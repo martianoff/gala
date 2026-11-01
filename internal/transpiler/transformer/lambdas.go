@@ -17,7 +17,7 @@ import (
 
 // This file contains lambda expression and partial function transformation logic extracted from expressions.go
 // Functions: transformLambda, transformLambdaWithExpectedType, inferBlockReturnType,
-//            findPartialFunction*, findLambdaInExpression, transformPartialFunctionLiteral,
+//            transformPartialFunctionLiteral,
 //            inferPartialFunctionParamType, transformPartialCaseClause, wrapInSome, generateNoneReturn,
 //            wrapBlockReturnsInSome
 
@@ -322,7 +322,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			}
 			return nil, t.missingReturnError(block, "this lambda", result)
 		}
-	} else if expr := l.expression(t); expr != nil {
+	} else if expr := l.expression(t); expr.ok() {
 		b, inferredRet, err := t.transformExpressionLambdaBody(l, expr, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
 			return nil, err
@@ -517,13 +517,13 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
 // Returns (body, inferredReturnType, error). Extracted from
 // transformLambdaWithExpectedType as part of A6.
-func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr grammar.IExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr exprSrc, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	bodySlot.tryThunk = t.isTryThunk(l)
 	// A lambda that returns nothing runs its body as a statement, as a void
 	// function does: a call is made, a match or if-expression runs its
 	// branches as statements, and a plain value is evaluated but not used.
 	if isVoidExpected {
-		body, err := t.transformVoidExpressionBody(bodyExpr, lambdaDiscardHint)
+		body, err := t.transformVoidExpressionBody(bodyExpr.antlr(t), lambdaDiscardHint)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -540,7 +540,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 		}
 		return body, nil, nil
 	}
-	expr, err := t.lowerResultAgainst(t.exprOf(bodyExpr), bodySlot, true)
+	expr, err := t.lowerResultAgainst(bodyExpr, bodySlot, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -967,119 +967,6 @@ func (b *blockLocals) record(name string, typ, value ast.Expr) {
 	b.types[name] = typ
 }
 
-// findPartialFunctionInExpression traverses the expression tree to find a partial function literal
-func (t *galaASTTransformer) findPartialFunctionInExpression(exprCtx grammar.IExpressionContext) *grammar.PartialFunctionLiteralContext {
-	if exprCtx == nil {
-		return nil
-	}
-
-	// Walk down the expression tree following the grammar structure
-	// expression -> orExpr -> andExpr -> ... -> postfixExpr -> primaryExpr -> partialFunctionLiteral
-	switch ctx := exprCtx.(type) {
-	case *grammar.ExpressionContext:
-		if ctx.OrExpr() != nil {
-			return t.findPartialFunctionInOrExpr(ctx.OrExpr().(*grammar.OrExprContext))
-		}
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInOrExpr(ctx *grammar.OrExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	andExprs := ctx.AllAndExpr()
-	if len(andExprs) == 1 {
-		return t.findPartialFunctionInAndExpr(andExprs[0].(*grammar.AndExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInAndExpr(ctx *grammar.AndExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	eqExprs := ctx.AllEqualityExpr()
-	if len(eqExprs) == 1 {
-		return t.findPartialFunctionInEqualityExpr(eqExprs[0].(*grammar.EqualityExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInEqualityExpr(ctx *grammar.EqualityExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	relExprs := ctx.AllRelationalExpr()
-	if len(relExprs) == 1 {
-		return t.findPartialFunctionInRelationalExpr(relExprs[0].(*grammar.RelationalExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInRelationalExpr(ctx *grammar.RelationalExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	addExprs := ctx.AllAdditiveExpr()
-	if len(addExprs) == 1 {
-		return t.findPartialFunctionInAdditiveExpr(addExprs[0].(*grammar.AdditiveExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInAdditiveExpr(ctx *grammar.AdditiveExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	mulExprs := ctx.AllMultiplicativeExpr()
-	if len(mulExprs) == 1 {
-		return t.findPartialFunctionInMultiplicativeExpr(mulExprs[0].(*grammar.MultiplicativeExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInMultiplicativeExpr(ctx *grammar.MultiplicativeExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	unaryExprs := ctx.AllUnaryExpr()
-	if len(unaryExprs) == 1 {
-		return t.findPartialFunctionInUnaryExpr(unaryExprs[0].(*grammar.UnaryExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInUnaryExpr(ctx *grammar.UnaryExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	if ctx.PostfixExpr() != nil {
-		return t.findPartialFunctionInPostfixExpr(ctx.PostfixExpr().(*grammar.PostfixExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInPostfixExpr(ctx *grammar.PostfixExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	if ctx.PrimaryExpr() != nil {
-		return t.findPartialFunctionInPrimaryExpr(ctx.PrimaryExpr().(*grammar.PrimaryExprContext))
-	}
-	return nil
-}
-
-func (t *galaASTTransformer) findPartialFunctionInPrimaryExpr(ctx *grammar.PrimaryExprContext) *grammar.PartialFunctionLiteralContext {
-	if ctx == nil {
-		return nil
-	}
-	if pf := ctx.PartialFunctionLiteral(); pf != nil {
-		return pf.(*grammar.PartialFunctionLiteralContext)
-	}
-	return nil
-}
-
 // containsAny checks if the given type expression contains "any" as a type or type parameter.
 // This is used to determine if an expected type is concrete enough to use for lambda return type.
 func containsAny(expr ast.Expr) bool {
@@ -1132,63 +1019,6 @@ func containsAny(expr ast.Expr) bool {
 	return false
 }
 
-// findLambdaInExpression traverses the expression tree to find a lambda expression
-// if the expression is simply a lambda (not part of a larger expression).
-
-func (t *galaASTTransformer) findLambdaInExpression(exprCtx grammar.IExpressionContext) *grammar.LambdaExpressionContext {
-	if exprCtx == nil {
-		return nil
-	}
-	orExpr := exprCtx.OrExpr()
-	if orExpr == nil {
-		return nil
-	}
-	orCtx := orExpr.(*grammar.OrExprContext)
-	if len(orCtx.AllAndExpr()) != 1 {
-		return nil
-	}
-	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
-	if len(andCtx.AllEqualityExpr()) != 1 {
-		return nil
-	}
-	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
-	if len(eqCtx.AllRelationalExpr()) != 1 {
-		return nil
-	}
-	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
-	if len(relCtx.AllAdditiveExpr()) != 1 {
-		return nil
-	}
-	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
-	if len(addCtx.AllMultiplicativeExpr()) != 1 {
-		return nil
-	}
-	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
-	if len(mulCtx.AllUnaryExpr()) != 1 {
-		return nil
-	}
-	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return nil
-	}
-	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
-	// Check that there are no postfix suffixes (no method calls, indexing, etc.)
-	if len(postfixCtx.AllPostfixSuffix()) > 0 {
-		return nil
-	}
-	primExpr := postfixCtx.PrimaryExpr()
-	if primExpr == nil {
-		return nil
-	}
-	primCtx := primExpr.(*grammar.PrimaryExprContext)
-	lambdaExpr := primCtx.LambdaExpression()
-	if lambdaExpr == nil {
-		return nil
-	}
-	return lambdaExpr.(*grammar.LambdaExpressionContext)
-}
-
 // partialFunctionSlot is slot s seen by a partial-function literal filling it:
 // its type is the function type s names — directly, through a GALA alias or as
 // a Go named function type — or nil when s names none.
@@ -1221,15 +1051,19 @@ func (t *galaASTTransformer) partialFunctionResultElem(s slot) transpiler.Type {
 	return elem
 }
 
-// transformPartialFunctionLiteral lowers a partial-function literal filling
-// slot s, whose type is a function type or nil (see partialFunctionSlot). The
-// slot's function type gives the literal its parameter type, which the
-// patterns are matched against, and the element type of its Option result
-// (see partialFunctionResultElem), which each arm's value is lowered against.
-func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.PartialFunctionLiteralContext, s slot) (ast.Expr, error) {
-	caseClauses := ctx.AllCaseClause()
+// transformPartialFunctionLiteral lowers the partial-function literal f, on
+// the tree it comes from, filling slot s, whose type is a function type or nil
+// (see partialFunctionSlot). The slot's function type gives the literal its
+// parameter type, which the patterns are matched against, and the element type
+// of its Option result (see partialFunctionResultElem), which each arm's value
+// is lowered against.
+func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slot) (ast.Expr, error) {
+	if f.node.Ok() {
+		t.nativeShape(f.node, "partial")
+	}
+	caseClauses := f.cases(t)
 	if len(caseClauses) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "partial function must have at least one case")
+		return nil, semanticErrorAtStart(f.at(), "partial function must have at least one case")
 	}
 
 	// Try to infer parameter type from expected function type or from patterns
@@ -1259,7 +1093,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	// A parameter whose cases name the variants of its sealed view (see
 	// sealedViewForCases) is matched as that view, read once on entry.
 	casesParam := paramName
-	viewExpr, casesType, viewed, err := t.matchViewSubject(ast.NewIdent(paramName), paramType, antlrCases(caseClauses), ctx)
+	viewExpr, casesType, viewed, err := t.matchViewSubjectAt(ast.NewIdent(paramName), paramType, caseClauses, f.at())
 	if err != nil {
 		return nil, err
 	}
@@ -1275,12 +1109,10 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 
 	// Transform each case clause, wrapping results in Some(...)
 	for _, cc := range caseClauses {
-		ccCtx := cc.(*grammar.CaseClauseContext)
-		patCtx := ccCtx.Pattern()
-		patternText := patCtx.GetText()
+		patternText := cc.pattern().text()
 
 		// Even wildcard case gets wrapped in Some for partial functions
-		clause, resultType, err := t.transformPartialCaseClause(ccCtx, casesParam, casesType, resultElem)
+		clause, resultType, err := t.transformPartialCaseClause(cc, casesParam, casesType, resultElem)
 		if err != nil {
 			return nil, err
 		}
@@ -1299,7 +1131,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	innerResultType := resultElem
 	if innerResultType == nil {
 		var err error
-		innerResultType, err = t.inferCommonResultType(resultTypes, casePatterns, ctx, false)
+		innerResultType, err = t.inferCommonResultTypeAt(resultTypes, casePatterns, f.at(), false)
 		if err != nil {
 			return nil, err
 		}
@@ -1340,22 +1172,19 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 }
 
 // inferPartialFunctionParamType tries to infer the parameter type from the patterns
-func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar.ICaseClauseContext) transpiler.Type {
+func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []caseSrc) transpiler.Type {
 	for _, cc := range caseClauses {
-		ccCtx := cc.(*grammar.CaseClauseContext)
-		patCtx := ccCtx.Pattern()
-
-		// Check for typed pattern like "x: int"
-		if tp, ok := patCtx.(*grammar.TypedPatternContext); ok {
-			typeExpr, err := t.transformType(tp.Type_())
+		pat := cc.pattern()
+		switch pat.kind() {
+		case patKindTyped:
+			// A typed pattern like "x: int"
+			typeExpr, err := t.lowerType(pat.typedType())
 			if err == nil {
 				return t.astTypeToTranspilerType(typeExpr)
 			}
-		}
-
-		// Check for extractor patterns like Some(n), Left(x), etc.
-		if ep, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			patternText := ep.GetText()
+		case patKindExpr:
+			// An extractor pattern like Some(n), Left(x), etc.
+			patternText := pat.text()
 			// Common Option patterns
 			if strings.HasPrefix(patternText, "Some(") || patternText == "None()" {
 				return transpiler.GenericType{
@@ -1384,20 +1213,19 @@ const partialArmNoValueMsg = "this case of the partial function produces no valu
 // The result expression is wrapped in Some(...). resultElem, when not nil, is
 // the Option element type the slot gives the literal: the arm's value is
 // lowered against it and wrapped in Some of it.
-func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType, resultElem transpiler.Type) (ast.Stmt, transpiler.Type, error) {
+func (t *galaASTTransformer) transformPartialCaseClause(cc caseSrc, paramName string, matchedType, resultElem transpiler.Type) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
 	defer t.popScope()
 	t.currentScope.caseArm = true
 
-	patCtx := ctx.Pattern()
-	cond, bindings, err := t.transformPatternWithType(antlrPat(patCtx), ast.NewIdent(paramName), matchedType)
+	cond, bindings, err := t.transformPatternWithType(cc.pattern(), ast.NewIdent(paramName), matchedType)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Handle guard clause
-	if ctx.GetGuard() != nil {
-		guard, err := t.transformExpression(ctx.GetGuard())
+	if g := cc.guard(); g.ok() {
+		guard, err := t.lowerExpr(g)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1411,14 +1239,14 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	var body []ast.Stmt
 	var resultType transpiler.Type
 
-	if ctx.GetBodyBlock() != nil {
+	if block := cc.bodyBlock(); block.ok() {
 		// Partial function arm body: the trailing expression is wrapped in
 		// Some(...) below, so it is value-consumed.
-		b, err := t.transformBlockWithTail(ctx.GetBodyBlock().(*grammar.BlockContext), tailExpr, typedSlot(resultElem))
+		b, err := t.lowerBlock(block, tailExpr, typedSlot(resultElem))
 		if err != nil {
 			return nil, nil, err
 		}
-		if at := t.noValueArmAt(antlrBlock(ctx.GetBodyBlock().(*grammar.BlockContext)), b.List); at.ok() {
+		if at := t.noValueArmAt(block, b.List); at.ok() {
 			return nil, nil, t.semanticErrorAtNode(at, partialArmNoValueMsg)
 		}
 		// A trailing expression is the arm's value, lowered like a match
@@ -1437,17 +1265,17 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 				resultType = t.inferResultType(ret.Results[0])
 			}
 		}
-	} else if ctx.GetBodyStmt() != nil {
-		if exprCtx := ctx.GetBodyStmt().Expression(); exprCtx != nil {
-			if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+	} else if stmt, ok := cc.bodyStmt(); ok {
+		if e := stmt.exprSrc(); e.ok() {
+			if err := t.checkForbiddenStatementKeywordSrc(e); err != nil {
 				return nil, nil, err
 			}
-			expr, err := t.lowerAgainst(t.exprOf(exprCtx), typedSlot(resultElem), true)
+			expr, err := t.lowerAgainst(e, typedSlot(resultElem), true)
 			if err != nil {
 				return nil, nil, err
 			}
 			if t.exprYieldsNoValue(expr) {
-				return nil, nil, t.semanticErrorAt(ctx.GetBodyStmt(), partialArmNoValueMsg)
+				return nil, nil, t.semanticErrorAtNode(stmt.at, partialArmNoValueMsg)
 			}
 			// Lowered like the tail of a block arm: a diverging call stays a
 			// statement, and any other value is returned wrapped in Some.
@@ -1458,7 +1286,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			}
 		} else {
 			// An assignment or increment yields no value.
-			return nil, nil, t.semanticErrorAt(ctx.GetBodyStmt(), partialArmNoValueMsg)
+			return nil, nil, t.semanticErrorAtNode(stmt.at, partialArmNoValueMsg)
 		}
 	}
 

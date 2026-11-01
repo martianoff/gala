@@ -24,9 +24,11 @@ import (
 // member accesses, indexes and calls (postfix_source.go, calls_source.go),
 // with the values their arguments pass and the shape a slot-typed value is
 // lowered by (args_source.go), and hands a lambda to lowerLambda on its node
-// (lambdas_source.go). What it does not cover yet it hands to ANTLR's tree
-// with crossTo: a postfix expression with a match, partial functions,
-// composite literals and the blocks of an if-expression's branches. Each
+// (lambdas_source.go), a partial function to transformPartialFunctionLiteral
+// (partialSrc) and a composite literal to transformCompositeLiteral
+// (compositeSrc). What it does not cover yet it hands to ANTLR's tree with
+// crossTo: a postfix expression with a match and the blocks of an
+// if-expression's branches. Each
 // lowering below takes the value it reads and is shared with the ANTLR walk,
 // so the two give the same Go.
 //
@@ -288,7 +290,7 @@ func (t *galaASTTransformer) lowerPrimaryExprNative(n native.GalaNodeRef) (ast.E
 		case native.GalaKIND_ifExpression:
 			return t.lowerIfExpression(ifExprSrc{node: kid}, slot{})
 		case native.GalaKIND_partialFunctionLiteral:
-			return t.transformPartialFunctionLiteral(crossTo[*grammar.PartialFunctionLiteralContext](t, kid), slot{})
+			return t.transformPartialFunctionLiteral(partialSrc{node: kid}, slot{})
 		}
 	}
 	return nil, semanticErrorAtStart(srcNode{node: n}, "primaryExpr must have primary, lambda, if expression, or partial function")
@@ -307,7 +309,7 @@ func (t *galaASTTransformer) lowerPrimaryNative(p native.PrimaryNode) (ast.Expr,
 			t.nativeShape(kid, "literal")
 			return t.lowerLiteral(nativeLiteral(native.LiteralNode{GalaNodeRef: kid}))
 		case native.GalaKIND_compositeLiteral:
-			return t.transformCompositeLiteral(crossTo[*grammar.CompositeLiteralContext](t, kid))
+			return t.transformCompositeLiteral(compositeSrc{node: kid})
 		case native.GalaKIND_tupleExpressionList:
 			list = kid
 		}

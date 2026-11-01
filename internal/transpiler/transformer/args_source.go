@@ -14,9 +14,9 @@ import (
 // so lowerAgainst and the argument lowering (lowerArg, transformArgument)
 // read the value once, the same way, on either tree.
 //
-// What they still hand to ANTLR's tree, with crossTo: a partial function
-// (transformPartialFunctionLiteral) and a postfix expression with a match
-// (transformPostfixMatchExpressionAgainst), whose lowerings read ANTLR's tree.
+// What they still hand to ANTLR's tree, with crossTo: a postfix expression
+// with a match (transformPostfixMatchExpressionAgainst), whose lowering reads
+// ANTLR's tree.
 
 // argValue is what an argument passes: an expression, or a lambda written
 // directly as the argument (the lambdaExpression alternative of rule
@@ -115,33 +115,15 @@ func (p postfixSrc) alone() bool {
 }
 
 // parenthesized is the first element of e when e is exactly a parenthesized
-// expression list — `(e)` or a tuple literal (parenthesizedList) — and the
-// number of its elements; 0 when e is no such list.
+// expression list — `(e)` or a tuple literal — and the number of its
+// elements; 0 when e is no such list.
 // Unlike patExpr.parenthesized, it collects no elements: it runs on every
 // value lowered against a slot.
 func (t *galaASTTransformer) parenthesized(e exprSrc) (first exprSrc, n int) {
-	if !e.node.Ok() {
-		list := t.parenthesizedList(e.ctx)
-		if list == nil {
-			return exprSrc{}, 0
-		}
-		exprs := list.AllExpression()
-		if len(exprs) == 0 {
-			return exprSrc{}, 0
-		}
-		return antlrExpr(exprs[0]), len(exprs)
+	if p := e.solePostfix(); p.ok() && p.alone() {
+		return p.parenFirst()
 	}
-	p := e.solePostfix()
-	if !p.ok() || !p.alone() {
-		return exprSrc{}, 0
-	}
-	for el := range galaparser.NativeKids(p.tupleListNode(), native.GalaKIND_expression) {
-		if n == 0 {
-			first = nativeExpr(el)
-		}
-		n++
-	}
-	return first, n
+	return exprSrc{}, 0
 }
 
 // grouped is the expression of e when e is exactly `(x)` (groupedExpression),
@@ -153,21 +135,11 @@ func (t *galaASTTransformer) grouped(e exprSrc) exprSrc {
 	return exprSrc{}
 }
 
-// lambdaIn is the lambda e is, with no suffix applied to it
-// (findLambdaInExpression), and the zero lambdaSrc otherwise.
+// lambdaIn is the lambda e is, with no suffix applied to it, and the zero
+// lambdaSrc otherwise.
 func (t *galaASTTransformer) lambdaIn(e exprSrc) lambdaSrc {
-	if e.node.Ok() {
-		p := e.solePostfix()
-		if !p.ok() || p.hasSuffixes() {
-			return lambdaSrc{}
-		}
-		if l := p.primaryExprNode().LambdaExpression(); l.Ok() {
-			return lambdaSrc{node: l}
-		}
-		return lambdaSrc{}
-	}
-	if l := t.findLambdaInExpression(e.ctx); l != nil {
-		return t.lambdaOf(l)
+	if p := e.solePostfix(); p.ok() && !p.hasSuffixes() {
+		return p.primaryLambda(t)
 	}
 	return lambdaSrc{}
 }
@@ -218,50 +190,39 @@ type partialSrc struct {
 // ok reports whether f is a partial function, not the zero partialSrc.
 func (f partialSrc) ok() bool { return f.ctx != nil || f.node.Ok() }
 
-// antlr is f's context, which its lowering (transformPartialFunctionLiteral)
-// reads: the crossing from its node.
-func (f partialSrc) antlr(t *galaASTTransformer) *grammar.PartialFunctionLiteralContext {
-	if f.node.Ok() {
-		return crossTo[*grammar.PartialFunctionLiteralContext](t, f.node)
+// partialOf is the partial function ctx, on the native tree when the walk
+// reads it (nativeNodeOf).
+func (t *galaASTTransformer) partialOf(ctx *grammar.PartialFunctionLiteralContext) partialSrc {
+	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_partialFunctionLiteral); ok {
+		return partialSrc{node: n}
 	}
-	return f.ctx
+	return partialSrc{ctx: ctx}
 }
 
 // partialIn is the partial function e's sole operand starts from, whatever
-// suffixes follow it (findPartialFunctionInExpression), and the zero
-// partialSrc when it starts from anything else.
+// suffixes follow it, and the zero partialSrc when it starts from anything
+// else.
 func (t *galaASTTransformer) partialIn(e exprSrc) partialSrc {
-	if e.node.Ok() {
-		p := e.solePostfix()
-		if !p.ok() {
-			return partialSrc{}
-		}
-		return partialSrc{node: p.primaryExprNode().PartialFunctionLiteral().GalaNodeRef}
+	if p := e.solePostfix(); p.ok() {
+		return p.primaryPartial(t)
 	}
-	return partialSrc{ctx: t.findPartialFunctionInExpression(e.ctx)}
+	return partialSrc{}
 }
 
 // barePartial is the partial function e is, with nothing applied to it
 // (barePartialFunction), and the zero partialSrc otherwise.
 func (t *galaASTTransformer) barePartial(e exprSrc) partialSrc {
-	if p := e.solePostfix(); !p.ok() || !p.alone() {
-		return partialSrc{}
+	if p := e.solePostfix(); p.ok() && p.alone() {
+		return p.primaryPartial(t)
 	}
-	return t.partialIn(e)
+	return partialSrc{}
 }
 
-// ifIn is the if-expression e is, with no suffix applied to it
-// (findIfExpressionInExpression), and the zero ifExprSrc otherwise.
+// ifIn is the if-expression e is, with no suffix applied to it, and the zero
+// ifExprSrc otherwise.
 func (t *galaASTTransformer) ifIn(e exprSrc) ifExprSrc {
-	if e.node.Ok() {
-		p := e.solePostfix()
-		if !p.ok() || p.hasSuffixes() {
-			return ifExprSrc{}
-		}
-		return ifExprSrc{node: p.primaryExprNode().IfExpression().GalaNodeRef}
-	}
-	if i := t.findIfExpressionInExpression(e.ctx); i != nil {
-		return t.ifExprOf(i)
+	if p := e.solePostfix(); p.ok() && !p.hasSuffixes() {
+		return p.primaryIf(t)
 	}
 	return ifExprSrc{}
 }
@@ -272,16 +233,94 @@ func (e ifExprSrc) ok() bool { return e.ctx != nil || e.node.Ok() }
 // bareMatch is the postfix expression of e when e is a match with no operator
 // around it (bareMatchPostfix), and the zero postfixSrc otherwise.
 func (t *galaASTTransformer) bareMatch(e exprSrc) postfixSrc {
-	if e.node.Ok() {
-		if p := e.solePostfix(); p.ok() && p.hasCases() {
-			return p
-		}
-		return postfixSrc{}
-	}
-	if p := t.bareMatchPostfix(e.ctx); p != nil {
-		return postfixSrc{ctx: p}
+	if p := e.solePostfix(); p.ok() && p.hasCases() {
+		return p
 	}
 	return postfixSrc{}
+}
+
+// antlrPrimaryExpr is the primary expression of p, a postfix expression on
+// ANTLR's tree, and nil when it has none.
+func (p postfixSrc) antlrPrimaryExpr() *grammar.PrimaryExprContext {
+	pe, _ := p.ctx.PrimaryExpr().(*grammar.PrimaryExprContext)
+	return pe
+}
+
+// primaryLambda is the lambda p's primary expression is, and the zero
+// lambdaSrc when it is something else.
+func (p postfixSrc) primaryLambda(t *galaASTTransformer) lambdaSrc {
+	if p.node.Ok() {
+		if l := p.primaryExprNode().LambdaExpression(); l.Ok() {
+			return lambdaSrc{node: l}
+		}
+		return lambdaSrc{}
+	}
+	if pe := p.antlrPrimaryExpr(); pe != nil {
+		if l, ok := pe.LambdaExpression().(*grammar.LambdaExpressionContext); ok {
+			return t.lambdaOf(l)
+		}
+	}
+	return lambdaSrc{}
+}
+
+// primaryPartial is the partial function p's primary expression is, and the
+// zero partialSrc when it is something else.
+func (p postfixSrc) primaryPartial(t *galaASTTransformer) partialSrc {
+	if p.node.Ok() {
+		return partialSrc{node: p.primaryExprNode().PartialFunctionLiteral().GalaNodeRef}
+	}
+	if pe := p.antlrPrimaryExpr(); pe != nil {
+		if f, ok := pe.PartialFunctionLiteral().(*grammar.PartialFunctionLiteralContext); ok {
+			return t.partialOf(f)
+		}
+	}
+	return partialSrc{}
+}
+
+// primaryIf is the if-expression p's primary expression is, and the zero
+// ifExprSrc when it is something else.
+func (p postfixSrc) primaryIf(t *galaASTTransformer) ifExprSrc {
+	if p.node.Ok() {
+		return ifExprSrc{node: p.primaryExprNode().IfExpression().GalaNodeRef}
+	}
+	if pe := p.antlrPrimaryExpr(); pe != nil {
+		if i, ok := pe.IfExpression().(*grammar.IfExpressionContext); ok {
+			return t.ifExprOf(i)
+		}
+	}
+	return ifExprSrc{}
+}
+
+// parenFirst is the first element of the parenthesized expression list p's
+// primary is, and the number of its elements; 0 when its primary is no such
+// list.
+func (p postfixSrc) parenFirst() (first exprSrc, n int) {
+	if p.node.Ok() {
+		for el := range galaparser.NativeKids(p.tupleListNode(), native.GalaKIND_expression) {
+			if n == 0 {
+				first = nativeExpr(el)
+			}
+			n++
+		}
+		return first, n
+	}
+	pe := p.antlrPrimaryExpr()
+	if pe == nil {
+		return exprSrc{}, 0
+	}
+	prim, ok := pe.Primary().(*grammar.PrimaryContext)
+	if !ok {
+		return exprSrc{}, 0
+	}
+	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
+	if !ok {
+		return exprSrc{}, 0
+	}
+	exprs := list.AllExpression()
+	if len(exprs) == 0 {
+		return exprSrc{}, 0
+	}
+	return antlrExpr(exprs[0]), len(exprs)
 }
 
 // antlr is p's context, which the match lowering

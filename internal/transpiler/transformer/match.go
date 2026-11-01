@@ -931,10 +931,16 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 // is what lets `c match { case '"' => readString(); case 't' => readBool() }`
 // stand as a statement.
 func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext, discardValue bool) (transpiler.Type, error) {
+	return t.inferCommonResultTypeAt(types, patterns, srcNode{ctx: ctx}, discardValue)
+}
+
+// inferCommonResultTypeAt is inferCommonResultType of a match at a node of
+// either tree, or at no node (the zero srcNode).
+func (t *galaASTTransformer) inferCommonResultTypeAt(types []transpiler.Type, patterns []string, at srcNode, discardValue bool) (transpiler.Type, error) {
 	if len(types) == 0 {
 		line, col := t.lastLine, t.lastCol
-		if ctx != nil && ctx.GetStart() != nil {
-			line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+		if at.ok() {
+			line, col = at.start()
 		}
 		return nil, galaerr.NewSemanticErrorAt(line, col, "match expression has no case branches")
 	}
@@ -1048,8 +1054,8 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 	for i, typ := range types {
 		if typ == nil {
 			line, col := t.lastLine, t.lastCol
-			if ctx != nil && ctx.GetStart() != nil {
-				line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+			if at.ok() {
+				line, col = at.start()
 			}
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
 		}
@@ -1080,8 +1086,8 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		}
 		msg := fmt.Sprintf("type mismatch in match expression: '%s' returns '%s' but '%s' returns '%s'. All branches must return the same type",
 			refPattern, refType.String(), patterns[i], typ.String())
-		if ctx != nil {
-			return nil, t.semanticErrorAt(ctx, msg)
+		if at.ok() {
+			return nil, t.semanticErrorAtNode(at, msg)
 		}
 		return nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 	}

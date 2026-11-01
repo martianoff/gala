@@ -215,11 +215,16 @@ func sealedViewPatternError(at srcNode, subjectType, view transpiler.Type, why s
 // subject's sealed view (see sealedViewForCases), and subject and subjectType
 // unchanged otherwise; viewed reports which. at locates the match.
 func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType transpiler.Type, caseClauses []caseSrc, at antlr.ParserRuleContext) (ast.Expr, transpiler.Type, bool, error) {
+	return t.matchViewSubjectAt(subject, subjectType, caseClauses, srcNode{ctx: at})
+}
+
+// matchViewSubjectAt is matchViewSubject of a match at a node of either tree.
+func (t *galaASTTransformer) matchViewSubjectAt(subject ast.Expr, subjectType transpiler.Type, caseClauses []caseSrc, at srcNode) (ast.Expr, transpiler.Type, bool, error) {
 	view, err := t.sealedViewForCases(subjectType, caseClauses)
 	if err != nil || view == nil {
 		return subject, subjectType, false, err
 	}
-	viewExpr, err := t.viewSubject(subject, subjectType, at)
+	viewExpr, err := t.viewSubjectAt(subject, subjectType, at)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -230,10 +235,16 @@ func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType tran
 // subject's MatchView() call, taken through an addressable receiver when the
 // method has a pointer receiver. at locates the match.
 func (t *galaASTTransformer) viewSubject(subject ast.Expr, subjectType transpiler.Type, at antlr.ParserRuleContext) (ast.Expr, error) {
-	if err := t.checkPtrViewReceiver(subjectType, at); err != nil {
+	return t.viewSubjectAt(subject, subjectType, srcNode{ctx: at})
+}
+
+// viewSubjectAt is viewSubject of a match at a node of either tree.
+func (t *galaASTTransformer) viewSubjectAt(subject ast.Expr, subjectType transpiler.Type, at srcNode) (ast.Expr, error) {
+	if err := t.checkPtrViewReceiverAt(subjectType, at); err != nil {
 		return nil, err
 	}
-	recv, err := t.addressableReceiver(subject, subjectType, sealedViewMethod, at.GetStart().GetLine(), at.GetStart().GetColumn())
+	line, col := at.start()
+	recv, err := t.addressableReceiver(subject, subjectType, sealedViewMethod, line, col)
 	if err != nil {
 		return nil, err
 	}

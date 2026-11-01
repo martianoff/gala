@@ -11,9 +11,12 @@ import (
 // an ANTLR half and a native half giving the same value for the same lambda,
 // as the statement sources do (statements_source.go). A native lambda's
 // block body is a native blockSrc, so its statements are lowered on the
-// native tree too, and its result type is a native typeSrc. Its parameters
-// (transformParameter) and an expression body are lowered on ANTLR's tree:
-// the native readers cross to it with crossTo.
+// native tree too; its result type is a native typeSrc and an expression
+// body a native exprSrc. An expression body of a lambda that returns nothing
+// is lowered as an expression statement (transformVoidExpressionBody), on
+// ANTLR's tree.
+// Its parameters (transformParameter) are lowered on ANTLR's tree too: the
+// native readers cross to it with crossTo.
 //
 // The native walk reaches a lambda on its node: from an expression
 // (lowerPrimaryExprNative), a call argument (argContent) or a slot-typed
@@ -23,7 +26,7 @@ import (
 
 // lambdaSrc is a lambda expression: its node when it is read on the native
 // tree, and its context, which a lambda reached from ANTLR's tree keeps for
-// the readers not ported yet (an expression body). A lambda the native walk
+// the readers not ported yet (its parameters). A lambda the native walk
 // reaches (lowerPrimaryExprNative, argContent) comes with its node only;
 // those readers cross for its context (antlr).
 type lambdaSrc struct {
@@ -115,13 +118,38 @@ func (l lambdaSrc) block() blockSrc {
 	return blockSrc{ctx: b}
 }
 
-// expression is l's expression body, and nil when its body is a block.
-func (l lambdaSrc) expression(t *galaASTTransformer) grammar.IExpressionContext {
+// expression is l's expression body, and the zero exprSrc when its body is a
+// block.
+func (l lambdaSrc) expression(t *galaASTTransformer) exprSrc {
 	if l.node.Ok() {
 		if e := l.node.Expression(); e.Ok() {
-			return crossTo[*grammar.ExpressionContext](t, e.GalaNodeRef)
+			return nativeExpr(e.GalaNodeRef)
 		}
-		return nil
+		return exprSrc{}
 	}
-	return l.ctx.Expression()
+	return t.exprOf(l.ctx.Expression())
+}
+
+// at is where f is written.
+func (f partialSrc) at() srcNode {
+	if f.node.Ok() {
+		return srcNode{node: f.node}
+	}
+	return srcNode{ctx: f.ctx}
+}
+
+// cases is f's case clauses, in order. Those read on the native tree are
+// reported to the onNativeCase hook, as a match's are (matchCases).
+func (f partialSrc) cases(t *galaASTTransformer) []caseSrc {
+	if !f.node.Ok() {
+		return antlrCases(f.ctx.AllCaseClause())
+	}
+	var out []caseSrc
+	for c := range galaparser.NativeKids(f.node, native.GalaKIND_caseClause) {
+		if t.onNativeCase != nil {
+			t.onNativeCase(c.Index(), int(c.Start().Line))
+		}
+		out = append(out, caseSrc{node: c})
+	}
+	return out
 }

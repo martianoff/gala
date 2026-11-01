@@ -1333,7 +1333,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		}
 		return t.lowerExpr(e)
 	case f.partial.ok():
-		return t.transformPartialFunctionLiteral(f.partial.antlr(t), t.partialFunctionSlot(s))
+		return t.transformPartialFunctionLiteral(f.partial, t.partialFunctionSlot(s))
 	case f.ifExpr.ok():
 		return t.lowerIfExpression(f.ifExpr, s)
 	case f.match.ok():

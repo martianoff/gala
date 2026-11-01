@@ -468,6 +468,7 @@ go_test(
 # gazelle:exclude native_match_test.go
 # gazelle:exclude native_postfix_walk_test.go
 # gazelle:exclude native_args_walk_test.go
+# gazelle:exclude native_leaves_walk_test.go
 go_test(
     # keep
     name = "native_walk_test",
@@ -486,6 +487,7 @@ go_test(
     srcs = [
         "native_args_walk_test.go",
         "native_expr_walk_test.go",
+        "native_leaves_walk_test.go",
         "native_match_test.go",
         "native_postfix_walk_test.go",
         "native_types_test.go",

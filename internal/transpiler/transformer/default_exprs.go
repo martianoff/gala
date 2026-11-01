@@ -575,8 +575,8 @@ func (t *galaASTTransformer) recordDefaultLambdaHints(param *grammar.ParameterCo
 	if t.lspVarTypes == nil || param.ParamDefault() == nil {
 		return
 	}
-	lambdaCtx := t.findLambdaInExpression(param.ParamDefault().(*grammar.ParamDefaultContext).Expression())
-	if lambdaCtx == nil || lambdaCtx.Parameters().(*grammar.ParametersContext).ParameterList() == nil {
+	lambdaCtx := t.lambdaIn(antlrExpr(param.ParamDefault().(*grammar.ParamDefaultContext).Expression())).ctx
+	if lambdaCtx == nil ||lambdaCtx.Parameters().(*grammar.ParametersContext).ParameterList() == nil {
 		return
 	}
 	_, expected, ok := t.lambdaExpectation(declared)

@@ -4651,7 +4651,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pf := t.partialIn(e); pf.ok() {
-		return t.transformPartialFunctionLiteral(pf.antlr(t), slot{typ: funcSlot, open: s.open})
+		return t.transformPartialFunctionLiteral(pf, slot{typ: funcSlot, open: s.open})
 	}
 
 	// Try to find a lambda in this expression
