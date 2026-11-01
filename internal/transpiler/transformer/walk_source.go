@@ -14,7 +14,9 @@ import (
 // The compiled file's top-level walk reads the file through walkSource:
 // galop's native tree when the parse came with one that the analysis has
 // converted (RichAST.Native), ANTLR's tree otherwise. A file is walked on one
-// tree or the other, never on a mix (see declarations_native.go).
+// tree or the other (see declarations_native.go); only a default value or an
+// interpolated expression that galop's parser does not settle is lowered on
+// ANTLR's tree in a file walked natively (parseExprAt).
 
 // walkSource is the compiled file as the top-level walk reads it: ANTLR's
 // tree sf, and, when the walk reads the native tree instead, its root and the

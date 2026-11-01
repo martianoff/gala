@@ -351,8 +351,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 	}()
 	// Nothing reads the native tree after the walk; keep no handle to it.
-	// (No state kept past a declaration holds a node of it: the receivers
-	// checked at the end keep ranges.)
+	// (The receivers checked at the end keep ranges. escapeCache and
+	// defaultTrees hold native nodes until the next transform resets them.)
 	defer func() { t.native = nil }()
 	tree := richAST.Tree
 	t.currentScope = nil

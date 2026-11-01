@@ -17,9 +17,10 @@ import (
 
 // parsedShapes is a program whose default values and interpolated
 // expressions the native walk parses on trees of their own (parseExprAt) and
-// lowers there. Each line marked `// parsed` holds a default or an
-// interpolation whose expression the native walk must have lowered on such a
-// tree; the multibyte text before each puts its columns past its bytes.
+// lowers there. Each line marked `// parsed: <kinds>` holds a default or an
+// interpolation whose nodes of those kinds (stmt, lambda, expr, case) the
+// native walk must have read on such a tree; the multibyte text before each
+// puts its columns past its bytes.
 const parsedShapes = `package main
 
 sealed type Shape {
@@ -27,50 +28,50 @@ sealed type Shape {
 	case Empty()
 }
 
-func apply(x int, f func(int) int = (a) => a + 1) int = f(x) // parsed
+func apply(x int, f func(int) int = (a) => a + 1) int = f(x) // parsed: lambda, expr
 
-func pick(s Shape, f func(Shape) Option[int] = { case Circle(r) => r }) int = f(s).GetOrElse(0) // parsed
+func pick(s Shape, f func(Shape) Option[int] = { case Circle(r) => r }) int = f(s).GetOrElse(0) // parsed: case
 
-func label(s string = "ü", n int = "ü".Size() * 2) string = s"${s}:${n}" // parsed
+func label(s string = "ü", n int = "ü".Size() * 2) string = s"${s}:${n}" // parsed: expr
 
 func hook(cb func() = nil) bool = cb == nil // a nil default is read, not lowered
 
-func block(f func(int) int = (a) => { // parsed
-	val d = a * 2
-	d + 1
+func block(f func(int) int = (a) => { // parsed: lambda
+	val d = a * 2 // parsed: stmt
+	d + 1 // parsed: expr
 }) int = f(1)
 
-struct Cfg(name string = "é", size int = 3, tags Option[string] = None[string]()) // parsed
+struct Cfg(name string = "é", size int = 3, tags Option[string] = None[string]()) // parsed: expr
 
 type Box struct {
 	n int
 }
 
-func (b Box) Scaled(k int = b.n * 2) int = b.n * k // parsed
+func (b Box) Scaled(k int = b.n * 2) int = b.n * k // parsed: expr
 
 func main() {
 	val x = 41
 	val c = Cfg()
 	Println(apply(1), pick(Circle(2)), label(), hook(), block(), c.size, Box{n: 3}.Scaled())
-	Println(s"üü ${x + 1} ${c.name}", f"é ${x}%5d") // parsed
-	Println(s"ü ${x * 2} and ${(if (x > 1) "bïg" else "small")} ${Box{n: x}.n}") // parsed
+	Println(s"üü ${x + 1} ${c.name}", f"é ${x}%5d") // parsed: expr
+	Println(s"ü ${x * 2} and ${(if (x > 1) "bïg" else "small")} ${Box{n: x}.n}") // parsed: expr
 }
 `
 
 // parsedCases cover each diagnostic a default value or an interpolated
 // expression reports: the line of each case's `/* ü */` marker is where it is
 // reported, after multibyte text and at the offset its own parse starts at,
-// and kind names how the native walk must have read that line: parsed, an
-// expression lowered on a tree of its own; or a check's shape (variant type,
-// codec name) that reports it there.
+// and kind names how the native walk must have read that line: a kind of
+// node read on a tree of its own (stmt, expr; see parsedShapes), or a check's
+// shape (variant type, codec name) that reports it there.
 var parsedCases = []struct{ name, kind, src string }{
-	{"a default fails to lower", "parsed", "package main\n\n/* ü */ func f(s string = \"ü\", n int = Some(1).Size()) int = n\n\nfunc main() {\n\tPrintln(f())\n}\n"},
-	{"a lambda default fails on its second line", "parsed", "package main\n\nfunc f(g func(int) int = (a) => {\n/* ü */ \tval d = Some(a).Size()\n\td\n}) int = g(1)\n\nfunc main() {\n\tPrintln(f())\n}\n"},
-	{"a struct field default fails", "parsed", "package main\n\n/* ü */ struct Cfg(s string = \"é\", n int = Some(1).Size())\n\nfunc main() {\n\tPrintln(Cfg())\n}\n"},
-	{"a method default fails", "parsed", "package main\n\ntype Box struct {\n\tn int\n}\n\n/* ü */ func (b Box) Get(k int = Some(b.n).Size()) int = k\n\nfunc main() {\n\tPrintln(Box{n: 1}.Get())\n}\n"},
-	{"an interpolation fails", "parsed", "package main\n\nfunc main() {\n\tval s = \"ü\"\n\t/* ü */ Println(s\"üé ${Some(s).Size()}\")\n}\n"},
-	{"a format interpolation fails", "parsed", "package main\n\nfunc main() {\n\tval s = \"ü\"\n\t/* ü */ Println(f\"é ${Some(s).Size()}%5d\")\n}\n"},
-	{"a later interpolation part fails", "parsed", "package main\n\nfunc main() {\n\tval s = \"ü\"\n\t/* ü */ Println(s\"é ${s} ü ${\"ä\" + s} ${Some(s).Size()}\")\n}\n"},
+	{"a default fails to lower", "expr", "package main\n\n/* ü */ func f(s string = \"ü\", n int = Some(1).Size()) int = n\n\nfunc main() {\n\tPrintln(f())\n}\n"},
+	{"a lambda default fails on its second line", "stmt", "package main\n\nfunc f(g func(int) int = (a) => {\n/* ü */ \tval d = Some(a).Size()\n\td\n}) int = g(1)\n\nfunc main() {\n\tPrintln(f())\n}\n"},
+	{"a struct field default fails", "expr", "package main\n\n/* ü */ struct Cfg(s string = \"é\", n int = Some(1).Size())\n\nfunc main() {\n\tPrintln(Cfg())\n}\n"},
+	{"a method default fails", "expr", "package main\n\ntype Box struct {\n\tn int\n}\n\n/* ü */ func (b Box) Get(k int = Some(b.n).Size()) int = k\n\nfunc main() {\n\tPrintln(Box{n: 1}.Get())\n}\n"},
+	{"an interpolation fails", "expr", "package main\n\nfunc main() {\n\tval s = \"ü\"\n\t/* ü */ Println(s\"üé ${Some(s).Size()}\")\n}\n"},
+	{"a format interpolation fails", "expr", "package main\n\nfunc main() {\n\tval s = \"ü\"\n\t/* ü */ Println(f\"é ${Some(s).Size()}%5d\")\n}\n"},
+	{"a later interpolation part fails", "expr", "package main\n\nfunc main() {\n\tval s = \"ü\"\n\t/* ü */ Println(s\"é ${s} ü ${\"ä\" + s} ${Some(s).Size()}\")\n}\n"},
 	{"an interpolation names a variant as a type", "variant type", variantSealed + "func main() {\n\t/* ü */ Println(s\"é ${(c Circle) => 1}\")\n}\n"},
 	{"an interpolation names generated codec metadata", "codec name", "package main\n\nstruct P(x int)\n\nfunc main() {\n\t/* ü */ Println(s\"é ${StructMeta_P{}}\")\n}\n"},
 }
@@ -85,8 +86,12 @@ func TestNativeParsedWalk(t *testing.T) {
 		n := run(t, "parsed shapes", parsedShapes)
 		require.NoError(t, n.err, "the program does not transpile")
 		for i, l := range strings.Split(parsedShapes, "\n") {
-			if strings.HasSuffix(l, "// parsed") {
-				assert.Truef(t, n.parsedAt[i+1], "the native walk lowered no expression parsed on its own on line %d: %s", i+1, strings.TrimSpace(l))
+			_, kinds, ok := strings.Cut(l, "// parsed: ")
+			if !ok {
+				continue
+			}
+			for _, kind := range strings.Split(kinds, ", ") {
+				assert.Truef(t, n.parsedAt[i+1][kind], "the native walk read no %s on a tree of its own on line %d (it read %v): %s", kind, i+1, n.parsedAt[i+1], strings.TrimSpace(l))
 			}
 		}
 	})
@@ -98,11 +103,7 @@ func TestNativeParsedWalk(t *testing.T) {
 			var se *galaerr.SemanticError
 			require.Truef(t, errors.As(n.err, &se), "not a semantic error: %v", n.err)
 			assert.Equalf(t, line, se.Line, "reported on another line: %v", n.err)
-			if c.kind == "parsed" {
-				assert.Truef(t, n.parsedAt[line], "the native walk lowered no expression parsed on its own on line %d; error: %v", line, n.err)
-			} else {
-				assert.Truef(t, n.shapes[line][c.kind], "the native walk read no %s on line %d (it read %v); error: %v", c.kind, line, n.shapes[line], n.err)
-			}
+			assert.Truef(t, n.parsedAt[line][c.kind] || n.shapes[line][c.kind], "the native walk read no %s on line %d (on a tree of its own %v, shapes %v); error: %v", c.kind, line, n.parsedAt[line], n.shapes[line], n.err)
 		})
 	}
 }
@@ -173,7 +174,7 @@ func Qualified(s string = Thing match {
 			if c.line != 0 {
 				read = c.line
 			}
-			assert.Truef(t, n.parsedAt[read], "the native walk read no case clause of the default on line %d on a tree of its own; error: %v", read, n.err)
+			assert.Truef(t, n.parsedAt[read]["case"], "the native walk read no case clause of the default on line %d on a tree of its own; error: %v", read, n.err)
 			if c.line == 0 {
 				require.NoError(t, n.err)
 				return

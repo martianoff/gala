@@ -399,6 +399,21 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 			return expr, nil
 		}
 	}
+	return antlrExpressionAtChecked(input, line, col, what, reuse)
+}
+
+// ParseExpressionANTLRAt is ParseExpressionAt with ANTLR's parser alone,
+// whatever the engine, for a caller whose run of galop's native parser on
+// input did not settle it (ParseExpressionNativeAt): galop does not parse it a
+// second time, nor report a panic on it twice.
+func ParseExpressionANTLRAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
+	return antlrExpressionAtChecked(input, line, col, what, nil)
+}
+
+// antlrExpressionAtChecked is antlrExpressionAt with its first syntax error,
+// or a token left over after the expression, as the error (see
+// ParseExpressionAt).
+func antlrExpressionAtChecked(input string, line, col int, what string, reuse *lexedInput) (grammar.IExpressionContext, error) {
 	exprCtx, stream, errs := antlrExpressionAt(input, line, col, reuse)
 	if len(errs) > 0 {
 		return nil, errs[0]

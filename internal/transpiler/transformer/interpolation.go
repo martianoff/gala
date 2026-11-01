@@ -271,12 +271,15 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // TestParseExpressionNativeAtMatchesANTLR guards against), and the expression
 // is lowered on ANTLR's tree, as a whole-file parse falls back.
 func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string) (exprSrc, error) {
+	parse := parser.ParseExpressionAt
 	if t.native != nil {
 		if n, err := parser.ParseExpressionNativeAt(text, line, col); err == nil {
 			return nativeExpr(n.GalaNodeRef), nil
 		}
+		// galop's parser has had its go at text: ANTLR's alone parses it now.
+		parse = parser.ParseExpressionANTLRAt
 	}
-	ctx, err := parser.ParseExpressionAt(text, line, col, what)
+	ctx, err := parse(text, line, col, what)
 	if err != nil {
 		return exprSrc{}, err
 	}

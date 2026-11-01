@@ -40,7 +40,7 @@ type walkRun struct {
 	captures  int                     // the Sendable capture checks run on the native tree
 	exprs     int                     // the expressions the native walk lowered, each counted once
 	exprLines map[int]bool            // the lines those expressions start on
-	parsedAt  map[int]bool            // the lines of the expressions, lambdas and case clauses it read on a tree of their own: a default value's or an interpolated expression's
+	parsedAt  map[int]map[string]bool // what it read on a tree of its own (a default value's or an interpolated expression's), by line: stmt, lambda, expr, case
 	shapes    map[int]map[string]bool // the expression shapes it lowered, by line
 	cases     int                     // the case clauses of matches and partial functions read on the native tree, each counted once
 	caseLines map[int]bool            // the lines those case clauses start on
@@ -69,7 +69,7 @@ type walkPipeline struct {
 
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
-	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, parsedAt: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
+	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, parsedAt: map[int]map[string]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
 	inner := tr
 	transformer.OnNativeDecl(tr, func() {
 		if run.native == 0 {
@@ -78,11 +78,11 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		run.native++
 	})
 	lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}
-	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true }, func(line int) { run.parsedAt[line] = true })
-	transformer.OnNativeStmt(tr, func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true })
-	transformer.OnNativeLambda(tr, func(index int) { lambdas[index] = true }, func(line int) { run.parsedAt[line] = true })
+	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true }, run.parsed("case"))
+	transformer.OnNativeStmt(tr, func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true }, run.parsed("stmt"))
+	transformer.OnNativeLambda(tr, func(index, _ int) { lambdas[index] = true }, run.parsed("lambda"))
 	transformer.OnNativeCapture(tr, func() { run.captures++ })
-	transformer.OnNativeExpr(tr, func(index, line int) { exprs[index], run.exprLines[line] = true, true }, func(line int) { run.parsedAt[line] = true })
+	transformer.OnNativeExpr(tr, func(index, line int) { exprs[index], run.exprLines[line] = true, true }, run.parsed("expr"))
 	transformer.OnNativeShape(tr, func(line int, shape string) {
 		if run.shapes[line] == nil {
 			run.shapes[line] = map[string]bool{}
@@ -107,6 +107,16 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 	run.root, _ = p.compiled.ConvertedRoot()
 	run.stmts, run.lambdas, run.exprs, run.cases = len(run.stmtNodes), len(lambdas), len(exprs), len(cases)
 	return run
+}
+
+// parsed is a hook recording each node of kind it is told of in r.parsedAt.
+func (r walkRun) parsed(kind string) func(line int) {
+	return func(line int) {
+		if r.parsedAt[line] == nil {
+			r.parsedAt[line] = map[string]bool{}
+		}
+		r.parsedAt[line][kind] = true
+	}
 }
 
 // loweredStmtOn reports whether the native walk lowered the outermost

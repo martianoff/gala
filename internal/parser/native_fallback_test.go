@@ -18,7 +18,7 @@ import (
 )
 
 // fallbackSrc has a node of every kind the transformer's top-level walk
-// crosses back to ANTLR's tree from.
+// reads on the native tree.
 const fallbackSrc = `package main
 
 struct P(x int, y string)
@@ -69,9 +69,10 @@ func (p *misbridgingParser) ParseFile(input string) *parser.Parsed {
 }
 
 // TestNativeBridgeFallback: a file whose native tree's bridge fails on any
-// kind of node the transformer's walk crosses from is compiled on ANTLR's
+// kind of node the transformer's walk reads is compiled on ANTLR's
 // tree, analysis and transform alike, to the same Go as with a sound bridge,
-// not stopped by the walk's crossing (an internal error, GALA-E0017).
+// not walked natively where the lookups from ANTLR's contexts to their nodes
+// (nativeNodeOf) could miss.
 func TestNativeBridgeFallback(t *testing.T) {
 	parser.RequestEngine(string(parser.EngineGalop))
 	t.Cleanup(func() { parser.RequestEngine("") })

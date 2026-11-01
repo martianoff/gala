@@ -158,7 +158,7 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 // TestBridgeHolds: the bridge holds for a converted parse, and not once any
 // node lacks its context or has another rule's, a context is missing, or the
 // tree has no nodes. The source has every kind of node the transformer's
-// top-level walk crosses back to ANTLR's tree from (types, signatures,
+// top-level walk reads on the native tree (types, signatures,
 // parameters, blocks, expressions, sealed and opaque declarations).
 func TestBridgeHolds(t *testing.T) {
 	p := parseWithGalop(`package main

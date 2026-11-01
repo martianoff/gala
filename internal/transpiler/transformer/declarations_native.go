@@ -19,7 +19,7 @@ import (
 // read natively too (decls_source.go), as are types (types_source.go), the
 // sealed and opaque type declarations (sealed_source.go), and block bodies
 // down to their statements (statements_source.go). Nothing the native walk
-// reads crosses back to ANTLR's tree.
+// reads crosses from a node back to ANTLR's tree.
 // TestNativeWalkAgrees holds the native walk to the ANTLR one.
 //
 // Children are read through the rule handles, NativeKids and Kind(), never
