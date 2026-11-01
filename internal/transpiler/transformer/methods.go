@@ -211,8 +211,8 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, args argsSrc) 
 		// A lambda override parses as the argument rule's lambdaExpression
 		// alternative rather than as a pattern, so read the argument the way
 		// function calls do.
-		exprCtx, lambdaCtx, isSpread, err := t.argContent(arg)
-		if err != nil || isSpread {
+		v, err := t.argContent(arg)
+		if err != nil || v.spread {
 			return nil, galaerr.NewSemanticErrorAt(argLine, argCol, "Copy overrides must be expressions")
 		}
 		// An override fills the field's slot exactly as a named constructor
@@ -227,7 +227,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, args argsSrc) 
 			}
 		}
 		var val ast.Expr
-		val, err = t.lowerArg(exprCtx, lambdaCtx, typedSlot(expected), false)
+		val, err = t.lowerArg(v, typedSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}

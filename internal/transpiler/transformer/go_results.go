@@ -515,23 +515,23 @@ func isTryThunkParam(callCtx callContext, argIdx int) bool {
 // standing where its plain value is expected: `val data = os.ReadFile(p)`
 // passed to a `[]byte` parameter. Go would report a type mismatch against
 // generated code; this names the call and the ways to reach the value.
-func (t *galaASTTransformer) checkGoResultAgainst(expr ast.Expr, expected transpiler.Type, ctx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkGoResultAgainst(expr ast.Expr, expected transpiler.Type, at srcNode) error {
 	res := t.goResultOf(expr)
 	if res == nil || !t.cannotHold(expected, res.Type) {
 		return nil
 	}
-	return t.goResultMisuse(res, fmt.Sprintf("`%s` is expected here", displayType(expected)), ctx)
+	return t.goResultMisuseAt(res, fmt.Sprintf("`%s` is expected here", displayType(expected)), at)
 }
 
 // checkGoResultGoArg is checkGoResultAgainst for argument i of a call to a Go
 // function or method, whose parameter types come from its Go signature rather
 // than from a slot (sig may be nil: nothing is checked).
-func (t *galaASTTransformer) checkGoResultGoArg(sig *transpiler.GoFuncSignature, i int, expr ast.Expr, ctx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkGoResultGoArg(sig *transpiler.GoFuncSignature, i int, expr ast.Expr, at srcNode) error {
 	param := goSigParamType(sig, i)
 	if param.IsNil() {
 		return nil
 	}
-	return t.checkGoResultAgainst(expr, param, ctx)
+	return t.checkGoResultAgainst(expr, param, at)
 }
 
 // cannotHold reports whether a slot of type expected certainly cannot hold a
@@ -589,7 +589,7 @@ func (t *galaASTTransformer) checkGoResultMember(base ast.Expr, member string, a
 	if meta == nil || hasMember(meta, member) {
 		return nil
 	}
-	return t.goResultMisuse(res, fmt.Sprintf("a %s has no member `%s`", stripPackagePrefix(gen.Base.String()), member), t.ctxAt(at))
+	return t.goResultMisuseAt(res, fmt.Sprintf("a %s has no member `%s`", stripPackagePrefix(gen.Base.String()), member), at)
 }
 
 // hasMember reports whether a type declares member as a method or field, of
@@ -617,7 +617,7 @@ func hasMember(meta *transpiler.TypeMetadata, member string) bool {
 func (t *galaASTTransformer) checkGoResultOperands(op string, at srcNode, operands ...ast.Expr) error {
 	for _, e := range operands {
 		if res := t.goResultOf(e); res != nil && !(!res.Fails && (op == "==" || op == "!=")) {
-			return t.goResultMisuse(res, fmt.Sprintf("it cannot be an operand of `%s`", op), t.ctxAt(at))
+			return t.goResultMisuseAt(res, fmt.Sprintf("it cannot be an operand of `%s`", op), at)
 		}
 	}
 	return nil
@@ -636,11 +636,7 @@ func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keywor
 // goResultMisuse builds the GALA-E0049 diagnostic for a converted Go call used
 // as something it is not.
 func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antlr.ParserRuleContext) error {
-	at := srcNode{}
-	if ctx != nil && ctx.GetStart() != nil {
-		at.ctx = ctx
-	}
-	return t.goResultMisuseAt(res, what, at)
+	return t.goResultMisuseAt(res, what, srcNode{ctx: ctx})
 }
 
 // goResultMisuseAt is goResultMisuse at a node of either tree, or at the
@@ -663,7 +659,8 @@ func (t *galaASTTransformer) goResultMisuseAt(res *goResult, what string, at src
 		hint = fmt.Sprintf("take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val %s = %s`",
 			names, res.source())
 	}
-	if !at.ok() {
+	// A context recovered from a syntax error may have no start token.
+	if !at.ok() || at.ctx != nil && at.ctx.GetStart() == nil {
 		return galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, t.lastLine, t.lastCol, msg, hint)
 	}
 	r := at.rng()

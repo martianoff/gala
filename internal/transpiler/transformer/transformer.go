@@ -99,7 +99,7 @@ type galaASTTransformer struct {
 	goResults              map[*ast.CallExpr]*goResult                   // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
 	genericGoResultCalls   map[*ast.CallExpr]*transpiler.GoFuncSignature // calls of a generic method lowered to a free function that declares a Go result list, with that function's signature (see declaredGoResultsSignature)
 	goIdentSignatures      map[string]*transpiler.GoFuncSignature        // lookupGoIdentSignature's answer per bare name (nil: no Go function)
-	tryThunkLambda         *grammar.LambdaExpressionContext              // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
+	tryThunkLambda         lambdaSrc                                     // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
 	needsEmbedImport       bool                                          // true when embed val declarations require import "embed"
 	warnTypeInference      bool                                          // when true, log warnings about type inference fallbacks
 	inferenceWarnings      []string                                      // collected type inference warnings
@@ -124,7 +124,7 @@ type galaASTTransformer struct {
 	userReturns            map[*ast.ReturnStmt]loopControlSite           // source position of each `return` lowered from source, checked by checkBranchingCalls
 	voidCalls              map[*ast.CallExpr]voidCallSite                // each call of void type with its source, checked by checkVoidCalls once the file is complete
 	hoisted                map[*ast.Ident]hoistedValue                   // a match or if-expression lowered as statements, by the placeholder that stands for it until its consumer takes it (see hoisted_value.go)
-	escapeCache            map[antlr.Tree]bool                           // whether a parse subtree holds control flow that would leave a construct lowered to a function literal (see escapesConstruct)
+	escapeCache            map[any]bool                                  // whether a parse subtree holds control flow that would leave a construct lowered to a function literal (see escapesConstruct)
 	hoistedPre             []ast.Stmt                                    // statements the local declaration being lowered needs before it, set when its initializer is lowered as statements (see hoisted_value.go)
 	localDeclaration       bool                                          // set while transformStatement lowers a val, var or assignment statement in a function body, whose single value may be lowered as statements (see lowerDeclarationInitializers)
 	userLoops              map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)

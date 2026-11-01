@@ -6,8 +6,6 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -663,7 +661,7 @@ func (t *galaASTTransformer) synthesizedMethodResultType(typeMeta *transpiler.Ty
 // underlying type or another opaque type is expected, or the underlying type
 // where the opaque type is expected. Untyped constants mix, as in Go. Any
 // other mismatch is left to Go, which stays the backstop.
-func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpiler.Type, at srcNode) error {
 	if !t.hasOpaque || expected == nil || transpiler.IsUnusable(expected) || expected.IsAny() {
 		return nil
 	}
@@ -704,16 +702,16 @@ func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpi
 			return nil
 		}
 	}
-	text := transpiler.SourceText(exprCtx)
+	text := at.sourceText()
 	hint := fmt.Sprintf("convert explicitly: %s(%s)", spell(expected, expM), text)
 	if expM != nil && actM != nil {
 		hint = t.throughUnderlyingHint(spell(expected, expM), actM, text)
 	}
-	tok := exprCtx.GetStart()
-	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueTypeMismatch, tok.GetLine(), tok.GetColumn(),
+	line, col := at.start()
+	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueTypeMismatch, line, col,
 		fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, spell(actual, actM), spell(expected, expM)),
 		hint,
-	).WithSpan(tok.GetColumn() + len([]rune(text)))
+	).WithSpan(col + len([]rune(text)))
 }
 
 // shareableUnderlying is the Sendable/Shareable checker's view of a named

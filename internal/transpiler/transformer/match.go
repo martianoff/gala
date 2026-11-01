@@ -1685,7 +1685,7 @@ func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([
 		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 			return nil, nil, err
 		}
-		expr, err := t.lowerResultAgainst(exprCtx, armSlot, true)
+		expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), armSlot, true)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -57,7 +57,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"loweringDefault", t.loweringDefault != nil},
 		{"matchInStatementPos", t.matchInStatementPos},
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
-		{"tryThunkLambda", t.tryThunkLambda != nil},
+		{"tryThunkLambda", t.tryThunkLambda.ok()},
 		{"hoistedPre", len(t.hoistedPre) != 0},
 		{"localDeclaration", t.localDeclaration},
 		{"signatureDots", t.signatureDots != nil},
@@ -191,7 +191,7 @@ func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.currentScope, t.activeTypeParams, t.returnSlot = s.currentScope, s.activeTypeParams, s.returnSlot
 	t.typeParamConstraints = s.typeParamConstraints
 	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
-	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, nil, nil
+	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, lambdaSrc{}, nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil
 	t.signatureDots, t.equalOwner, t.typeNameDepth = nil, nil, 0
 }

@@ -110,7 +110,7 @@ func (ix indexSrc) expr(i int) exprSrc {
 // a match hands p to ANTLR's tree whole.
 func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.Expr, error) {
 	// The hint is keyed by p's context, as the ANTLR walk pushes it.
-	owner, _ := t.native.Ctx(p.GalaNodeRef).(*grammar.PostfixExprContext)
+	owner := postfixSrc{node: p.GalaNodeRef}.hintKey(t)
 	src := postfixSrc{node: p.GalaNodeRef, owner: owner}
 	// Most chains are short: no allocation for them. A child that is no
 	// suffix is part of a match.

@@ -49,20 +49,25 @@ type hoistedValue struct {
 // it are asked about at every level of the lowering.
 func escapesConstruct[T antlr.Tree](t *galaASTTransformer, trees ...T) bool {
 	for _, tree := range trees {
-		key := antlr.Tree(tree)
-		escaping, ok := t.escapeCache[key]
-		if !ok {
-			escaping = escapes(key, false)
-			if t.escapeCache == nil {
-				t.escapeCache = make(map[antlr.Tree]bool)
-			}
-			t.escapeCache[key] = escaping
-		}
-		if escaping {
+		if t.cachedEscape(antlr.Tree(tree), func() bool { return escapes(tree, false) }) {
 			return true
 		}
 	}
 	return false
+}
+
+// cachedEscape is the cached escape answer for key, a subtree of either tree,
+// computed by walk the first time it is asked for.
+func (t *galaASTTransformer) cachedEscape(key any, walk func() bool) bool {
+	escaping, ok := t.escapeCache[key]
+	if !ok {
+		escaping = walk()
+		if t.escapeCache == nil {
+			t.escapeCache = make(map[any]bool)
+		}
+		t.escapeCache[key] = escaping
+	}
+	return escaping
 }
 
 func escapes(tree antlr.Tree, inLoop bool) bool {
@@ -87,15 +92,19 @@ func escapes(tree antlr.Tree, inLoop bool) bool {
 
 // hoistable reports whether exprCtx is a match or if-expression (possibly
 // parenthesized) whose arms escapesConstruct.
-func (t *galaASTTransformer) hoistable(exprCtx grammar.IExpressionContext) bool {
-	f := t.classifyExpr(exprCtx)
+func (t *galaASTTransformer) hoistable(e exprSrc) bool {
+	return t.hoistableForm(t.classifyExpr(e))
+}
+
+// hoistableForm is hoistable of a value of form f.
+func (t *galaASTTransformer) hoistableForm(f exprForm) bool {
 	switch {
-	case f.grouped != nil:
+	case f.grouped.ok():
 		return t.hoistable(f.grouped)
-	case f.ifExpr != nil:
-		return escapesConstruct(t, f.ifExpr.AllIfExprBranch()...)
-	case f.match != nil:
-		return escapesConstruct(t, f.match.AllCaseClause()...)
+	case f.ifExpr.ok():
+		return t.branchesEscape(f.ifExpr.branches())
+	case f.match.ok():
+		return t.matchEscapes(f.match)
 	}
 	return false
 }
@@ -110,11 +119,15 @@ func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.Expressio
 	local := t.localDeclaration
 	t.localDeclaration = false
 	exprs := ctx.AllExpression()
-	if !local || names != 1 || len(exprs) != 1 || !t.hoistable(exprs[0]) {
+	if !local || names != 1 || len(exprs) != 1 {
+		return t.transformExpressionListAgainst(ctx, declared)
+	}
+	e := t.exprOf(exprs[0])
+	if !t.hoistable(e) {
 		return t.transformExpressionListAgainst(ctx, declared)
 	}
 	target := t.nextTempVar()
-	expr, err := t.lowerAgainst(exprs[0], slot{typ: declared, hoist: target}, true)
+	expr, err := t.lowerAgainst(e, slot{typ: declared, hoist: target}, true)
 	if err != nil {
 		return nil, err
 	}

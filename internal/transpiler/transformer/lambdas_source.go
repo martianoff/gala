@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
@@ -14,16 +15,17 @@ import (
 // (transformParameter) and an expression body are lowered on ANTLR's tree:
 // the native readers cross to it with crossTo.
 //
-// Lambdas are reached from expressions and calls, which are still lowered on
-// ANTLR's tree. So the ANTLR entry points (transformLambdaWithExpectedType,
-// the Sendable capture check) take the lambda's node on the native tree when
-// the walk reads it (nativeNodeOf).
+// The native walk reaches a lambda on its node: from an expression
+// (lowerPrimaryExprNative), a call argument (argContent) or a slot-typed
+// value (classifyExpr). Code still on ANTLR's tree enters through
+// transformLambdaWithExpectedType, which takes the lambda's node when the
+// walk reads it (lambdaOf).
 
 // lambdaSrc is a lambda expression: its node when it is read on the native
 // tree, and its context, which a lambda reached from ANTLR's tree keeps for
-// the readers not ported yet (the Try thunk's identity). A
-// lambda the native expression walk reaches (lowerPrimaryExprNative) comes
-// with its node only; those readers cross for its context (antlr).
+// the readers not ported yet (an expression body). A lambda the native walk
+// reaches (lowerPrimaryExprNative, argContent) comes with its node only;
+// those readers cross for its context (antlr).
 type lambdaSrc struct {
 	ctx  *grammar.LambdaExpressionContext
 	node native.LambdaExpressionNode
@@ -36,6 +38,19 @@ func (l lambdaSrc) antlr(t *galaASTTransformer) *grammar.LambdaExpressionContext
 		return crossTo[*grammar.LambdaExpressionContext](t, l.node.GalaNodeRef)
 	}
 	return l.ctx
+}
+
+// ok reports whether l is a lambda, not the zero lambdaSrc.
+func (l lambdaSrc) ok() bool { return l.ctx != nil || l.node.Ok() }
+
+// is reports whether l and o are the same lambda: the same node on the
+// native tree, the same context on ANTLR's. A lambda the walk reads on the
+// native tree always has its node (lambdaOf), so the two never mix.
+func (l lambdaSrc) is(o lambdaSrc) bool {
+	if l.node.Ok() || o.node.Ok() {
+		return l.node == o.node
+	}
+	return l.ctx != nil && l.ctx == o.ctx
 }
 
 // lambdaOf is the lambda ctx, on the native tree when the walk reads it.
@@ -61,6 +76,22 @@ func (l lambdaSrc) params(t *galaASTTransformer) []paramDecl {
 		return t.readParamsNative(l.node.Parameters())
 	}
 	return readParams(l.ctx.Parameters().(*grammar.ParametersContext))
+}
+
+// paramCount is the number of parameters l declares.
+func (l lambdaSrc) paramCount() int {
+	if l.node.Ok() {
+		n := 0
+		for range galaparser.NativeKids(l.node.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+			n++
+		}
+		return n
+	}
+	params, ok := l.ctx.Parameters().(*grammar.ParametersContext)
+	if !ok || params.ParameterList() == nil {
+		return 0
+	}
+	return len(params.ParameterList().(*grammar.ParameterListContext).AllParameter())
 }
 
 // resultType is l's declared result type, and no type when it declares none.

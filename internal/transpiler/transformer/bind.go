@@ -409,7 +409,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		arg := prepped[i].recvExpr
 		if param := paramIndex(i-1, zip.ParamTypes, zip.Variadic); param >= 0 {
 			paramType := t.substituteTranspilerTypeParams(zip.ParamTypes[param], subst)
-			if err := t.checkPtrSlot(arg, paramType, prepped[i].exprCtx); err != nil {
+			if err := t.checkPtrSlot(arg, paramType, srcNode{ctx: prepped[i].exprCtx}); err != nil {
 				return nil, err
 			}
 			// A clause is a monad value wherever it stands in the group: a
@@ -619,7 +619,7 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 		res.typ = t.returnShape()
 	}
 	// With no type yet, the block's type comes from this value's own type.
-	expr, err := t.lowerAgainst(exprCtx, typedSlot(res.typ), true)
+	expr, err := t.lowerAgainst(t.exprOf(exprCtx), typedSlot(res.typ), true)
 	if err != nil {
 		return nil, err
 	}

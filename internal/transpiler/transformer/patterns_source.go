@@ -467,8 +467,8 @@ func (e patExpr) callPattern() (callPat, bool) {
 	return callPat{head: p, args: call.args(), typeArgs: typeArgs}, true
 }
 
-// qualifiedCallPattern reads e as a package-qualified call pattern
-// (getQualifiedCallPattern), and false when it is none.
+// qualifiedCallPattern reads e as a package-qualified call pattern,
+// `pkg.Ctor(args)` or `pkg.Ctor[T](args)`, and false when it is none.
 func (e patExpr) qualifiedCallPattern() (callPat, bool) {
 	p := e.postfix(true)
 	if !p.ok() {

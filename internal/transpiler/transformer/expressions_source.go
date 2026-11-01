@@ -22,13 +22,13 @@ import (
 // multiplicative), unary operators, identifiers, literals, string
 // interpolation, parenthesized expressions and tuples, if-expressions, and
 // member accesses, indexes and calls (postfix_source.go, calls_source.go),
-// and hands a lambda to lowerLambda on its node (lambdas_source.go). What it
-// does not cover yet it hands to ANTLR's tree with crossTo: what a call
-// argument passes (argContent), a postfix expression with a match, partial
-// functions, composite literals, the blocks of an
-// if-expression's branches, and the shape checks a slot-typed value takes
-// (lowerAgainst). Each lowering below takes the value it reads and is shared
-// with the ANTLR walk, so the two give the same Go.
+// with the values their arguments pass and the shape a slot-typed value is
+// lowered by (args_source.go), and hands a lambda to lowerLambda on its node
+// (lambdas_source.go). What it does not cover yet it hands to ANTLR's tree
+// with crossTo: a postfix expression with a match, partial functions,
+// composite literals and the blocks of an if-expression's branches. Each
+// lowering below takes the value it reads and is shared with the ANTLR walk,
+// so the two give the same Go.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -471,10 +471,14 @@ func (e ifExprSrc) branches() [2]ifBranchSrc {
 	return out
 }
 
-// branchesEscape is escapesConstruct of branches, which reads them on
-// ANTLR's tree.
+// branchesEscape is escapesConstruct of branches, on their tree.
 func (t *galaASTTransformer) branchesEscape(branches [2]ifBranchSrc) bool {
-	return escapesConstruct(t, branches[0].antlr(t), branches[1].antlr(t))
+	for _, b := range branches {
+		if (b.node.Ok() || b.ctx != nil) && t.escapesAt(b.at()) {
+			return true
+		}
+	}
+	return false
 }
 
 // ifBranchSrc is a branch of an if-expression: an expression or a block.
