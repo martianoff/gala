@@ -16,7 +16,7 @@ import (
 )
 
 // gatherSources returns the .gala files staged as data of parser_test.
-func gatherSources(t *testing.T) []string {
+func gatherSources(t testing.TB) []string {
 	t.Helper()
 	files, err := bazel.ListRunfiles()
 	if err != nil {

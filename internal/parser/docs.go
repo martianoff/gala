@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
+
+	"martianoff/gala/internal/parser/native"
 )
 
 // Doc comments
@@ -53,10 +55,7 @@ func DocKeyOf(t antlr.Token) DocKey { return DocKey{t.GetLine(), t.GetColumn()} 
 // they document. toks must be the complete token stream, hidden tokens included.
 // Returns nil for a source with no doc comments.
 func extractDocComments(toks []antlr.Token) Docs {
-	var docs Docs
-
-	var block []string
-	blockEndLine := -1 // last source line covered by the pending comment run
+	run := newDocRun()
 
 	// The previous default-channel token, and the line it ends on. The end line
 	// is computed lazily — only when a comment actually follows — because
@@ -72,41 +71,91 @@ func extractDocComments(toks []antlr.Token) Docs {
 		if tk.GetTokenType() == antlr.TokenEOF {
 			break
 		}
-		startLine := tk.GetLine()
-
 		if tk.GetChannel() != antlr.TokenDefaultChannel {
 			// Hidden channel holds comments only: WS is skipped outright.
 			if prevCode != nil && prevCodeEndLine < 0 {
 				prevCodeEndLine = prevCode.GetLine() + strings.Count(prevCode.GetText(), "\n")
 			}
-			if startLine == prevCodeEndLine {
-				continue // trailing comment on a line that already had code
-			}
-			text := tk.GetText()
-			// Continue the run when this comment sits on the line right after
-			// the previous one, or on the same line as where it ended —
-			// `/* Deprecated. */ // Use Bar instead.` is one doc comment, not
-			// two, and treating it as two silently drops the first.
-			if startLine != blockEndLine && startLine != blockEndLine+1 {
-				block = block[:0] // a blank line severed the run
-			}
-			block = appendDocLines(block, text)
-			blockEndLine = startLine + strings.Count(text, "\n")
+			run.comment(tk.GetLine(), prevCodeEndLine, tk.GetText)
 			continue
 		}
-
-		if len(block) > 0 && startLine == blockEndLine+1 {
-			if docs == nil {
-				docs = make(Docs)
-			}
-			docs[DocKeyOf(tk)] = strings.Join(block, "\n")
-		}
-		block = block[:0]
-		blockEndLine = -1
+		run.code(tk.GetLine(), tk.GetColumn)
 		prevCode = tk
 		prevCodeEndLine = -1
 	}
-	return docs
+	return run.docs
+}
+
+// nativeDocComments is extractDocComments for galop's native tokens: the
+// same doc comments, by the same keys.
+func nativeDocComments(ts *native.GalaTokens) Docs {
+	run := newDocRun()
+	// A cursor over Hidden rather than ts.HiddenBefore(i), which would binary
+	// search once per token.
+	hidden := ts.Hidden
+	for i, tk := range ts.Tokens {
+		if tk.Type == native.GalaEOF {
+			break
+		}
+		// The line the previous token ends on, computed once a comment needs
+		// it, as extractDocComments does.
+		prevCodeEndLine := -1
+		for ; len(hidden) > 0 && int(hidden[0].Next) == i; hidden = hidden[1:] {
+			if i > 0 && prevCodeEndLine < 0 {
+				prev := ts.Tokens[i-1]
+				prevCodeEndLine = int(prev.Line) + strings.Count(prev.Text(ts.Src), "\n")
+			}
+			comment := hidden[0].GalaToken
+			run.comment(int(comment.Line), prevCodeEndLine, func() string { return comment.Text(ts.Src) })
+		}
+		run.code(int(tk.Line), func() int { return int(tk.Column) })
+	}
+	return run.docs
+}
+
+// docRun pairs comment runs with the declarations they document, fed a
+// token stream's comments (comment) and default-channel tokens (code) in
+// order.
+type docRun struct {
+	docs  Docs
+	block []string
+	// blockEndLine is the last source line the pending comment run covers.
+	blockEndLine int
+}
+
+func newDocRun() docRun { return docRun{blockEndLine: -1} }
+
+// comment adds the comment that starts on startLine to the pending run, unless
+// it trails code: prevCodeEndLine is the line the code before it ends on, -1
+// when there is none. text is called only for a comment the run takes.
+func (r *docRun) comment(startLine, prevCodeEndLine int, text func() string) {
+	if startLine == prevCodeEndLine {
+		return // trailing comment on a line that already had code
+	}
+	raw := text()
+	// Continue the run when this comment sits on the line right after the
+	// previous one, or on the same line as where it ended —
+	// `/* Deprecated. */ // Use Bar instead.` is one doc comment, not two,
+	// and treating it as two silently drops the first.
+	if startLine != r.blockEndLine && startLine != r.blockEndLine+1 {
+		r.block = r.block[:0] // a blank line severed the run
+	}
+	r.block = appendDocLines(r.block, raw)
+	r.blockEndLine = startLine + strings.Count(raw, "\n")
+}
+
+// code ends the pending run at a default-channel token that starts on line:
+// the run documents it when it ends on the line just above. column, the
+// token's column, is read only for a token the run documents.
+func (r *docRun) code(line int, column func() int) {
+	if len(r.block) > 0 && line == r.blockEndLine+1 {
+		if r.docs == nil {
+			r.docs = make(Docs)
+		}
+		r.docs[DocKey{Line: line, Column: column()}] = strings.Join(r.block, "\n")
+	}
+	r.block = r.block[:0]
+	r.blockEndLine = -1
 }
 
 // appendDocLines appends the prose lines of a single comment token to dst,
