@@ -101,6 +101,68 @@ func main() {
 				"for {",
 			},
 		},
+		{
+			// A match applied to the self-call's result keeps the call out of
+			// tail position: the self-call and its match survive, no loop.
+			name: "self-call with a match on its result is not a tail call",
+			input: `package main
+
+func loop(n int, acc int) int = if (n <= 0) acc else loop(n - 1, acc + 1) match { case r => r * 2 }
+
+func main() {
+    Println(loop(3, 0))
+}
+`,
+			mustHave: []string{
+				"loop(n-1, acc+1)",
+				"r * 2",
+			},
+			mustMiss: []string{
+				"for {",
+			},
+		},
+		{
+			// A match applied to the whole if-expression (its else branch is a
+			// block, so the match attaches to the if) puts the if out of tail
+			// position: the match survives and nothing is rewritten.
+			name: "if-expression with a match on its result is not rewritten",
+			input: `package main
+
+func f(n int) int = if (n > 0) f(n - 1) else { 1 } match { case r => r * 2 }
+
+func main() {
+    Println(f(3))
+}
+`,
+			mustHave: []string{
+				"return f(n - 1)",
+				"r * 2",
+			},
+			mustMiss: []string{
+				"for {",
+			},
+		},
+		{
+			// Guard: a method called on the self-call's result keeps the call
+			// out of tail position too (callPattern already rejects the extra
+			// suffixes; field access and a call on the result take the same
+			// path).
+			name: "self-call with a method on its result is not a tail call",
+			input: `package main
+
+func up(n int) Option[int] = if (n <= 0) Some(0) else up(n - 1).Map((x) => x + 1)
+
+func main() {
+    Println(up(3))
+}
+`,
+			mustHave: []string{
+				"up(n-1)",
+			},
+			mustMiss: []string{
+				"for {",
+			},
+		},
 	}
 
 	for _, tt := range tests {

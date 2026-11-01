@@ -1,0 +1,30 @@
+package main
+
+// doubling counts n down to 0 and doubles the result once per level. The
+// match is applied to the self-call's result, so the call is not in tail
+// position: every level must run its match, giving 2^n.
+func doubling(n int) int = if (n <= 0) 1 else doubling(n - 1) match { case r => r * 2 }
+
+// loop is the self-call with an accumulator and a match on its result: the
+// match still runs once per level.
+func loop(n int, acc int) int = if (n <= 0) acc else loop(n - 1, acc + 1) match { case r => r * 2 }
+
+// wholeIf has a block else branch, so the match applies to the whole
+// if-expression, not to a branch: its result is doubled.
+func wholeIf(n int) int = if (n > 0) n else { 1 } match { case r => r * 2 }
+
+// recurIf is wholeIf with a self-call in the then branch: the match runs on
+// every level's result, so it is not a tail call either.
+func recurIf(n int) int = if (n > 0) recurIf(n - 1) else { 1 } match { case r => r * 2 }
+
+// countUp is a real tail self-call. It is still rewritten into a loop, so a
+// million levels run in constant stack.
+func countUp(n int, acc int) int = if (n <= 0) acc else countUp(n - 1, acc + 1)
+
+func main() {
+    Println(doubling(10))
+    Println(loop(3, 0))
+    Println(wholeIf(3))
+    Println(recurIf(3))
+    Println(countUp(1000000, 0))
+}
