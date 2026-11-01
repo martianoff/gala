@@ -1,0 +1,22 @@
+package main
+
+import (
+    gostrings "strings"
+
+    "martianoff/gala/examples/default_go_dot_import/caller"
+    "martianoff/gala/examples/default_go_dot_import/lib"
+)
+
+// lib's defaults name ToUpper and Repeat through lib's dot import of the Go
+// package strings. This file imports strings under another name; the
+// defaults lowered here use that name. They used to be lowered bare and fail
+// to compile, here, in lib's other file and in caller.
+func main() {
+    val b = lib.Box(2)
+    Println(b.Label())
+    Println(lib.Tag())
+    Println(lib.Describe(b))
+    Println(lib.DescribeTag())
+    Println(caller.Call())
+    Println(gostrings.ToLower(b.Label("Own")))
+}

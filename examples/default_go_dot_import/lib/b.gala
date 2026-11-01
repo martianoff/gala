@@ -1,0 +1,8 @@
+package lib
+
+// lib's other file imports neither package. a.gala's defaults, lowered here,
+// still resolve their names through a.gala's Go dot imports. They used to be
+// lowered bare and fail to compile.
+func Describe(b Box) string = b.Label()
+
+func DescribeTag() string = s"${Tag()} ${Width()}"

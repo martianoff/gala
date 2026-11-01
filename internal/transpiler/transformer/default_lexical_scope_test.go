@@ -190,3 +190,127 @@ func main() {
 		})
 	}
 }
+
+// TestDefaultGoDotImport: a default naming a function of a Go package its file
+// dot-imports (`ToUpper` of `import . "strings"`) is lowered in another file —
+// of its package or of another one — with that name qualified the way the
+// using file reaches the package: through its own import of it, under the
+// name it gives it, or an import added for the default. A using file that
+// dot-imports the package too reaches the name bare.
+func TestDefaultGoDotImport(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+	write("gala.mod", "module example.com/godot\n\ngala dev\n")
+	write("lib/a.gala", `package lib
+
+import (
+    . "strings"
+    . "unicode/utf8"
+)
+
+struct Box(N int)
+
+func (b Box) Label(prefix string = ToUpper("box")) string = s"${prefix}-${b.N}"
+
+func Tag(s string = Repeat("ab", 2)) string = s
+
+func Width(n int = RuneCountInString("héllo")) int = n
+`)
+
+	tests := []struct {
+		name, src, file string
+		want            []string
+		absent          []string
+	}{
+		{
+			name: "another package, a using file that does not import strings",
+			src: `package main
+
+import "example.com/godot/lib"
+
+func main() {
+    Println(lib.Box(1).Label(), lib.Tag(), lib.Width())
+}
+`,
+			want: []string{`strings.ToUpper("box")`, `strings.Repeat("ab", 2)`, `"strings"`,
+				`utf8.RuneCountInString("héllo")`, `"unicode/utf8"`},
+		},
+		{
+			name: "another package, a using file that imports strings under another name",
+			src: `package main
+
+import (
+    gostrings "strings"
+
+    "example.com/godot/lib"
+)
+
+func main() {
+    Println(lib.Box(1).Label(), lib.Tag(), gostrings.ToLower("A"))
+}
+`,
+			want:   []string{`gostrings.ToUpper("box")`, `gostrings.Repeat("ab", 2)`},
+			absent: []string{` strings.ToUpper`, `(strings.ToUpper`},
+		},
+		{
+			name: "another package, a using file that dot-imports strings",
+			src: `package main
+
+import (
+    . "strings"
+
+    "example.com/godot/lib"
+)
+
+func main() {
+    Println(lib.Box(1).Label(), lib.Tag(), ToLower("A"))
+}
+`,
+			want:   []string{`ToUpper("box")`, `Repeat("ab", 2)`},
+			absent: []string{`strings.ToUpper`, `strings.Repeat`},
+		},
+		{
+			name: "another file of the package, a using file that imports nothing",
+			src: `package lib
+
+func Describe(b Box) string = s"${b.Label()}${Tag()}${Width()}"
+`,
+			file: "lib/b.gala",
+			want: []string{`strings.ToUpper("box")`, `strings.Repeat("ab", 2)`, `"strings"`,
+				`utf8.RuneCountInString("héllo")`, `"unicode/utf8"`},
+		},
+		{
+			name: "another file of the package, a using file that dot-imports strings",
+			src: `package lib
+
+import . "strings"
+
+func Describe(b Box) string = ToLower(b.Label() + Tag())
+`,
+			file:   "lib/b.gala",
+			want:   []string{`ToUpper("box")`, `Repeat("ab", 2)`},
+			absent: []string{`strings.ToUpper`, `strings.Repeat`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := tt.file
+			if file == "" {
+				file = "main.gala"
+			}
+			out, err := transpileCrossPkgFile(t, root, tt.src, filepath.Join(root, filepath.FromSlash(file)))
+			require.NoError(t, err)
+			for _, want := range tt.want {
+				assert.Contains(t, out, want, "generated:\n%s", out)
+			}
+			for _, absent := range tt.absent {
+				assert.NotContains(t, out, absent, "generated:\n%s", out)
+			}
+		})
+	}
+}

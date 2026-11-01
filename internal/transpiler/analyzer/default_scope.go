@@ -26,6 +26,10 @@ type defaultScopeRecorder struct {
 	// recorded when its package was loaded as a dependency, which also
 	// knows the package's private vals.
 	keepRecorded bool
+	// goDots, when set, names a Go package a file dot-imports that its import
+	// table could not name because it was not loaded (a sibling's Go imports
+	// are not), for a default naming something of it (see goDotLoader.use).
+	goDots *goDotLoader
 }
 
 func newDefaultScopeRecorder(pkgPath string) *defaultScopeRecorder {
@@ -43,32 +47,90 @@ func (r *defaultScopeRecorder) addFile(canonFile string, quals fileQualifiers, r
 	}
 }
 
+// mergeGoTypesByPath merges the Go type info of the Go package at path into
+// richAST by import path only (see transpiler.GoTypeInfo.KeyedByPath), for a
+// default that names it through its own file's imports: the file need not
+// import the package, so the names its own imports bind keep their meaning.
+func mergeGoTypesByPath(keyed *transpiler.GoTypeInfo, richAST *transpiler.RichAST) {
+	if keyed.IsEmpty() {
+		return
+	}
+	if richAST.GoTypeInfo == nil {
+		richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
+	}
+	richAST.GoTypeInfo.Merge(keyed)
+}
+
+// goDotLoader loads, for a file, the Go packages that the defaults it may
+// lower reach through a Go dot import of their own file (`ToUpper` of
+// `import . "strings"`), each package once.
+type goDotLoader struct {
+	a       *galaAnalyzer
+	richAST *transpiler.RichAST
+	pkgs    map[string]*goDotPkg // import path -> the package
+}
+
+type goDotPkg struct {
+	keyed  *transpiler.GoTypeInfo // its type info, keyed by import path only
+	name   string                 // its name, "" when it did not load
+	merged bool                   // keyed is merged into richAST
+}
+
+func (a *galaAnalyzer) newGoDotLoader(richAST *transpiler.RichAST) *goDotLoader {
+	return &goDotLoader{a: a, richAST: richAST, pkgs: map[string]*goDotPkg{}}
+}
+
+// use reports the name of the Go package at path when the default text
+// names something it declares, merging its type info into the file's (see
+// mergeGoTypesByPath) so the default is typed and qualified there; "" when
+// it names nothing of it, or the package does not load. A default naming
+// none of it is left as it was: nothing is loaded into the file for it.
+func (l *goDotLoader) use(path, text string) string {
+	pkg, ok := l.pkgs[path]
+	if !ok {
+		goInfo := l.a.analyzeGoImport(path)
+		pkg = &goDotPkg{keyed: goInfo.KeyedByPath(path), name: goPackageName(goInfo, path)}
+		l.pkgs[path] = pkg
+	}
+	if pkg.name == "" || !slices.ContainsFunc(identifierPattern.FindAllString(text, -1), func(w string) bool {
+		return ast.IsExported(w) && pkg.keyed.HasQualified(path+"."+w)
+	}) {
+		return ""
+	}
+	if !pkg.merged {
+		pkg.merged = true
+		mergeGoTypesByPath(pkg.keyed, l.richAST)
+	}
+	return pkg.name
+}
+
 // loadDefaultScopeGoTypes loads the Go type info of the Go packages that the
 // defaults of the packages a file imports (imports) name through their own
-// files' imports (`strings` in `sep string = strings.Repeat("=", 2)`), so
-// such a default lowered in the file types as it does where it was written.
-// The file need not import them, so they are recorded by import path only:
-// the names its own imports bind keep their meaning.
+// files' imports — `strings` in `sep string = strings.Repeat("=", 2)`, or a Go
+// dot import's `ToUpper` (see goDotLoader) — so such a default lowered in the
+// file types as it does where it was written, and its names can be qualified
+// for the file (see mergeGoTypesByPath).
 func (a *galaAnalyzer) loadDefaultScopeGoTypes(imports []fileImport, richAST *transpiler.RichAST) {
 	imported := map[string]bool{}
 	for _, imp := range imports {
 		imported[imp.Path] = true
 	}
 	loaded := map[string]bool{}
+	dots := a.newGoDotLoader(richAST)
+	foreignGo := func(path string) bool { return !imported[path] && !a.isGalaImport(path) }
 	load := func(def transpiler.DefaultExpr) {
 		if def.Scope == nil || !imported[def.Scope.PkgPath] {
 			return
 		}
 		for _, path := range def.Scope.Imports {
-			if imported[path] || loaded[path] || a.isGalaImport(path) {
-				continue
+			if foreignGo(path) && !loaded[path] {
+				loaded[path] = true
+				mergeGoTypesByPath(a.analyzeGoImport(path).KeyedByPath(path), richAST)
 			}
-			loaded[path] = true
-			if keyed := a.analyzeGoImport(path).KeyedByPath(path); !keyed.IsEmpty() {
-				if richAST.GoTypeInfo == nil {
-					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
-				}
-				richAST.GoTypeInfo.Merge(keyed)
+		}
+		for path := range def.Scope.DotImports {
+			if foreignGo(path) {
+				dots.use(path, def.Text)
 			}
 		}
 	}
@@ -105,13 +167,17 @@ func (r *defaultScopeRecorder) record(pkgAST *transpiler.RichAST, canonical func
 		}
 		scope := &transpiler.DefaultScope{PkgPath: r.pkgPath}
 		for _, b := range quals.dots {
-			if b.PkgName == "" {
+			pkgName := b.PkgName
+			if pkgName == "" && !b.IsGala && r.goDots != nil {
+				pkgName = r.goDots.use(b.Path, def.Text)
+			}
+			if pkgName == "" {
 				continue // the package did not load; nothing resolves through it
 			}
 			if scope.DotImports == nil {
 				scope.DotImports = map[string]string{}
 			}
-			scope.DotImports[b.Path] = b.PkgName
+			scope.DotImports[b.Path] = pkgName
 		}
 		for _, word := range identifierPattern.FindAllString(def.Text, -1) {
 			if b, ok := quals.named[word]; ok {

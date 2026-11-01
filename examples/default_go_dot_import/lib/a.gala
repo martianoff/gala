@@ -1,0 +1,18 @@
+package lib
+
+import (
+    . "strings"
+    . "unicode/utf8"
+)
+
+// Defaults naming functions of Go packages this file dot-imports. A default
+// is lowered at each call that omits the argument, in the calling file: there
+// ToUpper, Repeat and RuneCountInString are qualified as that file reaches
+// strings and unicode/utf8 (whose name, utf8, is not its import path).
+struct Box(N int)
+
+func (b Box) Label(prefix string = ToUpper("box")) string = s"${prefix}-${b.N}"
+
+func Tag(s string = Repeat("ab", 2)) string = s
+
+func Width(n int = RuneCountInString("héllo")) int = n

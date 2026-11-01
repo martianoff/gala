@@ -344,9 +344,10 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 
 // qualifyDotImported qualifies id, a bare name of a lowered default from
 // another file, when it is a type, function, val or var of a package the
-// default's declaring file dot-imports (`EmptyArray` of collection_immutable)
-// and this file does not dot-import that package too. Otherwise id is
-// returned as is. A qualified selector is recorded in qualified.
+// default's declaring file dot-imports (`EmptyArray` of collection_immutable,
+// `ToUpper` of Go's strings) and this file does not dot-import that package
+// too. Otherwise id is returned as is. A qualified selector is recorded in
+// qualified.
 func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler.DefaultScope, qualified map[ast.Node]bool) ast.Expr {
 	for _, path := range slices.Sorted(maps.Keys(scope.DotImports)) { // deterministic output
 		pkgName := scope.DotImports[path]
@@ -363,11 +364,12 @@ func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler
 	return id
 }
 
-// importDeclares reports whether the GALA package at path, named pkgName,
-// declares a type, function, val or var called name.
+// importDeclares reports whether the package at path, named pkgName, declares
+// a type, function, val or var called name: a GALA package, or a Go one
+// (`ToUpper` of `strings`), found by its path in the Go type info.
 func (t *galaASTTransformer) importDeclares(path, pkgName, name string) bool {
 	_, isVal := t.importedVals(path)[name]
-	return isVal || t.packageDeclares(pkgName, name)
+	return isVal || t.packageDeclares(pkgName, name) || t.goTypeInfo.HasQualified(path+"."+name)
 }
 
 // importQualifier is this file's name for the package at path, named pkgName

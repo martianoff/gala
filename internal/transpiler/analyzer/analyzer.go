@@ -1278,10 +1278,13 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// lowered in the using file, against the declaring file's imports (see
 	// transpiler.DefaultScope): record them, as for a dependency's defaults.
 	// Only the import tables: unexported vals are in scope within the package,
-	// so addFile's private-val bookkeeping does not apply.
+	// so addFile's private-val bookkeeping does not apply. A sibling's Go
+	// imports were not loaded here, so a Go package it dot-imports is loaded
+	// for a default that names something of it.
 	if filePath != "" && len(siblingTrees) > 0 {
 		scopes := newDefaultScopeRecorder(richAST.OwnImportPath)
 		scopes.keepRecorded = true
+		scopes.goDots = a.newGoDotLoader(richAST)
 		scopes.quals[a.paths.canonical(filePath)] = fileQuals
 		for i, q := range siblingQuals {
 			if i < len(siblingPaths) {

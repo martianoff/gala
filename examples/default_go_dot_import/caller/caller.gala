@@ -1,0 +1,7 @@
+package caller
+
+import "martianoff/gala/examples/default_go_dot_import/lib"
+
+// Another package that imports neither strings nor unicode/utf8: lib's
+// defaults lowered here import them.
+func Call() string = s"${lib.Box(3).Label()} ${lib.Tag()} ${lib.Width()}"
