@@ -18,17 +18,16 @@ import (
 // in the same order, with the same diagnostics. TestCollectionsAgree and
 // TestCollectionDiagnosticsAgree hold each pair together.
 //
-// analyze reads the compiled file on its native tree, from its first read on
-// (file_checks_native.go), when the file is analyzed outside the LSP and its
-// parse came with a handle (see nativeFileOf and readsNative there). The
-// undefined-symbol check reads that tree too (undefined_symbol_native.go).
-// Every other file is collected on ANTLR's tree: a parse by ANTLR's parser or
-// one with syntax errors (no handle, see Parsed.CleanNative), an LSP buffer
-// or a tree a caller handed in bare, and a sibling or an imported file (the
-// parsed-file cache keeps no handle). A file is collected on one tree or the
-// other, never on a mix, and the native collection reads no ANTLR context:
-// the initializers of package-level bindings are inferred on the native tree
-// too (infer_native.go).
+// analyze reads a file on its native tree, from its first read on
+// (file_checks_native.go), when its parse came with a handle that bridges
+// (see nativeFileOf): the compiled file, an LSP buffer, a sibling and a file
+// of an imported package alike (siblings_native.go). The undefined-symbol
+// check reads that tree too (undefined_symbol_native.go). A file is
+// collected on ANTLR's tree when its parse had syntax errors (no handle, see
+// Parsed.CleanNative) or a caller handed in a bare tree. A file is collected
+// on one tree or the other, never on a mix, and the native collection reads
+// no ANTLR context: the initializers of package-level bindings are inferred
+// on the native tree too (infer_native.go).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
@@ -36,8 +35,8 @@ import (
 // collectTrace is what analyze tells galaAnalyzer.onCollect about a file:
 // whether the undefined-symbol check runs on it, whether its parse came with
 // a native-tree handle, and whether its declarations are collected on the
-// native tree, which, outside the LSP (see readsNative in analyze), they are
-// exactly when it has a handle and the tree converts.
+// native tree, which they are exactly when it has a handle and the tree
+// converts and bridges (nativeFileOf).
 type collectTrace struct {
 	filePath        string
 	checksUndefined bool

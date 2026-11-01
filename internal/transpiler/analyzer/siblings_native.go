@@ -21,13 +21,6 @@ import (
 // hands the same values to the same tree-free code. TestCollectionsAgree
 // holds the pairs together and proves which tree each read took.
 
-// cachedNative is the native-tree handle of the file at path whose ANTLR
-// tree is tree, as the parsed-file cache holds it with that very parse (see
-// parsedForTree), or nil when the cache holds none.
-func (a *galaAnalyzer) cachedNative(path string, tree *grammar.SourceFileContext) *galaparser.Native {
-	return a.parsedForFile(path, tree).CleanNative()
-}
-
 // notePackageRead tells a.onPackageRead, when set, of a read of a file of the
 // package, beyond those readTree reports: what it read and whether it took
 // the native tree. The read cannot be made again: it records metadata.
@@ -50,23 +43,6 @@ func (a *galaAnalyzer) packageFileImports(path string, tree *grammar.SourceFileC
 func (a *galaAnalyzer) packageFileNames(path string, tree *grammar.SourceFileContext, nf nativeFile) ownNames {
 	return readOn(a.onPackageRead, path, "top-level names", nf, ownNamesNative,
 		func() ownNames { return ownNamesOf(tree) })
-}
-
-// packageFileTypeNames is the names the file at path declares, and whether
-// each names a type (collectTopLevelDeclaredNames without the methods), read
-// as packageFileImports reads its imports.
-func (a *galaAnalyzer) packageFileTypeNames(path string, tree *grammar.SourceFileContext, nf nativeFile) map[string]bool {
-	return readOn(a.onPackageRead, path, "top-level names", nf,
-		func(root native.GalaNodeRef) map[string]bool {
-			names := make(map[string]bool)
-			forEachTopLevelNameNative(root, topLevelNameRecorder(names, nil))
-			return names
-		},
-		func() map[string]bool {
-			names := make(map[string]bool)
-			collectTopLevelDeclaredNames(tree, names, nil)
-			return names
-		})
 }
 
 // add records into o the names other introduces.

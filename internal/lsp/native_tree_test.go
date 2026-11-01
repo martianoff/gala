@@ -39,7 +39,7 @@ func (p antlrOnlyParser) ParseFile(input string) *parser.Parsed {
 // resolves their imports.
 func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 	t.Helper()
-	// Only galop's parses come with a native tree, whatever the build's or
+	// Parse with galop's engine, the CLI's default, whatever the build's or
 	// environment's default engine.
 	parser.RequestEngine(string(parser.EngineGalop))
 	t.Cleanup(func() { parser.RequestEngine("") })

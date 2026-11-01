@@ -310,7 +310,10 @@ type parsedFileEntry struct {
 	// comments and its native-tree handle, converted already (see
 	// parseFileCached), which a sibling's or an imported file's reads take
 	// (see siblings_native.go).
-	parsed  *galaparser.Parsed
+	parsed *galaparser.Parsed
+	// nf is the native tree of parsed's handle, its declarations bucketed
+	// once (nativeFileOf), for every analysis that reads the file.
+	nf      nativeFile
 	pkgName string
 	// syntaxErr is the parse failure of a file that does not parse (tree is
 	// nil then), stamped with the file's path. Cached like a tree, so a
@@ -792,8 +795,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	siblingParsed := make([]*galaparser.Parsed, len(siblingTrees))
 	siblingNFs := make([]nativeFile, len(siblingTrees))
 	for i, sib := range siblingTrees {
-		siblingParsed[i] = a.parsedForFile(siblingPathAt(siblingPaths, i), sib)
-		siblingNFs[i] = nativeFileOf(siblingParsed[i].CleanNative())
+		siblingParsed[i], siblingNFs[i] = a.cachedFile(siblingPathAt(siblingPaths, i), sib)
 	}
 
 	richAST := &transpiler.RichAST{
@@ -2748,12 +2750,11 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			// declarations, and its native-tree handle, the tree analyze
 			// reads it on when there is one.
 			var docs galaparser.Docs
-			p := a.parsedForFile(filePath, tree)
+			p, nf := a.cachedFile(filePath, tree)
 			if p != nil {
 				docs = p.Docs
 			}
-			handle := p.CleanNative()
-			res, err := a.analyze(tree, docs, handle, filePath)
+			res, err := a.analyze(tree, docs, p.CleanNative(), filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -2802,7 +2803,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 				}
 				pkgAST.Merge(res)
 				mergeOwnPackageVals(pkgAST, res, sameAsFilePath)
-				scopes.addFile(canonFile, a.qualifiersFor(a.packageFileImports(filePath, tree, nativeFileOf(handle)), res), res)
+				scopes.addFile(canonFile, a.qualifiersFor(a.packageFileImports(filePath, tree, nf), res), res)
 			}
 		}
 	}
@@ -4757,11 +4758,13 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	// takes the native tree when the handle bridges, and a converted handle
 	// no longer holds the token stream (see parser.Parsed.Native). A handle
 	// that does not bridge would serve no reader: it is not kept.
-	if !parsed.CleanNative().Bridged() {
+	nf := nativeFileOf(parsed.CleanNative())
+	if !nf.ok() {
 		parsed.Native = nil
 	}
 	a.cacheParsedFile(canonPath, &parsedFileEntry{
 		parsed:  parsed,
+		nf:      nf,
 		pkgName: pkgName,
 		mtime:   info.ModTime(),
 		size:    info.Size(),
@@ -4829,20 +4832,20 @@ func addFieldDoc(meta *transpiler.TypeMetadata, fieldName, doc string) {
 	meta.FieldDocs[fieldName] = doc
 }
 
-// parsedForFile returns the parse of `path` (its tree and doc comments), for a
-// caller that holds the matching tree.
+// cachedFile returns the parse of `path` (its tree, doc comments and native
+// tree, see cachedForTree), for a caller that holds the matching tree.
 //
 // Sibling files reach the analyzer as bare trees through three routes — the
 // explicit package-file list, an in-memory sibling-tree cache hit, and a fresh
 // directory scan — and all three go through parseFileCached, which stores the
 // whole parse under the same key. Looking it up by path afterwards keeps one
 // source of truth instead of threading a parallel slice down all three;
-// parsedForTree then checks that what came back belongs to this tree.
-func (a *galaAnalyzer) parsedForFile(path string, tree *grammar.SourceFileContext) *galaparser.Parsed {
+// cachedForTree then checks that what came back belongs to this tree.
+func (a *galaAnalyzer) cachedFile(path string, tree *grammar.SourceFileContext) (*galaparser.Parsed, nativeFile) {
 	if path == "" {
-		return nil
+		return nil, nativeFile{}
 	}
-	return a.parsedForTree(a.parsedFileCacheKey(path), tree)
+	return a.cachedForTree(a.parsedFileCacheKey(path), tree)
 }
 
 // parsedForTree returns the parse cached for canonPath, but only if it is the
@@ -4861,15 +4864,22 @@ func (a *galaAnalyzer) parsedForFile(path string, tree *grammar.SourceFileContex
 // per file per Analyze, so re-deriving it here turned one filepath.Abs per
 // sibling into two.
 func (a *galaAnalyzer) parsedForTree(canonPath string, tree *grammar.SourceFileContext) *galaparser.Parsed {
+	p, _ := a.cachedForTree(canonPath, tree)
+	return p
+}
+
+// cachedForTree is parsedForTree with the parse's native tree, bucketed when
+// it was cached (parsedFileEntry.nf): no tree when it has none.
+func (a *galaAnalyzer) cachedForTree(canonPath string, tree *grammar.SourceFileContext) (*galaparser.Parsed, nativeFile) {
 	if a.parsedFileCache == nil || canonPath == "" {
-		return nil
+		return nil, nativeFile{}
 	}
 	a.parsedFileCacheMu.Lock()
 	defer a.parsedFileCacheMu.Unlock()
 	if entry, ok := a.parsedFileCache[canonPath]; ok && entry.tree() == tree {
-		return entry.parsed
+		return entry.parsed, entry.nf
 	}
-	return nil
+	return nil, nativeFile{}
 }
 
 // parsedFileCacheKey derives the parsedFileCache key for a path. Writer

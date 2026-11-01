@@ -688,7 +688,8 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 		if perr != nil || tree == nil {
 			continue
 		}
-		addNames(names, a.packageFileTypeNames(path, tree, nativeFileOf(a.cachedNative(path, tree))))
+		_, nf := a.cachedFile(path, tree)
+		addNames(names, a.packageFileNames(path, tree, nf).types)
 	}
 	if a.importedNames != nil {
 		a.importedNames[key] = names

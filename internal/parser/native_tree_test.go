@@ -65,7 +65,7 @@ func checkNative(p *Parsed, text string) string {
 }
 
 // parseWithGalop parses src as a source file with galop's engine, whatever
-// the build's default: only galop's parses have a native tree.
+// the build's default.
 func parseWithGalop(src string) *Parsed {
 	var p *Parsed
 	withEngine(EngineGalop, func() { p = NewAntlrGalaParser().ParseFile(src) })

@@ -18,8 +18,8 @@ import (
 )
 
 // parseWithGalop makes tb's parses use galop's parser whatever the build's
-// or environment's default, until tb ends: only its parses come with a
-// native tree, which these tests compare ANTLR's collection to.
+// or environment's default, until tb ends, the parser that makes the native
+// trees these tests compare ANTLR's collection to by default.
 func parseWithGalop(tb testing.TB) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	tb.Cleanup(func() { galaparser.RequestEngine("") })

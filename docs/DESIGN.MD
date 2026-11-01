@@ -285,12 +285,12 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     reported on standard error.
   - **ANTLR alone stays an option at run time:** `--parser=antlr` or `GALA_PARSER=antlr` per
     process, or a build with `--//internal/parser:antlr`, whose binaries default to ANTLR (see
-    `internal/parser/engine.go`). Every build has both parsers. ANTLR's engine bypasses all of
-    galop's code: its lexer and parser, the conversion to the native tree, and every consumer's
-    native path. A parse ANTLR's parser makes, with ANTLR's engine or as galop's fallback, has
-    no native tree (`Parsed.Native` is nil), so while consumers move to the native tree one by
-    one (Stage B), ANTLR's engine runs their ANTLR paths end to end, to compare against and to
-    escape to.
+    `internal/parser/engine.go`). Every build has both parsers. ANTLR's engine bypasses galop's
+    lexer and parser, not its tree: every parse without syntax errors, whichever parser made
+    it, comes with a native tree (`Parsed.Native`), converted from ANTLR's tree by galop's
+    converter, and the analyzer, the transformer and the language server read that tree. A
+    parse with syntax errors has none, so its error-recovered tree is read on the ANTLR paths
+    end to end.
   - **Building GALA needs galop.** It runs at build time from prebuilt release binaries, which
     Bazel (rules_gala's galop toolchain) and nix download for linux and macOS (amd64 and arm64)
     and windows-amd64. No other host can build GALA.
