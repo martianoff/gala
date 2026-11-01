@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"go/ast"
+	"iter"
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
@@ -10,96 +11,132 @@ import (
 
 // The postfix chain on galop's native tree: a primary expression followed by
 // its suffixes, each a member access `.name`, an index or type arguments
-// `[exprs]`, or a call `(args)`. A member access and an index are read here
-// on either tree (memberSrc, indexSrc) and lowered once, by lowerMember and
-// resolveIndexAccess, so both walks give the same Go. A postfix expression
-// with a call suffix or a match is still lowered on ANTLR's tree as a whole
-// (crossTo): the call lowering reads the argument list and the expression it
-// ends, and the match is the match's.
+// `[exprs]`, or a call `(args)`. A member access and an index are read on
+// either tree through suffixSrc (memberSrc, indexSrc) and lowered once, by
+// lowerMember and resolveIndexAccess, so both walks give the same Go. A
+// postfix expression with a call suffix or a match is still lowered on
+// ANTLR's tree as a whole (crossTo): the call lowering reads the argument
+// list and the expression it ends, and the match is the match's.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
 // declarations_native.go).
 
-// memberSrc is a member access suffix `.name`: the name, where it is written,
-// and the suffix, where a diagnostic about the access points.
-type memberSrc struct {
-	name   string
-	nameAt srcNode
-	suffix srcNode
+// memberSrc is a member access suffix `.name`.
+type memberSrc struct{ suffixSrc }
+
+// indexSrc is an index or type-argument suffix `[exprs]`.
+type indexSrc struct{ suffixSrc }
+
+// at is where s is written.
+func (s suffixSrc) at() srcNode {
+	if s.node.Ok() {
+		return srcNode{node: s.node}
+	}
+	return srcNode{ctx: s.ctx}
 }
 
-// indexSrc is an index or type-argument suffix `[exprs]`: its expressions and
-// where it is written. hasList is false for a suffix without its list, which
-// only a malformed tree has.
-type indexSrc struct {
-	exprs   []exprSrc
-	hasList bool
-	at      srcNode
+// identAt is where the member s selects is written, the zero srcNode when s
+// is no selector.
+func (s suffixSrc) identAt() srcNode {
+	if s.node.Ok() {
+		if id := (native.PostfixSuffixNode{GalaNodeRef: s.node}).Identifier(); id.Ok() {
+			return srcNode{node: id.GalaNodeRef}
+		}
+		return srcNode{}
+	}
+	if id := s.ctx.Identifier(); id != nil {
+		return srcNode{ctx: id}
+	}
+	return srcNode{}
 }
 
-// antlrIndex reads the index suffix ctx on ANTLR's tree.
-func antlrIndex(ctx *grammar.PostfixSuffixContext) indexSrc {
-	ix := indexSrc{at: srcNode{ctx: ctx}}
-	list := ctx.ExpressionList()
-	if list == nil {
-		return ix
+// antlr is s's context, and false when s is a native node without one.
+func (s suffixSrc) antlr(t *galaASTTransformer) (*grammar.PostfixSuffixContext, bool) {
+	if !s.node.Ok() {
+		return s.ctx, s.ctx != nil
 	}
-	ix.hasList = true
-	for _, e := range list.AllExpression() {
-		ix.exprs = append(ix.exprs, antlrExpr(e))
-	}
-	return ix
+	ctx, ok := t.native.Ctx(s.node).(*grammar.PostfixSuffixContext)
+	return ctx, ok
 }
 
-// nativeIndex is antlrIndex of s.
-func nativeIndex(s native.PostfixSuffixNode) indexSrc {
-	ix := indexSrc{at: srcNode{node: s.GalaNodeRef}}
-	list := s.ExpressionList()
-	if !list.Ok() {
-		return ix
+// hasList reports whether ix has its expression list, which only a malformed
+// tree lacks.
+func (ix indexSrc) hasList() bool {
+	if ix.node.Ok() {
+		return (native.PostfixSuffixNode{GalaNodeRef: ix.node}).ExpressionList().Ok()
 	}
-	ix.hasList = true
-	for e := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
-		ix.exprs = append(ix.exprs, nativeExpr(e))
-	}
-	return ix
+	return ix.ctx.ExpressionList() != nil
 }
 
-// suffixOpenerNative is the token the native suffix s starts with: ".", "(" or
-// "[", and "" when it starts with no token.
-func suffixOpenerNative(s native.PostfixSuffixNode) string {
-	if s.ChildCount() == 0 {
-		return ""
+// exprs is the expressions of ix, in order, read off the tree as they are
+// iterated.
+func (ix indexSrc) exprs() iter.Seq[exprSrc] {
+	return func(yield func(exprSrc) bool) {
+		if ix.node.Ok() {
+			list := (native.PostfixSuffixNode{GalaNodeRef: ix.node}).ExpressionList()
+			for e := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
+				if !yield(nativeExpr(e)) {
+					return
+				}
+			}
+			return
+		}
+		list := ix.ctx.ExpressionList()
+		if list == nil {
+			return
+		}
+		for _, c := range list.GetChildren() {
+			if e, ok := c.(grammar.IExpressionContext); ok && !yield(antlrExpr(e)) {
+				return
+			}
+		}
 	}
-	if c := s.Child(0); c.IsToken() {
-		return c.Terminal().GetText()
+}
+
+// count is the number of ix's expressions.
+func (ix indexSrc) count() int {
+	n := 0
+	for range ix.exprs() {
+		n++
 	}
-	return ""
+	return n
+}
+
+// expr is the i-th expression of ix, the zero exprSrc when it has fewer.
+func (ix indexSrc) expr(i int) exprSrc {
+	for e := range ix.exprs() {
+		if i == 0 {
+			return e
+		}
+		i--
+	}
+	return exprSrc{}
 }
 
 // lowerSuffixedNative is transformPostfixExpr of p, whose primary expression
 // is prim, when p has a suffix or a match. Its member accesses and indexes
 // are lowered here; a call suffix or a match hands p to ANTLR's tree whole.
 func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim native.GalaNodeRef) (ast.Expr, error) {
-	// Most chains are short: no allocation for them.
-	var buf [4]native.PostfixSuffixNode
-	suffixes := buf[:0]
-	for i := 1; i < p.ChildCount(); i++ {
-		n := p.Child(i).Node()
-		if !n.Ok() || n.Kind() != native.GalaKIND_postfixSuffix {
-			// The `match` keyword, its braces and its case clauses.
+	src := postfixSrc{node: p.GalaNodeRef}
+	// Most chains are short: no allocation for them. A child that is no
+	// suffix is part of a match.
+	var buf [4]suffixSrc
+	suffixes := src.appendSuffixes(buf[:0])
+	if len(suffixes) != p.ChildCount()-1 {
+		return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
+	}
+	for _, s := range suffixes {
+		if s.opener() == "(" {
 			return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
 		}
-		s := native.PostfixSuffixNode{GalaNodeRef: n}
-		if suffixOpenerNative(s) == "(" {
-			return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
-		}
-		suffixes = append(suffixes, s)
 	}
 	// The type of the slot p fills is for its last suffix, never for the
-	// receiver it is applied to (see transformPostfixExpr).
-	release := t.expectedArgTypes.withhold(postfixOwner{node: p.GalaNodeRef})
+	// receiver it is applied to (see transformPostfixExpr). The hint is keyed
+	// by p's context, as the ANTLR walk pushes it.
+	owner, _ := t.native.Ctx(p.GalaNodeRef).(*grammar.PostfixExprContext)
+	release := t.expectedArgTypes.withhold(owner)
+	defer release()
 	result, err := t.lowerPrimaryExprNative(prim)
 	if err != nil {
 		return nil, err
@@ -116,14 +153,14 @@ func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim 
 }
 
 // lowerSuffixNative is applyPostfixSuffix of s, a member access or an index.
-func (t *galaASTTransformer) lowerSuffixNative(base ast.Expr, s native.PostfixSuffixNode) (ast.Expr, error) {
-	if id := s.Identifier(); id.Ok() {
-		t.nativeShape(s.GalaNodeRef, "selector")
-		return t.lowerMember(base, memberSrc{name: galaparser.NativeText(id.GalaNodeRef), nameAt: srcNode{node: id.GalaNodeRef}, suffix: srcNode{node: s.GalaNodeRef}})
+func (t *galaASTTransformer) lowerSuffixNative(base ast.Expr, s suffixSrc) (ast.Expr, error) {
+	if s.ident() != "" {
+		t.nativeShape(s.node, "selector")
+		return t.lowerMember(base, memberSrc{s})
 	}
-	if s.ChildCount() >= 2 && suffixOpenerNative(s) == "[" {
-		t.nativeShape(s.GalaNodeRef, "index")
-		return t.resolveIndexAccess(base, nativeIndex(s))
+	if s.childCount() >= 2 && s.opener() == "[" {
+		t.nativeShape(s.node, "index")
+		return t.resolveIndexAccess(base, indexSrc{s})
 	}
-	return nil, semanticErrorAtStart(srcNode{node: s.GalaNodeRef}, "unknown postfix suffix type")
+	return nil, semanticErrorAtStart(s.at(), "unknown postfix suffix type")
 }

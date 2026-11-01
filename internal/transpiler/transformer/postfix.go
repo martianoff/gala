@@ -49,7 +49,8 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 	suffixes := ctx.AllPostfixSuffix()
 	release := func() {}
 	if len(suffixes) > 0 {
-		release = t.expectedArgTypes.withhold(t.pendingOwnerOf(ctx))
+		release = t.expectedArgTypes.withhold(ctx)
+		defer release()
 	}
 	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	if err != nil {
@@ -77,7 +78,7 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 
 func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	if id := suffix.Identifier(); id != nil {
-		return t.lowerMember(base, memberSrc{name: id.GetText(), nameAt: srcNode{ctx: id}, suffix: srcNode{ctx: suffix}})
+		return t.lowerMember(base, memberSrc{suffixSrc{ctx: suffix}})
 	}
 
 	childCount := suffix.GetChildCount()
@@ -87,7 +88,7 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 			return t.applyGoCallSuffix(base, suffix)
 		}
 		if firstChild == "[" {
-			return t.resolveIndexAccess(base, antlrIndex(suffix))
+			return t.resolveIndexAccess(base, indexSrc{suffixSrc{ctx: suffix}})
 		}
 	}
 
@@ -97,7 +98,7 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 // lowerMember lowers the member access m on base: a member a Go call's Try
 // or Tuple does not have is GALA-E0049 (checkGoResultMember).
 func (t *galaASTTransformer) lowerMember(base ast.Expr, m memberSrc) (ast.Expr, error) {
-	if err := t.checkGoResultMember(base, m.name, m.suffix); err != nil {
+	if err := t.checkGoResultMember(base, m.ident(), m.at()); err != nil {
 		return nil, err
 	}
 	return t.resolveFieldAccess(base, m)
@@ -151,8 +152,8 @@ func receiverSource(suffix *grammar.PostfixSuffixContext) (from, to antlr.Parser
 // resolveFieldAccess handles member access `base.name` (m) with automatic
 // Immutable unwrapping.
 func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast.Expr, error) {
-	selName := m.name
-	line, col := m.nameAt.start()
+	selName := m.ident()
+	line, col := m.identAt().start()
 	// `pkg.Name` naming an imported package-level binding is read at once, as
 	// transformPrimary reads a same-package one: a val types as Immutable[T]
 	// (inferSelectorExprType), so unwrapImmutable adds the .Get().
@@ -416,16 +417,16 @@ func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Typ
 
 // resolveIndexAccess handles index/subscript expressions with Immutable unwrapping.
 func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast.Expr, error) {
-	if !ix.hasList {
-		return nil, semanticErrorAtStart(ix.at, "index expression requires expression list")
+	if !ix.hasList() {
+		return nil, semanticErrorAtStart(ix.at(), "index expression requires expression list")
 	}
 	if res := t.goResultOf(base); res != nil {
-		return nil, t.goResultMisuse(res, "it cannot be indexed", t.ctxAt(ix.at))
+		return nil, t.goResultMisuse(res, "it cannot be indexed", t.ctxAt(ix.at()))
 	}
 	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
-		return nil, t.typeParamMisuseErrorAt(ix.at, id.Name, "takes no type arguments")
+		return nil, t.typeParamMisuseErrorAt(ix.at(), id.Name, "takes no type arguments")
 	}
-	if err := t.checkVariantTypeArgs(base, ix.exprs); err != nil {
+	if err := t.checkVariantTypeArgs(base, ix.exprs()); err != nil {
 		return nil, err
 	}
 	// `F[T]` naming a generic function is its instantiation, not an index of
@@ -443,8 +444,8 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 		t.typeNameDepth++
 		defer func() { t.typeNameDepth-- }()
 	}
-	indices := make([]ast.Expr, 0, len(ix.exprs))
-	for _, e := range ix.exprs {
+	indices := make([]ast.Expr, 0, ix.count())
+	for e := range ix.exprs() {
 		index, err := t.lowerExpr(e)
 		if err != nil {
 			return nil, err
@@ -462,7 +463,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 	// whose constraint needs a Ptr receiver.
 	if len(t.ptrReceiverMethods) > 0 {
 		if o, ok := t.writtenTypeArgOwner(base, genericMethod); ok {
-			at := func(i int) srcNode { return ix.exprs[i].at() }
+			at := func(i int) srcNode { return ix.expr(i).at() }
 			if err := t.checkPtrWrittenTypeArgsAt(o, indices, at); err != nil {
 				return nil, err
 			}

@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"iter"
 	"slices"
 	"strings"
 
@@ -164,8 +165,8 @@ func isFuncTypeSignature(p *grammar.ParameterContext) bool {
 // argument of base, as in `ArrayOf[Circle](...)`. The grammar reads type
 // arguments as an index, so a variant name is reported only when base cannot
 // be indexed: a function, type or method rather than a value in scope.
-func (t *galaASTTransformer) checkVariantTypeArgs(base ast.Expr, args []exprSrc) error {
-	for _, arg := range args {
+func (t *galaASTTransformer) checkVariantTypeArgs(base ast.Expr, args iter.Seq[exprSrc]) error {
+	for arg := range args {
 		text := arg.text()
 		if !t.mayNameVariantTypeText(text) {
 			continue

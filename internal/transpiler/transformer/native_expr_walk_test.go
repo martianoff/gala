@@ -150,12 +150,19 @@ func exprWalkRunner(t *testing.T) func(t *testing.T, name, src string) walkRun {
 		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "_"), "main.gala")
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
-		n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, src)
-		require.True(t, ok, "the case does not parse cleanly with galop")
-		require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
-		t.Logf("the native walk lowered %d expressions; error: %v", n.exprs, n.err)
-		return n
+		return agreedWalk(t, nativeW, antlrW, path, src)
 	}
+}
+
+// agreedWalk holds the native walk of src, written at path, to the ANTLR
+// walk (checkWalksAgree), requires the native walk to have read the native
+// tree, and returns its run.
+func agreedWalk(t *testing.T, nativeW, antlrW *walkPipeline, path, src string) walkRun {
+	n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, src)
+	require.True(t, ok, "the case does not parse cleanly with galop")
+	require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
+	t.Logf("the native walk lowered %d expressions; error: %v", n.exprs, n.err)
+	return n
 }
 
 // checkMarkedShapes requires n, the native walk of src, to have transpiled

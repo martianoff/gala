@@ -17,17 +17,17 @@ import (
 // ANTLR's tree, through transformExpression and transformIfExpressionAgainst,
 // which find the context's node (nativeNodeOf). That lookup is the bridge
 // for callers not ported yet, and an exprSrc is the interface ported callers
-// use: the lookup goes once its callers take exprSrc values. The walk below covers the
-// operator chain (or, and, equality, relational, additive, multiplicative),
-// unary operators, identifiers, literals, string interpolation, parenthesized
-// expressions and tuples, if-expressions, and member accesses and indexes
-// (postfix_source.go), and hands a lambda to lowerLambda on its node
-// (lambdas_source.go). What it does not cover yet it hands to ANTLR's tree
-// with crossTo: a postfix expression with a call suffix or a match, partial
-// functions, composite
-// literals, the blocks of an if-expression's branches, and the shape checks a
-// slot-typed value takes (lowerAgainst). Each lowering below takes the value
-// it reads and is shared with the ANTLR walk, so the two give the same Go.
+// use: the lookup goes once its callers take exprSrc values. The walk below
+// covers the operator chain (or, and, equality, relational, additive,
+// multiplicative), unary operators, identifiers, literals, string
+// interpolation, parenthesized expressions and tuples, if-expressions, and
+// member accesses and indexes (postfix_source.go), and hands a lambda to
+// lowerLambda on its node (lambdas_source.go). What it does not cover yet it
+// hands to ANTLR's tree with crossTo: a postfix expression with a call suffix
+// or a match, partial functions, composite literals, the blocks of an
+// if-expression's branches, and the shape checks a slot-typed value takes
+// (lowerAgainst). Each lowering below takes the value it reads and is shared
+// with the ANTLR walk, so the two give the same Go.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see

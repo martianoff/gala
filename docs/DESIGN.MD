@@ -307,10 +307,9 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     and Sendable capture checks), and the case clauses and patterns of every `match` (the
     statements of a match arm's block included; a partial function's `{ case ... }` stays
     on ANTLR's tree); an expression, lambda or match entered from code still on ANTLR's
-    tree finds its node with `Native.NodeOfKind`. All of it runs only where the tree bridges to ANTLR's
-    (`Native.Bridged`); the compiled
-    file's sibling files, the files of imported packages and LSP buffers stay on ANTLR's
-    tree. `transpile()` drops the handle after the transform (before it when the analysis did
+    tree finds its node with `Native.NodeOfKind`. All of it runs only where the tree
+    bridges to ANTLR's (`Native.Bridged`); the compiled file's sibling files, the files of
+    imported packages and LSP buffers stay on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the analysis did
     not convert the tree), and neither the transformer nor any cache keeps it or a node of it:
     until it converts, it holds the
     token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive

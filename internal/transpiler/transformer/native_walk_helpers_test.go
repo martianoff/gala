@@ -45,9 +45,11 @@ type walkRun struct {
 // walkPipeline transpiles files the way the CLI does, parsing with galop, each
 // with an analyzer of its own, so no package-load failure carries over from
 // one file to the next. antlrOnly makes its transformer walk ANTLR's tree
-// whatever the parse came with.
+// whatever the parse came with. root is the project root of the analysis, ""
+// for none.
 type walkPipeline struct {
 	searchPaths []string
+	root        string
 	antlrOnly   bool
 }
 
@@ -71,7 +73,7 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		tr = withoutNative{tr}
 	}
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
-	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
+	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
 	run.stmts, run.lambdas, run.exprs, run.cases = len(stmts), len(lambdas), len(exprs), len(cases)
 	return run

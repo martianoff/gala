@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -32,47 +31,11 @@ type expectedArgTypeStack struct {
 	stack []expectedArg
 }
 
-// expectedArg is one hint and the postfix expression it was pushed for (the
-// zero postfixOwner when it was not pushed for one).
+// expectedArg is one hint and the postfix expression it was pushed for (nil
+// when it was not pushed for one).
 type expectedArg struct {
 	typ   transpiler.Type
-	owner postfixOwner
-}
-
-// postfixOwner is a postfix expression as the owner of a hint: its node when
-// the file's walk reads the native tree, its context otherwise, so both
-// walks key one expression the same way (ownerOf). The zero postfixOwner is
-// no expression.
-type postfixOwner struct {
-	ctx  *grammar.PostfixExprContext
-	node native.GalaNodeRef
-}
-
-// none reports whether o is no expression.
-func (o postfixOwner) none() bool { return o.ctx == nil && !o.node.Ok() }
-
-// ownerOf is the owner key of ctx: its native node when the walk reads the
-// native tree (nativeNodeOf), its context otherwise, and the zero
-// postfixOwner for a nil ctx.
-func (t *galaASTTransformer) ownerOf(ctx *grammar.PostfixExprContext) postfixOwner {
-	if ctx == nil {
-		return postfixOwner{}
-	}
-	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_postfixExpr); ok {
-		return postfixOwner{node: n}
-	}
-	return postfixOwner{ctx: ctx}
-}
-
-// pendingOwnerOf is ownerOf(ctx) for a lookup that only compares it with the
-// owner of the hint on top of the stack (takeFor, withhold): the zero
-// postfixOwner, which matches nothing, when that hint has no owner, so the
-// lookup is made only when there is one to match.
-func (t *galaASTTransformer) pendingOwnerOf(ctx *grammar.PostfixExprContext) postfixOwner {
-	if s := t.expectedArgTypes.stack; len(s) == 0 || s[len(s)-1].owner.none() {
-		return postfixOwner{}
-	}
-	return t.ownerOf(ctx)
+	owner *grammar.PostfixExprContext
 }
 
 // push pushes a new expected-type hint and returns an unwind function.
@@ -80,12 +43,12 @@ func (t *galaASTTransformer) pendingOwnerOf(ctx *grammar.PostfixExprContext) pos
 // bounded by the calling scope. The unwind is idempotent — a downstream
 // consume() that pops the hint first leaves the unwind as a no-op.
 func (s *expectedArgTypeStack) push(t transpiler.Type) func() {
-	return s.pushFor(t, postfixOwner{})
+	return s.pushFor(t, nil)
 }
 
 // pushFor is push for the hint of the value owner, a postfix expression
 // whose last suffix is the call that takes it (see withhold).
-func (s *expectedArgTypeStack) pushFor(t transpiler.Type, owner postfixOwner) func() {
+func (s *expectedArgTypeStack) pushFor(t transpiler.Type, owner *grammar.PostfixExprContext) func() {
 	s.stack = append(s.stack, expectedArg{typ: t, owner: owner})
 	pos := len(s.stack)
 	return func() {
@@ -124,8 +87,8 @@ func (s *expectedArgTypeStack) consume() transpiler.Type {
 // takeFor removes and returns the hint on top of the stack when it was pushed
 // for owner, and nil otherwise: a call takes the type of the slot it fills,
 // never a hint left on the stack by another value.
-func (s *expectedArgTypeStack) takeFor(owner postfixOwner) transpiler.Type {
-	if owner.none() || len(s.stack) == 0 || s.stack[len(s.stack)-1].owner != owner {
+func (s *expectedArgTypeStack) takeFor(owner *grammar.PostfixExprContext) transpiler.Type {
+	if owner == nil || len(s.stack) == 0 || s.stack[len(s.stack)-1].owner != owner {
 		return nil
 	}
 	return s.consume()
@@ -133,22 +96,30 @@ func (s *expectedArgTypeStack) takeFor(owner postfixOwner) transpiler.Type {
 
 // callOwner is the postfix expression the call suffix ends, the owner of the
 // hint pushed for the call (see pushFor).
-func (t *galaASTTransformer) callOwner(suffix *grammar.PostfixSuffixContext) postfixOwner {
+func callOwner(suffix *grammar.PostfixSuffixContext) *grammar.PostfixExprContext {
 	pe, _ := suffix.GetParent().(*grammar.PostfixExprContext)
-	return t.pendingOwnerOf(pe)
+	return pe
 }
 
 // withhold hides the hint on top of the stack when it was pushed for owner,
-// and returns the function that puts it back, to be called once. A slot
-// types the call that is its value, never that call's receiver: `parse()` in
-// `parse().Get()` does not take the type `.Get()` fills.
-func (s *expectedArgTypeStack) withhold(owner postfixOwner) func() {
-	if owner.none() || len(s.stack) == 0 || s.stack[len(s.stack)-1].owner != owner {
+// and returns the function that puts it back. The function acts once however
+// often it is called, so a caller defers it and also calls it before the
+// last suffix. A slot types the call that is its value, never that call's
+// receiver: `parse()` in `parse().Get()` does not take the type `.Get()`
+// fills.
+func (s *expectedArgTypeStack) withhold(owner *grammar.PostfixExprContext) func() {
+	if owner == nil || len(s.stack) == 0 || s.stack[len(s.stack)-1].owner != owner {
 		return func() {}
 	}
 	top := s.stack[len(s.stack)-1]
 	s.stack = s.stack[:len(s.stack)-1]
-	return func() { s.stack = append(s.stack, top) }
+	released := false
+	return func() {
+		if !released {
+			released = true
+			s.stack = append(s.stack, top)
+		}
+	}
 }
 
 // depth returns the current stack depth. Useful for invariant checks in

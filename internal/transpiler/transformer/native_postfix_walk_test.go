@@ -1,17 +1,23 @@
 package transformer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	galaparser "martianoff/gala/internal/parser"
 )
 
 // postfixShapes is a program with every postfix suffix the native walk
 // lowers: member accesses (fields, vals' Immutable fields, a tuple's
-// components, package members) and indexes (a generic function's type
-// arguments, a Go slice's element). Each line marked `// native: <shapes>` names the shapes the
-// native walk must have lowered on that line, as exprShapes does.
+// components, package members, an Immutable's own Get and value) and indexes
+// (a generic function's or generic method's type arguments, Ptr and Tuple
+// type arguments, a Go slice's element). Each line marked
+// `// native: <shapes>` names the shapes the native walk must have lowered on
+// that line, as exprShapes does.
 const postfixShapes = `package main
 
 import (
@@ -41,8 +47,22 @@ func members(p P, q Pair) int {
 	a + b + q.a.x // native: selector, operator, name
 }
 
+struct Box[T any](v T)
+
+func (b Box[T]) Empty[U any]() Option[U] = None[U]()
+
+func typeArgs(b Box[int], cell Immutable[int]) {
+	val e = b.Empty[string] // native: selector, index, name
+	val get = cell.Get // native: selector, name
+	val raw = cell.value // native: selector, name
+	val np = None[Ptr[P]] // native: index, name
+	val nt = None[Tuple[int, string, bool]] // native: index, name
+	Println(e(), get(), raw, np(), nt()) // native: name
+}
+
 func main() {
 	Println(members(P(1, 2), Pair(P(1, 2), P(3, 4)))) // native: literal
+	typeArgs(Box(1), NewImmutable(2))
 }
 `
 
@@ -74,4 +94,42 @@ func TestNativePostfixWalk(t *testing.T) {
 			assert.Truef(t, n.shapes[line][c.shape], "the native walk lowered no %s on line %d (it lowered %v); error: %v", c.shape, line, n.shapes[line], n.err)
 		})
 	}
+	t.Run("imported package val", func(t *testing.T) {
+		n := runPackageValWalk(t)
+		checkMarkedShapes(t, n, packageValMain)
+		assert.Contains(t, n.out, "lib.Limit.Get()", "the val is not read at once")
+	})
+}
+
+// packageValMain reads `lib.Limit`, a val of an imported GALA package, which
+// is read at once as an Immutable (importedPackageVal).
+const packageValMain = `package main
+
+import "example.com/pfx/lib"
+
+func main() {
+	val l = lib.Limit // native: selector, name
+	Println(l, lib.Greeting) // native: selector, name
+}
+`
+
+// runPackageValWalk walks packageValMain in a module whose lib package
+// declares the vals it reads, on both trees (checkWalksAgree).
+func runPackageValWalk(t *testing.T) walkRun {
+	galaparser.RequestEngine(string(galaparser.EngineGalop))
+	t.Cleanup(func() { galaparser.RequestEngine("") })
+	_, std := walkCorpus(t)
+	root := t.TempDir()
+	write := func(rel, content string) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+	}
+	write("gala.mod", "module example.com/pfx\n\ngala dev\n")
+	write("lib/lib.gala", "package lib\n\nval Limit = 50\nval Greeting = \"ü\"\n")
+	write("main.gala", packageValMain)
+	searchPaths := append([]string{root}, std...)
+	nativeW := &walkPipeline{searchPaths: searchPaths, root: root}
+	antlrW := &walkPipeline{searchPaths: searchPaths, root: root, antlrOnly: true}
+	return agreedWalk(t, nativeW, antlrW, filepath.Join(root, "main.gala"), packageValMain)
 }

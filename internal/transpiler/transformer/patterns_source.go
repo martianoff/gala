@@ -120,7 +120,7 @@ func (p patSrc) expr() patExpr {
 			e = native.ExpressionPatternNode{GalaNodeRef: p.node}.Expression()
 		}
 		if e.Ok() {
-			return patExpr{node: e.GalaNodeRef}
+			return patExpr{exprSrc: exprSrc{node: e.GalaNodeRef}}
 		}
 		return patExpr{}
 	}
@@ -156,10 +156,9 @@ func (p patSrc) typedType() typeSrc {
 // ANTLR's tree (an alternative's wrapper included, see wrapAsExpression), or
 // on the native tree an expression node or, for an alternative, the
 // multiplicativeExpr node it is and from, the expression it was split from.
-// The zero patExpr is no expression.
+// The zero patExpr is no expression. Its ok, at and text are exprSrc's.
 type patExpr struct {
-	ctx  grammar.IExpressionContext
-	node native.GalaNodeRef
+	exprSrc
 	from native.GalaNodeRef
 }
 
@@ -169,18 +168,7 @@ func antlrPatExpr(ctx grammar.IExpressionContext) patExpr {
 	if ctx == nil {
 		return patExpr{}
 	}
-	return patExpr{ctx: ctx}
-}
-
-// ok reports whether e is an expression.
-func (e patExpr) ok() bool { return e.ctx != nil || e.node.Ok() }
-
-// text is GetText of e.
-func (e patExpr) text() string {
-	if e.node.Ok() {
-		return galaparser.NativeText(e.node)
-	}
-	return e.ctx.GetText()
+	return patExpr{exprSrc: exprSrc{ctx: ctx}}
 }
 
 // sourceText is e as written, whitespace included (transpiler.SourceText).
@@ -192,14 +180,6 @@ func (e patExpr) sourceText() string {
 		return e.text()
 	}
 	return transpiler.SourceText(e.ctx)
-}
-
-// at is where e is written.
-func (e patExpr) at() srcNode {
-	if e.node.Ok() {
-		return srcNode{node: e.node}
-	}
-	return srcNode{ctx: e.ctx}
 }
 
 // start is the line and column of e's first token.
@@ -314,7 +294,7 @@ func (e patExpr) soleAdditive() (patAdditive, bool, error) {
 		for i := range add.ChildCount() {
 			c := add.Child(i)
 			if m := c.Node(); m.Ok() && m.Kind() == native.GalaKIND_multiplicativeExpr {
-				out.operands = append(out.operands, patExpr{node: m, from: e.node})
+				out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}, from: e.node})
 			} else if tok := c.Terminal(); tok.Ok() {
 				out.ops = append(out.ops, tok.GetText())
 			}
@@ -424,7 +404,7 @@ func (e patExpr) tupleElems() ([]patExpr, bool) {
 func nativeExprs(n native.GalaNodeRef) []patExpr {
 	var out []patExpr
 	for c := range galaparser.NativeKids(n, native.GalaKIND_expression) {
-		out = append(out, patExpr{node: c})
+		out = append(out, patExpr{exprSrc: exprSrc{node: c}})
 	}
 	return out
 }
@@ -573,8 +553,10 @@ type postfixSrc struct {
 func (p postfixSrc) ok() bool { return p.ctx != nil || p.node.Ok() }
 
 // suffixes is p's postfix suffixes, in order.
-func (p postfixSrc) suffixes() []suffixSrc {
-	var out []suffixSrc
+func (p postfixSrc) suffixes() []suffixSrc { return p.appendSuffixes(nil) }
+
+// appendSuffixes appends p's postfix suffixes, in order, to out.
+func (p postfixSrc) appendSuffixes(out []suffixSrc) []suffixSrc {
 	if p.node.Ok() {
 		for s := range galaparser.NativeKids(p.node, native.GalaKIND_postfixSuffix) {
 			out = append(out, suffixSrc{node: s})

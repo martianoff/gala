@@ -156,11 +156,11 @@ func ptrOf(ptr transpiler.PointerType) string {
 // receiver and recvType its type; m is the member access, whose receiver is
 // read on ANTLR's tree only to report the error.
 func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, m memberSrc) error {
+	suffix, ok := m.antlr(t)
+	if !ok {
+		return semanticErrorAtStart(m.at(), "internal error: the member access has no ANTLR context")
+	}
 	return t.checkPtrReceiverAt(recv, recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
-		suffix, _ := m.suffix.ctx.(*grammar.PostfixSuffixContext)
-		if m.suffix.node.Ok() {
-			suffix = crossTo[*grammar.PostfixSuffixContext](t, m.suffix.node)
-		}
 		return receiverSource(suffix)
 	})
 }
