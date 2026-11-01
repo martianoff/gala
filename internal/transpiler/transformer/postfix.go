@@ -435,7 +435,7 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 		}
 	}
 	t.nativeShape(p.node, "match")
-	return t.buildMatchExpressionFromClauses(subject, "obj", t.casesOf(p.node), p.at(), s)
+	return t.buildMatchExpressionFromClauses(subject, "obj", t.nativeCases(p.node), p.at(), s)
 }
 
 // lowerPrimaryOf lowers the primary expression of p.

@@ -250,7 +250,7 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 	if err := t.checkGeneratedCodecNamesOf(e); err != nil {
 		return nil, err
 	}
-	if err := t.checkVariantTypeNamesOf(e); err != nil {
+	if err := t.checkVariantTypeNamesNative(e.node); err != nil {
 		return nil, err
 	}
 	return t.lowerExpr(e)
@@ -259,7 +259,7 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // parseExprAt parses text as one expression whose first character sits at
 // line/col of the file (see parser.ParseExpressionAt) into a native tree of
 // its own, made by the engine's parser, as the file's is
-// (parser.ParseExpressionTreeAt): galop's native parser with galop's engine,
+// (parser.ParseExpressionCheckedAt): galop's native parser with galop's engine,
 // ANTLR's parser and galop's converter with ANTLR's, so `--parser antlr` runs
 // no galop parser here either. The lowering reads only the nodes it is given,
 // so it lowers this tree as it lowers the file's. When that parse does not
@@ -311,7 +311,7 @@ func (t *galaASTTransformer) parseExprOnce(text string, line, col int, what, fil
 	} else {
 		n, engineParsed, err = parser.ParseExpressionCheckedAt(text, line, col, what)
 	}
-	if errors.Is(err, parser.ErrNativeExpression) {
+	if errors.Is(err, parser.ErrConvertExpression) {
 		// ANTLR's parser accepted the text and galop's converter failed on it
 		// (reported on standard error): a galop bug, at the text's position.
 		return exprSrc{}, galaerr.NewCodedSemanticError(galaerr.CodeInternalTransformerPanic, line, col,

@@ -153,9 +153,9 @@ func (t *Native) Bridged() bool {
 
 // Unbridged is a handle on t's native tree whose bridge to ANTLR's tree does
 // not hold, for the tests that hold a reader on ANTLR's tree to its native
-// twin: a reader gated on Bridged reads the file on ANTLR's tree, and the
-// transformer, which reads the native tree alone, still has it. A nil t, or
-// one with no tree, gives nil.
+// twin, until those twins go: a reader gated on Bridged reads the file on
+// ANTLR's tree, and the transformer, which reads the native tree alone, still
+// has it. A nil t, or one with no tree, gives nil.
 func (t *Native) Unbridged() *Native {
 	tree, err := t.Tree()
 	if err != nil {

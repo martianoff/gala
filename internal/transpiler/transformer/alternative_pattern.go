@@ -21,10 +21,7 @@ import (
 // chain is an error: those share its precedence, so the operand they belong to
 // has to be parenthesized.
 func (t *galaASTTransformer) patternAlternatives(expr patExpr) ([]patExpr, error) {
-	add, ok, err := expr.soleAdditive()
-	if err != nil {
-		return nil, err
-	}
+	add, ok := expr.soleAdditive()
 	if !ok {
 		if bar, ok := expr.barUnderOperator(); ok {
 			line, col := bar.start()
@@ -138,7 +135,7 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []patExpr, objExpr
 // parenthesizedPattern returns p when expr is exactly `(p)`, or nil; `(p,)`
 // is a one-element tuple, not a parenthesized pattern.
 func (t *galaASTTransformer) parenthesizedPattern(expr patExpr) (patExpr, bool) {
-	if elems, single, ok := expr.parenthesized(t); ok && single {
+	if elems, single, ok := expr.parenthesized(); ok && single {
 		return elems[0], true
 	}
 	return patExpr{}, false

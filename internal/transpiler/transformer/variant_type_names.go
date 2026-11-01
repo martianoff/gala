@@ -28,8 +28,7 @@ import (
 // parameter, result, field, val/var annotation, type argument, typed pattern,
 // alias target, composite literal — before the declarations are transformed,
 // so every one is checked in source order, including those a transformation
-// lowers speculatively and discards. It reads the file's native tree
-// (checkVariantTypeNamesNative). An interpolated expression is parsed
+// lowers speculatively and discards. An interpolated expression is parsed
 // separately, so parseAndTransformExpr checks it when it parses it.
 //
 // Explicit type arguments (`ArrayOf[Circle](...)`, `case Unwrap[Circle](v)`)
@@ -75,12 +74,6 @@ type variantTypeRefs struct {
 	refs     []variantTypeRef
 }
 
-// checkVariantTypeNamesOf is checkVariantTypeNamesNative of e, an expression
-// parsed on its own (an interpolated one).
-func (t *galaASTTransformer) checkVariantTypeNamesOf(e exprSrc) error {
-	return t.checkVariantTypeNamesNative(e.node)
-}
-
 // checkVariantTypeNamesNative reports the first type below n that names a
 // sealed variant, or nil when there is none.
 func (t *galaASTTransformer) checkVariantTypeNamesNative(n native.GalaNodeRef) error {
@@ -96,7 +89,7 @@ func (t *galaASTTransformer) checkVariantTypeNamesNative(n native.GalaNodeRef) e
 // variant, or nil when none does.
 func (t *galaASTTransformer) reportVariantTypeRefs(r variantTypeRefs) error {
 	for _, ref := range r.refs {
-		if r.declared[ref.name] || typeParamInScopeAt(ref.at, ref.name) {
+		if r.declared[ref.name] || typeParamInScopeNative(ref.at.node, ref.name) {
 			continue
 		}
 		line, col := ref.at.start()
@@ -106,11 +99,6 @@ func (t *galaASTTransformer) reportVariantTypeRefs(r variantTypeRefs) error {
 		}
 	}
 	return nil
-}
-
-// typeParamInScopeAt is typeParamInScopeNative of at.
-func typeParamInScopeAt(at srcNode, name string) bool {
-	return typeParamInScopeNative(at.node, name)
 }
 
 // addVariantRef adds the type written as qualifier.name (qualifier "" for a bare name)

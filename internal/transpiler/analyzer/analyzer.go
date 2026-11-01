@@ -1451,6 +1451,15 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 		}
 		return false
 	}
+	// Looked up once, before the passes: a sibling the analysis kept no
+	// handle for is parsed again for one.
+	for i := 1; i < len(trees) && i < len(handles) && i < len(paths); i++ {
+		if handles[i] == nil && trees[i] != nil && untyped(paths[i]) {
+			if entry := a.parseFileEntry(paths[i]); entry != nil && entry.parsed != nil {
+				handles[i] = entry.parsed.CleanNative()
+			}
+		}
+	}
 	for progress := true; progress; {
 		progress = false
 		for i, tree := range trees {
@@ -1463,11 +1472,6 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 			view := *richAST
 			view.Tree = tree
 			view.Native = handles[i]
-			if view.Native == nil && i > 0 {
-				if entry := a.parseFileEntry(paths[i]); entry != nil && entry.parsed != nil {
-					view.Native = entry.parsed.CleanNative()
-				}
-			}
 			view.FilePath = paths[i]
 			view.Types = maps.Clone(richAST.Types)
 			types, onNative := transformer.InferPackageValTypes(&view)
