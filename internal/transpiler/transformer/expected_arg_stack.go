@@ -30,7 +30,7 @@ import (
 type expectedArgTypeStack struct {
 	stack []expectedArg
 	// observe, when set, is told of each takeFor and withhold: whether the
-	// hint on top of the stack was the owner's (see checkWalksAgree, in the
+	// hint on top of the stack was the owner's (see OnHint, in the
 	// native walk tests).
 	observe func(op string, owned bool)
 }

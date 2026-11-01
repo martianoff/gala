@@ -435,11 +435,9 @@ go_test(
         "//std:types.go",
     ] + glob(
         # Read by TestOracleCoversEveryTranspiler, which checks every test
-        # here constructs its transpiler through the oracle, and by
-        # TestTransformerReadsNoANTLR, which checks the library's imports
-        # and deps.
-        ["*.go"],
-    ) + ["BUILD.bazel"],
+        # here constructs its transpiler through the oracle.
+        ["*_test.go"],
+    ),
     embed = [":transformer"],
     deps = [
         "//galaerr",
@@ -530,5 +528,23 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
+    ],
+)
+
+# TestTransformerReadsNoANTLR reads the library's sources and this file, so it
+# stages them, apart from transformer_test, whose corpus guards would read the
+# library's sources too.
+# gazelle:exclude no_antlr_test.go
+go_test(
+    # keep
+    name = "no_antlr_test",
+    srcs = ["no_antlr_test.go"],
+    data = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ) + ["BUILD.bazel"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

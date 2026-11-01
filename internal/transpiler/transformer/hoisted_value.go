@@ -55,7 +55,7 @@ func (t *galaASTTransformer) cachedEscape(key native.GalaNodeRef, walk func() bo
 	if !ok {
 		escaping = walk()
 		if t.escapeCache == nil {
-			t.escapeCache = make(map[any]bool)
+			t.escapeCache = make(map[native.GalaNodeRef]bool)
 		}
 		t.escapeCache[key] = escaping
 	}

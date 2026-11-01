@@ -25,13 +25,15 @@ func parseWithGalop(tb testing.TB) {
 	tb.Cleanup(func() { galaparser.RequestEngine("") })
 }
 
-// antlrOnly parses as its parser does but gives no native-tree handle, so an
-// analyzer using it collects every file on ANTLR's tree.
+// antlrOnly parses as its parser does but gives a handle whose bridge does not
+// hold (Native.Unbridged), so an analyzer using it collects every file on
+// ANTLR's tree, while the transformer's inference of package-level vals,
+// which reads the native tree alone, still has it.
 type antlrOnly struct{ p transpiler.GalaParser }
 
 func (o antlrOnly) ParseFile(input string) *galaparser.Parsed {
 	parsed := o.p.ParseFile(input)
-	parsed.Native = nil
+	parsed.Native = parsed.Native.Unbridged()
 	return parsed
 }
 
@@ -138,11 +140,12 @@ func analyzeParsedForCollection(tb testing.TB, a *galaAnalyzer, path string, par
 }
 
 // checkTrace fails tb unless an's file was collected on the tree it should
-// have been: on its native tree exactly when its parse came with a handle
-// (wantHandle, which a galop parse without syntax errors has), whether or not
-// the undefined-symbol check runs on it, so a converter or bridge that fails
-// quietly cannot turn the comparison into ANTLR's against ANTLR's.
-func checkTrace(tb testing.TB, name string, an analysis, wantHandle bool) bool {
+// have been: on its native tree exactly when its handle bridges (wantNative;
+// antlrOnly's handles do not), whether or not the undefined-symbol check runs
+// on it, so a converter or bridge that fails quietly cannot turn the
+// comparison into ANTLR's against ANTLR's. Every parse comes with a handle:
+// a galop parse without syntax errors has one.
+func checkTrace(tb testing.TB, name string, an analysis, wantNative bool) bool {
 	tb.Helper()
 	switch t := an.trace; {
 	case t.filePath == "":
@@ -151,10 +154,10 @@ func checkTrace(tb testing.TB, name string, an analysis, wantHandle bool) bool {
 			return true
 		}
 		tb.Errorf("%s: analyze reported no collection", name)
-	case t.hasHandle != wantHandle:
-		tb.Errorf("%s: the parse came with a handle: %v, want %v", name, t.hasHandle, wantHandle)
-	case t.native != t.hasHandle:
-		tb.Errorf("%s: collected on the native tree: %v, want %v (whether the parse came with a handle)", name, t.native, t.hasHandle)
+	case !t.hasHandle:
+		tb.Errorf("%s: the parse came with no handle", name)
+	case t.native != wantNative:
+		tb.Errorf("%s: collected on the native tree: %v, want %v", name, t.native, wantNative)
 	default:
 		return true
 	}
@@ -182,6 +185,14 @@ func TestCollectionsAgree(t *testing.T) {
 	checkReads := func(onNative bool) func(treeRead) {
 		return func(r treeRead) {
 			if r.filePath == subject {
+				return
+			}
+			// The transformer infers package-level val types on the
+			// native tree alone, whichever tree the analysis reads.
+			if r.what == "val types" && !onNative {
+				if !r.native {
+					t.Errorf("%s: the inference of %s's val types did not read the native tree", subject, r.filePath)
+				}
 				return
 			}
 			if r.native != onNative {

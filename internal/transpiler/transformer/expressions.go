@@ -619,7 +619,7 @@ type slot struct {
 	tryThunk bool
 	// discarded: nothing reads the value filling the slot — the arms of a
 	// statement-position match. A block filling it lowers its trailing match
-	// or if as a statement, not as the block's value (see transformValueBlock).
+	// or if as a statement, not as the block's value (see lowerValueBlock).
 	discarded bool
 	// open: typ may hold placeholders for type parameters the call left
 	// unbound (an `any` fill, see inferFuncTypeSubstFromArgs, or the generic

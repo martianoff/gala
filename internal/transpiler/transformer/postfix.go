@@ -648,7 +648,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// Infer common result type from all branches. In statement position the
-	// value is discarded, so arms need not unify (see inferCommonResultType).
+	// value is discarded, so arms need not unify (see inferCommonResultTypeAt).
 	resultType, err := t.inferCommonResultTypeAt(resultTypes, casePatterns, at, stmtPosition)
 	if err != nil {
 		return nil, err
@@ -669,7 +669,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// a Go method returning bool, another calling a void Go method — do not
 	// emit `return <voidCall>` (rejected by Go as "no value used as value").
 	// So is a dispatch-style match no arm and no slot types (see
-	// inferCommonResultType).
+	// inferCommonResultTypeAt).
 	if stmtPosition || transpiler.IsUnusable(resultType) {
 		resultType = transpiler.VoidType{}
 	}

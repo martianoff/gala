@@ -87,7 +87,7 @@ func (t *galaASTTransformer) lowerExpr(e exprSrc) (ast.Expr, error) {
 	return t.lowerExprNative(e.node)
 }
 
-// trackNativePosition is trackPosition of n, a native node: where an error
+// trackNativePosition records the position of n, a native node: where an error
 // raised by a deeply nested helper is reported.
 func (t *galaASTTransformer) trackNativePosition(n native.GalaNodeRef) {
 	start := n.Start()
@@ -139,7 +139,7 @@ func operandKind(level native.GalaKind) (native.GalaKind, string, string, bool) 
 // lowerOperatorsNative lowers n, a level of the binary-operator chain (an
 // orExpr down to a multiplicativeExpr) or a unaryExpr: its operands, left
 // to right, each joined to the ones before it by the operator written
-// between them, as transformOrExpr and the levels below it do.
+// between them.
 func (t *galaASTTransformer) lowerOperatorsNative(n native.GalaNodeRef) (ast.Expr, error) {
 	level := n.Kind()
 	if level == native.GalaKIND_unaryExpr {
@@ -189,7 +189,7 @@ func (t *galaASTTransformer) lowerOperatorsNative(n native.GalaNodeRef) (ast.Exp
 	return result, nil
 }
 
-// lowerUnaryNative is transformUnaryExpr of u.
+// lowerUnaryNative lowers the unary expression u.
 func (t *galaASTTransformer) lowerUnaryNative(u native.UnaryExprNode) (ast.Expr, error) {
 	if op := u.UnaryOp(); op.Ok() {
 		t.nativeShape(u.GalaNodeRef, "unary")
@@ -218,7 +218,7 @@ func (t *galaASTTransformer) lowerPostfixNative(p native.PostfixExprNode) (ast.E
 	return t.lowerSuffixedNative(p)
 }
 
-// lowerPrimaryExprNative is transformPrimaryExpr of n, a primaryExpr node.
+// lowerPrimaryExprNative lowers n, a primaryExpr node.
 func (t *galaASTTransformer) lowerPrimaryExprNative(n native.GalaNodeRef) (ast.Expr, error) {
 	if kid, ok := firstKidNode(n); ok {
 		switch kid.Kind() {
@@ -358,7 +358,7 @@ func (e ifExprSrc) branches() [2]ifBranchSrc {
 	return out
 }
 
-// branchesEscape is escapesConstruct of branches.
+// branchesEscape reports whether a branch of branches escapes its construct (escapesAt).
 func (t *galaASTTransformer) branchesEscape(branches [2]ifBranchSrc) bool {
 	for _, b := range branches {
 		if b.node.Ok() && t.escapesAt(b.at()) {

@@ -224,7 +224,7 @@ func TestNativeTypeCases(t *testing.T) {
 			require.NotNil(t, transpiler.NewAntlrGalaParser().ParseFile(c.src).CleanNative(), "the case does not parse cleanly with galop")
 			n := transpileTypes(searchPaths, path, c.src)
 			checkGolden(t, path, searchPaths, n.out, n.err)
-			require.True(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's")
+			require.True(t, n.converted, "the parse has no native tree")
 			if c.want != "" {
 				require.ErrorContains(t, n.err, c.want, "the case does not fail with its diagnostic")
 			} else {

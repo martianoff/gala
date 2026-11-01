@@ -40,7 +40,6 @@ package concurrency
 // enforcement. It is called only by its tests. PR3 consumes it.
 
 import (
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
@@ -86,24 +85,6 @@ type Capture struct {
 //   - SkipTypedPatternArgument stays false: `x: T` in argument position is
 //     unusual, and treating x as a reference is the safe direction.
 var captureOptions = scopewalk.Options{ParseInterpolations: true}
-
-// FreeVariablesInLambda returns the free variables captured by an explicit
-// lambda. The lambda's declared parameters are bound (never captured); its body
-// may be an expression (`(x) => x + n`) or a block (`(x) => { ... }`).
-func FreeVariablesInLambda(lambda grammar.ILambdaExpressionContext) []Capture {
-	return capturesOf(func(w *scopewalk.Walker) { w.WalkLambda(lambda) })
-}
-
-// FreeVariablesInExpression returns the free variables of a bare expression —
-// the shape a by-name / thunk argument desugars to. `Future(counter + 1)` is
-// analyzed by calling this with the expression `counter + 1` and no params,
-// which is identical to analyzing the explicit thunk `() => counter + 1`.
-//
-// paramNames lets a caller seed additional bound names (e.g. an implicit
-// parameter of the thunk); pass nil/empty for the common Future/Spawn thunk.
-func FreeVariablesInExpression(paramNames []string, expr grammar.IExpressionContext) []Capture {
-	return capturesOf(func(w *scopewalk.Walker) { inThunkScope(w, paramNames, func() { w.Walk(expr) }) })
-}
 
 // capturesOf is the captures walk reports to a capture collector's walker.
 func capturesOf(walk func(*scopewalk.Walker)) []Capture {
