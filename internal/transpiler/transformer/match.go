@@ -205,20 +205,19 @@ func armMatchesEverything(clause ast.Stmt) bool {
 // same arity. A tuple pattern shorter than its subject also lowers to an
 // unconditional clause (it reads only the first elements), so the arity has to
 // match before such an arm may close the match.
-func (t *galaASTTransformer) isTuplePatternOfSubjectArity(pat grammar.IPatternContext, matchedType transpiler.Type) bool {
-	exprPat, ok := pat.(*grammar.ExpressionPatternContext)
-	if !ok {
+func (t *galaASTTransformer) isTuplePatternOfSubjectArity(pat patSrc, matchedType transpiler.Type) bool {
+	if pat.kind() != patKindExpr {
 		return false
 	}
-	p := t.getPrimaryFromExpression(exprPat.Expression())
-	if p == nil || p.TupleExpressionList() == nil {
+	elems, ok := pat.expr().tupleElems()
+	if !ok {
 		return false
 	}
 	genType, ok := matchedType.(transpiler.GenericType)
 	if !ok || genType.Base == nil || !isTupleTypeName(stripStdPrefix(genType.Base.BaseName())) {
 		return false
 	}
-	return len(p.TupleExpressionList().AllExpression()) == len(genType.Params)
+	return len(elems) == len(genType.Params)
 }
 
 // unreachableDefaultBody is the synthetic `panic("unreachable")` else-branch
@@ -367,18 +366,18 @@ func (t *galaASTTransformer) exprYieldsNoValue(expr ast.Expr) bool {
 	return typ != nil && typ.IsVoid()
 }
 
-// noValueArmAt returns where an arm whose block body is blockCtx, lowered to
+// noValueArmAt returns where an arm whose block body is block, lowered to
 // stmts, finishes without a value (see yieldsNoValue): its last statement, or
-// the block itself when it is empty. It returns nil when the arm yields a
-// value or leaves.
-func (t *galaASTTransformer) noValueArmAt(blockCtx *grammar.BlockContext, stmts []ast.Stmt) antlr.ParserRuleContext {
+// the block itself when it is empty. It returns the zero srcNode when the
+// arm yields a value or leaves.
+func (t *galaASTTransformer) noValueArmAt(block blockSrc, stmts []ast.Stmt) srcNode {
 	if !t.yieldsNoValue(stmts) {
-		return nil
+		return srcNode{}
 	}
-	if srcStmts := blockCtx.AllStatement(); len(srcStmts) > 0 {
-		return srcStmts[len(srcStmts)-1].(*grammar.StatementContext)
+	if last, ok := block.lastStatement(); ok {
+		return last.at
 	}
-	return blockCtx
+	return block.at()
 }
 
 // lowerPanicWrapperToBuiltin rewrites a call to the go_builtins.Panic wrapper
@@ -652,7 +651,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 // inside nested patterns or string literals are never miscounted. Patterns
 // that do not target a known sealed variant are skipped. The error points at
 // the offending pattern.
-func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patterns []grammar.IPatternContext) error {
+func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.Type, patterns []patSrc) error {
 	if transpiler.IsUnusable(matchedType) {
 		return nil
 	}
@@ -666,12 +665,11 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		variantByName[v.Name] = v
 	}
 	for _, pat := range patterns {
-		exprPat, ok := pat.(*grammar.ExpressionPatternContext)
-		if !ok {
+		if pat.kind() != patKindExpr {
 			continue
 		}
-		for _, alt := range t.flatAlternatives(exprPat.Expression()) {
-			name, argList, isCall := t.patternCallShape(alt)
+		for _, alt := range t.flatAlternatives(pat.expr()) {
+			name, args, isCall := alt.callShape()
 			if !isCall {
 				continue
 			}
@@ -679,20 +677,18 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 			if !ok {
 				continue
 			}
-			argList, err := t.normalizePatternArgs(name, argList, matchedType)
+			args, err := t.normalizePatternArgs(name, args, matchedType)
 			if err != nil {
 				return err
 			}
-			got := 0
-			if argList != nil {
-				got = len(argList.AllArgument())
-			}
+			got := len(args.list)
 			want := len(variant.FieldNames)
 			if got != want {
+				line, col := alt.start()
 				return galaerr.NewCodedSemanticError(
 					galaerr.CodeVariantArityMismatch,
-					alt.GetStart().GetLine(),
-					alt.GetStart().GetColumn(),
+					line,
+					col,
 					fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d",
 						name, got, want),
 					"use `_` for unused fields",
@@ -701,51 +697,6 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		}
 	}
 	return nil
-}
-
-// patternCallShape reads a call-shaped pattern from its parse tree: a
-// constructor name, optionally qualified by a selector chain and optionally
-// followed by type arguments, then a call — `Ctor(...)`, `Ctor[T](...)`,
-// `pkg.Ctor(...)`, `pkg.Ctor[T](...)`, `a.b.Ctor(...)`. It returns the bare
-// constructor name (the last selector, or the primary identifier), the call's
-// argument list (nil for an empty call), and whether the pattern has that
-// shape at all.
-func (t *galaASTTransformer) patternCallShape(expr grammar.IExpressionContext) (name string, argList *grammar.ArgumentListContext, ok bool) {
-	postfix := t.getSinglePostfixExpr(expr)
-	if postfix == nil {
-		return "", nil, false
-	}
-	primary := PrimaryOf(postfix)
-	if primary == nil || primary.Identifier() == nil {
-		return "", nil, false
-	}
-	name = primary.Identifier().GetText()
-
-	suffixes := postfix.AllPostfixSuffix()
-	if len(suffixes) == 0 {
-		return "", nil, false
-	}
-	call := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
-	if suffixOpener(call) != "(" {
-		return "", nil, false
-	}
-	prefix := suffixes[:len(suffixes)-1]
-	// Optional type arguments right before the call.
-	if n := len(prefix); n > 0 && suffixOpener(prefix[n-1].(*grammar.PostfixSuffixContext)) == "[" {
-		prefix = prefix[:n-1]
-	}
-	// Everything else is a selector chain; its last member is the name.
-	for _, s := range prefix {
-		sel := s.(*grammar.PostfixSuffixContext)
-		if sel.Identifier() == nil {
-			return "", nil, false
-		}
-		name = sel.Identifier().GetText()
-	}
-	if al := call.ArgumentList(); al != nil {
-		argList = al.(*grammar.ArgumentListContext)
-	}
-	return name, argList, true
 }
 
 // suffixOpener returns the token a postfix suffix starts with: ".", "(" or "[".
@@ -760,14 +711,13 @@ func suffixOpener(s *grammar.PostfixSuffixContext) string {
 // When the match subject type cannot be inferred from the expression itself, we look at the
 // case patterns (e.g., Some/None → Option, Success/Failure → Try, Left/Right → Either)
 // and resolve the parent sealed type from companion object metadata.
-func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICaseClauseContext) transpiler.Type {
+func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []caseSrc) transpiler.Type {
 	for _, cc := range caseClauses {
-		ccCtx := cc.(*grammar.CaseClauseContext)
-		patCtx := ccCtx.Pattern()
-		if patCtx == nil {
+		pat := cc.pattern()
+		if !pat.ok() {
 			continue
 		}
-		patternText := patCtx.GetText()
+		patternText := pat.text()
 		if isWildcard(patternText) || t.isBindingPatternOf(patternText, nil) {
 			continue
 		}
@@ -1394,26 +1344,25 @@ func (t *galaASTTransformer) collectReferencedIdents(nodes []ast.Node) map[strin
 }
 
 // transformCaseClauseWithType transforms a case clause and returns its result
-// type, and where the arm finishes without a value (nil when it yields one or
-// leaves; see yieldsNoValue). armSlot is the slot the match fills (see
+// type, and where the arm finishes without a value (the zero srcNode when it
+// yields one or leaves; see yieldsNoValue). armSlot is the slot the match fills (see
 // transformCaseBodyStmt).
-func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (ast.Stmt, transpiler.Type, antlr.ParserRuleContext, error) {
+func (t *galaASTTransformer) transformCaseClauseWithType(cc caseSrc, paramName string, matchedType transpiler.Type, armSlot slot) (ast.Stmt, transpiler.Type, srcNode, error) {
 	t.pushScope()
 	defer t.popScope()
 	t.currentScope.caseArm = true
 
-	patCtx := ctx.Pattern()
-	cond, bindings, err := t.transformPatternWithType(patCtx, ast.NewIdent(paramName), matchedType)
+	cond, bindings, err := t.transformPatternWithType(cc.pattern(), ast.NewIdent(paramName), matchedType)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, srcNode{}, err
 	}
 
 	// Transform guard expression separately so we can check variable references in it
 	var guardExpr ast.Expr
-	if ctx.GetGuard() != nil {
-		guardExpr, err = t.transformExpression(ctx.GetGuard())
+	if guard := cc.guard(); guard.ok() {
+		guardExpr, err = t.lowerExpr(guard)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, srcNode{}, err
 		}
 		cond = &ast.BinaryExpr{
 			X:  cond,
@@ -1424,17 +1373,17 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 
 	var body []ast.Stmt
 	var resultType transpiler.Type
-	var noValue antlr.ParserRuleContext
+	var noValue srcNode
 
-	if ctx.GetBodyBlock() != nil {
+	if block := cc.bodyBlock(); block.ok() {
 		// The case body's block last expression becomes the arm's value, so
 		// it is value-consumed (not statement-position).
-		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), armSlot)
+		b, err := t.lowerValueBlock(block, armSlot)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, srcNode{}, err
 		}
 		body = b.List
-		noValue = t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), body)
+		noValue = t.noValueArmAt(block, body)
 		// In GALA, a block used as an expression returns its last expression.
 		// Convert the last expression statement to a return statement.
 		if len(body) > 0 {
@@ -1468,15 +1417,15 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		if resultType == nil {
 			resultType = transpiler.VoidType{}
 		}
-	} else if ctx.GetBodyStmt() != nil {
-		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armSlot)
+	} else if stmt, ok := cc.bodyStmt(); ok {
+		bodyStmts, bodyType, err := t.transformCaseBodyStmt(stmt, armSlot)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, srcNode{}, err
 		}
 		body = bodyStmts
 		resultType = bodyType
 		if t.yieldsNoValue(body) {
-			noValue = ctx.GetBodyStmt()
+			noValue = stmt.at
 		}
 	}
 
@@ -1496,9 +1445,8 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 
 		for _, varName := range userVars {
 			if !refs[varName] {
-				line := ctx.GetStart().GetLine()
-				col := ctx.GetStart().GetColumn()
-				return nil, nil, nil, galaerr.NewSemanticErrorAt(line, col,
+				line, col := cc.at().start()
+				return nil, nil, srcNode{}, galaerr.NewSemanticErrorAt(line, col,
 					fmt.Sprintf("unused variable '%s' in match branch — use '_' to discard this value", varName))
 			}
 		}
@@ -1523,13 +1471,14 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 // matchArm is one lowered case clause of a match: a regular arm's clause, or
 // the default arm's body. hasResult reports whether the arm contributes
 // resultType to the match's result type. noValue is where the arm finishes
-// without a value (see yieldsNoValue), nil when it yields one or leaves.
+// without a value (see yieldsNoValue), the zero srcNode when it yields one or
+// leaves.
 type matchArm struct {
 	clause      ast.Stmt
 	defaultBody []ast.Stmt
 	resultType  transpiler.Type
 	hasResult   bool
-	noValue     antlr.ParserRuleContext
+	noValue     srcNode
 }
 
 // checkMixedArmValues rejects a match whose value is used where one arm yields
@@ -1539,20 +1488,20 @@ type matchArm struct {
 // needs no value, and a match none of whose arms yields one is left to the
 // lowering of a void match.
 func (t *galaASTTransformer) checkMixedArmValues(arms []matchArm) error {
-	var noValue antlr.ParserRuleContext
+	var noValue srcNode
 	valueSeen := false
 	for _, arm := range arms {
 		switch {
-		case arm.noValue != nil:
-			if noValue == nil {
+		case arm.noValue.ok():
+			if !noValue.ok() {
 				noValue = arm.noValue
 			}
 		case arm.resultType != nil && !arm.resultType.IsVoid() && !arm.resultType.IsNil():
 			valueSeen = true
 		}
 	}
-	if valueSeen && noValue != nil {
-		return t.semanticErrorAt(noValue,
+	if valueSeen && noValue.ok() {
+		return t.semanticErrorAtNode(noValue,
 			"this arm of the `match` produces no value, but another arm does; end every arm in a value, since the match's value is used")
 	}
 	return nil
@@ -1561,12 +1510,12 @@ func (t *galaASTTransformer) checkMixedArmValues(arms []matchArm) error {
 // lowerDefaultMatchArm lowers the default arm of a match (a wildcard, or the
 // catch-all binding pattern, binds) against armSlot. Its body's trailing value, or
 // the value its trailing if/else carries, is the arm's value.
-func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, binds bool, armSlot slot) (matchArm, error) {
+func (t *galaASTTransformer) lowerDefaultMatchArm(cc caseSrc, paramName string, matchedType transpiler.Type, binds bool, armSlot slot) (matchArm, error) {
 	var arm matchArm
 	// For binding patterns, register the variable and add assignment
 	var bindingStmts []ast.Stmt
 	if binds {
-		patternText := ctx.Pattern().GetText()
+		patternText := cc.pattern().text()
 		t.currentScope.vals[patternText] = false
 		if matchedType != nil && !matchedType.IsNil() {
 			t.currentScope.valTypes[patternText] = matchedType
@@ -1578,15 +1527,15 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 		})
 	}
 
-	if ctx.GetBodyBlock() != nil {
+	if block := cc.bodyBlock(); block.ok() {
 		// The default arm's block-body last expression becomes the
 		// arm's value, so it is value-consumed.
-		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), armSlot)
+		b, err := t.lowerValueBlock(block, armSlot)
 		if err != nil {
 			return matchArm{}, err
 		}
 		arm.defaultBody = append(bindingStmts, b.List...)
-		arm.noValue = t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), b.List)
+		arm.noValue = t.noValueArmAt(block, b.List)
 		if len(b.List) > 0 {
 			last := len(arm.defaultBody) - 1
 			switch lastStmt := b.List[len(b.List)-1].(type) {
@@ -1611,15 +1560,15 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 				}
 			}
 		}
-	} else if ctx.GetBodyStmt() != nil {
-		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armSlot)
+	} else if stmt, ok := cc.bodyStmt(); ok {
+		bodyStmts, bodyType, err := t.transformCaseBodyStmt(stmt, armSlot)
 		if err != nil {
 			return matchArm{}, err
 		}
 		arm.defaultBody = append(bindingStmts, bodyStmts...)
 		arm.resultType, arm.hasResult = bodyType, true
 		if t.yieldsNoValue(bodyStmts) {
-			arm.noValue = ctx.GetBodyStmt()
+			arm.noValue = stmt.at
 		}
 	}
 	return arm, nil
@@ -1715,8 +1664,8 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 // and resultType is the type (VoidType for assignments/incDec, or the expression type).
 // armSlot is the slot the match fills (zero when none); an
 // expression body is lowered against it (see lowerAgainst).
-func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
-	if exprCtx := ctx.Expression(); exprCtx != nil {
+func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
+	if exprCtx := s.expr(t); exprCtx != nil {
 		// `case x => break` runs loop control; the arm has no value.
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
 			return []ast.Stmt{bs}, transpiler.VoidType{}, nil
@@ -1746,7 +1695,7 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		return []ast.Stmt{stmt}, typ, nil
 	}
 	// Otherwise it's a side-effect statement (assignment, incDec, shortVarDecl)
-	stmt, err := t.transformSimpleStatement(ctx)
+	stmt, err := t.lowerSimpleStatement(s, false)
 	if err != nil {
 		return nil, nil, err
 	}

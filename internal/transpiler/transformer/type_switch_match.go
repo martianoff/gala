@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -75,7 +74,7 @@ type typeArm struct {
 // they are, when the match is not one the switch can dispatch (see above).
 // arms are the lowered arms of caseClauses; isDefault and isBinding classify
 // them as buildMatchExpressionFromClauses did.
-func (t *galaASTTransformer) typeSwitchDispatch(caseClauses []grammar.ICaseClauseContext, arms []matchArm, isDefault, isBinding []bool, paramName string, matchedType transpiler.Type) []ast.Stmt {
+func (t *galaASTTransformer) typeSwitchDispatch(caseClauses []caseSrc, arms []matchArm, isDefault, isBinding []bool, paramName string, matchedType transpiler.Type) []ast.Stmt {
 	if transpiler.IsUnusable(matchedType) || !t.holdsAnyType(matchedType) {
 		return nil
 	}
@@ -87,11 +86,10 @@ func (t *galaASTTransformer) typeSwitchDispatch(caseClauses []grammar.ICaseClaus
 		seen[types.ExprString(typ)] = true
 	}
 	for i, cc := range caseClauses {
-		ccCtx := cc.(*grammar.CaseClauseContext)
-		if isDefault[i] || isBinding[i] || isWildcard(ccCtx.Pattern().GetText()) {
+		if isDefault[i] || isBinding[i] || isWildcard(cc.pattern().text()) {
 			continue
 		}
-		if _, typed := ccCtx.Pattern().(*grammar.TypedPatternContext); !typed || ccCtx.GetGuard() != nil {
+		if cc.pattern().kind() != patKindTyped || cc.hasGuard() {
 			return nil
 		}
 		arm, ok := t.typePatternArm(arms[i].clause, paramName)

@@ -8,7 +8,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -65,20 +64,20 @@ func (t *galaASTTransformer) sealedViewOf(typ transpiler.Type) transpiler.Type {
 // A pattern over the subject itself — its own extractor, a literal, a typed
 // pattern of another type — or a binding of the whole subject, which would
 // bind the view rather than the subject, is GALA-E0079.
-func (t *galaASTTransformer) sealedViewForCases(subjectType transpiler.Type, caseClauses []grammar.ICaseClauseContext) (transpiler.Type, error) {
+func (t *galaASTTransformer) sealedViewForCases(subjectType transpiler.Type, caseClauses []caseSrc) (transpiler.Type, error) {
 	view := t.sealedViewOf(subjectType)
 	if view == nil {
 		return nil, nil
 	}
-	usesView := slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool {
-		exprPat, ok := cc.(*grammar.CaseClauseContext).Pattern().(*grammar.ExpressionPatternContext)
-		return ok && t.namesViewVariant(exprPat.Expression(), subjectType, view)
+	usesView := slices.ContainsFunc(caseClauses, func(cc caseSrc) bool {
+		pat := cc.pattern()
+		return pat.kind() == patKindExpr && t.namesViewVariant(pat.expr(), subjectType, view)
 	})
 	if !usesView {
 		return nil, nil
 	}
 	for _, cc := range caseClauses {
-		if err := t.checkSealedViewPattern(cc.(*grammar.CaseClauseContext).Pattern(), subjectType, view); err != nil {
+		if err := t.checkSealedViewPattern(cc.pattern(), subjectType, view); err != nil {
 			return nil, err
 		}
 	}
@@ -92,7 +91,7 @@ func (t *galaASTTransformer) sealedViewForCases(subjectType transpiler.Type, cas
 // itself, so a binding beside it (`case (Some(a), b)`) binds the value of
 // typ. Every alternative of a sub-pattern that reads the view applies to the
 // view (see checkViewAlternatives).
-func (t *galaASTTransformer) subPatternView(pat grammar.IExpressionContext, typ transpiler.Type) (transpiler.Type, error) {
+func (t *galaASTTransformer) subPatternView(pat patExpr, typ transpiler.Type) (transpiler.Type, error) {
 	view := t.sealedViewOf(typ)
 	if view == nil || !t.namesViewVariant(pat, typ, view) {
 		return nil, nil
@@ -105,7 +104,7 @@ func (t *galaASTTransformer) subPatternView(pat grammar.IExpressionContext, typ 
 
 // namesViewVariant reports whether one of pat's alternatives names a variant
 // of view that is not a variant of own, the type of the value matched.
-func (t *galaASTTransformer) namesViewVariant(pat grammar.IExpressionContext, own, view transpiler.Type) bool {
+func (t *galaASTTransformer) namesViewVariant(pat patExpr, own, view transpiler.Type) bool {
 	own = t.followAliasChain(own)
 	for _, alt := range t.flatAlternatives(pat) {
 		name := t.patternHeadName(alt)
@@ -122,23 +121,23 @@ func (t *galaASTTransformer) namesViewVariant(pat grammar.IExpressionContext, ow
 // patternHeadName returns the constructor a pattern alternative names: the
 // callee of a call-shaped pattern (`Some(n)`, `pkg.None()`) or a bare
 // identifier (`None`), and "" for any other shape.
-func (t *galaASTTransformer) patternHeadName(alt grammar.IExpressionContext) string {
-	if name, _, ok := t.patternCallShape(alt); ok {
+func (t *galaASTTransformer) patternHeadName(alt patExpr) string {
+	if name, _, ok := alt.callShape(); ok {
 		return name
 	}
 	if qualified := t.qualifiedZeroFieldCase(alt); qualified != "" {
 		return stripPackagePrefix(qualified)
 	}
-	return patternIdentifier(alt)
+	return alt.identifier()
 }
 
 // checkSealedViewPattern rejects a case pattern that does not apply to the
 // sealed view of a match over a value of subjectType (see
 // sealedViewForCases).
-func (t *galaASTTransformer) checkSealedViewPattern(pat grammar.IPatternContext, subjectType, view transpiler.Type) error {
-	switch p := pat.(type) {
-	case *grammar.TypedPatternContext:
-		typeExpr, err := t.transformType(p.Type_())
+func (t *galaASTTransformer) checkSealedViewPattern(pat patSrc, subjectType, view transpiler.Type) error {
+	switch pat.kind() {
+	case patKindTyped:
+		typeExpr, err := t.lowerType(pat.typedType())
 		if err != nil {
 			return err
 		}
@@ -146,14 +145,14 @@ func (t *galaASTTransformer) checkSealedViewPattern(pat grammar.IPatternContext,
 		if t.namesViewType(written, view) {
 			return nil
 		}
-		return sealedViewPatternError(p, subjectType, view,
+		return sealedViewPatternError(pat.at(), subjectType, view,
 			fmt.Sprintf("`%s` tests for %s, which is not %s",
-				p.GetText(), displayType(written), displayType(view)))
-	case *grammar.ExpressionPatternContext:
-		return t.checkViewAlternatives(p.Expression(), subjectType, view)
+				pat.text(), displayType(written), displayType(view)))
+	case patKindExpr:
+		return t.checkViewAlternatives(pat.expr(), subjectType, view)
 	default:
-		return sealedViewPatternError(pat, subjectType, view,
-			fmt.Sprintf("`%s` is not a variant of %s", pat.GetText(), displayType(view)))
+		return sealedViewPatternError(pat.at(), subjectType, view,
+			fmt.Sprintf("`%s` is not a variant of %s", pat.text(), displayType(view)))
 	}
 }
 
@@ -161,9 +160,9 @@ func (t *galaASTTransformer) checkSealedViewPattern(pat grammar.IPatternContext,
 // against the view of a value of typ, that does not apply to the view. Each
 // one is a variant of the view, `_`, or a stable identifier holding a value
 // of the view type, compared with the view by ==.
-func (t *galaASTTransformer) checkViewAlternatives(pat grammar.IExpressionContext, typ, view transpiler.Type) error {
+func (t *galaASTTransformer) checkViewAlternatives(pat patExpr, typ, view transpiler.Type) error {
 	for _, alt := range t.flatAlternatives(pat) {
-		text := alt.GetText()
+		text := alt.text()
 		if isWildcard(text) {
 			continue
 		}
@@ -177,15 +176,15 @@ func (t *galaASTTransformer) checkViewAlternatives(pat grammar.IExpressionContex
 				if t.namesViewType(valueType, view) {
 					continue
 				}
-				return sealedViewPatternError(alt, typ, view,
+				return sealedViewPatternError(alt.at(), typ, view,
 					fmt.Sprintf("`%s` is not a value of %s", name, displayType(view)))
 			}
 			if extractor, _ := t.bareExtractor(name, view); t.isSimpleIdentifier(name) && extractor == nil {
-				return sealedViewPatternError(alt, typ, view,
+				return sealedViewPatternError(alt.at(), typ, view,
 					fmt.Sprintf("`case %s` would bind the %s view, not the %s itself", name, displayType(view), displayType(typ)))
 			}
 		}
-		return sealedViewPatternError(alt, typ, view,
+		return sealedViewPatternError(alt.at(), typ, view,
 			fmt.Sprintf("`%s` is not a variant of %s", text, displayType(view)))
 	}
 	return nil
@@ -199,10 +198,11 @@ func (t *galaASTTransformer) namesViewType(written, view transpiler.Type) bool {
 }
 
 // sealedViewPatternError is GALA-E0079 at the offending pattern.
-func sealedViewPatternError(at antlr.ParserRuleContext, subjectType, view transpiler.Type, why string) error {
+func sealedViewPatternError(at srcNode, subjectType, view transpiler.Type, why string) error {
+	line, col := at.start()
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeInvalidSealedViewMatch,
-		at.GetStart().GetLine(), at.GetStart().GetColumn(),
+		line, col,
 		fmt.Sprintf("%s; this match reads %s through %s() as %s",
 			why, displayType(subjectType), sealedViewMethod, displayType(view)),
 		fmt.Sprintf("match only %s's variants and `_` here; match the %s itself in a separate match",
@@ -214,7 +214,7 @@ func sealedViewPatternError(at antlr.ParserRuleContext, subjectType, view transp
 // tests: subject.MatchView() and the view type when its cases read the
 // subject's sealed view (see sealedViewForCases), and subject and subjectType
 // unchanged otherwise; viewed reports which. at locates the match.
-func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType transpiler.Type, caseClauses []grammar.ICaseClauseContext, at antlr.ParserRuleContext) (ast.Expr, transpiler.Type, bool, error) {
+func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType transpiler.Type, caseClauses []caseSrc, at antlr.ParserRuleContext) (ast.Expr, transpiler.Type, bool, error) {
 	view, err := t.sealedViewForCases(subjectType, caseClauses)
 	if err != nil || view == nil {
 		return subject, subjectType, false, err

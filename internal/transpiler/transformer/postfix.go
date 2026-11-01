@@ -555,13 +555,12 @@ func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar
 	}
 
 	// Now handle the match expression
-	caseClauses := ctx.AllCaseClause()
-	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx, s)
+	return t.buildMatchExpressionFromClauses(subject, "obj", t.matchCases(ctx), ctx, s)
 }
 
 // buildMatchExpressionFromClauses builds a match expression from the subject and case clauses.
 // ctx is used for error position reporting when case clauses are empty.
-func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext, s slot) (ast.Expr, error) {
+func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []caseSrc, ctx antlr.ParserRuleContext, s slot) (ast.Expr, error) {
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
 	typedFromCases := false
@@ -573,8 +572,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 	if transpiler.IsUnusable(matchedType) {
 		if len(caseClauses) > 0 {
-			cc := caseClauses[0].(*grammar.CaseClauseContext)
-			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "cannot infer type of matched expression")
+			return nil, semanticErrorAtStart(caseClauses[0].at(), "cannot infer type of matched expression")
 		}
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer type of matched expression")
 	}
@@ -613,7 +611,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match whose value a local declaration stores, and whose arms hold a
 	// `return`, `break` or `continue`, is lowered as statements storing its
 	// value (see hoisted_value.go); its arms store theirs the same way.
-	if s.hoist != "" && (stmtPosition || !escapesConstruct(t, caseClauses...)) {
+	if s.hoist != "" && (stmtPosition || !escapesConstruct(t, antlrClauses(t, caseClauses)...)) {
 		s.hoist = ""
 	}
 	hoist := s.hoist
@@ -633,16 +631,20 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		defer t.enterReturnSlot(returnSlot{typ: s.closedType()})()
 	}
 
+	// Each clause's pattern and its text, read once for the scans below.
+	patterns := make([]patSrc, len(caseClauses))
+	patternTexts := make([]string, len(caseClauses))
+	for i, cc := range caseClauses {
+		patterns[i] = cc.pattern()
+		patternTexts[i] = patterns[i].text()
+	}
+
 	// Validate sealed-variant pattern arity before transforming arms. An
 	// under-/over-bound extractor pattern (e.g. `Rect(w, h)` for a 3-field
 	// Rect) must surface as a coded GALA-E0004 here; otherwise the mis-bound
 	// pattern flows into arm type inference and fails far away as a confusing
 	// match-branch type mismatch.
 	{
-		patterns := make([]grammar.IPatternContext, 0, len(caseClauses))
-		for _, cc := range caseClauses {
-			patterns = append(patterns, cc.(*grammar.CaseClauseContext).Pattern())
-		}
 		if arityErr := t.validateSealedVariantArity(matchedType, patterns); arityErr != nil {
 			return nil, arityErr
 		}
@@ -653,9 +655,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// binding pattern acts as the default (catch-all) case. A guarded wildcard
 	// (`case _ if g`) is conditional, not a catch-all, so it does not count.
 	hasExplicitWildcard := false
-	for _, cc := range caseClauses {
-		ccCtx := cc.(*grammar.CaseClauseContext)
-		if isWildcard(ccCtx.Pattern().GetText()) && ccCtx.GetGuard() == nil {
+	for i, cc := range caseClauses {
+		if isWildcard(patternTexts[i]) && !cc.hasGuard() {
 			hasExplicitWildcard = true
 			break
 		}
@@ -672,16 +673,16 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	isDefault := make([]bool, len(caseClauses))
 	foundDefault := false
 	for i, cc := range caseClauses {
-		ccCtx := cc.(*grammar.CaseClauseContext)
-		patternText := ccCtx.Pattern().GetText()
+		patternText := patternTexts[i]
 		isBinding[i] = t.isBindingPatternOf(patternText, matchedType)
-		if ccCtx.GetGuard() != nil || !(isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i])) {
+		if cc.hasGuard() || !(isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i])) {
 			continue
 		}
 		if foundDefault {
+			line, col := cc.at().start()
 			return nil, galaerr.NewCodedSemanticError(
 				galaerr.CodeMultipleDefaults,
-				ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
+				line, col,
 				"multiple default cases in match expression",
 				"keep one default case; combine logic with guards or nested matches if you need sub-cases")
 		}
@@ -691,11 +692,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	arms := make([]matchArm, len(caseClauses))
 	lowerArm := func(i int, armSlot slot) (transpiler.Type, error) {
-		ccCtx := caseClauses[i].(*grammar.CaseClauseContext)
+		cc := caseClauses[i]
 		var arm matchArm
 		var err error
 		if isDefault[i] {
-			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, subjectType, isBinding[i], armSlot)
+			arm, err = t.lowerDefaultMatchArm(cc, paramName, subjectType, isBinding[i], armSlot)
 		} else {
 			// A guarded binding of the whole subject (`case p if ...`) keeps
 			// the written type too; every other pattern reads the variants.
@@ -703,7 +704,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			if isBinding[i] {
 				armType = subjectType
 			}
-			arm.clause, arm.resultType, arm.noValue, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
+			arm.clause, arm.resultType, arm.noValue, err = t.transformCaseClauseWithType(cc, paramName, armType, armSlot)
 			arm.hasResult = arm.resultType != nil
 		}
 		if err != nil {
@@ -724,7 +725,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 	for i, arm := range arms {
-		ccCtx := caseClauses[i].(*grammar.CaseClauseContext)
+		cc := caseClauses[i]
 		if isDefault[i] {
 			defaultBody = arm.defaultBody
 			if arm.hasResult {
@@ -733,8 +734,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			}
 			continue
 		}
-		if !irrefutableTupleArm && ccCtx.GetGuard() == nil && armMatchesEverything(arm.clause) &&
-			t.isTuplePatternOfSubjectArity(ccCtx.Pattern(), matchedType) {
+		if !irrefutableTupleArm && !cc.hasGuard() && armMatchesEverything(arm.clause) &&
+			t.isTuplePatternOfSubjectArity(patterns[i], matchedType) {
 			irrefutableTupleArm = true
 		}
 		if arm.clause != nil {
@@ -742,7 +743,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 		if arm.hasResult {
 			resultTypes = append(resultTypes, arm.resultType)
-			casePatterns = append(casePatterns, fmt.Sprintf("case %s", ccCtx.Pattern().GetText()))
+			casePatterns = append(casePatterns, fmt.Sprintf("case %s", patternTexts[i]))
 		}
 	}
 
@@ -801,8 +802,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	if len(clauses) == 0 && len(defaultBody) == 0 {
 		if len(caseClauses) > 0 {
-			cc := caseClauses[0].(*grammar.CaseClauseContext)
-			return nil, galaerr.NewSemanticErrorAt(cc.GetStart().GetLine(), cc.GetStart().GetColumn(), "match expression must have at least one case")
+			return nil, semanticErrorAtStart(caseClauses[0].at(), "match expression must have at least one case")
 		}
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have at least one case")
 	}
@@ -824,18 +824,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 
 		if !hasDefault {
-			ccs := make([]*grammar.CaseClauseContext, len(caseClauses))
-			for i, cc := range caseClauses {
-				ccs[i] = cc.(*grammar.CaseClauseContext)
-			}
-			enumerable, isExhaustive, missing, guardedMissing := t.coverageOf(matchedType, ccs)
+			enumerable, isExhaustive, missing, guardedMissing := t.coverageOf(matchedType, caseClauses)
 			// Both diagnoses below are about the match as a whole, so they
 			// anchor on the first case clause (the match keyword itself sits
 			// after the subject and reads worse in the framed snippet).
 			line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 			if len(caseClauses) > 0 {
-				cc := caseClauses[0].(*grammar.CaseClauseContext)
-				line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
+				line, col = caseClauses[0].at().start()
 			}
 			switch {
 			case enumerable && !isExhaustive:

@@ -1236,7 +1236,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	// A parameter whose cases name the variants of its sealed view (see
 	// sealedViewForCases) is matched as that view, read once on entry.
 	casesParam := paramName
-	viewExpr, casesType, viewed, err := t.matchViewSubject(ast.NewIdent(paramName), paramType, caseClauses, ctx)
+	viewExpr, casesType, viewed, err := t.matchViewSubject(ast.NewIdent(paramName), paramType, antlrCases(caseClauses), ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1367,7 +1367,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	t.currentScope.caseArm = true
 
 	patCtx := ctx.Pattern()
-	cond, bindings, err := t.transformPatternWithType(patCtx, ast.NewIdent(paramName), matchedType)
+	cond, bindings, err := t.transformPatternWithType(antlrPat(patCtx), ast.NewIdent(paramName), matchedType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1395,8 +1395,8 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 		if err != nil {
 			return nil, nil, err
 		}
-		if at := t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), b.List); at != nil {
-			return nil, nil, t.semanticErrorAt(at, partialArmNoValueMsg)
+		if at := t.noValueArmAt(antlrBlock(ctx.GetBodyBlock().(*grammar.BlockContext)), b.List); at.ok() {
+			return nil, nil, t.semanticErrorAtNode(at, partialArmNoValueMsg)
 		}
 		// A trailing expression is the arm's value, lowered like a match
 		// arm's tail; it was left as a bare statement, so the arm had no

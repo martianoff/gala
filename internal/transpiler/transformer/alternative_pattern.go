@@ -23,30 +23,29 @@ import (
 // alternative pattern inside it. `|` mixed with `+`, `-` or `^` in one operand
 // chain is an error: those share its precedence, so the operand they belong to
 // has to be parenthesized.
-func (t *galaASTTransformer) patternAlternatives(expr grammar.IExpressionContext) ([]grammar.IExpressionContext, error) {
-	add := leadingAdditiveExpr(expr, true)
-	if add == nil {
-		if bar := barUnderOperator(expr); bar != nil {
+func (t *galaASTTransformer) patternAlternatives(expr patExpr) ([]patExpr, error) {
+	add, ok, err := expr.soleAdditive()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		if bar, ok := expr.barUnderOperator(); ok {
+			line, col := bar.start()
 			return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
-				bar.GetStart().GetLine(), bar.GetStart().GetColumn(),
+				line, col,
 				"'|' separates pattern alternatives and cannot be used inside a comparison or boolean expression in a pattern",
 				"compare in a guard, as in `case n if n > limit`")
 		}
 		return nil, nil
 	}
-	muls := add.AllMultiplicativeExpr()
-	if len(muls) == 1 {
-		if inner := t.parenthesizedPattern(expr); inner != nil {
+	if len(add.operands) == 1 {
+		if inner, ok := t.parenthesizedPattern(expr); ok {
 			return t.patternAlternatives(inner)
 		}
 		return nil, nil
 	}
 	hasBar, other := false, ""
-	for i := 1; i < len(muls); i++ {
-		op, err := getChildOperatorText(add, i*2-1)
-		if err != nil {
-			return nil, err
-		}
+	for _, op := range add.ops {
 		if op == "|" {
 			hasBar = true
 		} else if other == "" {
@@ -57,16 +56,13 @@ func (t *galaASTTransformer) patternAlternatives(expr grammar.IExpressionContext
 		return nil, nil
 	}
 	if other != "" {
+		line, col := add.at.start()
 		return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
-			add.GetStart().GetLine(), add.GetStart().GetColumn(),
+			line, col,
 			fmt.Sprintf("'|' separates pattern alternatives and cannot be mixed with '%s' in a pattern", other),
 			fmt.Sprintf("put parentheses around the alternative that uses '%s'", other))
 	}
-	alts := make([]grammar.IExpressionContext, len(muls))
-	for i, m := range muls {
-		alts[i] = wrapAsExpression(expr, m.(*grammar.MultiplicativeExprContext))
-	}
-	return alts, nil
+	return add.operands, nil
 }
 
 // barUnderOperator returns an additive chain of expr that holds a `|`, when
@@ -96,15 +92,15 @@ func barUnderOperator(expr grammar.IExpressionContext) *grammar.AdditiveExprCont
 // flatAlternatives returns the alternatives of pat, nested parenthesized
 // alternatives included, or pat itself when it has none. A malformed
 // alternative pattern counts as one pattern here; lowering reports it.
-func (t *galaASTTransformer) flatAlternatives(pat grammar.IExpressionContext) []grammar.IExpressionContext {
-	if !strings.Contains(pat.GetText(), "|") {
-		return []grammar.IExpressionContext{pat}
+func (t *galaASTTransformer) flatAlternatives(pat patExpr) []patExpr {
+	if !strings.Contains(pat.text(), "|") {
+		return []patExpr{pat}
 	}
 	alts, err := t.patternAlternatives(pat)
 	if err != nil || alts == nil {
-		return []grammar.IExpressionContext{pat}
+		return []patExpr{pat}
 	}
-	var flat []grammar.IExpressionContext
+	var flat []patExpr
 	for _, alt := range alts {
 		flat = append(flat, t.flatAlternatives(alt)...)
 	}
@@ -141,14 +137,14 @@ func wrapAsExpression(from grammar.IExpressionContext, m *grammar.Multiplicative
 // left to right: the first one that matches decides, and the statements of
 // the ones after it (extractor calls among them) do not run. Alternatives
 // that need no statements are a plain `c1 || c2 || …`.
-func (t *galaASTTransformer) transformAlternativePattern(alts []grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) transformAlternativePattern(alts []patExpr, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	conds := make([]ast.Expr, len(alts))
 	stmts := make([][]ast.Stmt, len(alts))
 	needStmts := false
 	for i, alt := range alts {
-		if isWildcard(alt.GetText()) {
+		if isWildcard(alt.text()) {
 			return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
-				alt.GetStart().GetLine(), alt.GetStart().GetColumn(),
+				alt.line(), alt.col(),
 				"a wildcard alternative matches everything, so the other alternatives never decide",
 				"write `case _` on its own")
 		}
@@ -158,7 +154,7 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []grammar.IExpress
 		}
 		if names := extractUserPatternVarNames(s); len(names) > 0 {
 			return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
-				alt.GetStart().GetLine(), alt.GetStart().GetColumn(),
+				alt.line(), alt.col(),
 				fmt.Sprintf("pattern alternative binds '%s'; an alternative pattern cannot bind names", names[0]),
 				"use `_` in place of the name, or give each alternative its own case")
 		}
@@ -194,9 +190,9 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []grammar.IExpress
 
 // parenthesizedPattern returns p when expr is exactly `(p)`, or nil; `(p,)`
 // is a one-element tuple, not a parenthesized pattern.
-func (t *galaASTTransformer) parenthesizedPattern(expr grammar.IExpressionContext) grammar.IExpressionContext {
-	if list := t.parenthesizedList(expr); list != nil && list.GetChildCount() == 1 {
-		return list.Expression(0)
+func (t *galaASTTransformer) parenthesizedPattern(expr patExpr) (patExpr, bool) {
+	if elems, single, ok := expr.parenthesized(t); ok && single {
+		return elems[0], true
 	}
-	return nil
+	return patExpr{}, false
 }

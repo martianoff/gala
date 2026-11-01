@@ -13,20 +13,33 @@ import (
 )
 
 // TestNativeWalkAgrees holds the transformer's walk of the compiled file's
-// top-level declarations, function-body statements and expressions on its
-// native tree to its walk on ANTLR's: every GALA source staged as data,
-// transpiled as the CLI transpiles a file, gives byte-identical Go, or the
-// same error, both ways. Each file's walk must have taken the tree it
-// should (checkWalksAgree), and most must have taken the native one, so a
-// bridge or converter that fails quietly cannot turn the comparison into
-// ANTLR's against ANTLR's.
-func TestNativeWalkAgrees(t *testing.T) {
+// top-level declarations, function-body statements, expressions, lambdas and
+// match case clauses on its native tree to its walk on ANTLR's: every GALA
+// source staged as data, transpiled as the CLI transpiles a file, gives
+// byte-identical Go, or the same error, both ways. Each file's walk must have
+// taken the tree it should (checkWalksAgree), and most must have taken the
+// native one, so a bridge or converter that fails quietly cannot turn the
+// comparison into ANTLR's against ANTLR's. The sources are split in two
+// halves, each a test of its own, so the target's shards run them side by
+// side.
+func TestNativeWalkAgrees(t *testing.T) { walkAgrees(t, 0) }
+
+// TestNativeWalkAgreesRest is TestNativeWalkAgrees over the other half of the
+// sources.
+func TestNativeWalkAgreesRest(t *testing.T) { walkAgrees(t, 1) }
+
+// walkAgrees is TestNativeWalkAgrees over every other source, from the
+// half-th on.
+func walkAgrees(t *testing.T, half int) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	paths, searchPaths := walkCorpus(t)
 	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
-	files, clean, walked, decls, stmts, lambdas, exprs := 0, 0, 0, 0, 0, 0, 0
-	for _, path := range paths {
+	files, clean, walked, decls, stmts, lambdas, exprs, cases := 0, 0, 0, 0, 0, 0, 0, 0
+	for i, path := range paths {
+		if i%2 != half {
+			continue
+		}
 		src, err := os.ReadFile(path)
 		require.NoError(t, err)
 		n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, string(src))
@@ -38,6 +51,7 @@ func TestNativeWalkAgrees(t *testing.T) {
 		stmts += n.stmts
 		lambdas += n.lambdas
 		exprs += n.exprs
+		cases += n.cases
 		if n.err == nil {
 			clean++
 		}
@@ -47,9 +61,9 @@ func TestNativeWalkAgrees(t *testing.T) {
 	}
 	// Floors catch the sources not being staged or the native walk going
 	// unused.
-	require.Truef(t, files >= 200 && clean >= files*3/4 && walked >= files*3/4 && decls >= files && stmts >= files && lambdas >= files && exprs >= stmts,
-		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations, %d body statements, %d lambdas and %d expressions lowered there", files, clean, walked, decls, stmts, lambdas, exprs)
-	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations, %d body statements, %d lambdas and %d expressions lowered there", files, clean, walked, decls, stmts, lambdas, exprs)
+	require.Truef(t, files >= 100 && clean >= files*3/4 && walked >= files*3/4 && decls >= files && stmts >= files && lambdas >= files && exprs >= stmts && cases >= files,
+		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations, %d body statements, %d lambdas, %d expressions and %d case clauses lowered there", files, clean, walked, decls, stmts, lambdas, exprs, cases)
+	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations, %d body statements, %d lambdas, %d expressions and %d case clauses lowered there", files, clean, walked, decls, stmts, lambdas, exprs, cases)
 }
 
 // walkCases cover every top-level declaration shape the native walk reads,
