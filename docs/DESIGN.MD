@@ -313,14 +313,14 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     the shape a value filling a typed slot is lowered by), its lambdas (their parameters, bodies
     and Sendable capture checks), and every `match`: its subject, its case clauses, and
     their patterns with the values they compare and the extractors and type arguments they
-    name (the statements of a match arm's block included; a partial function's
-    `{ case ... }` stays on ANTLR's tree); an expression, lambda or match entered from code still on ANTLR's
+    name (the statements of a match arm's block included, and a partial function's
+    `{ case ... }` cases too); an expression, lambda or match entered from code still on ANTLR's
     tree finds its node with `Native.NodeOfKind`, and the state keyed by a subtree (the
     expected-type hints, the escape cache) is keyed by its native node, whichever tree
     reaches it. All of it runs only where the tree
-    bridges to ANTLR's (`Native.Bridged`); the compiled file's sibling files, the files of
-    imported packages and LSP buffers stay on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the analysis did
-    not convert the tree), and neither the transformer nor any cache keeps it or a node of it:
+    bridges to ANTLR's (`Native.Bridged`). Every clean parse carries a native handle, ANTLR's engine included (through the converter), so the compiled file's sibling files, the files of
+    imported packages and clean LSP buffers are read on it too; an LSP buffer with syntax errors stays on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the analysis did
+    not convert the tree), and the transformer keeps neither it nor a node of it; the analyzer's parsed-file cache keeps a sibling file's converted tree for the later reads of that file. For the compiled file:
     until it converts, it holds the
     token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive
     (after converting, the native tree keeps the text). Doc comments are keyed by
