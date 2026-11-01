@@ -168,7 +168,7 @@ func (t *galaASTTransformer) classifyNative(e exprSrc) exprForm {
 				return exprForm{partial: partialSrc{node: prim}}
 			}
 		case native.GalaKIND_ifExpression:
-			if !suffixed {
+			if alone {
 				return exprForm{ifExpr: ifExprSrc{node: prim}}
 			}
 		}
@@ -229,10 +229,11 @@ func (t *galaASTTransformer) barePartial(e exprSrc) partialSrc {
 	return partialSrc{}
 }
 
-// ifIn is the if-expression e is, with no suffix applied to it, and the zero
-// ifExprSrc otherwise.
+// ifIn is the if-expression e is, with no suffix or match applied to it
+// (`if (c) a else { b } match { ... }` is the match), and the zero ifExprSrc
+// otherwise.
 func (t *galaASTTransformer) ifIn(e exprSrc) ifExprSrc {
-	if p := e.solePostfix(); p.ok() && !p.hasSuffixes() {
+	if p := e.solePostfix(); p.ok() && p.alone() {
 		return p.primaryIf(t)
 	}
 	return ifExprSrc{}

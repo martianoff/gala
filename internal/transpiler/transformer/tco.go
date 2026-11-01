@@ -174,10 +174,12 @@ func (t *galaASTTransformer) branchHasTailSelfCall(b ifBranchSrc, funcName strin
 }
 
 // selfCall is the call e is when it calls funcName by its bare name, with no
-// type arguments, and false when e is anything else.
+// type arguments, and false when e is anything else. A call with a match on
+// its result (`f(args) match { ... }`) is not one: the match, not the call, is
+// in tail position.
 func selfCall(e exprSrc, funcName string) (callPat, bool) {
 	call, ok := patExpr{exprSrc: e}.callPattern()
-	if !ok || call.hasTypeArgList() || call.head.primaryIdent() != funcName {
+	if !ok || call.head.hasCases() || call.hasTypeArgList() || call.head.primaryIdent() != funcName {
 		return callPat{}, false
 	}
 	return call, true
