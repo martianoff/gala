@@ -87,7 +87,7 @@ func lambdaSignatureOf(sig sigSrc) lambdaSignature {
 	var out lambdaSignature
 	var params []string
 	for _, p := range sig.params() {
-		out.hasDefault = out.hasDefault || p.hasDefault
+		out.hasDefault = out.hasDefault || p.def.ok()
 		out.partial = out.partial || !p.nameAt.ok() || !p.typ.ok()
 		params = append(params, oneLine(p.at.sourceText()))
 	}

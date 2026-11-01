@@ -279,7 +279,7 @@ func readParamsNative(ps native.ParametersNode) []paramDecl {
 			isVar:      param.VAR().Ok(),
 			isVal:      param.VAL().Ok(),
 			variadic:   param.ELLIPSIS().Ok(),
-			hasDefault: param.ParamDefault().Ok(),
+			def:        nativeDefault(param.ParamDefault()),
 		}
 		// A parameter can be nameless, as in `(...int) => 0`.
 		if id := param.Identifier(); id.Ok() {

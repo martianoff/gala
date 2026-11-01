@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -63,6 +65,38 @@ func CheckGeneratedCodecNames(tree antlr.Tree) error {
 		return nil
 	}
 	return GeneratedCodecNameError(found.GetText(), transpiler.PosFromToken(found.GetStart()))
+}
+
+// CheckGeneratedCodecNamesNative is CheckGeneratedCodecNames of root, a node
+// of the native tree.
+func CheckGeneratedCodecNamesNative(root native.GalaNodeRef) error {
+	var found native.GalaNodeRef
+	root.Walk(func(n native.GalaNodeRef) bool {
+		if found.Ok() {
+			return false
+		}
+		if n.Kind() != native.GalaKIND_identifier {
+			return true
+		}
+		if IsGeneratedCodecName(galaparser.NativeText(n)) {
+			found = n
+		}
+		return false
+	})
+	if !found.Ok() {
+		return nil
+	}
+	start := found.Start()
+	return GeneratedCodecNameError(galaparser.NativeText(found), transpiler.SourcePos{Line: int(start.Line), Column: int(start.Column)})
+}
+
+// checkGeneratedCodecNamesOf is CheckGeneratedCodecNames of e, on the tree it
+// is on.
+func checkGeneratedCodecNamesOf(e exprSrc) error {
+	if e.node.Ok() {
+		return CheckGeneratedCodecNamesNative(e.node)
+	}
+	return CheckGeneratedCodecNames(e.ctx)
 }
 
 // GeneratedCodecNameError is the GALA-E0058 error of name, an identifier

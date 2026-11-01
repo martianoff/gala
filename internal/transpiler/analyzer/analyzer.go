@@ -655,7 +655,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 			return nil, err
 		}
 		// GALA-E0058: generated codec metadata is not part of GALA's surface.
-		if err := readTree(a, filePath, "generated codec names", nf, checkGeneratedCodecNamesNative,
+		if err := readTree(a, filePath, "generated codec names", nf, transformer.CheckGeneratedCodecNamesNative,
 			func() error { return transformer.CheckGeneratedCodecNames(sourceFile) }); err != nil {
 			return nil, err
 		}

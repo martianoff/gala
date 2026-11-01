@@ -236,21 +236,49 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 //
 // line is 1-based and col 0-based, as ANTLR reports them; a line <= 0 means the
 // caller had no position and the expression is parsed at 1:0. The parsing
-// itself is parser.ParseExpressionAt, shared with declared default values.
+// itself is parseExprAt, shared with declared default values.
 func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col int) (ast.Expr, error) {
-	exprCtx, err := parser.ParseExpressionAt(exprText, line, col, "interpolated expression")
+	e, err := t.parseExprAt(exprText, line, col, "interpolated expression")
 	if err != nil {
 		return nil, err
 	}
 	// The analyzer checked the file's own parse tree, which holds this
 	// expression only as string text.
-	if err := CheckGeneratedCodecNames(exprCtx); err != nil {
+	if err := checkGeneratedCodecNamesOf(e); err != nil {
 		return nil, err
 	}
-	if err := t.checkVariantTypeNames(exprCtx); err != nil {
+	if err := t.checkVariantTypeNamesOf(e); err != nil {
 		return nil, err
 	}
-	return t.transformExpression(exprCtx)
+	return t.lowerExpr(e)
+}
+
+// parseExprAt parses text as one expression whose first character sits at
+// line/col of the file (see parser.ParseExpressionAt), on the tree the file's
+// walk reads: galop's native tree when the walk reads that one (t.native is
+// set), ANTLR's otherwise, so a file is lowered on one tree throughout.
+//
+// The native tree is a tree of its own, with no ANTLR contexts: nothing the
+// native lowering of an expression reaches crosses to ANTLR's tree, and a
+// crossing that did would find no context and raise an internal error
+// (crossTo), so no native handle is needed for it. When galop's native parser
+// does not settle the text, ANTLR's parser parses it: for a syntax error, to
+// report it with ANTLR's message. Where ANTLR's parser accepts it, galop's
+// parser panicked (reported on standard error, see
+// parser.ParseExpressionNativeAt) or disagrees with it (a galop bug, which
+// TestParseExpressionNativeAtMatchesANTLR guards against), and the expression
+// is lowered on ANTLR's tree, as a whole-file parse falls back.
+func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string) (exprSrc, error) {
+	if t.native != nil {
+		if n, err := parser.ParseExpressionNativeAt(text, line, col); err == nil {
+			return nativeExpr(n.GalaNodeRef), nil
+		}
+	}
+	ctx, err := parser.ParseExpressionAt(text, line, col, what)
+	if err != nil {
+		return exprSrc{}, err
+	}
+	return antlrExpr(ctx), nil
 }
 
 // formatVerbForType returns the Go printf format verb for a GALA type.
