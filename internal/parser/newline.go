@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // lineBreakRule is GALA's line-break rule, applied to a token stream one
@@ -186,13 +187,25 @@ func is(set []bool, ttype int) bool { return at(set, ttype) }
 // that never parses does not pay for it.
 var kinds = sync.OnceValue(func() *tokenKinds {
 	// The parser's vocabulary, not the lexer's: no lexer rule produces the
-	// re-typed tokens, so only the parser knows their types. RetypeNewlines
-	// uses the same types for galop's native tokens, which number the tokens
-	// as ANTLR's parser does (TestNativeVocabularyIsANTLRs).
+	// re-typed tokens, so only the parser knows their types.
 	grammar.GalaParserInit()
 	vocab := &grammar.GalaParserStaticData
+	return kindsOf(vocab.SymbolicNames, vocab.LiteralNames)
+})
+
+// nativeKinds is kinds for galop's native tokens, read from galop's own
+// vocabulary so that a native parse never initializes ANTLR's parser (which
+// deserializes its whole ATN). It numbers the tokens as ANTLR's parser does
+// (TestNativeVocabularyIsANTLRs).
+var nativeKinds = sync.OnceValue(func() *tokenKinds {
+	return kindsOf(native.GalaSymbolicNames, native.GalaLiteralNames)
+})
+
+// kindsOf derives the token kinds from a vocabulary: its symbolic and literal
+// names, by token type.
+func kindsOf(symbolic, literal []string) *tokenKinds {
 	byName := map[string]int{}
-	for _, names := range [][]string{vocab.SymbolicNames, vocab.LiteralNames} {
+	for _, names := range [][]string{symbolic, literal} {
 		for ttype, name := range names {
 			if name != "" {
 				byName[name] = ttype
@@ -206,7 +219,7 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 		}
 		return ttype
 	}
-	n := len(vocab.SymbolicNames)
+	n := len(symbolic)
 	k := &tokenKinds{
 		identifier:    mustType("IDENTIFIER"),
 		lparen:        mustType("'('"),
@@ -251,7 +264,7 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 		k.endsExpr[mustType(name)] = true
 	}
 	return k
-})
+}
 
 func (s *newlineTokenSource) NextToken() antlr.Token {
 	tok := s.Lexer.NextToken()

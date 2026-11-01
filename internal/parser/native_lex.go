@@ -13,6 +13,8 @@ import (
 // doc comments come from their hidden channel (nativeDocComments), and the
 // blank-line check reads the native tree (checkEmptyLinesNative). Each
 // matches its ANTLR counterpart, which the tests hold it to over the corpus.
+// Nothing on the build path calls them yet: they are the groundwork for
+// parsing with galop's native flavor directly.
 
 // RetypeNewlines applies GALA's line-break rule (see lineBreakRule) to ts in
 // place, as newlineTokenSource applies it to ANTLR's lexer: a '(' that starts
@@ -20,7 +22,7 @@ import (
 // '*' or '&' written against its operand where a statement can begin becomes
 // NL_STAR or NL_AMP. Run it once, before parsing ts.
 func RetypeNewlines(ts *native.GalaTokens) {
-	rule := lineBreakRule{kinds: kinds()}
+	rule := lineBreakRule{kinds: nativeKinds()}
 	src := ts.Src
 	for i := range ts.Tokens {
 		tok := &ts.Tokens[i]
@@ -45,34 +47,42 @@ func byteAt(src string, i int) int {
 
 // lexNative lexes src with galop's native lexer from line and column col (as
 // ANTLR counts them; line <= 0 starts at 1:0, as seedLexer does) and applies
-// the line-break rule.
+// the line-break rule. A leading UTF-8 BOM is dropped first, as ParseFile and
+// VisitTokens drop it, so the tokens index the source without it (ts.Src).
 func lexNative(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
-	ts := native.GalaLexAt(src, line, col)
+	ts := native.GalaLexAt(galaerr.StripBOM(src), line, col)
 	RetypeNewlines(ts)
 	return ts
 }
 
 // ErrNativeExpression is what ParseExpressionNativeAt returns when galop's
-// native parser does not settle the input: a lexical or syntax error, a token
-// left over after the expression, or a panic in galop's parser. The caller
-// parses the input with ParseExpressionAt instead, which reports the error
-// with ANTLR's message and hints.
+// native lexer and parser do not settle the input: a lexical or syntax error,
+// a token left over after the expression, or a panic. Reporting the error is
+// the caller's job: it parses the input with ParseExpressionAt, whose
+// messages and hints are ANTLR's.
 var ErrNativeExpression = errors.New("parser: galop's native parser does not settle the expression")
 
 // ParseExpressionNativeAt parses src as exactly one GALA expression whose
 // first character sits at line/col of an enclosing file (see
 // ParseExpressionAt), with galop's native lexer and parser. Every token of the
-// tree carries its position in that file. On any error it returns an error
-// wrapping ErrNativeExpression.
-func ParseExpressionNativeAt(src string, line, col int) (native.ExpressionNode, error) {
+// tree carries its position in that file. Any failure, a panic included
+// (recovered and reported through noteGalopPanic), is an error wrapping
+// ErrNativeExpression.
+func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionNode, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic(src, r)
+			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: panic: %v", ErrNativeExpression, r)
+		}
+	}()
 	ts := lexNative(src, line, col)
 	if len(ts.Errors) > 0 {
 		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, &ts.Errors[0])
 	}
-	expr, err := parseNativeExpression(ts)
+	expr, err = native.ParseExpression(ts)
 	if err != nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, err)
 	}
@@ -81,19 +91,6 @@ func ParseExpressionNativeAt(src string, line, col int) (native.ExpressionNode, 
 			next.Text(ts.Src), next.Line, next.Column)
 	}
 	return expr, nil
-}
-
-// parseNativeExpression is native.ParseExpression with a panic in galop's
-// parser recovered (see noteGalopPanic): the caller of ParseExpressionNativeAt
-// then parses the input with ANTLR's parser, as for a syntax error.
-func parseNativeExpression(ts *native.GalaTokens) (expr native.ExpressionNode, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic(ts.Src, r)
-			expr, err = native.ExpressionNode{}, fmt.Errorf("panic: %v", r)
-		}
-	}()
-	return native.ParseExpression(ts)
 }
 
 // checkEmptyLinesNative is checkEmptyLines on the native tree: the blank line

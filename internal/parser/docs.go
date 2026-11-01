@@ -97,12 +97,14 @@ func nativeDocComments(ts *native.GalaTokens) Docs {
 		if tk.Type == native.GalaEOF {
 			break
 		}
+		// The line the previous token ends on, computed once a comment needs
+		// it, as extractDocComments does.
 		prevCodeEndLine := -1
-		if i > 0 && len(hidden) > 0 && int(hidden[0].Next) == i {
-			prev := ts.Tokens[i-1]
-			prevCodeEndLine = int(prev.Line) + strings.Count(prev.Text(ts.Src), "\n")
-		}
 		for ; len(hidden) > 0 && int(hidden[0].Next) == i; hidden = hidden[1:] {
+			if i > 0 && prevCodeEndLine < 0 {
+				prev := ts.Tokens[i-1]
+				prevCodeEndLine = int(prev.Line) + strings.Count(prev.Text(ts.Src), "\n")
+			}
 			comment := hidden[0].GalaToken
 			run.comment(int(comment.Line), prevCodeEndLine, func() string { return comment.Text(ts.Src) })
 		}

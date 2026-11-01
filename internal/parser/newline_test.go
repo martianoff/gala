@@ -15,90 +15,9 @@ import (
 // break parses as it did before. Each case is a function body and the number
 // of statements the body must parse into.
 func TestLineStartTokenStartsStatement(t *testing.T) {
-	cases := []struct {
-		name  string
-		body  string
-		stmts int
-	}{
-		// A '(' on a new line starts a new statement.
-		{name: "tuple after call", body: "Println(\"zero\")\n(1, 2)", stmts: 2},
-		{name: "tuple after typed val", body: "val a int64 = 1\n(a, 2)", stmts: 2},
-		{name: "tuple after identifier", body: "val a = b\n(a, 2)", stmts: 2},
-		{name: "tuple after literal", body: "val a = \"x\"\n(a, 2)", stmts: 2},
-		{name: "tuple after true", body: "val a = true\n(a, 2)", stmts: 2},
-		{name: "tuple after index", body: "val a = xs[0]\n(a, 2)", stmts: 2},
-		{name: "tuple after if block", body: "if (a) { Println(1) }\n(a, 2)", stmts: 2},
-		{name: "tuple after assignment", body: "x = f()\n(x, 1)", stmts: 2},
-		{name: "indented tuple", body: "Println(\"zero\")\n        (1, 2)", stmts: 2},
-		{name: "grouping after call", body: "Println(\"zero\")\n(a + b) * 2", stmts: 2},
-		{name: "lambda after call", body: "Println(\"zero\")\n(x) => x", stmts: 2},
-		{name: "after line comment", body: "Println(\"zero\") // note\n(1, 2)", stmts: 2},
-		{name: "after comment line", body: "Println(\"zero\")\n// note\n(1, 2)", stmts: 2},
-		{name: "after block comment", body: "Println(\"zero\") /* note */\n(1, 2)", stmts: 2},
-		// As in Go, a block comment that spans lines is a line break.
-		{name: "after multi-line block comment", body: "Println(\"zero\") /* a\nb */ (1, 2)", stmts: 2},
-		{name: "after multi-line raw string", body: "val s = `a\nb`\n(s, 1)", stmts: 2},
-		{name: "after string with escaped newline", body: "val s = \"a\\\nb\"\n(s, 1)", stmts: 2},
-		{name: "slice literal after call", body: "Println(\"zero\")\n[]int{1, 2}", stmts: 2},
-
-		// So does a '*' or '&' written against its operand.
-		{name: "deref expression after val", body: "var n = 1\nval p = &n\n*p + 1", stmts: 3},
-		{name: "deref assignment after val", body: "val p = &n\n*p = 5", stmts: 2},
-		{name: "deref assignment after call", body: "f()\n*p = 5", stmts: 2},
-		{name: "deref as trailing value", body: "val x = 1\n*p", stmts: 2},
-		{name: "deref of grouping", body: "val a = b\n*(p)", stmts: 2},
-		{name: "double deref", body: "val a = b\n**pp", stmts: 2},
-		{name: "address-of as trailing value", body: "val x = 1\n&x", stmts: 2},
-		{name: "indented deref", body: "Println(\"zero\")\n        *p = 1", stmts: 2},
-		{name: "deref after nested block", body: "if (a) { f(x) }\n*p = 1", stmts: 2},
-		{name: "deref after a composite literal", body: "val r = Rect{w: 1}\n*p = 1", stmts: 2},
-		{name: "deref after a match", body: "val r = x match {\n    case _ => 0\n}\n*p = 1", stmts: 2},
-		{name: "deref after a var with no type", body: "var x\n*p = 5", stmts: 2},
-
-		// Everything else keeps continuing across the line break.
-		{name: "call on same line", body: "f(1)(2)", stmts: 1},
-		{name: "call after single-line block comment", body: "f /* note */ (1)", stmts: 1},
-		{name: "call after raw string on its closing line", body: "val s = f(`a\nb`)(1)", stmts: 1},
-		{name: "call after string with escaped newline", body: "val s = \"a\\\nb\"(1)", stmts: 1},
-		{name: "multi-line arguments", body: "Println(\n    1,\n    (2, 3),\n)", stmts: 1},
-		{name: "tuple argument on its own line", body: "f(\n    (1, 2)\n)", stmts: 1},
-		{name: "lambda argument on its own line", body: "xs.Map(\n    (x) => x\n)", stmts: 1},
-		{name: "method chain with leading dots", body: "xs\n    .Map((x) => x)\n    .Filter((x) => true)", stmts: 1},
-		{name: "binary plus at line start", body: "val a = 1\n    + 2", stmts: 1},
-		{name: "binary minus at line start", body: "val a = b\n    - 2", stmts: 1},
-		{name: "logical operators at line start", body: "val a = b\n    && c\n    || d", stmts: 1},
-		{name: "binary star at line start", body: "val a = b\n    * c", stmts: 1},
-		{name: "binary ampersand at line start", body: "val a = b\n    & c", stmts: 1},
-		{name: "binary star before deref", body: "val a = b\n    * *p", stmts: 1},
-		{name: "binary star at line end", body: "val a = b *\n    *p", stmts: 1},
-		{name: "deref after val equals", body: "val a =\n    *p", stmts: 1},
-		{name: "deref after comma", body: "f(1,\n*p)", stmts: 1},
-		{name: "multiplication inside arguments", body: "f(w\n    *h)", stmts: 1},
-		{name: "bitwise and inside parentheses", body: "val a = (w\n    &h)", stmts: 1},
-		{name: "multiplication inside index", body: "val a = xs[i\n    *2]", stmts: 1},
-		{name: "star before line comment", body: "val a = b\n    *// times\n    c", stmts: 1},
-		{name: "star before block comment", body: "val a = b\n    */* times */c", stmts: 1},
-		{name: "deref in block lambda argument", body: "xs.Map((x) => {\n    val p = &x\n    *p\n})", stmts: 1},
-		{name: "multiplication in a match arm", body: "val r = x match {\n    case Some(v) => v\n        *factor\n    case _ => 0\n}", stmts: 1},
-		{name: "multiplication in a partial function", body: "xs.Collect({\n    case v => v\n        *k\n})", stmts: 1},
-		{name: "multiplication in a composite literal", body: "val r = Rect{\n    w: width\n        *scale,\n}", stmts: 1},
-		{name: "multiplication in a generic composite literal", body: "val r = Array[int]{\n    w\n        *scale,\n}", stmts: 1},
-		{name: "multiplication in a spaced composite literal", body: "val r = Rect {\n    w: width\n        *scale,\n}", stmts: 1},
-		{name: "composite literal after an if-expression", body: "val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}", stmts: 2},
-		{name: "multiplication in an if-expression branch", body: "val r = if (c) Rect{\n    w: a\n        *b,\n} else d", stmts: 1},
-		{name: "multiplication in an arm after a guard", body: "val r = x match {\n    case v if v > 0 => v\n    case _ => Rect{\n        w: a\n            *b,\n    }\n}", stmts: 1},
-		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
-		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
-		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
-		{name: "after val equals", body: "val t =\n    (1, 2)", stmts: 1},
-		{name: "after lambda arrow", body: "val f = (x int) =>\n    (x, 1)", stmts: 1},
-		{name: "after open paren", body: "f(\n(1, 2))", stmts: 1},
-		{name: "after comma", body: "f(1,\n(1, 2))", stmts: 1},
-	}
-
-	for _, tt := range cases {
+	for _, tt := range lineStartCases {
 		t.Run(tt.name, func(t *testing.T) {
-			input := "package main\n\nfunc f() {\n" + tt.body + "\n}\n"
+			input := lineStartInput(tt.body)
 			tree, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 			require.Empty(t, errs)
 			block := tree.(grammar.ISourceFileContext).TopLevelDeclaration(0).FunctionDeclaration().Block()
@@ -115,24 +34,113 @@ func TestLineStartTokenStartsStatement(t *testing.T) {
 	}
 }
 
+// lineStartInput is a source file whose function f has body.
+func lineStartInput(body string) string { return "package main\n\nfunc f() {\n" + body + "\n}\n" }
+
+// lineBreakInputs are the source files of the line-break tests here, which
+// TestRetypeNewlinesCases also lexes with galop's native lexer.
+func lineBreakInputs() []string {
+	var inputs []string
+	for _, tt := range lineStartCases {
+		inputs = append(inputs, lineStartInput(tt.body))
+	}
+	for _, tt := range lineStartDeclCases {
+		inputs = append(inputs, "package main\n\n"+tt.decl+"\n")
+	}
+	for _, tt := range headerTypeCases {
+		inputs = append(inputs, "package main\n\n"+tt.src+"\n")
+	}
+	for _, tt := range splitHeaderCases {
+		inputs = append(inputs, "package main\n\n"+tt.src+"\n")
+	}
+	return inputs
+}
+
+var lineStartCases = []struct {
+	name  string
+	body  string
+	stmts int
+}{
+	// A '(' on a new line starts a new statement.
+	{name: "tuple after call", body: "Println(\"zero\")\n(1, 2)", stmts: 2},
+	{name: "tuple after typed val", body: "val a int64 = 1\n(a, 2)", stmts: 2},
+	{name: "tuple after identifier", body: "val a = b\n(a, 2)", stmts: 2},
+	{name: "tuple after literal", body: "val a = \"x\"\n(a, 2)", stmts: 2},
+	{name: "tuple after true", body: "val a = true\n(a, 2)", stmts: 2},
+	{name: "tuple after index", body: "val a = xs[0]\n(a, 2)", stmts: 2},
+	{name: "tuple after if block", body: "if (a) { Println(1) }\n(a, 2)", stmts: 2},
+	{name: "tuple after assignment", body: "x = f()\n(x, 1)", stmts: 2},
+	{name: "indented tuple", body: "Println(\"zero\")\n        (1, 2)", stmts: 2},
+	{name: "grouping after call", body: "Println(\"zero\")\n(a + b) * 2", stmts: 2},
+	{name: "lambda after call", body: "Println(\"zero\")\n(x) => x", stmts: 2},
+	{name: "after line comment", body: "Println(\"zero\") // note\n(1, 2)", stmts: 2},
+	{name: "after comment line", body: "Println(\"zero\")\n// note\n(1, 2)", stmts: 2},
+	{name: "after block comment", body: "Println(\"zero\") /* note */\n(1, 2)", stmts: 2},
+	// As in Go, a block comment that spans lines is a line break.
+	{name: "after multi-line block comment", body: "Println(\"zero\") /* a\nb */ (1, 2)", stmts: 2},
+	{name: "after multi-line raw string", body: "val s = `a\nb`\n(s, 1)", stmts: 2},
+	{name: "after string with escaped newline", body: "val s = \"a\\\nb\"\n(s, 1)", stmts: 2},
+	{name: "slice literal after call", body: "Println(\"zero\")\n[]int{1, 2}", stmts: 2},
+
+	// So does a '*' or '&' written against its operand.
+	{name: "deref expression after val", body: "var n = 1\nval p = &n\n*p + 1", stmts: 3},
+	{name: "deref assignment after val", body: "val p = &n\n*p = 5", stmts: 2},
+	{name: "deref assignment after call", body: "f()\n*p = 5", stmts: 2},
+	{name: "deref as trailing value", body: "val x = 1\n*p", stmts: 2},
+	{name: "deref of grouping", body: "val a = b\n*(p)", stmts: 2},
+	{name: "double deref", body: "val a = b\n**pp", stmts: 2},
+	{name: "address-of as trailing value", body: "val x = 1\n&x", stmts: 2},
+	{name: "indented deref", body: "Println(\"zero\")\n        *p = 1", stmts: 2},
+	{name: "deref after nested block", body: "if (a) { f(x) }\n*p = 1", stmts: 2},
+	{name: "deref after a composite literal", body: "val r = Rect{w: 1}\n*p = 1", stmts: 2},
+	{name: "deref after a match", body: "val r = x match {\n    case _ => 0\n}\n*p = 1", stmts: 2},
+	{name: "deref after a var with no type", body: "var x\n*p = 5", stmts: 2},
+
+	// Everything else keeps continuing across the line break.
+	{name: "call on same line", body: "f(1)(2)", stmts: 1},
+	{name: "call after single-line block comment", body: "f /* note */ (1)", stmts: 1},
+	{name: "call after raw string on its closing line", body: "val s = f(`a\nb`)(1)", stmts: 1},
+	{name: "call after string with escaped newline", body: "val s = \"a\\\nb\"(1)", stmts: 1},
+	{name: "multi-line arguments", body: "Println(\n    1,\n    (2, 3),\n)", stmts: 1},
+	{name: "tuple argument on its own line", body: "f(\n    (1, 2)\n)", stmts: 1},
+	{name: "lambda argument on its own line", body: "xs.Map(\n    (x) => x\n)", stmts: 1},
+	{name: "method chain with leading dots", body: "xs\n    .Map((x) => x)\n    .Filter((x) => true)", stmts: 1},
+	{name: "binary plus at line start", body: "val a = 1\n    + 2", stmts: 1},
+	{name: "binary minus at line start", body: "val a = b\n    - 2", stmts: 1},
+	{name: "logical operators at line start", body: "val a = b\n    && c\n    || d", stmts: 1},
+	{name: "binary star at line start", body: "val a = b\n    * c", stmts: 1},
+	{name: "binary ampersand at line start", body: "val a = b\n    & c", stmts: 1},
+	{name: "binary star before deref", body: "val a = b\n    * *p", stmts: 1},
+	{name: "binary star at line end", body: "val a = b *\n    *p", stmts: 1},
+	{name: "deref after val equals", body: "val a =\n    *p", stmts: 1},
+	{name: "deref after comma", body: "f(1,\n*p)", stmts: 1},
+	{name: "multiplication inside arguments", body: "f(w\n    *h)", stmts: 1},
+	{name: "bitwise and inside parentheses", body: "val a = (w\n    &h)", stmts: 1},
+	{name: "multiplication inside index", body: "val a = xs[i\n    *2]", stmts: 1},
+	{name: "star before line comment", body: "val a = b\n    *// times\n    c", stmts: 1},
+	{name: "star before block comment", body: "val a = b\n    */* times */c", stmts: 1},
+	{name: "deref in block lambda argument", body: "xs.Map((x) => {\n    val p = &x\n    *p\n})", stmts: 1},
+	{name: "multiplication in a match arm", body: "val r = x match {\n    case Some(v) => v\n        *factor\n    case _ => 0\n}", stmts: 1},
+	{name: "multiplication in a partial function", body: "xs.Collect({\n    case v => v\n        *k\n})", stmts: 1},
+	{name: "multiplication in a composite literal", body: "val r = Rect{\n    w: width\n        *scale,\n}", stmts: 1},
+	{name: "multiplication in a generic composite literal", body: "val r = Array[int]{\n    w\n        *scale,\n}", stmts: 1},
+	{name: "multiplication in a spaced composite literal", body: "val r = Rect {\n    w: width\n        *scale,\n}", stmts: 1},
+	{name: "composite literal after an if-expression", body: "val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}", stmts: 2},
+	{name: "multiplication in an if-expression branch", body: "val r = if (c) Rect{\n    w: a\n        *b,\n} else d", stmts: 1},
+	{name: "multiplication in an arm after a guard", body: "val r = x match {\n    case v if v > 0 => v\n    case _ => Rect{\n        w: a\n            *b,\n    }\n}", stmts: 1},
+	{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
+	{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
+	{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
+	{name: "after val equals", body: "val t =\n    (1, 2)", stmts: 1},
+	{name: "after lambda arrow", body: "val f = (x int) =>\n    (x, 1)", stmts: 1},
+	{name: "after open paren", body: "f(\n(1, 2))", stmts: 1},
+	{name: "after comma", body: "f(1,\n(1, 2))", stmts: 1},
+}
+
 // Declarations that open with '(' still parse when that '(' is put on a new
 // line after a name, since they accept the re-typed '(' as well.
 func TestLineStartTokenInDeclarations(t *testing.T) {
-	cases := []struct {
-		name string
-		decl string
-	}{
-		{name: "function parameters", decl: "func g\n(x int) int = x"},
-		{name: "generic function parameters", decl: "func g[T any]\n(x T) T = x"},
-		{name: "struct shorthand fields", decl: "struct P\n(x int)"},
-		{name: "sealed case fields", decl: "sealed type S {\n    case A\n    (x int)\n    case B\n}"},
-		{name: "interface method parameters", decl: "type I interface {\n    M\n    (x int) int\n}"},
-		{name: "pointer result type", decl: "func g()\n*int = nil"},
-		{name: "interface after a func type alias", decl: "type F func(int) int\n\ntype I interface {\n    M()\n    *int\n}"},
-		{name: "interface method pointer result", decl: "type I interface {\n    M()\n    *int\n}"},
-		{name: "top-level multiplication", decl: "val a = b\n*c"},
-	}
-	for _, tt := range cases {
+	for _, tt := range lineStartDeclCases {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.decl + "\n").Lenient()
 			assert.Empty(t, errs)
@@ -140,26 +148,26 @@ func TestLineStartTokenInDeclarations(t *testing.T) {
 	}
 }
 
+var lineStartDeclCases = []struct {
+	name string
+	decl string
+}{
+	{name: "function parameters", decl: "func g\n(x int) int = x"},
+	{name: "generic function parameters", decl: "func g[T any]\n(x T) T = x"},
+	{name: "struct shorthand fields", decl: "struct P\n(x int)"},
+	{name: "sealed case fields", decl: "sealed type S {\n    case A\n    (x int)\n    case B\n}"},
+	{name: "interface method parameters", decl: "type I interface {\n    M\n    (x int) int\n}"},
+	{name: "pointer result type", decl: "func g()\n*int = nil"},
+	{name: "interface after a func type alias", decl: "type F func(int) int\n\ntype I interface {\n    M()\n    *int\n}"},
+	{name: "interface method pointer result", decl: "type I interface {\n    M()\n    *int\n}"},
+	{name: "top-level multiplication", decl: "val a = b\n*c"},
+}
+
 // A block's '{' is told from a composite literal's by the header before it,
 // not by spacing: a body whose header ends in a type written against the '{'
 // is still a block, so a line-start deref in it begins a statement.
 func TestBlockAfterHeaderEndingInType(t *testing.T) {
-	cases := []struct {
-		name, src string
-		stmts     int
-	}{
-		{name: "function result type", src: "func f() int{\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
-		{name: "generic result type", src: "func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
-		{name: "expression-bodied function before", src: "func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
-		{name: "function-typed parameter", src: "func apply(f func(int) int) int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
-		{name: "generic method with function parameter", src: "func (o Box[T]) m[U any](f func(T) Option[U]) Option[U] {\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
-		{name: "for header with an assignment", src: "func f() {\n    for i := 0; i < n; i = i + step {\n        val p = &n\n        *p = 5\n    }\n}", stmts: 1},
-		{name: "func type alias before", src: "type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
-		// A func type has no block, so the '*' on the line after one starts
-		// a statement as after any other declaration.
-		{name: "local func type before", src: "func f() int {\n    var g func() int\n    *p = 5\n    val q = 1\n    *p + q\n}", stmts: 4},
-	}
-	for _, tt := range cases {
+	for _, tt := range headerTypeCases {
 		t.Run(tt.name, func(t *testing.T) {
 			tree, _, errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.src + "\n").Lenient()
 			require.Empty(t, errs)
@@ -170,15 +178,34 @@ func TestBlockAfterHeaderEndingInType(t *testing.T) {
 	}
 }
 
-// A func, if or for header split across lines still opens a block, so a line
-// in its body that starts with '(', or with '*' or '&' against its operand,
-// begins a new statement.
-func TestSplitHeaderOpensBlock(t *testing.T) {
-	// Six statements, three of which start with a re-typed token.
-	const body = "\n    val q = 1\n    *p + q\n    val r = 2\n    &r\n    val s = 3\n    (s, 2)\n}"
-	const stmts = 6
-	inFunc := func(header string) string { return "func f() int {\n    " + header + body + "\n    0\n}" }
-	cases := []struct{ name, src string }{
+var headerTypeCases = []struct {
+	name, src string
+	stmts     int
+}{
+	{name: "function result type", src: "func f() int{\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+	{name: "generic result type", src: "func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
+	{name: "expression-bodied function before", src: "func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+	{name: "function-typed parameter", src: "func apply(f func(int) int) int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+	{name: "generic method with function parameter", src: "func (o Box[T]) m[U any](f func(T) Option[U]) Option[U] {\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
+	{name: "for header with an assignment", src: "func f() {\n    for i := 0; i < n; i = i + step {\n        val p = &n\n        *p = 5\n    }\n}", stmts: 1},
+	{name: "func type alias before", src: "type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+	// A func type has no block, so the '*' on the line after one starts
+	// a statement as after any other declaration.
+	{name: "local func type before", src: "func f() int {\n    var g func() int\n    *p = 5\n    val q = 1\n    *p + q\n}", stmts: 4},
+}
+
+// splitHeaderBody is the body of each splitHeaderCases function: six
+// statements, three of which start with a re-typed token.
+const splitHeaderBody = "\n    val q = 1\n    *p + q\n    val r = 2\n    &r\n    val s = 3\n    (s, 2)\n}"
+
+// inFunc is a function whose body opens with a block under header.
+func inFunc(header string) string {
+	return "func f() int {\n    " + header + splitHeaderBody + "\n    0\n}"
+}
+
+var splitHeaderCases = func() []struct{ name, src string } {
+	const body = splitHeaderBody
+	return []struct{ name, src string }{
 		{name: "func brace on next line", src: "func f() int\n{" + body},
 		{name: "func brace on next line after generic result", src: "func f() Option[int]\n{" + body},
 		{name: "func brace on next line after func result", src: "func f() func(int) int\n{" + body},
@@ -201,7 +228,14 @@ func TestSplitHeaderOpensBlock(t *testing.T) {
 		{name: "for condition brace on next line", src: inFunc("for i < n\n    {")},
 		{name: "for clause wrapped", src: inFunc("for i := 0; i < n &&\n        ok; i++ {")},
 	}
-	for _, tt := range cases {
+}()
+
+// A func, if or for header split across lines still opens a block, so a line
+// in its body that starts with '(', or with '*' or '&' against its operand,
+// begins a new statement.
+func TestSplitHeaderOpensBlock(t *testing.T) {
+	const stmts = 6
+	for _, tt := range splitHeaderCases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := "package main\n\n" + tt.src + "\n"
 			tree, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()

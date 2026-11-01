@@ -2,9 +2,12 @@ package parser
 
 import (
 	"fmt"
+	"math/rand"
+	"slices"
 	"sync"
 	"testing"
 
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -234,4 +237,104 @@ func TestCleanNative(t *testing.T) {
 			t.Errorf("%s: a parse with an error gives a handle", name)
 		}
 	}
+}
+
+// brokenInputs are syntax errors ANTLR's recovery handles in different ways:
+// a missing token it conjures, extra tokens it skips, an unclosed block, a
+// truncated file.
+var brokenInputs = []string{
+	"package main\n\nfunc f( {\n}\n",
+	"package main\n\nfunc main() {\n    val x = (1 + \n}\n",
+	"package main\n\nfunc main() {\n    Println(\"a\"\n}\n",
+	"package main\n\nval x = 1 2 3\n",
+	"package main\n\nfunc main() {\n",
+	"package main\n\ntype T struct {\n    a int\n",
+	"package main\n\nfunc f() = x match {\n    case => 1\n}\n",
+	"package main\n\nval = \n",
+	"package\n",
+	"",
+	"package main\n\n)))\n",
+	"package main\n\nfunc main() {\n    if (x { y }\n}\n",
+	"package main\n\nsealed type S {\n    case A(\n}\n",
+	"package main\n\nimport\n\nval x = 1\n",
+}
+
+// errorNodes is the texts of the error nodes under tree, in order.
+func errorNodes(tree antlr.Tree, out []string) []string {
+	if n, ok := tree.(antlr.ErrorNode); ok {
+		return append(out, n.GetText())
+	}
+	for i := 0; i < tree.GetChildCount(); i++ {
+		out = errorNodes(tree.GetChild(i), out)
+	}
+	return out
+}
+
+// nativeErrorChildren is errorNodes for a native tree: the texts of its error
+// children.
+func nativeErrorChildren(n native.GalaNodeRef, out []string) []string {
+	for i := range n.ChildCount() {
+		c := n.Child(i)
+		switch {
+		case c.IsError():
+			out = append(out, n.Tree().Text(c.Terminal().Index()))
+		case !c.IsToken():
+			out = nativeErrorChildren(c.Node(), out)
+		}
+	}
+	return out
+}
+
+// TestConverterOnRecoveredTrees converts ANTLR's error-recovered trees to the
+// native form: the converter must not panic, the native tree must print as
+// the ANTLR tree, and its error children must be the ANTLR tree's error nodes,
+// in order. The inputs are brokenInputs and broken variants of the corpus.
+func TestConverterOnRecoveredTrees(t *testing.T) {
+	r := rand.New(rand.NewSource(5))
+	inputs := slices.Clone(brokenInputs)
+	for n, src := range sourceTexts(t) {
+		if n%4 == 0 {
+			inputs = append(inputs, breakSource(r, src), breakSource(r, src))
+		}
+	}
+	recovered, withErrorNodes := 0, 0
+	for k, input := range inputs {
+		res := parseSourceFile(input, EngineANTLR)
+		if len(res.errors) == 0 {
+			continue
+		}
+		recovered++
+		root, ok := res.tree.(antlr.ParserRuleContext)
+		if !ok {
+			t.Errorf("input %d (%.60q): no recovered tree", k, input)
+			continue
+		}
+		var tree *native.GalaTree
+		func() {
+			defer func() {
+				if p := recover(); p != nil {
+					t.Errorf("input %d (%.60q): the converter panicked: %v", k, input, p)
+				}
+			}()
+			tree, _, _ = grammar.GalaToNativeContexts(root, res.stream, input)
+		}()
+		if tree == nil {
+			t.Errorf("input %d (%.60q): the converter gave no tree", k, input)
+			continue
+		}
+		if w, g := treeText(res.tree), tree.Root().ToStringTree(); w != g {
+			t.Errorf("input %d (%.60q): the native tree prints differently: %s", k, input, diffAt(w, g))
+		}
+		want := errorNodes(res.tree, nil)
+		if got := nativeErrorChildren(tree.Root(), nil); !slices.Equal(want, got) {
+			t.Errorf("input %d (%.60q): error nodes %q, native error children %q", k, input, want, got)
+		}
+		if len(want) > 0 {
+			withErrorNodes++
+		}
+	}
+	if withErrorNodes < 10 {
+		t.Errorf("only %d of %d recovered trees have error nodes", withErrorNodes, recovered)
+	}
+	t.Logf("%d recovered trees, %d with error nodes", recovered, withErrorNodes)
 }
