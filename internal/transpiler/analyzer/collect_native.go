@@ -586,7 +586,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			return typeRedefinedError(sealedName, pkgName, pos.Line, pos.Column,
 				existing.DefinedIn, filePath, existing.Pos)
 		}
-		if err := a.registerSealedType(nativeSealedDeclOf(ctx, docs), pkgName, filePath, richAST); err != nil {
+		if err := a.registerSealedType(nativeSealedDeclOf(ctx, docs), pkgName, absFilePath, richAST); err != nil {
 			return err
 		}
 		fd.sealedDeclaredHere(fullSealedName)

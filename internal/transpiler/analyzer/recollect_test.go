@@ -1,10 +1,10 @@
 package analyzer
 
 import (
-	"fmt"
+	"maps"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"testing"
 
 	galaparser "martianoff/gala/internal/parser"
@@ -17,32 +17,22 @@ import (
 // opaque types, methods and functions.
 var declCollectors = map[string]typeCollector{
 	"antlr": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
-		sf := p.Tree.(*grammar.SourceFileContext)
-		if err := a.collectFileTypes(sf, fd); err != nil {
+		if err := typeCollectors["antlr"](a, p, fd); err != nil {
 			return err
 		}
-		return a.collectFileFuncs(sf, fd)
+		return a.collectFileFuncs(p.Tree.(*grammar.SourceFileContext), fd)
 	},
 	"native": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
-		nf := nativeFileOf(p.CleanNative())
-		if !nf.ok() {
-			return fmt.Errorf("a clean parse has no native tree")
-		}
-		if err := a.collectFileTypesNative(nf, fd); err != nil {
+		if err := typeCollectors["native"](a, p, fd); err != nil {
 			return err
 		}
-		return a.collectFileFuncsNative(nf, fd)
+		return a.collectFileFuncsNative(nativeFileOf(p.CleanNative()), fd)
 	},
 }
 
 // methodNamesOf is the sorted names of meta's methods.
 func methodNamesOf(meta *transpiler.TypeMetadata) []string {
-	var names []string
-	for name := range meta.Methods {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(meta.Methods))
 }
 
 // TestRecollectedDeclarationDropsStaleMethods: a type whose declaration
@@ -120,7 +110,7 @@ func TestRecollectedDeclarationDropsStaleMethods(t *testing.T) {
 					want.Methods[declared.Name] = declared
 				}
 				if !reflect.DeepEqual(got, want) {
-					t.Errorf("re-collected entry:\n got %+v\nwant %+v", *got, *want)
+					t.Errorf("re-collected entry differs from a first collection at %s", firstDiff(reflect.ValueOf(got), reflect.ValueOf(want), "", map[visit]bool{}))
 				}
 			})
 		}
@@ -221,7 +211,7 @@ func TestRecollectedSiblingDeclaration(t *testing.T) {
 				want.DefinedIn = firstDefinedIn
 			}
 			if !reflect.DeepEqual(got, want) {
-				t.Errorf("re-collected entry:\n got %+v\nwant %+v", *got, *want)
+				t.Errorf("re-collected entry differs from a first collection at %s", firstDiff(reflect.ValueOf(got), reflect.ValueOf(want), "", map[visit]bool{}))
 			}
 		})
 	}

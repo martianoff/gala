@@ -292,7 +292,7 @@ func (a *galaAnalyzer) collectFileFuncs(sourceFile *grammar.SourceFileContext, f
 					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 					existing.DefinedIn, filePath, existing.Pos)
 			}
-			if err := a.analyzeSealedType(ctx, pkgName, filePath, richAST, docs); err != nil {
+			if err := a.analyzeSealedType(ctx, pkgName, absFilePath, richAST, docs); err != nil {
 				return err
 			}
 			fd.sealedDeclaredHere(fullSealedName)
@@ -571,16 +571,13 @@ func embedDirective(varName, typeName string, patterns []string) transpiler.Embe
 	}
 }
 
-// markSiblingSealed sets DefinedIn, where it is empty, on the sealed type
-// fullName that the sibling at absSibPath declares and on its cases'
-// companions and their Apply.
+// markSiblingSealed sets DefinedIn, where it is empty, on the companions of
+// the cases of the sealed type fullName that the sibling at absSibPath
+// declares, and on their Apply (registerSealedType sets the type's own).
 func markSiblingSealed(richAST *transpiler.RichAST, pkgName, fullName, absSibPath string) {
 	meta, ok := richAST.Types[fullName]
 	if !ok {
 		return
-	}
-	if meta.DefinedIn == "" {
-		meta.DefinedIn = absSibPath
 	}
 	for _, v := range meta.SealedVariants {
 		if cm, ok := richAST.Types[qualifiedName(pkgName, v.Name)]; ok && cm.DefinedIn == "" {

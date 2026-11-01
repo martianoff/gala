@@ -3719,15 +3719,33 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 	return typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, mainFile, existing.Pos)
 }
 
-// collectedFromMainFile reports whether existing, the entry of a type a
-// sibling declares, was collected from the file being analyzed, which the
-// sibling then is under another spelling: the entry already holds the
-// declaration as that file now reads. Any other entry the sibling's
-// declaration is collected into again, since an earlier collection or a cache
-// load may hold an older form of it.
-func (a *galaAnalyzer) collectedFromMainFile(existing *transpiler.TypeMetadata, decls *packageDecls) bool {
-	return a.paths.sameFile(existing.DefinedIn, decls.mainFile)
+// siblingDeclSeen checks the entry richAST.Types[key] before the type
+// typeName that the sibling at sibPath (shown as sibDisplay) declares at pos
+// is collected into it, when declared says the entry holds a declaration
+// whose file is recorded. Another file's is a redefinition. One the analyzed
+// file's collection made, the sibling being that file under another
+// spelling, already holds the declaration as the file now reads: seen is
+// true, and the sibling skips it. Any other entry the declaration is
+// collected into again, since an earlier collection or a cache load may hold
+// an older form of it.
+func (a *galaAnalyzer) siblingDeclSeen(richAST *transpiler.RichAST, key, typeName, pkgName string, declared func(*transpiler.TypeMetadata) bool,
+	sibPath, sibDisplay string, pos transpiler.SourcePos, decls *packageDecls) (seen bool, err error) {
+	existing, ok := richAST.Types[key]
+	if !ok || existing.DefinedIn == "" || !declared(existing) {
+		return false, nil
+	}
+	if !a.paths.sameFile(existing.DefinedIn, sibPath) {
+		return false, siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay, pos, decls.mainFile)
+	}
+	return a.paths.sameFile(existing.DefinedIn, decls.mainFile), nil
 }
+
+// hasFields says whether meta records fields, as a struct, shorthand struct
+// or sealed type does.
+func hasFields(meta *transpiler.TypeMetadata) bool { return len(meta.FieldNames) > 0 }
+
+// isSealedEntry says whether meta records a sealed type.
+func isSealedEntry(meta *transpiler.TypeMetadata) bool { return meta.IsSealed }
 
 // extractSiblingFullMetadata extracts full type metadata from a sibling .gala file.
 // This includes struct fields, sealed types, shorthand structs, and all method/function
@@ -3765,20 +3783,15 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
 			}
-			// Error if type already has field info from a different file — redefinition.
-			// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
-			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 && existing.DefinedIn != "" {
-				if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
-				}
-				if a.collectedFromMainFile(existing, decls) {
-					continue
-				}
+			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
+			if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, hasFields, absSibPath, sibDisplay, pos, decls); err != nil {
+				return err
+			} else if seen {
+				continue
 			}
 			// The entry keeps the methods other files declare (e.g., methods
 			// from the current file) and DefinedIn from main analysis.
-			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, transpiler.PosFromToken(ctx.Identifier().GetStart()), absSibPath)
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absSibPath)
 			meta.Doc = docAt(docs, ctx.GetStart())
 			if ctx.TypeParameters() != nil {
 				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -3870,7 +3883,6 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					}
 				}
 			}
-			richAST.Types[fullTypeName] = meta
 		}
 
 		// Shorthand struct declarations
@@ -3881,17 +3893,14 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
 			}
-			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 && existing.DefinedIn != "" {
-				if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
-				}
-				if a.collectedFromMainFile(existing, decls) {
-					continue
-				}
+			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
+			if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, hasFields, absSibPath, sibDisplay, pos, decls); err != nil {
+				return err
+			} else if seen {
+				continue
 			}
 			// As for a type declaration above.
-			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, transpiler.PosFromToken(ctx.Identifier().GetStart()), absSibPath)
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absSibPath)
 			meta.Doc = docAt(docs, ctx.GetStart())
 			if meta.DefinedIn == "" {
 				meta.DefinedIn = absSibPath
@@ -3933,7 +3942,6 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 			}
 			meta.IsShorthand = true
-			richAST.Types[fullTypeName] = meta
 		}
 	}
 
@@ -3946,16 +3954,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
 			}
-			// Error if sealed type already defined in a different file — redefinition.
-			// Skip if DefinedIn is empty — the type came from cache.
-			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed && existing.DefinedIn != "" {
-				if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
-				}
-				if a.collectedFromMainFile(existing, decls) {
-					continue
-				}
+			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
+			if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, isSealedEntry, absSibPath, sibDisplay, pos, decls); err != nil {
+				return err
+			} else if seen {
+				continue
 			}
 			if err := a.analyzeSealedType(ctx, pkgName, absSibPath, richAST, docs); err != nil {
 				return err
@@ -3975,14 +3978,11 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		if pkgName != "" && pkgName != "main" && pkgName != "test" {
 			fullTypeName = pkgName + "." + typeName
 		}
-		if existing, ok := richAST.Types[fullTypeName]; ok && hasTypeDefinition(existing) && existing.DefinedIn != "" {
-			if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-				return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-					transpiler.PosFromToken(octx.Identifier().GetStart()), decls.mainFile)
-			}
-			if a.collectedFromMainFile(existing, decls) {
-				continue
-			}
+		pos := transpiler.PosFromToken(octx.Identifier().GetStart())
+		if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, hasTypeDefinition, absSibPath, sibDisplay, pos, decls); err != nil {
+			return err
+		} else if seen {
+			continue
 		}
 		a.analyzeOpaqueType(octx, pkgName, absSibPath, richAST, docs)
 	}
