@@ -58,6 +58,20 @@ func main() {
 			want: []string{"std.Some[<-chan time.Time]{}.Apply(time.After(time.Millisecond))", "(<-pending.Get()).Year()"},
 		},
 		{
+			name: "a bare receive is a statement, not an unused value",
+			input: `package main
+
+import "martianoff/gala/go_interop"
+
+func main() {
+    val signal = go_interop.NewSignal()
+    go_interop.CloseSignal(signal)
+    <-signal
+    Println("done")
+}`,
+			want: []string{"\t<-signal\n"},
+		},
+		{
 			name: "range over a channel binds each received value",
 			input: `package main
 
