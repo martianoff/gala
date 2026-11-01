@@ -6,32 +6,23 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
 
 // This file contains lambda expression and partial function transformation logic extracted from expressions.go
-// Functions: transformLambda, transformLambdaWithExpectedType, inferBlockReturnType,
+// Functions: lowerLambda, inferBlockReturnType,
 //            transformPartialFunctionLiteral,
 //            inferPartialFunctionParamType, transformPartialCaseClause, wrapInSome, generateNoneReturn,
 //            wrapBlockReturnsInSome
-
-func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
-	// A lambda in a typed slot never reaches here: the slot lowers it through
-	// lowerAgainst. This is the context-free form.
-	return t.transformLambdaWithExpectedType(ctx, nil, nil, true, false)
-}
 
 // ExpectedVoid is a sentinel value indicating the lambda should have no return type
 var ExpectedVoid ast.Expr = &ast.Ident{Name: "__void__"}
 
 // lambdaExpectation decomposes a function-shaped expected type — a func type,
-// or a named alias of one — into what transformLambdaWithExpectedType takes:
+// or a named alias of one — into what lowerLambda takes:
 // the expected result type (ExpectedVoid when there is none) and the parameter
 // types. ok is false when typ is not function-shaped.
 func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Expr, params []transpiler.Type, ok bool) {
@@ -78,41 +69,19 @@ func (t *galaASTTransformer) lambdaArgCallee(l lambdaSrc) string {
 // lambdaArgCall is the call l is written directly as an argument of, and
 // false when l is not one.
 func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
-	if l.node.Ok() {
-		arg := l.node.Parent()
-		if !arg.Ok() || arg.Kind() != native.GalaKIND_argument {
-			return callSrc{}, false
-		}
-		suffix := arg.Parent().Parent()
-		if !suffix.Ok() || suffix.Kind() != native.GalaKIND_postfixSuffix {
-			return callSrc{}, false
-		}
-		post := suffix.Parent()
-		if !post.Ok() || post.Kind() != native.GalaKIND_postfixExpr {
-			return callSrc{}, false
-		}
-		return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
-	}
-	lambda := l.ctx
-	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
-	if !ok {
+	arg := l.node.Parent()
+	if !arg.Ok() || arg.Kind() != native.GalaKIND_argument {
 		return callSrc{}, false
 	}
-	suffix, ok := arg.GetParent().GetParent().(*grammar.PostfixSuffixContext)
-	if !ok {
+	suffix := arg.Parent().Parent()
+	if !suffix.Ok() || suffix.Kind() != native.GalaKIND_postfixSuffix {
 		return callSrc{}, false
 	}
-	post, ok := suffix.GetParent().(*grammar.PostfixExprContext)
-	if !ok {
+	post := suffix.Parent()
+	if !post.Ok() || post.Kind() != native.GalaKIND_postfixExpr {
 		return callSrc{}, false
 	}
-	return callSrc{post: postfixSrc{ctx: post}, suffix: suffixSrc{ctx: suffix}}, true
-}
-
-// transformLambdaWithExpectedType is lowerLambda of the lambda ctx, on the
-// native tree when the walk reads it (lambdaOf).
-func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
-	return t.lowerLambda(t.lambdaOf(ctx), expectedRetType, expectedParamTypes, requireTypedParams, declaredResult)
+	return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
 }
 
 // isTryThunk reports whether l is the lambda being lowered as the thunk of
@@ -363,7 +332,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 // transformBlockLambdaBody handles the `{ ... }` form of a lambda body.
 // It returns (body, inferredReturnType, error). inferredReturnType is nil
 // when the expected return type is already concrete (caller keeps its own)
-// or when the lambda is void. Extracted from transformLambdaWithExpectedType
+// or when the lambda is void. Extracted from lowerLambda
 // as part of A6.
 func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSrc, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	// A value-returning lambda's body is a value block: its last expression
@@ -516,7 +485,7 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
 // Returns (body, inferredReturnType, error). Extracted from
-// transformLambdaWithExpectedType as part of A6.
+// lowerLambda.
 func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr exprSrc, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	bodySlot.tryThunk = t.isTryThunk(l)
 	// A lambda that returns nothing runs its body as a statement, as a void
@@ -852,7 +821,7 @@ func (t *galaASTTransformer) unifyBlockReturnTypes(types []ast.Expr) ast.Expr {
 		// Types are incompatible — return the first non-primitive/non-simple type
 		// as a best-effort (matches the old behaviour of picking the first return).
 		// A future enhancement could emit a SemanticError here when we have access
-		// to the ANTLR context for position info.
+		// to the source node for position info.
 		return bestExpr
 	}
 
@@ -1421,46 +1390,6 @@ func blockEndsWithReturn(block *ast.BlockStmt) bool {
 // type. Outside that context, `_` is still only legal in pattern positions
 // and yields a scope-lookup error at Go compile time.
 
-// countPlaceholderUnderscoresInExpr walks the parse tree under exprCtx and
-// counts leaf IDENTIFIER tokens whose text is `_`. This is a fast lexical
-// check used to decide whether to attempt a placeholder-lambda rewrite —
-// the actual renaming happens on the Go AST after transformation.
-func countPlaceholderUnderscoresInExpr(exprCtx grammar.IExpressionContext) int {
-	if exprCtx == nil {
-		return 0
-	}
-	return countPlaceholderUnderscoresInTree(exprCtx)
-}
-
-// countPlaceholderUnderscoresInTree recursively counts `_` IDENTIFIER leaves
-// in any ANTLR parse subtree. Lambda and pattern subtrees are skipped so
-// that existing `_` uses in nested lambdas or pattern positions do not
-// trigger the rewrite.
-func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
-	if node == nil {
-		return 0
-	}
-	// Stop at nested lambdas — their `_` uses belong to their own body.
-	if _, ok := node.(*grammar.LambdaExpressionContext); ok {
-		return 0
-	}
-	// Stop at pattern positions where `_` means wildcard, not placeholder.
-	if _, ok := node.(*grammar.CaseClauseContext); ok {
-		return 0
-	}
-	if tn, ok := node.(antlr.TerminalNode); ok {
-		if tn.GetText() == "_" {
-			return 1
-		}
-		return 0
-	}
-	total := 0
-	for i := 0; i < node.GetChildCount(); i++ {
-		total += countPlaceholderUnderscoresInTree(node.GetChild(i))
-	}
-	return total
-}
-
 // tryRewriteAsPlaceholderLambda is the L4 entry point called by
 // transformArgument. It returns (expr, handled, error):
 //
@@ -1596,7 +1525,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	}
 
 	// A placeholder takes its type from the expected function type exactly as
-	// an unannotated lambda parameter does (transformLambdaWithExpectedType):
+	// an unannotated lambda parameter does (lowerLambda):
 	// one the type has no parameter for, or whose parameter has no type (a
 	// type parameter only the callback could bind, masked out) or one that
 	// could not be resolved, is GALA-E0033, never `any`.

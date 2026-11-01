@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -130,7 +129,7 @@ func (t *galaASTTransformer) constrainTypeParam(name, constraint string) {
 }
 
 // typeParamMisuseErrorAt reports name, a type parameter of the enclosing
-// declaration, used at a node of either tree where it cannot stand — a name
+// declaration, used at a node where it cannot stand — a name
 // it shadows was meant.
 func (t *galaASTTransformer) typeParamMisuseErrorAt(at srcNode, name, what string) error {
 	err := t.semanticErrorAtNode(at, fmt.Sprintf("'%s' is a type parameter of the enclosing declaration and %s", name, what))
@@ -160,12 +159,6 @@ func receiverTypeParams(s typeSrc) []*ast.Field {
 		params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}})
 	}
 	return params
-}
-
-// receiverTypeParamNames is the names of receiverTypeParams of the receiver
-// type ctx, on ANTLR's tree.
-func receiverTypeParamNames(ctx grammar.ITypeContext) []string {
-	return receiverTypeParamNamesOf(antlrType(ctx))
 }
 
 // receiverTypeParamNamesOf is the names of receiverTypeParams of s.

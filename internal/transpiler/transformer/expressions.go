@@ -2,231 +2,16 @@ package transformer
 
 import (
 	"fmt"
-	"github.com/antlr4-go/antlr/v4"
 	"go/ast"
 	"go/token"
-	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"slices"
 )
 
-// NOTE: transformCallExpr was removed - it was dead code.
-// Call transformation goes through transformCallWithArgsCtx.
-
-func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
-	if ctx == nil {
-		return nil, nil
-	}
-	// An expression of the file the native walk reads is lowered on its
-	// native node, wherever its lowering is entered from (see
-	// expressions_source.go).
-	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_expression); ok {
-		return t.lowerExprNative(n)
-	}
-	// Track position for error reporting in deeply-nested helpers
-	if prc, ok := ctx.(antlr.ParserRuleContext); ok {
-		t.trackPosition(prc)
-	}
-
-	// With the new grammar, expression simply wraps orExpr
-	if orExpr := ctx.OrExpr(); orExpr != nil {
-		return t.transformOrExpr(orExpr.(*grammar.OrExprContext))
-	}
-
-	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "expression must contain orExpr")
-}
-
-func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Expr, error) {
-	andExprs := ctx.AllAndExpr()
-	if len(andExprs) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "orExpr must have at least one andExpr")
-	}
-
-	result, err := t.transformAndExpr(andExprs[0].(*grammar.AndExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	for i := 1; i < len(andExprs); i++ {
-		right, err := t.transformAndExpr(andExprs[i].(*grammar.AndExprContext))
-		if err != nil {
-			return nil, err
-		}
-		if result, err = t.binaryOperation("||", token.LOR, srcNode{ctx: ctx}, result, right); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.Expr, error) {
-	eqExprs := ctx.AllEqualityExpr()
-	if len(eqExprs) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "andExpr must have at least one equalityExpr")
-	}
-
-	result, err := t.transformEqualityExpr(eqExprs[0].(*grammar.EqualityExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	for i := 1; i < len(eqExprs); i++ {
-		right, err := t.transformEqualityExpr(eqExprs[i].(*grammar.EqualityExprContext))
-		if err != nil {
-			return nil, err
-		}
-		if result, err = t.binaryOperation("&&", token.LAND, srcNode{ctx: ctx}, result, right); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprContext) (ast.Expr, error) {
-	relExprs := ctx.AllRelationalExpr()
-	if len(relExprs) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "equalityExpr must have at least one relationalExpr")
-	}
-
-	result, err := t.transformRelationalExpr(relExprs[0].(*grammar.RelationalExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the operators between expressions
-	for i := 1; i < len(relExprs); i++ {
-		// The operator is at position (i*2 - 1) in children
-		opText, err := getChildOperatorText(ctx, i*2-1)
-		if err != nil {
-			return nil, err
-		}
-		right, err := t.transformRelationalExpr(relExprs[i].(*grammar.RelationalExprContext))
-		if err != nil {
-			return nil, err
-		}
-		tok := t.getBinaryToken(opText)
-		if result, err = t.binaryOperation(opText, tok, srcNode{ctx: ctx}, result, right); err != nil {
-			return nil, err
-		}
-		if result, err = t.lowerEquality(srcNode{ctx: relExprs[i-1]}, srcNode{ctx: relExprs[i]}, result); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExprContext) (ast.Expr, error) {
-	addExprs := ctx.AllAdditiveExpr()
-	if len(addExprs) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "relationalExpr must have at least one additiveExpr")
-	}
-
-	result, err := t.transformAdditiveExpr(addExprs[0].(*grammar.AdditiveExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	for i := 1; i < len(addExprs); i++ {
-		opText, err := getChildOperatorText(ctx, i*2-1)
-		if err != nil {
-			return nil, err
-		}
-		right, err := t.transformAdditiveExpr(addExprs[i].(*grammar.AdditiveExprContext))
-		if err != nil {
-			return nil, err
-		}
-		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), srcNode{ctx: ctx}, result, right); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprContext) (ast.Expr, error) {
-	mulExprs := ctx.AllMultiplicativeExpr()
-	if len(mulExprs) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "additiveExpr must have at least one multiplicativeExpr")
-	}
-
-	result, err := t.transformMultiplicativeExpr(mulExprs[0].(*grammar.MultiplicativeExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	for i := 1; i < len(mulExprs); i++ {
-		opText, err := getChildOperatorText(ctx, i*2-1)
-		if err != nil {
-			return nil, err
-		}
-		right, err := t.transformMultiplicativeExpr(mulExprs[i].(*grammar.MultiplicativeExprContext))
-		if err != nil {
-			return nil, err
-		}
-		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), srcNode{ctx: ctx}, result, right); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.MultiplicativeExprContext) (ast.Expr, error) {
-	unaryExprs := ctx.AllUnaryExpr()
-	if len(unaryExprs) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "multiplicativeExpr must have at least one unaryExpr")
-	}
-
-	result, err := t.transformUnaryExpr(unaryExprs[0].(*grammar.UnaryExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	for i := 1; i < len(unaryExprs); i++ {
-		opText, err := getChildOperatorText(ctx, i*2-1)
-		if err != nil {
-			return nil, err
-		}
-		right, err := t.transformUnaryExpr(unaryExprs[i].(*grammar.UnaryExprContext))
-		if err != nil {
-			return nil, err
-		}
-		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), srcNode{ctx: ctx}, result, right); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (ast.Expr, error) {
-	// Check for unary operator
-	if unaryOp := ctx.UnaryOp(); unaryOp != nil {
-		innerUnary := ctx.UnaryExpr().(*grammar.UnaryExprContext)
-		expr, err := t.transformUnaryExpr(innerUnary)
-		if err != nil {
-			return nil, err
-		}
-		return t.unaryOperation(unaryOp.GetText(), srcNode{ctx: ctx}, srcNode{ctx: innerUnary}, expr)
-	}
-
-	// Otherwise it's a postfixExpr
-	if postfix := ctx.PostfixExpr(); postfix != nil {
-		return t.transformPostfixExpr(postfix.(*grammar.PostfixExprContext))
-	}
-
-	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "unaryExpr must have unaryOp or postfixExpr")
-}
-
 // unaryOperation builds `op expr` from the lowered operand expr of the unary
 // expression at, whose operand is written at operand. Taking the address of a
 // val is GALA-E0058 (immutableAddressError, which reads the operand's
-// ANTLR text only for its diagnostic).
+// text only for its diagnostic).
 func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr ast.Expr) (ast.Expr, error) {
 	switch op {
 	case "&":
@@ -242,19 +27,6 @@ func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr
 	// Automatic unwrapping for other unary operands
 	expr = t.unwrapImmutable(expr)
 	return &ast.UnaryExpr{Op: t.getUnaryToken(op), X: expr}, nil
-}
-
-// getChildOperatorText safely extracts the operator text from a parse tree child node.
-func getChildOperatorText(ctx antlr.ParserRuleContext, index int) (string, error) {
-	child := ctx.GetChild(index)
-	if child == nil {
-		return "", galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "missing operator in expression")
-	}
-	tree, ok := child.(antlr.ParseTree)
-	if !ok {
-		return "", galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "unexpected operator node in expression")
-	}
-	return tree.GetText(), nil
 }
 
 // binaryOperation builds `left op right` from two lowered operands: it rejects
@@ -278,197 +50,6 @@ func (t *galaASTTransformer) isBinaryOperator(op string) bool {
 	default:
 		return false
 	}
-}
-
-// LeadingPostfixExpr walks the precedence chain (or → and → equality →
-// relational → additive → multiplicative → unary) down to the postfix
-// expression of ctx's first operand, or nil when a unary operator or no
-// operand intervenes. With sole set, every level must hold exactly one
-// operand, i.e. ctx has no binary operator at all.
-func LeadingPostfixExpr(ctx grammar.IExpressionContext, sole bool) *grammar.PostfixExprContext {
-	addExpr := leadingAdditiveExpr(ctx, sole)
-	if addExpr == nil {
-		return nil
-	}
-	fits := func(n int) bool { return n > 0 && (!sole || n == 1) }
-	mulExprs := addExpr.AllMultiplicativeExpr()
-	if !fits(len(mulExprs)) {
-		return nil
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if !fits(len(unaryExprs)) {
-		return nil
-	}
-	postfix, _ := unaryExprs[0].(*grammar.UnaryExprContext).PostfixExpr().(*grammar.PostfixExprContext)
-	return postfix
-}
-
-// leadingAdditiveExpr walks the precedence chain of ctx down to the additive
-// expression of its first operand, as LeadingPostfixExpr does. With sole set,
-// no `||`, `&&` or comparison may join several operands above it.
-func leadingAdditiveExpr(ctx grammar.IExpressionContext, sole bool) *grammar.AdditiveExprContext {
-	if ctx == nil {
-		return nil
-	}
-	fits := func(n int) bool { return n > 0 && (!sole || n == 1) }
-	orExpr, _ := ctx.OrExpr().(*grammar.OrExprContext)
-	if orExpr == nil {
-		return nil
-	}
-	andExprs := orExpr.AllAndExpr()
-	if !fits(len(andExprs)) {
-		return nil
-	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if !fits(len(eqExprs)) {
-		return nil
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if !fits(len(relExprs)) {
-		return nil
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if !fits(len(addExprs)) {
-		return nil
-	}
-	addExpr, _ := addExprs[0].(*grammar.AdditiveExprContext)
-	return addExpr
-}
-
-// PrimaryOf returns the primary a postfix expression starts from, or nil when
-// it starts from a lambda, if-expression or partial function instead.
-func PrimaryOf(postfix *grammar.PostfixExprContext) *grammar.PrimaryContext {
-	primaryExpr := postfixSrc{ctx: postfix}.antlrPrimaryExpr()
-	if primaryExpr == nil {
-		return nil
-	}
-	primary, _ := primaryExpr.Primary().(*grammar.PrimaryContext)
-	return primary
-}
-
-// getCallPatternFromExpression checks if an expression is a call pattern like Left(n)
-// and returns the base expression context and argument list.
-// Returns nil values if not a call pattern.
-func (t *galaASTTransformer) getCallPatternFromExpression(ctx grammar.IExpressionContext) (*grammar.PrimaryExprContext, *grammar.ArgumentListContext) {
-	primaryExpr, argList, _ := t.getCallPatternWithTypeArgsFromExpression(ctx)
-	return primaryExpr, argList
-}
-
-// getSinglePostfixExpr unwraps an expression that is a single operand with no
-// binary or unary operators down to its PostfixExprContext, navigating
-// expression -> orExpr -> andExpr -> ... -> unaryExpr -> postfixExpr. It returns
-// nil for any compound (binary/unary-prefixed) expression. This is the shared
-// front half of the call-pattern detectors, which only apply to an atomic
-// postfix expression like `Foo(x)`, `Foo[T](x)`, or `pkg.Foo(x)`.
-func (t *galaASTTransformer) getSinglePostfixExpr(ctx grammar.IExpressionContext) *grammar.PostfixExprContext {
-	if ctx == nil {
-		return nil
-	}
-	orExpr := ctx.OrExpr()
-	if orExpr == nil {
-		return nil
-	}
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) != 1 {
-		return nil
-	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) != 1 {
-		return nil
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) != 1 {
-		return nil
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) != 1 {
-		return nil
-	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) != 1 {
-		return nil
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) != 1 {
-		return nil
-	}
-	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
-	if unaryCtx.UnaryOp() != nil {
-		return nil
-	}
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return nil
-	}
-	return postfixExpr.(*grammar.PostfixExprContext)
-}
-
-// getCallPatternWithTypeArgsFromExpression checks if an expression is a call pattern
-// and returns the base expression context, argument list, and any explicit type arguments.
-// This handles both simple patterns like Left(n) and generic patterns like Unwrap[int](v).
-// Returns nil values if not a call pattern.
-func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx grammar.IExpressionContext) (*grammar.PrimaryExprContext, *grammar.ArgumentListContext, *grammar.ExpressionListContext) {
-	postfixCtx := t.getSinglePostfixExpr(ctx)
-	if postfixCtx == nil {
-		return nil, nil, nil
-	}
-
-	suffixes := postfixCtx.AllPostfixSuffix()
-	if len(suffixes) == 0 || len(suffixes) > 2 {
-		return nil, nil, nil
-	}
-
-	var typeArgsSuffix *grammar.PostfixSuffixContext
-	var callSuffix *grammar.PostfixSuffixContext
-
-	if len(suffixes) == 1 {
-		// Single suffix - must be a call
-		callSuffix = suffixes[0].(*grammar.PostfixSuffixContext)
-	} else if len(suffixes) == 2 {
-		// Two suffixes - first should be type args [T], second should be call (...)
-		typeArgsSuffix = suffixes[0].(*grammar.PostfixSuffixContext)
-		callSuffix = suffixes[1].(*grammar.PostfixSuffixContext)
-
-		// Verify first suffix is type args (starts with '[')
-		if typeArgsSuffix.GetChildCount() < 2 {
-			return nil, nil, nil
-		}
-		firstChild := typeArgsSuffix.GetChild(0).(antlr.ParseTree).GetText()
-		if firstChild != "[" {
-			return nil, nil, nil
-		}
-	}
-
-	// Verify call suffix starts with '('
-	if callSuffix.GetChildCount() < 2 {
-		return nil, nil, nil
-	}
-	callFirstChild := callSuffix.GetChild(0).(antlr.ParseTree).GetText()
-	if callFirstChild != "(" {
-		return nil, nil, nil
-	}
-
-	// Get the primary expression
-	primaryExpr := postfixCtx.PrimaryExpr()
-	if primaryExpr == nil {
-		return nil, nil, nil
-	}
-
-	// Get argument list (may be nil for empty calls)
-	var argList *grammar.ArgumentListContext
-	if al := callSuffix.ArgumentList(); al != nil {
-		argList = al.(*grammar.ArgumentListContext)
-	}
-
-	// Get explicit type arguments (may be nil if no type args)
-	var typeArgs *grammar.ExpressionListContext
-	if typeArgsSuffix != nil {
-		if el := typeArgsSuffix.ExpressionList(); el != nil {
-			typeArgs = el.(*grammar.ExpressionListContext)
-		}
-	}
-
-	return primaryExpr.(*grammar.PrimaryExprContext), argList, typeArgs
 }
 
 func (t *galaASTTransformer) getBinaryToken(op string) token.Token {
@@ -535,20 +116,9 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 	}
 }
 
-// transformPrimary, lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral moved to constructors.go
-// Lambda-related functions moved to lambdas.go
-func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
-	return t.transformIfExpressionAgainst(ctx, slot{})
-}
-
-// transformIfExpressionAgainst lowers an if-expression to an IIFE. s is the slot
-// it fills (zero when none): each branch value is lowered against it, and its
+// lowerIfExpression lowers the if-expression e to an IIFE. s is the slot it
+// fills (zero when none): each branch value is lowered against it, and its
 // type informs the IIFE's result type (see branchingResultType).
-func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpressionContext, s slot) (ast.Expr, error) {
-	return t.lowerIfExpression(t.ifExprOf(ctx), s)
-}
-
-// lowerIfExpression is transformIfExpressionAgainst of e, on either tree.
 func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, error) {
 	// 'if' '(' cond ')' thenBranch 'else' elseBranch
 	// Branches can be either expressions or blocks.
@@ -739,7 +309,7 @@ func (t *galaASTTransformer) unifyBranchTypes(thenT, elseT transpiler.Type) tran
 }
 
 // loweredIfBranch is a lowered branch of an if-expression (see
-// transformIfExprBranch): stmts run first, then expr is its value, unless the
+// lowerIfExprBranch): stmts run first, then expr is its value, unless the
 // branch terminates.
 type loweredIfBranch struct {
 	stmts      []ast.Stmt
@@ -851,18 +421,8 @@ func isNilIdent(expr ast.Expr) bool {
 	return ok && ident.Name == "nil"
 }
 
-// transformIfExprBranch lowers an if-expression branch, an expression or a
-// block, against s, the if-expression's slot (see lowerAgainst). A block's
-// value is its trailing expression, or its trailing if/else chain; its other
-// statements run first. A branch that already terminates (it ends in an
-// explicit `return`) gets no synthesized `return <expr>`: that would be dead
-// code returning a placeholder (see loweredIfBranch.needsValueReturn).
-func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, s slot) (loweredIfBranch, error) {
-	return t.lowerIfExprBranch(t.ifBranchOf(ctx), s)
-}
-
 // lowerIfExprBranchBlock lowers b, an if-expression branch that is a block,
-// against s (see transformIfExprBranch).
+// against s (see lowerIfExprBranch).
 func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
 	// Block branch: transform all statements, use last as the result expression.
 	stmts := b.statements()
@@ -946,7 +506,7 @@ func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (lowered
 }
 
 // lowerIfExprBranchValue lowers e, an if-expression branch that is an
-// expression, against s (see transformIfExprBranch).
+// expression, against s (see lowerIfExprBranch).
 func (t *galaASTTransformer) lowerIfExprBranchValue(e exprSrc, s slot) (loweredIfBranch, error) {
 	if bs, ok := t.lowerLoopControl(e); ok {
 		if s.hoist != "" {
@@ -1089,27 +649,12 @@ type exprForm struct {
 	match   postfixSrc
 }
 
-// classifyExpr reads e's form, on e's tree.
+// classifyExpr reads e's form.
 func (t *galaASTTransformer) classifyExpr(e exprSrc) exprForm {
 	if !e.ok() {
 		return exprForm{}
 	}
-	if e.node.Ok() {
-		return t.classifyNative(e)
-	}
-	if inner := t.grouped(e); inner.ok() {
-		return exprForm{grouped: inner}
-	}
-	if l := t.lambdaIn(e); l.ok() {
-		return exprForm{lambda: l}
-	}
-	if pf := t.barePartial(e); pf.ok() {
-		return exprForm{partial: pf}
-	}
-	if i := t.ifIn(e); i.ok() {
-		return exprForm{ifExpr: i}
-	}
-	return exprForm{match: t.bareMatch(e)}
+	return t.classifyNative(e)
 }
 
 // needsExpectedType reports whether e is a lambda, a partial function, an
@@ -1124,14 +669,13 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 
 // lowerAgainst lowers e in check mode against the slot it fills. A lambda
 // takes its parameter and result types from a function type (strict is
-// transformLambdaWithExpectedType's untyped-parameter policy), and so does a
+// lowerLambda's untyped-parameter policy), and so does a
 // partial function (see transformPartialFunctionLiteral); an if-expression
 // or match lowers each branch against the same slot (branch lambdas strictly);
 // a plain expression sees the slot type only if it consumes it
 // (consumesSlotType). A lambda body is never lowered against the outer slot:
 // it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
-	e = t.onNative(e)
 	untyped := transpiler.IsUnusable(s.typ)
 	if untyped && s.hoist == "" {
 		return t.lowerExpr(e)

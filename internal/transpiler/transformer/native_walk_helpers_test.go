@@ -1,9 +1,6 @@
 package transformer_test
 
 import (
-	"bytes"
-	"go/ast"
-	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,13 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
@@ -48,28 +43,20 @@ type walkRun struct {
 	// interpolated expression's: stmt, lambda, expr, case.
 	parsedAt map[parsedLine]map[string]bool
 	// hints is each look at the hint stack's top, in order: a take or a
-	// withhold, and whether the hint there was the asking value's. The two
-	// walks key a hint differently (hintOwner), so the same stream shows its
-	// ownership is the same.
-	hints []byte
-	// hintKeyMismatches is the lines of the postfix expressions whose hint
-	// key differs read through their ANTLR context and on their native node
-	// (HintKeyMismatches), as the native walk starts.
-	hintKeyMismatches []int
-	converted         bool
+	// withhold, and whether the hint there was the asking value's.
+	hints     []byte
+	converted bool
 }
 
-// walkPipeline transpiles files the way the CLI does, parsing with galop, each
-// with an analyzer of its own, so no package-load failure carries over from
-// one file to the next. antlrOnly makes its transformer walk ANTLR's tree
-// whatever the parse came with, and refuseNative parse every default value
-// and interpolated expression with ANTLR's parser, as when galop's does not
-// settle it (RefuseNativeParse). root is the project root of the analysis, ""
-// for none.
+// walkPipeline transpiles files the way the CLI does, with the engine the
+// test requested, each with an analyzer of its own, so no package-load
+// failure carries over from one file to the next. refuseNative parses every
+// default value and interpolated expression with ANTLR's parser, as when the
+// engine's does not settle it (RefuseNativeParse). root is the project root
+// of the analysis, "" for none.
 type walkPipeline struct {
 	searchPaths  []string
 	root         string
-	antlrOnly    bool
 	refuseNative bool
 }
 
@@ -95,13 +82,7 @@ func (r walkRun) parsedOn(what, file string, line int) map[string]bool {
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
 	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, parsedAt: map[parsedLine]map[string]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
-	inner := tr
-	transformer.OnNativeDecl(tr, func() {
-		if run.native == 0 {
-			run.hintKeyMismatches = transformer.HintKeyMismatches(inner)
-		}
-		run.native++
-	})
+	transformer.OnNativeDecl(tr, func() { run.native++ })
 	lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}
 	transformer.OnNativeNodes(tr, transformer.NativeNodeHooks{
 		Case:   func(index, line int) { cases[index], run.caseLines[line] = true, true },
@@ -135,10 +116,7 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		}
 		run.hints = append(run.hints, b)
 	})
-	if w.antlrOnly {
-		tr = withoutNative{tr}
-	}
-	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
+	p :=&handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.path = path
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
@@ -180,16 +158,6 @@ func (p *handleParser) ParseFile(input string) *galaparser.Parsed {
 	return parsed
 }
 
-// withoutNative transforms as its transformer does, but without the file's
-// native-tree handle, so its walk reads ANTLR's tree after the same parse and
-// analysis.
-type withoutNative struct{ transpiler.ASTTransformer }
-
-func (w withoutNative) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
-	richAST.Native = nil
-	return w.ASTTransformer.Transform(richAST)
-}
-
 // walkCorpus is the paths of the GALA sources staged as the test's data
 // (those TestEnginesAgree parses), sorted, and the search path that resolves
 // their imports.
@@ -214,160 +182,131 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
 }
 
-// treeCounts is what the native walk of a file must lower, counted on its
-// ANTLR tree: its top-level declarations, the statements of its top-level
+
+// treeCounts is what the walk of a file must lower, counted on its native
+// tree: its top-level declarations, the statements of its top-level
 // functions', lambdas' and match arms' bodies, its lambdas, and the case
 // clauses of its matches (bodyStatements).
 type treeCounts struct{ decls, stmts, lambdas, cases int }
 
-// countTree counts src's ANTLR tree, and false when src does not parse
-// cleanly with galop (no native tree to walk).
+// countTree counts src's native tree, and false when src does not parse
+// cleanly (no native tree to walk).
 func countTree(src string) (treeCounts, bool) {
-	parsed := transpiler.NewAntlrGalaParser().ParseFile(src)
-	if parsed.CleanNative() == nil {
+	tree, err := transpiler.NewAntlrGalaParser().ParseFile(src).CleanNative().Tree()
+	if err != nil {
 		return treeCounts{}, false
 	}
-	sf := parsed.Tree.(*grammar.SourceFileContext)
-	c := bodyStatements(sf)
-	c.decls = len(sf.AllTopLevelDeclaration())
+	root := tree.Root()
+	c := bodyStatements(root)
+	for range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
+		c.decls++
+	}
 	return c, true
 }
 
-// bodyStatements counts the statements the native walk lowers in sf's
-// top-level function bodies, lambda bodies, match arms and if-expression
-// branches: each statement of a body, and of the if and for blocks in it,
-// the statements of a `bind` chain included. It counts the lambdas and the
-// case clauses of matches and partial functions too.
-func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
+// bodyStatements counts the statements the walk lowers in root's top-level
+// function bodies, lambda bodies, match arms and if-expression branches: each
+// statement of a body, and of the if and for blocks in it, the statements of
+// a `bind` chain included. It counts the lambdas and the case clauses of
+// matches and partial functions too.
+func bodyStatements(root native.GalaNodeRef) treeCounts {
 	var c treeCounts
-	var block func(grammar.IBlockContext)
-	var ifBlocks func(grammar.IIfStatementContext)
-	block = func(b grammar.IBlockContext) {
-		if b == nil {
+	var block func(native.GalaNodeRef)
+	var ifBlocks func(native.GalaNodeRef)
+	block = func(b native.GalaNodeRef) {
+		if !b.Ok() {
 			return
 		}
-		for _, s := range b.AllStatement() {
+		for s := range galaparser.NativeKids(b, native.GalaKIND_statement) {
 			c.stmts++
-			d := s.Declaration()
-			switch {
-			case d == nil:
-			case d.IfStatement() != nil:
-				ifBlocks(d.IfStatement())
-			case d.ForStatement() != nil:
-				block(d.ForStatement().Block())
+			d, ok := galaparser.OnlyNativeKid(s, native.GalaKIND_declaration)
+			if !ok {
+				continue
+			}
+			if is, ok := galaparser.OnlyNativeKid(d, native.GalaKIND_ifStatement); ok {
+				ifBlocks(is)
+			} else if fs, ok := galaparser.OnlyNativeKid(d, native.GalaKIND_forStatement); ok {
+				if fb, ok := galaparser.OnlyNativeKid(fs, native.GalaKIND_block); ok {
+					block(fb)
+				}
 			}
 		}
 	}
-	ifBlocks = func(s grammar.IIfStatementContext) {
-		for _, b := range s.AllBlock() {
+	ifBlocks = func(s native.GalaNodeRef) {
+		for b := range galaparser.NativeKids(s, native.GalaKIND_block) {
 			block(b)
 		}
-		if elseIf := s.IfStatement(); elseIf != nil {
+		if elseIf, ok := galaparser.OnlyNativeKid(s, native.GalaKIND_ifStatement); ok {
 			ifBlocks(elseIf)
 		}
 	}
-	for _, td := range sf.AllTopLevelDeclaration() {
-		if fd := td.FunctionDeclaration(); fd != nil {
-			block(fd.Block())
-		}
-	}
-	// A lambda is lowered on the native tree wherever it is written
-	// (lambdas_source.go), and a match
-	// and a partial function read their case clauses there wherever they are
-	// (casesOf), but in a parameter's default value: a
-	// default is lowered at each call, from the text the analysis recorded,
-	// parsed on a tree of its own (the hooks count only the file's tree).
-	var below func(antlr.Tree)
-	below = func(node antlr.Tree) {
-		switch n := node.(type) {
-		case *grammar.ParamDefaultContext:
-			return
-		case *grammar.LambdaExpressionContext:
-			c.lambdas++
-			block(n.Block())
-		case interface {
-			AllCaseClause() []grammar.ICaseClauseContext
-		}:
-			// A match's postfix expression, or a partial function.
-			for _, cc := range n.AllCaseClause() {
-				c.cases++
-				block(cc.GetBodyBlock())
+	for td := range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
+		if fd, ok := galaparser.OnlyNativeKid(td, native.GalaKIND_functionDeclaration); ok {
+			if fb, ok := galaparser.OnlyNativeKid(fd, native.GalaKIND_block); ok {
+				block(fb)
 			}
-		case *grammar.IfExprBranchContext:
-			block(n.Block())
-		}
-		for _, child := range node.GetChildren() {
-			below(child)
 		}
 	}
-	below(sf)
+	// A lambda is lowered wherever it is written, and a match and a partial
+	// function read their case clauses wherever they are, but in a
+	// parameter's default value: a default is lowered at each call, from the
+	// text the analysis recorded, parsed on a tree of its own (the hooks count
+	// only the file's tree).
+	root.Walk(func(n native.GalaNodeRef) bool {
+		switch n.Kind() {
+		case native.GalaKIND_paramDefault:
+			return false
+		case native.GalaKIND_lambdaExpression:
+			c.lambdas++
+			if b, ok := galaparser.OnlyNativeKid(n, native.GalaKIND_block); ok {
+				block(b)
+			}
+		case native.GalaKIND_caseClause:
+			c.cases++
+			if b, ok := galaparser.OnlyNativeKid(n, native.GalaKIND_block); ok {
+				block(b)
+			}
+		case native.GalaKIND_ifExprBranch:
+			if b, ok := galaparser.OnlyNativeKid(n, native.GalaKIND_block); ok {
+				block(b)
+			}
+		}
+		return true
+	})
 	return c
 }
 
-// checkWalksAgree fails tb unless the native and the ANTLR walk of path give
-// the same Go, or the same error, and each walk took the tree it should: the
-// native walk lowered every top-level declaration of the file, every
-// statement of its function bodies, every lambda and every match's case
-// clauses (each one up to the failing one, on an error) when the analysis converted its native tree, and none when it did
-// not, and the ANTLR walk none.
-func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src string) (native walkRun, want treeCounts, ok bool) {
+// checkWalk transpiles src, written at path, with w, and fails tb unless its
+// Go, or its error, is its golden (checkGolden; the corpus run, whose files
+// have no goldens, passes golden false) and the walk lowered every top-level
+// declaration of the file, every statement of its function bodies, every
+// lambda and every match's case clauses (each one up to the failing one, on
+// an error). It is false when src does not parse cleanly.
+func checkWalk(tb testing.TB, w *walkPipeline, path, src string, golden bool) (run walkRun, want treeCounts, ok bool) {
 	tb.Helper()
 	want, ok = countTree(src)
 	if !ok {
 		return walkRun{}, want, false
 	}
-	n := nativeW.transpile(path, src)
-	a := antlrW.transpile(path, src)
-	if !strings.HasPrefix(tb.Name(), "TestNativeWalkAgrees") {
-		checkGolden(tb, path, nativeW.searchPaths, n.out, n.err)
+	n := w.transpile(path, src)
+	if golden {
+		checkGolden(tb, path, w.searchPaths, n.out, n.err)
 	}
-	assert.Zerof(tb, a.native, "%s: the ANTLR walk lowered declarations on the native tree", path)
-	assert.Zerof(tb, a.stmts, "%s: the ANTLR walk lowered statements on the native tree", path)
-	assert.Zerof(tb, a.lambdas, "%s: the ANTLR walk lowered lambdas on the native tree", path)
-	assert.Zerof(tb, a.captures, "%s: the ANTLR walk checked captures on the native tree", path)
-	assert.Zerof(tb, a.exprs, "%s: the ANTLR walk lowered expressions on the native tree", path)
-	assert.Zerof(tb, a.cases, "%s: the ANTLR walk read case clauses on the native tree", path)
-	// A walk of ANTLR's tree parses its defaults and interpolations on ANTLR's
-	// tree too (parseExprAt).
-	assert.Emptyf(tb, a.parsedAt, "%s: the ANTLR walk parsed defaults or interpolations with galop's native parser", path)
-	switch {
-	case !n.converted:
-		assert.Emptyf(tb, n.parsedAt, "%s: the native walk parsed defaults or interpolations with galop's native parser on a tree the analysis did not convert", path)
-		assert.Zerof(tb, n.native, "%s: the native walk lowered declarations on a tree the analysis did not convert", path)
-		assert.Zerof(tb, n.stmts, "%s: the native walk lowered statements on a tree the analysis did not convert", path)
-		assert.Zerof(tb, n.lambdas, "%s: the native walk lowered lambdas on a tree the analysis did not convert", path)
-		assert.Zerof(tb, n.exprs, "%s: the native walk lowered expressions on a tree the analysis did not convert", path)
-		assert.Zerof(tb, n.cases, "%s: the native walk read case clauses on a tree the analysis did not convert", path)
-	case n.err == nil:
-		assert.Equalf(tb, want.decls, n.native, "%s: top-level declarations the native walk lowered", path)
-		assert.Equalf(tb, want.stmts, n.stmts, "%s: body statements the native walk lowered", path)
-		assert.Equalf(tb, want.lambdas, n.lambdas, "%s: lambdas the native walk lowered", path)
-		assert.Equalf(tb, want.cases, n.cases, "%s: case clauses the native walk read", path)
+	if n.err == nil {
+		assert.Equalf(tb, want.decls, n.native, "%s: top-level declarations the walk lowered", path)
+		assert.Equalf(tb, want.stmts, n.stmts, "%s: body statements the walk lowered", path)
+		assert.Equalf(tb, want.lambdas, n.lambdas, "%s: lambdas the walk lowered", path)
+		assert.Equalf(tb, want.cases, n.cases, "%s: case clauses the walk read", path)
 		// A function body's statements hold expressions, and those are
-		// lowered on the native tree too.
+		// lowered too.
 		if want.stmts > 0 {
-			assert.Positivef(tb, n.exprs, "%s: the native walk lowered no expression", path)
+			assert.Positivef(tb, n.exprs, "%s: the walk lowered no expression", path)
 		}
-	default:
-		assert.LessOrEqualf(tb, n.native, want.decls, "%s: the native walk lowered more declarations than there are (error: %v)", path, n.err)
-		assert.LessOrEqualf(tb, n.stmts, want.stmts, "%s: the native walk lowered more statements than there are (error: %v)", path, n.err)
-		assert.LessOrEqualf(tb, n.lambdas, want.lambdas, "%s: the native walk lowered more lambdas than there are (error: %v)", path, n.err)
-		assert.LessOrEqualf(tb, n.cases, want.cases, "%s: the native walk read more case clauses than there are (error: %v)", path, n.err)
-	}
-	if n.out != a.out {
-		assert.Failf(tb, "the walks' Go differs", "%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
-	}
-	assert.Equalf(tb, a.err, n.err, "%s: the native walk's error differs from the ANTLR walk's", path)
-	// A value lowered from ANTLR's tree (an ANTLR half of a source type) is
-	// hinted under its context's key, and the call it is takes the hint on
-	// the native tree: the two keys must be one.
-	assert.Emptyf(tb, n.hintKeyMismatches, "%s: a hint pushed through ANTLR's tree is keyed apart from the native call that takes it, on lines %v", path, n.hintKeyMismatches)
-	if !bytes.Equal(n.hints, a.hints) {
-		i := 0
-		for i < len(n.hints) && i < len(a.hints) && n.hints[i] == a.hints[i] {
-			i++
-		}
-		assert.Failf(tb, "the walks' hint ownership differs", "%s: the native walk took %d looks at the hint stack, the ANTLR walk %d; they differ from look %d: native %q, ANTLR %q", path, len(n.hints), len(a.hints), i, n.hints[i:], a.hints[i:])
+	} else {
+		assert.LessOrEqualf(tb, n.native, want.decls, "%s: the walk lowered more declarations than there are (error: %v)", path, n.err)
+		assert.LessOrEqualf(tb, n.stmts, want.stmts, "%s: the walk lowered more statements than there are (error: %v)", path, n.err)
+		assert.LessOrEqualf(tb, n.lambdas, want.lambdas, "%s: the walk lowered more lambdas than there are (error: %v)", path, n.err)
+		assert.LessOrEqualf(tb, n.cases, want.cases, "%s: the walk read more case clauses than there are (error: %v)", path, n.err)
 	}
 	return n, want, true
 }

@@ -6,7 +6,6 @@ import (
 	"go/token"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -598,28 +597,9 @@ func operandText(at srcNode) string {
 	return "(" + text + ")"
 }
 
-// singlePostfixAt is singlePostfix of at, a relational expression on either
-// tree: one postfix expression with no operator around it (nativeOperand on
-// the native tree), false for any other node.
+// singlePostfixAt reports whether at is a relational expression that is one
+// postfix expression with no binary or unary operator around it
+// (nativeOperand), false for any other node.
 func singlePostfixAt(at srcNode) bool {
-	if at.node.Ok() {
-		return at.node.Kind() == native.GalaKIND_relationalExpr && nativeOperand(at.node, native.GalaKIND_postfixExpr, true).Ok()
-	}
-	rel, ok := at.ctx.(*grammar.RelationalExprContext)
-	return ok && singlePostfix(rel)
-}
-
-// singlePostfix reports whether rel is one postfix expression, with no binary
-// or unary operator.
-func singlePostfix(rel *grammar.RelationalExprContext) bool {
-	adds := rel.AllAdditiveExpr()
-	if len(adds) != 1 {
-		return false
-	}
-	muls := adds[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(muls) != 1 {
-		return false
-	}
-	unaries := muls[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	return len(unaries) == 1 && unaries[0].(*grammar.UnaryExprContext).UnaryOp() == nil
+	return at.node.Ok() && at.node.Kind() == native.GalaKIND_relationalExpr && nativeOperand(at.node, native.GalaKIND_postfixExpr, true).Ok()
 }

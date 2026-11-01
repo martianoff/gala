@@ -29,15 +29,11 @@ type typeRun struct {
 
 // transpileTypes transpiles src as walkPipeline.transpile does, with the
 // import search path searchPaths, recording the types lowered off the
-// native tree. antlrOnly makes the transformer walk ANTLR's tree whatever
-// the parse came with.
-func transpileTypes(searchPaths []string, antlrOnly bool, path, src string) typeRun {
+// native tree.
+func transpileTypes(searchPaths []string, path, src string) typeRun {
 	tr := transformer.NewGalaASTTransformer()
 	run := typeRun{lines: map[int]bool{}}
 	transformer.OnNativeType(tr, func(line int) { run.lines[line] = true })
-	if antlrOnly {
-		tr = withoutNative{tr}
-	}
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
@@ -211,9 +207,8 @@ type W struct {
 }
 
 // TestNativeTypeCases holds the lowering of types and of sealed and opaque
-// type declarations off the native tree to their lowering off ANTLR's, over
-// typeCases: the same Go, or the same error, both ways, with every marked
-// line's type lowered off the native tree.
+// type declarations over typeCases to its golden: the Go, or the error, with
+// every marked line's type lowered off the native tree.
 func TestNativeTypeCases(t *testing.T) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
@@ -227,19 +222,14 @@ func TestNativeTypeCases(t *testing.T) {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
 			require.NotNil(t, transpiler.NewAntlrGalaParser().ParseFile(c.src).CleanNative(), "the case does not parse cleanly with galop")
-			n, a := transpileTypes(searchPaths, false, path, c.src), transpileTypes(searchPaths, true, path, c.src)
+			n := transpileTypes(searchPaths, path, c.src)
 			checkGolden(t, path, searchPaths, n.out, n.err)
 			require.True(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's")
-			assert.Empty(t, a.lines, "the ANTLR walk lowered types off the native tree")
 			if c.want != "" {
 				require.ErrorContains(t, n.err, c.want, "the case does not fail with its diagnostic")
 			} else {
 				require.NoError(t, n.err, "the case does not transpile")
 			}
-			if n.out != a.out {
-				assert.Failf(t, "the walks' Go differs", "the native walk's Go differs from the ANTLR walk's at %s", firstLineDiff(n.out, a.out))
-			}
-			assert.Equal(t, a.err, n.err, "the native walk's error differs from the ANTLR walk's")
 			lines := markedLines(c.src)
 			require.NotEmpty(t, lines, "the case marks no line")
 			for _, line := range lines {

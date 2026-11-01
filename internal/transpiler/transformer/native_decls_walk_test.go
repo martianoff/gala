@@ -96,15 +96,15 @@ var declCases = []struct{ name, shape, src string }{
 }
 
 // TestNativeDeclsWalk holds the native walk of declShapes and of each of
-// declCases to the ANTLR walk (checkWalksAgree), and requires the native walk
+// declCases to its golden (checkWalk), and requires the native walk
 // to have read the declaration parts they mark.
 func TestNativeDeclsWalk(t *testing.T) {
 	run := exprWalkRunner(t)
 	t.Run("declaration shapes", func(t *testing.T) {
 		n := run(t, "declaration shapes", declShapes)
 		require.NoError(t, n.err, "the program does not transpile")
-		// checkWalksAgree held the hint stream to the ANTLR walk's; it must
-		// have found a value's own hint for that to show anything.
+		// The walk must have found a value's own hint on the hint stack, the
+		// ownership the hint keys exist for.
 		assert.Truef(t, strings.ContainsAny(string(n.hints), "TW"), "no look at the hint stack found the asking value's hint: %q", n.hints)
 		for i, l := range strings.Split(declShapes, "\n") {
 			_, marked, ok := strings.Cut(l, "// native: ")

@@ -102,7 +102,7 @@ var matchWalkCases = []struct{ name, src, shape string }{
 }
 
 // TestNativeMatchWalk holds the native walk of matchShapes and of each of
-// matchWalkCases to the ANTLR walk (checkWalksAgree), and requires the native
+// matchWalkCases to its golden (checkWalk), and requires the native
 // walk to have lowered the matches and pattern values they mark.
 func TestNativeMatchWalk(t *testing.T) {
 	run := exprWalkRunner(t)

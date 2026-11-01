@@ -4,112 +4,63 @@ import (
 	"go/ast"
 
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
-	"martianoff/gala/internal/transpiler"
 )
 
-// A type as its lowering reads it (lowerType). typeSrc is a type node of
-// ANTLR's tree (ctx) or of galop's native one (node), and each of its readers
-// has an ANTLR half and a native half that give the same value for the same
-// type, so a type is lowered once, the same way, whichever tree it comes
-// from. The native halves dispatch on the node's children and read them
-// through the rule handles and NativeKids, never through Typed() or the All
-// accessors (see declarations_native.go).
+// A type as its lowering reads it (lowerType): typeSrc is a type node, and
+// its readers dispatch on the node's children and read them through the rule
+// handles and NativeKids, never through Typed() or the All accessors (see
+// declarations_native.go).
 
 // typeSrc is a type as written; the zero typeSrc is no type.
 type typeSrc struct {
-	ctx  grammar.ITypeContext
 	node native.TypeNode
 }
-
-// antlrType is the type ctx, on ANTLR's tree; nil gives no type.
-func antlrType(ctx grammar.ITypeContext) typeSrc { return typeSrc{ctx: ctx} }
 
 // nativeType is the type node n; no node gives no type.
 func nativeType(n native.TypeNode) typeSrc { return typeSrc{node: n} }
 
 // ok reports whether s is a type, not the zero typeSrc.
-func (s typeSrc) ok() bool { return s.ctx != nil || s.node.Ok() }
+func (s typeSrc) ok() bool { return s.node.Ok() }
 
 // at is where s is written.
-func (s typeSrc) at() srcNode {
-	if s.node.Ok() {
-		return srcNode{node: s.node.GalaNodeRef}
-	}
-	return srcNode{ctx: s.ctx}
-}
+func (s typeSrc) at() srcNode { return srcNode{node: s.node.GalaNodeRef} }
 
 // text is s's tokens run together (GetText).
-func (s typeSrc) text() string {
-	if s.node.Ok() {
-		return s.node.GetText()
-	}
-	return s.ctx.GetText()
-}
+func (s typeSrc) text() string { return s.node.GetText() }
 
 // typeText is TypeText of s.
-func (s typeSrc) typeText() string {
-	if s.node.Ok() {
-		return galaparser.NativeTypeText(s.node)
-	}
-	return galaparser.TypeText(s.ctx)
-}
+func (s typeSrc) typeText() string { return galaparser.NativeTypeText(s.node) }
 
 // sourceText is the source s spans, whitespace included.
-func (s typeSrc) sourceText() string {
-	if s.node.Ok() {
-		return s.node.SourceText()
-	}
-	return transpiler.SourceText(s.ctx)
-}
+func (s typeSrc) sourceText() string { return s.node.SourceText() }
 
 // ptrElem is PtrElem of s: the type argument of `Ptr[T]`, or no type.
 func (s typeSrc) ptrElem() typeSrc {
-	if s.node.Ok() {
-		return nativeType(galaparser.NativePtrElem(s.node))
-	}
-	if s.ctx == nil {
+	if !s.node.Ok() {
 		return typeSrc{}
 	}
-	return antlrType(galaparser.PtrElem(s.ctx))
+	return nativeType(galaparser.NativePtrElem(s.node))
 }
 
 // pointerElem is PointerElem of s: the element type of `*T` or `Ptr[T]` and
 // true, or (s, false).
 func (s typeSrc) pointerElem() (typeSrc, bool) {
-	if s.node.Ok() {
-		elem, ok := galaparser.NativePointerElem(s.node)
-		return nativeType(elem), ok
-	}
-	if s.ctx == nil {
+	if !s.node.Ok() {
 		return s, false
 	}
-	elem, ok := galaparser.PointerElem(s.ctx)
-	return antlrType(elem), ok
+	elem, ok := galaparser.NativePointerElem(s.node)
+	return nativeType(elem), ok
 }
 
 // named reports whether s is a named type, `pkg.Name[Args]`.
-func (s typeSrc) named() bool {
-	if s.node.Ok() {
-		return s.node.QualifiedIdentifier().Ok()
-	}
-	return s.ctx.QualifiedIdentifier() != nil
-}
+func (s typeSrc) named() bool { return s.node.QualifiedIdentifier().Ok() }
 
 // nameParts is the identifiers of a named type's name, in order.
 func (s typeSrc) nameParts() []string {
-	if s.node.Ok() {
-		var parts []string
-		for id := range galaparser.NativeKids(s.node.QualifiedIdentifier().GalaNodeRef, native.GalaKIND_identifier) {
-			parts = append(parts, galaparser.NativeText(id))
-		}
-		return parts
-	}
-	ids := s.ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier()
-	parts := make([]string, len(ids))
-	for i, id := range ids {
-		parts[i] = id.GetText()
+	var parts []string
+	for id := range galaparser.NativeKids(s.node.QualifiedIdentifier().GalaNodeRef, native.GalaKIND_identifier) {
+		parts = append(parts, galaparser.NativeText(id))
 	}
 	return parts
 }
@@ -117,50 +68,27 @@ func (s typeSrc) nameParts() []string {
 // lastName is the last identifier of a named type's name (`Sendable` of
 // `std.Sendable`), read without building the list nameParts does.
 func (s typeSrc) lastName() string {
-	if s.node.Ok() {
-		var last native.GalaNodeRef
-		for id := range galaparser.NativeKids(s.node.QualifiedIdentifier().GalaNodeRef, native.GalaKIND_identifier) {
-			last = id
-		}
-		if !last.Ok() {
-			return ""
-		}
-		return galaparser.NativeText(last)
+	var last native.GalaNodeRef
+	for id := range galaparser.NativeKids(s.node.QualifiedIdentifier().GalaNodeRef, native.GalaKIND_identifier) {
+		last = id
 	}
-	ids := s.ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier()
-	if len(ids) == 0 {
+	if !last.Ok() {
 		return ""
 	}
-	return ids[len(ids)-1].GetText()
+	return galaparser.NativeText(last)
 }
 
 // nameText is a named type's name as written, its tokens run together.
-func (s typeSrc) nameText() string {
-	if s.node.Ok() {
-		return s.node.QualifiedIdentifier().GetText()
-	}
-	return s.ctx.QualifiedIdentifier().GetText()
-}
+func (s typeSrc) nameText() string { return s.node.QualifiedIdentifier().GetText() }
 
 // typeArgs is a named type's type arguments and true when it is written
 // with them (`Box[A, B]`), and false when it is not.
 func (s typeSrc) typeArgs() ([]typeSrc, bool) {
-	if s.node.Ok() {
-		args := s.node.TypeArguments()
-		if !args.Ok() {
-			return nil, false
-		}
-		return nativeTypes(args.TypeList().GalaNodeRef), true
-	}
-	if s.ctx.TypeArguments() == nil {
+	args := s.node.TypeArguments()
+	if !args.Ok() {
 		return nil, false
 	}
-	// A partial parse (an editor's `Box[]`) has no type list.
-	list, ok := s.ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext)
-	if !ok {
-		return nil, true
-	}
-	return antlrTypes(list.AllType_()), true
+	return nativeTypes(args.TypeList().GalaNodeRef), true
 }
 
 // nativeTypes is the child types of n.
@@ -172,22 +100,8 @@ func nativeTypes(n native.GalaNodeRef) []typeSrc {
 	return out
 }
 
-// antlrTypes is the types all.
-func antlrTypes(all []grammar.ITypeContext) []typeSrc {
-	out := make([]typeSrc, len(all))
-	for i, a := range all {
-		out[i] = antlrType(a)
-	}
-	return out
-}
-
 // hasTypeArgs reports whether s is written with type arguments.
-func (s typeSrc) hasTypeArgs() bool {
-	if s.node.Ok() {
-		return s.node.TypeArguments().Ok()
-	}
-	return s.ctx.TypeArguments() != nil
-}
+func (s typeSrc) hasTypeArgs() bool { return s.node.TypeArguments().Ok() }
 
 // typeShape is the form of a type that is not named.
 type typeShape uint8
@@ -202,29 +116,14 @@ const (
 
 // elems is the types s is written with directly: T of `*T` and `[]T`, K and
 // V of `map[K]V`.
-func (s typeSrc) elems() []typeSrc {
-	if s.node.Ok() {
-		return nativeTypes(s.node.GalaNodeRef)
-	}
-	return antlrTypes(s.ctx.AllType_())
-}
+func (s typeSrc) elems() []typeSrc { return nativeTypes(s.node.GalaNodeRef) }
 
 // startText is the text of s's first token.
-func (s typeSrc) startText() string {
-	if s.node.Ok() {
-		return galaparser.NativeStartText(s.node.GalaNodeRef)
-	}
-	return s.ctx.GetStart().GetText()
-}
+func (s typeSrc) startText() string { return galaparser.NativeStartText(s.node.GalaNodeRef) }
 
 // hasSignature reports whether s is written with a signature, a function
 // type's.
-func (s typeSrc) hasSignature() bool {
-	if s.node.Ok() {
-		return s.node.Signature().Ok()
-	}
-	return s.ctx.Signature() != nil
-}
+func (s typeSrc) hasSignature() bool { return s.node.Signature().Ok() }
 
 // shape is the form of s, which is not named, and, for a pointer, slice or
 // map type, its elems.
@@ -261,52 +160,23 @@ type funcTypeParam struct {
 
 // funcSignature is the parameters and results of s, a function type.
 func (s typeSrc) funcSignature() ([]funcTypeParam, []typeSrc) {
-	if s.node.Ok() {
-		sig := s.node.Signature()
-		var params []funcTypeParam
-		for p := range galaparser.NativeKids(sig.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
-			param := native.ParameterNode{GalaNodeRef: p}
-			fp := funcTypeParam{variadic: param.ELLIPSIS().Ok()}
-			if typ := param.Type_(); typ.Ok() {
-				fp.typ = nativeType(typ)
-			} else {
-				fp.name = param.Identifier().GetText()
-			}
-			params = append(params, fp)
-		}
-		return params, nativeSigResults(sig)
-	}
-	sig := s.ctx.Signature().(*grammar.SignatureContext)
+	sig := s.node.Signature()
 	var params []funcTypeParam
-	if list := sig.Parameters().(*grammar.ParametersContext).ParameterList(); list != nil {
-		for _, pCtx := range list.(*grammar.ParameterListContext).AllParameter() {
-			param := pCtx.(*grammar.ParameterContext)
-			fp := funcTypeParam{variadic: param.ELLIPSIS() != nil}
-			if param.Type_() != nil {
-				fp.typ = antlrType(param.Type_())
-			} else {
-				fp.name = param.Identifier().GetText()
-			}
-			params = append(params, fp)
+	for p := range galaparser.NativeKids(sig.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+		param := native.ParameterNode{GalaNodeRef: p}
+		fp := funcTypeParam{variadic: param.ELLIPSIS().Ok()}
+		if typ := param.Type_(); typ.Ok() {
+			fp.typ = nativeType(typ)
+		} else {
+			fp.name = param.Identifier().GetText()
 		}
+		params = append(params, fp)
 	}
-	return params, antlrSigResults(sig)
+	return params, nativeSigResults(sig)
 }
 
-// antlrSigResults is the result types of the signature ctx: its one result
-// type, or each type of its Go result list (`(int, error)`).
-func antlrSigResults(ctx *grammar.SignatureContext) []typeSrc {
-	if ctx.Type_() != nil {
-		return []typeSrc{antlrType(ctx.Type_())}
-	}
-	list, ok := ctx.GoResults().(*grammar.GoResultsContext)
-	if !ok {
-		return nil
-	}
-	return antlrTypes(list.AllType_())
-}
-
-// nativeSigResults is antlrSigResults of the signature node sig.
+// nativeSigResults is the result types of the signature node sig: its one
+// result type, or each type of its Go result list (`(int, error)`).
 func nativeSigResults(sig native.SignatureNode) []typeSrc {
 	if typ := sig.Type_(); typ.Ok() {
 		return []typeSrc{nativeType(typ)}
@@ -314,7 +184,7 @@ func nativeSigResults(sig native.SignatureNode) []typeSrc {
 	return nativeTypes(sig.GoResults().GalaNodeRef)
 }
 
-// noteNativeType tells onNativeType of n when it is a node of the native tree.
+// noteNativeType tells onNativeType of n.
 func (t *galaASTTransformer) noteNativeType(n srcNode) {
 	if t.onNativeType != nil && n.node.Ok() {
 		t.onNativeType(int(n.node.Start().Line))

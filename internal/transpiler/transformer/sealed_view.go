@@ -212,7 +212,7 @@ func sealedViewPatternError(at srcNode, subjectType, view transpiler.Type, why s
 // subjectType, tests: subject.MatchView() and the view type when its cases
 // read the subject's sealed view (see sealedViewForCases), and subject and
 // subjectType unchanged otherwise; viewed reports which. at locates the
-// match, on either tree.
+// match.
 func (t *galaASTTransformer) matchViewSubjectAt(subject ast.Expr, subjectType transpiler.Type, caseClauses []caseSrc, at srcNode) (ast.Expr, transpiler.Type, bool, error) {
 	view, err := t.sealedViewForCases(subjectType, caseClauses)
 	if err != nil || view == nil {
@@ -227,7 +227,7 @@ func (t *galaASTTransformer) matchViewSubjectAt(subject ast.Expr, subjectType tr
 
 // viewSubjectAt returns the expression a match over a sealed view tests: the
 // subject's MatchView() call, taken through an addressable receiver when the
-// method has a pointer receiver. at locates the match, on either tree.
+// method has a pointer receiver. at locates the match.
 func (t *galaASTTransformer) viewSubjectAt(subject ast.Expr, subjectType transpiler.Type, at srcNode) (ast.Expr, error) {
 	if err := t.checkPtrViewReceiverAt(subjectType, at); err != nil {
 		return nil, err

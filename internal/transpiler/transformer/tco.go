@@ -6,7 +6,7 @@ import (
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the parse tree
-// (either tree: ifExprSrc, ifBranchSrc, callPat), before the normal lowering
+// (ifExprSrc, ifBranchSrc, callPat), before the normal lowering
 // wraps an if-expression body in an IIFE (a `return self(...)` inside that
 // closure would return from the closure, not the function, so a Go-AST
 // post-pass would not see the tail call). match-form and

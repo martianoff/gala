@@ -126,7 +126,7 @@ var stmtCases = []struct{ name, src string }{
 }
 
 // TestNativeStmtWalk holds the native walk of stmtShapes and of each of
-// stmtCases to the ANTLR walk (checkWalksAgree), and requires the native
+// stmtCases to its golden (checkWalk), and requires the native
 // walk to have lowered the statements they mark.
 func TestNativeStmtWalk(t *testing.T) {
 	run := exprWalkRunner(t)

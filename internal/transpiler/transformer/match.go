@@ -9,10 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -699,14 +696,6 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 	return nil
 }
 
-// suffixOpener returns the token a postfix suffix starts with: ".", "(" or "[".
-func suffixOpener(s *grammar.PostfixSuffixContext) string {
-	if s.GetChildCount() == 0 {
-		return ""
-	}
-	return s.GetChild(0).(antlr.ParseTree).GetText()
-}
-
 // inferMatchedTypeFromCases attempts to infer the sealed parent type from case pattern names.
 // When the match subject type cannot be inferred from the expression itself, we look at the
 // case patterns (e.g., Some/None → Option, Success/Failure → Try, Left/Right → Either)
@@ -919,8 +908,8 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 	return false
 }
 
-// inferCommonResultType checks that all result types are compatible and returns the common type.
-// ctx is optional and used for position info in error messages.
+// inferCommonResultTypeAt checks that all result types are compatible and returns the common type.
+// at, where the match is, is optional (the zero srcNode) and used for position info in error messages.
 //
 // discardValue is set when the match is in statement position — its value is
 // discarded by the enclosing block, so the arms are pure side-effect dispatch
@@ -930,12 +919,6 @@ func (t *galaASTTransformer) isKnownMultiReturnFunction(pkgName, funcName string
 // another a bool-returning one) is not an error. Skipping the unification here
 // is what lets `c match { case '"' => readString(); case 't' => readBool() }`
 // stand as a statement.
-func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patterns []string, ctx antlr.ParserRuleContext, discardValue bool) (transpiler.Type, error) {
-	return t.inferCommonResultTypeAt(types, patterns, srcNode{ctx: ctx}, discardValue)
-}
-
-// inferCommonResultTypeAt is inferCommonResultType of a match at a node of
-// either tree, or at no node (the zero srcNode).
 func (t *galaASTTransformer) inferCommonResultTypeAt(types []transpiler.Type, patterns []string, at srcNode, discardValue bool) (transpiler.Type, error) {
 	if len(types) == 0 {
 		line, col := t.startOrLast(at)
@@ -1089,7 +1072,7 @@ func (t *galaASTTransformer) inferCommonResultTypeAt(types []transpiler.Type, pa
 // startOrLast is where at starts, or the last tracked position when at is no
 // node or has no first token.
 func (t *galaASTTransformer) startOrLast(at srcNode) (line, col int) {
-	if at.node.Ok() || at.ctx != nil && at.ctx.GetStart() != nil {
+	if at.node.Ok() {
 		return at.start()
 	}
 	return t.lastLine, t.lastCol
@@ -1703,7 +1686,7 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 	if len(types) == 0 {
 		return nil
 	}
-	common, err := t.inferCommonResultType(types, make([]string, len(types)), nil, false)
+	common, err := t.inferCommonResultTypeAt(types, make([]string, len(types)), srcNode{}, false)
 	if err != nil || transpiler.IsUnusable(common) || !t.isSettledType(common) {
 		return nil
 	}

@@ -5,7 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 
 	"github.com/stretchr/testify/require"
@@ -73,7 +74,7 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"matchInStatementPos":   func(t *galaASTTransformer) { t.matchInStatementPos = true },
 	"loweringDefault":       func(t *galaASTTransformer) { t.loweringDefault = &defaultLowering{} },
 	"pendingMatchStmtBlock": func(t *galaASTTransformer) { t.pendingMatchStmtBlock = &ast.BlockStmt{} },
-	"tryThunkLambda":        func(t *galaASTTransformer) { t.tryThunkLambda = lambdaSrc{ctx: &grammar.LambdaExpressionContext{}} },
+	"tryThunkLambda":        func(t *galaASTTransformer) { t.tryThunkLambda = lambdaSrc{node: someLambda()} },
 	"hoistedPre":            func(t *galaASTTransformer) { t.hoistedPre = []ast.Stmt{&ast.EmptyStmt{}} },
 	"localDeclaration":      func(t *galaASTTransformer) { t.localDeclaration = true },
 	"signatureDots":         func(t *galaASTTransformer) { t.signatureDots = []string{"collection_immutable"} },
@@ -147,4 +148,20 @@ func TestRestoreScopedStateCoversEveryScopedField(t *testing.T) {
 		require.Len(t, tr.expectedArgTypes.stack, 1)
 		require.False(t, tr.matchInStatementPos)
 	})
+}
+
+// someLambda is a lambda expression node, for a non-zero lambdaSrc.
+func someLambda() native.LambdaExpressionNode {
+	expr, err := galaparser.ParseExpressionNativeAt("() => 1", 1, 0)
+	if err != nil {
+		panic(err)
+	}
+	var lambda native.LambdaExpressionNode
+	expr.Walk(func(n native.GalaNodeRef) bool {
+		if n.Kind() == native.GalaKIND_lambdaExpression {
+			lambda = native.LambdaExpressionNode{GalaNodeRef: n}
+		}
+		return !lambda.Ok()
+	})
+	return lambda
 }

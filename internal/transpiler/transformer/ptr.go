@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
@@ -62,12 +60,7 @@ func (t *galaASTTransformer) isPtrTypeExpr(typeExpr ast.Expr) bool {
 	return ok && t.ptrStars[star]
 }
 
-// ptrError is a GALA-E0080 at ctx.
-func ptrError(ctx antlr.ParserRuleContext, msg, hint string) error {
-	return ptrErrorAt(srcNode{ctx: ctx}, msg, hint)
-}
-
-// ptrErrorAt is ptrError at a node of either tree.
+// ptrErrorAt is a GALA-E0080 at the node at.
 func ptrErrorAt(at srcNode, msg, hint string) error {
 	r := at.rng()
 	return spanErrorAt(galaerr.CodePtrNullability, r, r, msg, hint)
@@ -159,7 +152,7 @@ func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler
 }
 
 // checkPtrReceiverIn is checkPtrReceiver for a receiver located by source,
-// which returns the nodes, of either tree, spanning it and its source text,
+// which returns the nodes spanning it and its source text,
 // and is called only to report the error: a member access's receiver, or the
 // value a `bind` or `also` clause lowers to the receiver of FlatMap or ZipN.
 func (t *galaASTTransformer) checkPtrReceiverIn(recv ast.Expr, recvType transpiler.Type, method string, source func() (from, to srcNode, text string)) error {
@@ -419,7 +412,7 @@ func typeTypeParamOwner(name string, m *transpiler.TypeMetadata) typeParamOwner 
 }
 
 // checkPtrWrittenTypeArgsAt checks the written type arguments args of o, the
-// i-th located on either tree by at(i), with checkPtrTypeArg.
+// i-th located by at(i), with checkPtrTypeArg.
 func (t *galaASTTransformer) checkPtrWrittenTypeArgsAt(o typeParamOwner, args []ast.Expr, at func(i int) srcNode) error {
 	if !t.hasPtrConstraint(o) {
 		return nil

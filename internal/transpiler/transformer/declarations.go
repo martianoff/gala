@@ -5,60 +5,11 @@ import (
 	"go/ast"
 	"go/token"
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"strings"
-	"unicode/utf8"
-
-	"github.com/antlr4-go/antlr/v4"
 )
-
-func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelDeclarationContext) ([]ast.Decl, error) {
-	// Track position for error reporting in deeply-nested helpers
-	if prc, ok := ctx.(antlr.ParserRuleContext); ok {
-		t.trackPosition(prc)
-	}
-	if embedCtx := ctx.EmbedDeclaration(); embedCtx != nil {
-		return t.transformEmbedDeclaration(embedCtx.(*grammar.EmbedDeclarationContext))
-	}
-	if valCtx := ctx.ValDeclaration(); valCtx != nil {
-		decl, err := t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
-		if err != nil {
-			return nil, err
-		}
-		return []ast.Decl{decl}, nil
-	}
-	if varCtx := ctx.VarDeclaration(); varCtx != nil {
-		decl, err := t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
-		if err != nil {
-			return nil, err
-		}
-		return []ast.Decl{decl}, nil
-	}
-	if funcCtx := ctx.FunctionDeclaration(); funcCtx != nil {
-		decl, err := t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
-		if err != nil {
-			return nil, err
-		}
-		return []ast.Decl{decl}, nil
-	}
-	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
-	}
-	if structShorthandCtx := ctx.StructShorthandDeclaration(); structShorthandCtx != nil {
-		return t.transformStructShorthandDeclaration(structShorthandCtx.(*grammar.StructShorthandDeclarationContext))
-	}
-	if sealedCtx := ctx.SealedTypeDeclaration(); sealedCtx != nil {
-		return t.transformSealedTypeDeclaration(sealedCtx.(*grammar.SealedTypeDeclarationContext))
-	}
-	if opaqueCtx := ctx.OpaqueTypeDeclaration(); opaqueCtx != nil {
-		return t.transformOpaqueTypeDeclaration(opaqueCtx.(*grammar.OpaqueTypeDeclarationContext))
-	}
-	return nil, nil
-}
 
 // lowerDeclaration lowers s, a statement that is a declaration, other than a
 // `use` (see lowerStatement).
@@ -72,7 +23,7 @@ func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, er
 		return decl, nil, err
 	case stmtFunc:
 		// lowerDeclaration only sees statements inside a body; top-level
-		// functions arrive through transformTopLevelDeclaration.
+		// functions arrive through transformTopLevelDeclarationNative.
 		return nil, nil, nestedFunctionError(s.nestedFunc(t))
 	case stmtType:
 		decl, err := t.lowerLocalTypeDecl(s.typeDecl(t))
@@ -102,34 +53,17 @@ func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, er
 	return nil, nil, nil
 }
 
-// transformEmbedDeclaration handles `embed val name Type = "pattern"` declarations.
-// For string embeds, generates: var name string (with //go:embed via post-processing)
-// For EmbeddedFS embeds, generates: var _embed_name embed.FS; var name = std.NewEmbeddedFS(_embed_name)
-func (t *galaASTTransformer) transformEmbedDeclaration(ctx *grammar.EmbedDeclarationContext) ([]ast.Decl, error) {
-	return t.lowerEmbedDecl(readEmbedDecl(ctx))
-}
-
-// embedDecl is an embed declaration as lowerEmbedDecl reads it, from either
-// tree (readEmbedDecl, readEmbedDeclNative): its name, its type as written
-// ("" when it has none) and its patterns, quoted as written.
+// embedDecl is an embed declaration as lowerEmbedDecl reads it, from its node
+// (readEmbedDeclNative): its name, its type as written ("" when it has none)
+// and its patterns, quoted as written.
 type embedDecl struct {
 	name, typeName string
 	patterns       []string
 }
 
-// readEmbedDecl reads an embed declaration on ANTLR's tree.
-func readEmbedDecl(ctx *grammar.EmbedDeclarationContext) embedDecl {
-	d := embedDecl{name: ctx.Identifier().GetText()}
-	if ctx.Type_() != nil {
-		d.typeName = galaparser.TypeText(ctx.Type_())
-	}
-	for _, s := range ctx.EmbedPatterns().(*grammar.EmbedPatternsContext).AllSTRING() {
-		d.patterns = append(d.patterns, s.GetText())
-	}
-	return d
-}
-
-// lowerEmbedDecl lowers an embed declaration.
+// lowerEmbedDecl lowers `embed val name Type = "pattern"`.
+// For string embeds, generates: var name string (with //go:embed via post-processing)
+// For EmbeddedFS embeds, generates: var _embed_name embed.FS; var name = std.NewEmbeddedFS(_embed_name)
 func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 	varName := d.name
 
@@ -224,8 +158,8 @@ type declName struct {
 }
 
 // bindingDecl is a val or var declaration as its lowering (lowerValDecl,
-// lowerVarDecl, lowerTupleDestructure) reads it, from either tree
-// (readBindingDecl, readBindingDeclNative).
+// lowerVarDecl, lowerTupleDestructure) reads it, from its node
+// (readBindingDeclNative).
 type bindingDecl struct {
 	at       srcNode
 	topLevel bool // a package-level declaration, not one in a body
@@ -241,39 +175,6 @@ type bindingDecl struct {
 	// declaration whose names are a lone `_` and that has an initializer
 	// (see checkBlankDeclaration).
 	blankForm, blankHint string
-}
-
-// ctxDeclNames is the names of the identifier list idList, on ANTLR's tree.
-func ctxDeclNames(idList grammar.IIdentifierListContext) []declName {
-	ids := idList.(*grammar.IdentifierListContext).AllIdentifier()
-	names := make([]declName, len(ids))
-	for i, id := range ids {
-		names[i] = declName{text: id.GetText(), at: srcNode{ctx: id}}
-	}
-	return names
-}
-
-// readBindingDecl reads a val or var declaration, keyword, on ANTLR's tree.
-func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
-	d := bindingDecl{at: srcNode{ctx: ctx}, topLevel: isTopLevelDecl(ctx), typ: antlrType(ctx.Type_())}
-	if list, ok := ctx.ExpressionList().(*grammar.ExpressionListContext); ok && list != nil {
-		d.exprs = antlrExprList(list)
-	}
-	idList := ctx.IdentifierList()
-	if tp := ctx.TuplePattern(); tp != nil {
-		d.tuple = srcNode{ctx: tp}
-		idList = tp.(*grammar.TuplePatternContext).IdentifierList()
-	}
-	d.names = ctxDeclNames(idList)
-	if d.exprs.ok() && !d.tuple.ok() && isLoneBlank(d.names) {
-		d.blankForm = blankDeclarationForm(keyword, d.typ)
-		d.blankHint = blankDeclarationHint(ctx)
-	}
-	return d
-}
-
-func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
-	return t.lowerValDecl(readBindingDecl(ctx, "val"))
 }
 
 // lowerValDecl lowers a val declaration.
@@ -637,13 +538,6 @@ func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) 
 	}, nil
 }
 
-// isTopLevelDecl reports whether ctx is a package-level declaration, not one
-// in a body.
-func isTopLevelDecl(ctx antlr.ParserRuleContext) bool {
-	_, topLevel := ctx.GetParent().(*grammar.TopLevelDeclarationContext)
-	return topLevel
-}
-
 // packageTempAnchor is what a package-level declaration's temps are named
 // after: the first name other than `_` it binds. Every file of a package
 // shares one Go scope and each file's temp counter starts over, so a counter
@@ -680,22 +574,6 @@ func (t *galaASTTransformer) tupleTempName(topLevel bool, names []declName) stri
 	return fmt.Sprintf("__tuple_%d", t.nextTupleID())
 }
 
-// tupleDeclaration is what `val` and `var` declarations share: a tuple
-// pattern or an identifier list, an optional type and an optional
-// initializer.
-type tupleDeclaration interface {
-	antlr.ParserRuleContext
-	TuplePattern() grammar.ITuplePatternContext
-	IdentifierList() grammar.IIdentifierListContext
-	Type_() grammar.ITypeContext
-	ExpressionList() grammar.IExpressionListContext
-}
-
-var (
-	_ tupleDeclaration = (*grammar.ValDeclarationContext)(nil)
-	_ tupleDeclaration = (*grammar.VarDeclarationContext)(nil)
-)
-
 // checkBlankDeclaration rejects `val _ = expr` and `var _ = expr`, typed or
 // not, with GALA-E0060: a declaration whose only name is `_` binds nothing, so
 // the expression belongs on its own as a statement. A `_` among several names
@@ -731,25 +609,10 @@ func loneBlankError(at srcNode, names []declName, form, hint string) error {
 	return spanErrorAt(galaerr.CodeBlankValDeclaration, at.rng(), names[0].at.rng(), fmt.Sprintf("`%s` binds nothing", form), hint)
 }
 
-// blankDeclarationHint is GALA-E0060's hint: a package-level declaration has
-// no statement to become, and only in a lambda can a bare call returning an
-// `error` be refused (when the lambda has no result).
-func blankDeclarationHint(ctx antlr.ParserRuleContext) string {
-	if isTopLevelDecl(ctx) {
-		return topLevelBlankHint
-	}
-	for p := ctx.GetParent(); p != nil; p = p.GetParent() {
-		if _, ok := p.(*grammar.FunctionDeclarationContext); ok {
-			break
-		}
-		if _, ok := p.(*grammar.LambdaExpressionContext); ok {
-			return lambdaBlankHint
-		}
-	}
-	return bodyBlankHint
-}
-
-// GALA-E0060's hints, by where the declaration sits (blankDeclarationHint).
+// GALA-E0060's hints, by where the declaration sits
+// (nativeBlankDeclarationHint): a package-level declaration has no statement
+// to become, and only in a lambda can a bare call returning an `error` be
+// refused (when the lambda has no result).
 const (
 	topLevelBlankHint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
 	lambdaBlankHint   = "write the expression as a bare statement; in a lambda with no result, a call that returns only an `error` becomes `FromError(call())`; if the value matters, bind it to a name and use it"
@@ -763,70 +626,39 @@ func malformedTupleDestructure(from, to srcNode, msg, hint string) error {
 
 // srcRange is where a node of the source sits, as diagnostics read it: its
 // first token's line and column, and its last token's line and the column
-// just past that token, in code points as columns count. Both trees give the
-// same range for the same node (ctxRange, nativeRange).
+// just past that token, in code points as columns count (nativeRange).
 type srcRange struct {
 	line, col, stopLine, stopEnd int
 }
 
-// ctxRange is the range of ctx on ANTLR's tree.
-func ctxRange(ctx antlr.ParserRuleContext) srcRange {
-	start, stop := ctx.GetStart(), ctx.GetStop()
-	r := srcRange{line: start.GetLine(), col: start.GetColumn()}
-	if stop != nil {
-		r.stopLine, r.stopEnd = stop.GetLine(), stop.GetColumn()+utf8.RuneCountInString(stop.GetText())
-	}
-	return r
-}
-
-// srcNode is a node of either tree, as a diagnostic locates it: its context
-// on ANTLR's tree, or its native node. The readers keep the node and the
-// range is read only when a diagnostic needs it, so a declaration that lowers
-// cleanly pays nothing for it.
+// srcNode is a node of the native tree, as a diagnostic locates it. The
+// readers keep the node and the range is read only when a diagnostic needs
+// it, so a declaration that lowers cleanly pays nothing for it.
 type srcNode struct {
-	ctx  antlr.ParserRuleContext
 	node native.GalaNodeRef
 }
 
 // ok reports whether n is a node, not the zero srcNode.
-func (n srcNode) ok() bool { return n.ctx != nil || n.node.Ok() }
+func (n srcNode) ok() bool { return n.node.Ok() }
 
 // rng is n's range.
-func (n srcNode) rng() srcRange {
-	if n.node.Ok() {
-		return nativeRange(n.node)
-	}
-	return ctxRange(n.ctx)
-}
+func (n srcNode) rng() srcRange { return nativeRange(n.node) }
 
 // start is the line and column of n's first token, rng's start without
 // its stop, for the clean paths that pass a position on.
 func (n srcNode) start() (line, col int) {
-	if n.node.Ok() {
-		s := n.node.Start()
-		return int(s.Line), int(s.Column)
-	}
-	s := n.ctx.GetStart()
-	return s.GetLine(), s.GetColumn()
+	s := n.node.Start()
+	return int(s.Line), int(s.Column)
 }
 
-// spanError is a coded diagnostic underlining from the start of from to the
-// end of to when both are on one line.
-func spanError(code galaerr.ErrorCode, from, to antlr.ParserRuleContext, msg, hint string) error {
-	return spanErrorAt(code, ctxRange(from), ctxRange(to), msg, hint)
-}
-
-// spanErrorAt is spanError over ranges.
+// spanErrorAt is a coded diagnostic underlining from the start of from to
+// the end of to when both are on one line.
 func spanErrorAt(code galaerr.ErrorCode, from, to srcRange, msg, hint string) error {
 	err := galaerr.NewCodedSemanticError(code, from.line, from.col, msg, hint)
 	if to.stopLine == from.line {
 		err = err.WithSpan(to.stopEnd)
 	}
 	return err
-}
-
-func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
-	return t.lowerVarDecl(readBindingDecl(ctx, "var"))
 }
 
 // lowerVarDecl lowers a var declaration.
@@ -957,7 +789,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 }
 
 // funcDecl is a function or method declaration as lowerFuncDecl reads it,
-// from either tree (readFuncDecl, readFuncDeclNative).
+// from its node (readFuncDeclNative).
 type funcDecl struct {
 	name string
 	recv *receiverDecl // nil for a function
@@ -976,26 +808,6 @@ type receiverDecl struct {
 	at    srcNode
 	isVar bool
 	typ   typeSrc
-}
-
-// readFuncDecl reads a function declaration on ANTLR's tree.
-func readFuncDecl(ctx *grammar.FunctionDeclarationContext) funcDecl {
-	d := funcDecl{name: ctx.Identifier().GetText(), sig: antlrSig(ctx.Signature()), expr: antlrExpr(ctx.Expression())}
-	if b, ok := ctx.Block().(*grammar.BlockContext); ok && b != nil {
-		d.block = antlrBlock(b)
-	}
-	if r := ctx.Receiver(); r != nil {
-		recvCtx := r.(*grammar.ReceiverContext)
-		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: srcNode{ctx: recvCtx}, isVar: recvCtx.VAR() != nil, typ: antlrType(recvCtx.Type_())}
-	}
-	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
-	}
-	return d
-}
-
-func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) (ast.Decl, error) {
-	return t.lowerFuncDecl(readFuncDecl(ctx))
 }
 
 // lowerFuncDecl lowers a function or method declaration.
@@ -1444,7 +1256,7 @@ func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
 }
 
 // shorthandDecl is a struct shorthand declaration as lowerShorthandDecl reads
-// it, from either tree (readShorthandDecl, readShorthandDeclNative).
+// it, from its node (readShorthandDeclNative).
 type shorthandDecl struct {
 	at         srcNode
 	name       string
@@ -1454,7 +1266,7 @@ type shorthandDecl struct {
 }
 
 // paramDecl is a parameter of a signature, a struct shorthand or a lambda, as
-// lowerParam reads it, from either tree (readParams, readParamsNative): where
+// lowerParam reads it (readParamsNative): where
 // it and its name are written, its name, its keyword, its type, and whether
 // it is variadic or has a default clause, and that clause's value.
 type paramDecl struct {
@@ -1469,64 +1281,13 @@ type paramDecl struct {
 	typ        typeSrc // no type when it has none
 }
 
-// antlrDefault is the expression of a parameter's default d, and no
-// expression when it has none.
-func antlrDefault(d grammar.IParamDefaultContext) exprSrc {
-	if d == nil {
-		return exprSrc{}
-	}
-	return antlrExpr(d.Expression())
-}
-
-// nativeDefault is antlrDefault of d, a native node: its expression, which a
+// nativeDefault is the expression of a parameter's default d, which a
 // default always has (a missing one is an internal error, see nativeExpr).
 func nativeDefault(d native.ParamDefaultNode) exprSrc {
 	if !d.Ok() {
 		return exprSrc{}
 	}
 	return nativeExpr(d.Expression().GalaNodeRef)
-}
-
-// readParams reads a parameter list on ANTLR's tree.
-func readParams(ps *grammar.ParametersContext) []paramDecl {
-	list, ok := ps.ParameterList().(*grammar.ParameterListContext)
-	if !ok {
-		return nil
-	}
-	var out []paramDecl
-	for _, pCtx := range list.AllParameter() {
-		param := pCtx.(*grammar.ParameterContext)
-		pd := paramDecl{
-			at:         srcNode{ctx: param},
-			isVar:      param.VAR() != nil,
-			isVal:      param.VAL() != nil,
-			variadic:   param.ELLIPSIS() != nil,
-			hasDefault: param.ParamDefault() != nil,
-			def:        antlrDefault(param.ParamDefault()),
-			typ:        antlrType(param.Type_()),
-		}
-		// A parameter can be nameless, as in `(...int) => 0`.
-		if id := param.Identifier(); id != nil {
-			pd.nameAt, pd.name = srcNode{ctx: id}, id.GetText()
-		}
-		out = append(out, pd)
-	}
-	return out
-}
-
-// readShorthandDecl reads a struct shorthand declaration on ANTLR's tree.
-func readShorthandDecl(ctx *grammar.StructShorthandDeclarationContext) shorthandDecl {
-	id := ctx.Identifier()
-	d := shorthandDecl{at: srcNode{ctx: ctx}, name: id.GetText(), nameAt: srcNode{ctx: id}}
-	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
-	}
-	d.params = readParams(ctx.Parameters().(*grammar.ParametersContext))
-	return d
-}
-
-func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {
-	return t.lowerShorthandDecl(readShorthandDecl(ctx))
 }
 
 // lowerShorthandDecl lowers a struct shorthand declaration.
@@ -1695,9 +1456,8 @@ func (t *galaASTTransformer) storedFieldElem(meta *transpiler.TypeMetadata, fiel
 	return meta.Fields[field]
 }
 
-// typeDecl is a type declaration as lowerTypeDecl reads it, from either tree
-// (readTypeDecl, readTypeDeclNative). The types it holds are ANTLR contexts,
-// lowered on ANTLR's tree.
+// typeDecl is a type declaration as lowerTypeDecl reads it, from its node
+// (readTypeDeclNative).
 type typeDecl struct {
 	name       string
 	nameAt     srcNode
@@ -1732,45 +1492,6 @@ type methodSpecDecl struct {
 	name       string
 	typeParams []typeParam
 	sig        sigSrc
-}
-
-// readTypeDecl reads a type declaration on ANTLR's tree.
-func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
-	id := ctx.Identifier()
-	d := typeDecl{name: id.GetText(), nameAt: srcNode{ctx: id}}
-	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
-	}
-	if ctx.StructType() != nil {
-		d.kind = structTypeDecl
-		for _, fCtx := range ctx.StructType().(*grammar.StructTypeContext).AllStructField() {
-			f := fCtx.(*grammar.StructFieldContext)
-			d.fields = append(d.fields, structFieldDecl{name: f.Identifier().GetText(), isVar: f.VAR() != nil, typ: antlrType(f.Type_())})
-		}
-	} else if ctx.InterfaceType() != nil {
-		d.kind = interfaceTypeDecl
-		for _, mCtx := range ctx.InterfaceType().(*grammar.InterfaceTypeContext).AllMethodSpec() {
-			spec := mCtx.(*grammar.MethodSpecContext)
-			m := methodSpecDecl{name: spec.Identifier().GetText(), sig: antlrSig(spec.Signature())}
-			if tps := spec.TypeParameters(); tps != nil {
-				m.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
-			}
-			d.methods = append(d.methods, m)
-		}
-	} else if ctx.TypeAlias() != nil {
-		d.kind = aliasTypeDecl
-		aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
-		if aliasCtx.Type_() != nil {
-			d.aliasType = antlrType(aliasCtx.Type_())
-		} else if aliasCtx.Identifier() != nil {
-			d.aliasIdent = aliasCtx.Identifier().GetText()
-		}
-	}
-	return d
-}
-
-func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {
-	return t.lowerTypeDecl(readTypeDecl(ctx), false)
 }
 
 // lowerTypeDecl lowers a type declaration. A local one (declared in a function
@@ -1995,26 +1716,6 @@ const (
 	importUnnamed                       // something else before the path (parse-error recovery)
 )
 
-// readImportDecl reads an import declaration's specs on ANTLR's tree.
-func readImportDecl(ctx *grammar.ImportDeclarationContext) []importSpecDecl {
-	var specs []importSpecDecl
-	for _, specCtx := range ctx.AllImportSpec() {
-		s := specCtx.(*grammar.ImportSpecContext)
-		d := importSpecDecl{path: strings.Trim(s.STRING().GetText(), "\"")}
-		if s.Identifier() != nil {
-			d.kind, d.alias = importAliased, s.Identifier().GetText()
-		} else if s.GetChildCount() > 1 {
-			// Check for '.'
-			d.kind = importUnnamed
-			if terminal, ok := s.GetChild(0).(antlr.TerminalNode); ok && terminal.GetText() == "." {
-				d.kind = importDot
-			}
-		}
-		specs = append(specs, d)
-	}
-	return specs
-}
-
 // lowerImportDecl lowers an import declaration of specs.
 func (t *galaASTTransformer) lowerImportDecl(specDecls []importSpecDecl) ast.Decl {
 	// import "pkg"  or import ( "pkg1" "pkg2" )
@@ -2206,30 +1907,6 @@ func (t *galaASTTransformer) lowerStructField(f structFieldDecl) (*ast.Field, er
 
 // typeParam is a declared type parameter: its name and its constraint.
 type typeParam struct{ name, constraint string }
-
-// readTypeParams reads a type parameter list on ANTLR's tree. A partial parse
-// (an editor's `S[T]` or `S[]`) may have no list, or a parameter without its
-// name or constraint; it reads what is there.
-func readTypeParams(ctx *grammar.TypeParametersContext) []typeParam {
-	list, ok := ctx.TypeParameterList().(*grammar.TypeParameterListContext)
-	if !ok {
-		return nil
-	}
-	var params []typeParam
-	for _, tpCtx := range list.AllTypeParameter() {
-		tp := tpCtx.(*grammar.TypeParameterContext)
-		params = append(params, typeParam{name: identText(tp.Identifier(0)), constraint: identText(tp.Identifier(1))})
-	}
-	return params
-}
-
-// identText is id's text, or "" when a partial parse has no identifier.
-func identText(id grammar.IIdentifierContext) string {
-	if id == nil {
-		return ""
-	}
-	return id.GetText()
-}
 
 // lowerTypeParams lowers a type parameter list.
 func lowerTypeParams(params []typeParam) *ast.FieldList {
