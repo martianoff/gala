@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -151,6 +152,13 @@ func TestBrokenBufferGolden(t *testing.T) {
 			for _, off := range spread(completionCursors(text), 6) {
 				at := wirePosition(text, off)
 				res, err := h.Completion(ctx, &lsp.CompletionParams{TextDocumentPositionParams: lsp.TextDocumentPositionParams{TextDocument: doc, Position: at}})
+				if res != nil {
+					// The server gathers some items from maps, so their order
+					// is not part of the answer: an editor sorts them itself.
+					slices.SortStableFunc(res.Items, func(a, b lsp.CompletionItem) int {
+						return strings.Compare(jsonOf(t, a), jsonOf(t, b))
+					})
+				}
 				record("completion", off, []any{res, err})
 			}
 			require.NoError(t, h.DidClose(ctx, &lsp.DidCloseTextDocumentParams{TextDocument: doc}))
