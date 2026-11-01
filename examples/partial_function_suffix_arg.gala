@@ -1,5 +1,10 @@
 package main
 
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
 // show takes the Option a partial function returns, not the partial function.
 func show(o Option[int]) string = o match {
     case Some(x) => s"got $x"
@@ -31,4 +36,9 @@ func main() {
     Println(show(Some(1).FlatMap({ case n => n * 3 }(_))))
     val applied = { case n => n - 1 }(10)
     Println(applied)
+
+    // Extractor patterns are matched against the argument's type too.
+    Println({ case Some(x) => x * 2 }(Some(3)))
+    val shape Shape = Circle(4)
+    Println({ case Circle(r) => r }(shape))
 }

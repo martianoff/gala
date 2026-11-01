@@ -174,10 +174,11 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 }
 
 // lowerAppliedPartial lowers p's partial-function primary applied to its
-// first suffix, call, when that is a call with one positional argument and
-// the patterns name no parameter type (`{ case n => n * 2 }(3)`): the
-// argument's type, when known, is the literal's parameter type, as a slot's
-// would be. It reports false, lowering nothing, for any other p.
+// first suffix, call, when that is a call with one positional argument
+// (`{ case n => n * 2 }(3)`): the argument's type, when it is known and
+// concrete, is the literal's parameter type, as a function slot's would be,
+// and its patterns are matched against it. It reports false, lowering
+// nothing, for any other p.
 func (t *galaASTTransformer) lowerAppliedPartial(p postfixSrc, call suffixSrc) (ast.Expr, bool, error) {
 	pf := p.primaryPartial(t)
 	if !pf.ok() || call.ident() != "" || call.childCount() < 2 || call.opener() != "(" {
@@ -191,15 +192,13 @@ func (t *galaASTTransformer) lowerAppliedPartial(p postfixSrc, call suffixSrc) (
 	if err != nil || !v.expr.ok() || v.spread {
 		return nil, false, nil
 	}
-	if !transpiler.IsUnusable(t.inferPartialFunctionParamType(pf.cases(t))) {
-		return nil, false, nil
-	}
 	arg, err := t.lowerExpr(v.expr)
 	if err != nil {
 		return nil, false, err
 	}
 	var s slot
-	if argType := t.getExprTypeName(arg); !transpiler.IsUnusableOrAny(argType) {
+	if argType := t.getExprTypeName(arg); !transpiler.IsUnusableOrAny(argType) &&
+		!transpiler.ContainsUnusable(argType) && !t.mentionsUnboundTypeParam(argType) {
 		s.typ = transpiler.FuncType{Params: []transpiler.Type{argType}}
 	}
 	lit, err := t.transformPartialFunctionLiteral(pf, s)

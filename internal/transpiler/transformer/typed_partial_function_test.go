@@ -154,4 +154,9 @@ func TestPartialFunctionWithSuffixArgument(t *testing.T) {
 			assert.NotContains(t, got, "_pf_arg any")
 		})
 	}
+	// An extractor pattern is matched against the argument's type, not the
+	// `Option[any]` its pattern alone suggests.
+	got, err := trans.Transpile(decls+"func main() {\n    Println({ case Some(x) => x * 2 }(Some(3)))\n}\n", "")
+	require.NoError(t, err)
+	assert.Contains(t, got, "func(_pf_arg std.Option[int]) std.Option[int] {")
 }
