@@ -16,6 +16,7 @@ import (
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler/resolver"
@@ -160,34 +161,35 @@ type galaASTTransformer struct {
 	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
 	onNativeDecl func()
 	// onNativeStmt, when set, is told of each statement the native walk
-	// lowers in a block, by its node index and its first line. It observes
+	// lowers in a block, by its node. It observes
 	// and changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeStmt func(index, line int)
+	onNativeStmt func(n native.GalaNodeRef)
 	// onNativeType, when set, is told of each type, and each sealed or
 	// opaque type declaration, lowered off the native tree, by its first
 	// line. It observes and changes nothing; TestNativeTypeCases sets it.
 	onNativeType func(line int)
 	// onNativeLambda, when set, is told of each lambda lowered on the
-	// native tree, by its node index. It observes and
+	// native tree, by its node. It observes and
 	// changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeLambda func(index int)
+	onNativeLambda func(n native.GalaNodeRef)
 	// onNativeCapture, when set, is told of each Sendable capture check run
 	// on the native tree. It observes and changes nothing;
 	// TestNativeWalkCases sets it to prove which tree a check read.
 	onNativeCapture func()
 	// onNativeExpr, when set, is told of each expression the native walk
-	// lowers (lowerExprNative), by its node index and its first line. It
+	// lowers (lowerExprNative), by its node: one of the file's tree, or of a
+	// default's or an interpolated expression's, parsed on its own. It
 	// observes and changes nothing; the native walk tests set it to prove
 	// the native path ran.
-	onNativeExpr func(index, line int)
+	onNativeExpr func(n native.GalaNodeRef)
 	// onNativeShape, when set, is told of each expression shape the native
 	// walk lowers itself (nativeShape), by its first line. It observes and
 	// changes nothing; TestNativeExprWalk sets it to check each marked line.
 	onNativeShape func(line int, shape string)
 	// onNativeCase, when set, is told of each case clause a match reads on the
-	// native tree, by its node index and its first line. It observes and
+	// native tree, by its node. It observes and
 	// changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeCase func(index, line int)
+	onNativeCase func(n native.GalaNodeRef)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that

@@ -244,7 +244,7 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 	}
 	// The analyzer checked the file's own parse tree, which holds this
 	// expression only as string text.
-	if err := checkGeneratedCodecNamesOf(e); err != nil {
+	if err := t.checkGeneratedCodecNamesOf(e); err != nil {
 		return nil, err
 	}
 	if err := t.checkVariantTypeNamesOf(e); err != nil {

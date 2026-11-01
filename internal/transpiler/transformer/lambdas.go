@@ -137,7 +137,7 @@ func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
 // type is used.
 func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
 	if t.onNativeLambda != nil && l.node.Ok() {
-		t.onNativeLambda(l.node.Index())
+		t.onNativeLambda(l.node.GalaNodeRef)
 	}
 	t.pushScope()
 	defer t.popScope()

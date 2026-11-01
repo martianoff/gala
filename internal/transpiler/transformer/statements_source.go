@@ -873,6 +873,6 @@ func (n srcNode) text() string {
 // block's, a `bind` chain's, an if-expression branch's) calls it.
 func (t *galaASTTransformer) noteNativeStmt(s stmtSrc) {
 	if t.onNativeStmt != nil && s.at.node.Ok() {
-		t.onNativeStmt(s.at.node.Index(), int(s.at.node.Start().Line))
+		t.onNativeStmt(s.at.node)
 	}
 }

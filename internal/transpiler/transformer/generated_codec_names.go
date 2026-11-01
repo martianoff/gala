@@ -70,6 +70,12 @@ func CheckGeneratedCodecNames(tree antlr.Tree) error {
 // CheckGeneratedCodecNamesNative is CheckGeneratedCodecNames of root, a node
 // of the native tree.
 func CheckGeneratedCodecNamesNative(root native.GalaNodeRef) error {
+	return generatedCodecNameErrorAt(generatedCodecNameIn(root))
+}
+
+// generatedCodecNameIn is the first identifier of root spelled like a
+// generated codec metadata type, or no node.
+func generatedCodecNameIn(root native.GalaNodeRef) native.GalaNodeRef {
 	var found native.GalaNodeRef
 	root.Walk(func(n native.GalaNodeRef) bool {
 		if found.Ok() {
@@ -83,20 +89,28 @@ func CheckGeneratedCodecNamesNative(root native.GalaNodeRef) error {
 		}
 		return false
 	})
-	if !found.Ok() {
-		return nil
-	}
-	start := found.Start()
-	return GeneratedCodecNameError(galaparser.NativeText(found), transpiler.SourcePos{Line: int(start.Line), Column: int(start.Column)})
+	return found
 }
 
-// checkGeneratedCodecNamesOf is CheckGeneratedCodecNames of e, on the tree it
-// is on.
-func checkGeneratedCodecNamesOf(e exprSrc) error {
-	if e.node.Ok() {
-		return CheckGeneratedCodecNamesNative(e.node)
+// generatedCodecNameErrorAt is the GALA-E0058 error of id, an identifier node
+// generatedCodecNameIn found, or nil for no node.
+func generatedCodecNameErrorAt(id native.GalaNodeRef) error {
+	if !id.Ok() {
+		return nil
 	}
-	return CheckGeneratedCodecNames(e.ctx)
+	start := id.Start()
+	return GeneratedCodecNameError(galaparser.NativeText(id), transpiler.SourcePos{Line: int(start.Line), Column: int(start.Column)})
+}
+
+// checkGeneratedCodecNamesOf is CheckGeneratedCodecNames of e, an expression
+// parsed on its own (an interpolated one), on the tree it is on.
+func (t *galaASTTransformer) checkGeneratedCodecNamesOf(e exprSrc) error {
+	if !e.node.Ok() {
+		return CheckGeneratedCodecNames(e.ctx)
+	}
+	id := generatedCodecNameIn(e.node)
+	t.nativeShape(id, "codec name")
+	return generatedCodecNameErrorAt(id)
 }
 
 // GeneratedCodecNameError is the GALA-E0058 error of name, an identifier

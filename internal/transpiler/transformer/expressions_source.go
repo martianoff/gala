@@ -160,7 +160,7 @@ func (t *galaASTTransformer) trackNativePosition(n native.GalaNodeRef) {
 func (t *galaASTTransformer) lowerExprNative(n native.GalaNodeRef) (ast.Expr, error) {
 	t.trackNativePosition(n)
 	if t.onNativeExpr != nil {
-		t.onNativeExpr(n.Index(), t.lastLine)
+		t.onNativeExpr(n)
 	}
 	or, ok := firstKidNode(n)
 	if !ok || or.Kind() != native.GalaKIND_orExpr {

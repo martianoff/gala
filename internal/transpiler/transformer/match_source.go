@@ -34,7 +34,7 @@ func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
 	var out []caseSrc
 	for c := range galaparser.NativeKids(n, native.GalaKIND_caseClause) {
 		if t.onNativeCase != nil {
-			t.onNativeCase(c.Index(), int(c.Start().Line))
+			t.onNativeCase(c)
 		}
 		out = append(out, caseSrc{node: c})
 	}

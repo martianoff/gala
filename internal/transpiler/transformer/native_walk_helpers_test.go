@@ -40,6 +40,7 @@ type walkRun struct {
 	captures  int                     // the Sendable capture checks run on the native tree
 	exprs     int                     // the expressions the native walk lowered, each counted once
 	exprLines map[int]bool            // the lines those expressions start on
+	parsedAt  map[int]bool            // the lines of the expressions, lambdas and case clauses it read on a tree of their own: a default value's or an interpolated expression's
 	shapes    map[int]map[string]bool // the expression shapes it lowered, by line
 	cases     int                     // the case clauses of matches and partial functions read on the native tree, each counted once
 	caseLines map[int]bool            // the lines those case clauses start on
@@ -68,7 +69,7 @@ type walkPipeline struct {
 
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
-	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
+	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, parsedAt: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
 	inner := tr
 	transformer.OnNativeDecl(tr, func() {
 		if run.native == 0 {
@@ -77,11 +78,11 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		run.native++
 	})
 	lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}
-	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true })
+	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true }, func(line int) { run.parsedAt[line] = true })
 	transformer.OnNativeStmt(tr, func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true })
-	transformer.OnNativeLambda(tr, func(index int) { lambdas[index] = true })
+	transformer.OnNativeLambda(tr, func(index int) { lambdas[index] = true }, func(line int) { run.parsedAt[line] = true })
 	transformer.OnNativeCapture(tr, func() { run.captures++ })
-	transformer.OnNativeExpr(tr, func(index, line int) { exprs[index], run.exprLines[line] = true, true })
+	transformer.OnNativeExpr(tr, func(index, line int) { exprs[index], run.exprLines[line] = true, true }, func(line int) { run.parsedAt[line] = true })
 	transformer.OnNativeShape(tr, func(line int, shape string) {
 		if run.shapes[line] == nil {
 			run.shapes[line] = map[string]bool{}
@@ -236,8 +237,8 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 	// expression it is in crosses back to it, lambdas_source.go), and a match
 	// and a partial function read their case clauses there wherever they are
 	// (casesOf), but in a parameter's default value: a
-	// default is lowered at each call, from the declaration the analysis
-	// recorded, on ANTLR's tree.
+	// default is lowered at each call, from the text the analysis recorded,
+	// parsed on a tree of its own (the hooks count only the file's tree).
 	var below func(antlr.Tree)
 	below = func(node antlr.Tree) {
 		switch n := node.(type) {
