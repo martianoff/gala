@@ -1280,11 +1280,11 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// Only the import tables: unexported vals are in scope within the package,
 	// so addFile's private-val bookkeeping does not apply. A sibling's Go
 	// imports were not loaded here, so a Go package it dot-imports is loaded
-	// once one of its defaults is recorded.
+	// for a default that names something of it.
 	if filePath != "" && len(siblingTrees) > 0 {
 		scopes := newDefaultScopeRecorder(richAST.OwnImportPath)
 		scopes.keepRecorded = true
-		scopes.goDotName = a.siblingGoDotName(richAST)
+		scopes.goDots = a.newGoDotLoader(richAST)
 		scopes.quals[a.paths.canonical(filePath)] = fileQuals
 		for i, q := range siblingQuals {
 			if i < len(siblingPaths) {

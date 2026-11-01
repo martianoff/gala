@@ -208,13 +208,18 @@ func TestDefaultGoDotImport(t *testing.T) {
 	write("gala.mod", "module example.com/godot\n\ngala dev\n")
 	write("lib/a.gala", `package lib
 
-import . "strings"
+import (
+    . "strings"
+    . "unicode/utf8"
+)
 
 struct Box(N int)
 
 func (b Box) Label(prefix string = ToUpper("box")) string = s"${prefix}-${b.N}"
 
 func Tag(s string = Repeat("ab", 2)) string = s
+
+func Width(n int = RuneCountInString("héllo")) int = n
 `)
 
 	tests := []struct {
@@ -229,10 +234,11 @@ func Tag(s string = Repeat("ab", 2)) string = s
 import "example.com/godot/lib"
 
 func main() {
-    Println(lib.Box(1).Label(), lib.Tag())
+    Println(lib.Box(1).Label(), lib.Tag(), lib.Width())
 }
 `,
-			want: []string{`strings.ToUpper("box")`, `strings.Repeat("ab", 2)`, `"strings"`},
+			want: []string{`strings.ToUpper("box")`, `strings.Repeat("ab", 2)`, `"strings"`,
+				`utf8.RuneCountInString("héllo")`, `"unicode/utf8"`},
 		},
 		{
 			name: "another package, a using file that imports strings under another name",
@@ -272,10 +278,11 @@ func main() {
 			name: "another file of the package, a using file that imports nothing",
 			src: `package lib
 
-func Describe(b Box) string = b.Label() + Tag()
+func Describe(b Box) string = s"${b.Label()}${Tag()}${Width()}"
 `,
 			file: "lib/b.gala",
-			want: []string{`strings.ToUpper("box")`, `strings.Repeat("ab", 2)`, `"strings"`},
+			want: []string{`strings.ToUpper("box")`, `strings.Repeat("ab", 2)`, `"strings"`,
+				`utf8.RuneCountInString("héllo")`, `"unicode/utf8"`},
 		},
 		{
 			name: "another file of the package, a using file that dot-imports strings",

@@ -346,8 +346,8 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 // another file, when it is a type, function, val or var of a package the
 // default's declaring file dot-imports (`EmptyArray` of collection_immutable,
 // `ToUpper` of Go's strings) and this file does not dot-import that package
-// too. Otherwise id is
-// returned as is. A qualified selector is recorded in qualified.
+// too. Otherwise id is returned as is. A qualified selector is recorded in
+// qualified.
 func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler.DefaultScope, qualified map[ast.Node]bool) ast.Expr {
 	for _, path := range slices.Sorted(maps.Keys(scope.DotImports)) { // deterministic output
 		pkgName := scope.DotImports[path]

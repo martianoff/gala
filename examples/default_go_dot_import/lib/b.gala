@@ -1,8 +1,8 @@
 package lib
 
-// lib's other file does not import strings. a.gala's defaults, lowered here,
-// still resolve ToUpper and Repeat through a.gala's dot import of strings.
-// They used to be lowered bare and fail to compile.
+// lib's other file imports neither package. a.gala's defaults, lowered here,
+// still resolve their names through a.gala's Go dot imports. They used to be
+// lowered bare and fail to compile.
 func Describe(b Box) string = b.Label()
 
-func DescribeTag() string = Tag()
+func DescribeTag() string = s"${Tag()} ${Width()}"
