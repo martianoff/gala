@@ -111,19 +111,26 @@ go_test(
 go_test(
     # keep
     name = "lsp_native_test",
-    srcs = ["native_tree_test.go"],
+    # Walks the corpus, and serves requests on broken buffers of it.
+    size = "large",
+    srcs = [
+        "broken_buffer_golden_test.go",
+        "native_tree_test.go",
+    ],
     data = [
         "//:all_gala_sources",
         "//collection_immutable:gala_sources",
         "//examples:all_gala_sources",
         "//go_interop:types.go",
         "//std:gala_sources",
+        "testdata/broken_buffers.golden",
         "testdata/handler_answers.golden",
     ],
     embed = [":lsp"],
     tags = ["no-sandbox"],
     deps = [
         "//galaerr",
+        "//internal/digestgolden",
         "//internal/parser",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",

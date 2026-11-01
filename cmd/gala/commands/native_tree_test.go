@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,16 +14,33 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/digestgolden"
 	"martianoff/gala/internal/parser"
 )
 
-// stagedSources is the .gala files staged as the test's data, sorted.
-func stagedSources(t *testing.T) []string {
+// The goldens of `gala imports --json` and `gala doc` over the corpus, frozen
+// when both read the file on ANTLR's tree and on the native tree alike, and
+// the two agreed. To refresh one, run its test with GALA_UPDATE_IMPORTS_GOLDEN
+// or GALA_UPDATE_DOC_GOLDEN set to the golden's path in the source tree:
+//
+//	bazel test //cmd/gala/commands:commands_native_test \
+//	  --test_filter=TestImportsGolden \
+//	  --test_env=GALA_UPDATE_IMPORTS_GOLDEN=$PWD/cmd/gala/commands/testdata/imports.golden
+const (
+	importsGolden = "cmd/gala/commands/testdata/imports.golden"
+	docGolden     = "cmd/gala/commands/testdata/doc.golden"
+)
+
+// stagedSources is the .gala files staged as the test's data, sorted, and the
+// directory the corpus is staged under.
+func stagedSources(t *testing.T) ([]string, string) {
 	t.Helper()
 	// Parse with galop's engine, the CLI's default, whatever the build's or
 	// environment's default engine.
 	parser.RequestEngine(string(parser.EngineGalop))
 	t.Cleanup(func() { parser.RequestEngine("") })
+	types, err := bazel.Runfile("go_interop/types.go")
+	require.NoError(t, err, "the corpus is not staged")
 	files, err := bazel.ListRunfiles()
 	require.NoError(t, err)
 	var paths []string
@@ -33,47 +51,42 @@ func stagedSources(t *testing.T) []string {
 	}
 	sort.Strings(paths)
 	require.Greater(t, len(paths), 300, "the corpus is not staged")
-	return paths
+	return paths, filepath.Dir(filepath.Dir(types))
 }
 
-// TestImportsTreesAgree extracts every corpus file's imports, as
-// `gala imports --json` prints them, on both trees: from the parse once its
-// native tree has converted, which importsOfParse then reads, and from the
-// same parse without its native tree.
-func TestImportsTreesAgree(t *testing.T) {
+// relKey is path relative to root, with forward slashes.
+func relKey(t *testing.T, root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	require.NoError(t, err)
+	return filepath.ToSlash(rel)
+}
+
+// TestImportsGolden extracts every corpus file's imports, as
+// `gala imports --json` prints them, and holds them to the golden.
+func TestImportsGolden(t *testing.T) {
+	paths, root := stagedSources(t)
+	g := digestgolden.Open(t, importsGolden, "GALA_UPDATE_IMPORTS_GOLDEN")
 	p := parser.NewAntlrGalaParser()
-	native, failed := 0, 0
-	for _, path := range stagedSources(t) {
+	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
-		parsed := p.ParseFile(string(data))
-		antlrOnly := *parsed
-		antlrOnly.Native = nil
-		want, onNative := importsOfParse(path, &antlrOnly)
-		require.False(t, onNative, path)
-		if handle := parsed.CleanNative(); handle != nil {
-			_, err := handle.Tree()
-			require.NoError(t, err)
-			got, onNative := importsOfParse(path, parsed)
-			require.True(t, onNative, "%s: read ANTLR's tree", path)
-			require.Equal(t, jsonText(t, want), jsonText(t, got), path)
-			native++
-		} else {
-			failed++
-		}
+		got := jsonText(t, extractImports(p, "", string(data)))
+		g.Check("imports "+relKey(t, root, path), digestgolden.Digest(string(data)), digestgolden.Digest(got), func() string { return got })
 	}
-	t.Logf("%d files read on the native tree, %d without one (a parse with errors, or one ANTLR's parser made) on ANTLR's", native, failed)
-	assert.Greater(t, native, 300)
+	g.Finish("`gala imports --json` over the corpus; see importsGolden in native_tree_test.go.")
+	if !g.Updating() {
+		t.Logf("%d of %d files held to the golden", g.Compared, len(paths))
+		assert.Greater(t, g.Compared, 300)
+	}
 }
 
-// TestDocTreesAgree documents every package directory of the corpus, as
-// `gala doc` does, with the analysis reading the file on its native tree and
-// on ANTLR's: the package surface, as `gala doc` prints it and as its JSON,
-// must be the same. A directory that does not document (more than one
-// package, a file that does not parse) must fail the same way.
-func TestDocTreesAgree(t *testing.T) {
+// TestDocGolden documents every package directory of the corpus, as
+// `gala doc` does, and holds the package surface, as `gala doc` prints it and
+// as its JSON, or the error, to the golden.
+func TestDocGolden(t *testing.T) {
+	paths, root := stagedSources(t)
 	dirs := map[string]bool{}
-	for _, path := range stagedSources(t) {
+	for _, path := range paths {
 		dirs[filepath.Dir(path)] = true
 	}
 	sorted := make([]string, 0, len(dirs))
@@ -81,29 +94,44 @@ func TestDocTreesAgree(t *testing.T) {
 		sorted = append(sorted, dir)
 	}
 	sort.Strings(sorted)
+	norm := strings.NewReplacer(root, "$ROOT", filepath.ToSlash(root), "$ROOT")
+	g := digestgolden.Open(t, docGolden, "GALA_UPDATE_DOC_GOLDEN")
 	documented := 0
 	for _, dir := range sorted {
-		pkgName := filepath.Base(dir)
-		var analyzed *parser.Parsed
-		got, gotErr := loadPackageDocWith(pkgName, dir, func(p *parser.Parsed) { analyzed = p })
-		want, wantErr := loadPackageDocWith(pkgName, dir, func(p *parser.Parsed) { p.Native = nil })
-		require.Equal(t, errText(wantErr), errText(gotErr), dir)
-		if wantErr != nil {
-			continue
+		pkg, err := loadPackageDoc(filepath.Base(dir), dir)
+		var got string
+		if err != nil {
+			got = "error: " + err.Error()
+		} else {
+			var text bytes.Buffer
+			renderPackageDoc(&text, pkg)
+			got = jsonText(t, pkg) + "\n" + text.String()
+			documented++
 		}
-		// The analysis converts the native tree exactly when it reads the
-		// file there.
-		handle := analyzed.CleanNative()
-		require.True(t, handle.Converted() && handle.Bridged(), "%s: the analysis read ANTLR's tree", dir)
-		require.Equal(t, jsonText(t, want), jsonText(t, got), dir)
-		var wantText, gotText bytes.Buffer
-		renderPackageDoc(&wantText, want)
-		renderPackageDoc(&gotText, got)
-		require.Equal(t, wantText.String(), gotText.String(), dir)
-		documented++
+		got = norm.Replace(got)
+		g.Check("doc "+relKey(t, root, dir), dirDigest(t, dir), digestgolden.Digest(got), func() string { return got })
 	}
-	t.Logf("%d directories, %d documented on the native tree", len(sorted), documented)
-	assert.Greater(t, documented, 5)
+	g.Finish("`gala doc` over the corpus; see docGolden in native_tree_test.go.")
+	if !g.Updating() {
+		t.Logf("%d directories, %d documented, %d held to the golden", len(sorted), documented, g.Compared)
+		assert.Greater(t, documented, 5)
+		assert.Greater(t, g.Compared, len(sorted)*3/4)
+	}
+}
+
+
+// dirDigest is the digest of the .gala files of dir, by name and text.
+func dirDigest(t *testing.T, dir string) string {
+	files, err := filepath.Glob(filepath.Join(dir, "*.gala"))
+	require.NoError(t, err)
+	sort.Strings(files)
+	var b strings.Builder
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		require.NoError(t, err)
+		fmt.Fprintf(&b, "%s\x00%d\x00%s", filepath.Base(f), len(data), data)
+	}
+	return digestgolden.Digest(b.String())
 }
 
 func jsonText(t *testing.T, v any) string {
@@ -111,11 +139,4 @@ func jsonText(t *testing.T, v any) string {
 	data, err := json.Marshal(v)
 	require.NoError(t, err)
 	return string(data)
-}
-
-func errText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

@@ -111,10 +111,13 @@ go_test(
         "//examples:all_gala_sources",
         "//go_builtins:builtins.go",
         "//go_interop:types.go",
+        "testdata/doc.golden",
+        "testdata/imports.golden",
     ],
     embed = [":commands"],
     tags = ["no-sandbox"],
     deps = [
+        "//internal/digestgolden",
         "//internal/parser",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
