@@ -199,15 +199,15 @@ func (t *galaASTTransformer) checkPtrZipResult(zipResultType transpiler.Type, zi
 		fmt.Sprintf("declare %s to return %s or a value, or bind the clauses one after another with `bind`", zip.Name, ptrOf(declared)))
 }
 
-// checkPtrViewReceiver rejects a match through the sealed view of a pointer
+// checkPtrViewReceiverAt rejects a match through the sealed view of a pointer
 // that may be nil when its MatchView has a `Ptr` receiver (GALA-E0080), as
 // checkPtrReceiver rejects calling it. at locates the match.
-func (t *galaASTTransformer) checkPtrViewReceiver(subjectType transpiler.Type, at antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkPtrViewReceiverAt(subjectType transpiler.Type, at srcNode) error {
 	ptr, ok := t.nullablePtrReceiver(subjectType, sealedViewMethod)
 	if !ok {
 		return nil
 	}
-	return ptrError(at,
+	return ptrErrorAt(at,
 		fmt.Sprintf("cannot match a %s through %s: %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr",
 			displayType(ptr), sealedViewMethod, sealedViewMethod, ptrOf(ptr)),
 		"match RequirePtr(p), which panics on nil, or an OptionPtrOf(p)")

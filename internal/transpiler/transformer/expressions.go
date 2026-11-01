@@ -371,10 +371,7 @@ func leadingAdditiveExpr(ctx grammar.IExpressionContext, sole bool) *grammar.Add
 // PrimaryOf returns the primary a postfix expression starts from, or nil when
 // it starts from a lambda, if-expression or partial function instead.
 func PrimaryOf(postfix *grammar.PostfixExprContext) *grammar.PrimaryContext {
-	if postfix == nil {
-		return nil
-	}
-	primaryExpr, _ := postfix.PrimaryExpr().(*grammar.PrimaryExprContext)
+	primaryExpr := postfixSrc{ctx: postfix}.antlrPrimaryExpr()
 	if primaryExpr == nil {
 		return nil
 	}
@@ -573,7 +570,6 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 
 // transformPrimary, lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral moved to constructors.go
 // Lambda-related functions moved to lambdas.go
-// findLambdaInExpression moved to lambdas.go
 func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
 	return t.transformIfExpressionAgainst(ctx, slot{})
 }
@@ -889,126 +885,7 @@ func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slo
 // transformBlock, which uses this to mark the match as statement-position
 // so void-returning arm calls do not get wrapped in `return ...`.
 func (t *galaASTTransformer) expressionIsBareMatch(exprCtx grammar.IExpressionContext) bool {
-	return t.bareMatchPostfix(exprCtx) != nil
-}
-
-// bareMatchPostfix returns the postfix expression of a bare match (see
-// expressionIsBareMatch), or nil.
-func (t *galaASTTransformer) bareMatchPostfix(exprCtx grammar.IExpressionContext) *grammar.PostfixExprContext {
-	postfixCtx := t.barePostfix(exprCtx)
-	if postfixCtx == nil || postfixCtx.GetChildCount() <= 1 {
-		return nil
-	}
-	// transformPostfixExpr detects match by scanning children for a node whose
-	// text is the keyword `match`. Mirror that here.
-	for i := 0; i < postfixCtx.GetChildCount(); i++ {
-		child := postfixCtx.GetChild(i)
-		if child == nil {
-			continue
-		}
-		if pt, ok := child.(antlr.ParseTree); ok && pt.GetText() == "match" {
-			return postfixCtx
-		}
-	}
-	return nil
-}
-
-// barePostfix returns the postfix expression exprCtx consists of when no
-// operator surrounds it, or nil.
-func (t *galaASTTransformer) barePostfix(exprCtx grammar.IExpressionContext) *grammar.PostfixExprContext {
-	if exprCtx == nil {
-		return nil
-	}
-	orExpr := exprCtx.OrExpr()
-	if orExpr == nil {
-		return nil
-	}
-	orCtx := orExpr.(*grammar.OrExprContext)
-	if len(orCtx.AllAndExpr()) != 1 {
-		return nil
-	}
-	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
-	if len(andCtx.AllEqualityExpr()) != 1 {
-		return nil
-	}
-	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
-	if len(eqCtx.AllRelationalExpr()) != 1 {
-		return nil
-	}
-	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
-	if len(relCtx.AllAdditiveExpr()) != 1 {
-		return nil
-	}
-	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
-	if len(addCtx.AllMultiplicativeExpr()) != 1 {
-		return nil
-	}
-	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
-	if len(mulCtx.AllUnaryExpr()) != 1 {
-		return nil
-	}
-	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return nil
-	}
-	return postfixExpr.(*grammar.PostfixExprContext)
-}
-
-// findIfExpressionInExpression traverses the expression tree to find an if-expression
-// if the expression is simply an if-expression (not part of a larger expression).
-// Follows the same traversal pattern as findLambdaInExpression in lambdas.go.
-func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpressionContext) *grammar.IfExpressionContext {
-	if exprCtx == nil {
-		return nil
-	}
-	orExpr := exprCtx.OrExpr()
-	if orExpr == nil {
-		return nil
-	}
-	orCtx := orExpr.(*grammar.OrExprContext)
-	if len(orCtx.AllAndExpr()) != 1 {
-		return nil
-	}
-	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
-	if len(andCtx.AllEqualityExpr()) != 1 {
-		return nil
-	}
-	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
-	if len(eqCtx.AllRelationalExpr()) != 1 {
-		return nil
-	}
-	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
-	if len(relCtx.AllAdditiveExpr()) != 1 {
-		return nil
-	}
-	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
-	if len(addCtx.AllMultiplicativeExpr()) != 1 {
-		return nil
-	}
-	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
-	if len(mulCtx.AllUnaryExpr()) != 1 {
-		return nil
-	}
-	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return nil
-	}
-	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
-	if len(postfixCtx.AllPostfixSuffix()) > 0 {
-		return nil
-	}
-	primExpr := postfixCtx.PrimaryExpr()
-	if primExpr == nil {
-		return nil
-	}
-	primCtx := primExpr.(*grammar.PrimaryExprContext)
-	ifExpr := primCtx.IfExpression()
-	if ifExpr == nil {
-		return nil
-	}
-	return ifExpr.(*grammar.IfExpressionContext)
+	return t.bareMatch(antlrExpr(exprCtx)).ok()
 }
 
 // isNilIdent reports whether expr is the identifier `nil`.
@@ -1333,7 +1210,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		}
 		return t.lowerExpr(e)
 	case f.partial.ok():
-		return t.transformPartialFunctionLiteral(f.partial.antlr(t), t.partialFunctionSlot(s))
+		return t.transformPartialFunctionLiteral(f.partial, t.partialFunctionSlot(s))
 	case f.ifExpr.ok():
 		return t.lowerIfExpression(f.ifExpr, s)
 	case f.match.ok():
@@ -1646,28 +1523,6 @@ func (t *galaASTTransformer) isGenericStructAlias(name, resolved string, meta *t
 func isCallSuffix(s grammar.IPostfixSuffixContext) bool {
 	sc := s.(*grammar.PostfixSuffixContext)
 	return sc.Identifier() == nil && sc.ExpressionList() == nil
-}
-
-// parenthesizedList returns the list of an expression that is exactly a
-// parenthesized expression list — `(e)` or a tuple literal — or nil.
-func (t *galaASTTransformer) parenthesizedList(exprCtx grammar.IExpressionContext) *grammar.TupleExpressionListContext {
-	p := t.barePostfix(exprCtx)
-	if p == nil || p.GetChildCount() != 1 {
-		return nil
-	}
-	primExpr, ok := p.PrimaryExpr().(*grammar.PrimaryExprContext)
-	if !ok || primExpr == nil {
-		return nil
-	}
-	prim, ok := primExpr.Primary().(*grammar.PrimaryContext)
-	if !ok || prim == nil {
-		return nil
-	}
-	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
-	if !ok {
-		return nil
-	}
-	return list
 }
 
 // unwrapImmutable is the single canonical unwrap helper for val-wrapped

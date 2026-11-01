@@ -203,7 +203,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		// assignment is not one. Lowering it would assign to a function
 		// call's result, which Go rejects; the intent is the braced
 		// if-statement.
-		if t.findIfExpressionInExpression(exprCtx) != nil {
+		if t.ifIn(t.exprOf(exprCtx)).ok() {
 			return nil, t.semanticErrorAtNode(d.at, "cannot assign to an if-expression: its else branch is an "+
 				"expression, so `if (c) a() else x = v` assigns to the whole if. "+
 				"Use braces to make the assignment part of a branch: `if (c) { a() } else { x = v }`")
@@ -617,7 +617,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			// Loop control is a statement wherever it sits, the tail of a
 			// value-carrying block included: it is never the block's value.
 			stmt = bs
-		} else if ifExpr := t.findIfExpressionInExpression(valueExpr); discardsValue && ifExpr != nil {
+		} else if ifExpr := antlrIfIn(valueExpr); discardsValue && ifExpr != nil {
 			// An if-expression whose value nothing reads is an if statement.
 			stmt, err = t.lowerIfExpressionStatement(ifExpr)
 		} else if isTrailing && tail == tailReturn && valueExpr != nil {
@@ -843,7 +843,7 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(ctx *grammar.IfExpressio
 // is rejected as evaluated but not used, with hint. A plain value in a branch
 // gets the branch hint (functionDiscardHint) whatever encloses it.
 func (t *galaASTTransformer) lowerExpressionStatement(exprCtx grammar.IExpressionContext, hint string) (ast.Stmt, error) {
-	if ifExpr := t.findIfExpressionInExpression(exprCtx); ifExpr != nil {
+	if ifExpr := antlrIfIn(exprCtx); ifExpr != nil {
 		return t.lowerIfExpressionStatement(ifExpr)
 	}
 	if bs, ok := t.lowerLoopControl(exprCtx); ok {

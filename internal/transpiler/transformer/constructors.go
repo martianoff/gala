@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -24,7 +26,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	}
 	// Handle composite literal (e.g., map[K]V{}, struct{}{})
 	if ctx.CompositeLiteral() != nil {
-		return t.transformCompositeLiteral(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext))
+		return t.transformCompositeLiteral(t.compositeOf(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext)))
 	}
 	var elems []exprSrc
 	if list, ok := ctx.TupleExpressionList().(*grammar.TupleExpressionListContext); ok && list != nil {
@@ -531,18 +533,88 @@ func isNumericPrimitive(name string) bool {
 	return false
 }
 
-func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLiteralContext) (ast.Expr, error) {
+// compositeSrc is a composite literal, `T{...}`: a context on ANTLR's tree,
+// or a node on the native one.
+type compositeSrc struct {
+	ctx  *grammar.CompositeLiteralContext
+	node native.GalaNodeRef
+}
+
+// compositeOf is the composite literal ctx, on the native tree when the walk
+// reads it (nativeNodeOf).
+func (t *galaASTTransformer) compositeOf(ctx *grammar.CompositeLiteralContext) compositeSrc {
+	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_compositeLiteral); ok {
+		return compositeSrc{node: n}
+	}
+	return compositeSrc{ctx: ctx}
+}
+
+// at is where c is written.
+func (c compositeSrc) at() srcNode {
+	if c.node.Ok() {
+		return srcNode{node: c.node}
+	}
+	return srcNode{ctx: c.ctx}
+}
+
+// typ is the type c constructs.
+func (c compositeSrc) typ() typeSrc {
+	if c.node.Ok() {
+		return nativeType(native.CompositeLiteralNode{GalaNodeRef: c.node}.Type_())
+	}
+	return antlrType(c.ctx.Type_())
+}
+
+// keyedElem is an element of a composite literal: its key, the zero exprSrc
+// when it has none, and its value.
+type keyedElem struct{ key, value exprSrc }
+
+// elems is c's elements, in order.
+func (c compositeSrc) elems() []keyedElem {
+	var out []keyedElem
+	if c.node.Ok() {
+		list := native.CompositeLiteralNode{GalaNodeRef: c.node}.ElementList()
+		for kv := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_keyedElement) {
+			switch exprs := nativeExprs(kv); len(exprs) {
+			case 1:
+				out = append(out, keyedElem{value: exprs[0].exprSrc})
+			case 2:
+				out = append(out, keyedElem{key: exprs[0].exprSrc, value: exprs[1].exprSrc})
+			}
+		}
+		return out
+	}
+	list, ok := c.ctx.ElementList().(*grammar.ElementListContext)
+	if !ok {
+		return nil
+	}
+	for _, kv := range list.AllKeyedElement() {
+		switch exprs := kv.(*grammar.KeyedElementContext).AllExpression(); len(exprs) {
+		case 1:
+			out = append(out, keyedElem{value: antlrExpr(exprs[0])})
+		case 2:
+			out = append(out, keyedElem{key: antlrExpr(exprs[0]), value: antlrExpr(exprs[1])})
+		}
+	}
+	return out
+}
+
+// transformCompositeLiteral lowers the composite literal c, on the tree it
+// comes from.
+func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr, error) {
+	t.nativeShape(c.node, "composite")
 	// Transform the type
-	typeExpr, err := t.transformType(ctx.Type_())
+	typeExpr, err := t.lowerType(c.typ())
 	if err != nil {
 		return nil, err
 	}
+	line, col := c.at().start()
 
 	// Reject slice literals - users should use collection_immutable.Array, collection_mutable.Array, or go_interop.SliceOf() or go_interop.SliceEmpty() for Go interop
 	if _, isArray := typeExpr.(*ast.ArrayType); isArray {
 		return nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeSliceLiteralNotSupported,
-			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+			line, col,
 			"slice literals are not a first-class GALA construct",
 			"use collection_immutable.Array or collection_mutable.Array for type-safe collections, or go_interop.SliceOf()/SliceEmpty() for Go interop",
 		)
@@ -552,7 +624,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 	if _, isMap := typeExpr.(*ast.MapType); isMap {
 		return nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeMapLiteralNotSupported,
-			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+			line, col,
 			"map literals are not a first-class GALA construct",
 			"use collection_immutable.HashMap or collection_mutable.HashMap for type-safe maps, or go_interop.MapEmpty()/MapPut() for Go interop",
 		)
@@ -576,50 +648,44 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 	var elts []ast.Expr
 	given := make(map[string]bool) // the fields a keyed literal names
 	keyed := false
-	if ctx.ElementList() != nil {
-		elemList := ctx.ElementList().(*grammar.ElementListContext)
-		for _, keyedElem := range elemList.AllKeyedElement() {
-			kv := keyedElem.(*grammar.KeyedElementContext)
-			exprs := kv.AllExpression()
-			if len(exprs) == 2 {
-				// Key-value pair
-				key, err := t.transformExpression(exprs[0].(*grammar.ExpressionContext))
-				if err != nil {
-					return nil, err
-				}
-				value, err := t.transformExpression(exprs[1].(*grammar.ExpressionContext))
-				if err != nil {
-					return nil, err
-				}
-				keyed = true
-				// Wrap value with NewImmutable() if the field is immutable (val, not var)
-				if keyIdent, ok := key.(*ast.Ident); ok {
-					given[keyIdent.Name] = true
-					if idx, found := fieldIndex[keyIdent.Name]; found {
-						if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
-							// Reject nil assignment to immutable (val) fields — use Option[T] instead
-							if ident, isIdent := value.(*ast.Ident); isIdent && ident.Name == "nil" {
-								return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf(
-									"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
-									keyIdent.Name, keyIdent.Name))
-							}
-							value = t.wrapImmutableFieldValue(value, fieldTypes[keyIdent.Name], typeArgSubst)
+	for _, el := range c.elems() {
+		if el.key.ok() {
+			// Key-value pair
+			key, err := t.lowerExpr(el.key)
+			if err != nil {
+				return nil, err
+			}
+			value, err := t.lowerExpr(el.value)
+			if err != nil {
+				return nil, err
+			}
+			keyed = true
+			// Wrap value with NewImmutable() if the field is immutable (val, not var)
+			if keyIdent, ok := key.(*ast.Ident); ok {
+				given[keyIdent.Name] = true
+				if idx, found := fieldIndex[keyIdent.Name]; found {
+					if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
+						// Reject nil assignment to immutable (val) fields — use Option[T] instead
+						if ident, isIdent := value.(*ast.Ident); isIdent && ident.Name == "nil" {
+							return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+								"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
+								keyIdent.Name, keyIdent.Name))
 						}
+						value = t.wrapImmutableFieldValue(value, fieldTypes[keyIdent.Name], typeArgSubst)
 					}
 				}
-				elts = append(elts, &ast.KeyValueExpr{Key: key, Value: value})
-			} else if len(exprs) == 1 {
-				// Value only
-				value, err := t.transformExpression(exprs[0].(*grammar.ExpressionContext))
-				if err != nil {
-					return nil, err
-				}
-				elts = append(elts, value)
 			}
+			elts = append(elts, &ast.KeyValueExpr{Key: key, Value: value})
+		} else {
+			// Value only
+			value, err := t.lowerExpr(el.value)
+			if err != nil {
+				return nil, err
+			}
+			elts = append(elts, value)
 		}
 	}
 
-	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
 		// A sealed type's literal names none of its cases: it is the type's
 		// default value.

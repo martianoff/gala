@@ -203,8 +203,8 @@ func (t *galaASTTransformer) lowerFillingValue(exprCtx grammar.IExpressionContex
 // anchored at its argument list, or at its `(` when it has none.
 func (t *galaASTTransformer) errorAtOutermostCall(err error, exprCtx grammar.IExpressionContext) bool {
 	var se *galaerr.SemanticError
-	p := t.barePostfix(exprCtx)
-	if !errors.As(err, &se) || p == nil || t.bareMatchPostfix(exprCtx) != nil {
+	p := LeadingPostfixExpr(exprCtx, true)
+	if !errors.As(err, &se) || p == nil || t.bareMatch(antlrExpr(exprCtx)).ok() {
 		return false
 	}
 	suffixes := p.AllPostfixSuffix()

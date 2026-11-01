@@ -37,7 +37,7 @@ type walkRun struct {
 	exprs     int                     // the expressions the native walk lowered, each counted once
 	exprLines map[int]bool            // the lines those expressions start on
 	shapes    map[int]map[string]bool // the expression shapes it lowered, by line
-	cases     int                     // the case clauses of matches read on the native tree, each counted once
+	cases     int                     // the case clauses of matches and partial functions read on the native tree, each counted once
 	caseLines map[int]bool            // the lines those case clauses start on
 	converted bool
 }
@@ -153,7 +153,7 @@ func countTree(src string) (treeCounts, bool) {
 // top-level function bodies, lambda bodies and match arms: each statement of
 // a body, and of the if and for blocks in it, up to and including a block's
 // first `bind`, whose chain lowers the statements after it on ANTLR's tree.
-// It counts the lambdas and the case clauses of matches too. An
+// It counts the lambdas and the case clauses of matches and partial functions too. An
 // if-expression branch's block is lowered on ANTLR's tree.
 func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 	var c treeCounts
@@ -192,9 +192,10 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 	}
 	// A lambda is lowered on the native tree wherever it is written (the
 	// expression it is in crosses back to it, lambdas_source.go), and a match
-	// reads its case clauses there wherever it is (matchCases), but in a
-	// parameter's default value: a default is lowered at each call, from the
-	// declaration the analysis recorded, on ANTLR's tree.
+	// and a partial function read their case clauses there wherever they are
+	// (matchCases, partialSrc.cases), but in a parameter's default value: a
+	// default is lowered at each call, from the declaration the analysis
+	// recorded, on ANTLR's tree.
 	var below func(antlr.Tree)
 	below = func(node antlr.Tree) {
 		switch n := node.(type) {
@@ -203,7 +204,10 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 		case *grammar.LambdaExpressionContext:
 			c.lambdas++
 			block(n.Block())
-		case *grammar.PostfixExprContext:
+		case interface {
+			AllCaseClause() []grammar.ICaseClauseContext
+		}:
+			// A match's postfix expression, or a partial function.
 			for _, cc := range n.AllCaseClause() {
 				c.cases++
 				block(cc.GetBodyBlock())

@@ -1,16 +1,17 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
+
 	"martianoff/gala/internal/parser/grammar"
 )
 
-// NOTE (deferred forms): this slice detects tail self-calls on the ANTLR parse
-// tree, before the normal lowering wraps an if-expression body in an IIFE (a
-// `return self(...)` inside that closure would return from the closure, not the
-// function, so a Go-AST post-pass would not see the tail call). match-form and
+// NOTE (deferred forms): this slice detects tail self-calls on the parse tree
+// (either tree: ifExprSrc, ifBranchSrc, callPat), before the normal lowering
+// wraps an if-expression body in an IIFE (a `return self(...)` inside that
+// closure would return from the closure, not the function, so a Go-AST
+// post-pass would not see the tail call). match-form and
 // block-form bodies also lower to IIFEs, so extending TCO to them via this
 // approach means a parallel parse-tree matcher per form. Before adding the next
 // form, decide whether to keep parallel matchers or pivot to a shared
@@ -82,8 +83,8 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 	funcType *ast.FuncType,
 ) (*ast.BlockStmt, bool, error) {
 	// The body must be a bare if-expression.
-	ifExprCtx := t.findIfExpressionInExpression(exprCtx)
-	if ifExprCtx == nil {
+	ifExpr := t.ifIn(t.exprOf(exprCtx))
+	if !ifExpr.ok() {
 		return nil, false, nil
 	}
 
@@ -115,7 +116,7 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 	// no tail call is found, only to be transformed a second time by the normal
 	// lowering fallback. hasTailSelfCall walks the parse tree without
 	// transforming anything.
-	if !t.hasTailSelfCall(ifExprCtx, funcName, len(paramNames)) {
+	if !t.hasTailSelfCall(ifExpr, funcName, len(paramNames)) {
 		return nil, false, nil
 	}
 
@@ -128,7 +129,7 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 	// transformExpressionBodiedFunction.
 	tc := &tailCtx{funcName: funcName, paramNames: paramNames, paramTypes: paramTypes, retType: retType}
 
-	ifStmt, found, err := t.buildTailIfStmt(ifExprCtx, tc)
+	ifStmt, found, err := t.buildTailIfStmt(ifExpr, tc)
 	if err != nil {
 		return nil, false, err
 	}
@@ -150,13 +151,9 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 // branches and nested if-expressions; block branches are not considered), so it
 // is a conservative gate: true means "attempt the rewrite," false means "there
 // is definitely no tail self-call to rewrite."
-func (t *galaASTTransformer) hasTailSelfCall(ifExprCtx *grammar.IfExpressionContext, funcName string, argc int) bool {
-	branches := ifExprCtx.AllIfExprBranch()
-	if len(branches) != 2 {
-		return false
-	}
-	for _, b := range branches {
-		if t.branchHasTailSelfCall(b.(*grammar.IfExprBranchContext), funcName, argc) {
+func (t *galaASTTransformer) hasTailSelfCall(ifExpr ifExprSrc, funcName string, argc int) bool {
+	for _, b := range ifExpr.branches() {
+		if t.branchHasTailSelfCall(b, funcName, argc) {
 			return true
 		}
 	}
@@ -164,26 +161,26 @@ func (t *galaASTTransformer) hasTailSelfCall(ifExprCtx *grammar.IfExpressionCont
 }
 
 // branchHasTailSelfCall is the per-branch half of hasTailSelfCall.
-func (t *galaASTTransformer) branchHasTailSelfCall(branchCtx *grammar.IfExprBranchContext, funcName string, argc int) bool {
-	exprCtx := branchCtx.Expression()
-	if exprCtx == nil {
+func (t *galaASTTransformer) branchHasTailSelfCall(b ifBranchSrc, funcName string, argc int) bool {
+	e := b.expr()
+	if !e.ok() {
 		return false // block branch: not detected in this slice
 	}
-	if nested := t.findIfExpressionInExpression(exprCtx); nested != nil {
+	if nested := t.ifIn(e); nested.ok() {
 		return t.hasTailSelfCall(nested, funcName, argc)
 	}
-	primaryExpr, argList, typeArgs := t.getCallPatternWithTypeArgsFromExpression(exprCtx)
-	if primaryExpr == nil || typeArgs != nil {
-		return false
+	call, ok := selfCall(e, funcName)
+	return ok && len(call.args.list) == argc
+}
+
+// selfCall is the call e is when it calls funcName by its bare name, with no
+// type arguments, and false when e is anything else.
+func selfCall(e exprSrc, funcName string) (callPat, bool) {
+	call, ok := patExpr{exprSrc: e}.callPattern()
+	if !ok || call.hasTypeArgList() || call.head.primaryIdent() != funcName {
+		return callPat{}, false
 	}
-	if primaryExpr.GetText() != funcName {
-		return false
-	}
-	nargs := 0
-	if argList != nil {
-		nargs = len(argList.AllArgument())
-	}
-	return nargs == argc
+	return call, true
 }
 
 // buildTailIfStmt lowers an if-expression into an *ast.IfStmt whose branches are
@@ -191,24 +188,20 @@ func (t *galaASTTransformer) branchHasTailSelfCall(branchCtx *grammar.IfExprBran
 // statements. The bool reports whether a tail self-call was found anywhere in
 // the tree.
 func (t *galaASTTransformer) buildTailIfStmt(
-	ifExprCtx *grammar.IfExpressionContext,
+	ifExpr ifExprSrc,
 	tc *tailCtx,
 ) (*ast.IfStmt, bool, error) {
-	cond, err := t.transformExpression(ifExprCtx.Expression())
+	cond, err := t.lowerExpr(ifExpr.cond())
 	if err != nil {
 		return nil, false, err
 	}
 
-	branches := ifExprCtx.AllIfExprBranch()
-	if len(branches) != 2 {
-		return nil, false, fmt.Errorf("tco: expected exactly two if-expression branches, got %d", len(branches))
-	}
-
-	thenBody, thenFound, err := t.buildTailBranch(branches[0].(*grammar.IfExprBranchContext), tc)
+	branches := ifExpr.branches()
+	thenBody, thenFound, err := t.buildTailBranch(branches[0], tc)
 	if err != nil {
 		return nil, false, err
 	}
-	elseBody, elseFound, err := t.buildTailBranch(branches[1].(*grammar.IfExprBranchContext), tc)
+	elseBody, elseFound, err := t.buildTailBranch(branches[1], tc)
 	if err != nil {
 		return nil, false, err
 	}
@@ -225,13 +218,13 @@ func (t *galaASTTransformer) buildTailIfStmt(
 // self-call, or (c) a terminal value that becomes a `return`. Block branches
 // are treated as terminal returns via the shared branch transform.
 func (t *galaASTTransformer) buildTailBranch(
-	branchCtx *grammar.IfExprBranchContext,
+	branch ifBranchSrc,
 	tc *tailCtx,
 ) ([]ast.Stmt, bool, error) {
-	if exprCtx := branchCtx.Expression(); exprCtx != nil {
+	if e := branch.expr(); e.ok() {
 		// Nested if-expression: recurse so `if a x else if b self(...) else y`
 		// keeps the tail self-call in tail position.
-		if nested := t.findIfExpressionInExpression(exprCtx); nested != nil {
+		if nested := t.ifIn(e); nested.ok() {
 			ifStmt, found, err := t.buildTailIfStmt(nested, tc)
 			if err != nil {
 				return nil, false, err
@@ -240,30 +233,30 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 
 		// Direct tail self-call.
-		if stmts, ok, err := t.buildTailCallStep(exprCtx, tc); err != nil {
+		if stmts, ok, err := t.buildTailCallStep(e, tc); err != nil {
 			return nil, false, err
 		} else if ok {
 			return stmts, true, nil
 		}
 
 		// Terminal value: return it.
-		e, err := t.lowerResultAgainst(t.exprOf(exprCtx), t.tailResultSlot(tc), false)
+		value, err := t.lowerResultAgainst(e, t.tailResultSlot(tc), false)
 		if err != nil {
 			return nil, false, err
 		}
-		e = t.wrapWithAssertion(e, tc.retType)
-		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{e}}}, false, nil
+		value = t.wrapWithAssertion(value, tc.retType)
+		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{value}}}, false, nil
 	}
 
 	// Block branch: reuse the shared branch transform and append a terminal
 	// return when it does not already terminate. Tail self-calls hidden inside
 	// block branches are not detected in this slice.
-	b, err := t.transformIfExprBranch(branchCtx, t.tailResultSlot(tc))
+	b, err := t.lowerIfExprBranch(branch, t.tailResultSlot(tc))
 	if err != nil {
 		return nil, false, err
 	}
 	if b.noValue && !t.leaves(b.stmts) {
-		return nil, false, t.noValueBranchError(srcNode{ctx: branchCtx})
+		return nil, false, t.noValueBranchError(branch.at())
 	}
 	if b.needsValueReturn() {
 		return append(b.stmts, &ast.ReturnStmt{Results: []ast.Expr{t.wrapWithAssertion(b.expr, tc.retType)}}), false, nil
@@ -271,33 +264,24 @@ func (t *galaASTTransformer) buildTailBranch(
 	return b.stmts, false, nil
 }
 
-// buildTailCallStep detects whether exprCtx is a direct call to tc.funcName with
-// an argument count matching the parameters, and if so emits the loop-step
+// buildTailCallStep detects whether e is a direct call to tc.funcName with an
+// argument count matching the parameters, and if so emits the loop-step
 // statements: evaluate every argument into a temporary using the OLD parameter
 // values, assign the temporaries back to the parameters simultaneously, then
-// `continue`. Returns ok=false (with no statements) when exprCtx is not a
-// supported tail self-call, so the caller can treat it as a terminal value.
+// `continue`. Returns ok=false (with no statements) when e is not a supported
+// tail self-call, so the caller can treat it as a terminal value.
 func (t *galaASTTransformer) buildTailCallStep(
-	exprCtx grammar.IExpressionContext,
+	e exprSrc,
 	tc *tailCtx,
 ) ([]ast.Stmt, bool, error) {
-	primaryExpr, argList, typeArgs := t.getCallPatternWithTypeArgsFromExpression(exprCtx)
-	if primaryExpr == nil {
+	// The call target must be exactly the enclosing function's (un-mangled)
+	// name. Explicit type arguments (self[T](...)) are not supported in this
+	// slice.
+	call, ok := selfCall(e, tc.funcName)
+	if !ok {
 		return nil, false, nil
 	}
-	// Explicit type arguments (self[T](...)) are not supported in this slice.
-	if typeArgs != nil {
-		return nil, false, nil
-	}
-	// The call target must be exactly the enclosing function's (un-mangled) name.
-	if primaryExpr.GetText() != tc.funcName {
-		return nil, false, nil
-	}
-
-	var args []grammar.IArgumentContext
-	if argList != nil {
-		args = argList.AllArgument()
-	}
+	args := call.args.list
 	if len(args) != len(tc.paramNames) {
 		return nil, false, nil
 	}
@@ -305,35 +289,35 @@ func (t *galaASTTransformer) buildTailCallStep(
 	tmpNames := make([]string, len(args))
 	stmts := make([]ast.Stmt, 0, len(args)+2)
 	for i, a := range args {
-		argCtx := a.(*grammar.ArgumentContext)
 		// Named arguments (name = expr) are not supported for the rewrite.
-		if argCtx.Identifier() != nil {
+		if a.named() {
 			return nil, false, nil
 		}
-		exprC, lambdaC, isSpread, err := extractArgContent(argCtx)
+		v, err := t.argContent(a)
 		if err != nil {
 			return nil, false, err
 		}
 		// Only plain positional expression arguments are supported.
-		if lambdaC != nil || isSpread || exprC == nil {
+		if v.lambda.ok() || v.spread || !v.expr.ok() {
 			return nil, false, nil
 		}
-		e, err := t.transformExpression(exprC)
+		t.nativeShape(v.expr.node, "tail call")
+		arg, err := t.lowerExpr(v.expr)
 		if err != nil {
 			return nil, false, err
 		}
 		// The argument rebinds the parameter: a nil, or a pointer that may be
 		// nil, never fills a Ptr parameter.
-		if err := t.checkPtrSlot(e, t.astTypeToTranspilerType(tc.paramTypes[i]), srcNode{ctx: exprC}); err != nil {
+		if err := t.checkPtrSlot(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
 			return nil, false, err
 		}
-		e = t.wrapWithAssertion(e, tc.paramTypes[i])
+		arg = t.wrapWithAssertion(arg, tc.paramTypes[i])
 		// A closure inside a tail-call argument would capture the loop-carried
 		// parameter by reference; once that parameter is reassigned on the next
 		// iteration, the escaped closure observes the mutated value — diverging
 		// from the per-call binding the original recursion gives each frame.
 		// Bail to the normal lowering (real recursion) for this case.
-		if containsFuncLit(e) {
+		if containsFuncLit(arg) {
 			return nil, false, nil
 		}
 		// Use the package gensym so temps can't collide with a user identifier
@@ -343,7 +327,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 		stmts = append(stmts, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(tmp)},
 			Tok: token.DEFINE,
-			Rhs: []ast.Expr{e},
+			Rhs: []ast.Expr{arg},
 		})
 	}
 

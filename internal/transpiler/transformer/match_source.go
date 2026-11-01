@@ -37,16 +37,22 @@ func antlrCases(ctxs []grammar.ICaseClauseContext) []caseSrc {
 // this lookup goes.
 func (t *galaASTTransformer) matchCases(ctx *grammar.PostfixExprContext) []caseSrc {
 	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_postfixExpr); ok {
-		var out []caseSrc
-		for c := range galaparser.NativeKids(n, native.GalaKIND_caseClause) {
-			if t.onNativeCase != nil {
-				t.onNativeCase(c.Index(), int(c.Start().Line))
-			}
-			out = append(out, caseSrc{node: c})
-		}
-		return out
+		return t.nativeCases(n)
 	}
 	return antlrCases(ctx.AllCaseClause())
+}
+
+// nativeCases is the case clauses of n, a match's postfix expression or a
+// partial function, each reported to the onNativeCase hook.
+func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
+	var out []caseSrc
+	for c := range galaparser.NativeKids(n, native.GalaKIND_caseClause) {
+		if t.onNativeCase != nil {
+			t.onNativeCase(c.Index(), int(c.Start().Line))
+		}
+		out = append(out, caseSrc{node: c})
+	}
+	return out
 }
 
 // at is where c is written.
