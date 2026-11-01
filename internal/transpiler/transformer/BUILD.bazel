@@ -53,6 +53,7 @@ go_library(
         "patterns.go",
         "patterns_source.go",
         "postfix.go",
+        "postfix_source.go",
         "ptr.go",
         "return_slot.go",
         "scope.go",
@@ -461,6 +462,7 @@ go_test(
 # gazelle:exclude native_walk_helpers_test.go
 # gazelle:exclude native_expr_walk_test.go
 # gazelle:exclude native_match_test.go
+# gazelle:exclude native_postfix_walk_test.go
 go_test(
     # keep
     name = "native_walk_test",
@@ -479,6 +481,7 @@ go_test(
     srcs = [
         "native_expr_walk_test.go",
         "native_match_test.go",
+        "native_postfix_walk_test.go",
         "native_types_test.go",
         "native_walk_export_test.go",
         "native_walk_helpers_test.go",

@@ -601,7 +601,7 @@ func isStructOrSealed(meta *transpiler.TypeMetadata) bool {
 // checkGoResultMember reports a member the converted value does not have, read
 // off a converted Go call or a val bound to one: `val resp = http.Get(url)`
 // then `resp.StatusCode`. A Try or Tuple member (Map, GetOrElse, V1) is fine.
-func (t *galaASTTransformer) checkGoResultMember(base ast.Expr, member string, ctx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkGoResultMember(base ast.Expr, member string, at srcNode) error {
 	res := t.goResultOf(base)
 	if res == nil {
 		return nil
@@ -614,7 +614,7 @@ func (t *galaASTTransformer) checkGoResultMember(base ast.Expr, member string, c
 	if meta == nil || hasMember(meta, member) {
 		return nil
 	}
-	return t.goResultMisuse(res, fmt.Sprintf("a %s has no member `%s`", stripPackagePrefix(gen.Base.String()), member), ctx)
+	return t.goResultMisuse(res, fmt.Sprintf("a %s has no member `%s`", stripPackagePrefix(gen.Base.String()), member), t.ctxAt(at))
 }
 
 // hasMember reports whether a type declares member as a method or field, of

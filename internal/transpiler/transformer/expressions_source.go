@@ -17,16 +17,17 @@ import (
 // ANTLR's tree, through transformExpression and transformIfExpressionAgainst,
 // which find the context's node (nativeNodeOf). That lookup is the bridge
 // for callers not ported yet, and an exprSrc is the interface ported callers
-// use: the lookup goes once its callers take exprSrc values. The walk below covers the
-// operator chain (or, and, equality, relational, additive, multiplicative),
-// unary operators, identifiers, literals, string interpolation, parenthesized
-// expressions and tuples, and if-expressions, and hands a lambda to
+// use: the lookup goes once its callers take exprSrc values. The walk below
+// covers the operator chain (or, and, equality, relational, additive,
+// multiplicative), unary operators, identifiers, literals, string
+// interpolation, parenthesized expressions and tuples, if-expressions, and
+// member accesses and indexes (postfix_source.go), and hands a lambda to
 // lowerLambda on its node (lambdas_source.go). What it does not cover yet it
-// hands to ANTLR's tree with crossTo: a postfix expression with a suffix (a
-// selector, call or index) or a match, partial functions, composite
-// literals, the blocks of an if-expression's branches, and the shape checks a
-// slot-typed value takes (lowerAgainst). Each lowering below takes the value
-// it reads and is shared with the ANTLR walk, so the two give the same Go.
+// hands to ANTLR's tree with crossTo: a postfix expression with a call suffix
+// or a match, partial functions, composite literals, the blocks of an
+// if-expression's branches, and the shape checks a slot-typed value takes
+// (lowerAgainst). Each lowering below takes the value it reads and is shared
+// with the ANTLR walk, so the two give the same Go.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -56,6 +57,22 @@ func nativeExpr(n native.GalaNodeRef) exprSrc {
 
 // ok reports whether e is an expression, not the zero exprSrc.
 func (e exprSrc) ok() bool { return e.node.Ok() || e.ctx != nil }
+
+// at is where e is written.
+func (e exprSrc) at() srcNode {
+	if e.node.Ok() {
+		return srcNode{node: e.node}
+	}
+	return srcNode{ctx: e.ctx}
+}
+
+// text is GetText of e.
+func (e exprSrc) text() string {
+	if e.node.Ok() {
+		return galaparser.NativeText(e.node)
+	}
+	return e.ctx.GetText()
+}
 
 // antlr is e's context: where a lowering that reads ANTLR's tree takes it
 // over. nil for the zero exprSrc.
@@ -246,19 +263,16 @@ func (t *galaASTTransformer) lowerUnaryNative(u native.UnaryExprNode) (ast.Expr,
 	return nil, semanticErrorAtStart(srcNode{node: u.GalaNodeRef}, "unaryExpr must have unaryOp or postfixExpr")
 }
 
-// lowerPostfixNative is transformPostfixExpr of p. A postfix expression with
-// a suffix or a match is lowered on ANTLR's tree: its suffixes are the
-// selectors, calls and indexes, whose lowering reads the expression they
-// belong to, and its match is the match's.
+// lowerPostfixNative is transformPostfixExpr of p (see postfix_source.go).
 func (t *galaASTTransformer) lowerPostfixNative(p native.PostfixExprNode) (ast.Expr, error) {
-	if p.ChildCount() > 1 {
-		return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
-	}
 	prim, ok := firstKidNode(p.GalaNodeRef)
 	if !ok || prim.Kind() != native.GalaKIND_primaryExpr {
 		return nil, semanticErrorAtStart(srcNode{node: p.GalaNodeRef}, "postfixExpr must have primaryExpr")
 	}
-	return t.lowerPrimaryExprNative(prim)
+	if p.ChildCount() == 1 {
+		return t.lowerPrimaryExprNative(prim)
+	}
+	return t.lowerSuffixedNative(p, prim)
 }
 
 // lowerPrimaryExprNative is transformPrimaryExpr of n, a primaryExpr node.

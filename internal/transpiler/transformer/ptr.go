@@ -153,8 +153,13 @@ func ptrOf(ptr transpiler.PointerType) string {
 // checkPtrReceiver rejects selecting a method declared on a `Ptr[T]`
 // receiver — a call `p.M()` or a method value `p.M` — on a pointer that may be
 // nil (GALA-E0080): the receiver fills a Ptr slot. recv is the lowered
-// receiver and recvType its type; suffix is the member access.
-func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, suffix *grammar.PostfixSuffixContext) error {
+// receiver and recvType its type; m is the member access, whose receiver is
+// read on ANTLR's tree only to report the error.
+func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, m memberSrc) error {
+	suffix, ok := m.antlr(t)
+	if !ok {
+		return semanticErrorAtStart(m.at(), "internal error: the member access has no ANTLR context")
+	}
 	return t.checkPtrReceiverAt(recv, recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
 		return receiverSource(suffix)
 	})
@@ -425,14 +430,8 @@ func typeTypeParamOwner(name string, m *transpiler.TypeMetadata) typeParamOwner 
 	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
 }
 
-// checkPtrWrittenTypeArgs checks the written type arguments args of o, the
-// i-th located by at(i), with checkPtrTypeArg.
-func (t *galaASTTransformer) checkPtrWrittenTypeArgs(o typeParamOwner, args []ast.Expr, at func(i int) antlr.ParserRuleContext) error {
-	return t.checkPtrWrittenTypeArgsAt(o, args, func(i int) srcNode { return srcNode{ctx: at(i)} })
-}
-
-// checkPtrWrittenTypeArgsAt is checkPtrWrittenTypeArgs of type arguments
-// located on either tree.
+// checkPtrWrittenTypeArgsAt checks the written type arguments args of o, the
+// i-th located on either tree by at(i), with checkPtrTypeArg.
 func (t *galaASTTransformer) checkPtrWrittenTypeArgsAt(o typeParamOwner, args []ast.Expr, at func(i int) srcNode) error {
 	if !t.hasPtrConstraint(o) {
 		return nil

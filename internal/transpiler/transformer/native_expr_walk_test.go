@@ -137,38 +137,58 @@ var keywordCases = []struct{ name, src string }{
 	{"forbidden keyword", "package main\n\nfunc f() {\n\tPrintln(\"ü\")\n\t/* ü */ goto\n}\n"},
 }
 
-// TestNativeExprWalk holds the native walk of exprShapes and of each of
-// exprCases to the ANTLR walk (checkWalksAgree), and requires the native
-// walk to have lowered the expressions they mark.
-func TestNativeExprWalk(t *testing.T) {
+// exprWalkRunner selects galop for the test and returns the function that
+// writes a program to a file of its own, holds the native walk of it to the
+// ANTLR walk (checkWalksAgree), and returns the native walk's run.
+func exprWalkRunner(t *testing.T) func(t *testing.T, name, src string) walkRun {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
 	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
 	dir := t.TempDir()
-	run := func(t *testing.T, name, src string) walkRun {
+	return func(t *testing.T, name, src string) walkRun {
 		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "_"), "main.gala")
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
-		n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, src)
-		require.True(t, ok, "the case does not parse cleanly with galop")
-		require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
-		t.Logf("the native walk lowered %d expressions; error: %v", n.exprs, n.err)
-		return n
+		return agreedWalk(t, nativeW, antlrW, path, src)
 	}
-	t.Run("expression shapes", func(t *testing.T) {
-		n := run(t, "expression shapes", exprShapes)
-		require.NoError(t, n.err, "the program does not transpile")
-		for i, l := range strings.Split(exprShapes, "\n") {
-			_, marked, ok := strings.Cut(l, "// native: ")
-			if !ok {
-				continue
-			}
-			assert.Truef(t, n.exprLines[i+1], "the native walk did not lower the expression on line %d: %s", i+1, strings.TrimSpace(l))
-			for _, shape := range strings.Split(marked, ", ") {
-				assert.Truef(t, n.shapes[i+1][shape], "the native walk lowered no %s on line %d (it lowered %v): %s", shape, i+1, n.shapes[i+1], strings.TrimSpace(l))
-			}
+}
+
+// agreedWalk holds the native walk of src, written at path, to the ANTLR
+// walk (checkWalksAgree), requires the native walk to have read the native
+// tree, and returns its run.
+func agreedWalk(t *testing.T, nativeW, antlrW *walkPipeline, path, src string) walkRun {
+	n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, src)
+	require.True(t, ok, "the case does not parse cleanly with galop")
+	require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
+	t.Logf("the native walk lowered %d expressions; error: %v", n.exprs, n.err)
+	return n
+}
+
+// checkMarkedShapes requires n, the native walk of src, to have transpiled
+// src and, on each line marked `// native: <shapes>`, to have lowered an
+// expression and each of the shapes the marker names.
+func checkMarkedShapes(t *testing.T, n walkRun, src string) {
+	require.NoError(t, n.err, "the program does not transpile")
+	for i, l := range strings.Split(src, "\n") {
+		_, marked, ok := strings.Cut(l, "// native: ")
+		if !ok {
+			continue
 		}
+		assert.Truef(t, n.exprLines[i+1], "the native walk did not lower the expression on line %d: %s", i+1, strings.TrimSpace(l))
+		for _, shape := range strings.Split(marked, ", ") {
+			assert.Truef(t, n.shapes[i+1][shape], "the native walk lowered no %s on line %d (it lowered %v): %s", shape, i+1, n.shapes[i+1], strings.TrimSpace(l))
+		}
+	}
+}
+
+// TestNativeExprWalk holds the native walk of exprShapes and of each of
+// exprCases to the ANTLR walk (checkWalksAgree), and requires the native
+// walk to have lowered the expressions they mark.
+func TestNativeExprWalk(t *testing.T) {
+	run := exprWalkRunner(t)
+	t.Run("expression shapes", func(t *testing.T) {
+		checkMarkedShapes(t, run(t, "expression shapes", exprShapes), exprShapes)
 	})
 	for _, c := range exprCases {
 		t.Run(c.name, func(t *testing.T) {
