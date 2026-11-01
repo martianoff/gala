@@ -10,7 +10,7 @@ import (
 // postfixShapes is a program with every postfix suffix the native walk
 // lowers: member accesses (fields, vals' Immutable fields, a tuple's
 // components, package members) and indexes (a generic function's type
-// arguments). Each line marked `// native: <shapes>` names the shapes the
+// arguments, a Go slice's element). Each line marked `// native: <shapes>` names the shapes the
 // native walk must have lowered on that line, as exprShapes does.
 const postfixShapes = `package main
 
@@ -35,7 +35,9 @@ func members(p P, q Pair) int {
 	val g = pick[int, string] // native: index, name
 	val s = strings.ToUpper // native: selector, name
 	val m = strconv.IntSize // native: selector, name
-	Println(f(t), g(a, "ü"), s("ö"), m) // native: name, literal
+	val words = strings.Fields("ä ö")
+	val w = words[a - 1] // native: index, operator, name, literal
+	Println(f(t), g(a, "ü"), s("ö"), m, w) // native: name, literal
 	a + b + q.a.x // native: selector, operator, name
 }
 

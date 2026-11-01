@@ -64,6 +64,17 @@ func (t *galaASTTransformer) ownerOf(ctx *grammar.PostfixExprContext) postfixOwn
 	return postfixOwner{ctx: ctx}
 }
 
+// pendingOwnerOf is ownerOf(ctx) for a lookup that only compares it with the
+// owner of the hint on top of the stack (takeFor, withhold): the zero
+// postfixOwner, which matches nothing, when that hint has no owner, so the
+// lookup is made only when there is one to match.
+func (t *galaASTTransformer) pendingOwnerOf(ctx *grammar.PostfixExprContext) postfixOwner {
+	if s := t.expectedArgTypes.stack; len(s) == 0 || s[len(s)-1].owner.none() {
+		return postfixOwner{}
+	}
+	return t.ownerOf(ctx)
+}
+
 // push pushes a new expected-type hint and returns an unwind function.
 // The caller is expected to defer the unwind so the hint's lifetime is
 // bounded by the calling scope. The unwind is idempotent — a downstream
@@ -124,7 +135,7 @@ func (s *expectedArgTypeStack) takeFor(owner postfixOwner) transpiler.Type {
 // hint pushed for the call (see pushFor).
 func (t *galaASTTransformer) callOwner(suffix *grammar.PostfixSuffixContext) postfixOwner {
 	pe, _ := suffix.GetParent().(*grammar.PostfixExprContext)
-	return t.ownerOf(pe)
+	return t.pendingOwnerOf(pe)
 }
 
 // withhold hides the hint on top of the stack when it was pushed for owner,

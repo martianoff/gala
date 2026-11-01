@@ -49,7 +49,7 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 	suffixes := ctx.AllPostfixSuffix()
 	release := func() {}
 	if len(suffixes) > 0 {
-		release = t.expectedArgTypes.withhold(t.ownerOf(ctx))
+		release = t.expectedArgTypes.withhold(t.pendingOwnerOf(ctx))
 	}
 	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	if err != nil {

@@ -157,7 +157,11 @@ func ptrOf(ptr transpiler.PointerType) string {
 // read on ANTLR's tree only to report the error.
 func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, m memberSrc) error {
 	return t.checkPtrReceiverAt(recv, recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
-		return receiverSource(t.ctxAt(m.suffix).(*grammar.PostfixSuffixContext))
+		suffix, _ := m.suffix.ctx.(*grammar.PostfixSuffixContext)
+		if m.suffix.node.Ok() {
+			suffix = crossTo[*grammar.PostfixSuffixContext](t, m.suffix.node)
+		}
+		return receiverSource(suffix)
 	})
 }
 
@@ -426,14 +430,8 @@ func typeTypeParamOwner(name string, m *transpiler.TypeMetadata) typeParamOwner 
 	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
 }
 
-// checkPtrWrittenTypeArgs checks the written type arguments args of o, the
-// i-th located by at(i), with checkPtrTypeArg.
-func (t *galaASTTransformer) checkPtrWrittenTypeArgs(o typeParamOwner, args []ast.Expr, at func(i int) antlr.ParserRuleContext) error {
-	return t.checkPtrWrittenTypeArgsAt(o, args, func(i int) srcNode { return srcNode{ctx: at(i)} })
-}
-
-// checkPtrWrittenTypeArgsAt is checkPtrWrittenTypeArgs of type arguments
-// located on either tree.
+// checkPtrWrittenTypeArgsAt checks the written type arguments args of o, the
+// i-th located on either tree by at(i), with checkPtrTypeArg.
 func (t *galaASTTransformer) checkPtrWrittenTypeArgsAt(o typeParamOwner, args []ast.Expr, at func(i int) srcNode) error {
 	if !t.hasPtrConstraint(o) {
 		return nil
