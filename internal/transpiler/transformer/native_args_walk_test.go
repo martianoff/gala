@@ -34,6 +34,12 @@ func pair() Tuple[int64, string] = (1, "ü") // native: slot, parens
 
 func pick(b bool) int = if (b) 1 else 2 // native: slot, if
 
+func parse[T any]() Option[T] = None[T]()
+
+// A hint pushed for parse() through its ANTLR context is the one its call
+// takes on the native tree (checkWalksAgree).
+func parsed() Option[int] = parse() // native: slot
+
 func args(p P) int {
 	val a = apply((v) => v + 1, 2) // native: arg, slot
 	val b = apply(_ * 2, 3) // native: arg, slot, placeholder
@@ -68,7 +74,7 @@ func loops(n int) int {
 }
 
 func main() {
-	Println(pair(), pick(true), args(P(1, 2)), loops(4)) // native: arg
+	Println(pair(), pick(true), parsed(), args(P(1, 2)), loops(4)) // native: arg
 }
 `
 

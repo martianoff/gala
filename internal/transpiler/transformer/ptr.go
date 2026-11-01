@@ -153,22 +153,16 @@ func ptrOf(ptr transpiler.PointerType) string {
 // receiver — a call `p.M()` or a method value `p.M` — on a pointer that may be
 // nil (GALA-E0080): the receiver fills a Ptr slot. recv is the lowered
 // receiver and recvType its type; m is the member access, whose receiver is
-// read on ANTLR's tree only to report the error.
+// read, on m's tree, only to report the error.
 func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, m memberSrc) error {
-	suffix, ok := m.antlr(t)
-	if !ok {
-		return semanticErrorAtStart(m.at(), "internal error: the member access has no ANTLR context")
-	}
-	return t.checkPtrReceiverAt(recv, recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
-		return receiverSource(suffix)
-	})
+	return t.checkPtrReceiverIn(recv, recvType, method, func() (srcNode, srcNode, string) { return m.receiver(t) })
 }
 
-// checkPtrReceiverAt is checkPtrReceiver for a receiver located by source,
-// which returns the contexts spanning it and its source text and is called
-// only to report the error: a receiver written before a member access, or the
+// checkPtrReceiverIn is checkPtrReceiver for a receiver located by source,
+// which returns the nodes, of either tree, spanning it and its source text,
+// and is called only to report the error: a member access's receiver, or the
 // value a `bind` or `also` clause lowers to the receiver of FlatMap or ZipN.
-func (t *galaASTTransformer) checkPtrReceiverAt(recv ast.Expr, recvType transpiler.Type, method string, source func() (from, to antlr.ParserRuleContext, text string)) error {
+func (t *galaASTTransformer) checkPtrReceiverIn(recv ast.Expr, recvType transpiler.Type, method string, source func() (from, to srcNode, text string)) error {
 	ptr, ok := t.nullablePtrReceiver(recvType, method)
 	if !ok {
 		return nil
@@ -178,7 +172,7 @@ func (t *galaASTTransformer) checkPtrReceiverAt(recv ast.Expr, recvType transpil
 	if id, isIdent := recv.(*ast.Ident); isIdent && t.fixedBindingOf(id.Name) == fixedPointerReceiver {
 		hint = fmt.Sprintf("declare the receiver `%s %s`, or call it on RequirePtr(%s)", id.Name, ptrOf(ptr), text)
 	}
-	return spanError(galaerr.CodePtrNullability, from, to,
+	return spanErrorAt(galaerr.CodePtrNullability, from.rng(), to.rng(),
 		fmt.Sprintf("cannot call %s on %s (%s): %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr", method, text, displayType(ptr), method, ptrOf(ptr)),
 		hint)
 }
@@ -742,9 +736,8 @@ func (t *galaASTTransformer) checkPtrNilComparison(tok token.Token, at srcNode, 
 	if !transpiler.IsPtr(typ) {
 		return nil
 	}
-	ctx := t.ctxAt(at)
-	return ptrError(ctx,
-		fmt.Sprintf("%s compares a %s with nil, but a Ptr is never nil", transpiler.SourceText(ctx), displayType(typ)),
+	return ptrErrorAt(at,
+		fmt.Sprintf("%s compares a %s with nil, but a Ptr is never nil", at.sourceText(), displayType(typ)),
 		"drop the comparison; "+ptrMayBeAbsentHint)
 }
 

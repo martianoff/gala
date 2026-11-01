@@ -6,7 +6,6 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/transpiler"
 )
 
 // nestedFunc is a function declaration in a body: its name, where it starts,
@@ -15,7 +14,7 @@ import (
 type nestedFunc struct {
 	name              string
 	line, col, endCol int
-	sig               grammar.ISignatureContext
+	sig               sigSrc
 	method, generic   bool
 }
 
@@ -28,7 +27,7 @@ func readNestedFunc(ctx *grammar.FunctionDeclarationContext) nestedFunc {
 		line:    ctx.GetStart().GetLine(),
 		col:     ctx.GetStart().GetColumn(),
 		endCol:  id.GetStop().GetColumn() + len([]rune(name)),
-		sig:     ctx.Signature(),
+		sig:     antlrSig(ctx.Signature()),
 		method:  ctx.Receiver() != nil,
 		generic: ctx.TypeParameters() != nil,
 	}
@@ -65,7 +64,7 @@ func nestedFunctionError(d nestedFunc) error {
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot take type parameters", name)
 	case sig.hasDefault:
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot take default parameter values", name)
-	case d.sig.GoResults() != nil:
+	case d.sig.hasGoResults():
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot declare a Go result list", name)
 	case sig.partial:
 		hint = "write it as a lambda bound to a `val`; a lambda names every parameter, as in `(x int) =>`"
@@ -84,19 +83,17 @@ type lambdaSignature struct {
 	partial    bool // a parameter lacks a name or a type: `(int)` reads as a name in a lambda
 }
 
-func lambdaSignatureOf(sig grammar.ISignatureContext) lambdaSignature {
+func lambdaSignatureOf(sig sigSrc) lambdaSignature {
 	var out lambdaSignature
 	var params []string
-	if list := sig.Parameters().ParameterList(); list != nil {
-		for _, p := range list.AllParameter() {
-			out.hasDefault = out.hasDefault || p.ParamDefault() != nil
-			out.partial = out.partial || p.Identifier() == nil || p.Type_() == nil
-			params = append(params, oneLine(transpiler.SourceText(p)))
-		}
+	for _, p := range sig.params() {
+		out.hasDefault = out.hasDefault || p.hasDefault
+		out.partial = out.partial || !p.nameAt.ok() || !p.typ.ok()
+		params = append(params, oneLine(p.at.sourceText()))
 	}
 	out.text = "(" + strings.Join(params, ", ") + ")"
-	if sig.Type_() != nil {
-		out.text += " " + oneLine(transpiler.SourceText(sig.Type_()))
+	if typ := sig.resultType(); typ.ok() {
+		out.text += " " + oneLine(typ.sourceText())
 	}
 	return out
 }

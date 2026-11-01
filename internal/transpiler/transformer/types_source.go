@@ -114,6 +114,26 @@ func (s typeSrc) nameParts() []string {
 	return parts
 }
 
+// lastName is the last identifier of a named type's name (`Sendable` of
+// `std.Sendable`), read without building the list nameParts does.
+func (s typeSrc) lastName() string {
+	if s.node.Ok() {
+		var last native.GalaNodeRef
+		for id := range galaparser.NativeKids(s.node.QualifiedIdentifier().GalaNodeRef, native.GalaKIND_identifier) {
+			last = id
+		}
+		if !last.Ok() {
+			return ""
+		}
+		return galaparser.NativeText(last)
+	}
+	ids := s.ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier()
+	if len(ids) == 0 {
+		return ""
+	}
+	return ids[len(ids)-1].GetText()
+}
+
 // nameText is a named type's name as written, its tokens run together.
 func (s typeSrc) nameText() string {
 	if s.node.Ok() {

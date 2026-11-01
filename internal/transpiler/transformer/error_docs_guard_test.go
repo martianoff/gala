@@ -1325,6 +1325,18 @@ func main() = Println("ok")
 			},
 		},
 		{
+			name: "parameter with no name",
+			code: galaerr.CodeNamelessParam, // GALA-E0088
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func sum(...int) int = 0
+
+func main() = Println(sum(1, 2))
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

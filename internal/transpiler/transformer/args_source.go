@@ -85,14 +85,13 @@ func (e exprSrc) solePostfix() postfixSrc {
 	return patExpr{exprSrc: e}.postfix(true)
 }
 
-// hintKey is p's context, the key a hint pushed for p's value takes (see
-// expectedArgTypeStack.pushFor); nil for the zero postfixSrc.
-func (p postfixSrc) hintKey(t *galaASTTransformer) *grammar.PostfixExprContext {
+// hintKey is the key a hint pushed for p's value takes (see hintOwner); no
+// owner for the zero postfixSrc.
+func (t *galaASTTransformer) hintKey(p postfixSrc) hintOwner {
 	if p.node.Ok() {
-		owner, _ := t.native.Ctx(p.node).(*grammar.PostfixExprContext)
-		return owner
+		return nativeOwner(p.node)
 	}
-	return p.ctx
+	return t.ownerKey(p.ctx)
 }
 
 // hasTypeArgList reports whether c is written with type arguments and their
@@ -399,7 +398,7 @@ func escapesNative(n native.GalaNodeRef, inLoop bool) bool {
 // escapesAt is escapesConstruct of the subtree at n, on its tree.
 func (t *galaASTTransformer) escapesAt(n srcNode) bool {
 	if n.node.Ok() {
-		return t.cachedEscape(n.node, func() bool { return escapesNative(n.node, false) })
+		return t.cachedEscape(n.node.Index(), func() bool { return escapesNative(n.node, false) })
 	}
 	return escapesConstruct(t, n.ctx)
 }

@@ -853,6 +853,13 @@ const (
 	// the extractor of a constructor pattern are not affected: only the
 	// prelude's name can stand there.
 	CodeDotImportPreludeAmbiguity ErrorCode = "GALA-E0087"
+
+	// E0088: a parameter of a function, method or struct shorthand is
+	// written as a type alone, as in `func g(...int)`. The grammar allows it
+	// because a function type's parameters are types alone; a declared
+	// parameter is bound by its name, so it needs one. It used to stop the
+	// build with an internal error (GALA-E0017).
+	CodeNamelessParam ErrorCode = "GALA-E0088"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

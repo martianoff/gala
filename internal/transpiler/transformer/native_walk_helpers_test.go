@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"bytes"
 	"go/ast"
 	"go/token"
 	"os"
@@ -42,7 +43,16 @@ type walkRun struct {
 	shapes    map[int]map[string]bool // the expression shapes it lowered, by line
 	cases     int                     // the case clauses of matches and partial functions read on the native tree, each counted once
 	caseLines map[int]bool            // the lines those case clauses start on
-	converted bool
+	// hints is each look at the hint stack's top, in order: a take or a
+	// withhold, and whether the hint there was the asking value's. The two
+	// walks key a hint differently (hintOwner), so the same stream shows its
+	// ownership is the same.
+	hints []byte
+	// hintKeyMismatches is the lines of the postfix expressions whose hint
+	// key differs read through their ANTLR context and on their native node
+	// (HintKeyMismatches), as the native walk starts.
+	hintKeyMismatches []int
+	converted         bool
 }
 
 // walkPipeline transpiles files the way the CLI does, parsing with galop, each
@@ -59,7 +69,13 @@ type walkPipeline struct {
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
 	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
-	transformer.OnNativeDecl(tr, func() { run.native++ })
+	inner := tr
+	transformer.OnNativeDecl(tr, func() {
+		if run.native == 0 {
+			run.hintKeyMismatches = transformer.HintKeyMismatches(inner)
+		}
+		run.native++
+	})
 	lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}
 	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true })
 	transformer.OnNativeStmt(tr, func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true })
@@ -71,6 +87,15 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 			run.shapes[line] = map[string]bool{}
 		}
 		run.shapes[line][shape] = true
+	})
+	transformer.OnHint(tr, func(op string, owned bool) {
+		// One byte a look: t or w for a take or a withhold, upper-case when
+		// the hint was the asking value's.
+		b := op[0]
+		if owned {
+			b -= 'a' - 'A'
+		}
+		run.hints = append(run.hints, b)
 	})
 	if w.antlrOnly {
 		tr = withoutNative{tr}
@@ -287,6 +312,17 @@ func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src str
 		assert.Failf(tb, "the walks' Go differs", "%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
 	}
 	assert.Equalf(tb, a.err, n.err, "%s: the native walk's error differs from the ANTLR walk's", path)
+	// A value lowered from ANTLR's tree (an ANTLR half of a source type) is
+	// hinted under its context's key, and the call it is takes the hint on
+	// the native tree: the two keys must be one.
+	assert.Emptyf(tb, n.hintKeyMismatches, "%s: a hint pushed through ANTLR's tree is keyed apart from the native call that takes it, on lines %v", path, n.hintKeyMismatches)
+	if !bytes.Equal(n.hints, a.hints) {
+		i := 0
+		for i < len(n.hints) && i < len(a.hints) && n.hints[i] == a.hints[i] {
+			i++
+		}
+		assert.Failf(tb, "the walks' hint ownership differs", "%s: the native walk took %d looks at the hint stack, the ANTLR walk %d; they differ from look %d: native %q, ANTLR %q", path, len(n.hints), len(a.hints), i, n.hints[i:], a.hints[i:])
+	}
 	return n, want, true
 }
 

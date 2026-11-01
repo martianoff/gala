@@ -9,7 +9,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -17,12 +16,12 @@ import (
 // (internal/parser/native): each reader here is the twin of the one it is
 // named after, which reads ANTLR's tree, and fills the same tree-free value
 // for the same lowering (lowerValDecl, lowerFuncDecl, lowerTypeDecl, ...).
-// What the native tree does not drive yet, it hands to ANTLR's tree: the
-// signatures, parameters, initializers and expression bodies inside a
-// declaration cross back with crossTo. Types are read natively
-// (types_source.go), as are the sealed and opaque type declarations
-// (sealed_source.go), and block bodies down to their statements
-// (statements_source.go). The later steps of the port move the boundary down.
+// A declaration's signature, parameters, initializers and expression body are
+// read natively too (decls_source.go), as are types (types_source.go), the
+// sealed and opaque type declarations (sealed_source.go), and block bodies
+// down to their statements (statements_source.go). What the native tree does
+// not drive yet, it hands to ANTLR's tree with crossTo. The later steps of the
+// port move the boundary down.
 // TestNativeWalkAgrees holds the native walk to the ANTLR one.
 //
 // Children are read through the rule handles, NativeKids and Kind(), never
@@ -186,21 +185,12 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 		d.typ = nativeType(typ)
 	}
 	if list.Ok() {
-		d.exprs = crossTo[*grammar.ExpressionListContext](t, list.GalaNodeRef)
+		d.exprs = nativeExprList(list.GalaNodeRef)
 	}
 	if tp := n.TuplePattern(); tp.Ok() {
 		d.tuple = srcNode{node: tp.GalaNodeRef}
-		if typ.Ok() {
-			d.typAt = d.typ.at()
-		}
-		if list.Ok() {
-			d.exprsAt = srcNode{node: list.GalaNodeRef}
-			for range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
-				d.nExprs++
-			}
-		}
 	}
-	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
+	if d.exprs.ok() && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
 		d.blankHint = nativeBlankDeclarationHint(n.Ref(), d.topLevel)
 	}
@@ -209,12 +199,12 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 
 // readFuncDeclNative is readFuncDecl of n.
 func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode) funcDecl {
-	d := funcDecl{name: n.Identifier().GetText(), sig: crossTo[*grammar.SignatureContext](t, n.Signature().GalaNodeRef)}
+	d := funcDecl{name: n.Identifier().GetText(), sig: nativeSig(n.Signature())}
 	if b := n.Block(); b.Ok() {
 		d.block = blockSrc{node: b.GalaNodeRef}
 	}
 	if e := n.Expression(); e.Ok() {
-		d.expr = crossTo[*grammar.ExpressionContext](t, e.GalaNodeRef)
+		d.expr = nativeExpr(e.GalaNodeRef)
 	}
 	if r := n.Receiver(); r.Ok() {
 		d.recv = &receiverDecl{
@@ -251,7 +241,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 		d.kind = interfaceTypeDecl
 		for m := range galaparser.NativeKids(it.GalaNodeRef, native.GalaKIND_methodSpec) {
 			spec := native.MethodSpecNode{GalaNodeRef: m}
-			ms := methodSpecDecl{name: spec.Identifier().GetText(), sig: crossTo[*grammar.SignatureContext](t, spec.Signature().GalaNodeRef)}
+			ms := methodSpecDecl{name: spec.Identifier().GetText(), sig: nativeSig(spec.Signature())}
 			if tps := spec.TypeParameters(); tps.Ok() {
 				ms.typeParams = nativeTypeParams(tps)
 			}
@@ -275,20 +265,21 @@ func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDec
 	if tps := n.TypeParameters(); tps.Ok() {
 		d.typeParams = nativeTypeParams(tps)
 	}
-	d.params = t.readParamsNative(n.Parameters())
+	d.params = readParamsNative(n.Parameters())
 	return d
 }
 
 // readParamsNative is readParams of ps.
-func (t *galaASTTransformer) readParamsNative(ps native.ParametersNode) []paramDecl {
+func readParamsNative(ps native.ParametersNode) []paramDecl {
 	var out []paramDecl
 	for p := range galaparser.NativeKids(ps.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		param := native.ParameterNode{GalaNodeRef: p}
 		pd := paramDecl{
-			ctx:   crossTo[*grammar.ParameterContext](t, p),
-			at:    srcNode{node: p},
-			isVar: param.VAR().Ok(),
-			isVal: param.VAL().Ok(),
+			at:         srcNode{node: p},
+			isVar:      param.VAR().Ok(),
+			isVal:      param.VAL().Ok(),
+			variadic:   param.ELLIPSIS().Ok(),
+			hasDefault: param.ParamDefault().Ok(),
 		}
 		// A parameter can be nameless, as in `(...int) => 0`.
 		if id := param.Identifier(); id.Ok() {

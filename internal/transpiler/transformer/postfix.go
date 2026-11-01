@@ -44,7 +44,7 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "postfixExpr must have primaryExpr")
 	}
 
-	p := postfixSrc{ctx: ctx, owner: ctx}
+	p := postfixSrc{ctx: ctx, owner: t.ownerOf(ctx)}
 	var buf [4]suffixSrc
 	suffixes := p.appendSuffixes(buf[:0])
 	if len(suffixes) == 0 {
@@ -514,7 +514,7 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 		return nil, semanticErrorAtStart(p.at(), "match expression must have subject")
 	}
 	// No hint is pushed for a match, so its subject's suffixes take none.
-	p.owner = nil
+	p.owner = hintOwner{}
 	subject, err := t.lowerPrimaryOf(p)
 	if err != nil {
 		return nil, err

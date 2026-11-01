@@ -1,6 +1,10 @@
 package transformer
 
-import "martianoff/gala/internal/transpiler"
+import (
+	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/transpiler"
+)
 
 // OnNativeDecl sets tr's onNativeDecl hook for TestNativeWalkAgrees.
 func OnNativeDecl(tr transpiler.ASTTransformer, f func()) {
@@ -37,7 +41,42 @@ func OnNativeShape(tr transpiler.ASTTransformer, f func(line int, shape string))
 	tr.(*galaASTTransformer).onNativeShape = f
 }
 
+// OnHint sets tr's hint stack's observe hook for checkWalksAgree.
+func OnHint(tr transpiler.ASTTransformer, f func(op string, owned bool)) {
+	tr.(*galaASTTransformer).expectedArgTypes.observe = f
+}
+
 // OnNativeCase sets tr's onNativeCase hook for TestNativeWalkAgrees.
 func OnNativeCase(tr transpiler.ASTTransformer, f func(index, line int)) {
 	tr.(*galaASTTransformer).onNativeCase = f
+}
+
+// HintKeyMismatches is, for the file tr is lowering on the native tree, the
+// lines of the postfix expressions whose hint key read through their ANTLR
+// context differs from the one read on their native node: a value lowered
+// from ANTLR's tree pushes its hint under the first, and the call it is,
+// lowered on the native tree, takes it under the second (see ownerKey).
+func HintKeyMismatches(tr transpiler.ASTTransformer) []int {
+	t := tr.(*galaASTTransformer)
+	root, ok := t.native.BridgedRoot()
+	if !ok {
+		return nil
+	}
+	var lines []int
+	var walk func(n native.GalaNodeRef)
+	walk = func(n native.GalaNodeRef) {
+		if n.Kind() == native.GalaKIND_postfixExpr {
+			ctx := crossTo[*grammar.PostfixExprContext](t, n)
+			if t.hintKey(postfixSrc{ctx: ctx}) != t.hintKey(postfixSrc{node: n}) {
+				lines = append(lines, int(n.Start().Line))
+			}
+		}
+		for i := range n.ChildCount() {
+			if c := n.Child(i).Node(); c.Ok() {
+				walk(c)
+			}
+		}
+	}
+	walk(root)
+	return lines
 }

@@ -11,12 +11,10 @@ import (
 // an ANTLR half and a native half giving the same value for the same lambda,
 // as the statement sources do (statements_source.go). A native lambda's
 // block body is a native blockSrc, so its statements are lowered on the
-// native tree too; its result type is a native typeSrc and an expression
-// body a native exprSrc. An expression body of a lambda that returns nothing
-// is lowered as an expression statement (transformVoidExpressionBody), on
-// ANTLR's tree.
-// Its parameters (transformParameter) are lowered on ANTLR's tree too: the
-// native readers cross to it with crossTo.
+// native tree too; its result type is a native typeSrc, an expression body
+// a native exprSrc, and its parameters are read there (lowerParam). An
+// expression body of a lambda that returns nothing is lowered as an
+// expression statement (transformVoidExpressionBody), on ANTLR's tree.
 //
 // The native walk reaches a lambda on its node: from an expression
 // (lowerPrimaryExprNative), a call argument (argContent) or a slot-typed
@@ -76,7 +74,7 @@ func (l lambdaSrc) at() srcNode {
 // params is l's parameters, in order.
 func (l lambdaSrc) params(t *galaASTTransformer) []paramDecl {
 	if l.node.Ok() {
-		return t.readParamsNative(l.node.Parameters())
+		return readParamsNative(l.node.Parameters())
 	}
 	return readParams(l.ctx.Parameters().(*grammar.ParametersContext))
 }

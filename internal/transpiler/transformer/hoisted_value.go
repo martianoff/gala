@@ -8,6 +8,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -46,18 +47,46 @@ type hoistedValue struct {
 // function literal, could not reach the function or loop it is written for. A
 // `break` / `continue` inside a `for` loop of the tree's own controls that
 // loop. The answer for each tree is cached: a construct and those nested in
-// it are asked about at every level of the lowering.
+// it are asked about at every level of the lowering. When the file's walk
+// reads the native tree, a case clause, statement or if-expression branch is
+// asked about on its native node, so the answer is cached under the node's
+// index whichever tree asks (escapesAt).
 func escapesConstruct[T antlr.Tree](t *galaASTTransformer, trees ...T) bool {
 	for _, tree := range trees {
-		if t.cachedEscape(antlr.Tree(tree), func() bool { return escapes(tree, false) }) {
+		if t.escapesTree(tree) {
 			return true
 		}
 	}
 	return false
 }
 
-// cachedEscape is the cached escape answer for key, a subtree of either tree,
-// computed by walk the first time it is asked for.
+// escapesTree is escapesConstruct of tree, a subtree of ANTLR's tree.
+func (t *galaASTTransformer) escapesTree(tree antlr.Tree) bool {
+	if n, ok := t.escapeNode(tree); ok {
+		return t.escapesAt(srcNode{node: n})
+	}
+	return t.cachedEscape(tree, func() bool { return escapes(tree, false) })
+}
+
+// escapeNode is the native node of tree, a case clause, a statement or an
+// if-expression branch that code still on ANTLR's tree asks escapesConstruct
+// about (the only subtrees it is asked about), when the file's
+// walk reads the native tree (nativeNodeOf, which indexes only the nodes of
+// the kind asked for).
+func (t *galaASTTransformer) escapeNode(tree antlr.Tree) (native.GalaNodeRef, bool) {
+	switch ctx := tree.(type) {
+	case *grammar.CaseClauseContext:
+		return t.nativeNodeOf(ctx, native.GalaKIND_caseClause)
+	case *grammar.StatementContext:
+		return t.nativeNodeOf(ctx, native.GalaKIND_statement)
+	case *grammar.IfExprBranchContext:
+		return t.nativeNodeOf(ctx, native.GalaKIND_ifExprBranch)
+	}
+	return native.GalaNodeRef{}, false
+}
+
+// cachedEscape is the cached escape answer for key, a native node's index or
+// a subtree of ANTLR's tree, computed by walk the first time it is asked for.
 func (t *galaASTTransformer) cachedEscape(key any, walk func() bool) bool {
 	escaping, ok := t.escapeCache[key]
 	if !ok {
@@ -109,25 +138,20 @@ func (t *galaASTTransformer) hoistableForm(f exprForm) bool {
 	return false
 }
 
-// lowerDeclarationInitializers lowers the values of a `val` or `var`
+// lowerDeclarationInitializers lowers exprs, the values of a `val` or `var`
 // declaring names names, or of an assignment to names targets, with declared
 // type declared (nil when none). The single value of a single local name is
 // lowered as statements when hoistable: the statement then reads the variable
 // they store its value in, and they are left in t.hoistedPre for
 // transformStatement to emit before it.
-func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.ExpressionListContext, names int, declared transpiler.Type) ([]ast.Expr, error) {
+func (t *galaASTTransformer) lowerDeclarationInitializers(exprs []exprSrc, names int, declared transpiler.Type) ([]ast.Expr, error) {
 	local := t.localDeclaration
 	t.localDeclaration = false
-	exprs := ctx.AllExpression()
-	if !local || names != 1 || len(exprs) != 1 {
-		return t.transformExpressionListAgainst(ctx, declared)
-	}
-	e := t.exprOf(exprs[0])
-	if !t.hoistable(e) {
-		return t.transformExpressionListAgainst(ctx, declared)
+	if !local || names != 1 || len(exprs) != 1 || !t.hoistable(exprs[0]) {
+		return t.lowerExprsAgainst(exprs, declared)
 	}
 	target := t.nextTempVar()
-	expr, err := t.lowerAgainst(e, slot{typ: declared, hoist: target}, true)
+	expr, err := t.lowerAgainst(exprs[0], slot{typ: declared, hoist: target}, true)
 	if err != nil {
 		return nil, err
 	}
