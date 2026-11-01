@@ -258,10 +258,11 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // walk reads: galop's native tree when the walk reads that one (t.native is
 // set), ANTLR's otherwise, so a file is lowered on one tree throughout.
 //
-// The native tree is a tree of its own, with no ANTLR contexts: nothing the
-// native lowering of an expression reaches crosses to ANTLR's tree, and a
-// crossing that did would find no context and raise an internal error
-// (crossTo), so no native handle is needed for it. When galop's native parser
+// The native tree is a tree of its own, with no ANTLR contexts. The native
+// lowering of an expression reads only the nodes it is given, never crossing
+// to ANTLR's tree (the file's handle, t.native, is how a lowering entered with
+// an ANTLR context finds its node), so it lowers this tree as it lowers the
+// file's, with no handle of its own. When galop's native parser
 // does not settle the text, ANTLR's parser parses it: for a syntax error, to
 // report it with ANTLR's message. Where ANTLR's parser accepts it, galop's
 // parser panicked (reported on standard error, see

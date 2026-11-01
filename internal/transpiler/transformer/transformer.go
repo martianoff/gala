@@ -150,7 +150,8 @@ type galaASTTransformer struct {
 
 	// native is the native-tree handle of the file being transformed while
 	// its top-level walk reads that tree (see walkSource), nil while it reads
-	// ANTLR's. The native walk crosses to ANTLR's tree through it (crossTo).
+	// ANTLR's. A lowering entered with an ANTLR context finds its node through
+	// it (nativeNodeOf).
 	native *galaparser.Native
 	// walkedNative is whether the last transform's top-level walk read the
 	// native tree (see newWalkSource). Unlike native, it outlives the

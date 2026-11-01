@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"strings"
 	"unicode/utf8"
@@ -19,38 +18,17 @@ import (
 // A declaration's signature, parameters, initializers and expression body are
 // read natively too (decls_source.go), as are types (types_source.go), the
 // sealed and opaque type declarations (sealed_source.go), and block bodies
-// down to their statements (statements_source.go). What the native tree does
-// not drive yet, it hands to ANTLR's tree with crossTo. The later steps of the
-// port move the boundary down.
+// down to their statements (statements_source.go). Nothing the native walk
+// reads crosses back to ANTLR's tree.
 // TestNativeWalkAgrees holds the native walk to the ANTLR one.
 //
 // Children are read through the rule handles, NativeKids and Kind(), never
 // through Typed(), which builds a handle per node, or the All accessors,
 // which allocate.
 
-// crossTo is the ANTLR context of native node n, a C: the crossing from the
-// native tree back to ANTLR's where the port has not reached yet. The walk
-// reads only bridged trees (newWalkSource), where every node has a context of
-// its rule, so a missing node or one without a context of the right type is
-// a bug in the walk or the bridge, raised as an internal error.
-func crossTo[C antlr.ParserRuleContext](t *galaASTTransformer, n native.GalaNodeRef) C {
-	ctx := t.native.Ctx(n)
-	c, ok := ctx.(C)
-	if !ok {
-		what := "no node"
-		if n.Ok() {
-			what = fmt.Sprintf("node %d (kind %d) has the ANTLR context %T", n.Index(), n.Kind(), ctx)
-		}
-		// invariant: native-bridge — the walk reads only bridged trees.
-		panic(fmt.Sprintf("native tree: %s, not %T", what, c))
-	}
-	return c
-}
-
 // nativeNodeOf is ctx's node on the native tree, of kind, when the file's
 // walk reads that tree (t.native is set only for a bridged tree), and false
-// otherwise: crossTo's inverse, for the lowerings the native walk reaches
-// through an expression that is still lowered on ANTLR's tree (see
+// otherwise: the bridge for the lowerings entered with an ANTLR context (see
 // lambdas_source.go). A nil ctx, typed or not, has no node.
 func (t *galaASTTransformer) nativeNodeOf(ctx antlr.ParserRuleContext, kind native.GalaKind) (native.GalaNodeRef, bool) {
 	if t.native == nil {

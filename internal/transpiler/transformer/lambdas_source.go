@@ -23,22 +23,12 @@ import (
 // walk reads it (lambdaOf).
 
 // lambdaSrc is a lambda expression: its node when it is read on the native
-// tree, and its context, which a lambda reached from ANTLR's tree keeps for
-// the readers not ported yet (its parameters). A lambda the native walk
-// reaches (lowerPrimaryExprNative, argContent) comes with its node only;
-// those readers cross for its context (antlr).
+// tree, its context when it is read on ANTLR's. A lambda reached from ANTLR's
+// tree keeps its context alongside its node (lambdaOf); one the native walk
+// reaches (lowerPrimaryExprNative, argContent) comes with its node only.
 type lambdaSrc struct {
 	ctx  *grammar.LambdaExpressionContext
 	node native.LambdaExpressionNode
-}
-
-// antlr is l's context on ANTLR's tree, crossing from its node when l came
-// without one.
-func (l lambdaSrc) antlr(t *galaASTTransformer) *grammar.LambdaExpressionContext {
-	if l.ctx == nil && l.node.Ok() {
-		return crossTo[*grammar.LambdaExpressionContext](t, l.node.GalaNodeRef)
-	}
-	return l.ctx
 }
 
 // ok reports whether l is a lambda, not the zero lambdaSrc.

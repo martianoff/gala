@@ -93,7 +93,7 @@ func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
 		}
 		return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
 	}
-	lambda := l.antlr(t)
+	lambda := l.ctx
 	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
 	if !ok {
 		return callSrc{}, false

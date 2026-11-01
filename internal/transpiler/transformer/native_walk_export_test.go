@@ -1,6 +1,8 @@
 package transformer
 
 import (
+	"fmt"
+
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
@@ -111,7 +113,10 @@ func HintKeyMismatches(tr transpiler.ASTTransformer) []int {
 	var walk func(n native.GalaNodeRef)
 	walk = func(n native.GalaNodeRef) {
 		if n.Kind() == native.GalaKIND_postfixExpr {
-			ctx := crossTo[*grammar.PostfixExprContext](t, n)
+			ctx, ok := t.native.Ctx(n).(*grammar.PostfixExprContext)
+			if !ok {
+				panic(fmt.Sprintf("native tree: postfix node %d has no postfix context", n.Index()))
+			}
 			if t.hintKey(postfixSrc{ctx: ctx}) != t.hintKey(postfixSrc{node: n}) {
 				lines = append(lines, int(n.Start().Line))
 			}

@@ -1204,7 +1204,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 			// recursion runs in constant stack space. Restricted to plain
 			// functions (no receiver, so `name` is the un-mangled call target);
 			// receiver/generic-method forms fall through to the normal lowering.
-			loopBody, ok, tcoErr := t.tryTransformSelfTailRecursion(d.expr.antlr(t), name, funcType)
+			loopBody, ok, tcoErr := t.tryTransformSelfTailRecursion(d.expr, name, funcType)
 			if tcoErr != nil {
 				return nil, tcoErr
 			}

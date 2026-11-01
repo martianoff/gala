@@ -35,10 +35,10 @@ type walkSource struct {
 // paid for it.
 func newWalkSource(richAST *transpiler.RichAST, sf *grammar.SourceFileContext) walkSource {
 	h := richAST.Native
-	// The walk crosses back to ANTLR's tree on many kinds of node (crossTo).
-	// Native.Bridged checks every node has a context of its rule, so where it
-	// does not hold the whole file is walked on ANTLR's tree, as the analysis
-	// reads it, and no crossing can miss.
+	// A lowering entered with an ANTLR context finds its node through the
+	// bridge (nativeNodeOf). Native.Bridged checks every node has a context
+	// of its rule, so where it does not hold the whole file is walked on
+	// ANTLR's tree, as the analysis reads it, and no lookup can miss.
 	if !h.Converted() || !h.Bridged() {
 		return walkSource{sf: sf}
 	}
