@@ -7,11 +7,11 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
-	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
-// newlineTokenSource applies GALA's line-break rule to the token stream: a
-// '(' separated by a line break from a token that can end an expression is
+// lineBreakRule is GALA's line-break rule, applied to a token stream one
+// default-channel token at a time (see next): a '(' separated by a line break from a token that can end an expression is
 // re-typed as NL_LPAREN, and so is a '*' or '&' written directly against its
 // operand, as NL_STAR or NL_AMP.
 //
@@ -62,8 +62,7 @@ import (
 // `&n`); '+', '-' and '^' are not, so a line starting with one always
 // continues the expression. A line that starts with '.' continues a method
 // chain.
-type newlineTokenSource struct {
-	antlr.Lexer
+type lineBreakRule struct {
 	kinds *tokenKinds
 
 	// prevEndLine is the line the previous default-channel token ends on.
@@ -77,6 +76,14 @@ type newlineTokenSource struct {
 	// headers holds the `func`, `if` and `for` headers whose block's '{' is
 	// still to come, innermost last.
 	headers []header
+}
+
+// newlineTokenSource is ANTLR's lexer with the line-break rule (see
+// lineBreakRule) applied to its tokens. RetypeNewlines applies the same rule
+// to galop's native tokens.
+type newlineTokenSource struct {
+	antlr.Lexer
+	rule lineBreakRule
 }
 
 // header is a function declaration, `if` or `for` whose block's '{' is still
@@ -111,7 +118,7 @@ var _ antlr.Lexer = (*newlineTokenSource)(nil)
 // newTokenStream is the token stream every parse reads: the lexer's tokens
 // with the line-break rule above applied.
 func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
-	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, kinds: kinds()}, antlr.TokenDefaultChannel)
+	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, rule: lineBreakRule{kinds: kinds()}}, antlr.TokenDefaultChannel)
 }
 
 // lineStartToken describes one re-typed token: the source token it is
@@ -179,11 +186,13 @@ func is(set []bool, ttype int) bool { return at(set, ttype) }
 // that never parses does not pay for it.
 var kinds = sync.OnceValue(func() *tokenKinds {
 	// The parser's vocabulary, not the lexer's: no lexer rule produces the
-	// re-typed tokens, so only the parser knows their types.
-	grammar.GalaParserInit()
-	vocab := &grammar.GalaParserStaticData
+	// re-typed tokens, so only the parser knows their types. galop's native
+	// vocabulary numbers the tokens as ANTLR's parser does (a test holds them
+	// equal), and reading it leaves ANTLR's static data uninitialized for a
+	// native-only parse.
+	symbolic, literal := native.GalaSymbolicNames, native.GalaLiteralNames
 	byName := map[string]int{}
-	for _, names := range [][]string{vocab.SymbolicNames, vocab.LiteralNames} {
+	for _, names := range [][]string{symbolic, literal} {
 		for ttype, name := range names {
 			if name != "" {
 				byName[name] = ttype
@@ -197,7 +206,7 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 		}
 		return ttype
 	}
-	n := len(vocab.SymbolicNames)
+	n := len(symbolic)
 	k := &tokenKinds{
 		identifier:    mustType("IDENTIFIER"),
 		lparen:        mustType("'('"),
@@ -249,31 +258,44 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	if tok.GetChannel() != antlr.TokenDefaultChannel {
 		return tok
 	}
-	k := s.kinds
 	ttype := tok.GetTokenType()
 	line := tok.GetLine()
+	endLine := line
+	if is(s.rule.kinds.spansLines, ttype) {
+		endLine += strings.Count(tok.GetText(), "\n")
+	}
+	if to := s.rule.next(ttype, line, endLine, s.operatorStandsApart); to != ttype {
+		tok = s.GetTokenFactory().Create(tok.GetSource(), to, tok.GetText(),
+			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
+	}
+	return tok
+}
+
+// next applies the rule to the next default-channel token, of type ttype,
+// which starts on line and ends on endLine (a literal can span lines; see
+// tokenKinds.spansLines). standsApart reports whether whitespace or a
+// comment follows the token; it is called only for a '*' or '&' that could
+// be re-typed. next returns the type the token takes: ttype, or the type it
+// is re-typed to.
+func (s *lineBreakRule) next(ttype, line, endLine int, standsApart func() bool) int {
+	k := s.kinds
 	lineBreak := line > s.prevEndLine
 	s.endHeader(ttype)
 	if r := at(k.atLineStart, ttype); r.to != 0 && s.prevEndsExpr && lineBreak &&
-		(!r.needsOperand || s.atStatementLevel() && !s.operatorStandsApart()) {
-		tok = s.GetTokenFactory().Create(tok.GetSource(), r.to, tok.GetText(),
-			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
+		(!r.needsOperand || s.atStatementLevel() && !standsApart()) {
 		ttype = r.to
 	}
 	s.trackBrackets(ttype, lineBreak)
 	s.prevType = ttype
 	s.prevEndsExpr = is(k.endsExpr, ttype)
-	s.prevEndLine = line
-	if is(k.spansLines, ttype) {
-		s.prevEndLine += strings.Count(tok.GetText(), "\n")
-	}
-	return tok
+	s.prevEndLine = endLine
+	return ttype
 }
 
 // endHeader drops the pending header of an if whose parenthesized condition is
 // not followed by '{': it has no block. It runs before the token is re-typed,
 // since a statement cannot begin inside a header (see atStatementLevel).
-func (s *newlineTokenSource) endHeader(ttype int) {
+func (s *lineBreakRule) endHeader(ttype int) {
 	if h := s.pendingHeader(); h != nil && h.cond == condClosed && ttype != s.kinds.lbrace {
 		s.headers = s.headers[:len(s.headers)-1]
 	}
@@ -281,8 +303,8 @@ func (s *newlineTokenSource) endHeader(ttype int) {
 
 // trackBrackets keeps open and headers up to date with a token of type ttype;
 // lineBreak reports that a line break separates it from the token before (see
-// the newlineTokenSource doc for which '{' opens a block).
-func (s *newlineTokenSource) trackBrackets(ttype int, lineBreak bool) {
+// the lineBreakRule doc for which '{' opens a block).
+func (s *lineBreakRule) trackBrackets(ttype int, lineBreak bool) {
 	k := s.kinds
 	depth := len(s.open)
 	h := s.pendingHeader()
@@ -338,7 +360,7 @@ func (s *newlineTokenSource) trackBrackets(ttype int, lineBreak bool) {
 
 // pendingHeader is the innermost header whose '{' would open at the current
 // depth, or nil.
-func (s *newlineTokenSource) pendingHeader() *header {
+func (s *lineBreakRule) pendingHeader() *header {
 	if n := len(s.headers); n > 0 && s.headers[n-1].depth == len(s.open) {
 		return &s.headers[n-1]
 	}
@@ -349,7 +371,7 @@ func (s *newlineTokenSource) pendingHeader() *header {
 // than writing a func type: it starts a line or follows a block's '{', at the
 // top level or directly inside a block, and not inside another header (where a
 // `func` on its own line is a func-typed result).
-func (s *newlineTokenSource) declarationCanBegin(lineBreak bool) bool {
+func (s *lineBreakRule) declarationCanBegin(lineBreak bool) bool {
 	n := len(s.open)
 	return (n == 0 || s.open[n-1] == blockOpen) && s.pendingHeader() == nil &&
 		(lineBreak || s.prevType == s.kinds.lbrace)
@@ -358,7 +380,7 @@ func (s *newlineTokenSource) declarationCanBegin(lineBreak bool) bool {
 // atStatementLevel reports whether a statement can begin here: directly inside
 // a block's '{', and not inside a header still waiting for its own '{'. At the
 // top level only declarations begin, and those start with a keyword.
-func (s *newlineTokenSource) atStatementLevel() bool {
+func (s *lineBreakRule) atStatementLevel() bool {
 	return len(s.open) > 0 && s.open[len(s.open)-1] == blockOpen && s.pendingHeader() == nil
 }
 
