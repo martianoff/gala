@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -46,7 +45,7 @@ func (t *galaASTTransformer) transformPatternWithType(pat patSrc, objExpr ast.Ex
 		return nil, nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeUnknownPatternType,
 			line, col,
-			fmt.Sprintf("unrecognized pattern syntax (internal type %T)", t.ctxAt(pat.at())),
+			fmt.Sprintf("unrecognized pattern syntax (internal type %s)", pat.internalType()),
 			"this usually means a new grammar rule is missing transformer support; please report at github.com/martianoff/gala/issues",
 		)
 	}
@@ -101,12 +100,12 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 	// assumes `Ctor[T](...)` and would otherwise leave this shape to fall through to
 	// a (wrong) simple binding of the package identifier.
 	if call, ok := pat.qualifiedCallPattern(); ok {
-		pkgAst, err := t.transformPrimaryExpr(call.head.primaryExpr(t))
+		pkgAst, err := t.lowerPatternHead(call)
 		if err != nil {
 			return nil, nil, err
 		}
 		if pkgIdent, isIdent := pkgAst.(*ast.Ident); isIdent && t.importManager.IsPackage(pkgIdent.Name) {
-			qTypeArgs := call.typeArgs.exprList(t)
+			qTypeArgs := call.typeArgs.typeArgs()
 			// `case pkg.R(x)` where R is an imported extractor val/var.
 			if b, ok := t.lookupBinding(pkgIdent.Name, call.ctor); ok && qTypeArgs == nil {
 				if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, call.args, objExpr, matchedType, pat); handled {
@@ -129,7 +128,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 	if call, ok := pat.callPattern(); ok {
 		// An extractor names a type or companion, never a function.
 		t.typeNameDepth++
-		patternExpr, err := t.transformPrimaryExpr(call.head.primaryExpr(t))
+		patternExpr, err := t.lowerPatternHead(call)
 		t.typeNameDepth--
 		if err != nil {
 			return nil, nil, err
@@ -145,7 +144,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 			rawName = call.head.primaryIdent()
 		}
 
-		return t.transformConstructorCallPattern(rawName, call.args, call.typeArgs.exprList(t), objExpr, matchedType, pat)
+		return t.transformConstructorCallPattern(rawName, call.args, call.typeArgs.typeArgs(), objExpr, matchedType, pat)
 	}
 
 	if variant, parent := t.qualifiedCase(pat); variant != nil {
@@ -209,7 +208,7 @@ func sealedCaseNamed(parent *transpiler.TypeMetadata, name string) (*transpiler.
 // resolves to rawName (which may be unqualified like "Some" or qualified like
 // "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
 // and struct field matches, and instance extractors, in that order.
-func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, args argsSrc, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, args argsSrc, explicitTypeArgs []exprSrc, objExpr ast.Expr, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
 	// A type parameter of the enclosing declaration shadows every extractor,
 	// variant and struct of its name, and is none of them itself.
 	if t.typeParamValue(rawName) {
@@ -221,12 +220,12 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	}
 	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are
 	// always types, so a sealed variant among them is GALA-E0061.
-	if explicitTypeArgs != nil {
-		for _, arg := range explicitTypeArgs.AllExpression() {
-			if t.mayNameVariantType(arg) {
-				if err := t.variantTypeArgError(arg); err != nil {
-					return nil, nil, err
-				}
+	for _, arg := range explicitTypeArgs {
+		t.nativeShape(arg.node, "type-arg")
+		if text := arg.text(); t.mayNameVariantTypeText(text) {
+			line, col := arg.at().start()
+			if err := t.variantTypeArgErrorAt(text, line, col); err != nil {
+				return nil, nil, err
 			}
 		}
 	}
@@ -240,10 +239,10 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 			var inferredTypes []transpiler.Type
 			if len(meta.TypeParams) > 0 {
 				// Check if explicit type arguments were provided (e.g., Unwrap[int](v))
-				if explicitTypeArgs != nil && len(explicitTypeArgs.AllExpression()) > 0 {
+				if len(explicitTypeArgs) > 0 {
 					// Use explicit type arguments instead of inferring
-					for _, typeExpr := range explicitTypeArgs.AllExpression() {
-						typeAst, err := t.transformExpression(typeExpr)
+					for _, typeExpr := range explicitTypeArgs {
+						typeAst, err := t.lowerExpr(typeExpr)
 						if err != nil {
 							return nil, nil, err
 						}
@@ -699,12 +698,11 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(pat patExpr, objExp
 	}
 
 	// Literal or other - use direct equality comparison
-	patCtx := pat.antlr(t)
-	eqExpr, err := t.transformExpression(patCtx)
+	eqExpr, err := t.lowerPatExpr(pat)
 	if err != nil {
 		return nil, nil, err
 	}
-	cond, err := t.lowerPatternEquality(patCtx, eqExpr, objExpr, matchedType)
+	cond, err := t.lowerPatternEquality(pat, eqExpr, objExpr, matchedType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -976,7 +974,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 // For example, Person(name, age) matching against Person{Name: "Alice", Age: 25}
 // generates: name := obj.Name.Get(); age := obj.Age.Get() — `.Get()` only for
 // non-`var` fields, which are stored as Immutable[T].
-func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, args argsSrc, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, args argsSrc, explicitTypeArgs []exprSrc, fields []string, structName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 
@@ -1160,16 +1158,12 @@ func pointerReceiverMethods(meta *transpiler.TypeMetadata, required []string) []
 // the type arguments (`case Box[int](...)`); the instantiated type is
 // returned as well so the fields can be typed by it. Without them the pattern
 // is rejected: Go cannot assert to an uninstantiated generic type.
-func (t *galaASTTransformer) structPatternAssertType(structName string, explicitTypeArgs *grammar.ExpressionListContext, pat patExpr) (ast.Expr, transpiler.Type, error) {
+func (t *galaASTTransformer) structPatternAssertType(structName string, explicitTypeArgs []exprSrc, pat patExpr) (ast.Expr, transpiler.Type, error) {
 	meta := t.getTypeMeta(structName)
 	if meta == nil || len(meta.TypeParams) == 0 {
 		return t.ident(structName), nil, nil
 	}
-	var typeArgExprs []grammar.IExpressionContext
-	if explicitTypeArgs != nil {
-		typeArgExprs = explicitTypeArgs.AllExpression()
-	}
-	if len(typeArgExprs) != len(meta.TypeParams) {
+	if len(explicitTypeArgs) != len(meta.TypeParams) {
 		kind := "struct"
 		if meta.IsOpaque {
 			kind = "opaque type"
@@ -1178,10 +1172,10 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 			fmt.Sprintf("cannot match generic %s '%s' against a value of an interface or type-parameter type without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
 				kind, stripPackagePrefix(structName), len(meta.TypeParams), stripPackagePrefix(structName), strings.Join(meta.TypeParams, ", ")))
 	}
-	goArgs := make([]ast.Expr, len(typeArgExprs))
-	typeArgs := make([]transpiler.Type, len(typeArgExprs))
-	for i, e := range typeArgExprs {
-		typeAst, err := t.transformExpression(e)
+	goArgs := make([]ast.Expr, len(explicitTypeArgs))
+	typeArgs := make([]transpiler.Type, len(explicitTypeArgs))
+	for i, e := range explicitTypeArgs {
+		typeAst, err := t.lowerExpr(e)
 		if err != nil {
 			return nil, nil, err
 		}

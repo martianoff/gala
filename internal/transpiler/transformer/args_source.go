@@ -14,9 +14,7 @@ import (
 // so lowerAgainst and the argument lowering (lowerArg, transformArgument)
 // read the value once, the same way, on either tree.
 //
-// What they still hand to ANTLR's tree, with crossTo: a postfix expression
-// with a match (transformPostfixMatchExpressionAgainst), whose lowering reads
-// ANTLR's tree.
+// A postfix expression with a match is lowered on its tree too (lowerMatch).
 
 // argValue is what an argument passes: an expression, or a lambda written
 // directly as the argument (the lambdaExpression alternative of rule
@@ -345,16 +343,6 @@ func (p postfixSrc) parenFirst() (first exprSrc, n int) {
 	}
 	return antlrExpr(exprs[0]), len(exprs)
 }
-
-// antlr is p's context, which the match lowering
-// (transformPostfixMatchExpressionAgainst) reads: the crossing from its node.
-func (p postfixSrc) antlr(t *galaASTTransformer) *grammar.PostfixExprContext {
-	if p.node.Ok() {
-		return crossTo[*grammar.PostfixExprContext](t, p.node)
-	}
-	return p.ctx
-}
-
 // countPlaceholders is the number of `_` placeholders written in e outside any
 // lambda and case clause (countPlaceholderUnderscoresInExpr).
 func countPlaceholders(e exprSrc) int {

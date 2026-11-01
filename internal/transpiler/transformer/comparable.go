@@ -5,10 +5,9 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -487,7 +486,7 @@ func (t *galaASTTransformer) lowerEquality(left, right srcNode, cmp ast.Expr) (a
 	eq, badType, swapped := t.operandsEquality(xType, yType, isLiteral(bin.X))
 	switch {
 	case eq.mode == eqIncomparable:
-		return nil, t.incomparableOperandsError(t.ctxAt(left), t.ctxAt(right), bin.Op, badType, eq)
+		return nil, t.incomparableOperandsError(left, right, bin.Op, badType, eq)
 	case eq.mode == eqMethod && swapped:
 		return t.equalCallExpr(bin.Y, yType, bin.X, bin.Op == token.NEQ, right)
 	case eq.mode == eqMethod:
@@ -514,10 +513,10 @@ func (t *galaASTTransformer) equalCallExpr(x ast.Expr, xType transpiler.Type, y 
 
 // incomparableOperandsError is GALA-E0084 for `left tok right`, whose operand
 // of type typ has equality eq.
-func (t *galaASTTransformer) incomparableOperandsError(leftCtx, rightCtx antlr.ParserRuleContext, tok token.Token, typ transpiler.Type, eq equality) error {
+func (t *galaASTTransformer) incomparableOperandsError(left, right srcNode, tok token.Token, typ transpiler.Type, eq equality) error {
 	r := eq.why
 	name, reason := t.sourceTypeName(typ), t.incomparableReason(r)
-	l, rt := operandText(leftCtx), operandText(rightCtx)
+	l, rt := operandText(left), operandText(right)
 	msg := fmt.Sprintf("%s cannot compare %s values: %s", tok, name, reason)
 	var hint string
 	switch {
@@ -534,7 +533,7 @@ func (t *galaASTTransformer) incomparableOperandsError(leftCtx, rightCtx antlr.P
 	default:
 		hint = fmt.Sprintf("compare with Equal: `Equal(%s, %s)`", l, rt)
 	}
-	return spanError(galaerr.CodeIncomparableOperands, leftCtx, rightCtx, msg, hint)
+	return spanErrorAt(galaerr.CodeIncomparableOperands, left.rng(), right.rng(), msg, hint)
 }
 
 // functionHint is the hint for a comparison that reaches a function value,
@@ -551,7 +550,7 @@ func functionHint(r *incomparable) string {
 // (operandsEquality): `subject.Equal(pattern)` or `subject == pattern`. A
 // type with neither Equal nor Go's == is GALA-E0084. pattern is the lowered
 // value, subject the lowered subject and subjectType its type, when known.
-func (t *galaASTTransformer) lowerPatternEquality(ctx grammar.IExpressionContext, pattern, subject ast.Expr, subjectType transpiler.Type) (ast.Expr, error) {
+func (t *galaASTTransformer) lowerPatternEquality(pat patExpr, pattern, subject ast.Expr, subjectType transpiler.Type) (ast.Expr, error) {
 	cond := &ast.BinaryExpr{X: subject, Op: token.EQL, Y: pattern}
 	if isNilIdent(pattern) {
 		return cond, nil
@@ -563,28 +562,39 @@ func (t *galaASTTransformer) lowerPatternEquality(ctx grammar.IExpressionContext
 	switch eq.mode {
 	case eqIncomparable:
 		r := eq.why
-		name := transpiler.SourceText(ctx)
+		name := pat.sourceText()
 		hint := fmt.Sprintf("bind the value and compare it in a guard: `case v if Equal(v, %s) =>`", name)
 		if r.kind == kindFunction {
 			hint = functionHint(r)
 		}
-		return nil, spanError(galaerr.CodeIncomparableOperands, ctx, ctx,
+		at := pat.at().rng()
+		return nil, spanErrorAt(galaerr.CodeIncomparableOperands, at, at,
 			fmt.Sprintf("case %s compares the matched value with %s by ==, which cannot compare %s values: %s", name, name, t.sourceTypeName(badType), t.incomparableReason(r)),
 			hint)
 	case eqMethod:
-		return t.equalCallExpr(subject, subjectType, pattern, false, srcNode{ctx: ctx})
+		return t.equalCallExpr(subject, subjectType, pattern, false, pat.at())
 	}
 	return cond, nil
 }
 
 // operandText is the source of an operand of == as it reads in a call or
 // receiver position: parenthesized unless it is a single postfix expression.
-func operandText(ctx antlr.ParserRuleContext) string {
-	text := transpiler.SourceText(ctx)
-	if rel, ok := ctx.(*grammar.RelationalExprContext); ok && singlePostfix(rel) {
+func operandText(at srcNode) string {
+	text := at.sourceText()
+	if at.node.Ok() {
+		if at.node.Kind() == native.GalaKIND_relationalExpr && singlePostfixNative(at.node) {
+			return text
+		}
+	} else if rel, ok := at.ctx.(*grammar.RelationalExprContext); ok && singlePostfix(rel) {
 		return text
 	}
 	return "(" + text + ")"
+}
+
+// singlePostfixNative is singlePostfix of rel, a relationalExpr node.
+func singlePostfixNative(rel native.GalaNodeRef) bool {
+	u := nativeOperand(rel, native.GalaKIND_unaryExpr, true)
+	return u.Ok() && !(native.UnaryExprNode{GalaNodeRef: u}).UnaryOp().Ok()
 }
 
 // singlePostfix reports whether rel is one postfix expression, with no binary
