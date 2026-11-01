@@ -12,6 +12,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/transpiler/transformer"
 )
 
 // parsedShapes is a program whose default values and interpolated
@@ -185,4 +186,21 @@ func Qualified(s string = Thing match {
 			assert.Equal(t, c.col, se.Column, "%v", n.err)
 		})
 	}
+}
+
+// TestEscapeCacheKeysNodesByTree: whether a construct's subtree escapes is
+// cached per native node, and a default's or an interpolated expression's
+// tree numbers its nodes from 0 like the file's, so the cache must key a node
+// with its tree: the answer for one tree's node is not another's.
+func TestEscapeCacheKeysNodesByTree(t *testing.T) {
+	ret, err := galaparser.ParseExpressionNativeAt("if (true) { return 1 } else 2", 1, 0)
+	require.NoError(t, err)
+	plain, err := galaparser.ParseExpressionNativeAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0)
+	require.NoError(t, err)
+	tree := plain.Tree()
+	require.Less(t, ret.Index(), len(tree.Nodes), "the plain tree must have a node at the returning root's index")
+	same := tree.Node(ret.Index())
+	tr := transformer.NewGalaASTTransformer()
+	assert.True(t, transformer.EscapesAt(tr, ret.GalaNodeRef), "a branch that returns escapes")
+	assert.False(t, transformer.EscapesAt(tr, same), "the other tree's node at the same index took the first one's cached answer")
 }

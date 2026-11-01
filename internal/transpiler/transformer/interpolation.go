@@ -256,7 +256,8 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // parseExprAt parses text as one expression whose first character sits at
 // line/col of the file (see parser.ParseExpressionAt), on the tree the file's
 // walk reads: galop's native tree when the walk reads that one (t.native is
-// set), ANTLR's otherwise, so a file is lowered on one tree throughout.
+// set), ANTLR's otherwise. A file the walk reads on ANTLR's tree is lowered on
+// it throughout; one it reads natively, but for the fallback below.
 //
 // The native tree is a tree of its own, with no ANTLR contexts. The native
 // lowering of an expression reads only the nodes it is given, never crossing

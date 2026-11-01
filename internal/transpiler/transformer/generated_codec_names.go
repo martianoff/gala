@@ -98,8 +98,8 @@ func generatedCodecNameErrorAt(id native.GalaNodeRef) error {
 	if !id.Ok() {
 		return nil
 	}
-	start := id.Start()
-	return GeneratedCodecNameError(galaparser.NativeText(id), transpiler.SourcePos{Line: int(start.Line), Column: int(start.Column)})
+	line, col := srcNode{node: id}.start()
+	return GeneratedCodecNameError(galaparser.NativeText(id), transpiler.SourcePos{Line: line, Column: col})
 }
 
 // checkGeneratedCodecNamesOf is CheckGeneratedCodecNames of e, an expression

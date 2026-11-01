@@ -10,7 +10,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
@@ -251,11 +250,7 @@ func isQualifierNative(id native.GalaNodeRef) bool {
 	}
 	switch parent.Kind() {
 	case native.GalaKIND_qualifiedIdentifier:
-		ids := 0
-		for range galaparser.NativeKids(parent, native.GalaKIND_identifier) {
-			ids++
-		}
-		return ids > 1
+		return native.QualifiedIdentifierNode{GalaNodeRef: parent}.Identifier(1).Ok()
 	case native.GalaKIND_primary:
 		primaryExpr := parent.Parent()
 		if !primaryExpr.Ok() || primaryExpr.Kind() != native.GalaKIND_primaryExpr {
@@ -265,9 +260,8 @@ func isQualifierNative(id native.GalaNodeRef) bool {
 		if !postfix.Ok() || postfix.Kind() != native.GalaKIND_postfixExpr {
 			return false
 		}
-		for suffix := range galaparser.NativeKids(postfix, native.GalaKIND_postfixSuffix) {
-			return native.PostfixSuffixNode{GalaNodeRef: suffix}.Identifier().Ok()
-		}
+		suffix, ok := firstNativeKid(postfix, native.GalaKIND_postfixSuffix)
+		return ok && native.PostfixSuffixNode{GalaNodeRef: suffix}.Identifier().Ok()
 	}
 	return false
 }

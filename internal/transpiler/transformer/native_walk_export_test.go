@@ -1,8 +1,6 @@
 package transformer
 
 import (
-	"fmt"
-
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
@@ -32,6 +30,11 @@ func OnNativeStmt(tr transpiler.ASTTransformer, f func(index, line int)) {
 			f(n.Index(), int(n.Start().Line))
 		}
 	}
+}
+
+// EscapesAt is tr's escapesAt of the native node n.
+func EscapesAt(tr transpiler.ASTTransformer, n native.GalaNodeRef) bool {
+	return tr.(*galaASTTransformer).escapesAt(srcNode{node: n})
 }
 
 // OnNativeType sets tr's onNativeType hook for TestNativeTypeCases.
@@ -113,10 +116,7 @@ func HintKeyMismatches(tr transpiler.ASTTransformer) []int {
 	var walk func(n native.GalaNodeRef)
 	walk = func(n native.GalaNodeRef) {
 		if n.Kind() == native.GalaKIND_postfixExpr {
-			ctx, ok := t.native.Ctx(n).(*grammar.PostfixExprContext)
-			if !ok {
-				panic(fmt.Sprintf("native tree: postfix node %d has no postfix context", n.Index()))
-			}
+			ctx := t.native.Ctx(n).(*grammar.PostfixExprContext)
 			if t.hintKey(postfixSrc{ctx: ctx}) != t.hintKey(postfixSrc{node: n}) {
 				lines = append(lines, int(n.Start().Line))
 			}

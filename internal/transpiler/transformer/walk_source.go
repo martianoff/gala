@@ -14,14 +14,12 @@ import (
 // The compiled file's top-level walk reads the file through walkSource:
 // galop's native tree when the parse came with one that the analysis has
 // converted (RichAST.Native), ANTLR's tree otherwise. A file is walked on one
-// tree or the other, never on a mix; below the declarations, the native walk
-// crosses to ANTLR's tree where the port has not reached (see
-// declarations_native.go).
+// tree or the other, never on a mix (see declarations_native.go).
 
 // walkSource is the compiled file as the top-level walk reads it: ANTLR's
 // tree sf, and, when the walk reads the native tree instead, its root and the
-// handle h it crosses back through (root.Ok()). sf stays for the checks the
-// native walk does not cover yet.
+// handle h a lowering entered with an ANTLR context finds its node through
+// (root.Ok()). sf stays for the checks the native walk does not cover yet.
 type walkSource struct {
 	sf   *grammar.SourceFileContext
 	root native.SourceFileNode

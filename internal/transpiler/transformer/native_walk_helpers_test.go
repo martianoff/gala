@@ -233,8 +233,8 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 			block(fd.Block())
 		}
 	}
-	// A lambda is lowered on the native tree wherever it is written (the
-	// expression it is in crosses back to it, lambdas_source.go), and a match
+	// A lambda is lowered on the native tree wherever it is written
+	// (lambdas_source.go), and a match
 	// and a partial function read their case clauses there wherever they are
 	// (casesOf), but in a parameter's default value: a
 	// default is lowered at each call, from the text the analysis recorded,

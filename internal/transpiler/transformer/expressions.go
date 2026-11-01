@@ -851,12 +851,6 @@ func isNilIdent(expr ast.Expr) bool {
 	return ok && ident.Name == "nil"
 }
 
-// isNilLiteral reports whether exprCtx is the source literal `nil`: a single
-// token, checked without rendering the expression's text.
-func isNilLiteral(exprCtx grammar.IExpressionContext) bool {
-	return antlrExpr(exprCtx).isNil()
-}
-
 // transformIfExprBranch lowers an if-expression branch, an expression or a
 // block, against s, the if-expression's slot (see lowerAgainst). A block's
 // value is its trailing expression, or its trailing if/else chain; its other

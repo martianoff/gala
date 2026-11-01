@@ -114,7 +114,7 @@ func (e exprSrc) bareIdent() string {
 	return p.primaryIdent()
 }
 
-// isNil reports whether e is the literal `nil` (isNilLiteral): a single
+// isNil reports whether e is the literal `nil`: a single
 // token, checked without rendering the expression's text.
 func (e exprSrc) isNil() bool {
 	text, _, _, ok := e.soleToken()

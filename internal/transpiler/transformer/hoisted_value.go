@@ -85,8 +85,10 @@ func (t *galaASTTransformer) escapeNode(tree antlr.Tree) (native.GalaNodeRef, bo
 	return native.GalaNodeRef{}, false
 }
 
-// cachedEscape is the cached escape answer for key, a native node's index or
-// a subtree of ANTLR's tree, computed by walk the first time it is asked for.
+// cachedEscape is the cached escape answer for key, a native node or a subtree
+// of ANTLR's tree, computed by walk the first time it is asked for. A native
+// node is keyed with its tree: a default's or an interpolated expression's
+// tree, parsed on its own, numbers its nodes from 0 too.
 func (t *galaASTTransformer) cachedEscape(key any, walk func() bool) bool {
 	escaping, ok := t.escapeCache[key]
 	if !ok {
