@@ -44,7 +44,13 @@ error[GALA-E0088]: parameter `...int` has no name
 ```gala
 package main
 
-func sum(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (acc, x) => acc + x)
+func sum(xs ...int) int {
+    var total = 0
+    for _, x := range xs {
+        total += x
+    }
+    total
+}
 
 func main() = Println(sum(1, 2))
 ```
