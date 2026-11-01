@@ -283,8 +283,8 @@ func TestWalksAgree(t *testing.T) {
 }
 
 // TestNewPairsTheHooks checks that New refuses an EnterFunctionScope option
-// without its native twin, and a native twin without the option: the native
-// walk never calls the option's hook, so an unpaired one would be dropped.
+// without a native enter hook: the native walk never calls the option's hook,
+// so it would be dropped. A native hook alone is the native walk's own.
 func TestNewPairsTheHooks(t *testing.T) {
 	hook := func(*scopewalk.Walker, grammar.IFunctionDeclarationContext) {}
 	enter := func(*scopewalk.Walker, native.FunctionDeclarationNode) {}
@@ -297,7 +297,7 @@ func TestNewPairsTheHooks(t *testing.T) {
 		{"neither", scopewalk.Options{}, nil, false},
 		{"both", scopewalk.Options{EnterFunctionScope: hook}, enter, false},
 		{"option only", scopewalk.Options{EnterFunctionScope: hook}, nil, true},
-		{"native only", scopewalk.Options{}, enter, true},
+		{"native only", scopewalk.Options{}, enter, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			defer func() {

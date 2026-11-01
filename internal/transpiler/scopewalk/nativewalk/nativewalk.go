@@ -30,11 +30,12 @@ type Walker struct{ w walk }
 // New is w's walk on the native tree. enter, when not nil, is called for
 // each function declaration (see EnterFunctionScope); w's
 // Options.EnterFunctionScope, whose hook takes an ANTLR context, is never
-// called on this tree, so New panics when it is set.
+// called on this tree: New panics on that hook without a native one, which
+// the walk would otherwise drop.
 func New(w *scopewalk.Walker, enter EnterFunctionScope) Walker {
 	opts := w.Options()
-	if opts.EnterFunctionScope != nil {
-		panic("nativewalk: Options.EnterFunctionScope takes an ANTLR context; pass the native enter hook instead")
+	if opts.EnterFunctionScope != nil && enter == nil {
+		panic("nativewalk: Options.EnterFunctionScope without the native enter hook")
 	}
 	return Walker{walk{w, opts, enter}}
 }
