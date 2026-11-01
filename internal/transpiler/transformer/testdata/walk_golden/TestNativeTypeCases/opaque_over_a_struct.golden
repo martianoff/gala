@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0062] $DIR/main.gala:5:23 cannot declare opaque type "O" over P: P is a struct, and a distinct type over a struct (a GALA collection included) loses all of its methods (hint: use a struct to wrap it, or a type alias to name it)

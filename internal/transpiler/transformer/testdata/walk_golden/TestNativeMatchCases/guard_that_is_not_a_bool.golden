@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0089] $DIR/main.gala:4:19 case guard `s` has type string, not bool (hint: a guard must be a bool condition, such as a comparison)

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0007] $DIR/main.gala:5:18 slice literals are not a first-class GALA construct (hint: use collection_immutable.Array or collection_mutable.Array for type-safe collections, or go_interop.SliceOf()/SliceEmpty() for Go interop)

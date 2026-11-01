@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0071] $DIR/main.gala:4:18 a wildcard alternative matches everything, so the other alternatives never decide (hint: write `case _` on its own)

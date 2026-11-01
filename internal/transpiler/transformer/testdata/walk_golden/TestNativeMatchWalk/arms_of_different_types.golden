@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:17 type mismatch in match expression: 'case 1' returns 'string' but 'case _' returns 'int'. All branches must return the same type

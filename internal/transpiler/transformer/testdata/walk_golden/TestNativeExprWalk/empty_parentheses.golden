@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0019] $DIR/main.gala:4:17 empty parenthesized expression "()" cannot be used as a value (hint: use a real statement (e.g. `Println("…")`) or remove the arm if it cannot occur)

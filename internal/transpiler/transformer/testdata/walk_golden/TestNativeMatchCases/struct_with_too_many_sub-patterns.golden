@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:16 struct 'P' has 1 fields but pattern has 2 arguments

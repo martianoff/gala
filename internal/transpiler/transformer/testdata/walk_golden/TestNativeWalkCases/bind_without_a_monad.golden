@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:9 `bind` requires the enclosing function to declare a monad return type

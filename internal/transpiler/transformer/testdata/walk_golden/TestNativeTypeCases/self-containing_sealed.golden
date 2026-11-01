@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0077] $DIR/main.gala:3:20 sealed type S holds itself by value: field i has type S2, which contains S itself (hint: a value cannot contain itself; give the case field the type itself (`i S`), which is held by reference, or hold it through a pointer (`i *S`))

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0080] $DIR/main.gala:6:9 p == nil compares a Ptr[P] with nil, but a Ptr is never nil (hint: drop the comparison; a pointer that may be absent is an OptionPtr[T] (EmptyOptionPtr(), OptionPtrOf(p)); a Ptr always points somewhere)

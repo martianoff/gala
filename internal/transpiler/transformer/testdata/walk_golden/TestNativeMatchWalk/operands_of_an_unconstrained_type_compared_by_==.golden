@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0084] $DIR/main.gala:6:9 == cannot compare T values: T is a type parameter constrained by any (hint: constrain T with comparable where it is declared (`T comparable`); or compare with `Equal(a, b)`)

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0033] $DIR/main.gala:6:36 lambda parameter "y" has no type: the lambda takes 2 parameters where a function of 1 is expected (hint: give the lambda 1 parameters)

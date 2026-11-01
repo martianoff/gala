@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:26 field "x" is given more than once in construction of "P"

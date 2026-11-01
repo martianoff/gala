@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:13 receiver p cannot be declared `var` (hint: a receiver cannot be rebound; copy it into a local `var` (`var c = p`) if you need a mutable copy)

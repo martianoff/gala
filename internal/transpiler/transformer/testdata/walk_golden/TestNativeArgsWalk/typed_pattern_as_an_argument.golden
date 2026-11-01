@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:7:11 only expressions allowed as function arguments

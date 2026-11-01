@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0045] $DIR/main.gala:6:22 field "x" of "P" is given both by position and by name (hint: give each field once)

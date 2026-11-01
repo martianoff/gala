@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0077] $DIR/main.gala:4:1 struct S holds itself by value: field next has type S, which contains S itself (hint: a value cannot contain itself; declare recursive data as a sealed type whose case field has the type itself (`case Cons(head int, tail S)`), or hold it through a pointer (`next *S`))

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0060] $DIR/main.gala:4:9 `val _ = ...` binds nothing (hint: write the expression as a bare statement; if the value matters, bind it to a name and use it)

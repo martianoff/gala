@@ -1,0 +1,1 @@
+error: [SyntaxError] line 4:18 invalid digit '8' in octal literal 0829 (a leading 0 makes an integer literal octal; drop the leading zeros for a decimal number)

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0082] $DIR/main.gala:6:19 too many arguments in call to g: expected 1, got 2 (hint: remove 1 extra argument; g takes (a))

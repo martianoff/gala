@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:8:10 this lambda returns int, but its body can finish without a value; end it in the value to return, or add a `return`

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0018] $DIR/main.gala:3:20 cannot infer type parameter for sealed variant constructor "None()" (hint: annotate the binding (e.g. `val x Option[int] = None()`) or pass type args explicitly (`None[int]()`))

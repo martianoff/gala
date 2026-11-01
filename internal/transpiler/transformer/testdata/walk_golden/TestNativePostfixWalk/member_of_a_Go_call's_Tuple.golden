@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0049] $DIR/main.gala:7:18 `c` holds the result of `strings.Cut(...)`, which returns 3 values, so it is a `Tuple3[string, string, bool]`; a Tuple3 has no member `Before` (hint: read the values with `val (a, b, c) = ...` or `.V1`, `.V2`, ...; or bind the results Go-style: `val a, b, c = strings.Cut(...)`)

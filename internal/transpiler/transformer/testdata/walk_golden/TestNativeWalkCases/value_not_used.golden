@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:9 `x` is evaluated but not used; remove it, or return it from a function that declares a result type
