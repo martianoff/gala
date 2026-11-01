@@ -30,10 +30,7 @@ func (t *galaASTTransformer) normalizePatternArgs(rawName string, args argsSrc, 
 // firstNamedPatArg returns the index of the first named sub-pattern of args,
 // or -1.
 func firstNamedPatArg(args argsSrc) int {
-	return slices.IndexFunc(args.list, func(a argSrc) bool {
-		name, _ := a.name()
-		return name != ""
-	})
+	return slices.IndexFunc(args.list, argSrc.named)
 }
 
 // namedSubPatternError is GALA-E0073 at at.

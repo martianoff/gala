@@ -1193,7 +1193,7 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 
 // hasRestPattern checks if any argument in the argument list is a rest pattern (ends with ...).
 func (t *galaASTTransformer) hasRestPattern(args argsSrc) bool {
-	return slices.ContainsFunc(args.list, func(a argSrc) bool { return a.pattern().kind() == patKindRest })
+	return slices.ContainsFunc(args.list, argSrc.spread)
 }
 
 // isSeqType checks if a type implements the Seq interface (has Size, Get, SeqDrop methods).

@@ -273,7 +273,7 @@ func (t *galaASTTransformer) lowerPostfixNative(p native.PostfixExprNode) (ast.E
 	if p.ChildCount() == 1 {
 		return t.lowerPrimaryExprNative(prim)
 	}
-	return t.lowerSuffixedNative(p, prim)
+	return t.lowerSuffixedNative(p)
 }
 
 // lowerPrimaryExprNative is transformPrimaryExpr of n, a primaryExpr node.

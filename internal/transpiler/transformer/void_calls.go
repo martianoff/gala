@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -56,7 +57,7 @@ func (t *galaASTTransformer) recordVoidCall(c callSrc, call ast.Expr) {
 // its callee followed by `(...)`, or "" when that is long too.
 func voidCallText(c callSrc) string {
 	text := c.post.at().sourceText()
-	if len(text) <= 60 && !strings.ContainsAny(text, "\n\r") {
+	if utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r") {
 		return text
 	}
 	if callee := c.calleeText(); callee != "" {

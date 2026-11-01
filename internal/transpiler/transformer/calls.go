@@ -220,7 +220,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 						// left out is reported.
 						// The slot's type binds a generic case's type
 						// parameters, as for a call with arguments.
-						pending := t.expectedArgTypes.takeFor(c.owner(t))
+						pending := t.expectedArgTypes.takeFor(c.post.owner)
 						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, pending,
 							sl, sc)
 						if err != nil || handled {
@@ -290,7 +290,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
 				// Taken before the defaults are lowered, as a call with
 				// arguments takes it, so no default sees it.
-				pending := t.expectedArgTypes.takeFor(c.owner(t))
+				pending := t.expectedArgTypes.takeFor(c.post.owner)
 				handled, expr, err := t.tryTransformGenericMethodAsFunction(c, receiver, method, typeArgs, recvType, lookupBaseName, pending)
 				if err != nil || handled {
 					return expr, err
@@ -311,7 +311,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 				// any call (`parse()` for `parse[T any](s string = "")`).
 				// The slot type is the call's, taken before its defaults are
 				// lowered so none of them sees it.
-				pending := t.expectedArgTypes.takeFor(c.owner(t))
+				pending := t.expectedArgTypes.takeFor(c.post.owner)
 				// Every argument is a default, so the type parameters the
 				// defaults spell are bound by the call's explicit type
 				// arguments (`describe[int]()`) and, for the rest, by the
@@ -352,7 +352,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 				if methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
 					// The call takes no type from its slot; its defaults
 					// do not either.
-					t.expectedArgTypes.takeFor(c.owner(t))
+					t.expectedArgTypes.takeFor(c.post.owner)
 					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType, nil, sl, sc)
 					if err != nil {
 						return nil, err

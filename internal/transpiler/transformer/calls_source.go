@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -25,29 +24,14 @@ import (
 // still lowered on the native tree, which transformExpression and
 // transformLambdaWithExpectedType enter wherever the walk reads it.
 
-// callSrc is a call suffix and the postfix expression it ends.
+// callSrc is a call suffix and the postfix expression it ends, as the postfix
+// driver builds it (lowerSuffix): post carries the hint owner the call takes
+// its slot's type for (postfixSrc.owner). A callSrc built only to quote or
+// locate the call (recordVoidCall, lambdaArgCallee) leaves args empty.
 type callSrc struct {
 	post   postfixSrc
 	suffix suffixSrc
 	args   argsSrc // args.at is the zero srcNode for `()`
-}
-
-// antlrCall is the call suffix ctx, on ANTLR's tree.
-func antlrCall(ctx *grammar.PostfixSuffixContext) callSrc {
-	post, ok := ctx.GetParent().(*grammar.PostfixExprContext)
-	if !ok {
-		// invariant: the grammar puts a suffix only in a postfix expression.
-		panic(fmt.Sprintf("postfix suffix at %d:%d is not in a postfix expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()))
-	}
-	s := suffixSrc{ctx: ctx}
-	return callSrc{post: postfixSrc{ctx: post}, suffix: s, args: s.args()}
-}
-
-// nativeCall is the call suffix s of the postfix expression post, on the
-// native tree.
-func nativeCall(post native.GalaNodeRef, s native.GalaNodeRef) callSrc {
-	suffix := suffixSrc{node: s}
-	return callSrc{post: postfixSrc{node: post}, suffix: suffix, args: suffix.args()}
 }
 
 // at is where the call suffix is written: its `(`.
@@ -63,17 +47,6 @@ func (c callSrc) anchor() srcNode {
 		return c.args.at
 	}
 	return c.at()
-}
-
-// owner is the key of the hint pushed for the value of the call (see
-// expectedArgTypeStack.pushFor): the context of the postfix expression it
-// ends, as the ANTLR walk pushes it.
-func (c callSrc) owner(t *galaASTTransformer) *grammar.PostfixExprContext {
-	if c.post.node.Ok() {
-		owner, _ := t.native.Ctx(c.post.node).(*grammar.PostfixExprContext)
-		return owner
-	}
-	return c.post.ctx
 }
 
 // before yields the suffixes of the call's postfix expression before it, in
@@ -204,6 +177,16 @@ func (p postfixSrc) at() srcNode {
 		return srcNode{node: p.node}
 	}
 	return srcNode{ctx: p.ctx}
+}
+
+// firstSuffix is p's first suffix, and false when p has none.
+func (p postfixSrc) firstSuffix() (suffixSrc, bool) {
+	if p.node.Ok() {
+		s, ok := firstNativeKid(p.node, native.GalaKIND_postfixSuffix)
+		return suffixSrc{node: s}, ok
+	}
+	s, ok := p.ctx.PostfixSuffix(0).(*grammar.PostfixSuffixContext)
+	return suffixSrc{ctx: s}, ok && s != nil
 }
 
 // primaryAt is where p's primary expression is written.

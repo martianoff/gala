@@ -105,11 +105,11 @@ func (c callSrc) calleeSpells(b binding) bool {
 	if b.pkg == "" {
 		return prim == b.name
 	}
-	suffixes := c.post.suffixes()
-	if prim != b.pkg || len(suffixes) == 0 {
+	first, has := c.post.firstSuffix()
+	if prim != b.pkg || !has {
 		return false
 	}
-	name, at, ok := suffixes[0].member()
+	name, at, ok := first.member()
 	if !ok {
 		return false
 	}

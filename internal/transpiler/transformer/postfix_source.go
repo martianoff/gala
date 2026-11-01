@@ -38,16 +38,8 @@ func (s suffixSrc) at() srcNode {
 // identAt is where the member s selects is written, the zero srcNode when s
 // is no selector.
 func (s suffixSrc) identAt() srcNode {
-	if s.node.Ok() {
-		if id := (native.PostfixSuffixNode{GalaNodeRef: s.node}).Identifier(); id.Ok() {
-			return srcNode{node: id.GalaNodeRef}
-		}
-		return srcNode{}
-	}
-	if id := s.ctx.Identifier(); id != nil {
-		return srcNode{ctx: id}
-	}
-	return srcNode{}
+	_, at, _ := s.member()
+	return at
 }
 
 // antlr is s's context, and false when s is a native node without one.
@@ -113,11 +105,13 @@ func (ix indexSrc) expr(i int) exprSrc {
 	return exprSrc{}
 }
 
-// lowerSuffixedNative is transformPostfixExpr of p, whose primary expression
-// is prim, when p has a suffix or a match. A match hands p to ANTLR's tree
-// whole.
-func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim native.GalaNodeRef) (ast.Expr, error) {
-	src := postfixSrc{node: p.GalaNodeRef}
+// lowerSuffixedNative is transformPostfixExpr of p when p has a suffix or a
+// match. Its suffixes are lowered through the postfix driver (lowerSuffixes);
+// a match hands p to ANTLR's tree whole.
+func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.Expr, error) {
+	// The hint is keyed by p's context, as the ANTLR walk pushes it.
+	owner, _ := t.native.Ctx(p.GalaNodeRef).(*grammar.PostfixExprContext)
+	src := postfixSrc{node: p.GalaNodeRef, owner: owner}
 	// Most chains are short: no allocation for them. A child that is no
 	// suffix is part of a match.
 	var buf [4]suffixSrc
@@ -125,20 +119,17 @@ func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim 
 	if len(suffixes) != p.ChildCount()-1 {
 		return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
 	}
-	// The hint is keyed by p's context, as the ANTLR walk pushes it.
-	owner, _ := t.native.Ctx(p.GalaNodeRef).(*grammar.PostfixExprContext)
-	return t.lowerSuffixes(src, owner, suffixes)
+	return t.lowerSuffixes(src, suffixes)
 }
 
 // lowerSuffixes lowers p, a postfix expression with suffixes and no match,
 // on the tree it comes from: its primary expression, then each of suffixes
-// applied to the value before it. owner is p's context, the key of the hint
-// for the slot p fills.
-func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, owner *grammar.PostfixExprContext, suffixes []suffixSrc) (ast.Expr, error) {
+// applied to the value before it.
+func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (ast.Expr, error) {
 	// The type of the slot p fills is for its last suffix, the call that is
 	// the value (see consumesSlotType): never for the receiver the call is
 	// applied to.
-	release := t.expectedArgTypes.withhold(owner)
+	release := t.expectedArgTypes.withhold(p.owner)
 	defer release()
 	var result ast.Expr
 	var err error

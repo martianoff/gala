@@ -91,7 +91,7 @@ func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
 		if !post.Ok() || post.Kind() != native.GalaKIND_postfixExpr {
 			return callSrc{}, false
 		}
-		return nativeCall(post, suffix), true
+		return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
 	}
 	lambda := l.antlr(t)
 	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
@@ -102,7 +102,11 @@ func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
 	if !ok {
 		return callSrc{}, false
 	}
-	return antlrCall(suffix), true
+	post, ok := suffix.GetParent().(*grammar.PostfixExprContext)
+	if !ok {
+		return callSrc{}, false
+	}
+	return callSrc{post: postfixSrc{ctx: post}, suffix: suffixSrc{ctx: suffix}}, true
 }
 
 // transformLambdaWithExpectedType is lowerLambda of the lambda ctx, on the

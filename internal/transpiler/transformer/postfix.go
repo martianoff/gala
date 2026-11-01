@@ -43,13 +43,13 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "postfixExpr must have primaryExpr")
 	}
 
-	p := postfixSrc{ctx: ctx}
+	p := postfixSrc{ctx: ctx, owner: ctx}
 	var buf [4]suffixSrc
 	suffixes := p.appendSuffixes(buf[:0])
 	if len(suffixes) == 0 {
 		return t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	}
-	return t.lowerSuffixes(p, ctx, suffixes)
+	return t.lowerSuffixes(p, suffixes)
 }
 
 // lowerMember lowers the member access m on base: a member a Go call's Try
@@ -514,7 +514,7 @@ func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar
 	// Apply any suffixes before the match
 	suffixes := ctx.AllPostfixSuffix()
 	for _, suffix := range suffixes {
-		subject, err = t.lowerSuffix(subject, postfixSrc{ctx: ctx}, suffixSrc{ctx: suffix.(*grammar.PostfixSuffixContext)})
+		subject, err = t.lowerSuffix(subject, postfixSrc{ctx: ctx, owner: ctx}, suffixSrc{ctx: suffix.(*grammar.PostfixSuffixContext)})
 		if err != nil {
 			return nil, err
 		}
