@@ -3,6 +3,7 @@ package transformer_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,11 +14,12 @@ import (
 
 // postfixShapes is a program with every postfix suffix the native walk
 // lowers: member accesses (fields, vals' Immutable fields, a tuple's
-// components, package members, an Immutable's own Get and value) and indexes
+// components, package members, an Immutable's own Get and value), indexes
 // (a generic function's or generic method's type arguments, Ptr and Tuple
-// type arguments, a Go slice's element). Each line marked
-// `// native: <shapes>` names the shapes the native walk must have lowered on
-// that line, as exprShapes does.
+// type arguments, a Go slice's element) and calls (of functions, methods, Go
+// functions and constructors, with positional, named, default and lambda
+// arguments). Each line marked `// native: <shapes>` names the shapes the
+// native walk must have lowered on that line, as exprShapes does.
 const postfixShapes = `package main
 
 import (
@@ -60,13 +62,31 @@ func typeArgs(b Box[int], cell Immutable[int]) {
 	Println(e(), get(), raw, np(), nt()) // native: name
 }
 
+func (p P) Sum(k int = 1) int = (p.x + p.y) * k
+
+func dflt(a int, b int = 2) int = a + b
+
+func mk() P = P(0, 0)
+
+func calls(p P) int {
+	val a = id(5) + dflt(1) + dflt(a = 1, b = 3) // native: call, name, literal
+	val b = P(x = 1, y = 2).Sum() + p.Sum(k = 2) // native: call, selector
+	val c = Some(a).Map((v) => v + b).GetOrElse(0) // native: call, selector
+	val d = strconv.Atoi("ü").GetOrElse(-1) // native: call, selector
+	val e = p.Copy(y = 3).y + mk().x // native: call, selector
+	val w = strings.Join(strings.Fields("ä ö"), "-") // native: call, selector
+	Println(w) // native: call
+	a + b + c + d + e
+}
+
 func main() {
-	Println(members(P(1, 2), Pair(P(1, 2), P(3, 4)))) // native: literal
+	Println(members(P(1, 2), Pair(P(1, 2), P(3, 4)))) // native: literal, call
 	typeArgs(Box(1), NewImmutable(2))
+	Println(calls(P(1, 2))) // native: call
 }
 `
 
-// postfixCases cover each diagnostic a member access or an index reports,
+// postfixCases cover each diagnostic a member access, an index or a call reports,
 // after multibyte text: the suffix on the line of each case's `/* ü */`
 // marker must be lowered on the native tree as the shape the case names.
 var postfixCases = []struct{ name, shape, src string }{
@@ -76,6 +96,43 @@ var postfixCases = []struct{ name, shape, src string }{
 	{"index of a Go call's Try", "index", "package main\n\nimport \"os\"\n\nfunc f() {\n\tval data = os.ReadFile(\"f\")\n\tval x = /* ü */ data[0]\n\tPrintln(x)\n}\n"},
 	{"type arguments of a type parameter", "index", "package main\n\nfunc g[Left any](x Left) int {\n\tval f = /* ü */ Left[int]\n\t1\n}\n"},
 	{"sealed variant as a type argument", "index", "package main\n\nsealed type Shape {\n\tcase Circle(r float64)\n\tcase Square(s float64)\n}\n\nfunc id[T any](v T) T = v\n\nfunc f() {\n\tval g = /* ü */ id[Circle]\n\tPrintln(g)\n}\n"},
+	{"forbidden builtin", "call", "package main\n\nfunc f() int {\n\tval n = /* ü */ len(\"äö\")\n\tn\n}\n"},
+	{"forbidden builtin with no arguments", "call", "package main\n\nfunc f() {\n\tval r = /* ü */ recover()\n\tPrintln(r)\n}\n"},
+	{"sealed parent called", "call", "package main\n\nsealed type Shape {\n\tcase Circle(r float64)\n\tcase Square(s float64)\n}\n\nfunc f() {\n\tval s = /* ü */ Shape()\n\tPrintln(s)\n}\n"},
+	{"sealed parent called with a named argument", "call", "package main\n\nsealed type Shape {\n\tcase Circle(r float64)\n\tcase Square(s float64)\n}\n\nfunc f() {\n\tval s = /* ü */ Shape(r = 1.0)\n\tPrintln(s)\n}\n"},
+	{"Go call's Try converted", "call", "package main\n\nimport \"os\"\n\nfunc f() string {\n\tval s = /* ü */ string(os.ReadFile(\"f\"))\n\ts\n}\n"},
+	{"too many arguments", "call", "package main\n\nfunc g(a int) int = a\n\nfunc f() int {\n\tval x = /* ü */ g(1, 2)\n\tx\n}\n"},
+	{"too many method arguments", "call", "package main\n\nstruct P(x int)\n\nfunc (p P) Get(k int) int = p.x + k\n\nfunc f(p P) int {\n\tval x = /* ü */ p.Get(1, 2)\n\tx\n}\n"},
+	{"missing argument", "call", "package main\n\nfunc g(a int, b int) int = a + b\n\nfunc f() int {\n\tval x = /* ü */ g()\n\tx\n}\n"},
+	{"unknown named parameter", "call", "package main\n\nstruct P(x int)\n\nfunc (p P) Get(k int = 1) int = p.x + k\n\nfunc f(p P) int {\n\tval x = /* ü */ p.Get(z = 2)\n\tx\n}\n"},
+	{"positional argument after a named one", "call", "package main\n\nstruct P(x int, y int)\n\nfunc f() {\n\tval p = /* ü */ P(x = 1, 2)\n\tPrintln(p)\n}\n"},
+	{"unknown field", "call", "package main\n\nstruct P(x int, y int)\n\nfunc f() {\n\tval p = /* ü */ P(x = 1, z = 2)\n\tPrintln(p)\n}\n"},
+	{"field given twice", "call", "package main\n\nstruct P(x int, y int)\n\nfunc f() {\n\tval p = /* ü */ P(1, x = 2)\n\tPrintln(p)\n}\n"},
+	{"field given more than once", "call", "package main\n\nstruct P(x int, y int)\n\nfunc f() {\n\tval p = /* ü */ P(x = 1, x = 2)\n\tPrintln(p)\n}\n"},
+	{"spread argument for a field", "call", "package main\n\nstruct P(x int, y int)\n\nfunc f(xs []int) {\n\tval p = /* ü */ P(xs..., y = 2)\n\tPrintln(p)\n}\n"},
+	{"Ptr method call on a nullable pointer", "selector", "package main\n\nstruct Counter(var N int)\n\nfunc (c Ptr[Counter]) Count() int = c.N\n\nfunc lookup(found bool) *Counter = if (found) &Counter(1) else nil\n\nfunc f() int {\n\tval c = lookup(true)\n\t/* ü */ c.Count()\n}\n"},
+	{"val called as a function", "call", "package main\n\nfunc f() {\n\tval n = 1\n\tval x = /* ü */ n()\n\tPrintln(x)\n}\n"},
+	{"val called with arguments", "call", "package main\n\nfunc f() {\n\tval n = 1\n\tval x = /* ü */ n(2)\n\tPrintln(x)\n}\n"},
+	{"val field called", "call", "package main\n\nstruct P(n int)\n\nfunc f(p P) {\n\tval x = /* ü */ p.n()\n\tPrintln(x)\n}\n"},
+	{"unknown method", "call", "package main\n\nstruct P(x int)\n\nfunc f(p P) {\n\tval x = /* ü */ p.Nope()\n\tPrintln(x)\n}\n"},
+	{"unknown method with arguments", "call", "package main\n\nstruct P(x int)\n\nfunc f(p P) {\n\tval x = /* ü */ p.Nope(1)\n\tPrintln(x)\n}\n"},
+	{"type parameter called", "call", "package main\n\nfunc g[T any]() int {\n\tval x = /* ü */ T(() => 1)\n\t1\n}\n"},
+	{"void call used as a value", "call", "package main\n\nfunc v() {\n\tPrintln(\"ö\")\n}\n\nfunc f() {\n\tval x = /* ü */ v()\n\tPrintln(x)\n}\n"},
+	{"interface literal argument without a name", "call", "package main\n\ntype Greeter interface {\n\tGreet() string\n}\n\nfunc f() {\n\tval g = /* ü */ Greeter(() => \"ä\")\n\tPrintln(g)\n}\n"},
+	{"Copy of an unknown field", "call", "package main\n\nstruct P(x int)\n\nfunc f(p P) {\n\tval q = /* ü */ p.Copy(z = 1)\n\tPrintln(q)\n}\n"},
+	{"opaque conversion", "call", "package main\n\nopaque type A int64\n\nopaque type B int64\n\nfunc f(a A) B = /* ü */ B(a)\n"},
+	// A callee of 60 characters is quoted, one of 61 is not: counted in
+	// characters on both trees, not in bytes.
+	{"void call with a callee of 60 characters", "call", voidCalleeOf(50)},
+	{"void call with a callee of 61 characters", "call", voidCalleeOf(51)},
+}
+
+// voidCalleeOf is a program using the value of a void method call whose
+// callee, `P("ää...").Show`, is n+10 characters of multibyte text, and the
+// call too long to quote whole.
+func voidCalleeOf(n int) string {
+	return "package main\n\nstruct P(s string)\n\nfunc (p P) Show() {\n\tPrintln(p.s)\n}\n\nfunc f() {\n\tval x = /* ü */ P(\"" +
+		strings.Repeat("ä", n) + "\").Show()\n\tPrintln(x)\n}\n"
 }
 
 // TestNativePostfixWalk holds the native walk of postfixShapes and of each of

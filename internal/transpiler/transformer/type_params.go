@@ -5,8 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -62,15 +60,11 @@ func (t *galaASTTransformer) typeParamValue(name string) bool {
 // value, by position, and a lambda has no type to convert from: such a call
 // meant a function the type parameter shadows, as `Try(() => 1)` inside
 // `func g[Try any]` does.
-func (t *galaASTTransformer) checkTypeParamConversion(name string, suffix *grammar.PostfixSuffixContext) error {
-	var args []grammar.IArgumentContext
-	if list := suffix.ArgumentList(); list != nil {
-		args = list.AllArgument()
-	}
-	if len(args) == 1 && args[0].Identifier() == nil && args[0].LambdaExpression() == nil {
+func (t *galaASTTransformer) checkTypeParamConversion(name string, c callSrc) error {
+	if args := c.args.list; len(args) == 1 && !args[0].named() && !args[0].lambda() {
 		return nil
 	}
-	return t.typeParamMisuseError(suffix, name, "cannot be called: a conversion to it takes exactly one value, not a lambda")
+	return t.typeParamMisuseErrorAt(c.at(), name, "cannot be called: a conversion to it takes exactly one value, not a lambda")
 }
 
 // isUnboundTypeParam reports whether name is a type parameter that the code
@@ -135,13 +129,9 @@ func (t *galaASTTransformer) constrainTypeParam(name, constraint string) {
 	t.typeParamConstraints[name] = constraint
 }
 
-// typeParamMisuseError reports name, a type parameter of the enclosing
-// declaration, used where it cannot stand — a name it shadows was meant.
-func (t *galaASTTransformer) typeParamMisuseError(ctx antlr.ParserRuleContext, name, what string) error {
-	return t.typeParamMisuseErrorAt(srcNode{ctx: ctx}, name, what)
-}
-
-// typeParamMisuseErrorAt is typeParamMisuseError at a node of either tree.
+// typeParamMisuseErrorAt reports name, a type parameter of the enclosing
+// declaration, used at a node of either tree where it cannot stand — a name
+// it shadows was meant.
 func (t *galaASTTransformer) typeParamMisuseErrorAt(at srcNode, name, what string) error {
 	err := t.semanticErrorAtNode(at, fmt.Sprintf("'%s' is a type parameter of the enclosing declaration and %s", name, what))
 	err.Hint = fmt.Sprintf("a type parameter shadows every other '%s' in its declaration; rename the type parameter to reach the outer one", name)

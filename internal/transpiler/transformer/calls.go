@@ -106,24 +106,7 @@ func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col
 	return err
 }
 
-// primaryStartOf walks up from an ANTLR node inside a postfix call chain to the
-// enclosing postfixExpr and returns the start token of its primary expression —
-// i.e. the callee identifier (`len` in `len(s)`). This is the position the
-// forbidden-builtin diagnostic should point at, rather than the argument list.
-func primaryStartOf(node antlr.Tree) (line, col int, ok bool) {
-	for n := node; n != nil; n = n.GetParent() {
-		if pe, isPE := n.(*grammar.PostfixExprContext); isPE {
-			if prim := pe.PrimaryExpr(); prim != nil {
-				tok := prim.GetStart()
-				return tok.GetLine(), tok.GetColumn(), true
-			}
-			return 0, 0, false
-		}
-	}
-	return 0, 0, false
-}
-
-func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr, error) {
 	// Rewrite Println/Print to fmt.Println/fmt.Print (auto-imported)
 	base = t.rewriteBuiltinPrintFuncs(base)
 
@@ -132,11 +115,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 	// This is because at parse time we don't know if T[A, B] is a type instantiation or array access.
 	base = t.qualifyTypeArgsInExpr(base)
 
-	argList := suffix.ArgumentList()
-	if argList == nil {
+	if !c.args.at.ok() {
+		sl, sc := c.start()
 		// Check for compiler intrinsic: StructMeta[T]()
 		if isStructMetaIntrinsic(t.getBaseTypeName(base)) {
-			return t.transformStructMetaConstruction(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+			return t.transformStructMetaConstruction(base, sl, sc)
 		}
 		// A function the package declares is called, never read as a
 		// same-named type an import exports (`Void()` for `func Void()`), so
@@ -211,12 +194,12 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								// the hint's source for the annotation example, so it is
 								// looked up once here rather than twice.
 								if variant := t.sealedVariantOf(typeName); variant.parent != nil {
-									return nil, t.uninferredVariantError(variant, "()", nil, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+									return nil, t.uninferredVariantError(variant, "()", nil, nil, sl, sc)
 								}
 								// Any other companion would be emitted as an
 								// uninstantiated `MkTag{}` too.
 								if _, viaAlias := t.lookupTypeAlias(typeName); !viaAlias {
-									return nil, t.uninferredTypeArgError(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(),
+									return nil, t.uninferredTypeArgError(sl, sc,
 										base, valueYields(methodMeta.ReturnType), typeMeta.TypeParams, nil, typeMeta.TypeParams)
 								}
 							}
@@ -237,9 +220,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 						// left out is reported.
 						// The slot's type binds a generic case's type
 						// parameters, as for a call with arguments.
-						pending := t.expectedArgTypes.takeFor(callOwner(suffix))
+						pending := t.expectedArgTypes.takeFor(c.owner(t))
 						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, pending,
-							suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+							sl, sc)
 						if err != nil || handled {
 							return expr, err
 						}
@@ -252,7 +235,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 						// injects the metadata; otherwise it would read as
 						// constructing the empty struct.
 						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, nil,
-							suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+							sl, sc)
 						if err != nil || handled {
 							return expr, err
 						}
@@ -299,7 +282,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			}
 			// Before the generic and default-filling paths below return, and
 			// for `recv.m[T]()` as much as `recv.m()`.
-			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, suffix); err != nil {
+			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 				return nil, err
 			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
@@ -307,9 +290,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
 				// Taken before the defaults are lowered, as a call with
 				// arguments takes it, so no default sees it.
-				pending := t.expectedArgTypes.takeFor(callOwner(suffix))
-				handled, expr, err := t.tryTransformGenericMethodAsFunction(nil, receiver, method, typeArgs, recvType, lookupBaseName, pending,
-					suffix)
+				pending := t.expectedArgTypes.takeFor(c.owner(t))
+				handled, expr, err := t.tryTransformGenericMethodAsFunction(c, receiver, method, typeArgs, recvType, lookupBaseName, pending)
 				if err != nil || handled {
 					return expr, err
 				}
@@ -320,7 +302,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		if funcName := t.extractFuncName(base); funcName != "" {
 			funcMeta := t.getFunction(funcName)
 			if funcMeta != nil {
-				if err := funcParamList(funcMeta.Name, funcMeta).checkPositional(0, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()); err != nil {
+				if err := funcParamList(funcMeta.Name, funcMeta).checkPositional(0, sl, sc); err != nil {
 					return nil, err
 				}
 			}
@@ -329,7 +311,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// any call (`parse()` for `parse[T any](s string = "")`).
 				// The slot type is the call's, taken before its defaults are
 				// lowered so none of them sees it.
-				pending := t.expectedArgTypes.takeFor(callOwner(suffix))
+				pending := t.expectedArgTypes.takeFor(c.owner(t))
 				// Every argument is a default, so the type parameters the
 				// defaults spell are bound by the call's explicit type
 				// arguments (`describe[int]()`) and, for the rest, by the
@@ -342,12 +324,12 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 						maps.Copy(typeSubst, explicit)
 					}
 				}
-				filled, err := t.fillDefaultArgs(nil, funcMeta, typeSubst, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+				filled, err := t.fillDefaultArgs(nil, funcMeta, typeSubst, sl, sc)
 				if err != nil {
 					return nil, err
 				}
 				fun, err := t.injectFuncPhantomTypeArgs(base, funcMeta, filled, false, pending,
-					suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+					sl, sc)
 				if err != nil {
 					return nil, err
 				}
@@ -363,15 +345,15 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if typeMeta := t.getTypeMeta(zeroArgLookupBase); typeMeta != nil {
 				methodMeta := typeMeta.Methods[sel.Sel.Name]
 				if methodMeta != nil && !methodMeta.GoDeclared {
-					if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(0, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()); err != nil {
+					if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(0, sl, sc); err != nil {
 						return nil, err
 					}
 				}
 				if methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
 					// The call takes no type from its slot; its defaults
 					// do not either.
-					t.expectedArgTypes.takeFor(callOwner(suffix))
-					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+					t.expectedArgTypes.takeFor(c.owner(t))
+					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType, nil, sl, sc)
 					if err != nil {
 						return nil, err
 					}
@@ -395,16 +377,16 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			meta := t.getTypeMeta(resolved)
 			fields, ok := t.structFields[resolved]
 			if ok && meta != nil && meta.IsSealed && t.isTypeBaseExpr(base) {
-				return nil, t.typeAsConstructorErrorAt(base, meta, suffix)
+				return nil, t.typeAsConstructorErrorAt(base, meta, c)
 			}
 			if ok && t.isTypeBaseExpr(base) && (len(fields) == 0 || meta != nil) {
 				// A generic struct's type arguments come from the slot the
 				// construction fills, as for one with arguments: no field
 				// can bind them (`func p() Phantom[int] = Phantom()`).
-				line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+				line, col := sl, sc
 				// No field is supplied here, so this rejects another
 				// package's shorthand struct with a private field.
-				if err := t.checkPrivateFieldCtor(base, meta, fields, func(int, string) bool { return false }, suffix); err != nil {
+				if err := t.checkPrivateFieldCtor(base, meta, fields, func(int, string) bool { return false }, c); err != nil {
 					return nil, err
 				}
 				typed, err := t.structLiteralType(base, typeName, resolved, t.expectedArgTypes.peek(), line, col,
@@ -445,7 +427,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// call form is sugar for the Go literal, as it is with named
 		// arguments, so this is `T{}` rather than a zero-operand conversion.
 		if td := t.goStructTypeData(base); td != nil && t.spellsTypeName(base) {
-			line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+			line, col := sl, sc
 			if err := goStructTypeArgsError(base, td, line, col); err != nil {
 				return nil, err
 			}
@@ -454,10 +436,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// Zero-argument bare builtin (e.g. `recover()`) is forbidden too. Point
 		// the diagnostic at the callee identifier (the primary expr) so the
 		// caret underlines the builtin name, not the empty argument list.
-		bl, bc, exact := primaryStartOf(suffix)
-		if !exact {
-			bl, bc = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-		}
+		bl, bc, exact := c.calleePos()
 		if err := t.checkForbiddenGoBuiltinCall(base, bl, bc, exact); err != nil {
 			return nil, err
 		}
@@ -467,23 +446,23 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		if expr, handled := t.tryTransformValWithApply(base, nil); handled {
 			return expr, nil
 		}
-		if err := t.checkValueCalledAsFunction(base, suffix); err != nil {
+		if err := t.checkValueCalledAsFunction(base, c); err != nil {
 			return nil, err
 		}
 		// Last stop for a zero-argument call: if the receiver's GALA type is
 		// known and declares no such method, say so here rather than emitting
 		// it and letting `go build` describe the generated expression.
-		if err := t.checkUnknownMethodZeroArg(base, suffix, zeroArgRecvType, zeroArgLookupBase); err != nil {
+		if err := t.checkUnknownMethodZeroArg(base, c, zeroArgRecvType, zeroArgLookupBase); err != nil {
 			return nil, err
 		}
-		base, err := t.instantiateNullaryGenericCall(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+		base, err := t.instantiateNullaryGenericCall(base, sl, sc)
 		if err != nil {
 			return nil, err
 		}
 		return &ast.CallExpr{Fun: base, Args: nil}, nil
 	}
 
-	return t.transformCallWithArgsCtx(base, argList.(*grammar.ArgumentListContext))
+	return t.transformCallWithArgsCtx(base, c)
 }
 
 // resolveReceiverTypeAndLookupKey normalizes the inferred type of a call
@@ -579,21 +558,20 @@ func (t *galaASTTransformer) splitCallTarget(fun ast.Expr) (receiver ast.Expr, m
 //	handled=true  — the section produced an output expression; the caller
 //	                must return `expr` verbatim.
 //
-// argListCtx is nil for a call with no arguments; anchor is the argument
-// list, or the `()` of such a call, where diagnostics about the call point.
+// c is the call; a diagnostic about it points at its argument list, or the
+// `()` of a call with none (callSrc.anchor).
 // pendingExpected is the type of the slot the call fills, when it is the
 // value that fills one (see consumesSlotType).
 //
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
-	argListCtx *grammar.ArgumentListContext,
+	c callSrc,
 	receiver ast.Expr,
 	method string,
 	typeArgs []ast.Expr,
 	recvType transpiler.Type,
 	lookupBaseName string,
 	pendingExpected transpiler.Type,
-	anchor antlr.ParserRuleContext,
 ) (handled bool, result ast.Expr, err error) {
 	// Skip if the "receiver" is actually a package identifier — that is a
 	// package-qualified function call and belongs to a later section.
@@ -666,7 +644,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 
 	// The arguments in parameter order: named ones moved to their parameter,
 	// and a nil slot for each parameter left to its default.
-	slots, err := bindMethodArguments(argListCtx, anchor, methodMeta)
+	slots, err := bindMethodArguments(c, methodMeta)
 	if err != nil {
 		return true, nil, err
 	}
@@ -718,10 +696,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if pi < 0 {
 				break
 			}
-			if arg == nil {
+			if !arg.ok() {
 				continue
 			}
-			exprCtx, lambdaCtx, spread, extractErr := extractArgContent(arg)
+			exprCtx, lambdaCtx, spread, extractErr := t.argContent(arg)
 			if extractErr != nil {
 				continue
 			}
@@ -864,9 +842,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		return view
 	}
-	argListLine, argListCol := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
+	argListLine, argListCol := c.anchor().start()
 	for i, arg := range slots {
-		if arg == nil {
+		if !arg.ok() {
 			expr, derr := t.methodDefaultArg(methodMeta, i, receiver, recvType, typeSubst, argListLine, argListCol)
 			if derr != nil {
 				return true, nil, derr
@@ -874,7 +852,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			mArgs = append(mArgs, expr)
 			continue
 		}
-		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
+		exprCtx, lambdaCtx, isSpread, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return true, nil, extractErr
 		}
@@ -969,7 +947,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		yields := func() transpiler.Type {
 			return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypes)
 		}
-		if typeArgs, err = t.resultOnlyMethodTypeArgs(anchor, methodMeta, typeArgs, typeSubst, slotTyped, yields, mArgs); err != nil {
+		if typeArgs, err = t.resultOnlyMethodTypeArgs(c, methodMeta, typeArgs, typeSubst, slotTyped, yields, mArgs); err != nil {
 			return true, nil, err
 		}
 		// The type arguments spelled from the slot (those the arguments
@@ -977,7 +955,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if hasPtrConstrained {
 			src := typeArgSource{text: "the type the call is expected to have"}
 			for i := writtenTypeArgs; i < len(typeArgs) && i < len(methodMeta.TypeParams); i++ {
-				if err := t.checkPtrTypeArg(methodOwner, methodMeta.TypeParams[i], t.astTypeToTranspilerType(typeArgs[i]), src, anchor); err != nil {
+				if err := t.checkPtrTypeArgAt(methodOwner, methodMeta.TypeParams[i], t.astTypeToTranspilerType(typeArgs[i]), src, c.anchor()); err != nil {
 					return true, nil, err
 				}
 			}
@@ -992,7 +970,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 
-	nameLine, nameCol := methodNamePos(anchor)
+	nameLine, nameCol := c.methodNamePos()
 	if receiver, err = t.loweredMethodReceiver(receiver, recvType, methodMeta, method, nameLine, nameCol); err != nil {
 		return true, nil, err
 	}
@@ -1001,34 +979,29 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 
 // bindMethodArguments lays a call's arguments out in the method's parameter
 // order: positional arguments first, in order, then each named argument in its
-// parameter's slot. A nil slot is a parameter the call omits, which must have a
+// parameter's slot. A zero slot is a parameter the call omits, which must have a
 // default. A variadic parameter the call omits takes no argument: the slots
 // returned then stop before it, one fewer than the parameters.
 //
 // Without metadata, or for a call of only positional arguments that omits none
 // — including one spreading into a variadic parameter — the arguments are
 // returned as written. A positional call with too many arguments, or too few
-// for the parameters without a default, is GALA-E0082. anchor (the argument
-// list, or the `()` of a call with none) locates a diagnostic.
-func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata) ([]*grammar.ArgumentContext, error) {
-	var args []*grammar.ArgumentContext
+// for the parameters without a default, is GALA-E0082, at the call's anchor.
+func bindMethodArguments(c callSrc, methodMeta *transpiler.MethodMetadata) ([]argSrc, error) {
+	args := c.args.list
 	named := false
-	if argListCtx != nil {
-		for _, a := range argListCtx.AllArgument() {
-			arg := a.(*grammar.ArgumentContext)
-			args = append(args, arg)
-			named = named || arg.Identifier() != nil
-		}
+	for _, arg := range args {
+		named = named || arg.named()
 	}
 	if methodMeta == nil {
 		return args, nil
 	}
-	line, col := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
+	line, col := c.anchor().start()
 	params := methodParamList(methodMeta.Name, methodMeta)
 	if !named {
 		// A spread argument fills an unknown number of parameters, and a Go
 		// method keeps Go's own check (see call_arity.go).
-		if !slices.ContainsFunc(args, argIsSpread) && !methodMeta.GoDeclared {
+		if !slices.ContainsFunc(args, argSrc.spread) && !methodMeta.GoDeclared {
 			if err := params.checkPositional(len(args), line, col); err != nil {
 				return nil, err
 			}
@@ -1038,10 +1011,11 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 		}
 	}
 
-	slots := make([]*grammar.ArgumentContext, len(methodMeta.ParamTypes))
+	slots := make([]argSrc, len(methodMeta.ParamTypes))
 	next := 0
 	for _, arg := range args {
-		if arg.Identifier() == nil {
+		name, _ := arg.name()
+		if name == "" {
 			if next >= len(slots) {
 				return nil, params.tooManyError(len(args), line, col)
 			}
@@ -1049,18 +1023,17 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 			next++
 			continue
 		}
-		name := arg.Identifier().GetText()
 		idx := slices.Index(methodMeta.ParamNames, name)
 		if idx < 0 || idx >= len(slots) {
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", name, methodMeta.Name))
 		}
-		if slots[idx] != nil {
+		if slots[idx].ok() {
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", name, methodMeta.Name))
 		}
 		slots[idx] = arg
 	}
 	for i, slot := range slots {
-		if slot != nil {
+		if slot.ok() {
 			continue
 		}
 		if params.isVariadicSlot(i) {
@@ -1258,11 +1231,11 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 // the constant's default type (`0` for a `U` in an `Option[int64]` slot).
 // typeSubst holds those its arguments and the slot the call fills bound (see
 // tryTransformGenericMethodAsFunction); yields gives its result type on this
-// receiver, for the hint. One left open is GALA-E0067 at anchor (the call's
-// argument list, or its `()`), as for a generic function (see
+// receiver, for the hint. One left open is GALA-E0067 at the call's anchor
+// (callSrc.anchor), as for a generic function (see
 // injectFuncPhantomTypeArgs). typeArgs is returned as is when nothing needs
 // spelling: Go infers every type argument from the arguments.
-func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst typeSubstMap, slotTyped map[string]bool, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
+func (t *galaASTTransformer) resultOnlyMethodTypeArgs(c callSrc, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst typeSubstMap, slotTyped map[string]bool, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
 	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
 	// The call spells a prefix of the type arguments, up to the last phantom
 	// or slot-typed one; Go infers the rest from the arguments and the
@@ -1291,54 +1264,14 @@ func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleCon
 	if missing == nil {
 		return full, nil
 	}
-	name := methodCallName(anchor, methodMeta.Name)
-	line, col := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
+	name := c.methodCallName(methodMeta.Name)
+	line, col := c.anchor().start()
 	// No slot fixes an argument whose type is unknown.
 	always := slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] })
 	if err := t.unknownArgTypeError(line, col, name, missing, args, always); err != nil {
 		return nil, err
 	}
 	return nil, t.uninferredTypeArgErrorNamed(line, col, name, valueYields(yields()), methodMeta.TypeParams, resolved, missing)
-}
-
-// methodNamePos locates the name of the method a call selects: the last member
-// suffix before the call's argument list; anchor is that list, or the `()` of
-// a call with no arguments. It falls back to anchor's start.
-func methodNamePos(anchor antlr.ParserRuleContext) (line, col int) {
-	line, col = anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
-	for n := antlr.Tree(anchor); n != nil; n = n.GetParent() {
-		call, ok := n.(*grammar.PostfixSuffixContext)
-		if !ok {
-			continue
-		}
-		if postfix, ok := call.GetParent().(*grammar.PostfixExprContext); ok {
-			for _, s := range postfix.AllPostfixSuffix() {
-				if s == call {
-					break
-				}
-				if id := s.Identifier(); id != nil {
-					line, col = id.GetStart().GetLine(), id.GetStart().GetColumn()
-				}
-			}
-		}
-		break
-	}
-	return line, col
-}
-
-// methodCallName spells the callee of a method call for a diagnostic as the
-// source writes it (`Cell(1).Convert`, see calleeText); anchor is the call's
-// argument list or its `()`. A callee too long to quote is `(...).method`.
-func methodCallName(anchor antlr.Tree, method string) string {
-	for n := anchor; n != nil; n = n.GetParent() {
-		if suffix, ok := n.(*grammar.PostfixSuffixContext); ok {
-			if text := calleeText(suffix); strings.HasSuffix(text, "."+method) {
-				return text
-			}
-			break
-		}
-	}
-	return "(...)." + method
 }
 
 // transformRegularMethodCall handles Section 4 of the call dispatcher: method
@@ -1356,7 +1289,7 @@ func methodCallName(anchor antlr.Tree, method string) string {
 //
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) transformRegularMethodCall(
-	argListCtx *grammar.ArgumentListContext,
+	c callSrc,
 	receiver ast.Expr,
 	method string,
 	recvType transpiler.Type,
@@ -1377,11 +1310,11 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 		// the generated expression. checkUnknownMethod stands down whenever the
 		// receiver's type is not an instance of the type or the name is
 		// transformer-generated; see unknown_method.go.
-		if err := t.checkUnknownMethod(argListCtx, typeMeta, method, recvType); err != nil {
+		if err := t.checkUnknownMethod(c, typeMeta, method, recvType); err != nil {
 			return nil, err
 		}
 		// method metadata unresolved → emit the method call directly.
-		return t.emitDirectMethodCall(argListCtx, receiver, method)
+		return t.emitDirectMethodCall(c, receiver, method)
 	}
 
 	// Build type substitution map from receiver's type arguments.
@@ -1402,38 +1335,37 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	// Unresolved receiver type params: skip full expected-type inference but
 	// still detect void function parameters for lambda return-type stripping.
 	if hasUnresolvedTypeParams {
-		return t.emitMethodCallWithVoidLambdaHint(argListCtx, receiver, method, methodMeta, typeSubst)
+		return t.emitMethodCallWithVoidLambdaHint(c, receiver, method, methodMeta, typeSubst)
 	}
 
 	// Fully concrete receiver type: transform args (named + positional), then
 	// dispatch through named-args / default-args fillers if needed.
-	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, typeMeta.TypeParams, recvType)
+	return t.emitMethodCallWithFullTypes(c, receiver, method, methodMeta, typeSubst, typeMeta.TypeParams, recvType)
 }
 
 // emitDirectMethodCall is the fallback used when the method's metadata
 // cannot be resolved. It still generates a `receiver.method(args...)` call so
 // the downstream compiler can report a meaningful error rather than having
 // the receiver.method structure silently lost. Part of A1 cont.
-func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentListContext, receiver ast.Expr, method string) (ast.Expr, error) {
+func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, method string) (ast.Expr, error) {
 	var mArgs []ast.Expr
 	hasSpread := false
-	args := argListCtx.AllArgument()
+	args := c.args.list
 	// The Go method's parameters, for passing a Go call's results through
 	// and for naming a Try passed where its plain value is expected.
 	var goSig *transpiler.GoFuncSignature
 	if len(args) > 0 {
 		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
 	}
-	for i, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
+	for i, arg := range args {
+		exprCtx, lambdaCtx, isSpread, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, extractErr
 		}
 		if isSpread {
 			hasSpread = true
 		}
-		positional := !isSpread && arg.Identifier() == nil
+		positional := !isSpread && !arg.named()
 		// A lambda takes its parameter types from the Go method's parameter,
 		// once the signature is instantiated (see goMethodSignature).
 		expected := transpiler.Type(transpiler.NilType{})
@@ -1541,7 +1473,7 @@ func goSigParamType(sig *transpiler.GoFuncSignature, i int) transpiler.Type {
 // so we skip full expected-type threading, but we still pass void function
 // expected types so lambda arguments can strip their return types. Part of A1 cont.
 func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
-	argListCtx *grammar.ArgumentListContext,
+	c callSrc,
 	receiver ast.Expr,
 	method string,
 	methodMeta *transpiler.MethodMetadata,
@@ -1549,9 +1481,8 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
 	hasSpread := false
-	for i, argCtx := range argListCtx.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
-		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
+	for i, arg := range c.args.list {
+		exprCtx, lambdaCtx, isSpread, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, extractErr
 		}
@@ -1580,7 +1511,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 // threading, then dispatch through named-args / default-args fillers. Part of
 // A1 cont.
 func (t *galaASTTransformer) emitMethodCallWithFullTypes(
-	argListCtx *grammar.ArgumentListContext,
+	c callSrc,
 	receiver ast.Expr,
 	method string,
 	methodMeta *transpiler.MethodMetadata,
@@ -1592,17 +1523,15 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	mNamedArgs := make(map[string]ast.Expr)
 	hasSpread := false
 	argIdx := 0
-	for _, argCtx := range argListCtx.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
-		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
+	for _, arg := range c.args.list {
+		exprCtx, lambdaCtx, isSpreadAll, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, extractErr
 		}
 		if isSpreadAll {
 			hasSpread = true
 		}
-		if arg.Identifier() != nil {
-			argName := arg.Identifier().GetText()
+		if argName, _ := arg.name(); argName != "" {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 			resolvedMethodCtx.recvTypeParams = recvTypeParams
 			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, exprCtx, lambdaCtx); cerr != nil {
@@ -1630,18 +1559,19 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		}
 	}
 	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
+	al, ac := c.anchor().start()
 	// A Go method keeps Go's own check (see call_arity.go).
 	if len(mNamedArgs) == 0 && !hasSpread && !methodMeta.GoDeclared {
 		if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(len(mArgs),
-			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+			al, ac); err != nil {
 			return nil, err
 		}
 	}
 	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvType, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvType, typeSubst, al, ac)
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, al, ac)
 		if err != nil {
 			return nil, err
 		}
@@ -2003,12 +1933,12 @@ func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, typeName, res
 // transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) transformFunctionArgs(
 	fun ast.Expr,
-	argListCtx *grammar.ArgumentListContext,
+	c callSrc,
 	callCtx functionCallContext,
 ) (positional []ast.Expr, named map[string]ast.Expr, hasSpread bool, err error) {
 	named = make(map[string]ast.Expr)
 	argIdx := 0
-	args := argListCtx.AllArgument()
+	args := c.args.list
 
 	// A Go callee's parameters, for passing a Go call's results through
 	// (spreadGoResultArg) and for naming a Try or Tuple passed where its plain
@@ -2018,9 +1948,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: fun})
 	}
 
-	for _, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
+	for _, arg := range args {
+		exprCtx, lambdaCtx, isSpreadAll, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, nil, false, extractErr
 		}
@@ -2028,15 +1957,14 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			hasSpread = true
 		}
 
-		if arg.Identifier() != nil {
+		if argName, _ := arg.name(); argName != "" {
 			// Named argument: resolve the expected type via struct-field lookup
 			// first (supports generic struct construction), then function metadata,
 			// then sealed-variant cases. The line/col is for the dot-import
 			// ambiguity diagnostic in findSealedVariant — point at the named arg
 			// itself so the error pins the exact call-site token rather than
 			// the surrounding statement.
-			argName := arg.Identifier().GetText()
-			argLine, argCol := arg.GetStart().GetLine(), arg.GetStart().GetColumn()
+			argLine, argCol := arg.at().start()
 			namedExpectedType, expErr := t.resolveNamedArgExpectedFuncType(fun, argName, callCtx, argLine, argCol)
 			if expErr != nil {
 				return nil, nil, false, expErr
@@ -2391,7 +2319,7 @@ type functionCallContext struct {
 // gather all metadata used during argument transformation. slotType is the
 // type of the slot the call fills, when pushed (see functionCallContext).
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
-func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx *grammar.ArgumentListContext, slotType transpiler.Type) functionCallContext {
+func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsSrc, slotType transpiler.Type) functionCallContext {
 	ctx := functionCallContext{slotType: slotType}
 
 	// Look up GALA function metadata for expected parameter types
@@ -2446,16 +2374,13 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 			resolved := t.resolveStructTypeName(resolvedTypeName)
 			if fields, ok := t.structFields[resolved]; ok {
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
-					if argListCtx != nil {
-						args := argListCtx.AllArgument()
+					if args.at.ok() {
 						// A call naming a field is a construction whatever its
 						// argument count (handleNamedArgsCall), never Apply: its
 						// positional arguments fill the leading fields.
-						named := slices.ContainsFunc(args, func(a grammar.IArgumentContext) bool {
-							return a.(*grammar.ArgumentContext).Identifier() != nil
-						})
+						named := slices.ContainsFunc(args.list, argSrc.named)
 						ctx.structLiteral = (named && !typeMeta.IsSealed) ||
-							t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args))
+							t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args.list))
 					}
 					ctx.structFieldExpectedTypes = make([]transpiler.Type, len(fields))
 					for i, fieldName := range fields {
@@ -2468,7 +2393,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 					if structMeta := t.getTypeMeta(resolved); structMeta != nil && len(structMeta.TypeParams) > 0 {
 						typeParams, ctorFun, fromSlot := t.structCtorSlotArgs(fun, funcName, resolved, typeMeta.TypeParams, slotType)
 						ctx.structTypeParams = typeParams
-						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, argListCtx, fromSlot)
+						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, args, fromSlot)
 						for i, ft := range ctx.structFieldExpectedTypes {
 							ctx.structFieldExpectedTypes[i] = t.substituteTranspilerTypeParams(ft, ctx.structTypeSubst)
 						}
@@ -2480,7 +2405,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 
 	// A Go struct named-argument construction can build: one of the
 	// package's own .go files, or of an imported Go package.
-	if ctx.funcMeta == nil && ctx.structFieldExpectedTypes == nil && hasNamedArg(argListCtx) {
+	if ctx.funcMeta == nil && ctx.structFieldExpectedTypes == nil && slices.ContainsFunc(args.list, argSrc.named) {
 		ctx.goStruct = t.goStructTypeData(fun)
 	}
 
@@ -2495,7 +2420,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 			// None or only some written (`Using[Res](r, (x) => …)`): Go infers
 			// the rest from the arguments, and so does this, so no lambda is
 			// lowered against a bare type-parameter name.
-			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx, explicit)
+			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, args, explicit)
 		}
 	}
 
@@ -2517,13 +2442,13 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 					// A partial list (`Mk[int](2, (x) => …)`) is completed
 					// from the arguments as a generic function call's is, so
 					// no argument is lowered against a bare type-parameter name.
-					if n := len(ctx.applyTypeSubst); n > 0 && n < len(typeMeta.TypeParams) && argListCtx != nil {
+					if n := len(ctx.applyTypeSubst); n > 0 && n < len(typeMeta.TypeParams) && args.at.ok() {
 						ctx.applyTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(&transpiler.FunctionMetadata{
 							TypeParams: typeMeta.TypeParams,
 							ParamTypes: applyMeta.ParamTypes,
 							ParamNames: applyMeta.ParamNames,
 							Variadic:   applyMeta.Variadic,
-						}, argListCtx, ctx.applyTypeSubst)
+						}, args, ctx.applyTypeSubst)
 					}
 				}
 			}
@@ -2534,12 +2459,12 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// a struct with fields is never one). A generic sealed type gets the same
 	// two-phase inference as a generic struct, over the variant's fields.
 	if ctx.applyMethodMeta != nil && ctx.funcMeta == nil && len(ctx.structFieldExpectedTypes) == 0 {
-		line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+		line, col := args.at.start()
 		ctx.variant, ctx.variantParent, ctx.variantErr = t.sealedVariantForCall(fun, line, col)
 	}
 	if sv, parent := ctx.variant, ctx.variantParent; sv != nil && parent != nil && len(parent.TypeParams) > 0 {
 		ctx.structTypeParams = parent.TypeParams
-		ctx.structTypeSubst = t.structCtorTypeSubst(fun, parent.TypeParams, sv.FieldNames, sv.FieldTypes, argListCtx, nil)
+		ctx.structTypeSubst = t.structCtorTypeSubst(fun, parent.TypeParams, sv.FieldNames, sv.FieldTypes, args, nil)
 		if len(ctx.applyTypeSubst) == 0 {
 			ctx.applyTypeSubst = ctx.structTypeSubst
 		}
@@ -2699,16 +2624,14 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 // When extending call-site behavior, add or modify a single section's helper
 // rather than growing this dispatcher. Each helper is independently testable
 // and carries its own doc comment describing the sub-path it handles.
-func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (ast.Expr, error) {
 	// Bare Go builtins (append, len, panic, ...) are a hard error: they are the
 	// last symbols that resolve with no import and no GALA declaration. Reject
 	// them here where the call target and the symbol tables are both available.
 	// Report at the callee identifier (the primary expr) so the caret spans the
-	// builtin name; fall back to the argument list start if the walk-up fails.
-	fl, fc, exact := primaryStartOf(argListCtx)
-	if !exact {
-		fl, fc = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
-	}
+	// builtin name, or at the argument list when there is no primary (calleePos).
+	al, ac := c.anchor().start()
+	fl, fc, exact := c.calleePos()
 	if err := t.checkForbiddenGoBuiltinCall(fun, fl, fc, exact); err != nil {
 		return nil, err
 	}
@@ -2737,7 +2660,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 0.5: interface literal `Repo(Find = ...)` ---
 	// See interface_literal.go.
 	if !ownFunc {
-		if expr, handled, err := t.tryTransformInterfaceLiteral(fun, argListCtx, pendingExpected); handled || err != nil {
+		if expr, handled, err := t.tryTransformInterfaceLiteral(fun, c, pendingExpected); handled || err != nil {
 			return expr, err
 		}
 	}
@@ -2753,7 +2676,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		if id, ok := sel.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
 			// Fall through to package-qualified function dispatch.
 		} else {
-			return t.transformCopyCall(sel.X, argListCtx)
+			return t.transformCopyCall(sel.X, c.args)
 		}
 	}
 
@@ -2767,7 +2690,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// package-agnostic lookup key used by the generic-method registry.
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 	// Before the generic rewrite and the regular dispatch, so both are covered.
-	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, argListCtx); err != nil {
+	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 		return nil, err
 	}
 
@@ -2776,8 +2699,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 3: Generic method -> standalone function rewrite ---
 	if receiver != nil && isGenericMethod {
-		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected,
-			argListCtx)
+		handled, expr, err := t.tryTransformGenericMethodAsFunction(c, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected)
 		if err != nil {
 			return nil, err
 		}
@@ -2790,29 +2712,29 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// lookup fell through). Covers both the path with method metadata and the
 	// fallback when metadata cannot be resolved.
 	if receiver != nil && !isGenericMethod && method != "" {
-		return t.transformRegularMethodCall(argListCtx, receiver, method, recvType, lookupBaseName)
+		return t.transformRegularMethodCall(c, receiver, method, recvType, lookupBaseName)
 	}
 
 	// --- Section 5: Regular function call context gathering ---
-	callCtx := t.collectFunctionCallContext(fun, argListCtx, pendingExpected)
+	callCtx := t.collectFunctionCallContext(fun, c.args, pendingExpected)
 
 	// --- Section 5.5: a value whose type is not a function, called anyway ---
 	// Checked before the arguments are transformed, so named arguments or an
 	// argument that fails to transform cannot preempt it with an error about
 	// the arguments. A type with an Apply method is left to section 12. See
 	// value_called_as_function.go.
-	if err := t.checkValueCalledAsFunction(fun, argListCtx); err != nil {
+	if err := t.checkValueCalledAsFunction(fun, c); err != nil {
 		return nil, err
 	}
 
 	// --- Section 6: Argument transformation ---
 	// Walks the argument list, classifying each arg as positional or named,
 	// and resolves an expected type for each from the gathered callCtx.
-	args, namedArgs, hasSpread, err := t.transformFunctionArgs(fun, argListCtx, callCtx)
+	args, namedArgs, hasSpread, err := t.transformFunctionArgs(fun, c, callCtx)
 	if err != nil {
 		return nil, err
 	}
-	if err := t.checkPtrCallTypeArgs(fun, argListCtx, args, namedArgs, callCtx); err != nil {
+	if err := t.checkPtrCallTypeArgs(fun, c.args, args, namedArgs, callCtx); err != nil {
 		return nil, err
 	}
 
@@ -2822,8 +2744,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	if len(namedArgs) == 0 && !hasSpread && !ownFunc {
 		if target := t.opaqueConversionCallee(fun); target != nil {
 			if len(args) == 1 {
-				argCtx := argListCtx.Argument(0).(*grammar.ArgumentContext)
-				if err := t.checkOpaqueConversion(target, t.astTypeToTranspilerType(fun), args[0], argCtx); err != nil {
+				at := c.args.list[0].at()
+				if err := t.checkOpaqueConversion(target, t.astTypeToTranspilerType(fun), args[0], at); err != nil {
 					return nil, err
 				}
 			}
@@ -2837,7 +2759,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// spread argument fills an unknown number of parameters.
 	if callCtx.funcMeta != nil && len(namedArgs) == 0 && !hasSpread {
 		if err := funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta).checkPositional(len(args),
-			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+			al, ac); err != nil {
 			return nil, err
 		}
 	}
@@ -2845,24 +2767,24 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
-			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, al, ac)
 			// A result-only type parameter comes from the slot, as for a
 			// positional call (section 12.5), over the arguments in order.
 			if call, ok := expr.(*ast.CallExpr); ok && err == nil {
 				call.Fun, err = t.injectFuncPhantomTypeArgs(call.Fun, callCtx.funcMeta, call.Args, call.Ellipsis != token.NoPos, pendingExpected,
-					argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+					al, ac)
 			}
 			if err != nil {
 				return nil, err
 			}
 			return expr, nil
 		}
-		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, argListCtx)
+		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, c)
 	}
 
 	// --- Section 8: Default-arg injection for under-filled positional calls ---
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.DefaultExprs) > 0 && len(args) < len(callCtx.funcMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, callCtx.inferredTypeSubst, al, ac)
 		if err != nil {
 			return nil, err
 		}
@@ -2872,13 +2794,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 9: StructMeta[T]() compiler intrinsic ---
 	typeName := t.getBaseTypeName(fun)
 	if isStructMetaIntrinsic(typeName) {
-		return t.transformStructMetaConstruction(fun, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		return t.transformStructMetaConstruction(fun, al, ac)
 	}
 
 	// --- Section 10: Companion Apply / positional struct construction ---
 	if typeName != "" && !ownFunc {
 		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args, pendingExpected,
-			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			al, ac)
 		if err != nil {
 			return nil, err
 		}
@@ -2907,7 +2829,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// slot the call fills, so the generated Go is concrete rather than an
 	// uninstantiated `Fn(args)` that fails with "cannot infer".
 	if fun, err = t.injectFuncPhantomTypeArgs(fun, callCtx.funcMeta, args, hasSpread, pendingExpected,
-		argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+		al, ac); err != nil {
 		return nil, err
 	}
 
@@ -2948,8 +2870,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 // Keeping the body a dispatcher matches the established A1 pattern for
 // `transformCallWithArgsCtx` in this file: the numbered sections map to
 // the helpers below and are easy to navigate.
-func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, callCtx functionCallContext, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
-	line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, callCtx functionCallContext, c callSrc) (ast.Expr, error) {
+	line, col := c.anchor().start()
 	// 1. Extract the type name for struct field lookup.
 	typeName, qualifiedName := extractTypeNameFromExpr(fun)
 
@@ -2974,12 +2896,12 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return nil, ferr
 			}
 			if found {
-				if err := checkUnknownStructFields(qualifiedName, variantFieldNames, argListCtx); err != nil {
+				if err := checkUnknownStructFields(qualifiedName, variantFieldNames, c.args); err != nil {
 					return nil, err
 				}
 				// The positional arguments bind type parameters as the named
 				// ones do.
-				inferArgs, err := bindPositionalStructArgs(qualifiedName, variantFieldNames, args, namedArgs, argListCtx)
+				inferArgs, err := bindPositionalStructArgs(qualifiedName, variantFieldNames, args, namedArgs, c.args)
 				if err != nil {
 					return nil, err
 				}
@@ -3001,27 +2923,27 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		// A sealed parent is no construction target: its fields are the
 		// merged payloads of its cases, and a literal of it is none of them.
 		if meta != nil && meta.IsSealed {
-			return nil, t.typeAsConstructorErrorAt(fun, meta, argListCtx)
+			return nil, t.typeAsConstructorErrorAt(fun, meta, c)
 		}
 		// 3. Regular GALA struct construction with named args. A named
 		// argument matching no field is reported as itself: before the
 		// missing-field check, which would otherwise name the field the author
 		// thought they had just written, and before type-argument inference,
 		// which would blame the type argument that field was to bind.
-		if err := checkUnknownStructFields(qualifiedName, fields, argListCtx); err != nil {
+		if err := checkUnknownStructFields(qualifiedName, fields, c.args); err != nil {
 			return nil, err
 		}
 		if len(args) > len(fields) {
-			return nil, structTooManyArgsError(qualifiedName, fields, len(argListCtx.AllArgument()), line, col)
+			return nil, structTooManyArgsError(qualifiedName, fields, len(c.args.list), line, col)
 		}
-		namedArgs, err := bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, argListCtx)
+		namedArgs, err := bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, c.args)
 		if err != nil {
 			return nil, err
 		}
 		// Another package's struct is not constructible here when the literal
 		// would set a field private to that package.
 		provided := func(_ int, name string) bool { _, ok := namedArgs[name]; return ok }
-		if err := t.checkPrivateFieldCtor(fun, meta, fields, provided, argListCtx); err != nil {
+		if err := t.checkPrivateFieldCtor(fun, meta, fields, provided, c); err != nil {
 			return nil, err
 		}
 		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, callCtx.slotType, line, col)
@@ -3032,7 +2954,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	// fields are plain Go fields, never Immutable-wrapped, so the named
 	// arguments become a Go composite literal as they are.
 	if td := callCtx.goStruct; td != nil {
-		if err := checkUnknownStructFields(qualifiedName, td.FieldOrder, argListCtx); err != nil {
+		if err := checkUnknownStructFields(qualifiedName, td.FieldOrder, c.args); err != nil {
 			return nil, err
 		}
 		if len(args) > 0 {
@@ -3071,17 +2993,17 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 // checkPositionalBeforeNamed reports a positional argument written after a
 // named one in a construction of qualifiedName: positional arguments fill the
 // leading fields, so one after a named argument has no field to take.
-func checkPositionalBeforeNamed(qualifiedName string, argListCtx *grammar.ArgumentListContext) error {
+func checkPositionalBeforeNamed(qualifiedName string, args argsSrc) error {
 	named := false
-	for _, argCtx := range argListCtx.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
-		if arg.Identifier() != nil {
+	for _, arg := range args.list {
+		if arg.named() {
 			named = true
 			continue
 		}
 		if named {
+			line, col := arg.at().start()
 			return galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField,
-				arg.GetStart().GetLine(), arg.GetStart().GetColumn(),
+				line, col,
 				fmt.Sprintf("a positional argument follows a named one in construction of %q", qualifiedName),
 				"put the positional arguments first, or name this one too")
 		}
@@ -3095,24 +3017,24 @@ func checkPositionalBeforeNamed(qualifiedName string, argListCtx *grammar.Argume
 // named ones. A positional argument after a named one, a spread one and a field
 // given both ways are errors; arguments beyond the fields are left for the
 // caller to report.
-func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, argListCtx *grammar.ArgumentListContext) (map[string]ast.Expr, error) {
+func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, list argsSrc) (map[string]ast.Expr, error) {
 	if len(args) == 0 {
 		return namedArgs, nil
 	}
-	if err := checkPositionalBeforeNamed(qualifiedName, argListCtx); err != nil {
+	if err := checkPositionalBeforeNamed(qualifiedName, list); err != nil {
 		return nil, err
 	}
 	// The positional arguments come first (checked just now), so argument i of
 	// the list is args[i].
-	argCtxs := argListCtx.AllArgument()
 	bound := maps.Clone(namedArgs)
 	for i, arg := range args[:min(len(args), len(fields))] {
-		if argCtx := argCtxs[i].(*grammar.ArgumentContext); argIsSpread(argCtx) {
-			return nil, galaerr.NewSemanticErrorAt(argCtx.GetStart().GetLine(), argCtx.GetStart().GetColumn(),
+		if a := list.list[i]; a.spread() {
+			line, col := a.at().start()
+			return nil, galaerr.NewSemanticErrorAt(line, col,
 				fmt.Sprintf("a spread argument cannot fill field %q in construction of %q", fields[i], qualifiedName))
 		}
 		if _, twice := bound[fields[i]]; twice {
-			line, col := namedArgPos(argListCtx, fields[i])
+			line, col := namedArgPos(list, fields[i])
 			return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
 				fmt.Sprintf("field %q of %q is given both by position and by name", fields[i], qualifiedName),
 				"give each field once")
@@ -3122,14 +3044,14 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 	return bound, nil
 }
 
-// namedArgPos is the position of the argument naming field in argListCtx.
-func namedArgPos(argListCtx *grammar.ArgumentListContext, field string) (int, int) {
-	for _, a := range argListCtx.AllArgument() {
-		if id := a.(*grammar.ArgumentContext).Identifier(); id != nil && id.GetText() == field {
-			return id.GetStart().GetLine(), id.GetStart().GetColumn()
+// namedArgPos is the position of the argument naming field in args.
+func namedArgPos(args argsSrc, field string) (int, int) {
+	for _, a := range args.list {
+		if name, at := a.name(); name == field {
+			return at.start()
 		}
 	}
-	return argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+	return args.at.start()
 }
 
 // checkUnknownStructFields reports named arguments that match no field of the
@@ -3139,18 +3061,18 @@ func namedArgPos(argListCtx *grammar.ArgumentListContext, field string) (int, in
 // arguments are collected by name, so a second value for a field replaced the
 // first, and for a GALA struct the literal is built from its fields, so an
 // argument naming none of them was dropped.
-func checkUnknownStructFields(qualifiedName string, fields []string, argListCtx *grammar.ArgumentListContext) error {
+func checkUnknownStructFields(qualifiedName string, fields []string, args argsSrc) error {
 	var unknown []string
 	var line, col int
 	seen := make(map[string]bool)
-	for _, argCtx := range argListCtx.AllArgument() {
-		id := argCtx.(*grammar.ArgumentContext).Identifier()
-		if id == nil {
+	for _, arg := range args.list {
+		name, at := arg.name()
+		if name == "" {
 			continue
 		}
-		name := id.GetText()
 		if seen[name] {
-			return galaerr.NewSemanticErrorAt(id.GetStart().GetLine(), id.GetStart().GetColumn(),
+			l, c := at.start()
+			return galaerr.NewSemanticErrorAt(l, c,
 				fmt.Sprintf("field %q is given more than once in construction of %q", name, qualifiedName))
 		}
 		seen[name] = true
@@ -3158,7 +3080,7 @@ func checkUnknownStructFields(qualifiedName string, fields []string, argListCtx 
 			continue
 		}
 		if len(unknown) == 0 {
-			line, col = id.GetStart().GetLine(), id.GetStart().GetColumn()
+			line, col = at.start()
 		}
 		unknown = append(unknown, name)
 	}
@@ -3886,7 +3808,6 @@ func (t *galaASTTransformer) unifyFieldArgForInference(fieldType transpiler.Type
 	t.unifyForInference(fieldType, valType, typeParams, inferred)
 }
 
-
 // buildGoCompositeLiteralWithNamedArgs emits a plain Go composite literal
 // for a Go-imported or dot-imported type. No Immutable wrapping — the
 // underlying type is outside GALA's immutable model. Fields are sorted
@@ -3923,11 +3844,6 @@ func unwrapToBaseIdent(expr ast.Expr) *ast.Ident {
 			return nil
 		}
 	}
-}
-
-// hasNamedArg reports whether a call passes any argument by name.
-func hasNamedArg(argListCtx *grammar.ArgumentListContext) bool {
-	return argListCtx != nil && firstNamedPatArg(antlrArgs(argListCtx)) >= 0
 }
 
 // goStructTypeData returns the Go type info of the Go struct a call target
@@ -5147,8 +5063,8 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // placeholders reports that some type parameter was filled with `any`.
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
-func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset typeSubstMap) (subst typeSubstMap, placeholders bool) {
-	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(argListCtx, funcMeta.ParamNames))
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, args argsSrc, preset typeSubstMap) (subst typeSubstMap, placeholders bool) {
+	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(args, funcMeta.ParamNames))
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
@@ -5185,19 +5101,18 @@ type callArg struct {
 
 // callArgs classifies a call's arguments. A named argument fills the slot of
 // the same name in paramNames; a positional one fills the next position.
-func (t *galaASTTransformer) callArgs(argListCtx grammar.IArgumentListContext, paramNames []string) []callArg {
+func (t *galaASTTransformer) callArgs(list argsSrc, paramNames []string) []callArg {
 	var args []callArg
 	argIdx := 0
-	for _, argCtx := range argListCtx.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
+	for _, arg := range list.list {
 		var slot int
-		if arg.Identifier() != nil {
-			slot = slices.Index(paramNames, arg.Identifier().GetText())
+		if name, _ := arg.name(); name != "" {
+			slot = slices.Index(paramNames, name)
 		} else {
 			slot = argIdx
 			argIdx++
 		}
-		exprCtx, lambdaCtx, spread, err := extractArgContent(arg)
+		exprCtx, lambdaCtx, spread, err := t.argContent(arg)
 		if err != nil {
 			continue
 		}
@@ -5249,7 +5164,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	fun ast.Expr,
 	typeParams, fields []string,
 	fieldTypes []transpiler.Type,
-	argListCtx grammar.IArgumentListContext,
+	list argsSrc,
 	fromSlot map[string]transpiler.Type,
 ) typeSubstMap {
 	explicit := maps.Clone(fromSlot)
@@ -5257,12 +5172,12 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 		explicit = typeSubstMap{}
 	}
 	maps.Copy(explicit, explicitTypeArgSubst(typeParams, t.extractFuncCallTypeArgs(fun)))
-	if len(explicit) == len(typeParams) || argListCtx == nil {
+	if len(explicit) == len(typeParams) || !list.at.ok() {
 		return explicit
 	}
 	// The pre-pass lowers the non-lambda arguments an extra time: run it only
 	// when some argument's lowering depends on a generic function-typed slot.
-	args := t.callArgs(argListCtx, fields)
+	args := t.callArgs(list, fields)
 	if !slices.ContainsFunc(args, func(a callArg) bool {
 		if a.slot < 0 || a.slot >= len(fieldTypes) || !typeMentionsTypeParam(fieldTypes[a.slot], typeParams) {
 			return false

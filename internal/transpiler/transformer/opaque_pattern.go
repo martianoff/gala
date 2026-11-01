@@ -28,7 +28,7 @@ import (
 func (t *galaASTTransformer) generateOpaquePattern(
 	meta *transpiler.TypeMetadata,
 	rawName string,
-	args patArgs,
+	args argsSrc,
 	explicitTypeArgs *grammar.ExpressionListContext,
 	objExpr ast.Expr,
 	matchedType transpiler.Type,

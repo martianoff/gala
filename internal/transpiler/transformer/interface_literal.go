@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -148,19 +147,16 @@ func (t *galaASTTransformer) goInterfaceLiteralMeta(base ast.Expr) (interfaceLit
 
 // tryTransformInterfaceLiteral lowers a call of an interface's name, an
 // interface literal; handled is false for any other call.
-func (t *galaASTTransformer) tryTransformInterfaceLiteral(fun ast.Expr, argListCtx *grammar.ArgumentListContext, expected transpiler.Type) (expr ast.Expr, handled bool, err error) {
+func (t *galaASTTransformer) tryTransformInterfaceLiteral(fun ast.Expr, c callSrc, expected transpiler.Type) (expr ast.Expr, handled bool, err error) {
 	lit, ok := t.interfaceLiteralTarget(fun, expected)
 	if !ok {
 		return nil, false, nil
 	}
-	line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
-	if fl, fc, exact := primaryStartOf(argListCtx); exact {
-		line, col = fl, fc
-	}
+	line, col, _ := c.calleePos()
 	if err := t.checkInterfaceLiteralTarget(lit, line, col); err != nil {
 		return nil, true, err
 	}
-	given, err := t.interfaceLiteralMethods(lit, argListCtx, line, col)
+	given, err := t.interfaceLiteralMethods(lit, c.args, line, col)
 	if err != nil {
 		return nil, true, err
 	}
@@ -216,21 +212,20 @@ func (t *galaASTTransformer) checkInterfaceLiteralTarget(lit interfaceLiteral, l
 // interfaceLiteralMethods lowers the literal's arguments, each against the
 // function type of the method it names, and checks that they give every method
 // once.
-func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, argListCtx *grammar.ArgumentListContext, line, col int) (map[string]ast.Expr, error) {
+func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, args argsSrc, line, col int) (map[string]ast.Expr, error) {
 	name := t.displayTypeName(lit.meta)
 	subst := make(typeSubstMap, len(lit.typeArgs))
 	for i, tp := range lit.meta.TypeParams {
 		subst[tp] = lit.typeArgs[i]
 	}
 	given := make(map[string]ast.Expr, len(lit.methods))
-	for _, a := range argListCtx.AllArgument() {
-		arg := a.(*grammar.ArgumentContext)
-		argLine, argCol := arg.GetStart().GetLine(), arg.GetStart().GetColumn()
-		if arg.Identifier() == nil {
+	for _, arg := range args.list {
+		argLine, argCol := arg.at().start()
+		method, _ := arg.name()
+		if method == "" {
 			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("an argument of an interface literal of %s names the method it implements", name),
 				fmt.Sprintf("write `%s = ...` for one of %s's methods: %s", lit.methods[0], name, strings.Join(lit.methods, ", ")))
 		}
-		method := arg.Identifier().GetText()
 		mm, isMethod := lit.meta.Methods[method]
 		if !isMethod {
 			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("%s has no method %s", name, method),
@@ -240,7 +235,7 @@ func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, argLi
 			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("method %s of %s is given twice", method, name),
 				fmt.Sprintf("give %s once", method))
 		}
-		exprCtx, lambdaCtx, spread, err := extractArgContent(arg)
+		exprCtx, lambdaCtx, spread, err := t.argContent(arg)
 		if err != nil {
 			return nil, err
 		}

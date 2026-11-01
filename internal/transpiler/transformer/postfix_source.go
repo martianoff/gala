@@ -11,12 +11,11 @@ import (
 
 // The postfix chain on galop's native tree: a primary expression followed by
 // its suffixes, each a member access `.name`, an index or type arguments
-// `[exprs]`, or a call `(args)`. A member access and an index are read on
-// either tree through suffixSrc (memberSrc, indexSrc) and lowered once, by
-// lowerMember and resolveIndexAccess, so both walks give the same Go. A
-// postfix expression with a call suffix or a match is still lowered on
-// ANTLR's tree as a whole (crossTo): the call lowering reads the argument
-// list and the expression it ends, and the match is the match's.
+// `[exprs]`, or a call `(args)`. Both walks lower the chain through one
+// driver (lowerSuffixes), reading each suffix on the tree it comes from
+// through suffixSrc (memberSrc, indexSrc, and callSrc in calls_source.go),
+// so both give the same Go. A postfix expression with a match is still
+// lowered on ANTLR's tree as a whole (crossTo): the match is the match's.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -115,8 +114,8 @@ func (ix indexSrc) expr(i int) exprSrc {
 }
 
 // lowerSuffixedNative is transformPostfixExpr of p, whose primary expression
-// is prim, when p has a suffix or a match. Its member accesses and indexes
-// are lowered here; a call suffix or a match hands p to ANTLR's tree whole.
+// is prim, when p has a suffix or a match. A match hands p to ANTLR's tree
+// whole.
 func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim native.GalaNodeRef) (ast.Expr, error) {
 	src := postfixSrc{node: p.GalaNodeRef}
 	// Most chains are short: no allocation for them. A child that is no
@@ -126,18 +125,28 @@ func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim 
 	if len(suffixes) != p.ChildCount()-1 {
 		return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
 	}
-	for _, s := range suffixes {
-		if s.opener() == "(" {
-			return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
-		}
-	}
-	// The type of the slot p fills is for its last suffix, never for the
-	// receiver it is applied to (see transformPostfixExpr). The hint is keyed
-	// by p's context, as the ANTLR walk pushes it.
+	// The hint is keyed by p's context, as the ANTLR walk pushes it.
 	owner, _ := t.native.Ctx(p.GalaNodeRef).(*grammar.PostfixExprContext)
+	return t.lowerSuffixes(src, owner, suffixes)
+}
+
+// lowerSuffixes lowers p, a postfix expression with suffixes and no match,
+// on the tree it comes from: its primary expression, then each of suffixes
+// applied to the value before it. owner is p's context, the key of the hint
+// for the slot p fills.
+func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, owner *grammar.PostfixExprContext, suffixes []suffixSrc) (ast.Expr, error) {
+	// The type of the slot p fills is for its last suffix, the call that is
+	// the value (see consumesSlotType): never for the receiver the call is
+	// applied to.
 	release := t.expectedArgTypes.withhold(owner)
 	defer release()
-	result, err := t.lowerPrimaryExprNative(prim)
+	var result ast.Expr
+	var err error
+	if p.node.Ok() {
+		result, err = t.lowerPrimaryExprNative(p.primaryExprNode().GalaNodeRef)
+	} else {
+		result, err = t.transformPrimaryExpr(p.ctx.PrimaryExpr().(*grammar.PrimaryExprContext))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -145,22 +154,40 @@ func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode, prim 
 		if i == len(suffixes)-1 {
 			release()
 		}
-		if result, err = t.lowerSuffixNative(result, s); err != nil {
+		if result, err = t.lowerSuffix(result, p, s); err != nil {
 			return nil, err
 		}
+	}
+	// A call that produces no value may only stand alone (see void_calls.go).
+	if last := suffixes[len(suffixes)-1]; last.opener() == "(" {
+		t.recordVoidCall(callSrc{post: p, suffix: last}, result)
 	}
 	return result, nil
 }
 
-// lowerSuffixNative is applyPostfixSuffix of s, a member access or an index.
-func (t *galaASTTransformer) lowerSuffixNative(base ast.Expr, s suffixSrc) (ast.Expr, error) {
+// lowerSuffix applies s, a suffix of p, to base: a member access, an index
+// or type arguments, or a call.
+func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, s suffixSrc) (ast.Expr, error) {
 	if s.ident() != "" {
-		t.nativeShape(s.node, "selector")
+		t.suffixShape(s, "selector")
 		return t.lowerMember(base, memberSrc{s})
 	}
-	if s.childCount() >= 2 && s.opener() == "[" {
-		t.nativeShape(s.node, "index")
-		return t.resolveIndexAccess(base, indexSrc{s})
+	if s.childCount() >= 2 {
+		switch s.opener() {
+		case "(":
+			t.suffixShape(s, "call")
+			return t.applyGoCallSuffix(base, callSrc{post: p, suffix: s, args: s.args()})
+		case "[":
+			t.suffixShape(s, "index")
+			return t.resolveIndexAccess(base, indexSrc{s})
+		}
 	}
 	return nil, semanticErrorAtStart(s.at(), "unknown postfix suffix type")
+}
+
+// suffixShape is nativeShape of s when it is read on the native tree.
+func (t *galaASTTransformer) suffixShape(s suffixSrc, shape string) {
+	if s.node.Ok() {
+		t.nativeShape(s.node, shape)
+	}
 }

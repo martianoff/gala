@@ -157,7 +157,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 		}
 		// `case shapes.Square` is `case shapes.Square()`, as the unqualified
 		// spelling is.
-		return t.transformConstructorCallPattern(parent.Package+"."+variant.Name, patArgs{}, nil, objExpr, matchedType, pat)
+		return t.transformConstructorCallPattern(parent.Package+"."+variant.Name, argsSrc{}, nil, objExpr, matchedType, pat)
 	}
 
 	// Simple Binding - bind variable with the matched type
@@ -209,7 +209,7 @@ func sealedCaseNamed(parent *transpiler.TypeMetadata, name string) (*transpiler.
 // resolves to rawName (which may be unqualified like "Some" or qualified like
 // "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
 // and struct field matches, and instance extractors, in that order.
-func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, args patArgs, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, args argsSrc, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
 	// A type parameter of the enclosing declaration shadows every extractor,
 	// variant and struct of its name, and is none of them itself.
 	if t.typeParamValue(rawName) {
@@ -646,7 +646,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(pat patExpr, objExp
 			if _, resolved := t.getTypeMetaResolved(name); resolved != "" {
 				ctorName = resolved
 			}
-			return t.transformConstructorCallPattern(ctorName, patArgs{}, nil, objExpr, matchedType, pat)
+			return t.transformConstructorCallPattern(ctorName, argsSrc{}, nil, objExpr, matchedType, pat)
 		}
 
 		// The identifier may still refer to a zero-field extractor that is not a
@@ -654,7 +654,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(pat patExpr, objExp
 		// sealed variant matched against a subject whose type could not be
 		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
 		if meta, unapplyMeta := t.bareExtractor(name, matchedType); meta != nil {
-			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, patArgs{}, matchedType, pat)
+			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, argsSrc{}, matchedType, pat)
 		}
 
 		// On a subject that may hold any type, a case the bare name cannot
@@ -898,7 +898,7 @@ func (t *galaASTTransformer) isTupleType(typeName string) bool {
 //	b := obj.V2.Get()
 //
 // The condition is always true since the type already matches.
-func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, args patArgs, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, args argsSrc, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	if len(args.list) == 0 {
 		return ast.NewIdent("true"), nil, nil
 	}
@@ -976,7 +976,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 // For example, Person(name, age) matching against Person{Name: "Alice", Age: 25}
 // generates: name := obj.Name.Get(); age := obj.Age.Get() — `.Get()` only for
 // non-`var` fields, which are stored as Immutable[T].
-func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, args patArgs, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, args argsSrc, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 
@@ -1192,7 +1192,7 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 }
 
 // hasRestPattern checks if any argument in the argument list is a rest pattern (ends with ...).
-func (t *galaASTTransformer) hasRestPattern(args patArgs) bool {
+func (t *galaASTTransformer) hasRestPattern(args argsSrc) bool {
 	return slices.ContainsFunc(args.list, func(a argSrc) bool { return a.pattern().kind() == patKindRest })
 }
 
@@ -1357,7 +1357,7 @@ func scanSeqPatternArgs(args []argSrc) (restIndex int, restName string, nonRestC
 //	    rest = obj.SeqDrop(2).(Array[Option[int]])
 //	}
 //	if _tmp_ok && <Some(n) condition> { ... body }
-func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, args patArgs, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, args argsSrc, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	restPatternIndex, restPatternName, nonRestCount := scanSeqPatternArgs(args.list)
 
 	// Rest pattern must be the last argument.
@@ -1861,7 +1861,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	inferredTypes []transpiler.Type,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
-	args patArgs,
+	args argsSrc,
 	matchedType transpiler.Type,
 	pat patExpr,
 ) (ast.Expr, []ast.Stmt, error) {
@@ -1882,7 +1882,7 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 	inferredTypes []transpiler.Type,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
-	args patArgs,
+	args argsSrc,
 	matchedType transpiler.Type,
 ) (ast.Expr, []ast.Stmt, error) {
 	var allBindings []ast.Stmt
@@ -2128,7 +2128,7 @@ func (t *galaASTTransformer) assertedUnapplyPattern(
 // when the binding's type has no Unapply.
 func (t *galaASTTransformer) tryBindingExtractorPattern(
 	b binding,
-	args patArgs,
+	args argsSrc,
 	objExpr ast.Expr,
 	matchedType transpiler.Type,
 	pat patExpr,
@@ -2195,7 +2195,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	varTypeMeta *transpiler.TypeMetadata,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
-	args patArgs,
+	args argsSrc,
 	matchedType transpiler.Type,
 ) (ast.Expr, []ast.Stmt, error) {
 

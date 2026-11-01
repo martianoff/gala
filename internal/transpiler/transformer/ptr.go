@@ -11,7 +11,6 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -483,7 +482,7 @@ func (t *galaASTTransformer) checkPtrTypeArgsOfType(s typeSrc, args []ast.Expr, 
 // of a generic struct, bind, and those of a generic function an argument
 // refers to. args are its positional arguments and named its named ones,
 // lowered.
-func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, argListCtx *grammar.ArgumentListContext, args []ast.Expr, named map[string]ast.Expr, callCtx functionCallContext) error {
+func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, list argsSrc, args []ast.Expr, named map[string]ast.Expr, callCtx functionCallContext) error {
 	if len(t.ptrReceiverMethods) == 0 {
 		return nil
 	}
@@ -504,11 +503,10 @@ func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, argListCtx *gram
 	}
 	var plain, funcRefs []callArg
 	pos := 0
-	for _, a := range argListCtx.AllArgument() {
-		argCtx := a.(*grammar.ArgumentContext)
+	for _, a := range list.list {
 		arg, idx := ast.Expr(nil), -1
-		if id := argCtx.Identifier(); id != nil {
-			arg, idx = named[id.GetText()], slices.Index(names, id.GetText())
+		if name, _ := a.name(); name != "" {
+			arg, idx = named[name], slices.Index(names, name)
 		} else {
 			if pos < len(args) {
 				arg, idx = args[pos], pos
@@ -520,7 +518,7 @@ func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, argListCtx *gram
 		if idx >= len(types) && callCtx.funcMeta != nil {
 			idx = len(types) - 1
 		}
-		exprCtx, lambdaCtx, spread, err := extractArgContent(argCtx)
+		exprCtx, lambdaCtx, spread, err := t.argContent(a)
 		if err != nil || arg == nil || idx < 0 || idx >= len(types) || types[idx] == nil {
 			continue
 		}

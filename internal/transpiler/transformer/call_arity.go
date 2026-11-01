@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -164,12 +163,6 @@ func structTooManyArgsError(typeName string, fields []string, nargs, line, col i
 // many, the part shown beside the caret.
 func removeExtra(n int) string {
 	return fmt.Sprintf("remove %d extra %s", n, plural(n, "argument", "arguments"))
-}
-
-// argIsSpread reports whether arg spreads a slice, `xs...`.
-func argIsSpread(arg *grammar.ArgumentContext) bool {
-	_, _, spread, _ := extractArgContent(arg)
-	return spread
 }
 
 func plural(n int, one, many string) string {

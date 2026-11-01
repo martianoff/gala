@@ -94,13 +94,6 @@ func (s *expectedArgTypeStack) takeFor(owner *grammar.PostfixExprContext) transp
 	return s.consume()
 }
 
-// callOwner is the postfix expression the call suffix ends, the owner of the
-// hint pushed for the call (see pushFor).
-func callOwner(suffix *grammar.PostfixSuffixContext) *grammar.PostfixExprContext {
-	pe, _ := suffix.GetParent().(*grammar.PostfixExprContext)
-	return pe
-}
-
 // withhold hides the hint on top of the stack when it was pushed for owner,
 // and returns the function that puts it back. The function acts once however
 // often it is called, so a caller defers it and also calls it before the

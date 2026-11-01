@@ -5,10 +5,7 @@ import (
 	"go/ast"
 	"slices"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -73,19 +70,16 @@ func (t *galaASTTransformer) nonCallableType(typ transpiler.Type, typeParams []s
 }
 
 // checkValueCalledAsFunction rejects a call whose callee is a val, var or
-// parameter, or a val struct field, of a type that is not a function. node is
-// the call's argument list, or its empty-call suffix; it locates the
-// diagnostic and says whether the callee was written as a member, `x.name(`.
-func (t *galaASTTransformer) checkValueCalledAsFunction(fun ast.Expr, node antlr.ParserRuleContext) error {
+// parameter, or a val struct field, of a type that is not a function. The
+// call c locates the diagnostic and says whether the callee was written as a
+// member, `x.name(`.
+func (t *galaASTTransformer) checkValueCalledAsFunction(fun ast.Expr, c callSrc) error {
 	if b, ok := t.bindingRef(fun); ok {
 		if !t.nonCallableType(b.typ, nil) {
 			return nil
 		}
-		line, col, exact := primaryStartOf(node)
-		if !exact {
-			line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
-		}
-		exact = exact && calleeSpells(node, b)
+		line, col, exact := c.calleePos()
+		exact = exact && c.calleeSpells(b)
 		// A var and a parameter are both "a value": the binding does not say
 		// which it is, and the distinction does not change the fix.
 		kind := "value"
@@ -95,32 +89,32 @@ func (t *galaASTTransformer) checkValueCalledAsFunction(fun ast.Expr, node antlr
 		name := b.String()
 		return notCallableError(name, kind, name, name, b.typ, line, col, exact)
 	}
-	return t.checkValFieldCalledAsFunction(fun, node)
+	return t.checkValFieldCalledAsFunction(fun, c)
 }
 
-// calleeSpells reports whether the call holding node is written with b's own
-// spelling, `name` or `pkg.name`, starting at the primary expression, so that a
-// caret spanning len(b.String()) from there covers exactly the callee. It is
-// not for `(Red)()`, whose primary expression is the parenthesized one.
-func calleeSpells(node antlr.Tree, b binding) bool {
-	var pe *grammar.PostfixExprContext
-	for n := node; n != nil && pe == nil; n = n.GetParent() {
-		pe, _ = n.(*grammar.PostfixExprContext)
-	}
-	if pe == nil || pe.PrimaryExpr() == nil {
+// calleeSpells reports whether c is written with b's own spelling, `name` or
+// `pkg.name`, starting at the primary expression, so that a caret spanning
+// len(b.String()) from there covers exactly the callee. It is not for
+// `(Red)()`, whose primary expression is the parenthesized one.
+func (c callSrc) calleeSpells(b binding) bool {
+	line, col, ok := c.calleePos()
+	if !ok {
 		return false
 	}
-	prim := pe.PrimaryExpr()
+	prim := c.primaryText()
 	if b.pkg == "" {
-		return prim.GetText() == b.name
+		return prim == b.name
 	}
-	suffixes := pe.AllPostfixSuffix()
-	if prim.GetText() != b.pkg || len(suffixes) == 0 || suffixes[0].Identifier() == nil {
+	suffixes := c.post.suffixes()
+	if prim != b.pkg || len(suffixes) == 0 {
 		return false
 	}
-	start, member := prim.GetStart(), suffixes[0].Identifier().GetStart()
-	return member.GetText() == b.name && member.GetLine() == start.GetLine() &&
-		member.GetColumn() == start.GetColumn()+len([]rune(b.pkg))+1
+	name, at, ok := suffixes[0].member()
+	if !ok {
+		return false
+	}
+	mLine, mCol := at.start()
+	return name == b.name && mLine == line && mCol == col+len([]rune(b.pkg))+1
 }
 
 // checkValFieldCalledAsFunction is the check for a val struct field, `p.N()`:
@@ -130,17 +124,19 @@ func calleeSpells(node antlr.Tree, b binding) bool {
 // has the same shape but is preceded by a call suffix, not by `.N`. A `var`
 // field stays a selector, and a call of it is a method call, which
 // unknownMethodError checks.
-func (t *galaASTTransformer) checkValFieldCalledAsFunction(fun ast.Expr, node antlr.ParserRuleContext) error {
-	member := calledMemberToken(node)
-	if member == nil {
-		return nil
-	}
+func (t *galaASTTransformer) checkValFieldCalledAsFunction(fun ast.Expr, c callSrc) error {
+	// The callee's shape first: it rules out almost every call before the
+	// parse tree is read.
 	unwrap := immutableGetReceiver(fun)
 	if unwrap == nil {
 		return nil
 	}
+	member, memberAt, ok := c.member()
+	if !ok {
+		return nil
+	}
 	sel, ok := unwrap.X.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != member.GetText() {
+	if !ok || sel.Sel.Name != member {
 		return nil
 	}
 	if id, isIdent := sel.X.(*ast.Ident); isIdent && t.importManager.IsPackage(id.Name) {
@@ -155,7 +151,8 @@ func (t *galaASTTransformer) checkValFieldCalledAsFunction(fun ast.Expr, node an
 	if !isField || !t.nonCallableType(fieldType, meta.TypeParams) {
 		return nil
 	}
-	return fieldNotCallableError(meta, sel.Sel.Name, fieldType, member.GetLine(), member.GetColumn(), true)
+	mLine, mCol := memberAt.start()
+	return fieldNotCallableError(meta, sel.Sel.Name, fieldType, mLine, mCol, true)
 }
 
 // fieldNotCallableError is notCallableError for field of the struct meta.

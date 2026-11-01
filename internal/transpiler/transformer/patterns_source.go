@@ -437,7 +437,7 @@ type callPat struct {
 	head postfixSrc
 	// ctor is a qualified pattern's constructor name.
 	ctor     string
-	args     patArgs
+	args     argsSrc
 	typeArgs suffixSrc // the type arguments' suffix, the zero suffixSrc when none
 }
 
@@ -498,21 +498,21 @@ func (e patExpr) qualifiedCallPattern() (callPat, bool) {
 // callShape reads e as a call-shaped pattern of any qualification
 // (patternCallShape): the bare constructor name (the last selector, or the
 // primary identifier), the call's arguments, and whether e has that shape.
-func (e patExpr) callShape() (name string, args patArgs, ok bool) {
+func (e patExpr) callShape() (name string, args argsSrc, ok bool) {
 	p := e.postfix(true)
 	if !p.ok() {
-		return "", patArgs{}, false
+		return "", argsSrc{}, false
 	}
 	if name = p.primaryIdent(); name == "" {
-		return "", patArgs{}, false
+		return "", argsSrc{}, false
 	}
 	suffixes := p.suffixes()
 	if len(suffixes) == 0 {
-		return "", patArgs{}, false
+		return "", argsSrc{}, false
 	}
 	call := suffixes[len(suffixes)-1]
 	if call.opener() != "(" {
-		return "", patArgs{}, false
+		return "", argsSrc{}, false
 	}
 	prefix := suffixes[:len(suffixes)-1]
 	// Optional type arguments right before the call.
@@ -522,7 +522,7 @@ func (e patExpr) callShape() (name string, args patArgs, ok bool) {
 	// Everything else is a selector chain; its last member is the name.
 	for _, s := range prefix {
 		if name = s.ident(); name == "" {
-			return "", patArgs{}, false
+			return "", argsSrc{}, false
 		}
 	}
 	return name, call.args(), true
@@ -658,26 +658,18 @@ func (s suffixSrc) opener() string {
 
 // ident is the member s selects, "" when it is no selector.
 func (s suffixSrc) ident() string {
-	if s.node.Ok() {
-		if id := (native.PostfixSuffixNode{GalaNodeRef: s.node}).Identifier(); id.Ok() {
-			return galaparser.NativeText(id.GalaNodeRef)
-		}
-		return ""
-	}
-	if s.ctx.Identifier() == nil {
-		return ""
-	}
-	return s.ctx.Identifier().GetText()
+	name, _, _ := s.member()
+	return name
 }
 
 // args is the arguments of s, a call suffix.
-func (s suffixSrc) args() patArgs {
+func (s suffixSrc) args() argsSrc {
 	if s.node.Ok() {
 		list := (native.PostfixSuffixNode{GalaNodeRef: s.node}).ArgumentList()
 		if !list.Ok() {
-			return patArgs{}
+			return argsSrc{}
 		}
-		out := patArgs{at: srcNode{node: list.GalaNodeRef}}
+		out := argsSrc{at: srcNode{node: list.GalaNodeRef}}
 		for a := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_argument) {
 			out.list = append(out.list, argSrc{node: a})
 		}
@@ -685,7 +677,7 @@ func (s suffixSrc) args() patArgs {
 	}
 	list, ok := s.ctx.ArgumentList().(*grammar.ArgumentListContext)
 	if !ok || list == nil {
-		return patArgs{}
+		return argsSrc{}
 	}
 	return antlrArgs(list)
 }
@@ -706,25 +698,26 @@ func (s suffixSrc) exprList(t *galaASTTransformer) *grammar.ExpressionListContex
 	return nil
 }
 
-// patArgs is the sub-patterns of a call-shaped pattern, and at, their
-// argument list (the zero srcNode when the call has none).
-type patArgs struct {
+// argsSrc is the arguments of a call, or the sub-patterns of a call-shaped
+// pattern, and at, their argument list (the zero srcNode when the call has
+// none).
+type argsSrc struct {
 	list []argSrc
 	at   srcNode
 }
 
 // antlrArgs is the arguments of list, on ANTLR's tree.
-func antlrArgs(list *grammar.ArgumentListContext) patArgs {
-	out := patArgs{at: srcNode{ctx: list}}
+func antlrArgs(list *grammar.ArgumentListContext) argsSrc {
+	out := argsSrc{at: srcNode{ctx: list}}
 	for _, a := range list.AllArgument() {
 		out.list = append(out.list, argSrc{ctx: a.(*grammar.ArgumentContext)})
 	}
 	return out
 }
 
-// argSrc is an argument of a call-shaped pattern: a sub-pattern, possibly
-// named (`Field = p`), or a lambda. The zero argSrc is a field named
-// sub-patterns leave out: it has no name and no pattern.
+// argSrc is an argument of a call, or of a call-shaped pattern: a value or a
+// sub-pattern, possibly named (`Field = p`), or a lambda. The zero argSrc is
+// a field named sub-patterns leave out: it has no name and no pattern.
 type argSrc struct {
 	ctx  *grammar.ArgumentContext
 	node native.GalaNodeRef
