@@ -151,6 +151,8 @@ func (rn packageRenamer) typ(t Type) Type {
 	case ChanType:
 		v.Elem = rn.typ(v.Elem)
 		return v
+	case StructType:
+		return v.MapFields(rn.typ)
 	case MapType:
 		v.Key, v.Elem = rn.typ(v.Key), rn.typ(v.Elem)
 		return v

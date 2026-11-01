@@ -2,7 +2,9 @@ package transpiler
 
 import (
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"martianoff/gala/internal/parser"
 )
@@ -55,6 +57,8 @@ func ContainsUnusable(t Type) bool {
 		return ContainsUnusable(v.Elem)
 	case ChanType:
 		return ContainsUnusable(v.Elem)
+	case StructType:
+		return slices.ContainsFunc(v.FieldTypes(), ContainsUnusable)
 	case PointerType:
 		return ContainsUnusable(v.Elem)
 	case MapType:
@@ -130,6 +134,8 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 		return "[]" + DisplayTypeNamed(v.Elem, name)
 	case ChanType:
 		return spellChan(v.Dir, v.Elem, DisplayTypeNamed(v.Elem, name))
+	case StructType:
+		return spellStruct(v, func(f Type) string { return DisplayTypeNamed(f, name) })
 	case MapType:
 		return "map[" + DisplayTypeNamed(v.Key, name) + "]" + DisplayTypeNamed(v.Elem, name)
 	case GenericType:
@@ -293,6 +299,118 @@ func (t ChanType) IsVoid() bool       { return false }
 func (t ChanType) BaseName() string   { return "chan" }
 func (t ChanType) GetPackage() string { return "" }
 
+// StructField is a field of a StructType. An embedded field is named after
+// its type, as go/types names it.
+type StructField struct {
+	Name     string
+	Type     Type
+	Embedded bool
+	Tag      string
+}
+
+// StructType represents an anonymous Go struct type, `struct{}` or
+// `struct{X int}`. GALA code cannot spell one; it reaches GALA from Go APIs,
+// most often as the element of a signal channel (`chan struct{}`).
+type StructType struct {
+	Fields []StructField
+}
+
+func (t StructType) String() string { return spellStruct(t, Type.String) }
+func (t StructType) IsNil() bool    { return false }
+func (t StructType) IsAny() bool    { return false }
+func (t StructType) IsVoid() bool   { return false }
+
+// BaseName is the struct's spelling: two anonymous struct types are the same
+// type only when their fields are, so a lookup by name must see them all.
+func (t StructType) BaseName() string   { return t.String() }
+func (t StructType) GetPackage() string { return "" }
+
+// FieldTypes is the type of each of t's fields, in order.
+func (t StructType) FieldTypes() []Type {
+	types := make([]Type, len(t.Fields))
+	for i, f := range t.Fields {
+		types[i] = f.Type
+	}
+	return types
+}
+
+// MapFields is t with each field's type replaced by f of it.
+func (t StructType) MapFields(f func(Type) Type) StructType {
+	if len(t.Fields) == 0 {
+		return t
+	}
+	fields := make([]StructField, len(t.Fields))
+	for i, fd := range t.Fields {
+		fd.Type = f(fd.Type)
+		fields[i] = fd
+	}
+	return StructType{Fields: fields}
+}
+
+// spellStruct is t as go/types prints it, `struct{X int; Y string "tag"}`,
+// with each field's type spelled by name.
+func spellStruct(t StructType, name func(Type) string) string {
+	parts := make([]string, len(t.Fields))
+	for i, f := range t.Fields {
+		s := name(f.Type)
+		if !f.Embedded {
+			s = f.Name + " " + s
+		}
+		if f.Tag != "" {
+			s += " " + strconv.Quote(f.Tag)
+		}
+		parts[i] = s
+	}
+	return "struct{" + strings.Join(parts, "; ") + "}"
+}
+
+// parseStruct parses the body of `struct{...}` in the form spellStruct
+// prints. A field's name and type never hold a quote, so its tag, if any,
+// starts at its first one.
+func parseStruct(body string) StructType {
+	var st StructType
+	for _, part := range splitTopLevelOn(body, ';') {
+		var f StructField
+		if q := strings.IndexByte(part, '"'); q != -1 {
+			f.Tag, _ = strconv.Unquote(strings.TrimSpace(part[q:]))
+			part = strings.TrimSpace(part[:q])
+		}
+		name, typ, named := strings.Cut(part, " ")
+		if named && isIdentifier(name) {
+			f.Name, f.Type = name, ParseType(typ)
+		} else {
+			f.Type, f.Embedded = ParseType(part), true
+			f.Name = EmbeddedFieldName(f.Type)
+		}
+		st.Fields = append(st.Fields, f)
+	}
+	return st
+}
+
+// EmbeddedFieldName is the name Go gives a field embedding typ: its type
+// name, without a pointer, package or type arguments.
+func EmbeddedFieldName(typ Type) string {
+	switch v := typ.(type) {
+	case PointerType:
+		return EmbeddedFieldName(v.Elem)
+	case GenericType:
+		return EmbeddedFieldName(v.Base)
+	case NamedType:
+		return v.Name
+	}
+	return typ.String()
+}
+
+// isIdentifier reports whether s is a Go identifier.
+func isIdentifier(s string) bool {
+	for i, r := range s {
+		if !(r == '_' || unicode.IsLetter(r) || (i > 0 && unicode.IsDigit(r))) {
+			return false
+		}
+	}
+	return s != ""
+}
+
 // PointerType represents a pointer type.
 //
 // NonNull marks GALA's non-null pointer `Ptr[T]`: a compile-time marker that
@@ -417,6 +535,8 @@ func matchingClose(s string, open int) int {
 	depth := 0
 	for i := open; i < len(s); i++ {
 		switch s[i] {
+		case '"':
+			i = closingQuote(s, i)
 		case '(', '[', '{':
 			depth++
 		case ')', ']', '}':
@@ -429,10 +549,28 @@ func matchingClose(s string, open int) int {
 	return -1
 }
 
+// closingQuote is the index of the quote closing the quoted string, a struct
+// field's tag, that opens at s[open]: brackets and separators inside it are
+// text. len(s) when it is not closed.
+func closingQuote(s string, open int) int {
+	for i := open + 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '"':
+			return i
+		}
+	}
+	return len(s)
+}
+
 // splitTopLevel splits a comma-separated type list at the commas that are not
 // nested inside brackets or parentheses, trimming each part and dropping an
 // empty list's single empty part.
-func splitTopLevel(s string) []string {
+func splitTopLevel(s string) []string { return splitTopLevelOn(s, ',') }
+
+// splitTopLevelOn is splitTopLevel at sep: `;` separates a struct's fields.
+func splitTopLevelOn(s string, sep byte) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
@@ -440,11 +578,13 @@ func splitTopLevel(s string) []string {
 	depth, start := 0, 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
+		case '"':
+			i = closingQuote(s, i)
 		case '(', '[', '{':
 			depth++
 		case ')', ']', '}':
 			depth--
-		case ',':
+		case sep:
 			if depth == 0 {
 				parts = append(parts, strings.TrimSpace(s[start:i]))
 				start = i + 1
@@ -460,6 +600,10 @@ func ParseType(s string) Type {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return NilType{}
+	}
+	// An anonymous struct, in the form StructType.String() prints.
+	if body, ok := strings.CutPrefix(s, "struct{"); ok && matchingClose(s, len("struct")) == len(s)-1 {
+		return parseStruct(body[:len(body)-1])
 	}
 	// A function type, in the form FuncType.String() prints. Without this a
 	// function-typed type argument that round-trips through its string form
@@ -556,6 +700,8 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 		return ArrayType{Elem: SubstituteTypeParams(v.Elem, subst)}
 	case ChanType:
 		return ChanType{Elem: SubstituteTypeParams(v.Elem, subst), Dir: v.Dir}
+	case StructType:
+		return v.MapFields(func(f Type) Type { return SubstituteTypeParams(f, subst) })
 	case MapType:
 		return MapType{Key: SubstituteTypeParams(v.Key, subst), Elem: SubstituteTypeParams(v.Elem, subst)}
 	case PointerType:

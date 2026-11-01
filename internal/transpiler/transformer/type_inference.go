@@ -842,6 +842,10 @@ func (t *galaASTTransformer) collectReferencedParams(typ transpiler.Type, params
 		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.ChanType:
 		t.collectReferencedParams(v.Elem, params, out)
+	case transpiler.StructType:
+		for _, f := range v.FieldTypes() {
+			t.collectReferencedParams(f, params, out)
+		}
 	case transpiler.PointerType:
 		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.MapType:
@@ -1001,6 +1005,16 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 		return t.unifyForInference(patternChan.Elem, concreteChan.Elem, typeParams, inferredMap)
 	}
 
+	// Anonymous structs unify field by field when their fields line up.
+	patternStruct, patternIsStruct := pattern.(transpiler.StructType)
+	concreteStruct, concreteIsStruct := concrete.(transpiler.StructType)
+	if patternIsStruct && concreteIsStruct && len(patternStruct.Fields) == len(concreteStruct.Fields) {
+		for i, f := range patternStruct.Fields {
+			t.unifyForInference(f.Type, concreteStruct.Fields[i].Type, typeParams, inferredMap)
+		}
+		return true
+	}
+
 	// Check if both are map types
 	patternMap, patternIsMap := pattern.(transpiler.MapType)
 	concreteMap, concreteIsMap := concrete.(transpiler.MapType)
@@ -1126,6 +1140,10 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
 	case transpiler.ChanType:
 		return transpiler.ChanType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), Dir: v.Dir}
+	case transpiler.StructType:
+		return v.MapFields(func(f transpiler.Type) transpiler.Type {
+			return t.substituteInTypeDepth(f, paramMap, depth, qualifiedToo)
+		})
 	case transpiler.PointerType:
 		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), NonNull: v.NonNull}
 	case transpiler.MapType:

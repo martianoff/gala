@@ -22,6 +22,8 @@ func stripImportPaths(typ Type) Type {
 		return ArrayType{Elem: stripImportPaths(v.Elem)}
 	case ChanType:
 		return ChanType{Elem: stripImportPaths(v.Elem), Dir: v.Dir}
+	case StructType:
+		return v.MapFields(stripImportPaths)
 	case PointerType:
 		return PointerType{Elem: stripImportPaths(v.Elem)}
 	case MapType:
@@ -87,6 +89,17 @@ func TestParseTypeRoundTrip(t *testing.T) {
 		{"receive-only channel of a slice", ChanType{Elem: ArrayType{Elem: BasicType{Name: "int"}}, Dir: ChanRecv}},
 		{"send-only channel", ChanType{Elem: builder, Dir: ChanSend}},
 		{"channel of a receive-only channel", ChanType{Elem: ChanType{Elem: BasicType{Name: "int"}, Dir: ChanRecv}}},
+		{"empty struct", StructType{}},
+		{"channel of an empty struct", ChanType{Elem: StructType{}, Dir: ChanRecv}},
+		{"struct with fields", StructType{Fields: []StructField{
+			{Name: "X", Type: BasicType{Name: "int"}},
+			{Name: "Builder", Type: PointerType{Elem: builder}, Embedded: true},
+			{Name: "M", Type: MapType{Key: BasicType{Name: "string"}, Elem: StructType{}}},
+		}}},
+		{"struct with tags holding separators", GenericType{Base: option, Params: []Type{StructType{Fields: []StructField{
+			{Name: "A", Type: BasicType{Name: "int"}, Tag: `json:"a,omitempty" x:"{[;]}"`},
+			{Name: "B", Type: fileInfo},
+		}}}}},
 		{"map keyed by a generic", MapType{
 			Key:  GenericType{Base: option, Params: []Type{BasicType{Name: "int"}}},
 			Elem: MapType{Key: BasicType{Name: "string"}, Elem: builder},

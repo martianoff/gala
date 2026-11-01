@@ -1286,8 +1286,15 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		}
 	}
 
-	// Set underlying type
-	data.Underlying = goTypeToTranspilerType(typ.Underlying())
+	// Set underlying type. A named struct's fields are in Fields, and its
+	// underlying struct, unexported fields and all, is never spelled in GALA
+	// or emitted, so it stays the placeholder rather than a StructType that
+	// would copy every field into the cache a second time.
+	if _, isStruct := typ.Underlying().(*types.Struct); isStruct {
+		data.Underlying = transpiler.BasicType{Name: "any"}
+	} else {
+		data.Underlying = goTypeToTranspilerType(typ.Underlying())
+	}
 	data.NoCopy = noCopyReason(typ)
 	// A generic type's comparability depends on its type arguments.
 	if !isGenericGoType(typ) {
@@ -1627,8 +1634,24 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 		return transpiler.BasicType{Name: "any"}
 
 	case *types.Struct:
-		// Anonymous struct — can't represent directly, return any
-		return transpiler.BasicType{Name: "any"}
+		// An anonymous struct, such as a signal channel's `struct{}`, keeps
+		// its fields, so it is spelled as Go has it. One with an unexported
+		// field cannot be: the same spelling in another package is another
+		// type, so it stays the placeholder it was.
+		var st transpiler.StructType
+		for i := 0; i < t.NumFields(); i++ {
+			f := t.Field(i)
+			if !f.Exported() {
+				return transpiler.BasicType{Name: "any"}
+			}
+			st.Fields = append(st.Fields, transpiler.StructField{
+				Name:     f.Name(),
+				Type:     goTypeToTranspilerType(f.Type()),
+				Embedded: f.Embedded(),
+				Tag:      t.Tag(i),
+			})
+		}
+		return st
 
 	case *types.TypeParam:
 		// Generic type parameter
