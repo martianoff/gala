@@ -118,7 +118,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // isTryThunk reports whether l is the lambda being lowered as the thunk of
 // Try(...) (see tryThunkValue).
 func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
-	return t.tryThunkLambda != nil && l.antlr(t) == t.tryThunkLambda
+	return t.tryThunkLambda.ok() && l.is(t.tryThunkLambda)
 }
 
 // lowerLambda lowers a lambda, on the tree it comes from (see
@@ -540,7 +540,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 		}
 		return body, nil, nil
 	}
-	expr, err := t.lowerResultAgainst(bodyExpr, bodySlot, true)
+	expr, err := t.lowerResultAgainst(t.exprOf(bodyExpr), bodySlot, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1442,7 +1442,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 				return nil, nil, err
 			}
-			expr, err := t.lowerAgainst(exprCtx, typedSlot(resultElem), true)
+			expr, err := t.lowerAgainst(t.exprOf(exprCtx), typedSlot(resultElem), true)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1662,16 +1662,19 @@ func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
 // fresh `__pN`, finally wrapping the result in a `*ast.FuncLit` whose
 // parameter list matches the expected FuncType.
 func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
-	exprCtx grammar.IExpressionContext,
+	e exprSrc,
 	expectedType transpiler.Type,
 ) (ast.Expr, bool, error) {
 	ft, ok := expectedType.(transpiler.FuncType)
 	if !ok {
 		return nil, false, nil
 	}
-	placeholderCount := countPlaceholderUnderscoresInExpr(exprCtx)
+	placeholderCount := countPlaceholders(e)
 	if placeholderCount == 0 {
 		return nil, false, nil
+	}
+	if e.node.Ok() {
+		t.nativeShape(e.node, "placeholder")
 	}
 
 	// Choose the parameter types from the expected FuncType. A placeholder it
@@ -1703,7 +1706,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	scopeType := placeholderScopeType(paramTypes)
 	t.pushScope()
 	t.addVar("_", scopeType)
-	body, err := t.transformExpression(exprCtx)
+	body, err := t.lowerExpr(e)
 	// Resolve the body's concrete result type while `_` is still bound in scope
 	// (before popScope and before the `_` -> `__pN` rename). This mirrors the
 	// explicit lambda path, which infers its return type from the body rather
@@ -1778,7 +1781,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// one the type has no parameter for, or whose parameter has no type (a
 	// type parameter only the callback could bind, masked out) or one that
 	// could not be resolved, is GALA-E0033, never `any`.
-	line, col := exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn()
+	line, col := e.at().start()
 	for i := range paramNames {
 		if i >= len(ft.Params) {
 			return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
@@ -1845,7 +1848,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 			// error-only return is a bug, not a discard.
 			if funcName := t.goCallReturnsErrorOnly(body); funcName != "" {
 				return nil, false, galaerr.NewSemanticErrorAt(
-					exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+					line, col,
 					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
 			}
 			bodyStmt = &ast.ExprStmt{X: body}

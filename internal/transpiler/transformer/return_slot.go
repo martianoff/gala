@@ -157,7 +157,7 @@ func (t *galaASTTransformer) lowerReturnValue(exprCtx grammar.IExpressionContext
 	if t.returnSlotPending() {
 		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(exprCtx, true)}}, nil
 	}
-	expr, err := t.lowerResultAgainst(exprCtx, typedSlot(t.returnSlot.typ), false)
+	expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), typedSlot(t.returnSlot.typ), false)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +258,7 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	defer func() { t.currentScope = outerScope }()
 	for _, d := range s.deferred {
 		t.currentScope = d.scope
-		expr, err := t.lowerResultAgainst(d.exprCtx, typedSlot(s.typ), false)
+		expr, err := t.lowerResultAgainst(t.exprOf(d.exprCtx), typedSlot(s.typ), false)
 		// A constructor with no type argument that is itself the value of an
 		// unfilled slot (`return Failure(e)`) is the lambda's missing result
 		// type, which is what the user has to annotate. One nested deeper

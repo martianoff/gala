@@ -247,7 +247,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 
 		// Terminal value: return it.
-		e, err := t.lowerResultAgainst(exprCtx, t.tailResultSlot(tc), false)
+		e, err := t.lowerResultAgainst(t.exprOf(exprCtx), t.tailResultSlot(tc), false)
 		if err != nil {
 			return nil, false, err
 		}
@@ -324,7 +324,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 		}
 		// The argument rebinds the parameter: a nil, or a pointer that may be
 		// nil, never fills a Ptr parameter.
-		if err := t.checkPtrSlot(e, t.astTypeToTranspilerType(tc.paramTypes[i]), exprC); err != nil {
+		if err := t.checkPtrSlot(e, t.astTypeToTranspilerType(tc.paramTypes[i]), srcNode{ctx: exprC}); err != nil {
 			return nil, false, err
 		}
 		e = t.wrapWithAssertion(e, tc.paramTypes[i])

@@ -139,12 +139,8 @@ func (t *galaASTTransformer) lowerParenthesized(elems []exprSrc, at srcNode) (as
 		// rather than collapsing to `any` when an element's standalone
 		// type happens to resolve to nil/any.
 		if len(elems) > 1 {
-			elemExprs := make([]grammar.IExpressionContext, len(elems))
-			for i, e := range elems {
-				elemExprs[i] = e.antlr(t)
-			}
-			perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
-			exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
+			perElemExpected := t.tupleElementExpectedTypes(len(elems))
+			exprs, err := t.transformTupleElementExpressions(elems, perElemExpected)
 			if err != nil {
 				return nil, err
 			}
@@ -197,16 +193,16 @@ func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.T
 // sealed-variant constructors nested directly inside an element can resolve
 // their type arguments from the surrounding tuple slot.
 func (t *galaASTTransformer) transformTupleElementExpressions(
-	elemExprs []grammar.IExpressionContext,
+	elemExprs []exprSrc,
 	perElemExpected []transpiler.Type,
 ) ([]ast.Expr, error) {
 	out := make([]ast.Expr, 0, len(elemExprs))
-	for i, eCtx := range elemExprs {
+	for i, e := range elemExprs {
 		var expected transpiler.Type
 		if i < len(perElemExpected) {
 			expected = perElemExpected[i]
 		}
-		expr, err := t.lowerAgainst(eCtx, typedSlot(expected), true)
+		expr, err := t.lowerAgainst(e, typedSlot(expected), true)
 		if err != nil {
 			return nil, err
 		}

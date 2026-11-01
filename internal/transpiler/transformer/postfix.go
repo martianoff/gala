@@ -378,7 +378,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 		return nil, semanticErrorAtStart(ix.at(), "index expression requires expression list")
 	}
 	if res := t.goResultOf(base); res != nil {
-		return nil, t.goResultMisuse(res, "it cannot be indexed", t.ctxAt(ix.at()))
+		return nil, t.goResultMisuseAt(res, "it cannot be indexed", ix.at())
 	}
 	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
 		return nil, t.typeParamMisuseErrorAt(ix.at(), id.Name, "takes no type arguments")

@@ -20,9 +20,7 @@ import (
 // the call selects (member, methodNamePos) and its source text (calleeText).
 //
 // What an argument holds — the expression or lambda it passes — is read on
-// ANTLR's tree: a native argument crosses to it (argContent). The values are
-// still lowered on the native tree, which transformExpression and
-// transformLambdaWithExpectedType enter wherever the walk reads it.
+// the argument's tree too (argContent, args_source.go).
 
 // callSrc is a call suffix and the postfix expression it ends, as the postfix
 // driver builds it (lowerSuffix): post carries the hint owner the call takes
@@ -93,11 +91,14 @@ func (c callSrc) calleePos() (line, col int, exact bool) {
 
 // primaryText is GetText of the primary expression of the call's postfix
 // expression.
-func (c callSrc) primaryText() string {
-	if c.post.node.Ok() {
-		return galaparser.NativeText(c.post.primaryExprNode().GalaNodeRef)
+func (c callSrc) primaryText() string { return c.post.primaryText() }
+
+// primaryText is GetText of p's primary expression.
+func (p postfixSrc) primaryText() string {
+	if p.node.Ok() {
+		return galaparser.NativeText(p.primaryExprNode().GalaNodeRef)
 	}
-	return c.post.ctx.PrimaryExpr().GetText()
+	return p.ctx.PrimaryExpr().GetText()
 }
 
 // member is the name of the `.name` suffix just before the call and where it
@@ -237,17 +238,6 @@ func (a argSrc) lambda() bool {
 // spread reports whether a spreads a slice, `xs...`.
 func (a argSrc) spread() bool {
 	return a.pattern().kind() == patKindRest
-}
-
-// argContent is extractArgContent of a: the expression or lambda it passes,
-// read on ANTLR's tree (crossing from a's node), and whether it spreads a
-// slice, `xs...`.
-func (t *galaASTTransformer) argContent(a argSrc) (grammar.IExpressionContext, *grammar.LambdaExpressionContext, bool, error) {
-	ctx := a.ctx
-	if a.node.Ok() {
-		ctx = crossTo[*grammar.ArgumentContext](t, a.node)
-	}
-	return extractArgContent(ctx)
 }
 
 // sourceText is n as written, whitespace included (transpiler.SourceText).

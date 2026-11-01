@@ -264,7 +264,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	// may be nil, still never fills a Ptr target.
 	if len(lhsExprs) > 1 && len(rhsExprs) == len(lhsExprs) {
 		for i, rhs := range rhsExprs {
-			if err := t.checkPtrSlot(rhs, t.getExprTypeName(lhsExprs[i]), rhsListCtx.Expression(i)); err != nil {
+			if err := t.checkPtrSlot(rhs, t.getExprTypeName(lhsExprs[i]), srcNode{ctx: rhsListCtx.Expression(i)}); err != nil {
 				return nil, err
 			}
 		}
@@ -639,16 +639,16 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 					}
 				}
 			}
-		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != "" && t.hoistable(valueExpr) {
+		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != "" && t.hoistable(t.exprOf(valueExpr)) {
 			// The value of an arm lowered as statements is stored, and so is
 			// that of a match or if-expression at its tail (see
 			// hoisted_value.go).
 			var expr ast.Expr
-			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
+			if expr, err = t.lowerAgainst(t.exprOf(valueExpr), lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
 		} else if isTrailing && lastStmtIsValue && !transpiler.IsUnusable(lastValueExpected.typ) &&
-			(t.needsExpectedType(valueExpr) || t.consumesSlotType(valueExpr, t.followAliasChain(lastValueExpected.typ)) ||
+			(t.needsExpectedType(t.exprOf(valueExpr)) || t.consumesSlotType(t.exprOf(valueExpr), t.followAliasChain(lastValueExpected.typ)) ||
 				isNilLiteral(valueExpr)) {
 			// The block's value fills a typed slot: a lambda, if or match tail is
 			// lowered against it, and so is a tuple literal, construction or
@@ -656,7 +656,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			// which takes the slot's type as its own (lowerResultAgainst). Any other
 			// plain tail stays an ordinary statement.
 			var expr ast.Expr
-			if expr, err = t.lowerResultAgainst(valueExpr, lastValueExpected, true); err == nil {
+			if expr, err = t.lowerResultAgainst(t.exprOf(valueExpr), lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
 		} else if fillsPendingSlot {
@@ -688,7 +688,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		// or if-expression carries the value — even when it fills a pending
 		// slot, any other value is never promoted to the lambda's return.
 		discarded := !isTrailing || tail == tailDiscarded ||
-			(tail == tailIIFE && !t.needsExpectedType(valueExpr))
+			(tail == tailIIFE && !t.needsExpectedType(t.exprOf(valueExpr)))
 		if discarded && valueExpr != nil {
 			hint := functionDiscardHint
 			if isTrailing && tail == tailIIFE {

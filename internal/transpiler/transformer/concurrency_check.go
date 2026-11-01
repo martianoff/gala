@@ -64,10 +64,10 @@ func (t *galaASTTransformer) sendableMetaResolver() concurrency.MetadataResolver
 
 // checkSendableArg runs the capture-safety check for a positional call argument
 // when — and only when — the declared parameter at argIdx is a `Sendable[F]`
-// boundary. exprCtx / lambdaCtx are the argument's parse contexts (exactly one
-// is non-nil): an explicit lambda is analysed directly, a by-name expression is
-// analysed as a thunk body. Returns nil for non-boundary parameters.
-func (t *galaASTTransformer) checkSendableArg(ctx callContext, argIdx int, exprCtx grammar.IExpressionContext, lambdaCtx *grammar.LambdaExpressionContext) error {
+// boundary. v is the argument's value (argContent): an explicit lambda is
+// analysed directly, a by-name expression is analysed as a thunk body.
+// Returns nil for non-boundary parameters.
+func (t *galaASTTransformer) checkSendableArg(ctx callContext, argIdx int, v argValue) error {
 	raw, _, _, ok := t.boundaryParamAt(ctx, argIdx)
 	if !ok {
 		return nil
@@ -75,24 +75,27 @@ func (t *galaASTTransformer) checkSendableArg(ctx callContext, argIdx int, exprC
 	if !transpiler.IsSendable(raw) {
 		return nil
 	}
-	if lambdaCtx != nil {
-		return t.enforceSendableCapturesInLambda(lambdaCtx)
-	}
-	return t.enforceSendableCapturesInExpr(exprCtx)
+	return t.enforceSendableCapturesInArg(v)
 }
 
 // checkSendableNamedArg is the named-argument counterpart of checkSendableArg:
 // it gates the capture-safety check on the declared type of the parameter whose
 // name matches argName being a `Sendable[F]` boundary.
-func (t *galaASTTransformer) checkSendableNamedArg(ctx callContext, argName string, exprCtx grammar.IExpressionContext, lambdaCtx *grammar.LambdaExpressionContext) error {
+func (t *galaASTTransformer) checkSendableNamedArg(ctx callContext, argName string, v argValue) error {
 	raw, ok := boundaryParamByName(ctx, argName)
 	if !ok || !transpiler.IsSendable(raw) {
 		return nil
 	}
-	if lambdaCtx != nil {
-		return t.enforceSendableCapturesInLambda(lambdaCtx)
+	return t.enforceSendableCapturesInArg(v)
+}
+
+// enforceSendableCapturesInArg runs the capture-safety check for v, an
+// argument passed to a `Sendable` parameter.
+func (t *galaASTTransformer) enforceSendableCapturesInArg(v argValue) error {
+	if v.lambda.ok() {
+		return t.checkSendableCaptures(t.lambdaCaptures(v.lambda))
 	}
-	return t.enforceSendableCapturesInExpr(exprCtx)
+	return t.enforceSendableCapturesInExpr(v.expr)
 }
 
 // boundaryParamByName returns the declared parameter type for the named
@@ -122,31 +125,24 @@ func boundaryParamByName(ctx callContext, argName string) (transpiler.Type, bool
 	return transpiler.NilType{}, false
 }
 
-// enforceSendableCapturesInLambda runs the capture-safety check for an explicit
-// lambda argument passed to a `Sendable` parameter. It returns a GALA-E0037
-// error for the first unsafe capture, or nil when every capture is safe.
-func (t *galaASTTransformer) enforceSendableCapturesInLambda(lambda grammar.ILambdaExpressionContext) error {
-	return t.checkSendableCaptures(t.lambdaCaptures(lambda))
+// lambdaCaptures is the free variables l captures, on l's tree. It returns
+// them for a GALA-E0037 check of the first unsafe one.
+func (t *galaASTTransformer) lambdaCaptures(l lambdaSrc) []concurrency.Capture {
+	if l.node.Ok() {
+		t.nativeCaptureCheck()
+		return concurrency.FreeVariablesInLambdaNative(l.node)
+	}
+	return concurrency.FreeVariablesInLambda(l.ctx)
 }
 
-// lambdaCaptures is the free variables lambda captures, read on the native
-// tree when the walk reads it (nativeNodeOf) and on ANTLR's otherwise.
-func (t *galaASTTransformer) lambdaCaptures(lambda grammar.ILambdaExpressionContext) []concurrency.Capture {
-	if n, ok := t.nativeNodeOf(lambda, native.GalaKIND_lambdaExpression); ok {
+// thunkCaptures is the free variables of e, a by-name argument, as the body
+// of a thunk, on e's tree.
+func (t *galaASTTransformer) thunkCaptures(e exprSrc) []concurrency.Capture {
+	if e.node.Ok() {
 		t.nativeCaptureCheck()
-		return concurrency.FreeVariablesInLambdaNative(native.LambdaExpressionNode{GalaNodeRef: n})
+		return concurrency.FreeVariablesInExpressionNative(nil, native.ExpressionNode{GalaNodeRef: e.node})
 	}
-	return concurrency.FreeVariablesInLambda(lambda)
-}
-
-// thunkCaptures is the free variables of exprCtx, a by-name argument, as
-// the body of a thunk, read on the tree lambdaCaptures reads.
-func (t *galaASTTransformer) thunkCaptures(exprCtx grammar.IExpressionContext) []concurrency.Capture {
-	if n, ok := t.nativeNodeOf(exprCtx, native.GalaKIND_expression); ok {
-		t.nativeCaptureCheck()
-		return concurrency.FreeVariablesInExpressionNative(nil, native.ExpressionNode{GalaNodeRef: n})
-	}
-	return concurrency.FreeVariablesInExpression(nil, exprCtx)
+	return concurrency.FreeVariablesInExpression(nil, e.ctx)
 }
 
 // nativeCaptureCheck tells onNativeCapture of a capture check on the
@@ -161,11 +157,11 @@ func (t *galaASTTransformer) nativeCaptureCheck() {
 // thunk argument (`Future(counter + 1)` desugars to `() => counter + 1`). If the
 // expression is itself an explicit lambda (or contains one), that lambda is
 // analysed directly; otherwise the whole expression is analysed as a thunk body.
-func (t *galaASTTransformer) enforceSendableCapturesInExpr(exprCtx grammar.IExpressionContext) error {
-	if lam := t.findLambdaInExpression(exprCtx); lam != nil {
-		return t.checkSendableCaptures(t.lambdaCaptures(lam))
+func (t *galaASTTransformer) enforceSendableCapturesInExpr(e exprSrc) error {
+	if l := t.lambdaIn(e); l.ok() {
+		return t.checkSendableCaptures(t.lambdaCaptures(l))
 	}
-	return t.checkSendableCaptures(t.thunkCaptures(exprCtx))
+	return t.checkSendableCaptures(t.thunkCaptures(e))
 }
 
 // checkSendableCaptures classifies each captured free variable and returns a

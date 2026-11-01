@@ -471,10 +471,21 @@ func (e ifExprSrc) branches() [2]ifBranchSrc {
 	return out
 }
 
-// branchesEscape is escapesConstruct of branches, which reads them on
-// ANTLR's tree.
+// branchesEscape is escapesConstruct of branches, on their tree.
 func (t *galaASTTransformer) branchesEscape(branches [2]ifBranchSrc) bool {
-	return escapesConstruct(t, branches[0].antlr(t), branches[1].antlr(t))
+	for _, b := range branches {
+		switch {
+		case b.node.Ok():
+			if t.escapesConstructNative(b.node) {
+				return true
+			}
+		case b.ctx != nil:
+			if escapesConstruct(t, b.ctx) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ifBranchSrc is a branch of an if-expression: an expression or a block.

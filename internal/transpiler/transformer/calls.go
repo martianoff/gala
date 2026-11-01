@@ -8,10 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -662,7 +659,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		methodOwner = methodTypeParamOwner(method, methodMeta)
 		hasPtrConstrained = len(typeArgs) < len(methodMeta.TypeParams) && t.hasPtrConstraint(methodOwner)
 	}
-	checkPtrArg := func(i int, expr ast.Expr, exprCtx antlr.ParserRuleContext, spread bool) error {
+	checkPtrArg := func(i int, expr ast.Expr, at srcNode, spread bool) error {
 		if !hasPtrConstrained {
 			return nil
 		}
@@ -679,14 +676,14 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		bound := make(map[string]transpiler.Type)
 		t.unifyForInference(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
-		return t.checkPtrBoundTypeArgs(methodOwner, len(typeArgs), bound, argSource(exprCtx, argType), exprCtx)
+		return t.checkPtrBoundTypeArgs(methodOwner, len(typeArgs), bound, argSource(at, argType), at)
 	}
 	// The arguments that refer to a generic function, checked once the
 	// method's type arguments are known.
 	type funcRefArg struct {
 		i    int
 		expr ast.Expr
-		at   antlr.ParserRuleContext
+		at   srcNode
 	}
 	var funcRefs []funcRefArg
 	preTransformed := make(map[int]ast.Expr)
@@ -699,7 +696,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if !arg.ok() {
 				continue
 			}
-			exprCtx, lambdaCtx, spread, extractErr := t.argContent(arg)
+			v, extractErr := t.argContent(arg)
 			if extractErr != nil {
 				continue
 			}
@@ -707,19 +704,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			// Also skip placeholder-lambda expressions (L4): they contain `_`
 			// identifiers that only make sense once rewritten as a lambda,
 			// which happens later in transformArgument.
-			if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
+			if v.lambda.ok() || t.lambdaIn(v.expr).ok() || t.partialIn(v.expr).ok() {
 				continue
 			}
-			if countPlaceholderUnderscoresInExpr(exprCtx) > 0 {
+			if countPlaceholders(v.expr) > 0 {
 				continue
 			}
-			expr, txErr := t.transformExpression(exprCtx)
+			expr, txErr := t.lowerExpr(v.expr)
 			if txErr != nil {
 				continue
 			}
 			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
 			if t.isGenericFuncRef(expr) {
-				funcRefs = append(funcRefs, funcRefArg{i, expr, exprCtx})
+				funcRefs = append(funcRefs, funcRefArg{i, expr, v.expr.at()})
 			}
 			// Special case: bare reference to a generic GALA function. Without
 			// instantiation, Go cannot infer the function's own type params at
@@ -779,11 +776,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				continue
 			}
 			inferredMap := make(map[string]transpiler.Type)
-			if spread {
+			if v.spread {
 				substitutedParamType = spreadArgType(substitutedParamType)
 			}
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
-			if err := checkPtrArg(i, expr, exprCtx, spread); err != nil {
+			if err := checkPtrArg(i, expr, v.expr.at(), v.spread); err != nil {
 				return true, nil, err
 			}
 			// An untyped constant leaves the slot's binding in place.
@@ -852,11 +849,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			mArgs = append(mArgs, expr)
 			continue
 		}
-		exprCtx, lambdaCtx, isSpread, extractErr := t.argContent(arg)
+		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return true, nil, extractErr
 		}
-		if isSpread {
+		if v.spread {
 			hasSpread = true
 		}
 		// Reuse pre-transformed expression if available.
@@ -868,20 +865,20 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if typeMeta != nil {
 			genMethodCtx.recvTypeParams = typeMeta.TypeParams
 		}
-		if cerr := t.checkSendableArg(genMethodCtx, i, exprCtx, lambdaCtx); cerr != nil {
+		if cerr := t.checkSendableArg(genMethodCtx, i, v); cerr != nil {
 			return true, nil, cerr
 		}
-		expectedType := t.expectedArgType(genMethodCtx, i, isSpread)
-		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
+		expectedType := t.expectedArgType(genMethodCtx, i, v.spread)
+		expr, aerr := t.lowerArg(v, slot{typ: expectedType, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
 		if aerr != nil {
 			return true, nil, aerr
 		}
-		if lambdaCtx == nil {
-			if err := checkPtrArg(i, expr, exprCtx, isSpread); err != nil {
+		if !v.lambda.ok() {
+			if err := checkPtrArg(i, expr, v.expr.at(), v.spread); err != nil {
 				return true, nil, err
 			}
 		}
-		if lambdaCtx != nil {
+		if v.lambda.ok() {
 			// Harvest newly-inferred method type params from the
 			// lambda's actual result/param types and commit to typeSubst.
 			if pi := methodParamIndex(methodMeta, i); typeMeta != nil && pi >= 0 {
@@ -898,7 +895,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 								continue
 							}
 							if hasPtrConstrained {
-								if err := t.checkPtrTypeArg(methodOwner, tp, inferred, typeArgSource{text: transpiler.SourceText(lambdaCtx)}, lambdaCtx); err != nil {
+								if err := t.checkPtrTypeArg(methodOwner, tp, inferred, typeArgSource{text: v.lambda.at().sourceText()}, v.lambda.at()); err != nil {
 									return true, nil, err
 								}
 							}
@@ -908,8 +905,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				}
 			}
 		}
-		if lambdaCtx == nil && t.isGenericFuncRef(expr) {
-			funcRefs = append(funcRefs, funcRefArg{i, expr, exprCtx})
+		if !v.lambda.ok() && t.isGenericFuncRef(expr) {
+			funcRefs = append(funcRefs, funcRefArg{i, expr, v.expr.at()})
 		}
 		mArgs = append(mArgs, expr)
 	}
@@ -955,7 +952,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if hasPtrConstrained {
 			src := typeArgSource{text: "the type the call is expected to have"}
 			for i := writtenTypeArgs; i < len(typeArgs) && i < len(methodMeta.TypeParams); i++ {
-				if err := t.checkPtrTypeArgAt(methodOwner, methodMeta.TypeParams[i], t.astTypeToTranspilerType(typeArgs[i]), src, c.anchor()); err != nil {
+				if err := t.checkPtrTypeArg(methodOwner, methodMeta.TypeParams[i], t.astTypeToTranspilerType(typeArgs[i]), src, c.anchor()); err != nil {
 					return true, nil, err
 				}
 			}
@@ -1358,29 +1355,29 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
 	}
 	for i, arg := range args {
-		exprCtx, lambdaCtx, isSpread, extractErr := t.argContent(arg)
+		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, extractErr
 		}
-		if isSpread {
+		if v.spread {
 			hasSpread = true
 		}
-		positional := !isSpread && !arg.named()
+		positional := !v.spread && !arg.named()
 		// A lambda takes its parameter types from the Go method's parameter,
 		// once the signature is instantiated (see goMethodSignature).
 		expected := transpiler.Type(transpiler.NilType{})
-		if positional && lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) == 0 {
+		if positional && v.lambda.ok() && goSig != nil && len(goSig.TypeParams) == 0 {
 			expected = goSigParamType(goSig, i)
-		} else if positional && lambdaCtx == nil {
-			expected = t.goParamSlot(goSig, i, exprCtx)
+		} else if positional && !v.lambda.ok() {
+			expected = t.goParamSlot(goSig, i, v.expr)
 		}
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expected), false)
+		expr, err := t.lowerArg(v, typedSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}
 		if positional {
 			expr = t.spreadGoResultArg(goSig, len(args), expr)
-			if cerr := t.checkGoResultGoArg(goSig, i, expr, exprCtx); cerr != nil {
+			if cerr := t.checkGoResultGoArg(goSig, i, expr, v.expr.at()); cerr != nil {
 				return nil, cerr
 			}
 		}
@@ -1393,18 +1390,18 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 	}, nil
 }
 
-// goParamSlot is the slot type the i-th argument exprCtx of a call to the Go
+// goParamSlot is the slot type the i-th argument e of a call to the Go
 // function sig is lowered against, as an argument of a GALA function is: its
 // parameter's type, for a value that takes its type arguments from the slot
 // it fills (consumesSlotType) — `Id(5)` in `strconv.FormatInt(Id(5), 10)`
 // is an `Id[int64]`. NilType for any other argument, a parameter of a generic
 // Go function, or one of an interface type.
-func (t *galaASTTransformer) goParamSlot(sig *transpiler.GoFuncSignature, i int, exprCtx grammar.IExpressionContext) transpiler.Type {
+func (t *galaASTTransformer) goParamSlot(sig *transpiler.GoFuncSignature, i int, e exprSrc) transpiler.Type {
 	if sig == nil || len(sig.TypeParams) > 0 {
 		return transpiler.NilType{}
 	}
 	param := goSigParamType(sig, i)
-	if transpiler.IsUnusableOrAny(param) || !t.consumesSlotType(exprCtx, t.followAliasChain(param)) {
+	if transpiler.IsUnusableOrAny(param) || !t.consumesSlotType(e, t.followAliasChain(param)) {
 		return transpiler.NilType{}
 	}
 	if _, iface := t.interfaceMethodNames(param); iface {
@@ -1482,18 +1479,18 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	var mArgs []ast.Expr
 	hasSpread := false
 	for i, arg := range c.args.list {
-		exprCtx, lambdaCtx, isSpread, extractErr := t.argContent(arg)
+		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, extractErr
 		}
-		if isSpread {
+		if v.spread {
 			hasSpread = true
 		}
 		// `true` here filters to void function types only, avoiding leaked
 		// unresolved type params in return types.
 		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
-		expectedType := t.expectedArgType(unresolvedCtx, i, isSpread)
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, open: true}, false)
+		expectedType := t.expectedArgType(unresolvedCtx, i, v.spread)
+		expr, err := t.lowerArg(v, slot{typ: expectedType, open: true}, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1524,21 +1521,21 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	hasSpread := false
 	argIdx := 0
 	for _, arg := range c.args.list {
-		exprCtx, lambdaCtx, isSpreadAll, extractErr := t.argContent(arg)
+		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, extractErr
 		}
-		if isSpreadAll {
+		if v.spread {
 			hasSpread = true
 		}
 		if argName, _ := arg.name(); argName != "" {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 			resolvedMethodCtx.recvTypeParams = recvTypeParams
-			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, exprCtx, lambdaCtx); cerr != nil {
+			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, v); cerr != nil {
 				return nil, cerr
 			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
-			expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expectedType), false)
+			expr, err := t.lowerArg(v, typedSlot(expectedType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -1546,11 +1543,11 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		} else {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 			resolvedMethodCtx.recvTypeParams = recvTypeParams
-			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
+			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, v); cerr != nil {
 				return nil, cerr
 			}
-			expectedType := t.expectedArgType(resolvedMethodCtx, argIdx, isSpreadAll)
-			expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expectedType), false)
+			expectedType := t.expectedArgType(resolvedMethodCtx, argIdx, v.spread)
+			expr, err := t.lowerArg(v, typedSlot(expectedType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -1949,11 +1946,11 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	}
 
 	for _, arg := range args {
-		exprCtx, lambdaCtx, isSpreadAll, extractErr := t.argContent(arg)
+		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
 			return nil, nil, false, extractErr
 		}
-		if isSpreadAll {
+		if v.spread {
 			hasSpread = true
 		}
 
@@ -1973,11 +1970,11 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			// Concurrency boundary: enforce capture-safety when this named
 			// parameter is a Sendable[F].
 			boundaryCtx := callContext{funcMeta: callCtx.funcMeta, applyMethodMeta: callCtx.applyMethodMeta}
-			if cerr := t.checkSendableNamedArg(boundaryCtx, argName, exprCtx, lambdaCtx); cerr != nil {
+			if cerr := t.checkSendableNamedArg(boundaryCtx, argName, v); cerr != nil {
 				return nil, nil, false, cerr
 			}
 
-			expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, namedExpectedType, callCtx, false)
+			expr, aerr := t.lowerFunctionArg(v, namedExpectedType, callCtx, false)
 			if aerr != nil {
 				return nil, nil, false, aerr
 			}
@@ -1994,26 +1991,26 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		funcCallCtx.structLiteral = callCtx.structLiteral
 		// Concurrency boundary: enforce capture-safety when this positional
 		// parameter is a Sendable[F].
-		if cerr := t.checkSendableArg(funcCallCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
+		if cerr := t.checkSendableArg(funcCallCtx, argIdx, v); cerr != nil {
 			return nil, nil, false, cerr
 		}
-		expectedType := t.expectedArgType(funcCallCtx, argIdx, isSpreadAll)
-		if transpiler.IsUnusable(expectedType) && !isSpreadAll {
-			expectedType = t.goParamSlot(goSig, argIdx, exprCtx)
+		expectedType := t.expectedArgType(funcCallCtx, argIdx, v.spread)
+		if transpiler.IsUnusable(expectedType) && !v.spread {
+			expectedType = t.goParamSlot(goSig, argIdx, v.expr)
 		}
-		if goSig != nil && len(goSig.TypeParams) > 0 && (lambdaCtx != nil || isGoResultsThunkSlot(expectedType)) {
+		if goSig != nil && len(goSig.TypeParams) > 0 && (v.lambda.ok() || isGoResultsThunkSlot(expectedType)) {
 			expectedType = t.genericGoLambdaSlot(goSig, argIdx, positional, fun)
 		}
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
 		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, argIdx)
-		expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, expectedType, callCtx, tryThunk)
+		expr, aerr := t.lowerFunctionArg(v, expectedType, callCtx, tryThunk)
 		if aerr != nil {
 			return nil, nil, false, aerr
 		}
-		if !isSpreadAll {
+		if !v.spread {
 			expr = t.spreadGoResultArg(goSig, len(args), expr)
-			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, exprCtx); cerr != nil {
+			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, v.expr.at()); cerr != nil {
 				return nil, nil, false, cerr
 			}
 		}
@@ -2029,21 +2026,20 @@ func (t *galaASTTransformer) transformFunctionArgs(
 // lambdas) first has the constructor's still-unbound type parameters masked out
 // of that type (see genericCtorLambdaExpectation).
 func (t *galaASTTransformer) lowerFunctionArg(
-	exprCtx grammar.IExpressionContext,
-	lambdaCtx *grammar.LambdaExpressionContext,
+	v argValue,
 	expected transpiler.Type,
 	callCtx functionCallContext,
 	tryThunk bool,
 ) (ast.Expr, error) {
 	strict := false
 	if len(callCtx.unboundStructTypeParams()) > 0 &&
-		(lambdaCtx != nil || t.needsExpectedType(exprCtx) || t.isPlaceholderLambdaArg(exprCtx, expected)) {
+		(v.lambda.ok() || t.needsExpectedType(v.expr) || t.isPlaceholderLambdaArg(v.expr, expected)) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
-	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
+	return t.lowerArg(v, slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
 }
 
-// isPlaceholderLambdaArg reports whether exprCtx, filling a slot of type
+// isPlaceholderLambdaArg reports whether e, filling a slot of type
 // slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
 // see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
 // transformArgument, a lambda or partial function in it takes precedence. Its
@@ -2051,9 +2047,9 @@ func (t *galaASTTransformer) lowerFunctionArg(
 // arguments included (`double(_)`): one a nested call's own function-typed slot
 // takes (`compose(_ + 1, show)`) lowers there, and the slot's type arguments
 // then bind from the value it produces.
-func (t *galaASTTransformer) isPlaceholderLambdaArg(exprCtx grammar.IExpressionContext, slotType transpiler.Type) bool {
-	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholderUnderscoresInExpr(exprCtx) > 0 &&
-		t.findPartialFunctionInExpression(exprCtx) == nil && t.findLambdaInExpression(exprCtx) == nil
+func (t *galaASTTransformer) isPlaceholderLambdaArg(e exprSrc, slotType transpiler.Type) bool {
+	return e.ok() && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholders(e) > 0 &&
+		!t.partialIn(e).ok() && !t.lambdaIn(e).ok()
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -4452,41 +4448,36 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 	return result, nil
 }
 
-// lowerArg lowers one call argument against its slot's expected type: a direct
-// lambda (lambdaCtx, from extractArgContent) through
-// transformLambdaWithExpectedType, anything else through transformArgument.
-// strict is the untyped-lambda-parameter policy (see transformArgument).
-func (t *galaASTTransformer) lowerArg(
-	exprCtx grammar.IExpressionContext,
-	lambdaCtx *grammar.LambdaExpressionContext,
-	s slot,
-	strict bool,
-) (ast.Expr, error) {
-	if lambdaCtx != nil {
-		return t.lowerLambdaArg(lambdaCtx, s, strict)
+// lowerArg lowers one call argument, the value v (argContent), against its
+// slot's expected type: a direct lambda through lowerLambdaArg, anything else
+// through transformArgument. strict is the untyped-lambda-parameter policy
+// (see transformArgument).
+func (t *galaASTTransformer) lowerArg(v argValue, s slot, strict bool) (ast.Expr, error) {
+	if v.lambda.ok() {
+		return t.lowerLambdaArg(v.lambda, s, strict)
 	}
-	return t.transformArgument(exprCtx, s, strict)
+	return t.transformArgument(v.expr, s, strict)
 }
 
 // lowerLambdaArg lowers a lambda standing in argument slot s, marking it as the
 // Try thunk when the slot is one.
-func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionContext, s slot, strict bool) (ast.Expr, error) {
+func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (ast.Expr, error) {
 	if s.tryThunk {
 		prev := t.tryThunkLambda
-		t.tryThunkLambda = lambdaCtx
+		t.tryThunkLambda = l
 		defer func() { t.tryThunkLambda = prev }()
 	}
 	expectedRetType, expectedParamTypes, isFunc := t.lambdaExpectation(s.typ)
 	if !isFunc && s.typ != nil && (s.typ.IsAny() || s.typ.String() == "interface{}") {
 		// A slot typed `any` (a Go `func Register(h any)`) takes the lambda as
 		// it is: each parameter is `any`, as the callee declares.
-		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, lambdaParamCount(lambdaCtx))
+		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
-	lit, err := t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
+	lit, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
 	if err != nil {
 		return nil, err
 	}
-	return t.spreadLambdaGoResults(lit, s.typ, lambdaCtx)
+	return t.spreadLambdaGoResults(lit, s.typ, l.at())
 }
 
 // declaresAnyResult reports whether slot s is a function type whose results the
@@ -4631,21 +4622,12 @@ func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 	return ft
 }
 
-// lambdaParamCount is the number of parameters lambda declares.
-func lambdaParamCount(lambda *grammar.LambdaExpressionContext) int {
-	params, ok := lambda.Parameters().(*grammar.ParametersContext)
-	if !ok || params.ParameterList() == nil {
-		return 0
-	}
-	return len(params.ParameterList().(*grammar.ParameterListContext).AllParameter())
-}
-
-// transformArgument lowers an expression standing in argument slot s.
+// transformArgument lowers e, an expression standing in argument slot s.
 // strict is the untyped-lambda-parameter policy of transformLambdaWithExpectedType:
 // a declared slot (a parameter or field default) passes true, so an unannotated
 // lambda parameter the type does not cover is GALA-E0033; a call argument,
 // whose expected type may still be partly inferred, passes false.
-func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
+func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (ast.Expr, error) {
 	// A GALA alias of a function type (`f Conv[int, string]`) is a Go alias,
 	// so the slot has that function type: every lowering below that keys on
 	// a function type (lambdas, placeholders, partial functions, thunks)
@@ -4666,26 +4648,26 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	}
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
-	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
-		return t.transformPartialFunctionLiteral(pfCtx, slot{typ: funcSlot, open: s.open})
+	if pf := t.partialIn(e); pf.ok() {
+		return t.transformPartialFunctionLiteral(pf.antlr(t), slot{typ: funcSlot, open: s.open})
 	}
 
 	// Try to find a lambda in this expression
-	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
-		return t.lowerLambdaArg(lambdaCtx, s, strict)
+	if l := t.lambdaIn(e); l.ok() {
+		return t.lowerLambdaArg(l, s, strict)
 	}
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
 	// function type and the expression contains `_` identifiers.
-	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, funcSlot); err != nil {
+	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(e, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
-		return t.spreadLambdaGoResults(expr, funcSlot, exprCtx)
+		return t.spreadLambdaGoResults(expr, funcSlot, e.at())
 	}
 
 	// Check mode: an if-expression or match lowers its branches against the
 	// slot type; anything else sees it pushed for downward inference.
-	expr, err := t.lowerAgainst(exprCtx, s, strict)
+	expr, err := t.lowerAgainst(e, s, strict)
 	if err != nil {
 		return nil, err
 	}
@@ -5089,12 +5071,13 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 	return subst, placeholders
 }
 
-// callArg is one argument of a call: its expression (nil for a direct lambda),
-// the lambda it is or holds (nil when neither), and the index of the parameter
-// or field it fills (-1 when none); spread marks an `xs...` argument.
+// callArg is one argument of a call: its expression (the zero exprSrc for a
+// direct lambda), the lambda it is or holds (the zero lambdaSrc when
+// neither), and the index of the parameter or field it fills (-1 when none);
+// spread marks an `xs...` argument.
 type callArg struct {
-	expr   grammar.IExpressionContext
-	lambda *grammar.LambdaExpressionContext
+	expr   exprSrc
+	lambda lambdaSrc
 	slot   int
 	spread bool
 }
@@ -5112,14 +5095,15 @@ func (t *galaASTTransformer) callArgs(list argsSrc, paramNames []string) []callA
 			slot = argIdx
 			argIdx++
 		}
-		exprCtx, lambdaCtx, spread, err := t.argContent(arg)
+		v, err := t.argContent(arg)
 		if err != nil {
 			continue
 		}
-		if lambdaCtx == nil {
-			lambdaCtx = t.findLambdaInExpression(exprCtx)
+		lambda := v.lambda
+		if !lambda.ok() {
+			lambda = t.lambdaIn(v.expr)
 		}
-		args = append(args, callArg{expr: exprCtx, lambda: lambdaCtx, slot: slot, spread: spread})
+		args = append(args, callArg{expr: v.expr, lambda: lambda, slot: slot, spread: v.spread})
 	}
 	return args
 }
@@ -5134,14 +5118,14 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 	inferredMap := make(map[string]transpiler.Type)
 	for _, a := range args {
 		pi := paramIndex(a.slot, paramTypes, variadic)
-		if a.lambda != nil || pi < 0 || t.isPlaceholderLambdaArg(a.expr, paramTypes[pi]) {
+		if a.lambda.ok() || pi < 0 || t.isPlaceholderLambdaArg(a.expr, paramTypes[pi]) {
 			continue
 		}
 		paramType := paramTypes[pi]
 		if a.spread {
 			paramType = spreadArgType(paramType)
 		}
-		expr, err := t.transformExpression(a.expr)
+		expr, err := t.lowerExpr(a.expr)
 		if err != nil {
 			continue
 		}
@@ -5183,7 +5167,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 			return false
 		}
 		slotType := fieldTypes[a.slot]
-		return ((a.lambda != nil || t.needsExpectedType(a.expr)) && t.resolveTranspilerTypeAsFuncType(slotType) != nil) ||
+		return ((a.lambda.ok() || t.needsExpectedType(a.expr)) && t.resolveTranspilerTypeAsFuncType(slotType) != nil) ||
 			t.isPlaceholderLambdaArg(a.expr, slotType)
 	}) {
 		return explicit

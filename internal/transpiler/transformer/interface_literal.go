@@ -235,15 +235,15 @@ func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, args 
 			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("method %s of %s is given twice", method, name),
 				fmt.Sprintf("give %s once", method))
 		}
-		exprCtx, lambdaCtx, spread, err := t.argContent(arg)
+		v, err := t.argContent(arg)
 		if err != nil {
 			return nil, err
 		}
-		if spread {
+		if v.spread {
 			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("method %s of %s is given a spread argument", method, name),
 				"give it a function")
 		}
-		value, err := t.lowerArg(exprCtx, lambdaCtx, slot{typ: t.substituteTranspilerTypeParams(interfaceMethodFuncType(mm), subst)}, false)
+		value, err := t.lowerArg(v, slot{typ: t.substituteTranspilerTypeParams(interfaceMethodFuncType(mm), subst)}, false)
 		if err != nil {
 			return nil, err
 		}

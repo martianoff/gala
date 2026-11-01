@@ -77,34 +77,34 @@ func ptrErrorAt(at srcNode, msg, hint string) error {
 // a `Ptr` where the value's type has a nullable pointer (GALA-E0080): `nil`
 // or a `*T` where a `Ptr[T]` is expected, or an `Array[*T]` where an
 // `Array[Ptr[T]]` is. A value whose type is unknown is left alone.
-func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
-	if transpiler.IsUnusable(expected) || exprCtx == nil {
+func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Type, at srcNode) error {
+	if transpiler.IsUnusable(expected) || !at.ok() {
 		return nil
 	}
 	expected = t.followAliasChain(expected)
-	if err := t.checkPtrFuncRefSlot(expr, expected, exprCtx); err != nil {
+	if err := t.checkPtrFuncRefSlot(expr, expected, at); err != nil {
 		return err
 	}
 	// Most slots hold no Ptr: skip the expression's type inference for them.
 	if !hasPtr(expected) {
-		return t.checkPtrInterfaceSlot(expr, expected, exprCtx)
+		return t.checkPtrInterfaceSlot(expr, expected, at)
 	}
 	if isNilIdent(expr) {
 		if !transpiler.IsPtr(expected) {
 			return nil
 		}
-		return ptrError(exprCtx, fmt.Sprintf("cannot use nil as %s: a Ptr is never nil", displayType(expected)), ptrMayBeAbsentHint)
+		return ptrErrorAt(at, fmt.Sprintf("cannot use nil as %s: a Ptr is never nil", displayType(expected)), ptrMayBeAbsentHint)
 	}
 	actual := t.probeExprType(expr)
 	if transpiler.IsUnusable(actual) || !nullableWherePtr(expected, actual) {
 		return nil
 	}
-	text := transpiler.SourceText(exprCtx)
+	text := at.sourceText()
 	hint := fmt.Sprintf("pass RequirePtr(%s); RequirePtr panics on nil, and a pointer that may be nil is kept as OptionPtrOf(%s)", text, text)
 	if !transpiler.IsPtr(expected) {
 		hint = "build the value from Ptr values: `&x`, or RequirePtr(p) for a pointer from Go"
 	}
-	return ptrError(exprCtx,
+	return ptrErrorAt(at,
 		fmt.Sprintf("cannot use %s (%s) as %s: a pointer that may be nil cannot fill a Ptr", text, displayType(actual), displayType(expected)),
 		hint)
 }
@@ -217,7 +217,7 @@ func (t *galaASTTransformer) checkPtrViewReceiver(subjectType transpiler.Type, a
 // interface slot (GALA-E0080) when its type implements a method of the
 // interface on a `Ptr` receiver: a call through the interface would run that
 // method on whatever pointer the interface holds.
-func (t *galaASTTransformer) checkPtrInterfaceSlot(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkPtrInterfaceSlot(expr ast.Expr, expected transpiler.Type, at srcNode) error {
 	if len(t.ptrReceiverMethods) == 0 || isNilIdent(expr) {
 		return nil
 	}
@@ -229,8 +229,8 @@ func (t *galaASTTransformer) checkPtrInterfaceSlot(expr ast.Expr, expected trans
 	if !ok {
 		return nil
 	}
-	text := transpiler.SourceText(exprCtx)
-	return ptrError(exprCtx,
+	text := at.sourceText()
+	return ptrErrorAt(at,
 		fmt.Sprintf("cannot use %s (%s) as %s: its method %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr",
 			text, displayType(ptr), displayType(expected), m, ptrOf(ptr)),
 		fmt.Sprintf("pass RequirePtr(%s); RequirePtr panics on nil", text))
@@ -319,9 +319,9 @@ type typeArgSource struct {
 
 // argSource is the typeArgSource of a type argument inferred from the
 // argument at at, of type argType.
-func argSource(at antlr.ParserRuleContext, argType transpiler.Type) typeArgSource {
+func argSource(at srcNode, argType transpiler.Type) typeArgSource {
 	_, isPtr := argType.(transpiler.PointerType)
-	return typeArgSource{text: transpiler.SourceText(at), ptr: isPtr}
+	return typeArgSource{text: at.sourceText(), ptr: isPtr}
 }
 
 // checkPtrTypeArg rejects typeArg as the type argument of o's type parameter
@@ -329,12 +329,7 @@ func argSource(at antlr.ParserRuleContext, argType transpiler.Type) typeArgSourc
 // its type declares on a `Ptr` receiver (GALA-E0080): the generic code calls
 // that method on whatever pointer the type argument holds. at locates the
 // type argument, or what it is inferred from (src).
-func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at antlr.ParserRuleContext) error {
-	return t.checkPtrTypeArgAt(o, tp, typeArg, src, srcNode{ctx: at})
-}
-
-// checkPtrTypeArgAt is checkPtrTypeArg at a node of either tree.
-func (t *galaASTTransformer) checkPtrTypeArgAt(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at srcNode) error {
+func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at srcNode) error {
 	msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src)
 	if !bad {
 		return nil
@@ -394,7 +389,7 @@ func (t *galaASTTransformer) checkPtrSlotTypeArgs(name string, funcMeta *transpi
 // filling a slot of function type when the function's type arguments, taken
 // from that type, fail checkPtrTypeArg: the function's body would call a Ptr
 // receiver's method on whatever pointer it is called with.
-func (t *galaASTTransformer) checkPtrFuncRefSlot(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkPtrFuncRefSlot(expr ast.Expr, expected transpiler.Type, at srcNode) error {
 	expectedFT, isFT := expected.(transpiler.FuncType)
 	if !isFT || len(t.ptrReceiverMethods) == 0 {
 		return nil
@@ -403,14 +398,14 @@ func (t *galaASTTransformer) checkPtrFuncRefSlot(expr ast.Expr, expected transpi
 	if fm == nil || len(fm.TypeParams) == 0 {
 		return nil
 	}
-	o := funcTypeParamOwner(transpiler.SourceText(exprCtx), fm)
+	o := funcTypeParamOwner(at.sourceText(), fm)
 	if !t.hasPtrConstraint(o) {
 		return nil
 	}
 	bound := make(map[string]transpiler.Type)
 	t.unifyForInference(t.funcMetaToRawType(fm), expectedFT, fm.TypeParams, bound)
 	src := typeArgSource{text: fmt.Sprintf("the function type it fills, %s", displayType(expectedFT))}
-	return t.checkPtrBoundTypeArgs(o, 0, bound, src, exprCtx)
+	return t.checkPtrBoundTypeArgs(o, 0, bound, src, at)
 }
 
 // funcTypeParamOwner is the typeParamOwner of the function m, which name names.
@@ -436,7 +431,7 @@ func (t *galaASTTransformer) checkPtrWrittenTypeArgsAt(o typeParamOwner, args []
 		return nil
 	}
 	for i, arg := range args[:min(len(args), len(o.params))] {
-		if err := t.checkPtrTypeArgAt(o, o.params[i], t.astTypeToTranspilerType(arg), typeArgSource{}, at(i)); err != nil {
+		if err := t.checkPtrTypeArg(o, o.params[i], t.astTypeToTranspilerType(arg), typeArgSource{}, at(i)); err != nil {
 			return err
 		}
 	}
@@ -446,7 +441,7 @@ func (t *galaASTTransformer) checkPtrWrittenTypeArgsAt(o typeParamOwner, args []
 // checkPtrBoundTypeArgs checks, with checkPtrTypeArg, the type arguments
 // bound binds to o's type parameters, inferred from src at at. The first
 // written of o's type parameters are not inferred.
-func (t *galaASTTransformer) checkPtrBoundTypeArgs(o typeParamOwner, written int, bound map[string]transpiler.Type, src typeArgSource, at antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkPtrBoundTypeArgs(o typeParamOwner, written int, bound map[string]transpiler.Type, src typeArgSource, at srcNode) error {
 	for i, tp := range o.params {
 		typeArg, ok := bound[tp]
 		if !ok || i < written {
@@ -497,7 +492,7 @@ func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, list argsSrc, ar
 	}
 	type callArg struct {
 		expr   ast.Expr
-		at     antlr.ParserRuleContext
+		at     srcNode
 		param  transpiler.Type
 		spread bool // `xs...`, whose elements fill param
 	}
@@ -518,23 +513,18 @@ func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, list argsSrc, ar
 		if idx >= len(types) && callCtx.funcMeta != nil {
 			idx = len(types) - 1
 		}
-		exprCtx, lambdaCtx, spread, err := t.argContent(a)
+		v, err := t.argContent(a)
 		if err != nil || arg == nil || idx < 0 || idx >= len(types) || types[idx] == nil {
 			continue
 		}
-		var at antlr.ParserRuleContext
-		switch {
-		case exprCtx != nil:
-			at = exprCtx
-		case lambdaCtx != nil:
-			at = lambdaCtx
-		default:
+		at := v.at()
+		if !at.ok() {
 			continue
 		}
 		if t.isGenericFuncRef(arg) {
-			funcRefs = append(funcRefs, callArg{arg, at, types[idx], spread})
+			funcRefs = append(funcRefs, callArg{arg, at, types[idx], v.spread})
 		} else {
-			plain = append(plain, callArg{arg, at, types[idx], spread})
+			plain = append(plain, callArg{arg, at, types[idx], v.spread})
 		}
 	}
 	// The call's type arguments: written, then bound by its arguments.

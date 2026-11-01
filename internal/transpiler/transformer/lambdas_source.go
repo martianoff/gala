@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
@@ -38,6 +39,19 @@ func (l lambdaSrc) antlr(t *galaASTTransformer) *grammar.LambdaExpressionContext
 	return l.ctx
 }
 
+// ok reports whether l is a lambda, not the zero lambdaSrc.
+func (l lambdaSrc) ok() bool { return l.ctx != nil || l.node.Ok() }
+
+// is reports whether l and o are the same lambda: the same node on the
+// native tree, the same context on ANTLR's. A lambda the walk reads on the
+// native tree always has its node (lambdaOf), so the two never mix.
+func (l lambdaSrc) is(o lambdaSrc) bool {
+	if l.node.Ok() || o.node.Ok() {
+		return l.node == o.node
+	}
+	return l.ctx != nil && l.ctx == o.ctx
+}
+
 // lambdaOf is the lambda ctx, on the native tree when the walk reads it.
 func (t *galaASTTransformer) lambdaOf(ctx *grammar.LambdaExpressionContext) lambdaSrc {
 	l := lambdaSrc{ctx: ctx}
@@ -61,6 +75,22 @@ func (l lambdaSrc) params(t *galaASTTransformer) []paramDecl {
 		return t.readParamsNative(l.node.Parameters())
 	}
 	return readParams(l.ctx.Parameters().(*grammar.ParametersContext))
+}
+
+// paramCount is the number of parameters l declares.
+func (l lambdaSrc) paramCount() int {
+	if l.node.Ok() {
+		n := 0
+		for range galaparser.NativeKids(l.node.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+			n++
+		}
+		return n
+	}
+	params, ok := l.ctx.Parameters().(*grammar.ParametersContext)
+	if !ok || params.ParameterList() == nil {
+		return 0
+	}
+	return len(params.ParameterList().(*grammar.ParameterListContext).AllParameter())
 }
 
 // resultType is l's declared result type, and no type when it declares none.

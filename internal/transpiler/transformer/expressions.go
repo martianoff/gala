@@ -277,7 +277,7 @@ func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.Express
 	if len(exprs) != 1 {
 		return t.transformExpressionList(ctx)
 	}
-	e, err := t.lowerAgainst(exprs[0], typedSlot(expected), true)
+	e, err := t.lowerAgainst(t.exprOf(exprs[0]), typedSlot(expected), true)
 	if err != nil {
 		return nil, err
 	}
@@ -1134,7 +1134,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 			}
 			return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
 		}
-		expr, err := t.lowerResultAgainst(exprCtx, s, true)
+		expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), s, true)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -1185,7 +1185,7 @@ func (t *galaASTTransformer) lowerIfExprBranchValue(e exprSrc, s slot) (loweredI
 		}
 		return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
 	}
-	expr, err := t.lowerResultAgainst(e.antlr(t), s, true)
+	expr, err := t.lowerResultAgainst(e, s, true)
 	if err != nil {
 		return loweredIfBranch{}, err
 	}
@@ -1310,58 +1310,44 @@ func typedSlot(typ transpiler.Type) slot { return slot{typ: typ} }
 // exprForm classifies an expression by the forms whose lowering depends on
 // the slot they fill; at most one field is set.
 type exprForm struct {
-	grouped grammar.IExpressionContext // e for `(e)`
-	lambda  *grammar.LambdaExpressionContext
-	partial *grammar.PartialFunctionLiteralContext
-	ifExpr  *grammar.IfExpressionContext
-	match   *grammar.PostfixExprContext
+	grouped exprSrc // e for `(e)`
+	lambda  lambdaSrc
+	partial partialSrc
+	ifExpr  ifExprSrc
+	match   postfixSrc
 }
 
-func (t *galaASTTransformer) classifyExpr(exprCtx grammar.IExpressionContext) exprForm {
-	if exprCtx == nil {
+// classifyExpr reads e's form, on e's tree.
+func (t *galaASTTransformer) classifyExpr(e exprSrc) exprForm {
+	if !e.ok() {
 		return exprForm{}
 	}
-	if inner := t.groupedExpression(exprCtx); inner != nil {
+	if inner := e.grouped(); inner.ok() {
 		return exprForm{grouped: inner}
 	}
-	if l := t.findLambdaInExpression(exprCtx); l != nil {
+	if l := t.lambdaIn(e); l.ok() {
 		return exprForm{lambda: l}
 	}
-	if pf := t.barePartialFunction(exprCtx); pf != nil {
+	if pf := t.barePartial(e); pf.ok() {
 		return exprForm{partial: pf}
 	}
-	if i := t.findIfExpressionInExpression(exprCtx); i != nil {
+	if i := t.ifIn(e); i.ok() {
 		return exprForm{ifExpr: i}
 	}
-	return exprForm{match: t.bareMatchPostfix(exprCtx)}
+	return exprForm{match: t.bareMatch(e)}
 }
 
-// needsExpectedType reports whether exprCtx is a lambda, a partial function, an
+// needsExpectedType reports whether e is a lambda, a partial function, an
 // if-expression or a match, possibly parenthesized.
-func (t *galaASTTransformer) needsExpectedType(exprCtx grammar.IExpressionContext) bool {
-	f := t.classifyExpr(exprCtx)
-	if f.grouped != nil {
+func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
+	f := t.classifyExpr(e)
+	if f.grouped.ok() {
 		return t.needsExpectedType(f.grouped)
 	}
-	return f.lambda != nil || f.partial != nil || f.ifExpr != nil || f.match != nil
+	return f.lambda.ok() || f.partial.ok() || f.ifExpr.ok() || f.match.ok()
 }
 
-// barePartialFunction returns the partial-function literal exprCtx consists
-// of, with no operator or postfix suffix applied to it, or nil.
-func (t *galaASTTransformer) barePartialFunction(exprCtx grammar.IExpressionContext) *grammar.PartialFunctionLiteralContext {
-	postfix := t.barePostfix(exprCtx)
-	if postfix == nil || postfix.GetChildCount() != 1 {
-		return nil
-	}
-	prim, ok := postfix.PrimaryExpr().(*grammar.PrimaryExprContext)
-	if !ok {
-		return nil
-	}
-	pf, _ := prim.PartialFunctionLiteral().(*grammar.PartialFunctionLiteralContext)
-	return pf
-}
-
-// lowerAgainst lowers exprCtx in check mode against the slot it fills. A lambda
+// lowerAgainst lowers e in check mode against the slot it fills. A lambda
 // takes its parameter and result types from a function type (strict is
 // transformLambdaWithExpectedType's untyped-parameter policy), and so does a
 // partial function (see transformPartialFunctionLiteral); an if-expression
@@ -1369,33 +1355,36 @@ func (t *galaASTTransformer) barePartialFunction(exprCtx grammar.IExpressionCont
 // a plain expression sees the slot type only if it consumes it
 // (consumesSlotType). A lambda body is never lowered against the outer slot:
 // it gets typedSlot(the lambda's result type).
-func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
-	if transpiler.IsUnusable(s.typ) && (s.hoist == "" || !t.hoistable(exprCtx)) {
-		return t.transformExpression(exprCtx)
+func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
+	if transpiler.IsUnusable(s.typ) && (s.hoist == "" || !t.hoistable(e)) {
+		return t.lowerExpr(e)
 	}
-	f := t.classifyExpr(exprCtx)
+	if e.node.Ok() {
+		t.nativeShape(e.node, "slot")
+	}
+	f := t.classifyExpr(e)
 	switch {
-	case f.grouped != nil:
+	case f.grouped.ok():
 		expr, err := t.lowerAgainst(f.grouped, s, strict)
 		if err != nil {
 			return nil, err
 		}
 		return &ast.ParenExpr{X: expr}, nil
-	case f.lambda != nil:
+	case f.lambda.ok():
 		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(s.typ); ok {
-			lit, err := t.transformLambdaWithExpectedType(f.lambda, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
+			lit, err := t.lowerLambda(f.lambda, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
 			if err != nil {
 				return nil, err
 			}
-			return t.spreadLambdaGoResults(lit, s.typ, f.lambda)
+			return t.spreadLambdaGoResults(lit, s.typ, f.lambda.at())
 		}
-		return t.transformExpression(exprCtx)
-	case f.partial != nil:
-		return t.transformPartialFunctionLiteral(f.partial, t.partialFunctionSlot(s))
-	case f.ifExpr != nil:
-		return t.transformIfExpressionAgainst(f.ifExpr, s)
-	case f.match != nil:
-		return t.transformPostfixMatchExpressionAgainst(f.match, s)
+		return t.lowerExpr(e)
+	case f.partial.ok():
+		return t.transformPartialFunctionLiteral(f.partial.antlr(t), t.partialFunctionSlot(s))
+	case f.ifExpr.ok():
+		return t.lowerIfExpression(f.ifExpr, s)
+	case f.match.ok():
+		return t.transformPostfixMatchExpressionAgainst(f.match.antlr(t), s)
 	}
 	// A tuple literal filling a slot (`func f() Tuple[int64, int64] = (1, 2)`)
 	// takes its element types from it, and so does a construction of the
@@ -1411,18 +1400,18 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// The hint is the type an alias names, not the alias: the constructors and
 	// generic calls that read it match its structure (`Try[Email]` for
 	// `type Checked Try[Email]`) to bind their type arguments.
-	if hint := t.followAliasChain(s.typ); t.consumesSlotType(exprCtx, hint) {
-		release := t.expectedArgTypes.pushFor(hint, t.barePostfix(exprCtx))
+	if hint := t.followAliasChain(s.typ); t.consumesSlotType(e, hint) {
+		release := t.expectedArgTypes.pushFor(hint, e.solePostfix().hintKey(t))
 		defer release()
 	}
-	expr, err := t.transformExpression(exprCtx)
+	expr, err := t.lowerExpr(e)
 	if err != nil {
 		return nil, err
 	}
 	// A Go call converted to a Try or Tuple where its plain value is expected
 	// is named here, not left to Go's type mismatch on the generated code.
 	if !s.open && !s.tryThunk {
-		if err := t.checkGoResultAgainst(expr, s.typ, exprCtx); err != nil {
+		if err := t.checkGoResultAgainst(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
 	}
@@ -1430,11 +1419,11 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// convert implicitly; say so in GALA rather than leave it to Go. An open
 	// slot is not a type the value has to have.
 	if !s.open {
-		if err := t.checkOpaqueMismatch(expr, s.typ, exprCtx); err != nil {
+		if err := t.checkOpaqueMismatch(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
 		// A nil, or a pointer that may be nil, never fills a Ptr.
-		if err := t.checkPtrSlot(expr, s.typ, exprCtx); err != nil {
+		if err := t.checkPtrSlot(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
 	}
@@ -1455,8 +1444,8 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 // lowerAgainst and keeps no type: the call reads it as untyped (an explicit
 // nil to a by-name parameter is a thunk returning nil, and a generic call
 // spells its type argument out).
-func (t *galaASTTransformer) lowerResultAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
-	expr, err := t.lowerAgainst(exprCtx, s, strict)
+func (t *galaASTTransformer) lowerResultAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
+	expr, err := t.lowerAgainst(e, s, strict)
 	if err != nil {
 		return nil, err
 	}
@@ -1531,16 +1520,7 @@ func typeHasMaskedPart(typ transpiler.Type) bool {
 	return false
 }
 
-// groupedExpression returns e for an expression that is exactly `(e)`, or nil.
-func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContext) grammar.IExpressionContext {
-	list := t.parenthesizedList(exprCtx)
-	if list == nil || len(list.AllExpression()) != 1 {
-		return nil
-	}
-	return list.Expression(0)
-}
-
-// consumesSlotType reports whether exprCtx is a plain expression that takes
+// consumesSlotType reports whether e is a plain expression that takes
 // the type of the slot it fills (see lowerAgainst) — an argument, a
 // declaration, a function or lambda result — given as hint, the type an alias
 // names: a tuple literal of that tuple type, a construction of a value of
@@ -1553,46 +1533,47 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 // reaches only the call or literal that is the value: never a receiver it is
 // applied to (see expectedArgTypeStack.withhold), an argument nested in it,
 // or a value elsewhere in the enclosing function.
-func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext, hint transpiler.Type) bool {
-	if t.isTupleLiteralFor(exprCtx, hint) {
+func (t *galaASTTransformer) consumesSlotType(e exprSrc, hint transpiler.Type) bool {
+	if t.isTupleLiteralFor(e, hint) {
 		return true
 	}
-	name, typeArgs, noArgs := t.calleeOfCall(exprCtx)
+	name, typeArgs, noArgs := calleeOfCall(e)
 	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isResultGenericCall(name, noArgs)) {
 		return true
 	}
-	return t.isResultGenericMethodCall(exprCtx)
+	return t.isResultGenericMethodCall(e)
 }
 
-// isResultGenericMethodCall reports whether exprCtx is a method call written
+// isResultGenericMethodCall reports whether e is a method call written
 // without type arguments, `recv.m(...)`, where some type declares a method m
 // whose own type parameters its result mentions (`Convert[U any]() Option[U]`,
 // `Map[U any](f func(T) U) Option[U]`): the slot the call fills can bind
 // them. The receiver's type is not known before it is lowered, so any such m
 // qualifies; the method call itself takes the slot type only when it is one.
-func (t *galaASTTransformer) isResultGenericMethodCall(exprCtx grammar.IExpressionContext) bool {
-	p := t.barePostfix(exprCtx)
-	if p == nil || len(p.AllCaseClause()) > 0 {
+func (t *galaASTTransformer) isResultGenericMethodCall(e exprSrc) bool {
+	p := e.solePostfix()
+	if !p.ok() || p.hasCases() {
 		return false
 	}
-	suffixes := p.AllPostfixSuffix()
-	if len(suffixes) == 0 || !isCallSuffix(suffixes[len(suffixes)-1]) {
+	suffixes := p.suffixes()
+	n := len(suffixes)
+	if n < 2 || suffixes[n-1].opener() != "(" {
 		return false
 	}
-	call := callSrc{post: postfixSrc{ctx: p}, suffix: suffixSrc{ctx: suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)}}
-	member, _, ok := call.member()
+	// The method is the member the suffix before the call selects.
+	member, _, ok := suffixes[n-2].member()
 	return ok && t.resultGenericMethods[member]
 }
 
-// isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
+// isTupleLiteralFor reports whether e is exactly a tuple literal
 // `(a, b, ...)` whose arity matches the tuple type typ.
-func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
+func (t *galaASTTransformer) isTupleLiteralFor(e exprSrc, typ transpiler.Type) bool {
 	gen, ok := typ.(transpiler.GenericType)
 	if !ok || !t.isTupleTypeName(gen.Base.String()) {
 		return false
 	}
-	list := t.parenthesizedList(exprCtx)
-	return list != nil && len(list.AllExpression()) > 1 && len(list.AllExpression()) == len(gen.Params)
+	_, n := e.parenthesized()
+	return n > 1 && n == len(gen.Params)
 }
 
 // isConstructionOf reports whether a call of name (see calleeOfCall) is a
@@ -1652,15 +1633,16 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 // `geo.Tag[int](1)`, `parse()`), as written without its type arguments, and
 // whether it has any type arguments and whether it passes no arguments; ""
 // for anything else.
-func (t *galaASTTransformer) calleeOfCall(exprCtx grammar.IExpressionContext) (name string, typeArgs, noArgs bool) {
-	if p := t.barePostfix(exprCtx); p == nil || len(p.AllCaseClause()) > 0 {
+func calleeOfCall(e exprSrc) (name string, typeArgs, noArgs bool) {
+	if p := e.solePostfix(); !p.ok() || p.hasCases() {
 		return "", false, false
 	}
-	if prim, argList, typeArgList := t.getCallPatternWithTypeArgsFromExpression(exprCtx); prim != nil {
-		return prim.GetText(), typeArgList != nil, argList == nil || len(argList.AllArgument()) == 0
+	pe := patExpr{exprSrc: e}
+	if c, ok := pe.callPattern(); ok {
+		return c.head.primaryText(), c.hasTypeArgList(), len(c.args.list) == 0
 	}
-	if pkg, ctor, argList, typeArgList, ok := t.getQualifiedCallPattern(exprCtx); ok {
-		return pkg.GetText() + "." + ctor, typeArgList != nil, argList == nil || len(argList.AllArgument()) == 0
+	if c, ok := pe.qualifiedCallPattern(); ok {
+		return c.head.primaryText() + "." + c.ctor, c.hasTypeArgList(), len(c.args.list) == 0
 	}
 	return "", false, false
 }

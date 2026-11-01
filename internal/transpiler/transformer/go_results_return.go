@@ -6,8 +6,6 @@ import (
 	"go/token"
 	"slices"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -78,9 +76,9 @@ func (t *galaASTTransformer) goResultsValue(results *ast.FieldList) (transpiler.
 // spreading its one value over Go's results when slotType is a function type
 // with several (see lambdaExpectation). A result the slot leaves open (a type
 // parameter of a generic Go callee) takes its type from the lambda's value:
-// `Try[V]` makes `(V, error)`, `TupleN[...]` makes its N components. lambda is
-// the source, for the error when the value cannot make the results.
-func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transpiler.Type, lambda antlr.ParserRuleContext) (ast.Expr, error) {
+// `Try[V]` makes `(V, error)`, `TupleN[...]` makes its N components. at is where
+// the lambda is written, for the error when its value cannot make the results.
+func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transpiler.Type, at srcNode) (ast.Expr, error) {
 	fn, ok := lit.(*ast.FuncLit)
 	if !ok {
 		return lit, nil
@@ -107,7 +105,7 @@ func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transp
 		if v, _ := transpiler.GoResultValueOf(ft.Results); !transpiler.ContainsUnusable(v.Type) {
 			want = "a " + v.Type.String()
 		}
-		return nil, galaerr.NewSemanticErrorAt(lambda.GetStart().GetLine(), lambda.GetStart().GetColumn(),
+		return nil, semanticErrorAtStart(at,
 			fmt.Sprintf("this lambda is passed where Go expects a function with %d results, so it must give %s, but it gives %s", len(ft.Results), want, got))
 	}
 	fn.Body = t.returnGoResults(fn.Body, valueType, results)
