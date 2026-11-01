@@ -95,13 +95,11 @@ go_library(
         "//galaerr",
         "//internal/interpolation",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/concurrency",
         "//internal/transpiler/registry",
         "//internal/transpiler/resolver",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 
@@ -437,12 +435,15 @@ go_test(
         "//std:types.go",
     ] + glob(
         # Read by TestOracleCoversEveryTranspiler, which checks every test
-        # here constructs its transpiler through the oracle.
-        ["*_test.go"],
-    ),
+        # here constructs its transpiler through the oracle, and by
+        # TestTransformerReadsNoANTLR, which checks the library's imports
+        # and deps.
+        ["*.go"],
+    ) + ["BUILD.bazel"],
     embed = [":transformer"],
     deps = [
         "//galaerr",
+        "//internal/parser/galop",
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
@@ -456,14 +457,15 @@ go_test(
     ],
 )
 
-# The transformer's walk of the compiled file's top-level declarations on the
-# native tree, held to its walk on ANTLR's over the GALA sources
-# TestEnginesAgree parses. A target of its own: it stages all of them and
-# transpiles each twice. Gazelle leaves its files out of transformer_test (the exclude
-# directives) and keeps this rule as written. TestNativeTypeCases
-# (native_types_test.go) holds the native lowering of types and of sealed and
-# opaque declarations to the ANTLR one over its own cases; run it alone, in
-# seconds, with --test_filter=TestNativeTypeCases.
+# The transformer's walk of the native tree: over the GALA sources
+# TestEnginesAgree parses, under galop's engine and ANTLR's (TestWalkEnginesAgree),
+# and over the walk tests' cases, each held to its golden in
+# testdata/walk_golden. A target of its own: it stages all of the sources and
+# transpiles each twice. Gazelle leaves its files out of transformer_test (the
+# exclude directives) and keeps this rule as written. Run one case test alone,
+# in seconds, with e.g. --test_filter=TestNativeTypeCases; rewrite the goldens
+# with --test_sharding_strategy=disabled --test_arg=-update
+# --test_env=BUILD_WORKSPACE_DIRECTORY=<the workspace>.
 # gazelle:exclude native_walk_test.go
 # gazelle:exclude native_walk_export_test.go
 # gazelle:exclude native_types_test.go
@@ -481,17 +483,15 @@ go_test(
 go_test(
     # keep
     name = "native_walk_test",
-    # Walks the whole GALA corpus (every example plus the stdlib) on both
-    # trees, like transformer_test's corpus guards, so it needs the large
-    # timeout too: it takes ~235s on the main CI lane and crosses the default
-    # medium 300s on the slower ANTLR-parser lane. TestNativeExprWalk adds
-    # a few seconds; a target of its own would recompile the transformer's
-    # dependencies for its internal test file a second time, which Bazel
-    # rejects as conflicting actions.
+    # Walks the whole GALA corpus (every example plus the stdlib) under both
+    # engines, like transformer_test's corpus guards, so it needs the large
+    # timeout too. TestNativeExprWalk adds a few seconds; a target of its own
+    # would recompile the transformer's dependencies for its internal test
+    # file a second time, which Bazel rejects as conflicting actions.
     size = "large",
     # Three shards: the case tests (TestNativeMatchCases, TestNativeWalkCases)
-    # and the two halves of the corpus run (TestNativeWalkAgrees,
-    # TestNativeWalkAgreesRest) side by side, one shard each.
+    # and the two halves of the corpus run (TestWalkEnginesAgree,
+    # TestWalkEnginesAgreeRest) side by side, one shard each.
     shard_count = 3,
     srcs = [
         "native_args_walk_test.go",
@@ -524,11 +524,9 @@ go_test(
     embed = [":transformer"],
     deps = [
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",

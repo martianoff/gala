@@ -5,40 +5,23 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 )
 
 // The compiled file's top-level walk and declarations on galop's native tree
-// (internal/parser/native): each reader here is the twin of the one it is
-// named after, which reads ANTLR's tree, and fills the same tree-free value
-// for the same lowering (lowerValDecl, lowerFuncDecl, lowerTypeDecl, ...).
-// A declaration's signature, parameters, initializers and expression body are
-// read natively too (decls_source.go), as are types (types_source.go), the
-// sealed and opaque type declarations (sealed_source.go), and block bodies
-// down to their statements (statements_source.go). Nothing the native walk
-// reads crosses from a node back to ANTLR's tree.
-// TestNativeWalkAgrees holds the native walk to the ANTLR one.
+// (internal/parser/native): each reader here fills the tree-free value its
+// lowering takes (lowerValDecl, lowerFuncDecl, lowerTypeDecl, ...). A
+// declaration's signature, parameters, initializers and expression body are
+// read in decls_source.go, types in types_source.go, the sealed and opaque
+// type declarations in sealed_source.go, and block bodies down to their
+// statements in statements_source.go.
 //
 // Children are read through the rule handles, NativeKids and Kind(), never
 // through Typed(), which builds a handle per node, or the All accessors,
 // which allocate.
 
-// nativeNodeOf is ctx's node on the native tree, of kind, when the file's
-// walk reads that tree (t.native is set only for a bridged tree), and false
-// otherwise: the bridge for the lowerings entered with an ANTLR context (see
-// lambdas_source.go). A nil ctx, typed or not, has no node.
-func (t *galaASTTransformer) nativeNodeOf(ctx antlr.ParserRuleContext, kind native.GalaKind) (native.GalaNodeRef, bool) {
-	if t.native == nil {
-		return native.GalaNodeRef{}, false
-	}
-	n := t.native.NodeOfKind(ctx, kind)
-	return n, n.Ok()
-}
-
-// nativeRange is ctxRange of native node n's context.
+// nativeRange is the range of node n.
 func nativeRange(n native.GalaNodeRef) srcRange {
 	start := n.Start()
 	r := srcRange{line: int(start.Line), col: int(start.Column)}

@@ -6,11 +6,8 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
-
-	"github.com/antlr4-go/antlr/v4"
 )
 
 // GALA-E0058: a name the transpiler generates for a codec.
@@ -41,34 +38,9 @@ const (
 
 var generatedCodecPrefixes = []string{structMetaPrefix, mainStructMetaPrefix, valueMetaPrefix}
 
-// CheckGeneratedCodecNames reports the first identifier in tree spelled like a
-// generated codec metadata type, or nil when there is none.
-func CheckGeneratedCodecNames(tree antlr.Tree) error {
-	var found *grammar.IdentifierContext
-	var visit func(antlr.Tree)
-	visit = func(node antlr.Tree) {
-		if found != nil {
-			return
-		}
-		if id, ok := node.(*grammar.IdentifierContext); ok {
-			if IsGeneratedCodecName(id.GetText()) {
-				found = id
-			}
-			return
-		}
-		for _, child := range node.GetChildren() {
-			visit(child)
-		}
-	}
-	visit(tree)
-	if found == nil {
-		return nil
-	}
-	return GeneratedCodecNameError(found.GetText(), transpiler.PosFromToken(found.GetStart()))
-}
-
-// CheckGeneratedCodecNamesNative is CheckGeneratedCodecNames of root, a node
-// of the native tree.
+// CheckGeneratedCodecNamesNative reports the first identifier below root, a
+// node of the native tree, spelled like a generated codec metadata type, or
+// nil when there is none.
 func CheckGeneratedCodecNamesNative(root native.GalaNodeRef) error {
 	return generatedCodecNameErrorAt(generatedCodecNameIn(root))
 }
@@ -102,12 +74,9 @@ func generatedCodecNameErrorAt(id native.GalaNodeRef) error {
 	return GeneratedCodecNameError(galaparser.NativeText(id), transpiler.SourcePos{Line: line, Column: col})
 }
 
-// checkGeneratedCodecNamesOf is CheckGeneratedCodecNames of e, an expression
-// parsed on its own (an interpolated one), on the tree it is on.
+// checkGeneratedCodecNamesOf is CheckGeneratedCodecNamesNative of e, an
+// expression parsed on its own (an interpolated one).
 func (t *galaASTTransformer) checkGeneratedCodecNamesOf(e exprSrc) error {
-	if !e.node.Ok() {
-		return CheckGeneratedCodecNames(e.ctx)
-	}
 	id := generatedCodecNameIn(e.node)
 	t.nativeShape(id, "codec name")
 	return generatedCodecNameErrorAt(id)

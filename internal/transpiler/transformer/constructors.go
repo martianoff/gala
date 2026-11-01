@@ -8,36 +8,13 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
 
-// This file contains struct construction and literal transformation logic extracted from expressions.go
-// Functions: transformPrimary, lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral
-
-func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
-	if id := ctx.Identifier(); id != nil {
-		return t.lowerIdentifier(id.GetText(), srcNode{ctx: ctx})
-	}
-	if lit := ctx.Literal(); lit != nil {
-		return t.lowerLiteral(antlrLiteral(lit.(*grammar.LiteralContext)))
-	}
-	// Handle composite literal (e.g., map[K]V{}, struct{}{})
-	if ctx.CompositeLiteral() != nil {
-		return t.transformCompositeLiteral(t.compositeOf(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext)))
-	}
-	var elems []exprSrc
-	if list, ok := ctx.TupleExpressionList().(*grammar.TupleExpressionListContext); ok && list != nil {
-		all := list.AllExpression()
-		elems = make([]exprSrc, len(all))
-		for i, e := range all {
-			elems[i] = antlrExpr(e)
-		}
-	}
-	return t.lowerParenthesized(elems, srcNode{ctx: ctx})
-}
+// This file contains struct construction and literal transformation logic:
+// lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral.
 
 // lowerIdentifier lowers name, a primary written at at: a binding, a type
 // parameter, a type or function of the package, std's or another package's.
@@ -533,36 +510,17 @@ func isNumericPrimitive(name string) bool {
 	return false
 }
 
-// compositeSrc is a composite literal, `T{...}`: a context on ANTLR's tree,
-// or a node on the native one.
+// compositeSrc is a composite literal node, `T{...}`.
 type compositeSrc struct {
-	ctx  *grammar.CompositeLiteralContext
 	node native.GalaNodeRef
 }
 
-// compositeOf is the composite literal ctx, on the native tree when the walk
-// reads it (nativeNodeOf).
-func (t *galaASTTransformer) compositeOf(ctx *grammar.CompositeLiteralContext) compositeSrc {
-	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_compositeLiteral); ok {
-		return compositeSrc{node: n}
-	}
-	return compositeSrc{ctx: ctx}
-}
-
 // at is where c is written.
-func (c compositeSrc) at() srcNode {
-	if c.node.Ok() {
-		return srcNode{node: c.node}
-	}
-	return srcNode{ctx: c.ctx}
-}
+func (c compositeSrc) at() srcNode { return srcNode{node: c.node} }
 
 // typ is the type c constructs.
 func (c compositeSrc) typ() typeSrc {
-	if c.node.Ok() {
-		return nativeType(native.CompositeLiteralNode{GalaNodeRef: c.node}.Type_())
-	}
-	return antlrType(c.ctx.Type_())
+	return nativeType(native.CompositeLiteralNode{GalaNodeRef: c.node}.Type_())
 }
 
 // keyedElem is an element of a composite literal: its key, the zero exprSrc
@@ -572,35 +530,19 @@ type keyedElem struct{ key, value exprSrc }
 // elems is c's elements, in order.
 func (c compositeSrc) elems() []keyedElem {
 	var out []keyedElem
-	if c.node.Ok() {
-		list := native.CompositeLiteralNode{GalaNodeRef: c.node}.ElementList()
-		for kv := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_keyedElement) {
-			switch exprs := nativeExprs(kv); len(exprs) {
-			case 1:
-				out = append(out, keyedElem{value: exprs[0].exprSrc})
-			case 2:
-				out = append(out, keyedElem{key: exprs[0].exprSrc, value: exprs[1].exprSrc})
-			}
-		}
-		return out
-	}
-	list, ok := c.ctx.ElementList().(*grammar.ElementListContext)
-	if !ok {
-		return nil
-	}
-	for _, kv := range list.AllKeyedElement() {
-		switch exprs := kv.(*grammar.KeyedElementContext).AllExpression(); len(exprs) {
+	list := native.CompositeLiteralNode{GalaNodeRef: c.node}.ElementList()
+	for kv := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_keyedElement) {
+		switch exprs := nativeExprs(kv); len(exprs) {
 		case 1:
-			out = append(out, keyedElem{value: antlrExpr(exprs[0])})
+			out = append(out, keyedElem{value: exprs[0].exprSrc})
 		case 2:
-			out = append(out, keyedElem{key: antlrExpr(exprs[0]), value: antlrExpr(exprs[1])})
+			out = append(out, keyedElem{key: exprs[0].exprSrc, value: exprs[1].exprSrc})
 		}
 	}
 	return out
 }
 
-// transformCompositeLiteral lowers the composite literal c, on the tree it
-// comes from.
+// transformCompositeLiteral lowers the composite literal c.
 func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr, error) {
 	t.nativeShape(c.node, "composite")
 	// Transform the type

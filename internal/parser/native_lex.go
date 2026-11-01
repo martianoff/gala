@@ -133,6 +133,32 @@ func convertedExpressionAt(src string, line, col int) (expr native.ExpressionNod
 		return native.ExpressionNode{}, fmt.Errorf("%w: unexpected %q at %d:%d", ErrNativeExpression,
 			tok.GetText(), tok.GetLine(), tok.GetColumn())
 	}
+	return convertExpression(ctx, stream, src)
+}
+
+// ParseExpressionConvertedAt is the fallback of a caller whose engine's
+// parse of input did not settle it (ParseExpressionTreeAt): input parsed with
+// ANTLR's parser alone, whatever the engine, and converted to galop's native
+// tree. A syntax error is ANTLR's, reported as ParseExpressionAt reports it,
+// naming what input is parsed as. When ANTLR's parser accepts input (galop's
+// parser panicked on it, or disagreed with ANTLR's), the converted tree is the
+// expression. It lexes input again, as ParseExpressionANTLRAt does.
+func ParseExpressionConvertedAt(input string, line, col int, what string) (native.ExpressionNode, error) {
+	ctx, stream, errs := antlrExpressionAt(input, line, col, nil)
+	if len(errs) > 0 {
+		return native.ExpressionNode{}, errs[0]
+	}
+	if tok := stream.LT(1); tok != nil && tok.GetTokenType() != antlr.TokenEOF {
+		return native.ExpressionNode{}, galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn(),
+			fmt.Sprintf("unexpected %q in %s", tok.GetText(), what))
+	}
+	return convertExpression(ctx, stream, input)
+}
+
+// convertExpression converts ctx, an expression ANTLR's parser read from
+// stream over src, to galop's native tree. A panic in the converter is
+// recovered and reported through noteGalopPanic.
+func convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStream, src string) (expr native.ExpressionNode, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			noteGalopPanic(src, r)

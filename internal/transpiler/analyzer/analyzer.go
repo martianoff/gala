@@ -656,7 +656,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		}
 		// GALA-E0058: generated codec metadata is not part of GALA's surface.
 		if err := readTree(a, filePath, "generated codec names", nf, transformer.CheckGeneratedCodecNamesNative,
-			func() error { return transformer.CheckGeneratedCodecNames(sourceFile) }); err != nil {
+			func() error { return checkGeneratedCodecNames(sourceFile) }); err != nil {
 			return nil, err
 		}
 	}
@@ -4486,7 +4486,7 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 // native tree: each reads its tree, and they share what follows
 // (packageValOperand, packageValRefType, packageValCallType).
 func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, pkgName string, richAST *transpiler.RichAST) transpiler.Type {
-	postfix := transformer.LeadingPostfixExpr(expr, true)
+	postfix := leadingPostfixExpr(expr, true)
 	if postfix == nil {
 		// Not a single operand: of those, only a signed number is recognised.
 		return signedNumberType(expr.GetText())
@@ -4494,7 +4494,7 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 	if len(postfix.AllCaseClause()) > 0 {
 		return transpiler.NilType{} // a trailing match: typed by its arms
 	}
-	primary := transformer.PrimaryOf(postfix)
+	primary := primaryOf(postfix)
 	if primary == nil {
 		return transpiler.NilType{}
 	}

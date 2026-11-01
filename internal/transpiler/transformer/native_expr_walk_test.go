@@ -138,34 +138,33 @@ var keywordCases = []struct{ name, src string }{
 }
 
 // exprWalkRunner selects galop for the test and returns the function that
-// writes a program to a file of its own, holds the native walk of it to the
-// ANTLR walk (checkWalksAgree), and returns the native walk's run.
+// writes a program to a file of its own, holds the walk of it to its golden
+// (checkWalk), and returns the walk's run.
 func exprWalkRunner(t *testing.T) func(t *testing.T, name, src string) walkRun {
 	return walkRunner(t, galaparser.EngineGalop, walkPipeline{})
 }
 
-// walkRunner is exprWalkRunner with engine parsing and nativeW's options for
-// the native walk.
-func walkRunner(t *testing.T, engine galaparser.Engine, nativeW walkPipeline) func(t *testing.T, name, src string) walkRun {
+// walkRunner is exprWalkRunner with engine parsing and w's options for the
+// walk.
+func walkRunner(t *testing.T, engine galaparser.Engine, w walkPipeline) func(t *testing.T, name, src string) walkRun {
 	galaparser.RequestEngine(string(engine))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
-	nativeW.searchPaths = searchPaths
-	antlrW := &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
+	w.searchPaths = searchPaths
 	dir := t.TempDir()
 	return func(t *testing.T, name, src string) walkRun {
 		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "_"), "main.gala")
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
-		return agreedWalk(t, &nativeW, antlrW, path, src)
+		return goldenWalk(t, &w, path, src)
 	}
 }
 
-// agreedWalk holds the native walk of src, written at path, to the ANTLR
-// walk (checkWalksAgree), requires the native walk to have read the native
-// tree, and returns its run.
-func agreedWalk(t *testing.T, nativeW, antlrW *walkPipeline, path, src string) walkRun {
-	n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, src)
+// goldenWalk holds the walk of src, written at path, to its golden
+// (checkWalk), requires the walk to have read the native tree, and returns
+// its run.
+func goldenWalk(t *testing.T, w *walkPipeline, path, src string) walkRun {
+	n, _, ok := checkWalk(t, w, path, src, true)
 	require.True(t, ok, "the case does not parse cleanly with galop")
 	require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 	t.Logf("the native walk lowered %d expressions; error: %v", n.exprs, n.err)
@@ -190,7 +189,7 @@ func checkMarkedShapes(t *testing.T, n walkRun, src string) {
 }
 
 // TestNativeExprWalk holds the native walk of exprShapes and of each of
-// exprCases to the ANTLR walk (checkWalksAgree), and requires the native
+// exprCases to its golden (checkWalk), and requires the native
 // walk to have lowered the expressions they mark.
 func TestNativeExprWalk(t *testing.T) {
 	run := exprWalkRunner(t)

@@ -37,7 +37,7 @@ func pick(b bool) int = if (b) 1 else 2 // native: slot, if
 func parse[T any]() Option[T] = None[T]()
 
 // A hint pushed for parse() through its ANTLR context is the one its call
-// takes on the native tree (checkWalksAgree).
+// takes on the native tree (checkWalk).
 func parsed() Option[int] = parse() // native: slot
 
 func args(p P) int {
@@ -97,7 +97,7 @@ var argCases = []struct{ name, shape, src string }{
 }
 
 // TestNativeArgsWalk holds the native walk of argShapes and of each of
-// argCases to the ANTLR walk (checkWalksAgree), and requires the native walk
+// argCases to its golden (checkWalk), and requires the native walk
 // to have read the values they mark.
 func TestNativeArgsWalk(t *testing.T) {
 	run := exprWalkRunner(t)

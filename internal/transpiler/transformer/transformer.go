@@ -11,11 +11,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -148,14 +144,8 @@ type galaASTTransformer struct {
 	// lowered, and the element type each binding takes is recorded here.
 	valTypes map[string]transpiler.Type
 
-	// native is the native-tree handle of the file being transformed while
-	// its top-level walk reads that tree (see walkSource), nil while it reads
-	// ANTLR's. A lowering entered with an ANTLR context finds its node through
-	// it (nativeNodeOf).
-	native *galaparser.Native
 	// walkedNative is whether the last transform's top-level walk read the
-	// native tree (see newWalkSource). Unlike native, it outlives the
-	// transform, for the callers that report the tree it read.
+	// native tree (see newWalkSource): false only when the file had none.
 	walkedNative bool
 	// onNativeDecl, when set, is told of each top-level declaration the
 	// native walk lowers. It observes and changes nothing;
@@ -283,9 +273,8 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 // unknown or void. richAST is read, not written: the caller passes a copy whose
 // Types map the transform may extend.
 //
-// The file is walked as its transform walks it (see newWalkSource): on
-// richAST.Native's tree when that is converted and is richAST.Tree's, on
-// ANTLR's tree otherwise. onNative says which.
+// The file is walked as its transform walks it (see newWalkSource), on its
+// native tree; onNative is false, and types empty, when it has none.
 func InferPackageValTypes(richAST *transpiler.RichAST) (types map[string]transpiler.Type, onNative bool) {
 	t := NewGalaASTTransformer().(*galaASTTransformer)
 	t.valTypes = make(map[string]transpiler.Type)
@@ -300,7 +289,7 @@ func InferPackageValTypes(richAST *transpiler.RichAST) (types map[string]transpi
 // manual restores of the scoped state it had set (see scoped_state.go), so
 // that state is put back here: otherwise the next declaration would be
 // lowered with it, e.g. a match lowered as a discarded statement.
-func (t *galaASTTransformer) lowersCleanly(decl topDecl) (ok bool) {
+func (t *galaASTTransformer) lowersCleanly(decl native.GalaNodeRef) (ok bool) {
 	saved := t.saveScopedState()
 	defer func() {
 		if r := recover(); r != nil {
@@ -317,7 +306,7 @@ func (t *galaASTTransformer) lowersCleanly(decl topDecl) (ok bool) {
 // recordPackageValTypes lowers the package-level val/var declarations among
 // decls and records the type each binding takes in t.valTypes
 // (InferPackageValTypes).
-func (t *galaASTTransformer) recordPackageValTypes(decls []topDecl) {
+func (t *galaASTTransformer) recordPackageValTypes(decls []native.GalaNodeRef) {
 	for _, decl := range decls {
 		names, ok := bindingNames(decl)
 		if !ok || !t.lowersCleanly(decl) {
@@ -359,11 +348,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			)
 		}
 	}()
-	// Nothing reads the native tree after the walk; keep no handle to it.
-	// (The receivers checked at the end keep ranges. escapeCache and
-	// parsedExprs hold native nodes until the next transform resets them.)
-	defer func() { t.native = nil }()
-	tree := richAST.Tree
+	t.walkedNative = false
 	t.currentScope = nil
 	t.resetExprTypeCache()
 	t.goResults = nil
@@ -471,9 +456,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			msgs = append(msgs, "  - "+w)
 		}
 		errLine, errCol := 1, 0
-		if rootCtx, ok := any(tree).(antlr.ParserRuleContext); ok && rootCtx.GetStart() != nil {
-			errLine = rootCtx.GetStart().GetLine()
-			errCol = rootCtx.GetStart().GetColumn()
+		if tree, err := richAST.Native.Tree(); err == nil && tree.Root().Ok() {
+			start := tree.Root().Start()
+			errLine, errCol = int(start.Line), int(start.Column)
 		}
 		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol,
 			fmt.Sprintf("cannot transpile: %d imported package(s) could not be resolved:\n%s\n"+
@@ -501,18 +486,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 
 	fset = token.NewFileSet()
-	sourceFile, ok := any(tree).(*grammar.SourceFileContext)
-	if !ok {
-		errLine, errCol := 1, 0
-		if rootCtx, ok := any(tree).(antlr.ParserRuleContext); ok && rootCtx.GetStart() != nil {
-			errLine = rootCtx.GetStart().GetLine()
-			errCol = rootCtx.GetStart().GetColumn()
-		}
-		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol, fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
+	src, err := newWalkSource(richAST)
+	if err != nil {
+		return nil, nil, err
 	}
-	src := newWalkSource(richAST, sourceFile)
-	t.native = src.h
-	t.walkedNative = src.root.Ok()
+	t.walkedNative = true
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName
@@ -573,18 +551,18 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		return nil, nil, nil
 	}
 
-	for _, topDecl := range decls {
-		lowered, err := t.lowerTopDecl(topDecl)
+	for _, td := range decls {
+		lowered, err := t.lowerTopDecl(td)
 		if err != nil {
 			return nil, nil, err
 		}
 		if lowered != nil {
-			t.attachTopDeclDocs(topDecl, lowered)
+			t.attachTopDeclDocs(td, lowered)
 			// Source-mapped `//line` directive: mark the declaration with its
 			// originating GALA line so panics in top-level initializers report a
 			// GALA position (see line_directives.go).
-			if line, ok := topDecl.startLine(); t.emitLineMarkers() && ok {
-				marker := lineMarkerDecl(line)
+			if t.emitLineMarkers() {
+				marker := lineMarkerDecl(int(td.Start().Line))
 				// The marker turns into the `//line` directive, which has to be
 				// laid out around the first declaration's doc comment (see
 				// transpiler.insertLineDirectives). The doc moves onto the
@@ -808,17 +786,6 @@ func (t *galaASTTransformer) markDotImportUsed(pkgName string) {
 	t.importManager.MarkDotImportUsed(pkgName)
 }
 
-// trackPosition records the current ANTLR source position for use by deeply-nested
-// helpers (e.g., isImmutableType) that may need to report errors but lack direct
-// access to an ANTLR context. Callers that have a context should call this before
-// invoking such helpers.
-func (t *galaASTTransformer) trackPosition(ctx antlr.ParserRuleContext) {
-	if ctx != nil && ctx.GetStart() != nil {
-		t.lastLine = ctx.GetStart().GetLine()
-		t.lastCol = ctx.GetStart().GetColumn()
-	}
-}
-
 // raiseSemanticError panics with a SemanticError positioned at the last tracked
 // source location. It is used by deeply-nested Type-returning helpers that cannot
 // thread an error return through their signatures. The panic is caught by the
@@ -830,24 +797,14 @@ func (t *galaASTTransformer) raiseSemanticError(msg string) {
 	panic(galaerr.NewCodedSemanticError(galaerr.CodeRecursiveImmutable, t.lastLine, t.lastCol, msg, ""))
 }
 
-// semanticErrorAt creates a SemanticError with position info from an ANTLR context.
-func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg string) *galaerr.SemanticError {
-	if ctx != nil && ctx.GetStart() != nil {
-		line := ctx.GetStart().GetLine()
-		col := ctx.GetStart().GetColumn()
-		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
-	}
-	// Fall back to last tracked position from enclosing transformation
-	return galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
-}
-
-// semanticErrorAtNode is semanticErrorAt of n, a node of either tree.
+// semanticErrorAtNode creates a SemanticError at n's first token, or at the
+// last tracked position when n is no node.
 func (t *galaASTTransformer) semanticErrorAtNode(n srcNode, msg string) *galaerr.SemanticError {
-	if n.node.Ok() {
-		line, col := n.start()
-		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
+	if !n.ok() {
+		return galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 	}
-	return t.semanticErrorAt(n.ctx, msg)
+	line, col := n.start()
+	return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
 }
 
 // semanticErrorAtStart is galaerr.NewSemanticErrorAt n's first token: a

@@ -632,7 +632,7 @@ func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keywor
 }
 
 // goResultMisuseAt builds the GALA-E0049 diagnostic for a converted Go call
-// used as something it is not, at a node of either tree, or at the position
+// used as something it is not, at a node, or at the position
 // last lowered when at is the zero srcNode.
 func (t *galaASTTransformer) goResultMisuseAt(res *goResult, what string, at srcNode) error {
 	shape := fmt.Sprintf("returns %d values", res.count())
@@ -652,8 +652,8 @@ func (t *galaASTTransformer) goResultMisuseAt(res *goResult, what string, at src
 		hint = fmt.Sprintf("take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val %s = %s`",
 			names, res.source())
 	}
-	// A context recovered from a syntax error may have no start token.
-	if !at.ok() || at.ctx != nil && at.ctx.GetStart() == nil {
+	// No node to point at: the last tracked position.
+	if !at.ok() {
 		return galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, t.lastLine, t.lastCol, msg, hint)
 	}
 	r := at.rng()

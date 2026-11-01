@@ -98,8 +98,8 @@ var parsedCases = []struct{ name, what, kind, src string }{
 }
 
 // TestNativeParsedWalk holds the native walk of parsedShapes and of each of
-// parsedCases to the ANTLR walk (checkWalksAgree), which also holds the two
-// to the same diagnostic, at the same line and column, and requires the
+// parsedCases to its golden (checkWalk), which holds each case
+// to its diagnostic, at its line and column, and requires the
 // native walk to have read the lines they mark on the native tree: under
 // each engine, which parses the file and, for the native walk, its defaults
 // and interpolations (ANTLR's through galop's converter, see
@@ -138,27 +138,19 @@ func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string
 	}
 }
 
-// TestNativeParsedWalkFallback holds a native walk whose defaults and
-// interpolations all fall back to ANTLR's parser (RefuseNativeParse), as when
-// galop's parser does not settle them, to the ANTLR walk on parsedShapes and
-// on each of parsedCases: the same Go, or the same diagnostic, with nothing
-// parsed natively. Its defaults' lambdas, a Try thunk among them, are then
-// lowered from their contexts alone, in a file whose own lambdas, a Try thunk
-// calling a lambda default among them, are lowered from their nodes alone
-// (lambdaSrc.is).
+// TestNativeParsedWalkFallback holds a walk whose defaults and interpolations
+// all fall back to ANTLR's parser and galop's converter (RefuseNativeParse),
+// as when the engine's parser does not settle them, to its golden on
+// parsedShapes and on each of parsedCases: the Go, or the diagnostic, that
+// ANTLR's walk gave them.
 func TestNativeParsedWalkFallback(t *testing.T) {
 	run := walkRunner(t, galaparser.EngineGalop, walkPipeline{refuseNative: true})
-	check := func(t *testing.T, name, src string) walkRun {
-		n := run(t, name, src)
-		assert.Emptyf(t, n.parsedAt, "the native walk parsed with galop's native parser, which it was refused")
-		return n
-	}
 	t.Run("parsed shapes", func(t *testing.T) {
-		require.NoError(t, check(t, "parsed shapes", parsedShapes).err, "the program does not transpile")
+		require.NoError(t, run(t, "parsed shapes", parsedShapes).err, "the program does not transpile")
 	})
 	for _, c := range parsedCases {
 		t.Run(c.name, func(t *testing.T) {
-			require.Error(t, check(t, c.name, c.src).err, "the case transpiles")
+			require.Error(t, run(t, c.name, c.src).err, "the case transpiles")
 		})
 	}
 }
@@ -209,7 +201,6 @@ func Qualified(s string = Thing match {
 }) string = s
 `)
 	nativeW := &walkPipeline{searchPaths: append([]string{root}, searchPaths...), root: root}
-	antlrW := &walkPipeline{searchPaths: nativeW.searchPaths, root: root, antlrOnly: true}
 	cases := []struct {
 		name, using, call string
 		line, col         int // where the diagnostic is, in lib/borrowed.gala; 0 for none
@@ -222,7 +213,7 @@ func Qualified(s string = Thing match {
 		t.Run(c.name, func(t *testing.T) {
 			src := "package main\n\nimport (\n    " + c.using + "\n    \"example.com/parsed/lib\"\n)\n\nfunc main() {\n    Println(" + c.call + ")\n}\n"
 			path := write("main"+string(rune('a'+i))+"/main.gala", src)
-			n := agreedWalk(t, nativeW, antlrW, path, src)
+			n := goldenWalk(t, nativeW, path, src)
 			// The first case clause of each default is on line 6 of its file, and
 			// the rejected one's is where the diagnostic is.
 			read, file := 6, own

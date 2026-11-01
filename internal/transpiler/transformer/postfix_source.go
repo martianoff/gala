@@ -6,17 +6,16 @@ import (
 	"strings"
 
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
 
 // The postfix chain on galop's native tree: a primary expression followed by
 // its suffixes, each a member access `.name`, an index or type arguments
-// `[exprs]`, or a call `(args)`. Both walks lower the chain through one
-// driver (lowerSuffixes), reading each suffix on the tree it comes from
-// through suffixSrc (memberSrc, indexSrc, and callSrc in calls_source.go),
-// so both give the same Go. A postfix expression with a match is lowered by
-// lowerMatch, its subject through the same suffix lowering.
+// `[exprs]`, or a call `(args)`. The chain is lowered through one driver
+// (lowerSuffixes), reading each suffix through suffixSrc (memberSrc,
+// indexSrc, and callSrc in calls_source.go). A postfix expression with a
+// match is lowered by lowerMatch, its subject through the same suffix
+// lowering.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -29,12 +28,7 @@ type memberSrc struct{ suffixSrc }
 type indexSrc struct{ suffixSrc }
 
 // at is where s is written.
-func (s suffixSrc) at() srcNode {
-	if s.node.Ok() {
-		return srcNode{node: s.node}
-	}
-	return srcNode{ctx: s.ctx}
-}
+func (s suffixSrc) at() srcNode { return srcNode{node: s.node} }
 
 // identAt is where the member s selects is written, the zero srcNode when s
 // is no selector.
@@ -43,15 +37,11 @@ func (s suffixSrc) identAt() srcNode {
 	return at
 }
 
-// receiver is receiverSource of m: the receiver of the member access, the
-// postfix expression's primary through the suffix before m, as the nodes
-// spanning it and its source text. The grammar puts a suffix only in a
+// receiver is the receiver of the member access m: the postfix expression's
+// primary through the suffix before m, as the nodes spanning it and its
+// source text, each part as written. The grammar puts a suffix only in a
 // postfix expression.
 func (m memberSrc) receiver(t *galaASTTransformer) (from, to srcNode, text string) {
-	if !m.node.Ok() {
-		f, l, text := receiverSource(m.ctx)
-		return srcNode{ctx: f}, srcNode{ctx: l}, text
-	}
 	t.nativeShape(m.node, "receiver")
 	postfix := m.node.Parent()
 	primary := (native.PostfixExprNode{GalaNodeRef: postfix}).PrimaryExpr().GalaNodeRef
@@ -70,31 +60,16 @@ func (m memberSrc) receiver(t *galaASTTransformer) (from, to srcNode, text strin
 // hasList reports whether ix has its expression list, which only a malformed
 // tree lacks.
 func (ix indexSrc) hasList() bool {
-	if ix.node.Ok() {
-		return (native.PostfixSuffixNode{GalaNodeRef: ix.node}).ExpressionList().Ok()
-	}
-	return ix.ctx.ExpressionList() != nil
+	return (native.PostfixSuffixNode{GalaNodeRef: ix.node}).ExpressionList().Ok()
 }
 
 // exprs is the expressions of ix, in order, read off the tree as they are
 // iterated.
 func (ix indexSrc) exprs() iter.Seq[exprSrc] {
 	return func(yield func(exprSrc) bool) {
-		if ix.node.Ok() {
-			list := (native.PostfixSuffixNode{GalaNodeRef: ix.node}).ExpressionList()
-			for e := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
-				if !yield(nativeExpr(e)) {
-					return
-				}
-			}
-			return
-		}
-		list := ix.ctx.ExpressionList()
-		if list == nil {
-			return
-		}
-		for _, c := range list.GetChildren() {
-			if e, ok := c.(grammar.IExpressionContext); ok && !yield(antlrExpr(e)) {
+		list := (native.PostfixSuffixNode{GalaNodeRef: ix.node}).ExpressionList()
+		for e := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
+			if !yield(nativeExpr(e)) {
 				return
 			}
 		}
@@ -121,7 +96,7 @@ func (ix indexSrc) expr(i int) exprSrc {
 	return exprSrc{}
 }
 
-// lowerSuffixedNative is transformPostfixExpr of p when p has a suffix or a
+// lowerSuffixedNative lowers p, a postfix expression with a suffix or a
 // match. Its suffixes are lowered through the postfix driver (lowerSuffixes),
 // and a match by lowerMatch.
 func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.Expr, error) {
@@ -137,8 +112,8 @@ func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.
 	return t.lowerSuffixes(src, suffixes)
 }
 
-// lowerSuffixes lowers p, a postfix expression with suffixes and no match,
-// on the tree it comes from: its primary expression, then each of suffixes
+// lowerSuffixes lowers p, a postfix expression with suffixes and no match:
+// its primary expression, then each of suffixes
 // applied to the value before it.
 func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (ast.Expr, error) {
 	// The type of the slot p fills is for its last suffix, the call that is
@@ -185,7 +160,7 @@ func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, s suffixSr
 	return nil, semanticErrorAtStart(s.at(), "unknown postfix suffix type")
 }
 
-// suffixShape is nativeShape of s when it is read on the native tree.
+// suffixShape is nativeShape of s.
 func (t *galaASTTransformer) suffixShape(s suffixSrc, shape string) {
 	if s.node.Ok() {
 		t.nativeShape(s.node, shape)

@@ -127,7 +127,7 @@ var leafCases = []struct{ name, shape, src string }{
 }
 
 // TestNativeLeavesWalk holds the native walk of leafShapes and of each of
-// leafCases to the ANTLR walk (checkWalksAgree), and requires the native walk
+// leafCases to its golden (checkWalk), and requires the native walk
 // to have lowered the values they mark.
 func TestNativeLeavesWalk(t *testing.T) {
 	run := exprWalkRunner(t)

@@ -4,6 +4,7 @@ go_library(
     name = "analyzer",
     srcs = [
         "analyzer.go",
+        "antlr_expr_helpers.go",
         "cache.go",
         "cache_codec.go",
         "collect.go",

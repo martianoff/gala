@@ -3,7 +3,6 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"strconv"
@@ -62,12 +61,7 @@ func (t *galaASTTransformer) rewriteStdTupleIdent(ident ast.Expr, n int) ast.Exp
 	return t.stdIdent(name)
 }
 
-// transformType lowers the type ctx, on ANTLR's tree (see lowerType).
-func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
-	return t.lowerType(antlrType(ctx))
-}
-
-// lowerType lowers the type s, of either tree (types_source.go); no type
+// lowerType lowers the type s (types_source.go); no type
 // lowers to nil.
 func (t *galaASTTransformer) lowerType(s typeSrc) (ast.Expr, error) {
 	if !s.ok() {

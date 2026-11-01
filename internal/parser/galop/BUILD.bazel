@@ -4,7 +4,12 @@ go_library(
     name = "galop",
     srcs = ["galop.go"],
     importpath = "martianoff/gala/internal/parser/galop",
-    visibility = ["//internal/parser:__pkg__"],
+    visibility = [
+        "//internal/parser:__pkg__",
+        # The transformer's tests convert error-recovered trees, which no
+        # clean parse gives.
+        "//internal/transpiler/transformer:__pkg__",
+    ],
     deps = [
         "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it

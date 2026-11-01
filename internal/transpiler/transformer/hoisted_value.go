@@ -4,10 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
@@ -42,54 +39,18 @@ type hoistedValue struct {
 	typ   transpiler.Type
 }
 
-// escapesConstruct reports whether any of trees holds a `return`, `break` or
-// `continue` outside any lambda: one that, in a construct lowered to a
-// function literal, could not reach the function or loop it is written for. A
-// `break` / `continue` inside a `for` loop of the tree's own controls that
-// loop. The answer for each tree is cached: a construct and those nested in
-// it are asked about at every level of the lowering. When the file's walk
-// reads the native tree, a case clause, statement or if-expression branch is
-// asked about on its native node, so the answer is cached under the node's
-// index whichever tree asks (escapesAt).
-func escapesConstruct[T antlr.Tree](t *galaASTTransformer, trees ...T) bool {
-	for _, tree := range trees {
-		if t.escapesTree(tree) {
-			return true
-		}
-	}
-	return false
-}
+// A subtree escapesConstruct when it holds a `return`, `break` or `continue`
+// outside any lambda: one that, in a construct lowered to a function literal,
+// could not reach the function or loop it is written for. A `break` /
+// `continue` inside a `for` loop of the subtree's own controls that loop. The
+// answer for each subtree is cached (cachedEscape): a construct and those
+// nested in it are asked about at every level of the lowering.
 
-// escapesTree is escapesConstruct of tree, a subtree of ANTLR's tree.
-func (t *galaASTTransformer) escapesTree(tree antlr.Tree) bool {
-	if n, ok := t.escapeNode(tree); ok {
-		return t.escapesAt(srcNode{node: n})
-	}
-	return t.cachedEscape(tree, func() bool { return escapes(tree, false) })
-}
-
-// escapeNode is the native node of tree, a case clause, a statement or an
-// if-expression branch that code still on ANTLR's tree asks escapesConstruct
-// about (the only subtrees it is asked about), when the file's
-// walk reads the native tree (nativeNodeOf, which indexes only the nodes of
-// the kind asked for).
-func (t *galaASTTransformer) escapeNode(tree antlr.Tree) (native.GalaNodeRef, bool) {
-	switch ctx := tree.(type) {
-	case *grammar.CaseClauseContext:
-		return t.nativeNodeOf(ctx, native.GalaKIND_caseClause)
-	case *grammar.StatementContext:
-		return t.nativeNodeOf(ctx, native.GalaKIND_statement)
-	case *grammar.IfExprBranchContext:
-		return t.nativeNodeOf(ctx, native.GalaKIND_ifExprBranch)
-	}
-	return native.GalaNodeRef{}, false
-}
-
-// cachedEscape is the cached escape answer for key, a native node or a subtree
-// of ANTLR's tree, computed by walk the first time it is asked for. A native
-// node is keyed with its tree: a default's or an interpolated expression's
-// tree, parsed on its own, numbers its nodes from 0 too.
-func (t *galaASTTransformer) cachedEscape(key any, walk func() bool) bool {
+// cachedEscape is the cached escape answer for key, a native node, computed
+// by walk the first time it is asked for. A node is keyed with its tree: a
+// default's or an interpolated expression's tree, parsed on its own, numbers
+// its nodes from 0 too.
+func (t *galaASTTransformer) cachedEscape(key native.GalaNodeRef, walk func() bool) bool {
 	escaping, ok := t.escapeCache[key]
 	if !ok {
 		escaping = walk()
@@ -101,28 +62,8 @@ func (t *galaASTTransformer) cachedEscape(key any, walk func() bool) bool {
 	return escaping
 }
 
-func escapes(tree antlr.Tree, inLoop bool) bool {
-	switch n := tree.(type) {
-	case *grammar.LambdaExpressionContext:
-		return false
-	case *grammar.ReturnStatementContext:
-		return true
-	case *grammar.ForStatementContext:
-		inLoop = true
-	case antlr.TerminalNode:
-		_, ok := loopControlToken(n.GetText())
-		return ok && !inLoop
-	}
-	for i := 0; i < tree.GetChildCount(); i++ {
-		if escapes(tree.GetChild(i), inLoop) {
-			return true
-		}
-	}
-	return false
-}
-
 // hoistable reports whether exprCtx is a match or if-expression (possibly
-// parenthesized) whose arms escapesConstruct.
+// parenthesized) whose arms escapesConstruct (see cachedEscape).
 func (t *galaASTTransformer) hoistable(e exprSrc) bool {
 	return t.hoistableForm(t.classifyExpr(e))
 }
