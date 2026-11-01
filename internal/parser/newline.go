@@ -259,26 +259,25 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 		return tok
 	}
 	ttype := tok.GetTokenType()
-	line := tok.GetLine()
-	endLine := line
-	if is(s.rule.kinds.spansLines, ttype) {
-		endLine += strings.Count(tok.GetText(), "\n")
-	}
-	if to := s.rule.next(ttype, line, endLine, s.operatorStandsApart); to != ttype {
+	if to := s.rule.next(ttype, tok.GetLine(), tok.GetText, s.operatorStandsApart); to != ttype {
 		tok = s.GetTokenFactory().Create(tok.GetSource(), to, tok.GetText(),
-			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
+			tok.GetChannel(), tok.GetStart(), tok.GetStop(), tok.GetLine(), tok.GetColumn())
 	}
 	return tok
 }
 
 // next applies the rule to the next default-channel token, of type ttype,
-// which starts on line and ends on endLine (a literal can span lines; see
-// tokenKinds.spansLines). standsApart reports whether whitespace or a
-// comment follows the token; it is called only for a '*' or '&' that could
-// be re-typed. next returns the type the token takes: ttype, or the type it
-// is re-typed to.
-func (s *lineBreakRule) next(ttype, line, endLine int, standsApart func() bool) int {
+// which starts on line. text is the token's text, read only for a literal,
+// which can span lines (see tokenKinds.spansLines). standsApart reports
+// whether whitespace or a comment follows the token (see standsApartBefore);
+// it is called only for a '*' or '&' that could be re-typed. next returns the
+// type the token takes: ttype, or the type it is re-typed to.
+func (s *lineBreakRule) next(ttype, line int, text func() string, standsApart func() bool) int {
 	k := s.kinds
+	endLine := line
+	if is(k.spansLines, ttype) {
+		endLine += strings.Count(text(), "\n")
+	}
 	lineBreak := line > s.prevEndLine
 	s.endHeader(ttype)
 	if r := at(k.atLineStart, ttype); r.to != 0 && s.prevEndsExpr && lineBreak &&
@@ -389,12 +388,18 @@ func (s *lineBreakRule) atStatementLevel() bool {
 // has just consumed it, so LA(1) is the character after it.
 func (s *newlineTokenSource) operatorStandsApart() bool {
 	in := s.GetInputStream()
-	switch in.LA(1) {
+	return standsApartBefore(in.LA(1), in.LA(2))
+}
+
+// standsApartBefore reports whether the characters c and then next, which
+// follow an operator, start whitespace or a comment. A character past the
+// input is negative.
+func standsApartBefore(c, next int) bool {
+	switch c {
 	case ' ', '\t', '\r', '\n':
 		// The characters the grammar's WS rule skips.
 		return true
 	case '/':
-		next := in.LA(2)
 		return next == '/' || next == '*'
 	}
 	return false

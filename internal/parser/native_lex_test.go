@@ -32,16 +32,8 @@ func (l *lexErrors) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column 
 // included, and every lexical error (see printToken).
 func antlrTokens(t *testing.T, src string, line, col int) []string {
 	t.Helper()
-	lexer := grammar.NewgalaLexer(antlr.NewInputStream(src))
-	isolateLexerCaches(lexer.BaseLexer)
-	if !seedLexer(lexer.BaseLexer, line, col) {
-		t.Fatal("cannot seed ANTLR's lexer")
-	}
 	errs := &lexErrors{DefaultErrorListener: antlr.NewDefaultErrorListener()}
-	lexer.RemoveErrorListeners()
-	lexer.AddErrorListener(errs)
-	stream := newTokenStream(lexer)
-	stream.Fill()
+	stream := antlrStream(t, src, line, col, errs)
 	var out []string
 	for _, tok := range stream.GetAllTokens() {
 		out = append(out, printToken(tok.GetTokenType(), tok.GetChannel(), tok.GetLine(), tok.GetColumn(), tok.GetText()))
@@ -49,14 +41,45 @@ func antlrTokens(t *testing.T, src string, line, col int) []string {
 	return append(out, errs.msgs...)
 }
 
+// antlrStream is src lexed with ANTLR's lexer and the newline token source,
+// from line and column col (see seedLexer), every token read; listener, when
+// not nil, hears the lexical errors.
+func antlrStream(tb testing.TB, src string, line, col int, listener antlr.ErrorListener) *antlr.CommonTokenStream {
+	tb.Helper()
+	lexer := grammar.NewgalaLexer(antlr.NewInputStream(src))
+	isolateLexerCaches(lexer.BaseLexer)
+	if !seedLexer(lexer.BaseLexer, line, col) {
+		tb.Fatal("cannot seed ANTLR's lexer")
+	}
+	lexer.RemoveErrorListeners()
+	if listener != nil {
+		lexer.AddErrorListener(listener)
+	}
+	stream := newTokenStream(lexer)
+	stream.Fill()
+	return stream
+}
+
+// sourceTexts is the text of every staged source (see gatherSources).
+func sourceTexts(tb testing.TB) []string {
+	tb.Helper()
+	var texts []string
+	for _, path := range gatherSources(tb) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		texts = append(texts, string(data))
+	}
+	return texts
+}
+
 // nativeTokens is antlrTokens for galop's native lexer and RetypeNewlines.
 func nativeTokens(src string, line, col int) []string {
 	ts := lexNative(src, line, col)
 	var out []string
-	hidden := ts.Hidden
 	for i, tok := range ts.Tokens {
-		for ; len(hidden) > 0 && int(hidden[0].Next) == i; hidden = hidden[1:] {
-			h := hidden[0]
+		for _, h := range ts.HiddenBefore(i) {
 			out = append(out, printToken(int(h.Type), int(h.Channel), int(h.Line), int(h.Column), h.Text(src)))
 		}
 		out = append(out, printToken(int(tok.Type), native.GalaDefaultChannel, int(tok.Line), int(tok.Column), tok.Text(src)))
@@ -87,17 +110,26 @@ func firstTokenDiff(want, got []string) string {
 
 // corpusInputs is every staged source, two broken variants of each (lexical
 // errors, unbalanced brackets), every 15th with CRLF line ends, and the
-// position inputs.
+// position inputs. It is built once and shared by the tests that read it.
 func corpusInputs(t *testing.T) []string {
+	t.Helper()
+	corpus.once.Do(func() { corpus.inputs = buildCorpusInputs(t) })
+	if corpus.inputs == nil {
+		t.Fatal("the corpus inputs could not be built")
+	}
+	return corpus.inputs
+}
+
+var corpus struct {
+	once   sync.Once
+	inputs []string
+}
+
+func buildCorpusInputs(t *testing.T) []string {
 	t.Helper()
 	r := rand.New(rand.NewSource(3))
 	inputs := slices.Clone(positionInputs)
-	for n, path := range gatherSources(t) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		src := string(data)
+	for n, src := range sourceTexts(t) {
 		inputs = append(inputs, src, breakSource(r, src), breakSource(r, src))
 		if n%15 == 0 {
 			inputs = append(inputs, strings.ReplaceAll(src, "\n", "\r\n"))
@@ -202,12 +234,7 @@ func TestLexNativeAt(t *testing.T) {
 func TestNativeDocCommentsMatchANTLR(t *testing.T) {
 	documented := 0
 	for k, input := range corpusInputs(t) {
-		lexer := grammar.NewgalaLexer(antlr.NewInputStream(input))
-		isolateLexerCaches(lexer.BaseLexer)
-		lexer.RemoveErrorListeners()
-		stream := newTokenStream(lexer)
-		stream.Fill()
-		want := extractDocComments(stream.GetAllTokens())
+		want := extractDocComments(antlrStream(t, input, 0, 0, nil).GetAllTokens())
 		got := nativeDocComments(lexNative(input, 0, 0))
 		if fmt.Sprint(want) != fmt.Sprint(got) {
 			t.Errorf("input %d (%.60q): doc comments differ\nANTLR:  %q\nnative: %q", k, input, want, got)
@@ -250,9 +277,11 @@ func TestCheckEmptyLinesNativeMatchesANTLR(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		r := parseSourceFile(input, EngineANTLR)
-		if len(r.errors) > 0 {
-			t.Errorf("input %d (%.60q): native parses, ANTLR reports %v", k, input, r.errors)
+		// galop's engine builds ANTLR's tree, the same tree as ANTLR's parser
+		// for input that parses (TestEnginesAgree), at a fraction of the cost.
+		r := parseSourceFile(input, EngineGalop)
+		if len(r.errors) > 0 || !r.galop {
+			t.Errorf("input %d (%.60q): native parses, galop's ANTLR-tree parse does not: %v", k, input, r.errors)
 			continue
 		}
 		want := fmt.Sprint(p.checkEmptyLines(r.input, r.tree))
@@ -290,12 +319,7 @@ func corpusExpressions(t *testing.T) []expressionSample {
 		add(expressionSample{input, 3, 4})
 	}
 	defaults := 0
-	for _, path := range gatherSources(t) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		src := string(data)
+	for _, src := range sourceTexts(t) {
 		if root, err := native.ParseSourceFile(lexNative(src, 0, 0)); err == nil {
 			root.Walk(func(n native.GalaNodeRef) bool {
 				if n.Kind() == native.GalaKIND_paramDefault {
@@ -491,15 +515,10 @@ func nativeErrorChildren(n native.GalaNodeRef, out []string) []string {
 func TestConverterOnRecoveredTrees(t *testing.T) {
 	r := rand.New(rand.NewSource(5))
 	inputs := slices.Clone(brokenInputs)
-	for n, path := range gatherSources(t) {
-		if n%4 != 0 {
-			continue
+	for n, src := range sourceTexts(t) {
+		if n%4 == 0 {
+			inputs = append(inputs, breakSource(r, src), breakSource(r, src))
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		inputs = append(inputs, breakSource(r, string(data)), breakSource(r, string(data)))
 	}
 	recovered, withErrorNodes := 0, 0
 	for k, input := range inputs {
@@ -546,13 +565,9 @@ func TestConverterOnRecoveredTrees(t *testing.T) {
 func largestSource(b *testing.B) string {
 	b.Helper()
 	var largest string
-	for _, path := range gatherSources(b) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if len(data) > len(largest) {
-			largest = string(data)
+	for _, src := range sourceTexts(b) {
+		if len(src) > len(largest) {
+			largest = src
 		}
 	}
 	return largest
@@ -572,10 +587,7 @@ func BenchmarkLexRetype(b *testing.B) {
 	b.Run("antlr", func(b *testing.B) {
 		b.SetBytes(int64(len(src)))
 		for b.Loop() {
-			lexer := grammar.NewgalaLexer(antlr.NewInputStream(src))
-			isolateLexerCaches(lexer.BaseLexer)
-			lexer.RemoveErrorListeners()
-			newTokenStream(lexer).Fill()
+			antlrStream(b, src, 0, 0, nil)
 		}
 	})
 }

@@ -90,17 +90,19 @@ func extractDocComments(toks []antlr.Token) Docs {
 // same doc comments, by the same keys.
 func nativeDocComments(ts *native.GalaTokens) Docs {
 	run := newDocRun()
+	// A cursor over Hidden rather than ts.HiddenBefore(i), which would binary
+	// search once per token.
 	hidden := ts.Hidden
 	for i, tk := range ts.Tokens {
 		if tk.Type == native.GalaEOF {
 			break
 		}
+		prevCodeEndLine := -1
+		if i > 0 && len(hidden) > 0 && int(hidden[0].Next) == i {
+			prev := ts.Tokens[i-1]
+			prevCodeEndLine = int(prev.Line) + strings.Count(prev.Text(ts.Src), "\n")
+		}
 		for ; len(hidden) > 0 && int(hidden[0].Next) == i; hidden = hidden[1:] {
-			prevCodeEndLine := -1
-			if i > 0 {
-				prev := ts.Tokens[i-1]
-				prevCodeEndLine = int(prev.Line) + strings.Count(prev.Text(ts.Src), "\n")
-			}
 			comment := hidden[0].GalaToken
 			run.comment(int(comment.Line), prevCodeEndLine, func() string { return comment.Text(ts.Src) })
 		}

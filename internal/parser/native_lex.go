@@ -3,7 +3,6 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/native"
@@ -25,36 +24,23 @@ func RetypeNewlines(ts *native.GalaTokens) {
 	src := ts.Src
 	for i := range ts.Tokens {
 		tok := &ts.Tokens[i]
-		ttype := int(tok.Type)
-		if ttype == native.GalaEOF {
+		if tok.Type == native.GalaEOF {
 			break
 		}
-		line := int(tok.Line)
-		endLine := line
-		if is(rule.kinds.spansLines, ttype) {
-			endLine += strings.Count(src[tok.Start:tok.End], "\n")
-		}
-		end := int(tok.End)
-		if to := rule.next(ttype, line, endLine, func() bool { return standsApart(src, end) }); to != ttype {
-			tok.Type = int32(to)
-		}
+		start, end := int(tok.Start), int(tok.End)
+		tok.Type = int32(rule.next(int(tok.Type), int(tok.Line),
+			func() string { return src[start:end] },
+			func() bool { return standsApartBefore(byteAt(src, end), byteAt(src, end+1)) }))
 	}
 }
 
-// standsApart reports whether whitespace or a comment follows the token that
-// ends at byte offset end of src, as newlineTokenSource.operatorStandsApart
-// reads it from ANTLR's input stream.
-func standsApart(src string, end int) bool {
-	if end >= len(src) {
-		return false
+// byteAt is src[i], or -1 past the end of src. Only ASCII bytes are compared
+// with it, so reading bytes rather than code points is enough.
+func byteAt(src string, i int) int {
+	if i >= len(src) {
+		return -1
 	}
-	switch src[end] {
-	case ' ', '\t', '\r', '\n':
-		return true
-	case '/':
-		return end+1 < len(src) && (src[end+1] == '/' || src[end+1] == '*')
-	}
-	return false
+	return int(src[i])
 }
 
 // lexNative lexes src with galop's native lexer from line and column col (as
