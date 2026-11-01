@@ -213,6 +213,12 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				return ptr.Elem
 			}
 			return transpiler.NilType{}
+		case token.ARROW:
+			// A receive yields the channel's element type.
+			if ch, ok := t.getExprTypeNameManual(e.X).(transpiler.ChanType); ok {
+				return ch.Elem
+			}
+			return transpiler.NilType{}
 		default:
 			return t.getExprTypeNameManual(e.X)
 		}
@@ -829,6 +835,8 @@ func (t *galaASTTransformer) collectReferencedParams(typ transpiler.Type, params
 		}
 	case transpiler.ArrayType:
 		t.collectReferencedParams(v.Elem, params, out)
+	case transpiler.ChanType:
+		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.PointerType:
 		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.MapType:
@@ -1103,6 +1111,8 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 		}
 	case transpiler.ArrayType:
 		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
+	case transpiler.ChanType:
+		return transpiler.ChanType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), Dir: v.Dir}
 	case transpiler.PointerType:
 		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), NonNull: v.NonNull}
 	case transpiler.MapType:

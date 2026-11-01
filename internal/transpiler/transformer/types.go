@@ -266,6 +266,13 @@ func (t *galaASTTransformer) isKnownStdType(name string) bool {
 	return registry.IsStdType(name) && !t.activeTypeParams[name] && !t.packageDeclaresType(name)
 }
 
+// goChanDir is each channel direction as go/ast spells it.
+var goChanDir = map[transpiler.ChanDir]ast.ChanDir{
+	transpiler.ChanBoth: ast.SEND | ast.RECV,
+	transpiler.ChanRecv: ast.RECV,
+	transpiler.ChanSend: ast.SEND,
+}
+
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	if typ.IsNil() {
 		return ast.NewIdent("any")
@@ -329,6 +336,8 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		return &ast.StarExpr{X: t.typeToExpr(v.Elem)}
 	case transpiler.MapType:
 		return &ast.MapType{Key: t.typeToExpr(v.Key), Value: t.typeToExpr(v.Elem)}
+	case transpiler.ChanType:
+		return &ast.ChanType{Dir: goChanDir[v.Dir], Value: t.typeToExpr(v.Elem)}
 	case transpiler.FuncType:
 		// Params is never nil: go/ast's FuncType.End reads it when there are
 		// no results, so a nil list panics the printer on `func()`.
@@ -566,6 +575,15 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 			Key:  t.astTypeToTranspilerType(e.Key),
 			Elem: t.astTypeToTranspilerType(e.Value),
 		}
+	case *ast.ChanType:
+		dir := transpiler.ChanBoth
+		switch e.Dir {
+		case ast.RECV:
+			dir = transpiler.ChanRecv
+		case ast.SEND:
+			dir = transpiler.ChanSend
+		}
+		return transpiler.ChanType{Elem: t.astTypeToTranspilerType(e.Value), Dir: dir}
 	case *ast.FuncType:
 		// Handle function types like func(S) Option[Tuple[T, S]]
 		var params []transpiler.Type
@@ -727,6 +745,8 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 		return typeNameMatches(v.Elem, match)
 	case transpiler.MapType:
 		return typeNameMatches(v.Key, match) || typeNameMatches(v.Elem, match)
+	case transpiler.ChanType:
+		return typeNameMatches(v.Elem, match)
 	case transpiler.FuncType:
 		for _, p := range v.Params {
 			if typeNameMatches(p, match) {

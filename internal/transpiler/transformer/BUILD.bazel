@@ -136,6 +136,7 @@ go_test(
         "branch_tail_values_test.go",
         "call_arity_test.go",
         "chained_flatmap_test.go",
+        "channel_receive_test.go",
         "codec_boundary_test.go",
         "codec_cross_pkg_test.go",
         "codec_field_kinds_test.go",

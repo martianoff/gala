@@ -53,6 +53,8 @@ func ContainsUnusable(t Type) bool {
 	switch v := t.(type) {
 	case ArrayType:
 		return ContainsUnusable(v.Elem)
+	case ChanType:
+		return ContainsUnusable(v.Elem)
 	case PointerType:
 		return ContainsUnusable(v.Elem)
 	case MapType:
@@ -126,6 +128,8 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 		return "*" + DisplayTypeNamed(v.Elem, name)
 	case ArrayType:
 		return "[]" + DisplayTypeNamed(v.Elem, name)
+	case ChanType:
+		return chanPrefixes[v.Dir] + DisplayTypeNamed(v.Elem, name)
 	case MapType:
 		return "map[" + DisplayTypeNamed(v.Key, name) + "]" + DisplayTypeNamed(v.Elem, name)
 	case GenericType:
@@ -249,6 +253,35 @@ func (t MapType) IsAny() bool        { return false }
 func (t MapType) IsVoid() bool       { return false }
 func (t MapType) BaseName() string   { return "map" }
 func (t MapType) GetPackage() string { return "" }
+
+// ChanDir is the direction of a channel type.
+type ChanDir int
+
+const (
+	ChanBoth ChanDir = iota // chan T
+	ChanRecv                // <-chan T
+	ChanSend                // chan<- T
+)
+
+// chanPrefixes is the spelling of each direction ahead of the element type.
+var chanPrefixes = map[ChanDir]string{ChanBoth: "chan ", ChanRecv: "<-chan ", ChanSend: "chan<- "}
+
+// ChanType represents a Go channel type. GALA code cannot spell one; it gets
+// channels from Go functions and receives from them with `<-ch`, which yields
+// Elem.
+type ChanType struct {
+	Elem Type
+	Dir  ChanDir
+}
+
+func (t ChanType) String() string {
+	return chanPrefixes[t.Dir] + t.Elem.String()
+}
+func (t ChanType) IsNil() bool        { return false }
+func (t ChanType) IsAny() bool        { return false }
+func (t ChanType) IsVoid() bool       { return false }
+func (t ChanType) BaseName() string   { return "chan" }
+func (t ChanType) GetPackage() string { return "" }
 
 // PointerType represents a pointer type.
 //
@@ -430,6 +463,11 @@ func ParseType(s string) Type {
 	if strings.HasPrefix(s, "[]") {
 		return ArrayType{Elem: ParseType(s[2:])}
 	}
+	for dir, prefix := range chanPrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return ChanType{Elem: ParseType(s[len(prefix):]), Dir: dir}
+		}
+	}
 	if strings.HasPrefix(s, "*") {
 		return PointerType{Elem: ParseType(s[1:])}
 	}
@@ -503,6 +541,8 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 		return GenericType{Base: SubstituteTypeParams(v.Base, subst), Params: params}
 	case ArrayType:
 		return ArrayType{Elem: SubstituteTypeParams(v.Elem, subst)}
+	case ChanType:
+		return ChanType{Elem: SubstituteTypeParams(v.Elem, subst), Dir: v.Dir}
 	case MapType:
 		return MapType{Key: SubstituteTypeParams(v.Key, subst), Elem: SubstituteTypeParams(v.Elem, subst)}
 	case PointerType:

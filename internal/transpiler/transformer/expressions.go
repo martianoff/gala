@@ -620,6 +620,8 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 		return token.XOR
 	case "&":
 		return token.AND
+	case "<-":
+		return token.ARROW
 	default:
 		return token.ILLEGAL
 	}

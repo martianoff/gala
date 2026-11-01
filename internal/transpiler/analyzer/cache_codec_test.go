@@ -25,6 +25,7 @@ func init() {
 	gob.Register(transpiler.GenericType{})
 	gob.Register(transpiler.ArrayType{})
 	gob.Register(transpiler.MapType{})
+	gob.Register(transpiler.ChanType{})
 	gob.Register(transpiler.PointerType{})
 	gob.Register(transpiler.FuncType{})
 	gob.Register(transpiler.NilType{})
@@ -127,7 +128,7 @@ func buildSyntheticCache() *CachedRichAST {
 		r.Types["synthetic."+name] = &transpiler.TypeMetadata{
 			Name:       name,
 			Package:    "synthetic",
-			FieldNames: []string{"a", "b", "c"},
+			FieldNames: []string{"a", "b", "c", "d"},
 			Fields: map[string]transpiler.Type{
 				"a": transpiler.BasicType{Name: "int"},
 				"b": transpiler.GenericType{
@@ -135,6 +136,7 @@ func buildSyntheticCache() *CachedRichAST {
 					Params: []transpiler.Type{transpiler.BasicType{Name: "string"}},
 				},
 				"c": transpiler.ArrayType{Elem: transpiler.NamedType{Package: "std", Name: "Foo"}},
+				"d": transpiler.ChanType{Elem: transpiler.NamedType{Package: "time", Name: "Time", ImportPath: "time"}, Dir: transpiler.ChanRecv},
 			},
 			FieldDefaults: map[string]transpiler.DefaultExpr{"a": {Text: "(x int) => x + 1", Pos: transpiler.SourcePos{Line: 3, Column: 17}}},
 			Methods: map[string]*transpiler.MethodMetadata{

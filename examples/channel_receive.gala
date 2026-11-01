@@ -1,0 +1,25 @@
+package main
+
+import (
+    "time"
+
+    "martianoff/gala/go_interop"
+)
+
+// `<-ch` receives from a channel. Its inferred type is the channel's element
+// type, so the received value's methods resolve like any other value's.
+func main() {
+    val fired = <-time.After(time.Millisecond)
+    Println(fired.After(time.Unix(0, 0)))
+
+    val tick = <-go_interop.GoAfter(time.Millisecond)
+    Println(tick.Year() > 2000)
+
+    val pending = Some(time.After(time.Millisecond))
+    Println((<-pending.Get()).After(fired))
+
+    val signal = go_interop.NewSignal()
+    go_interop.CloseSignal(signal)
+    <-signal
+    Println("closed signal received")
+}
