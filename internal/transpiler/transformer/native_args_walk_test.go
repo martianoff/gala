@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,8 +42,10 @@ func args(p P) int {
 	val e = p.Copy(y = b).y // native: arg, slot
 	val f = run(() => c + 1) + run(c * 2) // native: arg, slot
 	val g = Some(a).Map(_ + 1).GetOrElse(0) // native: arg, placeholder
-	val h = p.x match { // native: slot
-		case 0 => return 0
+	val h = p.x match { // hoisted
+		case 0 => {
+			return 0
+		}
 		case n => n
 	}
 	a + b + c + d.Size() + e + f + g + h
@@ -77,7 +80,15 @@ var argCases = []struct{ name, shape, src string }{
 func TestNativeArgsWalk(t *testing.T) {
 	run := exprWalkRunner(t)
 	t.Run("argument shapes", func(t *testing.T) {
-		checkMarkedShapes(t, run(t, "argument shapes", argShapes), argShapes)
+		n := run(t, "argument shapes", argShapes)
+		checkMarkedShapes(t, n, argShapes)
+		// The hoisted match is lowered on ANTLR's tree, but it is classified
+		// against its slot, and its arms checked for escapes, on the native one.
+		for i, l := range strings.Split(argShapes, "\n") {
+			if strings.HasSuffix(l, "// hoisted") {
+				assert.Truef(t, n.shapes[i+1]["slot"], "the native walk classified no value on line %d (it lowered %v)", i+1, n.shapes[i+1])
+			}
+		}
 	})
 	for _, c := range argCases {
 		t.Run(c.name, func(t *testing.T) {
