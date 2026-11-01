@@ -575,19 +575,11 @@ func (c compositeSrc) elems() []keyedElem {
 	if c.node.Ok() {
 		list := native.CompositeLiteralNode{GalaNodeRef: c.node}.ElementList()
 		for kv := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_keyedElement) {
-			var exprs [2]exprSrc
-			n := 0
-			for e := range galaparser.NativeKids(kv, native.GalaKIND_expression) {
-				if n < len(exprs) {
-					exprs[n] = nativeExpr(e)
-				}
-				n++
-			}
-			switch n {
+			switch exprs := nativeExprs(kv); len(exprs) {
 			case 1:
-				out = append(out, keyedElem{value: exprs[0]})
+				out = append(out, keyedElem{value: exprs[0].exprSrc})
 			case 2:
-				out = append(out, keyedElem{key: exprs[0], value: exprs[1]})
+				out = append(out, keyedElem{key: exprs[0].exprSrc, value: exprs[1].exprSrc})
 			}
 		}
 		return out
@@ -610,9 +602,7 @@ func (c compositeSrc) elems() []keyedElem {
 // transformCompositeLiteral lowers the composite literal c, on the tree it
 // comes from.
 func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr, error) {
-	if c.node.Ok() {
-		t.nativeShape(c.node, "composite")
-	}
+	t.nativeShape(c.node, "composite")
 	// Transform the type
 	typeExpr, err := t.lowerType(c.typ())
 	if err != nil {

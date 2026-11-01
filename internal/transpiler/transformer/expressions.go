@@ -573,7 +573,6 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 
 // transformPrimary, lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral moved to constructors.go
 // Lambda-related functions moved to lambdas.go
-// findLambdaInExpression moved to lambdas.go
 func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
 	return t.transformIfExpressionAgainst(ctx, slot{})
 }
@@ -957,7 +956,6 @@ func (t *galaASTTransformer) barePostfix(exprCtx grammar.IExpressionContext) *gr
 
 // findIfExpressionInExpression traverses the expression tree to find an if-expression
 // if the expression is simply an if-expression (not part of a larger expression).
-// Follows the same traversal pattern as findLambdaInExpression in lambdas.go.
 func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpressionContext) *grammar.IfExpressionContext {
 	if exprCtx == nil {
 		return nil

@@ -231,14 +231,9 @@ func (t *galaASTTransformer) matchViewSubjectAt(subject ast.Expr, subjectType tr
 	return viewExpr, view, true, nil
 }
 
-// viewSubject returns the expression a match over a sealed view tests: the
+// viewSubjectAt returns the expression a match over a sealed view tests: the
 // subject's MatchView() call, taken through an addressable receiver when the
-// method has a pointer receiver. at locates the match.
-func (t *galaASTTransformer) viewSubject(subject ast.Expr, subjectType transpiler.Type, at antlr.ParserRuleContext) (ast.Expr, error) {
-	return t.viewSubjectAt(subject, subjectType, srcNode{ctx: at})
-}
-
-// viewSubjectAt is viewSubject of a match at a node of either tree.
+// method has a pointer receiver. at locates the match, on either tree.
 func (t *galaASTTransformer) viewSubjectAt(subject ast.Expr, subjectType transpiler.Type, at srcNode) (ast.Expr, error) {
 	if err := t.checkPtrViewReceiverAt(subjectType, at); err != nil {
 		return nil, err

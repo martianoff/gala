@@ -129,27 +129,3 @@ func (l lambdaSrc) expression(t *galaASTTransformer) exprSrc {
 	}
 	return t.exprOf(l.ctx.Expression())
 }
-
-// at is where f is written.
-func (f partialSrc) at() srcNode {
-	if f.node.Ok() {
-		return srcNode{node: f.node}
-	}
-	return srcNode{ctx: f.ctx}
-}
-
-// cases is f's case clauses, in order. Those read on the native tree are
-// reported to the onNativeCase hook, as a match's are (matchCases).
-func (f partialSrc) cases(t *galaASTTransformer) []caseSrc {
-	if !f.node.Ok() {
-		return antlrCases(f.ctx.AllCaseClause())
-	}
-	var out []caseSrc
-	for c := range galaparser.NativeKids(f.node, native.GalaKIND_caseClause) {
-		if t.onNativeCase != nil {
-			t.onNativeCase(c.Index(), int(c.Start().Line))
-		}
-		out = append(out, caseSrc{node: c})
-	}
-	return out
-}

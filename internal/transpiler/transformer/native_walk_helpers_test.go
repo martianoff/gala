@@ -193,9 +193,9 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 	// A lambda is lowered on the native tree wherever it is written (the
 	// expression it is in crosses back to it, lambdas_source.go), and a match
 	// and a partial function read their case clauses there wherever they are
-	// (matchCases, partialSrc.cases), but in a
-	// parameter's default value: a default is lowered at each call, from the
-	// declaration the analysis recorded, on ANTLR's tree.
+	// (matchCases, partialSrc.cases), but in a parameter's default value: a
+	// default is lowered at each call, from the declaration the analysis
+	// recorded, on ANTLR's tree.
 	var below func(antlr.Tree)
 	below = func(node antlr.Tree) {
 		switch n := node.(type) {
@@ -204,12 +204,10 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 		case *grammar.LambdaExpressionContext:
 			c.lambdas++
 			block(n.Block())
-		case *grammar.PostfixExprContext:
-			for _, cc := range n.AllCaseClause() {
-				c.cases++
-				block(cc.GetBodyBlock())
-			}
-		case *grammar.PartialFunctionLiteralContext:
+		case interface {
+			AllCaseClause() []grammar.ICaseClauseContext
+		}:
+			// A match's postfix expression, or a partial function.
 			for _, cc := range n.AllCaseClause() {
 				c.cases++
 				block(cc.GetBodyBlock())

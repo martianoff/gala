@@ -1058,9 +1058,7 @@ func (t *galaASTTransformer) partialFunctionResultElem(s slot) transpiler.Type {
 // of its Option result (see partialFunctionResultElem), which each arm's value
 // is lowered against.
 func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slot) (ast.Expr, error) {
-	if f.node.Ok() {
-		t.nativeShape(f.node, "partial")
-	}
+	t.nativeShape(f.node, "partial")
 	caseClauses := f.cases(t)
 	if len(caseClauses) == 0 {
 		return nil, semanticErrorAtStart(f.at(), "partial function must have at least one case")

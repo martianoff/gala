@@ -28,9 +28,8 @@ import (
 // (partialSrc) and a composite literal to transformCompositeLiteral
 // (compositeSrc). What it does not cover yet it hands to ANTLR's tree with
 // crossTo: a postfix expression with a match and the blocks of an
-// if-expression's branches. Each
-// lowering below takes the value it reads and is shared with the ANTLR walk,
-// so the two give the same Go.
+// if-expression's branches. Each lowering below takes the value it reads and
+// is shared with the ANTLR walk, so the two give the same Go.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -170,8 +169,10 @@ func (t *galaASTTransformer) lowerExprNative(n native.GalaNodeRef) (ast.Expr, er
 
 // nativeShape tells the onNativeShape hook, when set, that the native walk
 // lowered n, an expression of shape (an operator, a name, a literal, ...).
+// A lowering shared with the ANTLR walk calls it with no node there, and it
+// reports nothing.
 func (t *galaASTTransformer) nativeShape(n native.GalaNodeRef, shape string) {
-	if t.onNativeShape != nil {
+	if t.onNativeShape != nil && n.Ok() {
 		t.onNativeShape(int(n.Start().Line), shape)
 	}
 }

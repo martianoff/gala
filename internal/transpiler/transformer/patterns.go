@@ -64,7 +64,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 	if view, err := t.subPatternView(pat, matchedType); err != nil {
 		return nil, nil, err
 	} else if view != nil {
-		viewObj, err := t.viewSubject(objExpr, matchedType, t.ctxAt(pat.at()))
+		viewObj, err := t.viewSubjectAt(objExpr, matchedType, pat.at())
 		if err != nil {
 			return nil, nil, err
 		}

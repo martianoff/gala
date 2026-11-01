@@ -938,10 +938,7 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 // either tree, or at no node (the zero srcNode).
 func (t *galaASTTransformer) inferCommonResultTypeAt(types []transpiler.Type, patterns []string, at srcNode, discardValue bool) (transpiler.Type, error) {
 	if len(types) == 0 {
-		line, col := t.lastLine, t.lastCol
-		if at.ok() {
-			line, col = at.start()
-		}
+		line, col := t.startOrLast(at)
 		return nil, galaerr.NewSemanticErrorAt(line, col, "match expression has no case branches")
 	}
 
@@ -1053,10 +1050,7 @@ func (t *galaASTTransformer) inferCommonResultTypeAt(types []transpiler.Type, pa
 	// Check all types are compatible with the reference type
 	for i, typ := range types {
 		if typ == nil {
-			line, col := t.lastLine, t.lastCol
-			if at.ok() {
-				line, col = at.start()
-			}
+			line, col := t.startOrLast(at)
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("cannot infer result type for '%s'. Please add explicit type annotation", patterns[i]))
 		}
 		// VoidType is compatible with any type (for mixed match where some branches are void)
@@ -1086,13 +1080,19 @@ func (t *galaASTTransformer) inferCommonResultTypeAt(types []transpiler.Type, pa
 		}
 		msg := fmt.Sprintf("type mismatch in match expression: '%s' returns '%s' but '%s' returns '%s'. All branches must return the same type",
 			refPattern, refType.String(), patterns[i], typ.String())
-		if at.ok() {
-			return nil, t.semanticErrorAtNode(at, msg)
-		}
-		return nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
+		return nil, t.semanticErrorAtNode(at, msg)
 	}
 
 	return refType, nil
+}
+
+// startOrLast is where at starts, or the last tracked position when at is no
+// node or has no first token.
+func (t *galaASTTransformer) startOrLast(at srcNode) (line, col int) {
+	if at.node.Ok() || at.ctx != nil && at.ctx.GetStart() != nil {
+		return at.start()
+	}
+	return t.lastLine, t.lastCol
 }
 
 // unifyWithSealedWidening attempts to unify two match arm result types by

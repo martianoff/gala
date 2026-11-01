@@ -199,6 +199,22 @@ func (t *galaASTTransformer) partialOf(ctx *grammar.PartialFunctionLiteralContex
 	return partialSrc{ctx: ctx}
 }
 
+// at is where f is written.
+func (f partialSrc) at() srcNode {
+	if f.node.Ok() {
+		return srcNode{node: f.node}
+	}
+	return srcNode{ctx: f.ctx}
+}
+
+// cases is f's case clauses, in order, read as a match's are (matchCases).
+func (f partialSrc) cases(t *galaASTTransformer) []caseSrc {
+	if f.node.Ok() {
+		return t.nativeCases(f.node)
+	}
+	return antlrCases(f.ctx.AllCaseClause())
+}
+
 // partialIn is the partial function e's sole operand starts from, whatever
 // suffixes follow it, and the zero partialSrc when it starts from anything
 // else.
@@ -209,8 +225,8 @@ func (t *galaASTTransformer) partialIn(e exprSrc) partialSrc {
 	return partialSrc{}
 }
 
-// barePartial is the partial function e is, with nothing applied to it
-// (barePartialFunction), and the zero partialSrc otherwise.
+// barePartial is the partial function e is, with nothing applied to it,
+// and the zero partialSrc otherwise.
 func (t *galaASTTransformer) barePartial(e exprSrc) partialSrc {
 	if p := e.solePostfix(); p.ok() && p.alone() {
 		return p.primaryPartial(t)
@@ -304,12 +320,8 @@ func (p postfixSrc) parenFirst() (first exprSrc, n int) {
 		}
 		return first, n
 	}
-	pe := p.antlrPrimaryExpr()
-	if pe == nil {
-		return exprSrc{}, 0
-	}
-	prim, ok := pe.Primary().(*grammar.PrimaryContext)
-	if !ok {
+	prim := PrimaryOf(p.ctx)
+	if prim == nil {
 		return exprSrc{}, 0
 	}
 	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)

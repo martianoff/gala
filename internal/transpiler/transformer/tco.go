@@ -8,9 +8,10 @@ import (
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the parse tree
-// (either tree: ifExprSrc, ifBranchSrc, callPat), before the normal lowering wraps an if-expression body in an IIFE (a
-// `return self(...)` inside that closure would return from the closure, not the
-// function, so a Go-AST post-pass would not see the tail call). match-form and
+// (either tree: ifExprSrc, ifBranchSrc, callPat), before the normal lowering
+// wraps an if-expression body in an IIFE (a `return self(...)` inside that
+// closure would return from the closure, not the function, so a Go-AST
+// post-pass would not see the tail call). match-form and
 // block-form bodies also lower to IIFEs, so extending TCO to them via this
 // approach means a parallel parse-tree matcher per form. Before adding the next
 // form, decide whether to keep parallel matchers or pivot to a shared
@@ -263,27 +264,24 @@ func (t *galaASTTransformer) buildTailBranch(
 	return b.stmts, false, nil
 }
 
-// buildTailCallStep detects whether exprCtx is a direct call to tc.funcName with
-// an argument count matching the parameters, and if so emits the loop-step
+// buildTailCallStep detects whether e is a direct call to tc.funcName with an
+// argument count matching the parameters, and if so emits the loop-step
 // statements: evaluate every argument into a temporary using the OLD parameter
 // values, assign the temporaries back to the parameters simultaneously, then
-// `continue`. Returns ok=false (with no statements) when exprCtx is not a
-// supported tail self-call, so the caller can treat it as a terminal value.
+// `continue`. Returns ok=false (with no statements) when e is not a supported
+// tail self-call, so the caller can treat it as a terminal value.
 func (t *galaASTTransformer) buildTailCallStep(
-	call exprSrc,
+	e exprSrc,
 	tc *tailCtx,
 ) ([]ast.Stmt, bool, error) {
 	// The call target must be exactly the enclosing function's (un-mangled)
 	// name. Explicit type arguments (self[T](...)) are not supported in this
 	// slice.
-	c, ok := selfCall(call, tc.funcName)
+	call, ok := selfCall(e, tc.funcName)
 	if !ok {
 		return nil, false, nil
 	}
-	if call.node.Ok() {
-		t.nativeShape(call.node, "tail call")
-	}
-	args := c.args.list
+	args := call.args.list
 	if len(args) != len(tc.paramNames) {
 		return nil, false, nil
 	}
@@ -292,7 +290,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 	stmts := make([]ast.Stmt, 0, len(args)+2)
 	for i, a := range args {
 		// Named arguments (name = expr) are not supported for the rewrite.
-		if name, _ := a.name(); name != "" {
+		if a.named() {
 			return nil, false, nil
 		}
 		v, err := t.argContent(a)
@@ -303,22 +301,23 @@ func (t *galaASTTransformer) buildTailCallStep(
 		if v.lambda.ok() || v.spread || !v.expr.ok() {
 			return nil, false, nil
 		}
-		e, err := t.lowerExpr(v.expr)
+		t.nativeShape(v.expr.node, "tail call")
+		arg, err := t.lowerExpr(v.expr)
 		if err != nil {
 			return nil, false, err
 		}
 		// The argument rebinds the parameter: a nil, or a pointer that may be
 		// nil, never fills a Ptr parameter.
-		if err := t.checkPtrSlot(e, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
+		if err := t.checkPtrSlot(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
 			return nil, false, err
 		}
-		e = t.wrapWithAssertion(e, tc.paramTypes[i])
+		arg = t.wrapWithAssertion(arg, tc.paramTypes[i])
 		// A closure inside a tail-call argument would capture the loop-carried
 		// parameter by reference; once that parameter is reassigned on the next
 		// iteration, the escaped closure observes the mutated value — diverging
 		// from the per-call binding the original recursion gives each frame.
 		// Bail to the normal lowering (real recursion) for this case.
-		if containsFuncLit(e) {
+		if containsFuncLit(arg) {
 			return nil, false, nil
 		}
 		// Use the package gensym so temps can't collide with a user identifier
@@ -328,7 +327,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 		stmts = append(stmts, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(tmp)},
 			Tok: token.DEFINE,
-			Rhs: []ast.Expr{e},
+			Rhs: []ast.Expr{arg},
 		})
 	}
 
