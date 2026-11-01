@@ -180,7 +180,7 @@ const handlerGolden = "testdata/handler_answers.golden"
 // requests, which convert the document's cached parse.
 func TestHandlerAnswers(t *testing.T) {
 	texts, paths, root := nativeCorpus(t)
-	sample := handlerSample(t, texts, paths)
+	sample := handlerSample(t, texts, paths, root)
 	var reads treeReads
 	h := NewGalaHandler()
 	h.SetSearchPaths([]string{root})
@@ -254,39 +254,48 @@ func TestHandlerAnswers(t *testing.T) {
 	assert.Greater(t, reads.native, 300)
 }
 
-// handlerSample is the files TestHandlerAnswers opens: the largest clean
-// files, and the files with a dot import or non-ASCII text, a few of each.
-func handlerSample(t *testing.T, texts map[string]string, paths []string) []string {
+// handlerSample is the files TestHandlerAnswers opens (handlerFiles): every
+// one staged and parsing cleanly, with a dot import and non-ASCII text among them.
+func handlerSample(t *testing.T, texts map[string]string, paths []string, root string) []string {
 	t.Helper()
-	p := parser.NewAntlrGalaParser()
-	var clean, dotting, wide []string
+	byRel := map[string]string{}
 	for _, path := range paths {
-		parsed := p.ParseFile(texts[path])
-		if parsed.CleanNative() == nil || !strings.Contains(texts[path], "(") {
-			continue
+		if rel, err := filepath.Rel(root, path); err == nil {
+			byRel[filepath.ToSlash(rel)] = path
 		}
-		clean = append(clean, path)
+	}
+	p := parser.NewAntlrGalaParser()
+	var out []string
+	dotting, wide := 0, 0
+	for _, rel := range handlerFiles {
+		path, ok := byRel[rel]
+		require.Truef(t, ok, "%s is not staged", rel)
+		parsed := p.ParseFile(texts[path])
+		require.NotNilf(t, parsed.CleanNative(), "%s does not parse cleanly", rel)
 		if len(analyzer.DotImportPaths(parsed.Tree)) > 0 {
-			dotting = append(dotting, path)
+			dotting++
 		}
 		if strings.ContainsFunc(texts[path], func(r rune) bool { return r > 0x7F }) {
-			wide = append(wide, path)
+			wide++
 		}
+		out = append(out, path)
 	}
-	sort.SliceStable(clean, func(i, j int) bool { return len(texts[clean[i]]) > len(texts[clean[j]]) })
-	seen := map[string]bool{}
-	var out []string
-	for _, group := range [][]string{clean[:min(6, len(clean))], spread(dotting, 4), spread(wide, 4)} {
-		for _, path := range group {
-			if !seen[path] {
-				seen[path] = true
-				out = append(out, path)
-			}
-		}
-	}
-	require.NotEmpty(t, dotting, "no file of the corpus dot-imports")
-	require.NotEmpty(t, wide, "no file of the corpus has non-ASCII text")
+	require.Positive(t, dotting, "no file of the sample dot-imports")
+	require.Positive(t, wide, "no file of the sample has non-ASCII text")
 	return out
+}
+
+// handlerFiles is TestHandlerAnswers' sample, in the order it opens them:
+// large library files, which every platform stages, with dot imports and
+// non-ASCII text among them.
+var handlerFiles = []string{
+	"collection_immutable/array.gala",
+	"collection_mutable/treemap.gala",
+	"collection_immutable/treemap.gala",
+	"concurrent/future.gala",
+	"collection_mutable/treeset.gala",
+	"collection_immutable/treeset.gala",
+	"collection_immutable/list.gala",
 }
 
 // spread is at most n of xs, evenly spaced, in order.
