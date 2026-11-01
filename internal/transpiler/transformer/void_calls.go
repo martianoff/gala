@@ -5,9 +5,9 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -27,10 +27,11 @@ type voidCallSite struct {
 	lambda bool
 }
 
-// recordVoidCall records call, the lowering of ctx whose last suffix is an
-// argument list, when its type is known to be void. A call of unknown or any
-// other type is not recorded, nor counted as a give-up (see probeExprType).
-func (t *galaASTTransformer) recordVoidCall(ctx *grammar.PostfixExprContext, call ast.Expr) {
+// recordVoidCall records call, the lowering of the postfix expression whose
+// last suffix is the call c, when its type is known to be void. A call of
+// unknown or any other type is not recorded, nor counted as a give-up (see
+// probeExprType). c need not carry its arguments.
+func (t *galaASTTransformer) recordVoidCall(c callSrc, call ast.Expr) {
 	ce, ok := call.(*ast.CallExpr)
 	if !ok {
 		return
@@ -41,27 +42,25 @@ func (t *galaASTTransformer) recordVoidCall(ctx *grammar.PostfixExprContext, cal
 	if t.voidCalls == nil {
 		t.voidCalls = make(map[*ast.CallExpr]voidCallSite)
 	}
-	suffixes := ctx.AllPostfixSuffix()
 	lambda := false
-	if callee := ctx.PrimaryExpr().GetText(); len(suffixes) == 1 && token.IsIdentifier(callee) {
-		lambda = t.isVal(callee) || t.isVar(callee)
+	if _, chained := c.prev(); !chained {
+		if callee := c.primaryText(); token.IsIdentifier(callee) {
+			lambda = t.isVal(callee) || t.isVar(callee)
+		}
 	}
-	t.voidCalls[ce] = voidCallSite{
-		loopControlSite{ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()},
-		voidCallText(ctx, suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)),
-		lambda,
-	}
+	line, col := c.post.at().start()
+	t.voidCalls[ce] = voidCallSite{loopControlSite{line, col}, voidCallText(c), lambda}
 }
 
-// voidCallText is how a diagnostic quotes the call ctx, whose last suffix is
-// the argument list call: as written when it is short and on one line, and
-// otherwise as its callee followed by `(...)`, or "" when that is long too.
-func voidCallText(ctx *grammar.PostfixExprContext, call *grammar.PostfixSuffixContext) string {
-	text := transpiler.SourceText(ctx)
-	if len(text) <= 60 && !strings.ContainsAny(text, "\n\r") {
+// voidCallText is how a diagnostic quotes the postfix expression ending in
+// the call c: as written when it is short and on one line, and otherwise as
+// its callee followed by `(...)`, or "" when that is long too.
+func voidCallText(c callSrc) string {
+	text := c.post.at().sourceText()
+	if utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r") {
 		return text
 	}
-	if callee := calleeText(call); callee != "" {
+	if callee := c.calleeText(); callee != "" {
 		return callee + "(...)"
 	}
 	return ""

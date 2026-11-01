@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"slices"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -58,32 +58,55 @@ func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Exp
 	return ret, ft.Params, true
 }
 
-// lambdaArgCallee names the call a lambda is written directly as an argument
-// of — the method or function name as written, `f` in `f(…)` or `x.f(…)` — for
+// lambdaArgCallee names the call l is written directly as an argument of —
+// the method or function name as written, `f` in `f(…)` or `x.f(…)` — for
 // diagnostics. It is "" for any other shape (a lambda nested in a match arm or
 // a parenthesized expression, an explicitly instantiated callee), where naming
 // a call could name the wrong one.
-func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
-	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
+func (t *galaASTTransformer) lambdaArgCallee(l lambdaSrc) string {
+	c, ok := t.lambdaArgCall(l)
 	if !ok {
 		return ""
+	}
+	if prev, chained := c.prev(); chained {
+		name, _, _ := prev.member()
+		return name
+	}
+	return c.primaryText()
+}
+
+// lambdaArgCall is the call l is written directly as an argument of, and
+// false when l is not one.
+func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
+	if l.node.Ok() {
+		arg := l.node.Parent()
+		if !arg.Ok() || arg.Kind() != native.GalaKIND_argument {
+			return callSrc{}, false
+		}
+		suffix := arg.Parent().Parent()
+		if !suffix.Ok() || suffix.Kind() != native.GalaKIND_postfixSuffix {
+			return callSrc{}, false
+		}
+		post := suffix.Parent()
+		if !post.Ok() || post.Kind() != native.GalaKIND_postfixExpr {
+			return callSrc{}, false
+		}
+		return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
+	}
+	lambda := l.antlr(t)
+	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
+	if !ok {
+		return callSrc{}, false
 	}
 	suffix, ok := arg.GetParent().GetParent().(*grammar.PostfixSuffixContext)
 	if !ok {
-		return ""
+		return callSrc{}, false
 	}
-	postfix, ok := suffix.GetParent().(*grammar.PostfixExprContext)
+	post, ok := suffix.GetParent().(*grammar.PostfixExprContext)
 	if !ok {
-		return ""
+		return callSrc{}, false
 	}
-	suffixes := postfix.AllPostfixSuffix()
-	switch i := slices.Index(suffixes, grammar.IPostfixSuffixContext(suffix)); {
-	case i == 0:
-		return postfix.PrimaryExpr().GetText()
-	case i > 0 && suffixes[i-1].(*grammar.PostfixSuffixContext).Identifier() != nil:
-		return suffixes[i-1].(*grammar.PostfixSuffixContext).Identifier().GetText()
-	}
-	return ""
+	return callSrc{post: postfixSrc{ctx: post}, suffix: suffixSrc{ctx: suffix}}, true
 }
 
 // transformLambdaWithExpectedType is lowerLambda of the lambda ctx, on the
@@ -193,7 +216,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 					hint = fmt.Sprintf("give the lambda %d parameters", len(expectedParamTypes))
 				}
 				if unresolvedSlot {
-					callee := lambdaArgCallee(l.antlr(t))
+					callee := t.lambdaArgCallee(l)
 					if callee == "" {
 						callee = "the function it is passed to"
 					}

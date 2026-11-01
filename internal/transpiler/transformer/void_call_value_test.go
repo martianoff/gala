@@ -56,6 +56,9 @@ func TestVoidCallValueIsAnError(t *testing.T) {
 		{"function as a constructor argument", "func main() {\n    Println(Box(v()))\n}", "`v()` produces no value", 16, 16, false},
 		{"function as a lambda's value", "func main() {\n    val g = () => {\n        Println(\"g\")\n        v()\n    }\n    val h = (x int) => x + g()\n    Println(h(1))\n}", "`g()` produces no value", 20, 27, true},
 		{"function as a returned value", "func f() int {\n    return v()\n}", "`v()` produces no value", 16, 11, false},
+		// 41 characters, 71 bytes: short enough to quote whole.
+		{"call of multibyte text", "struct S(s string)\n\nfunc (x S) Say() {\n    Println(x.s)\n}\n\nfunc main() {\n    val x = S(\"" + strings.Repeat("ä", 30) + "\").Say()\n    Println(x)\n}",
+			"`S(\"" + strings.Repeat("ä", 30) + "\").Say()` produces no value", 22, 12, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -11,6 +11,7 @@ go_library(
         "call_context.go",
         "call_arity.go",
         "calls.go",
+        "calls_source.go",
         "codec.go",
         "codec_typed.go",
         "codec_validate.go",

@@ -392,7 +392,7 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 
 // fieldPatterns returns the patterns a variant pattern gives its fields, by
 // position once named sub-patterns are normalized.
-func (c *coverage) fieldPatterns(args patArgs, ctor covCtor) []covCell {
+func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 	fields := make([]covCell, len(ctor.fields))
 	for i, a := range args.list {
 		if i >= len(fields) {

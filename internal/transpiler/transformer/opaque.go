@@ -598,20 +598,20 @@ func (t *galaASTTransformer) opaqueConversionCallee(fun ast.Expr) *transpiler.Ty
 // checkOpaqueConversion rejects `OrderID(userID)`, a direct conversion of one
 // opaque type into another (GALA-E0063).
 // targetType is the type the conversion names (`OrderID`, `Id[Order]`).
-func (t *galaASTTransformer) checkOpaqueConversion(target *transpiler.TypeMetadata, targetType transpiler.Type, arg ast.Expr, argCtx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkOpaqueConversion(target *transpiler.TypeMetadata, targetType transpiler.Type, arg ast.Expr, at srcNode) error {
 	fromType := t.probeExprType(arg)
 	from := t.opaqueMeta(fromType)
 	if from == nil || t.sameOpaqueType(fromType, from, targetType, target) {
 		return nil
 	}
-	argText := transpiler.SourceText(argCtx)
-	tok := argCtx.GetStart()
+	argText := at.sourceText()
+	line, col := at.start()
 	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueToOpaqueConversion,
-		tok.GetLine(), tok.GetColumn(),
+		line, col,
 		fmt.Sprintf("cannot convert %s to %s directly: they are different opaque types",
 			t.opaqueTypeName(fromType, from), t.opaqueTypeName(targetType, target)),
 		t.throughUnderlyingHint(t.opaqueTypeName(targetType, target), from, argText),
-	).WithSpan(tok.GetColumn() + len([]rune(argText)))
+	).WithSpan(col + len([]rune(argText)))
 }
 
 // throughUnderlyingHint is the hint for a value of opaque type from where

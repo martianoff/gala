@@ -9,7 +9,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -52,9 +51,9 @@ import (
 // goResult records one Go call converted to a GALA value.
 type goResult struct {
 	transpiler.GoResultValue
-	raw    *ast.CallExpr                 // the Go call itself, yielding every result
-	suffix *grammar.PostfixSuffixContext // the call's argument list, for quoting the callee in a diagnostic
-	via    string                        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
+	raw  *ast.CallExpr // the Go call itself, yielding every result
+	site callSrc       // the call, for quoting the callee in a diagnostic
+	via  string        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
 }
 
 // count is the number of the call's results, a trailing error included.
@@ -67,7 +66,7 @@ func (r *goResult) count() int {
 
 // call renders the call for a diagnostic: `os.ReadFile(...)`.
 func (r *goResult) call() string {
-	if calleeText(r.suffix) == "" {
+	if r.site.calleeText() == "" {
 		return "this call"
 	}
 	return "`" + r.source() + "`"
@@ -76,7 +75,7 @@ func (r *goResult) call() string {
 // source renders the call as a pasteable placeholder: `os.ReadFile(...)`, or
 // `...` when the callee is not worth quoting.
 func (r *goResult) source() string {
-	callee := calleeText(r.suffix)
+	callee := r.site.calleeText()
 	if callee == "" {
 		return "..."
 	}
@@ -86,7 +85,7 @@ func (r *goResult) source() string {
 // liftGoResults converts expr, a call just built from its suffix, to one GALA
 // value when it calls a Go function with two or more results. Anything else is
 // returned unchanged.
-func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, error) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return expr, nil
@@ -107,12 +106,10 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.Postfi
 	}
 	returns := t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
 	value, _ := transpiler.GoResultValueOf(returns)
-	res := &goResult{GoResultValue: value, raw: call, suffix: suffix}
+	// The diagnostics quote the callee only: the arguments are not kept.
+	res := &goResult{GoResultValue: value, raw: call, site: callSrc{post: c.post, suffix: c.suffix}}
 	if value.Values > transpiler.MaxGoResultValues {
-		line, col := t.lastLine, t.lastCol
-		if suffix != nil {
-			line, col = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-		}
+		line, col := c.start()
 		return nil, galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, line, col,
 			fmt.Sprintf("%s returns %d values, more than the %d a Tuple holds, so it has no GALA value", res.call(), value.Values, transpiler.MaxGoResultValues),
 			fmt.Sprintf("bind the results by name: `val %s = %s`", transpiler.PlaceholderNames(res.count(), res.Fails), res.source()))
@@ -158,28 +155,6 @@ func (t *galaASTTransformer) stdHelperIdent(name string) ast.Expr {
 		return ast.NewIdent(name)
 	}
 	return &ast.SelectorExpr{X: ast.NewIdent(registry.StdPackageName), Sel: ast.NewIdent(name)}
-}
-
-// calleeText is the source text of the callee of the call suffix — everything
-// in its postfix expression before the argument list — or "" when that is not
-// a short single-line expression worth quoting.
-func calleeText(suffix *grammar.PostfixSuffixContext) string {
-	if suffix == nil {
-		return ""
-	}
-	postfix, ok := suffix.GetParent().(*grammar.PostfixExprContext)
-	if !ok || postfix.GetStart() == nil || suffix.GetStart() == nil {
-		return ""
-	}
-	start, end := postfix.GetStart().GetStart(), suffix.GetStart().GetStart()-1
-	if end < start || end-start >= 60 {
-		return ""
-	}
-	text := postfix.GetStart().GetInputStream().GetText(start, end)
-	if text == "" || strings.ContainsAny(text, "\n\r") {
-		return ""
-	}
-	return text
 }
 
 // isGalaCallee reports whether call names a GALA function or method, which
@@ -661,6 +636,16 @@ func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keywor
 // goResultMisuse builds the GALA-E0049 diagnostic for a converted Go call used
 // as something it is not.
 func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antlr.ParserRuleContext) error {
+	at := srcNode{}
+	if ctx != nil && ctx.GetStart() != nil {
+		at.ctx = ctx
+	}
+	return t.goResultMisuseAt(res, what, at)
+}
+
+// goResultMisuseAt is goResultMisuse at a node of either tree, or at the
+// position last lowered when at is the zero srcNode.
+func (t *galaASTTransformer) goResultMisuseAt(res *goResult, what string, at srcNode) error {
 	shape := fmt.Sprintf("returns %d values", res.count())
 	if res.Fails {
 		shape = "can fail"
@@ -678,15 +663,11 @@ func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antl
 		hint = fmt.Sprintf("take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val %s = %s`",
 			names, res.source())
 	}
-	line, col := t.lastLine, t.lastCol
-	if ctx != nil && ctx.GetStart() != nil {
-		line, col = ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	if !at.ok() {
+		return galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, t.lastLine, t.lastCol, msg, hint)
 	}
-	err := galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, line, col, msg, hint)
-	if ctx != nil && ctx.GetStart() != nil && ctx.GetStop() != nil && ctx.GetStop().GetLine() == line {
-		err = err.WithSpan(ctx.GetStop().GetColumn() + len([]rune(ctx.GetStop().GetText())))
-	}
-	return err
+	r := at.rng()
+	return spanErrorAt(galaerr.CodeGoCallResultAsValue, r, r, msg, hint)
 }
 
 // displayType renders a type as GALA source spells it.

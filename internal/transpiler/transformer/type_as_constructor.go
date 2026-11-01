@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 )
@@ -203,16 +201,13 @@ func PrivateFieldSetByCtor(meta *transpiler.TypeMetadata, fromPackage string, fi
 // Those forms never reach the positional dispatcher, whose calls of the same
 // type are reported by checkTypeUsedAsConstructor; both report GALA-E0043,
 // since in both the type has no constructor at the call site. The error points
-// at the callee of the call that node belongs to.
-func (t *galaASTTransformer) checkPrivateFieldCtor(fun ast.Expr, meta *transpiler.TypeMetadata, fields []string, provided func(i int, name string) bool, node antlr.ParserRuleContext) error {
+// at the callee of the call c.
+func (t *galaASTTransformer) checkPrivateFieldCtor(fun ast.Expr, meta *transpiler.TypeMetadata, fields []string, provided func(i int, name string) bool, c callSrc) error {
 	field := PrivateFieldSetByCtor(meta, t.packageName, fields, provided)
 	if field == "" {
 		return nil
 	}
-	line, col, exact := primaryStartOf(node)
-	if !exact {
-		line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
-	}
+	line, col, exact := c.calleePos()
 	typeName, qualifiedName := extractTypeNameFromExpr(fun)
 	return typeNotConstructorError(typeName, privateFieldHint(qualifiedName, meta, field), line, col, exact)
 }
@@ -225,13 +220,10 @@ func (t *galaASTTransformer) typeAsConstructorError(fun ast.Expr, meta *transpil
 }
 
 // typeAsConstructorErrorAt is typeAsConstructorError pointed at the callee of
-// the call node belongs to, for a caller that already holds meta: a sealed
+// the call c, for a caller that already holds meta: a sealed
 // parent called as `Shape()` or `Shape(R = 1)`, generic or not.
-func (t *galaASTTransformer) typeAsConstructorErrorAt(fun ast.Expr, meta *transpiler.TypeMetadata, node antlr.ParserRuleContext) error {
-	line, col, exact := primaryStartOf(node)
-	if !exact {
-		line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
-	}
+func (t *galaASTTransformer) typeAsConstructorErrorAt(fun ast.Expr, meta *transpiler.TypeMetadata, c callSrc) error {
+	line, col, exact := c.calleePos()
 	return t.typeAsConstructorError(fun, meta, line, col, exact)
 }
 

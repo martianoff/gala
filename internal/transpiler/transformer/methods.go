@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -119,7 +118,7 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 	return typ
 }
 
-func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, args argsSrc) (ast.Expr, error) {
 	// 1. Identify receiver type via the general expression-type inferencer.
 	// This handles all receiver shapes uniformly: bare identifiers (`p.Copy(...)`),
 	// chained struct-field access (`o.Tab.Copy(...)`, `m.View.Section.Copy(...)`),
@@ -135,7 +134,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		// but GALA seems to prefer explicit types for Copy overrides.
 		// For now, let's assume it's required to know the type for overrides.
 		// If no overrides, we just call the regular Copy() method.
-		if argListCtx == nil || len(argListCtx.AllArgument()) == 0 {
+		if len(args.list) == 0 {
 			return &ast.CallExpr{
 				Fun: &ast.SelectorExpr{
 					X:   receiver,
@@ -144,7 +143,8 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			}, nil
 		}
 		// If there are overrides, we need the type.
-		return nil, galaerr.NewSemanticErrorAt(argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn(), "cannot use Copy overrides: type of receiver unknown")
+		al, ac := args.at.start()
+		return nil, galaerr.NewSemanticErrorAt(al, ac, "cannot use Copy overrides: type of receiver unknown")
 	}
 
 	// The type may be spelled with an import alias (`l.Point`, from a
@@ -159,13 +159,9 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	fields, ok := t.structFields[typeName]
 	if !ok {
 		// If it's not a struct type but we have overrides, compilation error
-		if len(argListCtx.AllArgument()) > 0 {
-			for _, argCtx := range argListCtx.AllArgument() {
-				arg := argCtx.(*grammar.ArgumentContext)
-				if arg.Identifier() != nil {
-					return nil, galaerr.NewSemanticErrorAt(argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn(), "Copy overrides only supported for struct types")
-				}
-			}
+		if slices.ContainsFunc(args.list, argSrc.named) {
+			al, ac := args.at.start()
+			return nil, galaerr.NewSemanticErrorAt(al, ac, "Copy overrides only supported for struct types")
 		}
 		// Fallback to regular Copy() call if no named overrides (though the grammar allows them now)
 		return &ast.CallExpr{
@@ -192,12 +188,12 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	// 2. Parse overrides
 	overrides := make(map[string]ast.Expr)
 	overrideTypes := make(map[string]transpiler.Type)
-	for _, argCtx := range argListCtx.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
-		if arg.Identifier() == nil {
-			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be named: Copy(field = value)")
+	for _, arg := range args.list {
+		argLine, argCol := arg.at().start()
+		fieldName, _ := arg.name()
+		if fieldName == "" {
+			return nil, galaerr.NewSemanticErrorAt(argLine, argCol, "Copy overrides must be named: Copy(field = value)")
 		}
-		fieldName := arg.Identifier().GetText()
 		found := false
 		for _, f := range fields {
 			if f == fieldName {
@@ -206,18 +202,18 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			}
 		}
 		if !found {
-			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
+			return nil, galaerr.NewSemanticErrorAt(argLine, argCol, fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
 		}
 		if meta != nil && !visibleFrom(fieldName, meta, t.packageName) {
-			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(),
+			return nil, galaerr.NewSemanticErrorAt(argLine, argCol,
 				fmt.Sprintf("field %s of %s is unexported, so only package %s can set it", fieldName, typeName, meta.Package))
 		}
 		// A lambda override parses as the argument rule's lambdaExpression
 		// alternative rather than as a pattern, so read the argument the way
 		// function calls do.
-		exprCtx, lambdaCtx, isSpread, err := extractArgContent(arg)
+		exprCtx, lambdaCtx, isSpread, err := t.argContent(arg)
 		if err != nil || isSpread {
-			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be expressions")
+			return nil, galaerr.NewSemanticErrorAt(argLine, argCol, "Copy overrides must be expressions")
 		}
 		// An override fills the field's slot exactly as a named constructor
 		// argument does: the field's declared type is the expected type, so a

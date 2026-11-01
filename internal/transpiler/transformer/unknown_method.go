@@ -8,10 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -77,7 +74,7 @@ func isSynthesizedMethodName(name string) bool {
 // position; unknownMethodError holds the guards that decide whether the
 // judgement can be made at all.
 func (t *galaASTTransformer) checkUnknownMethod(
-	argListCtx *grammar.ArgumentListContext,
+	c callSrc,
 	typeMeta *transpiler.TypeMetadata,
 	method string,
 	recvType transpiler.Type,
@@ -88,7 +85,7 @@ func (t *galaASTTransformer) checkUnknownMethod(
 	if typeMeta == nil {
 		return nil
 	}
-	line, col, exact := callAnchorPos(argListCtx)
+	line, col, exact := callAnchorPos(c)
 	return t.unknownMethodError(typeMeta, method, recvType, line, col, exact)
 }
 
@@ -102,7 +99,7 @@ func (t *galaASTTransformer) checkUnknownMethod(
 // pass that is not cached when manual resolution falls short.
 func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 	base ast.Expr,
-	suffix *grammar.PostfixSuffixContext,
+	c callSrc,
 	recvType transpiler.Type,
 	lookupBaseName string,
 ) error {
@@ -121,7 +118,7 @@ func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 		return nil
 	}
 
-	line, col, exact := callAnchorPos(suffix)
+	line, col, exact := callAnchorPos(c)
 	return t.unknownMethodError(typeMeta, sel.Sel.Name, recvType, line, col, exact)
 }
 
@@ -194,7 +191,7 @@ func (t *galaASTTransformer) unknownMethodError(
 // arguments, generic or not, with defaults filled or not. It runs where the
 // dispatcher first resolves the receiver, before any of those paths returns,
 // because visibility is a property of the method found, not of failing to
-// find one. anchor is the call's argument list, or its `()`.
+// find one. c is the call.
 //
 // Visibility follows Go: a lower-case method — including the `is<Variant>`
 // predicates every sealed type gets — is private to its package. The call used
@@ -207,7 +204,7 @@ func (t *galaASTTransformer) checkMethodVisibility(
 	receiver ast.Expr,
 	method string,
 	lookupBaseName string,
-	anchor antlr.ParserRuleContext,
+	c callSrc,
 ) error {
 	// Runs for every method call, so the exported (common) case returns before
 	// any metadata lookup.
@@ -228,7 +225,7 @@ func (t *galaASTTransformer) checkMethodVisibility(
 			return nil
 		}
 	}
-	line, col, exact := callAnchorPos(anchor)
+	line, col, exact := callAnchorPos(c)
 	pkg := transpiler.PackageDisplayName(typeMeta.Package)
 	hint := fmt.Sprintf("call an exported method (only the capitalized methods of %s are visible outside package %s)", typeMeta.Name, pkg)
 	if pattern, ok := sealedPredicatePattern(typeMeta, method); ok {
@@ -381,58 +378,15 @@ func nearestName(name string, candidates []string) string {
 	return best
 }
 
-// methodNameStartOf locates the `.name` suffix that precedes this argument
-// list, so the caret lands on the method name rather than on the parenthesis.
-func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
-	tok := calledMemberToken(node)
-	if tok == nil {
-		return 0, 0, false
-	}
-	return tok.GetLine(), tok.GetColumn(), true
-}
-
 // callAnchorPos is the position a call diagnostic reports: the called method's
-// name when it can be located (exact), otherwise the start of anchor — the
-// call's argument list or its `()`.
-func callAnchorPos(anchor antlr.ParserRuleContext) (line, col int, exact bool) {
-	if line, col, exact = methodNameStartOf(anchor); exact {
+// name when it can be located (exact) — the `.name` suffix just before the
+// call, so the caret lands on the method name rather than on the parenthesis
+// — otherwise the start of the call's anchor, its argument list or its `()`.
+func callAnchorPos(c callSrc) (line, col int, exact bool) {
+	if _, at, ok := c.member(); ok {
+		line, col = at.start()
 		return line, col, true
 	}
-	return anchor.GetStart().GetLine(), anchor.GetStart().GetColumn(), false
-}
-
-// calledMemberToken returns the identifier of the `.name` suffix that
-// immediately precedes the call suffix holding node, or nil when the call is
-// not of a member — `f(x)`, or `g()(x)`, whose preceding suffix is a call.
-//
-// `postfixExpr: primaryExpr postfixSuffix*` means `xs.Sum()` carries two
-// suffixes — `.Sum` and `(...)` — and the argument list belongs to the second.
-// The method name is the identifier of the one before it.
-func calledMemberToken(node antlr.Tree) antlr.Token {
-	// Walk up to the postfixSuffix that owns this argument list.
-	var suffix *grammar.PostfixSuffixContext
-	for n := node; n != nil; n = n.GetParent() {
-		if s, isSuffix := n.(*grammar.PostfixSuffixContext); isSuffix {
-			suffix = s
-			break
-		}
-	}
-	if suffix == nil {
-		return nil
-	}
-	pe, isPE := suffix.GetParent().(*grammar.PostfixExprContext)
-	if !isPE {
-		return nil
-	}
-	all := pe.AllPostfixSuffix()
-	for i, s := range all {
-		if s != suffix || i == 0 {
-			continue
-		}
-		if id := all[i-1].Identifier(); id != nil {
-			return id.GetStart()
-		}
-		return nil
-	}
-	return nil
+	line, col = c.anchor().start()
+	return line, col, false
 }

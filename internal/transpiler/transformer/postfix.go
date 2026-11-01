@@ -14,7 +14,7 @@ import (
 )
 
 // This file contains postfix operation and field access transformation logic extracted from expressions.go
-// Functions: transformPostfixExpr, applyPostfixSuffix, transformPrimaryExpr, transformPostfixMatchExpression,
+// Functions: transformPostfixExpr, transformPrimaryExpr, transformPostfixMatchExpression,
 //            buildMatchExpressionFromClauses
 
 func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
@@ -43,56 +43,13 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "postfixExpr must have primaryExpr")
 	}
 
-	// The type of the slot this expression fills is for its last suffix, the
-	// call that is the value (see consumesSlotType), or for a bare tuple
-	// literal: never for the receiver the call is applied to.
-	suffixes := ctx.AllPostfixSuffix()
-	release := func() {}
-	if len(suffixes) > 0 {
-		release = t.expectedArgTypes.withhold(ctx)
-		defer release()
+	p := postfixSrc{ctx: ctx, owner: ctx}
+	var buf [4]suffixSrc
+	suffixes := p.appendSuffixes(buf[:0])
+	if len(suffixes) == 0 {
+		return t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	}
-	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply postfix suffixes
-	for i, suffix := range suffixes {
-		if i == len(suffixes)-1 {
-			release()
-		}
-		result, err = t.applyPostfixSuffix(result, suffix.(*grammar.PostfixSuffixContext))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// A call that produces no value may only stand alone (see void_calls.go).
-	if n := len(suffixes); n > 0 && isCallSuffix(suffixes[n-1]) {
-		t.recordVoidCall(ctx, result)
-	}
-
-	return result, nil
-}
-
-func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
-	if id := suffix.Identifier(); id != nil {
-		return t.lowerMember(base, memberSrc{suffixSrc{ctx: suffix}})
-	}
-
-	childCount := suffix.GetChildCount()
-	if childCount >= 2 {
-		firstChild := suffix.GetChild(0).(antlr.ParseTree).GetText()
-		if firstChild == "(" {
-			return t.applyGoCallSuffix(base, suffix)
-		}
-		if firstChild == "[" {
-			return t.resolveIndexAccess(base, indexSrc{suffixSrc{ctx: suffix}})
-		}
-	}
-
-	return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "unknown postfix suffix type")
+	return t.lowerSuffixes(p, suffixes)
 }
 
 // lowerMember lowers the member access m on base: a member a Go call's Try
@@ -108,14 +65,14 @@ func (t *galaASTTransformer) lowerMember(base ast.Expr, m memberSrc) (ast.Expr, 
 // function returning several results as one GALA value (see go_results.go).
 // GALA's own Println and Print are statements, not Go calls, and keep their
 // plain form.
-func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Expr, error) {
 	isPrint := t.isBuiltinPrint(base)
 	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
-		if err := t.checkTypeParamConversion(id.Name, suffix); err != nil {
+		if err := t.checkTypeParamConversion(id.Name, c); err != nil {
 			return nil, err
 		}
 	}
-	call, err := t.applyCallSuffix(base, suffix)
+	call, err := t.applyCallSuffix(base, c)
 	if err != nil || isPrint {
 		return call, err
 	}
@@ -123,11 +80,11 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.Po
 	if id, ok := base.(*ast.Ident); ok && transpiler.IsPrimitiveType(id.Name) && !t.isVal(id.Name) && !t.isVar(id.Name) {
 		if ce, ok := call.(*ast.CallExpr); ok && len(ce.Args) == 1 {
 			if res := t.goResultOf(ce.Args[0]); res != nil {
-				return nil, t.goResultMisuse(res, fmt.Sprintf("it cannot be converted to `%s`", id.Name), suffix)
+				return nil, t.goResultMisuseAt(res, fmt.Sprintf("it cannot be converted to `%s`", id.Name), c.at())
 			}
 		}
 	}
-	return t.liftGoResults(call, suffix)
+	return t.liftGoResults(call, c)
 }
 
 // receiverSource returns the receiver of the member access suffix — the
@@ -557,7 +514,7 @@ func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar
 	// Apply any suffixes before the match
 	suffixes := ctx.AllPostfixSuffix()
 	for _, suffix := range suffixes {
-		subject, err = t.applyPostfixSuffix(subject, suffix.(*grammar.PostfixSuffixContext))
+		subject, err = t.lowerSuffix(subject, postfixSrc{ctx: ctx, owner: ctx}, suffixSrc{ctx: suffix.(*grammar.PostfixSuffixContext)})
 		if err != nil {
 			return nil, err
 		}

@@ -1579,8 +1579,9 @@ func (t *galaASTTransformer) isResultGenericMethodCall(exprCtx grammar.IExpressi
 	if len(suffixes) == 0 || !isCallSuffix(suffixes[len(suffixes)-1]) {
 		return false
 	}
-	member := calledMemberToken(suffixes[len(suffixes)-1])
-	return member != nil && t.resultGenericMethods[member.GetText()]
+	call := callSrc{post: postfixSrc{ctx: p}, suffix: suffixSrc{ctx: suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)}}
+	member, _, ok := call.member()
+	return ok && t.resultGenericMethods[member]
 }
 
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
