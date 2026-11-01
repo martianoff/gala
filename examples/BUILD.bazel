@@ -4803,3 +4803,26 @@ gala_exec_test(
     src = "if_expr_trailing_match.gala",
     expected = "if_expr_trailing_match.out",
 )
+
+# A method declared in another file than its type: its parameter default
+# resolves through the file that declares the method, including at a call
+# in that file.
+gala_library(
+    name = "cross_file_method_default_lib",
+    srcs = [
+        "cross_file_method_default_lib/a.gala",
+        "cross_file_method_default_lib/b.gala",
+    ],
+    importpath = "martianoff/gala/examples/cross_file_method_default_lib",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "cross_file_method_default",
+    src = "cross_file_method_default.gala",
+    expected = "cross_file_method_default.out",
+    deps = [
+        "//collection_immutable",
+        "//examples:cross_file_method_default_lib",
+    ],
+)

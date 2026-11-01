@@ -1,0 +1,4 @@
+package cross_file_method_default_lib
+
+// Box is declared here; its method Label is declared in b.gala.
+struct Box(N int)

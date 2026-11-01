@@ -665,6 +665,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				ReceiverName:    recvCtx.Identifier().GetText(),
 				PointerReceiver: pointer,
 				PtrReceiver:     ptr,
+				DefinedIn:       filePath,
 			}
 			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 
@@ -701,9 +702,9 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 					// Merge IsGeneric: see collectFileFuncs.
 					methodMeta.IsGeneric = methodMeta.IsGeneric || existing.IsGeneric
 				}
-				methodMeta.DefinedIn = filePath
 				typeMeta.Methods[methodName] = methodMeta
 			} else {
+				// A placeholder until the sibling pass: see collectFileFuncs.
 				richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
 					Name:    baseType,
 					Package: pkgName,

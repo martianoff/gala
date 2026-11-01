@@ -1,0 +1,12 @@
+package main
+
+import lib "martianoff/gala/examples/cross_file_method_default_lib"
+
+// Label is declared in another file than Box, and its default names ArrayOf,
+// which only Label's file imports. The default resolves there, at a call in
+// that file and at one in another package alike.
+func main() {
+    Println(lib.Describe(lib.Box(1)))
+    Println(lib.Box(2).Label())
+    Println(lib.Box(3).Label(5))
+}
