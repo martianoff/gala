@@ -275,11 +275,11 @@ func readParamsNative(ps native.ParametersNode) []paramDecl {
 	for p := range galaparser.NativeKids(ps.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		param := native.ParameterNode{GalaNodeRef: p}
 		pd := paramDecl{
-			at:         srcNode{node: p},
-			isVar:      param.VAR().Ok(),
-			isVal:      param.VAL().Ok(),
-			variadic:   param.ELLIPSIS().Ok(),
-			def:        nativeDefault(param.ParamDefault()),
+			at:       srcNode{node: p},
+			isVar:    param.VAR().Ok(),
+			isVal:    param.VAL().Ok(),
+			variadic: param.ELLIPSIS().Ok(),
+			def:      nativeDefault(param.ParamDefault()),
 		}
 		// A parameter can be nameless, as in `(...int) => 0`.
 		if id := param.Identifier(); id.Ok() {

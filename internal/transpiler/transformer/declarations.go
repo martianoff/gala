@@ -1494,12 +1494,12 @@ func readParams(ps *grammar.ParametersContext) []paramDecl {
 	for _, pCtx := range list.AllParameter() {
 		param := pCtx.(*grammar.ParameterContext)
 		pd := paramDecl{
-			at:         srcNode{ctx: param},
-			isVar:      param.VAR() != nil,
-			isVal:      param.VAL() != nil,
-			variadic:   param.ELLIPSIS() != nil,
-			def:        antlrDefault(param.ParamDefault()),
-			typ:        antlrType(param.Type_()),
+			at:       srcNode{ctx: param},
+			isVar:    param.VAR() != nil,
+			isVal:    param.VAL() != nil,
+			variadic: param.ELLIPSIS() != nil,
+			def:      antlrDefault(param.ParamDefault()),
+			typ:      antlrType(param.Type_()),
 		}
 		// A parameter can be nameless, as in `(...int) => 0`.
 		if id := param.Identifier(); id != nil {

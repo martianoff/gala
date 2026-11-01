@@ -114,7 +114,7 @@ type galaASTTransformer struct {
 	unapplyHelperDecls     []ast.Decl                                    // their declarations
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
-	defaultTrees           map[defaultTreeKey]exprSrc // parse trees of declared default values, one per default per file (see defaultExprTree)
+	defaultTrees           map[defaultTreeKey]exprSrc                    // parse trees of declared default values, one per default per file (see defaultExprTree)
 	loweringDefault        *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
 	expectedArgTypes       expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
