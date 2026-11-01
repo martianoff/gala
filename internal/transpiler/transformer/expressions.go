@@ -1266,6 +1266,9 @@ func (t *galaASTTransformer) classifyExpr(e exprSrc) exprForm {
 	if !e.ok() {
 		return exprForm{}
 	}
+	if e.node.Ok() {
+		return t.classifyNative(e)
+	}
 	if inner := t.grouped(e); inner.ok() {
 		return exprForm{grouped: inner}
 	}
@@ -1300,13 +1303,17 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 // (consumesSlotType). A lambda body is never lowered against the outer slot:
 // it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
-	if transpiler.IsUnusable(s.typ) && (s.hoist == "" || !t.hoistable(e)) {
+	untyped := transpiler.IsUnusable(s.typ)
+	if untyped && s.hoist == "" {
+		return t.lowerExpr(e)
+	}
+	f := t.classifyExpr(e)
+	if untyped && !t.hoistableForm(f) {
 		return t.lowerExpr(e)
 	}
 	if e.node.Ok() {
 		t.nativeShape(e.node, "slot")
 	}
-	f := t.classifyExpr(e)
 	switch {
 	case f.grouped.ok():
 		expr, err := t.lowerAgainst(f.grouped, s, strict)

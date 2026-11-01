@@ -592,7 +592,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		isTrailing := i == lastIdx
 		discardsValue := !isTrailing || !lastStmtIsValue
 		valueExpr := st.valueExpr(t)
-		value := st.simpleS.exprSrc() // valueExpr on its tree, for the slot-typed lowering
+		value := t.exprOf(valueExpr) // on the native tree when the walk reads it
 		if discardsValue && valueExpr != nil && t.expressionIsBareMatch(valueExpr) {
 			t.matchInStatementPos = true
 		}

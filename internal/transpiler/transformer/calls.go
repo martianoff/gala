@@ -1377,7 +1377,7 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 		}
 		if positional {
 			expr = t.spreadGoResultArg(goSig, len(args), expr)
-			if cerr := t.checkGoResultGoArg(goSig, i, expr, v.expr.at()); cerr != nil {
+			if cerr := t.checkGoResultGoArg(goSig, i, expr, v.at()); cerr != nil {
 				return nil, cerr
 			}
 		}
@@ -2010,7 +2010,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 		if !v.spread {
 			expr = t.spreadGoResultArg(goSig, len(args), expr)
-			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, v.expr.at()); cerr != nil {
+			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, v.at()); cerr != nil {
 				return nil, nil, false, cerr
 			}
 		}

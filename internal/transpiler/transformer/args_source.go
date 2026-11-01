@@ -172,6 +172,43 @@ func (t *galaASTTransformer) lambdaIn(e exprSrc) lambdaSrc {
 	return lambdaSrc{}
 }
 
+// classifyNative is classifyExpr of e, a native expression: its sole postfix
+// expression is found once, and the form read off its primary's one child
+// (as grouped, lambdaIn, barePartial and ifIn read it) or its match.
+func (t *galaASTTransformer) classifyNative(e exprSrc) exprForm {
+	p := e.solePostfix()
+	if !p.ok() {
+		return exprForm{}
+	}
+	alone, suffixed := p.alone(), p.hasSuffixes()
+	if prim, ok := firstKidNode(p.primaryExprNode().GalaNodeRef); ok {
+		switch prim.Kind() {
+		case native.GalaKIND_primary:
+			if alone {
+				if el, ok := galaparser.OnlyNativeKid(p.tupleListNode(), native.GalaKIND_expression); ok {
+					return exprForm{grouped: nativeExpr(el)}
+				}
+			}
+		case native.GalaKIND_lambdaExpression:
+			if !suffixed {
+				return exprForm{lambda: lambdaSrc{node: native.LambdaExpressionNode{GalaNodeRef: prim}}}
+			}
+		case native.GalaKIND_partialFunctionLiteral:
+			if alone {
+				return exprForm{partial: partialSrc{node: prim}}
+			}
+		case native.GalaKIND_ifExpression:
+			if !suffixed {
+				return exprForm{ifExpr: ifExprSrc{node: prim}}
+			}
+		}
+	}
+	if p.hasCases() {
+		return exprForm{match: p}
+	}
+	return exprForm{}
+}
+
 // partialSrc is a partial-function literal, `{ case ... }`.
 type partialSrc struct {
 	ctx  *grammar.PartialFunctionLiteralContext

@@ -636,11 +636,7 @@ func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keywor
 // goResultMisuse builds the GALA-E0049 diagnostic for a converted Go call used
 // as something it is not.
 func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antlr.ParserRuleContext) error {
-	at := srcNode{}
-	if ctx != nil && ctx.GetStart() != nil {
-		at.ctx = ctx
-	}
-	return t.goResultMisuseAt(res, what, at)
+	return t.goResultMisuseAt(res, what, srcNode{ctx: ctx})
 }
 
 // goResultMisuseAt is goResultMisuse at a node of either tree, or at the

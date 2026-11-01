@@ -93,7 +93,11 @@ func escapes(tree antlr.Tree, inLoop bool) bool {
 // hoistable reports whether exprCtx is a match or if-expression (possibly
 // parenthesized) whose arms escapesConstruct.
 func (t *galaASTTransformer) hoistable(e exprSrc) bool {
-	f := t.classifyExpr(e)
+	return t.hoistableForm(t.classifyExpr(e))
+}
+
+// hoistableForm is hoistable of a value of form f.
+func (t *galaASTTransformer) hoistableForm(f exprForm) bool {
 	switch {
 	case f.grouped.ok():
 		return t.hoistable(f.grouped)
@@ -115,11 +119,15 @@ func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.Expressio
 	local := t.localDeclaration
 	t.localDeclaration = false
 	exprs := ctx.AllExpression()
-	if !local || names != 1 || len(exprs) != 1 || !t.hoistable(t.exprOf(exprs[0])) {
+	if !local || names != 1 || len(exprs) != 1 {
+		return t.transformExpressionListAgainst(ctx, declared)
+	}
+	e := t.exprOf(exprs[0])
+	if !t.hoistable(e) {
 		return t.transformExpressionListAgainst(ctx, declared)
 	}
 	target := t.nextTempVar()
-	expr, err := t.lowerAgainst(t.exprOf(exprs[0]), slot{typ: declared, hoist: target}, true)
+	expr, err := t.lowerAgainst(e, slot{typ: declared, hoist: target}, true)
 	if err != nil {
 		return nil, err
 	}
