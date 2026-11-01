@@ -1456,14 +1456,17 @@ type shorthandDecl struct {
 // paramDecl is a parameter of a signature, a struct shorthand or a lambda, as
 // lowerParam reads it, from either tree (readParams, readParamsNative): where
 // it and its name are written, its name, its keyword, its type, and whether
-// it is variadic, and its default value.
+// it is variadic or has a default clause, and that clause's value.
 type paramDecl struct {
 	at, nameAt   srcNode
 	name         string
 	isVar, isVal bool
 	variadic     bool
-	def          exprSrc // its default value; none when it has none
-	typ          typeSrc // no type when it has none
+	// hasDefault reports a default clause. An error-recovered tree can hold
+	// one without its value (`x int = `), so def can be none when it is set.
+	hasDefault bool
+	def        exprSrc // the default's value; none when it has none
+	typ        typeSrc // no type when it has none
 }
 
 // antlrDefault is the expression of a parameter's default d, and no
@@ -1494,12 +1497,13 @@ func readParams(ps *grammar.ParametersContext) []paramDecl {
 	for _, pCtx := range list.AllParameter() {
 		param := pCtx.(*grammar.ParameterContext)
 		pd := paramDecl{
-			at:       srcNode{ctx: param},
-			isVar:    param.VAR() != nil,
-			isVal:    param.VAL() != nil,
-			variadic: param.ELLIPSIS() != nil,
-			def:      antlrDefault(param.ParamDefault()),
-			typ:      antlrType(param.Type_()),
+			at:         srcNode{ctx: param},
+			isVar:      param.VAR() != nil,
+			isVal:      param.VAL() != nil,
+			variadic:   param.ELLIPSIS() != nil,
+			hasDefault: param.ParamDefault() != nil,
+			def:        antlrDefault(param.ParamDefault()),
+			typ:        antlrType(param.Type_()),
 		}
 		// A parameter can be nameless, as in `(...int) => 0`.
 		if id := param.Identifier(); id != nil {
@@ -2107,7 +2111,7 @@ func (t *galaASTTransformer) lowerParam(p paramDecl, requireType bool) (*ast.Fie
 
 	if p.typ.ok() {
 		t.isImmutableType(declared)
-		if p.def.ok() {
+		if p.hasDefault {
 			t.recordDefaultLambdaHints(p.def, declared)
 		}
 		if p.variadic {

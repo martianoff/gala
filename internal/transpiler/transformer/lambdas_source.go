@@ -35,13 +35,13 @@ type lambdaSrc struct {
 func (l lambdaSrc) ok() bool { return l.ctx != nil || l.node.Ok() }
 
 // is reports whether l and o are the same lambda: the same node on the
-// native tree, the same context on ANTLR's. A lambda the walk reads on the
-// native tree always has its node (lambdaOf), so the two never mix.
+// native tree, or the same context on ANTLR's. The two can meet: a file
+// walked natively reads a lambda with its node only, and one in a default or
+// an interpolation that falls back to ANTLR's tree (parseExprAt) with its
+// context only, as no node of the file's tree stands for it (lambdaOf). Such
+// two are different lambdas, and neither pair matches them.
 func (l lambdaSrc) is(o lambdaSrc) bool {
-	if l.node.Ok() || o.node.Ok() {
-		return l.node == o.node
-	}
-	return l.ctx != nil && l.ctx == o.ctx
+	return (l.node.Ok() && l.node == o.node) || (l.ctx != nil && l.ctx == o.ctx)
 }
 
 // lambdaOf is the lambda ctx, on the native tree when the walk reads it.

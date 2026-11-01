@@ -406,6 +406,14 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 // whatever the engine, for a caller whose run of galop's native parser on
 // input did not settle it (ParseExpressionNativeAt): galop does not parse it a
 // second time, nor report a panic on it twice.
+//
+// It lexes input again with ANTLR's lexer, where ParseExpressionAt reuses the
+// tokens of galop's ANTLR-flavored lexer. The native run's tokens
+// (native.GalaTokens) are not ANTLR tokens: they index bytes of the source
+// and carry no token objects, so ANTLR's parser cannot read them without a
+// conversion to an antlr.TokenStream that exists nowhere else. The fallback
+// runs only on a syntax error or a galop panic, so the second lex is not worth
+// that converter.
 func ParseExpressionANTLRAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
 	return antlrExpressionAtChecked(input, line, col, what, nil)
 }

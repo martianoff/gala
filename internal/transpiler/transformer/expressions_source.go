@@ -51,7 +51,8 @@ func antlrExpr(ctx grammar.IExpressionContext) exprSrc { return exprSrc{ctx: ctx
 // lowered silently to no expression.
 func nativeExpr(n native.GalaNodeRef) exprSrc {
 	if !n.Ok() {
-		// invariant: native-bridge — the walk reads only bridged trees.
+		// The trees parseExprAt parses come from galop's parser, without error.
+		// invariant: native-bridge — the walk reads only bridged or cleanly parsed trees.
 		panic("native tree: no node, not an expression")
 	}
 	return exprSrc{node: n}

@@ -271,6 +271,7 @@ go_test(
         "oracle_test.go",
         "package_val_inferred_type_test.go",
         "panic_audit_test.go",
+        "param_default_clause_test.go",
         "partial_ctor_type_args_test.go",
         "partial_type_params_test.go",
         "phantom_reexport_funconly_test.go",

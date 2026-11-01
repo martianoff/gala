@@ -52,6 +52,7 @@ type defaultSource struct {
 // positions, so no line markers are emitted for them either.
 type defaultLowering struct {
 	pkg     string // declaring package: bare function names resolve there (functionByName); they are qualified once the whole default is lowered
+	file    string // declaring source file, where its text is parsed (parseExprAt); "" when unknown
 	foreign bool   // declared in a file other than the one being transformed
 	// useScope is the use site's scope. Its bindings, and those of every
 	// scope around it, were not in scope where the default was written, so
@@ -60,13 +61,6 @@ type defaultLowering struct {
 	// emitTypeParams is the type parameters in scope where the lowered
 	// default is emitted (see shadowedByUse).
 	emitTypeParams map[string]bool
-}
-
-// defaultTreeKey identifies one declared default's text at one position.
-type defaultTreeKey struct {
-	text string
-	pos  transpiler.SourcePos
-	file string
 }
 
 // shadowedByUse returns a package-level val, var, function or type — or a
@@ -396,26 +390,6 @@ func (t *galaASTTransformer) declaredInDefaultScope(name string, src defaultSour
 	return false
 }
 
-// defaultExprTree parses a default's recorded text at its recorded position,
-// once per default per file, on the tree the file's walk reads (parseExprAt):
-// lowering is per use site, but the parse tree is the same at every one of
-// them.
-func (t *galaASTTransformer) defaultExprTree(src defaultSource) (exprSrc, error) {
-	key := defaultTreeKey{text: src.Text, pos: src.Pos, file: src.file}
-	if tree, ok := t.defaultTrees[key]; ok {
-		return tree, nil
-	}
-	tree, err := t.parseExprAt(src.Text, src.Pos.Line, src.Pos.Column, "default value")
-	if err != nil {
-		return exprSrc{}, err
-	}
-	if t.defaultTrees == nil {
-		t.defaultTrees = make(map[defaultTreeKey]exprSrc)
-	}
-	t.defaultTrees[key] = tree
-	return tree, nil
-}
-
 // transformDefaultExpr lowers a default value at a call or construction site.
 //
 // The declared type is the default's expected type, exactly as it is for an
@@ -437,7 +411,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if prev != nil {
 		useSite = prev.emitTypeParams
 	}
-	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local, useScope: t.currentScope, emitTypeParams: useSite}
+	t.loweringDefault = &defaultLowering{pkg: src.pkg, file: src.file, foreign: !local, useScope: t.currentScope, emitTypeParams: useSite}
 	defer func() { t.loweringDefault = prev }()
 	// The default is lowered in its own declaration's scope: the type
 	// parameters bound at the use site do not shadow the names it reads. In
@@ -490,7 +464,9 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		err.FilePath = t.filePath
 		return err
 	}
-	def, err := t.defaultExprTree(src)
+	// Parsed once per default per file (parseExprAt): lowering is per use
+	// site, but the parse tree is the same at every one of them.
+	def, err := t.parseExprAt(src.Text, src.Pos.Line, src.Pos.Column, "default value")
 	if err == nil {
 		if name := spellsAny(def, src.unspellable); name != "" {
 			err = shadowed(name)

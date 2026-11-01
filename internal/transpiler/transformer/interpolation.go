@@ -270,11 +270,49 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // parser.ParseExpressionNativeAt) or disagrees with it (a galop bug, which
 // TestParseExpressionNativeAtMatchesANTLR guards against), and the expression
 // is lowered on ANTLR's tree, as a whole-file parse falls back.
+//
+// Each text is parsed once per position per file (parsedExprs): a default is
+// lowered at every use site, and an interpolation in it with it, but the tree
+// is the same at each, so the caches keyed by its nodes (escapeCache, the
+// hint stack's keys) hit, and galop panics on a text once.
 func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string) (exprSrc, error) {
+	file := t.filePath
+	if t.loweringDefault != nil && t.loweringDefault.file != "" {
+		file = t.loweringDefault.file
+	}
+	key := parsedExprKey{file: file, text: text, what: what, line: line, col: col}
+	if e, ok := t.parsedExprs[key]; ok {
+		return e, nil
+	}
+	e, err := t.parseExprOnce(text, line, col, what, file)
+	if err != nil {
+		return exprSrc{}, err
+	}
+	if t.parsedExprs == nil {
+		t.parsedExprs = make(map[parsedExprKey]exprSrc)
+	}
+	t.parsedExprs[key] = e
+	return e, nil
+}
+
+// parsedExprKey is an expression's text as parseExprAt parses it: written at
+// line/col of file, and parsed as what (which a syntax error names).
+type parsedExprKey struct {
+	file, text, what string
+	line, col        int
+}
+
+// parseExprOnce is parseExprAt's parse of text, written in file.
+func (t *galaASTTransformer) parseExprOnce(text string, line, col int, what, file string) (exprSrc, error) {
 	parse := parser.ParseExpressionAt
 	if t.native != nil {
-		if n, err := parser.ParseExpressionNativeAt(text, line, col); err == nil {
-			return nativeExpr(n.GalaNodeRef), nil
+		if !t.refuseNativeParse {
+			if n, err := parser.ParseExpressionNativeAt(text, line, col); err == nil {
+				if t.onParsedExpr != nil {
+					t.onParsedExpr(n.Tree(), what, file)
+				}
+				return nativeExpr(n.GalaNodeRef), nil
+			}
 		}
 		// galop's parser has had its go at text: ANTLR's alone parses it now.
 		parse = parser.ParseExpressionANTLRAt

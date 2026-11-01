@@ -115,7 +115,7 @@ type galaASTTransformer struct {
 	unapplyHelperDecls     []ast.Decl                                    // their declarations
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
-	defaultTrees           map[defaultTreeKey]exprSrc                    // parse trees of declared default values, one per default per file (see defaultExprTree)
+	parsedExprs            map[parsedExprKey]exprSrc                     // parse trees of default values and interpolated expressions, one per text per position per file (see parseExprAt)
 	loweringDefault        *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
 	expectedArgTypes       expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
@@ -191,6 +191,15 @@ type galaASTTransformer struct {
 	// native tree, by its node. It observes and
 	// changes nothing; TestNativeWalkAgrees sets it to count them.
 	onNativeCase func(n native.GalaNodeRef)
+	// onParsedExpr, when set, is told of each tree parseExprAt parses with
+	// galop's native parser, with what it parsed and the file it is written
+	// in. It observes and changes nothing; the native walk tests set it to
+	// tell those trees' nodes from the file's.
+	onParsedExpr func(tree *native.GalaTree, what, file string)
+	// refuseNativeParse, when set, makes parseExprAt take its ANTLR fallback
+	// as if galop's native parser had not settled the text. Only
+	// TestNativeParsedWalkFallback sets it.
+	refuseNativeParse bool
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
@@ -352,7 +361,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}()
 	// Nothing reads the native tree after the walk; keep no handle to it.
 	// (The receivers checked at the end keep ranges. escapeCache and
-	// defaultTrees hold native nodes until the next transform resets them.)
+	// parsedExprs hold native nodes until the next transform resets them.)
 	defer func() { t.native = nil }()
 	tree := richAST.Tree
 	t.currentScope = nil
@@ -417,7 +426,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.unapplyHelpers = make(map[string]string)
 	t.unapplyHelperDecls = nil
 	t.valueMetas = make(map[string]*valueMetaConfig)
-	t.defaultTrees = nil
+	t.parsedExprs = nil
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"
 	t.warnTypeInference = os.Getenv("GALA_WARN_TYPES") == "1"
