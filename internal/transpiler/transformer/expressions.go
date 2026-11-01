@@ -877,14 +877,15 @@ func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (lowered
 		end = bindAt
 	}
 
+	// The statements before the value discard their values, as in any block.
 	var preceding []ast.Stmt
 	for _, st := range stmts[:end] {
 		t.noteNativeStmt(st)
-		stmt, pre, err := t.lowerStatement(st)
+		lowered, err := t.lowerDiscardedStatement(st, t.onNative(st.valueExpr()))
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
-		preceding = append(append(preceding, pre...), stmt)
+		preceding = append(preceding, lowered...)
 	}
 	if bindAt >= 0 {
 		expr, err := t.lowerIfExprBranchBind(stmts[bindAt:], s)
