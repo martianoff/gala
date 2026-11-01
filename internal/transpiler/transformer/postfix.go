@@ -565,7 +565,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	defer t.popScope()
 	t.addVar(paramName, subjectType)
 
-	// Consume the statement-position marker set by transformBlock. Arm bodies
+	// Consume the statement-position marker set by lowerBlock. Arm bodies
 	// must see matchInStatementPos = false so a NESTED match used as the arm's
 	// value is not also forced to void.
 	stmtPosition := t.matchInStatementPos
@@ -857,7 +857,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			block = &ast.BlockStmt{List: stmts}
 		}
 		t.pendingMatchStmtBlock = block
-		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
+		// Return a placeholder; lowerBlock recognises pendingMatchStmtBlock
 		// and replaces the wrapping ExprStmt with the inlined block.
 		return ast.NewIdent("_"), nil
 	}

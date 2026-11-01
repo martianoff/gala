@@ -5,7 +5,6 @@ import (
 	"go/ast"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -39,10 +38,10 @@ type returnSlot struct {
 // once the value is settled; scope is the lexical scope it is lowered in
 // again; err is the first lowering's error.
 type deferredReturn struct {
-	value   ast.Expr
-	exprCtx grammar.IExpressionContext
-	scope   *scope
-	err     error
+	value ast.Expr
+	expr  exprSrc
+	scope *scope
+	err   error
 }
 
 // enterReturnSlot makes s the current return slot and returns the function
@@ -155,11 +154,11 @@ func (t *galaASTTransformer) tryFillReturnSlot(typ transpiler.Type) bool {
 // lowerReturnValue lowers the value of a `return` statement against the
 // current slot; in a fillable slot that is still empty, through
 // lowerFillingValue.
-func (t *galaASTTransformer) lowerReturnValue(exprCtx grammar.IExpressionContext) (*ast.ReturnStmt, error) {
+func (t *galaASTTransformer) lowerReturnValue(e exprSrc) (*ast.ReturnStmt, error) {
 	if t.returnSlotPending() {
-		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(exprCtx, true)}}, nil
+		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(e, true)}}, nil
 	}
-	expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), typedSlot(t.returnSlot.typ), false)
+	expr, err := t.lowerResultAgainst(e, typedSlot(t.returnSlot.typ), false)
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +180,8 @@ func (t *galaASTTransformer) returnSlotPending() bool {
 // type is not settled is deferred too (deferUnsettled); a trailing value is
 // not, since it may legitimately be void or have a type the transpiler cannot
 // name.
-func (t *galaASTTransformer) lowerFillingValue(exprCtx grammar.IExpressionContext, deferUnsettled bool) ast.Expr {
-	expr, err := t.transformExpression(exprCtx)
+func (t *galaASTTransformer) lowerFillingValue(e exprSrc, deferUnsettled bool) ast.Expr {
+	expr, err := t.lowerExpr(e)
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
 		if t.tryFillReturnSlot(t.getExprTypeName(expr)) || !deferUnsettled {
@@ -192,34 +191,35 @@ func (t *galaASTTransformer) lowerFillingValue(exprCtx grammar.IExpressionContex
 		expr = ast.NewIdent("nil")
 	}
 	t.returnSlot.deferred = append(t.returnSlot.deferred, deferredReturn{
-		value: expr, exprCtx: exprCtx, scope: t.currentScope, err: err,
+		value: expr, expr: e, scope: t.currentScope, err: err,
 	})
 	return expr
 }
 
 // errorAtOutermostCall reports whether err is a semantic error anchored at the
-// argument list of the call exprCtx is (`Failure(e)`), as opposed to one
-// nested inside it (`describe(Failure(e))`). A constructor call's errors are
+// argument list of the call e is (`Failure(e)`), as opposed to one nested
+// inside it (`describe(Failure(e))`). A constructor call's errors are
 // anchored at its argument list, or at its `(` when it has none.
-func (t *galaASTTransformer) errorAtOutermostCall(err error, exprCtx grammar.IExpressionContext) bool {
+func (t *galaASTTransformer) errorAtOutermostCall(err error, e exprSrc) bool {
 	var se *galaerr.SemanticError
-	p := LeadingPostfixExpr(exprCtx, true)
-	if !errors.As(err, &se) || p == nil || t.bareMatch(antlrExpr(exprCtx)).ok() {
+	p := e.solePostfix()
+	if !errors.As(err, &se) || !p.ok() || p.hasCases() {
 		return false
 	}
-	suffixes := p.AllPostfixSuffix()
+	suffixes := p.suffixes()
 	if len(suffixes) == 0 {
 		return false
 	}
-	if !isCallSuffix(suffixes[len(suffixes)-1]) {
+	call := suffixes[len(suffixes)-1]
+	if call.opener() != "(" {
 		return false
 	}
-	call := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
-	anchor := call.GetStart()
-	if call.ArgumentList() != nil {
-		anchor = call.ArgumentList().GetStart()
+	anchor := call.at()
+	if args := call.args(); args.at.ok() {
+		anchor = args.at
 	}
-	return se.Line == anchor.GetLine() && se.Column == anchor.GetColumn()
+	line, col := anchor.start()
+	return se.Line == line && se.Column == col
 }
 
 // unresolvedLambdaResultMsg reports a lambda whose result type nothing settles.
@@ -260,20 +260,20 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	defer func() { t.currentScope = outerScope }()
 	for _, d := range s.deferred {
 		t.currentScope = d.scope
-		expr, err := t.lowerResultAgainst(t.exprOf(d.exprCtx), typedSlot(s.typ), false)
+		expr, err := t.lowerResultAgainst(d.expr, typedSlot(s.typ), false)
 		// A constructor with no type argument that is itself the value of an
 		// unfilled slot (`return Failure(e)`) is the lambda's missing result
 		// type, which is what the user has to annotate. One nested deeper
 		// keeps its own GALA-E0018.
 		if err != nil {
-			if filled || !isUninferredTypeArgError(err) || !t.errorAtOutermostCall(err, d.exprCtx) {
+			if filled || !isUninferredTypeArgError(err) || !t.errorAtOutermostCall(err, d.expr) {
 				return err
 			}
-			return t.semanticErrorAt(d.exprCtx, unresolvedLambdaResultMsg)
+			return t.semanticErrorAtNode(d.expr.at(), unresolvedLambdaResultMsg)
 		}
 		expr = t.unwrapImmutable(expr)
 		if !filled && !t.isSettledType(t.getExprTypeName(expr)) {
-			return t.semanticErrorAt(d.exprCtx, unresolvedLambdaResultMsg)
+			return t.semanticErrorAtNode(d.expr.at(), unresolvedLambdaResultMsg)
 		}
 		settled[d.value] = expr
 	}
@@ -305,7 +305,7 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	})
 	for _, d := range s.deferred {
 		if !placed[d.value] {
-			return t.semanticErrorAt(d.exprCtx, "internal error: the lowered result value was not found in the lambda body")
+			return t.semanticErrorAtNode(d.expr.at(), "internal error: the lowered result value was not found in the lambda body")
 		}
 	}
 	s.deferred = nil

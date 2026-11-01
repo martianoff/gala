@@ -5,10 +5,7 @@ import (
 	"go/ast"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
@@ -43,7 +40,7 @@ func (t *galaASTTransformer) immutableAddressError(at, operandAt srcNode, operan
 	if why == "" {
 		return nil
 	}
-	text := transpiler.SourceText(t.ctxAt(operandAt))
+	text := operandAt.sourceText()
 	line, col := at.start()
 	return galaerr.NewCodedSemanticError(galaerr.CodeAddressOfImmutable, line, col,
 		fmt.Sprintf("cannot take the address of %s: %s", text, why), hint,
@@ -53,31 +50,17 @@ func (t *galaASTTransformer) immutableAddressError(at, operandAt srcNode, operan
 // addressOperandBinding is immutablePostfixBinding of operand, a unaryExpr,
 // when it is a postfix expression with no unary operator, on either tree.
 func (t *galaASTTransformer) addressOperandBinding(operand srcNode) (string, fixedBinding) {
-	if !operand.node.Ok() {
-		u := operand.ctx.(*grammar.UnaryExprContext)
-		if postfix, ok := u.PostfixExpr().(*grammar.PostfixExprContext); ok && u.UnaryOp() == nil {
-			return t.immutablePostfixBinding(postfix)
+	var p postfixSrc
+	if operand.node.Ok() {
+		if u := (native.UnaryExprNode{GalaNodeRef: operand.node}); !u.UnaryOp().Ok() {
+			p = postfixSrc{node: u.PostfixExpr().GalaNodeRef}
 		}
-		return "", notFixed
-	}
-	u := native.UnaryExprNode{GalaNodeRef: operand.node}
-	if u.UnaryOp().Ok() {
-		return "", notFixed
-	}
-	p := u.PostfixExpr()
-	id := p.PrimaryExpr().Primary().Identifier()
-	if !id.Ok() {
-		return "", notFixed
-	}
-	pkg, name, suffixes := "", galaparser.NativeText(id.GalaNodeRef), 0
-	for s := range galaparser.NativeKids(p.GalaNodeRef, native.GalaKIND_postfixSuffix) {
-		sel := native.PostfixSuffixNode{GalaNodeRef: s}.Identifier()
-		if suffixes++; suffixes > 1 || !sel.Ok() {
-			return "", notFixed
+	} else if u := operand.ctx.(*grammar.UnaryExprContext); u.UnaryOp() == nil {
+		if postfix, ok := u.PostfixExpr().(*grammar.PostfixExprContext); ok {
+			p = postfixSrc{ctx: postfix}
 		}
-		pkg, name = name, galaparser.NativeText(sel.GalaNodeRef)
 	}
-	return t.immutableBinding(pkg, name)
+	return t.immutablePostfixBinding(p)
 }
 
 // receiverAddressHint is the hint for `&recv`: a pointer receiver is already
@@ -103,7 +86,7 @@ func addressHint(name, how string) string {
 // immutableFieldWriteError reports a write (`o.n = v`, `o.n++`) to a field
 // that is immutable or reached through a val, or returns nil. target is the
 // lowered target; a bare name is checked by immutableWriteError.
-func (t *galaASTTransformer) immutableFieldWriteError(targetCtx antlr.ParserRuleContext, target ast.Expr, verb string) error {
+func (t *galaASTTransformer) immutableFieldWriteError(targetAt srcNode, target ast.Expr, verb string) error {
 	if _, bare := target.(*ast.Ident); bare {
 		return nil
 	}
@@ -111,7 +94,7 @@ func (t *galaASTTransformer) immutableFieldWriteError(targetCtx antlr.ParserRule
 	if why == "" {
 		return nil
 	}
-	err := t.semanticErrorAt(targetCtx, fmt.Sprintf("cannot %s %s: %s", verb, transpiler.SourceText(targetCtx), why))
+	err := t.semanticErrorAtNode(targetAt, fmt.Sprintf("cannot %s %s: %s", verb, targetAt.sourceText(), why))
 	err.Hint = hint
 	return err
 }

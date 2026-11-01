@@ -302,7 +302,8 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     (its package clause, imports and names, and the checks on them), collects the file's
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
     the transformer walks its top-level declarations, the statements of its function
-    bodies, its expressions (operators, names, literals, parentheses and tuples,
+    bodies (`bind` chains and the blocks of if-expression branches included), its
+    expressions (operators, names, literals, parentheses and tuples,
     if-expressions, member accesses, indexes and calls, the values call arguments pass, and
     the shape a value filling a typed slot is lowered by), its lambdas (their parameters, bodies
     and Sendable capture checks), and the case clauses and patterns of every `match` (the

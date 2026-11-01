@@ -8,7 +8,9 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -34,36 +36,13 @@ import (
 // is structural: no type is special-cased, so a user-defined monad works exactly
 // like std's. See docs/BIND_NOTATION.MD.
 
-// stmtKindOf is the kind of s, a statement on ANTLR's tree.
-func stmtKindOf(s grammar.IStatementContext) stmtKind {
-	return antlrStmt(s.(*grammar.StatementContext)).kind
-}
-
-// trailingBindValueExpr extracts the value expression from a block's trailing
-// statement (e.g. `Success(...)`), or nil if the statement is not a bare
-// expression.
-func trailingBindValueExpr(stmtCtx grammar.IStatementContext) grammar.IExpressionContext {
-	sc, ok := stmtCtx.(*grammar.StatementContext)
-	if !ok || sc == nil {
-		return nil
-	}
-	dc, ok := sc.Declaration().(*grammar.DeclarationContext)
-	if !ok || dc == nil {
-		return nil
-	}
-	ss, ok := dc.SimpleStatement().(*grammar.SimpleStatementContext)
-	if !ok || ss == nil {
-		return nil
-	}
-	return ss.Expression()
-}
-
-// bindEntry is one `bind`/`also` clause: a name and its monadic RHS.
+// bindEntry is one `bind`/`also` clause: a name and its monadic RHS, its
+// type annotation (none when it has none) and where the clause is written.
 type bindEntry struct {
-	name    string
-	exprCtx grammar.IExpressionContext
-	typeCtx grammar.ITypeContext
-	ctx     antlr.ParserRuleContext
+	name string
+	expr exprSrc
+	typ  typeSrc
+	at   srcNode
 }
 
 // preppedBind is a bindEntry after its RHS has been transformed and typed.
@@ -73,25 +52,19 @@ type preppedBind struct {
 	recvType       transpiler.Type
 	lookupBaseName string
 	elemType       transpiler.Type
-	typeMeta       *transpiler.TypeMetadata   // the monad's
-	ctx            antlr.ParserRuleContext    // the clause
-	exprCtx        grammar.IExpressionContext // the clause's value
+	typeMeta       *transpiler.TypeMetadata // the monad's
+	at             srcNode                  // the clause
+	expr           exprSrc                  // the clause's value
 }
 
 // collectBindGroup splits the leading `bind` and any consecutive `also` clauses
 // into one group, returning that group and the statements after it.
-func collectBindGroup(stmts []grammar.IStatementContext) ([]bindEntry, []grammar.IStatementContext) {
-	bd := antlrStmt(stmts[0].(*grammar.StatementContext)).kid.ctx.(*grammar.BindDeclarationContext)
-	group := []bindEntry{{bd.Identifier().GetText(), bd.Expression(), bd.Type_(), bd}}
+func (t *galaASTTransformer) collectBindGroup(stmts []stmtSrc) ([]bindEntry, []stmtSrc) {
+	group := []bindEntry{stmts[0].bindClause()}
 	i := 1
-	for i < len(stmts) {
-		s := antlrStmt(stmts[i].(*grammar.StatementContext))
-		if s.kind != stmtAlso {
-			break
-		}
-		ad := s.kid.ctx.(*grammar.AlsoDeclarationContext)
-		group = append(group, bindEntry{ad.Identifier().GetText(), ad.Expression(), ad.Type_(), ad})
-		i++
+	for ; i < len(stmts) && stmts[i].kind == stmtAlso; i++ {
+		t.noteNativeStmt(stmts[i])
+		group = append(group, stmts[i].bindClause())
 	}
 	return group, stmts[i:]
 }
@@ -138,28 +111,51 @@ func (t *galaASTTransformer) bindSiblingNames(group []bindEntry, i int) map[stri
 
 // bindSiblingRefError reports that clause e references ref, a sibling's binding.
 func (t *galaASTTransformer) bindSiblingRefError(e bindEntry, ref string) error {
-	return t.semanticErrorAt(e.ctx,
+	return t.semanticErrorAtNode(e.at,
 		"cannot reference `"+ref+"` here: clauses in a `bind`/`also` group are "+
 			"evaluated independently, so a binding from one clause is not in scope "+
 			"for its siblings. Move this clause to its own `bind` if it must see `"+ref+"`.")
 }
 
 // firstReferencedGalaName is firstReferencedName over a clause's source: the
-// first bare name in exprCtx that is in names, or "". It serves only a clause
-// that failed to lower; the check on the lowered clause stays the precise one,
-// as it also sees names inside interpolated strings, which are parsed only
-// when lowered.
-func firstReferencedGalaName(exprCtx antlr.Tree, names map[string]bool) string {
+// first bare name in e that is in names, or "". It serves only a clause that
+// failed to lower; the check on the lowered clause stays the precise one, as
+// it also sees names inside interpolated strings, which are parsed only when
+// lowered.
+func firstReferencedGalaName(e exprSrc, names map[string]bool) string {
 	if len(names) == 0 {
 		return ""
 	}
+	if e.node.Ok() {
+		return firstReferencedNativeName(e.node, names)
+	}
 	found := ""
-	walkTree(exprCtx, func(n antlr.Tree) {
+	walkTree(e.ctx, func(n antlr.Tree) {
 		if p, ok := n.(*grammar.PrimaryContext); ok && found == "" && p.Identifier() != nil && names[p.GetText()] {
 			found = p.GetText()
 		}
 	})
 	return found
+}
+
+// firstReferencedNativeName is firstReferencedGalaName of n, a native node:
+// the first primary below it, in source order, that is a name in names.
+func firstReferencedNativeName(n native.GalaNodeRef, names map[string]bool) string {
+	if n.Kind() == native.GalaKIND_primary {
+		if id := (native.PrimaryNode{GalaNodeRef: n}).Identifier(); id.Ok() {
+			if name := galaparser.NativeText(id.GalaNodeRef); names[name] {
+				return name
+			}
+		}
+	}
+	for i := range n.ChildCount() {
+		if c := n.Child(i).Node(); c.Ok() {
+			if found := firstReferencedNativeName(c, names); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
 }
 
 // isNameInScope reports whether name resolves to a variable in the current
@@ -222,10 +218,10 @@ func (t *galaASTTransformer) newBindResult(typ transpiler.Type) *bindResult {
 
 // desugarBindChain lowers a run of statements beginning with a `bind` into a
 // FlatMap/Zip call expression of type res.typ (the block's monad M[R]).
-func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext, res *bindResult) (ast.Expr, error) {
-	group, rest := collectBindGroup(stmts)
+func (t *galaASTTransformer) desugarBindChain(stmts []stmtSrc, res *bindResult) (ast.Expr, error) {
+	group, rest := t.collectBindGroup(stmts)
 	if len(rest) == 0 {
-		return nil, t.semanticErrorAt(group[len(group)-1].ctx, "a `bind` block must end with a value expression")
+		return nil, t.semanticErrorAtNode(group[len(group)-1].at, "a `bind` block must end with a value expression")
 	}
 
 	prepped := make([]preppedBind, len(group))
@@ -235,7 +231,7 @@ func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext,
 			// A clause naming a sibling's binding may fail to lower before the
 			// independence check sees it (`also b = Success(a)` leaves
 			// Success's type argument open): the reference is the error.
-			if ref := firstReferencedGalaName(e.exprCtx, t.bindSiblingNames(group, i)); ref != "" {
+			if ref := firstReferencedGalaName(e.expr, t.bindSiblingNames(group, i)); ref != "" {
 				return nil, t.bindSiblingRefError(e, ref)
 			}
 			return nil, err
@@ -262,7 +258,7 @@ func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext,
 
 // prepBindEntry transforms and types one clause's RHS and validates bindability.
 func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppedBind, error) {
-	recvExpr, err := t.transformExpression(e.exprCtx)
+	recvExpr, err := t.lowerExpr(e.expr)
 	if err != nil {
 		return preppedBind{}, err
 	}
@@ -279,7 +275,7 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 	typeMeta, _ := t.getTypeMetaResolved(lookupBaseName)
 	if typeMeta == nil || typeMeta.Methods["FlatMap"] == nil {
 		base := strings.TrimPrefix(recvType.BaseName(), t.packageName+".")
-		return preppedBind{}, t.semanticErrorAt(e.ctx,
+		return preppedBind{}, t.semanticErrorAtNode(e.at,
 			"cannot `bind`/`also` over "+recvType.String()+": it is not a bindable monad. "+
 				"A bindable type must define a FlatMap method, e.g. "+
 				"`func (m "+base+"[T]) FlatMap[U](f func(T) "+base+"[U]) "+base+"[U]`")
@@ -287,8 +283,8 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 
 	// The bound value's element type A. An explicit annotation on the clause wins.
 	elemType := t.monadElemType(recvType)
-	if e.typeCtx != nil {
-		te, terr := t.transformType(e.typeCtx)
+	if e.typ.ok() {
+		te, terr := t.lowerType(e.typ)
 		if terr != nil {
 			return preppedBind{}, terr
 		}
@@ -297,7 +293,7 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 		// annotation must name it.
 		if !transpiler.IsUnusable(elemType) && t.isSettledType(elemType) &&
 			t.followAliasChain(annotated).String() != t.followAliasChain(elemType).String() {
-			return preppedBind{}, t.semanticErrorAt(e.ctx,
+			return preppedBind{}, t.semanticErrorAtNode(e.at,
 				"`"+e.name+"` is annotated "+annotated.String()+", but "+recvType.String()+" binds a value of type "+elemType.String()+
 					"; annotate it "+elemType.String()+" or drop the annotation")
 		}
@@ -312,10 +308,10 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 		res.monad = lookupBaseName
 	}
 	if lookupBaseName != res.monad {
-		return preppedBind{}, t.semanticErrorAt(e.ctx, "cannot `bind` a "+lookupBaseName+" inside a "+res.monad+" block (heterogeneous bind is not supported)")
+		return preppedBind{}, t.semanticErrorAtNode(e.at, "cannot `bind` a "+lookupBaseName+" inside a "+res.monad+" block (heterogeneous bind is not supported)")
 	}
 
-	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType, typeMeta, e.ctx, e.exprCtx}, nil
+	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType, typeMeta, e.at, e.expr}, nil
 }
 
 // bindReceiver is the receiver argument of the lowered call of p's monad's
@@ -323,7 +319,8 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 // pointer receiver, its address or an addressed copy (loweredMethodReceiver),
 // which a diagnostic places at p's clause.
 func (t *galaASTTransformer) bindReceiver(p preppedBind, recv ast.Expr, recvType transpiler.Type, method string) (ast.Expr, error) {
-	return t.loweredMethodReceiver(recv, recvType, p.typeMeta.Methods[method], method, p.ctx.GetStart().GetLine(), p.ctx.GetStart().GetColumn())
+	line, col := p.at.start()
+	return t.loweredMethodReceiver(recv, recvType, p.typeMeta.Methods[method], method, line, col)
 }
 
 // bindClauseReceiver is bindReceiver for p's own value. As for the same call
@@ -331,7 +328,10 @@ func (t *galaASTTransformer) bindReceiver(p preppedBind, recv ast.Expr, recvType
 // may be nil (GALA-E0080, checkPtrReceiverAt).
 func (t *galaASTTransformer) bindClauseReceiver(p preppedBind, method string) (ast.Expr, error) {
 	err := t.checkPtrReceiverAt(p.recvExpr, p.recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
-		return p.exprCtx, p.exprCtx, transpiler.SourceText(p.exprCtx)
+		// Called only to report the error.
+		at := p.expr.at()
+		ctx := t.ctxAt(at)
+		return ctx, ctx, at.sourceText()
 	})
 	if err != nil {
 		return nil, err
@@ -342,7 +342,7 @@ func (t *galaASTTransformer) bindClauseReceiver(p preppedBind, method string) (a
 // buildSequential chains the clauses as nested FlatMaps (each bound name stays in
 // scope for the rest), then the continuation. Used for a lone `bind` and as the
 // fail-fast fallback for an `also` group with no Zip.
-func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []grammar.IStatementContext, res *bindResult) (ast.Expr, error) {
+func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []stmtSrc, res *bindResult) (ast.Expr, error) {
 	p := prepped[0]
 	// The clause's receiver is lowered before its name is bound and before the
 	// clauses after it, so an error in it is reported first.
@@ -376,7 +376,7 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 // a0 := g.V1.Get(); a1 := g.V2.Get(); ...; <continuation> })`. The Zip runs the clauses
 // independently (per the type: concurrently for Future, accumulating for
 // Validated); the FlatMap threads all bound names into the continuation.
-func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.IStatementContext, res *bindResult, zipName string) (ast.Expr, error) {
+func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []stmtSrc, res *bindResult, zipName string) (ast.Expr, error) {
 	n := len(prepped)
 
 	// Zip call: method type args are the element types of clauses 1..n-1; the
@@ -409,7 +409,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		arg := prepped[i].recvExpr
 		if param := paramIndex(i-1, zip.ParamTypes, zip.Variadic); param >= 0 {
 			paramType := t.substituteTranspilerTypeParams(zip.ParamTypes[param], subst)
-			if err := t.checkPtrSlot(arg, paramType, srcNode{ctx: prepped[i].exprCtx}); err != nil {
+			if err := t.checkPtrSlot(arg, paramType, prepped[i].expr.at()); err != nil {
 				return nil, err
 			}
 			// A clause is a monad value wherever it stands in the group: a
@@ -442,7 +442,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 	if ptr, ok := zip.ReturnType.(transpiler.PointerType); ok {
 		zipResultType = transpiler.PointerType{Elem: zipResultType, NonNull: ptr.NonNull}
 	}
-	if err := t.checkPtrZipResult(zipResultType, zip, prepped[0].ctx, prepped[n-1].ctx); err != nil {
+	if err := t.checkPtrZipResult(zipResultType, zip, prepped[0].at, prepped[n-1].at); err != nil {
 		return nil, err
 	}
 	flatMapRecv, err := t.bindReceiver(prepped[0], zipCall, zipResultType, "FlatMap")
@@ -532,12 +532,12 @@ func (t *galaASTTransformer) typeHasMethod(lookupBaseName, method string) bool {
 // statements following a `bind`. Regular statements are emitted as-is; a nested
 // `bind` recurses; the trailing statement becomes `return <value>`, or, when it
 // is an if/else chain, returns its value from each branch.
-func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, res *bindResult) (*ast.BlockStmt, error) {
+func (t *galaASTTransformer) buildBindBody(stmts []stmtSrc, res *bindResult) (*ast.BlockStmt, error) {
 	body := &ast.BlockStmt{}
-	for i, s := range stmts {
-		src := antlrStmt(s.(*grammar.StatementContext))
+	for i, src := range stmts {
+		t.noteNativeStmt(src)
 		if src.kind == stmtAlso {
-			return nil, t.semanticErrorAt(s.(*grammar.StatementContext), "`also` must directly follow a `bind` or `also`")
+			return nil, t.semanticErrorAtNode(src.at, "`also` must directly follow a `bind` or `also`")
 		}
 		if src.kind == stmtBind {
 			expr, err := t.desugarBindChain(stmts[i:], res)
@@ -548,22 +548,22 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 			return body, nil
 		}
 		if i == len(stmts)-1 {
-			if src.kind == stmtIf {
-				stmt, err := t.lowerBindTailIf(src.kid.ctx.(*grammar.IfStatementContext), res)
+			if ifS := src.ifStmt(); ifS.ok() {
+				stmt, err := t.lowerBindTailIf(ifS, res)
 				if err != nil {
 					return nil, err
 				}
 				body.List = append(body.List, stmt)
 				return body, nil
 			}
-			expr, err := t.transformTrailingBindValue(s, res)
+			expr, err := t.transformTrailingBindValue(src, res)
 			if err != nil {
 				return nil, err
 			}
 			body.List = append(body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			return body, nil
 		}
-		stmt, pre, err := t.transformStatement(s.(*grammar.StatementContext))
+		stmt, pre, err := t.lowerStatement(src)
 		if err != nil {
 			return nil, err
 		}
@@ -574,17 +574,17 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 
 // lowerBindTailIf lowers the if/else chain at the tail of a `bind` block: each
 // of its branches ends in the block's value, which the continuation returns.
-func (t *galaASTTransformer) lowerBindTailIf(ifCtx *grammar.IfStatementContext, res *bindResult) (ast.Stmt, error) {
+func (t *galaASTTransformer) lowerBindTailIf(ifS ifSrc, res *bindResult) (ast.Stmt, error) {
 	// A `return` in the chain may have filled the lambda's slot meanwhile.
 	if transpiler.IsUnusable(res.typ) {
 		res.typ = t.returnShape()
 	}
-	promoted, ok, err := t.lowerTailIf(ifCtx, typedSlot(res.typ), plainReturn)
+	promoted, ok, err := t.lowerTailIf(ifS, typedSlot(res.typ), plainReturn)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, t.semanticErrorAt(ifCtx, "a `bind` block must end with a value expression; this `if` ends it, so it needs an `else` and every branch must end in a value")
+		return nil, t.semanticErrorAtNode(ifS.at(), "a `bind` block must end with a value expression; this `if` ends it, so it needs an `else` and every branch must end in a value")
 	}
 	// Each branch's value is a value of the block.
 	var checkErr error
@@ -593,7 +593,7 @@ func (t *galaASTTransformer) lowerBindTailIf(ifCtx *grammar.IfStatementContext, 
 			return false
 		}
 		if ret, ok := n.(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
-			checkErr = t.checkBindValue(ifCtx, ret.Results[0], res)
+			checkErr = t.checkBindValue(ifS.at(), ret.Results[0], res)
 		}
 		return true
 	})
@@ -608,23 +608,22 @@ func (t *galaASTTransformer) lowerBindTailIf(ifCtx *grammar.IfStatementContext, 
 // so that constructors like Success/Some infer their type argument. When the
 // result type is not known yet (a bind block in a lambda of unknown result
 // type), the value is lowered on its own and its type becomes the block's.
-func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStatementContext, res *bindResult) (ast.Expr, error) {
-	sc := stmtCtx.(*grammar.StatementContext)
-	exprCtx := trailingBindValueExpr(stmtCtx)
-	if exprCtx == nil {
-		return nil, t.semanticErrorAt(sc, "a `bind` block must end with a value expression")
+func (t *galaASTTransformer) transformTrailingBindValue(s stmtSrc, res *bindResult) (ast.Expr, error) {
+	value := s.valueExpr()
+	if !value.ok() {
+		return nil, t.semanticErrorAtNode(s.at, "a `bind` block must end with a value expression")
 	}
 	// A `return` in the chain may have filled the lambda's slot meanwhile.
 	if transpiler.IsUnusable(res.typ) {
 		res.typ = t.returnShape()
 	}
 	// With no type yet, the block's type comes from this value's own type.
-	expr, err := t.lowerAgainst(t.exprOf(exprCtx), typedSlot(res.typ), true)
+	expr, err := t.lowerAgainst(value, typedSlot(res.typ), true)
 	if err != nil {
 		return nil, err
 	}
 	expr = t.unwrapImmutable(expr)
-	if err := t.checkBindValue(sc, expr, res); err != nil {
+	if err := t.checkBindValue(s.at, expr, res); err != nil {
 		return nil, err
 	}
 	return expr, nil
@@ -633,27 +632,27 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 // checkBindValue checks value, a value of a `bind` block written at at,
 // against the block's monad: it must be a value of that monad. When the
 // block's result type is not known yet, value's type becomes it.
-func (t *galaASTTransformer) checkBindValue(at antlr.ParserRuleContext, value ast.Expr, res *bindResult) error {
+func (t *galaASTTransformer) checkBindValue(at srcNode, value ast.Expr, res *bindResult) error {
 	if t.isNoReturnCallExpr(value) {
 		return nil
 	}
 	typ := t.followAliasChain(t.getExprTypeName(value))
 	if typ.IsVoid() || isVoidIIFE(value) {
-		return t.semanticErrorAt(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, but `"+at.GetText()+"` produces no value")
+		return t.semanticErrorAtNode(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, but `"+at.text()+"` produces no value")
 	}
 	if transpiler.IsUnusable(res.typ) {
 		if !t.isSettledType(typ) {
-			return t.semanticErrorAt(at, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
+			return t.semanticErrorAtNode(at, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
 		}
 		res.typ, res.inferred = typ, true
 	} else if !t.isSettledType(typ) || typ.IsAny() {
 		return nil
 	}
 	if base := t.monadBaseName(typ); base != res.monad {
-		return t.semanticErrorAt(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, got "+typ.String())
+		return t.semanticErrorAtNode(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, got "+typ.String())
 	}
 	if res.inferred && t.followAliasChain(res.typ).String() != typ.String() {
-		return t.semanticErrorAt(at, "the values of this `bind` block have different types, "+res.typ.String()+" and "+typ.String()+"; end them in values of one type")
+		return t.semanticErrorAtNode(at, "the values of this `bind` block have different types, "+res.typ.String()+" and "+typ.String()+"; end them in values of one type")
 	}
 	return nil
 }
@@ -681,10 +680,10 @@ func (t *galaASTTransformer) monadElemType(monadType transpiler.Type) transpiler
 // enclosing function's: those statements run inside the bind's FlatMap
 // callback, which such a statement could only leave, not the function or
 // loop it names.
-func (t *galaASTTransformer) checkNoEscapeAfterBind(stmts []grammar.IStatementContext, where string) error {
+func (t *galaASTTransformer) checkNoEscapeAfterBind(stmts []stmtSrc, where string) error {
 	for _, stmt := range stmts[1:] {
-		if escapesConstruct(t, stmt) {
-			return t.semanticErrorAt(stmt.(*grammar.StatementContext),
+		if t.escapesAt(stmt.at) {
+			return t.semanticErrorAtNode(stmt.at,
 				"a `return`, `break` or `continue` after a `bind` in "+where+" cannot leave the enclosing function or loop: "+
 					"the statements after the `bind` run inside its FlatMap callback. Move it before the `bind`")
 		}

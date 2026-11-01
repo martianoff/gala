@@ -17,6 +17,7 @@ import (
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -32,6 +33,8 @@ type walkRun struct {
 	native    int
 	stmts     int                     // the statements the native walk lowered, each counted once
 	stmtLines map[int]bool            // the lines those statements start on
+	stmtNodes map[int]bool            // those statements' node indices
+	root      native.GalaNodeRef      // the native tree's root, when the analysis converted it
 	lambdas   int                     // the lambdas lowered on the native tree, each counted once
 	captures  int                     // the Sendable capture checks run on the native tree
 	exprs     int                     // the expressions the native walk lowered, each counted once
@@ -55,11 +58,11 @@ type walkPipeline struct {
 
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
-	run := walkRun{stmtLines: map[int]bool{}, exprLines: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
+	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
 	transformer.OnNativeDecl(tr, func() { run.native++ })
-	stmts, lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}, map[int]bool{}
+	lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}
 	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true })
-	transformer.OnNativeStmt(tr, func(index, line int) { stmts[index], run.stmtLines[line] = true, true })
+	transformer.OnNativeStmt(tr, func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true })
 	transformer.OnNativeLambda(tr, func(index int) { lambdas[index] = true })
 	transformer.OnNativeCapture(tr, func() { run.captures++ })
 	transformer.OnNativeExpr(tr, func(index, line int) { exprs[index], run.exprLines[line] = true, true })
@@ -75,8 +78,25 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
-	run.stmts, run.lambdas, run.exprs, run.cases = len(stmts), len(lambdas), len(exprs), len(cases)
+	run.root, _ = p.compiled.ConvertedRoot()
+	run.stmts, run.lambdas, run.exprs, run.cases = len(run.stmtNodes), len(lambdas), len(exprs), len(cases)
 	return run
+}
+
+// loweredStmtOn reports whether the native walk lowered the outermost
+// statement that starts on line, not only some statement on that line: the
+// first one a parent-first walk of the tree meets there.
+func (r walkRun) loweredStmtOn(line int) bool {
+	found, lowered := false, false
+	if r.root.Ok() {
+		r.root.Walk(func(n native.GalaNodeRef) bool {
+			if !found && n.Kind() == native.GalaKIND_statement && int(n.Start().Line) == line {
+				found, lowered = true, r.stmtNodes[n.Index()]
+			}
+			return !found
+		})
+	}
+	return lowered
 }
 
 // handleParser parses as its parser does and keeps the native-tree handle of
@@ -150,11 +170,10 @@ func countTree(src string) (treeCounts, bool) {
 }
 
 // bodyStatements counts the statements the native walk lowers in sf's
-// top-level function bodies, lambda bodies and match arms: each statement of
-// a body, and of the if and for blocks in it, up to and including a block's
-// first `bind`, whose chain lowers the statements after it on ANTLR's tree.
-// It counts the lambdas and the case clauses of matches and partial functions too. An
-// if-expression branch's block is lowered on ANTLR's tree.
+// top-level function bodies, lambda bodies, match arms and if-expression
+// branches: each statement of a body, and of the if and for blocks in it,
+// the statements of a `bind` chain included. It counts the lambdas and the
+// case clauses of matches and partial functions too.
 func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 	var c treeCounts
 	var block func(grammar.IBlockContext)
@@ -168,8 +187,6 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 			d := s.Declaration()
 			switch {
 			case d == nil:
-			case d.BindDeclaration() != nil:
-				return
 			case d.IfStatement() != nil:
 				ifBlocks(d.IfStatement())
 			case d.ForStatement() != nil:
@@ -212,6 +229,8 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 				c.cases++
 				block(cc.GetBodyBlock())
 			}
+		case *grammar.IfExprBranchContext:
+			block(n.Block())
 		}
 		for _, child := range node.GetChildren() {
 			below(child)

@@ -257,27 +257,14 @@ func getChildOperatorText(ctx antlr.ParserRuleContext, index int) (string, error
 	return tree.GetText(), nil
 }
 
-// Postfix-related functions moved to postfix.go
-func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionListContext) ([]ast.Expr, error) {
-	var exprs []ast.Expr
-	for _, eCtx := range ctx.AllExpression() {
-		e, err := t.transformExpression(eCtx)
-		if err != nil {
-			return nil, err
-		}
-		exprs = append(exprs, e)
-	}
-	return exprs, nil
-}
-
 // transformExpressionListAgainst lowers a declaration's or assignment's
 // right-hand side; a single expression is lowered against typedSlot(expected).
 func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.ExpressionListContext, expected transpiler.Type) ([]ast.Expr, error) {
 	exprs := ctx.AllExpression()
 	if len(exprs) != 1 {
-		return t.transformExpressionList(ctx)
+		return t.lowerExprList(antlrExprList(ctx))
 	}
-	e, err := t.lowerAgainst(t.exprOf(exprs[0]), typedSlot(expected), true)
+	e, err := t.lowerAgainst(antlrExpr(exprs[0]), typedSlot(expected), true)
 	if err != nil {
 		return nil, err
 	}
@@ -305,12 +292,6 @@ func (t *galaASTTransformer) isBinaryOperator(op string) bool {
 	default:
 		return false
 	}
-}
-
-// getPrimaryFromExpression navigates the new grammar structure to find the primary
-// This is used for backward compatibility with code that expects expr.Primary()
-func (t *galaASTTransformer) getPrimaryFromExpression(ctx grammar.IExpressionContext) *grammar.PrimaryContext {
-	return PrimaryOf(LeadingPostfixExpr(ctx, false))
 }
 
 // LeadingPostfixExpr walks the precedence chain (or → and → equality →
@@ -878,16 +859,6 @@ func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slo
 	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ, line, col)
 }
 
-// expressionIsBareMatch reports whether the expression context is a bare
-// `subject match { ... }` form whose value is the entire expression (i.e.
-// not nested inside arithmetic, calls, or other operators). When such a
-// match appears in statement position, its value is discarded — see
-// transformBlock, which uses this to mark the match as statement-position
-// so void-returning arm calls do not get wrapped in `return ...`.
-func (t *galaASTTransformer) expressionIsBareMatch(exprCtx grammar.IExpressionContext) bool {
-	return t.bareMatch(antlrExpr(exprCtx)).ok()
-}
-
 // isNilIdent reports whether expr is the identifier `nil`.
 func isNilIdent(expr ast.Expr) bool {
 	ident, ok := expr.(*ast.Ident)
@@ -897,10 +868,7 @@ func isNilIdent(expr ast.Expr) bool {
 // isNilLiteral reports whether exprCtx is the source literal `nil`: a single
 // token, checked without rendering the expression's text.
 func isNilLiteral(exprCtx grammar.IExpressionContext) bool {
-	if exprCtx == nil || exprCtx.GetStart() == nil {
-		return false
-	}
-	return exprCtx.GetStart() == exprCtx.GetStop() && exprCtx.GetStart().GetText() == "nil"
+	return antlrExpr(exprCtx).isNil()
 }
 
 // transformIfExprBranch lowers an if-expression branch, an expression or a
@@ -910,28 +878,29 @@ func isNilLiteral(exprCtx grammar.IExpressionContext) bool {
 // explicit `return`) gets no synthesized `return <expr>`: that would be dead
 // code returning a placeholder (see loweredIfBranch.needsValueReturn).
 func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, s slot) (loweredIfBranch, error) {
-	if exprCtx := ctx.Expression(); exprCtx != nil {
-		return t.lowerIfExprBranchValue(antlrExpr(exprCtx), s)
-	}
+	return t.lowerIfExprBranch(t.ifBranchOf(ctx), s)
+}
 
+// lowerIfExprBranchBlock lowers b, an if-expression branch that is a block,
+// against s (see transformIfExprBranch).
+func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
 	// Block branch: transform all statements, use last as the result expression.
-	// Path: statement → declaration → simpleStatement → expression
-	blockCtx := ctx.Block().(*grammar.BlockContext)
-	stmts := blockCtx.AllStatement()
+	stmts := b.statements()
 	if len(stmts) == 0 {
 		return noValueBranch(nil), nil
 	}
 
 	// A `bind` takes over the rest of the branch (see lowerIfExprBranchBind).
-	bindAt := slices.IndexFunc(stmts, func(s grammar.IStatementContext) bool { return stmtKindOf(s) == stmtBind })
+	bindAt := slices.IndexFunc(stmts, func(s stmtSrc) bool { return s.kind == stmtBind })
 	end := len(stmts) - 1
 	if bindAt >= 0 {
 		end = bindAt
 	}
 
 	var preceding []ast.Stmt
-	for _, stmtCtx := range stmts[:end] {
-		stmt, pre, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
+	for _, st := range stmts[:end] {
+		t.noteNativeStmt(st)
+		stmt, pre, err := t.lowerStatement(st)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -945,19 +914,18 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		return loweredIfBranch{stmts: preceding, expr: expr}, nil
 	}
 
-	// Try to extract expression from the last statement:
-	// statement → declaration → simpleStatement → expression
-	lastStmtCtx := stmts[len(stmts)-1].(*grammar.StatementContext)
-	last := antlrStmt(lastStmtCtx)
-	if exprCtx := last.valueExpr(t); exprCtx != nil {
+	// The branch's value is its last statement's expression.
+	last := stmts[len(stmts)-1]
+	t.noteNativeStmt(last)
+	if value := last.valueExpr(); value.ok() {
 		// The branch's value is its trailing expression; loop control has none.
-		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+		if bs, ok := t.lowerLoopControl(value); ok {
 			if s.hoist != "" {
 				return loweredIfBranch{stmts: append(preceding, bs), terminates: true}, nil
 			}
 			return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
 		}
-		expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), s, true)
+		expr, err := t.lowerResultAgainst(value, s, true)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -966,8 +934,8 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 
 	// A trailing if/else chain carries the branch's value in its branches, as
 	// at the tail of a match arm.
-	if last.kind == stmtIf {
-		b, err := t.lowerIfExprBranchTailIf(last.kid.ctx.(*grammar.IfStatementContext), s)
+	if ifS := last.ifStmt(); ifS.ok() {
+		b, err := t.lowerIfExprBranchTailIf(ifS, s)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -977,7 +945,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 
 	// If the last statement isn't a bare expression, transform it normally
 	// and return nil as the expression (void block).
-	lastStmt, pre, err := t.transformStatement(lastStmtCtx)
+	lastStmt, pre, err := t.lowerStatement(last)
 	if err != nil {
 		return loweredIfBranch{}, err
 	}
@@ -1000,7 +968,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 // lowerIfExprBranchValue lowers e, an if-expression branch that is an
 // expression, against s (see transformIfExprBranch).
 func (t *galaASTTransformer) lowerIfExprBranchValue(e exprSrc, s slot) (loweredIfBranch, error) {
-	if bs, ok := t.lowerLoopControlSrc(e); ok {
+	if bs, ok := t.lowerLoopControl(e); ok {
 		if s.hoist != "" {
 			// Lowered as statements, the branch acts on the loop: it
 			// terminates, with no value.
@@ -1015,22 +983,22 @@ func (t *galaASTTransformer) lowerIfExprBranchValue(e exprSrc, s slot) (loweredI
 	return loweredIfBranch{expr: expr}, nil
 }
 
-// lowerIfExprBranchTailIf lowers the if/else chain ifCtx at the tail of an
+// lowerIfExprBranchTailIf lowers the if/else chain ifS at the tail of an
 // if-expression branch filling slot s. When each branch of the chain ends in
 // a value, the chain returns it from each branch; otherwise the chain is a
 // statement and the if-expression branch has no value.
-func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifCtx *grammar.IfStatementContext, s slot) (loweredIfBranch, error) {
-	promoted, ok, err := t.lowerTailIf(ifCtx, s, t.armReturn)
+func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifS ifSrc, s slot) (loweredIfBranch, error) {
+	promoted, ok, err := t.lowerTailIf(ifS, s, t.armReturn)
 	if err != nil {
 		return loweredIfBranch{}, err
 	}
 	if !ok {
-		if err := t.checkUnpromotedBranchTails(ifSrc{ctx: ifCtx}, promoted); err != nil {
+		if err := t.checkUnpromotedBranchTails(ifS, promoted); err != nil {
 			return loweredIfBranch{}, err
 		}
 		return noValueBranch([]ast.Stmt{promoted}), nil
 	}
-	if err := t.checkChainValueTypes(ifCtx, promoted); err != nil {
+	if err := t.checkChainValueTypes(ifS.at(), promoted); err != nil {
 		return loweredIfBranch{}, err
 	}
 	result := t.armBranchResult(promoted, s)
@@ -1041,10 +1009,10 @@ func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifCtx *grammar.IfStatementC
 	return loweredIfBranch{stmts: []ast.Stmt{promoted}, expr: result, valueInStmts: true}, nil
 }
 
-// checkChainValueTypes rejects a promoted if/else chain (ifCtx its source)
+// checkChainValueTypes rejects a promoted if/else chain (written at at)
 // whose branch values have types that do not unify: each is a value of the
 // one block the chain ends.
-func (t *galaASTTransformer) checkChainValueTypes(ifCtx *grammar.IfStatementContext, promoted *ast.IfStmt) error {
+func (t *galaASTTransformer) checkChainValueTypes(at srcNode, promoted *ast.IfStmt) error {
 	var unified transpiler.Type = transpiler.NilType{}
 	var err error
 	ast.Inspect(promoted, func(n ast.Node) bool {
@@ -1064,7 +1032,7 @@ func (t *galaASTTransformer) checkChainValueTypes(ifCtx *grammar.IfStatementCont
 		} else if next := t.unifyBranchTypes(unified, typ); !next.IsNil() {
 			unified = next
 		} else {
-			err = t.semanticErrorAt(ifCtx, fmt.Sprintf(
+			err = t.semanticErrorAtNode(at, fmt.Sprintf(
 				"the branches of this `if` end in values of different types, %s and %s; end them in values of one type", unified, typ))
 		}
 		return true
@@ -1078,7 +1046,8 @@ func (t *galaASTTransformer) checkChainValueTypes(ifCtx *grammar.IfStatementCont
 // trailing value. Never the enclosing function's result type — the
 // if-expression's value need not be what the function returns. The chain's
 // bound names are local to the branch.
-func (t *galaASTTransformer) lowerIfExprBranchBind(stmts []grammar.IStatementContext, s slot) (ast.Expr, error) {
+func (t *galaASTTransformer) lowerIfExprBranchBind(stmts []stmtSrc, s slot) (ast.Expr, error) {
+	t.noteNativeStmt(stmts[0])
 	if err := t.checkNoEscapeAfterBind(stmts, "an if-expression branch"); err != nil {
 		return nil, err
 	}
@@ -1182,6 +1151,7 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 // (consumesSlotType). A lambda body is never lowered against the outer slot:
 // it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
+	e = t.onNative(e)
 	untyped := transpiler.IsUnusable(s.typ)
 	if untyped && s.hoist == "" {
 		return t.lowerExpr(e)
@@ -1517,12 +1487,6 @@ func (t *galaASTTransformer) isGenericStructAlias(name, resolved string, meta *t
 	endMeta := t.getTypeMeta(t.resolveTypeMetaName(end))
 	_, isStruct := t.structFields[t.resolveStructTypeName(end)]
 	return endMeta != nil && !endMeta.IsSealed && isStruct
-}
-
-// isCallSuffix reports whether s is an argument list `(...)`.
-func isCallSuffix(s grammar.IPostfixSuffixContext) bool {
-	sc := s.(*grammar.PostfixSuffixContext)
-	return sc.Identifier() == nil && sc.ExpressionList() == nil
 }
 
 // unwrapImmutable is the single canonical unwrap helper for val-wrapped
