@@ -97,6 +97,7 @@ var matchWalkCases = []struct{ name, src, shape string }{
 	{"variant as a pattern's type argument", "package main\n\nsealed type S {\n\tcase A()\n\tcase B()\n}\n\nstruct Box[T any](v T)\n\nfunc f(x any) int = x match {\n\t/* ü */ case Box[A](v) => \"ü\".Size()\n\tcase _ => 0\n}\n", "type-arg"},
 	{"generic struct with the wrong type arguments", "package main\n\nstruct Box[T any](v T)\n\nfunc f(x any) int = x match {\n\t/* ü */ case Box[int, string](v) => \"ü\".Size()\n\tcase _ => 0\n}\n", "type-arg"},
 	{"function as a qualified extractor", "package main\n\nimport \"strings\"\n\nfunc f(x string) int = x match {\n\t/* ü */ case strings.ToUpper(v) => v.Size()\n\tcase _ => 0\n}\n", "extractor"},
+	{"operands of an unconstrained type compared by ==", "package main\n\nfunc f[T any](a T, b T) bool {\n\tval s = \"ü\"\n\tPrintln(s)\n\t/* ü */ a == b\n}\n", "operator"},
 	{"sub-pattern value compared by == that cannot compare", "package main\n\nval Fn = (x int) => x\n\nfunc f(o Option[func(int) int]) int = o match {\n\t/* ü */ case Some(Fn) => \"ü\".Size()\n\tcase _ => 0\n}\n", "pattern"},
 }
 
