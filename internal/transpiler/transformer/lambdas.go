@@ -162,7 +162,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			return nil, galaerr.NewSemanticErrorAt(line, col, "cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
 		}
 		for i, p := range params {
-			field, err := t.transformParameter(p.ctx, false)
+			field, _, err := t.lowerParam(p, false)
 			if err != nil {
 				return nil, err
 			}
@@ -193,7 +193,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 				}
 			}
 			// A lambda parameter with no annotation and no inferable expected type
-			// would emit `any` (transformParameter's fallback). Reject it instead of
+			// would emit `any` (lowerParam's fallback). Reject it instead of
 			// generating non-concrete Go: the author must annotate the parameter or
 			// place the lambda in a typed context. (Replaces the prior `any`+warning
 			// fallback now that typed contexts thread expected types.)
@@ -523,7 +523,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 	// function does: a call is made, a match or if-expression runs its
 	// branches as statements, and a plain value is evaluated but not used.
 	if isVoidExpected {
-		body, err := t.transformVoidExpressionBody(bodyExpr.antlr(t), lambdaDiscardHint)
+		body, err := t.transformVoidExpressionBody(bodyExpr, lambdaDiscardHint)
 		if err != nil {
 			return nil, nil, err
 		}

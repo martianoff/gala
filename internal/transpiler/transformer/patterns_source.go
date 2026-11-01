@@ -565,12 +565,12 @@ func (e patExpr) qualifiedMember() (pkg, name string, ok bool) {
 }
 
 // postfixSrc is a postfix expression. owner, set by the postfix driver
-// (lowerSuffixes), is its context: the key of the hint for the slot its value
-// fills, on either tree (see expectedArgTypeStack.pushFor).
+// (lowerSuffixes), is the key of the hint for the slot its value fills, the
+// same on either tree (see hintOwner).
 type postfixSrc struct {
 	ctx   *grammar.PostfixExprContext
 	node  native.GalaNodeRef
-	owner *grammar.PostfixExprContext
+	owner hintOwner
 }
 
 // ok reports whether p is a postfix expression.

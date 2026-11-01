@@ -407,6 +407,7 @@ func (s stmtSrc) binding(t *galaASTTransformer) bindingDecl {
 // nestedFunc reads s, a function declaration in a body.
 func (s stmtSrc) nestedFunc(t *galaASTTransformer) nestedFunc {
 	if s.kid.node.Ok() {
+		t.nativeShape(s.kid.node, "nested")
 		n := native.FunctionDeclarationNode{GalaNodeRef: s.kid.node}
 		id := n.Identifier()
 		name, start := id.GetText(), n.Start()
@@ -415,7 +416,7 @@ func (s stmtSrc) nestedFunc(t *galaASTTransformer) nestedFunc {
 			line:    int(start.Line),
 			col:     int(start.Column),
 			endCol:  int(id.Stop().Column) + utf8.RuneCountInString(name),
-			sig:     crossTo[*grammar.SignatureContext](t, n.Signature().GalaNodeRef),
+			sig:     nativeSig(n.Signature()),
 			method:  n.Receiver().Ok(),
 			generic: n.TypeParameters().Ok(),
 		}

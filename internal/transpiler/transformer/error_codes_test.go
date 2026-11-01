@@ -435,6 +435,30 @@ func main() {
 			expectContains: `parameter "X" has no declared type`,
 		},
 		{
+			// A declared parameter written as a type alone, which the grammar
+			// allows for a function type's parameters, is rejected at the
+			// parameter, in its file.
+			name: "GALA-E0088 nameless variadic parameter",
+			input: `package main
+
+func g(...int) int = 0
+
+func main() = Println(g())`,
+			expectCode:     galaerr.CodeNamelessParam,
+			expectContains: "error_codes_test.gala:3:7 parameter `...int` has no name (hint: name it, as in `x ...int`)",
+		},
+		{
+			// The hint names the parameter after its keyword.
+			name: "GALA-E0088 nameless val parameter",
+			input: `package main
+
+func g(val ...int) int = 0
+
+func main() = Println(g())`,
+			expectCode:     galaerr.CodeNamelessParam,
+			expectContains: "error_codes_test.gala:3:7 parameter `val ...int` has no name (hint: name it, as in `val x ...int`)",
+		},
+		{
 			// GALA-E0040 is the one code in this table raised during PARSING
 			// rather than analysis, so it also pins that a coded parse-phase
 			// diagnostic survives the pipeline with its code intact.

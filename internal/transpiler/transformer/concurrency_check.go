@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/concurrency"
@@ -439,37 +438,19 @@ func withKnownLeaves(typ transpiler.Type) transpiler.Type {
 	return typ
 }
 
-// typeCtxIsSendable reports whether a parameter/binding's declared type
-// annotation is the `Sendable[F]` boundary marker, in any qualified form:
+// isSendable reports whether s, a parameter's or binding's declared type
+// annotation, is the `Sendable[F]` boundary marker, in any qualified form:
 // `Sendable[...]`, a package-qualified `std.Sendable[...]`, or a dot-imported
-// re-export. transformType erases the transparent marker before the type reaches
+// re-export. lowerType erases the transparent marker before the type reaches
 // scope (the stored type is the bare inner `F`), so this purely syntactic check
 // is how a Sendable-declared binding is remembered — see markSendable.
-func typeCtxIsSendable(ctx grammar.ITypeContext) bool {
-	if ctx == nil {
-		return false
-	}
-	qid, ok := ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext)
-	if !ok || qid == nil {
-		return false
-	}
-	ta, ok := ctx.TypeArguments().(*grammar.TypeArgumentsContext)
-	if !ok || ta == nil {
-		return false
-	}
-	ids := qid.AllIdentifier()
-	if len(ids) == 0 {
-		return false
-	}
+func (s typeSrc) isSendable() bool {
 	// The marker's own name is the last identifier; any leading qualifier (a
 	// package alias) is ignored, matching transpiler.UnwrapSendable's
 	// package-agnostic base-name comparison.
-	if ids[len(ids)-1].GetText() != transpiler.TypeSendable {
+	if !s.ok() || !s.named() || s.lastName() != transpiler.TypeSendable {
 		return false
 	}
-	tl, ok := ta.TypeList().(*grammar.TypeListContext)
-	if !ok || tl == nil {
-		return false
-	}
-	return len(tl.AllType_()) == 1
+	args, ok := s.typeArgs()
+	return ok && len(args) == 1
 }

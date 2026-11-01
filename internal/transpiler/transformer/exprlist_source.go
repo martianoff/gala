@@ -62,12 +62,3 @@ func (t *galaASTTransformer) lowerExprs(exprs []exprSrc) ([]ast.Expr, error) {
 	}
 	return out, nil
 }
-
-// antlr is l's context, which lowerDeclarationInitializers still reads: the
-// crossing from its node.
-func (l exprListSrc) antlr(t *galaASTTransformer) *grammar.ExpressionListContext {
-	if l.node.Ok() {
-		return crossTo[*grammar.ExpressionListContext](t, l.node)
-	}
-	return l.ctx
-}

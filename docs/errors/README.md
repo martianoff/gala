@@ -102,6 +102,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0085` | Struct tag on a field | [GALA-E0085.md](GALA-E0085.md) |
 | `GALA-E0086` | Type parameter on an interface method | [GALA-E0086.md](GALA-E0086.md) |
 | `GALA-E0087` | Name is both a std type and a dot-imported value | [GALA-E0087.md](GALA-E0087.md) |
+| `GALA-E0088` | Parameter with no name | [GALA-E0088.md](GALA-E0088.md) |
 
 ### Retired codes
 

@@ -325,13 +325,11 @@ func (t *galaASTTransformer) bindReceiver(p preppedBind, recv ast.Expr, recvType
 
 // bindClauseReceiver is bindReceiver for p's own value. As for the same call
 // written out, a method on a `Ptr` receiver is never called on a pointer that
-// may be nil (GALA-E0080, checkPtrReceiverAt).
+// may be nil (GALA-E0080, checkPtrReceiverIn).
 func (t *galaASTTransformer) bindClauseReceiver(p preppedBind, method string) (ast.Expr, error) {
-	err := t.checkPtrReceiverAt(p.recvExpr, p.recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
-		// Called only to report the error.
+	err := t.checkPtrReceiverIn(p.recvExpr, p.recvType, method, func() (srcNode, srcNode, string) {
 		at := p.expr.at()
-		ctx := t.ctxAt(at)
-		return ctx, ctx, at.sourceText()
+		return at, at, at.sourceText()
 	})
 	if err != nil {
 		return nil, err

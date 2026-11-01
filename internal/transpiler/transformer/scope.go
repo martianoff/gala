@@ -417,7 +417,7 @@ func (t *galaASTTransformer) fixedBindingOf(name string) fixedBinding {
 // markSendable flags name in the innermost scope as a binding whose declared
 // type is the `Sendable[F]` boundary marker. Call it right after the binding is
 // added (addVal/addVar) at any parameter/binding site whose type annotation is
-// Sendable — see typeCtxIsSendable.
+// Sendable — see typeSrc.isSendable.
 func (t *galaASTTransformer) markSendable(name string) {
 	if t.currentScope != nil {
 		t.currentScope.sendable[name] = true

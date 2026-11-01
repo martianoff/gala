@@ -231,7 +231,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	} else if len(lhsExprs) == 1 {
 		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
-	rhsExprs, err := t.lowerDeclarationInitializers(d.rhs.antlr(t), len(lhsExprs), lhsType)
+	rhsExprs, err := t.lowerDeclarationInitializers(t.exprsOf(d.rhs), len(lhsExprs), lhsType)
 	if err != nil {
 		return nil, err
 	}
@@ -1066,7 +1066,7 @@ func (t *galaASTTransformer) checkValueUsedHint(e exprSrc, stmt ast.Stmt, hint s
 	case *ast.CallExpr:
 		// A call lowered from a name or field that was not written as a call
 		// is a val read through `.Get()` (`x`, `b.n`).
-		if !isZeroArgGetCall(x) || !t.isUnwrittenValRead(e.antlr(t)) {
+		if !isZeroArgGetCall(x) || !t.isUnwrittenValRead(e) {
 			return nil
 		}
 	case *ast.UnaryExpr:

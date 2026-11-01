@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"iter"
+	"strings"
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
@@ -42,13 +43,28 @@ func (s suffixSrc) identAt() srcNode {
 	return at
 }
 
-// antlr is s's context, and false when s is a native node without one.
-func (s suffixSrc) antlr(t *galaASTTransformer) (*grammar.PostfixSuffixContext, bool) {
-	if !s.node.Ok() {
-		return s.ctx, s.ctx != nil
+// receiver is receiverSource of m: the receiver of the member access, the
+// postfix expression's primary through the suffix before m, as the nodes
+// spanning it and its source text. The grammar puts a suffix only in a
+// postfix expression.
+func (m memberSrc) receiver(t *galaASTTransformer) (from, to srcNode, text string) {
+	if !m.node.Ok() {
+		f, l, text := receiverSource(m.ctx)
+		return srcNode{ctx: f}, srcNode{ctx: l}, text
 	}
-	ctx, ok := t.native.Ctx(s.node).(*grammar.PostfixSuffixContext)
-	return ctx, ok
+	t.nativeShape(m.node, "receiver")
+	postfix := m.node.Parent()
+	primary := (native.PostfixExprNode{GalaNodeRef: postfix}).PrimaryExpr().GalaNodeRef
+	from, to = srcNode{node: primary}, srcNode{node: primary}
+	parts := []string{primary.SourceText()}
+	for s := range galaparser.NativeKids(postfix, native.GalaKIND_postfixSuffix) {
+		if s == m.node {
+			break
+		}
+		to = srcNode{node: s}
+		parts = append(parts, s.SourceText())
+	}
+	return from, to, strings.Join(parts, "")
 }
 
 // hasList reports whether ix has its expression list, which only a malformed
@@ -109,9 +125,8 @@ func (ix indexSrc) expr(i int) exprSrc {
 // match. Its suffixes are lowered through the postfix driver (lowerSuffixes),
 // and a match by lowerMatch.
 func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.Expr, error) {
-	// The hint is keyed by p's context, as the ANTLR walk pushes it.
-	owner := postfixSrc{node: p.GalaNodeRef}.hintKey(t)
-	src := postfixSrc{node: p.GalaNodeRef, owner: owner}
+	// The hint is keyed by p's node, as it is pushed (hintOwner).
+	src := postfixSrc{node: p.GalaNodeRef, owner: nativeOwner(p.GalaNodeRef)}
 	// Most chains are short: no allocation for them. A child that is no
 	// suffix is part of a match.
 	var buf [4]suffixSrc

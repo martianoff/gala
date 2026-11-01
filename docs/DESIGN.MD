@@ -301,7 +301,10 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     consumer at a time. The analyzer reads the compiled file on it, from its first read on
     (its package clause, imports and names, and the checks on them), collects the file's
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
-    the transformer walks its top-level declarations, the statements of its function
+    the transformer walks its top-level declarations (their signatures, parameters,
+    initializers and expression bodies included; the self-tail-call rewrite is entered
+    from ANTLR's tree, its expressions coming back to the native one, and a parameter's
+    default is read on ANTLR's tree), the statements of its function
     bodies (`bind` chains and the blocks of if-expression branches included), its
     expressions (operators, names, literals, parentheses and tuples,
     if-expressions, member accesses, indexes and calls, the values call arguments pass, and
@@ -310,7 +313,9 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     their patterns with the values they compare and the extractors and type arguments they
     name (the statements of a match arm's block included; a partial function's
     `{ case ... }` stays on ANTLR's tree); an expression, lambda or match entered from code still on ANTLR's
-    tree finds its node with `Native.NodeOfKind`. All of it runs only where the tree
+    tree finds its node with `Native.NodeOfKind`, and the state keyed by a subtree (the
+    expected-type hints, the escape cache) is keyed by its native node, whichever tree
+    reaches it. All of it runs only where the tree
     bridges to ANTLR's (`Native.Bridged`); the compiled file's sibling files, the files of
     imported packages and LSP buffers stay on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the analysis did
     not convert the tree), and neither the transformer nor any cache keeps it or a node of it:

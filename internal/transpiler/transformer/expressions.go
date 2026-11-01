@@ -257,20 +257,6 @@ func getChildOperatorText(ctx antlr.ParserRuleContext, index int) (string, error
 	return tree.GetText(), nil
 }
 
-// transformExpressionListAgainst lowers a declaration's or assignment's
-// right-hand side; a single expression is lowered against typedSlot(expected).
-func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.ExpressionListContext, expected transpiler.Type) ([]ast.Expr, error) {
-	exprs := ctx.AllExpression()
-	if len(exprs) != 1 {
-		return t.lowerExprList(antlrExprList(ctx))
-	}
-	e, err := t.lowerAgainst(antlrExpr(exprs[0]), typedSlot(expected), true)
-	if err != nil {
-		return nil, err
-	}
-	return []ast.Expr{e}, nil
-}
-
 // binaryOperation builds `left op right` from two lowered operands: it rejects
 // a Go call's Try or Tuple as an operand (GALA-E0049) and reads vals through
 // their Immutable wrapper.
@@ -1201,7 +1187,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	// generic calls that read it match its structure (`Try[Email]` for
 	// `type Checked Try[Email]`) to bind their type arguments.
 	if hint := t.followAliasChain(s.typ); t.consumesSlotType(e, hint) {
-		release := t.expectedArgTypes.pushFor(hint, e.solePostfix().hintKey(t))
+		release := t.expectedArgTypes.pushFor(hint, t.hintKey(e.solePostfix()))
 		defer release()
 	}
 	expr, err := t.lowerExpr(e)

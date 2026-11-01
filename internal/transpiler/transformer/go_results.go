@@ -6,8 +6,6 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -624,23 +622,18 @@ func (t *galaASTTransformer) checkGoResultOperands(op string, at srcNode, operan
 }
 
 // checkGoResultTupleDestructure reports `val (a, b) = goCall()` (or `var`) over a Go call
-// that can fail: its value is a Try, not a Tuple.
-func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keyword string, ctx antlr.ParserRuleContext) error {
+// that can fail: its value is a Try, not a Tuple. at is the initializer list.
+func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keyword string, at srcNode) error {
 	res := t.goResultOf(expr)
 	if res == nil || !res.Fails {
 		return nil
 	}
-	return t.goResultMisuse(res, fmt.Sprintf("a Try is not a Tuple, so it cannot be destructured with `%s (...)`", keyword), ctx)
+	return t.goResultMisuseAt(res, fmt.Sprintf("a Try is not a Tuple, so it cannot be destructured with `%s (...)`", keyword), at)
 }
 
-// goResultMisuse builds the GALA-E0049 diagnostic for a converted Go call used
-// as something it is not.
-func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antlr.ParserRuleContext) error {
-	return t.goResultMisuseAt(res, what, srcNode{ctx: ctx})
-}
-
-// goResultMisuseAt is goResultMisuse at a node of either tree, or at the
-// position last lowered when at is the zero srcNode.
+// goResultMisuseAt builds the GALA-E0049 diagnostic for a converted Go call
+// used as something it is not, at a node of either tree, or at the position
+// last lowered when at is the zero srcNode.
 func (t *galaASTTransformer) goResultMisuseAt(res *goResult, what string, at srcNode) error {
 	shape := fmt.Sprintf("returns %d values", res.count())
 	if res.Fails {

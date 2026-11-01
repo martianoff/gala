@@ -22,6 +22,7 @@ go_library(
         "constructors.go",
         "declarations.go",
         "declarations_native.go",
+        "decls_source.go",
         "default_exprs.go",
         "default_values.go",
         "doc_comments.go",
@@ -472,6 +473,7 @@ go_test(
 # gazelle:exclude native_args_walk_test.go
 # gazelle:exclude native_leaves_walk_test.go
 # gazelle:exclude native_stmt_walk_test.go
+# gazelle:exclude native_decls_walk_test.go
 go_test(
     # keep
     name = "native_walk_test",
@@ -489,6 +491,7 @@ go_test(
     shard_count = 3,
     srcs = [
         "native_args_walk_test.go",
+        "native_decls_walk_test.go",
         "native_expr_walk_test.go",
         "native_leaves_walk_test.go",
         "native_match_test.go",

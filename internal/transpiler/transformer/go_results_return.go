@@ -6,8 +6,6 @@ import (
 	"go/token"
 	"slices"
 
-	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -41,15 +39,16 @@ const goValueName = "_goValue"
 // list, into the one GALA value they make, the result type the body is lowered
 // against, and returns the Go results for returnGoResults to restore. It
 // returns nil for any other signature.
-func (t *galaASTTransformer) liftDeclaredGoResults(funcType *ast.FuncType, sig *grammar.SignatureContext) (*ast.FieldList, error) {
-	if sig.GoResults() == nil || funcType.Results == nil || len(funcType.Results.List) < 2 {
+func (t *galaASTTransformer) liftDeclaredGoResults(funcType *ast.FuncType, sig sigSrc) (*ast.FieldList, error) {
+	at, ok := sig.goResults()
+	if !ok || funcType.Results == nil || len(funcType.Results.List) < 2 {
 		return nil, nil
 	}
+	t.noteNativeShape(at, "goresults")
 	goResults := funcType.Results
 	value, err := t.goResultsValue(goResults)
 	if err != nil {
-		pos := sig.GoResults().GetStart()
-		return nil, galaerr.NewSemanticErrorAt(pos.GetLine(), pos.GetColumn(), err.Error())
+		return nil, semanticErrorAtStart(at, err.Error())
 	}
 	funcType.Results = &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(value.Type)}}}
 	return goResults, nil
