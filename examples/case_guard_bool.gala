@@ -1,0 +1,33 @@
+package main
+
+// A case guard is a bool. A guard of an opaque type over bool, or of a GALA
+// type over bool, is a bool too, after every kind of pattern: a binding, a
+// literal, a variant, an extractor.
+opaque type On bool
+
+type Flag bool
+
+struct Even()
+
+func (e Even) Unapply(n int) bool = n % 2 == 0
+
+func viaSome(x Option[int], on On) string = x match {
+    case Some(v) if on => s"some $v"
+    case _ => "off"
+}
+
+func viaExtractor(n int, f Flag) string = n match {
+    case Even() if f => "even"
+    case m if f => s"odd $m"
+    case _ => "off"
+}
+
+func main() {
+    Println(viaSome(Some(2), On(true)))
+    Println(viaSome(Some(2), On(false)))
+    Println(viaExtractor(4, true))
+    Println(viaExtractor(3, true))
+    Println(viaExtractor(4, false))
+    val pf func(int) Option[string] = { case n if On(n > 0) => s"positive $n" }
+    Println(pf(1), pf(-1))
+}

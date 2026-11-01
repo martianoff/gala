@@ -1337,6 +1337,19 @@ func main() = Println(sum(1, 2))
 			},
 		},
 		{
+			name: "case guard that is not a bool",
+			code: galaerr.CodeNonBoolGuard, // GALA-E0089
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val pf func(int) Option[int] = { case n if n => n }
+    Println(pf(1))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

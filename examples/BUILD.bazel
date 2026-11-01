@@ -2441,6 +2441,14 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Verification: a case guard of a defined bool type (opaque, or a GALA type
+# over bool) after a variant or extractor pattern, whose test is a typed bool.
+gala_exec_test(
+    name = "case_guard_bool",
+    src = "case_guard_bool.gala",
+    expected = "case_guard_bool.out",
+)
+
 # Verification: ToBytes/ToString/ToRunes byte conversion helpers
 gala_exec_test(
     name = "byte_conversion",

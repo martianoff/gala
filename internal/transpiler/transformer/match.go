@@ -1349,6 +1349,58 @@ func (t *galaASTTransformer) collectReferencedIdents(nodes []ast.Node) map[strin
 	return refs
 }
 
+// lowerCaseGuard is the lowered guard of cc, `case p if guard`, and nil when
+// cc has none. A guard whose type is known and is not a bool is GALA-E0089:
+// joined to the pattern's test with &&, it would fail in go build. A guard of
+// a defined bool type is converted to bool. A guard whose type inference
+// cannot tell, or reads as any, is left to Go: an inferred any is also what
+// inference falls back to, so it does not show the guard is not a bool.
+func (t *galaASTTransformer) lowerCaseGuard(cc caseSrc) (ast.Expr, error) {
+	g := cc.guard()
+	if !g.ok() {
+		return nil, nil
+	}
+	expr, err := t.lowerExpr(g)
+	if err != nil {
+		return nil, err
+	}
+	typ := t.probeExprType(expr)
+	if transpiler.IsUnusableOrAny(typ) {
+		return expr, nil
+	}
+	if t.isBoolValued(typ) {
+		if b, plain := typ.(transpiler.BasicType); !plain || b.Name != "bool" {
+			// Go joins a defined bool type only to an untyped test with &&;
+			// an extractor's or a variant's test is a typed bool.
+			expr = &ast.CallExpr{Fun: ast.NewIdent("bool"), Args: []ast.Expr{expr}}
+		}
+		return expr, nil
+	}
+	at := g.at().rng()
+	return nil, spanErrorAt(galaerr.CodeNonBoolGuard, at, at,
+		fmt.Sprintf("case guard `%s` has type %s, not bool", oneLine(g.text()), t.sourceTypeName(typ)),
+		"a guard must be a bool condition, such as a comparison")
+}
+
+// isBoolValued reports whether typ is bool at the bottom: bool itself, an
+// alias of it, a Go type defined over it, or an opaque type over one of them
+// (an opaque type cannot be declared over another).
+func (t *galaASTTransformer) isBoolValued(typ transpiler.Type) bool {
+	_, kind, via := t.resolveScalar(typ)
+	if via != nil {
+		_, kind, _ = t.resolveScalar(t.underlyingType(via))
+	}
+	return kind == scalarBool
+}
+
+// joinGuard is cond && guard, or cond when there is no guard.
+func joinGuard(cond, guard ast.Expr) ast.Expr {
+	if guard == nil {
+		return cond
+	}
+	return &ast.BinaryExpr{X: cond, Op: token.LAND, Y: guard}
+}
+
 // transformCaseClauseWithType transforms a case clause and returns its result
 // type, and where the arm finishes without a value (the zero srcNode when it
 // yields one or leaves; see yieldsNoValue). armSlot is the slot the match fills (see
@@ -1363,19 +1415,12 @@ func (t *galaASTTransformer) transformCaseClauseWithType(cc caseSrc, paramName s
 		return nil, nil, srcNode{}, err
 	}
 
-	// Transform guard expression separately so we can check variable references in it
-	var guardExpr ast.Expr
-	if guard := cc.guard(); guard.ok() {
-		guardExpr, err = t.lowerExpr(guard)
-		if err != nil {
-			return nil, nil, srcNode{}, err
-		}
-		cond = &ast.BinaryExpr{
-			X:  cond,
-			Op: token.LAND,
-			Y:  guardExpr,
-		}
+	// The guard is kept apart too, for the unused-binding check below.
+	guardExpr, err := t.lowerCaseGuard(cc)
+	if err != nil {
+		return nil, nil, srcNode{}, err
 	}
+	cond = joinGuard(cond, guardExpr)
 
 	var body []ast.Stmt
 	var resultType transpiler.Type

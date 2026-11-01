@@ -2190,7 +2190,7 @@ The method is named `MatchView`, not `View`, so it does not collide with the
 `View()` methods that UI components commonly declare.
 
 #### Pattern Matching Filters (Guards)
-Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables.
+Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables. A guard is a `bool`; one of another type is [GALA-E0089](errors/GALA-E0089.md).
 
 <!-- doc-check: fragment -->
 ```gala

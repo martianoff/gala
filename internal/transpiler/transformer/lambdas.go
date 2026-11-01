@@ -1221,18 +1221,11 @@ func (t *galaASTTransformer) transformPartialCaseClause(cc caseSrc, paramName st
 		return nil, nil, err
 	}
 
-	// Handle guard clause
-	if g := cc.guard(); g.ok() {
-		guard, err := t.lowerExpr(g)
-		if err != nil {
-			return nil, nil, err
-		}
-		cond = &ast.BinaryExpr{
-			X:  cond,
-			Op: token.LAND,
-			Y:  guard,
-		}
+	guard, err := t.lowerCaseGuard(cc)
+	if err != nil {
+		return nil, nil, err
 	}
+	cond = joinGuard(cond, guard)
 
 	var body []ast.Stmt
 	var resultType transpiler.Type
