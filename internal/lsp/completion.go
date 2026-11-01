@@ -3,6 +3,8 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
@@ -113,10 +115,16 @@ func isDotCompletion(text string, line, char int) bool {
 	return ok
 }
 
+// typeCompletions offers the exported types of richAST and the cases of its
+// sealed types, one item per name. The types are walked in key order, so of
+// two entries spelling one name (a sealed type's case and the case's own type
+// entry) the same one is offered every time, as in packageCompletions and
+// matchCaseCompletions.
 func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
-	for key, tm := range richAST.Types {
+	for _, key := range slices.Sorted(maps.Keys(richAST.Types)) {
+		tm := richAST.Types[key]
 		name := tm.Name
 		if name == "" {
 			if idx := strings.LastIndex(key, "."); idx >= 0 {
@@ -213,7 +221,8 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string, snippets bo
 	seen := make(map[string]bool)
 
 	// Types from this package
-	for key, tm := range richAST.Types {
+	for _, key := range slices.Sorted(maps.Keys(richAST.Types)) {
+		tm := richAST.Types[key]
 		name := tm.Name
 		if name == "" {
 			if idx := strings.LastIndex(key, "."); idx >= 0 {
@@ -332,7 +341,8 @@ func isMatchCaseContext(text string, line, _ int) bool {
 func matchCaseCompletions(richAST *transpiler.RichAST, matchedType string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
-	for key, tm := range richAST.Types {
+	for _, key := range slices.Sorted(maps.Keys(richAST.Types)) {
+		tm := richAST.Types[key]
 		if !tm.IsSealed {
 			continue
 		}
