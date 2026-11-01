@@ -232,6 +232,7 @@ func main() {
 	{"bare generic case on an any subject", "package main\n\nfunc f(x any) string = x match {\n\t/* ü */ case None => \"none\"\n\tcase _ => \"other\"\n}\n"},
 	{"bare case with fields nested in a field of type any", "package main\n\nsealed type S {\n\tcase C(r int)\n\tcase W(inner any)\n}\n\nfunc f(s S) string = s match {\n\t/* ü */ case W(C) => \"wrapped\"\n\tcase _ => \"other\"\n}\n"},
 	{"qualified generic case on an any subject", "package main\n\nimport \"martianoff/gala/std\"\n\nfunc f(x any) string = x match {\n\t/* ü */ case std.None => \"none\"\n\tcase _ => \"other\"\n}\n"},
+	{"guard that is not a bool", "package main\n\nfunc f(x string) int = x match {\n\t/* ü */ case s if s => 1\n\tcase _ => 0\n}\n"},
 	{"type parameter as a pattern","package main\n\nfunc f[T any](x any) int = x match {\n\t/* ü */ case T(v) => 1\n\tcase _ => 0\n}\n"},
 }
 

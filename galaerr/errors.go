@@ -860,6 +860,13 @@ const (
 	// parameter is bound by its name, so it needs one. It used to stop the
 	// build with an internal error (GALA-E0017).
 	CodeNamelessParam ErrorCode = "GALA-E0088"
+
+	// E0089: the guard of a case clause, `case p if guard`, in a match or a
+	// partial-function literal is not a bool. The guard is joined to the
+	// pattern's test with `&&`, so a guard of another type used to reach
+	// `go build` and fail there ("mismatched types untyped bool and int")
+	// against the generated condition.
+	CodeNonBoolGuard ErrorCode = "GALA-E0089"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

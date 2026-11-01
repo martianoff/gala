@@ -459,6 +459,35 @@ func main() = Println(g())`,
 			expectContains: "error_codes_test.gala:3:7 parameter `val ...int` has no name (hint: name it, as in `val x ...int`)",
 		},
 		{
+			// A partial-function literal's guard of type int used to reach
+			// go build, joined to the pattern's test with &&.
+			name: "GALA-E0089 int guard in a partial-function literal",
+			input: `package main
+
+func main() {
+    val pf func(int) Option[int] = { case n if n => n }
+    Println(pf(1))
+}`,
+			expectCode:     galaerr.CodeNonBoolGuard,
+			expectContains: "error_codes_test.gala:4:47 case guard `n` has type int, not bool (hint: a guard must be a bool condition, such as a comparison)",
+		},
+		{
+			// A match arm's guard is checked the same way.
+			name: "GALA-E0089 string guard in a match",
+			input: `package main
+
+func main() {
+    val s = "x"
+    val r = s match {
+        case v if v => 1
+        case _ => 0
+    }
+    Println(r)
+}`,
+			expectCode:     galaerr.CodeNonBoolGuard,
+			expectContains: "case guard `v` has type string, not bool",
+		},
+		{
 			// GALA-E0040 is the one code in this table raised during PARSING
 			// rather than analysis, so it also pins that a coded parse-phase
 			// diagnostic survives the pipeline with its code intact.
@@ -1373,6 +1402,41 @@ func main() = Println("ok")`,
 // TestT6VariantArityPositive is the positive half of T6 — the same sealed
 // declaration as the T6 negative case, but with patterns that match the
 // declared arity exactly. Must compile without error.
+// TestBoolGuardsAccepted is the positive companion to GALA-E0089: a guard of
+// bool, of a val field, of a GALA alias of bool and of an opaque type over
+// bool is not rejected.
+func TestBoolGuardsAccepted(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	input := `package main
+
+type Flag bool
+
+opaque type On bool
+
+struct Cfg(verbose bool)
+
+func pick(n int, c Cfg, f Flag, o On) int = n match {
+    case 0 if c.verbose => 0
+    case m if f => m
+    case m if o => m + 1
+    case m if m > 1 && !f => m * 2
+    case _ => -1
+}
+
+func main() {
+    val pf func(int) Option[int] = { case n if n > 0 && Cfg(true).verbose => n }
+    Println(pick(1, Cfg(true), true, On(true)), pf(1))
+}`
+	out, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+	assert.Contains(t, out, "c.verbose.Get()")
+}
+
 func TestT6VariantArityPositive(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())

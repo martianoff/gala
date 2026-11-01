@@ -1024,6 +1024,8 @@ The match is a match over `S`: binding types, guards, nested patterns, alternati
 
 #### Pattern Matching Filters (Guards)
 
+A guard is a `bool`; one of another type is [GALA-E0089](/docs/errors/gala-e0089/).
+
 <!-- doc-check: fragment -->
 ```gala
 val res = x match {
