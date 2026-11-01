@@ -1728,8 +1728,8 @@ func sealedDeclOf(ctx *grammar.SealedTypeDeclarationContext, docs galaparser.Doc
 
 // analyzeSealedType registers metadata for a sealed type declaration (see
 // registerSealedType).
-func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs) error {
-	return a.registerSealedType(sealedDeclOf(ctx, docs), pkgName, richAST)
+func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName, definedIn string, richAST *transpiler.RichAST, docs galaparser.Docs) error {
+	return a.registerSealedType(sealedDeclOf(ctx, docs), pkgName, definedIn, richAST)
 }
 
 // registerSealedType registers metadata for a sealed type declaration.
@@ -1737,24 +1737,11 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 // companion types for each case, and Apply/Unapply/IsXxx methods.
 // Returns a non-nil error if the declaration is rejected (e.g. duplicate
 // variant case names within the same sealed type).
-func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName string, richAST *transpiler.RichAST) error {
+func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn string, richAST *transpiler.RichAST) error {
 	typeName := decl.name
 	fullTypeName := qualifiedName(pkgName, typeName)
 
 	typeParams, typeParamConstraints := decl.typeParams, decl.typeParamConstraints
-
-	// Create parent type metadata with all variant fields merged + _variant
-	parentMeta := &transpiler.TypeMetadata{
-		Name:                 typeName,
-		Package:              pkgName,
-		Doc:                  decl.doc,
-		Pos:                  decl.pos,
-		Methods:              make(map[string]*transpiler.MethodMetadata),
-		Fields:               make(map[string]transpiler.Type),
-		IsSealed:             true,
-		TypeParams:           typeParams,
-		TypeParamConstraints: typeParamConstraints,
-	}
 
 	// Process each case to collect fields (two passes: collect, then resolve conflicts)
 	var variants []sealedCase
@@ -1796,6 +1783,18 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName string, richA
 		}
 	}
 
+	// The parent type, holding every case's fields + _variant. Its entry keeps
+	// the methods other files declare on it: a sibling's method on this
+	// sealed type (e.g. `func (w Widget) AsFixed(...)` in fluent.gala) may be
+	// recorded before this declaration is reached, and dropping it would
+	// break return-type resolution at the call site — which in turn breaks
+	// auto-unwrap of Immutable[T] fields on chained results.
+	parentMeta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, decl.pos, definedIn)
+	parentMeta.Doc = decl.doc
+	parentMeta.DefinedIn = definedIn
+	parentMeta.IsSealed = true
+	parentMeta.TypeParams, parentMeta.TypeParamConstraints = typeParams, typeParamConstraints
+
 	// Store variant metadata on parent
 	byRef := make([][]bool, len(variants))
 	for i, vi := range variants {
@@ -1813,25 +1812,6 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName string, richA
 	// method set is known (a.currentOwnMethods is read from every file of the
 	// package before any declaration is analyzed).
 	layoutSealedFields(parentMeta, allFieldTypes, a.methodNames(richAST, parentMeta), byRef)
-
-	// Preserve methods from any pre-existing placeholder entry. Sibling
-	// extraction may have processed a method on this sealed type from another
-	// file (e.g. `func (w Widget) AsFixed(...)` in fluent.gala) before this
-	// declaration was reached. That earlier pass creates a placeholder
-	// TypeMetadata at extractSiblingFullMetadata's method branch (the `else`
-	// arm where richAST.Types[fullBaseType] is created with just the method).
-	// Without this merge, the assignment below would clobber those methods,
-	// breaking return-type resolution at the call site — which in turn breaks
-	// auto-unwrap of Immutable[T] fields on chained results.
-	if existing, ok := richAST.Types[fullTypeName]; ok {
-		for name, m := range existing.Methods {
-			if _, dup := parentMeta.Methods[name]; !dup {
-				parentMeta.Methods[name] = m
-			}
-		}
-	}
-
-	richAST.Types[fullTypeName] = parentMeta
 
 	// For each variant, create companion type and register methods
 	for _, vi := range variants {
@@ -1946,9 +1926,10 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName string, richA
 	for _, vi := range variants {
 		isMethodName := "is" + vi.name
 		parentMeta.Methods[isMethodName] = &transpiler.MethodMetadata{
-			Name:       isMethodName,
-			Package:    pkgName,
-			ReturnType: transpiler.BasicType{Name: "bool"},
+			Name:        isMethodName,
+			Package:     pkgName,
+			ReturnType:  transpiler.BasicType{Name: "bool"},
+			Synthesized: true,
 		}
 	}
 	return nil
@@ -3738,6 +3719,16 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 	return typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, mainFile, existing.Pos)
 }
 
+// collectedFromMainFile reports whether existing, the entry of a type a
+// sibling declares, was collected from the file being analyzed, which the
+// sibling then is under another spelling: the entry already holds the
+// declaration as that file now reads. Any other entry the sibling's
+// declaration is collected into again, since an earlier collection or a cache
+// load may hold an older form of it.
+func (a *galaAnalyzer) collectedFromMainFile(existing *transpiler.TypeMetadata, decls *packageDecls) bool {
+	return a.paths.sameFile(existing.DefinedIn, decls.mainFile)
+}
+
 // extractSiblingFullMetadata extracts full type metadata from a sibling .gala file.
 // This includes struct fields, sealed types, shorthand structs, and all method/function
 // signatures. Used for both --package-files mode and directory-discovered siblings
@@ -3775,36 +3766,20 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				fullTypeName = pkgName + "." + typeName
 			}
 			// Error if type already has field info from a different file — redefinition.
-			// Skip if existing type was loaded from this same sibling file (via auto-import).
 			// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
-			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
+			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 && existing.DefinedIn != "" {
+				if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
 				}
-				if existing.DefinedIn != "" {
+				if a.collectedFromMainFile(existing, decls) {
 					continue
 				}
 			}
-			// Preserve existing methods from placeholder entry (e.g., methods from current file)
-			existingMethods := make(map[string]*transpiler.MethodMetadata)
-			if existing, ok := richAST.Types[fullTypeName]; ok {
-				for k, v := range existing.Methods {
-					existingMethods[k] = v
-				}
-			}
-			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Package: pkgName,
-				Doc:     docAt(docs, ctx.GetStart()),
-				Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
-				Methods: existingMethods,
-				Fields:  make(map[string]transpiler.Type),
-			}
-			// Preserve DefinedIn from main analysis if already set
-			if ex, ok := richAST.Types[fullTypeName]; ok && ex.DefinedIn != "" {
-				meta.DefinedIn = ex.DefinedIn
-			}
+			// The entry keeps the methods other files declare (e.g., methods
+			// from the current file) and DefinedIn from main analysis.
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, transpiler.PosFromToken(ctx.Identifier().GetStart()), absSibPath)
+			meta.Doc = docAt(docs, ctx.GetStart())
 			if ctx.TypeParameters() != nil {
 				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
 				if tpList := tpCtx.TypeParameterList(); tpList != nil {
@@ -3906,33 +3881,18 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
 			}
-			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
+			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 && existing.DefinedIn != "" {
+				if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
 				}
-				if existing.DefinedIn != "" {
+				if a.collectedFromMainFile(existing, decls) {
 					continue
 				}
 			}
-			existingMethods := make(map[string]*transpiler.MethodMetadata)
-			if existing, ok := richAST.Types[fullTypeName]; ok {
-				for k, v := range existing.Methods {
-					existingMethods[k] = v
-				}
-			}
-			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Package: pkgName,
-				Doc:     docAt(docs, ctx.GetStart()),
-				Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
-				Methods: existingMethods,
-				Fields:  make(map[string]transpiler.Type),
-			}
-			// Preserve DefinedIn from main analysis if already set
-			if ex, ok := richAST.Types[fullTypeName]; ok && ex.DefinedIn != "" {
-				meta.DefinedIn = ex.DefinedIn
-			}
+			// As for a type declaration above.
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, transpiler.PosFromToken(ctx.Identifier().GetStart()), absSibPath)
+			meta.Doc = docAt(docs, ctx.GetStart())
 			if meta.DefinedIn == "" {
 				meta.DefinedIn = absSibPath
 			}
@@ -3987,18 +3947,17 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				fullTypeName = pkgName + "." + typeName
 			}
 			// Error if sealed type already defined in a different file — redefinition.
-			// Skip if loaded from this same sibling file (via auto-import).
 			// Skip if DefinedIn is empty — the type came from cache.
-			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
-				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
+			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed && existing.DefinedIn != "" {
+				if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
 				}
-				if existing.DefinedIn != "" {
+				if a.collectedFromMainFile(existing, decls) {
 					continue
 				}
 			}
-			if err := a.analyzeSealedType(ctx, pkgName, richAST, docs); err != nil {
+			if err := a.analyzeSealedType(ctx, pkgName, absSibPath, richAST, docs); err != nil {
 				return err
 			}
 			markSiblingSealed(richAST, pkgName, fullTypeName, absSibPath)
@@ -4016,12 +3975,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		if pkgName != "" && pkgName != "main" && pkgName != "test" {
 			fullTypeName = pkgName + "." + typeName
 		}
-		if existing, ok := richAST.Types[fullTypeName]; ok && hasTypeDefinition(existing) {
-			if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
+		if existing, ok := richAST.Types[fullTypeName]; ok && hasTypeDefinition(existing) && existing.DefinedIn != "" {
+			if !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 				return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 					transpiler.PosFromToken(octx.Identifier().GetStart()), decls.mainFile)
 			}
-			if existing.DefinedIn != "" {
+			if a.collectedFromMainFile(existing, decls) {
 				continue
 			}
 		}

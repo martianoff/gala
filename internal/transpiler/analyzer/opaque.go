@@ -42,8 +42,8 @@ func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationConte
 // registerOpaqueType records `opaque type UserID int64` (or a phantom-typed
 // `opaque type Id[T any] int64`) as TypeMetadata with IsOpaque set and the
 // declared Underlying type. The type has no fields; its methods are attached
-// by the method-collection pass like any other type's. Methods already
-// recorded on a placeholder entry for the name are kept.
+// by the method-collection pass like any other type's. Methods another file
+// declares, already recorded on the entry, are kept (see startTypeEntry).
 //
 // The opaque type deliberately does not enter the alias tables: nothing that
 // infers, unifies or looks up methods may see through it.
@@ -51,28 +51,14 @@ func (a *galaAnalyzer) registerOpaqueType(decl opaqueDecl, pkgName, definedIn st
 	typeName := decl.name
 	fullTypeName := qualifiedName(pkgName, typeName)
 
-	meta := &transpiler.TypeMetadata{
-		Name:                 typeName,
-		Package:              pkgName,
-		Doc:                  decl.doc,
-		Pos:                  decl.pos,
-		Methods:              make(map[string]*transpiler.MethodMetadata),
-		Fields:               make(map[string]transpiler.Type),
-		IsOpaque:             true,
-		DefinedIn:            definedIn,
-		TypeParams:           decl.typeParams,
-		TypeParamConstraints: decl.typeParamConstraints,
-	}
-	if existing, ok := richAST.Types[fullTypeName]; ok {
-		for k, v := range existing.Methods {
-			meta.Methods[k] = v
-		}
-	}
-
+	meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, decl.pos, definedIn)
+	meta.Doc = decl.doc
+	meta.DefinedIn = definedIn
+	meta.IsOpaque = true
+	meta.TypeParams, meta.TypeParamConstraints = decl.typeParams, decl.typeParamConstraints
 	if decl.underlying != "" {
 		meta.Underlying = a.resolveTypeWithParams(decl.underlying, pkgName, meta.TypeParams)
 	}
-	richAST.Types[fullTypeName] = meta
 }
 
 // recordOpaqueBases sets UnderlyingBase on each opaque type pkgName declares:

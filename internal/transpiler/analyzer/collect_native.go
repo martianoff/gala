@@ -439,7 +439,6 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 
 			fullTypeName := qualifiedName(pkgName, typeName)
 
-			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				// Error if type is being redefined from a DIFFERENT file.
 				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
@@ -448,12 +447,8 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 					return typeRedefinedError(typeName, pkgName, pos.Line, pos.Column,
 						existing.DefinedIn, filePath, existing.Pos)
 				}
-				meta = existing
-			} else {
-				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
-				richAST.Types[fullTypeName] = meta
 			}
-			startTypeEntry(meta, nativePos(id.GalaNodeRef))
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, nativePos(id.GalaNodeRef), absFilePath)
 			nativeSetDoc(&meta.Doc, docs, decl)
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 
@@ -535,7 +530,6 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 
 			fullTypeName := qualifiedName(pkgName, typeName)
 
-			var meta *transpiler.TypeMetadata
 			pos := nativePos(id.GalaNodeRef)
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
@@ -543,12 +537,8 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 					return typeRedefinedError(typeName, pkgName, declPos.Line, declPos.Column,
 						existing.DefinedIn, filePath, existing.Pos)
 				}
-				meta = existing
-			} else {
-				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
-				richAST.Types[fullTypeName] = meta
 			}
-			startTypeEntry(meta, pos)
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absFilePath)
 			nativeSetDoc(&meta.Doc, docs, decl)
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 
@@ -596,7 +586,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			return typeRedefinedError(sealedName, pkgName, pos.Line, pos.Column,
 				existing.DefinedIn, filePath, existing.Pos)
 		}
-		if err := a.registerSealedType(nativeSealedDeclOf(ctx, docs), pkgName, richAST); err != nil {
+		if err := a.registerSealedType(nativeSealedDeclOf(ctx, docs), pkgName, filePath, richAST); err != nil {
 			return err
 		}
 		fd.sealedDeclaredHere(fullSealedName)

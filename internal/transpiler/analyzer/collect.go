@@ -65,7 +65,6 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 				fullTypeName = pkgName + "." + typeName
 			}
 
-			var meta *transpiler.TypeMetadata
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				// Error if type is being redefined from a DIFFERENT file.
 				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
@@ -74,12 +73,8 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 						existing.DefinedIn, filePath, existing.Pos)
 				}
-				meta = existing
-			} else {
-				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
-				richAST.Types[fullTypeName] = meta
 			}
-			startTypeEntry(meta, transpiler.PosFromToken(ctx.Identifier().GetStart()))
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, transpiler.PosFromToken(ctx.Identifier().GetStart()), absFilePath)
 			setDoc(&meta.Doc, docs, ctx.GetStart())
 			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 
@@ -181,7 +176,6 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 				fullTypeName = pkgName + "." + typeName
 			}
 
-			var meta *transpiler.TypeMetadata
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
@@ -189,12 +183,8 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 						existing.DefinedIn, filePath, existing.Pos)
 				}
-				meta = existing
-			} else {
-				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
-				richAST.Types[fullTypeName] = meta
 			}
-			startTypeEntry(meta, pos)
+			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absFilePath)
 			setDoc(&meta.Doc, docs, ctx.GetStart())
 			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 
@@ -235,21 +225,39 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 	return nil
 }
 
-// startTypeEntry readies meta, at pos, for collecting a type or shorthand
-// struct declaration into: a new entry holding only its Name and Package, or
-// a same-package one that an earlier collection or a cache load filled.
-// Such a declaration may have changed form since (a shorthand struct become
-// an interface, say), so no field the old one described survives, and the
-// entry is reset in place, so references to it stay valid. Name and Package
-// are its key. The methods declared on it, which other files may have added,
-// are kept; an interface's methods are its own specs, which its declaration
-// collects again. Doc is kept as well: the caller's setDoc replaces it only
-// when the declaration has a doc comment. So is DefinedIn, which a struct
-// declaration sets and other forms leave as an earlier pass recorded it.
-func startTypeEntry(meta *transpiler.TypeMetadata, pos transpiler.SourcePos) {
-	methods := meta.Methods
-	if meta.IsInterface || methods == nil {
-		methods = make(map[string]*transpiler.MethodMetadata)
+// startTypeEntry readies the entry richAST.Types[key] for collecting into it
+// the declaration, at pos in file, of the type name of package pkg. Every
+// path that registers a type declaration starts here: a struct, shorthand
+// struct, interface, sealed or opaque type, in the analyzed file or in a
+// sibling. The entry is a new one holding only its Name and Package, or one
+// of pkg that an earlier collection, another file's methods or a cache load
+// filled. Such a declaration may have changed form since (a struct become an
+// interface, say), so no field the old one described survives, and the entry
+// is reset in place, so references to it stay valid. Name and Package are its
+// key.
+//
+// Of its methods, those another file declares are kept: a type's methods may
+// be declared in any file of its package, and the analyzed file's methods are
+// collected before its siblings' types are. The methods file declares are
+// dropped, as are an interface's method specs and the methods the analyzer
+// synthesized for the old declaration (a sealed type's case predicates):
+// collecting file gives again those it still declares. Doc is kept as well:
+// the caller's setDoc replaces it only when the declaration has a doc
+// comment. So is DefinedIn, which a struct declaration sets and other forms
+// leave as an earlier pass recorded it.
+func (a *galaAnalyzer) startTypeEntry(richAST *transpiler.RichAST, key, name, pkg string, pos transpiler.SourcePos, file string) *transpiler.TypeMetadata {
+	meta := richAST.Types[key]
+	if meta == nil || meta.Package != pkg {
+		meta = &transpiler.TypeMetadata{Name: name, Package: pkg}
+		richAST.Types[key] = meta
+	}
+	methods := make(map[string]*transpiler.MethodMetadata)
+	if !meta.IsInterface {
+		for methodName, m := range meta.Methods {
+			if !m.Synthesized && !a.paths.sameFile(m.DefinedIn, file) {
+				methods[methodName] = m
+			}
+		}
 	}
 	*meta = transpiler.TypeMetadata{
 		Name:      meta.Name,
@@ -260,6 +268,7 @@ func startTypeEntry(meta *transpiler.TypeMetadata, pos transpiler.SourcePos) {
 		Fields:    make(map[string]transpiler.Type),
 		DefinedIn: meta.DefinedIn,
 	}
+	return meta
 }
 
 // collectFileFuncs records the sealed and opaque types, methods and top-level
@@ -283,7 +292,7 @@ func (a *galaAnalyzer) collectFileFuncs(sourceFile *grammar.SourceFileContext, f
 					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 					existing.DefinedIn, filePath, existing.Pos)
 			}
-			if err := a.analyzeSealedType(ctx, pkgName, richAST, docs); err != nil {
+			if err := a.analyzeSealedType(ctx, pkgName, filePath, richAST, docs); err != nil {
 				return err
 			}
 			fd.sealedDeclaredHere(fullSealedName)
