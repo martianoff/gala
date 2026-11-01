@@ -403,8 +403,8 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 }
 
 // ParseExpressionANTLRAt is ParseExpressionAt with ANTLR's parser alone,
-// whatever the engine, for a caller whose run of galop's native parser on
-// input did not settle it (ParseExpressionNativeAt): galop does not parse it a
+// whatever the engine, for a caller whose native parse of
+// input did not settle it (ParseExpressionTreeAt): galop does not parse it a
 // second time, nor report a panic on it twice.
 //
 // It lexes input again with ANTLR's lexer, where ParseExpressionAt reuses the

@@ -141,12 +141,13 @@ var keywordCases = []struct{ name, src string }{
 // writes a program to a file of its own, holds the native walk of it to the
 // ANTLR walk (checkWalksAgree), and returns the native walk's run.
 func exprWalkRunner(t *testing.T) func(t *testing.T, name, src string) walkRun {
-	return walkRunner(t, walkPipeline{})
+	return walkRunner(t, galaparser.EngineGalop, walkPipeline{})
 }
 
-// walkRunner is exprWalkRunner with nativeW's options for the native walk.
-func walkRunner(t *testing.T, nativeW walkPipeline) func(t *testing.T, name, src string) walkRun {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
+// walkRunner is exprWalkRunner with engine parsing and nativeW's options for
+// the native walk.
+func walkRunner(t *testing.T, engine galaparser.Engine, nativeW walkPipeline) func(t *testing.T, name, src string) walkRun {
+	galaparser.RequestEngine(string(engine))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
 	nativeW.searchPaths = searchPaths

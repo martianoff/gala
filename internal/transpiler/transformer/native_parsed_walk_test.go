@@ -100,9 +100,18 @@ var parsedCases = []struct{ name, what, kind, src string }{
 // TestNativeParsedWalk holds the native walk of parsedShapes and of each of
 // parsedCases to the ANTLR walk (checkWalksAgree), which also holds the two
 // to the same diagnostic, at the same line and column, and requires the
-// native walk to have read the lines they mark on the native tree.
+// native walk to have read the lines they mark on the native tree: under
+// each engine, which parses the file and, for the native walk, its defaults
+// and interpolations (ANTLR's through galop's converter, see
+// parser.ParseExpressionTreeAt).
 func TestNativeParsedWalk(t *testing.T) {
-	run := exprWalkRunner(t)
+	for _, engine := range []galaparser.Engine{galaparser.EngineGalop, galaparser.EngineANTLR} {
+		t.Run(string(engine), func(t *testing.T) { checkNativeParsedWalk(t, walkRunner(t, engine, walkPipeline{})) })
+	}
+}
+
+// checkNativeParsedWalk is TestNativeParsedWalk with run.
+func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string) walkRun) {
 	t.Run("parsed shapes", func(t *testing.T) {
 		n := run(t, "parsed shapes", parsedShapes)
 		require.NoError(t, n.err, "the program does not transpile")
@@ -138,7 +147,7 @@ func TestNativeParsedWalk(t *testing.T) {
 // calling a lambda default among them, are lowered from their nodes alone
 // (lambdaSrc.is).
 func TestNativeParsedWalkFallback(t *testing.T) {
-	run := walkRunner(t, walkPipeline{refuseNative: true})
+	run := walkRunner(t, galaparser.EngineGalop, walkPipeline{refuseNative: true})
 	check := func(t *testing.T, name, src string) walkRun {
 		n := run(t, name, src)
 		assert.Emptyf(t, n.parsedAt, "the native walk parsed with galop's native parser, which it was refused")
