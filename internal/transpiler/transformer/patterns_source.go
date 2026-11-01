@@ -356,21 +356,21 @@ func (e patExpr) barUnderOperator() (srcNode, bool) {
 }
 
 // parenthesized is the elements of e when e is exactly a parenthesized list
-// `(...)` (parenthesizedList), and single reports whether the list is one
-// expression with no trailing comma: a parenthesized pattern, not a tuple.
+// `(...)`, and single reports whether the list is one expression with no
+// trailing comma: a parenthesized pattern, not a tuple.
 func (e patExpr) parenthesized(t *galaASTTransformer) (elems []patExpr, single, ok bool) {
-	if e.node.Ok() {
-		p := postfixSrc{node: nativeOperand(e.node, native.GalaKIND_postfixExpr, true)}
-		if !p.ok() || p.node.ChildCount() != 1 {
-			return nil, false, false
-		}
+	p := e.postfix(true)
+	if !p.ok() || !p.alone() {
+		return nil, false, false
+	}
+	if p.node.Ok() {
 		list := p.tupleListNode()
 		if !list.Ok() {
 			return nil, false, false
 		}
 		return nativeExprs(list), list.ChildCount() == 1, true
 	}
-	list := t.parenthesizedList(e.ctx)
+	list := p.antlrTupleList()
 	if list == nil {
 		return nil, false, false
 	}
@@ -608,7 +608,7 @@ func (p postfixSrc) primaryExpr(t *galaASTTransformer) *grammar.PrimaryExprConte
 	if p.node.Ok() {
 		return crossTo[*grammar.PrimaryExprContext](t, p.primaryExprNode().GalaNodeRef)
 	}
-	return p.ctx.PrimaryExpr().(*grammar.PrimaryExprContext)
+	return p.antlrPrimaryExpr()
 }
 
 // primaryIdent is the identifier p starts from (PrimaryOf), "" when it starts

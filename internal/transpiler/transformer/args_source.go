@@ -78,7 +78,8 @@ func (t *galaASTTransformer) exprOf(ctx grammar.IExpressionContext) exprSrc {
 }
 
 // solePostfix is the postfix expression e is, with no operator around it
-// (barePostfix), and the zero postfixSrc when e is something else.
+// (LeadingPostfixExpr(e, true)), and the zero postfixSrc when e is something
+// else.
 func (e exprSrc) solePostfix() postfixSrc {
 	if !e.ok() {
 		return postfixSrc{}
@@ -243,11 +244,27 @@ func (t *galaASTTransformer) ifIn(e exprSrc) ifExprSrc {
 	return ifExprSrc{}
 }
 
+// antlrIfIn is ifIn of e, an expression on ANTLR's tree, as its context, for
+// the lowerings that still read one (lowerIfExpressionStatement); nil when e
+// is no if-expression.
+func antlrIfIn(e grammar.IExpressionContext) *grammar.IfExpressionContext {
+	p := antlrExpr(e).solePostfix()
+	if !p.ok() || p.hasSuffixes() {
+		return nil
+	}
+	pe := p.antlrPrimaryExpr()
+	if pe == nil {
+		return nil
+	}
+	i, _ := pe.IfExpression().(*grammar.IfExpressionContext)
+	return i
+}
+
 // ok reports whether e is an if-expression, not the zero ifExprSrc.
 func (e ifExprSrc) ok() bool { return e.ctx != nil || e.node.Ok() }
 
 // bareMatch is the postfix expression of e when e is a match with no operator
-// around it (bareMatchPostfix), and the zero postfixSrc otherwise.
+// around it, and the zero postfixSrc otherwise.
 func (t *galaASTTransformer) bareMatch(e exprSrc) postfixSrc {
 	if p := e.solePostfix(); p.ok() && p.hasCases() {
 		return p
@@ -256,10 +273,24 @@ func (t *galaASTTransformer) bareMatch(e exprSrc) postfixSrc {
 }
 
 // antlrPrimaryExpr is the primary expression of p, a postfix expression on
-// ANTLR's tree, and nil when it has none.
+// ANTLR's tree, and nil when it has none or p has no context.
 func (p postfixSrc) antlrPrimaryExpr() *grammar.PrimaryExprContext {
+	if p.ctx == nil {
+		return nil
+	}
 	pe, _ := p.ctx.PrimaryExpr().(*grammar.PrimaryExprContext)
 	return pe
+}
+
+// antlrTupleList is the parenthesized expression list p's primary is, on
+// ANTLR's tree, and nil when its primary is no such list.
+func (p postfixSrc) antlrTupleList() *grammar.TupleExpressionListContext {
+	prim := PrimaryOf(p.ctx)
+	if prim == nil {
+		return nil
+	}
+	list, _ := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
+	return list
 }
 
 // primaryLambda is the lambda p's primary expression is, and the zero
@@ -320,12 +351,8 @@ func (p postfixSrc) parenFirst() (first exprSrc, n int) {
 		}
 		return first, n
 	}
-	prim := PrimaryOf(p.ctx)
-	if prim == nil {
-		return exprSrc{}, 0
-	}
-	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
-	if !ok {
+	list := p.antlrTupleList()
+	if list == nil {
 		return exprSrc{}, 0
 	}
 	exprs := list.AllExpression()

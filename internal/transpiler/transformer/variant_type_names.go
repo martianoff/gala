@@ -81,6 +81,9 @@ type variantTypeRefs struct {
 // checkVariantTypeNamesIn is checkVariantTypeNames of the file s, on the tree
 // its walk reads.
 func (t *galaASTTransformer) checkVariantTypeNamesIn(s walkSource) error {
+	if len(t.variantNames) == 0 {
+		return nil // nothing to spell like a variant
+	}
 	if s.root.Ok() {
 		r := variantTypeRefs{declared: make(map[string]bool)}
 		t.collectVariantTypeRefsNative(s.root.GalaNodeRef, &r)
@@ -231,6 +234,9 @@ func isFuncTypeSignatureNative(p native.GalaNodeRef) bool {
 // checkVariantTypeNames reports the first type in tree, a tree of ANTLR's,
 // that names a sealed variant, or nil when there is none.
 func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
+	if len(t.variantNames) == 0 {
+		return nil // nothing to spell like a variant
+	}
 	r := variantTypeRefs{declared: make(map[string]bool)}
 	ref := func(ids []grammar.IIdentifierContext, typeArgs grammar.ITypeArgumentsContext, node antlr.ParserRuleContext) {
 		qualifier, name := "", ids[0].GetText()
