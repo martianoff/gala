@@ -537,7 +537,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.cacheTypeResolver()
 
 	t.variantNames = collectVariantNames(t.typeMetas)
-	if err := t.checkVariantTypeNames(sourceFile); err != nil {
+	if err := t.checkVariantTypeNamesIn(src); err != nil {
 		return nil, nil, err
 	}
 

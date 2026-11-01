@@ -7,12 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// leafShapes is a program with the partial functions, composite literals and
-// lambda expression bodies the native walk lowers on its own tree. Each line
-// marked `// native: <shapes>` names the shapes the native walk must have
-// lowered on that line, as exprShapes does: partial, a partial-function
-// literal (transformPartialFunctionLiteral); composite, a composite literal
-// (transformCompositeLiteral).
+// leafShapes is a program with the partial functions, composite literals,
+// lambda expression bodies and self tail calls the native walk lowers on its
+// own tree. Each line marked `// native: <shapes>` names the shapes the native
+// walk must have lowered on that line, as exprShapes does: partial, a
+// partial-function literal (transformPartialFunctionLiteral); composite, a
+// composite literal (transformCompositeLiteral); tail call, a self tail call
+// rewritten to a loop step (buildTailCallStep). The leafCases that name a
+// sealed variant as a type need the file's types read on the native tree
+// (checkVariantTypeNamesIn): variant type, a type spelled like a variant.
 const leafShapes = `package main
 
 import . "martianoff/gala/collection_immutable"
@@ -77,10 +80,23 @@ func bodies() int {
 	add(1, 2) + wrap(3).size + pick(Circle(4))
 }
 
+func fact(n int, acc int) int = if (n <= 1) acc else fact(n - 1, acc * n) // native: tail call
+
+func steps(n int, acc int) int = if (n <= 0) acc else if (n % 2 == 0) steps(n / 2, acc + 1) else { // native: tail call
+	val next = n - 1
+	next + acc
+}
+
+func named(n int, acc int) int = if (n <= 0) acc else named(acc = acc + 1, n = n - 1)
+
 func main() {
-	Println(classify()(Empty()).GetOrElse("none"), shapes(), composites(), bodies())
+	Println(classify()(Empty()).GetOrElse("none"), shapes(), composites(), bodies(), fact(5, 1), steps(9, 0), named(3, 0))
 }
 `
+
+// variantSealed starts the leafCases that name a sealed variant where a type
+// is expected (GALA-E0061).
+const variantSealed = "package main\n\n/* é */ sealed type Shape {\n\tcase Circle(r int)\n\tcase Square(s int)\n}\n\n"
 
 // leafCases cover each diagnostic a partial function or a composite literal
 // reports, after multibyte text: the value on the line of each case's
@@ -96,6 +112,17 @@ var leafCases = []struct{ name, shape, src string }{
 	{"slice literal", "composite", "package main\n\nfunc f() {\n\tval s = \"ü\"\n\tval xs = /* ü */ []int{1, 2}\n\tPrintln(xs, s)\n}\n"},
 	{"map literal", "composite", "package main\n\nfunc f() {\n\tval s = \"ü\"\n\tval m = /* ü */ map[string]int{\"a\": 1}\n\tPrintln(m, s)\n}\n"},
 	{"nil for an immutable field", "composite", "package main\n\ntype Box struct {\n\tlabel Option[string]\n}\n\nfunc f() {\n\tval s = \"ü\"\n\tval b = /* ü */ Box{label: nil}\n\tPrintln(b, s)\n}\n"},
+	{"tail call argument fails", "tail call", "package main\n\nfunc f(n int, acc int) int = if (n <= 0) acc else /* ü */ f(n - 1, Some(acc).Size())\n"},
+	{"tail call passes nil for a Ptr", "tail call", "package main\n\nstruct P(x int)\n\nfunc f(n int, p Ptr[P]) int = if (n <= 0) p.x else /* ü */ f(n - 1, nil)\n"},
+	{"variant as a parameter type", "variant type", variantSealed + "func f(/* ü */ c Circle) int = 1\n"},
+	{"variant as a result type", "variant type", variantSealed + "/* ü */ func f() Circle = Circle(1)\n"},
+	{"variant as a field type", "variant type", variantSealed + "type Holder struct {\n\t/* ü */ c Circle\n}\n"},
+	{"variant as a type argument", "variant type", variantSealed + "/* ü */ val xs Option[Circle] = None[Shape]()\n"},
+	{"variant in a func type", "variant type", variantSealed + "/* ü */ type F func(Circle) int\n"},
+	{"variant as an alias target", "variant type", variantSealed + "/* ü */ type C Circle\n"},
+	{"variant in a typed pattern", "variant type", variantSealed + "func f(s Shape) int = s match {\n\t/* ü */ case c: Circle => 1\n\tcase _ => 0\n}\n"},
+	{"variant in a lambda parameter", "variant type", variantSealed + "func f() {\n\t/* ü */ val g = (c Circle) => 1\n\tPrintln(g)\n}\n"},
+	{"variant shadowed by a type parameter", "variant type", variantSealed + "func g[Circle any](c Circle) Circle = c\n\n/* ü */ func f(c Circle) int = 1\n"},
 	{"composite element fails", "composite", "package main\n\ntype Box struct {\n\tsize int\n}\n\nfunc f() {\n\tval s = \"ü\"\n\tval b = /* ü */ Box{size: Some(1).Size()}\n\tPrintln(b, s)\n}\n"},
 }
 

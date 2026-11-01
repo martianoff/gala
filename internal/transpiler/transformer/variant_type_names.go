@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -29,7 +31,8 @@ import (
 // parameter, result, field, val/var annotation, type argument, typed pattern,
 // alias target, composite literal — before the declarations are transformed,
 // so every one is checked in source order, including those a transformation
-// lowers speculatively and discards. An interpolated expression is parsed
+// lowers speculatively and discards. It reads the file on the tree its walk
+// reads (checkVariantTypeNamesIn). An interpolated expression is parsed
 // separately, so parseAndTransformExpr checks it when it parses it.
 //
 // Explicit type arguments (`ArrayOf[Circle](...)`, `case Unwrap[Circle](v)`)
@@ -54,35 +57,186 @@ func collectVariantNames(typeMetas map[string]*transpiler.TypeMetadata) map[stri
 
 // variantTypeRef is a type written in the source whose name is spelled like a
 // sealed variant: name (bare or `qualifier.Name`), its type arguments as
-// written, and the node it was written as.
+// written, where it is written, and whether a declaration enclosing it
+// declares a type parameter of that name (typeParamInScope).
 type variantTypeRef struct {
-	name     string
-	typeArgs string
-	node     antlr.ParserRuleContext
+	name      string
+	typeArgs  string
+	at        srcNode
+	typeParam bool
 }
 
-// checkVariantTypeNames reports the first type in tree that names a sealed
-// variant, or nil when there is none.
+// variantTypeRefs is what checkVariantTypeNames reads of a tree: the names of
+// the types it declares and, in source order, the types it writes that are
+// spelled like a sealed variant.
+//
+// A type declared in the file shadows a variant of the same name. Scoping is
+// not tracked for types: one declared anywhere in the file (a function may
+// declare a local type) is never reported, which can miss a variant but
+// cannot reject a valid program. A type parameter is scoped to its
+// declaration; see typeParamInScope.
+type variantTypeRefs struct {
+	declared map[string]bool
+	refs     []variantTypeRef
+}
+
+// checkVariantTypeNamesIn is checkVariantTypeNames of the file s, on the tree
+// its walk reads.
+func (t *galaASTTransformer) checkVariantTypeNamesIn(s walkSource) error {
+	if s.root.Ok() {
+		r := variantTypeRefs{declared: make(map[string]bool)}
+		t.collectVariantTypeRefsNative(s.root.GalaNodeRef, &r)
+		return t.reportVariantTypeRefs(r)
+	}
+	return t.checkVariantTypeNames(s.sf)
+}
+
+// reportVariantTypeRefs reports the first of r's types that names a sealed
+// variant, or nil when none does.
+func (t *galaASTTransformer) reportVariantTypeRefs(r variantTypeRefs) error {
+	for _, ref := range r.refs {
+		if r.declared[ref.name] || ref.typeParam {
+			continue
+		}
+		line, col := ref.at.start()
+		if err := t.variantTypeError(ref.name, ref.typeArgs, line, col); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// variantRef is the variantTypeRef of a type written as ids (one name, or a
+// qualifier and a name) with typeArgs, the text of its type arguments, at at,
+// and false when its name is spelled like no sealed variant. inScope reports
+// whether a declaration around it declares a type parameter of a name.
+func (t *galaASTTransformer) variantRef(ids []string, typeArgs string, at srcNode, inScope func(string) bool) (variantTypeRef, bool) {
+	if !t.variantNames[ids[len(ids)-1]] {
+		return variantTypeRef{}, false
+	}
+	r := variantTypeRef{name: ids[0], typeArgs: typeArgs, at: at}
+	if len(ids) == 2 {
+		r.name += "." + ids[1]
+	}
+	r.typeParam = inScope(r.name)
+	return r, true
+}
+
+// collectVariantTypeRefsNative adds the declarations and the types of n, a
+// node of the native tree, and of every node below it to r, in source order,
+// as checkVariantTypeNames reads them on ANTLR's tree.
+func (t *galaASTTransformer) collectVariantTypeRefsNative(n native.GalaNodeRef, r *variantTypeRefs) {
+	ref := func(ids []string, typeArgs string, at native.GalaNodeRef) {
+		if v, ok := t.variantRef(ids, typeArgs, srcNode{node: at}, func(name string) bool { return typeParamInScopeNative(at, name) }); ok {
+			t.nativeShape(at, "variant type")
+			r.refs = append(r.refs, v)
+		}
+	}
+	switch n.Kind() {
+	case native.GalaKIND_typeDeclaration:
+		r.declared[native.TypeDeclarationNode{GalaNodeRef: n}.Identifier().GetText()] = true
+	case native.GalaKIND_structShorthandDeclaration:
+		r.declared[native.StructShorthandDeclarationNode{GalaNodeRef: n}.Identifier().GetText()] = true
+	case native.GalaKIND_sealedTypeDeclaration:
+		r.declared[native.SealedTypeDeclarationNode{GalaNodeRef: n}.Identifier().GetText()] = true
+	case native.GalaKIND_opaqueTypeDeclaration:
+		r.declared[native.OpaqueTypeDeclarationNode{GalaNodeRef: n}.Identifier().GetText()] = true
+	case native.GalaKIND_type:
+		typ := native.TypeNode{GalaNodeRef: n}
+		if qid := typ.QualifiedIdentifier(); qid.Ok() {
+			var buf [3]string
+			ids := buf[:0]
+			for id := range galaparser.NativeKids(qid.GalaNodeRef, native.GalaKIND_identifier) {
+				if len(ids) == len(buf) {
+					break
+				}
+				ids = append(ids, galaparser.NativeText(id))
+			}
+			if len(ids) <= 2 {
+				typeArgs := ""
+				if args := typ.TypeArguments(); args.Ok() {
+					typeArgs = galaparser.NativeText(args.GalaNodeRef)
+				}
+				ref(ids, typeArgs, qid.GalaNodeRef)
+			}
+		}
+	case native.GalaKIND_parameter:
+		// A function type's parameters written without names, as in
+		// `func(Circle) int`, parse as names with no type; the function
+		// type uses each name as the type.
+		p := native.ParameterNode{GalaNodeRef: n}
+		if id := p.Identifier(); !p.Type_().Ok() && id.Ok() && isFuncTypeSignatureNative(n) {
+			ref([]string{id.GetText()}, "", n)
+		}
+	case native.GalaKIND_typeAlias:
+		// `type C Circle` parses as the alias's bare-identifier
+		// alternative, which is not a type.
+		if id := (native.TypeAliasNode{GalaNodeRef: n}).Identifier(); id.Ok() {
+			ref([]string{id.GetText()}, "", n)
+		}
+	}
+	for i := range n.ChildCount() {
+		if c := n.Child(i); !c.IsToken() {
+			t.collectVariantTypeRefsNative(c.Node(), r)
+		}
+	}
+}
+
+// typeParamInScopeNative is typeParamInScope of n, a native node.
+func typeParamInScopeNative(n native.GalaNodeRef, name string) bool {
+	for ; n.Ok(); n = n.Parent() {
+		if n.Kind() == native.GalaKIND_functionDeclaration {
+			if recv := (native.FunctionDeclarationNode{GalaNodeRef: n}).Receiver(); recv.Ok() &&
+				slices.Contains(receiverTypeParamNamesOf(nativeType(recv.Type_())), name) {
+				return true
+			}
+		}
+		params, ok := firstNativeKid(n, native.GalaKIND_typeParameters)
+		if !ok {
+			continue
+		}
+		list := native.TypeParametersNode{GalaNodeRef: params}.TypeParameterList()
+		for tp := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_typeParameter) {
+			if (native.TypeParameterNode{GalaNodeRef: tp}).Identifier(0).GetText() == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isFuncTypeSignatureNative is isFuncTypeSignature of p, a parameter node.
+func isFuncTypeSignatureNative(p native.GalaNodeRef) bool {
+	// parameter → parameterList → parameters → signature → type
+	n := p
+	for range 4 {
+		if n = n.Parent(); !n.Ok() {
+			return false
+		}
+	}
+	return n.Kind() == native.GalaKIND_type
+}
+
+// checkVariantTypeNames reports the first type in tree, a tree of ANTLR's,
+// that names a sealed variant, or nil when there is none.
 func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
-	// A type declared in this file shadows a variant of the same name.
-	// Scoping is not tracked for types: one declared anywhere in the file
-	// (a function may declare a local type) is never reported, which can
-	// miss a variant but cannot reject a valid program. A type parameter is
-	// scoped to its declaration; see typeParamInScope.
-	declared := make(map[string]bool)
-	var refs []variantTypeRef
+	r := variantTypeRefs{declared: make(map[string]bool)}
+	declared := r.declared
 	ref := func(ids []grammar.IIdentifierContext, typeArgs grammar.ITypeArgumentsContext, node antlr.ParserRuleContext) {
 		if !t.variantNames[ids[len(ids)-1].GetText()] {
 			return
 		}
-		r := variantTypeRef{name: ids[0].GetText(), node: node}
-		if len(ids) == 2 {
-			r.name += "." + ids[1].GetText()
+		names := make([]string, len(ids))
+		for i, id := range ids {
+			names[i] = id.GetText()
 		}
+		text := ""
 		if typeArgs != nil {
-			r.typeArgs = typeArgs.GetText()
+			text = typeArgs.GetText()
 		}
-		refs = append(refs, r)
+		if v, ok := t.variantRef(names, text, srcNode{ctx: node}, func(name string) bool { return typeParamInScope(node, name) }); ok {
+			r.refs = append(r.refs, v)
+		}
 	}
 	walkTree(tree, func(node antlr.Tree) {
 		switch n := node.(type) {
@@ -115,16 +269,7 @@ func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
 			}
 		}
 	})
-	for _, r := range refs {
-		if declared[r.name] || typeParamInScope(r.node, r.name) {
-			continue
-		}
-		start := r.node.GetStart()
-		if err := t.variantTypeError(r.name, r.typeArgs, start.GetLine(), start.GetColumn()); err != nil {
-			return err
-		}
-	}
-	return nil
+	return t.reportVariantTypeRefs(r)
 }
 
 // typeParamInScope reports whether a declaration enclosing node declares a
