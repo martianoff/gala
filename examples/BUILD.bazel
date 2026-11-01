@@ -58,6 +58,10 @@ filegroup(
         "field_named_like_type/main.gala",
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
+        "default_go_dot_import/caller/caller.gala",
+        "default_go_dot_import/lib/a.gala",
+        "default_go_dot_import/lib/b.gala",
+        "default_go_dot_import_test.gala",
         "foreign_default_dot_scope/lib/inside.gala",
         "foreign_default_dot_scope/lib/lib.gala",
         "foreign_default_dot_scope/pa/pa.gala",
@@ -2992,6 +2996,37 @@ gala_exec_test(
         ":foreign_default_dot_scope_lib",
         ":foreign_default_dot_scope_pa",
         ":foreign_default_dot_scope_pb",
+    ],
+)
+
+# Defaults naming functions of the Go package their file dot-imports
+# (`import . "strings"`), lowered in lib's other file, in another package that
+# does not import strings, and in one that imports it under another name.
+gala_library(
+    name = "default_go_dot_import_lib",
+    srcs = [
+        "default_go_dot_import/lib/a.gala",
+        "default_go_dot_import/lib/b.gala",
+    ],
+    importpath = "martianoff/gala/examples/default_go_dot_import/lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "default_go_dot_import_caller",
+    srcs = ["default_go_dot_import/caller/caller.gala"],
+    gala_deps = [":default_go_dot_import_lib"],
+    importpath = "martianoff/gala/examples/default_go_dot_import/caller",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "default_go_dot_import_test",
+    src = "default_go_dot_import_test.gala",
+    expected = "default_go_dot_import_test.out",
+    gala_deps = [
+        ":default_go_dot_import_caller",
+        ":default_go_dot_import_lib",
     ],
 )
 

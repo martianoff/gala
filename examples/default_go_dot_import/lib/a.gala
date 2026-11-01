@@ -1,0 +1,12 @@
+package lib
+
+import . "strings"
+
+// Defaults naming functions of a Go package this file dot-imports. A default
+// is lowered at each call that omits the argument, in the calling file: there
+// ToUpper and Repeat are qualified as that file reaches strings.
+struct Box(N int)
+
+func (b Box) Label(prefix string = ToUpper("box")) string = s"${prefix}-${b.N}"
+
+func Tag(s string = Repeat("ab", 2)) string = s

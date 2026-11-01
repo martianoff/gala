@@ -1,0 +1,7 @@
+package caller
+
+import "martianoff/gala/examples/default_go_dot_import/lib"
+
+// Another package that does not import strings: lib's defaults lowered here
+// import it.
+func Call() string = s"${lib.Box(3).Label()} ${lib.Tag()}"
