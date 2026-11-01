@@ -27,14 +27,14 @@ type EnterFunctionScope func(w *scopewalk.Walker, fn native.FunctionDeclarationN
 // that Walker's Visitor, under its options, in its scopes.
 type Walker struct{ w walk }
 
-// New is w's walk on the native tree. enter stands in for w's
-// Options.EnterFunctionScope, whose hook takes an ANTLR context and is never
-// called on this tree. enter is nil exactly when that option is: New panics
-// on a hook without its native twin, which the walk would otherwise drop.
+// New is w's walk on the native tree. enter, when not nil, is called for
+// each function declaration (see EnterFunctionScope); w's
+// Options.EnterFunctionScope, whose hook takes an ANTLR context, is never
+// called on this tree, so New panics when it is set.
 func New(w *scopewalk.Walker, enter EnterFunctionScope) Walker {
 	opts := w.Options()
-	if (opts.EnterFunctionScope != nil) != (enter != nil) {
-		panic("nativewalk: Options.EnterFunctionScope and the native enter hook must be set together")
+	if opts.EnterFunctionScope != nil {
+		panic("nativewalk: Options.EnterFunctionScope takes an ANTLR context; pass the native enter hook instead")
 	}
 	return Walker{walk{w, opts, enter}}
 }
@@ -417,7 +417,15 @@ func (w walk) walkLiteral(lit native.LiteralNode) {
 	if !tok.Ok() {
 		return
 	}
-	w.WalkInterpolated(siteOf(tok.Token(), tok.GetText()))
+	// Each embedded expression is parsed on its own, into a native tree
+	// (parser.ParseExpressionTree), and walked in the current scope.
+	w.WalkInterpolatedParts(siteOf(tok.Token(), tok.GetText()), func(part string) {
+		expr, errs := parser.ParseExpressionTree(part)
+		if !expr.Ok() || len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
+			return
+		}
+		w.walk(expr.GalaNodeRef)
+	})
 }
 
 func (w walk) walkCompositeLiteral(cl native.CompositeLiteralNode) {

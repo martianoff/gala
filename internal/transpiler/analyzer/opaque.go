@@ -1,15 +1,13 @@
 package analyzer
 
 import (
-	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
-// opaqueDecl is what analyzeOpaqueType reads from an opaque type
+// opaqueDecl is what nativeOpaqueDeclOf reads from an opaque type
 // declaration: its name, doc comment, the position of its name, its type
 // parameters with their constraints, and its underlying type as written
-// (parser.TypeText), "" when it has none.
+// (galaparser.NativeTypeText), "" when it has none.
 type opaqueDecl struct {
 	name                 string
 	doc                  string
@@ -17,26 +15,6 @@ type opaqueDecl struct {
 	typeParams           []string
 	typeParamConstraints map[string]string
 	underlying           string
-}
-
-// opaqueDeclOf reads ctx, with the doc comments of its file.
-func opaqueDeclOf(ctx *grammar.OpaqueTypeDeclarationContext, docs galaparser.Docs) opaqueDecl {
-	d := opaqueDecl{
-		name: ctx.Identifier().GetText(),
-		doc:  docAt(docs, ctx.GetStart()),
-		pos:  transpiler.PosFromToken(ctx.Identifier().GetStart()),
-	}
-	d.typeParams, d.typeParamConstraints = typeParamsOf(ctx.TypeParameters())
-	if ctx.Type_() != nil {
-		d.underlying = galaparser.TypeText(ctx.Type_())
-	}
-	return d
-}
-
-// analyzeOpaqueType records an opaque type declaration (see
-// registerOpaqueType).
-func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationContext, pkgName, definedIn string, richAST *transpiler.RichAST, docs galaparser.Docs) {
-	a.registerOpaqueType(opaqueDeclOf(ctx, docs), pkgName, definedIn, richAST)
 }
 
 // registerOpaqueType records `opaque type UserID int64` (or a phantom-typed

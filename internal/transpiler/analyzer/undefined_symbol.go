@@ -17,7 +17,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
@@ -106,7 +105,7 @@ import (
 //     would need the full type surface of every imported Go package. Type
 //     names are checked by a separate pass over type positions — the
 //     qualifier of a qualified one, and an unqualified one for existence —
-//     see checkTypeNames.
+//     see checkTypeNamesNative.
 //   - Constructor names in `match` / `case` *patterns*. The shared walker
 //     binds the names a pattern introduces and ignores the constructor or
 //     extractor it names, because telling them apart in general needs the
@@ -350,59 +349,21 @@ type undefChecker struct {
 
 	// receiverImports returns the GALA packages the signature of a method of
 	// receiver type recvType may also use: those the file declaring the type
-	// dot-imports, when that is another file. See checkTypeNames.
+	// dot-imports, when that is another file. See checkTypeNamesNative.
 	receiverImports func(recvType string) map[string]bool
 
-	// inTypePass is set while checkTypeNames runs; see reportWith.
+	// inTypePass is set while checkTypeNamesNative runs; see reportWith.
 	inTypePass bool
 }
 
-// checkUndefinedSymbols runs the existence check over `sourceFile`, whose
-// imports are imports (scanFileImports), and returns the collected errors in
-// source order. fileDotImportSets maps each file of the package (by canonical
-// path) to the GALA package names it dot-imports; a method whose receiver type
-// lives in another file may use that file's dot imports in its signature, the
+// checkUndefinedSymbols runs the existence check over nf, the file's native
+// tree, whose imports are imports (scanFileImportsNative), and returns the
+// collected errors in source order (see undefined_symbol_native.go).
+// fileDotImportSets maps each file of the package (by canonical path) to the
+// GALA package names it dot-imports; a method whose receiver type lives in
+// another file may use that file's dot imports in its signature, the
 // bare-name form of the allowance GALA-E0025 makes.
-//
-// nf is sourceFile's native tree, or the zero nativeFile. The check reads the
-// native tree when there is one (undefined_symbol_native.go), as the
-// collection of the file's declarations did, and ANTLR's tree otherwise.
 func (a *galaAnalyzer) checkUndefinedSymbols(
-	sourceFile *grammar.SourceFileContext,
-	nf nativeFile,
-	imports []fileImport,
-	richAST *transpiler.RichAST,
-	filePath string,
-	fileDotImportSets map[string]map[string]bool,
-) []*galaerr.SemanticError {
-	errs := a.undefinedSymbolErrors(sourceFile, nf, imports, richAST, filePath, fileDotImportSets)
-	if a.onUndefinedCheck != nil {
-		a.onUndefinedCheck(undefinedCheck{
-			filePath: filePath,
-			native:   nf.ok(),
-			errs:     errs,
-			antlr: func() []*galaerr.SemanticError {
-				return a.undefinedSymbolErrors(sourceFile, nativeFile{}, imports, richAST, filePath, fileDotImportSets)
-			},
-		})
-	}
-	return errs
-}
-
-// undefinedCheck is what checkUndefinedSymbols tells
-// galaAnalyzer.onUndefinedCheck about a run: the file, whether the check
-// read its native tree, the errors it found, and how to run it again, in the
-// same state, on the file's ANTLR tree.
-type undefinedCheck struct {
-	filePath string
-	native   bool
-	errs     []*galaerr.SemanticError
-	antlr    func() []*galaerr.SemanticError
-}
-
-// undefinedSymbolErrors is checkUndefinedSymbols without the test hook.
-func (a *galaAnalyzer) undefinedSymbolErrors(
-	sourceFile *grammar.SourceFileContext,
 	nf nativeFile,
 	imports []fileImport,
 	richAST *transpiler.RichAST,
@@ -418,14 +379,10 @@ func (a *galaAnalyzer) undefinedSymbolErrors(
 	// than twice — each report walks every search root to build its hint, so
 	// the dedupe is worth real work. It runs under this function's eligibility
 	// guards, which is why it lives here rather than standing alone. See
-	// checkTypeNames.
-	if root := nf.root.GalaNodeRef; nf.ok() {
-		c.walkSourceFileNative(root)
-		c.checkTypeNamesNative(root)
-	} else {
-		c.walkSourceFile(sourceFile)
-		c.checkTypeNames(sourceFile)
-	}
+	// checkTypeNamesNative.
+	root := nf.root.GalaNodeRef
+	c.walkSourceFileNative(root)
+	c.checkTypeNamesNative(root)
 	return c.sortedErrs()
 }
 
@@ -622,8 +579,9 @@ func goInfoDeclaresPackage(gi *transpiler.GoTypeInfo, name string) bool {
 //
 // Names are collected only for the *existence* test; nothing here influences
 // type resolution or code generation. Results are cached per package directory:
-// analyzePackage has already parsed these files, so parseFileCached usually
-// hits, and a package's sources do not change during a build.
+// analyzePackage has already parsed these files, so parseFile usually finds
+// them in the parsed-file cache, and a package's sources do not change
+// during a build.
 func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bool {
 	out := make(map[string]bool)
 	for _, imp := range imports {
@@ -684,10 +642,8 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 			continue
 		}
 		path := filepath.Join(dirPath, n)
-		if entry := a.parseFileEntry(path); entry != nil {
-			if tree := entry.tree(); tree != nil {
-				addNames(names, a.packageFileTypeNames(path, tree, entry.nf))
-			}
+		if entry, _ := a.parseFile(path); entry != nil {
+			addNames(names, typeNamesNative(entry.nf.root.GalaNodeRef))
 		}
 	}
 	if a.importedNames != nil {
@@ -696,18 +652,13 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 	return names
 }
 
-// collectTopLevelDeclaredNames records into `out` every name the file's
-// top-level declarations introduce: free functions, types, struct shorthands,
-// sealed types and their case variants, package vals/vars (including
-// tuple-pattern destructuring), and embed bindings. A name's value is true
-// when it names a type. When methods is not nil, it also records there, by
-// receiver type, the name of every method the file declares, in the same walk.
-func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]bool, methods map[string]map[string]bool) {
-	forEachTopLevelName(sf, topLevelNameRecorder(out, methods))
-}
-
-// topLevelNameRecorder is the visitor collectTopLevelDeclaredNames and its
-// native twin record out and methods with.
+// topLevelNameRecorder is the visitor that records into out every name the
+// file's top-level declarations introduce: free functions, types, struct
+// shorthands, sealed types and their case variants, package vals/vars
+// (including tuple-pattern destructuring), and embed bindings. A name's value
+// is true when it names a type. When methods is not nil, it also records
+// there, by receiver type, the name of every method the file declares, in the
+// same walk.
 func topLevelNameRecorder(out map[string]bool, methods map[string]map[string]bool) topLevelVisitor {
 	v := topLevelVisitor{name: func(name string, _ transpiler.SourcePos, kind string) {
 		addName(out, name, kind == declKindType || kind == declKindVariant)
@@ -722,82 +673,24 @@ func topLevelNameRecorder(out map[string]bool, methods map[string]map[string]boo
 	return v
 }
 
-// topLevelVisitor is what forEachTopLevelName, and its native twin, report a
-// file's top-level names to, read off neither tree.
+// topLevelVisitor is what forEachTopLevelNameNative reports a file's
+// top-level names to.
 type topLevelVisitor struct {
 	// name gets each name a top-level declaration introduces, where its
 	// identifier starts, and the kind of declaration.
 	name func(name string, at transpiler.SourcePos, kind string)
 	// method, when not nil, gets each method's receiver base type (see
-	// getBaseTypeName) and name.
+	// nativeBaseTypeName) and name.
 	method func(receiverBase, name string)
 }
 
-// The kinds of top-level declaration forEachTopLevelName reports.
+// The kinds of top-level declaration forEachTopLevelNameNative reports.
 const (
 	declKindFunction = "function"
 	declKindType     = "type"
 	declKindVariant  = "sealed variant"
 	declKindValue    = "package-level value"
 )
-
-// forEachTopLevelName tells v every name the file's top-level declarations
-// introduce, and the kind of declaration: free functions, types, struct
-// shorthands, sealed types and their case variants, package vals/vars
-// (including tuple-pattern destructuring), and embed bindings; and, when
-// v.method is set, every method.
-func forEachTopLevelName(sf *grammar.SourceFileContext, v topLevelVisitor) {
-	report := func(id grammar.IIdentifierContext, kind string) {
-		if id != nil {
-			v.name(id.GetText(), transpiler.PosFromToken(id.GetStart()), kind)
-		}
-	}
-	reportList := func(il grammar.IIdentifierListContext) {
-		if il == nil {
-			return
-		}
-		for _, id := range il.(*grammar.IdentifierListContext).AllIdentifier() {
-			report(id, declKindValue)
-		}
-	}
-	for _, topDecl := range sf.AllTopLevelDeclaration() {
-		switch {
-		case topDecl.FunctionDeclaration() != nil:
-			fc := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
-			if fc.Receiver() == nil {
-				report(fc.Identifier(), declKindFunction)
-			} else if v.method != nil {
-				v.method(getBaseTypeName(fc.Receiver().(*grammar.ReceiverContext).Type_()), fc.Identifier().GetText())
-			}
-		case topDecl.TypeDeclaration() != nil:
-			report(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier(), declKindType)
-		case topDecl.StructShorthandDeclaration() != nil:
-			report(topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext).Identifier(), declKindType)
-		case topDecl.OpaqueTypeDeclaration() != nil:
-			report(topDecl.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext).Identifier(), declKindType)
-		case topDecl.SealedTypeDeclaration() != nil:
-			sc := topDecl.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
-			report(sc.Identifier(), declKindType)
-			for _, cc := range sc.AllSealedCase() {
-				report(cc.(*grammar.SealedCaseContext).Identifier(), declKindVariant)
-			}
-		case topDecl.ValDeclaration() != nil:
-			vc := topDecl.ValDeclaration().(*grammar.ValDeclarationContext)
-			reportList(vc.IdentifierList())
-			if tp := vc.TuplePattern(); tp != nil {
-				reportList(tp.(*grammar.TuplePatternContext).IdentifierList())
-			}
-		case topDecl.VarDeclaration() != nil:
-			vc := topDecl.VarDeclaration().(*grammar.VarDeclarationContext)
-			reportList(vc.IdentifierList())
-			if tp := vc.TuplePattern(); tp != nil {
-				reportList(tp.(*grammar.TuplePatternContext).IdentifierList())
-			}
-		case topDecl.EmbedDeclaration() != nil:
-			report(topDecl.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier(), declKindValue)
-		}
-	}
-}
 
 // undefinedSymbolLocalGoNames returns every name declared at the top level of
 // the hand-written .go files sitting alongside `filePath` — unexported ones
@@ -1272,7 +1165,7 @@ func (c *undefChecker) hintFor(name string) string {
 //   - ParseInterpolations descends into `s"…$x"` bodies, so a name used only
 //     inside an interpolation is checked like any other.
 //   - RequireCleanInterpolationParse drops a fragment whose re-parse reported
-//     errors, so ANTLR's error recovery can never become a diagnostic. Narrow
+//     errors, so the parser's error recovery can never become a diagnostic. Narrow
 //     by nature: the expression parser stops at the longest valid prefix
 //     without complaining, so `${x +}` still yields `x`.
 //   - SkipCompositeLiteralKeys omits `T{Field: v}`'s key, which names a struct
@@ -1286,108 +1179,15 @@ func (c *undefChecker) hintFor(name string) string {
 //     so the arm's BODY is checked against the names the pattern really
 //     introduces rather than a set inflated by its constructors. Strictly
 //     tighter, and it cannot add a reference the blunt form did not have.
-//   - EnterFunctionScope binds the two binders the walker does not model: a
-//     declaration's type parameters and a method's receiver.
+//   - The walk on the native tree binds the two binders the walker does not
+//     model, a declaration's type parameters and a method's receiver, through
+//     its enter hook (bindFunctionDeclarationScopeNative).
 func undefWalkOptions() scopewalk.Options {
 	return scopewalk.Options{
 		ParseInterpolations:            true,
 		RequireCleanInterpolationParse: true,
 		SkipCompositeLiteralKeys:       true,
 		SkipTypedPatternArgument:       true,
-		EnterFunctionScope:             bindFunctionDeclarationScope,
-	}
-}
-
-// bindFunctionDeclarationScope binds a function or method declaration's own
-// type parameters, and, for a method, its receiver name together with any type
-// parameters the receiver type introduces (`func (l *List[T]) …` brings both
-// `l` and `T` into scope).
-func bindFunctionDeclarationScope(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
-	fc, ok := fn.(*grammar.FunctionDeclarationContext)
-	if !ok {
-		return
-	}
-	bindTypeParameters(w, fc.TypeParameters())
-	recv := fc.Receiver()
-	if recv == nil {
-		return
-	}
-	rc, ok := recv.(*grammar.ReceiverContext)
-	if !ok {
-		return
-	}
-	w.BindID(rc.Identifier())
-	// The receiver's type arguments are the method's view of the type's
-	// parameters; they can sit behind a pointer or nest (`*List[T]`,
-	// `Pair[K, V]`), so every identifier in the receiver type is bound. Binding
-	// the type's own name alongside them is harmless — it is a declaration in
-	// this package either way.
-	w.BindIdentifiersIn(rc.Type_())
-}
-
-func bindTypeParameters(w *scopewalk.Walker, tp grammar.ITypeParametersContext) {
-	if tp == nil {
-		return
-	}
-	list := tp.(*grammar.TypeParametersContext).TypeParameterList()
-	if list == nil {
-		return
-	}
-	for _, p := range list.(*grammar.TypeParameterListContext).AllTypeParameter() {
-		w.BindID(p.(*grammar.TypeParameterContext).Identifier(0))
-	}
-}
-
-// walkSourceFile drives the shared walker over a whole file. Only declarations
-// that hold value-position expressions are entered: a `type` / `sealed type` /
-// `embed` declaration contains types and string literals, never a value this
-// check inspects.
-func (c *undefChecker) walkSourceFile(sf *grammar.SourceFileContext) {
-	w := c.walker
-	w.PushScope()
-	defer w.PopScope()
-	c.bindFileLevelNames(sf)
-
-	for _, topDecl := range sf.AllTopLevelDeclaration() {
-		switch {
-		case topDecl.FunctionDeclaration() != nil:
-			w.WalkFunctionDeclaration(topDecl.FunctionDeclaration())
-		case topDecl.ValDeclaration() != nil:
-			w.Walk(topDecl.ValDeclaration().(*grammar.ValDeclarationContext).ExpressionList())
-		case topDecl.VarDeclaration() != nil:
-			w.Walk(topDecl.VarDeclaration().(*grammar.VarDeclarationContext).ExpressionList())
-		case topDecl.StructShorthandDeclaration() != nil:
-			ctx := topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext)
-			w.PushScope()
-			bindTypeParameters(w, ctx.TypeParameters())
-			w.BindParameters(ctx.Parameters())
-			w.WalkParameterDefaults(ctx.Parameters())
-			w.PopScope()
-		}
-	}
-}
-
-// bindFileLevelNames registers this file's tuple-pattern package vals and vars
-// (`val (a, b) = ...`) from the parse tree, so they bind whatever metadata the
-// check runs against, and `embed val` directives, which no richAST metadata
-// lists.
-func (c *undefChecker) bindFileLevelNames(sf *grammar.SourceFileContext) {
-	for _, d := range c.rich.EmbedDirectives {
-		c.walker.Bind(d.VarName)
-	}
-	for _, topDecl := range sf.AllTopLevelDeclaration() {
-		var tp grammar.ITuplePatternContext
-		switch {
-		case topDecl.ValDeclaration() != nil:
-			tp = topDecl.ValDeclaration().(*grammar.ValDeclarationContext).TuplePattern()
-		case topDecl.VarDeclaration() != nil:
-			tp = topDecl.VarDeclaration().(*grammar.VarDeclarationContext).TuplePattern()
-		case topDecl.EmbedDeclaration() != nil:
-			c.walker.BindID(topDecl.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier())
-		}
-		if tp != nil {
-			c.walker.BindIdentifierList(tp.(*grammar.TuplePatternContext).IdentifierList())
-		}
 	}
 }
 
@@ -1586,105 +1386,6 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 
 // --- type-position names -----------------------------------------------------
 
-// checkTypeNames checks the type names written in TYPE positions. It reports a
-// package qualifier that no import brings into scope, so `var sb
-// strings.Builder` in a file that never imports `strings` is a GALA diagnostic
-// rather than a Go one, and an unqualified type name that does not resolve.
-//
-// The shared scope walker is a VALUE-reference walker: it short-circuits
-// TypeContext by design, because a type name is not a value and leaking one
-// into the reference stream would break the capture analysis built on the same
-// walker. That left type positions unchecked. The call half of
-//
-//	var sb strings.Builder                 // unreported
-//	sb.WriteString(strings.Repeat("-", n)) // GALA-E0023
-//
-// was caught and the type half was not; a file whose ONLY offending use was a
-// type position got no GALA error at all and fell through to `go build`.
-//
-// It is a method rather than a free function so it shares the caller's
-// qualifier set, error slice and `reported` map; an earlier revision built a
-// second checker and reported a doubly-missing qualifier twice.
-//
-// Only the QUALIFIER is checked, never the member. `strings.Builder` asks
-// whether `strings` is in scope, not whether it exports `Builder` — the
-// qualifier is unambiguously a package name, while resolving the member would
-// need the full type surface of every imported Go package and would misfire
-// whenever that surface is incomplete (no Go SDK, an unanalyzed package).
-//
-// An unqualified type name is reported when nothing declares it (see
-// typeNameExists), or when only GALA packages out of this file's scope do
-// (see galaScope), unless the file binds it itself (see
-// collectFileTypeBinders). It uses the value check's symbol table, so it
-// stands down under the same conditions (see fileImportsFullyLoaded).
-//
-// In the signature of a method whose receiver type is declared in another
-// file of the package, the packages that file dot-imports count as well — the
-// allowance GALA-E0025 makes for method signatures. receiverImports returns
-// them. The method body gets no allowance, for type and value names alike.
-func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext) {
-	c.inTypePass = true
-	defer func() { c.inTypePass = false }()
-	typeParams := collectFileTypeBinders(sourceFile)
-	var walk func(n antlr.Tree, extra map[string]bool)
-	walk = func(n antlr.Tree, extra map[string]bool) {
-		if fd, ok := n.(*grammar.FunctionDeclarationContext); ok && fd.Receiver() != nil {
-			var sigExtra map[string]bool
-			if rc, ok := fd.Receiver().(*grammar.ReceiverContext); ok && rc.Type_() != nil {
-				sigExtra = c.receiverImports(receiverBaseTypeName(rc.Type_()))
-			}
-			for i := 0; i < n.GetChildCount(); i++ {
-				switch child := n.GetChild(i).(type) {
-				case *grammar.BlockContext, *grammar.ExpressionContext:
-					walk(child, nil)
-				case antlr.ParserRuleContext:
-					walk(child, sigExtra)
-				}
-			}
-			return
-		}
-		// Nested TypeContexts are visited too: `map[string]strings.Builder`
-		// and `[]pkg.T` carry their named type below an outer TypeContext.
-		if tc, ok := n.(*grammar.TypeContext); ok {
-			c.checkTypeName(tc, typeParams, extra)
-		}
-		c.checkBareTypePositions(n, typeParams, extra)
-		skip := tupleDestructureType(n)
-		// Only a parser rule can contain a TypeContext; terminals are skipped.
-		for i := 0; i < n.GetChildCount(); i++ {
-			if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok && antlr.Tree(child) != skip {
-				walk(child, extra)
-			}
-		}
-	}
-	walk(sourceFile, nil)
-}
-
-// checkTypeName checks the type name a single TypeContext spells, if any.
-func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra map[string]bool) {
-	qi := tc.QualifiedIdentifier()
-	if qi == nil {
-		return
-	}
-	ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
-	if len(ids) < 2 {
-		c.checkBareTypeID(ids[0], typeParams, extra)
-		return
-	}
-	c.checkTypeQualifier(ids[0].GetText(), identifierSite(ids[0]))
-}
-
-// identifierSite is the site of identifier id: its token.
-func identifierSite(id grammar.IIdentifierContext) scopewalk.Site {
-	return scopewalk.TokenSite(id.GetStart())
-}
-
-// checkBareTypeID is checkBareTypeName of the name identifier id spells, at
-// its token.
-func (c *undefChecker) checkBareTypeID(id grammar.IIdentifierContext, typeParams, extra map[string]bool) {
-	c.checkBareTypeName(id.GetText(), identifierSite(id), typeParams, extra)
-}
-
 // checkTypeQualifier checks name, the package qualifier of a qualified type
 // name, written at at.
 func (c *undefChecker) checkTypeQualifier(name string, at scopewalk.Site) {
@@ -1730,54 +1431,6 @@ func (c *undefChecker) checkBareTypeName(name string, at scopewalk.Site, typePar
 			c.report(name, at)
 		}
 	}
-}
-
-// checkBareTypePositions checks the bare-identifier type positions n holds
-// directly; see checkBareTypeName.
-func (c *undefChecker) checkBareTypePositions(n antlr.Tree, typeParams, extra map[string]bool) {
-	switch ctx := n.(type) {
-	case *grammar.TypeAliasContext:
-		if id := ctx.Identifier(); id != nil {
-			c.checkBareTypeID(id, typeParams, extra)
-		}
-	case *grammar.TypeParameterContext:
-		if ids := ctx.AllIdentifier(); len(ids) == 2 {
-			c.checkBareTypeID(ids[1], typeParams, extra)
-		}
-	case *grammar.TypeContext:
-		sig, ok := ctx.Signature().(*grammar.SignatureContext)
-		if !ok {
-			return
-		}
-		params, ok := sig.Parameters().(*grammar.ParametersContext)
-		if !ok || params.ParameterList() == nil {
-			return
-		}
-		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			if pc, ok := p.(*grammar.ParameterContext); ok && pc.Identifier() != nil && pc.Type_() == nil {
-				c.checkBareTypeID(pc.Identifier(), typeParams, extra)
-			}
-		}
-	}
-}
-
-// tupleDestructureType returns the type a `val (a, b)` / `var (a, b)`
-// declaration was parsed with, if any. A destructuring takes no type, and
-// GALA-E0056 rejects one with the message that fits. The grammar is blind to
-// newlines, so for `var (a, b)` the first identifier of the next line parses as
-// this type: checking it as a type name would report that identifier instead.
-func tupleDestructureType(n antlr.Tree) antlr.Tree {
-	switch d := n.(type) {
-	case *grammar.ValDeclarationContext:
-		if d.TuplePattern() != nil && d.Type_() != nil {
-			return d.Type_()
-		}
-	case *grammar.VarDeclarationContext:
-		if d.TuplePattern() != nil && d.Type_() != nil {
-			return d.Type_()
-		}
-	}
-	return nil
 }
 
 // typeNameExists reports whether an unqualified type name denotes a type: a Go
@@ -1948,13 +1601,6 @@ func goKeyPackages[V any](m map[string]V, name string) map[string]bool {
 	return out
 }
 
-// receiverBaseTypeName reduces a receiver's type (`*Box[T]`, `Ptr[Box[T]]`)
-// to the bare type name (`Box`).
-func receiverBaseTypeName(ctx grammar.ITypeContext) string {
-	elem, _ := galaparser.PointerElem(ctx)
-	return receiverBaseTypeOf(galaparser.TypeText(elem))
-}
-
 // receiverBaseTypeOf is the bare type name of text, a receiver type's
 // pointee as written (`Box[T]`): its text before the type arguments.
 func receiverBaseTypeOf(text string) string {
@@ -1981,78 +1627,4 @@ func receiverFileImports[V any](paths *pathCache, rich *transpiler.RichAST, recv
 		return zero
 	}
 	return fileImportSets[declaring]
-}
-
-// collectReceiverTypeArgs adds the names a receiver type's arguments bind:
-// `Box[K, V]` and `*Box[T]` bind K, V and T.
-func collectReceiverTypeArgs(n antlr.Tree, out map[string]bool) {
-	if ta, ok := n.(*grammar.TypeArgumentsContext); ok {
-		tl, ok := ta.TypeList().(*grammar.TypeListContext)
-		if !ok {
-			return
-		}
-		for _, t := range tl.AllType_() {
-			tc, ok := t.(*grammar.TypeContext)
-			if !ok || tc.QualifiedIdentifier() == nil {
-				continue
-			}
-			if ids := tc.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier(); len(ids) == 1 {
-				out[ids[0].GetText()] = true
-			}
-		}
-		return
-	}
-	for i := 0; i < n.GetChildCount(); i++ {
-		if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok {
-			collectReceiverTypeArgs(child, out)
-		}
-	}
-}
-
-// collectFileTypeBinders returns every type name the file binds itself: the
-// type parameters it declares on any function, method or type — including the
-// names a method receiver binds (`func (b Box[T]) ...` binds T) — and the types
-// it declares at any depth, sealed variants included. The package-level types
-// are in the metadata as well; one declared inside a function body is only
-// here. Like the type parameters, they are recognised file-wide, which can
-// only suppress a report.
-func collectFileTypeBinders(node antlr.Tree) map[string]bool {
-	out := make(map[string]bool)
-	bind := func(id grammar.IIdentifierContext) {
-		if id != nil {
-			out[id.GetText()] = true
-		}
-	}
-	var walk func(antlr.Tree)
-	walk = func(n antlr.Tree) {
-		switch ctx := n.(type) {
-		case *grammar.TypeParameterContext:
-			if ids := ctx.AllIdentifier(); len(ids) > 0 {
-				bind(ids[0])
-			}
-			return
-		case *grammar.ReceiverContext:
-			if rt, ok := ctx.Type_().(*grammar.TypeContext); ok {
-				collectReceiverTypeArgs(rt, out)
-			}
-			return
-		case *grammar.TypeDeclarationContext:
-			bind(ctx.Identifier())
-		case *grammar.StructShorthandDeclarationContext:
-			bind(ctx.Identifier())
-		case *grammar.SealedTypeDeclarationContext:
-			bind(ctx.Identifier())
-		case *grammar.OpaqueTypeDeclarationContext:
-			bind(ctx.Identifier())
-		case *grammar.SealedCaseContext:
-			bind(ctx.Identifier())
-		}
-		for i := 0; i < n.GetChildCount(); i++ {
-			if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok {
-				walk(child)
-			}
-		}
-	}
-	walk(node)
-	return out
 }

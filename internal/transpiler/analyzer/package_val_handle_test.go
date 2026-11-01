@@ -39,18 +39,12 @@ func valType(t *testing.T, rich *transpiler.RichAST, name string) string {
 	return pv.Type.String()
 }
 
-// TestAnalyzedFileWithoutHandleTypesItsVals: the analyzed file itself, given
-// with no native-tree handle (as an imported package's file is when the
-// parsed-file cache does not pair it with its tree), takes the handle the
-// cache holds for its tree's parse, so its own generic-call vals are typed.
-func TestAnalyzedFileWithoutHandleTypesItsVals(t *testing.T) {
+// TestAnalyzedFileTypesItsVals: the analyzed file's own generic-call vals are
+// typed, by the transformer's inference over the file's native tree.
+func TestAnalyzedFileTypesItsVals(t *testing.T) {
 	path := writeGalaFile(t, t.TempDir(), "pv.gala", genericValSrc)
-	a := NewGalaAnalyzer(parser.NewAntlrGalaParser(), nil).(*galaAnalyzer)
-	tree, _, err := a.parseFileCached(path)
-	if err != nil || tree == nil {
-		t.Fatalf("parseFileCached: %v", err)
-	}
-	rich, err := a.analyze(tree, nil, nil, path)
+	p := parser.NewAntlrGalaParser()
+	rich, err := NewGalaAnalyzer(p, nil).AnalyzeParsed(p.ParseFile(genericValSrc), path)
 	if err != nil {
 		t.Fatalf("analyze: %v", err)
 	}
@@ -60,10 +54,11 @@ func TestAnalyzedFileWithoutHandleTypesItsVals(t *testing.T) {
 }
 
 // TestStaleSiblingTreeTakesNoNewerTypes: a sibling edited in place after its
-// tree was cached (the directory's file count unchanged, so the sibling-tree
-// cache still serves the old tree) has no handle for that tree once the
-// parsed-file cache holds the new parse. Its vals, collected from the old
-// tree, must not take the types of the new file's bindings of the same name.
+// parse was cached (the directory's file count unchanged, so the sibling
+// cache still serves the old parse), and parsed again into the parsed-file
+// cache, still gives the analysis its declarations and its vals' types from
+// one parse: its vals, collected from the old parse, must not take the types
+// of the new file's bindings of the same name.
 func TestStaleSiblingTreeTakesNoNewerTypes(t *testing.T) {
 	dir := t.TempDir()
 	mainPath := writeGalaFile(t, dir, "a.gala", "package pv\n\nfunc Use() string = W.V\n")
@@ -87,8 +82,8 @@ func TestStaleSiblingTreeTakesNoNewerTypes(t *testing.T) {
 	}
 
 	writeGalaFile(t, dir, "b.gala", strings.Replace(genericValSrc, `Wrap("a")`, "Wrap(12345)", 1))
-	if tree, _, err := a.parseFileCached(sibPath); err != nil || tree == nil {
-		t.Fatalf("parseFileCached: %v", err)
+	if entry := a.parseFileEntry(sibPath); entry == nil || entry.syntaxErr != nil {
+		t.Fatalf("parseFileEntry: %+v", entry)
 	}
 	if got := valType(t, analyzeMain(), "W"); got == "pv.Box[int]" {
 		t.Errorf("W, collected from the sibling's old tree, took the new file's type %q", got)

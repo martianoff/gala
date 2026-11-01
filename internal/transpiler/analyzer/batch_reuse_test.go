@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/parser"
@@ -51,17 +50,18 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 	counter := &countingParser{inner: innerParser}
 	batch := analyzer.NewBatchAnalyzer(counter, getStdSearchPath(), dir)
 
-	parse := func(p string) antlr.Tree {
+	parse := func(p string) *parser.Parsed {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.ParseFile(string(body)).Strict()
+		parsed := innerParser.ParseFile(string(body))
+		err = parsed.Err()
 		require.NoError(t, err)
-		return tree
+		return parsed
 	}
 
 	// First Analyze: std is loaded cold. Counter snapshots a high number.
 	batch.SetPackageFiles([]string{b})
-	_, err := transpiler.Analyze(batch, parse(a), nil, a)
+	_, err := batch.AnalyzeParsed(parse(a), a)
 	require.NoError(t, err)
 	first := atomic.LoadInt64(&counter.calls)
 
@@ -72,7 +72,7 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 	// previous call's parsedFileCache, or 0 if cached).
 	atomic.StoreInt64(&counter.calls, 0)
 	batch.SetPackageFiles([]string{a})
-	_, err = transpiler.Analyze(batch, parse(b), nil, b)
+	_, err = batch.AnalyzeParsed(parse(b), b)
 	require.NoError(t, err)
 	second := atomic.LoadInt64(&counter.calls)
 

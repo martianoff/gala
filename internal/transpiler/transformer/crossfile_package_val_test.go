@@ -49,12 +49,12 @@ func main() {
 	p := transpiler.NewAntlrGalaParser()
 
 	parsed := p.ParseFile(mainCode)
-	tree, _, err := parsed.Strict()
+	err := parsed.Err()
 	assert.NoError(t, err)
 
 	// Analyze main.gala with consts.gala as a sibling (multi-file mode).
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{constsPath})
-	richAST, err := transpiler.Analyze(a, tree, nil, mainPath)
+	richAST, err := a.AnalyzeParsed(parsed, mainPath)
 	withNative(richAST, parsed)
 	assert.NoError(t, err)
 

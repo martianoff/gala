@@ -7,29 +7,22 @@ import (
 	"slices"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
-// checkDotImportCollisions reports GALA-E0066 for the first top-level name sf
-// declares that a package dot-imported by any file of the package also
-// exports. The package's own declarations shadow its imports' names, std's
-// included, but a dot import is a Go dot import, and Go allows no
-// package-level name that a dot import in any file of the package also
-// brings in. dotImports maps each dot-imported package's name to its import
-// paths; the implicit std import is not a dot import and is not among them.
+// dotImportCollisions reports GALA-E0066 for the first top-level name a file
+// declares, as names reports them (forEachTopLevelNameNative), that a package
+// dot-imported by any file of the package also exports. The package's own
+// declarations shadow its imports' names, std's included, but a dot import is
+// a Go dot import, and Go allows no package-level name that a dot import in
+// any file of the package also brings in. dotImports maps each dot-imported
+// package's name to its import paths; the implicit std import is not a dot
+// import and is not among them.
 //
 // The check reads the import tables as written, before the transformer
 // prunes dot imports it finds unused, so a leftover dot import counts too:
 // whether one is kept depends on the bare names the file uses, and the
 // colliding declaration is such a name.
-func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[string][]string, richAST *transpiler.RichAST) error {
-	return dotImportCollisions(dotImports, richAST, func(v topLevelVisitor) { forEachTopLevelName(sf, v) })
-}
-
-// dotImportCollisions is checkDotImportCollisions of the file whose top-level
-// names names reports (forEachTopLevelName or its native twin), reading
-// neither tree.
 func dotImportCollisions(dotImports map[string][]string, richAST *transpiler.RichAST, names func(topLevelVisitor)) error {
 	if len(dotImports) == 0 || richAST == nil {
 		return nil

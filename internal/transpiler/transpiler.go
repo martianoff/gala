@@ -821,16 +821,9 @@ type GalaParser interface {
 
 // Analyzer analyzes a parse of a GALA file and produces a RichAST. It reads
 // the parse's tree and doc comments and attaches neither to the result: the
-// transpile pipeline sets RichAST.Docs. A caller holding only a tree uses
-// Analyze.
+// transpile pipeline sets RichAST.Docs.
 type Analyzer interface {
 	AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*RichAST, error)
-}
-
-// Analyze analyzes tree, with its doc comments docs (which may be nil), with
-// a.
-func Analyze(a Analyzer, tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error) {
-	return a.AnalyzeParsed(&galaparser.Parsed{Tree: tree, Docs: docs}, filePath)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.

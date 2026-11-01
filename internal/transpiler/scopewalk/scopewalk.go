@@ -305,14 +305,30 @@ func (w *Walker) Report(name string, at Site, use Use) {
 // the mapping back to source columns is lost; recording spans as it scans is
 // mechanical but touches a shared, well-tested splitter.
 func (w *Walker) WalkInterpolated(lit Site) {
+	if w.interpParser == nil {
+		w.interpParser = parser.NewAntlrGalaParser()
+	}
+	w.WalkInterpolatedParts(lit, func(part string) {
+		expr, errs := w.interpParser.ParseExpression(part)
+		if expr == nil {
+			return
+		}
+		if len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
+			return
+		}
+		antlrWalk{w}.walk(expr)
+	})
+}
+
+// WalkInterpolatedParts is WalkInterpolated with walkPart walking each
+// embedded expression, given its text: a walk of another tree parses and
+// walks the parts on that tree. Every reference walkPart reports is
+// attributed to lit.
+func (w *Walker) WalkInterpolatedParts(lit Site, walkPart func(part string)) {
 	raw := lit.Text
 	if len(raw) < 3 {
 		return
 	}
-	if w.interpParser == nil {
-		w.interpParser = parser.NewAntlrGalaParser()
-	}
-
 	prev := w.posOverride
 	w.posOverride = &lit
 	defer func() { w.posOverride = prev }()
@@ -320,19 +336,9 @@ func (w *Walker) WalkInterpolated(lit Site) {
 	// Strip the `s"`/`f"` prefix and the closing `"`, matching the transformer.
 	content := raw[2 : len(raw)-1]
 	for _, part := range interpolation.Split(content) {
-		if part.IsLiteral {
-			continue
+		if !part.IsLiteral {
+			walkPart(part.Text)
 		}
-		expr, errs := w.interpParser.ParseExpression(part.Text)
-		if expr == nil {
-			continue
-		}
-		if len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
-			continue
-		}
-		// A fragment's parse is ANTLR's tree alone, whatever tree the
-		// literal came from.
-		antlrWalk{w}.walk(expr)
 	}
 }
 

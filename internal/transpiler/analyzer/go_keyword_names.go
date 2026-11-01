@@ -5,11 +5,8 @@ import (
 	"go/token"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/transformer"
-
-	"github.com/antlr4-go/antlr/v4"
 )
 
 // GALA-E0055: a name spelled like a Go keyword.
@@ -45,43 +42,15 @@ var bareStatementKeywords = func() map[string]bool {
 	return out
 }()
 
-// checkGoKeywordNames reports the first identifier in sf spelled like a Go
-// keyword, preferring a declaration over a use, so a function named `go` that
-// is called above its declaration is reported where it is declared — the place
-// the rename starts. It returns nil when the file has none.
-func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
-	var k keywordNames
-	var visit func(antlr.Tree)
-	visit = func(node antlr.Tree) {
-		if k.done() {
-			return
-		}
-		if id, ok := node.(*grammar.IdentifierContext); ok {
-			if name := id.GetText(); keywordNamed(name) {
-				k.see(name, transpiler.PosFromToken(id.GetStart()),
-					func() bool { return isBareStatement(id) },
-					func() bool { return declaresName(id) },
-					func() bool { return inPattern(id) })
-			}
-			return
-		}
-		for _, child := range node.GetChildren() {
-			visit(child)
-		}
-	}
-	visit(sf)
-	return k.err()
-}
-
 // keywordName is an identifier spelled like a Go keyword, and where it starts.
 type keywordName struct {
 	name string
 	at   transpiler.SourcePos
 }
 
-// keywordNames is what checkGoKeywordNames, and its native twin, decide about
-// the identifiers they see, in source order, reading neither tree: the first
-// declaration and the first use of a name spelled like a Go keyword.
+// keywordNames is what checkGoKeywordNamesNative decides about the
+// identifiers it sees, in source order: the first declaration and the first
+// use of a name spelled like a Go keyword.
 type keywordNames struct {
 	firstUse, firstDecl *keywordName
 }
@@ -96,9 +65,9 @@ func keywordNamed(name string) bool { return token.IsKeyword(name) }
 
 // see considers the identifier name, spelled like a Go keyword
 // (keywordNamed), at at. bare, decl and pattern say whether it is a whole
-// statement on its own (isBareStatement), the name a declaration introduces
-// (declaresName), and part of a case pattern (inPattern); each is asked only
-// when the answer matters.
+// statement on its own (isBareStatementNative), the name a declaration
+// introduces (declaresNameNative), and part of a case pattern
+// (inPatternNative); each is asked only when the answer matters.
 func (k *keywordNames) see(name string, at transpiler.SourcePos, bare, decl, pattern func() bool) {
 	if bareStatementKeywords[name] && bare() {
 		return
@@ -151,73 +120,4 @@ func keywordUseDiagnostic(name string) (msg, hint string) {
 	}
 	return msg, fmt.Sprintf("GALA has no `%s`; if this refers to something you declared, "+
 		"rename that declaration", name)
-}
-
-// inPattern reports whether id is part of a case pattern, where a name is a
-// binding (`case break =>`, `case Some(break) =>`), never loop control. Call
-// arguments are patterns in the grammar too, so only the pattern of a case
-// clause counts.
-func inPattern(id *grammar.IdentifierContext) bool {
-	var prev antlr.Tree = id
-	for node := id.GetParent(); node != nil; prev, node = node, node.GetParent() {
-		if _, ok := node.(*grammar.CaseClauseContext); ok {
-			_, viaPattern := prev.(grammar.IPatternContext)
-			return viaPattern
-		}
-	}
-	return false
-}
-
-// isBareStatement reports whether id is a whole statement on its own: `break`
-// in a loop body or a match arm. The identifier's ancestors up to that
-// statement each wrap a single child, so the walk climbs while that holds.
-// A skipped `defer` / `go` / ... statement is left to GALA-E0036 (the
-// transformer's checkForbiddenStatementKeyword), which inspects statements
-// of this shape.
-func isBareStatement(id *grammar.IdentifierContext) bool {
-	var node antlr.Tree = id
-	for {
-		parent := node.GetParent()
-		if parent == nil || parent.GetChildCount() != 1 {
-			return false
-		}
-		if _, ok := parent.(*grammar.SimpleStatementContext); ok {
-			return true
-		}
-		node = parent
-	}
-}
-
-// declaresName reports whether id is the name a declaration introduces, as
-// opposed to a reference. Pattern bindings (`case go =>`) are expressions in
-// the grammar and count as uses; they are still reported, only after any
-// declaration.
-func declaresName(id *grammar.IdentifierContext) bool {
-	switch parent := id.GetParent().(type) {
-	case *grammar.PackageClauseContext,
-		*grammar.ImportSpecContext,
-		*grammar.EmbedDeclarationContext,
-		*grammar.StructShorthandDeclarationContext,
-		*grammar.SealedTypeDeclarationContext,
-		*grammar.OpaqueTypeDeclarationContext,
-		*grammar.SealedCaseContext,
-		*grammar.SealedCaseFieldContext,
-		*grammar.TypeDeclarationContext,
-		*grammar.StructFieldContext,
-		*grammar.MethodSpecContext,
-		*grammar.FunctionDeclarationContext,
-		*grammar.ReceiverContext,
-		*grammar.ParameterContext,
-		*grammar.IdentifierListContext,
-		*grammar.BindDeclarationContext,
-		*grammar.AlsoDeclarationContext,
-		*grammar.UseDeclarationContext,
-		*grammar.TypedPatternContext:
-		return true
-	case *grammar.TypeParameterContext:
-		// `[T any]`: the first identifier is the parameter, the second its
-		// constraint.
-		return parent.Identifier(0) == id
-	}
-	return false
 }
