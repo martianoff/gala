@@ -153,7 +153,7 @@ func (t *galaASTTransformer) grouped(e exprSrc) exprSrc {
 	return exprSrc{}
 }
 
-// lambda is the lambda e is, with no suffix applied to it
+// lambdaIn is the lambda e is, with no suffix applied to it
 // (findLambdaInExpression), and the zero lambdaSrc otherwise.
 func (t *galaASTTransformer) lambdaIn(e exprSrc) lambdaSrc {
 	if e.node.Ok() {

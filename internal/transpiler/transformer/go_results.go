@@ -663,7 +663,8 @@ func (t *galaASTTransformer) goResultMisuseAt(res *goResult, what string, at src
 		hint = fmt.Sprintf("take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val %s = %s`",
 			names, res.source())
 	}
-	if !at.ok() {
+	// A context recovered from a syntax error may have no start token.
+	if !at.ok() || at.ctx != nil && at.ctx.GetStart() == nil {
 		return galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, t.lastLine, t.lastCol, msg, hint)
 	}
 	r := at.rng()

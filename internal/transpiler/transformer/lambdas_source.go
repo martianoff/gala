@@ -15,10 +15,11 @@ import (
 // (transformParameter) and an expression body are lowered on ANTLR's tree:
 // the native readers cross to it with crossTo.
 //
-// Lambdas are reached from expressions and calls, which are still lowered on
-// ANTLR's tree. So the ANTLR entry points (transformLambdaWithExpectedType,
-// the Sendable capture check) take the lambda's node on the native tree when
-// the walk reads it (nativeNodeOf).
+// The native walk reaches a lambda on its node: from an expression
+// (lowerPrimaryExprNative), a call argument (argContent) or a slot-typed
+// value (classifyExpr). Code still on ANTLR's tree enters through
+// transformLambdaWithExpectedType, which takes the lambda's node when the
+// walk reads it (lambdaOf).
 
 // lambdaSrc is a lambda expression: its node when it is read on the native
 // tree, and its context, which a lambda reached from ANTLR's tree keeps for

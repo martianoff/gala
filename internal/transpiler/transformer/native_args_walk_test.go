@@ -48,11 +48,27 @@ func args(p P) int {
 		}
 		case n => n
 	}
-	a + b + c + d.Size() + e + f + g + h
+	val t = Try(() => strconv.Atoi("ü")).GetOrElse(0) // native: arg
+	a + b + c + d.Size() + e + f + g + h + t
+}
+
+func loops(n int) int {
+	for i := 0; i < n; i++ {
+		val v = if (i > 2) { // a break of its own loop
+			for j := 0; j < i; j++ {
+				break
+			}
+			i
+		} else {
+			0
+		}
+		Println(v)
+	}
+	n
 }
 
 func main() {
-	Println(pair(), pick(true), args(P(1, 2))) // native: arg
+	Println(pair(), pick(true), args(P(1, 2)), loops(4)) // native: arg
 }
 `
 
