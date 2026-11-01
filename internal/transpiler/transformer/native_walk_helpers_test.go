@@ -318,6 +318,9 @@ func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src str
 	}
 	n := nativeW.transpile(path, src)
 	a := antlrW.transpile(path, src)
+	if !strings.HasPrefix(tb.Name(), "TestNativeWalkAgrees") {
+		checkGolden(tb, path, nativeW.searchPaths, n.out, n.err)
+	}
 	assert.Zerof(tb, a.native, "%s: the ANTLR walk lowered declarations on the native tree", path)
 	assert.Zerof(tb, a.stmts, "%s: the ANTLR walk lowered statements on the native tree", path)
 	assert.Zerof(tb, a.lambdas, "%s: the ANTLR walk lowered lambdas on the native tree", path)

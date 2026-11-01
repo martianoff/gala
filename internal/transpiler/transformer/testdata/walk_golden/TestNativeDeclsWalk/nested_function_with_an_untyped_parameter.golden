@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0052] $DIR/main.gala:5:9 function `g` is declared inside a function body (hint: write it as a lambda bound to a `val`; a lambda names every parameter, as in `(x int) =>`)

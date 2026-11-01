@@ -468,6 +468,7 @@ go_test(
 # gazelle:exclude native_walk_export_test.go
 # gazelle:exclude native_types_test.go
 # gazelle:exclude native_walk_helpers_test.go
+# gazelle:exclude native_golden_test.go
 # gazelle:exclude native_expr_walk_test.go
 # gazelle:exclude native_match_test.go
 # gazelle:exclude native_match_walk_test.go
@@ -496,6 +497,7 @@ go_test(
         "native_args_walk_test.go",
         "native_decls_walk_test.go",
         "native_expr_walk_test.go",
+        "native_golden_test.go",
         "native_leaves_walk_test.go",
         "native_match_test.go",
         "native_match_walk_test.go",
@@ -507,7 +509,7 @@ go_test(
         "native_walk_helpers_test.go",
         "native_walk_test.go",
     ],
-    data = [
+    data = glob(["testdata/walk_golden/**"]) + [
         "//:all_gala_sources",
         "//examples:all_gala_sources",
         "//go_builtins:builtins.go",

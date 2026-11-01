@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0060] $DIR/main.gala:3:8 `var _ int = ...` binds nothing (hint: to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it)

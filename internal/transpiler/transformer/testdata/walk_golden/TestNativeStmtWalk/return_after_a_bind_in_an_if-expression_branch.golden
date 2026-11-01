@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:8:2 a `return`, `break` or `continue` after a `bind` in an if-expression branch cannot leave the enclosing function or loop: the statements after the `bind` run inside its FlatMap callback. Move it before the `bind`

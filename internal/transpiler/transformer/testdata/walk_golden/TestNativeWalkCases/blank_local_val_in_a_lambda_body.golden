@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0060] $DIR/main.gala:5:10 `val _ = ...` binds nothing (hint: write the expression as a bare statement; in a lambda with no result, a call that returns only an `error` becomes `FromError(call())`; if the value matters, bind it to a name and use it)

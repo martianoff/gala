@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0056] $DIR/main.gala:3:12 `val (...)` binds 3 names, but the tuple has 2 components (hint: remove the extra names)

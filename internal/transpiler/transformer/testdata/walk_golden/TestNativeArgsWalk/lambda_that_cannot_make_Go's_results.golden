@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:35 this lambda is passed where Go expects a function with 2 results, so it must give a Try for `(T, error)`, a Tuple for `(A, B)`, but it gives a value of type std.Option[string]

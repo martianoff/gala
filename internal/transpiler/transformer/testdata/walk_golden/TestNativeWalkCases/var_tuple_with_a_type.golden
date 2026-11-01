@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0056] $DIR/main.gala:3:19 a tuple destructuring `var (...)` takes no type annotation (hint: to declare several variables of one type, drop the parentheses: `var a, b T`)

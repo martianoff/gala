@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0049] $DIR/main.gala:6:23 `os.ReadFile(...)` can fail, so it produces `Try[[]byte]`; it cannot be converted to `string` (hint: take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val v, err = os.ReadFile(...)`)

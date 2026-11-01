@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0080] $DIR/main.gala:9:9 cannot match a *M through MatchView: MatchView has a Ptr[M] receiver, and a pointer that may be nil cannot fill a Ptr (hint: match RequirePtr(p), which panics on nil, or an OptionPtrOf(p))

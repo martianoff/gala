@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0008] $DIR/main.gala:5:17 map literals are not a first-class GALA construct (hint: use collection_immutable.HashMap or collection_mutable.HashMap for type-safe maps, or go_interop.MapEmpty()/MapPut() for Go interop)

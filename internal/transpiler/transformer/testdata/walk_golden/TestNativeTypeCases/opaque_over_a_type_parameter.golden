@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0062] $DIR/main.gala:3:30 cannot declare opaque type "Id" over T: a type parameter cannot be the underlying type (hint: declare Id over a scalar type; a type parameter may still appear only as a phantom, as in `opaque type Id[T any] int64`)

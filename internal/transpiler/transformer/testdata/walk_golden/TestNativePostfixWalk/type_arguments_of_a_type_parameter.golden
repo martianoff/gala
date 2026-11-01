@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:21 'Left' is a type parameter of the enclosing declaration and takes no type arguments (hint: a type parameter shadows every other 'Left' in its declaration; rename the type parameter to reach the outer one)

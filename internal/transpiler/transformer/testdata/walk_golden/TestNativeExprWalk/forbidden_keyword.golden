@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0036] $DIR/main.gala:5:9 bare Go statement keyword "goto" is not part of GALA's surface (hint: GALA has no `goto`; use structured control flow — pattern matching, recursion, or a `for` loop)

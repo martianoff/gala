@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0073] $DIR/main.gala:8:23 field 'h' of 'R' is matched twice (hint: match each field once)

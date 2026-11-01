@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:8:23 unknown parameter "z" in call to Get

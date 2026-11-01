@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0073] $DIR/main.gala:8:19 'Half' cannot be matched by field name: it is an extractor whose result has no field names (hint: write the sub-patterns by position)

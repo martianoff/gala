@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:19 a spread argument cannot fill field "x" in construction of "P"

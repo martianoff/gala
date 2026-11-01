@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0079] $DIR/main.gala:9:14 `3` is not a variant of Option[int]; this match reads M through MatchView() as Option[int] (hint: match only Option[int]'s variants and `_` here; match the M itself in a separate match)

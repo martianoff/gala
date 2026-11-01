@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0072] $DIR/main.gala:3:37 sealed variant "A" has 11 fields; a variant can have at most 10 (hint: group related fields into a struct and give the variant a field of that type)

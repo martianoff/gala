@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:10:17 this call produces no value, but its value is used (hint: call it as a statement on its own line, or declare a result type on the function so it returns a value)

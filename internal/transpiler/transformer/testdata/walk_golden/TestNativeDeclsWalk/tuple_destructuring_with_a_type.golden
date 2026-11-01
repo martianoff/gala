@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0056] $DIR/main.gala:7:20 a tuple destructuring `val (...)` takes no type annotation (hint: remove the type; each name takes its type from the tuple)

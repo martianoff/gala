@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0056] $DIR/main.gala:3:12 `var (...)` binds 1 name, but the tuple has 2 components (hint: bind one name per component; write `_` for a component you do not need)

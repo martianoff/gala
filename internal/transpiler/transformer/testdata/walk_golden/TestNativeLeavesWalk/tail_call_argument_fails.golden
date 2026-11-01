@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0044] $DIR/main.gala:3:77 Option has no method Size (hint: Option declares: Exists, Filter, FlatMap, ForAll, ForEach, Get, GetOrElse, Hash, ...)

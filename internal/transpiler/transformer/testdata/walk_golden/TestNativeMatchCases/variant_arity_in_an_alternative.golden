@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0004] $DIR/main.gala:9:20 sealed variant "A" pattern binds 0 field(s) but declares 1 (hint: use `_` for unused fields)

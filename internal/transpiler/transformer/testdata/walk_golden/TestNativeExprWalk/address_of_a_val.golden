@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0076] $DIR/main.gala:5:17 cannot take the address of x: x is a val (hint: pass x itself; declare it `var x` where a pointer is needed)

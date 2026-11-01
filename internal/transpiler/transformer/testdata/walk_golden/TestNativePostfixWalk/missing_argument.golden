@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0082] $DIR/main.gala:6:18 missing required argument "a" (parameter 1) in call to g: expected 2, got 0 (hint: pass "a", or declare a default for it; g takes (a, b))

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0044] $DIR/main.gala:6:19 P has no method Nope (hint: P declares no methods)
