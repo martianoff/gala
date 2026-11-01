@@ -15,7 +15,7 @@ import (
 
 // This file contains postfix operation and field access transformation logic extracted from expressions.go
 // Functions: transformPostfixExpr, applyPostfixSuffix, transformPrimaryExpr, transformPostfixMatchExpression,
-//            buildMatchExpressionFromClauses, transformTupleLiteral
+//            buildMatchExpressionFromClauses
 
 func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
 	// Check for match expression. B13: defensively guard the child cast — while
@@ -942,10 +942,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		t.recordBranchingCall(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}
 	return call, nil
-}
-
-func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {
-	return t.transformTupleLiteralWithExpected(exprs, nil, line...)
 }
 
 // transformTupleLiteralWithExpected lowers a tuple literal `(a, b, ...)` to

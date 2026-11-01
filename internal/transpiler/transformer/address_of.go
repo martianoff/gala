@@ -8,7 +8,9 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -20,13 +22,11 @@ import (
 // itself, or the binding is declared `var` where Go needs a *T.
 
 // immutableAddressError reports `&operand` when operand is immutable, or nil.
-// operand is the operand's lowering, used for the field paths a bare name
-// does not cover.
-func (t *galaASTTransformer) immutableAddressError(ctx *grammar.UnaryExprContext, operandCtx *grammar.UnaryExprContext, operand ast.Expr) error {
-	name, fixed := "", notFixed
-	if postfix, ok := operandCtx.PostfixExpr().(*grammar.PostfixExprContext); ok && operandCtx.UnaryOp() == nil {
-		name, fixed = t.immutablePostfixBinding(postfix)
-	}
+// at is the unary expression, operandAt its operand (a unaryExpr), on either
+// tree, and operand the operand's lowering, used for the field paths a bare
+// name does not cover. Only a diagnostic reads the operand's ANTLR text.
+func (t *galaASTTransformer) immutableAddressError(at, operandAt srcNode, operand ast.Expr) error {
+	name, fixed := t.addressOperandBinding(operandAt)
 	var why, hint string
 	switch {
 	case fixed == fixedParam:
@@ -43,11 +43,41 @@ func (t *galaASTTransformer) immutableAddressError(ctx *grammar.UnaryExprContext
 	if why == "" {
 		return nil
 	}
-	text := transpiler.SourceText(operandCtx)
-	tok := ctx.GetStart()
-	return galaerr.NewCodedSemanticError(galaerr.CodeAddressOfImmutable, tok.GetLine(), tok.GetColumn(),
+	text := transpiler.SourceText(t.ctxAt(operandAt))
+	line, col := at.start()
+	return galaerr.NewCodedSemanticError(galaerr.CodeAddressOfImmutable, line, col,
 		fmt.Sprintf("cannot take the address of %s: %s", text, why), hint,
-	).WithSpan(tok.GetColumn() + 1 + len([]rune(text)))
+	).WithSpan(col + 1 + len([]rune(text)))
+}
+
+// addressOperandBinding is immutablePostfixBinding of operand, a unaryExpr,
+// when it is a postfix expression with no unary operator, on either tree.
+func (t *galaASTTransformer) addressOperandBinding(operand srcNode) (string, fixedBinding) {
+	if !operand.node.Ok() {
+		u := operand.ctx.(*grammar.UnaryExprContext)
+		if postfix, ok := u.PostfixExpr().(*grammar.PostfixExprContext); ok && u.UnaryOp() == nil {
+			return t.immutablePostfixBinding(postfix)
+		}
+		return "", notFixed
+	}
+	u := native.UnaryExprNode{GalaNodeRef: operand.node}
+	if u.UnaryOp().Ok() {
+		return "", notFixed
+	}
+	p := u.PostfixExpr()
+	id := p.PrimaryExpr().Primary().Identifier()
+	if !id.Ok() {
+		return "", notFixed
+	}
+	pkg, name, suffixes := "", galaparser.NativeText(id.GalaNodeRef), 0
+	for s := range galaparser.NativeKids(p.GalaNodeRef, native.GalaKIND_postfixSuffix) {
+		sel := native.PostfixSuffixNode{GalaNodeRef: s}.Identifier()
+		if suffixes++; suffixes > 1 || !sel.Ok() {
+			return "", notFixed
+		}
+		pkg, name = name, galaparser.NativeText(sel.GalaNodeRef)
+	}
+	return t.immutableBinding(pkg, name)
 }
 
 // receiverAddressHint is the hint for `&recv`: a pointer receiver is already

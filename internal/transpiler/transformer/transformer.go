@@ -171,6 +171,15 @@ type galaASTTransformer struct {
 	// on the native tree. It observes and changes nothing;
 	// TestNativeWalkCases sets it to prove which tree a check read.
 	onNativeCapture func()
+	// onNativeExpr, when set, is told of each expression the native walk
+	// lowers (lowerExprNative), by its node index and its first line. It
+	// observes and changes nothing; the native walk tests set it to prove
+	// the native path ran.
+	onNativeExpr func(index, line int)
+	// onNativeShape, when set, is told of each expression shape the native
+	// walk lowers itself (nativeShape), by its first line. It observes and
+	// changes nothing; TestNativeExprWalk sets it to check each marked line.
+	onNativeShape func(line int, shape string)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
@@ -1190,7 +1199,7 @@ func (t *galaASTTransformer) namesOwnFunction(fun ast.Expr) bool {
 // A dot import of a prelude package brings in nothing the prelude does not,
 // and a default lowered from another package was written against that
 // package's imports, not this file's, so neither is ambiguous here.
-func (t *galaASTTransformer) preludeDotImportAmbiguity(ctx antlr.ParserRuleContext, name string, dot *ImportEntry, kind string) error {
+func (t *galaASTTransformer) preludeDotImportAmbiguity(at srcNode, name string, dot *ImportEntry, kind string) error {
 	if dot == nil || t.typeNameDepth > 0 || t.loweringForeignDefault() || registry.Global.IsPreludePackage(dot.PkgName) {
 		return nil
 	}
@@ -1208,7 +1217,7 @@ func (t *galaASTTransformer) preludeDotImportAmbiguity(ctx antlr.ParserRuleConte
 			break
 		}
 	}
-	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	line, col := at.start()
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeDotImportPreludeAmbiguity,
 		line, col,
