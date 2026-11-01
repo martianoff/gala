@@ -117,47 +117,37 @@ func (p postfixSrc) alone() bool {
 // parenthesized is the first element of e when e is exactly a parenthesized
 // expression list — `(e)` or a tuple literal (parenthesizedList) — and the
 // number of its elements; 0 when e is no such list.
-func (e exprSrc) parenthesized() (first exprSrc, n int) {
+// Unlike patExpr.parenthesized, it collects no elements: it runs on every
+// value lowered against a slot.
+func (t *galaASTTransformer) parenthesized(e exprSrc) (first exprSrc, n int) {
+	if !e.node.Ok() {
+		list := t.parenthesizedList(e.ctx)
+		if list == nil {
+			return exprSrc{}, 0
+		}
+		exprs := list.AllExpression()
+		if len(exprs) == 0 {
+			return exprSrc{}, 0
+		}
+		return antlrExpr(exprs[0]), len(exprs)
+	}
 	p := e.solePostfix()
 	if !p.ok() || !p.alone() {
 		return exprSrc{}, 0
 	}
-	if p.node.Ok() {
-		list := p.tupleListNode()
-		if !list.Ok() {
-			return exprSrc{}, 0
+	for el := range galaparser.NativeKids(p.tupleListNode(), native.GalaKIND_expression) {
+		if n == 0 {
+			first = nativeExpr(el)
 		}
-		for el := range galaparser.NativeKids(list, native.GalaKIND_expression) {
-			if n == 0 {
-				first = nativeExpr(el)
-			}
-			n++
-		}
-		return first, n
+		n++
 	}
-	prim, ok := p.ctx.PrimaryExpr().(*grammar.PrimaryExprContext)
-	if !ok || prim == nil {
-		return exprSrc{}, 0
-	}
-	list, ok := prim.Primary().(*grammar.PrimaryContext)
-	if !ok || list == nil {
-		return exprSrc{}, 0
-	}
-	tuple, ok := list.TupleExpressionList().(*grammar.TupleExpressionListContext)
-	if !ok || tuple == nil {
-		return exprSrc{}, 0
-	}
-	exprs := tuple.AllExpression()
-	if len(exprs) == 0 {
-		return exprSrc{}, 0
-	}
-	return antlrExpr(exprs[0]), len(exprs)
+	return first, n
 }
 
 // grouped is the expression of e when e is exactly `(x)` (groupedExpression),
 // and the zero exprSrc otherwise.
-func (e exprSrc) grouped() exprSrc {
-	if first, n := e.parenthesized(); n == 1 {
+func (t *galaASTTransformer) grouped(e exprSrc) exprSrc {
+	if first, n := t.parenthesized(e); n == 1 {
 		return first
 	}
 	return exprSrc{}
@@ -272,21 +262,28 @@ func countPlaceholders(e exprSrc) int {
 	if !e.node.Ok() {
 		return countPlaceholderUnderscoresInExpr(e.ctx)
 	}
+	return countPlaceholdersNative(e.node)
+}
+
+// countPlaceholdersNative is countPlaceholderUnderscoresInTree of the native
+// node n.
+func countPlaceholdersNative(n native.GalaNodeRef) int {
+	switch n.Kind() {
+	case native.GalaKIND_lambdaExpression, native.GalaKIND_caseClause:
+		// A nested lambda's `_` belong to its own body, and a case clause's
+		// are wildcards.
+		return 0
+	}
 	total := 0
-	e.node.Walk(func(n native.GalaNodeRef) bool {
-		switch n.Kind() {
-		case native.GalaKIND_lambdaExpression, native.GalaKIND_caseClause:
-			// A nested lambda's `_` belong to its own body, and a case
-			// clause's are wildcards.
-			return false
+	for i := range n.ChildCount() {
+		c := n.Child(i)
+		switch {
+		case !c.IsToken():
+			total += countPlaceholdersNative(c.Node())
+		case c.Terminal().GetText() == "_":
+			total++
 		}
-		for i := range n.ChildCount() {
-			if c := n.Child(i); c.IsToken() && c.Terminal().GetText() == "_" {
-				total++
-			}
-		}
-		return true
-	})
+	}
 	return total
 }
 
@@ -315,22 +312,12 @@ func escapesNative(n native.GalaNodeRef, inLoop bool) bool {
 	return false
 }
 
-// escapesConstructNative is escapesConstruct of native nodes.
-func (t *galaASTTransformer) escapesConstructNative(nodes ...native.GalaNodeRef) bool {
-	for _, n := range nodes {
-		escaping, ok := t.escapeCache[n]
-		if !ok {
-			escaping = escapesNative(n, false)
-			if t.escapeCache == nil {
-				t.escapeCache = make(map[any]bool)
-			}
-			t.escapeCache[n] = escaping
-		}
-		if escaping {
-			return true
-		}
+// escapesAt is escapesConstruct of the subtree at n, on its tree.
+func (t *galaASTTransformer) escapesAt(n srcNode) bool {
+	if n.node.Ok() {
+		return t.cachedEscape(n.node, func() bool { return escapesNative(n.node, false) })
 	}
-	return false
+	return escapesConstruct(t, n.ctx)
 }
 
 // matchEscapes reports whether a case clause of p, a match, escapesConstruct.
@@ -339,7 +326,7 @@ func (t *galaASTTransformer) matchEscapes(p postfixSrc) bool {
 		return escapesConstruct(t, p.ctx.AllCaseClause()...)
 	}
 	for c := range galaparser.NativeKids(p.node, native.GalaKIND_caseClause) {
-		if t.escapesConstructNative(c) {
+		if t.escapesAt(srcNode{node: c}) {
 			return true
 		}
 	}

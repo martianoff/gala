@@ -49,20 +49,25 @@ type hoistedValue struct {
 // it are asked about at every level of the lowering.
 func escapesConstruct[T antlr.Tree](t *galaASTTransformer, trees ...T) bool {
 	for _, tree := range trees {
-		key := any(antlr.Tree(tree))
-		escaping, ok := t.escapeCache[key]
-		if !ok {
-			escaping = escapes(tree, false)
-			if t.escapeCache == nil {
-				t.escapeCache = make(map[any]bool)
-			}
-			t.escapeCache[key] = escaping
-		}
-		if escaping {
+		if t.cachedEscape(antlr.Tree(tree), func() bool { return escapes(tree, false) }) {
 			return true
 		}
 	}
 	return false
+}
+
+// cachedEscape is the cached escape answer for key, a subtree of either tree,
+// computed by walk the first time it is asked for.
+func (t *galaASTTransformer) cachedEscape(key any, walk func() bool) bool {
+	escaping, ok := t.escapeCache[key]
+	if !ok {
+		escaping = walk()
+		if t.escapeCache == nil {
+			t.escapeCache = make(map[any]bool)
+		}
+		t.escapeCache[key] = escaping
+	}
+	return escaping
 }
 
 func escapes(tree antlr.Tree, inLoop bool) bool {

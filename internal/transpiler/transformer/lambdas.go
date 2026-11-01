@@ -118,7 +118,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // isTryThunk reports whether l is the lambda being lowered as the thunk of
 // Try(...) (see tryThunkValue).
 func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
-	return t.tryThunkLambda.ok() && l.is(t.tryThunkLambda)
+	return l.is(t.tryThunkLambda)
 }
 
 // lowerLambda lowers a lambda, on the tree it comes from (see

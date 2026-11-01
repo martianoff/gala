@@ -507,62 +507,6 @@ func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx gramma
 	return primaryExpr.(*grammar.PrimaryExprContext), argList, typeArgs
 }
 
-// getQualifiedCallPattern detects a package-qualified constructor pattern of the
-// shape `pkg.Ctor(args)` — e.g. `case acp.Acked()` or `case acp.OutcomeResult(x)`.
-// In the grammar this is a postfix expression with primary `pkg` and two
-// suffixes: a member access `.Ctor` followed by a call `(...)`. The unqualified
-// helper (getCallPatternWithTypeArgsFromExpression) treats a two-suffix postfix
-// as `Ctor[T](...)`, so it does not recognize this shape and the pattern would
-// otherwise fall through to a simple binding of `pkg`.
-//
-// Returns the primary expr for the package qualifier, the constructor name, the
-// argument list (nil for an empty call), and ok=true when the shape matches.
-func (t *galaASTTransformer) getQualifiedCallPattern(ctx grammar.IExpressionContext) (pkgPrimaryExpr *grammar.PrimaryExprContext, ctorName string, argList *grammar.ArgumentListContext, typeArgs *grammar.ExpressionListContext, ok bool) {
-	postfixCtx := t.getSinglePostfixExpr(ctx)
-	if postfixCtx == nil {
-		return nil, "", nil, nil, false
-	}
-
-	// `pkg.Ctor(args)`, or `pkg.Ctor[T](args)` with explicit type arguments.
-	suffixes := postfixCtx.AllPostfixSuffix()
-	if len(suffixes) != 2 && len(suffixes) != 3 {
-		return nil, "", nil, nil, false
-	}
-	memberSuffix := suffixes[0].(*grammar.PostfixSuffixContext)
-	callSuffix := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
-
-	// First suffix must be a member access `.Ident`.
-	if memberSuffix.Identifier() == nil {
-		return nil, "", nil, nil, false
-	}
-	ctorName = memberSuffix.Identifier().GetText()
-
-	// A middle suffix must be type arguments `[...]`.
-	if len(suffixes) == 3 {
-		typeArgsSuffix := suffixes[1].(*grammar.PostfixSuffixContext)
-		if suffixOpener(typeArgsSuffix) != "[" {
-			return nil, "", nil, nil, false
-		}
-		if el := typeArgsSuffix.ExpressionList(); el != nil {
-			typeArgs = el.(*grammar.ExpressionListContext)
-		}
-	}
-
-	// Last suffix must be a call `(...)`.
-	if callSuffix.GetChildCount() < 2 || suffixOpener(callSuffix) != "(" {
-		return nil, "", nil, nil, false
-	}
-
-	primaryExpr := postfixCtx.PrimaryExpr()
-	if primaryExpr == nil {
-		return nil, "", nil, nil, false
-	}
-	if al := callSuffix.ArgumentList(); al != nil {
-		argList = al.(*grammar.ArgumentListContext)
-	}
-	return primaryExpr.(*grammar.PrimaryExprContext), ctorName, argList, typeArgs, true
-}
-
 func (t *galaASTTransformer) getBinaryToken(op string) token.Token {
 	switch op {
 	case "||":
@@ -1322,7 +1266,7 @@ func (t *galaASTTransformer) classifyExpr(e exprSrc) exprForm {
 	if !e.ok() {
 		return exprForm{}
 	}
-	if inner := e.grouped(); inner.ok() {
+	if inner := t.grouped(e); inner.ok() {
 		return exprForm{grouped: inner}
 	}
 	if l := t.lambdaIn(e); l.ok() {
@@ -1572,7 +1516,7 @@ func (t *galaASTTransformer) isTupleLiteralFor(e exprSrc, typ transpiler.Type) b
 	if !ok || !t.isTupleTypeName(gen.Base.String()) {
 		return false
 	}
-	_, n := e.parenthesized()
+	_, n := t.parenthesized(e)
 	return n > 1 && n == len(gen.Params)
 }
 
