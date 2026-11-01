@@ -136,12 +136,14 @@ go_test(
 # gazelle:exclude collect_native_test.go
 # gazelle:exclude undefined_symbol_native_test.go
 # gazelle:exclude file_checks_native_test.go
+# gazelle:exclude recollect_test.go
 go_test(
     # keep
     name = "collect_native_test",
     srcs = [
         "collect_native_test.go",
         "file_checks_native_test.go",
+        "recollect_test.go",
         "undefined_symbol_native_test.go",
     ],
     data = [
