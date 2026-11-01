@@ -151,10 +151,13 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 		return nil, false
 	}
 	ft := signatureType(mm.ParamTypes, mm.ReturnType, mm.GoResults)
-	if len(meta.TypeParams) == 0 {
+	gen, isGeneric := recvType.(transpiler.GenericType)
+	if len(meta.TypeParams) == 0 && !isGeneric {
 		return ft, true
 	}
-	gen, isGeneric := recvType.(transpiler.GenericType)
+	// A generic receiver whose metadata names no type parameters, such as a
+	// Go type a GALA file declares methods on, fails here too: its type
+	// arguments have nothing to substitute.
 	if !isGeneric || len(gen.Params) != len(meta.TypeParams) {
 		return nil, false
 	}

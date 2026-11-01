@@ -1,0 +1,10 @@
+package cross_file_method_default_lib
+
+import . "martianoff/gala/collection_immutable"
+
+// Label names the box. Its default uses ArrayOf, which only this file
+// imports: a default resolves through the file that declares it.
+func (b Box) Label(parts int = ArrayOf("x", "y").Size()) string = s"box-${b.N}-${parts}"
+
+// Describe calls Label from the file that declares it, with the default.
+func Describe(b Box) string = b.Label()

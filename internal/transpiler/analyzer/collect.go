@@ -350,6 +350,7 @@ func (a *galaAnalyzer) collectFileFuncs(sourceFile *grammar.SourceFileContext, f
 						ReceiverName:    recvCtx.Identifier().GetText(),
 						PointerReceiver: isPointerReceiver(recvCtx),
 						PtrReceiver:     isPtrReceiver(recvCtx),
+						DefinedIn:       filePath,
 					}
 					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
 
@@ -411,12 +412,12 @@ func (a *galaAnalyzer) collectFileFuncs(sourceFile *grammar.SourceFileContext, f
 							// against a function definition).
 							methodMeta.IsGeneric = methodMeta.IsGeneric || existing.IsGeneric
 						}
-						methodMeta.DefinedIn = filePath
 						typeMeta.Methods[methodName] = methodMeta
 					} else {
-						// Even if type is not in this file, we might want to collect it?
-						// But for now let's stick to what's requested.
-						// We can create a placeholder if needed.
+						// The type is not known yet: another file declares
+						// it, and the sibling pass reads that file later. A
+						// placeholder holds the method until then; the
+						// method's DefinedIn is this file all the same.
 						richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
 							Name:    baseType,
 							Package: pkgName,
@@ -426,10 +427,7 @@ func (a *galaAnalyzer) collectFileFuncs(sourceFile *grammar.SourceFileContext, f
 					}
 					// Record the declaration so the sibling pass can detect a
 					// second definition of this method in another file of the
-					// package. This also catches a duplicate within this file
-					// when the receiver type is declared in a sibling: the
-					// check above sees only a placeholder entry whose
-					// DefinedIn is still empty, and would let it through.
+					// package.
 					if prev, dup := decls.recordMethod(fullBaseType+"."+methodName, filePath, methodMeta.Pos); dup {
 						return methodRedefinedError(methodName, baseType, pkgName,
 							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),

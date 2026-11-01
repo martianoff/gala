@@ -60,6 +60,7 @@ go_test(
         "go_results_test.go",
         "hover_chain_test.go",
         "hover_coverage_test.go",
+        "hover_cross_file_method_test.go",
         "hover_internal_test.go",
         "hover_variable_test.go",
         "hover_void_test.go",
