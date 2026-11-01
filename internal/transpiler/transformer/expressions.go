@@ -1412,7 +1412,7 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// generic calls that read it match its structure (`Try[Email]` for
 	// `type Checked Try[Email]`) to bind their type arguments.
 	if hint := t.followAliasChain(s.typ); t.consumesSlotType(exprCtx, hint) {
-		release := t.expectedArgTypes.pushFor(hint, t.barePostfix(exprCtx))
+		release := t.expectedArgTypes.pushFor(hint, t.ownerOf(t.barePostfix(exprCtx)))
 		defer release()
 	}
 	expr, err := t.transformExpression(exprCtx)

@@ -49,7 +49,7 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 	suffixes := ctx.AllPostfixSuffix()
 	release := func() {}
 	if len(suffixes) > 0 {
-		release = t.expectedArgTypes.withhold(ctx)
+		release = t.expectedArgTypes.withhold(t.ownerOf(ctx))
 	}
 	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	if err != nil {
@@ -76,12 +76,8 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 }
 
 func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
-	if suffix.Identifier() != nil {
-		name := suffix.Identifier().GetText()
-		if err := t.checkGoResultMember(base, name, suffix); err != nil {
-			return nil, err
-		}
-		return t.resolveFieldAccess(base, suffix)
+	if id := suffix.Identifier(); id != nil {
+		return t.lowerMember(base, memberSrc{name: id.GetText(), nameAt: srcNode{ctx: id}, suffix: srcNode{ctx: suffix}})
 	}
 
 	childCount := suffix.GetChildCount()
@@ -91,11 +87,20 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 			return t.applyGoCallSuffix(base, suffix)
 		}
 		if firstChild == "[" {
-			return t.resolveIndexAccess(base, suffix)
+			return t.resolveIndexAccess(base, antlrIndex(suffix))
 		}
 	}
 
 	return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "unknown postfix suffix type")
+}
+
+// lowerMember lowers the member access m on base: a member a Go call's Try
+// or Tuple does not have is GALA-E0049 (checkGoResultMember).
+func (t *galaASTTransformer) lowerMember(base ast.Expr, m memberSrc) (ast.Expr, error) {
+	if err := t.checkGoResultMember(base, m.name, m.suffix); err != nil {
+		return nil, err
+	}
+	return t.resolveFieldAccess(base, m)
 }
 
 // applyGoCallSuffix applies a call suffix, then presents a call to a Go
@@ -143,11 +148,11 @@ func receiverSource(suffix *grammar.PostfixSuffixContext) (from, to antlr.Parser
 	return from, to, strings.Join(parts, "")
 }
 
-// resolveFieldAccess handles member access `base.name` (the suffix) with
-// automatic Immutable unwrapping.
-func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
-	selName := suffix.Identifier().GetText()
-	line, col := suffix.Identifier().GetStart().GetLine(), suffix.Identifier().GetStart().GetColumn()
+// resolveFieldAccess handles member access `base.name` (m) with automatic
+// Immutable unwrapping.
+func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast.Expr, error) {
+	selName := m.name
+	line, col := m.nameAt.start()
 	// `pkg.Name` naming an imported package-level binding is read at once, as
 	// transformPrimary reads a same-package one: a val types as Immutable[T]
 	// (inferSelectorExprType), so unwrapImmutable adds the .Get().
@@ -178,7 +183,7 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, suffix *grammar.P
 		if err := t.goOnlyFieldError(xType, selName, line, col); err != nil {
 			return nil, err
 		}
-		if err := t.checkPtrReceiver(base, xType, selName, suffix); err != nil {
+		if err := t.checkPtrReceiver(base, xType, selName, m); err != nil {
 			return nil, err
 		}
 		var err error
@@ -410,18 +415,17 @@ func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Typ
 }
 
 // resolveIndexAccess handles index/subscript expressions with Immutable unwrapping.
-func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
-	exprList := suffix.ExpressionList()
-	if exprList == nil {
-		return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "index expression requires expression list")
+func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast.Expr, error) {
+	if !ix.hasList {
+		return nil, semanticErrorAtStart(ix.at, "index expression requires expression list")
 	}
 	if res := t.goResultOf(base); res != nil {
-		return nil, t.goResultMisuse(res, "it cannot be indexed", suffix)
+		return nil, t.goResultMisuse(res, "it cannot be indexed", t.ctxAt(ix.at))
 	}
 	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
-		return nil, t.typeParamMisuseError(suffix, id.Name, "takes no type arguments")
+		return nil, t.typeParamMisuseErrorAt(ix.at, id.Name, "takes no type arguments")
 	}
-	if err := t.checkVariantTypeArgs(base, exprList.AllExpression()); err != nil {
+	if err := t.checkVariantTypeArgs(base, ix.exprs); err != nil {
 		return nil, err
 	}
 	// `F[T]` naming a generic function is its instantiation, not an index of
@@ -439,9 +443,13 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 		t.typeNameDepth++
 		defer func() { t.typeNameDepth-- }()
 	}
-	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
-	if err != nil {
-		return nil, err
+	indices := make([]ast.Expr, 0, len(ix.exprs))
+	for _, e := range ix.exprs {
+		index, err := t.lowerExpr(e)
+		if err != nil {
+			return nil, err
+		}
+		indices = append(indices, index)
 	}
 	// A `Ptr[T]` type argument (`None[Ptr[T]]()`) is the Go type `*T`.
 	if len(indices) == 1 && t.namesPtrType(base) {
@@ -454,8 +462,8 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	// whose constraint needs a Ptr receiver.
 	if len(t.ptrReceiverMethods) > 0 {
 		if o, ok := t.writtenTypeArgOwner(base, genericMethod); ok {
-			at := func(i int) antlr.ParserRuleContext { return exprList.Expression(i) }
-			if err := t.checkPtrWrittenTypeArgs(o, indices, at); err != nil {
+			at := func(i int) srcNode { return ix.exprs[i].at() }
+			if err := t.checkPtrWrittenTypeArgsAt(o, indices, at); err != nil {
 				return nil, err
 			}
 		}

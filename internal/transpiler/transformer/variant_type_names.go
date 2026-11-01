@@ -164,15 +164,17 @@ func isFuncTypeSignature(p *grammar.ParameterContext) bool {
 // argument of base, as in `ArrayOf[Circle](...)`. The grammar reads type
 // arguments as an index, so a variant name is reported only when base cannot
 // be indexed: a function, type or method rather than a value in scope.
-func (t *galaASTTransformer) checkVariantTypeArgs(base ast.Expr, args []grammar.IExpressionContext) error {
+func (t *galaASTTransformer) checkVariantTypeArgs(base ast.Expr, args []exprSrc) error {
 	for _, arg := range args {
-		if !t.mayNameVariantType(arg) {
+		text := arg.text()
+		if !t.mayNameVariantTypeText(text) {
 			continue
 		}
 		if !t.isInstantiable(base) {
 			return nil
 		}
-		if err := t.variantTypeArgError(arg); err != nil {
+		line, col := arg.at().start()
+		if err := t.variantTypeArgErrorAt(text, line, col); err != nil {
 			return err
 		}
 	}
@@ -195,7 +197,13 @@ func variantTypeArgSplit(text string) (ptr, name, typeArgs string) {
 // spelled like a sealed variant and is not a type parameter or a value in
 // scope of that name.
 func (t *galaASTTransformer) mayNameVariantType(arg grammar.IExpressionContext) bool {
-	_, name, _ := variantTypeArgSplit(arg.GetText())
+	return t.mayNameVariantTypeText(arg.GetText())
+}
+
+// mayNameVariantTypeText is mayNameVariantType of an argument written as
+// text (GetText).
+func (t *galaASTTransformer) mayNameVariantTypeText(text string) bool {
+	_, name, _ := variantTypeArgSplit(text)
 	qualifier, bare := splitPackageQualifier(name)
 	if !t.variantNames[bare] {
 		return false
@@ -210,9 +218,15 @@ func (t *galaASTTransformer) mayNameVariantType(arg grammar.IExpressionContext) 
 // variantTypeArgError returns the GALA-E0061 for an explicit type argument
 // that names a sealed variant, or nil.
 func (t *galaASTTransformer) variantTypeArgError(arg grammar.IExpressionContext) error {
-	ptr, name, typeArgs := variantTypeArgSplit(arg.GetText())
 	start := arg.GetStart()
-	return t.variantTypeError(name, typeArgs, start.GetLine(), start.GetColumn()+len(ptr))
+	return t.variantTypeArgErrorAt(arg.GetText(), start.GetLine(), start.GetColumn())
+}
+
+// variantTypeArgErrorAt is variantTypeArgError of an argument written as text
+// (GetText) from line and col.
+func (t *galaASTTransformer) variantTypeArgErrorAt(text string, line, col int) error {
+	ptr, name, typeArgs := variantTypeArgSplit(text)
+	return t.variantTypeError(name, typeArgs, line, col+len(ptr))
 }
 
 // isInstantiable reports whether base, followed by `[...]`, is an

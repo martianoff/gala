@@ -237,7 +237,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 						// left out is reported.
 						// The slot's type binds a generic case's type
 						// parameters, as for a call with arguments.
-						pending := t.expectedArgTypes.takeFor(callOwner(suffix))
+						pending := t.expectedArgTypes.takeFor(t.callOwner(suffix))
 						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, pending,
 							suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 						if err != nil || handled {
@@ -307,7 +307,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
 				// Taken before the defaults are lowered, as a call with
 				// arguments takes it, so no default sees it.
-				pending := t.expectedArgTypes.takeFor(callOwner(suffix))
+				pending := t.expectedArgTypes.takeFor(t.callOwner(suffix))
 				handled, expr, err := t.tryTransformGenericMethodAsFunction(nil, receiver, method, typeArgs, recvType, lookupBaseName, pending,
 					suffix)
 				if err != nil || handled {
@@ -329,7 +329,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// any call (`parse()` for `parse[T any](s string = "")`).
 				// The slot type is the call's, taken before its defaults are
 				// lowered so none of them sees it.
-				pending := t.expectedArgTypes.takeFor(callOwner(suffix))
+				pending := t.expectedArgTypes.takeFor(t.callOwner(suffix))
 				// Every argument is a default, so the type parameters the
 				// defaults spell are bound by the call's explicit type
 				// arguments (`describe[int]()`) and, for the rest, by the
@@ -370,7 +370,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				if methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
 					// The call takes no type from its slot; its defaults
 					// do not either.
-					t.expectedArgTypes.takeFor(callOwner(suffix))
+					t.expectedArgTypes.takeFor(t.callOwner(suffix))
 					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 					if err != nil {
 						return nil, err

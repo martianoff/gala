@@ -153,10 +153,11 @@ func ptrOf(ptr transpiler.PointerType) string {
 // checkPtrReceiver rejects selecting a method declared on a `Ptr[T]`
 // receiver — a call `p.M()` or a method value `p.M` — on a pointer that may be
 // nil (GALA-E0080): the receiver fills a Ptr slot. recv is the lowered
-// receiver and recvType its type; suffix is the member access.
-func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, suffix *grammar.PostfixSuffixContext) error {
+// receiver and recvType its type; m is the member access, whose receiver is
+// read on ANTLR's tree only to report the error.
+func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, m memberSrc) error {
 	return t.checkPtrReceiverAt(recv, recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
-		return receiverSource(suffix)
+		return receiverSource(t.ctxAt(m.suffix).(*grammar.PostfixSuffixContext))
 	})
 }
 
