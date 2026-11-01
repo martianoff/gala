@@ -1671,9 +1671,9 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 // armSlot is the slot the match fills (zero when none); an
 // expression body is lowered against it (see lowerAgainst).
 func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
-	if exprCtx := s.expr(t); exprCtx != nil {
+	if e := s.exprSrc(); e.ok() {
 		// `case x => break` runs loop control; the arm has no value.
-		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+		if bs, ok := t.lowerLoopControl(e); ok {
 			return []ast.Stmt{bs}, transpiler.VoidType{}, nil
 		}
 		// In a statement match the arm's value is discarded, so its body is a
@@ -1681,17 +1681,17 @@ func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([
 		// if-expression runs as a statement (its own arms may hold loop
 		// control), and a plain value is evaluated but not used.
 		if armSlot.discarded {
-			stmt, err := t.lowerExpressionStatement(exprCtx, functionDiscardHint)
+			stmt, err := t.lowerExprStatement(e, functionDiscardHint)
 			if err != nil {
 				return nil, nil, err
 			}
 			return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
 		}
 		// Otherwise the body is the arm's value: wrap it in a return.
-		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+		if err := t.checkForbiddenStatementKeywordSrc(e); err != nil {
 			return nil, nil, err
 		}
-		expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), armSlot, true)
+		expr, err := t.lowerResultAgainst(e, armSlot, true)
 		if err != nil {
 			return nil, nil, err
 		}

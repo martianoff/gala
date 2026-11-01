@@ -1303,7 +1303,7 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 // used, with hint. The body of an expression lambda that returns nothing is
 // lowered the same way.
 func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpressionContext, hint string) (*ast.BlockStmt, error) {
-	stmt, err := t.lowerExpressionStatement(exprCtx, hint)
+	stmt, err := t.lowerExprStatement(antlrExpr(exprCtx), hint)
 	if err != nil {
 		return nil, err
 	}
@@ -1359,7 +1359,7 @@ func (t *galaASTTransformer) isUnwrittenValRead(exprCtx grammar.IExpressionConte
 // retType is the declared result type; a void function's body is
 // transformVoidExpressionBody's.
 func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, retType ast.Expr) (*ast.BlockStmt, error) {
-	expr, err := t.lowerResultAgainst(t.exprOf(exprCtx), typedSlot(t.astTypeToTranspilerType(retType)), false)
+	expr, err := t.lowerResultAgainst(antlrExpr(exprCtx), typedSlot(t.astTypeToTranspilerType(retType)), false)
 	if err != nil {
 		return nil, err
 	}

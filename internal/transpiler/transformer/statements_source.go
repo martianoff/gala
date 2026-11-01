@@ -16,20 +16,24 @@ import (
 // each of its readers has an ANTLR half and a native half that give the same
 // value for the same node, so blocks and statements are lowered once, the
 // same way, whichever tree they come from (lowerBlock, lowerStatement,
-// lowerIfStatement, lowerForStatement, lowerSimpleStatement). A condition,
-// a range operand and an expression statement are read as exprSrc values
-// (expressions_source.go); the expressions other readers hand on as
-// contexts find their native node again when lowered (transformExpression).
-// Types and the bind chains below a statement are read on ANTLR's tree: the
-// native readers cross to it with crossTo.
+// lowerIfStatement, lowerForStatement, lowerSimpleStatement), and so are the
+// `bind` chains (bind.go) and the blocks of if-expression branches. The
+// values of returns, `use` declarations, assignments, increments, short
+// variable declarations and loop conditions are read as exprSrc and
+// exprListSrc values (expressions_source.go, exprlist_source.go). What is
+// still read on ANTLR's tree, crossed to with crossTo or ctxAt, is a nested
+// function's signature, an assignment's values (lowerDeclarationInitializers),
+// a match's subject (lowered from its postfix expression, postfixSrc.antlr),
+// the val read checkValueUsedHint looks for (isUnwrittenValRead) and the
+// place a `bind` clause's nil-receiver error is reported at
+// (bindClauseReceiver).
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
 // declarations_native.go). A native block is reached from a function
-// declaration's body (readFuncDeclNative), from a lambda's (lambdas_source.go)
-// and from the if and for statements inside them: a match arm's or an
-// if-expression branch's block is below an expression whose statements are
-// still read on ANTLR's tree.
+// declaration's body (readFuncDeclNative), from a lambda's (lambdas_source.go),
+// from a match arm's (match_source.go), from an if-expression branch's
+// (ifBranchSrc.block) and from the if and for statements inside them.
 
 // blockSrc is a block.
 type blockSrc struct {
@@ -108,22 +112,25 @@ func (b blockSrc) stop() (line, col int, ok bool) {
 
 // is reports whether b is the block o, a lambda's body (see
 // returnSlot.body); false when o is the zero blockSrc. The two can be on
-// different trees (a match arm's ANTLR block below a native lambda), so a
-// native side is compared by its context on ANTLR's tree.
+// different trees (a block a caller still reads on ANTLR's tree, such as a
+// partial function's arm, below a native lambda), so an ANTLR side is
+// compared by its node on the native tree when the walk reads that tree.
 func (b blockSrc) is(t *galaASTTransformer, o blockSrc) bool {
-	if b.node.Ok() && o.node.Ok() {
-		return b.node == o.node
+	bn, on := b.nativeNode(t), o.nativeNode(t)
+	if bn.Ok() || on.Ok() {
+		return bn.Ok() && bn == on
 	}
-	ctx := b.antlr(t)
-	return ctx != nil && ctx == o.antlr(t)
+	return b.ctx != nil && b.ctx == o.ctx
 }
 
-// antlr is b's context on ANTLR's tree, and nil for the zero blockSrc.
-func (b blockSrc) antlr(t *galaASTTransformer) *grammar.BlockContext {
+// nativeNode is b's node on the native tree, and no node when the walk reads
+// ANTLR's tree or b is the zero blockSrc.
+func (b blockSrc) nativeNode(t *galaASTTransformer) native.GalaNodeRef {
 	if b.node.Ok() {
-		return crossTo[*grammar.BlockContext](t, b.node)
+		return b.node
 	}
-	return b.ctx
+	n, _ := t.nativeNodeOf(b.ctx, native.GalaKIND_block)
+	return n
 }
 
 // stmtKind is what a statement is: a `return`, or the kind of its
@@ -273,24 +280,6 @@ func (s stmtSrc) line() (int, bool) {
 	return 0, false
 }
 
-// antlr is s's context: where a lowering that reads ANTLR's tree whole (a
-// bind chain) takes it over.
-func (s stmtSrc) antlr(t *galaASTTransformer) *grammar.StatementContext {
-	if s.at.node.Ok() {
-		return crossTo[*grammar.StatementContext](t, s.at.node)
-	}
-	return s.at.ctx.(*grammar.StatementContext)
-}
-
-// antlrStmts is the contexts of stmts (see stmtSrc.antlr).
-func antlrStmts(t *galaASTTransformer, stmts []stmtSrc) []grammar.IStatementContext {
-	out := make([]grammar.IStatementContext, len(stmts))
-	for i, s := range stmts {
-		out[i] = s.antlr(t)
-	}
-	return out
-}
-
 // ifStmt is s's if-statement; the zero ifSrc when s is none.
 func (s stmtSrc) ifStmt() ifSrc {
 	switch {
@@ -314,21 +303,53 @@ func (s stmtSrc) forStmt() forSrc {
 }
 
 // valueExpr is the expression of s when s is an expression statement, and
-// nil otherwise.
-func (s stmtSrc) valueExpr(t *galaASTTransformer) grammar.IExpressionContext {
-	return s.simpleS.expr(t)
-}
+// the zero exprSrc otherwise.
+func (s stmtSrc) valueExpr() exprSrc { return s.simpleS.exprSrc() }
 
-// returnExpr is the value of s, a return statement, and nil when it has
-// none.
-func (s stmtSrc) returnExpr(t *galaASTTransformer) grammar.IExpressionContext {
+// returnExpr is the value of s, a return statement, and the zero exprSrc
+// when it has none.
+func (s stmtSrc) returnExpr() exprSrc {
 	if s.kid.node.Ok() {
 		if e := (native.ReturnStatementNode{GalaNodeRef: s.kid.node}).Expression(); e.Ok() {
-			return crossTo[*grammar.ExpressionContext](t, e.GalaNodeRef)
+			return nativeExpr(e.GalaNodeRef)
 		}
-		return nil
+		return exprSrc{}
 	}
-	return s.kid.ctx.(*grammar.ReturnStatementContext).Expression()
+	if e := s.kid.ctx.(*grammar.ReturnStatementContext).Expression(); e != nil {
+		return antlrExpr(e)
+	}
+	return exprSrc{}
+}
+
+// bindClause reads s, a bind or an also declaration.
+func (s stmtSrc) bindClause() bindEntry {
+	if n := s.kid.node; n.Ok() {
+		var (
+			id   native.IdentifierNode
+			expr native.ExpressionNode
+			typ  native.TypeNode
+		)
+		if s.kind == stmtBind {
+			d := native.BindDeclarationNode{GalaNodeRef: n}
+			id, expr, typ = d.Identifier(), d.Expression(), d.Type_()
+		} else {
+			d := native.AlsoDeclarationNode{GalaNodeRef: n}
+			id, expr, typ = d.Identifier(), d.Expression(), d.Type_()
+		}
+		e := bindEntry{name: galaparser.NativeText(id.GalaNodeRef), expr: nativeExpr(expr.GalaNodeRef), at: s.kid}
+		if typ.Ok() {
+			e.typ = nativeType(typ)
+		}
+		return e
+	}
+	e := bindEntry{at: s.kid}
+	switch d := s.kid.ctx.(type) {
+	case *grammar.BindDeclarationContext:
+		e.name, e.expr, e.typ = d.Identifier().GetText(), antlrExpr(d.Expression()), antlrType(d.Type_())
+	case *grammar.AlsoDeclarationContext:
+		e.name, e.expr, e.typ = d.Identifier().GetText(), antlrExpr(d.Expression()), antlrType(d.Type_())
+	}
+	return e
 }
 
 // hoistsInitializer reports whether the value of s may be lowered as
@@ -349,24 +370,24 @@ func (s stmtSrc) hoistsInitializer() bool {
 }
 
 // use reads s, a use declaration.
-func (s stmtSrc) use(t *galaASTTransformer) useDecl {
+func (s stmtSrc) use() useDecl {
 	if s.kid.node.Ok() {
 		n := native.UseDeclarationNode{GalaNodeRef: s.kid.node}
-		d := useDecl{name: n.Identifier().GetText(), expr: crossTo[*grammar.ExpressionContext](t, n.Expression().GalaNodeRef)}
+		d := useDecl{name: n.Identifier().GetText(), expr: nativeExpr(n.Expression().GalaNodeRef)}
 		if typ := n.Type_(); typ.Ok() {
 			d.typ = nativeType(typ)
 		}
 		return d
 	}
 	ctx := s.kid.ctx.(*grammar.UseDeclarationContext)
-	return useDecl{name: ctx.Identifier().GetText(), typ: antlrType(ctx.Type_()), expr: ctx.Expression()}
+	return useDecl{name: ctx.Identifier().GetText(), typ: antlrType(ctx.Type_()), expr: antlrExpr(ctx.Expression())}
 }
 
 // useDecl is `use name (typ) = expr`.
 type useDecl struct {
 	name string
 	typ  typeSrc // no type when it has no annotation
-	expr grammar.IExpressionContext
+	expr exprSrc
 }
 
 // binding reads s, a local val or var declaration.
@@ -484,12 +505,6 @@ func nativeSimple(n native.GalaNodeRef) simpleSrc {
 // ok reports whether s is a simple statement, not the zero simpleSrc.
 func (s simpleSrc) ok() bool { return s.at.ok() }
 
-// expr is the expression of s, an expression statement, and nil when s is
-// another kind.
-func (s simpleSrc) expr(t *galaASTTransformer) grammar.IExpressionContext {
-	return s.exprSrc().antlr(t)
-}
-
 // exprSrc is the expression of s, an expression statement, and the zero
 // exprSrc when s is another kind.
 func (s simpleSrc) exprSrc() exprSrc {
@@ -518,14 +533,14 @@ func (s simpleSrc) assignsOneName() bool {
 // its operand, and whether it decrements.
 type incDecDecl struct {
 	at   srcNode
-	expr grammar.IExpressionContext
+	expr exprSrc
 	dec  bool
 }
 
 // incDec reads s, an increment or decrement.
-func (s simpleSrc) incDec(t *galaASTTransformer) incDecDecl {
+func (s simpleSrc) incDec() incDecDecl {
 	if n := s.kid.node; n.Ok() {
-		d := incDecDecl{at: s.kid, expr: crossTo[*grammar.ExpressionContext](t, native.IncDecStmtNode{GalaNodeRef: n}.Expression().GalaNodeRef)}
+		d := incDecDecl{at: s.kid, expr: nativeExpr(native.IncDecStmtNode{GalaNodeRef: n}.Expression().GalaNodeRef)}
 		if n.ChildCount() >= 2 {
 			if c := n.Child(1); c.IsToken() && c.Terminal().GetText() == "--" {
 				d.dec = true
@@ -534,7 +549,7 @@ func (s simpleSrc) incDec(t *galaASTTransformer) incDecDecl {
 		return d
 	}
 	ctx := s.kid.ctx.(*grammar.IncDecStmtContext)
-	d := incDecDecl{at: s.kid, expr: ctx.Expression()}
+	d := incDecDecl{at: s.kid, expr: antlrExpr(ctx.Expression())}
 	if ctx.GetChildCount() >= 2 {
 		if term, ok := ctx.GetChild(1).(antlr.TerminalNode); ok && term.GetText() == "--" {
 			d.dec = true
@@ -547,26 +562,26 @@ func (s simpleSrc) incDec(t *galaASTTransformer) incDecDecl {
 // operator as written and its values.
 type assignDecl struct {
 	at       srcNode
-	lhs, rhs *grammar.ExpressionListContext
+	lhs, rhs exprListSrc
 	op       string
 }
 
 // assign reads s, an assignment.
-func (s simpleSrc) assign(t *galaASTTransformer) assignDecl {
+func (s simpleSrc) assign() assignDecl {
 	if n := s.kid.node; n.Ok() {
 		return assignDecl{
 			at:  s.kid,
-			lhs: crossTo[*grammar.ExpressionListContext](t, n.Child(0).Node()),
+			lhs: nativeExprList(n.Child(0).Node()),
 			op:  n.Child(1).Terminal().GetText(),
-			rhs: crossTo[*grammar.ExpressionListContext](t, n.Child(2).Node()),
+			rhs: nativeExprList(n.Child(2).Node()),
 		}
 	}
 	ctx := s.kid.ctx.(*grammar.AssignmentContext)
 	return assignDecl{
 		at:  s.kid,
-		lhs: ctx.GetChild(0).(*grammar.ExpressionListContext),
+		lhs: antlrExprList(ctx.GetChild(0).(*grammar.ExpressionListContext)),
 		op:  ctx.GetChild(1).(antlr.TerminalNode).GetText(),
-		rhs: ctx.GetChild(2).(*grammar.ExpressionListContext),
+		rhs: antlrExprList(ctx.GetChild(2).(*grammar.ExpressionListContext)),
 	}
 }
 
@@ -575,19 +590,19 @@ func (s simpleSrc) assign(t *galaASTTransformer) assignDecl {
 type shortVarDecl struct {
 	at    srcNode
 	names []declName
-	exprs *grammar.ExpressionListContext
+	exprs exprListSrc
 	// blankHint is GALA-E0060's hint when the names are a lone `_`.
 	blankHint string
 }
 
 // shortVar reads s, a short variable declaration.
-func (s simpleSrc) shortVar(t *galaASTTransformer) shortVarDecl {
+func (s simpleSrc) shortVar() shortVarDecl {
 	if n := s.kid.node; n.Ok() {
 		sv := native.ShortVarDeclNode{GalaNodeRef: n}
 		d := shortVarDecl{
 			at:    s.kid,
 			names: nativeDeclNames(sv.IdentifierList().GalaNodeRef),
-			exprs: crossTo[*grammar.ExpressionListContext](t, sv.ExpressionList().GalaNodeRef),
+			exprs: nativeExprList(sv.ExpressionList().GalaNodeRef),
 		}
 		if isLoneBlank(d.names) {
 			d.blankHint = nativeBlankDeclarationHint(n, false)
@@ -598,7 +613,7 @@ func (s simpleSrc) shortVar(t *galaASTTransformer) shortVarDecl {
 	d := shortVarDecl{
 		at:    s.kid,
 		names: ctxDeclNames(ctx.IdentifierList()),
-		exprs: ctx.ExpressionList().(*grammar.ExpressionListContext),
+		exprs: antlrExprList(ctx.ExpressionList().(*grammar.ExpressionListContext)),
 	}
 	if isLoneBlank(d.names) {
 		d.blankHint = blankDeclarationHint(ctx)
@@ -741,7 +756,7 @@ type rangeDecl struct {
 }
 
 // rangeClause reads s's range clause, and false when s has none.
-func (s forSrc) rangeClause(t *galaASTTransformer) (rangeDecl, bool) {
+func (s forSrc) rangeClause() (rangeDecl, bool) {
 	if s.node.Ok() {
 		rc := s.native().RangeClause()
 		if !rc.Ok() {
@@ -777,10 +792,11 @@ func (s forSrc) rangeClause(t *galaASTTransformer) (rangeDecl, bool) {
 }
 
 // forClauseDecl is `for init; cond; post`: its init and post statements (the
-// zero simpleSrc when omitted) and its condition (nil when omitted).
+// zero simpleSrc when omitted) and its condition (the zero exprSrc when
+// omitted).
 type forClauseDecl struct {
 	init, post simpleSrc
-	cond       grammar.IExpressionContext
+	cond       exprSrc
 }
 
 // clause reads s's for clause, and false when s has none.
@@ -789,7 +805,7 @@ type forClauseDecl struct {
 // counting the `;` separators that precede each one rather than by their
 // position in the list: nothing before the first separator is the init,
 // anything after the second is the post.
-func (s forSrc) clause(t *galaASTTransformer) (forClauseDecl, bool) {
+func (s forSrc) clause() (forClauseDecl, bool) {
 	if s.node.Ok() {
 		fc := s.native().ForClause()
 		if !fc.Ok() {
@@ -797,7 +813,7 @@ func (s forSrc) clause(t *galaASTTransformer) (forClauseDecl, bool) {
 		}
 		var d forClauseDecl
 		if e := fc.Expression(); e.Ok() {
-			d.cond = crossTo[*grammar.ExpressionContext](t, e.GalaNodeRef)
+			d.cond = nativeExpr(e.GalaNodeRef)
 		}
 		semis := 0
 		for i := range fc.ChildCount() {
@@ -822,7 +838,10 @@ func (s forSrc) clause(t *galaASTTransformer) (forClauseDecl, bool) {
 	if !ok || fc == nil {
 		return forClauseDecl{}, false
 	}
-	d := forClauseDecl{cond: fc.Expression()}
+	var d forClauseDecl
+	if e := fc.Expression(); e != nil {
+		d.cond = antlrExpr(e)
+	}
 	semis := 0
 	for _, child := range fc.GetChildren() {
 		switch node := child.(type) {
@@ -839,4 +858,21 @@ func (s forSrc) clause(t *galaASTTransformer) (forClauseDecl, bool) {
 		}
 	}
 	return d, true
+}
+
+// text is GetText of n: its tokens' text, joined.
+func (n srcNode) text() string {
+	if n.node.Ok() {
+		return galaparser.NativeText(n.node)
+	}
+	return n.ctx.GetText()
+}
+
+// noteNativeStmt tells the onNativeStmt hook, when set, that the walk lowers
+// s, as it starts to: each place that lowers a statement of a block (a
+// block's, a `bind` chain's, an if-expression branch's) calls it.
+func (t *galaASTTransformer) noteNativeStmt(s stmtSrc) {
+	if t.onNativeStmt != nil && s.at.node.Ok() {
+		t.onNativeStmt(s.at.node.Index(), int(s.at.node.Start().Line))
+	}
 }

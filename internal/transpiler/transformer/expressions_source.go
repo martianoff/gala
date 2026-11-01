@@ -27,8 +27,9 @@ import (
 // (lambdas_source.go), a partial function to transformPartialFunctionLiteral
 // (partialSrc) and a composite literal to transformCompositeLiteral
 // (compositeSrc). What it does not cover yet it hands to ANTLR's tree with
-// crossTo: a postfix expression with a match and the blocks of an
-// if-expression's branches. Each lowering below takes the value it reads and
+// crossTo: a postfix expression with a match. The blocks of an
+// if-expression's branches are lowered on the native tree
+// (lowerIfExprBranchBlock). Each lowering below takes the value it reads and
 // is shared with the ANTLR walk, so the two give the same Go.
 //
 // The native readers dispatch with Kind() and read children through the rule
@@ -57,6 +58,16 @@ func nativeExpr(n native.GalaNodeRef) exprSrc {
 	return exprSrc{node: n}
 }
 
+// onNative is e on the native tree when the walk reads it (exprOf): an
+// expression of a block a caller still reads on ANTLR's tree is lowered on
+// its node.
+func (t *galaASTTransformer) onNative(e exprSrc) exprSrc {
+	if e.node.Ok() || e.ctx == nil {
+		return e
+	}
+	return t.exprOf(e.ctx)
+}
+
 // ok reports whether e is an expression, not the zero exprSrc.
 func (e exprSrc) ok() bool { return e.node.Ok() || e.ctx != nil }
 
@@ -69,12 +80,7 @@ func (e exprSrc) at() srcNode {
 }
 
 // text is GetText of e.
-func (e exprSrc) text() string {
-	if e.node.Ok() {
-		return galaparser.NativeText(e.node)
-	}
-	return e.ctx.GetText()
-}
+func (e exprSrc) text() string { return e.at().text() }
 
 // antlr is e's context: where a lowering that reads ANTLR's tree takes it
 // over. nil for the zero exprSrc.
@@ -108,30 +114,21 @@ func (e exprSrc) soleToken() (text string, line, col int, ok bool) {
 	return start.GetText(), start.GetLine(), start.GetColumn(), true
 }
 
-// bareName is the name e is, with no operator, suffix or call around it
-// (a `match` may follow it), and the position e starts at; "" when e is
-// something else.
-func (e exprSrc) bareName(t *galaASTTransformer) (name string, line, col int) {
-	if e.node.Ok() {
-		p := galaparser.NativeSolePostfixExpr(native.ExpressionNode{GalaNodeRef: e.node})
-		if !p.Ok() {
-			return "", 0, 0
-		}
-		for range galaparser.NativeKids(p.GalaNodeRef, native.GalaKIND_postfixSuffix) {
-			return "", 0, 0
-		}
-		id := p.PrimaryExpr().Primary().Identifier()
-		if !id.Ok() {
-			return "", 0, 0
-		}
-		start := e.node.Start()
-		return galaparser.NativeText(id.GalaNodeRef), int(start.Line), int(start.Column)
+// bareIdent is the name e is, with no operator, suffix or call around it (a
+// `match` may follow it), and "" when e is something else.
+func (e exprSrc) bareIdent() string {
+	p := e.solePostfix()
+	if !p.ok() || p.hasSuffixes() {
+		return ""
 	}
-	if e.ctx == nil {
-		return "", 0, 0
-	}
-	start := e.ctx.GetStart()
-	return t.bareIdentifier(e.ctx), start.GetLine(), start.GetColumn()
+	return p.primaryIdent()
+}
+
+// isNil reports whether e is the literal `nil` (isNilLiteral): a single
+// token, checked without rendering the expression's text.
+func (e exprSrc) isNil() bool {
+	text, _, _, ok := e.soleToken()
+	return ok && text == "nil"
 }
 
 // lowerExpr lowers e, on the tree it is on.
@@ -490,20 +487,38 @@ type ifBranchSrc struct {
 	node native.GalaNodeRef
 }
 
+// ifBranchOf is the if-expression branch ctx, on the native tree when the
+// walk reads it (nativeNodeOf), for the callers that still read ANTLR's tree.
+func (t *galaASTTransformer) ifBranchOf(ctx *grammar.IfExprBranchContext) ifBranchSrc {
+	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_ifExprBranch); ok {
+		return ifBranchSrc{node: n}
+	}
+	return ifBranchSrc{ctx: ctx}
+}
+
+// ok reports whether b is a branch, not the zero ifBranchSrc.
+func (b ifBranchSrc) ok() bool { return b.ctx != nil || b.node.Ok() }
+
+// block is b's block, and the zero blockSrc when b is an expression.
+func (b ifBranchSrc) block() blockSrc {
+	if b.node.Ok() {
+		if blk := (native.IfExprBranchNode{GalaNodeRef: b.node}).Block(); blk.Ok() {
+			return blockSrc{node: blk.GalaNodeRef}
+		}
+		return blockSrc{}
+	}
+	if blk, ok := b.ctx.Block().(*grammar.BlockContext); ok && blk != nil {
+		return blockSrc{ctx: blk}
+	}
+	return blockSrc{}
+}
+
 // at is where b is written.
 func (b ifBranchSrc) at() srcNode {
 	if b.node.Ok() {
 		return srcNode{node: b.node}
 	}
 	return srcNode{ctx: b.ctx}
-}
-
-// antlr is b's context (see exprSrc.antlr).
-func (b ifBranchSrc) antlr(t *galaASTTransformer) *grammar.IfExprBranchContext {
-	if b.node.Ok() {
-		return crossTo[*grammar.IfExprBranchContext](t, b.node)
-	}
-	return b.ctx
 }
 
 // expr is b's expression, and the zero exprSrc when b is a block.
@@ -520,12 +535,11 @@ func (b ifBranchSrc) expr() exprSrc {
 	return exprSrc{}
 }
 
-// lowerIfExprBranch is transformIfExprBranch of b. A block branch is lowered
-// on ANTLR's tree; its expressions come back to the native one
-// (transformExpression).
+// lowerIfExprBranch lowers b, an if-expression branch, an expression or a
+// block, against s, the if-expression's slot (see lowerAgainst).
 func (t *galaASTTransformer) lowerIfExprBranch(b ifBranchSrc, s slot) (loweredIfBranch, error) {
 	if e := b.expr(); e.ok() {
 		return t.lowerIfExprBranchValue(e, s)
 	}
-	return t.transformIfExprBranch(b.antlr(t), s)
+	return t.lowerIfExprBranchBlock(b.block(), s)
 }

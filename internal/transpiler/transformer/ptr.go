@@ -188,13 +188,13 @@ func (t *galaASTTransformer) checkPtrReceiverAt(recv ast.Expr, recvType transpil
 // receiver (GALA-E0080): the FlatMap would run on whatever the Zip returns.
 // The call is the lowering's, not the user's, so the fix is in the monad.
 // zip is the ZipN and zipResultType its result; from and to span the group.
-func (t *galaASTTransformer) checkPtrZipResult(zipResultType transpiler.Type, zip *transpiler.MethodMetadata, from, to antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkPtrZipResult(zipResultType transpiler.Type, zip *transpiler.MethodMetadata, from, to srcNode) error {
 	ptr, ok := t.nullablePtrReceiver(zipResultType, "FlatMap")
 	if !ok {
 		return nil
 	}
 	declared, _ := zip.ReturnType.(transpiler.PointerType)
-	return spanError(galaerr.CodePtrNullability, from, to,
+	return spanErrorAt(galaerr.CodePtrNullability, from.rng(), to.rng(),
 		fmt.Sprintf("cannot bind this group through %s: it returns %s, a pointer that may be nil, and FlatMap has a %s receiver", zip.Name, displayType(ptr), ptrOf(ptr)),
 		fmt.Sprintf("declare %s to return %s or a value, or bind the clauses one after another with `bind`", zip.Name, ptrOf(declared)))
 }

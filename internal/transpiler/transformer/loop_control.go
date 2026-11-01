@@ -6,7 +6,6 @@ import (
 	"go/token"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 )
 
 // Loop control: `break` and `continue`.
@@ -43,14 +42,10 @@ func loopControlToken(name string) (token.Token, bool) {
 	return token.ILLEGAL, false
 }
 
-// lowerLoopControl lowers a statement that is a bare `break` or `continue` to a
-// Go BranchStmt, recording its source position for checkLoopControl.
-func (t *galaASTTransformer) lowerLoopControl(exprCtx grammar.IExpressionContext) (*ast.BranchStmt, bool) {
-	return t.lowerLoopControlSrc(antlrExpr(exprCtx))
-}
-
-// lowerLoopControlSrc is lowerLoopControl of e, on either tree.
-func (t *galaASTTransformer) lowerLoopControlSrc(e exprSrc) (*ast.BranchStmt, bool) {
+// lowerLoopControl lowers e, a statement that is a bare `break` or
+// `continue`, to a Go BranchStmt, recording its source position for
+// checkLoopControl; false when e is anything else.
+func (t *galaASTTransformer) lowerLoopControl(e exprSrc) (*ast.BranchStmt, bool) {
 	name, line, col, ok := e.soleToken()
 	if !ok {
 		return nil, false

@@ -244,22 +244,6 @@ func (t *galaASTTransformer) ifIn(e exprSrc) ifExprSrc {
 	return ifExprSrc{}
 }
 
-// antlrIfIn is ifIn of e, an expression on ANTLR's tree, as its context, for
-// the lowerings that still read one (lowerIfExpressionStatement); nil when e
-// is no if-expression.
-func antlrIfIn(e grammar.IExpressionContext) *grammar.IfExpressionContext {
-	p := antlrExpr(e).solePostfix()
-	if !p.ok() || p.hasSuffixes() {
-		return nil
-	}
-	pe := p.antlrPrimaryExpr()
-	if pe == nil {
-		return nil
-	}
-	i, _ := pe.IfExpression().(*grammar.IfExpressionContext)
-	return i
-}
-
 // ok reports whether e is an if-expression, not the zero ifExprSrc.
 func (e ifExprSrc) ok() bool { return e.ctx != nil || e.node.Ok() }
 
