@@ -1601,9 +1601,14 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 		return transpiler.MapType{Key: key, Elem: elem}
 
 	case *types.Chan:
-		// Map channels to their element type (GALA uses Signal wrappers)
-		elem := goTypeToTranspilerType(t.Elem())
-		return transpiler.NamedType{Name: "chan " + elem.String()}
+		dir := transpiler.ChanBoth
+		switch t.Dir() {
+		case types.RecvOnly:
+			dir = transpiler.ChanRecv
+		case types.SendOnly:
+			dir = transpiler.ChanSend
+		}
+		return transpiler.ChanType{Elem: goTypeToTranspilerType(t.Elem()), Dir: dir}
 
 	case *types.Signature:
 		result := transpiler.FuncType{}

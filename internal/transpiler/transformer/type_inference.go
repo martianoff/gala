@@ -213,6 +213,17 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				return ptr.Elem
 			}
 			return transpiler.NilType{}
+		case token.ARROW:
+			// A receive yields the channel's element type, also through a
+			// GALA alias of a channel or a Go type defined over one.
+			xType := t.followAliasChain(t.getExprTypeNameManual(e.X))
+			if u, ok := t.goNamedUnderlying(xType); ok {
+				xType = u
+			}
+			if ch, ok := xType.(transpiler.ChanType); ok {
+				return ch.Elem
+			}
+			return transpiler.NilType{}
 		default:
 			return t.getExprTypeNameManual(e.X)
 		}
@@ -829,6 +840,8 @@ func (t *galaASTTransformer) collectReferencedParams(typ transpiler.Type, params
 		}
 	case transpiler.ArrayType:
 		t.collectReferencedParams(v.Elem, params, out)
+	case transpiler.ChanType:
+		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.PointerType:
 		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.MapType:
@@ -980,6 +993,14 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 		return t.unifyForInference(patternPtr.Elem, concretePtr.Elem, typeParams, inferredMap)
 	}
 
+	// Check if both are channel types. A `chan T` argument fills a `<-chan T`
+	// parameter, so the directions need not agree.
+	patternChan, patternIsChan := pattern.(transpiler.ChanType)
+	concreteChan, concreteIsChan := concrete.(transpiler.ChanType)
+	if patternIsChan && concreteIsChan {
+		return t.unifyForInference(patternChan.Elem, concreteChan.Elem, typeParams, inferredMap)
+	}
+
 	// Check if both are map types
 	patternMap, patternIsMap := pattern.(transpiler.MapType)
 	concreteMap, concreteIsMap := concrete.(transpiler.MapType)
@@ -1103,6 +1124,8 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 		}
 	case transpiler.ArrayType:
 		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
+	case transpiler.ChanType:
+		return transpiler.ChanType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), Dir: v.Dir}
 	case transpiler.PointerType:
 		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), NonNull: v.NonNull}
 	case transpiler.MapType:

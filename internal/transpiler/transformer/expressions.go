@@ -564,6 +564,8 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 		return token.XOR
 	case "&":
 		return token.AND
+	case "<-":
+		return token.ARROW
 	default:
 		return token.ILLEGAL
 	}
@@ -1462,6 +1464,8 @@ func typeHasMaskedPart(typ transpiler.Type) bool {
 	case transpiler.GenericType:
 		return slices.ContainsFunc(v.Params, typeHasMaskedPart)
 	case transpiler.ArrayType:
+		return typeHasMaskedPart(v.Elem)
+	case transpiler.ChanType:
 		return typeHasMaskedPart(v.Elem)
 	case transpiler.PointerType:
 		return typeHasMaskedPart(v.Elem)

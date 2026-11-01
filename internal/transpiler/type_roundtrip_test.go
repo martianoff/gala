@@ -20,6 +20,8 @@ func stripImportPaths(typ Type) Type {
 		return GenericType{Base: stripImportPaths(v.Base), Params: params}
 	case ArrayType:
 		return ArrayType{Elem: stripImportPaths(v.Elem)}
+	case ChanType:
+		return ChanType{Elem: stripImportPaths(v.Elem), Dir: v.Dir}
 	case PointerType:
 		return PointerType{Elem: stripImportPaths(v.Elem)}
 	case MapType:
@@ -81,6 +83,10 @@ func TestParseTypeRoundTrip(t *testing.T) {
 			FuncType{Params: []Type{BasicType{Name: "int"}, BasicType{Name: "int"}}, Results: []Type{BasicType{Name: "int"}}},
 		}}},
 		{"func returning func", FuncType{Results: []Type{FuncType{Params: []Type{aliased}}}}},
+		{"channel", ChanType{Elem: fileInfo}},
+		{"receive-only channel of a slice", ChanType{Elem: ArrayType{Elem: BasicType{Name: "int"}}, Dir: ChanRecv}},
+		{"send-only channel", ChanType{Elem: builder, Dir: ChanSend}},
+		{"channel of a receive-only channel", ChanType{Elem: ChanType{Elem: BasicType{Name: "int"}, Dir: ChanRecv}}},
 		{"map keyed by a generic", MapType{
 			Key:  GenericType{Base: option, Params: []Type{BasicType{Name: "int"}}},
 			Elem: MapType{Key: BasicType{Name: "string"}, Elem: builder},

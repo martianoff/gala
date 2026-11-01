@@ -656,6 +656,8 @@ func hasPtr(typ transpiler.Type) bool {
 		return v.NonNull || hasPtr(v.Elem)
 	case transpiler.ArrayType:
 		return hasPtr(v.Elem)
+	case transpiler.ChanType:
+		return hasPtr(v.Elem)
 	case transpiler.MapType:
 		return hasPtr(v.Key) || hasPtr(v.Elem)
 	case transpiler.GenericType:
@@ -691,6 +693,9 @@ func nullableWherePtr(expected, actual transpiler.Type) bool {
 		return (e.NonNull && !a.NonNull) || nullableWherePtr(e.Elem, a.Elem)
 	case transpiler.ArrayType:
 		a, ok := actual.(transpiler.ArrayType)
+		return ok && nullableWherePtr(e.Elem, a.Elem)
+	case transpiler.ChanType:
+		a, ok := actual.(transpiler.ChanType)
 		return ok && nullableWherePtr(e.Elem, a.Elem)
 	case transpiler.MapType:
 		a, ok := actual.(transpiler.MapType)

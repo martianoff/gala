@@ -2426,6 +2426,15 @@ gala_exec_test(
     expected = "val_go_interface_method.out",
 )
 
+# Channel receive: `<-ch` lowers to Go's receive and infers the channel's
+# element type, so methods on the received value resolve.
+gala_exec_test(
+    name = "channel_receive",
+    src = "channel_receive.gala",
+    expected = "channel_receive.out",
+    deps = ["//go_interop"],
+)
+
 # Verification: ToBytes/ToString/ToRunes byte conversion helpers
 gala_exec_test(
     name = "byte_conversion",

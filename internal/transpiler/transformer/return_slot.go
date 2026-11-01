@@ -110,6 +110,8 @@ func (t *galaASTTransformer) typeMentionsUnresolvedTypeParam(typ transpiler.Type
 		return false
 	case transpiler.ArrayType:
 		return t.typeMentionsUnresolvedTypeParam(v.Elem)
+	case transpiler.ChanType:
+		return t.typeMentionsUnresolvedTypeParam(v.Elem)
 	case transpiler.PointerType:
 		return t.typeMentionsUnresolvedTypeParam(v.Elem)
 	case transpiler.MapType:
