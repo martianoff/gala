@@ -652,6 +652,8 @@ func hasPtr(typ transpiler.Type) bool {
 		return hasPtr(v.Elem)
 	case transpiler.ChanType:
 		return hasPtr(v.Elem)
+	case transpiler.StructType:
+		return slices.ContainsFunc(v.FieldTypes(), hasPtr)
 	case transpiler.MapType:
 		return hasPtr(v.Key) || hasPtr(v.Elem)
 	case transpiler.GenericType:
@@ -691,6 +693,16 @@ func nullableWherePtr(expected, actual transpiler.Type) bool {
 	case transpiler.ChanType:
 		a, ok := actual.(transpiler.ChanType)
 		return ok && nullableWherePtr(e.Elem, a.Elem)
+	case transpiler.StructType:
+		a, ok := actual.(transpiler.StructType)
+		if !ok || len(a.Fields) != len(e.Fields) {
+			return false
+		}
+		for i, f := range e.Fields {
+			if nullableWherePtr(f.Type, a.Fields[i].Type) {
+				return true
+			}
+		}
 	case transpiler.MapType:
 		a, ok := actual.(transpiler.MapType)
 		return ok && (nullableWherePtr(e.Key, a.Key) || nullableWherePtr(e.Elem, a.Elem))

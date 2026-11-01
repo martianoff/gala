@@ -620,7 +620,6 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 			if len(f.Names) == 0 {
 				field.Name, field.Embedded = transpiler.EmbeddedFieldName(field.Type), true
 				st.Fields = append(st.Fields, field)
-				continue
 			}
 			for _, name := range f.Names {
 				field.Name = name.Name

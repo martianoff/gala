@@ -1,10 +1,10 @@
 package transpiler
 
 import (
+	"go/token"
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"martianoff/gala/internal/parser"
 )
@@ -376,7 +376,7 @@ func parseStruct(body string) StructType {
 			part = strings.TrimSpace(part[:q])
 		}
 		name, typ, named := strings.Cut(part, " ")
-		if named && isIdentifier(name) {
+		if named && token.IsIdentifier(name) {
 			f.Name, f.Type = name, ParseType(typ)
 		} else {
 			f.Type, f.Embedded = ParseType(part), true
@@ -399,16 +399,6 @@ func EmbeddedFieldName(typ Type) string {
 		return v.Name
 	}
 	return typ.String()
-}
-
-// isIdentifier reports whether s is a Go identifier.
-func isIdentifier(s string) bool {
-	for i, r := range s {
-		if !(r == '_' || unicode.IsLetter(r) || (i > 0 && unicode.IsDigit(r))) {
-			return false
-		}
-	}
-	return s != ""
 }
 
 // PointerType represents a pointer type.
