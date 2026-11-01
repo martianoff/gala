@@ -698,6 +698,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(pat patExpr, objExp
 	}
 
 	// Literal or other - use direct equality comparison
+	t.nativeShape(pat.node, pat.valueShape())
 	eqExpr, err := t.lowerPatExpr(pat)
 	if err != nil {
 		return nil, nil, err

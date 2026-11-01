@@ -493,20 +493,23 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "primaryExpr must have primary, lambda, if expression, or partial function")
 }
 
-// transformPostfixMatchExpression lowers the match ctx, filling no slot. A
-// match of the file the native walk reads is lowered on its node, wherever
-// its lowering is entered from (lowerMatch).
+// transformPostfixMatchExpression lowers the match ctx, filling no slot.
 func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
-	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_postfixExpr); ok {
-		return t.lowerMatch(postfixSrc{node: n}, slot{})
-	}
 	return t.lowerMatch(postfixSrc{ctx: ctx}, slot{})
 }
 
 // lowerMatch lowers p, a postfix expression ending in a match, on the tree it
 // comes from, against slot s: its subject, the primary expression with the
-// suffixes before the match applied to it, then its case clauses.
+// suffixes before the match applied to it, then its case clauses. A match of
+// the file the native walk reads is lowered on its node, wherever its
+// lowering is entered from: a lowering still on ANTLR's tree hands over its
+// context.
 func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) {
+	if !p.node.Ok() {
+		if n, ok := t.nativeNodeOf(p.ctx, native.GalaKIND_postfixExpr); ok {
+			p.node, p.ctx = n, nil
+		}
+	}
 	if !p.hasPrimaryExpr() {
 		return nil, semanticErrorAtStart(p.at(), "match expression must have subject")
 	}
@@ -523,14 +526,8 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 			return nil, err
 		}
 	}
-	var cases []caseSrc
-	if p.node.Ok() {
-		t.nativeShape(p.node, "match")
-		cases = t.nativeCases(p.node)
-	} else {
-		cases = antlrCases(p.ctx.AllCaseClause())
-	}
-	return t.buildMatchExpressionFromClauses(subject, "obj", cases, p.at(), s)
+	t.nativeShape(p.node, "match")
+	return t.buildMatchExpressionFromClauses(subject, "obj", t.casesOf(p), p.at(), s)
 }
 
 // lowerPrimaryOf lowers the primary expression of p, on its tree.

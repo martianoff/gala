@@ -243,7 +243,11 @@ func (a argSrc) spread() bool {
 // sourceText is n as written, whitespace included (transpiler.SourceText).
 func (n srcNode) sourceText() string {
 	if n.node.Ok() {
-		return n.node.SourceText()
+		// With no source span, the text of its tokens, as on ANTLR's tree.
+		if s := n.node.SourceText(); s != "" {
+			return s
+		}
+		return n.text()
 	}
 	return transpiler.SourceText(n.ctx)
 }

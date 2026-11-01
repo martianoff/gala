@@ -409,13 +409,5 @@ func (t *galaASTTransformer) escapesAt(n srcNode) bool {
 
 // matchEscapes reports whether a case clause of p, a match, escapesConstruct.
 func (t *galaASTTransformer) matchEscapes(p postfixSrc) bool {
-	if !p.node.Ok() {
-		return escapesConstruct(t, p.ctx.AllCaseClause()...)
-	}
-	for c := range galaparser.NativeKids(p.node, native.GalaKIND_caseClause) {
-		if t.escapesAt(srcNode{node: c}) {
-			return true
-		}
-	}
-	return false
+	return t.casesEscape(t.casesOf(p))
 }

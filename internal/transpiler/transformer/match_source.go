@@ -41,6 +41,14 @@ func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
 	return out
 }
 
+// casesOf is the case clauses of p, a match, on its tree.
+func (t *galaASTTransformer) casesOf(p postfixSrc) []caseSrc {
+	if p.node.Ok() {
+		return t.nativeCases(p.node)
+	}
+	return antlrCases(p.ctx.AllCaseClause())
+}
+
 // at is where c is written.
 func (c caseSrc) at() srcNode {
 	if c.node.Ok() {

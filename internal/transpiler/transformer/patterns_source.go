@@ -8,7 +8,6 @@ import (
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
-	"martianoff/gala/internal/transpiler"
 )
 
 // A match's case clauses and their patterns as the pattern lowering reads
@@ -166,11 +165,10 @@ func (p patSrc) typedType() typeSrc {
 // patExpr is an expression read as a pattern: an expression context on
 // ANTLR's tree (an alternative's wrapper included, see wrapAsExpression), or
 // on the native tree an expression node or, for an alternative, the
-// multiplicativeExpr node it is and from, the expression it was split from.
-// The zero patExpr is no expression. Its ok, at and text are exprSrc's.
+// multiplicativeExpr node it is. The zero patExpr is no expression. Its ok,
+// at and text are exprSrc's.
 type patExpr struct {
 	exprSrc
-	from native.GalaNodeRef
 }
 
 // antlrPatExpr is the expression ctx, on ANTLR's tree; the zero patExpr when
@@ -183,15 +181,7 @@ func antlrPatExpr(ctx grammar.IExpressionContext) patExpr {
 }
 
 // sourceText is e as written, whitespace included (transpiler.SourceText).
-func (e patExpr) sourceText() string {
-	if e.node.Ok() {
-		if s := e.node.SourceText(); s != "" {
-			return s
-		}
-		return e.text()
-	}
-	return transpiler.SourceText(e.ctx)
-}
+func (e patExpr) sourceText() string { return e.at().sourceText() }
 
 // start is the line and column of e's first token.
 func (e patExpr) start() (line, col int) { return e.at().start() }
@@ -206,13 +196,27 @@ func (e patExpr) col() int { _, c := e.start(); return c }
 // alternative is lowered as the operand it is, as its wrapper on ANTLR's tree
 // is (wrapAsExpression).
 func (t *galaASTTransformer) lowerPatExpr(e patExpr) (ast.Expr, error) {
-	if !e.node.Ok() || e.node.Kind() != native.GalaKIND_multiplicativeExpr {
-		t.nativeShape(e.node, "pattern")
+	if !e.isAlternative() {
 		return t.lowerExpr(e.exprSrc)
 	}
-	t.nativeShape(e.node, "alternative")
 	t.trackNativePosition(e.node)
 	return t.lowerOperatorsNative(e.node)
+}
+
+// isAlternative reports whether e is a native alternative: one operand of a
+// `|` chain, a multiplicativeExpr node.
+func (e patExpr) isAlternative() bool {
+	return e.node.Ok() && e.node.Kind() == native.GalaKIND_multiplicativeExpr
+}
+
+// valueShape is the shape the native walk reports for e, a pattern's value
+// compared by == (see nativeShape): "alternative" for one alternative of
+// several, "pattern" otherwise.
+func (e patExpr) valueShape() string {
+	if e.isAlternative() {
+		return "alternative"
+	}
+	return "pattern"
 }
 
 // patChain is the precedence chain of an expression, from the expression
@@ -305,7 +309,7 @@ func (e patExpr) soleAdditive() (patAdditive, bool, error) {
 		for i := range add.ChildCount() {
 			c := add.Child(i)
 			if m := c.Node(); m.Ok() && m.Kind() == native.GalaKIND_multiplicativeExpr {
-				out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}, from: e.node})
+				out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}})
 			} else if tok := c.Terminal(); tok.Ok() {
 				out.ops = append(out.ops, tok.GetText())
 			}
