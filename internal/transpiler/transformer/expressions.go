@@ -1184,7 +1184,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	case f.ifExpr.ok():
 		return t.lowerIfExpression(f.ifExpr, s)
 	case f.match.ok():
-		return t.transformPostfixMatchExpressionAgainst(f.match.antlr(t), s)
+		return t.lowerMatch(f.match, s)
 	}
 	// A tuple literal filling a slot (`func f() Tuple[int64, int64] = (1, 2)`)
 	// takes its element types from it, and so does a construction of the

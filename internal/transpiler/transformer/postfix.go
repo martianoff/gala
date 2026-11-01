@@ -9,6 +9,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -492,41 +493,55 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "primaryExpr must have primary, lambda, if expression, or partial function")
 }
 
-// transformPostfixMatchExpression handles match expressions with the new grammar.
+// transformPostfixMatchExpression lowers the match ctx, filling no slot.
 func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
-	return t.transformPostfixMatchExpressionAgainst(ctx, slot{})
+	return t.lowerMatch(postfixSrc{ctx: ctx}, slot{})
 }
 
-// transformPostfixMatchExpressionAgainst lowers a match whose value fills slot s
-// (zero when none); see buildMatchExpressionFromClauses.
-func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar.PostfixExprContext, s slot) (ast.Expr, error) {
-	// Get the primary expression being matched
-	primaryExpr := ctx.PrimaryExpr()
-	if primaryExpr == nil {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have subject")
+// lowerMatch lowers p, a postfix expression ending in a match, on the tree it
+// comes from, against slot s: its subject, the primary expression with the
+// suffixes before the match applied to it, then its case clauses. A match of
+// the file the native walk reads is lowered on its node, wherever its
+// lowering is entered from: a lowering still on ANTLR's tree hands over its
+// context.
+func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) {
+	if !p.node.Ok() {
+		if n, ok := t.nativeNodeOf(p.ctx, native.GalaKIND_postfixExpr); ok {
+			p.node, p.ctx = n, nil
+		}
 	}
-
-	subject, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
+	if !p.hasPrimaryExpr() {
+		return nil, semanticErrorAtStart(p.at(), "match expression must have subject")
+	}
+	// No hint is pushed for a match, so its subject's suffixes take none.
+	p.owner = nil
+	subject, err := t.lowerPrimaryOf(p)
 	if err != nil {
 		return nil, err
 	}
-
-	// Apply any suffixes before the match
-	suffixes := ctx.AllPostfixSuffix()
-	for _, suffix := range suffixes {
-		subject, err = t.lowerSuffix(subject, postfixSrc{ctx: ctx, owner: ctx}, suffixSrc{ctx: suffix.(*grammar.PostfixSuffixContext)})
-		if err != nil {
+	var buf [4]suffixSrc
+	for _, suffix := range p.appendSuffixes(buf[:0]) {
+		if subject, err = t.lowerSuffix(subject, p, suffix); err != nil {
 			return nil, err
 		}
 	}
-
-	// Now handle the match expression
-	return t.buildMatchExpressionFromClauses(subject, "obj", t.matchCases(ctx), ctx, s)
+	t.nativeShape(p.node, "match")
+	return t.buildMatchExpressionFromClauses(subject, "obj", t.casesOf(p.node, p.ctx), p.at(), s)
 }
 
-// buildMatchExpressionFromClauses builds a match expression from the subject and case clauses.
-// ctx is used for error position reporting when case clauses are empty.
-func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []caseSrc, ctx antlr.ParserRuleContext, s slot) (ast.Expr, error) {
+// lowerPrimaryOf lowers the primary expression of p, on its tree.
+func (t *galaASTTransformer) lowerPrimaryOf(p postfixSrc) (ast.Expr, error) {
+	if p.node.Ok() {
+		return t.lowerPrimaryExprNative(p.primaryExprNode().GalaNodeRef)
+	}
+	return t.transformPrimaryExpr(p.antlrPrimaryExpr())
+}
+
+// buildMatchExpressionFromClauses builds a match expression from the subject
+// and case clauses. at, the match, locates the diagnostics about the match as
+// a whole.
+func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []caseSrc, at srcNode, s slot) (ast.Expr, error) {
+	line, col := at.start()
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
 	typedFromCases := false
@@ -540,12 +555,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if len(caseClauses) > 0 {
 			return nil, semanticErrorAtStart(caseClauses[0].at(), "cannot infer type of matched expression")
 		}
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer type of matched expression")
+		return nil, galaerr.NewSemanticErrorAt(line, col, "cannot infer type of matched expression")
 	}
 	// A subject whose cases name the variants of its sealed view (see
 	// sealedViewForCases) is matched as that view: the match tests
 	// `subject.MatchView()`, evaluated once, as a value of the sealed type.
-	subject, matchedType, _, err := t.matchViewSubject(subject, matchedType, caseClauses, ctx)
+	subject, matchedType, _, err := t.matchViewSubjectAt(subject, matchedType, caseClauses, at)
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +592,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match whose value a local declaration stores, and whose arms hold a
 	// `return`, `break` or `continue`, is lowered as statements storing its
 	// value (see hoisted_value.go); its arms store theirs the same way.
-	if s.hoist != "" && (stmtPosition || !escapesConstruct(t, antlrClauses(t, caseClauses)...)) {
+	if s.hoist != "" && (stmtPosition || !t.casesEscape(caseClauses)) {
 		s.hoist = ""
 	}
 	hoist := s.hoist
@@ -728,7 +743,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// Infer common result type from all branches. In statement position the
 	// value is discarded, so arms need not unify (see inferCommonResultType).
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx, stmtPosition)
+	resultType, err := t.inferCommonResultTypeAt(resultTypes, casePatterns, at, stmtPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -738,7 +753,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if hoist != "" && (transpiler.IsUnusable(resultType) || resultType.IsVoid()) {
 		allLeave := !slices.ContainsFunc(arms, func(a matchArm) bool { return !t.armLeaves(a.clause, a.defaultBody) })
 		if resultType, err = t.hoistedType("match", resultType, s, allLeave,
-			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), clauses, defaultBody); err != nil {
+			line, col, clauses, defaultBody); err != nil {
 			return nil, err
 		}
 	}
@@ -759,7 +774,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// its bare `return` leaves the enclosing function, which must then return
 	// nothing.
 	if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, hoist != "",
-		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()); err != nil {
+		line, col); err != nil {
 		return nil, err
 	}
 
@@ -770,7 +785,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if len(caseClauses) > 0 {
 			return nil, semanticErrorAtStart(caseClauses[0].at(), "match expression must have at least one case")
 		}
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have at least one case")
+		return nil, galaerr.NewSemanticErrorAt(line, col, "match expression must have at least one case")
 	}
 
 	// A match without a default must cover every value: exhaustively over a
@@ -794,9 +809,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			// Both diagnoses below are about the match as a whole, so they
 			// anchor on the first case clause (the match keyword itself sits
 			// after the subject and reads worse in the framed snippet).
-			line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+			diagLine, diagCol := line, col
 			if len(caseClauses) > 0 {
-				line, col = caseClauses[0].at().start()
+				diagLine, diagCol = caseClauses[0].at().start()
 			}
 			switch {
 			case enumerable && !isExhaustive:
@@ -806,7 +821,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				}
 				return nil, galaerr.NewCodedSemanticError(
 					galaerr.CodeNonExhaustiveMatch,
-					line, col,
+					diagLine, diagCol,
 					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
 					hint)
 			case enumerable:
@@ -820,7 +835,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				// hint footer.
 				return nil, galaerr.NewCodedSemanticError(
 					galaerr.CodeMissingDefault,
-					line, col,
+					diagLine, diagCol,
 					"match expression must have a default case",
 					"add `case _ => ...`")
 			}
@@ -848,7 +863,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		// match lowered to a function literal (see scopeReleases).
 		body := append(dispatch, t.buildMatchBodyForInline(clauses, defaultBody)...)
 		stmts, err := t.scopeReleases([]ast.Stmt{t.buildInlinedMatchBlock(subject, paramName, matchedType, body)},
-			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -869,7 +884,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if hoist != "" {
 		body := append(dispatch, t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)...)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
-		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType, line, col)
 	}
 
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping
@@ -900,7 +915,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		funcLit.Body = t.buildInlinedMatchBlock(subject, paramName, matchedType, stmts)
 	}
 	if !stmtPosition {
-		t.recordBranchingCall(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		t.recordBranchingCall(call, "match", line, col)
 	}
 	return call, nil
 }

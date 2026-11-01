@@ -350,15 +350,9 @@ func variantTypeArgSplit(text string) (ptr, name, typeArgs string) {
 	return ptr, name, typeArgs
 }
 
-// mayNameVariantType reports whether the explicit type argument arg is
-// spelled like a sealed variant and is not a type parameter or a value in
-// scope of that name.
-func (t *galaASTTransformer) mayNameVariantType(arg grammar.IExpressionContext) bool {
-	return t.mayNameVariantTypeText(arg.GetText())
-}
-
-// mayNameVariantTypeText is mayNameVariantType of an argument written as
-// text (GetText).
+// mayNameVariantTypeText reports whether the explicit type argument written
+// as text (GetText) is spelled like a sealed variant and is not a type
+// parameter or a value in scope of that name.
 func (t *galaASTTransformer) mayNameVariantTypeText(text string) bool {
 	_, name, _ := variantTypeArgSplit(text)
 	qualifier, bare := splitPackageQualifier(name)
@@ -372,15 +366,9 @@ func (t *galaASTTransformer) mayNameVariantTypeText(text string) bool {
 	return !bound && !t.activeTypeParams[name]
 }
 
-// variantTypeArgError returns the GALA-E0061 for an explicit type argument
-// that names a sealed variant, or nil.
-func (t *galaASTTransformer) variantTypeArgError(arg grammar.IExpressionContext) error {
-	start := arg.GetStart()
-	return t.variantTypeArgErrorAt(arg.GetText(), start.GetLine(), start.GetColumn())
-}
-
-// variantTypeArgErrorAt is variantTypeArgError of an argument written as text
-// (GetText) from line and col.
+// variantTypeArgErrorAt returns the GALA-E0061 for an explicit type argument,
+// written as text (GetText) from line and col, that names a sealed variant,
+// or nil.
 func (t *galaASTTransformer) variantTypeArgErrorAt(text string, line, col int) error {
 	ptr, name, typeArgs := variantTypeArgSplit(text)
 	return t.variantTypeError(name, typeArgs, line, col+len(ptr))

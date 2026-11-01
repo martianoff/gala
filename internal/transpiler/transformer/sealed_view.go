@@ -5,8 +5,6 @@ import (
 	"go/ast"
 	"slices"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 )
@@ -210,15 +208,11 @@ func sealedViewPatternError(at srcNode, subjectType, view transpiler.Type, why s
 	)
 }
 
-// matchViewSubject returns what a match over subject, a value of subjectType,
-// tests: subject.MatchView() and the view type when its cases read the
-// subject's sealed view (see sealedViewForCases), and subject and subjectType
-// unchanged otherwise; viewed reports which. at locates the match.
-func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType transpiler.Type, caseClauses []caseSrc, at antlr.ParserRuleContext) (ast.Expr, transpiler.Type, bool, error) {
-	return t.matchViewSubjectAt(subject, subjectType, caseClauses, srcNode{ctx: at})
-}
-
-// matchViewSubjectAt is matchViewSubject of a match at a node of either tree.
+// matchViewSubjectAt returns what a match over subject, a value of
+// subjectType, tests: subject.MatchView() and the view type when its cases
+// read the subject's sealed view (see sealedViewForCases), and subject and
+// subjectType unchanged otherwise; viewed reports which. at locates the
+// match, on either tree.
 func (t *galaASTTransformer) matchViewSubjectAt(subject ast.Expr, subjectType transpiler.Type, caseClauses []caseSrc, at srcNode) (ast.Expr, transpiler.Type, bool, error) {
 	view, err := t.sealedViewForCases(subjectType, caseClauses)
 	if err != nil || view == nil {

@@ -7,12 +7,11 @@ import (
 )
 
 // A match's case clauses as its lowering reads them (see patterns_source.go
-// for their patterns). A match is reached from an expression, which is read
-// on ANTLR's tree; its case clauses are read on the native one while the
-// file's walk reads that tree (see matchCases). The guard, the subject and
-// what an arm's body holds that is an expression are lowered on ANTLR's tree;
-// an arm's block and its statements are lowered on the native one, as a
-// function body's are (statements_source.go).
+// for their patterns). A match is lowered on the tree its expression is read
+// on (lowerMatch): its subject, and its case clauses with their patterns,
+// guards and bodies. A match that a lowering still on ANTLR's tree reaches is
+// lowered on its native node when the file's walk reads that tree
+// (transformPostfixMatchExpression).
 
 // caseSrc is a case clause.
 type caseSrc struct {
@@ -29,19 +28,6 @@ func antlrCases(ctxs []grammar.ICaseClauseContext) []caseSrc {
 	return out
 }
 
-// matchCases is the case clauses of the match ctx: read on the native tree
-// when the file's walk reads it (t.native holds its handle, see walkSource)
-// and ctx is a node of it, on ANTLR's tree otherwise — a match the file does
-// not hold, such as a default written in another file. Once expressions are
-// read on the native tree, their lowering hands a match over as its node and
-// this lookup goes.
-func (t *galaASTTransformer) matchCases(ctx *grammar.PostfixExprContext) []caseSrc {
-	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_postfixExpr); ok {
-		return t.nativeCases(n)
-	}
-	return antlrCases(ctx.AllCaseClause())
-}
-
 // nativeCases is the case clauses of n, a match's postfix expression or a
 // partial function, each reported to the onNativeCase hook.
 func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
@@ -53,6 +39,22 @@ func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
 		out = append(out, caseSrc{node: c})
 	}
 	return out
+}
+
+// caseHolder is a context with case clauses: a match's postfix expression
+// or a partial function.
+type caseHolder interface {
+	AllCaseClause() []grammar.ICaseClauseContext
+}
+
+// casesOf is the case clauses of a match or a partial function, on its tree:
+// those of n on the native tree, each reported to the onNativeCase hook
+// (nativeCases), and those of ctx otherwise.
+func (t *galaASTTransformer) casesOf(n native.GalaNodeRef, ctx caseHolder) []caseSrc {
+	if n.Ok() {
+		return t.nativeCases(n)
+	}
+	return antlrCases(ctx.AllCaseClause())
 }
 
 // at is where c is written.
@@ -125,20 +127,13 @@ func (c caseSrc) bodyStmt() (simpleSrc, bool) {
 	return simpleSrc{}, false
 }
 
-// antlr is c's context, for the readers of ANTLR's tree it reaches (the
-// escape scan of hoisted_value.go).
-func (c caseSrc) antlr(t *galaASTTransformer) *grammar.CaseClauseContext {
-	if c.node.Ok() {
-		return crossTo[*grammar.CaseClauseContext](t, c.node)
+// casesEscape reports whether a clause of cases escapesConstruct, each read
+// on its tree (escapesAt).
+func (t *galaASTTransformer) casesEscape(cases []caseSrc) bool {
+	for _, c := range cases {
+		if t.escapesAt(c.at()) {
+			return true
+		}
 	}
-	return c.ctx
-}
-
-// antlrClauses is the contexts of cases (see caseSrc.antlr).
-func antlrClauses(t *galaASTTransformer, cases []caseSrc) []*grammar.CaseClauseContext {
-	out := make([]*grammar.CaseClauseContext, len(cases))
-	for i, c := range cases {
-		out[i] = c.antlr(t)
-	}
-	return out
+	return false
 }

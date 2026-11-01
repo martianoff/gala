@@ -19,17 +19,17 @@ Reaching it means one of:
 **Minimal repro.** None. This is an internal-consistency check, unreachable
 from valid user source; there is no user-triggerable repro to show.
 
-**Error output.** The shape the code produces, from the emit site (`%T` is the
-Go type of the unhandled context):
+**Error output.** The shape the code produces, from the emit site (the name is
+the grammar rule of the unhandled pattern node):
 
 ```
-[SemanticError GALA-E0009] main.gala:L:C unrecognized pattern syntax (internal type *grammar.FooPatternContext) (hint: this usually means a new grammar rule is missing transformer support; please report at github.com/martianoff/gala/issues)
+[SemanticError GALA-E0009] main.gala:L:C unrecognized pattern syntax (grammar rule fooPattern) (hint: this usually means a new grammar rule is missing transformer support; please report at github.com/martianoff/gala/issues)
 ```
 
 **What to do.** File an issue at
 [github.com/martianoff/gala/issues](https://github.com/martianoff/gala/issues)
-with the source file and the exact `internal type` shown in the message — that
-type name identifies the missing case directly. Do not try to work around the
+with the source file and the exact `grammar rule` shown in the message — that
+rule name, with the framed pattern, identifies the missing case directly. Do not try to work around the
 error by rewriting the pattern; the rewrite would only hide a real gap in the
 transpiler.
 

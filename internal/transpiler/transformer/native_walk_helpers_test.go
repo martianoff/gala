@@ -210,7 +210,7 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 	// A lambda is lowered on the native tree wherever it is written (the
 	// expression it is in crosses back to it, lambdas_source.go), and a match
 	// and a partial function read their case clauses there wherever they are
-	// (matchCases, partialSrc.cases), but in a parameter's default value: a
+	// (casesOf), but in a parameter's default value: a
 	// default is lowered at each call, from the declaration the analysis
 	// recorded, on ANTLR's tree.
 	var below func(antlr.Tree)

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -29,7 +28,7 @@ func (t *galaASTTransformer) generateOpaquePattern(
 	meta *transpiler.TypeMetadata,
 	rawName string,
 	args argsSrc,
-	explicitTypeArgs *grammar.ExpressionListContext,
+	explicitTypeArgs []exprSrc,
 	objExpr ast.Expr,
 	matchedType transpiler.Type,
 	pat patExpr,
@@ -59,7 +58,7 @@ func (t *galaASTTransformer) generateOpaquePattern(
 		return failAt(arg.at(), "the sub-pattern of %s(...) is a single pattern for its underlying value, as in %s(v)", name, name)
 	}
 	if explicitTypeArgs != nil {
-		if n := len(explicitTypeArgs.AllExpression()); n != len(meta.TypeParams) {
+		if n := len(explicitTypeArgs); n != len(meta.TypeParams) {
 			return failAt(pat.at(), "%s takes %d type argument(s), got %d", name, len(meta.TypeParams), n)
 		}
 	}
@@ -213,7 +212,7 @@ func (t *galaASTTransformer) stablePatternValueType(expr patExpr) (typ transpile
 		return nil, false
 	}
 	if qualifier != "" {
-		goExpr, err := t.transformExpression(expr.antlr(t))
+		goExpr, err := t.lowerPatExpr(expr)
 		if err != nil {
 			return nil, false
 		}

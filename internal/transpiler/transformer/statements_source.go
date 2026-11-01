@@ -23,7 +23,6 @@ import (
 // exprListSrc values (expressions_source.go, exprlist_source.go). What is
 // still read on ANTLR's tree, crossed to with crossTo or ctxAt, is a nested
 // function's signature, an assignment's values (lowerDeclarationInitializers),
-// a match's subject (lowered from its postfix expression, postfixSrc.antlr),
 // the val read checkValueUsedHint looks for (isUnwrittenValRead) and the
 // place a `bind` clause's nil-receiver error is reported at
 // (bindClauseReceiver).

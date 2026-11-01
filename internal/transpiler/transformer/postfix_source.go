@@ -14,8 +14,8 @@ import (
 // `[exprs]`, or a call `(args)`. Both walks lower the chain through one
 // driver (lowerSuffixes), reading each suffix on the tree it comes from
 // through suffixSrc (memberSrc, indexSrc, and callSrc in calls_source.go),
-// so both give the same Go. A postfix expression with a match is still
-// lowered on ANTLR's tree as a whole (crossTo): the match is the match's.
+// so both give the same Go. A postfix expression with a match is lowered by
+// lowerMatch, its subject through the same suffix lowering.
 //
 // The native readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -106,8 +106,8 @@ func (ix indexSrc) expr(i int) exprSrc {
 }
 
 // lowerSuffixedNative is transformPostfixExpr of p when p has a suffix or a
-// match. Its suffixes are lowered through the postfix driver (lowerSuffixes);
-// a match hands p to ANTLR's tree whole.
+// match. Its suffixes are lowered through the postfix driver (lowerSuffixes),
+// and a match by lowerMatch.
 func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.Expr, error) {
 	// The hint is keyed by p's context, as the ANTLR walk pushes it.
 	owner := postfixSrc{node: p.GalaNodeRef}.hintKey(t)
@@ -117,7 +117,7 @@ func (t *galaASTTransformer) lowerSuffixedNative(p native.PostfixExprNode) (ast.
 	var buf [4]suffixSrc
 	suffixes := src.appendSuffixes(buf[:0])
 	if len(suffixes) != p.ChildCount()-1 {
-		return t.transformPostfixExpr(crossTo[*grammar.PostfixExprContext](t, p.GalaNodeRef))
+		return t.lowerMatch(src, slot{})
 	}
 	return t.lowerSuffixes(src, suffixes)
 }
@@ -131,13 +131,7 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 	// applied to.
 	release := t.expectedArgTypes.withhold(p.owner)
 	defer release()
-	var result ast.Expr
-	var err error
-	if p.node.Ok() {
-		result, err = t.lowerPrimaryExprNative(p.primaryExprNode().GalaNodeRef)
-	} else {
-		result, err = t.transformPrimaryExpr(p.ctx.PrimaryExpr().(*grammar.PrimaryExprContext))
-	}
+	result, err := t.lowerPrimaryOf(p)
 	if err != nil {
 		return nil, err
 	}

@@ -1,12 +1,12 @@
 package transformer
 
 import (
+	"go/ast"
 	"slices"
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
-	"martianoff/gala/internal/transpiler"
 )
 
 // A match's case clauses and their patterns as the pattern lowering reads
@@ -20,8 +20,8 @@ import (
 // literal, a tuple, a call, alternatives) is read here, on either tree. What a
 // pattern holds that is a value — a literal compared by ==, an extractor's
 // head, explicit type arguments (written as expressions) — is lowered as an
-// expression, which is read on ANTLR's tree: the native readers cross to it
-// with crossTo. A typed pattern's type is lowered on either tree (lowerType).
+// expression on the pattern's tree (lowerPatExpr, lowerPatternHead), as is a
+// typed pattern's type (lowerType).
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -93,6 +93,15 @@ func (p patSrc) kind() patKind {
 	return patKindNone
 }
 
+// ruleName is the grammar rule p is a node of, the same on either tree, for
+// the diagnostic of a pattern the lowering does not know (patKindUnknown).
+func (p patSrc) ruleName() string {
+	if p.node.Ok() {
+		return native.GalaRuleNames[p.node.Rule()]
+	}
+	return grammar.GalaParserStaticData.RuleNames[p.ctx.GetRuleIndex()]
+}
+
 // text is GetText of p.
 func (p patSrc) text() string {
 	if p.node.Ok() {
@@ -155,11 +164,10 @@ func (p patSrc) typedType() typeSrc {
 // patExpr is an expression read as a pattern: an expression context on
 // ANTLR's tree (an alternative's wrapper included, see wrapAsExpression), or
 // on the native tree an expression node or, for an alternative, the
-// multiplicativeExpr node it is and from, the expression it was split from.
-// The zero patExpr is no expression. Its ok, at and text are exprSrc's.
+// multiplicativeExpr node it is. The zero patExpr is no expression. Its ok,
+// at and text are exprSrc's.
 type patExpr struct {
 	exprSrc
-	from native.GalaNodeRef
 }
 
 // antlrPatExpr is the expression ctx, on ANTLR's tree; the zero patExpr when
@@ -172,15 +180,7 @@ func antlrPatExpr(ctx grammar.IExpressionContext) patExpr {
 }
 
 // sourceText is e as written, whitespace included (transpiler.SourceText).
-func (e patExpr) sourceText() string {
-	if e.node.Ok() {
-		if s := e.node.SourceText(); s != "" {
-			return s
-		}
-		return e.text()
-	}
-	return transpiler.SourceText(e.ctx)
-}
+func (e patExpr) sourceText() string { return e.at().sourceText() }
 
 // start is the line and column of e's first token.
 func (e patExpr) start() (line, col int) { return e.at().start() }
@@ -191,17 +191,31 @@ func (e patExpr) line() int { l, _ := e.start(); return l }
 // col is the column of e's first token.
 func (e patExpr) col() int { _, c := e.start(); return c }
 
-// antlr is e as the expression lowering reads it: e's context, or its native
-// node's (an alternative's wrapped as a whole expression, as on ANTLR's
-// tree).
-func (e patExpr) antlr(t *galaASTTransformer) grammar.IExpressionContext {
-	if !e.node.Ok() {
-		return e.ctx
+// lowerPatExpr lowers e, a pattern's value, as an expression on its tree. An
+// alternative is lowered as the operand it is, as its wrapper on ANTLR's tree
+// is (wrapAsExpression).
+func (t *galaASTTransformer) lowerPatExpr(e patExpr) (ast.Expr, error) {
+	if !e.isAlternative() {
+		return t.lowerExpr(e.exprSrc)
 	}
-	if e.node.Kind() == native.GalaKIND_multiplicativeExpr {
-		return wrapAsExpression(crossTo[*grammar.ExpressionContext](t, e.from), crossTo[*grammar.MultiplicativeExprContext](t, e.node))
+	t.trackNativePosition(e.node)
+	return t.lowerOperatorsNative(e.node)
+}
+
+// isAlternative reports whether e is a native alternative: one operand of a
+// `|` chain, a multiplicativeExpr node.
+func (e patExpr) isAlternative() bool {
+	return e.node.Ok() && e.node.Kind() == native.GalaKIND_multiplicativeExpr
+}
+
+// valueShape is the shape the native walk reports for e, a pattern's value
+// compared by == (see nativeShape): "alternative" for one alternative of
+// several, "pattern" otherwise.
+func (e patExpr) valueShape() string {
+	if e.isAlternative() {
+		return "alternative"
 	}
-	return crossTo[*grammar.ExpressionContext](t, e.node)
+	return "pattern"
 }
 
 // patChain is the precedence chain of an expression, from the expression
@@ -294,7 +308,7 @@ func (e patExpr) soleAdditive() (patAdditive, bool, error) {
 		for i := range add.ChildCount() {
 			c := add.Child(i)
 			if m := c.Node(); m.Ok() && m.Kind() == native.GalaKIND_multiplicativeExpr {
-				out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}, from: e.node})
+				out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}})
 			} else if tok := c.Terminal(); tok.Ok() {
 				out.ops = append(out.ops, tok.GetText())
 			}
@@ -439,6 +453,13 @@ type callPat struct {
 	ctor     string
 	args     argsSrc
 	typeArgs suffixSrc // the type arguments' suffix, the zero suffixSrc when none
+}
+
+// lowerPatternHead lowers the primary expression of c's head, its
+// constructor or, for a qualified pattern, its package, on its tree.
+func (t *galaASTTransformer) lowerPatternHead(c callPat) (ast.Expr, error) {
+	t.nativeShape(c.head.node, "extractor")
+	return t.lowerPrimaryOf(c.head)
 }
 
 // callPattern reads e as an unqualified call pattern
@@ -603,14 +624,6 @@ func (p postfixSrc) hasPrimaryExpr() bool {
 	return p.ctx.PrimaryExpr() != nil
 }
 
-// primaryExpr is p's primary expression, for the expression lowering.
-func (p postfixSrc) primaryExpr(t *galaASTTransformer) *grammar.PrimaryExprContext {
-	if p.node.Ok() {
-		return crossTo[*grammar.PrimaryExprContext](t, p.primaryExprNode().GalaNodeRef)
-	}
-	return p.antlrPrimaryExpr()
-}
-
 // primaryIdent is the identifier p starts from (PrimaryOf), "" when it starts
 // from anything else.
 func (p postfixSrc) primaryIdent() string {
@@ -685,20 +698,20 @@ func (s suffixSrc) args() argsSrc {
 	return antlrArgs(list)
 }
 
-// exprList is the expression list of s, a type-argument suffix, nil when s
-// is none or has none.
-func (s suffixSrc) exprList(t *galaASTTransformer) *grammar.ExpressionListContext {
-	switch {
-	case s.node.Ok():
-		if el := (native.PostfixSuffixNode{GalaNodeRef: s.node}).ExpressionList(); el.Ok() {
-			return crossTo[*grammar.ExpressionListContext](t, el.GalaNodeRef)
-		}
-	case s.ctx != nil:
-		if el, ok := s.ctx.ExpressionList().(*grammar.ExpressionListContext); ok {
-			return el
-		}
+// lowerTypeArg lowers e, a pattern's explicit type argument, as an expression
+// on its tree.
+func (t *galaASTTransformer) lowerTypeArg(e exprSrc) (ast.Expr, error) {
+	t.nativeShape(e.node, "type-arg")
+	return t.lowerExpr(e)
+}
+
+// typeArgs is the expressions of s, a type-argument suffix, in order; nil
+// when s is none or has none.
+func (s suffixSrc) typeArgs() []exprSrc {
+	if s.ctx == nil && !s.node.Ok() {
+		return nil
 	}
-	return nil
+	return slices.Collect(indexSrc{s}.exprs())
 }
 
 // argsSrc is the arguments of a call, or the sub-patterns of a call-shaped

@@ -19,9 +19,9 @@ last_modified_at: 2026-07-26
 
 ## Compiler message
 
-The header reads `error[GALA-E0009]: unrecognized pattern syntax (internal type *grammar.…Context)`, followed by a framed snippet of the offending pattern and a hint asking you to report it.
+The header reads `error[GALA-E0009]: unrecognized pattern syntax (grammar rule …)`, followed by a framed snippet of the offending pattern and a hint asking you to report it.
 
-No triggering program is quoted here on purpose: this code fires only when the grammar and the transformer disagree, which no well-formed source can force. The `internal type` in the message names the grammar context the transformer could not handle — copy it verbatim into your report.
+No triggering program is quoted here on purpose: this code fires only when the grammar and the transformer disagree, which no well-formed source can force. The `grammar rule` in the message names the rule of the pattern the transformer could not handle — copy it verbatim into your report.
 
 ---
 
@@ -30,7 +30,7 @@ No triggering program is quoted here on purpose: this code fires only when the g
 [File an issue](https://github.com/martianoff/gala/issues) with:
 
 - the smallest source file that reproduces it,
-- the exact `internal type *grammar.…Context` string from the message,
+- the exact `grammar rule` name from the message,
 - your GALA version (`gala version`).
 
 As a temporary workaround, rewrite the pattern in a simpler form — a plain binding plus a guard, or a nested `match` — and the transpiler will take a supported path.
