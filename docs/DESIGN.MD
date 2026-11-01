@@ -303,7 +303,7 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
     the transformer walks its top-level declarations, the statements of its function
     bodies, its expressions (operators, names, literals, parentheses and tuples,
-    if-expressions, member accesses and indexes), its lambdas (their parameters, bodies
+    if-expressions, member accesses, indexes and calls), its lambdas (their parameters, bodies
     and Sendable capture checks), and the case clauses and patterns of every `match` (the
     statements of a match arm's block included; a partial function's `{ case ... }` stays
     on ANTLR's tree); an expression, lambda or match entered from code still on ANTLR's
