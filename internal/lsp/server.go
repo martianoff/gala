@@ -434,7 +434,9 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 // native tree when it has one, as the analyzer reads the other files it
 // takes in.
 func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
-	h.noteTreeRead(treeReadAnalysis, parsed.CleanNative().Bridged())
+	if h.onTreeRead != nil { // Bridged converts: only a test's hook asks first
+		h.noteTreeRead(treeReadAnalysis, parsed.CleanNative().Bridged())
+	}
 	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 }
 

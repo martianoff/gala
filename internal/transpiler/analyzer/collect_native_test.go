@@ -230,7 +230,7 @@ func TestCollectionsAgree(t *testing.T) {
 	}
 	t.Logf("analyzed %d sources, %d of them collected on the native tree; reads of the other files: %v", analyzed, native, otherReads)
 	// Every kind of read of a sibling or an imported file was made, often.
-	for _, what := range []string{"imports", "top-level names", "declarations", "val types", "package clause"} {
+	for _, what := range []string{"imports", "top-level names", "top-level type names", "declarations", "val types", "package clause"} {
 		if otherReads[what] < 20 {
 			t.Errorf("%d native reads of other files' %s", otherReads[what], what)
 		}

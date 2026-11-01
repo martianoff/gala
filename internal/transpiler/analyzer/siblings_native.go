@@ -45,6 +45,13 @@ func (a *galaAnalyzer) packageFileNames(path string, tree *grammar.SourceFileCon
 		func() ownNames { return ownNamesOf(tree) })
 }
 
+// packageFileTypeNames is typeNamesOf the file at path (packageFileNames
+// without the methods), read as packageFileImports reads its imports.
+func (a *galaAnalyzer) packageFileTypeNames(path string, tree *grammar.SourceFileContext, nf nativeFile) map[string]bool {
+	return readOn(a.onPackageRead, path, "top-level type names", nf, typeNamesNative,
+		func() map[string]bool { return typeNamesOf(tree) })
+}
+
 // add records into o the names other introduces.
 func (o ownNames) add(other ownNames) {
 	addNames(o.types, other.types)

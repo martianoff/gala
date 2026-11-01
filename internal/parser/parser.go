@@ -32,8 +32,6 @@ type sourceFileParseResult struct {
 	stream *antlr.CommonTokenStream
 	tree   antlr.Tree
 	errors []error
-	// galop says galop's parser made tree, not ANTLR's.
-	galop bool
 }
 
 // parseSourceFileAttempt parses input once under the given ANTLR prediction
@@ -103,14 +101,14 @@ type Parsed struct {
 	Docs   Docs
 	Errors []error
 	// Native is the parse's native tree (see Native), nil when there is none:
-	// the parse gave no tree, or it reported syntax errors, so that code with
-	// a native and an ANTLR path reads an error-recovered tree on the ANTLR
-	// one end to end. Every parse without syntax errors has one, whichever
-	// parser made its tree: galop's, or ANTLR's (with ANTLR's engine, or as
-	// galop's fallback). Until it
-	// converts it holds the token stream and the source text, which a clean
-	// parse's tree does not keep alive, so a holder that keeps a Parsed long
-	// but never reads the native tree drops it.
+	// the parse gave no tree, or it reported an error (Errors is not empty:
+	// a syntax error, or a source-text or blank-line check), so that code
+	// with a native and an ANTLR path reads such a tree on the ANTLR one end
+	// to end. Every parse without errors has one, whichever parser made its
+	// tree: galop's, or ANTLR's (with ANTLR's engine, or as galop's
+	// fallback). Until it converts it holds the token stream and the source
+	// text, which a clean parse's tree does not keep alive, so a holder that
+	// keeps a Parsed long but never reads the native tree drops it.
 	Native *Native
 }
 
@@ -207,7 +205,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	}
 
 	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
-	if len(result.errors) == 0 {
+	if len(errs) == 0 {
 		parsed.Native = newNative(result.tree, result.stream, input)
 	}
 	return parsed
@@ -281,7 +279,7 @@ func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 			tree, ok, panicked := tryGalop(input, in, galopSourceFile)
 			clean := len(lexErrs.Errors) == 0 && !panicked
 			if ok && clean {
-				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree, galop: true}
+				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree}
 			}
 			if clean {
 				reuse = in

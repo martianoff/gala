@@ -119,6 +119,21 @@ func ownNamesNative(root native.GalaNodeRef) ownNames {
 	return o
 }
 
+// typeNamesOf is ownNamesOf sf's names without its methods: each name, and
+// whether it names a type.
+func typeNamesOf(sf *grammar.SourceFileContext) map[string]bool {
+	names := make(map[string]bool)
+	collectTopLevelDeclaredNames(sf, names, nil)
+	return names
+}
+
+// typeNamesNative is typeNamesOf root.
+func typeNamesNative(root native.GalaNodeRef) map[string]bool {
+	names := make(map[string]bool)
+	forEachTopLevelNameNative(root, topLevelNameRecorder(names, nil))
+	return names
+}
+
 // checkDotImportCollisionsNative is checkDotImportCollisions of root.
 func checkDotImportCollisionsNative(root native.GalaNodeRef, dotImports map[string][]string, richAST *transpiler.RichAST) error {
 	return dotImportCollisions(dotImports, richAST, func(v topLevelVisitor) { forEachTopLevelNameNative(root, v) })

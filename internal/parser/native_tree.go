@@ -3,6 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -118,7 +119,16 @@ func (t *Native) convert() {
 	}()
 	if t.tree, t.ctxs = galop.ToNative(t.root, t.stream, t.src); t.tree == nil {
 		t.err = errNoNative
+		return
 	}
+	// The converter sizes the node, child and context slices by an estimate
+	// and grows them by doubling, so up to half of each is spare capacity. A
+	// handle outlives its conversion (the analyzer's parsed-file cache keeps
+	// every file it parsed for the life of a build worker), so the slices are
+	// cut to their length, before any node reference exists.
+	t.tree.Nodes = slices.Clone(t.tree.Nodes)
+	t.tree.Kids = slices.Clone(t.tree.Kids)
+	t.ctxs = slices.Clone(t.ctxs)
 }
 
 // Bridged reports whether the tree converted and its bridge to the ANTLR
