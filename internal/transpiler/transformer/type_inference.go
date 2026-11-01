@@ -1005,14 +1005,23 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 		return t.unifyForInference(patternChan.Elem, concreteChan.Elem, typeParams, inferredMap)
 	}
 
-	// Anonymous structs unify field by field when their fields line up.
+	// Anonymous structs unify field by field when their fields are the same
+	// fields: name, embedding and tag, in order.
 	patternStruct, patternIsStruct := pattern.(transpiler.StructType)
 	concreteStruct, concreteIsStruct := concrete.(transpiler.StructType)
-	if patternIsStruct && concreteIsStruct && len(patternStruct.Fields) == len(concreteStruct.Fields) {
-		for i, f := range patternStruct.Fields {
-			t.unifyForInference(f.Type, concreteStruct.Fields[i].Type, typeParams, inferredMap)
+	if patternIsStruct && concreteIsStruct {
+		if len(patternStruct.Fields) != len(concreteStruct.Fields) {
+			return false
 		}
-		return true
+		unified := true
+		for i, f := range patternStruct.Fields {
+			c := concreteStruct.Fields[i]
+			if f.Name != c.Name || f.Embedded != c.Embedded || f.Tag != c.Tag {
+				return false
+			}
+			unified = t.unifyForInference(f.Type, c.Type, typeParams, inferredMap) && unified
+		}
+		return unified
 	}
 
 	// Check if both are map types

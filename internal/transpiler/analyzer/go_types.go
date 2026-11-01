@@ -1027,6 +1027,28 @@ func syntacticGoType(expr ast.Expr, imports map[string]string, pkgName string, t
 	case *ast.ParenExpr:
 		return syntacticGoType(e.X, imports, pkgName, typeParams)
 
+	case *ast.StructType:
+		// Only the empty struct: a field's spelling needs the type checker
+		// to be exact (see goTypeToTranspilerType).
+		if e.Fields == nil || len(e.Fields.List) == 0 {
+			return transpiler.StructType{}
+		}
+		return transpiler.NilType{}
+
+	case *ast.ChanType:
+		elem := syntacticGoType(e.Value, imports, pkgName, typeParams)
+		if elem.IsNil() {
+			return transpiler.NilType{}
+		}
+		dir := transpiler.ChanBoth
+		switch e.Dir {
+		case ast.RECV:
+			dir = transpiler.ChanRecv
+		case ast.SEND:
+			dir = transpiler.ChanSend
+		}
+		return transpiler.ChanType{Elem: elem, Dir: dir}
+
 	case *ast.Ellipsis:
 		// convertSignature stores a variadic parameter element-wise, so `...T`
 		// recovers as T to stay index-aligned with it.
@@ -1635,13 +1657,12 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 
 	case *types.Struct:
 		// An anonymous struct, such as a signal channel's `struct{}`, keeps
-		// its fields, so it is spelled as Go has it. One with an unexported
-		// field cannot be: the same spelling in another package is another
-		// type, so it stays the placeholder it was.
+		// its fields, so it is spelled as Go has it.
 		var st transpiler.StructType
 		for i := 0; i < t.NumFields(); i++ {
 			f := t.Field(i)
 			if !f.Exported() {
+				// The same spelling in another package is another type.
 				return transpiler.BasicType{Name: "any"}
 			}
 			st.Fields = append(st.Fields, transpiler.StructField{
@@ -1650,6 +1671,12 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 				Embedded: f.Embedded(),
 				Tag:      t.Tag(i),
 			})
+		}
+		// A field whose type the model does not spell exactly (an array's
+		// length, a type's arguments, an interface's methods) would make the
+		// struct another type: it stays the placeholder it was.
+		if st.String() != types.TypeString(t, func(p *types.Package) string { return p.Name() }) {
+			return transpiler.BasicType{Name: "any"}
 		}
 		return st
 

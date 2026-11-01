@@ -100,6 +100,9 @@ func TestParseTypeRoundTrip(t *testing.T) {
 			{Name: "A", Type: BasicType{Name: "int"}, Tag: `json:"a,omitempty" x:"{[;]}"`},
 			{Name: "B", Type: fileInfo},
 		}}}}},
+		{"struct of a tagged struct", StructType{Fields: []StructField{
+			{Name: "A", Type: StructType{Fields: []StructField{{Name: "B", Type: BasicType{Name: "int"}, Tag: `json:"b"`}}}, Tag: `x:"a"`},
+		}}},
 		{"map keyed by a generic", MapType{
 			Key:  GenericType{Base: option, Params: []Type{BasicType{Name: "int"}}},
 			Elem: MapType{Key: BasicType{Name: "string"}, Elem: builder},

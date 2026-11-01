@@ -276,6 +276,17 @@ func (c *comparer) walk(typ transpiler.Type, env map[string]typeArg, declared bo
 		}
 	case transpiler.GenericType:
 		args = tt.Params
+	case transpiler.StructType:
+		// An anonymous Go struct compares field by field, as Go's == does.
+		res := typeEq{native: true}
+		for _, f := range tt.Fields {
+			r := c.walk(f.Type, env, declared)
+			if r.bad != nil {
+				return typeEq{bad: r.bad}
+			}
+			res.native = res.native && r.native
+		}
+		return res
 	default:
 		return typeEq{} // a pointer, a channel: Go compares their identity
 	}

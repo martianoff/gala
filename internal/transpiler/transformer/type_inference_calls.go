@@ -36,6 +36,18 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			return fType
 		}
 	}
+	// A field of an anonymous Go struct, directly or through a pointer.
+	structType, isStruct := xType.(transpiler.StructType)
+	if ptr, isPtr := xType.(transpiler.PointerType); isPtr {
+		structType, isStruct = ptr.Elem.(transpiler.StructType)
+	}
+	if isStruct {
+		for _, f := range structType.Fields {
+			if f.Name == e.Sel.Name {
+				return f.Type
+			}
+		}
+	}
 	if ft, ok := t.methodValueType(xType, e.Sel.Name); ok {
 		return ft
 	}

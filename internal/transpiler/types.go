@@ -320,9 +320,9 @@ func (t StructType) IsNil() bool    { return false }
 func (t StructType) IsAny() bool    { return false }
 func (t StructType) IsVoid() bool   { return false }
 
-// BaseName is the struct's spelling: two anonymous struct types are the same
-// type only when their fields are, so a lookup by name must see them all.
-func (t StructType) BaseName() string   { return t.String() }
+// BaseName is "struct", as a channel's is "chan": an anonymous struct names
+// no declaration, and its spelling holds dots a package split would misread.
+func (t StructType) BaseName() string   { return "struct" }
 func (t StructType) GetPackage() string { return "" }
 
 // FieldTypes is the type of each of t's fields, in order.
@@ -365,13 +365,13 @@ func spellStruct(t StructType, name func(Type) string) string {
 }
 
 // parseStruct parses the body of `struct{...}` in the form spellStruct
-// prints. A field's name and type never hold a quote, so its tag, if any,
-// starts at its first one.
+// prints. A field's tag is its quote outside any brackets: a quote inside
+// them belongs to the tag of a nested struct's field.
 func parseStruct(body string) StructType {
 	var st StructType
 	for _, part := range splitTopLevelOn(body, ';') {
 		var f StructField
-		if q := strings.IndexByte(part, '"'); q != -1 {
+		if q := topLevelQuote(part); q != -1 {
 			f.Tag, _ = strconv.Unquote(strings.TrimSpace(part[q:]))
 			part = strings.TrimSpace(part[:q])
 		}
@@ -385,6 +385,25 @@ func parseStruct(body string) StructType {
 		st.Fields = append(st.Fields, f)
 	}
 	return st
+}
+
+// topLevelQuote is the index of s's first quote outside brackets, or -1.
+func topLevelQuote(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '"':
+			if depth == 0 {
+				return i
+			}
+			i = closingQuote(s, i)
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		}
+	}
+	return -1
 }
 
 // EmbeddedFieldName is the name Go gives a field embedding typ: its type
