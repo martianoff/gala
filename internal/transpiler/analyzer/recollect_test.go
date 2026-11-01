@@ -200,7 +200,7 @@ func TestRecollectedSiblingDeclaration(t *testing.T) {
 							t.Fatal("the sibling has no native tree")
 						}
 					}
-					if err := a.extractSiblingFullMetadata(sf, nf, fileQualifiers{}, "box", richAST, sibFile, newPackageDecls(mainFile)); err != nil {
+					if err := a.extractSiblingFullMetadata(sf, nf, parsed.Docs, fileQualifiers{}, "box", richAST, sibFile, newPackageDecls(mainFile)); err != nil {
 						t.Fatalf("sibling extraction: %v", err)
 					}
 				}

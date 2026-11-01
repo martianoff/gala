@@ -238,27 +238,22 @@ func bindingNamesNative(td native.GalaNodeRef) ([]string, bool) {
 	if !ok {
 		return nil, false
 	}
-	var idList native.IdentifierListNode
-	var tp native.TuplePatternNode
+	var binding nativeBinding
 	switch decl.Kind() {
 	case native.GalaKIND_valDeclaration:
-		d := native.ValDeclarationNode{GalaNodeRef: decl}
-		idList, tp = d.IdentifierList(), d.TuplePattern()
+		binding = native.ValDeclarationNode{GalaNodeRef: decl}
 	case native.GalaKIND_varDeclaration:
-		d := native.VarDeclarationNode{GalaNodeRef: decl}
-		idList, tp = d.IdentifierList(), d.TuplePattern()
+		binding = native.VarDeclarationNode{GalaNodeRef: decl}
 	default:
 		return nil, false
 	}
-	if tp.Ok() {
-		idList = tp.IdentifierList()
-	}
+	idList := bindingIdList(binding)
 	if !idList.Ok() {
 		return nil, false // parse-error recovery
 	}
 	var names []string
-	for id := range parser.NativeKids(idList.GalaNodeRef, native.GalaKIND_identifier) {
-		names = append(names, id.GetText())
+	for _, n := range nativeDeclNames(idList) {
+		names = append(names, n.text)
 	}
 	return names, true
 }

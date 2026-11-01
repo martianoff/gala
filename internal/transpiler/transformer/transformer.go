@@ -151,6 +151,10 @@ type galaASTTransformer struct {
 	// its top-level walk reads that tree (see walkSource), nil while it reads
 	// ANTLR's. The native walk crosses to ANTLR's tree through it (crossTo).
 	native *galaparser.Native
+	// walkedNative is whether the last transform's top-level walk read the
+	// native tree (see newWalkSource). Unlike native, it outlives the
+	// transform, for the callers that report the tree it read.
+	walkedNative bool
 	// onNativeDecl, when set, is told of each top-level declaration the
 	// native walk lowers. It observes and changes nothing;
 	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
@@ -236,6 +240,7 @@ func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*tran
 		File:             file,
 		VarTypes:         varTypes,
 		LambdaParamHints: hints,
+		WalkedNative:     t.walkedNative,
 	}, transformErr
 }
 
@@ -270,13 +275,10 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 // richAST.Native's tree when that is converted and is richAST.Tree's, on
 // ANTLR's tree otherwise. onNative says which.
 func InferPackageValTypes(richAST *transpiler.RichAST) (types map[string]transpiler.Type, onNative bool) {
-	if sf, ok := richAST.Tree.(*grammar.SourceFileContext); ok {
-		onNative = newWalkSource(richAST, sf).root.Ok()
-	}
 	t := NewGalaASTTransformer().(*galaASTTransformer)
 	t.valTypes = make(map[string]transpiler.Type)
 	_, _, _ = t.transform(richAST, false)
-	return t.valTypes, onNative
+	return t.valTypes, t.walkedNative
 }
 
 // lowersCleanly lowers one top-level declaration, reporting whether it lowered
@@ -498,6 +500,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 	src := newWalkSource(richAST, sourceFile)
 	t.native = src.h
+	t.walkedNative = src.root.Ok()
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName

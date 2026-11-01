@@ -23,15 +23,6 @@ const (
 	treeReadTransform = "the transform"
 )
 
-// nativeOf is the native-tree handle kept with parsed: its CleanNative, or
-// nil when h keeps every feature on ANTLR's tree.
-func (h *GalaHandler) nativeOf(parsed *parser.Parsed) *parser.Native {
-	if h.antlrTreeOnly {
-		return nil
-	}
-	return parsed.CleanNative()
-}
-
 // noteTreeRead tells h.onTreeRead, when set, of the read what, which took the
 // native tree when onNative holds.
 func (h *GalaHandler) noteTreeRead(what string, onNative bool) {

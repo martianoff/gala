@@ -688,7 +688,7 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 		if perr != nil || tree == nil {
 			continue
 		}
-		addNames(names, a.packageFileNames(path, tree, nativeFileOf(a.cachedNative(path, tree))).types)
+		addNames(names, a.packageFileTypeNames(path, tree, nativeFileOf(a.cachedNative(path, tree))))
 	}
 	if a.importedNames != nil {
 		a.importedNames[key] = names
@@ -710,21 +710,13 @@ func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]
 // native twin record out and methods with.
 func topLevelNameRecorder(out map[string]bool, methods map[string]map[string]bool) topLevelVisitor {
 	v := topLevelVisitor{name: func(name string, _ transpiler.SourcePos, kind string) {
-		if kind == declKindType || kind == declKindVariant {
-			out[name] = true
-		} else if !out[name] {
-			out[name] = false
-		}
+		addName(out, name, kind == declKindType || kind == declKindVariant)
 	}}
 	if methods != nil {
 		v.method = func(base, name string) {
-			if base == "" {
-				return
+			if base != "" {
+				addMethod(methods, base, name)
 			}
-			if methods[base] == nil {
-				methods[base] = make(map[string]bool)
-			}
-			methods[base][name] = true
 		}
 	}
 	return v

@@ -83,14 +83,12 @@ type GalaHandler struct {
 	// The document's analysis converts it (see analyzeClean).
 	parseNatives map[string]*parser.Native
 	parseTexts   map[string]string                       // URI -> the source that produced parseTrees[URI] (may be surgically patched)
-	// antlrTreeOnly keeps the analysis, the transform and every feature on
-	// ANTLR's tree: no parse is kept or analyzed with its native-tree handle
-	// (see nativeOf and antlrOnlyParser). onTreeRead, when set, is told of
-	// each read of a document's tree by a feature with a native twin: which
-	// read, and whether it took the native tree. Both are for tests, which
-	// compare the trees' answers.
-	antlrTreeOnly bool
-	onTreeRead    func(what string, onNative bool)
+	// onTreeRead, when set, is told of each read of a document's tree by a
+	// feature with a native twin: which read, and whether it took the native
+	// tree. It is for tests, which compare the trees' answers; to keep a
+	// handler on ANTLR's tree alone, they give it a parser whose parses have
+	// no native-tree handle.
+	onTreeRead  func(what string, onNative bool)
 	varTypes    map[string]map[string]string            // URI -> (varName -> type) from transpiler
 	lambdaHints map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
 }
@@ -433,35 +431,18 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 }
 
 // analyzeClean analyzes parsed, a parse of text without syntax errors, on its
-// native tree (see nativeOf), as the analyzer reads the other files it takes
-// in.
+// native tree when it has one, as the analyzer reads the other files it
+// takes in.
 func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
-	view := *parsed
-	view.Native = h.nativeOf(parsed)
-	h.noteTreeRead(treeReadAnalysis, view.Native.Bridged())
-	return h.newAnalyzer(filePath, text).AnalyzeParsed(&view, filePath)
-}
-
-// antlrOnlyParser parses as its GalaParser does but drops each parse's
-// native-tree handle, so that an analyzer parsing with it reads every file
-// on ANTLR's tree (see GalaHandler.antlrTreeOnly).
-type antlrOnlyParser struct{ transpiler.GalaParser }
-
-func (p antlrOnlyParser) ParseFile(input string) *parser.Parsed {
-	parsed := p.GalaParser.ParseFile(input)
-	parsed.Native = nil
-	return parsed
+	h.noteTreeRead(treeReadAnalysis, parsed.CleanNative().Bridged())
+	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 }
 
 // newAnalyzer builds the analyzer for one document: search paths, Go source
 // directories, and the files of a multi-file `main` package, which the
 // analyzer does not discover on its own (see packageFiles).
 func (h *GalaHandler) newAnalyzer(filePath, text string) transpiler.Analyzer {
-	var p transpiler.GalaParser = h.parser
-	if h.antlrTreeOnly {
-		p = antlrOnlyParser{p}
-	}
-	a := analyzer.NewGalaAnalyzerForLSP(p, h.getSearchPaths(filePath))
+	a := analyzer.NewGalaAnalyzerForLSP(h.parser, h.getSearchPaths(filePath))
 	if len(h.goSrcDirs) > 0 {
 		if s, ok := a.(interface{ SetGoSrcDirs(map[string]string) }); ok {
 			s.SetGoSrcDirs(h.goSrcDirs)
@@ -715,11 +696,11 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAST, parsed *parser.Parsed, text string) (*transpiler.TransformResult, error) {
 	// The transform walks the native tree the analysis converted (see the
 	// transformer's walkSource); the published AST does not keep it.
-	handle := h.nativeOf(parsed)
+	handle := parsed.CleanNative()
 	richAST.Native = handle
-	h.noteTreeRead(treeReadTransform, richAST.Native.Converted() && richAST.Native.Bridged())
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
+	h.noteTreeRead(treeReadTransform, result != nil && result.WalkedNative)
 
 	h.mu.Lock()
 	if h.isOpenLocked(uri) {

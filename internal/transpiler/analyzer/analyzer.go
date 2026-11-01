@@ -786,14 +786,14 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	logPhase("sibling-discovery ("+fmt.Sprintf("%d files", len(siblingTrees))+")", phaseStart)
 
-	// Each sibling's native-tree handle, as the parsed-file cache holds it
-	// with the sibling's tree (cachedNative), and its native tree, which its
-	// reads take when it has one.
-	siblingHandles := make([]*galaparser.Native, len(siblingTrees))
+	// Each sibling's parse, as the parsed-file cache holds it with the
+	// sibling's tree (nil when it holds none, see parsedForTree): its doc
+	// comments and its native tree, which its reads take when it has one.
+	siblingParsed := make([]*galaparser.Parsed, len(siblingTrees))
 	siblingNFs := make([]nativeFile, len(siblingTrees))
 	for i, sib := range siblingTrees {
-		siblingHandles[i] = a.cachedNative(siblingPathAt(siblingPaths, i), sib)
-		siblingNFs[i] = nativeFileOf(siblingHandles[i])
+		siblingParsed[i] = a.parsedForFile(siblingPathAt(siblingPaths, i), sib)
+		siblingNFs[i] = nativeFileOf(siblingParsed[i].CleanNative())
 	}
 
 	richAST := &transpiler.RichAST{
@@ -1224,27 +1224,19 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// (structs, sealed types, methods) to enable complete cross-file type resolution.
 	// Directory scanning skips main/test packages since sibling files in those packages
 	// may be unrelated programs sharing a directory (e.g., examples/).
-	if len(a.packageFiles) > 0 {
-		// Explicit package files: full metadata extraction for ALL packages including main/test
+	//
+	// Explicit package files: full metadata extraction for ALL packages
+	// including main/test. Directory-discovered siblings: the same; they are
+	// already filtered to matching package name during discovery (lines
+	// above), so it's safe to extract full struct field info without
+	// pollution concerns.
+	if len(a.packageFiles) > 0 || (pkgName != "main" && pkgName != "test") {
 		for i, sibTree := range siblingTrees {
-			sibPath := ""
-			if i < len(siblingPaths) {
-				sibPath = siblingPaths[i]
+			var docs galaparser.Docs
+			if siblingParsed[i] != nil {
+				docs = siblingParsed[i].Docs
 			}
-			if err := a.extractSiblingFullMetadata(sibTree, siblingNFs[i], siblingQuals[i], pkgName, richAST, sibPath, decls); err != nil {
-				return nil, err
-			}
-		}
-	} else if pkgName != "main" && pkgName != "test" {
-		// Directory-discovered siblings: full metadata extraction (same as --package-files mode).
-		// Siblings are already filtered to matching package name during discovery (lines above),
-		// so it's safe to extract full struct field info without pollution concerns.
-		for i, sibTree := range siblingTrees {
-			sibPath := ""
-			if i < len(siblingPaths) {
-				sibPath = siblingPaths[i]
-			}
-			if err := a.extractSiblingFullMetadata(sibTree, siblingNFs[i], siblingQuals[i], pkgName, richAST, sibPath, decls); err != nil {
+			if err := a.extractSiblingFullMetadata(sibTree, siblingNFs[i], docs, siblingQuals[i], pkgName, richAST, siblingPathAt(siblingPaths, i), decls); err != nil {
 				return nil, err
 			}
 		}
@@ -1377,9 +1369,13 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	phaseStart = time.Now()
 	richAST.ApplyPackageKeys()
+	handles := []*galaparser.Native{handle}
+	for _, p := range siblingParsed {
+		handles = append(handles, p.CleanNative())
+	}
 	a.inferPackageValTypes(richAST,
 		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
-		append([]*galaparser.Native{handle}, siblingHandles...),
+		handles,
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
@@ -3781,15 +3777,13 @@ func isSealedEntry(meta *transpiler.TypeMetadata) bool { return meta.IsSealed }
 //
 // The sibling is read on nf, its native tree, when that is one (see
 // extractSiblingDeclsNative), and on sibTree, its ANTLR tree, otherwise.
-func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, nf nativeFile, sibQuals fileQualifiers, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
+// docs are its doc comments, from the parse that gave both trees.
+func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, nf nativeFile, docs galaparser.Docs, sibQuals fileQualifiers, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
 	// The sibling's declarations resolve against the sibling's own imports.
 	outerQualifiers := a.currentQualifiers
 	a.currentQualifiers = sibQuals
 	defer func() { a.currentQualifiers = outerQualifiers }()
-	sx := siblingExtraction{pkgName: pkgName, richAST: richAST, absSibPath: a.parsedFileCacheKey(sibFilePath), decls: decls}
-	if p := a.parsedForTree(sx.absSibPath, sibTree); p != nil {
-		sx.docs = p.Docs
-	}
+	sx := siblingExtraction{pkgName: pkgName, richAST: richAST, absSibPath: a.parsedFileCacheKey(sibFilePath), docs: docs, decls: decls}
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under
 	// compilation. absSibPath stays the identity used for comparisons.
@@ -4758,11 +4752,14 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		return nil, "", nil
 	}
 	pkgName := pkgClause.Identifier().GetText()
-	// Converted here, on the goroutine that parsed it (parseFilesConcurrent),
-	// rather than by its first reader: every reader takes the native tree
-	// when the handle bridges, and a converted handle no longer holds the
-	// token stream (see parser.Parsed.Native).
-	parsed.CleanNative().Bridged()
+	// Converted here (Bridged converts), on the goroutine that parsed it
+	// (parseFilesConcurrent), rather than by its first reader: every reader
+	// takes the native tree when the handle bridges, and a converted handle
+	// no longer holds the token stream (see parser.Parsed.Native). A handle
+	// that does not bridge would serve no reader: it is not kept.
+	if !parsed.CleanNative().Bridged() {
+		parsed.Native = nil
+	}
 	a.cacheParsedFile(canonPath, &parsedFileEntry{
 		parsed:  parsed,
 		pkgName: pkgName,

@@ -44,7 +44,7 @@ import (
 				"gopkg.in/yaml.v3": "yaml", "github.com/mattn/go-sqlite3": "sqlite3",
 			},
 		}
-		q := a.qualifiersForFile(sf, rich)
+		q := a.qualifiersFor(scanFileImports(sf), rich)
 		for qualifier, path := range map[string]string{
 			"v1": "k8s.io/api/core/v1", "core": "martianoff/gala/core", "rand": "math/rand/v2",
 			"yaml": "gopkg.in/yaml.v3", "sqlite3": "github.com/mattn/go-sqlite3",
@@ -58,7 +58,7 @@ import (
 		// No Go type info: k8s.io/api/core/v1 may bind v1 (its last segment)
 		// or core (derived). The GALA package really is core, so it keeps it.
 		rich := &transpiler.RichAST{Packages: map[string]string{"martianoff/gala/core": "core"}}
-		q := a.qualifiersForFile(sf, rich)
+		q := a.qualifiersFor(scanFileImports(sf), rich)
 		assert.Equal(t, "martianoff/gala/core", q.named["core"].Path)
 		assert.True(t, q.named["core"].IsGala)
 		assert.Equal(t, "k8s.io/api/core/v1", q.named["v1"].Path)
@@ -89,7 +89,7 @@ import (
 	gi := transpiler.NewGoTypeInfo()
 	gi.Types["strings.Builder"] = &transpiler.GoTypeData{}
 	gi.Types["v1.Pod"] = &transpiler.GoTypeData{}
-	withInfo := a.qualifiersForFile(sf, &transpiler.RichAST{
+	withInfo := a.qualifiersFor(scanFileImports(sf), &transpiler.RichAST{
 		GoImportNames: map[string]string{"strings": "strings", "k8s.io/api/core/v1": "v1"},
 	})
 	cases := []struct {
@@ -107,7 +107,7 @@ import (
 	}
 
 	// Without type info the Go import is taken at its word.
-	noInfo := a.qualifiersForFile(sf, &transpiler.RichAST{})
+	noInfo := a.qualifiersFor(scanFileImports(sf), &transpiler.RichAST{})
 	got := noInfo.qualify(named("strings", "Str"), nil).(transpiler.NamedType)
 	assert.Equal(t, "strings", got.ImportPath)
 }
@@ -127,7 +127,7 @@ import (
 	require.NoError(t, err)
 	sf := tree.(*grammar.SourceFileContext)
 	a := &galaAnalyzer{}
-	q := a.qualifiersForFile(sf, &transpiler.RichAST{
+	q := a.qualifiersFor(scanFileImports(sf), &transpiler.RichAST{
 		Packages: map[string]string{"martianoff/gala/lab/cmdp": "cmdp", "martianoff/gala/lab/plain": "plain"},
 	})
 	named := func(pkg, name string) transpiler.NamedType { return transpiler.NamedType{Package: pkg, Name: name} }

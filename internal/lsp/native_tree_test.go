@@ -18,8 +18,21 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
+
+// antlrOnlyParser parses as its GalaParser does but drops each parse's
+// native-tree handle, so that a handler parsing with it analyzes,
+// transforms and answers on ANTLR's tree alone, its documents and the files
+// their analysis reads alike.
+type antlrOnlyParser struct{ transpiler.GalaParser }
+
+func (p antlrOnlyParser) ParseFile(input string) *parser.Parsed {
+	parsed := p.GalaParser.ParseFile(input)
+	parsed.Native = nil
+	return parsed
+}
 
 // nativeCorpus is the GALA sources staged as the test's data, sorted, with
 // their text as the handler holds it (BOM-stripped), and the search path that
@@ -159,7 +172,9 @@ func TestHandlerTreesAgree(t *testing.T) {
 	newHandler := func(antlrOnly bool, reads *treeReads) *GalaHandler {
 		h := NewGalaHandler()
 		h.SetSearchPaths([]string{root})
-		h.antlrTreeOnly = antlrOnly
+		if antlrOnly {
+			h.parser = antlrOnlyParser{h.parser}
+		}
 		h.onTreeRead = reads.note
 		return h
 	}
@@ -314,7 +329,9 @@ func TestBufferAnalysisTrees(t *testing.T) {
 	} {
 		h := NewGalaHandler()
 		h.SetSearchPaths([]string{root})
-		h.antlrTreeOnly = c.antlrOnly
+		if c.antlrOnly {
+			h.parser = antlrOnlyParser{h.parser}
+		}
 		got := map[string]bool{}
 		h.onTreeRead = func(what string, onNative bool) {
 			if prev, seen := got[what]; seen && prev != onNative {

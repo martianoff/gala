@@ -52,36 +52,54 @@ func (a *galaAnalyzer) packageFileNames(path string, tree *grammar.SourceFileCon
 		func() ownNames { return ownNamesOf(tree) })
 }
 
+// packageFileTypeNames is the names the file at path declares, and whether
+// each names a type (collectTopLevelDeclaredNames without the methods), read
+// as packageFileImports reads its imports.
+func (a *galaAnalyzer) packageFileTypeNames(path string, tree *grammar.SourceFileContext, nf nativeFile) map[string]bool {
+	return readOn(a.onPackageRead, path, "top-level names", nf,
+		func(root native.GalaNodeRef) map[string]bool {
+			names := make(map[string]bool)
+			forEachTopLevelNameNative(root, topLevelNameRecorder(names, nil))
+			return names
+		},
+		func() map[string]bool {
+			names := make(map[string]bool)
+			collectTopLevelDeclaredNames(tree, names, nil)
+			return names
+		})
+}
+
 // add records into o the names other introduces.
 func (o ownNames) add(other ownNames) {
 	addNames(o.types, other.types)
 	for base, methods := range other.methods {
-		if o.methods[base] == nil {
-			o.methods[base] = make(map[string]bool, len(methods))
-		}
 		for name := range methods {
-			o.methods[base][name] = true
+			addMethod(o.methods, base, name)
 		}
 	}
 }
 
-// addNames records into out the names of names, as topLevelNameRecorder
-// records them: a name that names a type anywhere names one.
+// addName records name into out, as a type's when isType: a name that names
+// a type in any file names one.
+func addName(out map[string]bool, name string, isType bool) {
+	if isType || !out[name] {
+		out[name] = isType
+	}
+}
+
+// addNames records into out each of names (see addName).
 func addNames(out, names map[string]bool) {
 	for name, isType := range names {
-		if isType || !out[name] {
-			out[name] = isType
-		}
+		addName(out, name, isType)
 	}
 }
 
-// siblingQualified is name qualified with pkgName as the sibling pass keys a
-// declaration: unqualified in a main or test package.
-func siblingQualified(pkgName, name string) string {
-	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		return pkgName + "." + name
+// addMethod records into methods the method name of receiver type base.
+func addMethod(methods map[string]map[string]bool, base, name string) {
+	if methods[base] == nil {
+		methods[base] = make(map[string]bool)
 	}
-	return name
+	methods[base][name] = true
 }
 
 // siblingMethod is a method a sibling declares, as the sibling pass records
@@ -106,7 +124,7 @@ type siblingMethod struct {
 func (a *galaAnalyzer) checkSiblingMethod(sm *siblingMethod, pkgName, absSibPath, sibDisplay string, decls *packageDecls) error {
 	sm.fullBaseType = sm.baseType
 	if !strings.Contains(sm.baseType, ".") {
-		sm.fullBaseType = siblingQualified(pkgName, sm.baseType)
+		sm.fullBaseType = qualifiedName(pkgName, sm.baseType)
 	}
 	prev, dup := decls.recordMethod(sm.fullBaseType+"."+sm.name, absSibPath, sm.pos)
 	if dup && a.paths.sameFile(prev.file, decls.mainFile) {
@@ -167,7 +185,7 @@ type siblingFunc struct {
 // already declares a function of that name: a redeclaration, which was
 // previously dropped here without a word.
 func (a *galaAnalyzer) checkSiblingFunc(sf *siblingFunc, pkgName, absSibPath, sibDisplay string, decls *packageDecls) error {
-	sf.fullName = siblingQualified(pkgName, sf.name)
+	sf.fullName = qualifiedName(pkgName, sf.name)
 	prev, dup := decls.recordFunc(sf.fullName, absSibPath, sf.pos)
 	if dup && a.paths.sameFile(prev.file, decls.mainFile) {
 		return funcRedeclaredError(sf.name, pkgName,
@@ -218,17 +236,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 			if structType := ctx.StructType(); structType.Ok() {
 				for fNode := range galaparser.NativeKids(structType.GalaNodeRef, native.GalaKIND_structField) {
-					fctx := native.StructFieldNode{GalaNodeRef: fNode}
-					fieldID := fctx.Identifier()
-					fieldName := fieldID.GetText()
-					meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.NativeTypeText(fctx.Type_()), pkgName, meta.TypeParams)
-					meta.FieldNames = append(meta.FieldNames, fieldName)
-					meta.ImmutFlags = append(meta.ImmutFlags, !fctx.VAR().Ok())
-					if meta.FieldPositions == nil {
-						meta.FieldPositions = make(map[string]transpiler.SourcePos)
-					}
-					meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-					addFieldDoc(meta, fieldName, nativeDocAt(docs, fNode))
+					a.recordStructFieldNative(meta, native.StructFieldNode{GalaNodeRef: fNode}, pkgName, docs)
 				}
 				if meta.DefinedIn == "" {
 					meta.DefinedIn = absSibPath
@@ -246,18 +254,8 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 						at := nativePos(msID.GalaNodeRef)
 						return galaerr.WithFilePath(genericInterfaceMethodError(at.Line, at.Column, meta, methodName, tps, cons), sibDisplay)
 					}
-					methodMeta := &transpiler.MethodMetadata{
-						Name:       methodName,
-						Package:    pkgName,
-						Doc:        nativeDocAt(docs, msNode),
-						Pos:        nativePos(msID.GalaNodeRef),
-						DefinedIn:  absSibPath,
-						OfTypeDecl: true,
-					}
-					sig := msCtx.Signature()
-					methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)
-					params := a.nativeParamsOf(sig.Parameters(), pkgName, meta.TypeParams)
-					methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
+					methodMeta := a.interfaceMethodNative(meta, msCtx, pkgName, absSibPath, docs)
+					methodMeta.Pos = nativePos(msID.GalaNodeRef)
 					meta.Methods[methodName] = methodMeta
 				}
 			}
@@ -282,18 +280,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			}
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 			for _, pctx := range nativeParams(ctx.Parameters()) {
-				fieldID := pctx.Identifier()
-				fieldName := fieldID.GetText()
-				fieldType := ""
-				if typ := pctx.Type_(); typ.Ok() {
-					fieldType = galaparser.NativeTypeText(typ)
-				}
-				decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL().Ok(), pctx.VAR().Ok())
-				if meta.FieldPositions == nil {
-					meta.FieldPositions = make(map[string]transpiler.SourcePos)
-				}
-				meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-				nativeRecordFieldDefault(meta, fieldName, pctx)
+				a.recordShorthandFieldNative(meta, pctx, pkgName, decls)
 			}
 			meta.IsShorthand = true
 		}
