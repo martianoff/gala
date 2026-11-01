@@ -683,11 +683,12 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 		if e.IsDir() || filepath.Ext(n) != ".gala" || strings.HasSuffix(n, "_test.gala") {
 			continue
 		}
-		tree, _, perr := a.parseFileCached(filepath.Join(dirPath, n))
+		path := filepath.Join(dirPath, n)
+		tree, _, perr := a.parseFileCached(path)
 		if perr != nil || tree == nil {
 			continue
 		}
-		collectTopLevelDeclaredNames(tree, names, nil)
+		addNames(names, a.packageFileNames(path, tree, nativeFileOf(a.cachedNative(path, tree))).types)
 	}
 	if a.importedNames != nil {
 		a.importedNames[key] = names

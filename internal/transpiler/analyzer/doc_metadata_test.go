@@ -433,8 +433,8 @@ func TestParsedForTreeRejectsForeignTree(t *testing.T) {
 	if got == nil || len(got.Docs) == 0 {
 		t.Fatal("matching tree returned no docs")
 	}
-	if got.Native != nil {
-		t.Error("the parsed-file cache keeps a native tree, which nothing reads yet")
+	if !got.Native.Converted() || !got.Native.Bridged() {
+		t.Error("the parsed-file cache keeps no converted native tree that bridges, which the file's reads take")
 	}
 
 	// A tree from a different parse of the same path must not be paired with

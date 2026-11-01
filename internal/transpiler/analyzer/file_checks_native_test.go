@@ -343,11 +343,10 @@ func TestFileChecksAgree(t *testing.T) {
 	t.Logf("%d files, all read on the native tree: %d reads, %d errors", files, reads, errs)
 }
 
-// TestLSPBuffersStayOnANTLR holds the LSP analyzer to ANTLR's tree: a buffer
-// parsed by galop comes with a native-tree handle, but analyzing it as the
-// language server does neither collects its declarations nor makes any other
-// read on the native tree, so a keystroke pays for no conversion.
-func TestLSPBuffersStayOnANTLR(t *testing.T) {
+// TestLSPBuffers: the LSP analyzer reads a buffer that parses cleanly on its
+// native tree, its collection and every other read alike, and a buffer with
+// syntax errors, whose parse has no handle, on ANTLR's error-recovered tree.
+func TestLSPBuffers(t *testing.T) {
 	parseWithGalop(t)
 	_, searchPaths := collectionCorpus(t)
 	a, ok := NewGalaAnalyzerForLSP(galaparser.NewAntlrGalaParser(), searchPaths, t.TempDir()).(*galaAnalyzer)
@@ -355,26 +354,32 @@ func TestLSPBuffersStayOnANTLR(t *testing.T) {
 	a.cache = nil
 
 	path := filepath.Join(t.TempDir(), "main.gala")
-	src := "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x)\n}\n"
-	require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
-	parsed := a.parser.ParseFile(src)
-	require.NoError(t, parsed.Err())
-	require.NotNil(t, parsed.Native, "a galop parse without syntax errors comes with a handle")
+	for _, c := range []struct {
+		name, src string
+		native    bool
+	}{
+		{"clean", "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x)\n}\n", true},
+		{"syntax error", "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x\n}\n", false},
+	} {
+		require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
+		parsed := a.parser.ParseFile(c.src)
+		require.Equal(t, c.native, parsed.Err() == nil, "%s: whether it parses", c.name)
+		require.Equal(t, c.native, parsed.CleanNative() != nil, "%s: whether the parse comes with a handle", c.name)
 
-	var reads []treeRead
-	a.onTreeRead = func(r treeRead) {
-		if r.filePath == path {
-			reads = append(reads, r)
+		var reads []treeRead
+		a.onTreeRead = func(r treeRead) {
+			if r.filePath == path {
+				reads = append(reads, r)
+			}
 		}
-	}
-	an := analyzeParsedForCollection(t, a, path, parsed, nil)
-	a.onTreeRead = nil
+		an := analyzeParsedForCollection(t, a, path, parsed, nil)
+		a.onTreeRead = nil
 
-	require.Equal(t, path, an.trace.filePath, "the buffer's declarations are collected")
-	assert.True(t, an.trace.hasHandle, "the buffer's parse came with a handle")
-	assert.False(t, an.trace.native, "the LSP analyzer collected the buffer on its native tree")
-	require.NotEmpty(t, reads, "the buffer's file checks report their reads")
-	for _, r := range reads {
-		assert.False(t, r.native, "the LSP analyzer made the read of the %s on the native tree", r.what)
+		require.Equal(t, path, an.trace.filePath, "%s: the buffer's declarations are collected", c.name)
+		assert.Equal(t, c.native, an.trace.native, "%s: the buffer was collected on its native tree", c.name)
+		require.NotEmpty(t, reads, "%s: the buffer's file checks report their reads", c.name)
+		for _, r := range reads {
+			assert.Equal(t, c.native, r.native, "%s: the read of the %s took the native tree", c.name, r.what)
+		}
 	}
 }

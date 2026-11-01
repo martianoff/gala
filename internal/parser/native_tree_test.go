@@ -81,10 +81,11 @@ func parseConverted(src string) *Parsed {
 	return &Parsed{Tree: r.tree, Errors: r.errors, Native: newNative(r.tree, r.stream, src)}
 }
 
-// TestNativeOnlyForGalopParses: a tree galop's parser made has a native tree;
-// one ANTLR's parser made, with ANTLR's engine or as galop's fallback on a
-// syntax error, has none, so its consumers take the ANTLR paths.
-func TestNativeOnlyForGalopParses(t *testing.T) {
+// TestNativeForCleanParses: a parse without syntax errors has a native tree,
+// whichever parser made its tree: galop's, or ANTLR's with ANTLR's engine,
+// whose tree converts and bridges as galop's does. A parse with syntax
+// errors, by either engine, has none, so its consumers take the ANTLR paths.
+func TestNativeForCleanParses(t *testing.T) {
 	const clean, broken = "package main\n\nval x = 1\n", "package main\n\nval x = \n"
 	if parseWithGalop(clean).Native == nil {
 		t.Error("galop's parse has no native tree")
@@ -94,8 +95,11 @@ func TestNativeOnlyForGalopParses(t *testing.T) {
 		antlrClean = NewAntlrGalaParser().ParseFile(clean)
 		antlrBroken = NewAntlrGalaParser().ParseFile(broken)
 	})
-	if antlrClean.Native != nil || antlrBroken.Native != nil {
-		t.Error("a parse with ANTLR's engine has a native tree")
+	if !antlrClean.Native.Bridged() {
+		t.Error("the clean parse with ANTLR's engine has no native tree that bridges")
+	}
+	if antlrBroken.Native != nil {
+		t.Error("the parse of a syntax error with ANTLR's engine has a native tree")
 	}
 	p := parseWithGalop(broken)
 	if len(p.Errors) == 0 {

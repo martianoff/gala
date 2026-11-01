@@ -22,6 +22,7 @@ go_library(
         "path_cache.go",
         "qualifiers.go",
         "receiver_type_params.go",
+        "siblings_native.go",
         "undefined_symbol.go",
         "undefined_symbol_native.go",
         "undefined_symbol_scope.go",

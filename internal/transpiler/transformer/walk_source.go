@@ -203,9 +203,11 @@ func readDeclDocsNative(td native.GalaNodeRef) declDocs {
 
 // bindingNames is the names a val or var declaration d binds, for
 // recordPackageValTypes, and false when d is no val or var or binds none
-// (parse-error recovery). d is on ANTLR's tree: package-val inference walks
-// only that tree (see InferPackageValTypes).
+// (parse-error recovery).
 func bindingNames(d topDecl) ([]string, bool) {
+	if d.node.Ok() {
+		return bindingNamesNative(d.node)
+	}
 	var decl tupleDeclaration
 	switch {
 	case d.ctx.ValDeclaration() != nil:
@@ -226,6 +228,37 @@ func bindingNames(d topDecl) ([]string, bool) {
 	names := make([]string, len(ids))
 	for i, id := range ids {
 		names[i] = id.GetText()
+	}
+	return names, true
+}
+
+// bindingNamesNative is bindingNames of td, a topLevelDeclaration node.
+func bindingNamesNative(td native.GalaNodeRef) ([]string, bool) {
+	decl, ok := firstKidNode(td)
+	if !ok {
+		return nil, false
+	}
+	var idList native.IdentifierListNode
+	var tp native.TuplePatternNode
+	switch decl.Kind() {
+	case native.GalaKIND_valDeclaration:
+		d := native.ValDeclarationNode{GalaNodeRef: decl}
+		idList, tp = d.IdentifierList(), d.TuplePattern()
+	case native.GalaKIND_varDeclaration:
+		d := native.VarDeclarationNode{GalaNodeRef: decl}
+		idList, tp = d.IdentifierList(), d.TuplePattern()
+	default:
+		return nil, false
+	}
+	if tp.Ok() {
+		idList = tp.IdentifierList()
+	}
+	if !idList.Ok() {
+		return nil, false // parse-error recovery
+	}
+	var names []string
+	for id := range parser.NativeKids(idList.GalaNodeRef, native.GalaKIND_identifier) {
+		names = append(names, id.GetText())
 	}
 	return names, true
 }

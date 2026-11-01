@@ -32,9 +32,7 @@ type sourceFileParseResult struct {
 	stream *antlr.CommonTokenStream
 	tree   antlr.Tree
 	errors []error
-	// galop says galop's parser made tree. Only its parses get a native tree:
-	// a tree ANTLR's parser made, with ANTLR's engine or as galop's fallback,
-	// is read on the ANTLR paths alone.
+	// galop says galop's parser made tree, not ANTLR's.
 	galop bool
 }
 
@@ -105,9 +103,11 @@ type Parsed struct {
 	Docs   Docs
 	Errors []error
 	// Native is the parse's native tree (see Native), nil when there is none:
-	// the parse gave no tree, or ANTLR's parser made it (with ANTLR's engine,
-	// or as galop's fallback on a syntax error or panic), so that code with a
-	// native and an ANTLR path takes the ANTLR one end to end. Until it
+	// the parse gave no tree, or it reported syntax errors, so that code with
+	// a native and an ANTLR path reads an error-recovered tree on the ANTLR
+	// one end to end. Every parse without syntax errors has one, whichever
+	// parser made its tree: galop's, or ANTLR's (with ANTLR's engine, or as
+	// galop's fallback). Until it
 	// converts it holds the token stream and the source text, which a clean
 	// parse's tree does not keep alive, so a holder that keeps a Parsed long
 	// but never reads the native tree drops it.
@@ -131,7 +131,7 @@ func (p *Parsed) Lenient() (antlr.Tree, Docs, []error) {
 
 // CleanNative is the native-tree handle of a parse without syntax errors,
 // nil for one with them (an error-recovered tree is ANTLR's to read), for no
-// parse, or when there is no handle (a parse by ANTLR's parser has none). The
+// parse, or when the holder dropped the handle. The
 // transpiler's native-tree readers take their handle from here, so a parse
 // without one is read on ANTLR's tree end to end.
 func (p *Parsed) CleanNative() *Native {
@@ -207,7 +207,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	}
 
 	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
-	if result.galop {
+	if len(result.errors) == 0 {
 		parsed.Native = newNative(result.tree, result.stream, input)
 	}
 	return parsed

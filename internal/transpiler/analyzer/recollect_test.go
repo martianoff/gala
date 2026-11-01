@@ -176,63 +176,76 @@ func TestRecollectedSiblingDeclaration(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
-			mainFile := filepath.Join(dir, "main.gala")
-			sibFile := filepath.Join(dir, "id.gala")
-			// The method the analyzed file declares on ID, which its
-			// collection records before the siblings' types.
-			declared := func() *transpiler.MethodMetadata {
-				return &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: mainFile}
+		for _, onNative := range []bool{false, true} {
+			name := c.name + "/antlr"
+			if onNative {
+				name = c.name + "/native"
 			}
-			extract := func(a *galaAnalyzer, richAST *transpiler.RichAST, src string) {
-				t.Helper()
-				sf := parseClean(t, src).Tree.(*grammar.SourceFileContext)
-				if err := a.extractSiblingFullMetadata(sf, fileQualifiers{}, "box", richAST, sibFile, newPackageDecls(mainFile)); err != nil {
-					t.Fatalf("sibling extraction: %v", err)
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				mainFile := filepath.Join(dir, "main.gala")
+				sibFile := filepath.Join(dir, "id.gala")
+				// The method the analyzed file declares on ID, which its
+				// collection records before the siblings' types.
+				declared := func() *transpiler.MethodMetadata {
+					return &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: mainFile}
 				}
-			}
-			// addDeclared records the analyzed file's method as its
-			// collection does: on the entry, or on a placeholder for it.
-			addDeclared := func(richAST *transpiler.RichAST) {
-				if meta := richAST.Types["box.ID"]; meta != nil {
-					meta.Methods["Describe"] = declared()
-					return
+				extract := func(a *galaAnalyzer, richAST *transpiler.RichAST, src string) {
+					t.Helper()
+					parsed := parseClean(t, src)
+					sf := parsed.Tree.(*grammar.SourceFileContext)
+					var nf nativeFile
+					if onNative {
+						if nf = nativeFileOf(parsed.CleanNative()); !nf.ok() {
+							t.Fatal("the sibling has no native tree")
+						}
+					}
+					if err := a.extractSiblingFullMetadata(sf, nf, fileQualifiers{}, "box", richAST, sibFile, newPackageDecls(mainFile)); err != nil {
+						t.Fatalf("sibling extraction: %v", err)
+					}
 				}
-				richAST.Types["box.ID"] = &transpiler.TypeMetadata{
-					Name: "ID", Package: "box",
-					Methods: map[string]*transpiler.MethodMetadata{"Describe": declared()},
-					Fields:  make(map[string]transpiler.Type),
+				// addDeclared records the analyzed file's method as its
+				// collection does: on the entry, or on a placeholder for it.
+				addDeclared := func(richAST *transpiler.RichAST) {
+					if meta := richAST.Types["box.ID"]; meta != nil {
+						meta.Methods["Describe"] = declared()
+						return
+					}
+					richAST.Types["box.ID"] = &transpiler.TypeMetadata{
+						Name: "ID", Package: "box",
+						Methods: map[string]*transpiler.MethodMetadata{"Describe": declared()},
+						Fields:  make(map[string]transpiler.Type),
+					}
 				}
-			}
 
-			a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-			richAST := newCollectedFile(a, "box", mainFile, nil).richAST
-			extract(a, richAST, c.first)
-			firstDefinedIn := richAST.Types["box.ID"].DefinedIn
-			addDeclared(richAST)
-			extract(a, richAST, c.again)
-			got := richAST.Types["box.ID"]
-			if names := methodNamesOf(got); !reflect.DeepEqual(names, c.wantMethods) {
-				t.Errorf("methods = %v, want %v", names, c.wantMethods)
-			}
+				a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
+				richAST := newCollectedFile(a, "box", mainFile, nil).richAST
+				extract(a, richAST, c.first)
+				firstDefinedIn := richAST.Types["box.ID"].DefinedIn
+				addDeclared(richAST)
+				extract(a, richAST, c.again)
+				got := richAST.Types["box.ID"]
+				if names := methodNamesOf(got); !reflect.DeepEqual(names, c.wantMethods) {
+					t.Errorf("methods = %v, want %v", names, c.wantMethods)
+				}
 
-			fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-			freshAST := newCollectedFile(fresh, "box", mainFile, nil).richAST
-			addDeclared(freshAST)
-			extract(fresh, freshAST, c.again)
-			if gotKeys, wantKeys := slices.Sorted(maps.Keys(richAST.Types)), slices.Sorted(maps.Keys(freshAST.Types)); !reflect.DeepEqual(gotKeys, wantKeys) {
-				t.Errorf("types = %v, want %v", gotKeys, wantKeys)
-			}
-			want := freshAST.Types["box.ID"]
-			// An interface declaration does not record DefinedIn, so the
-			// one recorded before stays.
-			if want.IsInterface {
-				want.DefinedIn = firstDefinedIn
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("re-collected entry differs from a first collection at %s", firstDiff(reflect.ValueOf(got), reflect.ValueOf(want), "", map[visit]bool{}))
-			}
-		})
+				fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
+				freshAST := newCollectedFile(fresh, "box", mainFile, nil).richAST
+				addDeclared(freshAST)
+				extract(fresh, freshAST, c.again)
+				if gotKeys, wantKeys := slices.Sorted(maps.Keys(richAST.Types)), slices.Sorted(maps.Keys(freshAST.Types)); !reflect.DeepEqual(gotKeys, wantKeys) {
+					t.Errorf("types = %v, want %v", gotKeys, wantKeys)
+				}
+				want := freshAST.Types["box.ID"]
+				// An interface declaration does not record DefinedIn, so the
+				// one recorded before stays.
+				if want.IsInterface {
+					want.DefinedIn = firstDefinedIn
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("re-collected entry differs from a first collection at %s", firstDiff(reflect.ValueOf(got), reflect.ValueOf(want), "", map[visit]bool{}))
+				}
+			})
+		}
 	}
 }

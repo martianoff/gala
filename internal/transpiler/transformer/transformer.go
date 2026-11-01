@@ -265,15 +265,18 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 // the result (the file's real transform reports it), as is one whose type is
 // unknown or void. richAST is read, not written: the caller passes a copy whose
 // Types map the transform may extend.
-func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Type {
+//
+// The file is walked as its transform walks it (see newWalkSource): on
+// richAST.Native's tree when that is converted and is richAST.Tree's, on
+// ANTLR's tree otherwise. onNative says which.
+func InferPackageValTypes(richAST *transpiler.RichAST) (types map[string]transpiler.Type, onNative bool) {
+	if sf, ok := richAST.Tree.(*grammar.SourceFileContext); ok {
+		onNative = newWalkSource(richAST, sf).root.Ok()
+	}
 	t := NewGalaASTTransformer().(*galaASTTransformer)
 	t.valTypes = make(map[string]transpiler.Type)
-	// The inference walks ANTLR's tree (bindingNames reads only that one):
-	// the file it is given need not be the one a native handle belongs to.
-	view := *richAST
-	view.Native = nil
-	_, _, _ = t.transform(&view, false)
-	return t.valTypes
+	_, _, _ = t.transform(richAST, false)
+	return t.valTypes, onNative
 }
 
 // lowersCleanly lowers one top-level declaration, reporting whether it lowered

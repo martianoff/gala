@@ -287,3 +287,42 @@ func jsonOf(t *testing.T, v any) string {
 	require.NoError(t, err)
 	return string(data)
 }
+
+// TestBufferAnalysisTrees: a buffer that parses cleanly is analyzed and
+// transformed on its native tree, a buffer with a syntax error is analyzed
+// on ANTLR's error-recovered tree and not transformed, and a handler on
+// ANTLR's tree alone analyzes and transforms the clean buffer on ANTLR's
+// tree. A collection_immutable file is opened, so its siblings are read
+// too.
+func TestBufferAnalysisTrees(t *testing.T) {
+	_, _, root := nativeCorpus(t)
+	path := filepath.Join(root, "collection_immutable", "array.gala")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	clean := galaerr.StripBOM(string(data))
+	broken := strings.Replace(clean, "func ", "func (", 1)
+	uri := lsp.DocumentURI("file:///" + filepath.ToSlash(path))
+	for _, c := range []struct {
+		name      string
+		antlrOnly bool
+		text      string
+		want      map[string]bool
+	}{
+		{"clean", false, clean, map[string]bool{treeReadAnalysis: true, treeReadTransform: true}},
+		{"syntax error", false, broken, map[string]bool{treeReadAnalysis: false}},
+		{"clean, ANTLR's tree alone", true, clean, map[string]bool{treeReadAnalysis: false, treeReadTransform: false}},
+	} {
+		h := NewGalaHandler()
+		h.SetSearchPaths([]string{root})
+		h.antlrTreeOnly = c.antlrOnly
+		got := map[string]bool{}
+		h.onTreeRead = func(what string, onNative bool) {
+			if prev, seen := got[what]; seen && prev != onNative {
+				t.Errorf("%s: the reads of %s took different trees", c.name, what)
+			}
+			got[what] = onNative
+		}
+		require.NoError(t, h.DidOpen(context.Background(), &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: c.text}}))
+		assert.Equal(t, c.want, got, "%s: the trees the analysis and the transform read", c.name)
+	}
+}

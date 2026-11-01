@@ -26,21 +26,28 @@ import (
 // when set, is told of it, with a way to make it on ANTLR's tree in the same
 // state.
 func readTree[T any](a *galaAnalyzer, filePath, what string, nf nativeFile, onNative func(native.GalaNodeRef) T, onANTLR func() T) T {
+	return readOn(a.onTreeRead, filePath, what, nf, onNative, onANTLR)
+}
+
+// readOn is readTree telling hook, when set, of the read.
+func readOn[T any](hook func(treeRead), filePath, what string, nf nativeFile, onNative func(native.GalaNodeRef) T, onANTLR func() T) T {
 	var got T
 	if nf.ok() {
 		got = onNative(nf.root.GalaNodeRef)
 	} else {
 		got = onANTLR()
 	}
-	if a.onTreeRead != nil {
-		a.onTreeRead(treeRead{filePath: filePath, what: what, native: nf.ok(), got: got, antlr: func() any { return onANTLR() }})
+	if hook != nil {
+		hook(treeRead{filePath: filePath, what: what, native: nf.ok(), got: got, antlr: func() any { return onANTLR() }})
 	}
 	return got
 }
 
 // treeRead is what readTree tells galaAnalyzer.onTreeRead about a read: the
 // file, the read, whether it took the native tree, what it gave, and how to
-// make it again, in the same state, on ANTLR's tree.
+// make it again, in the same state, on ANTLR's tree. A read that records
+// metadata cannot be made again: it has no got and no antlr (see
+// notePackageRead).
 type treeRead struct {
 	filePath, what string
 	native         bool
