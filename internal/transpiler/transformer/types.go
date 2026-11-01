@@ -267,7 +267,7 @@ func (t *galaASTTransformer) isKnownStdType(name string) bool {
 }
 
 // goChanDir is each channel direction as go/ast spells it.
-var goChanDir = map[transpiler.ChanDir]ast.ChanDir{
+var goChanDir = [...]ast.ChanDir{
 	transpiler.ChanBoth: ast.SEND | ast.RECV,
 	transpiler.ChanRecv: ast.RECV,
 	transpiler.ChanSend: ast.SEND,
@@ -337,7 +337,11 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	case transpiler.MapType:
 		return &ast.MapType{Key: t.typeToExpr(v.Key), Value: t.typeToExpr(v.Elem)}
 	case transpiler.ChanType:
-		return &ast.ChanType{Dir: goChanDir[v.Dir], Value: t.typeToExpr(v.Elem)}
+		elem := t.typeToExpr(v.Elem)
+		if e, ok := v.Elem.(transpiler.ChanType); ok && v.Dir == transpiler.ChanBoth && e.Dir == transpiler.ChanRecv {
+			elem = &ast.ParenExpr{X: elem} // chan (<-chan T), see transpiler.ChanType
+		}
+		return &ast.ChanType{Dir: goChanDir[v.Dir], Value: elem}
 	case transpiler.FuncType:
 		// Params is never nil: go/ast's FuncType.End reads it when there are
 		// no results, so a nil list panics the printer on `func()`.
@@ -778,6 +782,9 @@ func (t *galaASTTransformer) inferRangeTypes(rangeExpr ast.Expr) (keyType transp
 		return transpiler.BasicType{Name: "int"}, v.Elem
 	case transpiler.MapType:
 		return v.Key, v.Elem
+	case transpiler.ChanType:
+		// `for v := range ch` binds the one variable to each received value.
+		return v.Elem, transpiler.NilType{}
 	case transpiler.BasicType:
 		if v.Name == "string" {
 			return transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "rune"}

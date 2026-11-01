@@ -86,6 +86,7 @@ func TestParseTypeRoundTrip(t *testing.T) {
 		{"channel", ChanType{Elem: fileInfo}},
 		{"receive-only channel of a slice", ChanType{Elem: ArrayType{Elem: BasicType{Name: "int"}}, Dir: ChanRecv}},
 		{"send-only channel", ChanType{Elem: builder, Dir: ChanSend}},
+		{"channel of a receive-only channel", ChanType{Elem: ChanType{Elem: BasicType{Name: "int"}, Dir: ChanRecv}}},
 		{"map keyed by a generic", MapType{
 			Key:  GenericType{Base: option, Params: []Type{BasicType{Name: "int"}}},
 			Elem: MapType{Key: BasicType{Name: "string"}, Elem: builder},

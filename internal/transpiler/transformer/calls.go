@@ -3701,6 +3701,8 @@ func (t *galaASTTransformer) reachedAs(typ transpiler.Type) transpiler.Type {
 		return transpiler.GenericType{Base: t.reachedAs(ty.Base), Params: params}
 	case transpiler.ArrayType:
 		return transpiler.ArrayType{Elem: t.reachedAs(ty.Elem)}
+	case transpiler.ChanType:
+		return transpiler.ChanType{Elem: t.reachedAs(ty.Elem), Dir: ty.Dir}
 	case transpiler.NamedType:
 		if ty.Package == t.packageName {
 			return transpiler.BasicType{Name: ty.Name}

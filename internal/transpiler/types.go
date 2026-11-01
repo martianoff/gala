@@ -129,7 +129,7 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 	case ArrayType:
 		return "[]" + DisplayTypeNamed(v.Elem, name)
 	case ChanType:
-		return chanPrefixes[v.Dir] + DisplayTypeNamed(v.Elem, name)
+		return spellChan(v.Dir, v.Elem, DisplayTypeNamed(v.Elem, name))
 	case MapType:
 		return "map[" + DisplayTypeNamed(v.Key, name) + "]" + DisplayTypeNamed(v.Elem, name)
 	case GenericType:
@@ -264,7 +264,17 @@ const (
 )
 
 // chanPrefixes is the spelling of each direction ahead of the element type.
-var chanPrefixes = map[ChanDir]string{ChanBoth: "chan ", ChanRecv: "<-chan ", ChanSend: "chan<- "}
+var chanPrefixes = [...]string{ChanBoth: "chan ", ChanRecv: "<-chan ", ChanSend: "chan<- "}
+
+// spellChan is a channel of dir whose element elem is spelled elemText. Go
+// reads `chan <-chan T` as `chan<- (chan T)`, so a receive-only element of a
+// bidirectional channel is parenthesized, as go/types prints it.
+func spellChan(dir ChanDir, elem Type, elemText string) string {
+	if e, ok := elem.(ChanType); ok && dir == ChanBoth && e.Dir == ChanRecv {
+		elemText = "(" + elemText + ")"
+	}
+	return chanPrefixes[dir] + elemText
+}
 
 // ChanType represents a Go channel type. GALA code cannot spell one; it gets
 // channels from Go functions and receives from them with `<-ch`, which yields
@@ -275,7 +285,7 @@ type ChanType struct {
 }
 
 func (t ChanType) String() string {
-	return chanPrefixes[t.Dir] + t.Elem.String()
+	return spellChan(t.Dir, t.Elem, t.Elem.String())
 }
 func (t ChanType) IsNil() bool        { return false }
 func (t ChanType) IsAny() bool        { return false }
@@ -464,8 +474,11 @@ func ParseType(s string) Type {
 		return ArrayType{Elem: ParseType(s[2:])}
 	}
 	for dir, prefix := range chanPrefixes {
-		if strings.HasPrefix(s, prefix) {
-			return ChanType{Elem: ParseType(s[len(prefix):]), Dir: dir}
+		if elem, ok := strings.CutPrefix(s, prefix); ok {
+			if strings.HasPrefix(elem, "(") && strings.HasSuffix(elem, ")") {
+				elem = elem[1 : len(elem)-1] // chan (<-chan T), see spellChan
+			}
+			return ChanType{Elem: ParseType(elem), Dir: ChanDir(dir)}
 		}
 	}
 	if strings.HasPrefix(s, "*") {

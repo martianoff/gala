@@ -214,8 +214,13 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			}
 			return transpiler.NilType{}
 		case token.ARROW:
-			// A receive yields the channel's element type.
-			if ch, ok := t.getExprTypeNameManual(e.X).(transpiler.ChanType); ok {
+			// A receive yields the channel's element type, also through a
+			// GALA alias of a channel or a Go type defined over one.
+			xType := t.followAliasChain(t.getExprTypeNameManual(e.X))
+			if u, ok := t.goNamedUnderlying(xType); ok {
+				xType = u
+			}
+			if ch, ok := xType.(transpiler.ChanType); ok {
 				return ch.Elem
 			}
 			return transpiler.NilType{}
@@ -986,6 +991,14 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 	concretePtr, concreteIsPtr := concrete.(transpiler.PointerType)
 	if patternIsPtr && concreteIsPtr {
 		return t.unifyForInference(patternPtr.Elem, concretePtr.Elem, typeParams, inferredMap)
+	}
+
+	// Check if both are channel types. A `chan T` argument fills a `<-chan T`
+	// parameter, so the directions need not agree.
+	patternChan, patternIsChan := pattern.(transpiler.ChanType)
+	concreteChan, concreteIsChan := concrete.(transpiler.ChanType)
+	if patternIsChan && concreteIsChan {
+		return t.unifyForInference(patternChan.Elem, concreteChan.Elem, typeParams, inferredMap)
 	}
 
 	// Check if both are map types

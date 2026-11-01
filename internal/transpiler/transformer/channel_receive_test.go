@@ -57,6 +57,20 @@ func main() {
 }`,
 			want: []string{"std.Some[<-chan time.Time]{}.Apply(time.After(time.Millisecond))", "(<-pending.Get()).Year()"},
 		},
+		{
+			name: "range over a channel binds each received value",
+			input: `package main
+
+import "time"
+
+func main() {
+    for t := range time.Tick(time.Millisecond) {
+        val later = Some(t)
+        Println(later.Get().Year())
+    }
+}`,
+			want: []string{"std.Some[time.Time]{}.Apply(t)"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

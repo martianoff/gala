@@ -148,6 +148,9 @@ func (rn packageRenamer) typ(t Type) Type {
 	case ArrayType:
 		v.Elem = rn.typ(v.Elem)
 		return v
+	case ChanType:
+		v.Elem = rn.typ(v.Elem)
+		return v
 	case MapType:
 		v.Key, v.Elem = rn.typ(v.Key), rn.typ(v.Elem)
 		return v

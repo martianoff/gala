@@ -143,6 +143,8 @@ func (t *galaASTTransformer) namesOnlyImportedPackages(typ transpiler.Type) bool
 		}
 	case transpiler.ArrayType:
 		return t.namesOnlyImportedPackages(v.Elem)
+	case transpiler.ChanType:
+		return t.namesOnlyImportedPackages(v.Elem)
 	case transpiler.PointerType:
 		return t.namesOnlyImportedPackages(v.Elem)
 	case transpiler.MapType:

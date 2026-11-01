@@ -765,6 +765,10 @@ func (d *decoder) readType() transpiler.Type {
 		return transpiler.MapType{Key: k, Elem: v}
 	case typeTagChan:
 		dir := transpiler.ChanDir(d.readUvarint())
+		if dir > transpiler.ChanSend {
+			d.fail("unknown channel direction %d", dir)
+			return nil
+		}
 		return transpiler.ChanType{Elem: d.readType(), Dir: dir}
 	case typeTagPointer:
 		return transpiler.PointerType{Elem: d.readType()}
