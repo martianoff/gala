@@ -510,7 +510,9 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 	if !p.hasPrimaryExpr() {
 		return nil, semanticErrorAtStart(p.at(), "match expression must have subject")
 	}
-	p.owner = p.hintKey(t)
+	if p.owner == nil {
+		p.owner = p.hintKey(t)
+	}
 	subject, err := t.lowerPrimaryOf(p)
 	if err != nil {
 		return nil, err

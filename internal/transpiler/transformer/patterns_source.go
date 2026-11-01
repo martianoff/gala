@@ -22,8 +22,8 @@ import (
 // literal, a tuple, a call, alternatives) is read here, on either tree. What a
 // pattern holds that is a value — a literal compared by ==, an extractor's
 // head, explicit type arguments (written as expressions) — is lowered as an
-// expression, which is read on ANTLR's tree: the native readers cross to it
-// with crossTo. A typed pattern's type is lowered on either tree (lowerType).
+// expression on the pattern's tree (lowerPatExpr, lowerPatternHead), as is a
+// typed pattern's type (lowerType).
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -206,13 +206,12 @@ func (e patExpr) col() int { _, c := e.start(); return c }
 // alternative is lowered as the operand it is, as its wrapper on ANTLR's tree
 // is (wrapAsExpression).
 func (t *galaASTTransformer) lowerPatExpr(e patExpr) (ast.Expr, error) {
-	t.nativeShape(e.node, "pattern")
 	if !e.node.Ok() || e.node.Kind() != native.GalaKIND_multiplicativeExpr {
+		t.nativeShape(e.node, "pattern")
 		return t.lowerExpr(e.exprSrc)
 	}
-	start := e.node.Start()
-	t.lastLine, t.lastCol = int(start.Line), int(start.Column)
 	t.nativeShape(e.node, "alternative")
+	t.trackNativePosition(e.node)
 	return t.lowerOperatorsNative(e.node)
 }
 

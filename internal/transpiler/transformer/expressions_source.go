@@ -149,13 +149,18 @@ func (t *galaASTTransformer) ctxAt(n srcNode) antlr.ParserRuleContext {
 	return n.ctx
 }
 
+// trackNativePosition is trackPosition of n, a native node: where an error
+// raised by a deeply nested helper is reported.
+func (t *galaASTTransformer) trackNativePosition(n native.GalaNodeRef) {
+	start := n.Start()
+	t.lastLine, t.lastCol = int(start.Line), int(start.Column)
+}
+
 // lowerExprNative is transformExpression of n, an expression node.
 func (t *galaASTTransformer) lowerExprNative(n native.GalaNodeRef) (ast.Expr, error) {
-	start := n.Start()
-	// Track position for error reporting in deeply-nested helpers
-	t.lastLine, t.lastCol = int(start.Line), int(start.Column)
+	t.trackNativePosition(n)
 	if t.onNativeExpr != nil {
-		t.onNativeExpr(n.Index(), int(start.Line))
+		t.onNativeExpr(n.Index(), t.lastLine)
 	}
 	or, ok := firstKidNode(n)
 	if !ok || or.Kind() != native.GalaKIND_orExpr {

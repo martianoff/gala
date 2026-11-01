@@ -581,20 +581,21 @@ func (t *galaASTTransformer) lowerPatternEquality(pat patExpr, pattern, subject 
 // receiver position: parenthesized unless it is a single postfix expression.
 func operandText(at srcNode) string {
 	text := at.sourceText()
-	if at.node.Ok() {
-		if at.node.Kind() == native.GalaKIND_relationalExpr && singlePostfixNative(at.node) {
-			return text
-		}
-	} else if rel, ok := at.ctx.(*grammar.RelationalExprContext); ok && singlePostfix(rel) {
+	if singlePostfixAt(at) {
 		return text
 	}
 	return "(" + text + ")"
 }
 
-// singlePostfixNative is singlePostfix of rel, a relationalExpr node.
-func singlePostfixNative(rel native.GalaNodeRef) bool {
-	u := nativeOperand(rel, native.GalaKIND_unaryExpr, true)
-	return u.Ok() && !(native.UnaryExprNode{GalaNodeRef: u}).UnaryOp().Ok()
+// singlePostfixAt is singlePostfix of at, a relational expression on either
+// tree: one postfix expression with no operator around it (nativeOperand on
+// the native tree), false for any other node.
+func singlePostfixAt(at srcNode) bool {
+	if at.node.Ok() {
+		return at.node.Kind() == native.GalaKIND_relationalExpr && nativeOperand(at.node, native.GalaKIND_postfixExpr, true).Ok()
+	}
+	rel, ok := at.ctx.(*grammar.RelationalExprContext)
+	return ok && singlePostfix(rel)
 }
 
 // singlePostfix reports whether rel is one postfix expression, with no binary
