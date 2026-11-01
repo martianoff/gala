@@ -213,21 +213,21 @@ type patAdditive struct {
 // soleAdditive is the additive chain e is, and false when `||`, `&&` or a
 // comparison joins operands above it. Each operand of several is an
 // expression of its own, its multiplicativeExpr node.
-func (e patExpr) soleAdditive() (patAdditive, bool, error) {
+func (e patExpr) soleAdditive() (patAdditive, bool) {
 	if !e.node.Ok() {
-		return patAdditive{}, false, nil
+		return patAdditive{}, false
 	}
 	if e.node.Kind() == native.GalaKIND_multiplicativeExpr {
-		return patAdditive{operands: []patExpr{e}, at: e.at()}, true, nil
+		return patAdditive{operands: []patExpr{e}, at: e.at()}, true
 	}
 	add := nativeOperand(e.node, native.GalaKIND_additiveExpr, true)
 	if !add.Ok() {
-		return patAdditive{}, false, nil
+		return patAdditive{}, false
 	}
 	out := patAdditive{at: srcNode{node: add}}
 	if _, sole := galaparser.OnlyNativeKid(add, native.GalaKIND_multiplicativeExpr); sole {
 		out.operands = []patExpr{e}
-		return out, true, nil
+		return out, true
 	}
 	for i := range add.ChildCount() {
 		c := add.Child(i)
@@ -237,7 +237,7 @@ func (e patExpr) soleAdditive() (patAdditive, bool, error) {
 			out.ops = append(out.ops, tok.GetText())
 		}
 	}
-	return out, true, nil
+	return out, true
 }
 
 // barUnderOperator is where an additive chain of e that holds a `|` starts,
@@ -271,7 +271,7 @@ func (e patExpr) barUnderOperator() (srcNode, bool) {
 // parenthesized is the elements of e when e is exactly a parenthesized list
 // `(...)`, and single reports whether the list is one expression with no
 // trailing comma: a parenthesized pattern, not a tuple.
-func (e patExpr) parenthesized(t *galaASTTransformer) (elems []patExpr, single, ok bool) {
+func (e patExpr) parenthesized() (elems []patExpr, single, ok bool) {
 	p := e.postfix(true)
 	if !p.ok() || !p.alone() {
 		return nil, false, false

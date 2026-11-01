@@ -103,7 +103,7 @@ var parsedCases = []struct{ name, what, kind, src string }{
 // native walk to have read the lines they mark on the native tree: under
 // each engine, which parses the file and, for the native walk, its defaults
 // and interpolations (ANTLR's through galop's converter, see
-// parser.ParseExpressionTreeAt).
+// parser.ParseExpressionCheckedAt).
 func TestNativeParsedWalk(t *testing.T) {
 	for _, engine := range []galaparser.Engine{galaparser.EngineGalop, galaparser.EngineANTLR} {
 		t.Run(string(engine), func(t *testing.T) { checkNativeParsedWalk(t, walkRunner(t, engine, walkPipeline{})) })

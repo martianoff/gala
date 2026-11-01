@@ -111,7 +111,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	t.pushScope()
 	defer t.popScope()
 	fieldList := &ast.FieldList{}
-	if params := l.params(t); len(params) > 0 {
+	if params := l.params(); len(params) > 0 {
 		// Validate: reject `_` as a type annotation when other params have explicit types.
 		// `_` means "infer" but has no inference context in a standalone lambda.
 		hasExplicitType := false
@@ -291,7 +291,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			}
 			return nil, t.missingReturnError(block, "this lambda", result)
 		}
-	} else if expr := l.expression(t); expr.ok() {
+	} else if expr := l.expression(); expr.ok() {
 		b, inferredRet, err := t.transformExpressionLambdaBody(l, expr, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
 			return nil, err

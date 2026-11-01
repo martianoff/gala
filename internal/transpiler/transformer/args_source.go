@@ -148,9 +148,9 @@ func (f partialSrc) ok() bool { return f.node.Ok() }
 // at is where f is written.
 func (f partialSrc) at() srcNode { return srcNode{node: f.node} }
 
-// cases is f's case clauses, in order, read as a match's are (casesOf).
+// cases is f's case clauses, in order, read as a match's are (nativeCases).
 func (f partialSrc) cases(t *galaASTTransformer) []caseSrc {
-	return t.casesOf(f.node)
+	return t.nativeCases(f.node)
 }
 
 // partialIn is the partial function e's sole operand starts from, whatever

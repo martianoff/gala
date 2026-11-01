@@ -130,8 +130,8 @@ type galaASTTransformer struct {
 	lspVarTypes            map[string]transpiler.Type                    // LSP: collects all resolved var types during transformation
 	lspCurrentFunc         string                                        // LSP: name of the function currently being transformed (for scoping)
 	lspLambdaParamHints    []transpiler.LambdaParamHint                  // LSP: positions of lambda params with inferred types
-	lastLine               int                                           // last known ANTLR source line (for error reporting in deeply-nested helpers)
-	lastCol                int                                           // last known ANTLR source column (for error reporting in deeply-nested helpers)
+	lastLine               int                                           // last known source line (for error reporting in deeply-nested helpers)
+	lastCol                int                                           // last known source column (for error reporting in deeply-nested helpers)
 	goCtorClaims           map[string]int                                // Go constructor name -> how many of this package's sealed types and shorthand structs would generate it; see goCtorClaimed
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
@@ -260,7 +260,7 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 }
 
 // InferPackageValTypes infers the element type of each package-level val and
-// var that the file richAST.Tree declares, with the same expression inference
+// var that the file of richAST.Native declares, with the same expression inference
 // the file's own transform gives them: `val Names = ArrayOf("a", "b")` is an
 // Array[string]. The analyzer records a binding's type from a few initializer
 // shapes only; the other files of the package and its importers see the

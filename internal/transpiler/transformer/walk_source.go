@@ -92,7 +92,6 @@ func (s walkSource) topDecls() []native.GalaNodeRef {
 	return out
 }
 
-
 // readDeclDocsNative is what attachDocs reads of td, a topLevelDeclaration
 // node.
 func readDeclDocsNative(td native.GalaNodeRef) declDocs {

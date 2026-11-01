@@ -31,7 +31,7 @@ func (l lambdaSrc) is(o lambdaSrc) bool {
 func (l lambdaSrc) at() srcNode { return srcNode{node: l.node.GalaNodeRef} }
 
 // params is l's parameters, in order.
-func (l lambdaSrc) params(t *galaASTTransformer) []paramDecl {
+func (l lambdaSrc) params() []paramDecl {
 	return readParamsNative(l.node.Parameters())
 }
 
@@ -60,7 +60,7 @@ func (l lambdaSrc) block() blockSrc {
 
 // expression is l's expression body, and the zero exprSrc when its body is a
 // block.
-func (l lambdaSrc) expression(t *galaASTTransformer) exprSrc {
+func (l lambdaSrc) expression() exprSrc {
 	if e := l.node.Expression(); e.Ok() {
 		return nativeExpr(e.GalaNodeRef)
 	}

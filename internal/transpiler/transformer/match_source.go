@@ -27,12 +27,6 @@ func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
 	return out
 }
 
-// casesOf is the case clauses of n, a match's postfix expression or a
-// partial function (nativeCases).
-func (t *galaASTTransformer) casesOf(n native.GalaNodeRef) []caseSrc {
-	return t.nativeCases(n)
-}
-
 // at is where c is written.
 func (c caseSrc) at() srcNode { return srcNode{node: c.node} }
 
