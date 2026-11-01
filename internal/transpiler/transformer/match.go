@@ -1351,8 +1351,10 @@ func (t *galaASTTransformer) collectReferencedIdents(nodes []ast.Node) map[strin
 
 // lowerCaseGuard is the lowered guard of cc, `case p if guard`, and nil when
 // cc has none. A guard whose type is known and is not a bool is GALA-E0089:
-// joined to the pattern's test with &&, it would fail in go build. A guard
-// whose type inference cannot tell, or that is typed any, is left to Go.
+// joined to the pattern's test with &&, it would fail in go build. A guard of
+// a defined bool type is converted to bool. A guard whose type inference
+// cannot tell, or reads as any, is left to Go: an inferred any is also what
+// inference falls back to, so it does not show the guard is not a bool.
 func (t *galaASTTransformer) lowerCaseGuard(cc caseSrc) (ast.Expr, error) {
 	g := cc.guard()
 	if !g.ok() {
@@ -1367,29 +1369,28 @@ func (t *galaASTTransformer) lowerCaseGuard(cc caseSrc) (ast.Expr, error) {
 		return expr, nil
 	}
 	if t.isBoolValued(typ) {
+		if b, plain := typ.(transpiler.BasicType); !plain || b.Name != "bool" {
+			// Go joins a defined bool type only to an untyped test with &&;
+			// an extractor's or a variant's test is a typed bool.
+			expr = &ast.CallExpr{Fun: ast.NewIdent("bool"), Args: []ast.Expr{expr}}
+		}
 		return expr, nil
 	}
-	name := t.sourceTypeName(typ)
-	return nil, spanErrorAt(galaerr.CodeNonBoolGuard, g.at().rng(), g.at().rng(),
-		fmt.Sprintf("case guard `%s` has type %s, not bool", oneLine(g.text()), name),
+	at := g.at().rng()
+	return nil, spanErrorAt(galaerr.CodeNonBoolGuard, at, at,
+		fmt.Sprintf("case guard `%s` has type %s, not bool", oneLine(g.text()), t.sourceTypeName(typ)),
 		"a guard must be a bool condition, such as a comparison")
 }
 
 // isBoolValued reports whether typ is bool at the bottom: bool itself, an
-// alias of it, a Go type defined over it, or an opaque type over one of them.
-// Go joins a defined bool type to an untyped pattern test with &&, so such a
-// guard is left to Go.
+// alias of it, a Go type defined over it, or an opaque type over one of them
+// (an opaque type cannot be declared over another).
 func (t *galaASTTransformer) isBoolValued(typ transpiler.Type) bool {
-	for hop := 0; hop < 16; hop++ {
-		_, kind, via := t.resolveScalar(typ)
-		if via == nil {
-			return kind == scalarBool
-		}
-		if typ = t.underlyingType(via); typ == nil {
-			return false
-		}
+	_, kind, via := t.resolveScalar(typ)
+	if via != nil {
+		_, kind, _ = t.resolveScalar(t.underlyingType(via))
 	}
-	return false
+	return kind == scalarBool
 }
 
 // joinGuard is cond && guard, or cond when there is no guard.

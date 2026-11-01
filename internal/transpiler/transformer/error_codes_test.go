@@ -1399,12 +1399,9 @@ func main() = Println("ok")`,
 	}
 }
 
-// TestT6VariantArityPositive is the positive half of T6 — the same sealed
-// declaration as the T6 negative case, but with patterns that match the
-// declared arity exactly. Must compile without error.
 // TestBoolGuardsAccepted is the positive companion to GALA-E0089: a guard of
 // bool, of a val field, of a GALA alias of bool and of an opaque type over
-// bool is not rejected.
+// bool is not rejected, and one of a defined bool type is converted to bool.
 func TestBoolGuardsAccepted(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -1428,15 +1425,26 @@ func pick(n int, c Cfg, f Flag, o On) int = n match {
     case _ => -1
 }
 
+func viaSome(x Option[int], o On) int = x match {
+    case Some(v) if o => v
+    case _ => 0
+}
+
 func main() {
     val pf func(int) Option[int] = { case n if n > 0 && Cfg(true).verbose => n }
-    Println(pick(1, Cfg(true), true, On(true)), pf(1))
+    Println(pick(1, Cfg(true), true, On(true)), pf(1), viaSome(Some(2), On(true)))
 }`
 	out, err := trans.Transpile(input, "")
 	require.NoError(t, err)
 	assert.Contains(t, out, "c.verbose.Get()")
+	// A Some pattern's test is a typed bool, which Go joins with && only to
+	// a bool: the opaque guard is converted.
+	assert.Contains(t, out, "&& bool(o)")
 }
 
+// TestT6VariantArityPositive is the positive half of T6 — the same sealed
+// declaration as the T6 negative case, but with patterns that match the
+// declared arity exactly. Must compile without error.
 func TestT6VariantArityPositive(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
