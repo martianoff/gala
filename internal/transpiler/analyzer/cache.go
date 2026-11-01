@@ -181,7 +181,11 @@ import (
 //
 // v37: an anonymous Go struct type, such as a signal channel's struct{}, is a
 // transpiler.StructType. A v36 payload names it as any.
-const CacheVersion = "v37"
+//
+// v38: a method declared in another file than its type records that file
+// (MethodMetadata.DefinedIn) whichever file of the package was analyzed. A
+// v37 payload may leave it empty, so the method's defaults get no scope.
+const CacheVersion = "v38"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

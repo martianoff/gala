@@ -2,11 +2,14 @@ package analyzer_test
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
@@ -24,95 +27,71 @@ import (
 // does import it. The check now accepts the union of the method's-file and the
 // receiver-type's-file imports.
 func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
-	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/repro\n\ngala dev\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	boxFile := filepath.Join(tmp, "box.gala")
-	if err := os.WriteFile(boxFile, []byte("package repro\n\nstruct Box(name string)\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	durFile := filepath.Join(tmp, "dur.gala")
-	durSrc := "package repro\n\nimport . \"martianoff/gala/time_utils\"\n\nfunc (b Box) Span() Duration = Seconds(1)\n"
-	if err := os.WriteFile(durFile, []byte(durSrc), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	p := transpiler.NewAntlrGalaParser()
-	searchPaths := append([]string{tmp}, getStdSearchPath()...)
-	batch := analyzer.NewBatchAnalyzer(p, searchPaths, tmp)
-
-	files := []string{boxFile, durFile}
-	for _, fp := range files {
-		content, err := os.ReadFile(fp)
-		if err != nil {
-			t.Fatal(err)
-		}
-		tree, _, err := p.ParseFile(string(content)).Strict()
-		if err != nil {
-			t.Fatalf("parse %s: %v", fp, err)
-		}
-		var siblings []string
-		for _, other := range files {
-			if other != fp {
-				siblings = append(siblings, other)
-			}
-		}
-		batch.SetPackageFiles(siblings)
-		if _, err := transpiler.Analyze(batch, tree, nil, fp); err != nil {
-			t.Fatalf("analyze %s: unexpected error (a cross-file method may use its own file's imports): %v", fp, err)
-		}
-	}
+	analyzeEachFile(t, map[string]string{
+		"box.gala": "package repro\n\nstruct Box(name string)\n",
+		"dur.gala": "package repro\n\nimport . \"martianoff/gala/time_utils\"\n\nfunc (b Box) Span() Duration = Seconds(1)\n",
+	}, func(t *testing.T, errs map[string]error) {
+		requireNoErrors(t, errs, "a cross-file method may use its own file's imports")
+	})
 }
 
 // analyzeEachFile writes files (name -> source) as the package repro in a
-// fresh module and analyzes each of them in turn with the others as its
-// package files, as a build does. It returns each file's error, or nil.
-func analyzeEachFile(t *testing.T, files map[string]string) map[string]error {
+// fresh module and analyzes each of them in turn, in name order, with the
+// others as its package files, as a build does. It does so once per twin of
+// the collection, as a subtest, and gives check each file's error, or nil.
+// The analyzed file is read on its native tree when its parse comes with
+// one, and on ANTLR's tree when the analysis gets no native handle.
+func analyzeEachFile(t *testing.T, files map[string]string, check func(t *testing.T, errs map[string]error)) {
 	t.Helper()
-	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/repro\n\ngala dev\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	var paths []string
-	for name, src := range files {
-		p := filepath.Join(tmp, name)
-		if err := os.WriteFile(p, []byte(src), 0644); err != nil {
-			t.Fatal(err)
-		}
-		paths = append(paths, p)
-	}
-	p := transpiler.NewAntlrGalaParser()
-	batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
-	errs := make(map[string]error)
-	for _, fp := range paths {
-		tree, _, err := p.ParseFile(files[filepath.Base(fp)]).Strict()
-		if err != nil {
-			t.Fatalf("parse %s: %v", fp, err)
-		}
-		var siblings []string
-		for _, other := range paths {
-			if other != fp {
-				siblings = append(siblings, other)
+	for _, twin := range []string{"antlr", "native"} {
+		t.Run(twin, func(t *testing.T) {
+			galaparser.RequestEngine(string(galaparser.EngineGalop))
+			t.Cleanup(func() { galaparser.RequestEngine("") })
+			tmp := t.TempDir()
+			if err := os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/repro\n\ngala dev\n"), 0644); err != nil {
+				t.Fatal(err)
 			}
-		}
-		batch.SetPackageFiles(siblings)
-		_, errs[filepath.Base(fp)] = transpiler.Analyze(batch, tree, nil, fp)
+			paths := writePackage(t, tmp, files)
+			p := transpiler.NewAntlrGalaParser()
+			batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
+			errs := make(map[string]error, len(paths))
+			for _, name := range slices.Sorted(maps.Keys(paths)) {
+				parsed := p.ParseFile(files[name])
+				if err := parsed.Err(); err != nil {
+					t.Fatalf("parse %s: %v", name, err)
+				}
+				batch.SetPackageFiles(siblingsOf(paths, name))
+				if twin == "native" {
+					_, errs[name] = batch.AnalyzeParsed(parsed, paths[name])
+				} else {
+					_, errs[name] = transpiler.Analyze(batch, parsed.Tree, parsed.Docs, paths[name])
+				}
+			}
+			check(t, errs)
+		})
 	}
-	return errs
 }
 
-// errorCode is the code of err when it is a coded semantic error, "" when it
-// is not, and "none" when err is nil.
-func errorCode(err error) galaerr.ErrorCode {
-	if err == nil {
-		return "none"
+// requireNoErrors fails t for each file of errs whose analysis failed; why
+// says why none should.
+func requireNoErrors(t *testing.T, errs map[string]error, why string) {
+	t.Helper()
+	for _, name := range slices.Sorted(maps.Keys(errs)) {
+		if errs[name] != nil {
+			t.Errorf("%s: unexpected error (%s): %v", name, why, errs[name])
+		}
 	}
+}
+
+// requireCode fails t unless err, the analysis of file, is a semantic error
+// coded code, and returns it.
+func requireCode(t *testing.T, file string, err error, code galaerr.ErrorCode) *galaerr.SemanticError {
+	t.Helper()
 	var se *galaerr.SemanticError
-	if errors.As(err, &se) {
-		return se.Code
+	if !errors.As(err, &se) || se.Code != code {
+		t.Fatalf("%s: got %v, want %s", file, err, code)
 	}
-	return ""
+	return se
 }
 
 // TestCrossFileMethodImport_Unimported: a method declared in another file
@@ -120,49 +99,40 @@ func errorCode(err error) galaerr.ErrorCode {
 // signature names Array, which neither its file nor the type's file imports;
 // a third file's dot import is no allowance.
 func TestCrossFileMethodImport_Unimported(t *testing.T) {
-	errs := analyzeEachFile(t, map[string]string{
+	analyzeEachFile(t, map[string]string{
 		"box.gala":   "package repro\n\nstruct Box(name string)\n",
 		"items.gala": "package repro\n\nfunc (b Box) Items(xs Array[int]) Array[int] = xs\n",
 		"other.gala": "package repro\n\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct Holder(xs Array[int])\n",
+	}, func(t *testing.T, errs map[string]error) {
+		requireCode(t, "items.gala", errs["items.gala"], galaerr.CodeUnresolvedCrossPackageSymbol)
+		delete(errs, "items.gala")
+		requireNoErrors(t, errs, "only the method's file names Array without importing it")
 	})
-	if got := errorCode(errs["items.gala"]); got != galaerr.CodeUnresolvedCrossPackageSymbol {
-		t.Errorf("items.gala: got %q (%v), want %s", got, errs["items.gala"], galaerr.CodeUnresolvedCrossPackageSymbol)
-	}
-	for _, name := range []string{"box.gala", "other.gala"} {
-		if errs[name] != nil {
-			t.Errorf("%s: unexpected error: %v", name, errs[name])
-		}
-	}
 }
 
 // TestCrossFileMethodImport_ReceiverFileImport: a method's signature may name
 // a type its receiver type's file imports, though its own file does not.
 func TestCrossFileMethodImport_ReceiverFileImport(t *testing.T) {
-	errs := analyzeEachFile(t, map[string]string{
+	analyzeEachFile(t, map[string]string{
 		"box.gala":   "package repro\n\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct Box(items Array[int])\n",
 		"items.gala": "package repro\n\nfunc (b Box) Items() Array[int] = b.items\n",
+	}, func(t *testing.T, errs map[string]error) {
+		requireNoErrors(t, errs, "a method may use its receiver file's imports")
 	})
-	for name, err := range errs {
-		if err != nil {
-			t.Errorf("%s: unexpected error (a method may use its receiver file's imports): %v", name, err)
-		}
-	}
 }
 
 // TestCrossFileFieldNamedLikeMethod: a method declared in another file than
 // its struct, named like one of the struct's fields, is GALA-E0081 at the
 // method, which Go would otherwise reject.
 func TestCrossFileFieldNamedLikeMethod(t *testing.T) {
-	errs := analyzeEachFile(t, map[string]string{
+	analyzeEachFile(t, map[string]string{
 		"box.gala":  "package repro\n\nstruct Box(Name string)\n",
 		"name.gala": "package repro\n\nfunc (b Box) Name() string = \"box\"\n",
+	}, func(t *testing.T, errs map[string]error) {
+		if se := requireCode(t, "name.gala", errs["name.gala"], galaerr.CodeFieldNamedLikeMethod); se.Line != 3 || se.Column != 13 {
+			t.Errorf("reported at %d:%d, want the method's name at 3:13", se.Line, se.Column)
+		}
+		delete(errs, "name.gala")
+		requireNoErrors(t, errs, "the clash is reported at the method")
 	})
-	err := errs["name.gala"]
-	if got := errorCode(err); got != galaerr.CodeFieldNamedLikeMethod {
-		t.Fatalf("name.gala: got %q (%v), want %s", got, err, galaerr.CodeFieldNamedLikeMethod)
-	}
-	var se *galaerr.SemanticError
-	if errors.As(err, &se) && (se.Line != 3 || se.Column != 13) {
-		t.Errorf("reported at %d:%d, want the method's name at 3:13", se.Line, se.Column)
-	}
 }

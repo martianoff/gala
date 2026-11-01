@@ -136,13 +136,11 @@ func (r *defaultScopeRecorder) record(pkgAST *transpiler.RichAST, canonical func
 		for name, def := range tm.FieldDefaults {
 			tm.FieldDefaults[name] = scopeOf(def, tm.DefinedIn)
 		}
+		// A method's own file, which need not be its type's: a method may be
+		// declared in any file of the package.
 		for _, mm := range tm.Methods {
-			definedIn := mm.DefinedIn
-			if definedIn == "" {
-				definedIn = tm.DefinedIn // a synthesized method, such as a case's companion Apply
-			}
 			for i, def := range mm.DefaultExprs {
-				mm.DefaultExprs[i] = scopeOf(def, definedIn)
+				mm.DefaultExprs[i] = scopeOf(def, mm.DefinedIn)
 			}
 		}
 	}
