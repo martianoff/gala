@@ -1,8 +1,6 @@
 package transformer
 
 import (
-	"go/ast"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
@@ -39,8 +37,13 @@ func newWalkSource(richAST *transpiler.RichAST) (walkSource, error) {
 // tree, for why.
 func noNativeTree(why string) error {
 	return galaerr.NewCodedSemanticError(galaerr.CodeInternalTransformerPanic, 1, 0,
-		"internal transpiler error: no native tree to transform: "+why, galaerr.InternalTransformerPanicHint)
+		"internal transpiler error: no native tree to transform: "+why, internalDefectHint)
 }
+
+// internalDefectHint is the hint of an internal error raised where the
+// transformer knows the cause, unlike a recovered panic's
+// (galaerr.InternalTransformerPanicHint).
+const internalDefectHint = "not this file's fault: an internal transpiler defect. Please file an issue at https://github.com/martianoff/gala/issues with the source that triggered it"
 
 // packageClause is the file's package name and the doc key of its package
 // clause.
@@ -89,10 +92,6 @@ func (s walkSource) topDecls() []native.GalaNodeRef {
 	return out
 }
 
-// lowerTopDecl lowers td, a topLevelDeclaration node.
-func (t *galaASTTransformer) lowerTopDecl(td native.GalaNodeRef) ([]ast.Decl, error) {
-	return t.transformTopLevelDeclarationNative(td)
-}
 
 // readDeclDocsNative is what attachDocs reads of td, a topLevelDeclaration
 // node.

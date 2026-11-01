@@ -121,7 +121,7 @@ type galaASTTransformer struct {
 	userReturns            map[*ast.ReturnStmt]loopControlSite           // source position of each `return` lowered from source, checked by checkBranchingCalls
 	voidCalls              map[*ast.CallExpr]voidCallSite                // each call of void type with its source, checked by checkVoidCalls once the file is complete
 	hoisted                map[*ast.Ident]hoistedValue                   // a match or if-expression lowered as statements, by the placeholder that stands for it until its consumer takes it (see hoisted_value.go)
-	escapeCache            map[any]bool                                  // whether a parse subtree holds control flow that would leave a construct lowered to a function literal (see escapesConstruct)
+	escapeCache            map[native.GalaNodeRef]bool                   // whether a subtree holds control flow that would leave a construct lowered to a function literal (see cachedEscape)
 	hoistedPre             []ast.Stmt                                    // statements the local declaration being lowered needs before it, set when its initializer is lowered as statements (see hoisted_value.go)
 	localDeclaration       bool                                          // set while lowerStatement lowers a val, var or assignment statement in a function body, whose single value may be lowered as statements (see lowerDeclarationInitializers)
 	userLoops              map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)
@@ -149,11 +149,11 @@ type galaASTTransformer struct {
 	walkedNative bool
 	// onNativeDecl, when set, is told of each top-level declaration the
 	// native walk lowers. It observes and changes nothing;
-	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
+	// the walk tests set it to prove which tree each file's walk read.
 	onNativeDecl func()
 	// onNativeStmt, when set, is told of each statement the native walk
 	// lowers in a block, by its node. It observes
-	// and changes nothing; TestNativeWalkAgrees sets it to count them.
+	// and changes nothing; the walk tests set it to count them.
 	onNativeStmt func(n native.GalaNodeRef)
 	// onNativeType, when set, is told of each type, and each sealed or
 	// opaque type declaration, lowered off the native tree, by its first
@@ -161,7 +161,7 @@ type galaASTTransformer struct {
 	onNativeType func(line int)
 	// onNativeLambda, when set, is told of each lambda lowered on the
 	// native tree, by its node. It observes and
-	// changes nothing; TestNativeWalkAgrees sets it to count them.
+	// changes nothing; the walk tests set it to count them.
 	onNativeLambda func(n native.GalaNodeRef)
 	// onNativeCapture, when set, is told of each Sendable capture check run
 	// on the native tree. It observes and changes nothing;
@@ -179,15 +179,16 @@ type galaASTTransformer struct {
 	onNativeShape func(line int, shape string)
 	// onNativeCase, when set, is told of each case clause a match reads on the
 	// native tree, by its node. It observes and
-	// changes nothing; TestNativeWalkAgrees sets it to count them.
+	// changes nothing; the walk tests set it to count them.
 	onNativeCase func(n native.GalaNodeRef)
-	// onParsedExpr, when set, is told of each tree parseExprAt parses on
-	// the native tree, with what it parsed and the file it is written
-	// in. It observes and changes nothing; the native walk tests set it to
-	// tell those trees' nodes from the file's.
-	onParsedExpr func(tree *native.GalaTree, what, file string)
-	// refuseNativeParse, when set, makes parseExprAt take its ANTLR fallback
-	// as if the native parse had not settled the text. Only
+	// onParsedExpr, when set, is told of each tree parseExprAt parses, with
+	// what it parsed, the file it is written in, and whether the engine's
+	// parser made the tree rather than the fallback, ANTLR's parser and
+	// galop's converter. It observes and changes nothing; the native walk
+	// tests set it to tell those trees' nodes from the file's.
+	onParsedExpr func(tree *native.GalaTree, what, file string, engineParsed bool)
+	// refuseNativeParse, when set, makes parseExprAt take its fallback, ANTLR's
+	// parser and galop's converter, without trying the engine's parser. Only
 	// TestNativeParsedWalkFallback sets it.
 	refuseNativeParse bool
 
@@ -299,7 +300,7 @@ func (t *galaASTTransformer) lowersCleanly(decl native.GalaNodeRef) (ok bool) {
 			t.restoreScopedState(saved)
 		}
 	}()
-	_, err := t.lowerTopDecl(decl)
+	_, err := t.transformTopLevelDeclarationNative(decl)
 	return err == nil
 }
 
@@ -533,7 +534,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.cacheTypeResolver()
 
 	t.variantNames = collectVariantNames(t.typeMetas)
-	if err := t.checkVariantTypeNamesIn(src); err != nil {
+	if err := t.checkVariantTypeNamesNative(src.root.GalaNodeRef); err != nil {
 		return nil, nil, err
 	}
 
@@ -552,7 +553,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 
 	for _, td := range decls {
-		lowered, err := t.lowerTopDecl(td)
+		lowered, err := t.transformTopLevelDeclarationNative(td)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -814,7 +815,7 @@ func semanticErrorAtStart(n srcNode, msg string) *galaerr.SemanticError {
 	return galaerr.NewSemanticErrorAt(line, col, msg)
 }
 
-// semanticErrorIn is semanticErrorAt of the node at r.
+// semanticErrorIn is a SemanticError at the start of r, in the file.
 func (t *galaASTTransformer) semanticErrorIn(r srcRange, msg string) *galaerr.SemanticError {
 	return galaerr.NewSemanticErrorInFile(t.filePath, r.line, r.col, msg)
 }

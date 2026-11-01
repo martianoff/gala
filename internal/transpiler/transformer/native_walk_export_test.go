@@ -27,6 +27,9 @@ type ParsedOrigin struct{ What, File string }
 type NativeNodeHooks struct {
 	Stmt, Lambda, Expr, Case func(index, line int)
 	Parsed                   func(kind string, o ParsedOrigin, line int)
+	// ParsedTree is told of each tree parsed on its own, and whether the
+	// engine's parser made it rather than the fallback.
+	ParsedTree func(engineParsed bool)
 }
 
 // OnNativeNodes sets tr's onNativeStmt, onNativeLambda, onNativeExpr and
@@ -35,7 +38,10 @@ type NativeNodeHooks struct {
 func OnNativeNodes(tr transpiler.ASTTransformer, h NativeNodeHooks) {
 	t := tr.(*galaASTTransformer)
 	parsed := map[*native.GalaTree]ParsedOrigin{}
-	t.onParsedExpr = func(tree *native.GalaTree, what, file string) {
+	t.onParsedExpr = func(tree *native.GalaTree, what, file string, engineParsed bool) {
+		if h.ParsedTree != nil {
+			h.ParsedTree(engineParsed)
+		}
 		parsed[tree] = ParsedOrigin{What: what, File: filepath.ToSlash(filepath.Clean(file))}
 	}
 	byTree := func(kind string, f func(index, line int)) func(native.GalaNodeRef) {

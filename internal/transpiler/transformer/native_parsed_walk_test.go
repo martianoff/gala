@@ -142,15 +142,22 @@ func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string
 // all fall back to ANTLR's parser and galop's converter (RefuseNativeParse),
 // as when the engine's parser does not settle them, to its golden on
 // parsedShapes and on each of parsedCases: the Go, or the diagnostic, that
-// ANTLR's walk gave them.
+// ANTLR's walk gave them, with no tree made by the engine's parser.
 func TestNativeParsedWalkFallback(t *testing.T) {
 	run := walkRunner(t, galaparser.EngineGalop, walkPipeline{refuseNative: true})
+	check := func(t *testing.T, name, src string) walkRun {
+		n := run(t, name, src)
+		assert.Zerof(t, n.engineTrees, "the engine's parser parsed %d expressions, which it was refused", n.engineTrees)
+		return n
+	}
 	t.Run("parsed shapes", func(t *testing.T) {
-		require.NoError(t, run(t, "parsed shapes", parsedShapes).err, "the program does not transpile")
+		n := check(t, "parsed shapes", parsedShapes)
+		require.NoError(t, n.err, "the program does not transpile")
+		assert.Positive(t, n.fallbackTrees, "no expression was parsed by the fallback")
 	})
 	for _, c := range parsedCases {
 		t.Run(c.name, func(t *testing.T) {
-			require.Error(t, run(t, c.name, c.src).err, "the case transpiles")
+			require.Error(t, check(t, c.name, c.src).err, "the case transpiles")
 		})
 	}
 }

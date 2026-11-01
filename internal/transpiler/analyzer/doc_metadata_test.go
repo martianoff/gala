@@ -22,12 +22,12 @@ func analyzeSrc(t *testing.T, src string) *transpiler.RichAST {
 		t.Fatal(err)
 	}
 	p := parser.NewAntlrGalaParser()
-	tree, docs, err := p.ParseFile(src).Strict()
-	if err != nil {
+	parsed := p.ParseFile(src)
+	if err := parsed.Err(); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	a := NewGalaAnalyzer(p, nil)
-	rich, err := transpiler.Analyze(a, tree, docs, path)
+	rich, err := a.AnalyzeParsed(parsed, path)
 	if err != nil {
 		t.Fatalf("analyze: %v", err)
 	}

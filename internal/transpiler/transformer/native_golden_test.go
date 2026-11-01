@@ -22,12 +22,12 @@ var updateGoldens = flag.Bool("update", false, "rewrite the walk goldens in test
 // goldenDir is the directory of the walk goldens, relative to the package.
 const goldenDir = "testdata/walk_golden"
 
-// goldenSeen counts the goldens each test has checked, so a test that
+// goldenSeen counts the goldens each run of a test has checked, so a test that
 // transpiles more than one program has a golden for each.
 var goldenSeen = struct {
 	sync.Mutex
-	n map[string]int
-}{n: map[string]int{}}
+	n map[testing.TB]int
+}{n: map[testing.TB]int{}}
 
 // goldenPath is the golden of the i-th program the test name transpiles.
 func goldenPath(name string, i int) string {
@@ -78,8 +78,8 @@ var placeholderPath = regexp.MustCompile(`\$(DIR|SEARCH)[\\/][^\s:]*`)
 func checkGolden(tb testing.TB, path string, searchPaths []string, out string, err error) {
 	tb.Helper()
 	goldenSeen.Lock()
-	i := goldenSeen.n[tb.Name()]
-	goldenSeen.n[tb.Name()]++
+	i := goldenSeen.n[tb]
+	goldenSeen.n[tb]++
 	goldenSeen.Unlock()
 	file := goldenPath(tb.Name(), i)
 	got := goldenText(path, searchPaths, out, err)

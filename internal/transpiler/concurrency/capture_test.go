@@ -3,12 +3,11 @@ package concurrency
 import (
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 )
 
 // --- parse helpers -----------------------------------------------------------
@@ -19,61 +18,53 @@ func wrapBody(body string) string {
 	return "package p\n\nfunc f() {\n" + body + "\n}\n"
 }
 
-func parseSource(t *testing.T, src string) antlr.Tree {
+// parseSource parses src and returns its native tree's root.
+func parseSource(t *testing.T, src string) native.GalaNodeRef {
 	t.Helper()
-	tree, _, err := parser.NewAntlrGalaParser().ParseFile(src).Strict()
-	require.NoError(t, err, "snippet failed to parse:\n%s", src)
-	return tree
+	parsed := galaparser.NewAntlrGalaParser().ParseFile(src)
+	require.NoError(t, parsed.Err(), "snippet failed to parse:\n%s", src)
+	tree, err := parsed.CleanNative().Tree()
+	require.NoError(t, err, "snippet has no native tree:\n%s", src)
+	return tree.Root()
 }
 
-// walkTree visits node and all descendants in pre-order.
-func walkTree(node antlr.Tree, visit func(antlr.Tree)) {
-	visit(node)
-	for i := 0; i < node.GetChildCount(); i++ {
-		walkTree(node.GetChild(i), visit)
-	}
+// firstOfKind is the first node of kind under root, by pre-order.
+func firstOfKind(root native.GalaNodeRef, kind native.GalaKind) native.GalaNodeRef {
+	var found native.GalaNodeRef
+	root.Walk(func(n native.GalaNodeRef) bool {
+		if !found.Ok() && n.Kind() == kind {
+			found = n
+		}
+		return !found.Ok()
+	})
+	return found
 }
 
 // firstLambda parses src and returns the FIRST (outermost, by pre-order)
 // lambda expression in the tree.
-func firstLambda(t *testing.T, src string) grammar.ILambdaExpressionContext {
+func firstLambda(t *testing.T, src string) native.LambdaExpressionNode {
 	t.Helper()
-	tree := parseSource(t, src)
-	var found grammar.ILambdaExpressionContext
-	walkTree(tree, func(n antlr.Tree) {
-		if found != nil {
-			return
-		}
-		if l, ok := n.(*grammar.LambdaExpressionContext); ok {
-			found = l
-		}
-	})
-	require.NotNil(t, found, "no lambda found in:\n%s", src)
-	return found
+	found := firstOfKind(parseSource(t, src), native.GalaKIND_lambdaExpression)
+	require.True(t, found.Ok(), "no lambda found in:\n%s", src)
+	return native.LambdaExpressionNode{GalaNodeRef: found}
 }
 
 // firstValInitExpr parses src and returns the initializer expression of the
-// first `val` declaration — used to obtain a bare expression context for the
+// first `val` declaration — used to obtain a bare expression for the
 // thunk-sugar entry point.
-func firstValInitExpr(t *testing.T, src string) grammar.IExpressionContext {
+func firstValInitExpr(t *testing.T, src string) native.ExpressionNode {
 	t.Helper()
-	tree := parseSource(t, src)
-	var found grammar.IExpressionContext
-	walkTree(tree, func(n antlr.Tree) {
-		if found != nil {
-			return
-		}
-		if vd, ok := n.(*grammar.ValDeclarationContext); ok {
-			if el := vd.ExpressionList(); el != nil {
-				exprs := el.AllExpression()
-				if len(exprs) > 0 {
-					found = exprs[0]
-				}
+	var found native.GalaNodeRef
+	if vd := firstOfKind(parseSource(t, src), native.GalaKIND_valDeclaration); vd.Ok() {
+		if list, ok := galaparser.OnlyNativeKid(vd, native.GalaKIND_expressionList); ok {
+			for e := range galaparser.NativeKids(list, native.GalaKIND_expression) {
+				found = e
+				break
 			}
 		}
-	})
-	require.NotNil(t, found, "no val initializer found in:\n%s", src)
-	return found
+	}
+	require.True(t, found.Ok(), "no val initializer found in:\n%s", src)
+	return native.ExpressionNode{GalaNodeRef: found}
 }
 
 // names extracts just the capture names, preserving first-seen order. It
@@ -238,7 +229,7 @@ func TestFreeVariablesInLambda(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lambda := firstLambda(t, wrapBody("val g = "+tc.lambda))
-			got := names(FreeVariablesInLambda(lambda))
+			got := names(FreeVariablesInLambdaNative(lambda))
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -251,7 +242,7 @@ func TestFreeVariablesInLambda(t *testing.T) {
 func TestFreeVariablesInExpression(t *testing.T) {
 	t.Run("bare expression captures free names", func(t *testing.T) {
 		expr := firstValInitExpr(t, wrapBody("val g = counter + 1"))
-		got := names(FreeVariablesInExpression(nil, expr))
+		got := names(FreeVariablesInExpressionNative(nil, expr))
 		assert.Equal(t, []string{"counter"}, got)
 	})
 
@@ -261,14 +252,14 @@ func TestFreeVariablesInExpression(t *testing.T) {
 		expr := firstValInitExpr(t, wrapBody("val g = counter + 1"))
 		lambda := firstLambda(t, wrapBody("val g = () => counter + 1"))
 		assert.Equal(t,
-			names(FreeVariablesInExpression(nil, expr)),
-			names(FreeVariablesInLambda(lambda)),
+			names(FreeVariablesInExpressionNative(nil, expr)),
+			names(FreeVariablesInLambdaNative(lambda)),
 		)
 	})
 
 	t.Run("seeded param names are treated as bound", func(t *testing.T) {
 		expr := firstValInitExpr(t, wrapBody("val g = counter + step"))
-		got := names(FreeVariablesInExpression([]string{"step"}, expr))
+		got := names(FreeVariablesInExpressionNative([]string{"step"}, expr))
 		assert.Equal(t, []string{"counter"}, got)
 	})
 }
@@ -398,7 +389,7 @@ func TestCaptureFieldPaths(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lambda := firstLambda(t, wrapBody("val g = "+tc.lambda))
-			caps := FreeVariablesInLambda(lambda)
+			caps := FreeVariablesInLambdaNative(lambda)
 			c := findCapture(caps, tc.capture)
 			require.NotNil(t, c, "expected a capture named %q in %v", tc.capture, names(caps))
 			assert.Equal(t, tc.wantWhole, c.Whole, "Whole mismatch")
@@ -411,7 +402,7 @@ func TestCaptureFieldPaths(t *testing.T) {
 // reference to the captured name (the caret PR3's diagnostic points at).
 func TestCapturePosition(t *testing.T) {
 	lambda := firstLambda(t, wrapBody("val g = () => counter + 1"))
-	caps := FreeVariablesInLambda(lambda)
+	caps := FreeVariablesInLambdaNative(lambda)
 	require.Len(t, caps, 1)
 	assert.Equal(t, "counter", caps[0].Name)
 	// `counter` is on line 4 (package, blank, func, body) of wrapBody's output.

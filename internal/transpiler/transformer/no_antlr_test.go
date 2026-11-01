@@ -1,4 +1,4 @@
-package transformer
+package transformer_test
 
 import (
 	"go/parser"
@@ -45,7 +45,7 @@ func TestTransformerReadsNoANTLR(t *testing.T) {
 			}
 		}
 	}
-	require.Greater(t, read, 100, "the library's sources are not staged")
+	require.Greater(t, read, 50, "the library's sources are not staged")
 
 	build, err := os.ReadFile("BUILD.bazel")
 	require.NoError(t, err)

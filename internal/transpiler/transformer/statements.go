@@ -327,7 +327,7 @@ func (t *galaASTTransformer) lowerShortVarDecl(d shortVarDecl, mutable bool) (as
 // shortVarDeclFromMultiValue lowers `a, b := f()`, binding several names from
 // one multi-value expression. The call is evaluated once into temporaries and
 // each name takes its own, mirroring the `val a, b = f()` lowering in
-// transformVarDeclaration.
+// lowerVarDecl.
 func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	d shortVarDecl,
 	rhs ast.Expr,
@@ -721,7 +721,7 @@ func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
 	// wrapper, so strip any inferred Immutable[T] to T and register it with
 	// mutable-storage (addVar) semantics. A `val` binding is always
 	// Immutable-wrapped, so every read of it is rewritten to `x.Get()`
-	// (transformPrimary); `use` stores the resource directly, so its reads and
+	// (lowerPrimaryNative); `use` stores the resource directly, so its reads and
 	// `x.Close()` must stay plain — addVar gives exactly that.
 	if t.isImmutableType(resType) {
 		if gen, ok := resType.(transpiler.GenericType); ok && len(gen.Params) > 0 {

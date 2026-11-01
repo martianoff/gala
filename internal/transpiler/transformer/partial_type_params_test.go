@@ -15,8 +15,8 @@ import (
 // (`sealed type S[T] {`, `sealed type S[] {`) parses with errors into a tree
 // ANTLR's recovery leaves holes in: a type parameter without its constraint,
 // or one with neither name nor constraint. Reading the sealed and opaque
-// declarations off that tree, converted to the native tree as the language
-// server converts an error-recovered buffer, does not panic.
+// declarations off that tree, converted to the native tree by galop's
+// converter, does not panic.
 func TestReadTypeParamsOfPartialParse(t *testing.T) {
 	cases := []struct{ name, src string }{
 		{name: "empty sealed list", src: "package main\n\nsealed type S[] {\n\tcase A\n}\n"},

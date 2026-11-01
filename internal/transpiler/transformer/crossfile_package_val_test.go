@@ -48,12 +48,14 @@ func main() {
 
 	p := transpiler.NewAntlrGalaParser()
 
-	tree, _, err := p.ParseFile(mainCode).Strict()
+	parsed := p.ParseFile(mainCode)
+	tree, _, err := parsed.Strict()
 	assert.NoError(t, err)
 
 	// Analyze main.gala with consts.gala as a sibling (multi-file mode).
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{constsPath})
 	richAST, err := transpiler.Analyze(a, tree, nil, mainPath)
+	withNative(richAST, parsed)
 	assert.NoError(t, err)
 
 	// The analyzer must surface the sibling file's package-level vals with

@@ -6,7 +6,18 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+
+	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/transpiler"
 )
+
+// withNative gives richAST, when the analysis made one, the native tree of
+// parsed, which the transform reads, as the transpile pipeline does.
+func withNative(richAST *transpiler.RichAST, parsed *galaparser.Parsed) {
+	if richAST != nil {
+		richAST.Native = parsed.CleanNative()
+	}
+}
 
 // generatedHeader is the header prepended to generated Go code.
 // This must match the constant in generator.go.

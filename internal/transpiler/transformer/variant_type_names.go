@@ -29,7 +29,7 @@ import (
 // alias target, composite literal — before the declarations are transformed,
 // so every one is checked in source order, including those a transformation
 // lowers speculatively and discards. It reads the file's native tree
-// (checkVariantTypeNamesIn). An interpolated expression is parsed
+// (checkVariantTypeNamesNative). An interpolated expression is parsed
 // separately, so parseAndTransformExpr checks it when it parses it.
 //
 // Explicit type arguments (`ArrayOf[Circle](...)`, `case Unwrap[Circle](v)`)
@@ -73,11 +73,6 @@ type variantTypeRef struct {
 type variantTypeRefs struct {
 	declared map[string]bool
 	refs     []variantTypeRef
-}
-
-// checkVariantTypeNamesIn is checkVariantTypeNamesNative of the file s.
-func (t *galaASTTransformer) checkVariantTypeNamesIn(s walkSource) error {
-	return t.checkVariantTypeNamesNative(s.root.GalaNodeRef)
 }
 
 // checkVariantTypeNamesOf is checkVariantTypeNamesNative of e, an expression

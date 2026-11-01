@@ -33,7 +33,7 @@ func nativeRange(n native.GalaNodeRef) srcRange {
 	return r
 }
 
-// nativeDeclNames is ctxDeclNames of the identifier list idList.
+// nativeDeclNames is the names the identifier list idList declares.
 func nativeDeclNames(idList native.GalaNodeRef) []declName {
 	var names []declName
 	for id := range galaparser.NativeKids(idList, native.GalaKIND_identifier) {
@@ -42,7 +42,7 @@ func nativeDeclNames(idList native.GalaNodeRef) []declName {
 	return names
 }
 
-// nativeTypeParams is readTypeParams of tps, a typeParameters node.
+// nativeTypeParams is the type parameters tps, a typeParameters node, declares.
 func nativeTypeParams(tps native.TypeParametersNode) []typeParam {
 	var params []typeParam
 	for n := range galaparser.NativeKids(tps.TypeParameterList().GalaNodeRef, native.GalaKIND_typeParameter) {
@@ -52,7 +52,7 @@ func nativeTypeParams(tps native.TypeParametersNode) []typeParam {
 	return params
 }
 
-// transformTopLevelDeclarationNative is transformTopLevelDeclaration of td, a
+// transformTopLevelDeclarationNative lowers td, a
 // topLevelDeclaration node.
 func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNodeRef) ([]ast.Decl, error) {
 	if t.onNativeDecl != nil {
@@ -97,7 +97,7 @@ func oneDecl(d ast.Decl, err error) ([]ast.Decl, error) {
 	return []ast.Decl{d}, nil
 }
 
-// readEmbedDeclNative is readEmbedDecl of n.
+// readEmbedDeclNative reads the embed declaration n.
 func readEmbedDeclNative(n native.EmbedDeclarationNode) embedDecl {
 	d := embedDecl{name: n.Identifier().GetText()}
 	if typ := n.Type_(); typ.Ok() {
@@ -137,7 +137,7 @@ func bindingIdList(n nativeBinding) native.GalaNodeRef {
 	return n.IdentifierList().GalaNodeRef
 }
 
-// readBindingDeclNative is readBindingDecl of a val or var declaration n,
+// readBindingDeclNative reads a val or var declaration n, introduced by
 // keyword: a package-level one or a statement in a body.
 func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword string) bindingDecl {
 	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: isTopLevelDeclNative(n.Ref()), names: nativeDeclNames(bindingIdList(n))}
@@ -158,7 +158,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 	return d
 }
 
-// readFuncDeclNative is readFuncDecl of n.
+// readFuncDeclNative reads the function declaration n.
 func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode) funcDecl {
 	d := funcDecl{name: n.Identifier().GetText(), sig: nativeSig(n.Signature())}
 	if b := n.Block(); b.Ok() {
@@ -181,7 +181,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 	return d
 }
 
-// readTypeDeclNative is readTypeDecl of n.
+// readTypeDeclNative reads the type declaration n.
 func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) typeDecl {
 	id := n.Identifier()
 	d := typeDecl{name: id.GetText(), nameAt: srcNode{node: id.GalaNodeRef}}
@@ -219,7 +219,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 	return d
 }
 
-// readShorthandDeclNative is readShorthandDecl of n.
+// readShorthandDeclNative reads the struct shorthand declaration n.
 func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDeclarationNode) shorthandDecl {
 	id := n.Identifier()
 	d := shorthandDecl{at: srcNode{node: n.GalaNodeRef}, name: id.GetText(), nameAt: srcNode{node: id.GalaNodeRef}}
@@ -230,7 +230,7 @@ func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDec
 	return d
 }
 
-// readParamsNative is readParams of ps.
+// readParamsNative reads the parameters ps.
 func readParamsNative(ps native.ParametersNode) []paramDecl {
 	var out []paramDecl
 	for p := range galaparser.NativeKids(ps.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
@@ -255,7 +255,7 @@ func readParamsNative(ps native.ParametersNode) []paramDecl {
 	return out
 }
 
-// readImportDeclNative is readImportDecl of n.
+// readImportDeclNative reads the import declaration n.
 func readImportDeclNative(n native.GalaNodeRef) []importSpecDecl {
 	var specs []importSpecDecl
 	for s := range galaparser.NativeKids(n, native.GalaKIND_importSpec) {

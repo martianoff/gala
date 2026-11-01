@@ -1698,7 +1698,7 @@ func (t *galaASTTransformer) importPackageName(path string) string {
 }
 
 // importSpecDecl is an import spec as lowerImportDecl reads it, from either
-// tree (readImportDecl, readImportDeclNative): its path, unquoted, and how it
+// tree (readImportDeclNative): its path, unquoted, and how it
 // names the package.
 type importSpecDecl struct {
 	path  string

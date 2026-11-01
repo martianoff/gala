@@ -42,6 +42,10 @@ type walkRun struct {
 	// parsedAt is what it read on a tree of its own, a default value's or an
 	// interpolated expression's: stmt, lambda, expr, case.
 	parsedAt map[parsedLine]map[string]bool
+	// engineTrees and fallbackTrees count the trees parsed on their own by
+	// the engine's parser and by the fallback, ANTLR's parser and galop's
+	// converter.
+	engineTrees, fallbackTrees int
 	// hints is each look at the hint stack's top, in order: a take or a
 	// withhold, and whether the hint there was the asking value's.
 	hints     []byte
@@ -89,6 +93,13 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		Stmt:   func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true },
 		Lambda: func(index, _ int) { lambdas[index] = true },
 		Expr:   func(index, line int) { exprs[index], run.exprLines[line] = true, true },
+		ParsedTree: func(engine bool) {
+			if engine {
+				run.engineTrees++
+			} else {
+				run.fallbackTrees++
+			}
+		},
 		Parsed: func(kind string, o transformer.ParsedOrigin, line int) {
 			at := parsedLine{o.What, o.File, line}
 			if run.parsedAt[at] == nil {

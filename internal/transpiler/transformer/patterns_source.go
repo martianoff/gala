@@ -334,7 +334,7 @@ func (t *galaASTTransformer) lowerPatternHead(c callPat) (ast.Expr, error) {
 }
 
 // callPattern reads e as an unqualified call pattern
-// (getCallPatternWithTypeArgsFromExpression), and false when it is none.
+// with its type arguments, and false when it is none.
 func (e patExpr) callPattern() (callPat, bool) {
 	p := e.postfix(true)
 	if !p.ok() {

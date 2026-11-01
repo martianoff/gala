@@ -1,13 +1,16 @@
 package transformer
 
 import (
+	"errors"
 	"go/ast"
 	"go/token"
 	"strings"
 	"unicode/utf8"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -300,15 +303,25 @@ type parsedExprKey struct {
 
 // parseExprOnce is parseExprAt's parse of text, written in file.
 func (t *galaASTTransformer) parseExprOnce(text string, line, col int, what, file string) (exprSrc, error) {
-	n, err := parser.ParseExpressionTreeAt(text, line, col)
-	if err != nil || t.refuseNativeParse {
-		// The engine's parser has had its go at text: ANTLR's alone parses it now.
-		if n, err = parser.ParseExpressionConvertedAt(text, line, col, what); err != nil {
-			return exprSrc{}, err
-		}
+	var n native.ExpressionNode
+	var engineParsed bool
+	var err error
+	if t.refuseNativeParse {
+		n, err = parser.ParseExpressionConvertedAt(text, line, col, what)
+	} else {
+		n, engineParsed, err = parser.ParseExpressionCheckedAt(text, line, col, what)
+	}
+	if errors.Is(err, parser.ErrNativeExpression) {
+		// ANTLR's parser accepted the text and galop's converter failed on it
+		// (reported on standard error): a galop bug, at the text's position.
+		return exprSrc{}, galaerr.NewCodedSemanticError(galaerr.CodeInternalTransformerPanic, line, col,
+			"internal transpiler error: "+err.Error(), internalDefectHint)
+	}
+	if err != nil {
+		return exprSrc{}, err
 	}
 	if t.onParsedExpr != nil {
-		t.onParsedExpr(n.Tree(), what, file)
+		t.onParsedExpr(n.Tree(), what, file, engineParsed)
 	}
 	return nativeExpr(n.GalaNodeRef), nil
 }
