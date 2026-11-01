@@ -18,6 +18,7 @@ imports crypto/crypto.gala	e749026a51a532cf	9bee46bcd5ad135e
 imports examples/alias_expected_type/checks/checks.gala	9ffb97a6be5d65ff	fd5d065a799eede1
 imports examples/alias_expected_type_test.gala	bf847e357eb49f34	7d36f9a97c1e9e6b
 imports examples/alternative_patterns.gala	8966fe0004dc6219	8e33923725874d90
+imports examples/anonymous_struct_type.gala	a310ad8740a778e7	1d5dcc0072e4d9e4
 imports examples/apply_method.gala	5b68355ab46a154d	729b97be931a3ed1
 imports examples/array_large_access.gala	e51d0e92a68d67c3	a8a585cdaf365c7f
 imports examples/array_tabulate_lambda_inference.gala	b61fbdaf6a3af90c	e5de27cfce170775
@@ -62,6 +63,9 @@ imports examples/copy_lambda_override/handlers/handlers.gala	e205f85c39dcd571	00
 imports examples/copy_self_qualified_struct/lib.gala	75ffd698a05a9574	94eda4ece980baa1
 imports examples/cross_file_import_lib/ops.gala	e0a290e468796ffa	f347d7e044bad860
 imports examples/cross_file_import_lib/types.gala	c653dfb5fcb544c5	a54692c5d8c0ea71
+imports examples/cross_file_method_default.gala	2c47e127da077578	d0233aa3a2e6c7cb
+imports examples/cross_file_method_default_lib/a.gala	8709b9b8eda0e5f6	29d01479733ce446
+imports examples/cross_file_method_default_lib/b.gala	2b858042d36fcc1c	99f901570770fb9f
 imports examples/cross_file_unwrap/main.gala	3a8e54d38efd1cf8	1464ec1893d3aee6
 imports examples/cross_file_unwrap/types.gala	53dcf22e3a88ce5f	8e33923725874d90
 imports examples/cross_file_unwrap_lib/ops.gala	c86984d1defb9e54	fc0c63074b5fede7
@@ -94,6 +98,10 @@ imports examples/crosspkg_package_val/colors/colors.gala	4ed855bb5e75a2a6	2ad9c0
 imports examples/crosspkg_package_val/palette/palette.gala	d835a1ff14da1a83	2e2a5f825bc3f4b4
 imports examples/custom_seq_pattern.gala	97718a55de120510	b0bcc1f1801a652f
 imports examples/deeply_nested_pattern.gala	4bff5ee967d5ba92	a52cb0182b2c6b4b
+imports examples/default_go_dot_import/caller/caller.gala	0035f4e6f7b8de65	3db5b560c4b43c0e
+imports examples/default_go_dot_import/lib/a.gala	c40f6fc72344372b	6ed2ca82b298b14f
+imports examples/default_go_dot_import/lib/b.gala	4612f13360b4d485	f6ceede008cd4285
+imports examples/default_go_dot_import_test.gala	cf458a34dc0f8e03	d0e61bdda331b453
 imports examples/default_params.gala	59d3638315757f3f	8e33923725874d90
 imports examples/default_params_expr.gala	a1841d4e9cbaea8e	8e33923725874d90
 imports examples/default_type_param_binding.gala	f56c96520160959e	8e33923725874d90
@@ -229,9 +237,11 @@ imports examples/if_else_unwrapping.gala	c2d7f0b46b64e3c4	729b97be931a3ed1
 imports examples/if_expr_batch_regress/logic.gala	d3ff4769b2d9f47f	d9c67518c697ead8
 imports examples/if_expr_batch_regress/types.gala	7a57df3a1e5e74c1	eb2d2aa84e5bf5f2
 imports examples/if_expr_batch_regress_test.gala	3ab439c2a02e5755	9770322e51e8034d
+imports examples/if_expr_branch_statements.gala	622e775cbb2f0e44	8e33923725874d90
 imports examples/if_expr_concrete_type.gala	5b94dd5a3c62ccd9	a52cb0182b2c6b4b
 imports examples/if_expr_lambda_return_type.gala	c14405ef96e0bcba	e5de27cfce170775
 imports examples/if_expr_return_generic.gala	2bdf9e65c0416ffe	d47828a4b65f1486
+imports examples/if_expr_trailing_match.gala	c7aaf58068ee9c22	8e33923725874d90
 imports examples/if_expr_unit_func_param.gala	d136246a617f5f8d	8e33923725874d90
 imports examples/if_expression_block.gala	ff34b007b7e9221f	8e33923725874d90
 imports examples/if_iife_terminating_branches.gala	0d41184aa41d04b9	a8a585cdaf365c7f
@@ -415,6 +425,7 @@ imports examples/package_val_init_types.gala	99dd5aca60976961	ad2211ef0ddb5599
 imports examples/package_val_init_types/consts/consts.gala	087599dd5e9f7726	fae40dec119c38ae
 imports examples/partial_ctor_type_args.gala	48560320e267098e	8e33923725874d90
 imports examples/partial_function.gala	babc43621cfc6bf7	6f91feb2f9b6d589
+imports examples/partial_function_suffix_arg.gala	e3d673e36c193c13	8e33923725874d90
 imports examples/path_basics.gala	b5aacfd576d75202	61521957a1d541ee
 imports examples/pattern_match_filter.gala	8ea3ff041f092a20	729b97be931a3ed1
 imports examples/pf_repro.gala	839ba7a8dcc657ea	6f91feb2f9b6d589

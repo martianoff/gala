@@ -3,13 +3,14 @@ doc collection_immutable	2b6ed3213807ac90	c604a72fe365d683
 doc collection_mutable	ffbb0f94916c4b85	3ba29c58fe3d28da
 doc concurrent	6ec408e11a7d612c	3de1d119c03daca7
 doc crypto	92c87aff012a36ab	00e1af5423c3ad0c
-doc examples	1ce1f2ddf879d5cf	6fdf3033fa559b68
+doc examples	2132f2eeda4ebdbe	6fdf3033fa559b68
 doc examples/alias_expected_type/checks	db48327fe7037be6	4504a6e3188f0ea0
 doc examples/codec_imported_struct	909cf77dcdd4a8ae	50ca2b0f91a1b1fb
 doc examples/codec_imported_struct/billing	60857c4129acb8f3	5fc509f3b894877f
 doc examples/copy_lambda_override/handlers	4e06faf13d9cd049	0650eda7c5876b1b
 doc examples/copy_self_qualified_struct	896fdf40d8bc4026	35dedf7258c10bc6
 doc examples/cross_file_import_lib	930ce61e647bc4de	ab07a3dd9b63291a
+doc examples/cross_file_method_default_lib	de1396638fe6b0f4	7361458cd0e1354b
 doc examples/cross_file_unwrap	47d61535f08812e1	6c92882117cf5eb5
 doc examples/cross_file_unwrap_lib	42b3f599159e7086	feaba6207ba539f5
 doc examples/cross_pkg_copy_overrides/shapes	fce1212c21a3dcbb	aefba22101e87cdf
@@ -32,6 +33,8 @@ doc examples/cross_pkg_try_match/corelib	3e8e50b5c4e3c0e4	9be7f9fa3a4adb7f
 doc examples/crossfile_package_val	cb9f54f931c7f84c	d95a3f009d84f249
 doc examples/crosspkg_package_val/colors	92d23dec8f3c80e1	489733d6a1f928c9
 doc examples/crosspkg_package_val/palette	a5cdfddb11cb6308	f0f14139ea5922d7
+doc examples/default_go_dot_import/caller	f352b0aeec2a73f0	f6846c538363d104
+doc examples/default_go_dot_import/lib	63733656d562c11b	41d51f5760cae6cf
 doc examples/doc_verify	7f90be6f57103165	03ee759bcb77f32c
 doc examples/field_named_like_type	66c552653d2f7a37	296f4e7c89f81251
 doc examples/field_named_like_type/lib	5c9ddea435a8f64b	91a576d3bf0f82a8
