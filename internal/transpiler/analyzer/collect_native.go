@@ -504,10 +504,11 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						return genericInterfaceMethodError(pos.Line, pos.Column, meta, methodName, tps, cons)
 					}
 					methodMeta := &transpiler.MethodMetadata{
-						Name:      methodName,
-						Package:   pkgName,
-						Doc:       nativeDocAt(docs, msNode),
-						DefinedIn: filePath,
+						Name:       methodName,
+						Package:    pkgName,
+						Doc:        nativeDocAt(docs, msNode),
+						DefinedIn:  filePath,
+						OfTypeDecl: true,
 					}
 					sig := msCtx.Signature()
 					methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)

@@ -85,6 +85,14 @@ func TestRecollectedDeclarationDropsStaleMethods(t *testing.T) {
 			again:       "package box\n\nsealed type ID {\n    case Small(N int)\n}\n",
 			wantMethods: []string{"Describe", "isSmall"},
 		},
+		{
+			// The old case's companion goes: no Apply or Unapply is left on
+			// the opaque type now named like it.
+			name:        "case_name_reused_by_opaque",
+			first:       "package box\n\nsealed type ID {\n    case Small(N int)\n}\n",
+			again:       "package box\n\nsealed type ID {\n    case Big(N int)\n}\n\nopaque type Small int64\n",
+			wantMethods: []string{"Describe", "isBig"},
+		},
 	}
 	// A method another file declares on ID, recorded between the collections.
 	declared := &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: "other.gala"}
@@ -104,13 +112,15 @@ func TestRecollectedDeclarationDropsStaleMethods(t *testing.T) {
 				if names := methodNamesOf(got); !reflect.DeepEqual(names, c.wantMethods) {
 					t.Errorf("methods = %v, want %v", names, c.wantMethods)
 				}
+				// Every entry, so a companion of a case the file no longer
+				// declares is caught too.
 				fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-				want := collectOnce(t, fresh, collect, fd.filePath, c.again).richAST.Types["box.ID"]
+				want := collectOnce(t, fresh, collect, fd.filePath, c.again).richAST.Types
 				if !fromInterface {
-					want.Methods[declared.Name] = declared
+					want["box.ID"].Methods[declared.Name] = declared
 				}
-				if !reflect.DeepEqual(got, want) {
-					t.Errorf("re-collected entry differs from a first collection at %s", firstDiff(reflect.ValueOf(got), reflect.ValueOf(want), "", map[visit]bool{}))
+				if !reflect.DeepEqual(fd.richAST.Types, want) {
+					t.Errorf("re-collected entries differ from a first collection at %s", firstDiff(reflect.ValueOf(fd.richAST.Types), reflect.ValueOf(want), "", map[visit]bool{}))
 				}
 			})
 		}
@@ -132,6 +142,13 @@ func TestRecollectedSiblingDeclaration(t *testing.T) {
 			first:       "package box\n\nstruct ID(N int)\n\nfunc (i ID) Old() int {\n    return 1\n}\n",
 			again:       "package box\n\ntype ID interface {\n    Raw() int64\n}\n",
 			wantMethods: []string{"Describe", "Raw"},
+		},
+		{
+			// The analyzed file's method stays, the old method specs go.
+			name:        "interface_to_struct",
+			first:       "package box\n\ntype ID interface {\n    Raw() int64\n}\n",
+			again:       "package box\n\nstruct ID(N int)\n",
+			wantMethods: []string{"Describe"},
 		},
 		{
 			name:        "method_deleted",
@@ -204,6 +221,9 @@ func TestRecollectedSiblingDeclaration(t *testing.T) {
 			freshAST := newCollectedFile(fresh, "box", mainFile, nil).richAST
 			addDeclared(freshAST)
 			extract(fresh, freshAST, c.again)
+			if gotKeys, wantKeys := slices.Sorted(maps.Keys(richAST.Types)), slices.Sorted(maps.Keys(freshAST.Types)); !reflect.DeepEqual(gotKeys, wantKeys) {
+				t.Errorf("types = %v, want %v", gotKeys, wantKeys)
+			}
 			want := freshAST.Types["box.ID"]
 			// An interface declaration does not record DefinedIn, so the
 			// one recorded before stays.

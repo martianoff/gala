@@ -1816,10 +1816,7 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn st
 	// For each variant, create companion type and register methods
 	for _, vi := range variants {
 		companionName := vi.name
-		fullCompanionName := companionName
-		if pkgName != "" && pkgName != "main" && pkgName != "test" {
-			fullCompanionName = pkgName + "." + companionName
-		}
+		fullCompanionName := qualifiedName(pkgName, companionName)
 
 		companionMeta := &transpiler.TypeMetadata{
 			Name:                 companionName,
@@ -1828,14 +1825,18 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn st
 			Pos:                  vi.pos,
 			Methods:              make(map[string]*transpiler.MethodMetadata),
 			Fields:               make(map[string]transpiler.Type),
+			DefinedIn:            definedIn,
 			TypeParams:           typeParams,
 			TypeParamConstraints: typeParamConstraints,
 		}
 
-		// Apply method: takes the variant's fields, returns parent type
+		// Apply method: takes the variant's fields, returns parent type. Its
+		// field defaults are lowered as declared in definedIn.
 		applyMeta := &transpiler.MethodMetadata{
-			Name:    "Apply",
-			Package: pkgName,
+			Name:       "Apply",
+			Package:    pkgName,
+			DefinedIn:  definedIn,
+			OfTypeDecl: true,
 		}
 		for i, f := range vi.fields {
 			applyMeta.ParamTypes = append(applyMeta.ParamTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
@@ -1881,8 +1882,9 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn st
 
 		// Unapply method
 		unapplyMeta := &transpiler.MethodMetadata{
-			Name:    "Unapply",
-			Package: pkgName,
+			Name:       "Unapply",
+			Package:    pkgName,
+			OfTypeDecl: true,
 		}
 		// Param: the parent type
 		unapplyMeta.ParamTypes = append(unapplyMeta.ParamTypes, applyMeta.ReturnType)
@@ -1926,10 +1928,10 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn st
 	for _, vi := range variants {
 		isMethodName := "is" + vi.name
 		parentMeta.Methods[isMethodName] = &transpiler.MethodMetadata{
-			Name:        isMethodName,
-			Package:     pkgName,
-			ReturnType:  transpiler.BasicType{Name: "bool"},
-			Synthesized: true,
+			Name:       isMethodName,
+			Package:    pkgName,
+			ReturnType: transpiler.BasicType{Name: "bool"},
+			OfTypeDecl: true,
 		}
 	}
 	return nil
@@ -3779,10 +3781,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
 			ctx := typeDecl.(*grammar.TypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
-			fullTypeName := typeName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				fullTypeName = pkgName + "." + typeName
-			}
+			fullTypeName := qualifiedName(pkgName, typeName)
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, hasFields, absSibPath, sibDisplay, pos, decls); err != nil {
 				return err
@@ -3841,11 +3840,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						return galaerr.WithFilePath(genericInterfaceMethodError(id.GetLine(), id.GetColumn(), meta, methodName, tps, cons), sibDisplay)
 					}
 					methodMeta := &transpiler.MethodMetadata{
-						Name:      methodName,
-						Package:   pkgName,
-						Doc:       docAt(docs, msCtx.GetStart()),
-						Pos:       transpiler.PosFromToken(msCtx.Identifier().GetStart()),
-						DefinedIn: absSibPath,
+						Name:       methodName,
+						Package:    pkgName,
+						Doc:        docAt(docs, msCtx.GetStart()),
+						Pos:        transpiler.PosFromToken(msCtx.Identifier().GetStart()),
+						DefinedIn:  absSibPath,
+						OfTypeDecl: true,
 					}
 					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, meta.TypeParams)
 					if msCtx.Signature().Parameters() != nil {
@@ -3889,10 +3889,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
 			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
 			typeName := ctx.Identifier().GetText()
-			fullTypeName := typeName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				fullTypeName = pkgName + "." + typeName
-			}
+			fullTypeName := qualifiedName(pkgName, typeName)
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, hasFields, absSibPath, sibDisplay, pos, decls); err != nil {
 				return err
@@ -3950,12 +3947,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
 			ctx := sealedCtx.(*grammar.SealedTypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
-			fullTypeName := typeName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				fullTypeName = pkgName + "." + typeName
-			}
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
-			if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, isSealedEntry, absSibPath, sibDisplay, pos, decls); err != nil {
+			if seen, err := a.siblingDeclSeen(richAST, qualifiedName(pkgName, typeName), typeName, pkgName, isSealedEntry, absSibPath, sibDisplay, pos, decls); err != nil {
 				return err
 			} else if seen {
 				continue
@@ -3963,7 +3956,6 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if err := a.analyzeSealedType(ctx, pkgName, absSibPath, richAST, docs); err != nil {
 				return err
 			}
-			markSiblingSealed(richAST, pkgName, fullTypeName, absSibPath)
 		}
 	}
 
@@ -3974,10 +3966,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			continue
 		}
 		typeName := octx.Identifier().GetText()
-		fullTypeName := typeName
-		if pkgName != "" && pkgName != "main" && pkgName != "test" {
-			fullTypeName = pkgName + "." + typeName
-		}
+		fullTypeName := qualifiedName(pkgName, typeName)
 		pos := transpiler.PosFromToken(octx.Identifier().GetStart())
 		if seen, err := a.siblingDeclSeen(richAST, fullTypeName, typeName, pkgName, hasTypeDefinition, absSibPath, sibDisplay, pos, decls); err != nil {
 			return err

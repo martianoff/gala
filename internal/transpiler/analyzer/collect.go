@@ -137,10 +137,11 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						return genericInterfaceMethodError(id.GetLine(), id.GetColumn(), meta, methodName, tps, cons)
 					}
 					methodMeta := &transpiler.MethodMetadata{
-						Name:      methodName,
-						Package:   pkgName,
-						Doc:       docAt(docs, msCtx.GetStart()),
-						DefinedIn: filePath,
+						Name:       methodName,
+						Package:    pkgName,
+						Doc:        docAt(docs, msCtx.GetStart()),
+						DefinedIn:  filePath,
+						OfTypeDecl: true,
 					}
 					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, meta.TypeParams)
 					if msCtx.Signature().Parameters() != nil {
@@ -239,12 +240,14 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 // Of its methods, those another file declares are kept: a type's methods may
 // be declared in any file of its package, and the analyzed file's methods are
 // collected before its siblings' types are. The methods file declares are
-// dropped, as are an interface's method specs and the methods the analyzer
-// synthesized for the old declaration (a sealed type's case predicates):
-// collecting file gives again those it still declares. Doc is kept as well:
-// the caller's setDoc replaces it only when the declaration has a doc
-// comment. So is DefinedIn, which a struct declaration sets and other forms
-// leave as an earlier pass recorded it.
+// dropped, as are those that came with the old declaration (OfTypeDecl: an
+// interface's method specs, a sealed type's case predicates): collecting
+// file gives again those it still declares. So are the companions of an old
+// sealed declaration's cases, which registerSealedType makes again for the
+// cases there still are. Doc is kept as well: the caller's setDoc replaces
+// it only when the declaration has a doc comment. So is DefinedIn, which a
+// struct declaration sets and other forms leave as an earlier pass recorded
+// it.
 func (a *galaAnalyzer) startTypeEntry(richAST *transpiler.RichAST, key, name, pkg string, pos transpiler.SourcePos, file string) *transpiler.TypeMetadata {
 	meta := richAST.Types[key]
 	if meta == nil || meta.Package != pkg {
@@ -252,11 +255,15 @@ func (a *galaAnalyzer) startTypeEntry(richAST *transpiler.RichAST, key, name, pk
 		richAST.Types[key] = meta
 	}
 	methods := make(map[string]*transpiler.MethodMetadata)
-	if !meta.IsInterface {
-		for methodName, m := range meta.Methods {
-			if !m.Synthesized && !a.paths.sameFile(m.DefinedIn, file) {
-				methods[methodName] = m
-			}
+	for methodName, m := range meta.Methods {
+		if !m.OfTypeDecl && !a.paths.sameFile(m.DefinedIn, file) {
+			methods[methodName] = m
+		}
+	}
+	for _, v := range meta.SealedVariants {
+		caseKey := qualifiedName(pkg, v.Name)
+		if c := richAST.Types[caseKey]; c != nil && c.Package == pkg && c.Methods["Apply"] != nil && c.Methods["Apply"].OfTypeDecl {
+			delete(richAST.Types, caseKey)
 		}
 	}
 	*meta = transpiler.TypeMetadata{
@@ -568,24 +575,6 @@ func embedDirective(varName, typeName string, patterns []string) transpiler.Embe
 		GoVar:    goVar,
 		Patterns: patterns,
 		TypeName: typeName,
-	}
-}
-
-// markSiblingSealed sets DefinedIn, where it is empty, on the companions of
-// the cases of the sealed type fullName that the sibling at absSibPath
-// declares, and on their Apply (registerSealedType sets the type's own).
-func markSiblingSealed(richAST *transpiler.RichAST, pkgName, fullName, absSibPath string) {
-	meta, ok := richAST.Types[fullName]
-	if !ok {
-		return
-	}
-	for _, v := range meta.SealedVariants {
-		if cm, ok := richAST.Types[qualifiedName(pkgName, v.Name)]; ok && cm.DefinedIn == "" {
-			cm.DefinedIn = absSibPath
-			if apply := cm.Methods["Apply"]; apply != nil {
-				apply.DefinedIn = absSibPath
-			}
-		}
 	}
 }
 

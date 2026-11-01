@@ -757,11 +757,12 @@ type MethodMetadata struct {
 	// is a Go call: several results are one GALA value (Try/Tuple), which
 	// ReturnType already records.
 	GoDeclared bool
-	// Synthesized is true for a method the analyzer generates from its
-	// type's declaration rather than one a file declares: a sealed type's
-	// case predicates (`isCircle`). Collecting the declaration again
-	// generates them again, so an entry reset for it drops them.
-	Synthesized bool
+	// OfTypeDecl is true for a method that comes with its type's
+	// declaration rather than one a file declares on the type: an
+	// interface's method spec, a sealed type's case predicate (`isCircle`),
+	// a case companion's Apply and Unapply. Collecting the declaration again
+	// gives them again, so an entry reset for it drops them.
+	OfTypeDecl bool
 	// GoResults is the Go result list a GALA method declares,
 	// `Write(p []byte) (int, error)`; nil for a single result type. Go sees
 	// these results, and a call of the method is a Go call: ReturnType holds

@@ -169,9 +169,11 @@ import (
 // v34: a Go type records whether == cannot compare its values
 // (GoTypeData.Incomparable, GALA-E0084). A v33 payload lacks it.
 //
-// v35: a method the analyzer synthesizes, a sealed type's case predicate,
-// is marked (MethodMetadata.Synthesized). A v34 payload lacks the mark, so
-// an entry re-collected after its type stopped being sealed kept them.
+// v35: a method that comes with its type's declaration (an interface's
+// method spec, a sealed type's case predicate, a case companion's Apply and
+// Unapply) is marked (MethodMetadata.OfTypeDecl). A v34 payload lacks the
+// mark, so an entry re-collected after its declaration changed form kept
+// them.
 const CacheVersion = "v35"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit

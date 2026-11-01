@@ -325,6 +325,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.PtrReceiver)
 	e.writeBool(m.Variadic)
 	e.writeBool(m.GoDeclared)
+	e.writeBool(m.OfTypeDecl)
 	e.writeTypeSlice(m.GoResults)
 }
 
@@ -837,6 +838,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.PtrReceiver = d.readBool()
 	m.Variadic = d.readBool()
 	m.GoDeclared = d.readBool()
+	m.OfTypeDecl = d.readBool()
 	m.GoResults = d.readTypeSlice()
 	return m
 }
