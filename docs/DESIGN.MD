@@ -303,8 +303,10 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
     the transformer walks its top-level declarations (their signatures, parameters,
     initializers and expression bodies included; the self-tail-call rewrite is entered
-    from ANTLR's tree, its expressions coming back to the native one, and a parameter's
-    default is read on ANTLR's tree), the statements of its function
+    from ANTLR's tree, its expressions coming back to the native one), the default values
+    and interpolated expressions it lowers (each parsed on its own, by the engine's parser:
+    galop's native parser, or ANTLR's and galop's converter, with ANTLR's parser alone
+    reporting a syntax error), the statements of its function
     bodies (`bind` chains and the blocks of if-expression branches included), its
     expressions (operators, names, literals, parentheses and tuples,
     if-expressions, member accesses, indexes and calls, the values call arguments pass, and

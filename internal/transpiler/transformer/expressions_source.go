@@ -26,8 +26,7 @@ import (
 // lowered by (args_source.go), and hands a lambda to lowerLambda on its node
 // (lambdas_source.go), a partial function to transformPartialFunctionLiteral
 // (partialSrc) and a composite literal to transformCompositeLiteral
-// (compositeSrc). What it does not cover yet it hands to ANTLR's tree with
-// crossTo: a postfix expression with a match. The blocks of an
+// (compositeSrc). The blocks of an
 // if-expression's branches are lowered on the native tree
 // (lowerIfExprBranchBlock). Each lowering below takes the value it reads and
 // is shared with the ANTLR walk, so the two give the same Go.
@@ -47,12 +46,13 @@ type exprSrc struct {
 func antlrExpr(ctx grammar.IExpressionContext) exprSrc { return exprSrc{ctx: ctx} }
 
 // nativeExpr is the expression node n, which its reader requires: on a
-// bridged tree a required child is always there, so a missing one is a bug
-// in the walk or the bridge, raised as an internal error, as crossTo raises
-// it, not lowered silently to no expression.
+// tree that parsed a required child is always there, so a missing one is a
+// bug in the walk or in galop's parser, raised as an internal error, not
+// lowered silently to no expression.
 func nativeExpr(n native.GalaNodeRef) exprSrc {
 	if !n.Ok() {
-		// invariant: native-bridge — the walk reads only bridged trees.
+		// The trees parseExprAt parses come from galop's parser, without error.
+		// invariant: native-bridge — the walk reads only bridged or cleanly parsed trees.
 		panic("native tree: no node, not an expression")
 	}
 	return exprSrc{node: n}
@@ -81,15 +81,6 @@ func (e exprSrc) at() srcNode {
 
 // text is GetText of e.
 func (e exprSrc) text() string { return e.at().text() }
-
-// antlr is e's context: where a lowering that reads ANTLR's tree takes it
-// over. nil for the zero exprSrc.
-func (e exprSrc) antlr(t *galaASTTransformer) grammar.IExpressionContext {
-	if e.node.Ok() {
-		return crossTo[*grammar.ExpressionContext](t, e.node)
-	}
-	return e.ctx
-}
 
 // soleToken is the text and position of e's one token, and false when e
 // spans more or none. It runs on every expression statement (loop control,
@@ -124,7 +115,7 @@ func (e exprSrc) bareIdent() string {
 	return p.primaryIdent()
 }
 
-// isNil reports whether e is the literal `nil` (isNilLiteral): a single
+// isNil reports whether e is the literal `nil`: a single
 // token, checked without rendering the expression's text.
 func (e exprSrc) isNil() bool {
 	text, _, _, ok := e.soleToken()
@@ -139,16 +130,6 @@ func (t *galaASTTransformer) lowerExpr(e exprSrc) (ast.Expr, error) {
 	return t.transformExpression(e.ctx)
 }
 
-// ctxAt is n's context on ANTLR's tree, for a check that reads it: the
-// crossing from a native node (crossTo). Diagnostics take it on their error
-// paths only.
-func (t *galaASTTransformer) ctxAt(n srcNode) antlr.ParserRuleContext {
-	if n.node.Ok() {
-		return crossTo[antlr.ParserRuleContext](t, n.node)
-	}
-	return n.ctx
-}
-
 // trackNativePosition is trackPosition of n, a native node: where an error
 // raised by a deeply nested helper is reported.
 func (t *galaASTTransformer) trackNativePosition(n native.GalaNodeRef) {
@@ -160,7 +141,7 @@ func (t *galaASTTransformer) trackNativePosition(n native.GalaNodeRef) {
 func (t *galaASTTransformer) lowerExprNative(n native.GalaNodeRef) (ast.Expr, error) {
 	t.trackNativePosition(n)
 	if t.onNativeExpr != nil {
-		t.onNativeExpr(n.Index(), t.lastLine)
+		t.onNativeExpr(n)
 	}
 	or, ok := firstKidNode(n)
 	if !ok || or.Kind() != native.GalaKIND_orExpr {

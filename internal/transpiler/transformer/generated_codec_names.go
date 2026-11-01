@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -63,6 +65,52 @@ func CheckGeneratedCodecNames(tree antlr.Tree) error {
 		return nil
 	}
 	return GeneratedCodecNameError(found.GetText(), transpiler.PosFromToken(found.GetStart()))
+}
+
+// CheckGeneratedCodecNamesNative is CheckGeneratedCodecNames of root, a node
+// of the native tree.
+func CheckGeneratedCodecNamesNative(root native.GalaNodeRef) error {
+	return generatedCodecNameErrorAt(generatedCodecNameIn(root))
+}
+
+// generatedCodecNameIn is the first identifier of root spelled like a
+// generated codec metadata type, or no node.
+func generatedCodecNameIn(root native.GalaNodeRef) native.GalaNodeRef {
+	var found native.GalaNodeRef
+	root.Walk(func(n native.GalaNodeRef) bool {
+		if found.Ok() {
+			return false
+		}
+		if n.Kind() != native.GalaKIND_identifier {
+			return true
+		}
+		if IsGeneratedCodecName(galaparser.NativeText(n)) {
+			found = n
+		}
+		return false
+	})
+	return found
+}
+
+// generatedCodecNameErrorAt is the GALA-E0058 error of id, an identifier node
+// generatedCodecNameIn found, or nil for no node.
+func generatedCodecNameErrorAt(id native.GalaNodeRef) error {
+	if !id.Ok() {
+		return nil
+	}
+	line, col := srcNode{node: id}.start()
+	return GeneratedCodecNameError(galaparser.NativeText(id), transpiler.SourcePos{Line: line, Column: col})
+}
+
+// checkGeneratedCodecNamesOf is CheckGeneratedCodecNames of e, an expression
+// parsed on its own (an interpolated one), on the tree it is on.
+func (t *galaASTTransformer) checkGeneratedCodecNamesOf(e exprSrc) error {
+	if !e.node.Ok() {
+		return CheckGeneratedCodecNames(e.ctx)
+	}
+	id := generatedCodecNameIn(e.node)
+	t.nativeShape(id, "codec name")
+	return generatedCodecNameErrorAt(id)
 }
 
 // GeneratedCodecNameError is the GALA-E0058 error of name, an identifier

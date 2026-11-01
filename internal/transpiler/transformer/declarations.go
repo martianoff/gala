@@ -1204,7 +1204,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 			// recursion runs in constant stack space. Restricted to plain
 			// functions (no receiver, so `name` is the un-mangled call target);
 			// receiver/generic-method forms fall through to the normal lowering.
-			loopBody, ok, tcoErr := t.tryTransformSelfTailRecursion(d.expr.antlr(t), name, funcType)
+			loopBody, ok, tcoErr := t.tryTransformSelfTailRecursion(d.expr, name, funcType)
 			if tcoErr != nil {
 				return nil, tcoErr
 			}
@@ -1456,23 +1456,35 @@ type shorthandDecl struct {
 // paramDecl is a parameter of a signature, a struct shorthand or a lambda, as
 // lowerParam reads it, from either tree (readParams, readParamsNative): where
 // it and its name are written, its name, its keyword, its type, and whether
-// it is variadic or has a default value.
+// it is variadic or has a default clause, and that clause's value.
 type paramDecl struct {
 	at, nameAt   srcNode
 	name         string
 	isVar, isVal bool
 	variadic     bool
-	hasDefault   bool
-	typ          typeSrc // no type when it has none
+	// hasDefault reports a default clause. An error-recovered tree can hold
+	// one without its value (`x int = `), so def can be none when it is set.
+	hasDefault bool
+	def        exprSrc // the default's value; none when it has none
+	typ        typeSrc // no type when it has none
 }
 
-// antlr is p's context, for recordDefaultLambdaHints, which reads its
-// default on ANTLR's tree: the crossing from a native node (crossTo).
-func (p paramDecl) antlr(t *galaASTTransformer) *grammar.ParameterContext {
-	if p.at.node.Ok() {
-		return crossTo[*grammar.ParameterContext](t, p.at.node)
+// antlrDefault is the expression of a parameter's default d, and no
+// expression when it has none.
+func antlrDefault(d grammar.IParamDefaultContext) exprSrc {
+	if d == nil {
+		return exprSrc{}
 	}
-	return p.at.ctx.(*grammar.ParameterContext)
+	return antlrExpr(d.Expression())
+}
+
+// nativeDefault is antlrDefault of d, a native node: its expression, which a
+// default always has (a missing one is an internal error, see nativeExpr).
+func nativeDefault(d native.ParamDefaultNode) exprSrc {
+	if !d.Ok() {
+		return exprSrc{}
+	}
+	return nativeExpr(d.Expression().GalaNodeRef)
 }
 
 // readParams reads a parameter list on ANTLR's tree.
@@ -1490,6 +1502,7 @@ func readParams(ps *grammar.ParametersContext) []paramDecl {
 			isVal:      param.VAL() != nil,
 			variadic:   param.ELLIPSIS() != nil,
 			hasDefault: param.ParamDefault() != nil,
+			def:        antlrDefault(param.ParamDefault()),
 			typ:        antlrType(param.Type_()),
 		}
 		// A parameter can be nameless, as in `(...int) => 0`.
@@ -2099,7 +2112,7 @@ func (t *galaASTTransformer) lowerParam(p paramDecl, requireType bool) (*ast.Fie
 	if p.typ.ok() {
 		t.isImmutableType(declared)
 		if p.hasDefault {
-			t.recordDefaultLambdaHints(p.antlr(t), declared)
+			t.recordDefaultLambdaHints(p.def, declared)
 		}
 		if p.variadic {
 			// Variadic parameter: ...T becomes ...T in Go

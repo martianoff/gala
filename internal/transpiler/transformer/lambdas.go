@@ -93,7 +93,7 @@ func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
 		}
 		return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
 	}
-	lambda := l.antlr(t)
+	lambda := l.ctx
 	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
 	if !ok {
 		return callSrc{}, false
@@ -137,7 +137,7 @@ func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
 // type is used.
 func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
 	if t.onNativeLambda != nil && l.node.Ok() {
-		t.onNativeLambda(l.node.Index())
+		t.onNativeLambda(l.node.GalaNodeRef)
 	}
 	t.pushScope()
 	defer t.popScope()

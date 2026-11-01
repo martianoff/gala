@@ -81,15 +81,30 @@ type variantTypeRefs struct {
 // checkVariantTypeNamesIn is checkVariantTypeNames of the file s, on the tree
 // its walk reads.
 func (t *galaASTTransformer) checkVariantTypeNamesIn(s walkSource) error {
+	if s.root.Ok() {
+		return t.checkVariantTypeNamesNative(s.root.GalaNodeRef)
+	}
+	return t.checkVariantTypeNames(s.sf)
+}
+
+// checkVariantTypeNamesOf is checkVariantTypeNames of e, an expression parsed
+// on its own (an interpolated one), on the tree it is on.
+func (t *galaASTTransformer) checkVariantTypeNamesOf(e exprSrc) error {
+	if e.node.Ok() {
+		return t.checkVariantTypeNamesNative(e.node)
+	}
+	return t.checkVariantTypeNames(e.ctx)
+}
+
+// checkVariantTypeNamesNative is checkVariantTypeNames of n, a node of the
+// native tree.
+func (t *galaASTTransformer) checkVariantTypeNamesNative(n native.GalaNodeRef) error {
 	if len(t.variantNames) == 0 {
 		return nil // nothing to spell like a variant
 	}
-	if s.root.Ok() {
-		r := variantTypeRefs{declared: make(map[string]bool)}
-		t.collectVariantTypeRefsNative(s.root.GalaNodeRef, &r)
-		return t.reportVariantTypeRefs(r)
-	}
-	return t.checkVariantTypeNames(s.sf)
+	r := variantTypeRefs{declared: make(map[string]bool)}
+	t.collectVariantTypeRefsNative(n, &r)
+	return t.reportVariantTypeRefs(r)
 }
 
 // reportVariantTypeRefs reports the first of r's types that names a sealed

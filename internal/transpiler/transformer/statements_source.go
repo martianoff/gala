@@ -20,12 +20,7 @@ import (
 // `bind` chains (bind.go) and the blocks of if-expression branches. The
 // values of returns, `use` declarations, assignments, increments, short
 // variable declarations and loop conditions are read as exprSrc and
-// exprListSrc values (expressions_source.go, exprlist_source.go). What is
-// still read on ANTLR's tree, crossed to with crossTo or ctxAt, is a nested
-// function's signature, an assignment's values (lowerDeclarationInitializers),
-// the val read checkValueUsedHint looks for (isUnwrittenValRead) and the
-// place a `bind` clause's nil-receiver error is reported at
-// (bindClauseReceiver).
+// exprListSrc values (expressions_source.go, exprlist_source.go).
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
@@ -873,6 +868,6 @@ func (n srcNode) text() string {
 // block's, a `bind` chain's, an if-expression branch's) calls it.
 func (t *galaASTTransformer) noteNativeStmt(s stmtSrc) {
 	if t.onNativeStmt != nil && s.at.node.Ok() {
-		t.onNativeStmt(s.at.node.Index(), int(s.at.node.Start().Line))
+		t.onNativeStmt(s.at.node)
 	}
 }

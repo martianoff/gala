@@ -271,6 +271,7 @@ go_test(
         "oracle_test.go",
         "package_val_inferred_type_test.go",
         "panic_audit_test.go",
+        "param_default_clause_test.go",
         "partial_ctor_type_args_test.go",
         "partial_type_params_test.go",
         "phantom_reexport_funconly_test.go",
@@ -472,6 +473,7 @@ go_test(
 # gazelle:exclude native_postfix_walk_test.go
 # gazelle:exclude native_args_walk_test.go
 # gazelle:exclude native_leaves_walk_test.go
+# gazelle:exclude native_parsed_walk_test.go
 # gazelle:exclude native_stmt_walk_test.go
 # gazelle:exclude native_decls_walk_test.go
 go_test(
@@ -496,6 +498,7 @@ go_test(
         "native_leaves_walk_test.go",
         "native_match_test.go",
         "native_match_walk_test.go",
+        "native_parsed_walk_test.go",
         "native_postfix_walk_test.go",
         "native_stmt_walk_test.go",
         "native_types_test.go",

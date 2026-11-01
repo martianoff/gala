@@ -141,16 +141,23 @@ var keywordCases = []struct{ name, src string }{
 // writes a program to a file of its own, holds the native walk of it to the
 // ANTLR walk (checkWalksAgree), and returns the native walk's run.
 func exprWalkRunner(t *testing.T) func(t *testing.T, name, src string) walkRun {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
+	return walkRunner(t, galaparser.EngineGalop, walkPipeline{})
+}
+
+// walkRunner is exprWalkRunner with engine parsing and nativeW's options for
+// the native walk.
+func walkRunner(t *testing.T, engine galaparser.Engine, nativeW walkPipeline) func(t *testing.T, name, src string) walkRun {
+	galaparser.RequestEngine(string(engine))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
-	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
+	nativeW.searchPaths = searchPaths
+	antlrW := &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
 	dir := t.TempDir()
 	return func(t *testing.T, name, src string) walkRun {
 		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "_"), "main.gala")
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
-		return agreedWalk(t, nativeW, antlrW, path, src)
+		return agreedWalk(t, &nativeW, antlrW, path, src)
 	}
 }
 

@@ -399,7 +399,7 @@ func escapesNative(n native.GalaNodeRef, inLoop bool) bool {
 // escapesAt is escapesConstruct of the subtree at n, on its tree.
 func (t *galaASTTransformer) escapesAt(n srcNode) bool {
 	if n.node.Ok() {
-		return t.cachedEscape(n.node.Index(), func() bool { return escapesNative(n.node, false) })
+		return t.cachedEscape(n.node, func() bool { return escapesNative(n.node, false) })
 	}
 	return escapesConstruct(t, n.ctx)
 }

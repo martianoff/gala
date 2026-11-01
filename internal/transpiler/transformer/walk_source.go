@@ -14,14 +14,14 @@ import (
 // The compiled file's top-level walk reads the file through walkSource:
 // galop's native tree when the parse came with one that the analysis has
 // converted (RichAST.Native), ANTLR's tree otherwise. A file is walked on one
-// tree or the other, never on a mix; below the declarations, the native walk
-// crosses to ANTLR's tree where the port has not reached (see
-// declarations_native.go).
+// tree or the other (see declarations_native.go); only a default value or an
+// interpolated expression that galop's parser does not settle is lowered on
+// ANTLR's tree in a file walked natively (parseExprAt).
 
 // walkSource is the compiled file as the top-level walk reads it: ANTLR's
 // tree sf, and, when the walk reads the native tree instead, its root and the
-// handle h it crosses back through (root.Ok()). sf stays for the checks the
-// native walk does not cover yet.
+// handle h a lowering entered with an ANTLR context finds its node through
+// (root.Ok()). sf stays for the checks the native walk does not cover yet.
 type walkSource struct {
 	sf   *grammar.SourceFileContext
 	root native.SourceFileNode
@@ -35,10 +35,10 @@ type walkSource struct {
 // paid for it.
 func newWalkSource(richAST *transpiler.RichAST, sf *grammar.SourceFileContext) walkSource {
 	h := richAST.Native
-	// The walk crosses back to ANTLR's tree on many kinds of node (crossTo).
-	// Native.Bridged checks every node has a context of its rule, so where it
-	// does not hold the whole file is walked on ANTLR's tree, as the analysis
-	// reads it, and no crossing can miss.
+	// A lowering entered with an ANTLR context finds its node through the
+	// bridge (nativeNodeOf). Native.Bridged checks every node has a context
+	// of its rule, so where it does not hold the whole file is walked on
+	// ANTLR's tree, as the analysis reads it, and no lookup can miss.
 	if !h.Converted() || !h.Bridged() {
 		return walkSource{sf: sf}
 	}

@@ -3,8 +3,6 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
-
-	"martianoff/gala/internal/parser/grammar"
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the parse tree
@@ -78,12 +76,12 @@ func (t *galaASTTransformer) tailResultSlot(tc *tailCtx) slot {
 // forms, match-form and block-body forms, and mutual recursion are not handled
 // here and fall through to the normal lowering.
 func (t *galaASTTransformer) tryTransformSelfTailRecursion(
-	exprCtx grammar.IExpressionContext,
+	body exprSrc,
 	funcName string,
 	funcType *ast.FuncType,
 ) (*ast.BlockStmt, bool, error) {
 	// The body must be a bare if-expression.
-	ifExpr := t.ifIn(t.exprOf(exprCtx))
+	ifExpr := t.ifIn(body)
 	if !ifExpr.ok() {
 		return nil, false, nil
 	}

@@ -29,6 +29,7 @@ import (
 // top-level declarations the native walk lowered, and whether the analysis
 // converted the parse's native tree, which the walk reads only then.
 type walkRun struct {
+	path      string // the file transpiled
 	out       string
 	err       error
 	native    int
@@ -43,6 +44,9 @@ type walkRun struct {
 	shapes    map[int]map[string]bool // the expression shapes it lowered, by line
 	cases     int                     // the case clauses of matches and partial functions read on the native tree, each counted once
 	caseLines map[int]bool            // the lines those case clauses start on
+	// parsedAt is what it read on a tree of its own, a default value's or an
+	// interpolated expression's: stmt, lambda, expr, case.
+	parsedAt map[parsedLine]map[string]bool
 	// hints is each look at the hint stack's top, in order: a take or a
 	// withhold, and whether the hint there was the asking value's. The two
 	// walks key a hint differently (hintOwner), so the same stream shows its
@@ -58,17 +62,39 @@ type walkRun struct {
 // walkPipeline transpiles files the way the CLI does, parsing with galop, each
 // with an analyzer of its own, so no package-load failure carries over from
 // one file to the next. antlrOnly makes its transformer walk ANTLR's tree
-// whatever the parse came with. root is the project root of the analysis, ""
+// whatever the parse came with, and refuseNative parse every default value
+// and interpolated expression with ANTLR's parser, as when galop's does not
+// settle it (RefuseNativeParse). root is the project root of the analysis, ""
 // for none.
 type walkPipeline struct {
-	searchPaths []string
-	root        string
-	antlrOnly   bool
+	searchPaths  []string
+	root         string
+	antlrOnly    bool
+	refuseNative bool
+}
+
+// parsedLine is a line of an expression parsed on its own: of a default value
+// or of an interpolated expression (what), in file.
+type parsedLine struct {
+	what, file string
+	line       int
+}
+
+// The origins parseExprAt parses an expression on its own as.
+const (
+	parsedDefault = "default value"
+	parsedInterp  = "interpolated expression"
+)
+
+// parsedOn is what r read on line of a tree parsed on its own as what, in
+// file.
+func (r walkRun) parsedOn(what, file string, line int) map[string]bool {
+	return r.parsedAt[parsedLine{what, filepath.ToSlash(filepath.Clean(file)), line}]
 }
 
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
-	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
+	run := walkRun{stmtLines: map[int]bool{}, stmtNodes: map[int]bool{}, exprLines: map[int]bool{}, parsedAt: map[parsedLine]map[string]bool{}, shapes: map[int]map[string]bool{}, caseLines: map[int]bool{}}
 	inner := tr
 	transformer.OnNativeDecl(tr, func() {
 		if run.native == 0 {
@@ -77,11 +103,23 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		run.native++
 	})
 	lambdas, exprs, cases := map[int]bool{}, map[int]bool{}, map[int]bool{}
-	transformer.OnNativeCase(tr, func(index, line int) { cases[index], run.caseLines[line] = true, true })
-	transformer.OnNativeStmt(tr, func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true })
-	transformer.OnNativeLambda(tr, func(index int) { lambdas[index] = true })
+	transformer.OnNativeNodes(tr, transformer.NativeNodeHooks{
+		Case:   func(index, line int) { cases[index], run.caseLines[line] = true, true },
+		Stmt:   func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true },
+		Lambda: func(index, _ int) { lambdas[index] = true },
+		Expr:   func(index, line int) { exprs[index], run.exprLines[line] = true, true },
+		Parsed: func(kind string, o transformer.ParsedOrigin, line int) {
+			at := parsedLine{o.What, o.File, line}
+			if run.parsedAt[at] == nil {
+				run.parsedAt[at] = map[string]bool{}
+			}
+			run.parsedAt[at][kind] = true
+		},
+	})
+	if w.refuseNative {
+		transformer.RefuseNativeParse(tr)
+	}
 	transformer.OnNativeCapture(tr, func() { run.captures++ })
-	transformer.OnNativeExpr(tr, func(index, line int) { exprs[index], run.exprLines[line] = true, true })
 	transformer.OnNativeShape(tr, func(line int, shape string) {
 		if run.shapes[line] == nil {
 			run.shapes[line] = map[string]bool{}
@@ -101,6 +139,7 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		tr = withoutNative{tr}
 	}
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
+	run.path = path
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
 	run.root, _ = p.compiled.ConvertedRoot()
@@ -232,12 +271,12 @@ func bodyStatements(sf *grammar.SourceFileContext) treeCounts {
 			block(fd.Block())
 		}
 	}
-	// A lambda is lowered on the native tree wherever it is written (the
-	// expression it is in crosses back to it, lambdas_source.go), and a match
+	// A lambda is lowered on the native tree wherever it is written
+	// (lambdas_source.go), and a match
 	// and a partial function read their case clauses there wherever they are
 	// (casesOf), but in a parameter's default value: a
-	// default is lowered at each call, from the declaration the analysis
-	// recorded, on ANTLR's tree.
+	// default is lowered at each call, from the text the analysis recorded,
+	// parsed on a tree of its own (the hooks count only the file's tree).
 	var below func(antlr.Tree)
 	below = func(node antlr.Tree) {
 		switch n := node.(type) {
@@ -285,8 +324,12 @@ func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src str
 	assert.Zerof(tb, a.captures, "%s: the ANTLR walk checked captures on the native tree", path)
 	assert.Zerof(tb, a.exprs, "%s: the ANTLR walk lowered expressions on the native tree", path)
 	assert.Zerof(tb, a.cases, "%s: the ANTLR walk read case clauses on the native tree", path)
+	// A walk of ANTLR's tree parses its defaults and interpolations on ANTLR's
+	// tree too (parseExprAt).
+	assert.Emptyf(tb, a.parsedAt, "%s: the ANTLR walk parsed defaults or interpolations with galop's native parser", path)
 	switch {
 	case !n.converted:
+		assert.Emptyf(tb, n.parsedAt, "%s: the native walk parsed defaults or interpolations with galop's native parser on a tree the analysis did not convert", path)
 		assert.Zerof(tb, n.native, "%s: the native walk lowered declarations on a tree the analysis did not convert", path)
 		assert.Zerof(tb, n.stmts, "%s: the native walk lowered statements on a tree the analysis did not convert", path)
 		assert.Zerof(tb, n.lambdas, "%s: the native walk lowered lambdas on a tree the analysis did not convert", path)

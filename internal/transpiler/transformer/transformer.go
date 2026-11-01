@@ -16,6 +16,7 @@ import (
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler/resolver"
@@ -114,7 +115,7 @@ type galaASTTransformer struct {
 	unapplyHelperDecls     []ast.Decl                                    // their declarations
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
-	defaultTrees           map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
+	parsedExprs            map[parsedExprKey]exprSrc                     // parse trees of default values and interpolated expressions, one per text per position per file (see parseExprAt)
 	loweringDefault        *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
 	expectedArgTypes       expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
@@ -149,7 +150,8 @@ type galaASTTransformer struct {
 
 	// native is the native-tree handle of the file being transformed while
 	// its top-level walk reads that tree (see walkSource), nil while it reads
-	// ANTLR's. The native walk crosses to ANTLR's tree through it (crossTo).
+	// ANTLR's. A lowering entered with an ANTLR context finds its node through
+	// it (nativeNodeOf).
 	native *galaparser.Native
 	// walkedNative is whether the last transform's top-level walk read the
 	// native tree (see newWalkSource). Unlike native, it outlives the
@@ -160,34 +162,44 @@ type galaASTTransformer struct {
 	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
 	onNativeDecl func()
 	// onNativeStmt, when set, is told of each statement the native walk
-	// lowers in a block, by its node index and its first line. It observes
+	// lowers in a block, by its node. It observes
 	// and changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeStmt func(index, line int)
+	onNativeStmt func(n native.GalaNodeRef)
 	// onNativeType, when set, is told of each type, and each sealed or
 	// opaque type declaration, lowered off the native tree, by its first
 	// line. It observes and changes nothing; TestNativeTypeCases sets it.
 	onNativeType func(line int)
 	// onNativeLambda, when set, is told of each lambda lowered on the
-	// native tree, by its node index. It observes and
+	// native tree, by its node. It observes and
 	// changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeLambda func(index int)
+	onNativeLambda func(n native.GalaNodeRef)
 	// onNativeCapture, when set, is told of each Sendable capture check run
 	// on the native tree. It observes and changes nothing;
 	// TestNativeWalkCases sets it to prove which tree a check read.
 	onNativeCapture func()
 	// onNativeExpr, when set, is told of each expression the native walk
-	// lowers (lowerExprNative), by its node index and its first line. It
+	// lowers (lowerExprNative), by its node: one of the file's tree, or of a
+	// default's or an interpolated expression's, parsed on its own. It
 	// observes and changes nothing; the native walk tests set it to prove
 	// the native path ran.
-	onNativeExpr func(index, line int)
+	onNativeExpr func(n native.GalaNodeRef)
 	// onNativeShape, when set, is told of each expression shape the native
 	// walk lowers itself (nativeShape), by its first line. It observes and
 	// changes nothing; TestNativeExprWalk sets it to check each marked line.
 	onNativeShape func(line int, shape string)
 	// onNativeCase, when set, is told of each case clause a match reads on the
-	// native tree, by its node index and its first line. It observes and
+	// native tree, by its node. It observes and
 	// changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeCase func(index, line int)
+	onNativeCase func(n native.GalaNodeRef)
+	// onParsedExpr, when set, is told of each tree parseExprAt parses on
+	// the native tree, with what it parsed and the file it is written
+	// in. It observes and changes nothing; the native walk tests set it to
+	// tell those trees' nodes from the file's.
+	onParsedExpr func(tree *native.GalaTree, what, file string)
+	// refuseNativeParse, when set, makes parseExprAt take its ANTLR fallback
+	// as if the native parse had not settled the text. Only
+	// TestNativeParsedWalkFallback sets it.
+	refuseNativeParse bool
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
@@ -348,8 +360,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 	}()
 	// Nothing reads the native tree after the walk; keep no handle to it.
-	// (No state kept past a declaration holds a node of it: the receivers
-	// checked at the end keep ranges.)
+	// (The receivers checked at the end keep ranges. escapeCache and
+	// parsedExprs hold native nodes until the next transform resets them.)
 	defer func() { t.native = nil }()
 	tree := richAST.Tree
 	t.currentScope = nil
@@ -414,7 +426,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.unapplyHelpers = make(map[string]string)
 	t.unapplyHelperDecls = nil
 	t.valueMetas = make(map[string]*valueMetaConfig)
-	t.defaultTrees = nil
+	t.parsedExprs = nil
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"
 	t.warnTypeInference = os.Getenv("GALA_WARN_TYPES") == "1"

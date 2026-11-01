@@ -439,6 +439,36 @@ func TestParseExpressionNativeAtMatchesANTLR(t *testing.T) {
 	t.Logf("%d expressions accepted, %d rejected", accepted, rejected)
 }
 
+// TestParseExpressionTreeAtConvertsANTLR: with ANTLR's engine,
+// ParseExpressionTreeAt gives ANTLR's tree of each of the corpus's
+// expressions, converted to galop's native form with its token positions,
+// and fails with ErrNativeExpression where ANTLR's parser does.
+func TestParseExpressionTreeAtConvertsANTLR(t *testing.T) {
+	samples := corpusExpressions(t)
+	withEngine(EngineANTLR, func() {
+		for _, s := range samples {
+			want, wantErr := ParseExpressionAt(s.src, s.line, s.col, "test expression")
+			got, err := ParseExpressionTreeAt(s.src, s.line, s.col)
+			switch {
+			case err != nil && !errors.Is(err, ErrNativeExpression):
+				t.Errorf("%q at %d:%d: error %v does not wrap ErrNativeExpression", s.src, s.line, s.col, err)
+			case (err == nil) != (wantErr == nil):
+				t.Errorf("%q at %d:%d: ANTLR error %v, converted error %v", s.src, s.line, s.col, wantErr, err)
+			case err == nil:
+				if w, g := treeText(want), got.ToStringTree(); w != g {
+					t.Errorf("%q at %d:%d: trees differ: %s", s.src, s.line, s.col, diffAt(w, g))
+				}
+				var w, g strings.Builder
+				antlrTerminals(&w, want)
+				nativeTerminals(&g, got.GalaNodeRef)
+				if w.String() != g.String() {
+					t.Errorf("%q at %d:%d: token positions differ: %s", s.src, s.line, s.col, diffAt(w.String(), g.String()))
+				}
+			}
+		}
+	})
+}
+
 // TestParseExpressionNativeAtLeftovers: an expression followed by more tokens
 // is not one expression.
 func TestParseExpressionNativeAtLeftovers(t *testing.T) {

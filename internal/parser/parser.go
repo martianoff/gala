@@ -399,6 +399,29 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 			return expr, nil
 		}
 	}
+	return antlrExpressionAtChecked(input, line, col, what, reuse)
+}
+
+// ParseExpressionANTLRAt is ParseExpressionAt with ANTLR's parser alone,
+// whatever the engine, for a caller whose native parse of
+// input did not settle it (ParseExpressionTreeAt): galop does not parse it a
+// second time, nor report a panic on it twice.
+//
+// It lexes input again with ANTLR's lexer, where ParseExpressionAt reuses the
+// tokens of galop's ANTLR-flavored lexer. The native run's tokens
+// (native.GalaTokens) are not ANTLR tokens: they index bytes of the source
+// and carry no token objects, so ANTLR's parser cannot read them without a
+// conversion to an antlr.TokenStream that exists nowhere else. The fallback
+// runs only on a syntax error or a galop panic, so the second lex is not worth
+// that converter.
+func ParseExpressionANTLRAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
+	return antlrExpressionAtChecked(input, line, col, what, nil)
+}
+
+// antlrExpressionAtChecked is antlrExpressionAt with its first syntax error,
+// or a token left over after the expression, as the error (see
+// ParseExpressionAt).
+func antlrExpressionAtChecked(input string, line, col int, what string, reuse *lexedInput) (grammar.IExpressionContext, error) {
 	exprCtx, stream, errs := antlrExpressionAt(input, line, col, reuse)
 	if len(errs) > 0 {
 		return nil, errs[0]

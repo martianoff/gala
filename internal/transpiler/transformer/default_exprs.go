@@ -10,8 +10,8 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -52,6 +52,7 @@ type defaultSource struct {
 // positions, so no line markers are emitted for them either.
 type defaultLowering struct {
 	pkg     string // declaring package: bare function names resolve there (functionByName); they are qualified once the whole default is lowered
+	file    string // declaring source file, where its text is parsed (parseExprAt); "" when unknown
 	foreign bool   // declared in a file other than the one being transformed
 	// useScope is the use site's scope. Its bindings, and those of every
 	// scope around it, were not in scope where the default was written, so
@@ -60,13 +61,6 @@ type defaultLowering struct {
 	// emitTypeParams is the type parameters in scope where the lowered
 	// default is emitted (see shadowedByUse).
 	emitTypeParams map[string]bool
-}
-
-// defaultTreeKey identifies one declared default's text at one position.
-type defaultTreeKey struct {
-	text string
-	pos  transpiler.SourcePos
-	file string
 }
 
 // shadowedByUse returns a package-level val, var, function or type — or a
@@ -144,29 +138,45 @@ func (t *galaASTTransformer) carriedTypeParams(declared transpiler.Type, subst m
 
 // spellsAny returns the first of names that the default's source refers to —
 // as a value or as a type, not as a member, label or binding — or "".
-func spellsAny(tree antlr.Tree, names []string) string {
+func spellsAny(e exprSrc, names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	if id := firstReference(tree, func(id *grammar.IdentifierContext) bool { return slices.Contains(names, id.GetText()) }); id != nil {
-		return id.GetText()
+	if id := firstReference(e, func(id srcNode) bool { return slices.Contains(names, id.text()) }); id.ok() {
+		return id.text()
 	}
 	return ""
 }
 
-// firstReference returns the first identifier of tree that refers to a name —
+// firstReference returns the first identifier of e that refers to a name —
 // as a value or as a type, not as a member, label or binding — and that match
-// accepts, or nil.
-func firstReference(tree antlr.Tree, match func(*grammar.IdentifierContext) bool) *grammar.IdentifierContext {
+// accepts, or no node.
+func firstReference(e exprSrc, match func(srcNode) bool) srcNode {
+	if e.node.Ok() {
+		var found native.GalaNodeRef
+		e.node.Walk(func(n native.GalaNodeRef) bool {
+			if found.Ok() {
+				return false
+			}
+			if n.Kind() == native.GalaKIND_identifier && isReferenceNative(n) && match(srcNode{node: n}) {
+				found = n
+			}
+			return true
+		})
+		return srcNode{node: found}
+	}
 	var found *grammar.IdentifierContext
-	walkTree(tree, func(node antlr.Tree) {
+	walkTree(e.ctx, func(node antlr.Tree) {
 		id, ok := node.(*grammar.IdentifierContext)
-		if !ok || found != nil || !isReference(id) || !match(id) {
+		if !ok || found != nil || !isReference(id) || !match(srcNode{ctx: id}) {
 			return
 		}
 		found = id
 	})
-	return found
+	if found == nil {
+		return srcNode{}
+	}
+	return srcNode{ctx: found}
 }
 
 // isReference reports whether id refers to a name, as a value or as a type
@@ -184,10 +194,31 @@ func isReference(id *grammar.IdentifierContext) bool {
 	return false
 }
 
+// isReferenceNative is isReference of id, an identifier node.
+func isReferenceNative(id native.GalaNodeRef) bool {
+	parent := id.Parent()
+	if !parent.Ok() {
+		return false
+	}
+	switch parent.Kind() {
+	case native.GalaKIND_primary:
+		return true
+	case native.GalaKIND_qualifiedIdentifier:
+		return native.QualifiedIdentifierNode{GalaNodeRef: parent}.Identifier(0).GalaNodeRef == id
+	case native.GalaKIND_parameter:
+		// `func(Some) int`: an unnamed parameter's type.
+		return !native.ParameterNode{GalaNodeRef: parent}.Type_().Ok() && isFuncTypeSignatureNative(parent)
+	}
+	return false
+}
+
 // isQualifier reports whether id, a reference, is followed by a member
 // selection: `pb` in `pb.Same()` or in `pb.Point`.
-func isQualifier(id *grammar.IdentifierContext) bool {
-	switch parent := id.GetParent().(type) {
+func isQualifier(id srcNode) bool {
+	if id.node.Ok() {
+		return isQualifierNative(id.node)
+	}
+	switch parent := id.ctx.GetParent().(type) {
 	case *grammar.QualifiedIdentifierContext:
 		return len(parent.AllIdentifier()) > 1
 	case *grammar.PrimaryContext:
@@ -201,6 +232,30 @@ func isQualifier(id *grammar.IdentifierContext) bool {
 		}
 		suffixes := postfix.AllPostfixSuffix()
 		return len(suffixes) > 0 && suffixes[0].(*grammar.PostfixSuffixContext).Identifier() != nil
+	}
+	return false
+}
+
+// isQualifierNative is isQualifier of id, an identifier node.
+func isQualifierNative(id native.GalaNodeRef) bool {
+	parent := id.Parent()
+	if !parent.Ok() {
+		return false
+	}
+	switch parent.Kind() {
+	case native.GalaKIND_qualifiedIdentifier:
+		return native.QualifiedIdentifierNode{GalaNodeRef: parent}.Identifier(1).Ok()
+	case native.GalaKIND_primary:
+		primaryExpr := parent.Parent()
+		if !primaryExpr.Ok() || primaryExpr.Kind() != native.GalaKIND_primaryExpr {
+			return false
+		}
+		postfix := primaryExpr.Parent()
+		if !postfix.Ok() || postfix.Kind() != native.GalaKIND_postfixExpr {
+			return false
+		}
+		suffix, ok := firstNativeKid(postfix, native.GalaKIND_postfixSuffix)
+		return ok && native.PostfixSuffixNode{GalaNodeRef: suffix}.Identifier().Ok()
 	}
 	return false
 }
@@ -221,8 +276,8 @@ func isQualifier(id *grammar.IdentifierContext) bool {
 // qualifier of the source that the default's file does not bind, and this
 // file binds to a package, is read through this file's import. Each is
 // reported at its own token, in the default's file.
-func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr, src defaultSource) error {
-	if !t.lexicallyScoped(src) || t.importManager == nil || exprCtx == nil {
+func (t *galaASTTransformer) outOfLexicalScope(e exprSrc, expr ast.Expr, src defaultSource) error {
+	if !t.lexicallyScoped(src) || t.importManager == nil || !e.ok() {
 		return nil
 	}
 	var bound map[string]bool // nil when lowering failed: no bindings known
@@ -232,8 +287,8 @@ func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr
 	free := func(name string) bool {
 		return !bound[name] && !slices.Contains(src.carried, name) && !slices.Contains(src.typeParams, name) && t.shadowingScope(name) == nil
 	}
-	if at, path := t.bareOutsideScope(exprCtx, src, free); at != nil {
-		name := at.GetText()
+	if at, path := t.bareOutsideScope(e, src, free); at.ok() {
+		name := at.text()
 		return lexicalScopeError(at, name, fmt.Sprintf(
 			"%s is declared in %q, which the file using this default dot-imports but the default's own file does not; a default value resolves its names where it is written, so add `import . %q` to the default's file",
 			name, path, path))
@@ -244,8 +299,8 @@ func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr
 	if expr == nil {
 		return nil
 	}
-	if at, path := t.qualifierOutsideScope(exprCtx, src, free); at != nil {
-		name := at.GetText()
+	if at, path := t.qualifierOutsideScope(e, src, free); at.ok() {
+		name := at.text()
 		return lexicalScopeError(at, name, fmt.Sprintf(
 			"%s names %q in the file using this default but nothing in the default's own file; a default value resolves its names where it is written, so add `import %q` to the default's file",
 			name, path, path))
@@ -255,8 +310,9 @@ func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr
 
 // lexicalScopeError is the GALA-E0023 for name, out of a default's scope, at
 // its token at in the default's source.
-func lexicalScopeError(at *grammar.IdentifierContext, name, hint string) error {
-	return galaerr.NewCodedSemanticError(galaerr.CodeUndefinedVariable, at.GetStart().GetLine(), at.GetStart().GetColumn(), "undefined: "+name, hint)
+func lexicalScopeError(at srcNode, name, hint string) error {
+	line, col := at.start()
+	return galaerr.NewCodedSemanticError(galaerr.CodeUndefinedVariable, line, col, "undefined: "+name, hint)
 }
 
 // bareOutsideScope finds, for outOfLexicalScope, the token of a bare, free,
@@ -266,7 +322,7 @@ func lexicalScopeError(at *grammar.IdentifierContext, name, hint string) error {
 // none. Only the source is read: the lowered default also holds names spelled
 // for this file (a declared type, through this file's dot import), which the
 // default never wrote. A dot import brings in exported names only.
-func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, src defaultSource, free func(string) bool) (*grammar.IdentifierContext, string) {
+func (t *galaASTTransformer) bareOutsideScope(e exprSrc, src defaultSource, free func(string) bool) (srcNode, string) {
 	var outside []*ImportEntry
 	for _, e := range t.importManager.dotImports {
 		if _, own := src.Scope.DotImports[e.Path]; !own && e.Path != src.Scope.PkgPath && t.galaPkgPaths[e.Path] {
@@ -274,12 +330,12 @@ func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, src defaultSou
 		}
 	}
 	if len(outside) == 0 {
-		return nil, ""
+		return srcNode{}, ""
 	}
 	path := ""
 	prelude := registry.Global.PreludePackages()
-	at := firstReference(exprCtx, func(id *grammar.IdentifierContext) bool {
-		n := id.GetText()
+	at := firstReference(e, func(id srcNode) bool {
+		n := id.text()
 		if isQualifier(id) || !ast.IsExported(n) || !free(n) || t.declaredInDefaultScope(n, src, prelude) {
 			return false
 		}
@@ -297,10 +353,10 @@ func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, src defaultSou
 // qualifierOutsideScope finds, for outOfLexicalScope, the token of a
 // qualifier of the default's source that its file does not bind and this file
 // binds to an import it wrote, and that import's path; nil when there is none.
-func (t *galaASTTransformer) qualifierOutsideScope(exprCtx antlr.Tree, src defaultSource, free func(string) bool) (*grammar.IdentifierContext, string) {
+func (t *galaASTTransformer) qualifierOutsideScope(e exprSrc, src defaultSource, free func(string) bool) (srcNode, string) {
 	path := ""
-	at := firstReference(exprCtx, func(id *grammar.IdentifierContext) bool {
-		q := id.GetText()
+	at := firstReference(e, func(id srcNode) bool {
+		q := id.text()
 		if _, own := src.Scope.Imports[q]; own || !isQualifier(id) || !free(q) {
 			return false
 		}
@@ -334,25 +390,6 @@ func (t *galaASTTransformer) declaredInDefaultScope(name string, src defaultSour
 	return false
 }
 
-// defaultExprTree parses a default's recorded text at its recorded position,
-// once per default per file: lowering is per use site, but the parse tree is
-// the same at every one of them.
-func (t *galaASTTransformer) defaultExprTree(src defaultSource) (grammar.IExpressionContext, error) {
-	key := defaultTreeKey{text: src.Text, pos: src.Pos, file: src.file}
-	if tree, ok := t.defaultTrees[key]; ok {
-		return tree, nil
-	}
-	tree, err := parser.ParseExpressionAt(src.Text, src.Pos.Line, src.Pos.Column, "default value")
-	if err != nil {
-		return nil, err
-	}
-	if t.defaultTrees == nil {
-		t.defaultTrees = make(map[defaultTreeKey]grammar.IExpressionContext)
-	}
-	t.defaultTrees[key] = tree
-	return tree, nil
-}
-
 // transformDefaultExpr lowers a default value at a call or construction site.
 //
 // The declared type is the default's expected type, exactly as it is for an
@@ -374,7 +411,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if prev != nil {
 		useSite = prev.emitTypeParams
 	}
-	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local, useScope: t.currentScope, emitTypeParams: useSite}
+	t.loweringDefault = &defaultLowering{pkg: src.pkg, file: src.file, foreign: !local, useScope: t.currentScope, emitTypeParams: useSite}
 	defer func() { t.loweringDefault = prev }()
 	// The default is lowered in its own declaration's scope: the type
 	// parameters bound at the use site do not shadow the names it reads. In
@@ -427,19 +464,21 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		err.FilePath = t.filePath
 		return err
 	}
-	exprCtx, err := t.defaultExprTree(src)
+	// Parsed once per default per file (parseExprAt): lowering is per use
+	// site, but the parse tree is the same at every one of them.
+	def, err := t.parseExprAt(src.Text, src.Pos.Line, src.Pos.Column, "default value")
 	if err == nil {
-		if name := spellsAny(exprCtx, src.unspellable); name != "" {
+		if name := spellsAny(def, src.unspellable); name != "" {
 			err = shadowed(name)
 		}
 	}
 	var expr ast.Expr
 	if err == nil {
-		expr, err = t.lowerDefault(exprCtx, src)
+		expr, err = t.lowerDefault(def, src)
 		if err != nil {
 			// What it failed on may be a name only this file's imports
 			// declare: report that, at the name.
-			if scopeErr := t.outOfLexicalScope(exprCtx, nil, src); scopeErr != nil {
+			if scopeErr := t.outOfLexicalScope(def, nil, src); scopeErr != nil {
 				err = scopeErr
 			}
 		}
@@ -448,7 +487,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		expr, err = t.qualifyDefaultExpr(expr, src)
 	}
 	if err == nil {
-		err = t.outOfLexicalScope(exprCtx, expr, src)
+		err = t.outOfLexicalScope(def, expr, src)
 	}
 	if err == nil {
 		if name := t.shadowedByUse(expr, useSite, src.carried); name != "" {
@@ -479,11 +518,11 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 // through that file's dot import of collection_immutable, never through one of
 // this file's. Their names are respelled with this file's afterwards (see
 // qualifyDefaultExpr).
-func (t *galaASTTransformer) lowerDefault(exprCtx grammar.IExpressionContext, src defaultSource) (ast.Expr, error) {
+func (t *galaASTTransformer) lowerDefault(def exprSrc, src defaultSource) (ast.Expr, error) {
 	if t.lexicallyScoped(src) && t.importManager != nil {
 		defer t.importManager.WithForeignQualifiers(src.Scope.Imports, src.Scope.DotImports)()
 	}
-	return t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())
+	return t.transformWithDeclaredType(def, src.declared, src.unboundTypeParams())
 }
 
 // declaringPackageVals returns the package-level vals and vars (exported ones:
@@ -567,32 +606,36 @@ func (t *galaASTTransformer) bindDefaultTypeParams(expr ast.Expr, src defaultSou
 }
 
 // recordDefaultLambdaHints records the LSP inlay hints for a lambda default's
-// unannotated parameters, from the declaration: each takes its type from the
-// declared parameter or field type. A default is lowered once per use site
-// that omits it — possibly with different type arguments — so hints recorded
-// there would repeat, and could disagree, on the same parameter.
-func (t *galaASTTransformer) recordDefaultLambdaHints(param *grammar.ParameterContext, declared transpiler.Type) {
-	if t.lspVarTypes == nil || param.ParamDefault() == nil {
+// unannotated parameters, from the declaration: def is the default as its
+// parameter declares it, and each lambda parameter takes its type from the
+// declared parameter type. A default is lowered once per use site that omits
+// it — possibly with different type arguments — so hints recorded there would
+// repeat, and could disagree, on the same parameter.
+func (t *galaASTTransformer) recordDefaultLambdaHints(def exprSrc, declared transpiler.Type) {
+	if t.lspVarTypes == nil || !def.ok() {
 		return
 	}
-	lambdaCtx := t.lambdaIn(antlrExpr(param.ParamDefault().(*grammar.ParamDefaultContext).Expression())).ctx
-	if lambdaCtx == nil || lambdaCtx.Parameters().(*grammar.ParametersContext).ParameterList() == nil {
+	lambda := t.lambdaIn(def)
+	if !lambda.ok() {
+		return
+	}
+	params := lambda.params(t)
+	if len(params) == 0 {
 		return
 	}
 	_, expected, ok := t.lambdaExpectation(declared)
 	if !ok {
 		return
 	}
-	for i, p := range lambdaCtx.Parameters().(*grammar.ParametersContext).ParameterList().(*grammar.ParameterListContext).AllParameter() {
-		lp := p.(*grammar.ParameterContext)
-		if lp.Type_() != nil || i >= len(expected) || transpiler.IsUnusableOrAny(expected[i]) {
+	for i, p := range params {
+		if p.typ.ok() || !p.nameAt.ok() || i >= len(expected) || transpiler.IsUnusableOrAny(expected[i]) {
 			continue
 		}
-		pos := transpiler.PosFromToken(lp.Identifier().GetStart())
+		line, col := p.nameAt.start()
 		t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
-			Line:   pos.Line,
-			Column: pos.Column,
-			Name:   lp.Identifier().GetText(),
+			Line:   line,
+			Column: col,
+			Name:   p.name,
 			Type:   expected[i],
 		})
 	}
@@ -639,17 +682,17 @@ func (src defaultSource) unboundTypeParams() []string {
 // (the absent function, pointer, ...), and must not be lifted into a thunk
 // `func() T { return nil }` by the by-name sugar that an explicit argument to a
 // zero-argument function parameter gets.
-func (t *galaASTTransformer) transformWithDeclaredType(exprCtx grammar.IExpressionContext, declared transpiler.Type, typeParams []string) (ast.Expr, error) {
+func (t *galaASTTransformer) transformWithDeclaredType(e exprSrc, declared transpiler.Type, typeParams []string) (ast.Expr, error) {
 	if declared != nil {
 		if inner, isSendable := transpiler.UnwrapSendable(declared); isSendable {
 			declared = inner
 		}
 	}
 	if transpiler.IsUnusable(declared) || typeMentionsTypeParam(declared, typeParams) {
-		return t.transformExpression(exprCtx)
+		return t.lowerExpr(e)
 	}
-	if isNilLiteral(exprCtx) {
+	if e.isNil() {
 		return ast.NewIdent("nil"), nil
 	}
-	return t.transformArgument(t.exprOf(exprCtx), typedSlot(declared), true)
+	return t.transformArgument(e, typedSlot(declared), true)
 }

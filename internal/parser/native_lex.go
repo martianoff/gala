@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"unicode/utf8"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -102,6 +105,45 @@ func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionN
 			next.Text(ts.Src), next.Line, next.Column)
 	}
 	return expr, nil
+}
+
+// ParseExpressionTreeAt is src's native tree as exactly one GALA expression
+// whose first character sits at line/col of an enclosing file (see
+// ParseExpressionAt), made by the engine's parser, as a file's native tree
+// is: galop's native parser with galop's engine (ParseExpressionNativeAt),
+// ANTLR's parser with ANTLR's, its tree converted by galop's converter
+// (Parsed.Native). An unusable engine parses as galop's, as ParseFile fails
+// on it anyway. Any failure is an error wrapping ErrNativeExpression.
+func ParseExpressionTreeAt(src string, line, col int) (native.ExpressionNode, error) {
+	if engine, err := currentEngine(); err != nil || engine != EngineANTLR {
+		return ParseExpressionNativeAt(src, line, col)
+	}
+	return convertedExpressionAt(src, line, col)
+}
+
+// convertedExpressionAt parses src with ANTLR's parser alone (see
+// ParseExpressionAt) and converts the expression to galop's native tree. A
+// panic in the converter is recovered and reported through noteGalopPanic.
+func convertedExpressionAt(src string, line, col int) (expr native.ExpressionNode, err error) {
+	ctx, stream, errs := antlrExpressionAt(src, line, col, nil)
+	if len(errs) > 0 {
+		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, errs[0])
+	}
+	if tok := stream.LT(1); tok != nil && tok.GetTokenType() != antlr.TokenEOF {
+		return native.ExpressionNode{}, fmt.Errorf("%w: unexpected %q at %d:%d", ErrNativeExpression,
+			tok.GetText(), tok.GetLine(), tok.GetColumn())
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic(src, r)
+			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrNativeExpression, r)
+		}
+	}()
+	tree, _ := galop.ToNative(ctx, stream, src)
+	if tree == nil {
+		return native.ExpressionNode{}, fmt.Errorf("%w: the converter gave no tree", ErrNativeExpression)
+	}
+	return native.ExpressionNode{GalaNodeRef: tree.Root()}, nil
 }
 
 // checkEmptyLinesNative is checkEmptyLines on the native tree: the blank line

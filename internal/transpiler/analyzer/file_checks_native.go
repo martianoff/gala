@@ -7,7 +7,6 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/transformer"
 )
 
 // The reads analyze makes of the compiled file before and around its
@@ -276,28 +275,6 @@ func declaresNameNative(id native.GalaNodeRef) bool {
 		return native.TypeParameterNode{GalaNodeRef: parent}.Identifier(0).GalaNodeRef == id
 	}
 	return false
-}
-
-// checkGeneratedCodecNamesNative is transformer.CheckGeneratedCodecNames of
-// root.
-func checkGeneratedCodecNamesNative(root native.GalaNodeRef) error {
-	var found native.GalaNodeRef
-	root.Walk(func(n native.GalaNodeRef) bool {
-		if found.Ok() {
-			return false
-		}
-		if n.Kind() != native.GalaKIND_identifier {
-			return true
-		}
-		if transformer.IsGeneratedCodecName(galaparser.NativeText(n)) {
-			found = n
-		}
-		return false
-	})
-	if !found.Ok() {
-		return nil
-	}
-	return transformer.GeneratedCodecNameError(galaparser.NativeText(found), nativePos(found))
 }
 
 // DotImportPathsNative is DotImportPaths of root, a file's native tree.
