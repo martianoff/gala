@@ -180,6 +180,10 @@ type galaASTTransformer struct {
 	// walk lowers itself (nativeShape), by its first line. It observes and
 	// changes nothing; TestNativeExprWalk sets it to check each marked line.
 	onNativeShape func(line int, shape string)
+	// onNativeCase, when set, is told of each case clause a match reads on the
+	// native tree, by its node index and its first line. It observes and
+	// changes nothing; TestNativeWalkAgrees sets it to count them.
+	onNativeCase func(index, line int)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that

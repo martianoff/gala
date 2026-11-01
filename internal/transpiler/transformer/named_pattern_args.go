@@ -5,10 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -17,45 +14,44 @@ import (
 // construction. Positional sub-patterns come first; a field given neither way
 // matches anything: `case Rect(Height = h)` is `case Rect(_, h)`.
 
-// normalizePatternArgs returns argList with each named sub-pattern moved to
-// its field's position and an empty argument, which every pattern lowering
+// normalizePatternArgs returns args with each named sub-pattern moved to its
+// field's position and an empty argument, which every pattern lowering
 // skips, for each field left out. A list without named sub-patterns is
 // returned as it is. Lowering, the variant arity check and exhaustiveness
 // all read the normalized list.
-func (t *galaASTTransformer) normalizePatternArgs(rawName string, argList *grammar.ArgumentListContext, matchedType transpiler.Type) (*grammar.ArgumentListContext, error) {
-	firstNamed := firstNamedArg(argList)
+func (t *galaASTTransformer) normalizePatternArgs(rawName string, args patArgs, matchedType transpiler.Type) (patArgs, error) {
+	firstNamed := firstNamedPatArg(args)
 	if firstNamed < 0 {
-		return argList, nil
+		return args, nil
 	}
-	return t.reorderNamedArgs(rawName, argList, firstNamed, matchedType)
+	return t.reorderNamedArgs(rawName, args, firstNamed, matchedType)
 }
 
-// firstNamedArg returns the index of the first named sub-pattern of argList,
+// firstNamedPatArg returns the index of the first named sub-pattern of args,
 // or -1.
-func firstNamedArg(argList *grammar.ArgumentListContext) int {
-	if argList == nil {
-		return -1
-	}
-	return slices.IndexFunc(argList.AllArgument(), func(a grammar.IArgumentContext) bool {
-		return a.(*grammar.ArgumentContext).Identifier() != nil
+func firstNamedPatArg(args patArgs) int {
+	return slices.IndexFunc(args.list, func(a argSrc) bool {
+		name, _ := a.name()
+		return name != ""
 	})
 }
 
 // namedSubPatternError is GALA-E0073 at at.
-func namedSubPatternError(at antlr.Token, msg, hint string) error {
-	return galaerr.NewCodedSemanticError(galaerr.CodeInvalidNamedSubPattern, at.GetLine(), at.GetColumn(), msg, hint)
+func namedSubPatternError(at srcNode, msg, hint string) error {
+	line, col := at.start()
+	return galaerr.NewCodedSemanticError(galaerr.CodeInvalidNamedSubPattern, line, col, msg, hint)
 }
 
 // noFieldNamesError reports named sub-patterns on a pattern that has no
 // fields to match by name.
-func noFieldNamesError(argList *grammar.ArgumentListContext, firstNamed int, name, why string) error {
-	at := argList.Argument(firstNamed).(*grammar.ArgumentContext).Identifier().GetStart()
+func noFieldNamesError(args patArgs, firstNamed int, name, why string) error {
+	_, at := args.list[firstNamed].name()
 	return namedSubPatternError(at, fmt.Sprintf("'%s' cannot be matched by field name: %s", name, why),
 		"write the sub-patterns by position")
 }
 
 // reorderNamedArgs builds the normalized list of normalizePatternArgs.
-func (t *galaASTTransformer) reorderNamedArgs(rawName string, argList *grammar.ArgumentListContext, firstNamed int, matchedType transpiler.Type) (*grammar.ArgumentListContext, error) {
+func (t *galaASTTransformer) reorderNamedArgs(rawName string, args patArgs, firstNamed int, matchedType transpiler.Type) (patArgs, error) {
 	name := stripPackagePrefix(rawName)
 	var fields []string
 	if variant, _ := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
@@ -63,7 +59,7 @@ func (t *galaASTTransformer) reorderNamedArgs(rawName string, argList *grammar.A
 	} else if meta := t.getTypeMeta(rawName); meta != nil && meta.IsOpaque {
 		// An opaque-type pattern takes one sub-pattern and reports a named
 		// one itself.
-		return argList, nil
+		return args, nil
 	} else if fields = t.structPatternFields(rawName); fields == nil {
 		why := "it is an extractor whose result has no field names"
 		if parent := t.sealedParentOfVariant(rawName); parent != "" {
@@ -71,50 +67,40 @@ func (t *galaASTTransformer) reorderNamedArgs(rawName string, argList *grammar.A
 		} else if meta != nil && !meta.IsSealed && len(meta.FieldNames) > 0 {
 			why = "its pattern calls its own Unapply or matches elements, not fields"
 		}
-		return nil, noFieldNamesError(argList, firstNamed, name, why)
+		return patArgs{}, noFieldNamesError(args, firstNamed, name, why)
 	}
-	slots := make([]grammar.IArgumentContext, len(fields))
-	for i, a := range argList.AllArgument() {
-		arg := a.(*grammar.ArgumentContext)
-		if arg.Identifier() == nil {
+	slots := make([]argSrc, len(fields))
+	filled := make([]bool, len(fields))
+	for i, arg := range args.list {
+		field, at := arg.name()
+		if field == "" {
 			switch {
 			case i > firstNamed:
-				return nil, namedSubPatternError(arg.GetStart(), "a positional sub-pattern cannot follow a named one",
+				return patArgs{}, namedSubPatternError(arg.at(), "a positional sub-pattern cannot follow a named one",
 					"put the positional sub-patterns first, or name this one too")
 			case i >= len(slots):
-				return nil, namedSubPatternError(arg.GetStart(), fmt.Sprintf("'%s' has %d fields, but this is sub-pattern %d", name, len(fields), i+1),
+				return patArgs{}, namedSubPatternError(arg.at(), fmt.Sprintf("'%s' has %d fields, but this is sub-pattern %d", name, len(fields), i+1),
 					"remove the extra sub-pattern")
 			}
-			slots[i] = arg
+			slots[i], filled[i] = arg, true
 			continue
 		}
-		field := arg.Identifier().GetText()
-		at := arg.Identifier().GetStart()
-		if arg.Pattern() == nil {
-			return nil, namedSubPatternError(at, fmt.Sprintf("field '%s' is given a lambda, which is not a pattern", field),
+		if !arg.pattern().ok() {
+			return patArgs{}, namedSubPatternError(at, fmt.Sprintf("field '%s' is given a lambda, which is not a pattern", field),
 				"match the field with a pattern, such as `_` or a name to bind")
 		}
 		idx := slices.Index(fields, field)
 		switch {
 		case idx < 0:
-			return nil, namedSubPatternError(at, fmt.Sprintf("'%s' has no field '%s'", name, field),
+			return patArgs{}, namedSubPatternError(at, fmt.Sprintf("'%s' has no field '%s'", name, field),
 				fmt.Sprintf("its fields are %s", strings.Join(fields, ", ")))
-		case slots[idx] != nil:
-			return nil, namedSubPatternError(at, fmt.Sprintf("field '%s' of '%s' is matched twice", field, name), "match each field once")
+		case filled[idx]:
+			return patArgs{}, namedSubPatternError(at, fmt.Sprintf("field '%s' of '%s' is matched twice", field, name), "match each field once")
 		}
-		slots[idx] = arg
+		slots[idx], filled[idx] = arg, true
 	}
-	parent, _ := argList.GetParent().(antlr.ParserRuleContext)
-	out := grammar.NewArgumentListContext(argList.GetParser(), parent, -1)
-	out.SetStart(argList.GetStart())
-	out.SetStop(argList.GetStop())
-	for _, s := range slots {
-		if s == nil {
-			s = grammar.NewEmptyArgumentContext()
-		}
-		out.AddChild(s)
-	}
-	return out, nil
+	// A slot left out stays the zero argSrc: no name and no pattern.
+	return patArgs{list: slots, at: args.at}, nil
 }
 
 // structPatternFields returns the field names, in order, of the struct named

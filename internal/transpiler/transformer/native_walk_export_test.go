@@ -36,3 +36,8 @@ func OnNativeExpr(tr transpiler.ASTTransformer, f func(index, line int)) {
 func OnNativeShape(tr transpiler.ASTTransformer, f func(line int, shape string)) {
 	tr.(*galaASTTransformer).onNativeShape = f
 }
+
+// OnNativeCase sets tr's onNativeCase hook for TestNativeWalkAgrees.
+func OnNativeCase(tr transpiler.ASTTransformer, f func(index, line int)) {
+	tr.(*galaASTTransformer).onNativeCase = f
+}

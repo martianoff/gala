@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"sort"
 	"strings"
-
-	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -28,40 +27,33 @@ func blankAssignTempVar(stmts []ast.Stmt, varName string) []ast.Stmt {
 	})
 }
 
-func (t *galaASTTransformer) transformPattern(patCtx grammar.IPatternContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
-	return t.transformPatternWithType(patCtx, objExpr, nil)
-}
-
-func (t *galaASTTransformer) transformPatternWithType(patCtx grammar.IPatternContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if isWildcard(patCtx.GetText()) {
+func (t *galaASTTransformer) transformPatternWithType(pat patSrc, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	if isWildcard(pat.text()) {
 		return ast.NewIdent("true"), nil, nil
 	}
 
-	switch ctx := patCtx.(type) {
-	case *grammar.ExpressionPatternContext:
-		return t.transformExpressionPatternWithType(ctx.Expression(), objExpr, matchedType)
-	case *grammar.TypedPatternContext:
-		return t.transformTypedPattern(ctx, objExpr, matchedType)
-	case *grammar.RestPatternContext:
+	switch pat.kind() {
+	case patKindExpr:
+		return t.transformExpressionPatternWithType(pat.expr(), objExpr, matchedType)
+	case patKindTyped:
+		return t.transformTypedPattern(pat, objExpr, matchedType)
+	case patKindRest:
 		// Rest pattern like "rest..." or "_..." - these should only appear in argument lists
 		// If we get here, it's an error (rest patterns must be part of a sequence pattern)
-		return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "rest pattern (...) can only be used as the last argument in a sequence pattern like Array(first, second, rest...)")
+		return nil, nil, semanticErrorAtStart(pat.at(), "rest pattern (...) can only be used as the last argument in a sequence pattern like Array(first, second, rest...)")
 	default:
+		line, col := pat.at().start()
 		return nil, nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeUnknownPatternType,
-			patCtx.GetStart().GetLine(), patCtx.GetStart().GetColumn(),
-			fmt.Sprintf("unrecognized pattern syntax (internal type %T)", patCtx),
+			line, col,
+			fmt.Sprintf("unrecognized pattern syntax (internal type %T)", t.ctxAt(pat.at())),
 			"this usually means a new grammar rule is missing transformer support; please report at github.com/martianoff/gala/issues",
 		)
 	}
 }
 
-func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpressionContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
-	return t.transformExpressionPatternWithType(patExprCtx, objExpr, nil)
-}
-
-func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	text := patExprCtx.GetText()
+func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	text := pat.text()
 	if isWildcard(text) {
 		return ast.NewIdent("true"), nil, nil
 	}
@@ -69,17 +61,17 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// A sub-pattern naming a variant of its value's sealed view tests the
 	// view (see subPatternView). A whole case pattern is already matched
 	// against the view when it reads one (see sealedViewForCases).
-	if view, err := t.subPatternView(patExprCtx, matchedType); err != nil {
+	if view, err := t.subPatternView(pat, matchedType); err != nil {
 		return nil, nil, err
 	} else if view != nil {
-		viewObj, err := t.viewSubject(objExpr, matchedType, patExprCtx)
+		viewObj, err := t.viewSubject(objExpr, matchedType, t.ctxAt(pat.at()))
 		if err != nil {
 			return nil, nil, err
 		}
 		// Read the view once for the whole sub-pattern, its alternatives
 		// included.
 		viewVar := t.nextTempVar()
-		cond, stmts, err := t.transformExpressionPatternWithType(patExprCtx, ast.NewIdent(viewVar), view)
+		cond, stmts, err := t.transformExpressionPatternWithType(pat, ast.NewIdent(viewVar), view)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -88,7 +80,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	}
 
 	if strings.Contains(text, "|") {
-		if alts, err := t.patternAlternatives(patExprCtx); err != nil {
+		if alts, err := t.patternAlternatives(pat); err != nil {
 			return nil, nil, err
 		} else if alts != nil {
 			return t.transformAlternativePattern(alts, objExpr, matchedType)
@@ -96,16 +88,9 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	}
 
 	// Tuple pattern with parentheses syntax: (a, b, c) => Tuple3(a, b, c)
-	if p := t.getPrimaryFromExpression(patExprCtx); p != nil {
-		if exprList := p.TupleExpressionList(); exprList != nil {
-			if el, ok := exprList.(*grammar.TupleExpressionListContext); ok {
-				exprs := el.AllExpression()
-				if len(exprs) >= 2 {
-					// This is a tuple pattern (a, b, c) - transform to TupleN pattern
-					return t.transformTuplePattern(exprs, objExpr, matchedType)
-				}
-			}
-		}
+	if elems, ok := pat.tupleElems(); ok && len(elems) >= 2 {
+		// This is a tuple pattern (a, b, c) - transform to TupleN pattern
+		return t.transformTuplePattern(elems, objExpr, matchedType)
 	}
 
 	// Package-qualified constructor pattern: pkg.Ctor(args) or pkg.Ctor[T](args) — e.g. `case acp.Acked()`
@@ -115,15 +100,16 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// MUST come before the unqualified call-pattern check, whose two-suffix branch
 	// assumes `Ctor[T](...)` and would otherwise leave this shape to fall through to
 	// a (wrong) simple binding of the package identifier.
-	if pkgPrimaryExpr, ctorName, qArgList, qTypeArgs, ok := t.getQualifiedCallPattern(patExprCtx); ok {
-		pkgAst, err := t.transformPrimaryExpr(pkgPrimaryExpr)
+	if call, ok := pat.qualifiedCallPattern(); ok {
+		pkgAst, err := t.transformPrimaryExpr(call.head.primaryExpr(t))
 		if err != nil {
 			return nil, nil, err
 		}
 		if pkgIdent, isIdent := pkgAst.(*ast.Ident); isIdent && t.importManager.IsPackage(pkgIdent.Name) {
+			qTypeArgs := call.typeArgs.exprList(t)
 			// `case pkg.R(x)` where R is an imported extractor val/var.
-			if b, ok := t.lookupBinding(pkgIdent.Name, ctorName); ok && qTypeArgs == nil {
-				if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, qArgList, objExpr, matchedType, patExprCtx); handled {
+			if b, ok := t.lookupBinding(pkgIdent.Name, call.ctor); ok && qTypeArgs == nil {
+				if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, call.args, objExpr, matchedType, pat); handled {
 					return expr, stmts, err
 				}
 			}
@@ -131,8 +117,8 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 				pkgName = actual
 			}
-			rawName := pkgName + "." + ctorName
-			return t.transformConstructorCallPattern(rawName, qArgList, qTypeArgs, objExpr, matchedType, patExprCtx)
+			rawName := pkgName + "." + call.ctor
+			return t.transformConstructorCallPattern(rawName, call.args, qTypeArgs, objExpr, matchedType, pat)
 		}
 	}
 
@@ -140,10 +126,10 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// This check must come BEFORE the simple binding check because a pattern like `Foo(x)`
 	// has a primary with identifier `Foo`, but it's not a simple binding.
 	// Also handles generic patterns with explicit type arguments like Unwrap[int](v).
-	if primaryExprCtx, argList, explicitTypeArgs := t.getCallPatternWithTypeArgsFromExpression(patExprCtx); primaryExprCtx != nil {
+	if call, ok := pat.callPattern(); ok {
 		// An extractor names a type or companion, never a function.
 		t.typeNameDepth++
-		patternExpr, err := t.transformPrimaryExpr(primaryExprCtx)
+		patternExpr, err := t.transformPrimaryExpr(call.head.primaryExpr(t))
 		t.typeNameDepth--
 		if err != nil {
 			return nil, nil, err
@@ -154,41 +140,37 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		rawName := t.getBaseTypeName(patternExpr)
 
 		// If rawName is empty, the identifier may have been wrapped in .Get() (val variable).
-		// Fall back to extracting the identifier directly from the grammar context.
+		// Fall back to extracting the identifier directly from the parse tree.
 		if rawName == "" {
-			if p := primaryExprCtx.Primary(); p != nil {
-				if pc, ok := p.(*grammar.PrimaryContext); ok && pc.Identifier() != nil {
-					rawName = pc.Identifier().GetText()
-				}
-			}
+			rawName = call.head.primaryIdent()
 		}
 
-		return t.transformConstructorCallPattern(rawName, argList, explicitTypeArgs, objExpr, matchedType, patExprCtx)
+		return t.transformConstructorCallPattern(rawName, call.args, call.typeArgs.exprList(t), objExpr, matchedType, pat)
 	}
 
-	if variant, parent := t.qualifiedCase(patExprCtx); variant != nil {
+	if variant, parent := t.qualifiedCase(pat); variant != nil {
 		// `case shapes.Circle` spells none of the case's fields, and on a
 		// subject that may hold any type `case std.None` cannot name the type
 		// arguments of the case it tests: both are errors (GALA-E0039).
 		if caseUntestable(variant, parent, t.holdsAnyTypeKnown(matchedType)) {
-			return nil, nil, t.untestableCaseError(patExprCtx.GetText(), variant, parent, matchedType, patExprCtx.GetStart())
+			return nil, nil, t.untestableCaseError(pat.text(), variant, parent, matchedType, pat.at())
 		}
 		// `case shapes.Square` is `case shapes.Square()`, as the unqualified
 		// spelling is.
-		return t.transformConstructorCallPattern(parent.Package+"."+variant.Name, nil, nil, objExpr, matchedType, patExprCtx)
+		return t.transformConstructorCallPattern(parent.Package+"."+variant.Name, patArgs{}, nil, objExpr, matchedType, pat)
 	}
 
 	// Simple Binding - bind variable with the matched type
 	// This check comes after the extractor check because extractors like `Foo(x)` have a primary
 	// with an identifier, but they're not simple bindings.
-	return t.transformSimpleBindingOrLiteral(patExprCtx, objExpr, matchedType)
+	return t.transformSimpleBindingOrLiteral(pat, objExpr, matchedType)
 }
 
 // qualifiedZeroFieldCase returns the name a pattern `pkg.Name` resolves to —
 // "shapes.Square", with an import alias resolved — when it names a zero-field
 // sealed case (see qualifiedCase). It returns "" for anything else.
-func (t *galaASTTransformer) qualifiedZeroFieldCase(ctx grammar.IExpressionContext) string {
-	if variant, parent := t.qualifiedCase(ctx); variant != nil && len(variant.FieldNames) == 0 {
+func (t *galaASTTransformer) qualifiedZeroFieldCase(pat patExpr) string {
+	if variant, parent := t.qualifiedCase(pat); variant != nil && len(variant.FieldNames) == 0 {
 		return parent.Package + "." + variant.Name
 	}
 	return ""
@@ -198,17 +180,11 @@ func (t *galaASTTransformer) qualifiedZeroFieldCase(ctx grammar.IExpressionConte
 // sealed type, when pkg is an imported package and Name a case it declares
 // and exports. It returns nils for anything else, such as a qualified
 // constant (`math.MaxInt8`), which is compared by ==.
-func (t *galaASTTransformer) qualifiedCase(ctx grammar.IExpressionContext) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
-	postfix := t.getSinglePostfixExpr(ctx)
-	if postfix == nil || len(postfix.AllPostfixSuffix()) != 1 || postfix.CaseClause(0) != nil {
+func (t *galaASTTransformer) qualifiedCase(pat patExpr) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
+	pkg, name, ok := pat.qualifiedMember()
+	if !ok {
 		return nil, nil
 	}
-	member := postfix.PostfixSuffix(0).(*grammar.PostfixSuffixContext)
-	primary := PrimaryOf(postfix)
-	if suffixOpener(member) != "." || member.Identifier() == nil || primary == nil || primary.Identifier() == nil {
-		return nil, nil
-	}
-	pkg, name := primary.Identifier().GetText(), member.Identifier().GetText()
 	if !token.IsExported(name) || t.bindingScope(pkg) != nil || !t.importManager.IsPackage(pkg) {
 		return nil, nil
 	}
@@ -233,13 +209,13 @@ func sealedCaseNamed(parent *transpiler.TypeMetadata, name string) (*transpiler.
 // resolves to rawName (which may be unqualified like "Some" or qualified like
 // "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
 // and struct field matches, and instance extractors, in that order.
-func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, args patArgs, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
 	// A type parameter of the enclosing declaration shadows every extractor,
 	// variant and struct of its name, and is none of them itself.
 	if t.typeParamValue(rawName) {
-		return nil, nil, t.typeParamMisuseError(patExprCtx, rawName, "cannot be matched as a pattern")
+		return nil, nil, t.typeParamMisuseErrorAt(pat.at(), rawName, "cannot be matched as a pattern")
 	}
-	argList, err := t.normalizePatternArgs(rawName, argList, matchedType)
+	args, err := t.normalizePatternArgs(rawName, args, matchedType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -274,14 +250,14 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 						inferredTypes = append(inferredTypes, t.resolveType(t.getBaseTypeName(typeAst)))
 					}
 					if len(inferredTypes) != len(meta.TypeParams) {
-						return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+						return nil, nil, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 							fmt.Sprintf("extractor '%s' expects %d type parameters, got %d", rawName, len(meta.TypeParams), len(inferredTypes)))
 					}
 				} else {
 					// Infer type parameters from the matched type
 					inferredTypes = t.inferExtractorTypeParams(meta, matchedType)
 					if len(inferredTypes) != len(meta.TypeParams) {
-						return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+						return nil, nil, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 							fmt.Sprintf("cannot infer type parameters for extractor '%s'. Ensure the Unapply method's parameter type matches the matched type", rawName))
 					}
 				}
@@ -289,19 +265,19 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 			// Check if return type is supported (bool or Option[T])
 			returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, inferredTypes)
 			if !t.isDirectUnapplyReturnType(returnType) {
-				return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+				return nil, nil, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 					fmt.Sprintf("extractor '%s' must have Unapply returning bool or Option[T], got '%s'. Use Option[T] for extractors or bool for guard patterns. Unapply(any) any is not allowed",
 						rawName, returnType.String()))
 			}
 			// Use direct Unapply call - no reflection needed!
-			return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType, patExprCtx)
+			return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, args, matchedType, pat)
 		}
 	}
 
 	// An opaque type unwraps to its single underlying value: `case UserID(n)`.
 	// No Unapply is generated for it; the pattern lowers to a conversion.
 	if meta := t.opaqueMetaByName(rawName); meta != nil {
-		return t.generateOpaquePattern(meta, rawName, argList, explicitTypeArgs, objExpr, matchedType, patExprCtx)
+		return t.generateOpaquePattern(meta, rawName, args, explicitTypeArgs, objExpr, matchedType, pat)
 	}
 
 	// Check if this is a sequence pattern (e.g., Array(first, second, rest...) or Array(a, b, c))
@@ -309,24 +285,24 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	// Must be checked BEFORE struct field match, since Array/List are also structs
 	// but their pattern arguments represent elements, not struct fields.
 	if t.isSeqType(matchedType) {
-		return t.generateSeqPatternMatch(objExpr, argList, matchedType)
+		return t.generateSeqPatternMatch(objExpr, args, matchedType)
 	}
-	if t.hasRestPattern(argList) {
-		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+	if t.hasRestPattern(args) {
+		return nil, nil, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 			fmt.Sprintf("rest pattern (...) requires a sequence type (Array, List, or type implementing Seq). Got '%s'", matchedType.String()))
 	}
 
 	// Check if this is a direct struct match for tuples (pattern type equals container type)
 	// This handles cases like (a, b) matching against Tuple[A, B]
 	if t.isDirectStructMatch(rawName, matchedType) {
-		return t.generateDirectTupleStructMatch(objExpr, argList, matchedType)
+		return t.generateDirectTupleStructMatch(objExpr, args, matchedType)
 	}
 
 	// Check if this is a non-generic struct pattern match (e.g., Person(name, age))
 	// Use direct field access for known structs
 	resolvedStructName := t.resolveStructTypeName(rawName)
 	if fields, ok := t.structFields[resolvedStructName]; ok && len(fields) > 0 {
-		return t.generateDirectStructFieldMatch(objExpr, argList, explicitTypeArgs, fields, resolvedStructName, matchedType, patExprCtx)
+		return t.generateDirectStructFieldMatch(objExpr, args, explicitTypeArgs, fields, resolvedStructName, matchedType, pat)
 	}
 
 	// Check if rawName is a variable whose type has an Unapply method (instance extractor).
@@ -336,7 +312,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	if !bound {
 		b = binding{name: rawName, typ: t.getType(rawName)}
 	}
-	if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, argList, objExpr, matchedType, patExprCtx); handled {
+	if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, args, objExpr, matchedType, pat); handled {
 		return expr, stmts, err
 	}
 
@@ -351,7 +327,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	}
 	return nil, nil, galaerr.NewCodedSemanticError(
 		galaerr.CodeMissingUnapply,
-		patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+		pat.line(), pat.col(),
 		msg, hint)
 }
 
@@ -543,8 +519,8 @@ func (t *galaASTTransformer) holdsAnyTypeKnown(matchedType transpiler.Type) bool
 // of a generic sealed type on a subject that may hold any type is told to
 // spell its type arguments (`case None[int]()`), which spelling its fields
 // alone would not do.
-func (t *galaASTTransformer) untestableCaseError(written string, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, matchedType transpiler.Type, at antlr.Token) error {
-	line, col := at.GetLine(), at.GetColumn()
+func (t *galaASTTransformer) untestableCaseError(written string, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, matchedType transpiler.Type, at srcNode) error {
+	line, col := at.start()
 	qualified := strings.Contains(written, ".")
 	fields := repeatJoin("_", len(variant.FieldNames))
 	if !genericOnAnySubject(parent, t.holdsAnyTypeKnown(matchedType)) {
@@ -643,27 +619,13 @@ func (t *galaASTTransformer) boundInCurrentPattern(s *scope) bool {
 	return s == t.currentScope && s.caseArm
 }
 
-// patternIdentifier returns the name when a pattern is a bare identifier, and
-// "" for anything else — a literal, a qualified name such as `math.MaxInt8`,
-// or an operator expression — all of which compare by equality.
-func patternIdentifier(ctx grammar.IExpressionContext) string {
-	postfix := LeadingPostfixExpr(ctx, true)
-	if postfix == nil || postfix.PostfixSuffix(0) != nil || postfix.CaseClause(0) != nil {
-		return ""
-	}
-	if p := PrimaryOf(postfix); p != nil && p.Identifier() != nil {
-		return p.Identifier().GetText()
-	}
-	return ""
-}
-
 // transformSimpleBindingOrLiteral handles the two remaining pattern shapes once a
 // pattern is known not to be a tuple/extractor/constructor call: a bare identifier
 // binds a variable (with a zero-field sealed-variant shortcut), and anything else
 // — a literal, a qualified name, or a stable identifier (see
 // isStableIdentifierPattern) — is compared for equality.
-func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if name := patternIdentifier(patExprCtx); name != "" {
+func (t *galaASTTransformer) transformSimpleBindingOrLiteral(pat patExpr, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	if name := pat.identifier(); name != "" {
 
 		// A bare identifier that names a variant of the type being matched is
 		// never a binding — binding it would turn the arm into a catch-all that
@@ -671,7 +633,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		if variant, parent := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
 			if len(variant.FieldNames) > 0 {
 				return nil, nil, bareVariantBindingError(name, variant, parent,
-					patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn())
+					pat.line(), pat.col())
 			}
 			// Zero-field variant: `case None` means exactly `case None()`. Route
 			// through the constructor-call path so generic parents (Option[T],
@@ -684,7 +646,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 			if _, resolved := t.getTypeMetaResolved(name); resolved != "" {
 				ctorName = resolved
 			}
-			return t.transformConstructorCallPattern(ctorName, nil, nil, objExpr, matchedType, patExprCtx)
+			return t.transformConstructorCallPattern(ctorName, patArgs{}, nil, objExpr, matchedType, pat)
 		}
 
 		// The identifier may still refer to a zero-field extractor that is not a
@@ -692,21 +654,21 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		// sealed variant matched against a subject whose type could not be
 		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
 		if meta, unapplyMeta := t.bareExtractor(name, matchedType); meta != nil {
-			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType, patExprCtx)
+			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, patArgs{}, matchedType, pat)
 		}
 
 		// On a subject that may hold any type, a case the bare name cannot
 		// test (`case Circle`, `case None`) is an error, as a field-bearing
 		// one is on a subject of its sealed type, not a catch-all binding.
 		if variant, parent := t.untestableBareCase(name, matchedType); variant != nil {
-			return nil, nil, t.untestableCaseError(name, variant, parent, matchedType, patExprCtx.GetStart())
+			return nil, nil, t.untestableCaseError(name, variant, parent, matchedType, pat.at())
 		}
 
 		// A name bound earlier in this same pattern is neither a fresh binding
 		// (Go would reject the redeclaration) nor a value to compare against.
 		s := t.bindingScope(name)
 		if s != nil && t.boundInCurrentPattern(s) {
-			err := galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+			err := galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 				fmt.Sprintf("'%s' is bound more than once in this pattern", name))
 			err.Hint = "bind each part to its own name and compare them in a guard: `case (a, b) if a == b =>`"
 			return nil, nil, err
@@ -737,11 +699,12 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 	}
 
 	// Literal or other - use direct equality comparison
-	patExpr, err := t.transformExpression(patExprCtx)
+	patCtx := pat.antlr(t)
+	eqExpr, err := t.transformExpression(patCtx)
 	if err != nil {
 		return nil, nil, err
 	}
-	cond, err := t.lowerPatternEquality(patExprCtx, patExpr, objExpr, matchedType)
+	cond, err := t.lowerPatternEquality(patCtx, eqExpr, objExpr, matchedType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -751,16 +714,16 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 // transformTypedPattern lowers `name: Type`. matchedType is the subject's type
 // as the enclosing pattern knows it, nil when it does not; objExpr may be a
 // temp whose type cannot be read back, as with a value an extractor took out.
-func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	name := ctx.Identifier().GetText()
-	typeExpr, err := t.transformType(ctx.Type_())
+func (t *galaASTTransformer) transformTypedPattern(pat patSrc, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	name := pat.typedName()
+	typeExpr, err := t.lowerType(pat.typedType())
 	if err != nil {
 		return nil, nil, err
 	}
 	// A dynamic type test cannot tell a Ptr from a nil `*T`: Go's assertion
 	// to `*T` accepts a nil one.
 	if typ := t.astTypeToTranspilerType(typeExpr); hasPtr(typ) {
-		return nil, nil, ptrError(ctx,
+		return nil, nil, ptrErrorAt(pat.at(),
 			fmt.Sprintf("a typed pattern cannot test for %s: a pointer from a dynamic value may be nil", displayType(typ)),
 			"match the nullable pointer type (`case p: *T`) and pass it through RequirePtr(p) or OptionPtrOf(p)")
 	}
@@ -935,13 +898,8 @@ func (t *galaASTTransformer) isTupleType(typeName string) bool {
 //	b := obj.V2.Get()
 //
 // The condition is always true since the type already matches.
-func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if argList == nil {
-		return ast.NewIdent("true"), nil, nil
-	}
-
-	args := argList.AllArgument()
-	if len(args) == 0 {
+func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, args patArgs, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	if len(args.list) == 0 {
 		return ast.NewIdent("true"), nil, nil
 	}
 
@@ -955,12 +913,12 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 	}
 
 	// Generate bindings for each pattern argument using direct field access
-	for i, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		if arg.Pattern() == nil {
+	for i, arg := range args.list {
+		argPat := arg.pattern()
+		if !argPat.ok() {
 			continue
 		}
-		patternText := arg.Pattern().GetText()
+		patternText := argPat.text()
 
 		if isWildcard(patternText) {
 			continue
@@ -986,7 +944,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 
 		// A binding, a nested pattern or a typed pattern, all lowered by the
 		// general dispatcher.
-		nestedCond, nestedStmts, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)
+		nestedCond, nestedStmts, err := t.transformPatternWithType(argPat, elemExpr, elemType)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1018,7 +976,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 // For example, Person(name, age) matching against Person{Name: "Alice", Age: 25}
 // generates: name := obj.Name.Get(); age := obj.Age.Get() — `.Get()` only for
 // non-`var` fields, which are stored as Immutable[T].
-func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, args patArgs, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 
@@ -1029,7 +987,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	// field access reads from castVar. A concretely-typed subject keeps reading
 	// fields straight off objExpr.
 	baseExpr := objExpr
-	assertFrom, err := t.patternAssertSubject(objExpr, structName, structName, matchedType, patExprCtx)
+	assertFrom, err := t.patternAssertSubject(objExpr, structName, structName, matchedType, pat)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1037,7 +995,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		// A generic struct can only be asserted to one of its instantiations,
 		// which an interface subject cannot supply: the pattern must name the
 		// type arguments (`case Box[int](v, tag)`). They then type the fields too.
-		assertType, instantiated, err := t.structPatternAssertType(structName, explicitTypeArgs, patExprCtx)
+		assertType, instantiated, err := t.structPatternAssertType(structName, explicitTypeArgs, pat)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1051,16 +1009,12 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		conds = append(conds, ok)
 	}
 
-	var args []grammar.IArgumentContext
-	if argList != nil {
-		args = argList.AllArgument()
-	}
-	if len(args) == 0 {
+	if len(args.list) == 0 {
 		return combineStructMatchConds(conds, stmts)
 	}
 
-	if len(args) > len(fields) {
-		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args)))
+	if len(args.list) > len(fields) {
+		return nil, nil, semanticErrorAtStart(args.at, fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args.list)))
 	}
 
 	// Get field types if available. They are the declared types, so for a
@@ -1082,12 +1036,12 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	}
 
 	// Generate bindings for each pattern argument using direct field access
-	for i, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		if arg.Pattern() == nil {
+	for i, arg := range args.list {
+		argPat := arg.pattern()
+		if !argPat.ok() {
 			continue
 		}
-		patternText := arg.Pattern().GetText()
+		patternText := argPat.text()
 
 		if isWildcard(patternText) {
 			continue
@@ -1117,7 +1071,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		// nested pattern such as `Circle(r)` or a typed pattern such as
 		// `e: Tagged[_]`, all lowered by the general dispatcher against the
 		// field's type.
-		nestedCond, nestedStmts, err := t.transformPatternWithType(arg.Pattern(), elemExpr, fieldType)
+		nestedCond, nestedStmts, err := t.transformPatternWithType(argPat, elemExpr, fieldType)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1154,7 +1108,7 @@ func combineStructMatchConds(conds []ast.Expr, stmts []ast.Stmt) (ast.Expr, []as
 // so the arm is an error rather than one that silently never matches. A value
 // of a type parameter is asserted through `any`. patternName is the pattern's
 // constructor, as the error names it.
-func (t *galaASTTransformer) patternAssertSubject(objExpr ast.Expr, typeName, patternName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, error) {
+func (t *galaASTTransformer) patternAssertSubject(objExpr ast.Expr, typeName, patternName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, error) {
 	if matchedType == nil {
 		return nil, nil
 	}
@@ -1179,9 +1133,8 @@ func (t *galaASTTransformer) patternAssertSubject(objExpr ast.Expr, typeName, pa
 		reason = "missing " + strings.Join(required, ", ")
 	}
 	if reason != "" {
-		at := patExprCtx.GetStart()
 		name, pattern := stripPackagePrefix(typeName), stripPackagePrefix(patternName)
-		return nil, galaerr.NewSemanticErrorAt(at.GetLine(), at.GetColumn(),
+		return nil, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 			fmt.Sprintf("%s does not implement %s (%s), so a value of type %s never holds one and the pattern %s(...) never matches",
 				name, matchedType.String(), reason, matchedType.String(), pattern))
 	}
@@ -1207,7 +1160,7 @@ func pointerReceiverMethods(meta *transpiler.TypeMetadata, required []string) []
 // the type arguments (`case Box[int](...)`); the instantiated type is
 // returned as well so the fields can be typed by it. Without them the pattern
 // is rejected: Go cannot assert to an uninstantiated generic type.
-func (t *galaASTTransformer) structPatternAssertType(structName string, explicitTypeArgs *grammar.ExpressionListContext, patExprCtx grammar.IExpressionContext) (ast.Expr, transpiler.Type, error) {
+func (t *galaASTTransformer) structPatternAssertType(structName string, explicitTypeArgs *grammar.ExpressionListContext, pat patExpr) (ast.Expr, transpiler.Type, error) {
 	meta := t.getTypeMeta(structName)
 	if meta == nil || len(meta.TypeParams) == 0 {
 		return t.ident(structName), nil, nil
@@ -1221,7 +1174,7 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 		if meta.IsOpaque {
 			kind = "opaque type"
 		}
-		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+		return nil, nil, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 			fmt.Sprintf("cannot match generic %s '%s' against a value of an interface or type-parameter type without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
 				kind, stripPackagePrefix(structName), len(meta.TypeParams), stripPackagePrefix(structName), strings.Join(meta.TypeParams, ", ")))
 	}
@@ -1239,19 +1192,8 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 }
 
 // hasRestPattern checks if any argument in the argument list is a rest pattern (ends with ...).
-func (t *galaASTTransformer) hasRestPattern(argList *grammar.ArgumentListContext) bool {
-	if argList == nil {
-		return false
-	}
-	for _, argCtx := range argList.AllArgument() {
-		arg := argCtx.(*grammar.ArgumentContext)
-		if pat := arg.Pattern(); pat != nil {
-			if _, ok := pat.(*grammar.RestPatternContext); ok {
-				return true
-			}
-		}
-	}
-	return false
+func (t *galaASTTransformer) hasRestPattern(args patArgs) bool {
+	return slices.ContainsFunc(args.list, func(a argSrc) bool { return a.pattern().kind() == patKindRest })
 }
 
 // isSeqType checks if a type implements the Seq interface (has Size, Get, SeqDrop methods).
@@ -1373,18 +1315,17 @@ func assembleSeqPatternGuardBlock(stmts []ast.Stmt, sizeCheckName string, guarde
 // pattern (if any) and returning its index, its binding name (or "" for a
 // wildcard/anonymous rest), and the count of non-rest arguments. Extracted
 // from generateSeqPatternMatch as part of A2.
-func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restName string, nonRestCount int) {
+func scanSeqPatternArgs(args []argSrc) (restIndex int, restName string, nonRestCount int) {
 	restIndex = -1
-	for i, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		pat := arg.Pattern()
-		if pat == nil {
+	for i, arg := range args {
+		pat := arg.pattern()
+		if !pat.ok() {
 			nonRestCount++
 			continue
 		}
-		if restPat, ok := pat.(*grammar.RestPatternContext); ok {
+		if pat.kind() == patKindRest {
 			restIndex = i
-			exprText := restPat.Expression().GetText()
+			exprText := pat.expr().text()
 			if !isWildcard(exprText) {
 				restName = exprText
 			}
@@ -1416,17 +1357,12 @@ func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restNam
 //	    rest = obj.SeqDrop(2).(Array[Option[int]])
 //	}
 //	if _tmp_ok && <Some(n) condition> { ... body }
-func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	var args []grammar.IArgumentContext
-	if argList != nil {
-		args = argList.AllArgument()
-	}
-
-	restPatternIndex, restPatternName, nonRestCount := scanSeqPatternArgs(args)
+func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, args patArgs, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+	restPatternIndex, restPatternName, nonRestCount := scanSeqPatternArgs(args.list)
 
 	// Rest pattern must be the last argument.
-	if restPatternIndex >= 0 && restPatternIndex != len(args)-1 {
-		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), "rest pattern (...) must be the last argument in a sequence pattern")
+	if restPatternIndex >= 0 && restPatternIndex != len(args.list)-1 {
+		return nil, nil, semanticErrorAtStart(args.at, "rest pattern (...) must be the last argument in a sequence pattern")
 	}
 
 	// Emit the size check and seed the statement+condition accumulators. A
@@ -1445,7 +1381,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 	}
 
 	// Emit bindings for the non-rest arguments.
-	varDecls, guardedAssigns, extraConds, err := t.emitNonRestBindings(args, objExpr, elemType, elemTypeExpr)
+	varDecls, guardedAssigns, extraConds, err := t.emitNonRestBindings(args.list, objExpr, elemType, elemTypeExpr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1506,24 +1442,23 @@ func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, count int, exact bo
 //
 // Extracted from generateSeqPatternMatch as part of A2 cont.
 func (t *galaASTTransformer) emitNonRestBindings(
-	args []grammar.IArgumentContext,
+	args []argSrc,
 	objExpr ast.Expr,
 	elemType transpiler.Type,
 	elemTypeExpr ast.Expr,
 ) (varDecls []ast.Stmt, guardedAssigns []ast.Stmt, extraConds []ast.Expr, err error) {
 	argIndex := 0
-	for _, argCtx := range args {
-		arg := argCtx.(*grammar.ArgumentContext)
-		patCtx := arg.Pattern()
-		if patCtx == nil {
+	for _, arg := range args {
+		patCtx := arg.pattern()
+		if !patCtx.ok() {
 			argIndex++
 			continue
 		}
 		// Rest patterns are handled by emitRestBinding; skip here.
-		if _, ok := patCtx.(*grammar.RestPatternContext); ok {
+		if patCtx.kind() == patKindRest {
 			continue
 		}
-		patternText := patCtx.GetText()
+		patternText := patCtx.text()
 		if isWildcard(patternText) {
 			argIndex++
 			continue
@@ -1593,11 +1528,11 @@ func seqGetAssign(name string, objExpr ast.Expr, index int) ast.Stmt {
 
 // transformTuplePattern transforms a tuple pattern like (a, b, c) into direct field access.
 // Instead of using reflection-based UnapplyTupleN, this generates direct access to V1, V2, etc.
-func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+func (t *galaASTTransformer) transformTuplePattern(patternExprs []patExpr, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	n := len(patternExprs)
 	if n < 2 || n > 10 {
 		if n > 0 {
-			return nil, nil, galaerr.NewSemanticErrorAt(patternExprs[0].GetStart().GetLine(), patternExprs[0].GetStart().GetColumn(), fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
+			return nil, nil, galaerr.NewSemanticErrorAt(patternExprs[0].line(), patternExprs[0].col(), fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
 		}
 		return nil, nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
 	}
@@ -1615,8 +1550,8 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 	// Conditions from nested element patterns are AND-combined; bindings from
 	// every element are collected so that `(true, code)` binds `code` even
 	// when an earlier element contributes a literal-equality condition.
-	for i, patExpr := range patternExprs {
-		patText := patExpr.GetText()
+	for i, elem := range patternExprs {
+		patText := elem.text()
 		if isWildcard(patText) {
 			continue
 		}
@@ -1643,7 +1578,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 		// A binding or a nested pattern, both lowered recursively. Bindings
 		// must be appended BEFORE we accumulate the condition so any later
 		// element pattern (e.g. `code` in `(true, code)`) still gets bound.
-		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(patExpr, elemExpr, elemType)
+		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(elem, elemExpr, elemType)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1926,16 +1861,16 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	inferredTypes []transpiler.Type,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
-	argList *grammar.ArgumentListContext,
+	args patArgs,
 	matchedType transpiler.Type,
-	patExprCtx grammar.IExpressionContext,
+	pat patExpr,
 ) (ast.Expr, []ast.Stmt, error) {
 	subst := func(typ transpiler.Type) transpiler.Type {
 		return t.substituteConcreteTypes(typ, extractorMeta.TypeParams, inferredTypes)
 	}
-	return t.assertedUnapplyPattern(objExpr, t.unapplyAssertType(unapplyMeta, subst), extractorName, matchedType, patExprCtx,
+	return t.assertedUnapplyPattern(objExpr, t.unapplyAssertType(unapplyMeta, subst), extractorName, matchedType, pat,
 		func(obj ast.Expr, matched transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-			return t.lowerDirectUnapplyPattern(extractorName, extractorMeta, inferredTypes, unapplyMeta, obj, argList, matched)
+			return t.lowerDirectUnapplyPattern(extractorName, extractorMeta, inferredTypes, unapplyMeta, obj, args, matched)
 		})
 }
 
@@ -1947,7 +1882,7 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 	inferredTypes []transpiler.Type,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
-	argList *grammar.ArgumentListContext,
+	args patArgs,
 	matchedType transpiler.Type,
 ) (ast.Expr, []ast.Stmt, error) {
 	var allBindings []ast.Stmt
@@ -1996,8 +1931,8 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 	}
 
 	// Handle the pattern arguments
-	if argList != nil && len(argList.AllArgument()) > 0 && !isBoolReturn {
-		numArgs := len(argList.AllArgument())
+	if len(args.list) > 0 && !isBoolReturn {
+		numArgs := len(args.list)
 
 		// Check if the inner type is a Tuple that needs expansion
 		isTupleResult := false
@@ -2026,12 +1961,12 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 		var hoisted, guardedStmts []ast.Stmt
 
 		// For each argument pattern, generate direct field access
-		for i, argCtx := range argList.AllArgument() {
-			arg := argCtx.(*grammar.ArgumentContext)
-			if arg.Pattern() == nil {
+		for i, arg := range args.list {
+			argPat := arg.pattern()
+			if !argPat.ok() {
 				continue
 			}
-			patternText := arg.Pattern().GetText()
+			patternText := argPat.text()
 
 			if isWildcard(patternText) {
 				continue
@@ -2085,7 +2020,7 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 				// the payload, which is a zero value when the extractor did not match,
 				// so it runs inside the guard; its bindings are declared
 				// before the guard so the arm sees them.
-				subCond, subBindings, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)
+				subCond, subBindings, err := t.transformPatternWithType(argPat, elemExpr, elemType)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -2161,13 +2096,13 @@ func (t *galaASTTransformer) assertedUnapplyPattern(
 	paramType transpiler.Type,
 	patternName string,
 	matchedType transpiler.Type,
-	patExprCtx grammar.IExpressionContext,
+	pat patExpr,
 	lower func(obj ast.Expr, matched transpiler.Type) (ast.Expr, []ast.Stmt, error),
 ) (ast.Expr, []ast.Stmt, error) {
 	if paramType == nil {
 		return lower(objExpr, matchedType)
 	}
-	assertFrom, err := t.patternAssertSubject(objExpr, paramType.BaseName(), patternName, matchedType, patExprCtx)
+	assertFrom, err := t.patternAssertSubject(objExpr, paramType.BaseName(), patternName, matchedType, pat)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2193,10 +2128,10 @@ func (t *galaASTTransformer) assertedUnapplyPattern(
 // when the binding's type has no Unapply.
 func (t *galaASTTransformer) tryBindingExtractorPattern(
 	b binding,
-	argList *grammar.ArgumentListContext,
+	args patArgs,
 	objExpr ast.Expr,
 	matchedType transpiler.Type,
-	patExprCtx grammar.IExpressionContext,
+	pat patExpr,
 ) (ast.Expr, []ast.Stmt, bool, error) {
 	if b.typ == nil || b.typ.IsNil() {
 		return nil, nil, false, nil
@@ -2211,17 +2146,17 @@ func (t *galaASTTransformer) tryBindingExtractorPattern(
 		return nil, nil, false, nil
 	}
 	if returnType := unapplyMeta.ReturnType; !t.isDirectUnapplyReturnType(returnType) {
-		return nil, nil, true, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+		return nil, nil, true, galaerr.NewSemanticErrorAt(pat.line(), pat.col(),
 			fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
 				b, varTypeName, returnType.String()))
 	}
-	if i := firstNamedArg(argList); i >= 0 {
-		return nil, nil, true, noFieldNamesError(argList, i, b.String(), "it is an extractor whose result has no field names")
+	if i := firstNamedPatArg(args); i >= 0 {
+		return nil, nil, true, noFieldNamesError(args, i, b.String(), "it is an extractor whose result has no field names")
 	}
 	subst := func(typ transpiler.Type) transpiler.Type { return t.substituteBindingTypeParams(typ, b, varMeta) }
-	expr, stmts, err := t.assertedUnapplyPattern(objExpr, t.unapplyAssertType(unapplyMeta, subst), b.String(), matchedType, patExprCtx,
+	expr, stmts, err := t.assertedUnapplyPattern(objExpr, t.unapplyAssertType(unapplyMeta, subst), b.String(), matchedType, pat,
 		func(obj ast.Expr, matched transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-			return t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, obj, argList, matched)
+			return t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, obj, args, matched)
 		})
 	return expr, stmts, true, err
 }
@@ -2260,7 +2195,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	varTypeMeta *transpiler.TypeMetadata,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
-	argList *grammar.ArgumentListContext,
+	args patArgs,
 	matchedType transpiler.Type,
 ) (ast.Expr, []ast.Stmt, error) {
 
@@ -2315,8 +2250,8 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	}
 
 	// Handle the pattern arguments
-	if argList != nil && len(argList.AllArgument()) > 0 && !isBoolReturn {
-		numArgs := len(argList.AllArgument())
+	if len(args.list) > 0 && !isBoolReturn {
+		numArgs := len(args.list)
 
 		// Check if the inner type is a Tuple that needs expansion
 		isTupleResult := false
@@ -2340,12 +2275,12 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 		allBindings = blankAssignTempVar(allBindings, innerName)
 		var hoisted, guardedStmts []ast.Stmt
 
-		for i, argCtx := range argList.AllArgument() {
-			arg := argCtx.(*grammar.ArgumentContext)
-			if arg.Pattern() == nil {
+		for i, arg := range args.list {
+			argPat := arg.pattern()
+			if !argPat.ok() {
 				continue
 			}
-			patternText := arg.Pattern().GetText()
+			patternText := argPat.text()
 
 			if isWildcard(patternText) {
 				continue
@@ -2389,7 +2324,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 			} else {
 				// As in generateDirectUnapplyPattern: run the sub-pattern
 				// inside the guard, declare its bindings before it.
-				subCond, subBindings, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)
+				subCond, subBindings, err := t.transformPatternWithType(argPat, elemExpr, elemType)
 				if err != nil {
 					return nil, nil, err
 				}

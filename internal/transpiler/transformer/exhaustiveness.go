@@ -3,7 +3,6 @@ package transformer
 import (
 	"go/types"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -16,11 +15,20 @@ import (
 
 // covCell is one pattern of a row. nil matches every value; covRefutable
 // matches some values and names no constructor.
-type covCell = grammar.IExpressionContext
+type covCell = *patExpr
+
+// patCell is e as a cell: nil, which matches every value, when there is no
+// expression (parse-error recovery).
+func patCell(e patExpr) covCell {
+	if !e.ok() {
+		return nil
+	}
+	return &e
+}
 
 // covRefutable stands for a pattern that is neither a wildcard nor a
 // constructor, such as a typed pattern of a narrower type.
-var covRefutable covCell = grammar.NewEmptyExpressionContext()
+var covRefutable covCell = &patExpr{}
 
 // covCtor is one constructor of an enumerable type and its field types.
 type covCtor struct {
@@ -45,7 +53,7 @@ type coverage struct {
 // `Rect` when no case matches it at all, `Some(...)` when cases match only
 // some of its values. guardedMissing reports whether a guarded case names one
 // of the missing constructors.
-func (t *galaASTTransformer) coverageOf(matchedType transpiler.Type, clauses []*grammar.CaseClauseContext) (enumerable, exhaustive bool, missing []string, guardedMissing bool) {
+func (t *galaASTTransformer) coverageOf(matchedType transpiler.Type, clauses []caseSrc) (enumerable, exhaustive bool, missing []string, guardedMissing bool) {
 	c := &coverage{t: t, ctors: map[string][]covCtor{}, views: map[string]transpiler.Type{}}
 	ctors, ok := c.constructors(matchedType, false)
 	if !ok {
@@ -53,15 +61,16 @@ func (t *galaASTTransformer) coverageOf(matchedType transpiler.Type, clauses []*
 	}
 	var rows, guarded [][]covCell
 	for _, cc := range clauses {
-		pat, ok := cc.Pattern().(*grammar.ExpressionPatternContext)
-		if !ok {
+		pat := cc.pattern()
+		if pat.kind() != patKindExpr {
 			// A typed pattern at the top of a case covers no constructor.
 			continue
 		}
-		if cc.GetGuard() != nil {
-			guarded = append(guarded, []covCell{pat.Expression()})
+		cell := patCell(pat.expr())
+		if cc.hasGuard() {
+			guarded = append(guarded, []covCell{cell})
 		} else {
-			rows = append(rows, []covCell{pat.Expression()})
+			rows = append(rows, []covCell{cell})
 		}
 	}
 	rows = c.expandAlternatives(rows)
@@ -145,7 +154,7 @@ func (c *coverage) columnView(rows [][]covCell, typ transpiler.Type) transpiler.
 	for _, row := range rows {
 		switch cell := row[0]; {
 		case cell == covRefutable || c.isWildcard(cell, typ):
-		case c.t.namesViewVariant(cell, typ, view):
+		case c.t.namesViewVariant(*cell, typ, view):
 			readsView = true
 		default:
 			return nil
@@ -176,8 +185,8 @@ func (c *coverage) expandAlternatives(rows [][]covCell) [][]covCell {
 			out = append(out, row)
 			continue
 		}
-		for _, alt := range c.t.flatAlternatives(row[0]) {
-			out = append(out, append([]covCell{alt}, row[1:]...))
+		for _, alt := range c.t.flatAlternatives(*row[0]) {
+			out = append(out, append([]covCell{&alt}, row[1:]...))
 		}
 	}
 	return out
@@ -293,16 +302,16 @@ func (c *coverage) isWildcard(cell covCell, typ transpiler.Type) bool {
 	case cell == covRefutable:
 		return false
 	}
-	if inner := c.t.parenthesizedPattern(cell); inner != nil {
-		return c.isWildcard(inner, typ)
+	if inner, ok := c.t.parenthesizedPattern(*cell); ok {
+		return c.isWildcard(&inner, typ)
 	}
-	if isWildcard(cell.GetText()) {
+	if isWildcard(cell.text()) {
 		return true
 	}
 	// A bare name binds unless it tests the value (a variant, a zero-field
 	// extractor, a stable identifier), as transformSimpleBindingOrLiteral
 	// lowers it; its capitalization plays no part.
-	switch name := patternIdentifier(cell); name {
+	switch name := cell.identifier(); name {
 	case "", "true", "false", "nil", "iota":
 		return false
 	default:
@@ -320,7 +329,7 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 	}
 	typ = c.t.followAliasChain(typ)
 	if bt, ok := typ.(transpiler.BasicType); ok && bt.Name == "bool" {
-		if text := cell.GetText(); text == "true" || text == "false" {
+		if text := cell.text(); text == "true" || text == "false" {
 			return text, nil
 		}
 		return "", nil
@@ -330,22 +339,26 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 		return "", nil
 	}
 	if ctors[0].name == tupleCtorName {
-		list := c.t.parenthesizedList(cell)
-		if list == nil || len(list.AllExpression()) != len(ctors[0].fields) {
+		elems, _, ok := cell.parenthesized(c.t)
+		if !ok || len(elems) != len(ctors[0].fields) {
 			return "", nil
 		}
-		return tupleCtorName, list.AllExpression()
+		cells := make([]covCell, len(elems))
+		for i := range elems {
+			cells[i] = &elems[i]
+		}
+		return tupleCtorName, cells
 	}
-	if inner := c.t.parenthesizedPattern(cell); inner != nil {
-		return c.constructorOf(inner, typ)
+	if inner, ok := c.t.parenthesizedPattern(*cell); ok {
+		return c.constructorOf(&inner, typ)
 	}
 	// `case None` is `case None()`, and `case shapes.Square` is
 	// `case shapes.Square()`.
 	// A qualified case names a constructor of typ only when it is of typ's
 	// package.
-	bare, qualified := patternIdentifier(cell), false
+	bare, qualified := cell.identifier(), false
 	if bare == "" {
-		if pkg, name := splitPackageQualifier(c.t.qualifiedZeroFieldCase(cell)); name != "" {
+		if pkg, name := splitPackageQualifier(c.t.qualifiedZeroFieldCase(*cell)); name != "" {
 			if meta := c.t.getTypeMeta(typ.BaseName()); meta == nil || meta.Package != pkg {
 				return "", nil
 			}
@@ -360,18 +373,18 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 		}
 		return "", nil
 	}
-	name, argList, isCall := c.t.patternCallShape(cell)
+	name, args, isCall := cell.callShape()
 	if !isCall {
 		return "", nil
 	}
 	for _, ctor := range ctors {
 		if ctor.name == name {
-			argList, err := c.t.normalizePatternArgs(name, argList, typ)
+			args, err := c.t.normalizePatternArgs(name, args, typ)
 			if err != nil {
 				// Lowering reports the malformed sub-patterns.
 				return "", nil
 			}
-			return name, c.fieldPatterns(argList, ctor)
+			return name, c.fieldPatterns(args, ctor)
 		}
 	}
 	return "", nil
@@ -379,21 +392,18 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 
 // fieldPatterns returns the patterns a variant pattern gives its fields, by
 // position once named sub-patterns are normalized.
-func (c *coverage) fieldPatterns(argList *grammar.ArgumentListContext, ctor covCtor) []covCell {
+func (c *coverage) fieldPatterns(args patArgs, ctor covCtor) []covCell {
 	fields := make([]covCell, len(ctor.fields))
-	if argList == nil {
-		return fields
-	}
-	for i, a := range argList.AllArgument() {
+	for i, a := range args.list {
 		if i >= len(fields) {
 			break
 		}
-		switch pat := a.(*grammar.ArgumentContext).Pattern().(type) {
-		case nil:
+		switch pat := a.pattern(); pat.kind() {
+		case patKindNone:
 			// A field left out of named sub-patterns matches anything.
-		case *grammar.ExpressionPatternContext:
-			fields[i] = pat.Expression()
-		case *grammar.TypedPatternContext:
+		case patKindExpr:
+			fields[i] = patCell(pat.expr())
+		case patKindTyped:
 			// `x: T` of the field's own type matches every value of it.
 			if !c.typedPatternOfType(pat, ctor.fields[i]) {
 				fields[i] = covRefutable
@@ -406,11 +416,11 @@ func (c *coverage) fieldPatterns(argList *grammar.ArgumentListContext, ctor covC
 }
 
 // typedPatternOfType reports whether the typed pattern names exactly typ.
-func (c *coverage) typedPatternOfType(pat *grammar.TypedPatternContext, typ transpiler.Type) bool {
+func (c *coverage) typedPatternOfType(pat patSrc, typ transpiler.Type) bool {
 	if transpiler.IsUnusable(typ) {
 		return false
 	}
-	written, err := c.t.transformType(pat.Type_())
+	written, err := c.t.lowerType(pat.typedType())
 	if err != nil {
 		return false
 	}
