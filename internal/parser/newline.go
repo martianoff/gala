@@ -7,13 +7,13 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
-	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/parser/grammar"
 )
 
 // lineBreakRule is GALA's line-break rule, applied to a token stream one
-// default-channel token at a time (see next): a '(' separated by a line break from a token that can end an expression is
-// re-typed as NL_LPAREN, and so is a '*' or '&' written directly against its
-// operand, as NL_STAR or NL_AMP.
+// default-channel token at a time (see next): a '(' separated by a line break
+// from a token that can end an expression is re-typed as NL_LPAREN, and so is
+// a '*' or '&' written directly against its operand, as NL_STAR or NL_AMP.
 //
 // The lexer skips whitespace, so without this the parser cannot tell
 //
@@ -186,13 +186,13 @@ func is(set []bool, ttype int) bool { return at(set, ttype) }
 // that never parses does not pay for it.
 var kinds = sync.OnceValue(func() *tokenKinds {
 	// The parser's vocabulary, not the lexer's: no lexer rule produces the
-	// re-typed tokens, so only the parser knows their types. galop's native
-	// vocabulary numbers the tokens as ANTLR's parser does (a test holds them
-	// equal), and reading it leaves ANTLR's static data uninitialized for a
-	// native-only parse.
-	symbolic, literal := native.GalaSymbolicNames, native.GalaLiteralNames
+	// re-typed tokens, so only the parser knows their types. RetypeNewlines
+	// uses the same types for galop's native tokens, which number the tokens
+	// as ANTLR's parser does (TestNativeVocabularyIsANTLRs).
+	grammar.GalaParserInit()
+	vocab := &grammar.GalaParserStaticData
 	byName := map[string]int{}
-	for _, names := range [][]string{symbolic, literal} {
+	for _, names := range [][]string{vocab.SymbolicNames, vocab.LiteralNames} {
 		for ttype, name := range names {
 			if name != "" {
 				byName[name] = ttype
@@ -206,7 +206,7 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 		}
 		return ttype
 	}
-	n := len(symbolic)
+	n := len(vocab.SymbolicNames)
 	k := &tokenKinds{
 		identifier:    mustType("IDENTIFIER"),
 		lparen:        mustType("'('"),

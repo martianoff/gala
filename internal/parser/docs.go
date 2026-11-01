@@ -79,7 +79,7 @@ func extractDocComments(toks []antlr.Token) Docs {
 			run.comment(tk.GetLine(), prevCodeEndLine, tk.GetText)
 			continue
 		}
-		run.code(DocKeyOf(tk))
+		run.code(tk.GetLine(), tk.GetColumn)
 		prevCode = tk
 		prevCodeEndLine = -1
 	}
@@ -106,7 +106,7 @@ func nativeDocComments(ts *native.GalaTokens) Docs {
 			comment := hidden[0].GalaToken
 			run.comment(int(comment.Line), prevCodeEndLine, func() string { return comment.Text(ts.Src) })
 		}
-		run.code(DocKey{Line: int(tk.Line), Column: int(tk.Column)})
+		run.code(int(tk.Line), func() int { return int(tk.Column) })
 	}
 	return run.docs
 }
@@ -142,14 +142,15 @@ func (r *docRun) comment(startLine, prevCodeEndLine int, text func() string) {
 	r.blockEndLine = startLine + strings.Count(raw, "\n")
 }
 
-// code ends the pending run at a default-channel token that starts at key:
-// the run documents it when it ends on the line just above.
-func (r *docRun) code(key DocKey) {
-	if len(r.block) > 0 && key.Line == r.blockEndLine+1 {
+// code ends the pending run at a default-channel token that starts on line:
+// the run documents it when it ends on the line just above. column, the
+// token's column, is read only for a token the run documents.
+func (r *docRun) code(line int, column func() int) {
+	if len(r.block) > 0 && line == r.blockEndLine+1 {
 		if r.docs == nil {
 			r.docs = make(Docs)
 		}
-		r.docs[key] = strings.Join(r.block, "\n")
+		r.docs[DocKey{Line: line, Column: column()}] = strings.Join(r.block, "\n")
 	}
 	r.block = r.block[:0]
 	r.blockEndLine = -1

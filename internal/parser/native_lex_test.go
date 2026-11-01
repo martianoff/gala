@@ -115,7 +115,7 @@ func corpusInputs(t *testing.T) []string {
 	t.Helper()
 	corpus.once.Do(func() { corpus.inputs = buildCorpusInputs(t) })
 	if corpus.inputs == nil {
-		t.Fatal("the corpus inputs could not be built")
+		t.Fatal("building the corpus inputs failed in the test that first asked for them; run this test alone to see why")
 	}
 	return corpus.inputs
 }
@@ -542,6 +542,7 @@ func TestConverterOnRecoveredTrees(t *testing.T) {
 			tree, _, _ = grammar.GalaToNativeContexts(root, res.stream, input)
 		}()
 		if tree == nil {
+			t.Errorf("input %d (%.60q): the converter gave no tree", k, input)
 			continue
 		}
 		if w, g := treeText(res.tree), tree.Root().ToStringTree(); w != g {

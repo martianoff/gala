@@ -67,18 +67,12 @@ var ErrNativeExpression = errors.New("parser: galop's native parser does not set
 // ParseExpressionAt), with galop's native lexer and parser. Every token of the
 // tree carries its position in that file. On any error it returns an error
 // wrapping ErrNativeExpression.
-func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionNode, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic(src, r)
-			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: panic: %v", ErrNativeExpression, r)
-		}
-	}()
+func ParseExpressionNativeAt(src string, line, col int) (native.ExpressionNode, error) {
 	ts := lexNative(src, line, col)
 	if len(ts.Errors) > 0 {
 		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, &ts.Errors[0])
 	}
-	expr, err = native.ParseExpression(ts)
+	expr, err := parseNativeExpression(ts)
 	if err != nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, err)
 	}
@@ -87,6 +81,19 @@ func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionN
 			next.Text(ts.Src), next.Line, next.Column)
 	}
 	return expr, nil
+}
+
+// parseNativeExpression is native.ParseExpression with a panic in galop's
+// parser recovered (see noteGalopPanic): the caller of ParseExpressionNativeAt
+// then parses the input with ANTLR's parser, as for a syntax error.
+func parseNativeExpression(ts *native.GalaTokens) (expr native.ExpressionNode, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic(ts.Src, r)
+			expr, err = native.ExpressionNode{}, fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return native.ParseExpression(ts)
 }
 
 // checkEmptyLinesNative is checkEmptyLines on the native tree: the blank line
