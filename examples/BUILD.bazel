@@ -4786,3 +4786,11 @@ gala_exec_test(
         ":sealed_foreign_field_lib",
     ],
 )
+
+# An if-expression with a trailing match in a typed val, a call argument,
+# statement position and a nested tail-recursive if: the match is kept.
+gala_exec_test(
+    name = "if_expr_trailing_match",
+    src = "if_expr_trailing_match.gala",
+    expected = "if_expr_trailing_match.out",
+)
