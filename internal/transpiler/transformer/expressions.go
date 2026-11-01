@@ -881,7 +881,7 @@ func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (lowered
 	var preceding []ast.Stmt
 	for _, st := range stmts[:end] {
 		t.noteNativeStmt(st)
-		lowered, err := t.lowerDiscardedStatement(st, t.onNative(st.valueExpr()))
+		lowered, err := t.lowerDiscardedStatement(st)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}

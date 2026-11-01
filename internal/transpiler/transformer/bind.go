@@ -562,7 +562,7 @@ func (t *galaASTTransformer) buildBindBody(stmts []stmtSrc, res *bindResult) (*a
 			body.List = append(body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			return body, nil
 		}
-		lowered, err := t.lowerDiscardedStatement(src, t.onNative(src.valueExpr()))
+		lowered, err := t.lowerDiscardedStatement(src)
 		if err != nil {
 			return nil, err
 		}

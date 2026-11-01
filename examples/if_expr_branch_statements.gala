@@ -33,17 +33,14 @@ func note(k int) int {
 
 // A match used as a statement after a `bind`: one arm's value is discarded,
 // the other arm has none.
-func bound(n int) int {
-    val o = Some(n).FlatMap((m) => {
-        bind x = Some(m)
-        x match {
-            case 1 => note(x)
-            case _ => Println("bound other")
-        }
-        Some(x * 2)
-    })
-    o.GetOrElse(0)
-}
+func bound(n int) int = Some(n).FlatMap((m) => {
+    bind x = Some(m)
+    x match {
+        case 1 => note(x)
+        case _ => Println("bound other")
+    }
+    Some(x * 2)
+}).GetOrElse(0)
 
 func main() {
     Println(pick(true, 1))

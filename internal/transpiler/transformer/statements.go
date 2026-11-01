@@ -548,10 +548,8 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		// expression is consumed (transformValueBlock) — function bodies
 		// with a return type, lambda bodies, and match arm bodies all do,
 		// since their trailing expression becomes the block's value.
-		isTrailing := i == lastIdx
-		value := t.onNative(st.valueExpr())
-		if !isTrailing || !lastStmtIsValue {
-			stmts, err := t.lowerDiscardedStatement(st, value)
+		if i != lastIdx || !lastStmtIsValue {
+			stmts, err := t.lowerDiscardedStatement(st)
 			if err != nil {
 				return nil, err
 			}
@@ -559,6 +557,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			continue
 		}
 		// The trailing statement of a value-carrying block.
+		value := t.onNative(st.valueExpr())
 		var stmt ast.Stmt
 		// pre: statements a local declaration needs before it (see
 		// lowerStatement).
@@ -652,19 +651,21 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 
 // lowerDiscardedStatement lowers st, a block statement whose value nothing
 // reads — every statement of a block but the trailing one of a value-carrying
-// block — to the statements it emits, in order. value is st's expression, if
-// st is one. Loop control is a statement, an if-expression an if statement
-// (lowerIfExpressionStatement), and a plain value is evaluated but not used.
+// block — to the statements it emits, in order. Loop control is a statement,
+// an if-expression an if statement (lowerIfExpressionStatement), and a plain
+// value is evaluated but not used.
 //
 // A bare `subject match { ... }` there is a statement-position match, lowered
 // as a void IIFE; otherwise arms calling void Go functions (e.g. `d.Skip()`)
 // get wrapped in `return d.Skip()` because at least one other arm produced a
 // typed value, and Go rejects "return d.Skip()" as "no value used as value".
-func (t *galaASTTransformer) lowerDiscardedStatement(st stmtSrc, value exprSrc) ([]ast.Stmt, error) {
+func (t *galaASTTransformer) lowerDiscardedStatement(st stmtSrc) ([]ast.Stmt, error) {
+	value := t.onNative(st.valueExpr())
 	prev := t.matchInStatementPos
-	if t.bareMatch(value).ok() {
-		t.matchInStatementPos = true
-	}
+	// The flag is set for this statement only: one an enclosing match left
+	// on, while its subject is lowered, does not make this statement's value
+	// discarded too.
+	t.matchInStatementPos = t.bareMatch(value).ok()
 	var stmt ast.Stmt
 	var pre []ast.Stmt
 	var err error
@@ -680,7 +681,7 @@ func (t *galaASTTransformer) lowerDiscardedStatement(st stmtSrc, value exprSrc) 
 		return nil, err
 	}
 	if inlined := t.takePendingMatchBlock(); inlined != nil {
-		return []ast.Stmt{inlined}, nil
+		return append(pre, inlined), nil
 	}
 	if value.ok() {
 		if err := t.checkValueUsedHint(value, stmt, functionDiscardHint); err != nil {

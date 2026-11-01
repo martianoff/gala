@@ -18,7 +18,7 @@ func TestBlockStatementsBeforeTheValue(t *testing.T) {
 			"return 7"},
 		{"discarded if-expression in an if-expression branch",
 			"val v = if (c) {\n        if (n > 1) Println(\"big\") else Println(\"small\")\n        n * 10\n    } else 0\n    v",
-			`"small"`},
+			"if n > 1 {"},
 		{"match with a value arm and a void arm in a bind continuation",
 			"val o = Some(n).FlatMap((m) => {\n        bind x = Some(m)\n        x match {\n            case 1 => note(x)\n            case _ => Println(\"other\")\n        }\n        Some(x)\n    })\n    o.GetOrElse(0)",
 			"note(x)"},
