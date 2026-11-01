@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"slices"
 
@@ -94,13 +93,13 @@ func (p patSrc) kind() patKind {
 	return patKindNone
 }
 
-// internalType names what p is in the parse tree, for the diagnostic of a
-// pattern the lowering does not know (patKindUnknown).
-func (p patSrc) internalType() string {
+// ruleName is the grammar rule p is a node of, the same on either tree, for
+// the diagnostic of a pattern the lowering does not know (patKindUnknown).
+func (p patSrc) ruleName() string {
 	if p.node.Ok() {
-		return fmt.Sprintf("native node kind %d", p.node.Kind())
+		return native.GalaRuleNames[p.node.Rule()]
 	}
-	return fmt.Sprintf("%T", p.ctx)
+	return grammar.GalaParserStaticData.RuleNames[p.ctx.GetRuleIndex()]
 }
 
 // text is GetText of p.
@@ -697,6 +696,13 @@ func (s suffixSrc) args() argsSrc {
 		return argsSrc{}
 	}
 	return antlrArgs(list)
+}
+
+// lowerTypeArg lowers e, a pattern's explicit type argument, as an expression
+// on its tree.
+func (t *galaASTTransformer) lowerTypeArg(e exprSrc) (ast.Expr, error) {
+	t.nativeShape(e.node, "type-arg")
+	return t.lowerExpr(e)
 }
 
 // typeArgs is the expressions of s, a type-argument suffix, in order; nil

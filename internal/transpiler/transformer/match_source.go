@@ -41,12 +41,20 @@ func (t *galaASTTransformer) nativeCases(n native.GalaNodeRef) []caseSrc {
 	return out
 }
 
-// casesOf is the case clauses of p, a match, on its tree.
-func (t *galaASTTransformer) casesOf(p postfixSrc) []caseSrc {
-	if p.node.Ok() {
-		return t.nativeCases(p.node)
+// caseHolder is a context with case clauses: a match's postfix expression
+// or a partial function.
+type caseHolder interface {
+	AllCaseClause() []grammar.ICaseClauseContext
+}
+
+// casesOf is the case clauses of a match or a partial function, on its tree:
+// those of n on the native tree, each reported to the onNativeCase hook
+// (nativeCases), and those of ctx otherwise.
+func (t *galaASTTransformer) casesOf(n native.GalaNodeRef, ctx caseHolder) []caseSrc {
+	if n.Ok() {
+		return t.nativeCases(n)
 	}
-	return antlrCases(p.ctx.AllCaseClause())
+	return antlrCases(ctx.AllCaseClause())
 }
 
 // at is where c is written.

@@ -206,12 +206,9 @@ func (f partialSrc) at() srcNode {
 	return srcNode{ctx: f.ctx}
 }
 
-// cases is f's case clauses, in order, read as a match's are (matchCases).
+// cases is f's case clauses, in order, read as a match's are (casesOf).
 func (f partialSrc) cases(t *galaASTTransformer) []caseSrc {
-	if f.node.Ok() {
-		return t.nativeCases(f.node)
-	}
-	return antlrCases(f.ctx.AllCaseClause())
+	return t.casesOf(f.node, f.ctx)
 }
 
 // partialIn is the partial function e's sole operand starts from, whatever
@@ -408,6 +405,17 @@ func (t *galaASTTransformer) escapesAt(n srcNode) bool {
 }
 
 // matchEscapes reports whether a case clause of p, a match, escapesConstruct.
+// It is a scan ahead of the lowering, so it reads the clauses without
+// reporting them to the onNativeCase hook (nativeCases) and stops at the
+// first that escapes.
 func (t *galaASTTransformer) matchEscapes(p postfixSrc) bool {
-	return t.casesEscape(t.casesOf(p))
+	if !p.node.Ok() {
+		return escapesConstruct(t, p.ctx.AllCaseClause()...)
+	}
+	for c := range galaparser.NativeKids(p.node, native.GalaKIND_caseClause) {
+		if t.escapesAt(srcNode{node: c}) {
+			return true
+		}
+	}
+	return false
 }

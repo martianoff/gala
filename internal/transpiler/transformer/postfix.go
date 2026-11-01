@@ -513,9 +513,8 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 	if !p.hasPrimaryExpr() {
 		return nil, semanticErrorAtStart(p.at(), "match expression must have subject")
 	}
-	if p.owner == nil {
-		p.owner = p.hintKey(t)
-	}
+	// No hint is pushed for a match, so its subject's suffixes take none.
+	p.owner = nil
 	subject, err := t.lowerPrimaryOf(p)
 	if err != nil {
 		return nil, err
@@ -527,7 +526,7 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 		}
 	}
 	t.nativeShape(p.node, "match")
-	return t.buildMatchExpressionFromClauses(subject, "obj", t.casesOf(p), p.at(), s)
+	return t.buildMatchExpressionFromClauses(subject, "obj", t.casesOf(p.node, p.ctx), p.at(), s)
 }
 
 // lowerPrimaryOf lowers the primary expression of p, on its tree.

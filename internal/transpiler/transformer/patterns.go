@@ -45,7 +45,7 @@ func (t *galaASTTransformer) transformPatternWithType(pat patSrc, objExpr ast.Ex
 		return nil, nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeUnknownPatternType,
 			line, col,
-			fmt.Sprintf("unrecognized pattern syntax (internal type %s)", pat.internalType()),
+			fmt.Sprintf("unrecognized pattern syntax (grammar rule %s)", pat.ruleName()),
 			"this usually means a new grammar rule is missing transformer support; please report at github.com/martianoff/gala/issues",
 		)
 	}
@@ -221,7 +221,6 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are
 	// always types, so a sealed variant among them is GALA-E0061.
 	for _, arg := range explicitTypeArgs {
-		t.nativeShape(arg.node, "type-arg")
 		if text := arg.text(); t.mayNameVariantTypeText(text) {
 			line, col := arg.at().start()
 			if err := t.variantTypeArgErrorAt(text, line, col); err != nil {
@@ -242,7 +241,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 				if len(explicitTypeArgs) > 0 {
 					// Use explicit type arguments instead of inferring
 					for _, typeExpr := range explicitTypeArgs {
-						typeAst, err := t.lowerExpr(typeExpr)
+						typeAst, err := t.lowerTypeArg(typeExpr)
 						if err != nil {
 							return nil, nil, err
 						}
@@ -1176,7 +1175,7 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 	goArgs := make([]ast.Expr, len(explicitTypeArgs))
 	typeArgs := make([]transpiler.Type, len(explicitTypeArgs))
 	for i, e := range explicitTypeArgs {
-		typeAst, err := t.lowerExpr(e)
+		typeAst, err := t.lowerTypeArg(e)
 		if err != nil {
 			return nil, nil, err
 		}
