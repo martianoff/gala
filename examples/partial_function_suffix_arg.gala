@@ -9,6 +9,10 @@ func show(o Option[int]) string = o match {
 // describe takes any value, so it must see the applied result.
 func describe[T any](v T) string = s"$v"
 
+// applyTo takes a function, which `{ case ... }(_)` fills as a placeholder
+// lambda that applies the partial function to its argument.
+func applyTo(f func(int) Option[int], v int) Option[int] = f(v)
+
 func main() {
     // Applying a partial function in an argument passes its Option result.
     Println(show({ case n: int if n > 0 => n * 2 }(3)))
@@ -16,4 +20,15 @@ func main() {
     Println(describe({ case n: int => n + 1 }(4)))
     // A member on the result is applied too.
     Println({ case n: int => n * 10 }(2).GetOrElse(0))
+    // A placeholder in the suffix makes the argument a lambda.
+    Println(applyTo({ case n: int => n * 3 }(_), 7))
+
+    // Untyped patterns take their parameter type from the applied argument.
+    val five = 5
+    Println(show({ case n if n > 0 => n * 2 }(five)))
+    Println(describe({ case n => n + 1 }(4)))
+    Println(applyTo({ case n if n > 0 => n * 3 }(_), 7))
+    Println(show(Some(1).FlatMap({ case n => n * 3 }(_))))
+    val applied = { case n => n - 1 }(10)
+    Println(applied)
 }

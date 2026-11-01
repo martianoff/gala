@@ -129,12 +129,29 @@ func TestPartialFunctionWithSuffixArgument(t *testing.T) {
 			body: "func main() {\n    Println({ case n: int => n * 10 }(2).GetOrElse(0))\n}",
 			want: "}(2).GetOrElse(0)",
 		},
+		{
+			name: "untyped pattern takes the argument's type",
+			body: "func main() {\n    Println(show({ case n if n > 0 => n * 2 }(3)))\n}",
+			want: "}(3))",
+		},
+		{
+			name: "untyped pattern applied to a placeholder",
+			body: "func main() {\n    Println(show(Some(1).FlatMap({ case n => n * 3 }(_))))\n}",
+			want: "func(_pf_arg int) std.Option[int] {",
+		},
+		{
+			name: "untyped pattern applied in a val",
+			body: "func main() {\n    val r = { case n => n - 1 }(10)\n    Println(r)\n}",
+			want: "}(10)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(decls+tt.body+"\n", "")
 			require.NoError(t, err)
 			assert.Contains(t, got, tt.want)
+			assert.Contains(t, got, "func(_pf_arg int) std.Option[int] {")
+			assert.NotContains(t, got, "_pf_arg any")
 		})
 	}
 }

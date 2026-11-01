@@ -2041,15 +2041,15 @@ func (t *galaASTTransformer) lowerFunctionArg(
 
 // isPlaceholderLambdaArg reports whether e, filling a slot of type
 // slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
-// see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
-// transformArgument, a lambda or partial function in it takes precedence. Its
+// see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Its
 // `_` are counted as tryRewriteAsPlaceholderLambda counts them, nested call
 // arguments included (`double(_)`): one a nested call's own function-typed slot
 // takes (`compose(_ + 1, show)`) lowers there, and the slot's type arguments
-// then bind from the value it produces.
+// then bind from the value it produces. A bare lambda or partial function,
+// which transformArgument lowers first, has none: the count skips lambdas and
+// case clauses.
 func (t *galaASTTransformer) isPlaceholderLambdaArg(e exprSrc, slotType transpiler.Type) bool {
-	return e.ok() && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholders(e) > 0 &&
-		!t.barePartial(e).ok() && !t.lambdaIn(e).ok()
+	return e.ok() && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholders(e) > 0
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named

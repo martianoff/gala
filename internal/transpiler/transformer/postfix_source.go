@@ -8,6 +8,7 @@ import (
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/transpiler"
 )
 
 // The postfix chain on galop's native tree: a primary expression followed by
@@ -146,11 +147,18 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 	// applied to.
 	release := t.expectedArgTypes.withhold(p.owner)
 	defer release()
-	result, err := t.lowerPrimaryOf(p)
+	result, applied, err := t.lowerAppliedPartial(p, suffixes[0])
 	if err != nil {
 		return nil, err
 	}
-	for i, s := range suffixes {
+	first := 0
+	if applied {
+		first = 1
+	} else if result, err = t.lowerPrimaryOf(p); err != nil {
+		return nil, err
+	}
+	for i := first; i < len(suffixes); i++ {
+		s := suffixes[i]
 		if i == len(suffixes)-1 {
 			release()
 		}
@@ -163,6 +171,42 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 		t.recordVoidCall(callSrc{post: p, suffix: last}, result)
 	}
 	return result, nil
+}
+
+// lowerAppliedPartial lowers p's partial-function primary applied to its
+// first suffix, call, when that is a call with one positional argument and
+// the patterns name no parameter type (`{ case n => n * 2 }(3)`): the
+// argument's type, when known, is the literal's parameter type, as a slot's
+// would be. It reports false, lowering nothing, for any other p.
+func (t *galaASTTransformer) lowerAppliedPartial(p postfixSrc, call suffixSrc) (ast.Expr, bool, error) {
+	pf := p.primaryPartial(t)
+	if !pf.ok() || call.ident() != "" || call.childCount() < 2 || call.opener() != "(" {
+		return nil, false, nil
+	}
+	args := call.args().list
+	if len(args) != 1 || args[0].named() {
+		return nil, false, nil
+	}
+	v, err := t.argContent(args[0])
+	if err != nil || !v.expr.ok() || v.spread {
+		return nil, false, nil
+	}
+	if !transpiler.IsUnusable(t.inferPartialFunctionParamType(pf.cases(t))) {
+		return nil, false, nil
+	}
+	arg, err := t.lowerExpr(v.expr)
+	if err != nil {
+		return nil, false, err
+	}
+	var s slot
+	if argType := t.getExprTypeName(arg); !transpiler.IsUnusableOrAny(argType) {
+		s.typ = transpiler.FuncType{Params: []transpiler.Type{argType}}
+	}
+	lit, err := t.transformPartialFunctionLiteral(pf, s)
+	if err != nil {
+		return nil, false, err
+	}
+	return &ast.CallExpr{Fun: lit, Args: []ast.Expr{arg}}, true, nil
 }
 
 // lowerSuffix applies s, a suffix of p, to base: a member access, an index
