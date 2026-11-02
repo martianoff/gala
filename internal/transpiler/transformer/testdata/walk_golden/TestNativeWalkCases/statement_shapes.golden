@@ -62,6 +62,7 @@ func both(x int, y int) std.Option[int] {
 //line $DIR/main.gala:22
 	return std.Option_FlatMap[int, int](look(x), func(a int) std.Option[int] {
 		return std.Option_FlatMap[int, int](look(y), func(b int) std.Option[int] {
+//line $DIR/main.gala:24
 			return std.Some[int]{}.Apply(a + b + base)
 		})
 	})

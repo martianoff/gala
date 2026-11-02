@@ -515,47 +515,34 @@ func (t *galaASTTransformer) typeHasMethod(lookupBaseName, method string) bool {
 }
 
 // buildBindBody builds the body block of a bind continuation lambda from the
-// statements following a `bind`. Regular statements are lowered as in any
-// block (appendDiscardedStatement); a nested `bind` recurses; the trailing
+// statements following a `bind`. The statements before its end are lowered
+// as any block's (walkBlock); a nested `bind` recurses; the trailing
 // statement becomes `return <value>`, or, when it is an if/else chain,
 // returns its value from each branch.
 func (t *galaASTTransformer) buildBindBody(stmts []stmtSrc, res *bindResult) (*ast.BlockStmt, error) {
-	body := &ast.BlockStmt{}
-	for i, src := range stmts {
-		t.noteNativeStmt(src)
-		if src.kind == stmtAlso {
-			return nil, t.semanticErrorAtNode(src.at, "`also` must directly follow a `bind` or `also`")
+	return walkBlock(t, stmts, func(e blockEnd) (*ast.BlockStmt, error) {
+		if len(e.rest) == 0 {
+			return &ast.BlockStmt{}, nil
 		}
-		if src.kind == stmtBind {
-			expr, err := t.desugarBindChain(stmts[i:], res)
+		if ifS := e.rest[0].ifStmt(); ifS.ok() {
+			stmt, err := t.lowerBindTailIf(ifS, res)
 			if err != nil {
 				return nil, err
 			}
-			body.List = append(body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
-			return body, nil
+			return &ast.BlockStmt{List: append(e.marked(), stmt)}, nil
 		}
-		if i == len(stmts)-1 {
-			if ifS := src.ifStmt(); ifS.ok() {
-				stmt, err := t.lowerBindTailIf(ifS, res)
-				if err != nil {
-					return nil, err
-				}
-				body.List = append(body.List, stmt)
-				return body, nil
-			}
-			expr, err := t.transformTrailingBindValue(src, res)
-			if err != nil {
-				return nil, err
-			}
-			body.List = append(body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
-			return body, nil
-		}
+		var expr ast.Expr
 		var err error
-		if body.List, err = t.appendDiscardedStatement(body.List, src); err != nil {
+		if e.bind() {
+			expr, err = t.desugarBindChain(e.rest, res)
+		} else {
+			expr, err = t.transformTrailingBindValue(e.rest[0], res)
+		}
+		if err != nil {
 			return nil, err
 		}
-	}
-	return body, nil
+		return &ast.BlockStmt{List: append(e.marked(), &ast.ReturnStmt{Results: []ast.Expr{expr}})}, nil
+	})
 }
 
 // lowerBindTailIf lowers the if/else chain at the tail of a `bind` block: each

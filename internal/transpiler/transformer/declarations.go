@@ -42,11 +42,11 @@ func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, er
 	case stmtSimple:
 		stmt, err := t.lowerSimpleStatement(s.simpleS, false)
 		return nil, stmt, err
-	// A block lowers a `bind` and the `also`s after it as one FlatMap chain
-	// before reaching its statements one by one, so either one here has no
-	// chain to belong to.
+	// walkBlock rejects an `also` and hands a `bind` to the block's end before
+	// any statement reaches here; these cases keep a new caller from lowering
+	// either one to nothing.
 	case stmtAlso:
-		return nil, nil, t.semanticErrorAtNode(s.kid, "`also` must follow a `bind`")
+		return nil, nil, t.semanticErrorAtNode(s.kid, "`also` must directly follow a `bind` or `also`")
 	case stmtBind:
 		return nil, nil, t.semanticErrorAtNode(s.kid, "`bind` is not supported here")
 	}

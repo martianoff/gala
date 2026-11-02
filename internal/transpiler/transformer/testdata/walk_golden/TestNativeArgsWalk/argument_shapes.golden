@@ -122,12 +122,15 @@ func loops(n int) int {
 //line $DIR/main.gala:44
 		var v = func() int {
 			if i > 2 {
+//line $DIR/main.gala:45
 				for j := 0; j < i; j++ {
 //line $DIR/main.gala:46
 					break
 				}
+//line $DIR/main.gala:48
 				return i
 			} else {
+//line $DIR/main.gala:50
 				return 0
 			}
 		}()

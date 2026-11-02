@@ -70,3 +70,53 @@ func run(n int) int = Some(n).FlatMap((m) => {
 		})
 	}
 }
+
+// An `also` that follows no `bind` is rejected wherever a block's statements
+// are lowered: a block, an if-expression branch, before its value or at its
+// end, and a `bind` continuation.
+func TestAlsoWithoutBindIsRejectedInEveryBlock(t *testing.T) {
+	for _, tc := range []struct{ name, src string }{
+		{"block", `package main
+
+func run(n int) Option[int] {
+    also y = Some(n)
+    Some(y)
+}
+`},
+		{"if-expression branch", `package main
+
+func run(c bool, n int) Option[int] {
+    val v = if (c) {
+        also y = Some(n)
+        Some(y)
+    } else Some(0)
+    v
+}
+`},
+		{"end of an if-expression branch", `package main
+
+func run(c bool, n int) Option[int] {
+    val v = if (c) {
+        Println(n)
+        also y = Some(n)
+    } else Some(0)
+    v
+}
+`},
+		{"bind continuation", `package main
+
+func run(n int) Option[int] {
+    bind x = Some(n)
+    Println(x)
+    also y = Some(x)
+    Some(y)
+}
+`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newBindTranspiler().Transpile(tc.src, "")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "`also` must directly follow a `bind` or `also`")
+		})
+	}
+}

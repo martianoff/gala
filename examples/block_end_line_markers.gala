@@ -1,0 +1,43 @@
+package main
+
+import "regexp"
+
+// A panic inside an if-expression branch, or inside a `bind` continuation,
+// reports the GALA line it happens on: their statements carry line markers as
+// any block's do. An if statement before the panic spans several Go lines, so
+// a line counted on from an earlier marker would be wrong.
+
+func inBranch(n int) int {
+    val v = if (n >= 0) {
+        if (n > 5) Println("big") else Println("small")
+        val q = 100 / n
+        q + 1
+    } else 0
+    v
+}
+
+func inBind(n int) Option[int] {
+    bind x = Some(n)
+    if (x > 5) Println("big") else Println("small")
+    val q = 100 / x
+    Some(q)
+}
+
+func inBranchBind(n int) Option[int] = if (n >= 0) {
+    bind x = Some(n)
+    if (x > 5) Println("big") else Println("small")
+    val q = 100 / x
+    Some(q)
+} else Some(0)
+
+// panicsAt reports whether the first GALA frame of the stack of the panic
+// err came from, the one that panicked, is at the given .gala line. The file
+// name is not matched, so the example can be run under any name.
+func panicsAt(err error, line int) bool = PanicStack(err).Exists((stack) =>
+    regexp.MustCompile(s"^(runtime\\.[^\\n]*\\n\\t[^\\n]*\\n)*main\\.[^\\n]*\\n\\t[^\\n]*\\.gala:$line\\n").MatchString(stack))
+
+func main() {
+    Println(s"if-expression branch: ${panicsAt(Try(inBranch(0)).GetError(), 13)}")
+    Println(s"bind continuation: ${panicsAt(Try(inBind(0)).GetError(), 22)}")
+    Println(s"bind in an if-expression branch: ${panicsAt(Try(inBranchBind(0)).GetError(), 29)}")
+}

@@ -565,8 +565,8 @@ func (s forSrc) clause() (forClauseDecl, bool) {
 func (n srcNode) text() string { return galaparser.NativeText(n.node) }
 
 // noteNativeStmt tells the onNativeStmt hook, when set, that the walk lowers
-// s, as it starts to: each place that lowers a statement of a block (a
-// block's, a `bind` chain's, an if-expression branch's) calls it.
+// s, as it starts to: walkBlock calls it for each statement of a block, and
+// collectBindGroup for the `also`s a `bind` takes into its group.
 func (t *galaASTTransformer) noteNativeStmt(s stmtSrc) {
 	if t.onNativeStmt != nil && s.at.node.Ok() {
 		t.onNativeStmt(s.at.node)

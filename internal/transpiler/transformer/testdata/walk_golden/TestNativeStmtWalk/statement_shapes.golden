@@ -55,9 +55,13 @@ func chain(a string, b string) std.Option[int] {
 //line $DIR/main.gala:17
 	return std.Option_FlatMap[int, int](lookup(a), func(x int) std.Option[int] {
 		return std.Option_FlatMap[int, int](lookup(b), func(y int) std.Option[int] {
+//line $DIR/main.gala:19
 			var sum = x + y
+//line $DIR/main.gala:20
 			fmt.Println(pre, sum)
+//line $DIR/main.gala:21
 			return std.Option_FlatMap[int, int](std.Some[int]{}.Apply(sum*2), func(z int) std.Option[int] {
+//line $DIR/main.gala:22
 				if z > 2 {
 //line $DIR/main.gala:23
 					return std.Some[int]{}.Apply(z)
@@ -75,12 +79,18 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:30
 	var v = func() int {
 		if c {
+//line $DIR/main.gala:31
 			var m = n * 2
+//line $DIR/main.gala:32
 			fmt.Println("ü", m)
+//line $DIR/main.gala:33
 			return m + 1
 		} else {
+//line $DIR/main.gala:35
 			var k = n
+//line $DIR/main.gala:36
 			k += 3
+//line $DIR/main.gala:37
 			if k > 4 {
 //line $DIR/main.gala:38
 				return k
@@ -100,7 +110,9 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:46
 	var o = func() std.Option[int] {
 		if c {
+//line $DIR/main.gala:47
 			return std.Option_FlatMap[int, int](lookup("ä"), func(q int) std.Option[int] {
+//line $DIR/main.gala:48
 				return std.Some[int]{}.Apply(q + n)
 			})
 		} else {
