@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0056] $DIR/main.gala:5:9 a tuple destructuring `var (...)` needs an initializer (hint: add the tuple to split: `= pair`; a variable with no value declares its own type instead, as in `var a int`)

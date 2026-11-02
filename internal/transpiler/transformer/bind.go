@@ -6,10 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
@@ -123,23 +120,14 @@ func (t *galaASTTransformer) bindSiblingRefError(e bindEntry, ref string) error 
 // it also sees names inside interpolated strings, which are parsed only when
 // lowered.
 func firstReferencedGalaName(e exprSrc, names map[string]bool) string {
-	if len(names) == 0 {
+	if len(names) == 0 || !e.node.Ok() {
 		return ""
 	}
-	if e.node.Ok() {
-		return firstReferencedNativeName(e.node, names)
-	}
-	found := ""
-	walkTree(e.ctx, func(n antlr.Tree) {
-		if p, ok := n.(*grammar.PrimaryContext); ok && found == "" && p.Identifier() != nil && names[p.GetText()] {
-			found = p.GetText()
-		}
-	})
-	return found
+	return firstReferencedNativeName(e.node, names)
 }
 
-// firstReferencedNativeName is firstReferencedGalaName of n, a native node:
-// the first primary below it, in source order, that is a name in names.
+// firstReferencedNativeName is the first primary below n, in source order,
+// that is a name in names, or "".
 func firstReferencedNativeName(n native.GalaNodeRef, names map[string]bool) string {
 	if n.Kind() == native.GalaKIND_primary {
 		if id := (native.PrimaryNode{GalaNodeRef: n}).Identifier(); id.Ok() {

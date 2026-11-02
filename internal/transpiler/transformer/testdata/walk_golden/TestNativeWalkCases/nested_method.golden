@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0052] $DIR/main.gala:6:9 method `G` is declared inside a function body (hint: declare `G` at the top level of the file; a method sits beside its receiver type)

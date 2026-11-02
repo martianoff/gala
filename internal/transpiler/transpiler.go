@@ -947,15 +947,9 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
-	// After the analysis, the native tree's one reader is the transform's
-	// walk of the top-level declarations, which reads it only where the
-	// analysis converted it (the transformer's walkSource). Keep the handle
-	// for that; drop it otherwise, and with it the token stream and source
-	// text it holds until converted, before the transform.
+	// After the analysis, the native tree's one reader is the transform,
+	// which reads the file on it alone (the transformer's walkSource).
 	handle := parsed.CleanNative()
-	if !handle.Converted() {
-		handle = nil
-	}
 	parsed.Native = nil
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0045] $DIR/main.gala:6:26 a positional argument follows a named one in construction of "P" (hint: put the positional arguments first, or name this one too)

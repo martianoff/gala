@@ -3,12 +3,11 @@ package transformer
 import (
 	"path/filepath"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
-// OnNativeDecl sets tr's onNativeDecl hook for TestNativeWalkAgrees.
+// OnNativeDecl sets tr's onNativeDecl hook for the walk tests.
 func OnNativeDecl(tr transpiler.ASTTransformer, f func()) {
 	tr.(*galaASTTransformer).onNativeDecl = f
 }
@@ -28,6 +27,9 @@ type ParsedOrigin struct{ What, File string }
 type NativeNodeHooks struct {
 	Stmt, Lambda, Expr, Case func(index, line int)
 	Parsed                   func(kind string, o ParsedOrigin, line int)
+	// ParsedTree is told of each tree parsed on its own, and whether the
+	// engine's parser made it rather than the fallback.
+	ParsedTree func(engineParsed bool)
 }
 
 // OnNativeNodes sets tr's onNativeStmt, onNativeLambda, onNativeExpr and
@@ -36,7 +38,10 @@ type NativeNodeHooks struct {
 func OnNativeNodes(tr transpiler.ASTTransformer, h NativeNodeHooks) {
 	t := tr.(*galaASTTransformer)
 	parsed := map[*native.GalaTree]ParsedOrigin{}
-	t.onParsedExpr = func(tree *native.GalaTree, what, file string) {
+	t.onParsedExpr = func(tree *native.GalaTree, what, file string, engineParsed bool) {
+		if h.ParsedTree != nil {
+			h.ParsedTree(engineParsed)
+		}
 		parsed[tree] = ParsedOrigin{What: what, File: filepath.ToSlash(filepath.Clean(file))}
 	}
 	byTree := func(kind string, f func(index, line int)) func(native.GalaNodeRef) {
@@ -81,37 +86,7 @@ func OnNativeShape(tr transpiler.ASTTransformer, f func(line int, shape string))
 	tr.(*galaASTTransformer).onNativeShape = f
 }
 
-// OnHint sets tr's hint stack's observe hook for checkWalksAgree.
+// OnHint sets tr's hint stack's observe hook for the walk tests.
 func OnHint(tr transpiler.ASTTransformer, f func(op string, owned bool)) {
 	tr.(*galaASTTransformer).expectedArgTypes.observe = f
-}
-
-// HintKeyMismatches is, for the file tr is lowering on the native tree, the
-// lines of the postfix expressions whose hint key read through their ANTLR
-// context differs from the one read on their native node: a value lowered
-// from ANTLR's tree pushes its hint under the first, and the call it is,
-// lowered on the native tree, takes it under the second (see ownerKey).
-func HintKeyMismatches(tr transpiler.ASTTransformer) []int {
-	t := tr.(*galaASTTransformer)
-	root, ok := t.native.BridgedRoot()
-	if !ok {
-		return nil
-	}
-	var lines []int
-	var walk func(n native.GalaNodeRef)
-	walk = func(n native.GalaNodeRef) {
-		if n.Kind() == native.GalaKIND_postfixExpr {
-			ctx := t.native.Ctx(n).(*grammar.PostfixExprContext)
-			if t.hintKey(postfixSrc{ctx: ctx}) != t.hintKey(postfixSrc{node: n}) {
-				lines = append(lines, int(n.Start().Line))
-			}
-		}
-		for i := range n.ChildCount() {
-			if c := n.Child(i).Node(); c.Ok() {
-				walk(c)
-			}
-		}
-	}
-	walk(root)
-	return lines
 }

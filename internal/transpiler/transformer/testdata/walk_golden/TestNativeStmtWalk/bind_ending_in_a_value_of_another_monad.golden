@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:9 a `bind` block over std.Option must end with a std.Option value, got std.Try[int]

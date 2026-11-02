@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:31 this branch of the if-expression produces no value, but the if-expression's value is used; end the branch in a value

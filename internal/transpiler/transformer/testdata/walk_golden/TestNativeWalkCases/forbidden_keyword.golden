@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0036] $DIR/main.gala:4:9 bare Go statement keyword "defer" is not part of GALA's surface (hint: GALA has no `defer`; use the `resource` combinators — `Using` / `Bracket` / `WithLock` from martianoff/gala/resource (or a `use x = ...` binding) — which guarantee cleanup on every exit path)

@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:20 rest pattern (...) must be the last argument in a sequence pattern

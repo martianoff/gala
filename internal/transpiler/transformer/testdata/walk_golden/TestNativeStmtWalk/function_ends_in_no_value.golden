@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:9 function f returns int, but ends in `Println(s)`, which produces no value; end the body in the value to return, or add a `return`

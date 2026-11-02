@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0023] $SEARCH/lib/borrowed.gala:11:17 undefined: pb (hint: pb names "example.com/parsed/pb" in the file using this default but nothing in the default's own file; a default value resolves its names where it is written, so add `import "example.com/parsed/pb"` to the default's file)

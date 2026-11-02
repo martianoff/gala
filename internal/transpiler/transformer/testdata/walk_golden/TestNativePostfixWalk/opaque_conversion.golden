@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0063] $DIR/main.gala:7:26 cannot convert A to B directly: they are different opaque types (hint: convert through the underlying type if this is intended: B(int64(a)))

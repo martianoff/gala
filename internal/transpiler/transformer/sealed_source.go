@@ -2,14 +2,12 @@ package transformer
 
 import (
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
 
 // Sealed and opaque type declarations as their lowering reads them
-// (lowerSealedDecl, lowerOpaqueDecl), from either tree: each reader here has
-// an ANTLR half and a native half that fill the same tree-free value (see
-// declarations_native.go). A sealed case field's default is not read: the
+// (lowerSealedDecl, lowerOpaqueDecl), from their nodes, each into a
+// tree-free value. A sealed case field's default is not read: the
 // analyzer records it, and the lowering reads it from the type's metadata.
 
 // sealedDecl is a sealed type declaration.
@@ -37,28 +35,7 @@ type sealedCaseFieldDecl struct {
 	typ  typeSrc
 }
 
-// readSealedDecl reads a sealed type declaration on ANTLR's tree.
-func readSealedDecl(ctx *grammar.SealedTypeDeclarationContext) sealedDecl {
-	id := ctx.Identifier()
-	d := sealedDecl{name: id.GetText(), at: srcNode{ctx: ctx}, nameAt: srcNode{ctx: id}}
-	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
-	}
-	for _, caseCtx := range ctx.AllSealedCase() {
-		sc := caseCtx.(*grammar.SealedCaseContext)
-		c := sealedCaseDecl{name: sc.Identifier().GetText(), at: srcNode{ctx: sc}, nameAt: srcNode{ctx: sc.Identifier()}, isDefault: sc.DEFAULT() != nil}
-		if list := sc.SealedCaseFieldList(); list != nil {
-			for _, fieldCtx := range list.(*grammar.SealedCaseFieldListContext).AllSealedCaseField() {
-				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
-				c.fields = append(c.fields, sealedCaseFieldDecl{name: fc.Identifier().GetText(), at: srcNode{ctx: fc}, typ: antlrType(fc.Type_())})
-			}
-		}
-		d.cases = append(d.cases, c)
-	}
-	return d
-}
-
-// readSealedDeclNative is readSealedDecl of n.
+// readSealedDeclNative reads the sealed type declaration n.
 func readSealedDeclNative(n native.SealedTypeDeclarationNode) sealedDecl {
 	id := n.Identifier()
 	d := sealedDecl{name: id.GetText(), at: srcNode{node: n.GalaNodeRef}, nameAt: srcNode{node: id.GalaNodeRef}}
@@ -86,16 +63,7 @@ type opaqueDecl struct {
 	underlying typeSrc
 }
 
-// readOpaqueDecl reads an opaque type declaration on ANTLR's tree.
-func readOpaqueDecl(ctx *grammar.OpaqueTypeDeclarationContext) opaqueDecl {
-	d := opaqueDecl{name: ctx.Identifier().GetText(), underlying: antlrType(ctx.Type_())}
-	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
-	}
-	return d
-}
-
-// readOpaqueDeclNative is readOpaqueDecl of n.
+// readOpaqueDeclNative reads the opaque type declaration n.
 func readOpaqueDeclNative(n native.OpaqueTypeDeclarationNode) opaqueDecl {
 	d := opaqueDecl{name: n.Identifier().GetText(), underlying: nativeType(n.Type_())}
 	if tps := n.TypeParameters(); tps.Ok() {

@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:9 cannot assign to an if-expression: its else branch is an expression, so `if (c) a() else x = v` assigns to the whole if. Use braces to make the assignment part of a branch: `if (c) { a() } else { x = v }`

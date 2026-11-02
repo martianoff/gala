@@ -4,21 +4,26 @@ import (
 	"testing"
 
 	"github.com/antlr4-go/antlr/v4"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
-// TestParamDefaultClauseWithoutValue: a parameter's default clause on ANTLR's
-// tree can be there without its value, as an error-recovered `x int = ` may
-// leave it. The parameter still has a default, as the clause says: readParams
-// reports one, and so does the signature as the nested-function hint respells
-// it (lambdaSignatureOf), which then says a lambda cannot take one.
+// TestParamDefaultClauseWithoutValue: a parameter's default clause can be
+// there without its value, as an error-recovered `x int = ` may leave it and
+// galop's converter carries it to the native tree. Only a clean parse is
+// transformed, and on its tree a default clause always has its value, so
+// reading such a clause is a missing required node: an internal error, never
+// a parameter lowered as if it had no default. The tree is ANTLR's, cut and
+// converted.
 func TestParamDefaultClauseWithoutValue(t *testing.T) {
-	lexer := grammar.NewgalaLexer(antlr.NewInputStream("(x int = 1) int"))
+	const src = "(x int = 1) int"
+	lexer := grammar.NewgalaLexer(antlr.NewInputStream(src))
 	lexer.RemoveErrorListeners()
-	p := grammar.NewgalaParser(antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel))
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	p := grammar.NewgalaParser(stream)
 	p.RemoveErrorListeners()
 	sig := p.Signature()
 	list := sig.Parameters().(*grammar.ParametersContext).ParameterList().(*grammar.ParameterListContext)
@@ -26,10 +31,11 @@ func TestParamDefaultClauseWithoutValue(t *testing.T) {
 	// Drop the clause's value, keeping its `=`.
 	clause.RemoveLastChild()
 	require.Nil(t, clause.Expression(), "the default clause keeps its value")
+	tree, _ := galop.ToNative(sig.(antlr.ParserRuleContext), stream, src)
+	require.NotNil(t, tree, "the converter gave no tree")
+	n := native.SignatureNode{GalaNodeRef: tree.Root()}
+	require.Equal(t, native.GalaKIND_signature, n.Kind())
 
-	params := readParams(sig.Parameters().(*grammar.ParametersContext))
-	require.Len(t, params, 1)
-	assert.False(t, params[0].def.ok(), "readParams: a value for a clause without one")
-	assert.True(t, params[0].hasDefault, "readParams: no default")
-	assert.True(t, lambdaSignatureOf(antlrSig(sig)).hasDefault, "lambdaSignatureOf: no default")
+	require.PanicsWithValue(t, "native tree: no node, not an expression", func() { readParamsNative(n.Parameters()) },
+		"readParamsNative: a default clause without its value read as a parameter")
 }

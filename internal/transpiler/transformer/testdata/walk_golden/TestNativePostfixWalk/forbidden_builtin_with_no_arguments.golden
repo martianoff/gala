@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0035] $DIR/main.gala:4:17 bare Go builtin "recover(...)" is not part of GALA's surface (hint: `recover` is not available on the GALA surface; `Try` captures panics — use `Try(() => ...)` / `TryApply`)

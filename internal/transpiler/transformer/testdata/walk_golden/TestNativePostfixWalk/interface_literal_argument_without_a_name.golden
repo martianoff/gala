@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0078] $DIR/main.gala:8:25 an argument of an interface literal of Greeter names the method it implements (hint: write `Greet = ...` for one of Greeter's methods: Greet)

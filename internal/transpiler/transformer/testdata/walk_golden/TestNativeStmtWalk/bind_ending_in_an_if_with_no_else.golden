@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:9 a `bind` block must end with a value expression; this `if` ends it, so it needs an `else` and every branch must end in a value

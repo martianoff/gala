@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0035] $DIR/main.gala:4:17 bare Go builtin "len(...)" is not part of GALA's surface (hint: use `.Size()` (logical size — characters for strings) or `.ByteSize()` (raw bytes) instead of `len(...)`)

@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:19 `1` is evaluated but not used; declare the function's result type to return it, as in `func f() int = 42`; a function with no result type returns nothing

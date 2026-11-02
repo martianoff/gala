@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0080] $DIR/main.gala:16:18 type argument B (Bumper) of Holder is *Counter: its method Bump has a Ptr[Counter] receiver, and a pointer that may be nil cannot fill a Ptr (hint: make the type argument Ptr[Counter])

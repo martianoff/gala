@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0080] $DIR/main.gala:7:25 cannot use nil as Ptr[P]: a Ptr is never nil (hint: a pointer that may be absent is an OptionPtr[T] (EmptyOptionPtr(), OptionPtrOf(p)); a Ptr always points somewhere)

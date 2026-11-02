@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:10 `bind` is not allowed in a block whose value is not used, such as the body of an `if` statement or a loop: its chain would be computed and thrown away. Use it in a function or lambda body, an if-expression branch or a match arm

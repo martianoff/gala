@@ -124,24 +124,24 @@ func boundaryParamByName(ctx callContext, argName string) (transpiler.Type, bool
 	return transpiler.NilType{}, false
 }
 
-// lambdaCaptures is the free variables l captures, on l's tree. It returns
-// them for a GALA-E0037 check of the first unsafe one.
+// lambdaCaptures is the free variables l captures, none for no lambda. It
+// returns them for a GALA-E0037 check of the first unsafe one.
 func (t *galaASTTransformer) lambdaCaptures(l lambdaSrc) []concurrency.Capture {
-	if l.node.Ok() {
-		t.nativeCaptureCheck()
-		return concurrency.FreeVariablesInLambdaNative(l.node)
+	if !l.node.Ok() {
+		return nil
 	}
-	return concurrency.FreeVariablesInLambda(l.ctx)
+	t.nativeCaptureCheck()
+	return concurrency.FreeVariablesInLambdaNative(l.node)
 }
 
 // thunkCaptures is the free variables of e, a by-name argument, as the body
-// of a thunk, on e's tree.
+// of a thunk, none for no expression.
 func (t *galaASTTransformer) thunkCaptures(e exprSrc) []concurrency.Capture {
-	if e.node.Ok() {
-		t.nativeCaptureCheck()
-		return concurrency.FreeVariablesInExpressionNative(nil, native.ExpressionNode{GalaNodeRef: e.node})
+	if !e.node.Ok() {
+		return nil
 	}
-	return concurrency.FreeVariablesInExpression(nil, e.ctx)
+	t.nativeCaptureCheck()
+	return concurrency.FreeVariablesInExpressionNative(nil, native.ExpressionNode{GalaNodeRef: e.node})
 }
 
 // nativeCaptureCheck tells onNativeCapture of a capture check on the

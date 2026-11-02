@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:9 cannot assign to receiver p (hint: a receiver cannot be rebound; copy it into a local `var` (`var c = p`) if you need a mutable copy)

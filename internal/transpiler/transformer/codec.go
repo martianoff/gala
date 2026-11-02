@@ -76,7 +76,7 @@ const mainPackageName = "main"
 // ---- StructMeta interception ----
 
 // isStructMetaIntrinsic reports whether a call's base type name is the
-// StructMeta[T]() intrinsic, spelled bare or std-qualified as transformPrimary
+// StructMeta[T]() intrinsic, spelled bare or std-qualified as lowerIdentifier
 // may leave it. The qualified spelling (seen with `StructMeta[billing.Email]()`)
 // used to fall through to an interface composite literal Go rejects.
 func isStructMetaIntrinsic(name string) bool {

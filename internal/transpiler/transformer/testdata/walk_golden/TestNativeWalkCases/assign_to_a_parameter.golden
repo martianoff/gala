@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:9 cannot assign to immutable variable x (hint: declare it `var x` to reassign it)

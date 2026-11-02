@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:9:30 cannot discard error return from os.Remove in void lambda — use FromError(os.Remove) to handle the error

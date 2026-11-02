@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0038] $DIR/main.gala:4:20 invalid escape sequence "\d" in string literal (hint: valid escapes are \a \b \f \n \r \t \v \\ \" \xHH \uHHHH \UHHHHHHHH and \OOO (octal); to write a literal backslash (in a regular expression, for example) double it (\\) or use a backtick raw string)

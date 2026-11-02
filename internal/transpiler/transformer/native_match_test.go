@@ -247,22 +247,22 @@ func caseMarkerLine(src string) (int, bool) {
 	return 0, false
 }
 
-// TestNativeMatchCases is TestNativeWalkAgrees over matchCases: each case's
-// Go, or its error, is the same on both trees, and the match was read on the
+// TestNativeMatchCases holds each of matchCases to its golden (checkWalk):
+// its Go, or its error, and the match was read on the
 // native tree — every case clause of the file on a clean transpile, and the
 // case clause a diagnostic is about on an error.
 func TestNativeMatchCases(t *testing.T) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
-	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
+	w := &walkPipeline{searchPaths: searchPaths}
 	dir := t.TempDir()
 	for _, c := range matchCases {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "_"), "main.gala")
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
-			n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, c.src)
+			n, _, ok := checkWalk(t, w, path, c.src, true)
 			require.True(t, ok, "the case does not parse cleanly with galop")
 			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 			require.Positive(t, n.cases, "no case clause was read on the native tree; error: %v", n.err)

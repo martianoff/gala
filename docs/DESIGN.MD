@@ -301,30 +301,24 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     consumer at a time. The analyzer reads the compiled file on it, from its first read on
     (its package clause, imports and names, and the checks on them), collects the file's
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
-    the transformer walks its top-level declarations (their signatures, parameters,
-    initializers and expression bodies included; the self-tail-call rewrite is entered
-    from ANTLR's tree, its expressions coming back to the native one), the default values
-    and interpolated expressions it lowers (each parsed on its own, by the engine's parser:
-    galop's native parser, or ANTLR's and galop's converter, with ANTLR's parser alone
-    reporting a syntax error), the statements of its function
-    bodies (`bind` chains and the blocks of if-expression branches included), its
-    expressions (operators, names, literals, parentheses and tuples,
-    if-expressions, member accesses, indexes and calls, the values call arguments pass, and
-    the shape a value filling a typed slot is lowered by), its lambdas (their parameters, bodies
-    and Sendable capture checks), and every `match`: its subject, its case clauses, and
-    their patterns with the values they compare and the extractors and type arguments they
-    name (the statements of a match arm's block included, and a partial function's
-    `{ case ... }` cases too); an expression, lambda or match entered from code still on ANTLR's
-    tree finds its node with `Native.NodeOfKind`, and the state keyed by a subtree (the
-    expected-type hints, the escape cache) is keyed by its native node, whichever tree
-    reaches it. All of it runs only where the tree
-    bridges to ANTLR's (`Native.Bridged`). Every clean parse carries a native handle, ANTLR's engine included (through the converter), so the compiled file's sibling files, the files of
-    imported packages and clean LSP buffers are read on it too; an LSP buffer with syntax errors stays on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the analysis did
-    not convert the tree), and the transformer keeps neither it nor a node of it; the analyzer's parsed-file cache keeps a sibling file's converted tree for the later reads of that file. For the compiled file:
-    until it converts, it holds the
-    token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive
-    (after converting, the native tree keeps the text). Doc comments are keyed by
-    line and column (`parser.DocKey`), which both trees share.
+    the transformer reads the native tree alone: it has no ANTLR reader left, and its
+    library does not depend on ANTLR's runtime or generated parser
+    (`TestTransformerReadsNoANTLR`). Only a clean parse is transformed, and every clean
+    parse carries a native handle, ANTLR's engine included (through the converter), so a
+    file without a native tree is an internal error. The default values and interpolated
+    expressions it lowers are each parsed on their own by the engine's parser (galop's
+    native parser, or ANTLR's and galop's converter); when that parse does not settle the
+    text, ANTLR's parser alone parses it and its tree is converted, so a syntax error is
+    reported with ANTLR's message. The state keyed by a subtree (the expected-type hints,
+    the escape cache) is keyed by its native node. The compiled file's sibling files, the
+    files of imported packages and clean LSP buffers are read on the native tree too; an
+    LSP buffer with syntax errors stays on ANTLR's tree. `transpile()` drops the handle
+    after the transform, and the transformer keeps neither it nor a node of it; the
+    analyzer's parsed-file cache keeps a sibling file's converted tree for the later reads
+    of that file. For the compiled file: until it converts, it holds the token stream and
+    the source text, which a clean parse's ANTLR tree doesn't keep alive (after
+    converting, the native tree keeps the text). Doc comments are keyed by line and
+    column (`parser.DocKey`), which both trees share.
   - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
     and errors on every GALA source of the repository, and that the native tree matches
     ANTLR's; CI runs the suite under each.

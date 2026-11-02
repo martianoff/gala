@@ -439,20 +439,20 @@ func TestParseExpressionNativeAtMatchesANTLR(t *testing.T) {
 	t.Logf("%d expressions accepted, %d rejected", accepted, rejected)
 }
 
-// TestParseExpressionTreeAtConvertsANTLR: with ANTLR's engine,
-// ParseExpressionTreeAt gives ANTLR's tree of each of the corpus's
+// TestParseExpressionCheckedAtConvertsANTLR: with ANTLR's engine,
+// ParseExpressionCheckedAt gives ANTLR's tree of each of the corpus's
 // expressions, converted to galop's native form with its token positions,
-// and fails with ErrNativeExpression where ANTLR's parser does.
-func TestParseExpressionTreeAtConvertsANTLR(t *testing.T) {
+// and fails with ANTLR's error where ANTLR's parser does.
+func TestParseExpressionCheckedAtConvertsANTLR(t *testing.T) {
 	samples := corpusExpressions(t)
 	withEngine(EngineANTLR, func() {
 		for _, s := range samples {
 			want, wantErr := ParseExpressionAt(s.src, s.line, s.col, "test expression")
-			got, err := ParseExpressionTreeAt(s.src, s.line, s.col)
+			got, engineParsed, err := ParseExpressionCheckedAt(s.src, s.line, s.col, "test expression")
 			switch {
-			case err != nil && !errors.Is(err, ErrNativeExpression):
-				t.Errorf("%q at %d:%d: error %v does not wrap ErrNativeExpression", s.src, s.line, s.col, err)
-			case (err == nil) != (wantErr == nil):
+			case err == nil && !engineParsed:
+				t.Errorf("%q at %d:%d: ANTLR's engine's tree reported as the fallback's", s.src, s.line, s.col)
+			case fmt.Sprint(err) != fmt.Sprint(wantErr):
 				t.Errorf("%q at %d:%d: ANTLR error %v, converted error %v", s.src, s.line, s.col, wantErr, err)
 			case err == nil:
 				if w, g := treeText(want), got.ToStringTree(); w != g {

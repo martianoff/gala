@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0028] $DIR/main.gala:5:13 type alias "A" already declared in package "main" (hint: remove the duplicate declaration or rename one of the aliases)

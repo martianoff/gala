@@ -339,7 +339,7 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 		return "", nil
 	}
 	if ctors[0].name == tupleCtorName {
-		elems, _, ok := cell.parenthesized(c.t)
+		elems, _, ok := cell.parenthesized()
 		if !ok || len(elems) != len(ctors[0].fields) {
 			return "", nil
 		}

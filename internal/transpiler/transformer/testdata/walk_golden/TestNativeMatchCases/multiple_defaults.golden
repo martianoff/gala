@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0006] $DIR/main.gala:5:9 multiple default cases in match expression (hint: keep one default case; combine logic with guards or nested matches if you need sub-cases)

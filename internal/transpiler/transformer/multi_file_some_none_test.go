@@ -46,11 +46,13 @@ func main() {
 	p := transpiler.NewAntlrGalaParser()
 
 	t.Run("single-file-has-std-types", func(t *testing.T) {
-		tree, _, err := p.ParseFile(lookupCode).Strict()
+		parsed := p.ParseFile(lookupCode)
+		tree, _, err := parsed.Strict()
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 		richAST, err := transpiler.Analyze(a, tree, nil, "")
+		withNative(richAST, parsed)
 		assert.NoError(t, err)
 
 		assert.Contains(t, richAST.Types, "std.Some", "single-file should have std.Some type")
@@ -68,11 +70,13 @@ func main() {
 	})
 
 	t.Run("multi-file-has-std-types", func(t *testing.T) {
-		tree, _, err := p.ParseFile(lookupCode).Strict()
+		parsed := p.ParseFile(lookupCode)
+		tree, _, err := parsed.Strict()
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{mainPath})
 		richAST, err := transpiler.Analyze(a, tree, nil, lookupPath)
+		withNative(richAST, parsed)
 		assert.NoError(t, err)
 
 		// The key regression: multi-file mode must also have std types

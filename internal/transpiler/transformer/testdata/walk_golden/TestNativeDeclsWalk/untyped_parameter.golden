@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0034] $DIR/main.gala:5:15 parameter "a" has no declared type (hint: type every parameter individually (e.g. `a int`); GALA does not support Go-style grouped parameters like `(a, b int)`)

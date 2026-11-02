@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0033] $DIR/main.gala:4:18 lambda parameter "x" has no type and none can be inferred from context (hint: annotate it (e.g. `(x int) => …`) or use the lambda in a typed context (typed val, function argument, or return))

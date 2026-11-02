@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:2 this arm of the `match` produces no value, but another arm does; end every arm in a value, since the match's value is used

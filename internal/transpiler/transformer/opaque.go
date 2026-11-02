@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -376,14 +375,9 @@ func (t *galaASTTransformer) resolveScalar(typ transpiler.Type) (end transpiler.
 	return typ, scalarNone, nil
 }
 
-// transformOpaqueTypeDeclaration lowers `opaque type Name[TP] U` to the Go
-// defined type `type Name[TP] U`, plus the synthesized Hash and Compare.
-func (t *galaASTTransformer) transformOpaqueTypeDeclaration(ctx *grammar.OpaqueTypeDeclarationContext) ([]ast.Decl, error) {
-	return t.lowerOpaqueDecl(readOpaqueDecl(ctx))
-}
-
-// lowerOpaqueDecl lowers an opaque type declaration, read from either tree
-// (sealed_source.go).
+// lowerOpaqueDecl lowers `opaque type Name[TP] U`, read from its node
+// (sealed_source.go), to the Go defined type `type Name[TP] U`, plus the
+// synthesized Hash and Compare.
 func (t *galaASTTransformer) lowerOpaqueDecl(d opaqueDecl) ([]ast.Decl, error) {
 	name := d.name
 

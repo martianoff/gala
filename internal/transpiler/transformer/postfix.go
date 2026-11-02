@@ -6,52 +6,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
 
-// This file contains postfix operation and field access transformation logic extracted from expressions.go
-// Functions: transformPostfixExpr, transformPrimaryExpr, transformPostfixMatchExpression,
-//            buildMatchExpressionFromClauses
-
-func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
-	// Check for match expression. B13: defensively guard the child cast — while
-	// ANTLR children are normally non-nil ParseTrees, a malformed parse tree
-	// would otherwise panic here rather than returning a clean error.
-	if ctx.GetChildCount() > 1 {
-		for i := 0; i < ctx.GetChildCount(); i++ {
-			child := ctx.GetChild(i)
-			if child == nil {
-				continue
-			}
-			pt, ok := child.(antlr.ParseTree)
-			if !ok {
-				continue
-			}
-			if pt.GetText() == "match" {
-				return t.transformPostfixMatchExpression(ctx)
-			}
-		}
-	}
-
-	// Get the primary expression
-	primaryExpr := ctx.PrimaryExpr()
-	if primaryExpr == nil {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "postfixExpr must have primaryExpr")
-	}
-
-	p := postfixSrc{ctx: ctx, owner: t.ownerOf(ctx)}
-	var buf [4]suffixSrc
-	suffixes := p.appendSuffixes(buf[:0])
-	if len(suffixes) == 0 {
-		return t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
-	}
-	return t.lowerSuffixes(p, suffixes)
-}
+// This file contains postfix operation and field access transformation logic:
+// member access, lowerMatch and buildMatchExpressionFromClauses.
 
 // lowerMember lowers the member access m on base: a member a Go call's Try
 // or Tuple does not have is GALA-E0049 (checkGoResultMember).
@@ -88,32 +49,13 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Ex
 	return t.liftGoResults(call, c)
 }
 
-// receiverSource returns the receiver of the member access suffix — the
-// postfix expression's primary through the suffix before it — as the contexts
-// spanning it and its source text. The grammar puts a suffix only in a
-// postfix expression.
-func receiverSource(suffix *grammar.PostfixSuffixContext) (from, to antlr.ParserRuleContext, text string) {
-	postfix := suffix.GetParent().(*grammar.PostfixExprContext)
-	from = postfix.PrimaryExpr()
-	to = from
-	parts := []string{transpiler.SourceText(from)}
-	for _, s := range postfix.AllPostfixSuffix() {
-		if s == suffix {
-			break
-		}
-		to = s
-		parts = append(parts, transpiler.SourceText(s))
-	}
-	return from, to, strings.Join(parts, "")
-}
-
 // resolveFieldAccess handles member access `base.name` (m) with automatic
 // Immutable unwrapping.
 func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast.Expr, error) {
 	selName := m.ident()
 	line, col := m.identAt().start()
 	// `pkg.Name` naming an imported package-level binding is read at once, as
-	// transformPrimary reads a same-package one: a val types as Immutable[T]
+	// lowerIdentifier reads a same-package one: a val types as Immutable[T]
 	// (inferSelectorExprType), so unwrapImmutable adds the .Get().
 	if xIdent, ok := base.(*ast.Ident); ok && t.importedPackageVal(xIdent.Name, selName) != nil {
 		return t.unwrapImmutable(&ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}), nil
@@ -473,43 +415,10 @@ func (t *galaASTTransformer) namesGenericMethod(expr ast.Expr) bool {
 
 // handleNamedArgsCall moved to calls.go
 
-func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContext) (ast.Expr, error) {
-	if p := ctx.Primary(); p != nil {
-		return t.transformPrimary(p.(*grammar.PrimaryContext))
-	}
-
-	if l := ctx.LambdaExpression(); l != nil {
-		return t.transformLambda(l.(*grammar.LambdaExpressionContext))
-	}
-
-	if i := ctx.IfExpression(); i != nil {
-		return t.transformIfExpression(i.(*grammar.IfExpressionContext))
-	}
-
-	if pf := ctx.PartialFunctionLiteral(); pf != nil {
-		return t.transformPartialFunctionLiteral(t.partialOf(pf.(*grammar.PartialFunctionLiteralContext)), slot{})
-	}
-
-	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "primaryExpr must have primary, lambda, if expression, or partial function")
-}
-
-// transformPostfixMatchExpression lowers the match ctx, filling no slot.
-func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
-	return t.lowerMatch(postfixSrc{ctx: ctx}, slot{})
-}
-
-// lowerMatch lowers p, a postfix expression ending in a match, on the tree it
-// comes from, against slot s: its subject, the primary expression with the
-// suffixes before the match applied to it, then its case clauses. A match of
-// the file the native walk reads is lowered on its node, wherever its
-// lowering is entered from: a lowering still on ANTLR's tree hands over its
-// context.
+// lowerMatch lowers p, a postfix expression ending in a match, against slot
+// s: its subject, the primary expression with the suffixes before the match
+// applied to it, then its case clauses.
 func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) {
-	if !p.node.Ok() {
-		if n, ok := t.nativeNodeOf(p.ctx, native.GalaKIND_postfixExpr); ok {
-			p.node, p.ctx = n, nil
-		}
-	}
 	if !p.hasPrimaryExpr() {
 		return nil, semanticErrorAtStart(p.at(), "match expression must have subject")
 	}
@@ -526,15 +435,12 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 		}
 	}
 	t.nativeShape(p.node, "match")
-	return t.buildMatchExpressionFromClauses(subject, "obj", t.casesOf(p.node, p.ctx), p.at(), s)
+	return t.buildMatchExpressionFromClauses(subject, "obj", t.nativeCases(p.node), p.at(), s)
 }
 
-// lowerPrimaryOf lowers the primary expression of p, on its tree.
+// lowerPrimaryOf lowers the primary expression of p.
 func (t *galaASTTransformer) lowerPrimaryOf(p postfixSrc) (ast.Expr, error) {
-	if p.node.Ok() {
-		return t.lowerPrimaryExprNative(p.primaryExprNode().GalaNodeRef)
-	}
-	return t.transformPrimaryExpr(p.antlrPrimaryExpr())
+	return t.lowerPrimaryExprNative(p.primaryExprNode().GalaNodeRef)
 }
 
 // buildMatchExpressionFromClauses builds a match expression from the subject
@@ -742,7 +648,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// Infer common result type from all branches. In statement position the
-	// value is discarded, so arms need not unify (see inferCommonResultType).
+	// value is discarded, so arms need not unify (see inferCommonResultTypeAt).
 	resultType, err := t.inferCommonResultTypeAt(resultTypes, casePatterns, at, stmtPosition)
 	if err != nil {
 		return nil, err
@@ -763,7 +669,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// a Go method returning bool, another calling a void Go method — do not
 	// emit `return <voidCall>` (rejected by Go as "no value used as value").
 	// So is a dispatch-style match no arm and no slot types (see
-	// inferCommonResultType).
+	// inferCommonResultTypeAt).
 	if stmtPosition || transpiler.IsUnusable(resultType) {
 		resultType = transpiler.VoidType{}
 	}

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0043] $DIR/main.gala:9:17 Shape is a type, not a constructor (hint: Shape is a sealed type: its value is one of its cases, so construct a case instead, e.g. `Circle(...)`)

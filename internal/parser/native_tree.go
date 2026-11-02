@@ -134,11 +134,11 @@ func (t *Native) convert() {
 // Bridged reports whether the tree converted and its bridge to the ANTLR
 // tree holds: one context per node, the root is a source file with its
 // context, and every node has a context of its own rule. Every reader of a
-// file that takes the native tree (the analyzer's collection of the file's
-// declarations, its undefined-symbol check, the transformer's top-level walk)
-// works on it only when the bridge holds, and on the ANTLR tree otherwise, so
-// they all take the same tree, and a crossing back to a context of the node's
-// rule (Ctx) cannot miss. The one rule with labeled alternatives, pattern, is
+// file that still has an ANTLR twin (the analyzer's collection of the file's
+// declarations, its undefined-symbol check) works on it only when the bridge
+// holds, and on the ANTLR tree otherwise, so a crossing back to a context of
+// the node's rule (Ctx) cannot miss. The transformer has no ANTLR twin: it
+// reads the native tree whether or not the bridge holds. The one rule with labeled alternatives, pattern, is
 // not checked for its alternative's context type; nothing crosses there by
 // type. It is checked once, on the first call, safely from any goroutine. A
 // nil *Native is not bridged.
@@ -149,6 +149,23 @@ func (t *Native) Bridged() bool {
 	}
 	t.bridgedOnce.Do(func() { t.bridged = bridgeHolds(tree, t.ctxs) })
 	return t.bridged
+}
+
+// Unbridged is a handle on t's native tree whose bridge to ANTLR's tree does
+// not hold, for the tests that hold a reader on ANTLR's tree to its native
+// twin, until those twins go: a reader gated on Bridged reads the file on
+// ANTLR's tree, and the transformer, which reads the native tree alone, still
+// has it. A nil t, or one with no tree, gives nil.
+func (t *Native) Unbridged() *Native {
+	tree, err := t.Tree()
+	if err != nil {
+		return nil
+	}
+	u := &Native{tree: tree}
+	u.once.Do(func() {})
+	u.converted.Store(true)
+	u.bridgedOnce.Do(func() {})
+	return u
 }
 
 // bridgeHolds is Bridged's check of tree, whose nodes' contexts are ctxs.

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0047] $DIR/main.gala:4:9 `if` takes no initializer statement (hint: wrap the call in `Try(...)` and `match` on `Success(v)` / `Failure(e)` — a Go `(T, error)` return is auto-wrapped)

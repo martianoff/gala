@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0056] $DIR/main.gala:5:9 tuple destructuring requires exactly one expression on the right side (hint: destructure one tuple; to bind several values, write them as one: `val (a, b) = (x, y)`)

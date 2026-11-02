@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0039] $DIR/main.gala:9:16 `C` is a variant of sealed type "S", so `case C` binds a new variable and matches every value instead of testing for C (hint: write `case C(_)` to match the variant, or rename the binding if you meant to capture the whole value)

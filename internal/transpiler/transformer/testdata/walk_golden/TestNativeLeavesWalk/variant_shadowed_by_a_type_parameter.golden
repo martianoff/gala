@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0061] $DIR/main.gala:10:17 Circle is a variant of sealed type Shape, not a type (hint: use the sealed type Shape here; Circle(...) builds one, and `case Circle(...)` in a match reaches the variant's fields)

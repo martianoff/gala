@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0037] $DIR/main.gala:7:13 closure crossing a concurrency boundary captures reassignable var "counter" — a data race, because the enclosing scope may reassign it while the goroutine runs (hint: snapshot it into an immutable `val` before the boundary (e.g. `val counter = counter` outside the closure) so the goroutine captures a stable copy)

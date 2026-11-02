@@ -48,11 +48,13 @@ func main() {
 
 	p := transpiler.NewAntlrGalaParser()
 
-	tree, _, err := p.ParseFile(mainCode).Strict()
+	parsed := p.ParseFile(mainCode)
+	tree, _, err := parsed.Strict()
 	assert.NoError(t, err)
 
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{typesPath})
 	richAST, err := transpiler.Analyze(a, tree, nil, mainPath)
+	withNative(richAST, parsed)
 	assert.NoError(t, err)
 
 	// The identifier-branch aliases must reach the sibling with their targets.

@@ -5,25 +5,20 @@ import (
 	"slices"
 
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
 
 // A match's case clauses and their patterns as the pattern lowering reads
-// them. Each source below is a node of ANTLR's tree (ctx) or of galop's
-// native one (node), and each of its readers has an ANTLR half and a native
-// half that give the same value for the same node, so a pattern is lowered
-// once, the same way, whichever tree it comes from (transformPatternWithType,
+// them, on galop's native tree (transformPatternWithType,
 // transformExpressionPatternWithType, coverageOf, sealedViewForCases, ...).
 //
 // A pattern is an expression read as a pattern: its shape (a binding, a
-// literal, a tuple, a call, alternatives) is read here, on either tree. What a
-// pattern holds that is a value — a literal compared by ==, an extractor's
-// head, explicit type arguments (written as expressions) — is lowered as an
-// expression on the pattern's tree (lowerPatExpr, lowerPatternHead), as is a
-// typed pattern's type (lowerType).
+// literal, a tuple, a call, alternatives) is read here. What a pattern holds
+// that is a value — a literal compared by ==, an extractor's head, explicit
+// type arguments (written as expressions) — is lowered as an expression
+// (lowerPatExpr, lowerPatternHead), as is a typed pattern's type (lowerType).
 //
-// The native halves dispatch with Kind() and read children through the rule
+// The readers dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
 // declarations_native.go).
 
@@ -38,21 +33,10 @@ const (
 	patKindUnknown                // a rule alternative the lowering does not know
 )
 
-// patSrc is a pattern: a context of rule pattern, or its node (of kind
-// restPattern, expressionPattern or typedPattern). The zero patSrc is no
-// pattern.
+// patSrc is a pattern: its node, of kind restPattern, expressionPattern or
+// typedPattern. The zero patSrc is no pattern.
 type patSrc struct {
-	ctx  grammar.IPatternContext
 	node native.GalaNodeRef
-}
-
-// antlrPat is the pattern ctx, on ANTLR's tree; the zero patSrc when ctx is
-// nil.
-func antlrPat(ctx grammar.IPatternContext) patSrc {
-	if ctx == nil {
-		return patSrc{}
-	}
-	return patSrc{ctx: ctx}
 }
 
 // nativePat is the pattern n, or the zero patSrc when n is no node.
@@ -64,80 +48,48 @@ func nativePat(n native.GalaNodeRef) patSrc {
 }
 
 // ok reports whether p is a pattern.
-func (p patSrc) ok() bool { return p.ctx != nil || p.node.Ok() }
+func (p patSrc) ok() bool { return p.node.Ok() }
 
 // kind is p's alternative.
 func (p patSrc) kind() patKind {
-	switch {
-	case p.node.Ok():
-		switch p.node.Kind() {
-		case native.GalaKIND_restPattern:
-			return patKindRest
-		case native.GalaKIND_expressionPattern:
-			return patKindExpr
-		case native.GalaKIND_typedPattern:
-			return patKindTyped
-		}
-		return patKindUnknown
-	case p.ctx != nil:
-		switch p.ctx.(type) {
-		case *grammar.RestPatternContext:
-			return patKindRest
-		case *grammar.ExpressionPatternContext:
-			return patKindExpr
-		case *grammar.TypedPatternContext:
-			return patKindTyped
-		}
-		return patKindUnknown
+	if !p.node.Ok() {
+		return patKindNone
 	}
-	return patKindNone
+	switch p.node.Kind() {
+	case native.GalaKIND_restPattern:
+		return patKindRest
+	case native.GalaKIND_expressionPattern:
+		return patKindExpr
+	case native.GalaKIND_typedPattern:
+		return patKindTyped
+	}
+	return patKindUnknown
 }
 
-// ruleName is the grammar rule p is a node of, the same on either tree, for
-// the diagnostic of a pattern the lowering does not know (patKindUnknown).
-func (p patSrc) ruleName() string {
-	if p.node.Ok() {
-		return native.GalaRuleNames[p.node.Rule()]
-	}
-	return grammar.GalaParserStaticData.RuleNames[p.ctx.GetRuleIndex()]
-}
+// ruleName is the grammar rule p is a node of, for the diagnostic of a
+// pattern the lowering does not know (patKindUnknown).
+func (p patSrc) ruleName() string { return native.GalaRuleNames[p.node.Rule()] }
 
-// text is GetText of p.
-func (p patSrc) text() string {
-	if p.node.Ok() {
-		return galaparser.NativeText(p.node)
-	}
-	return p.ctx.GetText()
-}
+// text is p's tokens' text, joined.
+func (p patSrc) text() string { return galaparser.NativeText(p.node) }
 
 // at is where p is written.
-func (p patSrc) at() srcNode {
-	if p.node.Ok() {
-		return srcNode{node: p.node}
-	}
-	return srcNode{ctx: p.ctx}
-}
+func (p patSrc) at() srcNode { return srcNode{node: p.node} }
 
 // expr is the expression of p, a rest or an expression pattern.
 func (p patSrc) expr() patExpr {
-	if p.node.Ok() {
-		var e native.ExpressionNode
-		switch p.node.Kind() {
-		case native.GalaKIND_restPattern:
-			e = native.RestPatternNode{GalaNodeRef: p.node}.Expression()
-		case native.GalaKIND_expressionPattern:
-			e = native.ExpressionPatternNode{GalaNodeRef: p.node}.Expression()
-		}
-		if e.Ok() {
-			return patExpr{exprSrc: exprSrc{node: e.GalaNodeRef}}
-		}
+	if !p.node.Ok() {
 		return patExpr{}
 	}
-	switch c := p.ctx.(type) {
-	case *grammar.RestPatternContext:
-		return antlrPatExpr(c.Expression())
-	case *grammar.ExpressionPatternContext:
-		return antlrPatExpr(c.Expression())
+	var e native.ExpressionNode
+	switch p.node.Kind() {
+	case native.GalaKIND_restPattern:
+		e = native.RestPatternNode{GalaNodeRef: p.node}.Expression()
+	case native.GalaKIND_expressionPattern:
+		e = native.ExpressionPatternNode{GalaNodeRef: p.node}.Expression()
+	}
+	if e.Ok() {
+		return patExpr{exprSrc: exprSrc{node: e.GalaNodeRef}}
 	}
 	return patExpr{}
 }
@@ -146,37 +98,16 @@ func (p patSrc) expr() patExpr {
 func (p patSrc) typed() native.TypedPatternNode { return native.TypedPatternNode{GalaNodeRef: p.node} }
 
 // typedName is the name p, a typed pattern, binds.
-func (p patSrc) typedName() string {
-	if p.node.Ok() {
-		return p.typed().Identifier().GetText()
-	}
-	return p.ctx.(*grammar.TypedPatternContext).Identifier().GetText()
-}
+func (p patSrc) typedName() string { return p.typed().Identifier().GetText() }
 
 // typedType is the type p, a typed pattern, tests for.
-func (p patSrc) typedType() typeSrc {
-	if p.node.Ok() {
-		return nativeType(p.typed().Type_())
-	}
-	return antlrType(p.ctx.(*grammar.TypedPatternContext).Type_())
-}
+func (p patSrc) typedType() typeSrc { return nativeType(p.typed().Type_()) }
 
-// patExpr is an expression read as a pattern: an expression context on
-// ANTLR's tree (an alternative's wrapper included, see wrapAsExpression), or
-// on the native tree an expression node or, for an alternative, the
-// multiplicativeExpr node it is. The zero patExpr is no expression. Its ok,
-// at and text are exprSrc's.
+// patExpr is an expression read as a pattern: an expression node or, for an
+// alternative, the multiplicativeExpr node it is. The zero patExpr is no
+// expression. Its ok, at and text are exprSrc's.
 type patExpr struct {
 	exprSrc
-}
-
-// antlrPatExpr is the expression ctx, on ANTLR's tree; the zero patExpr when
-// ctx is nil.
-func antlrPatExpr(ctx grammar.IExpressionContext) patExpr {
-	if ctx == nil {
-		return patExpr{}
-	}
-	return patExpr{exprSrc: exprSrc{ctx: ctx}}
 }
 
 // sourceText is e as written, whitespace included (transpiler.SourceText).
@@ -191,9 +122,8 @@ func (e patExpr) line() int { l, _ := e.start(); return l }
 // col is the column of e's first token.
 func (e patExpr) col() int { _, c := e.start(); return c }
 
-// lowerPatExpr lowers e, a pattern's value, as an expression on its tree. An
-// alternative is lowered as the operand it is, as its wrapper on ANTLR's tree
-// is (wrapAsExpression).
+// lowerPatExpr lowers e, a pattern's value, as an expression. An alternative
+// is lowered as the operand it is.
 func (t *galaASTTransformer) lowerPatExpr(e patExpr) (ast.Expr, error) {
 	if !e.isAlternative() {
 		return t.lowerExpr(e.exprSrc)
@@ -233,8 +163,7 @@ var patChain = [...]native.GalaKind{
 }
 
 // nativeOperand walks the precedence chain from n, a node on it, down to the
-// node of kind target of n's first operand (leadingAdditiveExpr and
-// LeadingPostfixExpr on the native tree), and no node when an operand is
+// node of kind target of n's first operand, and no node when an operand is
 // missing or a unary operator intervenes. With sole set, every level must
 // hold exactly one operand.
 func nativeOperand(n native.GalaNodeRef, target native.GalaKind, sole bool) native.GalaNodeRef {
@@ -267,17 +196,10 @@ func firstNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNode
 	return native.GalaNodeRef{}, false
 }
 
-// postfix is the postfix expression e is (sole, getSinglePostfixExpr) or
-// starts with (LeadingPostfixExpr(e, false)); the zero postfixSrc when there
-// is none.
+// postfix is the postfix expression e is (sole) or starts with; the zero
+// postfixSrc when there is none.
 func (e patExpr) postfix(sole bool) postfixSrc {
-	if e.node.Ok() {
-		return postfixSrc{node: nativeOperand(e.node, native.GalaKIND_postfixExpr, sole)}
-	}
-	if p := LeadingPostfixExpr(e.ctx, sole); p != nil {
-		return postfixSrc{ctx: p}
-	}
-	return postfixSrc{}
+	return postfixSrc{node: nativeOperand(e.node, native.GalaKIND_postfixExpr, sole)}
 }
 
 // patAdditive is the additive chain of a pattern's sole operand: its operands
@@ -288,54 +210,34 @@ type patAdditive struct {
 	at       srcNode
 }
 
-// soleAdditive is the additive chain e is (leadingAdditiveExpr(e, true)), and
-// false when `||`, `&&` or a comparison joins operands above it. Each operand
-// of several is an expression of its own (see wrapAsExpression).
-func (e patExpr) soleAdditive() (patAdditive, bool, error) {
-	if e.node.Ok() {
-		if e.node.Kind() == native.GalaKIND_multiplicativeExpr {
-			return patAdditive{operands: []patExpr{e}, at: e.at()}, true, nil
-		}
-		add := nativeOperand(e.node, native.GalaKIND_additiveExpr, true)
-		if !add.Ok() {
-			return patAdditive{}, false, nil
-		}
-		out := patAdditive{at: srcNode{node: add}}
-		if _, sole := galaparser.OnlyNativeKid(add, native.GalaKIND_multiplicativeExpr); sole {
-			out.operands = []patExpr{e}
-			return out, true, nil
-		}
-		for i := range add.ChildCount() {
-			c := add.Child(i)
-			if m := c.Node(); m.Ok() && m.Kind() == native.GalaKIND_multiplicativeExpr {
-				out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}})
-			} else if tok := c.Terminal(); tok.Ok() {
-				out.ops = append(out.ops, tok.GetText())
-			}
-		}
-		return out, true, nil
+// soleAdditive is the additive chain e is, and false when `||`, `&&` or a
+// comparison joins operands above it. Each operand of several is an
+// expression of its own, its multiplicativeExpr node.
+func (e patExpr) soleAdditive() (patAdditive, bool) {
+	if !e.node.Ok() {
+		return patAdditive{}, false
 	}
-	add := leadingAdditiveExpr(e.ctx, true)
-	if add == nil {
-		return patAdditive{}, false, nil
+	if e.node.Kind() == native.GalaKIND_multiplicativeExpr {
+		return patAdditive{operands: []patExpr{e}, at: e.at()}, true
 	}
-	muls := add.AllMultiplicativeExpr()
-	out := patAdditive{at: srcNode{ctx: add}}
-	if len(muls) == 1 {
+	add := nativeOperand(e.node, native.GalaKIND_additiveExpr, true)
+	if !add.Ok() {
+		return patAdditive{}, false
+	}
+	out := patAdditive{at: srcNode{node: add}}
+	if _, sole := galaparser.OnlyNativeKid(add, native.GalaKIND_multiplicativeExpr); sole {
 		out.operands = []patExpr{e}
-		return out, true, nil
+		return out, true
 	}
-	for i, m := range muls {
-		out.operands = append(out.operands, antlrPatExpr(wrapAsExpression(e.ctx, m.(*grammar.MultiplicativeExprContext))))
-		if i > 0 {
-			op, err := getChildOperatorText(add, i*2-1)
-			if err != nil {
-				return patAdditive{}, false, err
-			}
-			out.ops = append(out.ops, op)
+	for i := range add.ChildCount() {
+		c := add.Child(i)
+		if m := c.Node(); m.Ok() && m.Kind() == native.GalaKIND_multiplicativeExpr {
+			out.operands = append(out.operands, patExpr{exprSrc: exprSrc{node: m}})
+		} else if tok := c.Terminal(); tok.Ok() {
+			out.ops = append(out.ops, tok.GetText())
 		}
 	}
-	return out, true, nil
+	return out, true
 }
 
 // barUnderOperator is where an additive chain of e that holds a `|` starts,
@@ -343,9 +245,6 @@ func (e patExpr) soleAdditive() (patAdditive, bool, error) {
 // otherwise.
 func (e patExpr) barUnderOperator() (srcNode, bool) {
 	if !e.node.Ok() {
-		if add := barUnderOperator(e.ctx); add != nil {
-			return srcNode{ctx: add}, true
-		}
 		return srcNode{}, false
 	}
 	var found native.GalaNodeRef
@@ -372,46 +271,27 @@ func (e patExpr) barUnderOperator() (srcNode, bool) {
 // parenthesized is the elements of e when e is exactly a parenthesized list
 // `(...)`, and single reports whether the list is one expression with no
 // trailing comma: a parenthesized pattern, not a tuple.
-func (e patExpr) parenthesized(t *galaASTTransformer) (elems []patExpr, single, ok bool) {
+func (e patExpr) parenthesized() (elems []patExpr, single, ok bool) {
 	p := e.postfix(true)
 	if !p.ok() || !p.alone() {
 		return nil, false, false
 	}
-	if p.node.Ok() {
-		list := p.tupleListNode()
-		if !list.Ok() {
-			return nil, false, false
-		}
-		return nativeExprs(list), list.ChildCount() == 1, true
-	}
-	list := p.antlrTupleList()
-	if list == nil {
+	list := p.tupleListNode()
+	if !list.Ok() {
 		return nil, false, false
 	}
-	return antlrExprs(list.AllExpression()), list.GetChildCount() == 1, true
+	return nativeExprs(list), list.ChildCount() == 1, true
 }
 
-// tupleElems is the elements of the parenthesized list e starts with
-// (getPrimaryFromExpression's TupleExpressionList), and false when it starts
-// with none.
+// tupleElems is the elements of the parenthesized list e starts with, and
+// false when it starts with none.
 func (e patExpr) tupleElems() ([]patExpr, bool) {
 	p := e.postfix(false)
 	if !p.ok() {
 		return nil, false
 	}
-	if p.node.Ok() {
-		list := p.tupleListNode()
-		return nativeExprs(list), list.Ok()
-	}
-	prim := PrimaryOf(p.ctx)
-	if prim == nil {
-		return nil, false
-	}
-	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
-	if !ok {
-		return nil, false
-	}
-	return antlrExprs(list.AllExpression()), true
+	list := p.tupleListNode()
+	return nativeExprs(list), list.Ok()
 }
 
 // nativeExprs is the expression children of n.
@@ -419,15 +299,6 @@ func nativeExprs(n native.GalaNodeRef) []patExpr {
 	var out []patExpr
 	for c := range galaparser.NativeKids(n, native.GalaKIND_expression) {
 		out = append(out, patExpr{exprSrc: exprSrc{node: c}})
-	}
-	return out
-}
-
-// antlrExprs is ctxs as pattern expressions.
-func antlrExprs(ctxs []grammar.IExpressionContext) []patExpr {
-	out := make([]patExpr, len(ctxs))
-	for i, c := range ctxs {
-		out[i] = antlrPatExpr(c)
 	}
 	return out
 }
@@ -456,14 +327,14 @@ type callPat struct {
 }
 
 // lowerPatternHead lowers the primary expression of c's head, its
-// constructor or, for a qualified pattern, its package, on its tree.
+// constructor or, for a qualified pattern, its package.
 func (t *galaASTTransformer) lowerPatternHead(c callPat) (ast.Expr, error) {
 	t.nativeShape(c.head.node, "extractor")
 	return t.lowerPrimaryOf(c.head)
 }
 
 // callPattern reads e as an unqualified call pattern
-// (getCallPatternWithTypeArgsFromExpression), and false when it is none.
+// with its type arguments, and false when it is none.
 func (e patExpr) callPattern() (callPat, bool) {
 	p := e.postfix(true)
 	if !p.ok() {
@@ -565,50 +436,37 @@ func (e patExpr) qualifiedMember() (pkg, name string, ok bool) {
 }
 
 // postfixSrc is a postfix expression. owner, set by the postfix driver
-// (lowerSuffixes), is the key of the hint for the slot its value fills, the
-// same on either tree (see hintOwner).
+// (lowerSuffixes), is the key of the hint for the slot its value fills (see
+// hintOwner).
 type postfixSrc struct {
-	ctx   *grammar.PostfixExprContext
 	node  native.GalaNodeRef
 	owner hintOwner
 }
 
 // ok reports whether p is a postfix expression.
-func (p postfixSrc) ok() bool { return p.ctx != nil || p.node.Ok() }
+func (p postfixSrc) ok() bool { return p.node.Ok() }
 
 // suffixes is p's postfix suffixes, in order.
 func (p postfixSrc) suffixes() []suffixSrc { return p.appendSuffixes(nil) }
 
 // appendSuffixes appends p's postfix suffixes, in order, to out.
 func (p postfixSrc) appendSuffixes(out []suffixSrc) []suffixSrc {
-	if p.node.Ok() {
-		for s := range galaparser.NativeKids(p.node, native.GalaKIND_postfixSuffix) {
-			out = append(out, suffixSrc{node: s})
-		}
-		return out
-	}
-	for _, s := range p.ctx.AllPostfixSuffix() {
-		out = append(out, suffixSrc{ctx: s.(*grammar.PostfixSuffixContext)})
+	for s := range galaparser.NativeKids(p.node, native.GalaKIND_postfixSuffix) {
+		out = append(out, suffixSrc{node: s})
 	}
 	return out
 }
 
 // hasSuffixes reports whether p has a postfix suffix.
 func (p postfixSrc) hasSuffixes() bool {
-	if p.node.Ok() {
-		_, ok := firstNativeKid(p.node, native.GalaKIND_postfixSuffix)
-		return ok
-	}
-	return p.ctx.PostfixSuffix(0) != nil
+	_, ok := firstNativeKid(p.node, native.GalaKIND_postfixSuffix)
+	return ok
 }
 
 // hasCases reports whether p ends in a match.
 func (p postfixSrc) hasCases() bool {
-	if p.node.Ok() {
-		_, ok := firstNativeKid(p.node, native.GalaKIND_caseClause)
-		return ok
-	}
-	return p.ctx.CaseClause(0) != nil
+	_, ok := firstNativeKid(p.node, native.GalaKIND_caseClause)
+	return ok
 }
 
 // primaryExprNode is p's primary expression node.
@@ -617,59 +475,39 @@ func (p postfixSrc) primaryExprNode() native.PrimaryExprNode {
 }
 
 // hasPrimaryExpr reports whether p has a primary expression.
-func (p postfixSrc) hasPrimaryExpr() bool {
-	if p.node.Ok() {
-		return p.primaryExprNode().Ok()
-	}
-	return p.ctx.PrimaryExpr() != nil
-}
+func (p postfixSrc) hasPrimaryExpr() bool { return p.primaryExprNode().Ok() }
 
-// primaryIdent is the identifier p starts from (PrimaryOf), "" when it starts
-// from anything else.
+// primaryIdent is the identifier p starts from, "" when it starts from
+// anything else.
 func (p postfixSrc) primaryIdent() string {
-	if p.node.Ok() {
-		if id := p.primaryExprNode().Primary().Identifier(); id.Ok() {
-			return galaparser.NativeText(id.GalaNodeRef)
-		}
-		return ""
-	}
-	if prim := PrimaryOf(p.ctx); prim != nil && prim.Identifier() != nil {
-		return prim.Identifier().GetText()
+	if id := p.primaryExprNode().Primary().Identifier(); id.Ok() {
+		return galaparser.NativeText(id.GalaNodeRef)
 	}
 	return ""
 }
 
-// tupleListNode is the parenthesized list p's native primary is, or no node.
+// tupleListNode is the parenthesized list p's primary is, or no node.
 func (p postfixSrc) tupleListNode() native.GalaNodeRef {
 	return p.primaryExprNode().Primary().TupleExpressionList().GalaNodeRef
 }
 
 // suffixSrc is a postfix suffix: `.name`, `(args)` or `[exprs]`.
 type suffixSrc struct {
-	ctx  *grammar.PostfixSuffixContext
 	node native.GalaNodeRef
 }
 
 // childCount is the number of s's children, tokens included.
-func (s suffixSrc) childCount() int {
-	if s.node.Ok() {
-		return s.node.ChildCount()
-	}
-	return s.ctx.GetChildCount()
-}
+func (s suffixSrc) childCount() int { return s.node.ChildCount() }
 
-// opener is the token s starts with: ".", "(" or "[" (suffixOpener).
+// opener is the token s starts with: ".", "(" or "[".
 func (s suffixSrc) opener() string {
-	if s.node.Ok() {
-		if s.node.ChildCount() == 0 {
-			return ""
-		}
-		if tok := s.node.Child(0).Terminal(); tok.Ok() {
-			return tok.GetText()
-		}
-		return s.node.Child(0).Node().GetText()
+	if s.node.ChildCount() == 0 {
+		return ""
 	}
-	return suffixOpener(s.ctx)
+	if tok := s.node.Child(0).Terminal(); tok.Ok() {
+		return tok.GetText()
+	}
+	return s.node.Child(0).Node().GetText()
 }
 
 // ident is the member s selects, "" when it is no selector.
@@ -680,26 +518,19 @@ func (s suffixSrc) ident() string {
 
 // args is the arguments of s, a call suffix.
 func (s suffixSrc) args() argsSrc {
-	if s.node.Ok() {
-		list := (native.PostfixSuffixNode{GalaNodeRef: s.node}).ArgumentList()
-		if !list.Ok() {
-			return argsSrc{}
-		}
-		out := argsSrc{at: srcNode{node: list.GalaNodeRef}}
-		for a := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_argument) {
-			out.list = append(out.list, argSrc{node: a})
-		}
-		return out
-	}
-	list, ok := s.ctx.ArgumentList().(*grammar.ArgumentListContext)
-	if !ok || list == nil {
+	list := (native.PostfixSuffixNode{GalaNodeRef: s.node}).ArgumentList()
+	if !list.Ok() {
 		return argsSrc{}
 	}
-	return antlrArgs(list)
+	out := argsSrc{at: srcNode{node: list.GalaNodeRef}}
+	for a := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_argument) {
+		out.list = append(out.list, argSrc{node: a})
+	}
+	return out
 }
 
-// lowerTypeArg lowers e, a pattern's explicit type argument, as an expression
-// on its tree.
+// lowerTypeArg lowers e, a pattern's explicit type argument, as an
+// expression.
 func (t *galaASTTransformer) lowerTypeArg(e exprSrc) (ast.Expr, error) {
 	t.nativeShape(e.node, "type-arg")
 	return t.lowerExpr(e)
@@ -708,7 +539,7 @@ func (t *galaASTTransformer) lowerTypeArg(e exprSrc) (ast.Expr, error) {
 // typeArgs is the expressions of s, a type-argument suffix, in order; nil
 // when s is none or has none.
 func (s suffixSrc) typeArgs() []exprSrc {
-	if s.ctx == nil && !s.node.Ok() {
+	if !s.node.Ok() {
 		return nil
 	}
 	return slices.Collect(indexSrc{s}.exprs())
@@ -722,42 +553,22 @@ type argsSrc struct {
 	at   srcNode
 }
 
-// antlrArgs is the arguments of list, on ANTLR's tree.
-func antlrArgs(list *grammar.ArgumentListContext) argsSrc {
-	out := argsSrc{at: srcNode{ctx: list}}
-	for _, a := range list.AllArgument() {
-		out.list = append(out.list, argSrc{ctx: a.(*grammar.ArgumentContext)})
-	}
-	return out
-}
-
 // argSrc is an argument of a call, or of a call-shaped pattern: a value or a
 // sub-pattern, possibly named (`Field = p`), or a lambda. The zero argSrc is
 // a field named sub-patterns leave out: it has no name and no pattern.
 type argSrc struct {
-	ctx  *grammar.ArgumentContext
 	node native.GalaNodeRef
 }
 
 // at is where a is written.
-func (a argSrc) at() srcNode {
-	if a.node.Ok() {
-		return srcNode{node: a.node}
-	}
-	return srcNode{ctx: a.ctx}
-}
+func (a argSrc) at() srcNode { return srcNode{node: a.node} }
 
 // name is the field a names and where the name is written, "" when a is
 // positional.
 func (a argSrc) name() (string, srcNode) {
-	switch {
-	case a.node.Ok():
+	if a.node.Ok() {
 		if id := (native.ArgumentNode{GalaNodeRef: a.node}).Identifier(); id.Ok() {
 			return galaparser.NativeText(id.GalaNodeRef), srcNode{node: id.GalaNodeRef}
-		}
-	case a.ctx != nil:
-		if id := a.ctx.Identifier(); id != nil {
-			return id.GetText(), srcNode{ctx: id}
 		}
 	}
 	return "", srcNode{}
@@ -765,11 +576,8 @@ func (a argSrc) name() (string, srcNode) {
 
 // pattern is a's sub-pattern, the zero patSrc when a is a lambda or left out.
 func (a argSrc) pattern() patSrc {
-	switch {
-	case a.node.Ok():
-		return nativePat((native.ArgumentNode{GalaNodeRef: a.node}).Pattern().GalaNodeRef)
-	case a.ctx != nil:
-		return antlrPat(a.ctx.Pattern())
+	if !a.node.Ok() {
+		return patSrc{}
 	}
-	return patSrc{}
+	return nativePat((native.ArgumentNode{GalaNodeRef: a.node}).Pattern().GalaNodeRef)
 }

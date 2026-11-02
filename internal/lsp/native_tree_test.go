@@ -2,7 +2,10 @@ package lsp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,8 +38,9 @@ func (p antlrOnlyParser) ParseFile(input string) *parser.Parsed {
 }
 
 // nativeCorpus is the GALA sources staged as the test's data, sorted, with
-// their text as the handler holds it (BOM-stripped), and the search path that
-// resolves their imports.
+// their text as the handler holds it (BOM-stripped) and with LF line endings,
+// so that a checkout with CRLF endings asks the same requests at the same
+// places, and the search path that resolves their imports.
 func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 	t.Helper()
 	// Parse with galop's engine, the CLI's default, whatever the build's or
@@ -58,7 +62,7 @@ func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 		}
 		data, err := os.ReadFile(f.Path)
 		require.NoError(t, err)
-		texts[f.Path] = galaerr.StripBOM(string(data))
+		texts[f.Path] = strings.ReplaceAll(galaerr.StripBOM(string(data)), "\r\n", "\n")
 		paths = append(paths, f.Path)
 	}
 	sort.Strings(paths)
@@ -156,52 +160,70 @@ func (r *treeReads) note(_ string, onNative bool) {
 	}
 }
 
-// TestHandlerTreesAgree serves the same requests from two handlers, one that
-// keeps each parse's native tree and one on ANTLR's tree alone: signature help
-// at the cursors of callCursors and hover at the start of every identifier,
-// on a sample of the corpus. The responses, positions in UTF-16 columns
-// included, must be the same, and every read of the first handler must take
-// the native tree and every read of the second ANTLR's. Hover reads the native
-// tree only once something has converted it (dotImportPathsOf), so each
-// file's hovers come after its signature-help requests, which convert the
-// document's cached parse.
-func TestHandlerTreesAgree(t *testing.T) {
+// updateHandlerGolden rewrites handlerGolden instead of checking it. Run the
+// test with --test_arg=-update and
+// --test_env=BUILD_WORKSPACE_DIRECTORY=<the workspace>.
+var updateHandlerGolden = flag.Bool("update", false, "rewrite "+handlerGolden)
+
+// handlerGolden holds TestHandlerAnswers' answers: a line per request, its
+// file relative to the corpus root, what it asked and where, and a digest of
+// the answer's JSON. It was written from the code on which the native handler
+// still answered every one of these requests as a handler on ANTLR's tree alone.
+const handlerGolden = "testdata/handler_answers.golden"
+
+// TestHandlerAnswers serves signature help at the cursors of callCursors and
+// hover at the start of every identifier, on a sample of the corpus, and
+// holds each answer, positions in UTF-16 columns included, to its digest in
+// handlerGolden. Every read of the handler must take the native tree. Hover
+// reads the native tree only once something has converted it
+// (dotImportPathsOf), so each file's hovers come after its signature-help
+// requests, which convert the document's cached parse.
+func TestHandlerAnswers(t *testing.T) {
 	texts, paths, root := nativeCorpus(t)
-	sample := handlerSample(t, texts, paths)
-	var nativeReads, antlrReads treeReads
-	newHandler := func(antlrOnly bool, reads *treeReads) *GalaHandler {
-		h := NewGalaHandler()
-		h.SetSearchPaths([]string{root})
-		if antlrOnly {
-			h.parser = antlrOnlyParser{h.parser}
+	sample := handlerSample(t, texts, paths, root)
+	var reads treeReads
+	h := NewGalaHandler()
+	h.SetSearchPaths([]string{root})
+	h.onTreeRead = reads.note
+	want, wantLines := map[string]string{}, 0
+	if !*updateHandlerGolden {
+		data, err := os.ReadFile(handlerGolden)
+		require.NoError(t, err, "no golden: run the test with --test_arg=-update")
+		for _, l := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+			if where, digest, ok := strings.Cut(l, "\t=> "); ok {
+				want[where] = digest
+				wantLines++
+			}
 		}
-		h.onTreeRead = reads.note
-		return h
 	}
-	onNative, onANTLR := newHandler(false, &nativeReads), newHandler(true, &antlrReads)
+	var golden strings.Builder
 	ctx := context.Background()
 	sigCases, hoverCases, answered := 0, 0, 0
 	for _, path := range sample {
 		text := texts[path]
 		uri := lsp.DocumentURI("file:///" + filepath.ToSlash(path))
 		doc := lsp.TextDocumentIdentifier{URI: uri}
-		for _, h := range []*GalaHandler{onNative, onANTLR} {
-			require.NoError(t, h.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: text}}))
-		}
-		// ask serves one request from both handlers and checks that they
-		// answer the same, and that each read the tree it should.
+		require.NoError(t, h.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: text}}))
+		rel, err := filepath.Rel(root, path)
+		require.NoError(t, err)
+		// ask serves one request and holds its answer to its golden.
 		ask := func(what string, off int, serve func(h *GalaHandler, at lsp.Position) (any, error)) {
 			at := wirePosition(text, off)
-			n0, a0 := nativeReads, antlrReads
-			got, gotErr := serve(onNative, at)
-			want, wantErr := serve(onANTLR, at)
-			where := fmt.Sprintf("%s %s@%d:%d", what, path, at.Line, at.Character)
-			require.Equal(t, wantErr, gotErr, where)
-			require.Equal(t, jsonOf(t, want), jsonOf(t, got), where)
-			require.Zero(t, nativeReads.antlr-n0.antlr, "%s: the native handler read ANTLR's tree", where)
-			require.Zero(t, antlrReads.native-a0.native, "%s: the ANTLR handler read the native tree", where)
-			require.Equal(t, antlrReads.antlr-a0.antlr, nativeReads.native-n0.native, "%s: the handlers read the tree a different number of times", where)
-			if jsonOf(t, want) != "null" {
+			r0 := reads
+			got, gotErr := serve(h, at)
+			where := fmt.Sprintf("%s\t%s@%d:%d", what, filepath.ToSlash(rel), at.Line, at.Character)
+			answer := jsonOf(t, got)
+			if gotErr != nil {
+				answer = "error: " + gotErr.Error()
+			}
+			sum := sha256.Sum256([]byte(answer))
+			digest := hex.EncodeToString(sum[:8])
+			fmt.Fprintf(&golden, "%s\t=> %s\n", where, digest)
+			if !*updateHandlerGolden {
+				assert.Equalf(t, want[where], digest, "%s: the answer differs from its golden: %s", where, answer)
+			}
+			require.Zero(t, reads.antlr-r0.antlr, "%s: the handler read ANTLR's tree", where)
+			if answer != "null" {
 				answered++
 			}
 		}
@@ -218,44 +240,62 @@ func TestHandlerTreesAgree(t *testing.T) {
 			hoverCases++
 		}
 	}
-	t.Logf("%d files, %d signature-help and %d hover requests, %d answered; native handler: %+v", len(sample), sigCases, hoverCases, answered, nativeReads)
+	if *updateHandlerGolden {
+		ws := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
+		require.NotEmpty(t, ws, "-update writes into the workspace: pass --test_env=BUILD_WORKSPACE_DIRECTORY")
+		dest := filepath.Join(ws, "internal", "lsp", filepath.FromSlash(handlerGolden))
+		require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0o755))
+		require.NoError(t, os.WriteFile(dest, []byte(golden.String()), 0o644))
+	} else {
+		assert.Equal(t, wantLines, sigCases+hoverCases, "the golden holds requests the test no longer asks")
+	}
+	t.Logf("%d files, %d signature-help and %d hover requests, %d answered; reads: %+v", len(sample), sigCases, hoverCases, answered, reads)
 	assert.Greater(t, answered, 200)
-	assert.Greater(t, nativeReads.native, 300)
+	assert.Greater(t, reads.native, 300)
 }
 
-// handlerSample is the files TestHandlerTreesAgree opens: the largest clean
-// files, and the files with a dot import or non-ASCII text, a few of each.
-func handlerSample(t *testing.T, texts map[string]string, paths []string) []string {
+// handlerSample is the files TestHandlerAnswers opens (handlerFiles): every
+// one staged and parsing cleanly, with a dot import and non-ASCII text among them.
+func handlerSample(t *testing.T, texts map[string]string, paths []string, root string) []string {
 	t.Helper()
-	p := parser.NewAntlrGalaParser()
-	var clean, dotting, wide []string
+	byRel := map[string]string{}
 	for _, path := range paths {
-		parsed := p.ParseFile(texts[path])
-		if parsed.CleanNative() == nil || !strings.Contains(texts[path], "(") {
-			continue
+		if rel, err := filepath.Rel(root, path); err == nil {
+			byRel[filepath.ToSlash(rel)] = path
 		}
-		clean = append(clean, path)
+	}
+	p := parser.NewAntlrGalaParser()
+	var out []string
+	dotting, wide := 0, 0
+	for _, rel := range handlerFiles {
+		path, ok := byRel[rel]
+		require.Truef(t, ok, "%s is not staged", rel)
+		parsed := p.ParseFile(texts[path])
+		require.NotNilf(t, parsed.CleanNative(), "%s does not parse cleanly", rel)
 		if len(analyzer.DotImportPaths(parsed.Tree)) > 0 {
-			dotting = append(dotting, path)
+			dotting++
 		}
 		if strings.ContainsFunc(texts[path], func(r rune) bool { return r > 0x7F }) {
-			wide = append(wide, path)
+			wide++
 		}
+		out = append(out, path)
 	}
-	sort.SliceStable(clean, func(i, j int) bool { return len(texts[clean[i]]) > len(texts[clean[j]]) })
-	seen := map[string]bool{}
-	var out []string
-	for _, group := range [][]string{clean[:min(6, len(clean))], spread(dotting, 4), spread(wide, 4)} {
-		for _, path := range group {
-			if !seen[path] {
-				seen[path] = true
-				out = append(out, path)
-			}
-		}
-	}
-	require.NotEmpty(t, dotting, "no file of the corpus dot-imports")
-	require.NotEmpty(t, wide, "no file of the corpus has non-ASCII text")
+	require.Positive(t, dotting, "no file of the sample dot-imports")
+	require.Positive(t, wide, "no file of the sample has non-ASCII text")
 	return out
+}
+
+// handlerFiles is TestHandlerAnswers' sample, in the order it opens them:
+// large library files, which every platform stages, with dot imports and
+// non-ASCII text among them.
+var handlerFiles = []string{
+	"collection_immutable/array.gala",
+	"collection_mutable/treemap.gala",
+	"collection_immutable/treemap.gala",
+	"concurrent/future.gala",
+	"collection_mutable/treeset.gala",
+	"collection_immutable/treeset.gala",
+	"collection_immutable/list.gala",
 }
 
 // spread is at most n of xs, evenly spaced, in order.

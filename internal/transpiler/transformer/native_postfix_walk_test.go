@@ -136,7 +136,7 @@ func voidCalleeOf(n int) string {
 }
 
 // TestNativePostfixWalk holds the native walk of postfixShapes and of each of
-// postfixCases to the ANTLR walk (checkWalksAgree), and requires the native
+// postfixCases to its golden (checkWalk), and requires the native
 // walk to have lowered the suffixes they mark.
 func TestNativePostfixWalk(t *testing.T) {
 	run := exprWalkRunner(t)
@@ -171,7 +171,7 @@ func main() {
 `
 
 // runPackageValWalk walks packageValMain in a module whose lib package
-// declares the vals it reads, on both trees (checkWalksAgree).
+// declares the vals it reads, to its golden (checkWalk).
 func runPackageValWalk(t *testing.T) walkRun {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
@@ -187,6 +187,5 @@ func runPackageValWalk(t *testing.T) walkRun {
 	write("main.gala", packageValMain)
 	searchPaths := append([]string{root}, std...)
 	nativeW := &walkPipeline{searchPaths: searchPaths, root: root}
-	antlrW := &walkPipeline{searchPaths: searchPaths, root: root, antlrOnly: true}
-	return agreedWalk(t, nativeW, antlrW, filepath.Join(root, "main.gala"), packageValMain)
+	return goldenWalk(t, nativeW, filepath.Join(root, "main.gala"), packageValMain)
 }

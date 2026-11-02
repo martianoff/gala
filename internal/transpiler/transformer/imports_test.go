@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,30 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/transformer"
 )
+
+// TestImportManager_TransitiveImportsInPathOrder: the transitive imports are
+// declared in path order, whatever order their map gives, so a file that
+// needs several (the Go packages defaults of another package name, as in
+// examples/default_go_dot_import) gets the same Go on every run.
+func TestImportManager_TransitiveImportsInPathOrder(t *testing.T) {
+	paths := []string{"unicode/utf8", "strings", "encoding/json", "example.com/lib/deep", "bytes"}
+	want := []string{"bytes", "encoding/json", "example.com/lib/deep", "strings", "unicode/utf8"}
+	for range 20 {
+		m := transformer.NewImportManager()
+		for _, p := range paths {
+			m.AddTransitive(p, transpiler.AssumedPackageName(p))
+		}
+		file := &ast.File{Name: ast.NewIdent("main")}
+		m.AddTransitiveImportsToFile(file, nil)
+		var got []string
+		for _, d := range file.Decls {
+			for _, s := range d.(*ast.GenDecl).Specs {
+				got = append(got, strings.Trim(s.(*ast.ImportSpec).Path.Value, `"`))
+			}
+		}
+		require.Equal(t, want, got)
+	}
+}
 
 func TestImportManager_Add(t *testing.T) {
 	m := transformer.NewImportManager()

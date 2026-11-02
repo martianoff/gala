@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
@@ -19,9 +18,9 @@ import (
 // itself, or the binding is declared `var` where Go needs a *T.
 
 // immutableAddressError reports `&operand` when operand is immutable, or nil.
-// at is the unary expression, operandAt its operand (a unaryExpr), on either
-// tree, and operand the operand's lowering, used for the field paths a bare
-// name does not cover. Only a diagnostic reads the operand's ANTLR text.
+// at is the unary expression, operandAt its operand (a unaryExpr), and
+// operand the operand's lowering, used for the field paths a bare name does
+// not cover. Only a diagnostic reads the operand's source text.
 func (t *galaASTTransformer) immutableAddressError(at, operandAt srcNode, operand ast.Expr) error {
 	name, fixed := t.addressOperandBinding(operandAt)
 	var why, hint string
@@ -48,17 +47,11 @@ func (t *galaASTTransformer) immutableAddressError(at, operandAt srcNode, operan
 }
 
 // addressOperandBinding is immutablePostfixBinding of operand, a unaryExpr,
-// when it is a postfix expression with no unary operator, on either tree.
+// when it is a postfix expression with no unary operator.
 func (t *galaASTTransformer) addressOperandBinding(operand srcNode) (string, fixedBinding) {
 	var p postfixSrc
-	if operand.node.Ok() {
-		if u := (native.UnaryExprNode{GalaNodeRef: operand.node}); !u.UnaryOp().Ok() {
-			p = postfixSrc{node: u.PostfixExpr().GalaNodeRef}
-		}
-	} else if u := operand.ctx.(*grammar.UnaryExprContext); u.UnaryOp() == nil {
-		if postfix, ok := u.PostfixExpr().(*grammar.PostfixExprContext); ok {
-			p = postfixSrc{ctx: postfix}
-		}
+	if u := (native.UnaryExprNode{GalaNodeRef: operand.node}); operand.node.Ok() && !u.UnaryOp().Ok() {
+		p = postfixSrc{node: u.PostfixExpr().GalaNodeRef}
 	}
 	return t.immutablePostfixBinding(p)
 }

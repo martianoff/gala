@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:2 this case of the partial function produces no value; end it in a value, since a partial function returns `Some(value)` when a case matches
