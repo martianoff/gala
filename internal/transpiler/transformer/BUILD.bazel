@@ -217,6 +217,7 @@ go_test(
         "go_results_test.go",
         "go_sibling_methods_test.go",
         "go_subpackage_import_path_test.go",
+        "if_expr_branch_statements_test.go",
         "if_expr_trailing_match_test.go",
         "immutable_alias_field_test.go",
         "immutable_field_slot_test.go",

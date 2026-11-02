@@ -543,32 +543,27 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			return block, nil
 		}
-		// A bare `subject match { ... }` whose value is discarded by the
-		// surrounding ExprStmt must be lowered as a void IIFE; otherwise
-		// arms calling void Go functions (e.g. `d.Skip()`) get wrapped in
-		// `return d.Skip()` because at least one other arm produced a typed
-		// value, and Go rejects "return d.Skip()" as "no value used as
-		// value". A non-trailing statement is unconditionally
-		// statement-position; the trailing statement is statement-position
+		// A non-trailing statement discards its value; the trailing one does
 		// only when the caller did NOT signal that the block's last
-		// expression is consumed (transformValueBlock) — function
-		// bodies with a return type, lambda bodies, and match arm bodies
-		// all use it, since their trailing expression becomes the
-		// block's value.
-		prev := t.matchInStatementPos
-		isTrailing := i == lastIdx
-		discardsValue := !isTrailing || !lastStmtIsValue
-		value := t.onNative(st.valueExpr())
-		if discardsValue && t.bareMatch(value).ok() {
-			t.matchInStatementPos = true
+		// expression is consumed (transformValueBlock) — function bodies
+		// with a return type, lambda bodies, and match arm bodies all do,
+		// since their trailing expression becomes the block's value.
+		if i != lastIdx || !lastStmtIsValue {
+			var err error
+			if block.List, err = t.appendDiscardedStatement(block.List, st); err != nil {
+				return nil, err
+			}
+			continue
 		}
+		// The trailing statement of a value-carrying block.
+		value := t.onNative(st.valueExpr())
 		var stmt ast.Stmt
 		// pre: statements a local declaration needs before it (see
 		// lowerStatement).
 		var pre []ast.Stmt
 		var err error
 		// The trailing value of a lambda's block body is a result value.
-		slotBody := isTrailing && lastStmtIsValue && b.is(t, t.returnSlot.body)
+		slotBody := b.is(t, t.returnSlot.body)
 		// The trailing value of a lambda whose result type is not known yet
 		// is one of its result values, like a `return` value.
 		fillsPendingSlot := slotBody && value.ok() && t.returnSlotPending()
@@ -579,21 +574,14 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			lastValueExpected = typedSlot(t.returnSlot.typ)
 		}
 		ifS := st.ifStmt()
-		var discardedIf ifExprSrc // an if-expression whose value nothing reads
-		if discardsValue {
-			discardedIf = t.ifIn(value)
-		}
 		if bs, ok := t.lowerLoopControl(value); ok {
 			// Loop control is a statement wherever it sits, the tail of a
 			// value-carrying block included: it is never the block's value.
 			stmt = bs
-		} else if discardedIf.ok() {
-			// An if-expression whose value nothing reads is an if statement.
-			stmt, err = t.lowerIfExpressionStatement(discardedIf)
-		} else if isTrailing && tail == tailReturn && value.ok() {
+		} else if tail == tailReturn && value.ok() {
 			// The function's implicit return value.
 			stmt, err = t.lowerFunctionTail(value)
-		} else if isTrailing && ifS.ok() && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
+		} else if ifS.ok() && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
 			// A trailing if/else carries the block's value in its branches,
 			// and so does an if/else nested at the tail of such a branch.
 			branchTail := tailBranch
@@ -610,7 +598,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 					}
 				}
 			}
-		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != "" && t.hoistable(value) {
+		} else if lastValueExpected.hoist != "" && t.hoistable(value) {
 			// The value of an arm lowered as statements is stored, and so is
 			// that of a match or if-expression at its tail (see
 			// hoisted_value.go).
@@ -618,7 +606,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			if expr, err = t.lowerAgainst(value, lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
-		} else if isTrailing && lastStmtIsValue && !transpiler.IsUnusable(lastValueExpected.typ) &&
+		} else if !transpiler.IsUnusable(lastValueExpected.typ) &&
 			(t.needsExpectedType(value) || t.consumesSlotType(value, t.followAliasChain(lastValueExpected.typ)) ||
 				value.isNil()) {
 			// The block's value fills a typed slot: a lambda, if or match tail is
@@ -637,35 +625,18 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		} else {
 			stmt, pre, err = t.lowerStatement(st)
 		}
-		t.matchInStatementPos = prev
 		if err != nil {
 			return nil, err
 		}
-		// A statement-position match with a user-written `return X` inside an
-		// arm body cannot be lowered as an IIFE (the bare return that
-		// stripReturnStatements emits only exits the synthetic lambda, leaving
-		// any enclosing for-loop spinning forever). buildMatchExpressionFromClauses
-		// detects this case, builds the body as an inlined block, and stores
-		// it in pendingMatchStmtBlock; we replace the placeholder ExprStmt
-		// with the inlined block here so the user's `return X` becomes a real
-		// Go return from the enclosing function.
-		if t.pendingMatchStmtBlock != nil {
-			block.List = append(block.List, t.pendingMatchStmtBlock)
-			t.pendingMatchStmtBlock = nil
+		if inlined := t.takePendingMatchBlock(); inlined != nil {
+			block.List = append(block.List, inlined)
 			continue
 		}
-		// A value is discarded by every statement but the trailing one of a
-		// value-carrying block. At the tail of a tailIIFE block only a match
-		// or if-expression carries the value — even when it fills a pending
-		// slot, any other value is never promoted to the lambda's return.
-		discarded := !isTrailing || tail == tailDiscarded ||
-			(tail == tailIIFE && !t.needsExpectedType(value))
-		if discarded && value.ok() {
-			hint := functionDiscardHint
-			if isTrailing && tail == tailIIFE {
-				hint = lambdaDiscardHint
-			}
-			if err := t.checkValueUsedHint(value, stmt, hint); err != nil {
+		// At the tail of a tailIIFE block only a match or if-expression
+		// carries the value — even when it fills a pending slot, any other
+		// value is never promoted to the lambda's return.
+		if tail == tailIIFE && !t.needsExpectedType(value) && value.ok() {
+			if err := t.checkValueUsedHint(value, stmt, lambdaDiscardHint); err != nil {
 				return nil, err
 			}
 		}
@@ -675,6 +646,46 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		t.typeBlockValue(block)
 	}
 	return block, nil
+}
+
+// appendDiscardedStatement appends to dst the lowering of st, a block
+// statement whose value nothing reads — every statement of a block but the
+// trailing one of a value-carrying block. An expression there is lowered as
+// lowerExprStatement lowers it: a bare match is a statement-position match,
+// an if-expression an if statement, and a plain value is evaluated but not
+// used. Any other statement is lowered by lowerStatement, after the
+// statements a local declaration needs before it. st's own statement is
+// always the last one appended.
+func (t *galaASTTransformer) appendDiscardedStatement(dst []ast.Stmt, st stmtSrc) ([]ast.Stmt, error) {
+	if value := t.onNative(st.valueExpr()); value.ok() {
+		stmt, err := t.lowerExprStatement(value, functionDiscardHint)
+		if err != nil {
+			return nil, err
+		}
+		return append(dst, stmt), nil
+	}
+	stmt, pre, err := t.lowerStatement(st)
+	if err != nil {
+		return nil, err
+	}
+	if inlined := t.takePendingMatchBlock(); inlined != nil {
+		stmt = inlined
+	}
+	return append(append(dst, pre...), stmt), nil
+}
+
+// takePendingMatchBlock takes the inlined block a statement-position match
+// left in pendingMatchStmtBlock, and nil when there is none. A match with a
+// user-written `return X` in an arm cannot be lowered as an IIFE (the bare
+// return stripReturnStatements emits only exits the synthetic lambda, leaving
+// any enclosing for-loop spinning forever), so buildMatchExpressionFromClauses
+// builds it as an inlined block and lowers to a placeholder; the block stands
+// in for the placeholder's statement, so `return X` returns from the
+// enclosing function.
+func (t *galaASTTransformer) takePendingMatchBlock() *ast.BlockStmt {
+	block := t.pendingMatchStmtBlock
+	t.pendingMatchStmtBlock = nil
+	return block
 }
 
 // typeBlockValue types the trailing value of a value-carrying block while the
@@ -831,9 +842,8 @@ func (t *galaASTTransformer) lowerExprStatement(e exprSrc, hint string) (ast.Stm
 	if err != nil {
 		return nil, err
 	}
-	if block := t.pendingMatchStmtBlock; block != nil {
-		t.pendingMatchStmtBlock = nil
-		return block, nil
+	if inlined := t.takePendingMatchBlock(); inlined != nil {
+		return inlined, nil
 	}
 	stmt := &ast.ExprStmt{X: expr}
 	if err := t.checkValueUsedHint(e, stmt, hint); err != nil {
