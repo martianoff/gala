@@ -13,7 +13,7 @@ func TestExtract(t *testing.T) {
 	if len(gala) < 600 {
 		t.Fatalf("the corpus has %d .gala files", len(gala))
 	}
-	for _, name := range []string{"std/option.gala", "go_interop/types.go", "docs/errors/GALA-E0011.md"} {
+	for _, name := range []string{"std/option.gala", "go_interop/types.go", "docs/errors/GALA-E0011.md", "gala.mod"} {
 		if _, ok := files[name]; !ok {
 			t.Errorf("the corpus has no %s", name)
 		}

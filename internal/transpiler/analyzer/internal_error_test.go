@@ -130,6 +130,35 @@ func TestInternalErrorOfAnImportedPackage(t *testing.T) {
 	}
 }
 
+// TestInternalErrorThroughAnImporter: a package that imports a package with
+// an internal error fails too, and is not cached without that package's
+// metadata, so a later analysis reaching it through the importer fails as
+// well.
+func TestInternalErrorThroughAnImporter(t *testing.T) {
+	root, a := internalErrorProject(t, map[string]string{
+		"main.gala":  "package main\n\nimport \"example.com/repro/mid\"\n\nfunc main() {\n    mid.M()\n}\n",
+		"mid/m.gala": "package mid\n\nimport \"example.com/repro/dep\"\n\nfunc M() {\n    dep.F()\n}\n",
+		"dep/a.gala": "package dep\n\nfunc F() {}\n",
+		"dep/b.gala": "package dep\n\n" + convertFailMark + "\nfunc G() {}\n",
+	})
+	main := filepath.Join(root, "main.gala")
+	for range 2 {
+		requireInternal(t, a.analyzeText(t, main, nil), filepath.Join(root, "dep", "b.gala"))
+	}
+}
+
+// TestInternalErrorOfAnUnreadSibling: a sibling the analysis does not read,
+// a test file of a library analyzed as a non-test file, does not fail it.
+func TestInternalErrorOfAnUnreadSibling(t *testing.T) {
+	root, a := internalErrorProject(t, map[string]string{
+		"lib/a.gala":      "package lib\n\nfunc A() int = 1\n",
+		"lib/a_test.gala": "package lib\n\n" + convertFailMark + "\nfunc helper() int = 2\n",
+	})
+	if err := a.analyzeText(t, filepath.Join(root, "lib", "a.gala"), nil); err != nil {
+		t.Fatalf("an unread sibling failed the analysis: %v", err)
+	}
+}
+
 // TestPackageTopLevelNamesInternalError: the source scan of a package's
 // declarations returns the internal error of a file whose parse did not
 // convert, rather than leaving the file's names out.

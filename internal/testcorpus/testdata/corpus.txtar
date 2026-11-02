@@ -5,9 +5,12 @@ tests read only this archive. Every file is LF-only.
 
 It holds the .gala sources of //:all_gala_sources, //examples:all_gala_sources,
 //collection_immutable, //lazy, //resource, //std, //stream, //subprocess and
-//test, go_interop/types.go, go_builtins/builtins.go and the error reference
-pages docs/errors/GALA-E*.md, as they were when it was added. Changing it
-changes the goldens' inputs: regenerate them and review the change.
+//test, go_interop/types.go, go_builtins/builtins.go, the repository's
+gala.mod (so that the extracted corpus is a module of its own, as the
+repository is, and an analysis of it reads nothing outside it) and the error
+reference pages docs/errors/GALA-E*.md, as they were when it was added.
+Changing it changes the goldens' inputs: regenerate them and review the
+change.
 -- collection_immutable/array.gala --
 package collection_immutable
 
@@ -47441,6 +47444,10 @@ func Append(path string, data Array[byte], mode int) Try[Void] =
             val closeResult = FromError(f.Close())
             return writeResult.FlatMap((_) => closeResult)
         })
+-- gala.mod --
+module martianoff/gala
+
+gala 0.95.0
 -- go_builtins/builtins.go --
 // Package go_builtins is a dependency-free leaf package that exposes the
 // handful of Go builtin primitives GALA still needs internally but no longer
