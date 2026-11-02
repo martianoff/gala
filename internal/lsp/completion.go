@@ -125,7 +125,7 @@ func isDotCompletion(text string, line, char int) bool {
 // editor sorts them).
 func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 	// claims counts, by name, the entries that would offer it.
-	claims := make(map[string]int)
+	claims := make(map[string]int, len(richAST.Types))
 	for key, tm := range richAST.Types {
 		if name := typeItemName(key, tm); isExported(name) {
 			claims[name]++

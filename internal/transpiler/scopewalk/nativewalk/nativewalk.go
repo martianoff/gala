@@ -6,10 +6,15 @@
 package nativewalk
 
 import (
+	"errors"
+
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
+
+// parseExpressionTree parses an interpolated expression; tests replace it.
+var parseExpressionTree = parser.ParseExpressionTree
 
 // EnterFunctionScope, when a walk has one, is called after the walk pushes the
 // scope for a function declaration and before it binds the declaration's
@@ -421,7 +426,15 @@ func (w walk) walkLiteral(lit native.LiteralNode) {
 	// Each embedded expression is parsed on its own, into a native tree
 	// (parser.ParseExpressionTree), and walked in the current scope.
 	w.WalkInterpolatedParts(siteOf(tok.Token(), tok.GetText()), func(part string) {
-		expr, errs := parser.ParseExpressionTree(part)
+		expr, errs := parseExpressionTree(part)
+		// A part that parsed but did not convert is not walked: the walk is
+		// incomplete, which its caller learns from Err.
+		for _, err := range errs {
+			if errors.Is(err, parser.ErrConvertExpression) {
+				w.Fail(err)
+				return
+			}
+		}
 		if !expr.Ok() || len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
 			return
 		}

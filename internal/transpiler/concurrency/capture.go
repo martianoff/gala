@@ -40,6 +40,8 @@ package concurrency
 // enforcement. It is called only by its tests. PR3 consumes it.
 
 import (
+	"fmt"
+
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
@@ -90,6 +92,12 @@ var captureOptions = scopewalk.Options{ParseInterpolations: true}
 func capturesOf(walk func(*scopewalk.Walker)) []Capture {
 	c := newCaptureCollector()
 	walk(c.walker)
+	if err := c.walker.Err(); err != nil {
+		// The captures are incomplete, and a safety check cannot rest on
+		// them: a transpiler defect, which the transformer reports as one
+		// (it recovers the panic as GALA-E0017).
+		panic(fmt.Sprintf("capture analysis: %v", err))
+	}
 	return c.out
 }
 

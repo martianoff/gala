@@ -29,9 +29,7 @@ type Corpus struct {
 
 // Files is the corpus's files, by slash-separated path relative to its root,
 // to their texts. They end their lines with LF.
-func Files() map[string]string { return parsed() }
-
-var parsed = sync.OnceValue(func() map[string]string {
+var Files = sync.OnceValue(func() map[string]string {
 	files := map[string]string{}
 	// A checkout may have turned the archive's line ends into CRLF.
 	text := strings.ReplaceAll(archive, "\r\n", "\n")
@@ -55,20 +53,49 @@ var parsed = sync.OnceValue(func() map[string]string {
 	return files
 })
 
-// Extract writes the corpus into a new temporary directory of tb.
+// Extract is the corpus extracted to a temporary directory. Under Bazel it is
+// extracted once per test binary, in the test's TEST_TMPDIR (which Bazel
+// removes), and every test of the binary reads the same copy, so none may
+// write in it; elsewhere, into a directory of tb's own.
 func Extract(tb testing.TB) Corpus {
 	tb.Helper()
-	root := tb.TempDir()
+	var c Corpus
+	var err error
+	if os.Getenv("TEST_TMPDIR") != "" {
+		c, err = extracted()
+	} else {
+		c, err = extractTo(tb.TempDir())
+	}
+	if err != nil {
+		tb.Fatalf("cannot extract the corpus: %v", err)
+	}
+	return c
+}
+
+var extracted = sync.OnceValues(func() (Corpus, error) {
+	root, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "testcorpus")
+	if err != nil {
+		return Corpus{}, err
+	}
+	return extractTo(root)
+})
+
+// extractTo writes the corpus into root.
+func extractTo(root string) (Corpus, error) {
+	made := map[string]bool{}
 	for name, text := range Files() {
 		path := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			tb.Fatal(err)
+		if dir := filepath.Dir(path); !made[dir] {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return Corpus{}, err
+			}
+			made[dir] = true
 		}
 		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-			tb.Fatal(err)
+			return Corpus{}, err
 		}
 	}
-	return Corpus{Root: root}
+	return Corpus{Root: root}, nil
 }
 
 // Path is the path of the corpus file rel (slash-separated, relative to the
@@ -84,9 +111,8 @@ func (c Corpus) Rel(path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// GalaFiles is the paths of the corpus's .gala files, in the order of their
-// slash-separated names, which is the same on every platform.
-func (c Corpus) GalaFiles() []string {
+// GalaNames is the names of the corpus's .gala files (see Files), sorted.
+func GalaNames() []string {
 	var names []string
 	for name := range Files() {
 		if strings.HasSuffix(name, ".gala") {
@@ -94,6 +120,13 @@ func (c Corpus) GalaFiles() []string {
 		}
 	}
 	sort.Strings(names)
+	return names
+}
+
+// GalaFiles is the paths of the corpus's .gala files, in the order of their
+// slash-separated names (GalaNames), which is the same on every platform.
+func (c Corpus) GalaFiles() []string {
+	names := GalaNames()
 	paths := make([]string, len(names))
 	for i, name := range names {
 		paths[i] = c.Path(name)

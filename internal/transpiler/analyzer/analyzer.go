@@ -767,7 +767,8 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 				var failedPaths []string
 				for i, entry := range entries {
 					if perr := parseErrs[i]; perr != nil {
-						if ie := asInternal(perr); ie != nil {
+						// Only a sibling the analysis reads fails it.
+						if ie := asInternal(perr); ie != nil && a.seesSibling(candidatePaths[i], filePath) {
 							return nil, ie
 						}
 						failedPaths = append(failedPaths, candidatePaths[i])
@@ -2457,6 +2458,7 @@ func (a *galaAnalyzer) isStdType(name string) bool {
 // what the package's hand-written Go types record as theirs (AnalyzeGoFiles),
 // so code generation imports them the way the source does.
 func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler.RichAST, retErr error) {
+	hadInternal := a.internalErr != nil
 	// Every failure to load a package is recorded, whatever the reason. The
 	// undefined-symbol check consults the record: a package that did not load
 	// contributes none of its symbols, and its callers' callers cannot tell
@@ -2467,9 +2469,14 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		}
 		// Its callers take a package that did not load as a gap (a
 		// warning, or no metadata); an internal error fails the analysis
-		// that loads it instead (see analyzeFile).
-		if ie := asInternal(retErr); ie != nil && a.internalErr == nil {
-			a.internalErr = ie
+		// that loads it instead (see analyzeFile). The package is not left
+		// marked as analyzed, so every later analysis that imports it loads
+		// it again, from the parsed-file cache, and fails the same way.
+		if ie := asInternal(retErr); ie != nil {
+			if a.internalErr == nil {
+				a.internalErr = ie
+			}
+			delete(a.analyzedPkgs, importPath)
 		}
 	}()
 
@@ -2715,6 +2722,14 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// populated by the GALA analyzer.
 	if includeGenerated {
 		synthesizeTypeMetadataFromGo(pkgAST, goInfo)
+	}
+
+	// A package it imports met an internal error while it loaded: it has
+	// none of that package's metadata, so it fails too, and is neither
+	// cached nor kept as analyzed (see the deferred record above). Every
+	// later analysis reaching the failing package through it fails as well.
+	if !hadInternal && a.internalErr != nil {
+		return nil, a.internalErr
 	}
 
 	// Store in disk cache for future processes. Only the package's OWN
@@ -4197,10 +4212,10 @@ func (a *galaAnalyzer) lookupSiblingCache(canonDir, dirPath, filePath, pkgName s
 		if perr == nil {
 			return stale()
 		}
-		if ie := asInternal(perr); ie != nil {
-			return nil, false, nil, ie
-		}
 		if a.seesSibling(path, filePath) {
+			if ie := asInternal(perr); ie != nil {
+				return nil, false, nil, ie
+			}
 			syntaxErrs = append(syntaxErrs, perr)
 		}
 	}

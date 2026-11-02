@@ -77,7 +77,6 @@ func typeNamesNative(root native.GalaNodeRef) map[string]bool {
 	return names
 }
 
-
 // forEachTopLevelNameNative tells v every name the top-level declarations of
 // root, a file's native tree, introduce, and the kind of declaration: free
 // functions, types, struct shorthands, sealed types and their case variants,

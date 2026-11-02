@@ -159,6 +159,9 @@ type Walker struct {
 	// token, so a reference inside `s"…"` is attributed to the literal that
 	// contains it.
 	posOverride *Site
+
+	// err is the first defect the walk met (see Fail).
+	err error
 }
 
 // New returns a Walker that reports to v.
@@ -169,6 +172,19 @@ func New(v Visitor, opts Options) *Walker {
 // Options is w's options, for its walk on the native tree (package
 // nativewalk).
 func (w *Walker) Options() Options { return w.opts }
+
+// Fail records err, a defect the walk met that left part of the tree
+// unwalked (an interpolated expression galop's converter did not convert),
+// unless one is recorded already. The walk goes on; its caller fails with
+// Err, since what the walk reported is incomplete.
+func (w *Walker) Fail(err error) {
+	if w.err == nil {
+		w.err = err
+	}
+}
+
+// Err is the first defect the walk met (see Fail), or nil.
+func (w *Walker) Err() error { return w.err }
 
 // ---------------------------------------------------------------------------
 // Scope stack

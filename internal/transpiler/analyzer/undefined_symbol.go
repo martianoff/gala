@@ -386,6 +386,10 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	root := nf.root.GalaNodeRef
 	c.walkSourceFileNative(root)
 	c.checkTypeNamesNative(root)
+	if err := c.walker.Err(); err != nil {
+		// Part of the file went unchecked.
+		return nil, &InternalError{File: filePath, Err: err}
+	}
 	return c.sortedErrs(), nil
 }
 
@@ -590,7 +594,7 @@ func goInfoDeclaresPackage(gi *transpiler.GoTypeInfo, name string) bool {
 // them in the parsed-file cache, and a package's sources do not change
 // during a build.
 func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) (map[string]bool, error) {
-	out := make(map[string]bool)
+	var pkgs []string
 	for _, imp := range imports {
 		if !a.isGalaImport(imp.Path) {
 			continue // Go package — its symbols come from GoTypeInfo
@@ -598,25 +602,22 @@ func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) (map[string]b
 		// Only a dot import puts a package's names in scope unqualified; a
 		// named import is reached through its qualifier, which is checked
 		// separately.
-		if !imp.IsDot {
-			continue
+		if imp.IsDot {
+			pkgs = append(pkgs, strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix))
 		}
-		names, err := a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix))
+	}
+	// The implicit prelude is subject to the same treatment as any written
+	// import — it resolves through the ordinary package path, not a bypass.
+	pkgs = append(pkgs, registry.StdPackageName)
+	out := make(map[string]bool)
+	for _, pkg := range pkgs {
+		names, err := a.packageTopLevelNames(pkg)
 		if err != nil {
 			return nil, err
 		}
 		for name, isType := range names {
 			out[name] = out[name] || isType
 		}
-	}
-	// The implicit prelude is subject to the same treatment as any written
-	// import — it resolves through the ordinary package path, not a bypass.
-	stdNames, err := a.packageTopLevelNames(registry.StdPackageName)
-	if err != nil {
-		return nil, err
-	}
-	for name, isType := range stdNames {
-		out[name] = out[name] || isType
 	}
 	// A prelude package registers type names its sources do not declare, such
 	// as the `Ptr[T]` marker, which a type argument in an expression names

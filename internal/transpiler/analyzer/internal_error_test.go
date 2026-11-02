@@ -116,6 +116,9 @@ func TestInternalErrorOfAnImportedPackage(t *testing.T) {
 	})
 	main := filepath.Join(root, "main.gala")
 	requireInternal(t, a.analyzeText(t, main, nil), filepath.Join(root, "dep", "b.gala"))
+	// Every analysis of the batch that imports the package fails, not only
+	// the one that loaded it first.
+	requireInternal(t, a.analyzeText(t, main, nil), filepath.Join(root, "dep", "b.gala"))
 	// The failure is the analysis's own: the next one of the batch, which
 	// imports a package that loads, succeeds.
 	other := filepath.Join(root, "other.gala")

@@ -2,7 +2,6 @@ package nativewalk
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 
@@ -34,16 +33,8 @@ func TestWalkGolden(t *testing.T) {
 	for i, in := range walkInputs {
 		sources = append(sources, source{fmt.Sprintf("input %d", i), in})
 	}
-	files := testcorpus.Files()
-	var names []string
-	for name := range files {
-		if strings.HasSuffix(name, ".gala") {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		sources = append(sources, source{name, files[name]})
+	for _, name := range testcorpus.GalaNames() {
+		sources = append(sources, source{name, testcorpus.Files()[name]})
 	}
 	walked := 0
 	for _, src := range sources {

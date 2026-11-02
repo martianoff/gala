@@ -16,6 +16,7 @@ go_library(
 go_test(
     name = "nativewalk_test",
     srcs = [
+        "interpolation_failure_test.go",
         "nativewalk_test.go",
         "walk_golden_test.go",
     ],

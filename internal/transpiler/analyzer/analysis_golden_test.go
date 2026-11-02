@@ -78,11 +78,10 @@ func goldenInputs(t *testing.T) ([]goldenInput, []string, string) {
 	}
 	written := t.TempDir()
 	addPackage := func(key string, files [][2]string) {
-		dir := filepath.Join(written, fmt.Sprintf("p%03d", len(inputs)))
-		if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		dir := filepath.Join(written, fmt.Sprintf("p%03d", len(inputs)), "pkg")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		dir = filepath.Join(dir, "pkg")
 		var pkgPaths []string
 		for _, f := range files {
 			path := filepath.Join(dir, f[0])

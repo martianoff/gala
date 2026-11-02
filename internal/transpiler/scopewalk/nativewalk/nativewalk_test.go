@@ -3,7 +3,6 @@ package nativewalk
 import (
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"martianoff/gala/internal/parser"
@@ -99,10 +98,8 @@ func (discard) Reference(string, scopewalk.Site, scopewalk.Use) {}
 // parses the sources afresh, untimed.
 func BenchmarkWalk(b *testing.B) {
 	var texts []string
-	for name, text := range testcorpus.Files() {
-		if strings.HasSuffix(name, ".gala") {
-			texts = append(texts, text)
-		}
+	for _, name := range testcorpus.GalaNames() {
+		texts = append(texts, testcorpus.Files()[name])
 	}
 	opts := scopewalk.Options{ParseInterpolations: true, RequireCleanInterpolationParse: true, SkipCompositeLiteralKeys: true, SkipTypedPatternArgument: true}
 	for _, mode := range []string{"native", "native-walk"} {
