@@ -116,6 +116,7 @@ go_test(
     size = "large",
     srcs = [
         "broken_buffer_golden_test.go",
+        "calls_golden_test.go",
         "native_tree_test.go",
     ],
     data = [
@@ -125,6 +126,7 @@ go_test(
         "//go_interop:types.go",
         "//std:gala_sources",
         "testdata/broken_buffers.golden",
+        "testdata/calls.golden",
         "testdata/handler_answers.golden",
     ],
     embed = [":lsp"],
