@@ -144,9 +144,6 @@ type galaASTTransformer struct {
 	// lowered, and the element type each binding takes is recorded here.
 	valTypes map[string]transpiler.Type
 
-	// walkedNative is whether the last transform's top-level walk read the
-	// native tree (see newWalkSource): false only when the file had none.
-	walkedNative bool
 	// onNativeDecl, when set, is told of each top-level declaration the
 	// native walk lowers. It observes and changes nothing;
 	// the walk tests set it to prove which tree each file's walk read.
@@ -243,7 +240,6 @@ func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*tran
 		File:             file,
 		VarTypes:         varTypes,
 		LambdaParamHints: hints,
-		WalkedNative:     t.walkedNative,
 	}, transformErr
 }
 
@@ -275,12 +271,12 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 // Types map the transform may extend.
 //
 // The file is walked as its transform walks it (see newWalkSource), on its
-// native tree; onNative is false, and types empty, when it has none.
-func InferPackageValTypes(richAST *transpiler.RichAST) (types map[string]transpiler.Type, onNative bool) {
+// native tree; types is empty when it has none.
+func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Type {
 	t := NewGalaASTTransformer().(*galaASTTransformer)
 	t.valTypes = make(map[string]transpiler.Type)
 	_, _, _ = t.transform(richAST, false)
-	return t.valTypes, t.walkedNative
+	return t.valTypes
 }
 
 // lowersCleanly lowers one top-level declaration, reporting whether it lowered
@@ -349,7 +345,6 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			)
 		}
 	}()
-	t.walkedNative = false
 	t.currentScope = nil
 	t.resetExprTypeCache()
 	t.goResults = nil
@@ -491,7 +486,6 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	if err != nil {
 		return nil, nil, err
 	}
-	t.walkedNative = true
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName

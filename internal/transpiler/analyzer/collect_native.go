@@ -99,9 +99,6 @@ func nativeTopLevelDecls(root native.GalaNodeRef) iter.Seq[native.GalaNodeRef] {
 	}
 }
 
-// ok reports whether f is a native tree, not the zero nativeFile.
-func (f nativeFile) ok() bool { return f.root.Ok() }
-
 // nativePos is transpiler.PosFromToken of n's first token.
 func nativePos(n native.GalaNodeRef) transpiler.SourcePos {
 	return nativeTokenPos(n.Start())

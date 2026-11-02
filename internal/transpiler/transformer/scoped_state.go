@@ -114,7 +114,6 @@ var accumulatedStateFields = []string{
 	"goTypeInfo",
 	"filePath",
 	"richAST",
-	"walkedNative",
 	"onNativeDecl",
 	"onNativeStmt",
 	"onNativeType",

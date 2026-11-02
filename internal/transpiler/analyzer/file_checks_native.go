@@ -5,7 +5,6 @@ import (
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
-	"martianoff/gala/internal/transpiler"
 )
 
 // The reads analyze makes of the compiled file before and around its
@@ -78,12 +77,6 @@ func typeNamesNative(root native.GalaNodeRef) map[string]bool {
 	return names
 }
 
-// checkDotImportCollisionsNative reports GALA-E0066 for the first top-level
-// name root, a file's native tree, declares that a package dot-imported by any
-// file of the package also exports (see dotImportCollisions).
-func checkDotImportCollisionsNative(root native.GalaNodeRef, dotImports map[string][]string, richAST *transpiler.RichAST) error {
-	return dotImportCollisions(dotImports, richAST, func(v topLevelVisitor) { forEachTopLevelNameNative(root, v) })
-}
 
 // forEachTopLevelNameNative tells v every name the top-level declarations of
 // root, a file's native tree, introduce, and the kind of declaration: free

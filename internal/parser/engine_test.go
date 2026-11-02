@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // gatherSources returns the .gala files staged as data of parser_test.
@@ -385,6 +387,40 @@ func TestGalopPanicFallsBack(t *testing.T) {
 	}
 	if got, want := parseExpressionWith(EngineGalop, "a + b"), parseExpressionWith(EngineANTLR, "a + b"); got != want {
 		t.Errorf("expression after a panic:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestParseExpressionTreeReportsConversionFailure: when galop's converter
+// gives no tree, ParseExpressionTree gives the zero node and says why
+// (ErrConvertExpression), whether the converter returned nothing or panicked.
+func TestParseExpressionTreeReportsConversionFailure(t *testing.T) {
+	RequestEngine(string(EngineANTLR))
+	saved := galopToNative
+	defer func() { galopToNative = saved; RequestEngine("") }()
+	for name, conv := range map[string]func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext){
+		"no tree": func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext) {
+			return nil, nil
+		},
+		"panic": func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext) {
+			panic("injected")
+		},
+	} {
+		galopToNative = conv
+		expr, errs := ParseExpressionTree("a + b")
+		if expr.Ok() {
+			t.Errorf("%s: got a tree", name)
+		}
+		found := false
+		for _, err := range errs {
+			found = found || errors.Is(err, ErrConvertExpression)
+		}
+		if !found {
+			t.Errorf("%s: errors %v do not report the conversion failure", name, errs)
+		}
+	}
+	galopToNative = saved
+	if expr, errs := ParseExpressionTree("a + b"); !expr.Ok() || len(errs) > 0 {
+		t.Errorf("with the converter back: tree %v, errors %v", expr.Ok(), errs)
 	}
 }
 

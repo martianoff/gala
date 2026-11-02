@@ -389,7 +389,7 @@ func TestParsedFileEntryKeepsDocsAndNative(t *testing.T) {
 	if len(entry.parsed.Docs) == 0 {
 		t.Error("the cached parse has no docs")
 	}
-	if !entry.parsed.Native.Converted() || !entry.nf.ok() {
+	if !entry.parsed.Native.Converted() || !entry.nf.root.Ok() {
 		t.Error("the parsed-file cache keeps no converted native tree, which the file's reads take")
 	}
 	if entry.pkgName != "spkg" || entry.pkgPos != (transpiler.SourcePos{Line: 1, Column: 0}) {
@@ -414,7 +414,7 @@ func TestSharedParsedFiles(t *testing.T) {
 		return a
 	}
 	first := analyzerSharing().parseFileEntry(path)
-	if first == nil || first.parsed == nil || !first.nf.ok() {
+	if first == nil || first.parsed == nil || !first.nf.root.Ok() {
 		t.Fatal("the file has no cached parse with a native tree")
 	}
 	if again := analyzerSharing().parseFileEntry(path); again != first {

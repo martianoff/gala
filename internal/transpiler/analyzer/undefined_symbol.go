@@ -369,8 +369,11 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
-) []*galaerr.SemanticError {
-	c := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
+) ([]*galaerr.SemanticError, error) {
+	c, err := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
+	if err != nil {
+		return nil, err
+	}
 	c.walker = scopewalk.New(c, undefWalkOptions())
 	// The value walk, then the type pass. Type positions are invisible to the
 	// value walker, so they get their own pass over the same qualifier set.
@@ -383,20 +386,24 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	root := nf.root.GalaNodeRef
 	c.walkSourceFileNative(root)
 	c.checkTypeNamesNative(root)
-	return c.sortedErrs()
+	return c.sortedErrs(), nil
 }
 
 // newUndefChecker is the checker of the file at filePath, whose imports are
 // imports, with no walker yet: the symbol table and the scope its checks
 // decide by, whichever tree they read. See checkUndefinedSymbols for
 // fileDotImportSets.
-func (a *galaAnalyzer) newUndefChecker(imports []fileImport, richAST *transpiler.RichAST, filePath string, fileDotImportSets map[string]map[string]bool) *undefChecker {
+func (a *galaAnalyzer) newUndefChecker(imports []fileImport, richAST *transpiler.RichAST, filePath string, fileDotImportSets map[string]map[string]bool) (*undefChecker, error) {
 	declared := indexDeclaredSymbols(richAST)
 	for name := range a.undefinedSymbolLocalGoNames(filePath) {
 		declared[name] = true
 	}
 	sourceTypes := make(map[string]bool)
-	for name, isType := range a.importedTopLevelNames(imports) {
+	imported, err := a.importedTopLevelNames(imports)
+	if err != nil {
+		return nil, err
+	}
+	for name, isType := range imported {
 		declared[name] = true
 		if isType {
 			sourceTypes[name] = true
@@ -418,7 +425,7 @@ func (a *galaAnalyzer) newUndefChecker(imports []fileImport, richAST *transpiler
 		receiverImports: func(recvType string) map[string]bool {
 			return receiverFileImports(a.paths, richAST, recvType, filePath, fileDotImportSets)
 		},
-	}
+	}, nil
 }
 
 // sortedErrs is the checker's errors in source order.
@@ -582,7 +589,7 @@ func goInfoDeclaresPackage(gi *transpiler.GoTypeInfo, name string) bool {
 // analyzePackage has already parsed these files, so parseFile usually finds
 // them in the parsed-file cache, and a package's sources do not change
 // during a build.
-func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bool {
+func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) (map[string]bool, error) {
 	out := make(map[string]bool)
 	for _, imp := range imports {
 		if !a.isGalaImport(imp.Path) {
@@ -594,13 +601,21 @@ func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bo
 		if !imp.IsDot {
 			continue
 		}
-		for name, isType := range a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix)) {
+		names, err := a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix))
+		if err != nil {
+			return nil, err
+		}
+		for name, isType := range names {
 			out[name] = out[name] || isType
 		}
 	}
 	// The implicit prelude is subject to the same treatment as any written
 	// import — it resolves through the ordinary package path, not a bypass.
-	for name, isType := range a.packageTopLevelNames(registry.StdPackageName) {
+	stdNames, err := a.packageTopLevelNames(registry.StdPackageName)
+	if err != nil {
+		return nil, err
+	}
+	for name, isType := range stdNames {
 		out[name] = out[name] || isType
 	}
 	// A prelude package registers type names its sources do not declare, such
@@ -611,29 +626,30 @@ func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bo
 			out[name] = true
 		}
 	}
-	return out
+	return out, nil
 }
 
 // packageTopLevelNames parses the .gala sources of the package at `relPath`
-// and returns the names their top-level declarations introduce.
-func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
+// and returns the names their top-level declarations introduce. A source that
+// does not parse is left out; an internal error reading one is returned.
+func (a *galaAnalyzer) packageTopLevelNames(relPath string) (map[string]bool, error) {
 	if a.resolver == nil {
-		return nil
+		return nil, nil
 	}
 	dirPath, err := a.resolver.ResolvePackagePath(relPath)
 	if err != nil || dirPath == "" {
-		return nil
+		return nil, nil
 	}
 	key := a.paths.canonical(dirPath)
 	if cached, ok := a.importedNames[key]; ok {
-		return cached
+		return cached, nil
 	}
 	entries, rerr := os.ReadDir(dirPath)
 	if rerr != nil {
 		if a.importedNames != nil {
 			a.importedNames[key] = nil
 		}
-		return nil
+		return nil, nil
 	}
 	names := make(map[string]bool)
 	for _, e := range entries {
@@ -642,14 +658,18 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 			continue
 		}
 		path := filepath.Join(dirPath, n)
-		if entry, _ := a.parseFile(path); entry != nil {
+		entry, perr := a.parseFile(path)
+		if ie := asInternal(perr); ie != nil {
+			return nil, ie
+		}
+		if entry != nil {
 			addNames(names, typeNamesNative(entry.nf.root.GalaNodeRef))
 		}
 	}
 	if a.importedNames != nil {
 		a.importedNames[key] = names
 	}
-	return names
+	return names, nil
 }
 
 // topLevelNameRecorder is the visitor that records into out every name the

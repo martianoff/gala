@@ -17,6 +17,7 @@ go_library(
         "go_nocopy.go",
         "go_types.go",
         "infer_native.go",
+        "internal_error.go",
         "opaque.go",
         "package_siblings.go",
         "path_cache.go",
@@ -140,6 +141,7 @@ go_test(
 # gazelle:exclude collect_native_test.go
 # gazelle:exclude undefined_symbol_native_test.go
 # gazelle:exclude file_checks_native_test.go
+# gazelle:exclude internal_error_test.go
 # gazelle:exclude recollect_test.go
 go_test(
     # keep
@@ -148,6 +150,7 @@ go_test(
         "analysis_golden_test.go",
         "collect_native_test.go",
         "file_checks_native_test.go",
+        "internal_error_test.go",
         "recollect_test.go",
         "undefined_symbol_native_test.go",
     ],

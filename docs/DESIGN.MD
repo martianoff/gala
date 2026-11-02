@@ -303,10 +303,14 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     analyzer reads every file it takes in on it (its package clause, imports, declarations
     and checks; the undefined-symbol check is a walk of it, `nativewalk.New`) and keeps no
     ANTLR tree on its result, and the transformer has no ANTLR reader left. The transformer,
-    the scope walk and the transpiler's own library do not depend on ANTLR's runtime or
-    generated parser (`TestTransformerReadsNoANTLR`, `noantlr.Check`). Only a clean parse is
-    transformed, and every clean parse carries a native handle, ANTLR's engine included
-    (through the converter), so a file without a native tree is an internal error. The
+    the scope walk and the transpiler's own library do not depend on ANTLR's runtime,
+    generated parser or galop's converter directly: no non-test source of theirs imports
+    one, and their Bazel libraries name none as a dependency (`TestTransformerReadsNoANTLR`,
+    `noantlr.Check`). They still reach all three transitively through `//internal/parser`,
+    which parses with them, until the parser no longer does; the guard does not check
+    that. Only a clean parse is transformed, and every clean parse carries a native handle,
+    ANTLR's engine included (through the converter), so a file without a native tree is an
+    internal error, never read on ANTLR's tree instead. The
     default values and interpolated expressions it lowers are each parsed on their own by
     the engine's parser (galop's native parser, or ANTLR's and galop's converter); when that
     parse does not settle the text, ANTLR's parser alone parses it and its tree is

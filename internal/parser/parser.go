@@ -102,9 +102,9 @@ type Parsed struct {
 	Errors []error
 	// Native is the parse's native tree (see Native), nil when there is none:
 	// the parse gave no tree, or it reported an error (Errors is not empty:
-	// a syntax error, or a source-text or blank-line check), so that code
-	// with a native and an ANTLR path reads such a tree on the ANTLR one end
-	// to end. Every parse without errors has one, whichever parser made its
+	// a syntax error, or a source-text or blank-line check; its
+	// error-recovered tree is RecoveredNative's). Every parse without errors
+	// has one, whichever parser made its
 	// tree: galop's, or ANTLR's (with ANTLR's engine, or as galop's
 	// fallback). Until it converts it holds the token stream and the source
 	// text, which a clean parse's tree does not keep alive, so a holder that
@@ -147,10 +147,11 @@ func (p *Parsed) Lenient() (antlr.Tree, Docs, []error) {
 }
 
 // CleanNative is the native-tree handle of a parse without syntax errors,
-// nil for one with them (an error-recovered tree is ANTLR's to read), for no
-// parse, or when the holder dropped the handle. The
-// transpiler's native-tree readers take their handle from here, so a parse
-// without one is read on ANTLR's tree end to end.
+// nil for one with them (RecoveredNative has an error-recovered tree), for no
+// parse, or when the holder dropped the handle. The transpiler's readers (the
+// analyzer, the scope walk, the transformer) read the native tree only: a
+// clean parse without one, whose conversion failed, is an internal error to
+// them, not a parse read on ANTLR's tree.
 func (p *Parsed) CleanNative() *Native {
 	if p == nil || len(p.Errors) > 0 {
 		return nil
@@ -232,10 +233,11 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	return parsed
 }
 
-// Hooks for galop's parser, replaced by tests.
+// Hooks for galop's parser and converter, replaced by tests.
 var (
 	galopSourceFile = galop.SourceFile
 	galopExpression = galop.Expression
+	galopToNative   = galop.ToNative
 )
 
 // seedLexer makes lexer start at line and column col, as ANTLR counts them,

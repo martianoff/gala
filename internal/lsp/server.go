@@ -436,13 +436,11 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	return diagnostics
 }
 
-// analyzeClean analyzes parsed, a parse of text without syntax errors, on its
-// native tree when it has one, as the analyzer reads the other files it
-// takes in.
+// analyzeClean analyzes parsed, a parse of text without syntax errors. The
+// analyzer reads the native tree only (a parse without one is an internal
+// error), as it reads the other files it takes in.
 func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
-	if h.onTreeRead != nil { // Bridged converts: only a test's hook asks first
-		h.noteTreeRead(treeReadAnalysis, parsed.CleanNative().Bridged())
-	}
+	h.noteTreeRead(treeReadAnalysis, true)
 	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 }
 
@@ -710,7 +708,7 @@ func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAS
 	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
-	h.noteTreeRead(treeReadTransform, result != nil && result.WalkedNative)
+	h.noteTreeRead(treeReadTransform, true) // the transformer reads the native tree only
 
 	h.mu.Lock()
 	if h.isOpenLocked(uri) {

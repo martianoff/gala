@@ -8,7 +8,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -156,7 +155,8 @@ func ParseExpressionConvertedAt(input string, line, col int, what string) (nativ
 // native parser parses src that is exactly one expression; anything else,
 // and all of it with ANTLR's engine, is parsed by ANTLR's parser, its
 // error-recovered tree when there are errors, and converted by galop's
-// converter. No tree is the zero node: the converter failed (a panic is
+// converter. No tree is the zero node, with the reason among the errors: the
+// converter failed (an error wrapping ErrConvertExpression; a panic is also
 // reported through noteGalopPanic), or no engine can be chosen.
 func ParseExpressionTree(src string) (native.ExpressionNode, []error) {
 	engine, err := currentEngine()
@@ -172,7 +172,10 @@ func ParseExpressionTree(src string) (native.ExpressionNode, []error) {
 	if ctx == nil {
 		return native.ExpressionNode{}, errs
 	}
-	expr, _ := convertExpression(ctx, stream, src)
+	expr, err := convertExpression(ctx, stream, src)
+	if err != nil {
+		return native.ExpressionNode{}, append(errs, err)
+	}
 	return expr, errs
 }
 
@@ -186,7 +189,7 @@ func convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStr
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
 		}
 	}()
-	tree, _ := galop.ToNative(ctx, stream, src)
+	tree, _ := galopToNative(ctx, stream, src)
 	if tree == nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: the converter gave no tree", ErrConvertExpression)
 	}

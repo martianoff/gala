@@ -90,6 +90,7 @@ go_test(
         "//internal/depman/fetch",
         "//internal/depman/mod",
         "//internal/depman/sum",
+        "//internal/parser",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",

@@ -137,6 +137,9 @@ type galaAnalyzer struct {
 	currentDotImportPkgs map[string]bool            // Package names dot-imported by the current file OR any sibling — package-wide on purpose: sibling declarations resolve through it too, and GALA-E0025 (not this set) enforces per-file imports
 	currentQualifiers    fileQualifiers             // Import table of the file whose declarations are being resolved (see fileQualifiers)
 	analyzeDepth         int                        // recursion depth for profiling
+	// internalErr is the first InternalError met loading a package during the
+	// current top-level analysis, which fails it (see analyzeFile).
+	internalErr *InternalError
 	cache                *analysisCache             // disk-based package analysis cache
 
 	// pendingResolveErrors collects GALA-E0025 errors for unqualified
@@ -302,7 +305,11 @@ type parsedFileEntry struct {
 	// is nil then), stamped with the file's path. Cached like a parse, so a
 	// broken sibling is not re-parsed by every file of its package.
 	syntaxErr error
-	mtime     time.Time
+	// internalErr is the InternalError of a file that parses but whose
+	// parse did not convert to a native tree (parsed is nil then). Cached
+	// like a parse; every reader of the file fails with it.
+	internalErr error
+	mtime       time.Time
 	size      int64
 }
 
@@ -584,14 +591,24 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // therefore what an analysis failure reports, in place of the cascade they
 // cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
 // the phases after analysis to do the same.
-func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, filePath string) (result *transpiler.RichAST, err error) {
+func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, filePath string) (*transpiler.RichAST, error) {
+	nf, err := nativeFileOf(handle)
+	if err != nil {
+		return nil, &InternalError{File: filePath, Err: err}
+	}
+	return a.analyzeFile(docs, handle, nf, filePath)
+}
+
+// analyzeFile is analyze of the file whose handle converted to nf.
+func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Native, nf nativeFile, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
 
 	var siblingSyntaxErrs []error
 	defer func() {
-		if len(siblingSyntaxErrs) == 0 {
+		// An internal error is not a cascade of a sibling's syntax error.
+		if len(siblingSyntaxErrs) == 0 || asInternal(err) != nil {
 			return
 		}
 		sibErr := siblingSyntaxErrs[0]
@@ -604,6 +621,17 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 			result.SiblingSyntaxErrors = sibErr
 		}
 	}()
+	// An internal error met loading an imported package, however the load's
+	// caller took the failure, fails the analysis of the file.
+	if isTopLevel {
+		a.internalErr = nil
+		defer func() {
+			if a.internalErr != nil {
+				result, err = nil, a.internalErr
+				a.internalErr = nil
+			}
+		}()
+	}
 
 	var analyzeStart time.Time
 	if profiler.Enabled && isTopLevel {
@@ -617,10 +645,6 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 	_ = analyzeStart
 	_ = logPhase
 
-	nf, err := nativeFileOf(handle)
-	if err != nil {
-		return nil, fmt.Errorf("internal error: %s: %w", filePath, err)
-	}
 	root := nf.root.GalaNodeRef
 
 	// GALA-E0055: a name spelled like a Go keyword cannot reach the generated
@@ -663,6 +687,9 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 		entries, parseErrs := a.parseFilesConcurrent(toParse)
 		for i, entry := range entries {
 			if perr := parseErrs[i]; perr != nil {
+				if ie := asInternal(perr); ie != nil {
+					return nil, ie
+				}
 				siblingSyntaxErrs = append(siblingSyntaxErrs, perr)
 				continue
 			}
@@ -740,6 +767,9 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 				var failedPaths []string
 				for i, entry := range entries {
 					if perr := parseErrs[i]; perr != nil {
+						if ie := asInternal(perr); ie != nil {
+							return nil, ie
+						}
 						failedPaths = append(failedPaths, candidatePaths[i])
 						if a.seesSibling(candidatePaths[i], filePath) {
 							siblingSyntaxErrs = append(siblingSyntaxErrs, perr)
@@ -1108,7 +1138,7 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 
 	// GALA-E0066: a package-level name a dot import also brings in.
 	if isTopLevel {
-		if err := checkDotImportCollisionsNative(root, packageDotImports, richAST); err != nil {
+		if err := dotImportCollisions(root, packageDotImports, richAST); err != nil {
 			return nil, err
 		}
 	}
@@ -1297,7 +1327,11 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if checksUndefined {
-			if errs := a.checkUndefinedSymbols(nf, fileImports, richAST, filePath, fileDotImportSets); len(errs) > 0 {
+			errs, err := a.checkUndefinedSymbols(nf, fileImports, richAST, filePath, fileDotImportSets)
+			if err != nil {
+				return nil, err
+			}
+			if len(errs) > 0 {
 				return nil, errs[0]
 			}
 		}
@@ -1363,7 +1397,7 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, files [
 			view.Native = f.handle
 			view.FilePath = f.path
 			view.Types = maps.Clone(richAST.Types)
-			types, _ := transformer.InferPackageValTypes(&view)
+			types := transformer.InferPackageValTypes(&view)
 			for name, typ := range types {
 				if pv := richAST.PackageVals[name]; pv != nil && pv.Type.IsNil() {
 					typed := *pv
@@ -2431,6 +2465,12 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		if retErr != nil {
 			a.notePackageLoadFailure(relPath)
 		}
+		// Its callers take a package that did not load as a gap (a
+		// warning, or no metadata); an internal error fails the analysis
+		// that loads it instead (see analyzeFile).
+		if ie := asInternal(retErr); ie != nil && a.internalErr == nil {
+			a.internalErr = ie
+		}
 	}()
 
 	var pkgStart time.Time
@@ -2542,7 +2582,14 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			candidatePaths = append(candidatePaths, filepath.Join(dirPath, f.Name()))
 		}
 	}
-	entries, _ := a.parseFilesConcurrent(candidatePaths)
+	// A file that does not parse is left out of the package's metadata, as
+	// one whose analysis fails is; an internal error fails the load.
+	entries, parseErrs := a.parseFilesConcurrent(candidatePaths)
+	for _, perr := range parseErrs {
+		if ie := asInternal(perr); ie != nil {
+			return nil, ie
+		}
+	}
 	// What the package's defaults mean where they were written, for a use
 	// site in an importing package (see defaultScopeRecorder).
 	scopes := newDefaultScopeRecorder(importPath)
@@ -2556,7 +2603,10 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		// recursive work and is intentionally serialized; parsing is the
 		// part that benefited from parallelism above.
 		{
-			res, err := a.analyze(entry.parsed.Docs, entry.parsed.Native, filePath)
+			res, err := a.analyzeFile(entry.parsed.Docs, entry.parsed.Native, entry.nf, filePath)
+			if ie := asInternal(err); ie != nil {
+				return nil, ie
+			}
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -3914,9 +3964,11 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // caching the result on the analyzer keyed by canonical absolute path. Cache
 // entries are invalidated when the file's mtime or size changes between
 // calls. It is nil for a file that cannot be read or has no package clause,
-// and an entry with syntaxErr set for one that does not parse, syntaxErr
-// being its syntax error stamped with the file's path; the caller decides
-// whether either is fatal (see Analyze's siblingSyntaxErrs).
+// an entry with syntaxErr set for one that does not parse, syntaxErr being
+// its syntax error stamped with the file's path, and an entry with
+// internalErr set for one whose clean parse did not convert to a native tree.
+// The caller decides whether a syntax error is fatal (see Analyze's
+// siblingSyntaxErrs); an internal error always is.
 //
 // Used by the explicit-package-files branch in Analyze (to amortize
 // sibling parsing across BatchAnalyzer calls) and by analyzePackage (so
@@ -3952,11 +4004,11 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	// rather than by its first reader: every reader takes the native tree,
 	// and a converted handle no longer holds the token stream (see
 	// parser.Parsed.Native). A clean parse that does not convert is a bug in
-	// galop's converter, which no reader can work around: it is reported as
-	// the file's error, as an internal one.
+	// galop's converter, which no reader can work around: every reader fails
+	// with it, as an internal error (not as the file's syntax error).
 	nf, err := nativeFileOf(parsed.CleanNative())
 	if err != nil {
-		return a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: fmt.Errorf("internal error: %s: %w", path, err), mtime: info.ModTime(), size: info.Size()})
+		return a.cacheParsedFile(canonPath, &parsedFileEntry{internalErr: &InternalError{File: path, Err: err}, mtime: info.ModTime(), size: info.Size()})
 	}
 	clause := nf.root.PackageClause()
 	name := clause.Identifier()
@@ -4016,17 +4068,18 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 	return canonPath
 }
 
-// parseFile is the parse of path (parseFileEntry), or its syntax error: no
-// entry for a file that does not parse, nor for one that cannot be read or
-// has no package clause.
+// parseFile is the parse of path (parseFileEntry), or its syntax error or
+// InternalError: no entry for a file that does not parse or convert, nor for
+// one that cannot be read or has no package clause.
 func (a *galaAnalyzer) parseFile(path string) (*parsedFileEntry, error) {
 	entry := a.parseFileEntry(path)
-	if entry == nil || entry.syntaxErr != nil {
-		var err error
-		if entry != nil {
-			err = entry.syntaxErr
-		}
-		return nil, err
+	switch {
+	case entry == nil:
+		return nil, nil
+	case entry.internalErr != nil:
+		return nil, entry.internalErr
+	case entry.syntaxErr != nil:
+		return nil, entry.syntaxErr
 	}
 	return entry, nil
 }
@@ -4143,6 +4196,9 @@ func (a *galaAnalyzer) lookupSiblingCache(canonDir, dirPath, filePath, pkgName s
 		_, perr := a.parseFile(path)
 		if perr == nil {
 			return stale()
+		}
+		if ie := asInternal(perr); ie != nil {
+			return nil, false, nil, ie
 		}
 		if a.seesSibling(path, filePath) {
 			syntaxErrs = append(syntaxErrs, perr)

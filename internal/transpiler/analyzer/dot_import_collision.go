@@ -7,11 +7,12 @@ import (
 	"slices"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
-// dotImportCollisions reports GALA-E0066 for the first top-level name a file
-// declares, as names reports them (forEachTopLevelNameNative), that a package
+// dotImportCollisions reports GALA-E0066 for the first top-level name root, a
+// file's native tree, declares (forEachTopLevelNameNative) that a package
 // dot-imported by any file of the package also exports. The package's own
 // declarations shadow its imports' names, std's included, but a dot import is
 // a Go dot import, and Go allows no package-level name that a dot import in
@@ -23,7 +24,7 @@ import (
 // prunes dot imports it finds unused, so a leftover dot import counts too:
 // whether one is kept depends on the bare names the file uses, and the
 // colliding declaration is such a name.
-func dotImportCollisions(dotImports map[string][]string, richAST *transpiler.RichAST, names func(topLevelVisitor)) error {
+func dotImportCollisions(root native.GalaNodeRef, dotImports map[string][]string, richAST *transpiler.RichAST) error {
 	if len(dotImports) == 0 || richAST == nil {
 		return nil
 	}
@@ -44,7 +45,7 @@ func dotImportCollisions(dotImports map[string][]string, richAST *transpiler.Ric
 		return ""
 	}
 	var err error
-	names(topLevelVisitor{name: func(name string, at transpiler.SourcePos, kind string) {
+	forEachTopLevelNameNative(root, topLevelVisitor{name: func(name string, at transpiler.SourcePos, kind string) {
 		// A dot import brings in exported names only.
 		if err != nil || !token.IsExported(name) {
 			return
