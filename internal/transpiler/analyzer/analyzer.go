@@ -3963,8 +3963,11 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	if !clause.Ok() || !name.Ok() {
 		return nil
 	}
+	// The entry keeps the native tree alone (Native.TreeOnly), not ANTLR's
+	// tree nor the contexts of the bridge: every reader takes the native tree,
+	// and the cache keeps the entry for the life of a build worker.
 	return a.cacheParsedFile(canonPath, &parsedFileEntry{
-		parsed:  parsed,
+		parsed:  &galaparser.Parsed{Docs: parsed.Docs, Native: parsed.Native.TreeOnly()},
 		nf:      nf,
 		pkgName: galaparser.NativeText(name.GalaNodeRef),
 		pkgPos:  nativePos(clause.GalaNodeRef),
