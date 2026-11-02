@@ -11,8 +11,8 @@ import (
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
-	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/testcorpus"
+	"martianoff/gala/internal/transpiler"
 )
 
 // parseWithGalop makes tb's parses use galop's parser whatever the build's

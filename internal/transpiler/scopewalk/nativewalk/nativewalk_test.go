@@ -129,4 +129,3 @@ func BenchmarkWalk(b *testing.B) {
 		})
 	}
 }
-

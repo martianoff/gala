@@ -140,7 +140,7 @@ type galaAnalyzer struct {
 	// internalErr is the first InternalError met loading a package during the
 	// current top-level analysis, which fails it (see analyzeFile).
 	internalErr *InternalError
-	cache                *analysisCache             // disk-based package analysis cache
+	cache       *analysisCache // disk-based package analysis cache
 
 	// pendingResolveErrors collects GALA-E0025 errors for unqualified
 	// names that don't resolve through the current file's explicit
@@ -310,7 +310,7 @@ type parsedFileEntry struct {
 	// like a parse; every reader of the file fails with it.
 	internalErr error
 	mtime       time.Time
-	size      int64
+	size        int64
 }
 
 // resolveCacheRoot returns the project root for the analysis disk cache.
