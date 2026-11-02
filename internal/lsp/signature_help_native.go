@@ -5,19 +5,6 @@ import (
 	"martianoff/gala/internal/parser/native"
 )
 
-// nativeRoot is the root of handle's native tree, converting it if no reader
-// has yet; false for no handle or a tree that does not convert.
-func nativeRoot(handle *parser.Native) (native.GalaNodeRef, bool) {
-	if handle == nil {
-		return native.GalaNodeRef{}, false
-	}
-	tree, err := handle.Tree()
-	if err != nil {
-		return native.GalaNodeRef{}, false
-	}
-	return tree.Root(), tree.Root().Ok()
-}
-
 // findCallAtOffsetNative returns the innermost call-style postfixSuffix (one
 // with an argument list or a `(`) whose argument list holds the byte offset
 // cursorOffset, under root, the native tree of a parse of the document's

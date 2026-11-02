@@ -131,7 +131,7 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 	run.path = path
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
-	run.root, _ = p.compiled.ConvertedRoot()
+	run.root, _ = p.compiled.Root()
 	run.stmts, run.lambdas, run.exprs, run.cases = len(run.stmtNodes), len(lambdas), len(exprs), len(cases)
 	return run
 }

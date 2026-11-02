@@ -148,7 +148,7 @@ func fileResolver(richAST *transpiler.RichAST, dotImports []string) *resolver.Ty
 // handle dot-imports, in source order (analyzer.DotImportPathsNative); none
 // for no handle.
 func dotImportPathsOf(handle *parser.Native) []string {
-	if root, ok := nativeRoot(handle); ok {
+	if root, ok := handle.Root(); ok {
 		return analyzer.DotImportPathsNative(root)
 	}
 	return nil

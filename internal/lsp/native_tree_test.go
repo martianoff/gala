@@ -21,6 +21,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/transpiler"
 )
 
 // nativeCorpus is the GALA sources staged as the test's data, sorted, with
@@ -248,17 +249,12 @@ func jsonOf(t *testing.T, v any) string {
 
 // TestBufferAnalysisTrees: a buffer that parses cleanly is analyzed and
 // transformed, and a buffer with a syntax error is analyzed on the native
-// tree of its error-recovered tree and not transformed; either way the
-// document keeps its native tree, converted, for the features that read it. A
+// tree of its error-recovered tree and not transformed. Either way the
+// document keeps, for the features that read it, the native tree of its own
+// text alone (Native.TreeOnly), without the bridge to ANTLR's tree. A
 // collection_immutable file is opened, so its siblings are read too.
 func TestBufferAnalysisTrees(t *testing.T) {
-	_, _, root := nativeCorpus(t)
-	path := filepath.Join(root, "collection_immutable", "array.gala")
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	clean := galaerr.StripBOM(string(data))
-	broken := strings.Replace(clean, "func ", "func (", 1)
-	uri := lsp.DocumentURI("file:///" + filepath.ToSlash(path))
+	clean, broken, uri, root := bufferTexts(t)
 	for _, c := range []struct {
 		name        string
 		text        string
@@ -269,14 +265,78 @@ func TestBufferAnalysisTrees(t *testing.T) {
 	} {
 		h := NewGalaHandler()
 		h.SetSearchPaths([]string{root})
-		require.NoError(t, h.DidOpen(context.Background(), &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: c.text}}))
-		h.mu.Lock()
-		richAST, handle, varTypes := h.richASTs[string(uri)], h.parseNatives[string(uri)], h.varTypes[string(uri)]
-		h.mu.Unlock()
-		require.NotNil(t, richAST, "%s: no analysis", c.name)
-		assert.NotEmpty(t, richAST.Types, "%s: the analysis collected no types", c.name)
-		require.NotNil(t, handle, "%s: no native tree kept", c.name)
-		assert.True(t, handle.Converted(), "%s: the analysis did not read the native tree", c.name)
-		assert.Equal(t, c.transformed, varTypes != nil, "%s: transformed", c.name)
+		got := openBuffer(t, h, uri, c.text)
+		require.NotNil(t, got.richAST, "%s: no analysis", c.name)
+		assert.Contains(t, got.richAST.Types, "Array", "%s: the analysis did not collect the file's types", c.name)
+		assertTreeOf(t, c.name, got, c.text)
+		assert.Equal(t, c.transformed, got.varTypes != nil, "%s: transformed", c.name)
 	}
+}
+
+// TestBufferTreeFollowsEdits opens one document with a clean text, then a
+// broken one, then the clean one again: after each, the document's analysis
+// and native tree are the new text's, and no earlier text's tree is kept.
+func TestBufferTreeFollowsEdits(t *testing.T) {
+	clean, broken, uri, root := bufferTexts(t)
+	h := NewGalaHandler()
+	h.SetSearchPaths([]string{root})
+	var prev bufferState
+	for i, text := range []string{clean, broken, clean} {
+		name := fmt.Sprintf("text %d", i)
+		got := openBuffer(t, h, uri, text)
+		require.NotNil(t, got.richAST, "%s: no analysis", name)
+		assertTreeOf(t, name, got, text)
+		assert.NotSame(t, prev.richAST, got.richAST, "%s: the analysis is an earlier text's", name)
+		assert.NotSame(t, prev.handle, got.handle, "%s: the native tree is an earlier text's", name)
+		prev = got
+	}
+}
+
+// bufferTexts is collection_immutable/array.gala of the staged corpus, clean
+// and with a syntax error, with the file's URI and the corpus root.
+func bufferTexts(t *testing.T) (clean, broken string, uri lsp.DocumentURI, root string) {
+	t.Helper()
+	_, _, root = nativeCorpus(t)
+	path := filepath.Join(root, "collection_immutable", "array.gala")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	clean = galaerr.StripBOM(string(data))
+	broken = strings.Replace(clean, "func ", "func (", 1)
+	require.NotEqual(t, clean, broken)
+	return clean, broken, lsp.DocumentURI("file:///" + filepath.ToSlash(path)), root
+}
+
+// bufferState is what a handler keeps of a document for its features.
+type bufferState struct {
+	richAST  *transpiler.RichAST
+	handle   *parser.Native
+	text     string // the text handle's tree was parsed from
+	varTypes map[string]string
+}
+
+// openBuffer opens uri with text in h, which analyzes it before returning,
+// and returns what h then keeps of it.
+func openBuffer(t *testing.T, h *GalaHandler, uri lsp.DocumentURI, text string) bufferState {
+	t.Helper()
+	require.NoError(t, h.DidOpen(context.Background(), &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: text}}))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	key := string(uri)
+	return bufferState{h.richASTs[key], h.parseNatives[key], h.parseTexts[key], h.varTypes[key]}
+}
+
+// assertTreeOf holds the native tree got keeps to be text's, and its tree
+// alone.
+func assertTreeOf(t *testing.T, name string, got bufferState, text string) {
+	t.Helper()
+	require.NotNil(t, got.handle, "%s: no native tree kept", name)
+	assert.False(t, got.handle.Bridged(), "%s: the bridge to ANTLR's tree is kept", name)
+	assert.Equal(t, text, got.text, "%s: the kept tree's text", name)
+	root, ok := got.handle.Root()
+	require.True(t, ok, "%s: the kept tree has no root", name)
+	// The root spans the text from its first token to its last: all of it
+	// but the space and comments around them.
+	src := nativeSourceText(root)
+	assert.Contains(t, text, src, "%s: the kept tree is not of the text", name)
+	assert.Greater(t, len(src), len(text)/2, "%s: the kept tree is not of the text", name)
 }

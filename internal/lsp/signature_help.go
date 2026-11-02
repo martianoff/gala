@@ -121,7 +121,7 @@ func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callCon
 	if handle == nil {
 		handle = h.parser.ParseFile(src).RecoveredNative()
 	}
-	root, ok := nativeRoot(handle)
+	root, ok := handle.Root()
 	if !ok {
 		return nil
 	}

@@ -359,20 +359,21 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	parsed := h.parser.ParseFile(text)
 	if errs := parsed.Errors; len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
+		// The features that read the tree get this text's error-recovered
+		// tree, the native tree alone (Native.TreeOnly), before the analysis
+		// runs; nil when there is none, so no older text's tree outlives the
+		// edit.
+		handle := parsed.RecoveredNative().TreeOnly() // converts: not under h.mu
+		h.mu.Lock()
+		if h.isOpenLocked(uri) {
+			h.parseNatives[uri] = handle
+			h.parseTexts[uri] = text
+		}
+		h.mu.Unlock()
 		// The parse failed: if the analyzer can extract type metadata from
 		// the partial tree, cache the richAST so completion/hover/definition
 		// work while mid-edit.
 		h.tryAnalyzePartial(uri, filePath, text, parsed)
-		// Kept after the analysis, which converted it: the native tree alone
-		// (Native.TreeOnly), for the features that read it.
-		if handle := parsed.RecoveredNative().TreeOnly(); handle != nil {
-			h.mu.Lock()
-			if h.isOpenLocked(uri) {
-				h.parseNatives[uri] = handle
-				h.parseTexts[uri] = text
-			}
-			h.mu.Unlock()
-		}
 		return diagnostics
 	}
 

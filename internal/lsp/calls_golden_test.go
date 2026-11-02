@@ -37,18 +37,18 @@ func TestCallsGolden(t *testing.T) {
 		if handle == nil {
 			continue
 		}
-		tree, err := handle.Tree()
-		require.NoError(t, err, path)
+		top, ok := handle.Root()
+		require.True(t, ok, "%s: no native tree", path)
 		files++
 		var b strings.Builder
 		for _, off := range spread(callCursors(text), 150) {
-			call := findCallAtOffsetNative(tree.Root(), off)
+			call := findCallAtOffsetNative(top, off)
 			if call != nil {
 				calls++
 			}
 			fmt.Fprintf(&b, "%d: %+v\n", off, call)
 		}
-		dots := analyzer.DotImportPathsNative(tree.Root())
+		dots := analyzer.DotImportPathsNative(top)
 		if len(dots) > 0 {
 			dotting++
 		}

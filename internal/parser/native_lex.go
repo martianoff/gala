@@ -16,8 +16,9 @@ import (
 // doc comments come from their hidden channel (nativeDocComments), and the
 // blank-line check reads the native tree (checkEmptyLinesNative). Each
 // matches its ANTLR counterpart, which the tests hold it to over the corpus.
-// Nothing on the build path calls them yet: they are the groundwork for
-// parsing with galop's native flavor directly.
+// Under galop's engine the transformer parses the expressions of string
+// interpolations with them (ParseExpressionCheckedAt), and the language
+// server lexes with them (VisitNativeTokens).
 
 // RetypeNewlines applies GALA's line-break rule (see lineBreakRule) to ts in
 // place, as newlineTokenSource applies it to ANTLR's lexer: a '(' that starts

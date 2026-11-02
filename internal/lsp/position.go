@@ -224,4 +224,3 @@ func utf16Len(r rune) int {
 	}
 	return 1
 }
-
