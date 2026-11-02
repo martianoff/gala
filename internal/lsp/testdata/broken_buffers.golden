@@ -20,19 +20,20 @@ concurrent/future.gala: half-typed declaration	621dfa9347a2ab1e	dd65ff68816dd7b7
 concurrent/future.gala: member being typed	426677edeebcebed	2fcdda01691a0b6a
 concurrent/future.gala: truncated	60c6dd0681c21584	5a3d1a2aae52a3f8
 concurrent/future.gala: unclosed call	e566b9efb0c5fd30	3e1f5f6615f14b84
-examples/fix013_named_arg_widen.gala: half-typed declaration	119aa4790aa94965	c7f791c9c2684cf4
-examples/fix013_named_arg_widen.gala: member being typed	b88ac7ce2b5c93e3	ac9a26dd7f4484ce
-examples/fix013_named_arg_widen.gala: truncated	dc48d889a289caf3	76becf8abb468f79
-examples/fix013_named_arg_widen.gala: unclosed call	d2f5dc7d5e8e4e49	960e9ac29fc4c326
+examples/fix024_match_arm_return_in_loop.gala: half-typed declaration	abff6295371acc62	a3468838c3870d11
+examples/fix024_match_arm_return_in_loop.gala: unclosed call	dbad94e0bad370fb	f6cc4aabbd047572
 examples/for_range_groupby_key_type.gala: half-typed declaration	220d2af3d84160df	c464b139ec49a9f3
 examples/for_range_groupby_key_type.gala: truncated	4cc06cc1f10c1981	bc3d227d31b945a0
 examples/for_range_groupby_key_type.gala: unclosed call	a06113fe93d5dbf3	12d7eb011629d191
-examples/list_pattern_match.gala: half-typed declaration	cc93e02b8a48645c	e4ad1ead02ee6719
-examples/list_pattern_match.gala: truncated	ceb0560b4c207a6e	878b88543621c127
-examples/list_pattern_match.gala: unclosed call	ca1c77a498cdc76d	f3e2e85fa650ae44
-examples/match_stmt_mixed_void.gala: half-typed declaration	80064a283c620d0f	8cd4958757be4d5a
-examples/match_stmt_mixed_void.gala: truncated	09c94602d29a769a	5dd8c9a7edca38fd
-examples/sorted.gala: truncated	11297f8d179b5019	d4c5f11c3c8a2aea
-examples/sorted.gala: unclosed call	a2008d2c7e5835c9	3228c6f6fd29fb46
-examples/string_interpolation.gala: truncated	cb61626cb16e7aa9	c3d5d81a06601e90
-examples/string_interpolation.gala: unclosed call	36de425dc8b33828	482e63aefc25c1e1
+examples/local_function_lambda.gala: half-typed declaration	bc31ad85ab8eb496	9ab6e7cc8039f129
+examples/local_function_lambda.gala: member being typed	b3476c65a775725c	59217b7e3322a73c
+examples/local_function_lambda.gala: truncated	f8da3bc2cbd1b575	bc2943b9dc1777f8
+examples/local_function_lambda.gala: unclosed call	085d1fd94e8f80eb	656eaf2324c1285e
+examples/match_stmt_true_dangle.gala: half-typed declaration	3a6c3ca2c56ce85d	54737337d478dc37
+examples/match_stmt_true_dangle.gala: member being typed	ce48222291036438	fde64019904987b2
+examples/match_stmt_true_dangle.gala: truncated	58dcb1ba5456131f	2d3b644da66308c4
+examples/match_stmt_true_dangle.gala: unclosed call	db6b159a02e0ed89	d3d81dd3b32e0c30
+examples/sourcemap_imports_demo.gala: unclosed call	ec39e3dc68c13ac0	22a580a5a681c918
+examples/struct_field_defaults.gala: member being typed	79914670814b7ef0	bbbf881ea96ea0ac
+examples/struct_field_defaults.gala: truncated	7dbb061c634cec70	1c5b90f29a1866da
+examples/struct_field_defaults.gala: unclosed call	cfab5b63ada2c751	83e4b2ff20425b10

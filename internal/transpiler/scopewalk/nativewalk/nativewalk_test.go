@@ -3,14 +3,12 @@ package nativewalk
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
-
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/testcorpus"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
@@ -89,40 +87,22 @@ struct Point(x int = origin, y int = x)
 `,
 }
 
-// corpus is the paths of the GALA sources staged as the test's data.
-func corpus(tb testing.TB) []string {
-	files, err := bazel.ListRunfiles()
-	if err != nil {
-		tb.Fatalf("cannot list the runfiles: %v", err)
-	}
-	var paths []string
-	for _, f := range files {
-		if strings.HasSuffix(f.ShortPath, ".gala") {
-			paths = append(paths, f.Path)
-		}
-	}
-	sort.Strings(paths)
-	return paths
-}
-
 // discard is a Visitor that drops what it is told.
 type discard struct{}
 
 func (discard) Reference(string, scopewalk.Site, scopewalk.Use) {}
 
-// BenchmarkWalk walks every staged source from its root with the
+// BenchmarkWalk walks every source of the frozen corpus from its root with the
 // undefined-symbol check's options: on the native tree converted within the
 // timed walk, as the transpiler does ("native"), and on the native tree
 // converted beforehand ("native-walk"). Each iteration
 // parses the sources afresh, untimed.
 func BenchmarkWalk(b *testing.B) {
 	var texts []string
-	for _, path := range corpus(b) {
-		text, err := os.ReadFile(path)
-		if err != nil {
-			b.Fatal(err)
+	for name, text := range testcorpus.Files() {
+		if strings.HasSuffix(name, ".gala") {
+			texts = append(texts, text)
 		}
-		texts = append(texts, string(text))
 	}
 	opts := scopewalk.Options{ParseInterpolations: true, RequireCleanInterpolationParse: true, SkipCompositeLiteralKeys: true, SkipTypedPatternArgument: true}
 	for _, mode := range []string{"native", "native-walk"} {

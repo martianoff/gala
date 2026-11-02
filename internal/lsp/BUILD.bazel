@@ -132,6 +132,7 @@ go_test(
         "//galaerr",
         "//internal/digestgolden",
         "//internal/parser",
+        "//internal/testcorpus",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "@com_github_owenrumney_go_lsp//lsp",

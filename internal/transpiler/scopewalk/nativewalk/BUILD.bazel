@@ -19,25 +19,14 @@ go_test(
         "nativewalk_test.go",
         "walk_golden_test.go",
     ],
-    # The test walks the GALA sources TestEnginesAgree parses (TestWalkGolden).
-    data = [
-        "//:all_gala_sources",
-        "//examples:all_gala_sources",
-        "//lazy:gala_sources",
-        "//resource:gala_sources",
-        "//std:gala_sources",
-        "//stream:gala_sources",
-        "//subprocess:gala_sources",
-        "//test:gala_sources",
-        "testdata/walks.golden",
-    ],
+    data = ["testdata/walks.golden"],
     embed = [":nativewalk"],
     deps = [
         "//internal/digestgolden",
         "//internal/parser",
         "//internal/parser/native",  # keep
+        "//internal/testcorpus",
         "//internal/transpiler/scopewalk",
-        "@rules_go//go/tools/bazel",
     ],
 )
 

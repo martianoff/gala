@@ -105,12 +105,8 @@ go_test(
     # keep
     name = "commands_native_test",
     srcs = ["native_tree_test.go"],
-    # The test reads the GALA sources TestEnginesAgree parses.
+    # The test reads the frozen corpus of //internal/testcorpus.
     data = [
-        "//:all_gala_sources",
-        "//examples:all_gala_sources",
-        "//go_builtins:builtins.go",
-        "//go_interop:types.go",
         "testdata/doc.golden",
         "testdata/imports.golden",
     ],
@@ -119,8 +115,8 @@ go_test(
     deps = [
         "//internal/digestgolden",
         "//internal/parser",
+        "//internal/testcorpus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@rules_go//go/tools/bazel",
     ],
 )

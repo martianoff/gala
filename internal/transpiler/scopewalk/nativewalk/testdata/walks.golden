@@ -226,7 +226,7 @@ examples/hashmap.gala	a5343e77d9a49812	e07396ed19821e1e
 examples/hashmap_foreachkv_twoparam.gala	2930433baae137e6	305541430ede3b8b
 examples/hashmap_sorted_nonorderable.gala	5411eeed3064f756	223ca599df042fc2
 examples/hello.gala	5881578a601b2a60	0b4c855d6e70616e
-examples/hex_literals.gala	d74c194274ae1daf	4f0019143211c8ec
+examples/hex_literals.gala	931848a24a90e4a8	4f0019143211c8ec
 examples/hm_advanced_unwrapping.gala	e7136e08f9b72f83	a456ac2f45e28177
 examples/hm_generic_identity_unwrapping.gala	a5a8e19e065d978c	177d9a98e915c20f
 examples/hm_generic_unwrapping.gala	1a303f25b7f21b02	1ceb14d90710b14f
@@ -237,6 +237,7 @@ examples/if_else_unwrapping.gala	c2d7f0b46b64e3c4	217506c50abc4949
 examples/if_expr_batch_regress/logic.gala	d3ff4769b2d9f47f	dd690a4ebd2e8590
 examples/if_expr_batch_regress/types.gala	7a57df3a1e5e74c1	0daf8875beb6e970
 examples/if_expr_batch_regress_test.gala	3ab439c2a02e5755	e200fbbfa1c9bd4f
+examples/if_expr_branch_statements.gala	622e775cbb2f0e44	4538d8f8ab60fd82
 examples/if_expr_concrete_type.gala	5b94dd5a3c62ccd9	2b871023d816911a
 examples/if_expr_lambda_return_type.gala	c14405ef96e0bcba	e53aa56ee959b290
 examples/if_expr_return_generic.gala	2bdf9e65c0416ffe	0a2530b5c04c0291
@@ -453,8 +454,8 @@ examples/sealed_bare_variants.gala	fbd978479db0a6d1	1e588581fcf980ad
 examples/sealed_case_field_defaults.gala	059f4e67f1b6881c	e5542fc670e7a41d
 examples/sealed_case_type_param_from_context.gala	88b5db99dd16ad03	b2102d82755f7949
 examples/sealed_default_case.gala	ae32d0b17dce6475	9d0551829bb6d734
-examples/sealed_done_state_pkg/state/helpers.gala	4970a357491acd78	b0f519029bb8c83b
-examples/sealed_done_state_pkg/state/state.gala	92de752917f3c78d	39566b95ec08547b
+examples/sealed_done_state_pkg/state/helpers.gala	c48be6a55b37b25f	b0f519029bb8c83b
+examples/sealed_done_state_pkg/state/state.gala	e67195cf271112fe	39566b95ec08547b
 examples/sealed_dot_import_lib/cmds.gala	7648f7c291acc8f0	0daf8875beb6e970
 examples/sealed_dot_import_lib/helpers.gala	2f06c08d14393491	b0f519029bb8c83b
 examples/sealed_equal.gala	402ed0448bef7288	5479149c8e0524a4
@@ -489,6 +490,7 @@ examples/short_var_decl_multi_value.gala	bca67578b70a8ddb	e2a4113c349df033
 examples/single_letter_type_names.gala	3cd1331b6e37f26d	88bc6dce3ddde294
 examples/size_method.gala	893abf76c36818ff	7c6d88d0d4f89865
 examples/slice_element_unwrap.gala	66c2f1f893a29f73	9f1307905ee2d9f3
+examples/slice_type_param.gala	eb8510bd3ad6d05e	08d1774d7d2fd67d
 examples/slice_unwrap/main.gala	2f58c591e3667150	6f7b6300f1dc7264
 examples/slice_unwrap/model.gala	1c335c4d61dd2ea7	5c70c84f1af70860
 examples/some_type_inference.gala	c9850aac2b98a555	9572f89683d0c6b7
@@ -516,7 +518,7 @@ examples/struct_field_unwrap/types.gala	d75990e40cffebf3	91ac97234fb575d9
 examples/struct_lambda_inference.gala	0ec5cc808ff9dfa9	446566d9e74af088
 examples/struct_mixed_args.gala	40cde516d30c4320	b973a188f22943c9
 examples/struct_pattern_interface_subject.gala	dbfe303efe21a25b	8f298c21f29eaff4
-examples/struct_shorthand_generic.gala	701da6990adb3be4	2afcabc93bebc8d3
+examples/struct_shorthand_generic.gala	5687b3df71184938	2afcabc93bebc8d3
 examples/subprocess_async.gala	5dfe5182b11ec99f	f00aefbe6772118e
 examples/tco_deep_sum.gala	37b4de6dc41d9086	7f7a2331a4a6a712
 examples/tco_factorial.gala	34c99cc3ece0301c	ff563b7f0b829a7e
@@ -598,7 +600,7 @@ examples/use_lib_chained_generic.gala	314f9989d4c6b75c	a1124ebf4c5c547f
 examples/use_lib_generic.gala	9188ebaf232197c5	76dc2aa3bb39755a
 examples/use_lib_qualified.gala	e25272bd11b639bf	80da935252e220eb
 examples/use_multi_file_lib.gala	c3f6c88ac2f34a28	f813a226632f313b
-examples/use_sealed_done_state.gala	744c12c05205efbb	af4a08bb2ef607e4
+examples/use_sealed_done_state.gala	5955593b54bedd6e	af4a08bb2ef607e4
 examples/use_sealed_dot_import.gala	e61c65f2601ab89a	0a860cfe6549fdb2
 examples/use_sealed_foreign_field.gala	b42b1708b70acb24	78bb3fda2de705e2
 examples/use_sealed_widen_call_arg.gala	48366627c5b1c1df	241281f2ef6cc39e

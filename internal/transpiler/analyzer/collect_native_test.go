@@ -9,11 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
-
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/testcorpus"
 )
 
 // parseWithGalop makes tb's parses use galop's parser whatever the build's
@@ -23,30 +22,12 @@ func parseWithGalop(tb testing.TB) {
 	tb.Cleanup(func() { galaparser.RequestEngine("") })
 }
 
-// collectionCorpus is the paths of the GALA sources staged as the test's
-// data (those TestEnginesAgree parses), sorted, and the search path that
-// resolves their imports.
+// collectionCorpus is the paths of the GALA sources of the frozen corpus
+// (internal/testcorpus), extracted for tb, in name order, and the search path
+// that resolves their imports.
 func collectionCorpus(tb testing.TB) ([]string, []string) {
-	stdFile, err := bazel.Runfile("std/option.gala")
-	if err != nil {
-		tb.Skipf("std sources not staged: %v", err)
-	}
-	files, err := bazel.ListRunfiles()
-	if err != nil {
-		tb.Fatalf("cannot list the runfiles: %v", err)
-	}
-	var paths []string
-	for _, f := range files {
-		if !strings.HasSuffix(f.ShortPath, ".gala") {
-			continue
-		}
-		if info, err := os.Stat(f.Path); err != nil || !info.Mode().IsRegular() {
-			continue // a directory named *.gala, such as a tool's .gala cache
-		}
-		paths = append(paths, f.Path)
-	}
-	sort.Strings(paths)
-	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
+	c := testcorpus.Extract(tb)
+	return c.GalaFiles(), []string{c.Root}
 }
 
 // newCollectionAnalyzer is a batch analyzer over searchPaths parsing with p,
@@ -161,21 +142,20 @@ var collectionErrorInputs = []struct {
 // files (`// a.gala`) form one package until a name repeats, and an example
 // that names none is a package of its own.
 func docExamples(tb testing.TB) [][][2]string {
-	page, err := bazel.Runfile("docs/errors/GALA-E0011.md")
-	if err != nil {
-		tb.Fatalf("the error reference pages are not staged: %v", err)
+	files := testcorpus.Files()
+	var pages []string
+	for name := range files {
+		if strings.HasPrefix(name, "docs/errors/GALA-E") && strings.HasSuffix(name, ".md") {
+			pages = append(pages, name)
+		}
 	}
-	pages, err := filepath.Glob(filepath.Join(filepath.Dir(page), "GALA-E*.md"))
-	if err != nil || len(pages) < 50 {
-		tb.Fatalf("found %d error reference pages: %v", len(pages), err)
+	if len(pages) < 50 {
+		tb.Fatalf("the corpus has %d error reference pages", len(pages))
 	}
 	sort.Strings(pages)
 	var pkgs [][][2]string
 	for _, path := range pages {
-		text, err := os.ReadFile(path)
-		if err != nil {
-			tb.Fatal(err)
-		}
+		text := files[path]
 		var pkg [][2]string
 		names := make(map[string]bool)
 		flush := func() {
@@ -184,7 +164,7 @@ func docExamples(tb testing.TB) [][][2]string {
 			}
 			pkg, names = nil, make(map[string]bool)
 		}
-		for _, block := range strings.Split(strings.ReplaceAll(string(text), "\r\n", "\n"), "```gala\n")[1:] {
+		for _, block := range strings.Split(text, "```gala\n")[1:] {
 			src, _, _ := strings.Cut(block, "```")
 			name := ""
 			if first, _, _ := strings.Cut(src, "\n"); strings.HasPrefix(first, "// ") && strings.HasSuffix(first, ".gala") {
@@ -744,4 +724,40 @@ func BenchmarkCollect(b *testing.B) {
 			}
 		}
 	})
+}
+
+// TestNativeSetDocKeepsExistingWhenAbsent: recording a declaration's doc
+// comment replaces the one a metadata entry carries only when docs has one
+// for the declaration. A nil docs map or a missing entry (a pass that did not
+// thread the docs, or a cache load) never erases a doc already recorded.
+func TestNativeSetDocKeepsExistingWhenAbsent(t *testing.T) {
+	parseWithGalop(t)
+	parsed := galaparser.NewAntlrGalaParser().ParseFile("package main\n\ntype T struct {\n    x int\n}\n")
+	nf, err := nativeFileOf(parsed.CleanNative())
+	if err != nil || len(nf.types) != 1 {
+		t.Fatalf("no type declaration: %v", err)
+	}
+	decl := nf.types[0]
+	key := galaparser.NativeDocKeyOf(decl)
+	present := galaparser.Docs{key: "fresh doc"}
+	absent := galaparser.Docs{{Line: key.Line + 1, Column: key.Column}: "another declaration's doc"}
+	for _, tc := range []struct {
+		name string
+		docs galaparser.Docs
+		in   string
+		want string
+	}{
+		{"absent leaves existing", absent, "existing", "existing"},
+		{"nil map leaves existing", nil, "existing", "existing"},
+		{"empty map leaves existing", galaparser.Docs{}, "existing", "existing"},
+		{"present replaces existing", present, "existing", "fresh doc"},
+		{"present fills empty", present, "", "fresh doc"},
+		{"absent leaves empty", absent, "", ""},
+	} {
+		got := tc.in
+		nativeSetDoc(&got, tc.docs, decl)
+		if got != tc.want {
+			t.Errorf("%s: nativeSetDoc = %q, want %q", tc.name, got, tc.want)
+		}
+	}
 }

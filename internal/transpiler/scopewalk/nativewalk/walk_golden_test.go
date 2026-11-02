@@ -2,31 +2,31 @@ package nativewalk
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
-
 	"martianoff/gala/internal/digestgolden"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/testcorpus"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
 // walkGolden holds TestWalkGolden's results: a line per source, its name, a
 // digest of its text and a digest of what the walks report on it. It was
 // written from the code on which the walk on the native tree reported, on
-// every one of these sources, what the walk on ANTLR's tree reported.
+// every one of these sources, what the walk on ANTLR's tree reported
+// (TestWalksAgree, run on the same sources).
 const walkGolden = "internal/transpiler/scopewalk/nativewalk/testdata/walks.golden"
 
-// TestWalkGolden walks each GALA source staged as data, and walkInputs, from
-// its root and from each node the walk's callers enter at (entriesOf), under
-// every option set, and holds what the walks report (every reference with
-// its site and use, and every call of the hook, in order) to its digest in
-// walkGolden. Refresh the golden with --test_env=GALA_UPDATE_WALK_GOLDEN set
-// to its path in the source tree.
+// TestWalkGolden walks each GALA source of the frozen corpus
+// (internal/testcorpus), and walkInputs, from its root and from each node the
+// walk's callers enter at (entriesOf), under every option set, and holds what
+// the walks report (every reference with its site and use, and every call of
+// the hook, in order) to its digest in walkGolden. Every source must have its
+// line: a missing or stale line fails the test. Regenerate the golden with
+// --test_env=GALA_UPDATE_WALK_GOLDEN set to its path in the source tree.
 func TestWalkGolden(t *testing.T) {
 	g := digestgolden.Open(t, walkGolden, "GALA_UPDATE_WALK_GOLDEN")
 	type source struct{ name, text string }
@@ -34,26 +34,24 @@ func TestWalkGolden(t *testing.T) {
 	for i, in := range walkInputs {
 		sources = append(sources, source{fmt.Sprintf("input %d", i), in})
 	}
-	files, err := bazel.ListRunfiles()
-	if err != nil {
-		t.Fatalf("cannot list the runfiles: %v", err)
+	files := testcorpus.Files()
+	var names []string
+	for name := range files {
+		if strings.HasSuffix(name, ".gala") {
+			names = append(names, name)
+		}
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].ShortPath < files[j].ShortPath })
-	for _, f := range files {
-		if !strings.HasSuffix(f.ShortPath, ".gala") {
-			continue
-		}
-		text, err := os.ReadFile(f.Path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sources = append(sources, source{f.ShortPath, string(text)})
+	sort.Strings(names)
+	for _, name := range names {
+		sources = append(sources, source{name, files[name]})
 	}
 	walked := 0
 	for _, src := range sources {
 		nf := parser.NewAntlrGalaParser().ParseFile(src.text).CleanNative()
 		if nf == nil {
-			continue // a source that does not parse is never walked
+			// A source that does not parse is never walked.
+			g.Check(src.name, digestgolden.Digest(src.text), digestgolden.Digest("syntax error"), nil)
+			continue
 		}
 		tree, err := nf.Tree()
 		if err != nil {
@@ -66,13 +64,8 @@ func TestWalkGolden(t *testing.T) {
 		})
 	}
 	g.Finish("TestWalkGolden: per source, a digest of its text and of what the walks report on it.")
-	// The repository's sources parse; floors catch them not being staged
-	// and the golden going stale.
-	if walked < 200 {
-		t.Fatalf("walked %d sources; the repository's are not staged", walked)
-	}
-	if !g.Updating() && g.Compared < walked*9/10 {
-		t.Fatalf("%d of %d sources held to the golden: refresh it", g.Compared, walked)
+	if walked < 600 {
+		t.Fatalf("walked %d sources of the corpus", walked)
 	}
 }
 

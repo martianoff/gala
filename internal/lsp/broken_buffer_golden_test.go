@@ -15,6 +15,7 @@ import (
 
 	"martianoff/gala/internal/digestgolden"
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/testcorpus"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
 
@@ -25,10 +26,11 @@ import (
 // (a request may analyze a patched copy of the buffer and cache it, as in an
 // editor, so the order is part of the answer).
 //
+// The buffers are files of the frozen corpus (internal/testcorpus), broken.
 // Each line is `key<TAB>input<TAB>answers`: the buffer's name, a digest of
 // its text and a digest of the answers, as JSON with the corpus root
-// rewritten. A buffer whose text changed since the golden was written is not
-// compared. To refresh the golden, run the test with
+// rewritten. A buffer the golden does not list, one whose text changed and a
+// line no buffer has fail the test. To regenerate the golden, run the test with
 // GALA_UPDATE_BROKEN_BUFFER_GOLDEN set to its path in the source tree:
 //
 //	bazel test //internal/lsp:lsp_native_test --test_filter=TestBrokenBufferGolden \
@@ -104,14 +106,21 @@ var breakings = []struct {
 // TestBrokenBufferGolden opens a sample of the corpus broken each way of
 // breakings, and holds the server's answers on it to the golden.
 func TestBrokenBufferGolden(t *testing.T) {
-	texts, paths, root := nativeCorpus(t)
+	parser.RequestEngine(string(parser.EngineGalop))
+	t.Cleanup(func() { parser.RequestEngine("") })
+	c := testcorpus.Extract(t)
+	paths := c.GalaFiles()
+	texts := map[string]string{}
+	for _, path := range paths {
+		texts[path] = testcorpus.Files()[c.Rel(path)]
+	}
+	root := c.Root
 	sample := brokenBufferSample(t, texts, paths)
 	g := digestgolden.Open(t, brokenBufferGolden, "GALA_UPDATE_BROKEN_BUFFER_GOLDEN")
 	h := NewGalaHandler()
 	h.SetSearchPaths([]string{root})
 	ctx := context.Background()
-	norm := strings.NewReplacer(root, "$ROOT", filepath.ToSlash(root), "$ROOT",
-		strings.ReplaceAll(filepath.ToSlash(root), "/", `\\`), "$ROOT")
+	norm := c.Normalizer()
 	p := parser.NewAntlrGalaParser()
 	buffers, answered := 0, 0
 	start := time.Now()
