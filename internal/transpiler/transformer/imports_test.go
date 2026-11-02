@@ -31,6 +31,34 @@ func TestImportManager_Add(t *testing.T) {
 	assert.Equal(t, entry, e)
 }
 
+// TestImportManager_AddTransitiveImportsToFileOrder: the imports added for
+// generated code (a default lowered in another file adds the packages it
+// names) come out in import-path order, ahead of the file's own, whatever
+// order they were recorded in. They used to follow map iteration order, so
+// the same file could transpile to differently ordered imports run to run.
+func TestImportManager_AddTransitiveImportsToFileOrder(t *testing.T) {
+	recorded := []string{"unicode/utf8", "strings", "math/rand/v2", "bytes", "example.com/x/lib", "errors", "os"}
+	want := []string{`"bytes"`, `"errors"`, `"example.com/x/lib"`, `"math/rand/v2"`, `"os"`, `"strings"`, `"unicode/utf8"`, `"fmt"`}
+	for range 50 { // map order varies run to run: one pass could be sorted by chance
+		m := transformer.NewImportManager()
+		for _, path := range recorded {
+			m.AddTransitive(path, transpiler.AssumedPackageName(path))
+		}
+		file := &ast.File{Name: ast.NewIdent("main"), Decls: []ast.Decl{&ast.GenDecl{
+			Tok:   token.IMPORT,
+			Specs: []ast.Spec{&ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: `"fmt"`}}},
+		}}}
+		m.AddTransitiveImportsToFile(file, nil)
+		var got []string
+		for _, decl := range file.Decls {
+			for _, spec := range decl.(*ast.GenDecl).Specs {
+				got = append(got, spec.(*ast.ImportSpec).Path.Value)
+			}
+		}
+		require.Equal(t, want, got)
+	}
+}
+
 func TestImportManager_AddWithAlias(t *testing.T) {
 	m := transformer.NewImportManager()
 
