@@ -110,7 +110,7 @@ go_test(
 go_test(
     # keep
     name = "lsp_native_test",
-    # Walks the corpus, and serves requests on broken buffers of it.
+    # Walks the frozen corpus, and serves requests on it and on broken buffers of it.
     size = "large",
     srcs = [
         "broken_buffer_golden_test.go",
@@ -118,11 +118,6 @@ go_test(
         "native_tree_test.go",
     ],
     data = [
-        "//:all_gala_sources",
-        "//collection_immutable:gala_sources",
-        "//examples:all_gala_sources",
-        "//go_interop:types.go",
-        "//std:gala_sources",
         "testdata/broken_buffers.golden",
         "testdata/calls.golden",
         "testdata/handler_answers.golden",
@@ -139,7 +134,6 @@ go_test(
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@rules_go//go/tools/bazel",
     ],
 )
 

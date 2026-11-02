@@ -2,14 +2,10 @@ package lsp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -17,44 +13,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
-
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/digestgolden"
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/testcorpus"
 	"martianoff/gala/internal/transpiler"
 )
 
-// nativeCorpus is the GALA sources staged as the test's data, sorted, with
-// their text as the handler holds it (BOM-stripped) and with LF line endings,
-// so that a checkout with CRLF endings asks the same requests at the same
-// places, and the search path that resolves their imports.
+// nativeCorpus is the frozen corpus (internal/testcorpus), extracted: its
+// .gala files in the order of their names, with their text as the handler
+// holds it (BOM-stripped, LF line ends), and its root, the search path that
+// resolves their imports.
 func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 	t.Helper()
 	// Parse with galop's engine, the CLI's default, whatever the build's or
 	// environment's default engine.
 	parser.RequestEngine(string(parser.EngineGalop))
 	t.Cleanup(func() { parser.RequestEngine("") })
-	stdFile, err := bazel.Runfile("std/option.gala")
-	require.NoError(t, err, "the std sources are not staged")
-	files, err := bazel.ListRunfiles()
-	require.NoError(t, err)
-	texts := map[string]string{}
-	var paths []string
-	for _, f := range files {
-		if !strings.HasSuffix(f.ShortPath, ".gala") {
-			continue
-		}
-		if info, err := os.Stat(f.Path); err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		data, err := os.ReadFile(f.Path)
-		require.NoError(t, err)
-		texts[f.Path] = strings.ReplaceAll(galaerr.StripBOM(string(data)), "\r\n", "\n")
-		paths = append(paths, f.Path)
+	c := testcorpus.Extract(t)
+	paths := c.GalaFiles()
+	texts := make(map[string]string, len(paths))
+	for _, path := range paths {
+		texts[path] = galaerr.StripBOM(testcorpus.Files()[c.Rel(path)])
 	}
-	sort.Strings(paths)
-	require.Greater(t, len(paths), 300, "the corpus is not staged")
-	return texts, paths, filepath.Dir(filepath.Dir(stdFile))
+	return texts, paths, c.Root
 }
 
 // callCursors is the byte offsets in text signature help is asked at: on and
@@ -72,38 +54,31 @@ func callCursors(text string) []int {
 	return out
 }
 
-// updateHandlerGolden rewrites handlerGolden instead of checking it. Run the
-// test with --test_arg=-update and
-// --test_env=BUILD_WORKSPACE_DIRECTORY=<the workspace>.
-var updateHandlerGolden = flag.Bool("update", false, "rewrite "+handlerGolden)
-
-// handlerGolden holds TestHandlerAnswers' answers: a line per request, its
-// file relative to the corpus root, what it asked and where, and a digest of
-// the answer's JSON. It was written from the code on which the native handler
-// still answered every one of these requests as a handler on ANTLR's tree alone.
-const handlerGolden = "testdata/handler_answers.golden"
+// handlerGolden holds TestHandlerAnswers' answers: a line per file of the
+// sample, its path relative to the corpus root, a digest of its text and a
+// digest of the answers to the requests on it, as JSON with the corpus root
+// rewritten. It was written from the code on which the handler still read
+// ANTLR's tree too, and answered on the native tree as on ANTLR's. A file the
+// golden does not list, one whose text changed and a line no file has fail
+// the test. To regenerate the golden, run the test with
+// GALA_UPDATE_HANDLER_GOLDEN set to its path in the source tree:
+//
+//	bazel test //internal/lsp:lsp_native_test --test_filter=TestHandlerAnswers \
+//	  --test_env=GALA_UPDATE_HANDLER_GOLDEN=$PWD/internal/lsp/testdata/handler_answers.golden
+const handlerGolden = "internal/lsp/testdata/handler_answers.golden"
 
 // TestHandlerAnswers serves signature help at the cursors of callCursors and
-// hover at the start of every identifier, on a sample of the corpus, and
-// holds each answer, positions in UTF-16 columns included, to its digest in
-// handlerGolden.
+// hover at the start of every identifier, on a sample of the corpus opened in
+// one handler, in that order, and holds each file's answers, positions in
+// UTF-16 columns included, to its digest in handlerGolden.
 func TestHandlerAnswers(t *testing.T) {
 	texts, paths, root := nativeCorpus(t)
+	c := testcorpus.Corpus{Root: root}
+	norm := c.Normalizer()
 	sample := handlerSample(t, texts, paths, root)
+	g := digestgolden.Open(t, handlerGolden, "GALA_UPDATE_HANDLER_GOLDEN")
 	h := NewGalaHandler()
 	h.SetSearchPaths([]string{root})
-	want, wantLines := map[string]string{}, 0
-	if !*updateHandlerGolden {
-		data, err := os.ReadFile(handlerGolden)
-		require.NoError(t, err, "no golden: run the test with --test_arg=-update")
-		for _, l := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
-			if where, digest, ok := strings.Cut(l, "\t=> "); ok {
-				want[where] = digest
-				wantLines++
-			}
-		}
-	}
-	var golden strings.Builder
 	ctx := context.Background()
 	sigCases, hoverCases, answered := 0, 0, 0
 	for _, path := range sample {
@@ -111,55 +86,43 @@ func TestHandlerAnswers(t *testing.T) {
 		uri := lsp.DocumentURI("file:///" + filepath.ToSlash(path))
 		doc := lsp.TextDocumentIdentifier{URI: uri}
 		require.NoError(t, h.DidOpen(ctx, &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: text}}))
-		rel, err := filepath.Rel(root, path)
-		require.NoError(t, err)
-		// ask serves one request and holds its answer to its golden.
-		ask := func(what string, off int, serve func(h *GalaHandler, at lsp.Position) (any, error)) {
+		var answers strings.Builder
+		// ask serves one request and records its answer.
+		ask := func(what string, off int, serve func(at lsp.Position) (any, error)) {
 			at := wirePosition(text, off)
-			got, gotErr := serve(h, at)
-			where := fmt.Sprintf("%s\t%s@%d:%d", what, filepath.ToSlash(rel), at.Line, at.Character)
+			got, gotErr := serve(at)
 			answer := jsonOf(t, got)
 			if gotErr != nil {
 				answer = "error: " + gotErr.Error()
 			}
-			sum := sha256.Sum256([]byte(answer))
-			digest := hex.EncodeToString(sum[:8])
-			fmt.Fprintf(&golden, "%s\t=> %s\n", where, digest)
-			if !*updateHandlerGolden {
-				assert.Equalf(t, want[where], digest, "%s: the answer differs from its golden: %s", where, answer)
-			}
 			if answer != "null" {
 				answered++
 			}
+			fmt.Fprintf(&answers, "%s@%d:%d %s\n", what, at.Line, at.Character, norm.Replace(answer))
 		}
 		for _, off := range spread(callCursors(text), 40) {
-			ask("signature help", off, func(h *GalaHandler, at lsp.Position) (any, error) {
+			ask("signature help", off, func(at lsp.Position) (any, error) {
 				return h.SignatureHelp(ctx, &lsp.SignatureHelpParams{TextDocumentPositionParams: lsp.TextDocumentPositionParams{TextDocument: doc, Position: at}})
 			})
 			sigCases++
 		}
 		for _, off := range spread(identifierStarts(text), 60) {
-			ask("hover", off, func(h *GalaHandler, at lsp.Position) (any, error) {
+			ask("hover", off, func(at lsp.Position) (any, error) {
 				return h.Hover(ctx, &lsp.HoverParams{TextDocumentPositionParams: lsp.TextDocumentPositionParams{TextDocument: doc, Position: at}})
 			})
 			hoverCases++
 		}
+		got := answers.String()
+		g.Check(c.Rel(path), digestgolden.Digest(text), digestgolden.Digest(got), func() string { return got })
 	}
-	if *updateHandlerGolden {
-		ws := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
-		require.NotEmpty(t, ws, "-update writes into the workspace: pass --test_env=BUILD_WORKSPACE_DIRECTORY")
-		dest := filepath.Join(ws, "internal", "lsp", filepath.FromSlash(handlerGolden))
-		require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0o755))
-		require.NoError(t, os.WriteFile(dest, []byte(golden.String()), 0o644))
-	} else {
-		assert.Equal(t, wantLines, sigCases+hoverCases, "the golden holds requests the test no longer asks")
-	}
+	g.Finish("TestHandlerAnswers: per file of the sample, a digest of its text and of the handler's answers on it; see handlerGolden in native_tree_test.go.")
 	t.Logf("%d files, %d signature-help and %d hover requests, %d answered", len(sample), sigCases, hoverCases, answered)
 	assert.Greater(t, answered, 200)
 }
 
 // handlerSample is the files TestHandlerAnswers opens (handlerFiles): every
-// one staged and parsing cleanly, with a dot import and non-ASCII text among them.
+// one in the corpus and parsing cleanly, with a dot import and non-ASCII text
+// among them.
 func handlerSample(t *testing.T, texts map[string]string, paths []string, root string) []string {
 	t.Helper()
 	byRel := map[string]string{}
@@ -173,7 +136,7 @@ func handlerSample(t *testing.T, texts map[string]string, paths []string, root s
 	dotting, wide := 0, 0
 	for _, rel := range handlerFiles {
 		path, ok := byRel[rel]
-		require.Truef(t, ok, "%s is not staged", rel)
+		require.Truef(t, ok, "%s is not in the corpus", rel)
 		handle := p.ParseFile(texts[path]).CleanNative()
 		require.NotNilf(t, handle, "%s does not parse cleanly", rel)
 		if len(dotImportPathsOf(handle)) > 0 {
@@ -190,7 +153,7 @@ func handlerSample(t *testing.T, texts map[string]string, paths []string, root s
 }
 
 // handlerFiles is TestHandlerAnswers' sample, in the order it opens them:
-// large library files, which every platform stages, with dot imports and
+// large library files of the corpus, with dot imports and
 // non-ASCII text among them.
 var handlerFiles = []string{
 	"collection_immutable/array.gala",
@@ -292,7 +255,7 @@ func TestBufferTreeFollowsEdits(t *testing.T) {
 	}
 }
 
-// bufferTexts is collection_immutable/array.gala of the staged corpus, clean
+// bufferTexts is collection_immutable/array.gala of the corpus, clean
 // and with a syntax error, with the file's URI and the corpus root.
 func bufferTexts(t *testing.T) (clean, broken string, uri lsp.DocumentURI, root string) {
 	t.Helper()

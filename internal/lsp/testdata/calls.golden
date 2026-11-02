@@ -1,4 +1,4 @@
-# TestCallsGolden: per clean file, a digest of its text and of the calls found at its cursors and its dot imports.
+# TestCallsGolden: per clean file, a digest of its text and of the calls found at its cursors and its dot imports; see callsGolden in calls_golden_test.go.
 collection_immutable/array.gala	fcceeed5f79dfdbd	b39f591a08208ae0
 collection_immutable/hashmap.gala	b44ea1a201fcb236	06ef8ad395664b1c
 collection_immutable/hashset.gala	3219a35c691cc308	98e958cf4e3070c2
@@ -226,7 +226,7 @@ examples/hashmap.gala	a5343e77d9a49812	18978ec75d8f423b
 examples/hashmap_foreachkv_twoparam.gala	2930433baae137e6	6b70c8ecc2bc23fa
 examples/hashmap_sorted_nonorderable.gala	5411eeed3064f756	ebc0e43e91225be2
 examples/hello.gala	5881578a601b2a60	6aa2017357b09dd4
-examples/hex_literals.gala	d74c194274ae1daf	54231ec4c1a9373a
+examples/hex_literals.gala	931848a24a90e4a8	54231ec4c1a9373a
 examples/hm_advanced_unwrapping.gala	e7136e08f9b72f83	9184fe554dc7beb5
 examples/hm_generic_identity_unwrapping.gala	a5a8e19e065d978c	3bafe0702fea3bfc
 examples/hm_generic_unwrapping.gala	1a303f25b7f21b02	5a0d1bc2c8d39095
@@ -454,8 +454,8 @@ examples/sealed_bare_variants.gala	fbd978479db0a6d1	b5348cff92c4b8c5
 examples/sealed_case_field_defaults.gala	059f4e67f1b6881c	d0a4843ca8c7e550
 examples/sealed_case_type_param_from_context.gala	88b5db99dd16ad03	a40c5c95ccc40679
 examples/sealed_default_case.gala	ae32d0b17dce6475	a660fc61bafad886
-examples/sealed_done_state_pkg/state/helpers.gala	4970a357491acd78	07791ccd979911f0
-examples/sealed_done_state_pkg/state/state.gala	92de752917f3c78d	1e358799e38a3b64
+examples/sealed_done_state_pkg/state/helpers.gala	c48be6a55b37b25f	07791ccd979911f0
+examples/sealed_done_state_pkg/state/state.gala	e67195cf271112fe	1e358799e38a3b64
 examples/sealed_dot_import_lib/cmds.gala	7648f7c291acc8f0	8d9e0f9ed6b27df4
 examples/sealed_dot_import_lib/helpers.gala	2f06c08d14393491	539225da24618182
 examples/sealed_equal.gala	402ed0448bef7288	81d3117a336b35a8
@@ -517,7 +517,7 @@ examples/struct_field_unwrap/types.gala	d75990e40cffebf3	629bd61557b0a4c3
 examples/struct_lambda_inference.gala	0ec5cc808ff9dfa9	52782f83bb47d1d2
 examples/struct_mixed_args.gala	40cde516d30c4320	69a9bbb992119877
 examples/struct_pattern_interface_subject.gala	dbfe303efe21a25b	f58e6ce3fdea1e98
-examples/struct_shorthand_generic.gala	701da6990adb3be4	035b3ce3bb208658
+examples/struct_shorthand_generic.gala	5687b3df71184938	035b3ce3bb208658
 examples/subprocess_async.gala	5dfe5182b11ec99f	a143f7615caeb5d8
 examples/tco_deep_sum.gala	37b4de6dc41d9086	f507211129db251f
 examples/tco_factorial.gala	34c99cc3ece0301c	ebfb245eb7e66bbb
@@ -599,7 +599,7 @@ examples/use_lib_chained_generic.gala	314f9989d4c6b75c	f452ff73d5f6b915
 examples/use_lib_generic.gala	9188ebaf232197c5	77410010e9d25a99
 examples/use_lib_qualified.gala	e25272bd11b639bf	dc021a2b32b64b78
 examples/use_multi_file_lib.gala	c3f6c88ac2f34a28	6416ce57be3debf2
-examples/use_sealed_done_state.gala	744c12c05205efbb	c1da7c671c087446
+examples/use_sealed_done_state.gala	5955593b54bedd6e	c1da7c671c087446
 examples/use_sealed_dot_import.gala	e61c65f2601ab89a	0ec72efbdd8bf593
 examples/use_sealed_foreign_field.gala	b42b1708b70acb24	5513738abb96219d
 examples/use_sealed_widen_call_arg.gala	48366627c5b1c1df	ba8a0c60ca9b08c8
@@ -641,6 +641,7 @@ json/naming.gala	ccaa6db53fd51103	371c45273d636ee8
 lazy/lazy.gala	b18007374c647438	5760b4089860afcf
 path/path.gala	acec41dd9dd6c419	25e1df3a7c15f510
 regex/regex.gala	394992bd37da6df7	94c2b5d429a2d823
+resource/resource.gala	6be51aa981ae0ba2	bd05b7b757e949a0
 std/either.gala	49f24761175d191a	f2a746ddae13451d
 std/errors.gala	fd4dfdbd578334d5	4d9c838a6959115b
 std/hashable.gala	e8c379ee7327b475	02e57394101e682f
@@ -656,5 +657,11 @@ std/try.gala	90b1278c94269500	e06b20fdec700fa7
 std/tuple.gala	9a1c51df0938b138	d89ebb2386dd3b58
 stream/stream.gala	a5879df242586b36	b410673f46f2d794
 strings/strings.gala	b60f8f31ee6ec080	b7e8af96d2b1d9ef
+subprocess/async.gala	0774a7d5140317f6	f00eb1ed80c611e1
+subprocess/subprocess.gala	fc1ac329f916c299	e4d976ed5a717282
+test/assertions.gala	832d5df86764fdd9	a1eef03861a94d3f
+test/bench.gala	f523f9860a83651d	af0601fe3c8eeee4
+test/framework.gala	d673eedd38b53903	a91f88aef3cb5c55
+test/table.gala	12b0bee46239d53b	19ec6bf553119253
 time_utils/time_utils.gala	aaadccbb6a1f5cdd	3af91aedca6e79fd
 validation/validated.gala	923b943381984fa1	0c7607b50b4747e5
