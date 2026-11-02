@@ -19,7 +19,7 @@ go_test(
         "nativewalk_test.go",
         "walk_golden_test.go",
     ],
-    # The test walks the GALA sources TestEnginesAgree parses.
+    # The test walks the GALA sources TestEnginesAgree parses (TestWalkGolden).
     data = [
         "//:all_gala_sources",
         "//examples:all_gala_sources",
@@ -35,10 +35,8 @@ go_test(
     deps = [
         "//internal/digestgolden",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep
         "//internal/transpiler/scopewalk",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@rules_go//go/tools/bazel",
     ],
 )

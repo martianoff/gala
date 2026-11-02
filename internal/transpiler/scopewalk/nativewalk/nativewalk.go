@@ -1,15 +1,8 @@
-// Package nativewalk walks scopewalk's walk on galop's native tree
-// (internal/parser/native).
-//
-// The walk here is scopewalk's ANTLR walk (walk_antlr.go) node for node: the
-// same handlers, visiting the same nodes in the same order, so it reports the
-// same references at the same sites. Each handler sits under the name of its
-// ANTLR twin. TestWalksAgree holds the two together.
-//
-// A caller on the native tree enters it here, with a node, where a caller on
-// ANTLR's tree enters scopewalk's walk with a context: the walk never crosses
-// from one tree to the other (an interpolation fragment, re-parsed into
-// ANTLR's tree alone, is the one walk of ANTLR's tree it makes).
+// Package nativewalk is scopewalk's walk on galop's native tree
+// (internal/parser/native): a caller enters it with a node, and it reports
+// to a scopewalk.Walker's Visitor, under the Walker's options, in its scopes.
+// An interpolation fragment is parsed into a native tree of its own
+// (parser.ParseExpressionTree) and walked the same way.
 package nativewalk
 
 import (
@@ -18,9 +11,10 @@ import (
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
-// EnterFunctionScope is scopewalk.Options.EnterFunctionScope on the native
-// tree: called after the walk pushes the scope for a function declaration
-// and before it binds the declaration's parameters.
+// EnterFunctionScope, when a walk has one, is called after the walk pushes the
+// scope for a function declaration and before it binds the declaration's
+// parameters. It is the hook for binders the walk does not model itself —
+// type parameters and a method receiver, which only the analyzer's pass needs.
 type EnterFunctionScope func(w *scopewalk.Walker, fn native.FunctionDeclarationNode)
 
 // Walker is the walk on the native tree of a scopewalk.Walker: it reports to
@@ -28,57 +22,64 @@ type EnterFunctionScope func(w *scopewalk.Walker, fn native.FunctionDeclarationN
 type Walker struct{ w walk }
 
 // New is w's walk on the native tree. enter, when not nil, is called for
-// each function declaration (see EnterFunctionScope); w's
-// Options.EnterFunctionScope, whose hook takes an ANTLR context, is never
-// called on this tree: New panics on that hook without a native one, which
-// the walk would otherwise drop.
+// each function declaration (see EnterFunctionScope).
 func New(w *scopewalk.Walker, enter EnterFunctionScope) Walker {
-	opts := w.Options()
-	if opts.EnterFunctionScope != nil && enter == nil {
-		panic("nativewalk: Options.EnterFunctionScope without the native enter hook")
-	}
-	return Walker{walk{w, opts, enter}}
+	return Walker{walk{w, w.Options(), enter}}
 }
 
-// Walk is scopewalk.Walker.Walk of node n.
+// Walk descends node n. Nodes that affect scoping or contribute references
+// have precise handlers; every other node recurses into all its children. A
+// lambda pushes a fresh scope, binds its parameters into it, walks its body
+// and pops, so a nested lambda's parameters shadow only within its own scope;
+// a block introduces a nested scope and walks its statements in order, so a
+// local declared partway through shadows an enclosing name only for the
+// references that follow it.
 func (nw Walker) Walk(n native.GalaNodeRef) { nw.w.walk(n) }
 
-// WalkFunctionDeclaration is scopewalk.Walker.WalkFunctionDeclaration of fn.
+// WalkFunctionDeclaration handles a `func f(...) = body` (or block-bodied)
+// declaration. The name is bound in the ENCLOSING scope, so the function may
+// recurse and later statements may call it; its parameters live in a fresh
+// nested scope covering only its body. The EnterFunctionScope hook runs inside
+// that scope, before the parameters bind.
 func (nw Walker) WalkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	nw.w.walkFunctionDeclaration(fn)
 }
 
-// WalkParameterDefaults is scopewalk.Walker.WalkParameterDefaults of params.
+// WalkParameterDefaults walks the `= expr` default of each parameter, so a
+// reference inside a default value is seen.
 func (nw Walker) WalkParameterDefaults(params native.ParametersNode) {
 	nw.w.walkParameterDefaults(params)
 }
 
-// The binders of scopewalk.Walker on the native tree: each binds in w's
-// innermost scope what its ANTLR twin, the Walker method of its name, binds.
+// The binders: each binds names in w's innermost scope.
 
-// BindID is scopewalk.Walker.BindID of identifier id.
+// BindID binds the name identifier id spells, if there is one.
 func BindID(w *scopewalk.Walker, id native.IdentifierNode) {
 	if id.Ok() {
 		w.Bind(parser.NativeText(id.GalaNodeRef))
 	}
 }
 
-// BindIdentifierList is scopewalk.Walker.BindIdentifierList of idList.
+// BindIdentifierList binds every name of an identifier list.
 func BindIdentifierList(w *scopewalk.Walker, idList native.IdentifierListNode) {
 	for id := range parser.NativeKids(idList.GalaNodeRef, native.GalaKIND_identifier) {
 		w.Bind(parser.NativeText(id))
 	}
 }
 
-// BindParameters is scopewalk.Walker.BindParameters of params.
+// BindParameters binds each named parameter of a parameter list. Type-only
+// parameters (function-type positions with no identifier) bind nothing.
 func BindParameters(w *scopewalk.Walker, params native.ParametersNode) {
 	for p := range parser.NativeKids(params.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		BindID(w, native.ParameterNode{GalaNodeRef: p}.Identifier())
 	}
 }
 
-// BindIdentifiersIn is scopewalk.Walker.BindIdentifiersIn of node n: it binds
-// every identifier under n.
+// BindIdentifiersIn binds every identifier under node n. It is the blunt
+// instrument for a construct whose binder/reference split the walk does not
+// model — a method receiver's type arguments (`func (s Stack[T]) …` introduces
+// T), or a whole `case` pattern under Options.BindWholePattern. Over-binding
+// can only mask a reference, never invent one.
 func BindIdentifiersIn(w *scopewalk.Walker, n native.GalaNodeRef) {
 	if !n.Ok() {
 		return
@@ -111,9 +112,8 @@ func siteOf(tok native.GalaToken, text string) scopewalk.Site {
 	return scopewalk.Site{Line: int(tok.Line), Column: int(tok.Column), Text: text}
 }
 
-// IdentifierSite is the name identifier id spells and the site of its token:
-// what scopewalk.TokenSite gives for its context's start token. An identifier
-// of no token has no site.
+// IdentifierSite is the name identifier id spells and the site of its token.
+// An identifier of no token has no site.
 func IdentifierSite(id native.GalaNodeRef) (string, scopewalk.Site) {
 	name := parser.NativeText(id)
 	if id.StopIndex() < id.StartIndex() {
@@ -149,7 +149,7 @@ func (w walk) walkParameterDefaults(params native.ParametersNode) {
 // Generic dispatcher
 // ---------------------------------------------------------------------------
 
-// walk is antlrWalk.walk: precise handlers for the nodes that scope or
+// walk is Walker.Walk of n: precise handlers for the nodes that scope or
 // reference, every child for the rest.
 func (w walk) walk(n native.GalaNodeRef) {
 	if !n.Ok() {
@@ -216,8 +216,9 @@ func (w walk) walk(n native.GalaNodeRef) {
 		w.walk(d.Expression().GalaNodeRef)
 		w.bindID(d.Identifier())
 		return
-	// A type declaration binds its name for the rest of its block (see the
-	// ANTLR twin).
+	// A type declaration binds its name for the rest of its block: a struct
+	// type's name is also its constructor (`Inner(1)`), a value position. Its
+	// body is types, but walks like any other node.
 	case native.GalaKIND_typeDeclaration:
 		w.bindID(native.TypeDeclarationNode{GalaNodeRef: n}.Identifier())
 		// No return: the body still gets the generic recursion.
@@ -283,8 +284,7 @@ func (w walk) walkValVarDecl(exprList native.ExpressionListNode, idList native.I
 	w.bindIdentifierList(tuple.IdentifierList())
 }
 
-// walkFunctionDeclaration calls the walk's EnterFunctionScope, the native
-// tree's stand-in for Options.EnterFunctionScope.
+// walkFunctionDeclaration is Walker.WalkFunctionDeclaration of fn.
 func (w walk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	if !fn.Ok() {
 		return

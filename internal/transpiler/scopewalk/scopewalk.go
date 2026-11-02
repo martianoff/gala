@@ -25,8 +25,8 @@
 //   - a property of the consumer, not the walk (decide it in Visitor.Reference,
 //     which already sees the name, the site and the use), or
 //   - something both passes would want (then just change the walk), or
-//   - a binder this walker does not model (use EnterFunctionScope, or push a
-//     scope and Bind before calling in).
+//   - a binder this walker does not model (use nativewalk's
+//     EnterFunctionScope hook, or push a scope and Bind before calling in).
 //
 // A flag that only one caller ever sets to a non-zero value, or that encodes a
 // preference rather than a disagreement about meaning, belongs in the consumer.
@@ -56,24 +56,17 @@
 // walked in the current scope, so a name referenced only inside an
 // interpolation is seen like any other reference.
 //
-// TWO TREES. The entry points here take ANTLR contexts and walk ANTLR's tree
-// (walk_antlr.go). Package nativewalk walks galop's native tree for a Walker,
-// entered with a native node, and mirrors this walk handler for handler;
-// nativewalk's TestWalksAgree holds the two to the same output on the GALA
-// sources the parser's engine test parses (std, the examples and the other
-// libraries). ANTLR's walk stays for what has no native tree: a parse ANTLR's
-// parser made (with ANTLR's engine, or on a syntax error), an interpolation
-// fragment (re-parsed into ANTLR's tree alone), and a caller that holds none.
+// THE TREE. This package holds what the walk shares whatever it walks: the
+// scope stack, the Visitor and its Options, interpolation splitting and the
+// classification of a postfix chain. Package nativewalk walks galop's native
+// tree for a Walker, entered with a native node; it imports this package, so
+// nothing here can name a tree.
 package scopewalk
 
 import (
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/interpolation"
-	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 )
 
 // Use records HOW a reference is used, so a consumer that cares can be
@@ -150,24 +143,13 @@ type Options struct {
 	// ARGUMENT position would otherwise contribute. The form is vanishingly
 	// rare there and its identifier is not clearly a value.
 	SkipTypedPatternArgument bool
-
-	// EnterFunctionScope, when set, is called after the walker pushes the scope
-	// for a function declaration and before its parameters are bound. It is the
-	// hook for binders this walker does not model itself — type parameters and
-	// a method receiver, which only the analyzer's pass needs. The walk on the
-	// native tree takes its own hook instead (nativewalk.New).
-	EnterFunctionScope func(w *Walker, fn grammar.IFunctionDeclarationContext)
 }
 
-// Walker holds the scope stack and drives the traversal.
+// Walker holds the scope stack and the Visitor a walk reports to.
 type Walker struct {
 	visitor Visitor
 	opts    Options
 	scopes  []map[string]bool
-
-	// interpParser re-parses interpolation bodies; created on first use so a
-	// consumer that leaves ParseInterpolations off never pays for it.
-	interpParser *parser.AntlrGalaParser
 
 	// posOverride, when set, replaces the site reported for a reference. A
 	// re-parsed interpolation fragment is its own token stream, so its tokens
@@ -214,34 +196,6 @@ func (w *Walker) Bind(name string) {
 	w.scopes[len(w.scopes)-1][name] = true
 }
 
-// BindID binds the text of an identifier context, if present.
-func (w *Walker) BindID(id grammar.IIdentifierContext) {
-	if id != nil {
-		w.Bind(id.GetText())
-	}
-}
-
-// BindIdentifierList binds every name in an identifier list.
-func (w *Walker) BindIdentifierList(idList grammar.IIdentifierListContext) {
-	if idList == nil {
-		return
-	}
-	for _, id := range idList.AllIdentifier() {
-		w.Bind(id.GetText())
-	}
-}
-
-// BindIdentifiersIn binds every `identifier` leaf under node. It is the blunt
-// instrument for a construct whose binder/reference split the walker does not
-// model — a method receiver's type arguments (`func (s Stack[T]) …` introduces
-// T), or a whole `case` pattern under Options.BindWholePattern. Over-binding
-// can only mask a reference, never invent one.
-func (w *Walker) BindIdentifiersIn(node antlr.Tree) {
-	for _, name := range identifiersUnder(node) {
-		w.Bind(name)
-	}
-}
-
 // Bound reports whether name is bound in any enclosing scope.
 func (w *Walker) Bound(name string) bool {
 	for i := len(w.scopes) - 1; i >= 0; i-- {
@@ -252,25 +206,8 @@ func (w *Walker) Bound(name string) bool {
 	return false
 }
 
-// BindParameters binds each named parameter of a parameter list. Type-only
-// parameters (function-type positions with no identifier) bind nothing.
-func (w *Walker) BindParameters(params grammar.IParametersContext) {
-	if params == nil {
-		return
-	}
-	pl := params.ParameterList()
-	if pl == nil {
-		return
-	}
-	for _, p := range pl.AllParameter() {
-		if pc, ok := p.(*grammar.ParameterContext); ok {
-			w.BindID(pc.Identifier())
-		}
-	}
-}
-
-// Report emits an unbound value-position reference (for both walks, this
-// package's and nativewalk's): a name no scope binds goes to the Visitor. Inside a re-parsed
+// Report emits an unbound value-position reference, for the walk
+// (nativewalk): a name no scope binds goes to the Visitor. Inside a re-parsed
 // interpolation fragment the reported token is the enclosing string literal —
 // see posOverride.
 func (w *Walker) Report(name string, at Site, use Use) {
@@ -283,10 +220,11 @@ func (w *Walker) Report(name string, at Site, use Use) {
 	w.visitor.Reference(name, at, use)
 }
 
-// WalkInterpolated walks the embedded expressions of lit, an interpolated
-// (`s"…"`) or format (`f"…"`) string literal. Such a literal is a single
-// token whose embedded `${…}` / `$name` expressions are NOT parse-tree
-// children, so each is re-parsed and walked in the CURRENT scope.
+// WalkInterpolatedParts walks the embedded expressions of lit, an
+// interpolated (`s"…"`) or format (`f"…"`) string literal, with walkPart,
+// which is given each one's text to parse and walk in the CURRENT scope. Such
+// a literal is a single token whose embedded `${…}` / `$name` expressions are
+// NOT parse-tree children.
 //
 // A re-parsed fragment is its own token stream: its tokens' line/column are
 // relative to the fragment, so reporting one verbatim would put a caret on line
@@ -304,26 +242,6 @@ func (w *Walker) Report(name string, at Site, use Use) {
 // only that Split builds its parts by unescaping into a strings.Builder, so
 // the mapping back to source columns is lost; recording spans as it scans is
 // mechanical but touches a shared, well-tested splitter.
-func (w *Walker) WalkInterpolated(lit Site) {
-	if w.interpParser == nil {
-		w.interpParser = parser.NewAntlrGalaParser()
-	}
-	w.WalkInterpolatedParts(lit, func(part string) {
-		expr, errs := w.interpParser.ParseExpression(part)
-		if expr == nil {
-			return
-		}
-		if len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
-			return
-		}
-		antlrWalk{w}.walk(expr)
-	})
-}
-
-// WalkInterpolatedParts is WalkInterpolated with walkPart walking each
-// embedded expression, given its text: a walk of another tree parses and
-// walks the parts on that tree. Every reference walkPart reports is
-// attributed to lit.
 func (w *Walker) WalkInterpolatedParts(lit Site, walkPart func(part string)) {
 	raw := lit.Text
 	if len(raw) < 3 {
@@ -340,43 +258,6 @@ func (w *Walker) WalkInterpolatedParts(lit Site, walkPart func(part string)) {
 			walkPart(part.Text)
 		}
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Entry points
-// ---------------------------------------------------------------------------
-
-// Walk descends an arbitrary parse-tree node. Nodes that affect scoping or
-// contribute references have precise handlers; every other node recurses into
-// all its children.
-func (w *Walker) Walk(node antlr.Tree) { antlrWalk{w}.walk(node) }
-
-// WalkLambda, WalkBlock and WalkFunctionDeclaration are Walk on a node of
-// their kind, which Walk dispatches to its handler.
-
-// WalkLambda pushes a fresh scope, binds the lambda's parameters into it, walks
-// the body, and pops — so a nested lambda's parameters shadow only within its
-// own scope.
-func (w *Walker) WalkLambda(lambda grammar.ILambdaExpressionContext) { w.Walk(lambda) }
-
-// WalkBlock introduces a nested scope and walks the block's statements in
-// order, so a local declared partway through shadows an enclosing name only for
-// references that follow it.
-func (w *Walker) WalkBlock(block grammar.IBlockContext) { w.Walk(block) }
-
-// WalkFunctionDeclaration handles a `func f(...) = body` (or block-bodied)
-// declaration. The name is bound in the ENCLOSING scope, so the function may
-// recurse and later statements may call it; its parameters live in a fresh
-// nested scope covering only its body. Options.EnterFunctionScope runs inside
-// that scope, before the parameters bind, for binders this walker does not
-// model (type parameters, a method receiver).
-func (w *Walker) WalkFunctionDeclaration(fn grammar.IFunctionDeclarationContext) { w.Walk(fn) }
-
-// WalkParameterDefaults walks the `= expr` default of each parameter, so a
-// reference inside a default value is seen. A parameter list is no node Walk
-// dispatches, so it has a handler of its own on each tree.
-func (w *Walker) WalkParameterDefaults(params grammar.IParametersContext) {
-	antlrWalk{w}.walkParameterDefaults(params)
 }
 
 // Suffix is what ClassifySuffixes reads off a postfix suffix, whichever tree

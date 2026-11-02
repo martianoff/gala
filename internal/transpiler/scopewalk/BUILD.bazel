@@ -2,18 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "scopewalk",
-    srcs = [
-        "scopewalk.go",
-        "walk_antlr.go",
-    ],
+    srcs = ["scopewalk.go"],
     importpath = "martianoff/gala/internal/transpiler/scopewalk",
     visibility = ["//:__subpackages__"],
-    deps = [
-        "//internal/interpolation",
-        "//internal/parser",
-        "//internal/parser/grammar",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
-    ],
+    deps = ["//internal/interpolation"],
 )
 
 go_test(
@@ -22,7 +14,6 @@ go_test(
     deps = [
         ":scopewalk",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler/scopewalk/nativewalk",
         "@com_github_stretchr_testify//assert",

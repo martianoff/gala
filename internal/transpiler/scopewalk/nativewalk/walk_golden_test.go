@@ -81,9 +81,9 @@ func TestWalkGolden(t *testing.T) {
 // walk.
 func walkAll(root native.GalaNodeRef) []string {
 	starts := append([]native.GalaNodeRef{root}, entriesOf(root)...)
-	var rec, unused recorder
+	var rec recorder
 	var out []string
-	for i, set := range optionSets(&unused, &rec) {
+	for i, set := range optionSets(&rec) {
 		for _, n := range starts {
 			rec.events = nil
 			w := scopewalk.New(&rec, set.opts)
