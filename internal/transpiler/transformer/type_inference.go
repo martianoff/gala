@@ -987,7 +987,10 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 	patternArr, patternIsArr := pattern.(transpiler.ArrayType)
 	concreteArr, concreteIsArr := concrete.(transpiler.ArrayType)
 	if patternIsArr && concreteIsArr {
-		if patternArr.Fixed != concreteArr.Fixed || patternArr.Len != concreteArr.Len {
+		// Arrays of two lengths never unify. A Go signature reads an array
+		// parameter as a slice (see goTypeToTranspilerType), so a slice
+		// pattern still takes an array's element type.
+		if patternArr.Fixed && concreteArr.Fixed && patternArr.Len != concreteArr.Len {
 			return false
 		}
 		return t.unifyForInference(patternArr.Elem, concreteArr.Elem, typeParams, inferredMap)
@@ -1702,11 +1705,7 @@ func interfaceMethodSignature(it transpiler.InterfaceType, method string) *trans
 	if !ok {
 		return nil
 	}
-	sig := &transpiler.GoFuncSignature{Returns: ft.Results}
-	for _, p := range ft.Params {
-		sig.Params = append(sig.Params, transpiler.GoParam{Type: p})
-	}
-	return sig
+	return goResultsSignature(ft.Params, nil, ft.Results, nil)
 }
 
 // universeMethodSignature returns the signature of method on a predeclared

@@ -22,6 +22,10 @@ type Box[T any] struct{ Value T }
 
 type Reader interface{ Read() int }
 
+type cell int
+
+type Alias = Reader
+
 func Grid() struct{ Cells [3]int; Rows [][2]string }
 func Boxed() struct{ Inner Box[int]; Boxes []Box[[2]int] }
 func Shaped() struct{ Shape interface{ Scale(int); Area() int } }
@@ -32,7 +36,10 @@ func Nested() struct{ A struct{ B [1]Box[string] } }
 func Hidden() struct{ x int }
 func HiddenMethod() struct{ R interface{ read() } }
 func Variadic() struct{ F func(...int) }
+func HiddenType() struct{ C [3]cell }
+func Aliased() struct{ R Alias; A any }
 
+func AnyField() struct{ A any; E error }
 func TopLevel() [3]int
 `
 	fset := token.NewFileSet()
@@ -56,7 +63,10 @@ func TopLevel() [3]int
 		{"Hidden", "any"},
 		{"HiddenMethod", "any"},
 		{"Variadic", "any"},
+		{"HiddenType", "any"},
+		{"Aliased", "any"},
 		// Outside an anonymous struct an array stays the slice it has been.
+		{"AnyField", "struct{A any; E error}"},
 		{"TopLevel", "[]int"},
 	} {
 		got := goTypeToTranspilerType(result(tt.fn))

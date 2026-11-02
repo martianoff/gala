@@ -614,6 +614,9 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		return arr
 	case *ast.InterfaceType:
 		// An inline interface as typeToExpr emits it: methods only.
+		if e.Methods == nil {
+			return transpiler.NilType{}
+		}
 		var it transpiler.InterfaceType
 		for _, f := range e.Methods.List {
 			ft, ok := t.astTypeToTranspilerType(f.Type).(transpiler.FuncType)

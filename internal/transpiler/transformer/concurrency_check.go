@@ -424,7 +424,7 @@ func withKnownLeaves(typ transpiler.Type) transpiler.Type {
 	case transpiler.ChanType:
 		v.Elem = withKnownLeaves(v.Elem)
 		return v
-	case transpiler.StructType, transpiler.InterfaceType:
+	case transpiler.StructType:
 		return transpiler.MapMembers(v, withKnownLeaves)
 	case transpiler.PointerType:
 		v.Elem = withKnownLeaves(v.Elem)

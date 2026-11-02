@@ -1712,8 +1712,9 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 // spellsExactly reports whether convertGoType, exact, spells t as Go has it,
 // so that the spelling names the same type: every array length, type
 // argument and interface method is kept. A name only t's own package can
-// write (an unexported field or method), unsafe.Pointer and a variadic
-// function type have no spelling in the type model.
+// write (an unexported field, method or type), a type reached through a
+// package's alias, unsafe.Pointer and a variadic function type have no
+// spelling in the type model.
 func spellsExactly(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic:
@@ -1721,10 +1722,17 @@ func spellsExactly(t types.Type) bool {
 	case *types.TypeParam:
 		return true
 	case *types.Alias:
-		return spellsExactly(types.Unalias(t))
+		// An alias is spelled as the type it names, which another package
+		// may not be able to write (an internal package's type); only the
+		// universe's `any` is kept.
+		return t.Obj().Pkg() == nil && spellsExactly(types.Unalias(t))
 	case *types.Named:
-		if t.Obj().IsAlias() {
-			return spellsExactly(types.Unalias(t))
+		obj := t.Obj()
+		if obj.IsAlias() {
+			return obj.Pkg() == nil && spellsExactly(types.Unalias(t))
+		}
+		if obj.Pkg() != nil && !obj.Exported() {
+			return false
 		}
 		for i := 0; i < t.TypeArgs().Len(); i++ {
 			if !spellsExactly(t.TypeArgs().At(i)) {
