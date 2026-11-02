@@ -119,9 +119,12 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:58
 	var b = func() int {
 		if n > 0 {
+//line $DIR/main.gala:59
 			var m = n * 2
+//line $DIR/main.gala:60
 			return m + 1
 		} else {
+//line $DIR/main.gala:62
 			return 0
 		}
 	}()
@@ -151,6 +154,7 @@ func branches(c bool, n int) int {
 		if i > 3 {
 			_tmp_1 = i
 		} else {
+//line $DIR/main.gala:71
 			return i
 		}
 		var v = _tmp_1

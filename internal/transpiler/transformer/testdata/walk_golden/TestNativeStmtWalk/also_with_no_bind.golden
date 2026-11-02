@@ -1,1 +1,1 @@
-error: [SemanticError] $DIR/main.gala:5:9 `also` must follow a `bind`
+error: [SemanticError] $DIR/main.gala:5:9 `also` must directly follow a `bind` or `also`

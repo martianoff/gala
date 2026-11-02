@@ -438,193 +438,243 @@ func (t *galaASTTransformer) lowerValueBlock(b blockSrc, s slot) (*ast.BlockStmt
 	return t.lowerBlock(b, tailValue, s)
 }
 
-// lowerBlock lowers a block. tail and lastValueExpected describe this block's
-// trailing statement only; they are parameters, not transformer state, so
-// nested and sibling blocks cannot inherit them.
-func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
-	// A match or if-expression at the tail of every value-carrying block is
-	// value-consumed, not statement-position — including a branch of a value
-	// block's trailing if, whose tail the chain promotes like a lambda's.
-	lastStmtIsValue := tail != tailDiscarded
-	t.pushScope()
-	defer t.popScope()
+// blockEnd is where a block walk (walkBlock) hands the block over to its
+// caller's strategy for the block's end.
+type blockEnd struct {
+	// lowered is the lowering of the statements before rest, each discarding
+	// its value (appendDiscardedStatement).
+	lowered []ast.Stmt
+	// mark is the line marker of rest's first statement, nil when markers
+	// are off (see line_directives.go). The strategy places it before the
+	// code that statement lowers to, so a block never ends in a marker.
+	mark ast.Stmt
+	// rest is the block's first `bind` and every statement after it, which
+	// the `bind` collapses into a FlatMap chain (see bind.go); with no
+	// `bind`, the block's trailing statement alone; none for an empty block.
+	rest []stmtSrc
+}
 
-	block := &ast.BlockStmt{}
-	allStmts := b.statements()
-	lastIdx := len(allStmts) - 1
-	for i, st := range allStmts {
+// bind reports whether the block ends in a `bind` chain.
+func (e blockEnd) bind() bool { return len(e.rest) > 0 && e.rest[0].kind == stmtBind }
+
+// marked is lowered, then mark: the statements the code of rest's first
+// statement follows.
+func (e blockEnd) marked() []ast.Stmt { return appendMark(e.lowered, e.mark) }
+
+// walkBlock lowers stmts, the statements of a block, up to the block's end,
+// which end, the caller's strategy, lowers: a block's (lowerBlock), an
+// if-expression branch's (lowerIfExprBranchBlock) or a `bind`
+// continuation's (buildBindBody). Every statement, the end's first included,
+// is noted for the native walk and gets its line marker. An `also` reached
+// here follows no `bind`: a `bind` takes the `also`s right after it into its
+// group (collectBindGroup).
+func walkBlock[R any](t *galaASTTransformer, stmts []stmtSrc, end func(blockEnd) (R, error)) (R, error) {
+	var lowered []ast.Stmt
+	var zero R
+	for i, st := range stmts {
 		t.noteNativeStmt(st)
 		// Source-mapped `//line` directive: mark each statement with its
 		// originating GALA line so a panic reports the GALA position. The marker
 		// is prepended before the statement's generated code — never appended —
 		// so the block's trailing statement stays real and downstream
 		// trailing-expression handling is unaffected (see line_directives.go).
+		var mark ast.Stmt
 		if t.emitLineMarkers() {
 			if line, ok := st.line(); ok {
-				block.List = append(block.List, lineMarkerStmt(line))
+				mark = lineMarkerStmt(line)
 			}
 		}
-		// Monadic do-notation: a `bind` collapses itself and every following
-		// statement in the block into a FlatMap chain (see bind.go). Statements
-		// before the first `bind` are emitted normally by prior iterations. An
-		// `also` is only valid immediately following a `bind`/`also` (handled
-		// inside the chain), so one reached here has no preceding `bind`.
 		if st.kind == stmtAlso {
-			return nil, t.semanticErrorAtNode(st.at, "`also` must follow a `bind`")
+			return zero, t.semanticErrorAtNode(st.at, "`also` must directly follow a `bind` or `also`")
 		}
-		if st.kind == stmtBind {
-			if !lastStmtIsValue {
-				// The chain is the block's value, and nothing reads the
-				// value of this block.
-				if transpiler.IsUnusable(t.returnSlot.typ) {
-					return nil, t.semanticErrorAtNode(st.at, "`bind` requires the enclosing function to declare a monad return type")
-				}
-				return nil, t.semanticErrorAtNode(st.at,
-					"`bind` is not allowed in a block whose value is not used, such as the body of an `if` statement or a loop: "+
-						"its chain would be computed and thrown away. Use it in a function or lambda body, an if-expression branch or a match arm")
-			}
-			// The block's monad is the type of the value the block fills: the
-			// result type of the enclosing function or lambda, or of the match
-			// or if-expression whose arm it is. When that is not known, a
-			// block whose value is consumed takes it from its own trailing
-			// value, and fills the enclosing lambda's slot with it.
-			chain := allStmts[i:]
-			hoisted := lastValueExpected.hoist != ""
-			typ := t.returnSlot.typ
-			if tail != tailReturn {
-				if closed := lastValueExpected.closedType(); !transpiler.IsUnusable(closed) {
-					typ = closed
-				} else if hoisted {
-					// An arm lowered as statements has no slot of its own: the
-					// function's result type is not the arm's.
-					typ = nil
-				}
-			}
-			if hoisted {
-				if err := t.checkNoEscapeAfterBind(chain, "a match arm"); err != nil {
-					return nil, err
-				}
-				// The chain's continuations are functions of their own.
-				defer t.enterIIFEReturnSlot(typ)()
-			}
-			res := t.newBindResult(typ)
-			expr, err := t.desugarBindChain(chain, res)
-			if err != nil {
-				return nil, err
-			}
-			if hoisted {
-				// The chain is the arm's value, which the arm stores: a
-				// `return` there would leave the function.
-				block.List = append(block.List, &ast.ExprStmt{X: expr})
-				return block, nil
-			}
-			t.tryFillReturnSlot(res.typ)
-			block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
-			return block, nil
+		e := blockEnd{lowered: lowered, mark: mark, rest: stmts[i:]}
+		if st.kind == stmtBind || i == len(stmts)-1 {
+			return end(e)
 		}
-		// A non-trailing statement discards its value; the trailing one does
-		// only when the caller did NOT signal that the block's last
-		// expression is consumed (lowerValueBlock) — function bodies
-		// with a return type, lambda bodies, and match arm bodies all do,
-		// since their trailing expression becomes the block's value.
-		if i != lastIdx || !lastStmtIsValue {
-			var err error
-			if block.List, err = t.appendDiscardedStatement(block.List, st); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		// The trailing statement of a value-carrying block.
-		value := st.valueExpr()
-		var stmt ast.Stmt
-		// pre: statements a local declaration needs before it (see
-		// lowerStatement).
-		var pre []ast.Stmt
 		var err error
-		// The trailing value of a lambda's block body is a result value.
-		slotBody := b.is(t.returnSlot.body)
-		// The trailing value of a lambda whose result type is not known yet
-		// is one of its result values, like a `return` value.
-		fillsPendingSlot := slotBody && value.ok() && t.returnSlotPending()
-		// Once an earlier `return` has filled that slot, the trailing value
-		// fills a slot of that type like any other result value.
-		if slotBody && t.returnSlot.fillable &&
-			transpiler.IsUnusable(lastValueExpected.typ) && !transpiler.IsUnusable(t.returnSlot.typ) {
-			lastValueExpected = typedSlot(t.returnSlot.typ)
+		if lowered, err = t.appendDiscardedStatement(e.marked(), st); err != nil {
+			return zero, err
 		}
-		ifS := st.ifStmt()
-		if bs, ok := t.lowerLoopControl(value); ok {
-			// Loop control is a statement wherever it sits, the tail of a
-			// value-carrying block included: it is never the block's value.
-			stmt = bs
-		} else if tail == tailReturn && value.ok() {
-			// The function's implicit return value.
-			stmt, err = t.lowerFunctionTail(value)
-		} else if ifS.ok() && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
-			// A trailing if/else carries the block's value in its branches,
-			// and so does an if/else nested at the tail of such a branch.
-			branchTail := tailBranch
-			if tail == tailReturn {
-				branchTail = tailReturn
-			}
-			stmt, err = t.lowerIfStatement(ifS, branchTail, lastValueExpected)
-			if ifStmt, ok := stmt.(*ast.IfStmt); ok && err == nil && tail == tailValue {
-				// The consumer promotes the chain only when every branch
-				// ends in a value; otherwise its branch tails are discarded.
-				if _, promotes := t.promoteIfBranchValues(ifStmt, plainReturn); !promotes {
-					if err = t.checkMixedBranchValues(ifS, ifStmt); err == nil {
-						err = t.checkUnpromotedBranchTails(ifS, ifStmt)
-					}
-				}
-			}
-		} else if lastValueExpected.hoist != "" && t.hoistable(value) {
-			// The value of an arm lowered as statements is stored, and so is
-			// that of a match or if-expression at its tail (see
-			// hoisted_value.go).
-			var expr ast.Expr
-			if expr, err = t.lowerAgainst(value, lastValueExpected, true); err == nil {
-				stmt = &ast.ExprStmt{X: expr}
-			}
-		} else if !transpiler.IsUnusable(lastValueExpected.typ) &&
-			(t.needsExpectedType(value) || t.consumesSlotType(value, t.followAliasChain(lastValueExpected.typ)) ||
-				value.isNil()) {
-			// The block's value fills a typed slot: a lambda, if or match tail is
-			// lowered against it, and so is a tuple literal, construction or
-			// call that takes the slot's type (consumesSlotType), and a `nil`,
-			// which takes the slot's type as its own (lowerResultAgainst). Any other
-			// plain tail stays an ordinary statement.
-			var expr ast.Expr
-			if expr, err = t.lowerResultAgainst(value, lastValueExpected, true); err == nil {
-				stmt = &ast.ExprStmt{X: expr}
-			}
-		} else if fillsPendingSlot {
-			if err = t.checkForbiddenStatementKeywordSrc(value); err == nil {
-				stmt = &ast.ExprStmt{X: t.lowerFillingValue(value, false)}
-			}
-		} else {
-			stmt, pre, err = t.lowerStatement(st)
+	}
+	return end(blockEnd{})
+}
+
+// appendMark appends to dst the line marker mark, when there is one.
+func appendMark(dst []ast.Stmt, mark ast.Stmt) []ast.Stmt {
+	if mark == nil {
+		return dst
+	}
+	return append(dst, mark)
+}
+
+// lowerBlock lowers a block. tail and lastValueExpected describe this block's
+// trailing statement only; they are parameters, not transformer state, so
+// nested and sibling blocks cannot inherit them.
+func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
+	t.pushScope()
+	defer t.popScope()
+
+	stmts, err := walkBlock(t, b.statements(), func(e blockEnd) ([]ast.Stmt, error) {
+		switch {
+		case e.bind():
+			return t.lowerBlockBind(e, tail, lastValueExpected)
+		case len(e.rest) == 0:
+			return nil, nil
+		case tail == tailDiscarded:
+			// The trailing statement discards its value like the others: the
+			// caller did not signal that the block's last expression is
+			// consumed (lowerValueBlock), as function bodies with a return
+			// type, lambda bodies and match arm bodies do.
+			return t.appendDiscardedStatement(e.marked(), e.rest[0])
 		}
-		if err != nil {
+		stmts, err := t.lowerBlockTail(b, e.marked(), e.rest[0], tail, lastValueExpected)
+		if err == nil && (tail == tailValue || tail == tailBranch || tail == tailExpr) {
+			t.typeBlockValue(stmts)
+		}
+		return stmts, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ast.BlockStmt{List: stmts}, nil
+}
+
+// lowerBlockBind lowers the `bind` chain e ends a block in (see lowerBlock).
+func (t *galaASTTransformer) lowerBlockBind(e blockEnd, tail blockTail, lastValueExpected slot) ([]ast.Stmt, error) {
+	st := e.rest[0]
+	if tail == tailDiscarded {
+		// The chain is the block's value, and nothing reads the value of this
+		// block.
+		if transpiler.IsUnusable(t.returnSlot.typ) {
+			return nil, t.semanticErrorAtNode(st.at, "`bind` requires the enclosing function to declare a monad return type")
+		}
+		return nil, t.semanticErrorAtNode(st.at,
+			"`bind` is not allowed in a block whose value is not used, such as the body of an `if` statement or a loop: "+
+				"its chain would be computed and thrown away. Use it in a function or lambda body, an if-expression branch or a match arm")
+	}
+	// The block's monad is the type of the value the block fills: the result
+	// type of the enclosing function or lambda, or of the match or
+	// if-expression whose arm it is. When that is not known, a block whose
+	// value is consumed takes it from its own trailing value, and fills the
+	// enclosing lambda's slot with it.
+	hoisted := lastValueExpected.hoist != ""
+	typ := t.returnSlot.typ
+	if tail != tailReturn {
+		if closed := lastValueExpected.closedType(); !transpiler.IsUnusable(closed) {
+			typ = closed
+		} else if hoisted {
+			// An arm lowered as statements has no slot of its own: the
+			// function's result type is not the arm's.
+			typ = nil
+		}
+	}
+	if hoisted {
+		if err := t.checkNoEscapeAfterBind(e.rest, "a match arm"); err != nil {
 			return nil, err
 		}
-		if inlined := t.takePendingMatchBlock(); inlined != nil {
-			block.List = append(block.List, inlined)
-			continue
+		// The chain's continuations are functions of their own.
+		defer t.enterIIFEReturnSlot(typ)()
+	}
+	res := t.newBindResult(typ)
+	expr, err := t.desugarBindChain(e.rest, res)
+	if err != nil {
+		return nil, err
+	}
+	if hoisted {
+		// The chain is the arm's value, which the arm stores: a `return`
+		// there would leave the function.
+		return append(e.marked(), &ast.ExprStmt{X: expr}), nil
+	}
+	t.tryFillReturnSlot(res.typ)
+	return append(e.marked(), &ast.ReturnStmt{Results: []ast.Expr{expr}}), nil
+}
+
+// lowerBlockTail appends to dst the lowering of st, the trailing statement of
+// b, a value-carrying block (see lowerBlock).
+func (t *galaASTTransformer) lowerBlockTail(b blockSrc, dst []ast.Stmt, st stmtSrc, tail blockTail, lastValueExpected slot) ([]ast.Stmt, error) {
+	value := st.valueExpr()
+	var stmt ast.Stmt
+	// pre: statements a local declaration needs before it (see
+	// lowerStatement).
+	var pre []ast.Stmt
+	var err error
+	// The trailing value of a lambda's block body is a result value.
+	slotBody := b.is(t.returnSlot.body)
+	// The trailing value of a lambda whose result type is not known yet is
+	// one of its result values, like a `return` value.
+	fillsPendingSlot := slotBody && value.ok() && t.returnSlotPending()
+	// Once an earlier `return` has filled that slot, the trailing value fills
+	// a slot of that type like any other result value.
+	if slotBody && t.returnSlot.fillable &&
+		transpiler.IsUnusable(lastValueExpected.typ) && !transpiler.IsUnusable(t.returnSlot.typ) {
+		lastValueExpected = typedSlot(t.returnSlot.typ)
+	}
+	ifS := st.ifStmt()
+	if bs, ok := t.lowerLoopControl(value); ok {
+		// Loop control is a statement wherever it sits, the tail of a
+		// value-carrying block included: it is never the block's value.
+		stmt = bs
+	} else if tail == tailReturn && value.ok() {
+		// The function's implicit return value.
+		stmt, err = t.lowerFunctionTail(value)
+	} else if ifS.ok() && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
+		// A trailing if/else carries the block's value in its branches, and
+		// so does an if/else nested at the tail of such a branch.
+		branchTail := tailBranch
+		if tail == tailReturn {
+			branchTail = tailReturn
 		}
-		// At the tail of a tailIIFE block only a match or if-expression
-		// carries the value — even when it fills a pending slot, any other
-		// value is never promoted to the lambda's return.
-		if tail == tailIIFE && !t.needsExpectedType(value) && value.ok() {
-			if err := t.checkValueUsedHint(value, stmt, lambdaDiscardHint); err != nil {
-				return nil, err
+		stmt, err = t.lowerIfStatement(ifS, branchTail, lastValueExpected)
+		if ifStmt, ok := stmt.(*ast.IfStmt); ok && err == nil && tail == tailValue {
+			// The consumer promotes the chain only when every branch ends in
+			// a value; otherwise its branch tails are discarded.
+			if _, promotes := t.promoteIfBranchValues(ifStmt, plainReturn); !promotes {
+				if err = t.checkMixedBranchValues(ifS, ifStmt); err == nil {
+					err = t.checkUnpromotedBranchTails(ifS, ifStmt)
+				}
 			}
 		}
-		block.List = append(append(block.List, pre...), stmt)
+	} else if lastValueExpected.hoist != "" && t.hoistable(value) {
+		// The value of an arm lowered as statements is stored, and so is that
+		// of a match or if-expression at its tail (see hoisted_value.go).
+		var expr ast.Expr
+		if expr, err = t.lowerAgainst(value, lastValueExpected, true); err == nil {
+			stmt = &ast.ExprStmt{X: expr}
+		}
+	} else if !transpiler.IsUnusable(lastValueExpected.typ) &&
+		(t.needsExpectedType(value) || t.consumesSlotType(value, t.followAliasChain(lastValueExpected.typ)) ||
+			value.isNil()) {
+		// The block's value fills a typed slot: a lambda, if or match tail is
+		// lowered against it, and so is a tuple literal, construction or call
+		// that takes the slot's type (consumesSlotType), and a `nil`, which
+		// takes the slot's type as its own (lowerResultAgainst). Any other
+		// plain tail stays an ordinary statement.
+		var expr ast.Expr
+		if expr, err = t.lowerResultAgainst(value, lastValueExpected, true); err == nil {
+			stmt = &ast.ExprStmt{X: expr}
+		}
+	} else if fillsPendingSlot {
+		if err = t.checkForbiddenStatementKeywordSrc(value); err == nil {
+			stmt = &ast.ExprStmt{X: t.lowerFillingValue(value, false)}
+		}
+	} else {
+		stmt, pre, err = t.lowerStatement(st)
 	}
-	if tail == tailValue || tail == tailBranch || tail == tailExpr {
-		t.typeBlockValue(block)
+	if err != nil {
+		return nil, err
 	}
-	return block, nil
+	if inlined := t.takePendingMatchBlock(); inlined != nil {
+		return append(dst, inlined), nil
+	}
+	// At the tail of a tailIIFE block only a match or if-expression carries
+	// the value — even when it fills a pending slot, any other value is never
+	// promoted to the lambda's return.
+	if tail == tailIIFE && !t.needsExpectedType(value) && value.ok() {
+		if err := t.checkValueUsedHint(value, stmt, lambdaDiscardHint); err != nil {
+			return nil, err
+		}
+	}
+	return append(append(dst, pre...), stmt), nil
 }
 
 // appendDiscardedStatement appends to dst the lowering of st, a block
@@ -667,8 +717,8 @@ func (t *galaASTTransformer) takePendingMatchBlock() *ast.BlockStmt {
 	return block
 }
 
-// typeBlockValue types the trailing value of a value-carrying block while the
-// block's scope is still open.
+// typeBlockValue types the trailing value of a value-carrying block, whose
+// lowered statements are stmts, while the block's scope is still open.
 //
 // The block's consumer — a match arm, a partial-function arm, a branch of a
 // trailing if/else — types the value only after this function returns and the
@@ -677,12 +727,12 @@ func (t *galaASTTransformer) takePendingMatchBlock() *ast.BlockStmt {
 // as unresolved, and a match whose arms were all like it was lowered as void
 // and its value used. A successful lookup is cached on the expression node, so
 // typing it here is what the consumer's later query finds.
-func (t *galaASTTransformer) typeBlockValue(block *ast.BlockStmt) {
-	if len(block.List) == 0 {
+func (t *galaASTTransformer) typeBlockValue(stmts []ast.Stmt) {
+	if len(stmts) == 0 {
 		return
 	}
 	var value ast.Expr
-	switch last := block.List[len(block.List)-1].(type) {
+	switch last := stmts[len(stmts)-1].(type) {
 	case *ast.ExprStmt:
 		value = last.X
 	case *ast.ReturnStmt:

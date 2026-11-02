@@ -4885,3 +4885,11 @@ gala_exec_test(
     src = "if_expr_branch_statements.gala",
     expected = "if_expr_branch_statements.out",
 )
+
+# A panic inside an if-expression branch or a bind continuation reports the
+# GALA line it happens on.
+gala_exec_test(
+    name = "block_end_line_markers",
+    src = "block_end_line_markers.gala",
+    expected = "block_end_line_markers.out",
+)

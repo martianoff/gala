@@ -390,7 +390,9 @@ func steps(n int, acc int) int {
 				n, acc = _tmp_26, _tmp_27
 				continue
 			} else {
+//line $DIR/main.gala:68
 				var next = n - 1
+//line $DIR/main.gala:69
 				return next + acc
 			}
 		}
