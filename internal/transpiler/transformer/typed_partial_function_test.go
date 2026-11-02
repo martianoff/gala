@@ -100,3 +100,63 @@ func TestTypedPartialFunctionQualifiedStd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, got, "func(_pf_arg int) std.Option[int] {")
 }
+
+// TestPartialFunctionWithSuffixArgument covers a partial-function literal
+// with a suffix applied to it, passed as a call argument: the argument is the
+// applied result, not the literal, so the suffix must survive lowering.
+func TestPartialFunctionWithSuffixArgument(t *testing.T) {
+	trans := newTranspiler()
+	const decls = "package main\n\n" +
+		"func show(o Option[int]) string = o.Map((x) => s\"got $x\").GetOrElse(\"none\")\n\n" +
+		"func describe[T any](v T) string = s\"$v\"\n\n"
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "call suffix against a concrete slot",
+			body: "func main() {\n    Println(show({ case n: int => n * 2 }(3)))\n}",
+			want: "}(3))",
+		},
+		{
+			name: "call suffix against a generic slot",
+			body: "func main() {\n    Println(describe({ case n: int => n + 1 }(4)))\n}",
+			want: "}(4))",
+		},
+		{
+			name: "member suffix after the call",
+			body: "func main() {\n    Println({ case n: int => n * 10 }(2).GetOrElse(0))\n}",
+			want: "}(2).GetOrElse(0)",
+		},
+		{
+			name: "untyped pattern takes the argument's type",
+			body: "func main() {\n    Println(show({ case n if n > 0 => n * 2 }(3)))\n}",
+			want: "}(3))",
+		},
+		{
+			name: "untyped pattern applied to a placeholder",
+			body: "func main() {\n    Println(show(Some(1).FlatMap({ case n => n * 3 }(_))))\n}",
+			want: "func(_pf_arg int) std.Option[int] {",
+		},
+		{
+			name: "untyped pattern applied in a val",
+			body: "func main() {\n    val r = { case n => n - 1 }(10)\n    Println(r)\n}",
+			want: "}(10)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.body+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+			assert.Contains(t, got, "func(_pf_arg int) std.Option[int] {")
+			assert.NotContains(t, got, "_pf_arg any")
+		})
+	}
+	// An extractor pattern is matched against the argument's type, not the
+	// `Option[any]` its pattern alone suggests.
+	got, err := trans.Transpile(decls+"func main() {\n    Println({ case Some(x) => x * 2 }(Some(3)))\n}\n", "")
+	require.NoError(t, err)
+	assert.Contains(t, got, "func(_pf_arg std.Option[int]) std.Option[int] {")
+}

@@ -210,16 +210,6 @@ func (f partialSrc) cases(t *galaASTTransformer) []caseSrc {
 	return t.casesOf(f.node, f.ctx)
 }
 
-// partialIn is the partial function e's sole operand starts from, whatever
-// suffixes follow it, and the zero partialSrc when it starts from anything
-// else.
-func (t *galaASTTransformer) partialIn(e exprSrc) partialSrc {
-	if p := e.solePostfix(); p.ok() {
-		return p.primaryPartial(t)
-	}
-	return partialSrc{}
-}
-
 // barePartial is the partial function e is, with nothing applied to it,
 // and the zero partialSrc otherwise.
 func (t *galaASTTransformer) barePartial(e exprSrc) partialSrc {

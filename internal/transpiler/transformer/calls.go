@@ -704,7 +704,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			// Also skip placeholder-lambda expressions (L4): they contain `_`
 			// identifiers that only make sense once rewritten as a lambda,
 			// which happens later in transformArgument.
-			if v.lambda.ok() || t.lambdaIn(v.expr).ok() || t.partialIn(v.expr).ok() {
+			if v.lambda.ok() || t.lambdaIn(v.expr).ok() || t.barePartial(v.expr).ok() {
 				continue
 			}
 			if countPlaceholders(v.expr) > 0 {
@@ -2041,15 +2041,15 @@ func (t *galaASTTransformer) lowerFunctionArg(
 
 // isPlaceholderLambdaArg reports whether e, filling a slot of type
 // slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
-// see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
-// transformArgument, a lambda or partial function in it takes precedence. Its
+// see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Its
 // `_` are counted as tryRewriteAsPlaceholderLambda counts them, nested call
 // arguments included (`double(_)`): one a nested call's own function-typed slot
 // takes (`compose(_ + 1, show)`) lowers there, and the slot's type arguments
-// then bind from the value it produces.
+// then bind from the value it produces. A bare lambda or partial function,
+// which transformArgument lowers first, has none: the count skips lambdas and
+// case clauses.
 func (t *galaASTTransformer) isPlaceholderLambdaArg(e exprSrc, slotType transpiler.Type) bool {
-	return e.ok() && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholders(e) > 0 &&
-		!t.partialIn(e).ok() && !t.lambdaIn(e).ok()
+	return e.ok() && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholders(e) > 0
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -4651,8 +4651,9 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 		}
 	}
 	expectedType := s.typ
-	// Try to find a partial function literal in this expression
-	if pf := t.partialIn(e); pf.ok() {
+	// A partial function literal standing alone lowers against the slot; one
+	// with a suffix applied (`{ case ... }(x)`) is an ordinary expression.
+	if pf := t.barePartial(e); pf.ok() {
 		return t.transformPartialFunctionLiteral(pf, slot{typ: funcSlot, open: s.open})
 	}
 
