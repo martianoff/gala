@@ -1,8 +1,8 @@
 load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "anon_struct_field_bridge",
+    name = "bridge",
     srcs = ["bridge.go"],
-    importpath = "martianoff/gala/examples/anon_struct_field_bridge",
+    importpath = "martianoff/gala/examples/anonymous_struct_field_types/bridge",
     visibility = ["//visibility:public"],
 )

@@ -2473,9 +2473,9 @@ gala_exec_test(
 # fits in an Option and its fields keep their types.
 gala_exec_test(
     name = "anonymous_struct_field_types",
-    src = "anonymous_struct_field_types.gala",
-    expected = "anonymous_struct_field_types.out",
-    deps = ["//examples/anon_struct_field_bridge"],
+    src = "anonymous_struct_field_types/main.gala",
+    expected = "anonymous_struct_field_types/main.out",
+    deps = ["//examples/anonymous_struct_field_types/bridge"],
 )
 
 # Verification: ToBytes/ToString/ToRunes byte conversion helpers

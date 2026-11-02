@@ -1,7 +1,7 @@
-// Package anon_struct_field_bridge returns anonymous Go struct types whose
+// Package bridge returns anonymous Go struct types whose
 // fields have a fixed-length array type, a generic type instance or an
 // inline interface type, so GALA has to spell each field's type exactly.
-package anon_struct_field_bridge
+package bridge
 
 // Box is a generic Go struct, named by an anonymous struct's field.
 type Box[T any] struct {
