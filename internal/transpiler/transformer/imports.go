@@ -981,8 +981,12 @@ func CheckImportPaths(file *ast.File) error {
 // RichAST.ImportPathMap). An import whose qualifier is not the name Add would
 // give it (transpiler.AssumedPackageName) is written with that qualifier as
 // its name.
+//
+// The imports are added in import-path order, whatever order they were
+// recorded in: each one is put first, so the paths are walked from the last.
 func (m *ImportManager) AddTransitiveImportsToFile(file *ast.File, pathMap map[string]string) {
-	for galaPath, alias := range m.transitiveImports {
+	for _, galaPath := range slices.Backward(slices.Sorted(maps.Keys(m.transitiveImports))) {
+		alias := m.transitiveImports[galaPath]
 		path := galaPath
 		if mapped, ok := pathMap[galaPath]; ok {
 			path = mapped
