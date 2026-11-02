@@ -1,0 +1,86 @@
+package main
+
+// A val declared in an if-expression's block branch is local to the branch,
+// as in any other block: it shadows an outer name only inside the branch.
+
+// The branch's value is the shadowing name itself.
+func local(c bool) int {
+    val m = "outer"
+    val r = if (c) {
+        val m = 41
+        m
+    } else 0
+    Println(m + "!")
+    r
+}
+
+// A branch that leaves the function: the if-expression is lowered as
+// statements storing its value.
+func leaves(n int) string {
+    val m = "kept"
+    val r = if (n > 0) {
+        val m = n * 2
+        if (m > 100) { return "too big" }
+        m + 1
+    } else {
+        val m = true
+        if (m) -1 else -2
+    }
+    s"$m $r"
+}
+
+// Nested if-expressions, each branch shadowing the same name.
+func nested(a bool, b bool) string {
+    val m = "outer"
+    val r = if (a) {
+        val m = 10
+        val inner = if (b) {
+            val m = "inner"
+            m.Size()
+        } else {
+            val m = 3
+            m + 1
+        }
+        Println(s"m=$m inner=$inner")
+        m + inner
+    } else {
+        val m = 2.5
+        Println(s"else m=$m")
+        0
+    }
+    val f = () => m + "?"
+    s"$m $r ${f()}"
+}
+
+// A `bind` after a shadowing val in a branch.
+func bound(c bool) Option[int] {
+    val m = "outer"
+    val r = if (c) {
+        val m = 5
+        bind x = Some(m)
+        Some(x + m)
+    } else None()
+    Println(m + "!")
+    r
+}
+
+func main() {
+    val m = "outer"
+    val r = if (true) {
+        val m = 41
+        m + 1
+    } else 0
+    Println(r)
+    Println(m + "!")
+
+    Println(local(true))
+    Println(local(false))
+    Println(leaves(3))
+    Println(leaves(80))
+    Println(leaves(0))
+    Println(nested(true, true))
+    Println(nested(true, false))
+    Println(nested(false, true))
+    Println(bound(true))
+    Println(bound(false))
+}

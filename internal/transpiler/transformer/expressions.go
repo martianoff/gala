@@ -442,7 +442,25 @@ func isNilIdent(expr ast.Expr) bool {
 // against s (see lowerIfExprBranch). The statements before its end are lowered
 // as any block's (walkBlock); its value is its trailing expression, or the
 // value of the `bind` chain or the trailing if/else chain it ends in.
+//
+// The branch is a block of its own: the names it declares are local to it.
+// Its value is typed before they go out of scope, as a match arm's is: the
+// if-expression reads that type once the branch is lowered, from the type
+// cache (getExprTypeName caches by node), so a value naming a branch-local
+// val keeps that val's type rather than an outer one's.
 func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
+	t.pushScope()
+	defer t.popScope()
+	lowered, err := t.walkIfExprBranchBlock(b, s)
+	if err == nil {
+		t.getExprTypeName(lowered.expr)
+	}
+	return lowered, err
+}
+
+// walkIfExprBranchBlock lowers b, an if-expression branch that is a block, in
+// the scope lowerIfExprBranchBlock pushes for it.
+func (t *galaASTTransformer) walkIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
 	return walkBlock(t, b.statements(), func(e blockEnd) (loweredIfBranch, error) {
 		if len(e.rest) == 0 {
 			return noValueBranch(nil), nil
@@ -585,14 +603,13 @@ func (t *galaASTTransformer) checkChainValueTypes(at srcNode, promoted *ast.IfSt
 // slot s the if-expression fills, or, when that is not known, the branch's
 // trailing value. Never the enclosing function's result type — the
 // if-expression's value need not be what the function returns. The chain's
-// bound names are local to the branch.
+// bound names are local to the branch, whose scope lowerIfExprBranchBlock
+// pushes.
 func (t *galaASTTransformer) lowerIfExprBranchBind(stmts []stmtSrc, s slot) (ast.Expr, error) {
 	if err := t.checkNoEscapeAfterBind(stmts, "an if-expression branch"); err != nil {
 		return nil, err
 	}
 	typ := s.closedType()
-	t.pushScope()
-	defer t.popScope()
 	// A hoisted if-expression enters no IIFE slot of its own, so the chain's
 	// result would otherwise come from the enclosing function's.
 	defer t.enterIIFEReturnSlot(typ)()

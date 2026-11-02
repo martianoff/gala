@@ -4886,6 +4886,13 @@ gala_exec_test(
     expected = "if_expr_branch_statements.out",
 )
 
+# A val declared in an if-expression's block branch is local to the branch.
+gala_exec_test(
+    name = "if_expr_branch_scope",
+    src = "if_expr_branch_scope.gala",
+    expected = "if_expr_branch_scope.out",
+)
+
 # A panic inside an if-expression branch or a bind continuation reports the
 # GALA line it happens on.
 gala_exec_test(

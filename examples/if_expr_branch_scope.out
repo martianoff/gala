@@ -1,0 +1,19 @@
+42
+outer!
+outer!
+41
+outer!
+0
+kept 7
+too big
+kept -1
+m=10 inner=5
+outer 15 outer?
+m=10 inner=4
+outer 14 outer?
+else m=2.5
+outer 0 outer?
+outer!
+Some(10)
+outer!
+None()
