@@ -424,6 +424,10 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 	}
 	// No hint is pushed for a match, so its subject's suffixes take none.
 	p.owner = hintOwner{}
+	// Statement position is this match's, not its subject's: a match or a
+	// block in the subject is lowered as its value is used.
+	stmtPosition := t.matchInStatementPos
+	t.matchInStatementPos = false
 	subject, err := t.lowerPrimaryOf(p)
 	if err != nil {
 		return nil, err
@@ -434,6 +438,7 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 			return nil, err
 		}
 	}
+	t.matchInStatementPos = stmtPosition
 	t.nativeShape(p.node, "match")
 	return t.buildMatchExpressionFromClauses(subject, "obj", t.nativeCases(p.node), p.at(), s)
 }
@@ -486,7 +491,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	defer t.popScope()
 	t.addVar(paramName, subjectType)
 
-	// Consume the statement-position marker set by lowerBlock. Arm bodies
+	// Consume the statement-position marker set by lowerExprStatement. Arm bodies
 	// must see matchInStatementPos = false so a NESTED match used as the arm's
 	// value is not also forced to void.
 	stmtPosition := t.matchInStatementPos
@@ -778,8 +783,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			block = &ast.BlockStmt{List: stmts}
 		}
 		t.pendingMatchStmtBlock = block
-		// Return a placeholder; lowerBlock recognises pendingMatchStmtBlock
-		// and replaces the wrapping ExprStmt with the inlined block.
+		// Return a placeholder; the enclosing statement takes the block with
+		// takePendingMatchBlock and emits it in place of the placeholder.
 		return ast.NewIdent("_"), nil
 	}
 

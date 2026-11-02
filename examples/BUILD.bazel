@@ -4867,3 +4867,11 @@ gala_exec_test(
         "//examples:cross_file_method_default_lib",
     ],
 )
+
+# Statements before the value of an if-expression block branch, and of a
+# bind continuation, are lowered as in any block.
+gala_exec_test(
+    name = "if_expr_branch_statements",
+    src = "if_expr_branch_statements.gala",
+    expected = "if_expr_branch_statements.out",
+)
