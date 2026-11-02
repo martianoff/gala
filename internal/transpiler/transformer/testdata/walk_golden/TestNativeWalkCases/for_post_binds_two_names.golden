@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:28 a `for` post statement cannot bind a multi-value call; move the binding into the loop body

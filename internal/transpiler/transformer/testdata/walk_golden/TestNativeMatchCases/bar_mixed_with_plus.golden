@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0071] $DIR/main.gala:4:14 '|' separates pattern alternatives and cannot be mixed with '+' in a pattern (hint: put parentheses around the alternative that uses '+')

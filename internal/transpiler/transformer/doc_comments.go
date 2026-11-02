@@ -6,10 +6,8 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // Doc comments in generated Go
@@ -80,16 +78,6 @@ func sanitizeDocLine(line string) string {
 	}, line)
 }
 
-// docKeyOf is the doc key of the declaration whose first token is start, or
-// the zero key, which no doc comment has, when there is no start token (an
-// error-recovered tree).
-func docKeyOf(start antlr.Token) parser.DocKey {
-	if start == nil {
-		return parser.DocKey{}
-	}
-	return parser.DocKeyOf(start)
-}
-
 // docAt is the doc comment group of the declaration whose first token is at
 // key, or nil when it is undocumented. The caller has checked t.richAST.
 func (t *galaASTTransformer) docAt(key parser.DocKey) *ast.CommentGroup {
@@ -97,7 +85,7 @@ func (t *galaASTTransformer) docAt(key parser.DocKey) *ast.CommentGroup {
 }
 
 // declDocs is what attachDocs reads of a GALA top-level declaration, from
-// either tree (readDeclDocs, readDeclDocsNative): which kind it is, where it
+// its native tree (readDeclDocsNative): which kind it is, where it
 // starts, its name, and its documented members.
 type declDocs struct {
 	kind declDocKind
@@ -131,71 +119,11 @@ const (
 // attachTopDeclDocs attaches the doc comments of d, one GALA top-level
 // declaration, to the Go declarations it lowered to. decls is the
 // transformer's output for that declaration, in emission order.
-func (t *galaASTTransformer) attachTopDeclDocs(d topDecl, decls []ast.Decl) {
+func (t *galaASTTransformer) attachTopDeclDocs(td native.GalaNodeRef, decls []ast.Decl) {
 	if t.richAST == nil || len(t.richAST.Docs) == 0 || len(decls) == 0 {
 		return
 	}
-	if d.node.Ok() {
-		t.attachDocs(readDeclDocsNative(d.node), decls)
-	} else {
-		t.attachDocs(readDeclDocs(d.ctx), decls)
-	}
-}
-
-// readDeclDocs reads what attachDocs needs of ctx on ANTLR's tree.
-func readDeclDocs(ctx grammar.ITopLevelDeclarationContext) declDocs {
-	dd := declDocs{doc: docKeyOf(ctx.GetStart())}
-	switch {
-	case ctx.FunctionDeclaration() != nil, ctx.ValDeclaration() != nil, ctx.VarDeclaration() != nil:
-		dd.kind = docsOne
-
-	case ctx.EmbedDeclaration() != nil:
-		dd.kind = docsEmbed
-		dd.name = ctx.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier().GetText()
-
-	case ctx.TypeDeclaration() != nil:
-		typeCtx := ctx.TypeDeclaration().(*grammar.TypeDeclarationContext)
-		dd.kind, dd.name = docsType, typeCtx.Identifier().GetText()
-		if st, ok := typeCtx.StructType().(*grammar.StructTypeContext); ok && st != nil {
-			for _, f := range st.AllStructField() {
-				fctx := f.(*grammar.StructFieldContext)
-				dd.members = append(dd.members, memberDoc{fctx.Identifier().GetText(), docKeyOf(fctx.GetStart())})
-			}
-		}
-		if it, ok := typeCtx.InterfaceType().(*grammar.InterfaceTypeContext); ok && it != nil {
-			for _, m := range it.AllMethodSpec() {
-				mctx := m.(*grammar.MethodSpecContext)
-				dd.members = append(dd.members, memberDoc{mctx.Identifier().GetText(), docKeyOf(mctx.GetStart())})
-			}
-		}
-
-	case ctx.StructShorthandDeclaration() != nil:
-		sctx := ctx.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext)
-		dd.kind, dd.name = docsShorthand, sctx.Identifier().GetText()
-		params := sctx.Parameters().(*grammar.ParametersContext)
-		if params.ParameterList() == nil {
-			break
-		}
-		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			pctx := p.(*grammar.ParameterContext)
-			if pctx.Identifier() != nil {
-				dd.members = append(dd.members, memberDoc{pctx.Identifier().GetText(), docKeyOf(pctx.GetStart())})
-			}
-		}
-
-	case ctx.OpaqueTypeDeclaration() != nil:
-		dd.kind = docsOpaque
-		dd.name = ctx.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext).Identifier().GetText()
-
-	case ctx.SealedTypeDeclaration() != nil:
-		sctx := ctx.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
-		dd.kind, dd.name = docsSealed, sctx.Identifier().GetText()
-		for _, c := range sctx.AllSealedCase() {
-			cctx := c.(*grammar.SealedCaseContext)
-			dd.members = append(dd.members, memberDoc{cctx.Identifier().GetText(), docKeyOf(cctx.GetStart())})
-		}
-	}
-	return dd
+	t.attachDocs(readDeclDocsNative(td), decls)
 }
 
 // attachDocs attaches the doc comments of the declaration dd describes to

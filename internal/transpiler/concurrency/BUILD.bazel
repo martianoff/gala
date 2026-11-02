@@ -11,7 +11,6 @@ go_library(
     importpath = "martianoff/gala/internal/transpiler/concurrency",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/scopewalk",
@@ -28,30 +27,9 @@ go_test(
     embed = [":concurrency"],
     deps = [
         "//internal/parser",
-        "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-    ],
-)
-
-go_test(
-    # keep
-    name = "concurrency_native_test",
-    srcs = ["capture_native_test.go"],
-    # The test analyzes the GALA sources TestEnginesAgree parses.
-    data = [
-        "//:all_gala_sources",
-        "//examples:all_gala_sources",
-    ],
-    embed = [":concurrency"],
-    deps = [
-        "//internal/parser",
-        "//internal/parser/grammar",
-        "//internal/parser/native",  # keep
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-        "@rules_go//go/tools/bazel",
     ],
 )

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0080] $DIR/main.gala:6:14 a typed pattern cannot test for Ptr[P]: a pointer from a dynamic value may be nil (hint: match the nullable pointer type (`case p: *T`) and pass it through RequirePtr(p) or OptionPtrOf(p))

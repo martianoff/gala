@@ -377,7 +377,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	// One parse gives both the errors and ANTLR's error-recovered tree, so a
 	// keystroke on a broken file parses it once.
 	parsed := h.parser.ParseFile(text)
-	tree, docs, errs := parsed.Lenient()
+	tree, _, errs := parsed.Lenient()
 	if len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
 		// The parse failed: if the analyzer can extract type metadata from
@@ -392,7 +392,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 			}
 			h.mu.Unlock()
 		}
-		h.tryAnalyzePartial(uri, filePath, text, tree, docs)
+		h.tryAnalyzePartial(uri, filePath, text, parsed)
 		return diagnostics
 	}
 
@@ -529,21 +529,25 @@ func (h *GalaHandler) loadProjectModule(rootPath string) {
 	}
 }
 
-// tryAnalyzePartial attempts to analyze an error-recovered ANTLR tree.
-// The tree may contain nil or error nodes, so this is wrapped in a panic
-// recovery — a crash just means we skip caching rather than losing the
-// LSP connection. When it succeeds, the cached richAST/varTypes keep
-// completion and go-to-def working while the user is mid-edit.
-// tryAnalyzePartial runs the analyzer on ANTLR's error-recovered tree.
-// The tree may have nil/error nodes, so this is wrapped in panic recovery.
-func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.Tree, docs parser.Docs) {
-	if tree == nil {
+// tryAnalyzePartial analyzes parsed, a parse with syntax errors, on ANTLR's
+// error-recovered tree. The transformer's inference of the file's
+// package-level vals reads the native tree alone, so the analysis is given
+// the native tree of the recovered tree (parser.Parsed.RecoveredNative)
+// without its bridge (Native.TreeOnly): the analyzer's own reads stay on
+// ANTLR's tree. The tree may lack nodes or hold error tokens, so this is
+// wrapped in a panic recovery — a crash just means we skip caching rather
+// than losing the LSP connection. When it succeeds, the cached
+// richAST/varTypes keep completion and go-to-def working while the user is
+// mid-edit.
+func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, parsed *parser.Parsed) {
+	if parsed.Tree == nil {
 		return
 	}
 	defer func() { recover() }()
 
-	h.noteTreeRead(treeReadAnalysis, false) // an error-recovered tree is ANTLR's alone
-	richAST, err := transpiler.Analyze(h.newAnalyzer(filePath, text), tree, docs, filePath)
+	h.noteTreeRead(treeReadAnalysis, false) // the analyzer reads an error-recovered tree on ANTLR's
+	recovered := &parser.Parsed{Tree: parsed.Tree, Docs: parsed.Docs, Native: parsed.RecoveredNative().TreeOnly()}
+	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(recovered, filePath)
 	if err != nil || richAST == nil {
 		return
 	}

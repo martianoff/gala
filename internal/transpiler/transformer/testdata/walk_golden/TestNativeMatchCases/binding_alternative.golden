@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0071] $DIR/main.gala:4:14 pattern alternative binds 'n'; an alternative pattern cannot bind names (hint: use `_` in place of the name, or give each alternative its own case)

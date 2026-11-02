@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:10:14 P does not implement Named (missing Name), so a value of type Named never holds one and the pattern P(...) never matches

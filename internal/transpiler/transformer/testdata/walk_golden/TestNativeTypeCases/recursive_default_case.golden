@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0074] $DIR/main.gala:3:47 the default case "A" of sealed type "S" has a field "next" of type S itself, which its zero value cannot hold (hint: make a case without such a field the default, or drop `default`)

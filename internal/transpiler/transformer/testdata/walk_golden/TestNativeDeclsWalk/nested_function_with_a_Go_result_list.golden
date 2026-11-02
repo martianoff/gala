@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0052] $DIR/main.gala:5:9 function `g` is declared inside a function body (hint: declare `g` at the top level of the file; a lambda cannot declare a Go result list)

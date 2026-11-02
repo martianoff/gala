@@ -4627,7 +4627,7 @@ func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 }
 
 // transformArgument lowers e, an expression standing in argument slot s.
-// strict is the untyped-lambda-parameter policy of transformLambdaWithExpectedType:
+// strict is the untyped-lambda-parameter policy of lowerLambda:
 // a declared slot (a parameter or field default) passes true, so an unannotated
 // lambda parameter the type does not cover is GALA-E0033; a call argument,
 // whose expected type may still be partly inferred, passes false.

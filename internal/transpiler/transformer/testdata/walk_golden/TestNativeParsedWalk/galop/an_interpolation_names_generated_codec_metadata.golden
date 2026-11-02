@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0058] $DIR/main.gala:6:23 StructMeta_P is codec metadata the transpiler generates and cannot be named in GALA code (hint: use json.Codec[T], yaml.Codec[T] or StructMeta[T]() instead; those check that a struct with private fields may be decoded)

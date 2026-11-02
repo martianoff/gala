@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:9 cannot reference `a` here: clauses in a `bind`/`also` group are evaluated independently, so a binding from one clause is not in scope for its siblings. Move this clause to its own `bind` if it must see `a`.

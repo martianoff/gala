@@ -4,6 +4,7 @@ go_library(
     name = "analyzer",
     srcs = [
         "analyzer.go",
+        "antlr_expr_helpers.go",
         "cache.go",
         "cache_codec.go",
         "collect.go",
@@ -78,6 +79,7 @@ go_test(
         "opaque_base_test.go",
         "own_go_files_test.go",
         "package_siblings_test.go",
+        "package_val_handle_test.go",
         "package_val_infer_test.go",
         "parallel_parse_test.go",
         "parsedfile_cache_test.go",

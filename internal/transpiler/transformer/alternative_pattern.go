@@ -6,10 +6,7 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -24,10 +21,7 @@ import (
 // chain is an error: those share its precedence, so the operand they belong to
 // has to be parenthesized.
 func (t *galaASTTransformer) patternAlternatives(expr patExpr) ([]patExpr, error) {
-	add, ok, err := expr.soleAdditive()
-	if err != nil {
-		return nil, err
-	}
+	add, ok := expr.soleAdditive()
 	if !ok {
 		if bar, ok := expr.barUnderOperator(); ok {
 			line, col := bar.start()
@@ -65,30 +59,6 @@ func (t *galaASTTransformer) patternAlternatives(expr patExpr) ([]patExpr, error
 	return add.operands, nil
 }
 
-// barUnderOperator returns an additive chain of expr that holds a `|`, when
-// `||`, `&&` or a comparison joins several operands above it, or nil.
-func barUnderOperator(expr grammar.IExpressionContext) *grammar.AdditiveExprContext {
-	or, _ := expr.OrExpr().(*grammar.OrExprContext)
-	if or == nil {
-		return nil
-	}
-	for _, a := range or.AllAndExpr() {
-		for _, e := range a.(*grammar.AndExprContext).AllEqualityExpr() {
-			for _, r := range e.(*grammar.EqualityExprContext).AllRelationalExpr() {
-				for _, ad := range r.(*grammar.RelationalExprContext).AllAdditiveExpr() {
-					add := ad.(*grammar.AdditiveExprContext)
-					for i := 1; i < len(add.AllMultiplicativeExpr()); i++ {
-						if op, err := getChildOperatorText(add, i*2-1); err == nil && op == "|" {
-							return add
-						}
-					}
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // flatAlternatives returns the alternatives of pat, nested parenthesized
 // alternatives included, or pat itself when it has none. A malformed
 // alternative pattern counts as one pattern here; lowering reports it.
@@ -105,32 +75,6 @@ func (t *galaASTTransformer) flatAlternatives(pat patExpr) []patExpr {
 		flat = append(flat, t.flatAlternatives(alt)...)
 	}
 	return flat
-}
-
-// wrapAsExpression builds an expression node whose only operand is m, so an
-// alternative goes through the same pattern lowering as a whole pattern. The
-// node takes m's position and hangs off the parent of the pattern it was
-// split from; m itself keeps its parent.
-func wrapAsExpression(from grammar.IExpressionContext, m *grammar.MultiplicativeExprContext) grammar.IExpressionContext {
-	parser := m.GetParser()
-	parent, _ := from.GetParent().(antlr.ParserRuleContext)
-	expr := grammar.NewExpressionContext(parser, parent, -1)
-	or := grammar.NewOrExprContext(parser, expr, -1)
-	and := grammar.NewAndExprContext(parser, or, -1)
-	eq := grammar.NewEqualityExprContext(parser, and, -1)
-	rel := grammar.NewRelationalExprContext(parser, eq, -1)
-	add := grammar.NewAdditiveExprContext(parser, rel, -1)
-	add.AddChild(m)
-	rel.AddChild(add)
-	eq.AddChild(rel)
-	and.AddChild(eq)
-	or.AddChild(and)
-	expr.AddChild(or)
-	for _, c := range []antlr.ParserRuleContext{expr, or, and, eq, rel, add} {
-		c.SetStart(m.GetStart())
-		c.SetStop(m.GetStop())
-	}
-	return expr
 }
 
 // transformAlternativePattern lowers the alternatives of one pattern, tried
@@ -191,7 +135,7 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []patExpr, objExpr
 // parenthesizedPattern returns p when expr is exactly `(p)`, or nil; `(p,)`
 // is a one-element tuple, not a parenthesized pattern.
 func (t *galaASTTransformer) parenthesizedPattern(expr patExpr) (patExpr, bool) {
-	if elems, single, ok := expr.parenthesized(t); ok && single {
+	if elems, single, ok := expr.parenthesized(); ok && single {
 		return elems[0], true
 	}
 	return patExpr{}, false

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0073] $DIR/main.gala:8:23 a positional sub-pattern cannot follow a named one (hint: put the positional sub-patterns first, or name this one too)

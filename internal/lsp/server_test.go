@@ -5415,3 +5415,27 @@ func TestCompletionTriggerCharactersExcludeOpenParen(t *testing.T) {
 		t.Error("signature help must keep '(' as its trigger")
 	}
 }
+
+// A buffer with a syntax error is analyzed on its error-recovered tree, and
+// its package-level vals keep the types the transformer infers for them: a
+// generic call's result, which only that inference types. The error is in a
+// function the val has nothing to do with, so hover on the val still answers
+// with its type mid-edit.
+func TestBrokenBufferKeepsInferredPackageValType(t *testing.T) {
+	const src = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nval Names = ArrayOf(\"a\", \"b\")\n\nfunc show() {\n    Println(Names.Size())\n}\n\nfunc broken() {\n    val x = \n}\n"
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, src)
+
+	line, col := locate(t, src, "Println(Names.Size())", "Names")
+	var hover string
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(25 * time.Millisecond) {
+		if hv, err := h.Hover(uri, line, col); err == nil && hv != nil {
+			if hover = hv.Contents.Value(); strings.Contains(hover, "Array[string]") {
+				break
+			}
+		}
+	}
+	if !strings.Contains(hover, "Array[string]") {
+		t.Fatalf("hover on Names in a buffer with a syntax error: want its inferred type Array[string], got %q", hover)
+	}
+}

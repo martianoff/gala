@@ -5,14 +5,9 @@ import (
 	"go/ast"
 	"go/token"
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"strings"
 )
-
-func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
-	return t.lowerSimpleStatement(antlrSimple(ctx), false)
-}
 
 // lowerSimpleStatement lowers s. mutable makes the names a `:=` declares
 // mutable (they can be incremented or decremented): the init statement of a
@@ -80,7 +75,7 @@ func ForbiddenStatementKeywordSuggestion(name string) (string, bool) {
 	return s, ok
 }
 
-// checkForbiddenStatementKeyword rejects a bare Go-only statement keyword
+// checkForbiddenStatementKeywordSrc rejects e, a bare Go-only statement keyword
 // (`defer`, `go`, `goto`, `fallthrough`, `select`, `chan`) that the parser
 // accepted as a lone identifier expression-statement. Such statements only
 // "work" as an accident of the final gofmt round-trip (see
@@ -90,12 +85,6 @@ func ForbiddenStatementKeywordSuggestion(name string) (string, bool) {
 // Unlike checkForbiddenGoBuiltinCall it needs no resolver guard: these are Go
 // keywords, and the analyzer rejects a declaration spelled like one
 // (GALA-E0055), so the name never refers to anything the program declared.
-func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExpressionContext) error {
-	return t.checkForbiddenStatementKeywordSrc(antlrExpr(exprCtx))
-}
-
-// checkForbiddenStatementKeywordSrc is checkForbiddenStatementKeyword of e,
-// on either tree.
 func (t *galaASTTransformer) checkForbiddenStatementKeywordSrc(e exprSrc) error {
 	// Only a bare identifier statement (`defer`) is the accident; anything with
 	// a postfix (`x.defer()`), operator, or arguments is a normal expression.
@@ -338,7 +327,7 @@ func (t *galaASTTransformer) lowerShortVarDecl(d shortVarDecl, mutable bool) (as
 // shortVarDeclFromMultiValue lowers `a, b := f()`, binding several names from
 // one multi-value expression. The call is evaluated once into temporaries and
 // each name takes its own, mirroring the `val a, b = f()` lowering in
-// transformVarDeclaration.
+// lowerVarDecl.
 func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	d shortVarDecl,
 	rhs ast.Expr,
@@ -433,7 +422,7 @@ const (
 	tailReturn
 )
 
-// transformValueBlock lowers a block whose trailing expression, or trailing
+// lowerValueBlock lowers b, a block whose trailing expression, or trailing
 // if/else chain, is its value (a value-returning lambda body or a match arm). s is
 // the slot that value fills, zero when unknown: a lambda, if or match tail is
 // lowered against it (see lowerAgainst).
@@ -442,21 +431,11 @@ const (
 // match) lowers its tail as a statement, so a trailing match there is a
 // statement-position match too rather than a value mixing value and void arms,
 // and a trailing plain value is evaluated but not used, as in any statement.
-func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
-	return t.lowerValueBlock(antlrBlock(ctx), s)
-}
-
-// lowerValueBlock is transformValueBlock of b.
 func (t *galaASTTransformer) lowerValueBlock(b blockSrc, s slot) (*ast.BlockStmt, error) {
 	if s.discarded {
 		return t.lowerBlock(b, tailDiscarded, slot{})
 	}
 	return t.lowerBlock(b, tailValue, s)
-}
-
-// transformBlockWithTail lowers the block ctx (see lowerBlock).
-func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
-	return t.lowerBlock(antlrBlock(ctx), tail, lastValueExpected)
 }
 
 // lowerBlock lowers a block. tail and lastValueExpected describe this block's
@@ -551,14 +530,14 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		// value". A non-trailing statement is unconditionally
 		// statement-position; the trailing statement is statement-position
 		// only when the caller did NOT signal that the block's last
-		// expression is consumed (transformValueBlock) — function
+		// expression is consumed (lowerValueBlock) — function
 		// bodies with a return type, lambda bodies, and match arm bodies
 		// all use it, since their trailing expression becomes the
 		// block's value.
 		prev := t.matchInStatementPos
 		isTrailing := i == lastIdx
 		discardsValue := !isTrailing || !lastStmtIsValue
-		value := t.onNative(st.valueExpr())
+		value := st.valueExpr()
 		if discardsValue && t.bareMatch(value).ok() {
 			t.matchInStatementPos = true
 		}
@@ -568,7 +547,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		var pre []ast.Stmt
 		var err error
 		// The trailing value of a lambda's block body is a result value.
-		slotBody := isTrailing && lastStmtIsValue && b.is(t, t.returnSlot.body)
+		slotBody := isTrailing && lastStmtIsValue && b.is(t.returnSlot.body)
 		// The trailing value of a lambda whose result type is not known yet
 		// is one of its result values, like a `return` value.
 		fillsPendingSlot := slotBody && value.ok() && t.returnSlotPending()
@@ -742,7 +721,7 @@ func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
 	// wrapper, so strip any inferred Immutable[T] to T and register it with
 	// mutable-storage (addVar) semantics. A `val` binding is always
 	// Immutable-wrapped, so every read of it is rewritten to `x.Get()`
-	// (transformPrimary); `use` stores the resource directly, so its reads and
+	// (lowerPrimaryNative); `use` stores the resource directly, so its reads and
 	// `x.Close()` must stay plain — addVar gives exactly that.
 	if t.isImmutableType(resType) {
 		if gen, ok := resType.(transpiler.GenericType); ok && len(gen.Params) > 0 {

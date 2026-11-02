@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:18 'T' is a type parameter of the enclosing declaration and cannot be called: a conversion to it takes exactly one value, not a lambda (hint: a type parameter shadows every other 'T' in its declaration; rename the type parameter to reach the outer one)

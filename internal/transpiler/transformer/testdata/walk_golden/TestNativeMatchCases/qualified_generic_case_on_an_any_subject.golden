@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0039] $DIR/main.gala:6:14 `case std.None` cannot test a value of type any: None is a variant of generic sealed type "Option", and the pattern names none of Option's type arguments (hint: write the type arguments (e.g. `case std.None[int]()`), match on a typed subject (e.g. `std.Option[int]`), or use a lowercase name to bind the value)

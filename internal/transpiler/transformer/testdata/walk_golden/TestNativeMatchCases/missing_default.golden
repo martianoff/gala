@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0003] $DIR/main.gala:4:9 match expression must have a default case (hint: add `case _ => ...`)

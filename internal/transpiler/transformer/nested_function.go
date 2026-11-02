@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 )
 
 // nestedFunc is a function declaration in a body: its name, where it starts,
@@ -16,21 +15,6 @@ type nestedFunc struct {
 	line, col, endCol int
 	sig               sigSrc
 	method, generic   bool
-}
-
-// readNestedFunc reads the function declaration ctx on ANTLR's tree.
-func readNestedFunc(ctx *grammar.FunctionDeclarationContext) nestedFunc {
-	id := ctx.Identifier()
-	name := id.GetText()
-	return nestedFunc{
-		name:    name,
-		line:    ctx.GetStart().GetLine(),
-		col:     ctx.GetStart().GetColumn(),
-		endCol:  id.GetStop().GetColumn() + len([]rune(name)),
-		sig:     antlrSig(ctx.Signature()),
-		method:  ctx.Receiver() != nil,
-		generic: ctx.TypeParameters() != nil,
-	}
 }
 
 // nestedFunctionError rejects d, a named `func` declared inside a function

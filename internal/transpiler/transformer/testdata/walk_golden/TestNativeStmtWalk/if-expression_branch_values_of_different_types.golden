@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:2 the branches of this `if` end in values of different types, int and string; end them in values of one type

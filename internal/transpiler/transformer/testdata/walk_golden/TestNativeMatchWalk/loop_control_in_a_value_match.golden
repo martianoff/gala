@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0059] $DIR/main.gala:7:13 `break` inside a match whose value is used cannot reach the loop around it (hint: a match whose value is used must produce one on every path; initialize a `val` with it, use it as a statement, or test the condition before it and `break` there)

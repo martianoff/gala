@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
@@ -31,7 +30,7 @@ import (
 type expectedArgTypeStack struct {
 	stack []expectedArg
 	// observe, when set, is told of each takeFor and withhold: whether the
-	// hint on top of the stack was the owner's (see checkWalksAgree, in the
+	// hint on top of the stack was the owner's (see OnHint, in the
 	// native walk tests).
 	observe func(op string, owned bool)
 }
@@ -43,47 +42,17 @@ type expectedArg struct {
 	owner hintOwner
 }
 
-// hintOwner is the postfix expression a hint is pushed for: its node on the
-// native tree (the tree and the node's index) when the file's walk reads that
-// tree, so the hint is keyed the same whichever tree the expression is
-// lowered on (see ownerKey), and its context on ANTLR's tree otherwise. The
-// zero hintOwner is no owner.
+// hintOwner is the postfix expression a hint is pushed for: its node (the
+// tree and the node's index). The zero hintOwner is no owner.
 type hintOwner struct {
-	ctx  *grammar.PostfixExprContext
 	node native.GalaNodeRef
 }
 
 // ok reports whether o is an owner.
-func (o hintOwner) ok() bool { return o.ctx != nil || o.node.Ok() }
+func (o hintOwner) ok() bool { return o.node.Ok() }
 
 // nativeOwner is the owner of a hint pushed for the postfix node n.
 func nativeOwner(n native.GalaNodeRef) hintOwner { return hintOwner{node: n} }
-
-// ownerOf is ownerKey for a postfix expression about to be lowered on ANTLR's
-// tree, which only compares it with the hints already on the stack: with none
-// there, none can be ctx's, so ctx is not looked up (a hint is pushed before
-// the value it is for is lowered). A hint is pushed under ownerKey, never
-// ownerOf, so the call that takes it finds it on either tree.
-func (t *galaASTTransformer) ownerOf(ctx *grammar.PostfixExprContext) hintOwner {
-	if ctx != nil && t.expectedArgTypes.depth() == 0 {
-		return hintOwner{ctx: ctx}
-	}
-	return t.ownerKey(ctx)
-}
-
-// ownerKey is the owner of a hint pushed for ctx: its native node's when the
-// file's walk reads the native tree and ctx is on it, ctx itself otherwise
-// (an expression parsed on its own, such as a parameter's default). A nil
-// ctx is no owner.
-func (t *galaASTTransformer) ownerKey(ctx *grammar.PostfixExprContext) hintOwner {
-	if ctx == nil {
-		return hintOwner{}
-	}
-	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_postfixExpr); ok {
-		return nativeOwner(n)
-	}
-	return hintOwner{ctx: ctx}
-}
 
 // owns reports whether the hint on top of the stack was pushed for owner,
 // telling observe.

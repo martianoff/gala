@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0059] $DIR/main.gala:5:22 `break` is a statement, not a value (hint: write `break` on its own line inside a `for` loop)

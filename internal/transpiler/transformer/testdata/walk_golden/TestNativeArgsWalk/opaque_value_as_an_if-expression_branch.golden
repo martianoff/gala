@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0064] $DIR/main.gala:5:43 cannot use a (A) as int64: an opaque type never converts implicitly (hint: convert explicitly: int64(a))

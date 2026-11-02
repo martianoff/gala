@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:5:9 cannot `bind`/`also` over int: it is not a bindable monad. A bindable type must define a FlatMap method, e.g. `func (m int[T]) FlatMap[U](f func(T) int[U]) int[U]`

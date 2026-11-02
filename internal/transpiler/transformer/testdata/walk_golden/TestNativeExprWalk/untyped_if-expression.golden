@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0068] $DIR/main.gala:4:17 cannot infer the type of this if-expression: no branch has a known type (hint: declare the type its value fills (e.g. `val x Option[int] = if (...) ...`) or give a branch a typed value (e.g. `None[int]()`))

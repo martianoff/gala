@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:9 assignment mismatch: 2 names but the right-hand side is a single value

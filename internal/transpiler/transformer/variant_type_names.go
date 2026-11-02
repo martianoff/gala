@@ -9,11 +9,8 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
-
-	"github.com/antlr4-go/antlr/v4"
 )
 
 // GALA-E0061: a sealed variant named where a type is expected.
@@ -27,12 +24,11 @@ import (
 // asked whether a Shape is the companion struct, which is never true, so the
 // arm silently never matched.
 //
-// checkVariantTypeNames walks every type the grammar parses as one —
+// checkVariantTypeNamesNative walks every type the grammar parses as one —
 // parameter, result, field, val/var annotation, type argument, typed pattern,
 // alias target, composite literal — before the declarations are transformed,
 // so every one is checked in source order, including those a transformation
-// lowers speculatively and discards. It reads the file on the tree its walk
-// reads (checkVariantTypeNamesIn). An interpolated expression is parsed
+// lowers speculatively and discards. An interpolated expression is parsed
 // separately, so parseAndTransformExpr checks it when it parses it.
 //
 // Explicit type arguments (`ArrayOf[Circle](...)`, `case Unwrap[Circle](v)`)
@@ -64,7 +60,7 @@ type variantTypeRef struct {
 	at       srcNode
 }
 
-// variantTypeRefs is what checkVariantTypeNames reads of a tree: the names of
+// variantTypeRefs is what checkVariantTypeNamesNative reads of a tree: the names of
 // the types it declares and, in source order, the types it writes that are
 // spelled like a sealed variant.
 //
@@ -72,32 +68,14 @@ type variantTypeRef struct {
 // not tracked for types: one declared anywhere in the file (a function may
 // declare a local type) is never reported, which can miss a variant but
 // cannot reject a valid program. A type parameter is scoped to its
-// declaration; see typeParamInScope.
+// declaration; see typeParamInScopeNative.
 type variantTypeRefs struct {
 	declared map[string]bool
 	refs     []variantTypeRef
 }
 
-// checkVariantTypeNamesIn is checkVariantTypeNames of the file s, on the tree
-// its walk reads.
-func (t *galaASTTransformer) checkVariantTypeNamesIn(s walkSource) error {
-	if s.root.Ok() {
-		return t.checkVariantTypeNamesNative(s.root.GalaNodeRef)
-	}
-	return t.checkVariantTypeNames(s.sf)
-}
-
-// checkVariantTypeNamesOf is checkVariantTypeNames of e, an expression parsed
-// on its own (an interpolated one), on the tree it is on.
-func (t *galaASTTransformer) checkVariantTypeNamesOf(e exprSrc) error {
-	if e.node.Ok() {
-		return t.checkVariantTypeNamesNative(e.node)
-	}
-	return t.checkVariantTypeNames(e.ctx)
-}
-
-// checkVariantTypeNamesNative is checkVariantTypeNames of n, a node of the
-// native tree.
+// checkVariantTypeNamesNative reports the first type below n that names a
+// sealed variant, or nil when there is none.
 func (t *galaASTTransformer) checkVariantTypeNamesNative(n native.GalaNodeRef) error {
 	if len(t.variantNames) == 0 {
 		return nil // nothing to spell like a variant
@@ -111,7 +89,7 @@ func (t *galaASTTransformer) checkVariantTypeNamesNative(n native.GalaNodeRef) e
 // variant, or nil when none does.
 func (t *galaASTTransformer) reportVariantTypeRefs(r variantTypeRefs) error {
 	for _, ref := range r.refs {
-		if r.declared[ref.name] || typeParamInScopeAt(ref.at, ref.name) {
+		if r.declared[ref.name] || typeParamInScopeNative(ref.at.node, ref.name) {
 			continue
 		}
 		line, col := ref.at.start()
@@ -121,14 +99,6 @@ func (t *galaASTTransformer) reportVariantTypeRefs(r variantTypeRefs) error {
 		}
 	}
 	return nil
-}
-
-// typeParamInScopeAt is typeParamInScope of at, a node of either tree.
-func typeParamInScopeAt(at srcNode, name string) bool {
-	if at.node.Ok() {
-		return typeParamInScopeNative(at.node, name)
-	}
-	return typeParamInScope(at.ctx, name)
 }
 
 // addVariantRef adds the type written as qualifier.name (qualifier "" for a bare name)
@@ -150,7 +120,7 @@ func (t *galaASTTransformer) addVariantRef(r *variantTypeRefs, qualifier, name s
 
 // collectVariantTypeRefsNative adds the declarations and the types of n, a
 // node of the native tree, and of every node below it to r, in source order,
-// as checkVariantTypeNames reads them on ANTLR's tree.
+// as checkVariantTypeNamesNative reads them.
 func (t *galaASTTransformer) collectVariantTypeRefsNative(n native.GalaNodeRef, r *variantTypeRefs) {
 	switch n.Kind() {
 	case native.GalaKIND_typeDeclaration:
@@ -211,7 +181,10 @@ func (t *galaASTTransformer) collectVariantTypeRefsNative(n native.GalaNodeRef, 
 	}
 }
 
-// typeParamInScopeNative is typeParamInScope of n, a native node.
+// typeParamInScopeNative reports whether a declaration enclosing n declares
+// a type parameter called name — in its type parameter list, or, for a
+// method, as a type argument of its receiver (`func (b Box[Left]) Get()
+// Left`).
 func typeParamInScopeNative(n native.GalaNodeRef, name string) bool {
 	for ; n.Ok(); n = n.Parent() {
 		if n.Kind() == native.GalaKIND_functionDeclaration {
@@ -234,7 +207,9 @@ func typeParamInScopeNative(n native.GalaNodeRef, name string) bool {
 	return false
 }
 
-// isFuncTypeSignatureNative is isFuncTypeSignature of p, a parameter node.
+// isFuncTypeSignatureNative reports whether p, a parameter node, belongs to
+// the signature of a function type (`func(...)` in a type position) rather
+// than of a function, method or lambda, whose untyped parameters are names.
 func isFuncTypeSignatureNative(p native.GalaNodeRef) bool {
 	// parameter → parameterList → parameters → signature → type
 	n := p
@@ -244,92 +219,6 @@ func isFuncTypeSignatureNative(p native.GalaNodeRef) bool {
 		}
 	}
 	return n.Kind() == native.GalaKIND_type
-}
-
-// checkVariantTypeNames reports the first type in tree, a tree of ANTLR's,
-// that names a sealed variant, or nil when there is none.
-func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
-	if len(t.variantNames) == 0 {
-		return nil // nothing to spell like a variant
-	}
-	r := variantTypeRefs{declared: make(map[string]bool)}
-	ref := func(ids []grammar.IIdentifierContext, typeArgs grammar.ITypeArgumentsContext, node antlr.ParserRuleContext) {
-		qualifier, name := "", ids[0].GetText()
-		if len(ids) == 2 {
-			qualifier, name = name, ids[1].GetText()
-		}
-		var text func() string
-		if typeArgs != nil {
-			text = typeArgs.GetText
-		}
-		t.addVariantRef(&r, qualifier, name, text, srcNode{ctx: node})
-	}
-	walkTree(tree, func(node antlr.Tree) {
-		switch n := node.(type) {
-		case *grammar.TypeDeclarationContext:
-			r.declared[n.Identifier().GetText()] = true
-		case *grammar.StructShorthandDeclarationContext:
-			r.declared[n.Identifier().GetText()] = true
-		case *grammar.SealedTypeDeclarationContext:
-			r.declared[n.Identifier().GetText()] = true
-		case *grammar.OpaqueTypeDeclarationContext:
-			r.declared[n.Identifier().GetText()] = true
-		case *grammar.TypeContext:
-			if qid, ok := n.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext); ok && qid != nil {
-				if ids := qid.AllIdentifier(); len(ids) <= 2 {
-					ref(ids, n.TypeArguments(), qid)
-				}
-			}
-		case *grammar.ParameterContext:
-			// A function type's parameters written without names, as in
-			// `func(Circle) int`, parse as names with no type; the function
-			// type uses each name as the type.
-			if n.Type_() == nil && n.Identifier() != nil && isFuncTypeSignature(n) {
-				ref([]grammar.IIdentifierContext{n.Identifier()}, nil, n)
-			}
-		case *grammar.TypeAliasContext:
-			// `type C Circle` parses as the alias's bare-identifier
-			// alternative, which is not a TypeContext.
-			if id := n.Identifier(); id != nil {
-				ref([]grammar.IIdentifierContext{id}, nil, n)
-			}
-		}
-	})
-	return t.reportVariantTypeRefs(r)
-}
-
-// typeParamInScope reports whether a declaration enclosing node declares a
-// type parameter called name — in its type parameter list, or, for a method,
-// as a type argument of its receiver (`func (b Box[Left]) Get() Left`).
-func typeParamInScope(node antlr.Tree, name string) bool {
-	for ; node != nil; node = node.GetParent() {
-		if fn, ok := node.(*grammar.FunctionDeclarationContext); ok && fn.Receiver() != nil &&
-			slices.Contains(receiverTypeParamNames(fn.Receiver().(*grammar.ReceiverContext).Type_()), name) {
-			return true
-		}
-		decl, ok := node.(interface {
-			TypeParameters() grammar.ITypeParametersContext
-		})
-		if !ok || decl.TypeParameters() == nil {
-			continue
-		}
-		list := decl.TypeParameters().TypeParameterList()
-		for _, tp := range list.AllTypeParameter() {
-			if tp.Identifier(0).GetText() == name {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// isFuncTypeSignature reports whether parameter p belongs to the signature of
-// a function type (`func(...)` in a type position) rather than of a function,
-// method or lambda, whose untyped parameters are names.
-func isFuncTypeSignature(p *grammar.ParameterContext) bool {
-	// parameter → parameterList → parameters → signature → type
-	_, ok := p.GetParent().GetParent().GetParent().GetParent().(*grammar.TypeContext)
-	return ok
 }
 
 // checkVariantTypeArgs reports a sealed variant written as an explicit type
@@ -449,12 +338,4 @@ func (t *galaASTTransformer) variantTypeError(name, typeArgs string, line, col i
 		fmt.Sprintf("use the sealed type %s here; %s(...) builds one, and `case %s(...)` in a match reaches the variant's fields",
 			parentType, name, name),
 	).WithSpan(col + len(name))
-}
-
-// walkTree calls visit on node and every node below it, in source order.
-func walkTree(node antlr.Tree, visit func(antlr.Tree)) {
-	visit(node)
-	for _, child := range node.GetChildren() {
-		walkTree(child, visit)
-	}
 }

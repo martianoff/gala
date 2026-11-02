@@ -97,7 +97,7 @@ var argCases = []struct{ name, shape, src string }{
 }
 
 // TestNativeArgsWalk holds the native walk of argShapes and of each of
-// argCases to the ANTLR walk (checkWalksAgree), and requires the native walk
+// argCases to its golden (checkWalk), and requires the native walk
 // to have read the values they mark.
 func TestNativeArgsWalk(t *testing.T) {
 	run := exprWalkRunner(t)

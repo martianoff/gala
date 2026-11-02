@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:3:16 identifier "__gala_line_7" uses the reserved "__gala_line_" prefix (reserved for transpiler-internal source-map markers); rename it

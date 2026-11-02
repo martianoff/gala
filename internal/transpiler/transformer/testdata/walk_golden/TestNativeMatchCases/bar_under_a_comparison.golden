@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0071] $DIR/main.gala:4:14 '|' separates pattern alternatives and cannot be used inside a comparison or boolean expression in a pattern (hint: compare in a guard, as in `case n if n > limit`)

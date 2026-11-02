@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0023] $SEARCH/lib/borrowed.gala:6:17 undefined: OnlyB (hint: OnlyB is declared in "example.com/parsed/pb", which the file using this default dot-imports but the default's own file does not; a default value resolves its names where it is written, so add `import . "example.com/parsed/pb"` to the default's file)

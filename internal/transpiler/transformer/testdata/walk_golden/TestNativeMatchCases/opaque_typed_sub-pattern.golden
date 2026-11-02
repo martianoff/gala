@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:6:17 the value inside ID(...) is always a int64; bind it with a name, not a typed pattern

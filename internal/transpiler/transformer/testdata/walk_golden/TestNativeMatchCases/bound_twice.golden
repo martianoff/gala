@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:4:18 'a' is bound more than once in this pattern (hint: bind each part to its own name and compare them in a guard: `case (a, b) if a == b =>`)

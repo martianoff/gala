@@ -1,0 +1,1 @@
+error: [SemanticError] $DIR/main.gala:7:9 cannot assign to p.x: field x is immutable (hint: declare the field `var x`)

@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0080] $DIR/main.gala:11:9 cannot call Count on h.c (*Counter): Count has a Ptr[Counter] receiver, and a pointer that may be nil cannot fill a Ptr (hint: call it on RequirePtr(h.c), which panics on nil; a pointer that may be nil is kept as OptionPtrOf(h.c))

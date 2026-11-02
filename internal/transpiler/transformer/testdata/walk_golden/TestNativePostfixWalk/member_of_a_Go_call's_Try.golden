@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0049] $DIR/main.gala:7:18 `n` holds the result of `strconv.Atoi(...)`, which can fail, so it is a `Try[int]`; a Try has no member `Foo` (hint: take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val v, err = strconv.Atoi(...)`)

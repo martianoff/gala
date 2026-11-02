@@ -7,10 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -152,49 +149,24 @@ func spellsAny(e exprSrc, names []string) string {
 // as a value or as a type, not as a member, label or binding — and that match
 // accepts, or no node.
 func firstReference(e exprSrc, match func(srcNode) bool) srcNode {
-	if e.node.Ok() {
-		var found native.GalaNodeRef
-		e.node.Walk(func(n native.GalaNodeRef) bool {
-			if found.Ok() {
-				return false
-			}
-			if n.Kind() == native.GalaKIND_identifier && isReferenceNative(n) && match(srcNode{node: n}) {
-				found = n
-			}
-			return true
-		})
-		return srcNode{node: found}
-	}
-	var found *grammar.IdentifierContext
-	walkTree(e.ctx, func(node antlr.Tree) {
-		id, ok := node.(*grammar.IdentifierContext)
-		if !ok || found != nil || !isReference(id) || !match(srcNode{ctx: id}) {
-			return
-		}
-		found = id
-	})
-	if found == nil {
+	if !e.node.Ok() {
 		return srcNode{}
 	}
-	return srcNode{ctx: found}
-}
-
-// isReference reports whether id refers to a name, as a value or as a type
-// (see firstReference).
-func isReference(id *grammar.IdentifierContext) bool {
-	switch parent := id.GetParent().(type) {
-	case *grammar.PrimaryContext:
+	var found native.GalaNodeRef
+	e.node.Walk(func(n native.GalaNodeRef) bool {
+		if found.Ok() {
+			return false
+		}
+		if n.Kind() == native.GalaKIND_identifier && isReferenceNative(n) && match(srcNode{node: n}) {
+			found = n
+		}
 		return true
-	case *grammar.QualifiedIdentifierContext:
-		return parent.Identifier(0) == id
-	case *grammar.ParameterContext:
-		// `func(Some) int`: an unnamed parameter's type.
-		return parent.Type_() == nil && isFuncTypeSignature(parent)
-	}
-	return false
+	})
+	return srcNode{node: found}
 }
 
-// isReferenceNative is isReference of id, an identifier node.
+// isReferenceNative reports whether id, an identifier node, refers to a
+// name, as a value or as a type (see firstReference).
 func isReferenceNative(id native.GalaNodeRef) bool {
 	parent := id.Parent()
 	if !parent.Ok() {
@@ -215,25 +187,7 @@ func isReferenceNative(id native.GalaNodeRef) bool {
 // isQualifier reports whether id, a reference, is followed by a member
 // selection: `pb` in `pb.Same()` or in `pb.Point`.
 func isQualifier(id srcNode) bool {
-	if id.node.Ok() {
-		return isQualifierNative(id.node)
-	}
-	switch parent := id.ctx.GetParent().(type) {
-	case *grammar.QualifiedIdentifierContext:
-		return len(parent.AllIdentifier()) > 1
-	case *grammar.PrimaryContext:
-		primaryExpr, ok := parent.GetParent().(*grammar.PrimaryExprContext)
-		if !ok {
-			return false
-		}
-		postfix, ok := primaryExpr.GetParent().(*grammar.PostfixExprContext)
-		if !ok {
-			return false
-		}
-		suffixes := postfix.AllPostfixSuffix()
-		return len(suffixes) > 0 && suffixes[0].(*grammar.PostfixSuffixContext).Identifier() != nil
-	}
-	return false
+	return id.node.Ok() && isQualifierNative(id.node)
 }
 
 // isQualifierNative is isQualifier of id, an identifier node.
@@ -619,7 +573,7 @@ func (t *galaASTTransformer) recordDefaultLambdaHints(def exprSrc, declared tran
 	if !lambda.ok() {
 		return
 	}
-	params := lambda.params(t)
+	params := lambda.params()
 	if len(params) == 0 {
 		return
 	}

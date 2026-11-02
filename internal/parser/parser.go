@@ -110,6 +110,25 @@ type Parsed struct {
 	// text, which a clean parse's tree does not keep alive, so a holder that
 	// keeps a Parsed long but never reads the native tree drops it.
 	Native *Native
+	// recovered is, for a parse that reported errors, the native tree of its
+	// error-recovered tree (see RecoveredNative).
+	recovered *Native
+}
+
+// RecoveredNative is the native-tree handle of the parse whether or not it
+// reported errors: Native for a parse without them, and for one with them the
+// handle of ANTLR's error-recovered tree, whose conversion marks the tokens
+// the recovery skipped or made up as error children (native.GalaChild.IsError).
+// nil when the parse gave no tree. An editor reads a file mid-edit through
+// it; everything that needs a well-formed file takes CleanNative.
+func (p *Parsed) RecoveredNative() *Native {
+	if p == nil {
+		return nil
+	}
+	if len(p.Errors) > 0 {
+		return p.recovered
+	}
+	return p.Native
 }
 
 // Strict is the tree and doc comments, or the syntax errors as one error (and
@@ -207,6 +226,8 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
 	if len(errs) == 0 {
 		parsed.Native = newNative(result.tree, result.stream, input)
+	} else {
+		parsed.recovered = newNative(result.tree, result.stream, input)
 	}
 	return parsed
 }
@@ -399,38 +420,23 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 			return expr, nil
 		}
 	}
-	return antlrExpressionAtChecked(input, line, col, what, reuse)
-}
-
-// ParseExpressionANTLRAt is ParseExpressionAt with ANTLR's parser alone,
-// whatever the engine, for a caller whose native parse of
-// input did not settle it (ParseExpressionTreeAt): galop does not parse it a
-// second time, nor report a panic on it twice.
-//
-// It lexes input again with ANTLR's lexer, where ParseExpressionAt reuses the
-// tokens of galop's ANTLR-flavored lexer. The native run's tokens
-// (native.GalaTokens) are not ANTLR tokens: they index bytes of the source
-// and carry no token objects, so ANTLR's parser cannot read them without a
-// conversion to an antlr.TokenStream that exists nowhere else. The fallback
-// runs only on a syntax error or a galop panic, so the second lex is not worth
-// that converter.
-func ParseExpressionANTLRAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
-	return antlrExpressionAtChecked(input, line, col, what, nil)
+	expr, _, err := antlrExpressionAtChecked(input, line, col, what, reuse)
+	return expr, err
 }
 
 // antlrExpressionAtChecked is antlrExpressionAt with its first syntax error,
 // or a token left over after the expression, as the error (see
-// ParseExpressionAt).
-func antlrExpressionAtChecked(input string, line, col int, what string, reuse *lexedInput) (grammar.IExpressionContext, error) {
+// ParseExpressionAt), and the token stream the expression was read from.
+func antlrExpressionAtChecked(input string, line, col int, what string, reuse *lexedInput) (grammar.IExpressionContext, *antlr.CommonTokenStream, error) {
 	exprCtx, stream, errs := antlrExpressionAt(input, line, col, reuse)
 	if len(errs) > 0 {
-		return nil, errs[0]
+		return nil, nil, errs[0]
 	}
 	if tok := stream.LT(1); tok != nil && tok.GetTokenType() != antlr.TokenEOF {
-		return nil, galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn(),
+		return nil, nil, galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn(),
 			fmt.Sprintf("unexpected %q in %s", tok.GetText(), what))
 	}
-	return exprCtx, nil
+	return exprCtx, stream, nil
 }
 
 // sharedDFA lazily builds one DFA slice per ATN and reuses it forever. The

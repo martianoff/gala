@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0002] $DIR/main.gala:9:9 non-exhaustive match: missing cases: B (hint: add the missing variant cases, or add a `case _ => ...` default to cover them; a case with an `if` guard does not count, since its guard may be false)

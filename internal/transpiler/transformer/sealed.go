@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -26,11 +25,7 @@ type sealedFieldInfo struct {
 	isRecursive     bool // true if field type references the parent sealed type (requires pointer indirection)
 }
 
-func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedTypeDeclarationContext) ([]ast.Decl, error) {
-	return t.lowerSealedDecl(readSealedDecl(ctx))
-}
-
-// lowerSealedDecl lowers a sealed type declaration, read from either tree
+// lowerSealedDecl lowers a sealed type declaration, read from its node
 // (sealed_source.go).
 func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 	name := d.name

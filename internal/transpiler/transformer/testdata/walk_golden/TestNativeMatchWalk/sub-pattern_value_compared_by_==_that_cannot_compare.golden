@@ -1,0 +1,1 @@
+error: [SemanticError GALA-E0084] $DIR/main.gala:6:19 case Fn compares the matched value with Fn by ==, which cannot compare func(int) int values: func(int) int is a function (hint: a function value cannot be compared, only called: compare the values it returns)
