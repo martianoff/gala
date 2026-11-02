@@ -982,7 +982,13 @@ func CheckImportPaths(file *ast.File) error {
 // give it (transpiler.AssumedPackageName) is written with that qualifier as
 // its name.
 func (m *ImportManager) AddTransitiveImportsToFile(file *ast.File, pathMap map[string]string) {
-	for galaPath, alias := range m.transitiveImports {
+	// Each import is put first, so they are added in reverse path order to be
+	// declared in path order: in map order, a file with several declared them
+	// in a different order from run to run.
+	paths := slices.Sorted(maps.Keys(m.transitiveImports))
+	slices.Reverse(paths)
+	for _, galaPath := range paths {
+		alias := m.transitiveImports[galaPath]
 		path := galaPath
 		if mapped, ok := pathMap[galaPath]; ok {
 			path = mapped
