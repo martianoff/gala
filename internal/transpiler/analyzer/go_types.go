@@ -1684,7 +1684,8 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 		// its fields, so it is spelled as Go has it. One GALA cannot spell
 		// exactly stays the placeholder it was: an unexported field makes the
 		// same spelling another type in another package.
-		if !spellsExactly(t) {
+		// Inside a field (exact), the outermost struct already checked it.
+		if !exact && !spellsExactly(t) {
 			return transpiler.BasicType{Name: "any"}
 		}
 		var st transpiler.StructType
@@ -1742,7 +1743,14 @@ func spellsExactly(t types.Type) bool {
 	case *types.Chan:
 		return spellsExactly(t.Elem())
 	case *types.Signature:
-		return !t.Variadic() && tupleSpellsExactly(t.Params()) && tupleSpellsExactly(t.Results())
+		return !t.Variadic() && spellsExactly(t.Params()) && spellsExactly(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if !spellsExactly(t.At(i).Type()) {
+				return false
+			}
+		}
+		return true
 	case *types.Interface:
 		if !t.IsMethodSet() {
 			return false
@@ -1762,16 +1770,6 @@ func spellsExactly(t types.Type) bool {
 		return true
 	}
 	return false
-}
-
-// tupleSpellsExactly is spellsExactly of each type in tup.
-func tupleSpellsExactly(tup *types.Tuple) bool {
-	for i := 0; i < tup.Len(); i++ {
-		if !spellsExactly(tup.At(i).Type()) {
-			return false
-		}
-	}
-	return true
 }
 
 // extractFromAST is a fallback that extracts minimal type info from Go AST

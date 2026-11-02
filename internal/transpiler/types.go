@@ -480,6 +480,9 @@ func (t InterfaceType) Method(name string) (FuncType, bool) {
 // MapMethods is t with each method's signature replaced by f of it. A
 // replacement that is not a signature leaves the method as it was.
 func (t InterfaceType) MapMethods(f func(Type) Type) InterfaceType {
+	if len(t.Methods) == 0 {
+		return t
+	}
 	methods := make([]InterfaceMethod, len(t.Methods))
 	for i, m := range t.Methods {
 		if ft, ok := f(m.Type).(FuncType); ok {
@@ -756,9 +759,11 @@ func ParseType(s string) Type {
 		return ArrayType{Elem: ParseType(s[2:])}
 	}
 	// A fixed-length array, `[3]int`.
-	if lenText, elem, ok := strings.Cut(strings.TrimPrefix(s, "["), "]"); ok && strings.HasPrefix(s, "[") {
-		if n, err := strconv.ParseInt(lenText, 10, 64); err == nil && n >= 0 {
-			return ArrayType{Elem: ParseType(elem), Len: n, Fixed: true}
+	if rest, ok := strings.CutPrefix(s, "["); ok {
+		if lenText, elem, ok := strings.Cut(rest, "]"); ok {
+			if n, err := strconv.ParseInt(lenText, 10, 64); err == nil && n >= 0 {
+				return ArrayType{Elem: ParseType(elem), Len: n, Fixed: true}
+			}
 		}
 	}
 	for dir, prefix := range chanPrefixes {
