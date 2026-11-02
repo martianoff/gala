@@ -654,7 +654,8 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 // lowerExprStatement lowers it: a bare match is a statement-position match,
 // an if-expression an if statement, and a plain value is evaluated but not
 // used. Any other statement is lowered by lowerStatement, after the
-// statements a local declaration needs before it.
+// statements a local declaration needs before it. st's own statement is
+// always the last one appended.
 func (t *galaASTTransformer) appendDiscardedStatement(dst []ast.Stmt, st stmtSrc) ([]ast.Stmt, error) {
 	if value := t.onNative(st.valueExpr()); value.ok() {
 		stmt, err := t.lowerExprStatement(value, functionDiscardHint)
@@ -663,13 +664,7 @@ func (t *galaASTTransformer) appendDiscardedStatement(dst []ast.Stmt, st stmtSrc
 		}
 		return append(dst, stmt), nil
 	}
-	// A statement-position flag an enclosing match left on while its subject
-	// is lowered is not this statement's: a match a declaration stores is
-	// value-consumed.
-	prev := t.matchInStatementPos
-	t.matchInStatementPos = false
 	stmt, pre, err := t.lowerStatement(st)
-	t.matchInStatementPos = prev
 	if err != nil {
 		return nil, err
 	}
