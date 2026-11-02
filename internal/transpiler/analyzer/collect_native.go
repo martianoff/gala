@@ -373,8 +373,8 @@ func nativeRecordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, p
 }
 
 // nativeDefaultExpr is the DefaultExpr of default expression e: its text
-// exactly as it is written in the source, as transpiler.SourceText gives a
-// context's, and the position of its first token.
+// exactly as it is written in the source, whitespace included, and the
+// position of its first token.
 //
 // The text is re-parsed at every call or construction site that omits the
 // argument, so it must survive a second lexing. Concatenating token texts

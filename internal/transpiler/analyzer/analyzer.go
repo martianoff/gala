@@ -18,8 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
@@ -565,7 +563,7 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 // analyzed on the native tree of its error-recovered tree
 // (Parsed.RecoveredNative).
 func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
-	return a.analyze(parsed.Tree, parsed.Docs, parsed.RecoveredNative(), filePath)
+	return a.analyze(parsed.Docs, parsed.RecoveredNative(), filePath)
 }
 
 // analyze collects the metadata of the file at filePath for RichAST.
@@ -579,15 +577,14 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // takes (collect_native.go, file_checks_native.go), as the reads of its
 // siblings and of the files of the packages it imports take theirs
 // (siblings_native.go); nothing keeps it. A file without a native tree is an
-// internal error. tree is the file's ANTLR tree, which only rides on the
-// result (RichAST.Tree).
+// internal error.
 //
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
 // therefore what an analysis failure reports, in place of the cascade they
 // cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
 // the phases after analysis to do the same.
-func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *galaparser.Native, filePath string) (result *transpiler.RichAST, err error) {
+func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
@@ -774,7 +771,6 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	logPhase("sibling-discovery ("+fmt.Sprintf("%d files", len(siblings))+")", phaseStart)
 
 	richAST := &transpiler.RichAST{
-		Tree:             tree,
 		PackageName:      pkgName,
 		PackageDoc:       clause.doc,
 		Types:            make(map[string]*transpiler.TypeMetadata),
@@ -1311,9 +1307,9 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	phaseStart = time.Now()
 	richAST.ApplyPackageKeys()
-	files := []valFile{{tree: tree, handle: handle, path: absFilePath}}
+	files := []valFile{{handle: handle, path: absFilePath}}
 	for _, sib := range siblings {
-		files = append(files, valFile{tree: sib.parsed.Tree, handle: sib.parsed.Native, path: sib.path})
+		files = append(files, valFile{handle: sib.parsed.Native, path: sib.path})
 	}
 	a.inferPackageValTypes(richAST, files)
 	logPhase("infer-package-val-types", phaseStart)
@@ -1327,9 +1323,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 }
 
 // valFile is a file of the package as inferPackageValTypes hands it to the
-// transformer: its ANTLR tree, its native-tree handle and its path.
+// transformer: its native-tree handle and its path.
 type valFile struct {
-	tree   antlr.Tree
 	handle *galaparser.Native
 	path   string
 }
@@ -1365,7 +1360,6 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, files [
 			// methods) in Types; that belongs to its file's transform, not to
 			// this package's record.
 			view := *richAST
-			view.Tree = f.tree
 			view.Native = f.handle
 			view.FilePath = f.path
 			view.Types = maps.Clone(richAST.Types)
@@ -2562,7 +2556,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		// recursive work and is intentionally serialized; parsing is the
 		// part that benefited from parallelism above.
 		{
-			res, err := a.analyze(entry.parsed.Tree, entry.parsed.Docs, entry.parsed.Native, filePath)
+			res, err := a.analyze(entry.parsed.Docs, entry.parsed.Native, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName

@@ -110,7 +110,6 @@ func analyzeParsedForCollection(tb testing.TB, a *galaAnalyzer, path string, par
 		an.result = err
 		return an
 	}
-	res.Tree = nil // each analysis has its own parse
 	an.result = res
 	return an
 }
