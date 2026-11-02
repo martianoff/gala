@@ -154,6 +154,8 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 
 	case transpiler.ArrayType:
 		// Bare Go slice ([]T): backed by a shared, mutable backing array.
+		// A Go array ([N]T) has mutable elements, as a Go struct has
+		// mutable fields, so it is not shareable either.
 		return false
 
 	case transpiler.MapType:

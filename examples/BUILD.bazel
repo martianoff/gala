@@ -2468,6 +2468,16 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Verification: an anonymous Go struct whose fields are a fixed-length array,
+# a generic type instance and an inline interface is typed concretely, so it
+# fits in an Option and its fields keep their types.
+gala_exec_test(
+    name = "anonymous_struct_field_types",
+    src = "anonymous_struct_field_types/main.gala",
+    expected = "anonymous_struct_field_types/main.out",
+    deps = ["//examples/anonymous_struct_field_types/bridge"],
+)
+
 # Verification: ToBytes/ToString/ToRunes byte conversion helpers
 gala_exec_test(
     name = "byte_conversion",

@@ -57,8 +57,8 @@ func ContainsUnusable(t Type) bool {
 		return ContainsUnusable(v.Elem)
 	case ChanType:
 		return ContainsUnusable(v.Elem)
-	case StructType:
-		return slices.ContainsFunc(v.FieldTypes(), ContainsUnusable)
+	case StructType, InterfaceType:
+		return slices.ContainsFunc(MemberTypes(v), ContainsUnusable)
 	case PointerType:
 		return ContainsUnusable(v.Elem)
 	case MapType:
@@ -131,11 +131,13 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 		}
 		return "*" + DisplayTypeNamed(v.Elem, name)
 	case ArrayType:
-		return "[]" + DisplayTypeNamed(v.Elem, name)
+		return v.Prefix() + DisplayTypeNamed(v.Elem, name)
 	case ChanType:
 		return spellChan(v.Dir, v.Elem, DisplayTypeNamed(v.Elem, name))
 	case StructType:
 		return spellStruct(v, func(f Type) string { return DisplayTypeNamed(f, name) })
+	case InterfaceType:
+		return spellInterface(v, func(m Type) string { return DisplayTypeNamed(m, name) })
 	case MapType:
 		return "map[" + DisplayTypeNamed(v.Key, name) + "]" + DisplayTypeNamed(v.Elem, name)
 	case GenericType:
@@ -228,21 +230,33 @@ func (t GenericType) IsVoid() bool       { return false }
 func (t GenericType) BaseName() string   { return t.Base.BaseName() }
 func (t GenericType) GetPackage() string { return t.Base.GetPackage() }
 
-// ArrayType represents a slice or array type.
+// ArrayType represents a slice type, or, when Fixed, a Go array type of
+// length Len, `[Len]Elem`. A fixed-length array reaches GALA as the type of
+// an anonymous Go struct's field, which must be spelled exactly.
 type ArrayType struct {
-	Elem Type
+	Elem  Type
+	Len   int64
+	Fixed bool
+}
+
+// Prefix is the spelling ahead of t's element type: `[]` or `[Len]`.
+func (t ArrayType) Prefix() string {
+	if t.Fixed {
+		return "[" + strconv.FormatInt(t.Len, 10) + "]"
+	}
+	return "[]"
 }
 
 func (t ArrayType) String() string {
 	if t.Elem == nil {
-		return "[]"
+		return t.Prefix()
 	}
-	return "[]" + t.Elem.String()
+	return t.Prefix() + t.Elem.String()
 }
 func (t ArrayType) IsNil() bool        { return false }
 func (t ArrayType) IsAny() bool        { return false }
 func (t ArrayType) IsVoid() bool       { return false }
-func (t ArrayType) BaseName() string   { return "[]" + t.Elem.BaseName() }
+func (t ArrayType) BaseName() string   { return t.Prefix() + t.Elem.BaseName() }
 func (t ArrayType) GetPackage() string { return "" }
 
 // MapType represents a map type.
@@ -418,6 +432,118 @@ func EmbeddedFieldName(typ Type) string {
 		return v.Name
 	}
 	return typ.String()
+}
+
+// InterfaceMethod is a method of an InterfaceType.
+type InterfaceMethod struct {
+	Name string
+	Type FuncType
+}
+
+// InterfaceType represents an inline, non-empty Go interface type,
+// `interface{Area() int}`, by its method set: an embedded interface's
+// methods are listed as its own, which is the same type. GALA code cannot
+// spell one; it reaches GALA as the type of an anonymous Go struct's field.
+// The empty interface is BasicType `any`.
+type InterfaceType struct {
+	Methods []InterfaceMethod
+}
+
+func (t InterfaceType) String() string { return spellInterface(t, Type.String) }
+func (t InterfaceType) IsNil() bool    { return false }
+func (t InterfaceType) IsAny() bool    { return false }
+func (t InterfaceType) IsVoid() bool   { return false }
+
+// BaseName is "interface", as an anonymous struct's is "struct".
+func (t InterfaceType) BaseName() string   { return "interface" }
+func (t InterfaceType) GetPackage() string { return "" }
+
+// MethodTypes is the signature of each of t's methods, in order.
+func (t InterfaceType) MethodTypes() []Type {
+	types := make([]Type, len(t.Methods))
+	for i, m := range t.Methods {
+		types[i] = m.Type
+	}
+	return types
+}
+
+// Method is t's method named name.
+func (t InterfaceType) Method(name string) (FuncType, bool) {
+	for _, m := range t.Methods {
+		if m.Name == name {
+			return m.Type, true
+		}
+	}
+	return FuncType{}, false
+}
+
+// MapMethods is t with each method's signature replaced by f of it. A
+// replacement that is not a signature leaves the method as it was.
+func (t InterfaceType) MapMethods(f func(Type) Type) InterfaceType {
+	if len(t.Methods) == 0 {
+		return t
+	}
+	methods := make([]InterfaceMethod, len(t.Methods))
+	for i, m := range t.Methods {
+		if ft, ok := f(m.Type).(FuncType); ok {
+			m.Type = ft
+		}
+		methods[i] = m
+	}
+	return InterfaceType{Methods: methods}
+}
+
+// MemberTypes is the type of each field of a StructType, or the signature of
+// each method of an InterfaceType, in order: what a walk over a type visits
+// inside either. nil for any other type.
+func MemberTypes(t Type) []Type {
+	switch v := t.(type) {
+	case StructType:
+		return v.FieldTypes()
+	case InterfaceType:
+		return v.MethodTypes()
+	}
+	return nil
+}
+
+// MapMembers is t, a StructType or an InterfaceType, with each member's type
+// (see MemberTypes) replaced by f of it. Any other t is returned as it is.
+func MapMembers(t Type, f func(Type) Type) Type {
+	switch v := t.(type) {
+	case StructType:
+		return v.MapFields(f)
+	case InterfaceType:
+		return v.MapMethods(f)
+	}
+	return t
+}
+
+// spellInterface is t as go/types prints it, `interface{M(int) string; N()}`,
+// with each method's signature spelled by sig less its `func` keyword.
+func spellInterface(t InterfaceType, sig func(Type) string) string {
+	parts := make([]string, len(t.Methods))
+	for i, m := range t.Methods {
+		parts[i] = m.Name + strings.TrimPrefix(sig(m.Type), "func")
+	}
+	return "interface{" + strings.Join(parts, "; ") + "}"
+}
+
+// parseInterface parses the body of `interface{...}` in the form
+// spellInterface prints.
+func parseInterface(body string) (InterfaceType, bool) {
+	var it InterfaceType
+	for _, part := range splitTopLevelOn(body, ';') {
+		open := strings.IndexByte(part, '(')
+		if open <= 0 || !token.IsIdentifier(part[:open]) {
+			return InterfaceType{}, false
+		}
+		ft, ok := parseFuncType("func" + part[open:])
+		if !ok {
+			return InterfaceType{}, false
+		}
+		it.Methods = append(it.Methods, InterfaceMethod{Name: part[:open], Type: ft})
+	}
+	return it, len(it.Methods) > 0
 }
 
 // PointerType represents a pointer type.
@@ -614,6 +740,12 @@ func ParseType(s string) Type {
 	if body, ok := strings.CutPrefix(s, "struct{"); ok && matchingClose(s, len("struct")) == len(s)-1 {
 		return parseStruct(body[:len(body)-1])
 	}
+	// An inline interface, in the form InterfaceType.String() prints.
+	if body, ok := strings.CutPrefix(s, "interface{"); ok && matchingClose(s, len("interface")) == len(s)-1 {
+		if it, ok := parseInterface(body[:len(body)-1]); ok {
+			return it
+		}
+	}
 	// A function type, in the form FuncType.String() prints. Without this a
 	// function-typed type argument that round-trips through its string form
 	// (`func(int) int`) came back as an opaque name, so calling a value of that
@@ -625,6 +757,14 @@ func ParseType(s string) Type {
 	}
 	if strings.HasPrefix(s, "[]") {
 		return ArrayType{Elem: ParseType(s[2:])}
+	}
+	// A fixed-length array, `[3]int`.
+	if rest, ok := strings.CutPrefix(s, "["); ok {
+		if lenText, elem, ok := strings.Cut(rest, "]"); ok {
+			if n, err := strconv.ParseInt(lenText, 10, 64); err == nil && n >= 0 {
+				return ArrayType{Elem: ParseType(elem), Len: n, Fixed: true}
+			}
+		}
 	}
 	for dir, prefix := range chanPrefixes {
 		if elem, ok := strings.CutPrefix(s, prefix); ok {
@@ -706,11 +846,12 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 		}
 		return GenericType{Base: SubstituteTypeParams(v.Base, subst), Params: params}
 	case ArrayType:
-		return ArrayType{Elem: SubstituteTypeParams(v.Elem, subst)}
+		v.Elem = SubstituteTypeParams(v.Elem, subst)
+		return v
 	case ChanType:
 		return ChanType{Elem: SubstituteTypeParams(v.Elem, subst), Dir: v.Dir}
-	case StructType:
-		return v.MapFields(func(f Type) Type { return SubstituteTypeParams(f, subst) })
+	case StructType, InterfaceType:
+		return MapMembers(v, func(f Type) Type { return SubstituteTypeParams(f, subst) })
 	case MapType:
 		return MapType{Key: SubstituteTypeParams(v.Key, subst), Elem: SubstituteTypeParams(v.Elem, subst)}
 	case PointerType:

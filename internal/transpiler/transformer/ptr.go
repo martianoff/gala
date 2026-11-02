@@ -645,8 +645,8 @@ func hasPtr(typ transpiler.Type) bool {
 		return hasPtr(v.Elem)
 	case transpiler.ChanType:
 		return hasPtr(v.Elem)
-	case transpiler.StructType:
-		return slices.ContainsFunc(v.FieldTypes(), hasPtr)
+	case transpiler.StructType, transpiler.InterfaceType:
+		return slices.ContainsFunc(transpiler.MemberTypes(v), hasPtr)
 	case transpiler.MapType:
 		return hasPtr(v.Key) || hasPtr(v.Elem)
 	case transpiler.GenericType:

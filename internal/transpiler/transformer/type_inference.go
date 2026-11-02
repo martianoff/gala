@@ -842,8 +842,8 @@ func (t *galaASTTransformer) collectReferencedParams(typ transpiler.Type, params
 		t.collectReferencedParams(v.Elem, params, out)
 	case transpiler.ChanType:
 		t.collectReferencedParams(v.Elem, params, out)
-	case transpiler.StructType:
-		for _, f := range v.FieldTypes() {
+	case transpiler.StructType, transpiler.InterfaceType:
+		for _, f := range transpiler.MemberTypes(v) {
 			t.collectReferencedParams(f, params, out)
 		}
 	case transpiler.PointerType:
@@ -987,6 +987,12 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 	patternArr, patternIsArr := pattern.(transpiler.ArrayType)
 	concreteArr, concreteIsArr := concrete.(transpiler.ArrayType)
 	if patternIsArr && concreteIsArr {
+		// Arrays of two lengths never unify. A Go signature reads an array
+		// parameter as a slice (see goTypeToTranspilerType), so a slice
+		// pattern still takes an array's element type.
+		if patternArr.Fixed && concreteArr.Fixed && patternArr.Len != concreteArr.Len {
+			return false
+		}
 		return t.unifyForInference(patternArr.Elem, concreteArr.Elem, typeParams, inferredMap)
 	}
 
@@ -1020,6 +1026,25 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 				return false
 			}
 			unified = t.unifyForInference(f.Type, c.Type, typeParams, inferredMap) && unified
+		}
+		return unified
+	}
+
+	// Inline interfaces unify method by method when they have the same
+	// methods, in order.
+	patternIface, patternIsIface := pattern.(transpiler.InterfaceType)
+	concreteIface, concreteIsIface := concrete.(transpiler.InterfaceType)
+	if patternIsIface && concreteIsIface {
+		if len(patternIface.Methods) != len(concreteIface.Methods) {
+			return false
+		}
+		unified := true
+		for i, m := range patternIface.Methods {
+			c := concreteIface.Methods[i]
+			if m.Name != c.Name {
+				return false
+			}
+			unified = t.unifyForInference(m.Type, c.Type, typeParams, inferredMap) && unified
 		}
 		return unified
 	}
@@ -1146,11 +1171,12 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 			Params: newParams,
 		}
 	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
+		v.Elem = t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)
+		return v
 	case transpiler.ChanType:
 		return transpiler.ChanType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), Dir: v.Dir}
-	case transpiler.StructType:
-		return v.MapFields(func(f transpiler.Type) transpiler.Type {
+	case transpiler.StructType, transpiler.InterfaceType:
+		return transpiler.MapMembers(v, func(f transpiler.Type) transpiler.Type {
 			return t.substituteInTypeDepth(f, paramMap, depth, qualifiedToo)
 		})
 	case transpiler.PointerType:
@@ -1617,6 +1643,9 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 	if sig := universeMethodSignature(recv, method); sig != nil {
 		return sig
 	}
+	if it, ok := recv.(transpiler.InterfaceType); ok {
+		return interfaceMethodSignature(it, method)
+	}
 	if t.goTypeInfo == nil || transpiler.IsUnusable(recv) {
 		return nil
 	}
@@ -1666,6 +1695,17 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		}
 	}
 	return inst
+}
+
+// interfaceMethodSignature returns the signature of method on a value of the
+// inline interface type it, or nil: the type lists its own methods, so no
+// package's type info records them.
+func interfaceMethodSignature(it transpiler.InterfaceType, method string) *transpiler.GoFuncSignature {
+	ft, ok := it.Method(method)
+	if !ok {
+		return nil
+	}
+	return goResultsSignature(ft.Params, nil, ft.Results, nil)
 }
 
 // universeMethodSignature returns the signature of method on a predeclared

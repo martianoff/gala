@@ -277,7 +277,7 @@ func (t *galaASTTransformer) typeArgKey(typ transpiler.Type) (string, bool) {
 		return "*" + elem, ok
 	case transpiler.ArrayType:
 		elem, ok := t.typeArgKey(ty.Elem)
-		return "[]" + elem, ok
+		return ty.Prefix() + elem, ok
 	case transpiler.ChanType:
 		elem, ok := t.typeArgKey(ty.Elem)
 		return transpiler.ChanType{Elem: transpiler.BasicType{Name: elem}, Dir: ty.Dir}.String(), ok

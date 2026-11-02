@@ -1554,7 +1554,14 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 // goTypeToTranspilerType converts a go/types.Type to a transpiler.Type.
 // This is the core bridge between Go's type system and GALA's.
 // It handles type aliases by resolving them to their underlying type.
-func goTypeToTranspilerType(t types.Type) transpiler.Type {
+func goTypeToTranspilerType(t types.Type) transpiler.Type { return convertGoType(t, false) }
+
+// convertGoType is goTypeToTranspilerType. When exact, as for an anonymous
+// struct's field, t is spelled as Go has it: a fixed-length array keeps its
+// length, a generic type instance its type arguments and an inline interface
+// its methods. The caller checks spellsExactly(t) first. Elsewhere those
+// stay as they have been: a slice, the bare type name and `any`.
+func convertGoType(t types.Type, exact bool) transpiler.Type {
 	if t == nil {
 		return transpiler.NilType{}
 	}
@@ -1600,34 +1607,41 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 		}
 		// Check if this is an alias — if so, resolve to the aliased type
 		if obj.IsAlias() {
-			return goTypeToTranspilerType(types.Unalias(t))
+			return convertGoType(types.Unalias(t), exact)
 		}
-		return transpiler.NamedType{
+		named := transpiler.NamedType{
 			Package:    pkg.Name(),
 			Name:       obj.Name(),
 			ImportPath: pkg.Path(),
 		}
+		if !exact || t.TypeArgs().Len() == 0 {
+			return named
+		}
+		args := make([]transpiler.Type, t.TypeArgs().Len())
+		for i := range args {
+			args[i] = convertGoType(t.TypeArgs().At(i), exact)
+		}
+		return transpiler.GenericType{Base: named, Params: args}
 
 	case *types.Alias:
 		// Go 1.22+ explicit alias type — resolve to the underlying aliased type
-		return goTypeToTranspilerType(types.Unalias(t))
+		return convertGoType(types.Unalias(t), exact)
 
 	case *types.Pointer:
-		elem := goTypeToTranspilerType(t.Elem())
-		return transpiler.PointerType{Elem: elem}
+		return transpiler.PointerType{Elem: convertGoType(t.Elem(), exact)}
 
 	case *types.Slice:
-		elem := goTypeToTranspilerType(t.Elem())
-		return transpiler.ArrayType{Elem: elem}
+		return transpiler.ArrayType{Elem: convertGoType(t.Elem(), exact)}
 
 	case *types.Array:
-		elem := goTypeToTranspilerType(t.Elem())
-		return transpiler.ArrayType{Elem: elem}
+		arr := transpiler.ArrayType{Elem: convertGoType(t.Elem(), exact)}
+		if exact {
+			arr.Len, arr.Fixed = t.Len(), true
+		}
+		return arr
 
 	case *types.Map:
-		key := goTypeToTranspilerType(t.Key())
-		elem := goTypeToTranspilerType(t.Elem())
-		return transpiler.MapType{Key: key, Elem: elem}
+		return transpiler.MapType{Key: convertGoType(t.Key(), exact), Elem: convertGoType(t.Elem(), exact)}
 
 	case *types.Chan:
 		dir := transpiler.ChanBoth
@@ -1637,46 +1651,52 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 		case types.SendOnly:
 			dir = transpiler.ChanSend
 		}
-		return transpiler.ChanType{Elem: goTypeToTranspilerType(t.Elem()), Dir: dir}
+		return transpiler.ChanType{Elem: convertGoType(t.Elem(), exact), Dir: dir}
 
 	case *types.Signature:
 		result := transpiler.FuncType{}
 		params := t.Params()
 		for i := 0; i < params.Len(); i++ {
-			result.Params = append(result.Params, goTypeToTranspilerType(params.At(i).Type()))
+			result.Params = append(result.Params, convertGoType(params.At(i).Type(), exact))
 		}
 		results := t.Results()
 		for i := 0; i < results.Len(); i++ {
-			result.Results = append(result.Results, goTypeToTranspilerType(results.At(i).Type()))
+			result.Results = append(result.Results, convertGoType(results.At(i).Type(), exact))
 		}
 		return result
 
 	case *types.Interface:
-		// Empty interface → any
-		return transpiler.BasicType{Name: "any"}
+		if !exact || t.Empty() {
+			return transpiler.BasicType{Name: "any"}
+		}
+		// The method set, embedded interfaces' methods included, sorted as
+		// go/types keeps it: the same type as the interface as written.
+		var it transpiler.InterfaceType
+		for i := 0; i < t.NumMethods(); i++ {
+			m := t.Method(i)
+			ft, _ := convertGoType(m.Type(), exact).(transpiler.FuncType)
+			it.Methods = append(it.Methods, transpiler.InterfaceMethod{Name: m.Name(), Type: ft})
+		}
+		return it
 
 	case *types.Struct:
 		// An anonymous struct, such as a signal channel's `struct{}`, keeps
-		// its fields, so it is spelled as Go has it.
+		// its fields, so it is spelled as Go has it. One GALA cannot spell
+		// exactly stays the placeholder it was: an unexported field makes the
+		// same spelling another type in another package.
+		// Inside a field (exact), the outermost struct already checked it.
+		if !exact && !spellsExactly(t) {
+			return transpiler.BasicType{Name: "any"}
+		}
 		var st transpiler.StructType
 		for i := 0; i < t.NumFields(); i++ {
 			f := t.Field(i)
-			if !f.Exported() {
-				// The same spelling in another package is another type.
-				return transpiler.BasicType{Name: "any"}
-			}
 			st.Fields = append(st.Fields, transpiler.StructField{
 				Name:     f.Name(),
-				Type:     goTypeToTranspilerType(f.Type()),
+				Type:     convertGoType(f.Type(), true),
 				Embedded: f.Embedded(),
 				Tag:      t.Tag(i),
 			})
-		}
-		// A field whose type the model does not spell exactly (an array's
-		// length, a type's arguments, an interface's methods) would make the
-		// struct another type: it stays the placeholder it was.
-		if st.String() != types.TypeString(t, func(p *types.Package) string { return p.Name() }) {
-			return transpiler.BasicType{Name: "any"}
 		}
 		return st
 
@@ -1687,6 +1707,77 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 	default:
 		return transpiler.NilType{}
 	}
+}
+
+// spellsExactly reports whether convertGoType, exact, spells t as Go has it,
+// so that the spelling names the same type: every array length, type
+// argument and interface method is kept. A name only t's own package can
+// write (an unexported field, method or type), a type reached through a
+// package's alias, unsafe.Pointer and a variadic function type have no
+// spelling in the type model.
+func spellsExactly(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Basic:
+		return t.Kind() != types.Invalid && t.Kind() != types.UnsafePointer && t.Info()&types.IsUntyped == 0
+	case *types.TypeParam:
+		return true
+	case *types.Alias:
+		// An alias is spelled as the type it names, which another package
+		// may not be able to write (an internal package's type); only the
+		// universe's `any` is kept.
+		return t.Obj().Pkg() == nil && spellsExactly(types.Unalias(t))
+	case *types.Named:
+		obj := t.Obj()
+		if obj.IsAlias() {
+			return obj.Pkg() == nil && spellsExactly(types.Unalias(t))
+		}
+		if obj.Pkg() != nil && !obj.Exported() {
+			return false
+		}
+		for i := 0; i < t.TypeArgs().Len(); i++ {
+			if !spellsExactly(t.TypeArgs().At(i)) {
+				return false
+			}
+		}
+		return true
+	case *types.Pointer:
+		return spellsExactly(t.Elem())
+	case *types.Slice:
+		return spellsExactly(t.Elem())
+	case *types.Array:
+		return spellsExactly(t.Elem())
+	case *types.Map:
+		return spellsExactly(t.Key()) && spellsExactly(t.Elem())
+	case *types.Chan:
+		return spellsExactly(t.Elem())
+	case *types.Signature:
+		return !t.Variadic() && spellsExactly(t.Params()) && spellsExactly(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if !spellsExactly(t.At(i).Type()) {
+				return false
+			}
+		}
+		return true
+	case *types.Interface:
+		if !t.IsMethodSet() {
+			return false
+		}
+		for i := 0; i < t.NumMethods(); i++ {
+			if m := t.Method(i); !m.Exported() || !spellsExactly(m.Type()) {
+				return false
+			}
+		}
+		return true
+	case *types.Struct:
+		for i := 0; i < t.NumFields(); i++ {
+			if f := t.Field(i); !f.Exported() || !spellsExactly(f.Type()) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // extractFromAST is a fallback that extracts minimal type info from Go AST

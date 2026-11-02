@@ -57,6 +57,14 @@ func TestStructTypeExpr(t *testing.T) {
 			{Name: "X", Type: transpiler.BasicType{Name: "int"}, Tag: `json:"x"`},
 			{Name: "Point", Type: transpiler.BasicType{Name: "Point"}, Embedded: true},
 		}}, "struct {\n\tX\tint\t\"json:\\\"x\\\"\"\n\tPoint\n}"},
+		{transpiler.StructType{Fields: []transpiler.StructField{
+			{Name: "Cells", Type: transpiler.ArrayType{Elem: transpiler.BasicType{Name: "int"}, Len: 3, Fixed: true}},
+			{Name: "Rows", Type: transpiler.ArrayType{Elem: transpiler.ArrayType{Elem: transpiler.BasicType{Name: "string"}, Len: 2, Fixed: true}}},
+		}}, "struct {\n\tCells\t[3]int\n\tRows\t[][2]string\n}"},
+		{transpiler.InterfaceType{Methods: []transpiler.InterfaceMethod{
+			{Name: "Area", Type: transpiler.FuncType{Results: []transpiler.Type{transpiler.BasicType{Name: "int"}}}},
+			{Name: "Scale", Type: transpiler.FuncType{Params: []transpiler.Type{transpiler.BasicType{Name: "int"}}}},
+		}}, "interface {\n\tArea() int\n\tScale(int)\n}"},
 	} {
 		var buf bytes.Buffer
 		expr := tr.typeToExpr(tt.typ)

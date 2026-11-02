@@ -323,7 +323,11 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		}
 		return &ast.IndexListExpr{X: base, Indices: params}
 	case transpiler.ArrayType:
-		return &ast.ArrayType{Elt: t.typeToExpr(v.Elem)}
+		arr := &ast.ArrayType{Elt: t.typeToExpr(v.Elem)}
+		if v.Fixed {
+			arr.Len = &ast.BasicLit{Kind: token.INT, Value: strconv.FormatInt(v.Len, 10)}
+		}
+		return arr
 	case transpiler.PointerType:
 		if v.NonNull {
 			return t.ptrStar(t.typeToExpr(v.Elem))
@@ -355,6 +359,15 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			fields.List = append(fields.List, field)
 		}
 		return &ast.StructType{Fields: fields}
+	case transpiler.InterfaceType:
+		methods := &ast.FieldList{}
+		for _, m := range v.Methods {
+			methods.List = append(methods.List, &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(m.Name)},
+				Type:  t.typeToExpr(m.Type),
+			})
+		}
+		return &ast.InterfaceType{Methods: methods}
 	case transpiler.FuncType:
 		// Params is never nil: go/ast's FuncType.End reads it when there are
 		// no results, so a nil list panics the printer on `func()`.
@@ -584,7 +597,40 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 	case *ast.StarExpr:
 		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X), NonNull: t.isPtrTypeExpr(e)}
 	case *ast.ArrayType:
-		return transpiler.ArrayType{Elem: t.astTypeToTranspilerType(e.Elt)}
+		arr := transpiler.ArrayType{Elem: t.astTypeToTranspilerType(e.Elt)}
+		if e.Len != nil {
+			// A fixed-length array as typeToExpr emits it; a length that is
+			// not an integer literal has no spelling here.
+			lit, ok := e.Len.(*ast.BasicLit)
+			if !ok || lit.Kind != token.INT {
+				return transpiler.NilType{}
+			}
+			n, err := strconv.ParseInt(lit.Value, 0, 64)
+			if err != nil {
+				return transpiler.NilType{}
+			}
+			arr.Len, arr.Fixed = n, true
+		}
+		return arr
+	case *ast.InterfaceType:
+		// An inline interface as typeToExpr emits it: methods only.
+		if e.Methods == nil {
+			return transpiler.NilType{}
+		}
+		var it transpiler.InterfaceType
+		for _, f := range e.Methods.List {
+			ft, ok := t.astTypeToTranspilerType(f.Type).(transpiler.FuncType)
+			if !ok || len(f.Names) == 0 {
+				return transpiler.NilType{}
+			}
+			for _, name := range f.Names {
+				it.Methods = append(it.Methods, transpiler.InterfaceMethod{Name: name.Name, Type: ft})
+			}
+		}
+		if len(it.Methods) == 0 {
+			return transpiler.NilType{}
+		}
+		return it
 	case *ast.MapType:
 		// A Go map is legal in every type position a Go slice is, so it has to
 		// round-trip here for the same reasons. Without this case a declared
@@ -784,8 +830,8 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 		return typeNameMatches(v.Key, match) || typeNameMatches(v.Elem, match)
 	case transpiler.ChanType:
 		return typeNameMatches(v.Elem, match)
-	case transpiler.StructType:
-		for _, f := range v.FieldTypes() {
+	case transpiler.StructType, transpiler.InterfaceType:
+		for _, f := range transpiler.MemberTypes(v) {
 			if typeNameMatches(f, match) {
 				return true
 			}

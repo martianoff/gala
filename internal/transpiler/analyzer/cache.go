@@ -185,7 +185,12 @@ import (
 // v38: a method declared in another file than its type records that file
 // (MethodMetadata.DefinedIn) whichever file of the package was analyzed. A
 // v37 payload may leave it empty, so the method's defaults get no scope.
-const CacheVersion = "v38"
+//
+// v39: an anonymous Go struct whose field is a fixed-length array, a generic
+// type instance or an inline interface is a transpiler.StructType, with the
+// field typed by a fixed ArrayType, a GenericType or an InterfaceType. A v38
+// payload names such a struct as any.
+const CacheVersion = "v39"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

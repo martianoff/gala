@@ -1,0 +1,24 @@
+package main
+
+import "martianoff/gala/examples/anonymous_struct_field_types/bridge"
+
+// An anonymous Go struct keeps its type when a field's type is a fixed-length
+// array, a generic type instance or an inline interface: each one is spelled
+// as Go has it, so the struct can be held in a GALA container and its fields
+// read back with their own types.
+func main() {
+    val grid = Some(bridge.Grid())
+    val g = grid.Get()
+    Println(g.Name, g.Cells)
+    Println(Some(g.Cells).Get())
+
+    val boxed = Some(bridge.Boxed())
+    val inner = Some(boxed.Get().Inner)
+    Println(inner.Get().Value + 1)
+    Println(Some(inner.Get().Value).Map((v) => v * 2).Get())
+
+    val shaped = Some(bridge.Shaped())
+    val shape = Some(shaped.Get().Shape)
+    Println(shape.Get().Area())
+    Println(Some(shape.Get().Area()).Map((a) => a + 1).Get())
+}
