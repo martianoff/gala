@@ -235,7 +235,8 @@ func declaresNameNative(id native.GalaNodeRef) bool {
 	return false
 }
 
-// DotImportPathsNative is DotImportPaths of root, a file's native tree.
+// DotImportPathsNative is the GALA packages the file whose native tree is
+// root dot-imports, in source order; none for a root that is no source file.
 func DotImportPathsNative(root native.GalaNodeRef) []string {
 	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
 		return nil

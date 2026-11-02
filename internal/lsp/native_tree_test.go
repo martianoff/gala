@@ -267,7 +267,7 @@ func TestBufferAnalysisTrees(t *testing.T) {
 		h.SetSearchPaths([]string{root})
 		got := openBuffer(t, h, uri, c.text)
 		require.NotNil(t, got.richAST, "%s: no analysis", c.name)
-		assert.Contains(t, got.richAST.Types, "Array", "%s: the analysis did not collect the file's types", c.name)
+		assert.Contains(t, got.richAST.Types, "collection_immutable.Array", "%s: the analysis did not collect the file's types", c.name)
 		assertTreeOf(t, c.name, got, c.text)
 		assert.Equal(t, c.transformed, got.varTypes != nil, "%s: transformed", c.name)
 	}

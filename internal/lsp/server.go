@@ -687,11 +687,12 @@ func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAS
 	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
+	kept := handle.TreeOnly() // the native tree alone, for the features
 
 	h.mu.Lock()
 	if h.isOpenLocked(uri) {
 		h.richASTs[uri] = richAST
-		h.parseNatives[uri] = handle.TreeOnly() // the native tree alone, for the features
+		h.parseNatives[uri] = kept
 		h.parseTexts[uri] = text
 	}
 	h.mu.Unlock()
