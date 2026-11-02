@@ -1,0 +1,54 @@
+package main
+
+// The statements before the value of an if-expression's block branch, and
+// those of a `bind` continuation, are lowered like the statements of any
+// other block.
+
+// A match used as a statement: its arms need no value, and an arm's `return`
+// leaves the function.
+func pick(c bool, n int) int {
+    val v = if (c) {
+        n match {
+            case 1 => { return 7 }
+            case _ => Println("other")
+        }
+        5
+    } else 2
+    v
+}
+
+// An if-expression whose value nothing reads is an if statement.
+func scale(c bool, n int) int {
+    val v = if (c) {
+        if (n > 1) Println("big") else Println("small")
+        n * 10
+    } else 0
+    v
+}
+
+func note(k int) int {
+    Println(s"note $k")
+    k
+}
+
+// A match used as a statement after a `bind`: one arm's value is discarded,
+// the other arm has none.
+func bound(n int) int = Some(n).FlatMap((m) => {
+    bind x = Some(m)
+    x match {
+        case 1 => note(x)
+        case _ => Println("bound other")
+    }
+    Some(x * 2)
+}).GetOrElse(0)
+
+func main() {
+    Println(pick(true, 1))
+    Println(pick(true, 2))
+    Println(pick(false, 1))
+    Println(scale(true, 3))
+    Println(scale(true, 1))
+    Println(scale(false, 1))
+    Println(bound(1))
+    Println(bound(2))
+}
