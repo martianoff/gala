@@ -36,8 +36,6 @@ func TestCloseDuringAnalysisLeavesNoEntries(t *testing.T) {
 				}
 				_, ok := h.richASTs[uri]
 				note("richASTs", ok)
-				_, ok = h.parseTrees[uri]
-				note("parseTrees", ok)
 				_, ok = h.parseNatives[uri]
 				note("parseNatives", ok)
 				_, ok = h.parseTexts[uri]

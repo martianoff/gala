@@ -71,6 +71,29 @@ func lexNative(src string, line, col int) *native.GalaTokens {
 	return ts
 }
 
+// VisitNativeTokens lexes input with galop's native lexer and calls visit
+// with the text of every default-channel token, in order, stopping at EOF:
+// VisitTokens on galop's lexer, whose tokens match ANTLR's lexer's
+// (TestNativeLexMatchesANTLR). Lexical errors are not reported; a panic in
+// the lexer is recovered and reported through noteGalopPanic, and ends the
+// visit.
+//
+// Like ParseFile it is safe to call from several goroutines at once.
+func VisitNativeTokens(input string, visit func(text string)) {
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic(input, r)
+		}
+	}()
+	ts := lexNative(input, 0, 0)
+	for _, tok := range ts.Tokens {
+		if tok.Type == native.GalaEOF {
+			return
+		}
+		visit(tok.Text(ts.Src))
+	}
+}
+
 // ErrNativeExpression is what ParseExpressionNativeAt returns when galop's
 // native lexer and parser do not settle the input: a lexical or syntax error,
 // a token left over after the expression, or a panic. Reporting the error is

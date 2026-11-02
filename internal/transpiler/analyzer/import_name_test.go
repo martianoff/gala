@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -31,9 +30,7 @@ import (
     "github.com/mattn/go-sqlite3"
 )
 `
-	tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
-	require.NoError(t, err)
-	sf := tree.(*grammar.SourceFileContext)
+	imports := fileImportsOf(t, src)
 	a := &galaAnalyzer{}
 
 	t.Run("real Go package names win when known", func(t *testing.T) {
@@ -44,7 +41,7 @@ import (
 				"gopkg.in/yaml.v3": "yaml", "github.com/mattn/go-sqlite3": "sqlite3",
 			},
 		}
-		q := a.qualifiersFor(scanFileImports(sf), rich)
+		q := a.qualifiersFor(imports, rich)
 		for qualifier, path := range map[string]string{
 			"v1": "k8s.io/api/core/v1", "core": "martianoff/gala/core", "rand": "math/rand/v2",
 			"yaml": "gopkg.in/yaml.v3", "sqlite3": "github.com/mattn/go-sqlite3",
@@ -58,7 +55,7 @@ import (
 		// No Go type info: k8s.io/api/core/v1 may bind v1 (its last segment)
 		// or core (derived). The GALA package really is core, so it keeps it.
 		rich := &transpiler.RichAST{Packages: map[string]string{"martianoff/gala/core": "core"}}
-		q := a.qualifiersFor(scanFileImports(sf), rich)
+		q := a.qualifiersFor(imports, rich)
 		assert.Equal(t, "martianoff/gala/core", q.named["core"].Path)
 		assert.True(t, q.named["core"].IsGala)
 		assert.Equal(t, "k8s.io/api/core/v1", q.named["v1"].Path)
@@ -80,16 +77,14 @@ import (
     "k8s.io/api/core/v1"
 )
 `
-	tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
-	require.NoError(t, err)
-	sf := tree.(*grammar.SourceFileContext)
+	imports := fileImportsOf(t, src)
 	a := &galaAnalyzer{}
 	named := func(pkg, name string) transpiler.NamedType { return transpiler.NamedType{Package: pkg, Name: name} }
 
 	gi := transpiler.NewGoTypeInfo()
 	gi.Types["strings.Builder"] = &transpiler.GoTypeData{}
 	gi.Types["v1.Pod"] = &transpiler.GoTypeData{}
-	withInfo := a.qualifiersFor(scanFileImports(sf), &transpiler.RichAST{
+	withInfo := a.qualifiersFor(imports, &transpiler.RichAST{
 		GoImportNames: map[string]string{"strings": "strings", "k8s.io/api/core/v1": "v1"},
 	})
 	cases := []struct {
@@ -107,7 +102,7 @@ import (
 	}
 
 	// Without type info the Go import is taken at its word.
-	noInfo := a.qualifiersFor(scanFileImports(sf), &transpiler.RichAST{})
+	noInfo := a.qualifiersFor(imports, &transpiler.RichAST{})
 	got := noInfo.qualify(named("strings", "Str"), nil).(transpiler.NamedType)
 	assert.Equal(t, "strings", got.ImportPath)
 }
@@ -123,11 +118,9 @@ import (
     "strings"
 )
 `
-	tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
-	require.NoError(t, err)
-	sf := tree.(*grammar.SourceFileContext)
+	imports := fileImportsOf(t, src)
 	a := &galaAnalyzer{}
-	q := a.qualifiersFor(scanFileImports(sf), &transpiler.RichAST{
+	q := a.qualifiersFor(imports, &transpiler.RichAST{
 		Packages: map[string]string{"martianoff/gala/lab/cmdp": "cmdp", "martianoff/gala/lab/plain": "plain"},
 	})
 	named := func(pkg, name string) transpiler.NamedType { return transpiler.NamedType{Package: pkg, Name: name} }
@@ -144,4 +137,12 @@ import (
 	paths := map[string]bool{}
 	q.galaImportPaths(paths)
 	assert.Equal(t, map[string]bool{"martianoff/gala/lab/cmdp": true, "martianoff/gala/lab/plain": true}, paths)
+}
+
+// fileImportsOf is the imports src declares (scanFileImportsNative).
+func fileImportsOf(t *testing.T, src string) []fileImport {
+	t.Helper()
+	nf, err := nativeFileOf(transpiler.NewAntlrGalaParser().ParseFile(src).CleanNative())
+	require.NoError(t, err)
+	return scanFileImportsNative(nf.root.GalaNodeRef)
 }

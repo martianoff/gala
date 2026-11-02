@@ -21,7 +21,6 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/transpiler/analyzer"
 )
 
 // nativeCorpus is the GALA sources staged as the test's data, sorted, with
@@ -72,81 +71,6 @@ func callCursors(text string) []int {
 	return out
 }
 
-// TestSignatureCallTreesAgree finds the call at up to 150 cursors of callCursors in
-// every clean file of the corpus on both trees: findCallAtOffset on ANTLR's
-// and findCallAtOffsetNative on the native one must find the same call. Each
-// file's native tree is the one callAtOffset reads (it bridges), so each case
-// is a read of the native tree.
-func TestSignatureCallTreesAgree(t *testing.T) {
-	texts, paths, _ := nativeCorpus(t)
-	p := parser.NewAntlrGalaParser()
-	files, cases, calls := 0, 0, 0
-	for _, path := range paths {
-		text := texts[path]
-		parsed := p.ParseFile(text)
-		handle := parsed.CleanNative()
-		if handle == nil {
-			continue // a parse with errors (or none) is ANTLR's alone
-		}
-		require.True(t, handle.Bridged(), "%s: the native tree does not bridge", path)
-		files++
-		for _, off := range spread(callCursors(text), 150) {
-			want := findCallAtOffset(parsed.Tree, text, off)
-			got, onNative := callAtOffset(parsed.Tree, handle, text, off)
-			require.True(t, onNative, "%s@%d: callAtOffset read ANTLR's tree", path, off)
-			require.Equal(t, want, got, "%s@%d", path, off)
-			cases++
-			if want != nil {
-				calls++
-			}
-		}
-	}
-	t.Logf("%d files, %d cursors, %d in a call", files, cases, calls)
-	assert.Greater(t, files, 300)
-	assert.Greater(t, calls, 10000)
-}
-
-// TestDotImportTreesAgree reads every clean file's dot imports on both trees.
-func TestDotImportTreesAgree(t *testing.T) {
-	texts, paths, _ := nativeCorpus(t)
-	p := parser.NewAntlrGalaParser()
-	files, dotting := 0, 0
-	for _, path := range paths {
-		parsed := p.ParseFile(texts[path])
-		handle := parsed.CleanNative()
-		if handle == nil {
-			continue
-		}
-		// Hover reads the native tree only once it is converted.
-		_, onNative := dotImportPathsOf(parsed.Tree, handle)
-		require.False(t, onNative, "%s: read the native tree before it converted", path)
-		_, err := handle.Tree()
-		require.NoError(t, err)
-		got, onNative := dotImportPathsOf(parsed.Tree, handle)
-		require.True(t, onNative, "%s: read ANTLR's tree", path)
-		want := analyzer.DotImportPaths(parsed.Tree)
-		require.Equal(t, want, got, path)
-		files++
-		if len(want) > 0 {
-			dotting++
-		}
-	}
-	t.Logf("%d files, %d with dot imports", files, dotting)
-	assert.Greater(t, files, 300)
-	assert.Greater(t, dotting, 5)
-}
-
-// treeReads records a handler's reads of a document's tree (onTreeRead).
-type treeReads struct{ native, antlr int }
-
-func (r *treeReads) note(_ string, onNative bool) {
-	if onNative {
-		r.native++
-	} else {
-		r.antlr++
-	}
-}
-
 // updateHandlerGolden rewrites handlerGolden instead of checking it. Run the
 // test with --test_arg=-update and
 // --test_env=BUILD_WORKSPACE_DIRECTORY=<the workspace>.
@@ -161,17 +85,12 @@ const handlerGolden = "testdata/handler_answers.golden"
 // TestHandlerAnswers serves signature help at the cursors of callCursors and
 // hover at the start of every identifier, on a sample of the corpus, and
 // holds each answer, positions in UTF-16 columns included, to its digest in
-// handlerGolden. Every read of the handler must take the native tree. Hover
-// reads the native tree only once something has converted it
-// (dotImportPathsOf), so each file's hovers come after its signature-help
-// requests, which convert the document's cached parse.
+// handlerGolden.
 func TestHandlerAnswers(t *testing.T) {
 	texts, paths, root := nativeCorpus(t)
 	sample := handlerSample(t, texts, paths, root)
-	var reads treeReads
 	h := NewGalaHandler()
 	h.SetSearchPaths([]string{root})
-	h.onTreeRead = reads.note
 	want, wantLines := map[string]string{}, 0
 	if !*updateHandlerGolden {
 		data, err := os.ReadFile(handlerGolden)
@@ -196,7 +115,6 @@ func TestHandlerAnswers(t *testing.T) {
 		// ask serves one request and holds its answer to its golden.
 		ask := func(what string, off int, serve func(h *GalaHandler, at lsp.Position) (any, error)) {
 			at := wirePosition(text, off)
-			r0 := reads
 			got, gotErr := serve(h, at)
 			where := fmt.Sprintf("%s\t%s@%d:%d", what, filepath.ToSlash(rel), at.Line, at.Character)
 			answer := jsonOf(t, got)
@@ -209,7 +127,6 @@ func TestHandlerAnswers(t *testing.T) {
 			if !*updateHandlerGolden {
 				assert.Equalf(t, want[where], digest, "%s: the answer differs from its golden: %s", where, answer)
 			}
-			require.Zero(t, reads.antlr-r0.antlr, "%s: the handler read ANTLR's tree", where)
 			if answer != "null" {
 				answered++
 			}
@@ -236,9 +153,8 @@ func TestHandlerAnswers(t *testing.T) {
 	} else {
 		assert.Equal(t, wantLines, sigCases+hoverCases, "the golden holds requests the test no longer asks")
 	}
-	t.Logf("%d files, %d signature-help and %d hover requests, %d answered; reads: %+v", len(sample), sigCases, hoverCases, answered, reads)
+	t.Logf("%d files, %d signature-help and %d hover requests, %d answered", len(sample), sigCases, hoverCases, answered)
 	assert.Greater(t, answered, 200)
-	assert.Greater(t, reads.native, 300)
 }
 
 // handlerSample is the files TestHandlerAnswers opens (handlerFiles): every
@@ -257,9 +173,9 @@ func handlerSample(t *testing.T, texts map[string]string, paths []string, root s
 	for _, rel := range handlerFiles {
 		path, ok := byRel[rel]
 		require.Truef(t, ok, "%s is not staged", rel)
-		parsed := p.ParseFile(texts[path])
-		require.NotNilf(t, parsed.CleanNative(), "%s does not parse cleanly", rel)
-		if len(analyzer.DotImportPaths(parsed.Tree)) > 0 {
+		handle := p.ParseFile(texts[path]).CleanNative()
+		require.NotNilf(t, handle, "%s does not parse cleanly", rel)
+		if len(dotImportPathsOf(handle)) > 0 {
 			dotting++
 		}
 		if strings.ContainsFunc(texts[path], func(r rune) bool { return r > 0x7F }) {
@@ -331,10 +247,10 @@ func jsonOf(t *testing.T, v any) string {
 }
 
 // TestBufferAnalysisTrees: a buffer that parses cleanly is analyzed and
-// transformed on its native tree, and a buffer with a syntax error is
-// analyzed on the native tree of its error-recovered tree and not
-// transformed. A collection_immutable file is opened, so its siblings are
-// read too.
+// transformed, and a buffer with a syntax error is analyzed on the native
+// tree of its error-recovered tree and not transformed; either way the
+// document keeps its native tree, converted, for the features that read it. A
+// collection_immutable file is opened, so its siblings are read too.
 func TestBufferAnalysisTrees(t *testing.T) {
 	_, _, root := nativeCorpus(t)
 	path := filepath.Join(root, "collection_immutable", "array.gala")
@@ -344,23 +260,23 @@ func TestBufferAnalysisTrees(t *testing.T) {
 	broken := strings.Replace(clean, "func ", "func (", 1)
 	uri := lsp.DocumentURI("file:///" + filepath.ToSlash(path))
 	for _, c := range []struct {
-		name string
-		text string
-		want map[string]bool
+		name        string
+		text        string
+		transformed bool
 	}{
-		{"clean", clean, map[string]bool{treeReadAnalysis: true, treeReadTransform: true}},
-		{"syntax error", broken, map[string]bool{treeReadAnalysis: true}},
+		{"clean", clean, true},
+		{"syntax error", broken, false},
 	} {
 		h := NewGalaHandler()
 		h.SetSearchPaths([]string{root})
-		got := map[string]bool{}
-		h.onTreeRead = func(what string, onNative bool) {
-			if prev, seen := got[what]; seen && prev != onNative {
-				t.Errorf("%s: the reads of %s took different trees", c.name, what)
-			}
-			got[what] = onNative
-		}
 		require.NoError(t, h.DidOpen(context.Background(), &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: c.text}}))
-		assert.Equal(t, c.want, got, "%s: the trees the analysis and the transform read", c.name)
+		h.mu.Lock()
+		richAST, handle, varTypes := h.richASTs[string(uri)], h.parseNatives[string(uri)], h.varTypes[string(uri)]
+		h.mu.Unlock()
+		require.NotNil(t, richAST, "%s: no analysis", c.name)
+		assert.NotEmpty(t, richAST.Types, "%s: the analysis collected no types", c.name)
+		require.NotNil(t, handle, "%s: no native tree kept", c.name)
+		assert.True(t, handle.Converted(), "%s: the analysis did not read the native tree", c.name)
+		assert.Equal(t, c.transformed, varTypes != nil, "%s: transformed", c.name)
 	}
 }

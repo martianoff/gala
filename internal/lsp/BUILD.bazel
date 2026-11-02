@@ -28,7 +28,6 @@ go_library(
         "//internal/build",
         "//internal/depman/mod",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
@@ -36,7 +35,6 @@ go_library(
         "//internal/transpiler/module",
         "//internal/transpiler/resolver",
         "//internal/transpiler/transformer",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//server",
     ],
@@ -143,4 +141,16 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
     ],
+)
+
+# gazelle:exclude no_antlr_test.go
+go_test(
+    # keep
+    name = "no_antlr_test",
+    srcs = ["no_antlr_test.go"],
+    data = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ) + ["BUILD.bazel"],
+    deps = ["//internal/noantlr"],
 )

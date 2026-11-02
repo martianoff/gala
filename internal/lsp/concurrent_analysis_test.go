@@ -51,7 +51,7 @@ func main() {
 // fans out again through analyzer.parseFilesConcurrent. That makes the language
 // server the heaviest concurrent consumer of the shared ANTLR parser in the
 // codebase, heavier than any CLI transpile, while the synchronous requests
-// interleaved here read the very maps (richASTs, parseTrees, documents) those
+// interleaved here read the very maps (richASTs, parseNatives, documents) those
 // background analyses write.
 //
 // The handler is safe by inspection — GalaHandler splits set-once configuration

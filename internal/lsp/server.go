@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 	golsp "github.com/owenrumney/go-lsp/server"
 
@@ -73,22 +72,14 @@ type GalaHandler struct {
 	docVersions     map[string]int64               // URI -> monotonic edit version
 	analysisCancels map[string]context.CancelFunc  // URI -> cancel func for in-flight analysis
 	richASTs        map[string]*transpiler.RichAST // URI -> analyzed AST
-	// parseTrees caches the raw ANTLR parse tree for the most recent
-	// successful analysis. Features like signatureHelp walk the tree to
+	// parseNatives is, by URI, the native-tree handle of the document's latest
+	// parse (parser.Parsed.RecoveredNative): of its error-recovered tree when
+	// the parse has syntax errors. Features like signatureHelp walk the tree to
 	// locate the call expression at a cursor position rather than doing
-	// byte-level scans.
-	parseTrees map[string]antlr.Tree
-	// parseNatives is, by URI, the native-tree handle of the parse that gave
-	// parseTrees[URI] (parser.Parsed.CleanNative), nil when there is none.
-	// The document's analysis converts it (see analyzeClean).
+	// byte-level scans. It is kept after the document's analysis, as the native
+	// tree alone (Native.TreeOnly).
 	parseNatives map[string]*parser.Native
-	parseTexts   map[string]string                       // URI -> the source that produced parseTrees[URI] (may be surgically patched)
-	// onTreeRead, when set, is told of each read of a document's tree by a
-	// feature with a native twin: which read, and whether it took the native
-	// tree. It is for tests, which compare the trees' answers; to keep a
-	// handler on ANTLR's tree alone, they give it a parser whose parses have
-	// no native-tree handle.
-	onTreeRead  func(what string, onNative bool)
+	parseTexts   map[string]string // URI -> the source that produced parseNatives[URI] (may be surgically patched)
 	// parsedFiles is the parsed-file cache every document's analysis shares:
 	// the parses and native trees of the files on disk that the analyses
 	// read (a package's other files, the files of imported packages), kept
@@ -146,21 +137,11 @@ func (h *GalaHandler) DebugVarTypes(uri string) map[string]string {
 	return h.varTypes[uri]
 }
 
-// DebugParseTree returns the cached parse tree and the source text it was
-// parsed from (may be surgically patched for signatureHelp / completion).
-// For tests.
-func (h *GalaHandler) DebugParseTree(uri string) (antlr.Tree, string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.parseTrees[uri], h.parseTexts[uri]
-}
-
 // NewGalaHandler creates a new GALA LSP handler.
 func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:       make(map[string]string),
 		richASTs:        make(map[string]*transpiler.RichAST),
-		parseTrees:      make(map[string]antlr.Tree),
 		parseNatives:    make(map[string]*parser.Native),
 		parseTexts:      make(map[string]string),
 		varTypes:        make(map[string]map[string]string),
@@ -324,7 +305,6 @@ func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocu
 	delete(h.documents, uri)
 	delete(h.docVersions, uri)
 	delete(h.richASTs, uri)
-	delete(h.parseTrees, uri)
 	delete(h.parseNatives, uri)
 	delete(h.parseTexts, uri)
 	delete(h.varTypes, uri)
@@ -374,25 +354,25 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	diagnostics := make([]lsp.Diagnostic, 0) // must be [] not null in JSON
 	x := h.index(text)
 
-	// One parse gives both the errors and ANTLR's error-recovered tree, so a
+	// One parse gives both the errors and the error-recovered tree, so a
 	// keystroke on a broken file parses it once.
 	parsed := h.parser.ParseFile(text)
-	tree, _, errs := parsed.Lenient()
-	if len(errs) > 0 {
+	if errs := parsed.Errors; len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
 		// The parse failed: if the analyzer can extract type metadata from
 		// the partial tree, cache the richAST so completion/hover/definition
 		// work while mid-edit.
-		if tree != nil {
+		h.tryAnalyzePartial(uri, filePath, text, parsed)
+		// Kept after the analysis, which converted it: the native tree alone
+		// (Native.TreeOnly), for the features that read it.
+		if handle := parsed.RecoveredNative().TreeOnly(); handle != nil {
 			h.mu.Lock()
 			if h.isOpenLocked(uri) {
-				h.parseTrees[uri] = tree
-				h.parseNatives[uri] = nil // an error-recovered tree is ANTLR's alone
+				h.parseNatives[uri] = handle
 				h.parseTexts[uri] = text
 			}
 			h.mu.Unlock()
 		}
-		h.tryAnalyzePartial(uri, filePath, text, parsed)
 		return diagnostics
 	}
 
@@ -440,7 +420,6 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 // analyzer reads the native tree only (a parse without one is an internal
 // error), as it reads the other files it takes in.
 func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
-	h.noteTreeRead(treeReadAnalysis, true)
 	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 }
 
@@ -539,7 +518,6 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, parsed *pars
 	}
 	defer func() { recover() }()
 
-	h.noteTreeRead(treeReadAnalysis, true)
 	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 	if err != nil || richAST == nil {
 		return
@@ -708,13 +686,11 @@ func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAS
 	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
-	h.noteTreeRead(treeReadTransform, true) // the transformer reads the native tree only
 
 	h.mu.Lock()
 	if h.isOpenLocked(uri) {
 		h.richASTs[uri] = richAST
-		h.parseTrees[uri] = parsed.Tree
-		h.parseNatives[uri] = handle
+		h.parseNatives[uri] = handle.TreeOnly() // the native tree alone, for the features
 		h.parseTexts[uri] = text
 	}
 	h.mu.Unlock()

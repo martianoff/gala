@@ -64,18 +64,6 @@ func TestRuneColumns(t *testing.T) {
 	assert.Equal(t, 4, byteToRune(mixedLine, 10))
 }
 
-func TestTokenOffsets(t *testing.T) {
-	text := "// é😀\nfoo(x)"
-	o := newTokenOffsets(text)
-	// Code points: '/','/',' ','é','😀','\n','f' -> 'f' is index 6.
-	assert.Equal(t, 10, o.byteOf(6))
-	assert.Equal(t, len(text), o.byteOf(99))
-
-	ascii := newTokenOffsets("foo(x)")
-	assert.Equal(t, 3, ascii.byteOf(3))
-	assert.Equal(t, 6, ascii.byteOf(99))
-}
-
 func TestNthLine(t *testing.T) {
 	text := "a\nbé\n\nd"
 	assert.Equal(t, "a", nthLine(text, 0))

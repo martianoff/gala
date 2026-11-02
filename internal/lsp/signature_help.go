@@ -4,22 +4,20 @@ import (
 	"context"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/parser"
-	grammar "martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
 // SignatureHelp implements textDocument/signatureHelp.
 //
-// Locates the call expression at the cursor by walking the ANTLR parse
+// Locates the call expression at the cursor by walking the native parse
 // tree — not by byte-level scans — then extracts the callee name,
 // receiver chain, and argument index structurally from the tree. The
 // tree is parsed from a version of the source where the unclosed call
 // has been surgically closed with `)` (see ensureAnalysisForSignature)
-// so ANTLR can actually produce a well-formed postfixExpr.
+// so the parser can actually produce a well-formed postfixExpr.
 func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHelpParams) (*lsp.SignatureHelp, error) {
 	uri := string(params.TextDocument.URI)
 
@@ -105,46 +103,33 @@ type callContext struct {
 // findCallAtCaret finds the call whose argument list holds the caret, in the
 // document as patchTextForSignature leaves it.
 //
-// The tree parsed for the document's latest analysis is reused when it was
+// The native tree of the document's latest parse is reused when it was
 // parsed from exactly that text; any other tree — another caret's patch, an
 // older edit — would put the call at the wrong offsets. Without such a tree it
-// parses src afresh and walks ANTLR's tree of it.
+// parses src afresh, its error-recovered tree when src does not parse.
 func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callContext {
 	src, offset := patchTextForSignature(text, line, char)
 	if offset < 0 {
 		return nil
 	}
 	h.mu.Lock()
-	tree, handle := h.parseTrees[uri], h.parseNatives[uri]
+	handle := h.parseNatives[uri]
 	if h.parseTexts[uri] != src {
-		tree, handle = nil, nil
+		handle = nil
 	}
 	h.mu.Unlock()
-	if tree == nil {
-		// A throwaway parse, read once: converting the whole file to the
-		// native tree for one lookup would cost more than ANTLR's walk.
-		if tree = h.parser.ParseFile(src).Tree; tree == nil {
-			return nil
-		}
+	if handle == nil {
+		handle = h.parser.ParseFile(src).RecoveredNative()
 	}
-	call, onNative := callAtOffset(tree, handle, src, offset)
-	h.noteTreeRead(treeReadSignatureCall, onNative)
-	return call
-}
-
-// callAtOffset is findCallAtOffset of a parse of src, whose ANTLR tree is
-// tree and whose native-tree handle is handle (nil for none). It reads the
-// native tree when the handle bridges, converting it if no feature has yet,
-// and ANTLR's tree otherwise; onNative says which it read.
-func callAtOffset(tree antlr.Tree, handle *parser.Native, src string, offset int) (call *callContext, onNative bool) {
-	if root, ok := handle.BridgedRoot(); ok {
-		return findCallAtOffsetNative(root, offset), true
+	root, ok := nativeRoot(handle)
+	if !ok {
+		return nil
 	}
-	return findCallAtOffset(tree, src, offset), false
+	return findCallAtOffsetNative(root, offset)
 }
 
 // patchTextForSignature closes the call the user is typing with a `)` at the
-// cursor when the document's parentheses do not balance, so ANTLR can produce
+// cursor when the document's parentheses do not balance, so the parser can produce
 // the call. Returns the text and the cursor's byte offset in it.
 //
 // A balanced document is left alone: editors insert the `)` as the `(` is
@@ -172,8 +157,8 @@ func patchTextForSignature(text string, line, char int) (patched string, cursorO
 // count.
 func unclosedParens(text string) int {
 	n := 0
-	parser.VisitTokens(text, func(tok antlr.Token) {
-		switch tok.GetText() {
+	parser.VisitNativeTokens(text, func(tok string) {
+		switch tok {
 		case "(":
 			n++
 		case ")":
@@ -203,59 +188,6 @@ func lineCharToOffset(text string, line, char int) int {
 	return -1
 }
 
-// findCallAtOffset returns the innermost call-style postfixSuffix (one
-// that has an argumentList) whose argumentList's source range contains
-// the given byte offset. Returns nil if no such call is found.
-func findCallAtOffset(tree antlr.Tree, text string, cursorOffset int) *callContext {
-	f := &callFinder{cursorOffset: cursorOffset, offs: newTokenOffsets(text)}
-	antlr.ParseTreeWalkerDefault.Walk(f, tree)
-	if f.bestSuffix == nil {
-		return nil
-	}
-	shape, ok := callShapeOf(f.bestSuffix, f.bestParent, text, f.offs)
-	if !ok {
-		return nil
-	}
-	return shape.context(cursorOffset)
-}
-
-// callFinder is an ANTLR listener that tracks the innermost postfixSuffix
-// whose argumentList range brackets the cursor.
-type callFinder struct {
-	*grammar.BasegalaListener
-	cursorOffset int          // bytes
-	offs         tokenOffsets // token indexes (code points) -> bytes
-	bestSuffix   *grammar.PostfixSuffixContext
-	bestParent   *grammar.PostfixExprContext
-	bestDepth    int
-	depth        int
-}
-
-func (f *callFinder) EnterEveryRule(ctx antlr.ParserRuleContext) { f.depth++ }
-func (f *callFinder) ExitEveryRule(ctx antlr.ParserRuleContext)  { f.depth-- }
-
-func (f *callFinder) EnterPostfixSuffix(ctx *grammar.PostfixSuffixContext) {
-	// A postfixSuffix that has no argumentList and no '(' terminal is
-	// either a `.id` or `[exprs]` — not a call. Fast-skip it.
-	if ctx.ArgumentList() == nil && findChildTerminal(ctx, "(") == nil {
-		return
-	}
-	start, stop := openParenRange(ctx, f.offs)
-	if !bracketsCursor(start, stop, f.cursorOffset) {
-		return
-	}
-	if f.depth <= f.bestDepth {
-		return
-	}
-	parent, _ := ctx.GetParent().(*grammar.PostfixExprContext)
-	if parent == nil {
-		return
-	}
-	f.bestSuffix = ctx
-	f.bestParent = parent
-	f.bestDepth = f.depth
-}
-
 // bracketsCursor reports whether the argument-list region of a call, from
 // just after its '(' at byte openAfter to its ')' at byte closeAt, holds
 // the cursor: strictly after the '(' and at or before the ')'. Using
@@ -267,46 +199,10 @@ func bracketsCursor(openAfter, closeAt, cursorOffset int) bool {
 	return openAfter >= 0 && cursorOffset > openAfter && cursorOffset <= closeAt
 }
 
-// openParenRange returns the byte offsets of the '(' and ')' of a
-// call-style postfixSuffix (or the '(' start and the argument list's
-// stop for a still-unclosed/recovered suffix). Returns (-1, -1) if the
-// suffix has no '('.
-func openParenRange(ctx *grammar.PostfixSuffixContext, offs tokenOffsets) (openAfter, closeAt int) {
-	openParen := findChildTerminal(ctx, "(")
-	if openParen == nil {
-		return -1, -1
-	}
-	openAfter = offs.byteOf(openParen.GetSymbol().GetStart())
-	closeParen := findChildTerminal(ctx, ")")
-	if closeParen != nil {
-		closeAt = offs.byteOf(closeParen.GetSymbol().GetStart())
-		return openAfter, closeAt
-	}
-	// Recovered tree without a matching ')' — treat end of the suffix as
-	// the close position.
-	if stop := ctx.GetStop(); stop != nil {
-		closeAt = offs.byteOf(stop.GetStop() + 1)
-		return openAfter, closeAt
-	}
-	return openAfter, openAfter + 1
-}
-
-// findChildTerminal returns the first direct terminal-node child whose
-// text equals `literal`, or nil.
-func findChildTerminal(ctx antlr.RuleContext, literal string) antlr.TerminalNode {
-	for _, child := range ctx.GetChildren() {
-		if term, ok := child.(antlr.TerminalNode); ok && term.GetText() == literal {
-			return term
-		}
-	}
-	return nil
-}
-
-// callShape is what signature help reads of a call from either parse tree:
-// the call-style postfixSuffix the cursor is in and the postfixExpr it is a
-// suffix of, as source text and byte offsets. callShapeOf reads it from
-// ANTLR's tree and callShapeNative from the native tree; context turns it
-// into the callContext, the same way for both.
+// callShape is what signature help reads of a call from the parse tree: the
+// call-style postfixSuffix the cursor is in and the postfixExpr it is a
+// suffix of, as source text and byte offsets. callShapeNative reads it, and
+// context turns it into the callContext.
 type callShape struct {
 	// primary is the source text of the postfixExpr's primary expression.
 	primary string
@@ -327,61 +223,6 @@ type callShape struct {
 type callArg struct {
 	start, end int
 	name       string
-}
-
-// callShapeOf is the callShape of the call callSuffix of parent, on ANTLR's
-// tree, and false when callSuffix is none of parent's suffixes.
-func callShapeOf(callSuffix *grammar.PostfixSuffixContext, parent *grammar.PostfixExprContext, text string, offs tokenOffsets) (callShape, bool) {
-	suffixes := parent.AllPostfixSuffix()
-	callIdx := -1
-	for i, s := range suffixes {
-		if s == callSuffix {
-			callIdx = i
-			break
-		}
-	}
-	if callIdx < 0 {
-		return callShape{}, false
-	}
-
-	shape := callShape{primary: contextText(parent.PrimaryExpr(), text, offs)}
-	// If the immediately-preceding suffix is `.id`, the callee is that
-	// identifier and the receiver is primaryExpr + suffixes before it.
-	if callIdx > 0 {
-		prev, _ := suffixes[callIdx-1].(*grammar.PostfixSuffixContext)
-		if prev != nil && prev.Identifier() != nil && findChildTerminal(prev, "(") == nil && findChildTerminal(prev, "[") == nil {
-			shape.method = prev.Identifier().GetText()
-			shape.receiver = shape.primary
-			for i := 0; i < callIdx-1; i++ {
-				shape.receiver += contextText(suffixes[i], text, offs)
-			}
-		}
-	}
-
-	if open := findChildTerminal(callSuffix, "("); open != nil {
-		shape.argStarts = append(shape.argStarts, offs.byteOf(open.GetSymbol().GetStart()))
-	}
-	argList, _ := callSuffix.ArgumentList().(*grammar.ArgumentListContext)
-	if argList == nil {
-		return shape, true
-	}
-	for _, child := range argList.GetChildren() {
-		if term, ok := child.(antlr.TerminalNode); ok && term.GetText() == "," {
-			shape.argStarts = append(shape.argStarts, offs.byteOf(term.GetSymbol().GetStart()))
-		}
-	}
-	for _, a := range argList.AllArgument() {
-		arg, ok := a.(*grammar.ArgumentContext)
-		if !ok || arg.GetStart() == nil || arg.GetStop() == nil {
-			continue
-		}
-		ca := callArg{start: offs.byteOf(arg.GetStart().GetStart()), end: offs.byteOf(arg.GetStop().GetStop() + 1)}
-		if id := arg.Identifier(); id != nil {
-			ca.name = id.GetText()
-		}
-		shape.args = append(shape.args, ca)
-	}
-	return shape, true
 }
 
 // context turns the call into the data the signature resolver needs:
@@ -426,35 +267,6 @@ func (s callShape) context(cursorOffset int) *callContext {
 		}
 	}
 	return call
-}
-
-// contextText returns the original source text covered by the given
-// parse-tree context. Uses start/stop character indices from the tokens
-// so whitespace and punctuation are preserved verbatim.
-func contextText(ctx antlr.RuleContext, text string, offs tokenOffsets) string {
-	if ctx == nil {
-		return ""
-	}
-	rc, ok := ctx.(interface {
-		GetStart() antlr.Token
-		GetStop() antlr.Token
-	})
-	if !ok {
-		return ""
-	}
-	start, stop := rc.GetStart(), rc.GetStop()
-	if start == nil || stop == nil {
-		return ""
-	}
-	s, e := start.GetStart(), stop.GetStop()
-	if s < 0 || e < 0 || s > e {
-		return ""
-	}
-	bs, be := offs.byteOf(s), offs.byteOf(e+1)
-	if be > len(text) || bs >= be {
-		return ""
-	}
-	return text[bs:be]
 }
 
 func isIdentifier(s string) bool {
