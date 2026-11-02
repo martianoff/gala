@@ -13,6 +13,8 @@ m=10 inner=4
 outer 14 outer?
 else m=2.5
 outer 0 outer?
+outer 7
+outer 1
 outer!
 Some(10)
 outer!

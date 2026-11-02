@@ -52,6 +52,16 @@ func nested(a bool, b bool) string {
     s"$m $r ${f()}"
 }
 
+// A branch ending in an if/else chain whose value is the shadowing val.
+func chain(c bool, d bool) string {
+    val m = "outer"
+    val r = if (c) {
+        val m = 7
+        if (d) 1 else m
+    } else 0
+    s"$m $r"
+}
+
 // A `bind` after a shadowing val in a branch.
 func bound(c bool) Option[int] {
     val m = "outer"
@@ -81,6 +91,8 @@ func main() {
     Println(nested(true, true))
     Println(nested(true, false))
     Println(nested(false, true))
+    Println(chain(true, false))
+    Println(chain(true, true))
     Println(bound(true))
     Println(bound(false))
 }

@@ -166,7 +166,7 @@ func TestIfExpressionBranchValIsLocalToTheBranch(t *testing.T) {
         val m = 5
         bind x = Some(m)
         Some(x + m)
-    } else None()`, nil},
+    } else None()`, []string{"var r = func() std.Option[int] {"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src := "package main\n\nfunc run(c bool, n int) string {\n    val m = \"outer\"" + tc.body + `

@@ -443,25 +443,13 @@ func isNilIdent(expr ast.Expr) bool {
 // as any block's (walkBlock); its value is its trailing expression, or the
 // value of the `bind` chain or the trailing if/else chain it ends in.
 //
-// The branch is a block of its own: the names it declares are local to it.
-// Its value is typed before they go out of scope, as a match arm's is: the
-// if-expression reads that type once the branch is lowered, from the type
-// cache (getExprTypeName caches by node), so a value naming a branch-local
-// val keeps that val's type rather than an outer one's.
+// The branch is a block of its own: the names it declares are local to it,
+// and its value is typed before they go out of scope (see typeValue), so a
+// value naming a branch-local val keeps that val's type.
 func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
 	t.pushScope()
 	defer t.popScope()
-	lowered, err := t.walkIfExprBranchBlock(b, s)
-	if err == nil {
-		t.getExprTypeName(lowered.expr)
-	}
-	return lowered, err
-}
-
-// walkIfExprBranchBlock lowers b, an if-expression branch that is a block, in
-// the scope lowerIfExprBranchBlock pushes for it.
-func (t *galaASTTransformer) walkIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
-	return walkBlock(t, b.statements(), func(e blockEnd) (loweredIfBranch, error) {
+	lowered, err := walkBlock(t, b.statements(), func(e blockEnd) (loweredIfBranch, error) {
 		if len(e.rest) == 0 {
 			return noValueBranch(nil), nil
 		}
@@ -521,6 +509,10 @@ func (t *galaASTTransformer) walkIfExprBranchBlock(b blockSrc, s slot) (loweredI
 		}
 		return noValueBranch(stmts), nil
 	})
+	if err == nil {
+		t.typeValue(lowered.expr)
+	}
+	return lowered, err
 }
 
 // lowerIfExprBranchValue lowers e, an if-expression branch that is an
