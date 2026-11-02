@@ -78,8 +78,8 @@ doc examples/multipackage_subpkg/state	93990b6fde52e621	eb6b03caa66d02e4
 doc examples/opaque_type_cross_pkg	4b274b451b75e10d	099bd4127dc15534
 doc examples/opaque_type_cross_pkg/billing	20468c0b39e48293	f746df5780ec88d6
 doc examples/opaque_type_mixed	f265f2de4ed28ac9	08164b054152fbe6
-doc examples/opaque_type_mixed/ids	3b0ed2a7cdf720b0	76c411b8c4712dc3
-doc examples/own_go_func_multi_results	2fba50a5ae13feac	6a0d1e2619c12ea3
+doc examples/opaque_type_mixed/ids	3b0ed2a7cdf720b0	ef3cc84426137a1f
+doc examples/own_go_func_multi_results	2fba50a5ae13feac	ed3674e11158948d
 doc examples/package_tuple_destructure	2bd3cb1a59a82b00	bc76242ee66980f6
 doc examples/package_val_init_types/consts	b081955e02d164c4	10b3e82d9479118c
 doc examples/ptr_cycle_lowered_lib	95986474a2f376a7	48a1d000fdda9086
@@ -104,7 +104,7 @@ doc examples/when_generic_lib	76308cc2328a58fe	317808e36ee0a771
 doc examples/wrapper_method_lambda	de1b19b8a97bc5c8	3a1c8f6ef7653c48
 doc fs	32d7f59cb2a20b9d	2aba20334b96d62e
 doc io	9566b737a035b1a3	d5574ea7ff2bdc6f
-doc json	caf8b26e2aabeedd	418e3722593a17fa
+doc json	caf8b26e2aabeedd	8d5c60f8d5ba9324
 doc lazy	4f071f9cd22308ef	1f8410badf662072
 doc path	b6f2f6b2788aec67	4b37a021d402bbda
 doc regex	5908dbb07265ffeb	a8cd488cf24666b0
