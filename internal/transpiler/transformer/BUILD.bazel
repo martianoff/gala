@@ -441,7 +441,6 @@ go_test(
     embed = [":transformer"],
     deps = [
         "//galaerr",
-        "//internal/parser/galop",
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",

@@ -151,12 +151,13 @@ func (t *Native) Bridged() bool {
 	return t.bridged
 }
 
-// Unbridged is a handle on t's native tree whose bridge to ANTLR's tree does
-// not hold, for the tests that hold a reader on ANTLR's tree to its native
-// twin, until those twins go: a reader gated on Bridged reads the file on
-// ANTLR's tree, and the transformer, which reads the native tree alone, still
-// has it. A nil t, or one with no tree, gives nil.
-func (t *Native) Unbridged() *Native {
+// TreeOnly is a handle on t's native tree alone: no bridge to ANTLR's tree
+// (Bridged is false; Ctx and Node find nothing), so a reader gated on Bridged
+// reads the file on ANTLR's tree, while a reader of the native tree alone,
+// the transformer, still has it. A holder that keeps a handle for such a
+// reader only keeps this one, so the contexts of a bridge nothing crosses
+// are not kept with it. A nil t, or one with no tree, gives nil.
+func (t *Native) TreeOnly() *Native {
 	tree, err := t.Tree()
 	if err != nil {
 		return nil

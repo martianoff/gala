@@ -22,7 +22,7 @@ import (
 // match.
 //
 // A construct is lowered this way only when it needs to be: when its arms hold
-// such a statement outside any lambda (escapesConstruct). An arm whose value is
+// such a statement outside any lambda (escapesAt). An arm whose value is
 // itself such a construct stores into the same variable. Inside a larger
 // expression it cannot be: the rest of the expression would have to be
 // evaluated around it. There a `return` that would leave only the construct is
@@ -39,7 +39,7 @@ type hoistedValue struct {
 	typ   transpiler.Type
 }
 
-// A subtree escapesConstruct when it holds a `return`, `break` or `continue`
+// A subtree escapes (escapesAt) when it holds a `return`, `break` or `continue`
 // outside any lambda: one that, in a construct lowered to a function literal,
 // could not reach the function or loop it is written for. A `break` /
 // `continue` inside a `for` loop of the subtree's own controls that loop. The
@@ -62,8 +62,8 @@ func (t *galaASTTransformer) cachedEscape(key native.GalaNodeRef, walk func() bo
 	return escaping
 }
 
-// hoistable reports whether exprCtx is a match or if-expression (possibly
-// parenthesized) whose arms escapesConstruct (see cachedEscape).
+// hoistable reports whether e is a match or if-expression (possibly
+// parenthesized) whose arms escape (escapesAt).
 func (t *galaASTTransformer) hoistable(e exprSrc) bool {
 	return t.hoistableForm(t.classifyExpr(e))
 }

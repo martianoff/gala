@@ -14,17 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// antlrPackages are the packages of ANTLR's tree: its runtime and the
-// generated parser.
+// antlrPackages are the packages of ANTLR's tree: its runtime, the
+// generated parser, and galop's converter from ANTLR's tree to the native
+// one, which only the transformer's tests may call.
 var antlrPackages = []string{
 	"github.com/antlr4-go/antlr/v4",
 	"martianoff/gala/internal/parser/grammar",
+	"martianoff/gala/internal/parser/galop",
 }
 
 // TestTransformerReadsNoANTLR keeps the transformer on the native tree: no
-// source of the library imports ANTLR's runtime or its generated parser, and
-// the library's Bazel target does not depend on them. A file's tree reaches
-// the transformer as RichAST.Native only.
+// source of the library imports ANTLR's runtime, its generated parser or
+// galop's converter of ANTLR's tree, and the library's Bazel target does not
+// depend on them. A file's tree reaches the transformer as RichAST.Native
+// only.
 func TestTransformerReadsNoANTLR(t *testing.T) {
 	srcs, err := filepath.Glob("*.go")
 	require.NoError(t, err)
@@ -53,7 +56,7 @@ func TestTransformerReadsNoANTLR(t *testing.T) {
 	require.NotNil(t, library, "no go_library named transformer in BUILD.bazel")
 	deps := regexp.MustCompile(`(?s)\n    deps = \[(.*?)\n    \]`).FindSubmatch(library)
 	require.NotNil(t, deps, "the transformer library lists no deps")
-	for _, dep := range []string{"//internal/parser/grammar", "@com_github_antlr4_go_antlr_v4//:antlr"} {
+	for _, dep := range []string{"//internal/parser/grammar", "//internal/parser/galop", "@com_github_antlr4_go_antlr_v4//:antlr"} {
 		assert.NotContainsf(t, string(deps[1]), `"`+dep+`"`, "the transformer library depends on %s", dep)
 	}
 }

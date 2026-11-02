@@ -1436,9 +1436,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 //
 // trees, handles and paths are the package's files, in parallel: each one's
 // tree, native-tree handle (nil for none) and path. The transform reads a
-// file's native tree only: a sibling whose handle the analysis did not keep
-// is parsed again for one (parseFileEntry), and a file left without one, a
-// compiled file with syntax errors, has no binding typed here. A binding can
+// file's native tree only, so a file without a handle, after the lookup
+// below, is not transformed and has no binding typed here. A binding can
 // read another file's binding, so files are revisited while a pass still
 // types something: each pass types at least one more binding or ends the
 // loop.
@@ -1451,19 +1450,21 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 		}
 		return false
 	}
-	// Looked up once, before the passes: a sibling the analysis kept no
-	// handle for is parsed again for one.
-	for i := 1; i < len(trees) && i < len(handles) && i < len(paths); i++ {
-		if handles[i] == nil && trees[i] != nil && untyped(paths[i]) {
-			if entry := a.parseFileEntry(paths[i]); entry != nil && entry.parsed != nil {
-				handles[i] = entry.parsed.CleanNative()
+	// Looked up once, before the passes: a file, the analyzed one included,
+	// that came without a handle takes the one the parsed-file cache holds
+	// for its tree's own parse (cachedFile). A newer parse of the file would
+	// not do: its bindings are not the ones its tree declared.
+	for i := range handles {
+		if handles[i] == nil && i < len(trees) && i < len(paths) && trees[i] != nil && untyped(paths[i]) {
+			if p, _ := a.cachedFile(paths[i], trees[i]); p != nil {
+				handles[i] = p.CleanNative()
 			}
 		}
 	}
 	for progress := true; progress; {
 		progress = false
 		for i, tree := range trees {
-			if tree == nil || i >= len(paths) || !untyped(paths[i]) {
+			if tree == nil || i >= len(paths) || i >= len(handles) || handles[i] == nil || !untyped(paths[i]) {
 				continue
 			}
 			// The transform may register metadata of its own (EmbeddedFS's
@@ -4812,10 +4813,14 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	// (parseFilesConcurrent), rather than by its first reader: every reader
 	// takes the native tree when the handle bridges, and a converted handle
 	// no longer holds the token stream (see parser.Parsed.Native). A handle
-	// that does not bridge is kept too: the transformer's inference of the
-	// file's package-level vals reads the native tree alone
-	// (inferPackageValTypes).
+	// that does not bridge serves only the transformer's inference of the
+	// file's package-level vals (inferPackageValTypes), which reads the
+	// native tree alone: only that tree is kept (Native.TreeOnly), not the
+	// contexts of the bridge.
 	nf := nativeFileOf(parsed.CleanNative())
+	if !nf.ok() {
+		parsed.Native = parsed.Native.TreeOnly()
+	}
 	return a.cacheParsedFile(canonPath, &parsedFileEntry{
 		parsed:  parsed,
 		nf:      nf,

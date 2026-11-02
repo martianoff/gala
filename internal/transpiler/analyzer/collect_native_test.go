@@ -26,14 +26,14 @@ func parseWithGalop(tb testing.TB) {
 }
 
 // antlrOnly parses as its parser does but gives a handle whose bridge does not
-// hold (Native.Unbridged), so an analyzer using it collects every file on
+// hold (Native.TreeOnly), so an analyzer using it collects every file on
 // ANTLR's tree, while the transformer's inference of package-level vals,
 // which reads the native tree alone, still has it.
 type antlrOnly struct{ p transpiler.GalaParser }
 
 func (o antlrOnly) ParseFile(input string) *galaparser.Parsed {
 	parsed := o.p.ParseFile(input)
-	parsed.Native = parsed.Native.Unbridged()
+	parsed.Native = parsed.Native.TreeOnly()
 	return parsed
 }
 

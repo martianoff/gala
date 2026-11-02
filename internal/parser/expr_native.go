@@ -16,8 +16,8 @@ var soleOperandChain = [...]native.GalaKind{
 	native.GalaKIND_unaryExpr,
 }
 
-// NativeSolePostfixExpr is the transformer's LeadingPostfixExpr(e, true) on
-// the native tree: the postfix expression e is, or no node when e has a
+// NativeSolePostfixExpr is the analyzer's leadingPostfixExpr(e, true) on the
+// native tree: the postfix expression e is, or no node when e has a
 // binary operator at any level (or → and → equality → relational → additive
 // → multiplicative → unary) or a unary operator before its operand.
 func NativeSolePostfixExpr(e native.ExpressionNode) native.PostfixExprNode {

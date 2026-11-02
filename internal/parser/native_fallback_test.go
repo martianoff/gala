@@ -69,10 +69,10 @@ func (p *misbridgingParser) ParseFile(input string) *parser.Parsed {
 }
 
 // TestNativeBridgeFallback: a file whose native tree's bridge fails on any
-// kind of node the transformer's walk reads is compiled on ANTLR's
-// tree, analysis and transform alike, to the same Go as with a sound bridge,
-// not walked natively where the lookups from ANTLR's contexts to their nodes
-// (nativeNodeOf) could miss.
+// kind of node the transformer's walk reads is analyzed on ANTLR's tree,
+// where a lookup from an ANTLR context to its node could miss, and
+// transformed on its native tree, which the transformer reads whatever the
+// bridge, to the same Go as with a sound bridge.
 func TestNativeBridgeFallback(t *testing.T) {
 	parser.RequestEngine(string(parser.EngineGalop))
 	t.Cleanup(func() { parser.RequestEngine("") })

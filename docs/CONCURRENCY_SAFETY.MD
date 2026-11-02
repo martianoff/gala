@@ -172,13 +172,13 @@ enforcement can be **field-access-sensitive** (see
 `.field` selector chains applied to the variable, and `Whole` is set the moment
 it is used as a value in any other way.
 
-It is a **pure, syntactic** walk over the ANTLR parse tree (like the
+It is a **pure, syntactic** walk over galop's native parse tree (like the
 transformer), with an explicit lexical scope stack — no analyzer, no type
 system, no AST mutation. Two entry points share one walker:
 
-- `FreeVariablesInLambda(lambda)` — an explicit lambda; its declared parameters
+- `FreeVariablesInLambdaNative(lambda)` — an explicit lambda; its declared parameters
   are bound, its body may be an expression or a block.
-- `FreeVariablesInExpression(paramNames, expr)` — a bare expression, so the same
+- `FreeVariablesInExpressionNative(paramNames, expr)` — a bare expression, so the same
   analysis serves the by-name / thunk sugar (see below).
 
 ### Scoping rules
@@ -258,8 +258,8 @@ captures `items` + `base`, and an interpolation that references a **local**
 
 `Future(counter + 1)` desugars its by-name argument to a thunk. The analysis
 treats the two spellings identically: analysing the bare expression
-`counter + 1` (via `FreeVariablesInExpression`) yields the **same** captures as
-analysing the explicit thunk `() => counter + 1` (via `FreeVariablesInLambda`).
+`counter + 1` (via `FreeVariablesInExpressionNative`) yields the **same** captures as
+analysing the explicit thunk `() => counter + 1` (via `FreeVariablesInLambdaNative`).
 So whichever way a program spells a deferred computation, its capture set — and
 therefore its shareability verdict — is the same.
 

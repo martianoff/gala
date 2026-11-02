@@ -64,8 +64,7 @@ func (c caseSrc) bodyStmt() (simpleSrc, bool) {
 	return simpleSrc{}, false
 }
 
-// casesEscape reports whether a clause of cases escapesConstruct
-// (escapesAt).
+// casesEscape reports whether a clause of cases escapes (escapesAt).
 func (t *galaASTTransformer) casesEscape(cases []caseSrc) bool {
 	for _, c := range cases {
 		if t.escapesAt(c.at()) {

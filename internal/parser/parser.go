@@ -110,6 +110,25 @@ type Parsed struct {
 	// text, which a clean parse's tree does not keep alive, so a holder that
 	// keeps a Parsed long but never reads the native tree drops it.
 	Native *Native
+	// recovered is, for a parse that reported errors, the native tree of its
+	// error-recovered tree (see RecoveredNative).
+	recovered *Native
+}
+
+// RecoveredNative is the native-tree handle of the parse whether or not it
+// reported errors: Native for a parse without them, and for one with them the
+// handle of ANTLR's error-recovered tree, whose conversion marks the tokens
+// the recovery skipped or made up as error children (native.GalaChild.IsError).
+// nil when the parse gave no tree. An editor reads a file mid-edit through
+// it; everything that needs a well-formed file takes CleanNative.
+func (p *Parsed) RecoveredNative() *Native {
+	if p == nil {
+		return nil
+	}
+	if len(p.Errors) > 0 {
+		return p.recovered
+	}
+	return p.Native
 }
 
 // Strict is the tree and doc comments, or the syntax errors as one error (and
@@ -207,6 +226,8 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
 	if len(errs) == 0 {
 		parsed.Native = newNative(result.tree, result.stream, input)
+	} else {
+		parsed.recovered = newNative(result.tree, result.stream, input)
 	}
 	return parsed
 }
