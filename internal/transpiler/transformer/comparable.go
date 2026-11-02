@@ -253,6 +253,14 @@ func (c *comparer) walk(typ transpiler.Type, env map[string]typeArg, declared bo
 	case transpiler.MapType:
 		return typeEq{bad: &incomparable{leaf: typ, kind: "a Go map"}}
 	case transpiler.ArrayType:
+		if tt.Fixed {
+			// A Go array compares element by element, as Go's == does.
+			r := c.walk(tt.Elem, env, declared)
+			if r.bad != nil {
+				return typeEq{bad: r.bad}
+			}
+			return typeEq{native: r.native}
+		}
 		if declared {
 			return typeEq{bad: &incomparable{leaf: typ, kind: "a Go slice"}}
 		}

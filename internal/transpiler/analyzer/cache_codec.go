@@ -37,19 +37,21 @@ import (
 var codecMagic = [4]byte{'G', 'A', 'C', 0x0A}
 
 const (
-	typeTagNil     uint8 = 0 // nil interface
-	typeTagBasic   uint8 = 1
-	typeTagNamed   uint8 = 2
-	typeTagGeneric uint8 = 3
-	typeTagArray   uint8 = 4
-	typeTagMap     uint8 = 5
-	typeTagPointer uint8 = 6
-	typeTagFunc    uint8 = 7
-	typeTagNilType uint8 = 8 // concrete NilType{}
-	typeTagVoid    uint8 = 9
-	typeTagPtr     uint8 = 10 // non-null pointer Ptr[T]
-	typeTagChan    uint8 = 11
-	typeTagStruct  uint8 = 12
+	typeTagNil        uint8 = 0 // nil interface
+	typeTagBasic      uint8 = 1
+	typeTagNamed      uint8 = 2
+	typeTagGeneric    uint8 = 3
+	typeTagArray      uint8 = 4
+	typeTagMap        uint8 = 5
+	typeTagPointer    uint8 = 6
+	typeTagFunc       uint8 = 7
+	typeTagNilType    uint8 = 8 // concrete NilType{}
+	typeTagVoid       uint8 = 9
+	typeTagPtr        uint8 = 10 // non-null pointer Ptr[T]
+	typeTagChan       uint8 = 11
+	typeTagStruct     uint8 = 12
+	typeTagFixedArray uint8 = 13 // a Go array, `[Len]Elem`
+	typeTagInterface  uint8 = 14
 )
 
 // encodeCachedRichAST serializes c using the binary codec. The returned
@@ -255,7 +257,12 @@ func (e *encoder) writeType(t transpiler.Type) {
 			e.writeType(p)
 		}
 	case transpiler.ArrayType:
-		e.writeByte(typeTagArray)
+		if v.Fixed {
+			e.writeByte(typeTagFixedArray)
+			e.writeUvarint(uint64(v.Len))
+		} else {
+			e.writeByte(typeTagArray)
+		}
 		e.writeType(v.Elem)
 	case transpiler.MapType:
 		e.writeByte(typeTagMap)
@@ -273,6 +280,13 @@ func (e *encoder) writeType(t transpiler.Type) {
 			e.writeBool(f.Embedded)
 			e.writeString(f.Tag)
 			e.writeType(f.Type)
+		}
+	case transpiler.InterfaceType:
+		e.writeByte(typeTagInterface)
+		e.writeUvarint(uint64(len(v.Methods)))
+		for _, m := range v.Methods {
+			e.writeString(m.Name)
+			e.writeType(m.Type)
 		}
 	case transpiler.PointerType:
 		if v.NonNull {
@@ -769,6 +783,9 @@ func (d *decoder) readType() transpiler.Type {
 		return transpiler.GenericType{Base: base, Params: params}
 	case typeTagArray:
 		return transpiler.ArrayType{Elem: d.readType()}
+	case typeTagFixedArray:
+		n := int64(d.readUvarint())
+		return transpiler.ArrayType{Elem: d.readType(), Len: n, Fixed: true}
 	case typeTagMap:
 		k := d.readType()
 		v := d.readType()
@@ -788,6 +805,18 @@ func (d *decoder) readType() transpiler.Type {
 			st.Fields = append(st.Fields, f)
 		}
 		return st
+	case typeTagInterface:
+		var it transpiler.InterfaceType
+		for n := d.readUvarint(); n > 0 && d.err == nil; n-- {
+			name := d.readString()
+			ft, ok := d.readType().(transpiler.FuncType)
+			if !ok {
+				d.fail("interface method %s has no signature", name)
+				return nil
+			}
+			it.Methods = append(it.Methods, transpiler.InterfaceMethod{Name: name, Type: ft})
+		}
+		return it
 	case typeTagPointer:
 		return transpiler.PointerType{Elem: d.readType()}
 	case typeTagPtr:

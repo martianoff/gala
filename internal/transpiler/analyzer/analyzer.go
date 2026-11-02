@@ -1673,8 +1673,8 @@ func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[st
 		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, quals, errs, pos, ctxName)
 	case transpiler.ChanType:
 		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, quals, errs, pos, ctxName)
-	case transpiler.StructType:
-		for _, ft := range tt.FieldTypes() {
+	case transpiler.StructType, transpiler.InterfaceType:
+		for _, ft := range transpiler.MemberTypes(tt) {
 			walkTypeForUnresolvedPackages(ft, explicit, knownGala, quals, errs, pos, ctxName)
 		}
 	case transpiler.MapType:

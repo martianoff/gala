@@ -19,11 +19,12 @@ func stripImportPaths(typ Type) Type {
 		}
 		return GenericType{Base: stripImportPaths(v.Base), Params: params}
 	case ArrayType:
-		return ArrayType{Elem: stripImportPaths(v.Elem)}
+		v.Elem = stripImportPaths(v.Elem)
+		return v
 	case ChanType:
 		return ChanType{Elem: stripImportPaths(v.Elem), Dir: v.Dir}
-	case StructType:
-		return v.MapFields(stripImportPaths)
+	case StructType, InterfaceType:
+		return MapMembers(v, stripImportPaths)
 	case PointerType:
 		return PointerType{Elem: stripImportPaths(v.Elem)}
 	case MapType:
@@ -102,6 +103,18 @@ func TestParseTypeRoundTrip(t *testing.T) {
 		}}}}},
 		{"struct of a tagged struct", StructType{Fields: []StructField{
 			{Name: "A", Type: StructType{Fields: []StructField{{Name: "B", Type: BasicType{Name: "int"}, Tag: `json:"b"`}}}, Tag: `x:"a"`},
+		}}},
+		{"fixed-length array", ArrayType{Elem: BasicType{Name: "int"}, Len: 3, Fixed: true}},
+		{"zero-length array of a generic", ArrayType{Elem: GenericType{Base: option, Params: []Type{builder}}, Len: 0, Fixed: true}},
+		{"slice of fixed-length arrays", ArrayType{Elem: ArrayType{Elem: BasicType{Name: "byte"}, Len: 32, Fixed: true}}},
+		{"inline interface", InterfaceType{Methods: []InterfaceMethod{
+			{Name: "Area", Type: FuncType{Results: []Type{BasicType{Name: "int"}}}},
+			{Name: "Scale", Type: FuncType{Params: []Type{BasicType{Name: "int"}, builder}, Results: []Type{BasicType{Name: "int"}, BasicType{Name: "error"}}}},
+		}}},
+		{"struct of every exact field form", StructType{Fields: []StructField{
+			{Name: "Cells", Type: ArrayType{Elem: BasicType{Name: "int"}, Len: 3, Fixed: true}},
+			{Name: "Inner", Type: GenericType{Base: NamedType{Package: "bridge", Name: "Box"}, Params: []Type{BasicType{Name: "int"}}}},
+			{Name: "Shape", Type: InterfaceType{Methods: []InterfaceMethod{{Name: "Area", Type: FuncType{Results: []Type{BasicType{Name: "int"}}}}}}, Tag: `json:"shape"`},
 		}}},
 		{"map keyed by a generic", MapType{
 			Key:  GenericType{Base: option, Params: []Type{BasicType{Name: "int"}}},

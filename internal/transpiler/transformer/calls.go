@@ -3618,11 +3618,12 @@ func (t *galaASTTransformer) reachedAs(typ transpiler.Type) transpiler.Type {
 		}
 		return transpiler.GenericType{Base: t.reachedAs(ty.Base), Params: params}
 	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: t.reachedAs(ty.Elem)}
+		ty.Elem = t.reachedAs(ty.Elem)
+		return ty
 	case transpiler.ChanType:
 		return transpiler.ChanType{Elem: t.reachedAs(ty.Elem), Dir: ty.Dir}
-	case transpiler.StructType:
-		return ty.MapFields(t.reachedAs)
+	case transpiler.StructType, transpiler.InterfaceType:
+		return transpiler.MapMembers(ty, t.reachedAs)
 	case transpiler.NamedType:
 		if ty.Package == t.packageName {
 			return transpiler.BasicType{Name: ty.Name}

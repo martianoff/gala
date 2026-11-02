@@ -54,6 +54,7 @@ go_test(
     srcs = [
         "analyzed_pkgs_invariant_test.go",
         "analyzer_test.go",
+        "anonymous_struct_fields_test.go",
         "batch_reuse_test.go",
         "cache_codec_test.go",
         "cache_e2e_test.go",

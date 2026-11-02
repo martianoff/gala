@@ -145,8 +145,8 @@ func (t *galaASTTransformer) namesOnlyImportedPackages(typ transpiler.Type) bool
 		return t.namesOnlyImportedPackages(v.Elem)
 	case transpiler.ChanType:
 		return t.namesOnlyImportedPackages(v.Elem)
-	case transpiler.StructType:
-		for _, f := range v.FieldTypes() {
+	case transpiler.StructType, transpiler.InterfaceType:
+		for _, f := range transpiler.MemberTypes(v) {
 			if !t.namesOnlyImportedPackages(f) {
 				return false
 			}

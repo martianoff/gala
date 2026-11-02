@@ -27,6 +27,7 @@ func init() {
 	gob.Register(transpiler.MapType{})
 	gob.Register(transpiler.ChanType{})
 	gob.Register(transpiler.StructType{})
+	gob.Register(transpiler.InterfaceType{})
 	gob.Register(transpiler.PointerType{})
 	gob.Register(transpiler.FuncType{})
 	gob.Register(transpiler.NilType{})
@@ -129,7 +130,7 @@ func buildSyntheticCache() *CachedRichAST {
 		r.Types["synthetic."+name] = &transpiler.TypeMetadata{
 			Name:       name,
 			Package:    "synthetic",
-			FieldNames: []string{"a", "b", "c", "d", "e", "f"},
+			FieldNames: []string{"a", "b", "c", "d", "e", "f", "g"},
 			Fields: map[string]transpiler.Type{
 				"a": transpiler.BasicType{Name: "int"},
 				"b": transpiler.GenericType{
@@ -142,6 +143,12 @@ func buildSyntheticCache() *CachedRichAST {
 				"f": transpiler.StructType{Fields: []transpiler.StructField{
 					{Name: "X", Type: transpiler.BasicType{Name: "int"}, Tag: `json:"x"`},
 					{Name: "Time", Type: transpiler.NamedType{Package: "time", Name: "Time", ImportPath: "time"}, Embedded: true},
+				}},
+				"g": transpiler.StructType{Fields: []transpiler.StructField{
+					{Name: "Cells", Type: transpiler.ArrayType{Elem: transpiler.BasicType{Name: "int"}, Len: 3, Fixed: true}},
+					{Name: "Shape", Type: transpiler.InterfaceType{Methods: []transpiler.InterfaceMethod{
+						{Name: "Area", Type: transpiler.FuncType{Results: []transpiler.Type{transpiler.BasicType{Name: "int"}}}},
+					}}},
 				}},
 			},
 			FieldDefaults: map[string]transpiler.DefaultExpr{"a": {Text: "(x int) => x + 1", Pos: transpiler.SourcePos{Line: 3, Column: 17}}},

@@ -419,12 +419,13 @@ func withKnownLeaves(typ transpiler.Type) transpiler.Type {
 	}
 	switch v := typ.(type) {
 	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: withKnownLeaves(v.Elem)}
+		v.Elem = withKnownLeaves(v.Elem)
+		return v
 	case transpiler.ChanType:
 		v.Elem = withKnownLeaves(v.Elem)
 		return v
-	case transpiler.StructType:
-		return v.MapFields(withKnownLeaves)
+	case transpiler.StructType, transpiler.InterfaceType:
+		return transpiler.MapMembers(v, withKnownLeaves)
 	case transpiler.PointerType:
 		v.Elem = withKnownLeaves(v.Elem)
 		return v

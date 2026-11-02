@@ -173,8 +173,8 @@ func receiverTypeArgScope(ast *transpiler.RichAST, m *transpiler.MethodMetadata,
 			walk(ty.Elem)
 		case transpiler.ChanType:
 			walk(ty.Elem)
-		case transpiler.StructType:
-			for _, f := range ty.FieldTypes() {
+		case transpiler.StructType, transpiler.InterfaceType:
+			for _, f := range transpiler.MemberTypes(ty) {
 				walk(f)
 			}
 		case transpiler.PointerType:
@@ -291,8 +291,8 @@ func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, scope map[strin
 	case transpiler.ChanType:
 		return checkTypeExists(ast, ty.Elem, scope, location)
 
-	case transpiler.StructType:
-		for _, f := range ty.FieldTypes() {
+	case transpiler.StructType, transpiler.InterfaceType:
+		for _, f := range transpiler.MemberTypes(ty) {
 			if w := checkTypeExists(ast, f, scope, location); w != nil {
 				return w
 			}
@@ -525,8 +525,8 @@ func checkPackagePrefixInType(ast *transpiler.RichAST, t transpiler.Type, locati
 		checkPackagePrefixInType(ast, ty.Elem, location, warnings)
 	case transpiler.ChanType:
 		checkPackagePrefixInType(ast, ty.Elem, location, warnings)
-	case transpiler.StructType:
-		for _, f := range ty.FieldTypes() {
+	case transpiler.StructType, transpiler.InterfaceType:
+		for _, f := range transpiler.MemberTypes(ty) {
 			checkPackagePrefixInType(ast, f, location, warnings)
 		}
 	case transpiler.MapType:
