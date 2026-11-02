@@ -15,7 +15,10 @@ go_library(
 
 go_test(
     name = "nativewalk_test",
-    srcs = ["nativewalk_test.go"],
+    srcs = [
+        "nativewalk_test.go",
+        "walk_golden_test.go",
+    ],
     # The test walks the GALA sources TestEnginesAgree parses.
     data = [
         "//:all_gala_sources",
@@ -26,9 +29,11 @@ go_test(
         "//stream:gala_sources",
         "//subprocess:gala_sources",
         "//test:gala_sources",
+        "testdata/walks.golden",
     ],
     embed = [":nativewalk"],
     deps = [
+        "//internal/digestgolden",
         "//internal/parser",
         "//internal/parser/grammar",
         "//internal/parser/native",  # keep
