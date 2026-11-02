@@ -549,11 +549,10 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 		// with a return type, lambda bodies, and match arm bodies all do,
 		// since their trailing expression becomes the block's value.
 		if i != lastIdx || !lastStmtIsValue {
-			stmts, err := t.lowerDiscardedStatement(st)
-			if err != nil {
+			var err error
+			if block.List, err = t.appendDiscardedStatement(block.List, st); err != nil {
 				return nil, err
 			}
-			block.List = append(block.List, stmts...)
 			continue
 		}
 		// The trailing statement of a value-carrying block.
@@ -649,46 +648,35 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 	return block, nil
 }
 
-// lowerDiscardedStatement lowers st, a block statement whose value nothing
-// reads — every statement of a block but the trailing one of a value-carrying
-// block — to the statements it emits, in order. Loop control is a statement,
-// an if-expression an if statement (lowerIfExpressionStatement), and a plain
-// value is evaluated but not used.
-//
-// A bare `subject match { ... }` there is a statement-position match, lowered
-// as a void IIFE; otherwise arms calling void Go functions (e.g. `d.Skip()`)
-// get wrapped in `return d.Skip()` because at least one other arm produced a
-// typed value, and Go rejects "return d.Skip()" as "no value used as value".
-func (t *galaASTTransformer) lowerDiscardedStatement(st stmtSrc) ([]ast.Stmt, error) {
-	value := t.onNative(st.valueExpr())
-	prev := t.matchInStatementPos
-	// The flag is set for this statement only: one an enclosing match left
-	// on, while its subject is lowered, does not make this statement's value
-	// discarded too.
-	t.matchInStatementPos = t.bareMatch(value).ok()
-	var stmt ast.Stmt
-	var pre []ast.Stmt
-	var err error
-	if bs, ok := t.lowerLoopControl(value); ok {
-		stmt = bs
-	} else if ifExpr := t.ifIn(value); ifExpr.ok() {
-		stmt, err = t.lowerIfExpressionStatement(ifExpr)
-	} else {
-		stmt, pre, err = t.lowerStatement(st)
+// appendDiscardedStatement appends to dst the lowering of st, a block
+// statement whose value nothing reads — every statement of a block but the
+// trailing one of a value-carrying block. An expression there is lowered as
+// lowerExprStatement lowers it: a bare match is a statement-position match,
+// an if-expression an if statement, and a plain value is evaluated but not
+// used. Any other statement is lowered by lowerStatement, after the
+// statements a local declaration needs before it.
+func (t *galaASTTransformer) appendDiscardedStatement(dst []ast.Stmt, st stmtSrc) ([]ast.Stmt, error) {
+	if value := t.onNative(st.valueExpr()); value.ok() {
+		stmt, err := t.lowerExprStatement(value, functionDiscardHint)
+		if err != nil {
+			return nil, err
+		}
+		return append(dst, stmt), nil
 	}
+	// A statement-position flag an enclosing match left on while its subject
+	// is lowered is not this statement's: a match a declaration stores is
+	// value-consumed.
+	prev := t.matchInStatementPos
+	t.matchInStatementPos = false
+	stmt, pre, err := t.lowerStatement(st)
 	t.matchInStatementPos = prev
 	if err != nil {
 		return nil, err
 	}
 	if inlined := t.takePendingMatchBlock(); inlined != nil {
-		return append(pre, inlined), nil
+		stmt = inlined
 	}
-	if value.ok() {
-		if err := t.checkValueUsedHint(value, stmt, functionDiscardHint); err != nil {
-			return nil, err
-		}
-	}
-	return append(pre, stmt), nil
+	return append(append(dst, pre...), stmt), nil
 }
 
 // takePendingMatchBlock takes the inlined block a statement-position match

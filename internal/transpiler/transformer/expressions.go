@@ -881,11 +881,10 @@ func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (lowered
 	var preceding []ast.Stmt
 	for _, st := range stmts[:end] {
 		t.noteNativeStmt(st)
-		lowered, err := t.lowerDiscardedStatement(st)
-		if err != nil {
+		var err error
+		if preceding, err = t.appendDiscardedStatement(preceding, st); err != nil {
 			return loweredIfBranch{}, err
 		}
-		preceding = append(preceding, lowered...)
 	}
 	if bindAt >= 0 {
 		expr, err := t.lowerIfExprBranchBind(stmts[bindAt:], s)
@@ -924,13 +923,13 @@ func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (lowered
 		return b, nil
 	}
 
-	// If the last statement isn't a bare expression, transform it normally
-	// and return nil as the expression (void block).
-	lastStmt, pre, err := t.lowerStatement(last)
+	// If the last statement isn't a bare expression, it is a statement like
+	// the others and the block has no value (void block).
+	preceding, err := t.appendDiscardedStatement(preceding, last)
 	if err != nil {
 		return loweredIfBranch{}, err
 	}
-	preceding = append(append(preceding, pre...), lastStmt)
+	lastStmt := preceding[len(preceding)-1]
 	// If the last statement is an explicit return, the branch terminates: the
 	// caller must skip its synthesized trailing return so we don't emit dead
 	// `return nil` after a typed return. We also surface the return's value

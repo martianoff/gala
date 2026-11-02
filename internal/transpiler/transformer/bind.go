@@ -528,7 +528,7 @@ func (t *galaASTTransformer) typeHasMethod(lookupBaseName, method string) bool {
 
 // buildBindBody builds the body block of a bind continuation lambda from the
 // statements following a `bind`. Regular statements are lowered as in any
-// block (lowerDiscardedStatement); a nested `bind` recurses; the trailing
+// block (appendDiscardedStatement); a nested `bind` recurses; the trailing
 // statement becomes `return <value>`, or, when it is an if/else chain,
 // returns its value from each branch.
 func (t *galaASTTransformer) buildBindBody(stmts []stmtSrc, res *bindResult) (*ast.BlockStmt, error) {
@@ -562,11 +562,10 @@ func (t *galaASTTransformer) buildBindBody(stmts []stmtSrc, res *bindResult) (*a
 			body.List = append(body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			return body, nil
 		}
-		lowered, err := t.lowerDiscardedStatement(src)
-		if err != nil {
+		var err error
+		if body.List, err = t.appendDiscardedStatement(body.List, src); err != nil {
 			return nil, err
 		}
-		body.List = append(body.List, lowered...)
 	}
 	return body, nil
 }
