@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -16,9 +17,9 @@ import (
 // doc comments come from their hidden channel (nativeDocComments), and the
 // blank-line check reads the native tree (checkEmptyLinesNative). Each
 // matches its ANTLR counterpart, which the tests hold it to over the corpus.
-// Under galop's engine the transformer parses the expressions of string
-// interpolations with them (ParseExpressionCheckedAt), and the language
-// server lexes with them (VisitNativeTokens).
+// With galop's engine they are how GALA parses: ParseFile parses a file
+// with them, ParseExpressionCheckedAt an expression, and the language server
+// lexes with them (VisitNativeTokens).
 
 // RetypeNewlines applies GALA's line-break rule (see lineBreakRule) to ts in
 // place, as newlineTokenSource applies it to ANTLR's lexer: a '(' that starts
@@ -138,7 +139,7 @@ func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionN
 	if len(ts.Errors) > 0 {
 		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, &ts.Errors[0])
 	}
-	expr, err = native.ParseExpression(ts)
+	expr, err = nativeParseExpression(ts)
 	if err != nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, err)
 	}
@@ -148,6 +149,13 @@ func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionN
 	}
 	return expr, nil
 }
+
+// Hooks for galop's native parser of an expression and its converter from
+// ANTLR's trees, replaced by tests.
+var (
+	nativeParseExpression = native.ParseExpression
+	galopToNative         = galop.ToNative
+)
 
 // ParseExpressionCheckedAt is input's native tree as exactly one GALA
 // expression whose first character sits at line/col of an enclosing file (see
@@ -181,15 +189,15 @@ func ParseExpressionCheckedAt(input string, line, col int, what string) (expr na
 // ANTLR's parser to read, and the fallback runs only on a syntax error or a
 // galop panic.
 func ParseExpressionConvertedAt(input string, line, col int, what string) (native.ExpressionNode, error) {
-	ctx, stream, err := antlrExpressionAtChecked(input, line, col, what, nil)
+	ctx, stream, err := antlrExpressionAtChecked(input, line, col, what)
 	if err != nil {
 		return native.ExpressionNode{}, err
 	}
 	return convertExpression(ctx, stream, input)
 }
 
-// ParseExpressionTree is ParseExpression's tree in native form, and the
-// syntax errors: src parsed as an expression, not anchored at end of input,
+// ParseExpressionTree is src's native tree as an expression, and the syntax
+// errors: src parsed as an expression, not anchored at end of input,
 // so `x +` gives the tree of `x`, with no error. With galop's engine, galop's
 // native parser parses src that is exactly one expression; anything else,
 // and all of it with ANTLR's engine, is parsed by ANTLR's parser, its
@@ -207,7 +215,7 @@ func ParseExpressionTree(src string) (native.ExpressionNode, []error) {
 			return expr, nil
 		}
 	}
-	ctx, stream, errs := antlrExpressionAt(src, 0, 0, nil)
+	ctx, stream, errs := antlrExpressionAt(src, 0, 0)
 	if ctx == nil {
 		return native.ExpressionNode{}, errs
 	}
@@ -228,7 +236,7 @@ func convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStr
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
 		}
 	}()
-	tree, _ := galopToNative(ctx, stream, src)
+	tree := galopToNative(ctx, stream, src)
 	if tree == nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: the converter gave no tree", ErrConvertExpression)
 	}

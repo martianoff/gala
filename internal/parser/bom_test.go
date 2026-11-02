@@ -107,9 +107,10 @@ func main() {
 }
 `
 
-	tree, _, errs := NewAntlrGalaParser().ParseFile(utf8BOM + src).Lenient()
+	parsed := NewAntlrGalaParser().ParseFile(utf8BOM + src)
+	_, _, errs := parsed.Lenient()
 
-	require.NotNil(t, tree)
+	require.NotNil(t, parsed.RecoveredNative())
 	for _, err := range errs {
 		assert.NotContains(t, err.Error(), "packageClause should follow by an empty line",
 			"the empty line after `package main` is present; this diagnostic is false")

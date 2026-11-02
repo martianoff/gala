@@ -11,13 +11,13 @@ import (
 
 // Engine names the parser that turns GALA source into a tree.
 //
-// Both engines build the same tree: the context types ANTLR generates for
-// gala.g4. galop's parser (its antlr flavor, generated next to ANTLR's in
-// internal/parser/grammar) gives exactly ANTLR's tree on every input ANTLR
-// accepts, many times faster. On input with a syntax error, or if it fails
-// in any other way, ANTLR's parser parses the input instead, so syntax
-// errors, their hints and the error-recovered tree the language server reads
-// are always ANTLR's.
+// Both engines give the same native tree (internal/parser/native). galop's
+// engine parses with galop's native lexer and parser, many times faster than
+// ANTLR's, and builds no ANTLR tree; ANTLR's engine parses with ANTLR's
+// parser and converts its tree with galop's converter. On input with an
+// error, or if galop's parser fails in any other way, ANTLR's parser parses
+// the input instead, so syntax errors, their hints and the error-recovered
+// tree the language server reads are always ANTLR's.
 type Engine string
 
 const (

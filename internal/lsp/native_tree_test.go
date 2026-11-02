@@ -322,7 +322,7 @@ func bufferOf(h *GalaHandler, uri lsp.DocumentURI) bufferState {
 func assertTreeOf(t *testing.T, name string, got bufferState, text string) {
 	t.Helper()
 	require.NotNil(t, got.handle, "%s: no native tree kept", name)
-	assert.False(t, got.handle.Bridged(), "%s: the bridge to ANTLR's tree is kept", name)
+	assert.True(t, got.handle.Converted(), "%s: the kept handle still holds a parse to convert", name)
 	assert.Equal(t, text, got.text, "%s: the kept tree's text", name)
 	root, ok := got.handle.Root()
 	require.True(t, ok, "%s: the kept tree has no root", name)

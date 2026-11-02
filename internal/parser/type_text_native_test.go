@@ -18,7 +18,7 @@ import (
 // runs it on every node of the trees it checks, so TestEnginesAgree runs it on
 // every GALA source of the repository; checkNative compares DocKeyOf with
 // NativeDocKeyOf itself, as its check of where each node starts.
-func checkNativeHelpers(n *Native, ctx antlr.ParserRuleContext, node native.GalaNodeRef) string {
+func checkNativeHelpers(nodeOf func(antlr.ParserRuleContext) native.GalaNodeRef, ctx antlr.ParserRuleContext, node native.GalaNodeRef) string {
 	// NativeText takes its own path for a node of one token; any other is
 	// the node's GetText.
 	if node.StopIndex() == node.StartIndex() {
@@ -26,19 +26,19 @@ func checkNativeHelpers(n *Native, ctx antlr.ParserRuleContext, node native.Gala
 			return fmt.Sprintf("GetText is %q, NativeText %q", want, got)
 		}
 	}
-	// A helper's nil context is no node, as Node finds it.
+	// A helper's nil context is no node, as nodeOf finds it.
 	switch c := ctx.(type) {
 	case *grammar.TypeContext:
 		typ := native.TypeNode{GalaNodeRef: node}
 		if want, got := TypeText(c), NativeTypeText(typ); got != want {
 			return fmt.Sprintf("TypeText is %q, NativeTypeText %q", want, got)
 		}
-		if want, got := n.Node(PtrElem(c)), NativePtrElem(typ).GalaNodeRef; got != want {
+		if want, got := nodeOf(PtrElem(c)), NativePtrElem(typ).GalaNodeRef; got != want {
 			return fmt.Sprintf("PtrElem is node %d, NativePtrElem node %d", want.Index(), got.Index())
 		}
 		wantElem, wantOk := PointerElem(c)
 		gotElem, gotOk := NativePointerElem(typ)
-		if want := n.Node(wantElem); gotElem.GalaNodeRef != want || gotOk != wantOk {
+		if want := nodeOf(wantElem); gotElem.GalaNodeRef != want || gotOk != wantOk {
 			return fmt.Sprintf("PointerElem is (node %d, %t), NativePointerElem (node %d, %t)", want.Index(), wantOk, gotElem.Index(), gotOk)
 		}
 	case *grammar.TypeAliasContext:
@@ -94,10 +94,10 @@ func TestNativeTypeHelpers(t *testing.T) {
 		if (len(p.Errors) > 0) != broken {
 			t.Fatalf("input %d: errors %v, want them only for the last input", k, p.Errors)
 		}
-		if msg := checkNative(p, treeText(p.Tree)); msg != "" {
+		if msg := checkNative(p, input); msg != "" {
 			t.Fatalf("input %d: %s", k, msg)
 		}
-		tree, err := p.Native.Tree()
+		tree, err := p.RecoveredNative().Tree()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,14 +171,14 @@ func TestNativeTextConjuredToken(t *testing.T) {
 		"packag\n\nval x = 1\n",
 	} {
 		p := parseConverted(src)
-		tree, err := p.Native.Tree()
+		tree, err := p.RecoveredNative().Tree()
 		if err != nil {
 			t.Fatalf("%q: %v", src, err)
 		}
 		if len(tree.Conjured) == 0 {
 			t.Fatalf("%q: the recovered tree conjures no token", src)
 		}
-		if msg := checkNative(p, parseFileAs(EngineANTLR, src).text); msg != "" {
+		if msg := checkNative(p, src); msg != "" {
 			t.Errorf("%q: %s", src, msg)
 		}
 	}
@@ -195,7 +195,7 @@ func TestNativeDocKeyOfGalopParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := parseWithGalop(src)
+	p := parseConverted(src)
 	converted, err := p.Native.Tree()
 	if err != nil {
 		t.Fatal(err)

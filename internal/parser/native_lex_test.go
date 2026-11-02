@@ -326,11 +326,9 @@ func TestCheckEmptyLinesNativeMatchesANTLR(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		// galop's engine builds ANTLR's tree, the same tree as ANTLR's parser
-		// for input that parses (TestEnginesAgree), at a fraction of the cost.
-		r := parseSourceFile(input, EngineGalop)
+		r := parseSourceFile(input)
 		if len(r.errors) > 0 {
-			t.Errorf("input %d (%.60q): native parses, galop's ANTLR-tree parse does not: %v", k, input, r.errors)
+			t.Errorf("input %d (%.60q): native parses, ANTLR's parser does not: %v", k, input, r.errors)
 			continue
 		}
 		want := fmt.Sprint(p.checkEmptyLines(r.input, r.tree))

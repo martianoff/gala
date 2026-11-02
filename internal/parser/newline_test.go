@@ -18,7 +18,7 @@ func TestLineStartTokenStartsStatement(t *testing.T) {
 	for _, tt := range lineStartCases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := lineStartInput(tt.body)
-			tree, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
+			tree, _, errs := parseConverted(input).Lenient()
 			require.Empty(t, errs)
 			block := tree.(grammar.ISourceFileContext).TopLevelDeclaration(0).FunctionDeclaration().Block()
 			assert.Len(t, block.AllStatement(), tt.stmts)
@@ -169,7 +169,7 @@ var lineStartDeclCases = []struct {
 func TestBlockAfterHeaderEndingInType(t *testing.T) {
 	for _, tt := range headerTypeCases {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, _, errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.src + "\n").Lenient()
+			tree, _, errs := parseConverted("package main\n\n" + tt.src + "\n").Lenient()
 			require.Empty(t, errs)
 			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
 			body := decls[len(decls)-1].FunctionDeclaration().Block()
@@ -238,7 +238,7 @@ func TestSplitHeaderOpensBlock(t *testing.T) {
 	for _, tt := range splitHeaderCases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := "package main\n\n" + tt.src + "\n"
-			tree, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
+			tree, _, errs := parseConverted(input).Lenient()
 			require.Empty(t, errs)
 			// The body is the block whose first statement is `val q = 1`.
 			var body grammar.IBlockContext

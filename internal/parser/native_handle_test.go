@@ -4,26 +4,22 @@ import (
 	"testing"
 
 	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/parser/native"
 
 	"github.com/antlr4-go/antlr/v4"
 )
 
 // TestNilNative: a nil *Native, what every parse without a native tree
-// carries, reports that it has none and finds nothing, without panicking.
+// carries, reports that it has none, without panicking.
 func TestNilNative(t *testing.T) {
 	var n *Native
 	if tree, err := n.Tree(); tree != nil || err == nil {
 		t.Errorf("Tree() = %v, %v; want no tree and an error", tree, err)
 	}
-	if ctx := n.Ctx(native.GalaNodeRef{}); ctx != nil {
-		t.Errorf("Ctx() = %v, want nil", ctx)
+	if root, ok := n.Root(); ok || root.Ok() {
+		t.Error("Root() found a node")
 	}
-	if node := n.Node(nil); node.Ok() {
-		t.Error("Node() found a node")
-	}
-	if n.Bridged() {
-		t.Error("Bridged() = true")
+	if n.Converted() {
+		t.Error("Converted() = true")
 	}
 }
 

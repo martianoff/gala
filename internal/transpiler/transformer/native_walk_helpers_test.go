@@ -127,7 +127,7 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		}
 		run.hints = append(run.hints, b)
 	})
-	p :=&handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
+	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.path = path
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
@@ -192,7 +192,6 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 	sort.Strings(paths)
 	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
 }
-
 
 // treeCounts is what the walk of a file must lower, counted on its native
 // tree: its top-level declarations, the statements of its top-level

@@ -4,23 +4,63 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// checkNative checks p's native tree: it prints as the ANTLR tree, whose text
-// is text (treeText); the converter gives one context per node, the root's
-// last; and the bridge pairs every node with a context of its rule, starting
-// at the same token, both ways; and the native helpers agree with the ANTLR
-// ones on every node (checkNativeHelpers). TestEnginesAgree runs it on the
-// parses it makes.
-func checkNative(p *Parsed, text string) string {
-	n := p.Native
+// dumpNative prints everything a native tree holds: its nodes, children,
+// token labels, error children, conjured tokens, tokens and hidden tokens,
+// and the text they index.
+func dumpNative(t *native.GalaTree) string {
+	return fmt.Sprintf("nodes %v\nkids %v\nlabels %v\nerrors %v\nconjured %v %q\ntokens %v\nhidden %v\nsrc %q",
+		t.Nodes, t.Kids, t.TokenLabels, t.ErrorKids, t.Conjured, t.ConjuredText, t.Tokens, t.Hidden, t.Src)
+}
+
+// antlrReference is src parsed by ANTLR's parser (error-recovered when src
+// has syntax errors), its tree converted to the native form, and the ANTLR
+// context of each native node, by node index: what galop's native parse of
+// src is held to.
+type antlrReference struct {
+	text string // treeText of ANTLR's tree
+	tree *native.GalaTree
+	ctxs []antlr.ParserRuleContext
+	// nodes maps a context to its node's index.
+	nodes map[antlr.ParserRuleContext]int
+}
+
+func referenceOf(src string) (antlrReference, error) {
+	src = galaerr.StripBOM(src)
+	r := parseSourceFile(src)
+	root, ok := r.tree.(antlr.ParserRuleContext)
+	if !ok {
+		return antlrReference{}, fmt.Errorf("ANTLR's parse gave no tree")
+	}
+	tree, _, ctxs := grammar.GalaToNativeContexts(root, r.stream, src)
+	if tree == nil {
+		return antlrReference{}, fmt.Errorf("the converter gave no tree")
+	}
+	ref := antlrReference{text: treeText(r.tree), tree: tree, ctxs: ctxs, nodes: map[antlr.ParserRuleContext]int{}}
+	for i, c := range ctxs {
+		ref.nodes[c] = i
+	}
+	return ref, nil
+}
+
+// checkNative checks p's native tree, a parse of src: it is the native tree
+// of ANTLR's parse of src, converted (dumpNative prints both the same), and
+// prints as ANTLR's tree; every node has a context of its rule in ANTLR's
+// tree, starting at the same token; and the native helpers agree with the
+// ANTLR ones on every node (checkNativeHelpers). TestEnginesAgree runs it on
+// the parses it makes.
+func checkNative(p *Parsed, src string) string {
+	n := p.RecoveredNative()
 	tree, err := n.Tree()
 	if err != nil {
 		return err.Error()
@@ -28,30 +68,35 @@ func checkNative(p *Parsed, text string) string {
 	if again, _ := n.Tree(); again != tree {
 		return "a second Tree call converted again"
 	}
-	if got := tree.Root().ToStringTree(); got != text {
-		return "the native tree prints differently from the ANTLR tree: " + diffAt(text, got)
+	ref, err := referenceOf(src)
+	if err != nil {
+		return err.Error()
 	}
-	if len(n.ctxs) != len(tree.Nodes) {
-		return fmt.Sprintf("%d contexts for %d nodes", len(n.ctxs), len(tree.Nodes))
+	if want, got := dumpNative(ref.tree), dumpNative(tree); got != want {
+		return "the native tree is not ANTLR's tree converted: " + diffAt(want, got)
 	}
-	if last := len(n.ctxs) - 1; tree.Root().Index() != last || n.ctxs[last] != p.Tree {
-		return "the root, and its context the tree, are not last"
+	if got := tree.Root().ToStringTree(); got != ref.text {
+		return "the native tree prints differently from the ANTLR tree: " + diffAt(ref.text, got)
 	}
-	if !n.Bridged() {
-		return "the bridge does not hold"
+	if len(ref.ctxs) != len(tree.Nodes) {
+		return fmt.Sprintf("%d contexts for %d nodes", len(ref.ctxs), len(tree.Nodes))
+	}
+	nodeOf := func(ctx antlr.ParserRuleContext) native.GalaNodeRef {
+		if i, ok := ref.nodes[ctx]; ok {
+			return tree.Node(i)
+		}
+		return native.GalaNodeRef{}
 	}
 	for i := range tree.Nodes {
 		node := tree.Node(i)
-		ctx := n.Ctx(node)
+		ctx := ref.ctxs[i]
 		switch {
 		case ctx == nil:
 			return fmt.Sprintf("node %d has no context", i)
 		case ctx.GetRuleIndex() != node.Rule():
 			return fmt.Sprintf("node %d is rule %d, its context rule %d", i, node.Rule(), ctx.GetRuleIndex())
-		case n.Node(ctx) != node:
-			return fmt.Sprintf("node %d's context maps to node %d", i, n.Node(ctx).Index())
 		}
-		if msg := checkNativeHelpers(n, ctx, node); msg != "" {
+		if msg := checkNativeHelpers(nodeOf, ctx, node); msg != "" {
 			return fmt.Sprintf("node %d (%s): %s", i, native.GalaRuleNames[node.Rule()], msg)
 		}
 		// A node that spans no token has no first token to compare.
@@ -72,151 +117,119 @@ func parseWithGalop(src string) *Parsed {
 	return p
 }
 
-// parseConverted parses src with ANTLR's parser and gives the parse a native
-// tree all the same, error-recovered when src has syntax errors: ParseFile
-// gives such a parse none, but galop's converter takes it, so the native
-// helpers are checked on error-recovered trees too.
+// parseConverted parses src with ANTLR's engine, whatever the build's
+// default, so that its native tree is ANTLR's tree converted, error-recovered
+// when src has errors (see RecoveredNative).
 func parseConverted(src string) *Parsed {
-	r := parseSourceFile(src, EngineANTLR)
-	return &Parsed{Tree: r.tree, Errors: r.errors, Native: newNative(r.tree, r.stream, src)}
+	var p *Parsed
+	withEngine(EngineANTLR, func() { p = NewAntlrGalaParser().ParseFile(src) })
+	return p
 }
 
-// TestNativeForCleanParses: a parse without syntax errors has a native tree,
-// whichever parser made its tree: galop's, or ANTLR's with ANTLR's engine,
-// whose tree converts and bridges as galop's does. A parse with syntax
-// errors, by either engine, has none, so its consumers take the ANTLR paths.
+// TestNativeForCleanParses: a parse without errors has a native tree with
+// either engine; galop's has no ANTLR tree, ANTLR's engine's has one. A
+// parse with syntax errors, by either engine, has ANTLR's error-recovered
+// tree and no clean native tree, only the recovered one.
 func TestNativeForCleanParses(t *testing.T) {
 	const clean, broken = "package main\n\nval x = 1\n", "package main\n\nval x = \n"
-	if parseWithGalop(clean).Native == nil {
-		t.Error("galop's parse has no native tree")
+	galop := parseWithGalop(clean)
+	if galop.Native == nil || !galop.Native.Converted() {
+		t.Error("galop's parse has no native tree of its own")
 	}
-	var antlrClean, antlrBroken *Parsed
-	withEngine(EngineANTLR, func() {
-		antlrClean = NewAntlrGalaParser().ParseFile(clean)
-		antlrBroken = NewAntlrGalaParser().ParseFile(broken)
-	})
-	if !antlrClean.Native.Bridged() {
-		t.Error("the clean parse with ANTLR's engine has no native tree that bridges")
+	if galop.Tree != nil {
+		t.Error("galop's clean parse has an ANTLR tree")
 	}
-	if antlrBroken.Native != nil {
-		t.Error("the parse of a syntax error with ANTLR's engine has a native tree")
+	antlrClean, antlrBroken := parseConverted(clean), parseConverted(broken)
+	if antlrClean.Tree == nil || antlrClean.Native == nil || antlrClean.Native.Converted() {
+		t.Error("the clean parse with ANTLR's engine has no ANTLR tree, or no native tree to convert")
 	}
-	p := parseWithGalop(broken)
-	if len(p.Errors) == 0 {
-		t.Fatal("the broken source parses")
+	if _, ok := antlrClean.Native.Root(); !ok {
+		t.Error("the clean parse with ANTLR's engine does not convert")
 	}
-	if p.Native != nil {
-		t.Error("ANTLR's fallback parse of a syntax error has a native tree")
+	for name, p := range map[string]*Parsed{"ANTLR's engine": antlrBroken, "galop's engine": parseWithGalop(broken)} {
+		if len(p.Errors) == 0 {
+			t.Fatalf("%s: the broken source parses", name)
+		}
+		if p.Native != nil || p.CleanNative() != nil {
+			t.Errorf("%s: the parse of a syntax error has a clean native tree", name)
+		}
+		if p.Tree == nil || p.RecoveredNative() == nil {
+			t.Errorf("%s: the parse of a syntax error has no recovered tree", name)
+		}
 	}
 }
 
-// TestParseFileNative: a parse's native tree belongs to it alone; a node or
-// a context of another parse has no counterpart, and no node has a context.
+// TestParseFileNative: a parse's native tree belongs to it alone.
 func TestParseFileNative(t *testing.T) {
-	p := parseWithGalop("package main\n\nval x = 1\n")
+	const src = "package main\n\nval x = 1\n"
+	p := parseWithGalop(src)
 	other := parseWithGalop("package other\n")
-	if msg := checkNative(p, treeText(p.Tree)); msg != "" {
+	if msg := checkNative(p, src); msg != "" {
 		t.Fatal(msg)
 	}
+	tree, _ := p.Native.Tree()
 	otherTree, err := other.Native.Tree()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Native.Ctx(otherTree.Root()) != nil {
-		t.Error("a node of another parse has a context")
-	}
-	if p.Native.Node(other.Tree.(antlr.ParserRuleContext)).Ok() {
-		t.Error("a context of another parse has a node")
-	}
-	if p.Native.Ctx(native.GalaNodeRef{}) != nil {
-		t.Error("no node has a context")
+	if tree == otherTree {
+		t.Error("two parses share a native tree")
 	}
 }
 
 // TestParseFileNativeConcurrent asks for one parse's native tree from many
-// goroutines: they get the same one (run under the race detector in CI).
+// goroutines, for galop's parse and for one to convert: they get the same
+// one (run under the race detector in CI).
 func TestParseFileNativeConcurrent(t *testing.T) {
-	p := parseWithGalop("package main\n\nfunc f(a int) int = a + 1\n")
-	got := make([]*native.GalaTree, 16)
-	var wg sync.WaitGroup
-	for i := range got {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			got[i], _ = p.Native.Tree()
-			p.Native.Node(p.Tree.(antlr.ParserRuleContext))
-		}()
-	}
-	wg.Wait()
-	for i := range got {
-		if got[i] == nil || got[i] != got[0] {
-			t.Fatalf("goroutine %d got %p, goroutine 0 %p", i, got[i], got[0])
+	const src = "package main\n\nfunc f(a int) int = a + 1\n"
+	for name, p := range map[string]*Parsed{"galop": parseWithGalop(src), "ANTLR": parseConverted(src)} {
+		got := make([]*native.GalaTree, 16)
+		var wg sync.WaitGroup
+		for i := range got {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				got[i], _ = p.Native.Tree()
+				p.Native.Root()
+			}()
 		}
-	}
-}
-
-// TestBridgeHolds: the bridge holds for a converted parse, and not once any
-// node lacks its context or has another rule's, a context is missing, or the
-// tree has no nodes. The source has every kind of node the transformer's
-// top-level walk reads on the native tree (types, signatures,
-// parameters, blocks, expressions, sealed and opaque declarations).
-func TestBridgeHolds(t *testing.T) {
-	p := parseWithGalop(`package main
-
-type P struct {
-    var a int
-    b []string
-}
-
-type I interface {
-    M(x int) string
-}
-
-sealed type S {
-    case A(v int)
-    case B()
-}
-
-opaque type O int
-
-struct Q(x int, y string)
-
-val x, y = 1, 2
-
-func (p P) f(n int) int { return n }
-
-func g() int = 2
-`)
-	if len(p.Errors) > 0 {
-		t.Fatal(p.Errors)
-	}
-	tree, err := p.Native.Tree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !p.Native.Bridged() {
-		t.Fatal("a converted parse is not bridged")
-	}
-	for i := range tree.Nodes {
-		// No context, then another rule's: the root's, or for the root the
-		// last node's before it.
-		other := p.Native.ctxs[tree.Root().Index()]
-		if i == tree.Root().Index() {
-			other = p.Native.ctxs[i-1]
-		}
-		for _, ctx := range []antlr.ParserRuleContext{nil, other} {
-			ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
-			ctxs[i] = ctx
-			if bridgeHolds(tree, ctxs) {
-				t.Errorf("bridged with context %T for node %d (%s)", ctx, i, native.GalaRuleNames[tree.Node(i).Rule()])
+		wg.Wait()
+		for i := range got {
+			if got[i] == nil || got[i] != got[0] {
+				t.Fatalf("%s: goroutine %d got %p, goroutine 0 %p", name, i, got[i], got[0])
 			}
 		}
 	}
-	if bridgeHolds(tree, p.Native.ctxs[1:]) {
-		t.Error("bridged with a context missing")
+}
+
+// TestNativeParsePanicFallsBack makes galop's native parser panic: the parse
+// must still succeed, on ANTLR's parser, with its tree converted.
+func TestNativeParsePanicFallsBack(t *testing.T) {
+	savedFile, savedExpr := nativeParseSourceFile, nativeParseExpression
+	defer func() { nativeParseSourceFile, nativeParseExpression = savedFile, savedExpr }()
+	nativeParseSourceFile = func(*native.GalaTokens) (native.SourceFileNode, error) { panic("injected") }
+	nativeParseExpression = func(*native.GalaTokens) (native.ExpressionNode, error) { panic("injected") }
+	before := galopPanics.Load()
+
+	const src = "package main\n\nval x = 1\n"
+	p := parseWithGalop(src)
+	if len(p.Errors) > 0 || p.Tree == nil {
+		t.Fatalf("the fallback parse failed: errors %v, tree %v", p.Errors, p.Tree)
 	}
-	if bridgeHolds(&native.GalaTree{}, nil) {
-		t.Error("an empty tree is bridged")
+	if msg := checkNative(p, src); msg != "" {
+		t.Error(msg)
+	}
+
+	// The expression entry points fall back to ANTLR's parser, converted.
+	want, wantTree := parseExpressionAtWith(EngineANTLR, "a + b", 3, 4), parseExpressionWith(EngineANTLR, "a + b")
+	if got := parseExpressionAtWith(EngineGalop, "a + b", 3, 4); got != want || strings.Contains(got, "error:") {
+		t.Errorf("ParseExpressionCheckedAt after a panic: %s", diffAt(want, got))
+	}
+	if gotTree := parseExpressionWith(EngineGalop, "a + b"); gotTree != wantTree {
+		t.Errorf("ParseExpressionTree after a panic: %s", diffAt(wantTree, gotTree))
+	}
+	if n := galopPanics.Load() - before; n != 3 {
+		t.Errorf("%d galop panics counted, want 3", n)
 	}
 }
 
@@ -309,7 +322,7 @@ func TestConverterOnRecoveredTrees(t *testing.T) {
 	}
 	recovered, withErrorNodes := 0, 0
 	for k, input := range inputs {
-		res := parseSourceFile(input, EngineANTLR)
+		res := parseSourceFile(input)
 		if len(res.errors) == 0 {
 			continue
 		}
