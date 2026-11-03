@@ -7,6 +7,7 @@ import (
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -103,29 +104,46 @@ type callContext struct {
 // findCallAtCaret finds the call whose argument list holds the caret, in the
 // document as patchTextForSignature leaves it.
 //
-// The native tree of the document's latest parse is reused when it was
-// parsed from exactly that text; any other tree — another caret's patch, an
-// older edit — would put the call at the wrong offsets. Without such a tree it
-// parses src afresh, its error-recovered tree when src does not parse.
+// A native tree is reused when it was parsed from exactly that text: the one
+// of the document's latest parse, or the one this parsed for itself last
+// (signatureTrees); any other tree — another caret's patch, an older edit —
+// would put the call at the wrong offsets. Without such a tree it parses src
+// afresh, its error-recovered tree when src does not parse, and keeps that
+// tree for the next request on src.
 func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callContext {
 	src, offset := patchTextForSignature(text, line, char)
 	if offset < 0 {
 		return nil
 	}
 	h.mu.Lock()
-	handle := h.parseNatives[uri]
-	if h.parseTexts[uri] != src {
-		handle = nil
+	var handle *parser.Native
+	switch {
+	case h.parseTexts[uri] == src:
+		handle = h.parseNatives[uri]
+	case h.signatureTrees[uri].text == src:
+		handle = h.signatureTrees[uri].handle
 	}
 	h.mu.Unlock()
 	if handle == nil {
-		handle = h.parser.ParseFile(src).RecoveredNative()
+		handle = h.parser.ParseFile(src).RecoveredNative().TreeOnly() // converts: not under h.mu
+		h.mu.Lock()
+		if h.isCurrentLocked(uri, text) {
+			h.signatureTrees[uri] = patchedTree{text: src, handle: handle}
+		}
+		h.mu.Unlock()
 	}
 	root, ok := handle.Root()
 	if !ok {
 		return nil
 	}
 	return findCallAtOffsetNative(root, offset)
+}
+
+// patchedTree is a native tree alone (Native.TreeOnly) with the text it was
+// parsed from.
+type patchedTree struct {
+	text   string
+	handle *parser.Native
 }
 
 // patchTextForSignature closes the call the user is typing with a `)` at the
@@ -197,6 +215,167 @@ func lineCharToOffset(text string, line, char int) int {
 // suffix without a '('.
 func bracketsCursor(openAfter, closeAt, cursorOffset int) bool {
 	return openAfter >= 0 && cursorOffset > openAfter && cursorOffset <= closeAt
+}
+
+// findCallAtOffsetNative returns the innermost call-style postfixSuffix (one
+// with an argument list or a `(`) whose argument list holds the byte offset
+// cursorOffset, under root, the native tree of a parse of the document's
+// text, whose byte offsets its tokens carry; nil when there is none.
+func findCallAtOffsetNative(root native.GalaNodeRef, cursorOffset int) *callContext {
+	f := nativeCallFinder{cursorOffset: cursorOffset}
+	f.walk(root, native.GalaNodeRef{}, 1)
+	if !f.bestSuffix.Ok() {
+		return nil
+	}
+	shape, ok := callShapeNative(f.bestSuffix, f.bestParent)
+	if !ok {
+		return nil
+	}
+	return shape.context(cursorOffset)
+}
+
+// nativeCallFinder tracks the innermost postfixSuffix whose argument list
+// brackets the cursor.
+type nativeCallFinder struct {
+	cursorOffset int
+	bestSuffix   native.GalaNodeRef
+	bestParent   native.GalaNodeRef
+	bestDepth    int
+}
+
+// walk visits n, the child of parent, at depth depth (the root's is 1), and
+// the nodes under it. A node whose tokens do not span the cursor is skipped
+// with everything under it: a suffix the finder keeps has the cursor after
+// its '(' and at or before its ')' (bracketsCursor), so inside its own tokens
+// and those of every node above it.
+func (f *nativeCallFinder) walk(n, parent native.GalaNodeRef, depth int) {
+	if n.StopIndex() < n.StartIndex() || f.cursorOffset <= int(n.Start().Start) || f.cursorOffset > int(n.Stop().End) {
+		return
+	}
+	if n.Kind() == native.GalaKIND_postfixSuffix {
+		f.enterPostfixSuffix(n, parent, depth)
+	}
+	for i := range n.ChildCount() {
+		if c := n.Child(i).Node(); c.Ok() {
+			f.walk(c, n, depth+1)
+		}
+	}
+}
+
+// enterPostfixSuffix keeps suffix, the child of parent at depth depth, when it
+// is a call whose argument list brackets the cursor, deeper than the suffix
+// kept so far. A suffix with no argument list and no `(` is a `.id` or
+// `[exprs]`, not a call.
+func (f *nativeCallFinder) enterPostfixSuffix(suffix, parent native.GalaNodeRef, depth int) {
+	open := childToken(suffix, "(")
+	if !(native.PostfixSuffixNode{GalaNodeRef: suffix}).ArgumentList().Ok() && !open.Ok() {
+		return
+	}
+	start, stop := openParenRangeNative(suffix, open)
+	if !bracketsCursor(start, stop, f.cursorOffset) {
+		return
+	}
+	if depth <= f.bestDepth {
+		return
+	}
+	if !parent.Ok() || parent.Kind() != native.GalaKIND_postfixExpr {
+		return
+	}
+	f.bestSuffix = suffix
+	f.bestParent = parent
+	f.bestDepth = depth
+}
+
+// openParenRangeNative returns the byte offsets of the `(` and `)` of suffix, a
+// call-style postfixSuffix whose first `(` child is openParen (childToken),
+// or the `(` and the suffix's end for a still-unclosed, recovered suffix;
+// (-1, -1) when it has no `(`.
+func openParenRangeNative(suffix native.GalaNodeRef, openParen native.GalaTerminal) (openAfter, closeAt int) {
+	if !openParen.Ok() {
+		return -1, -1
+	}
+	openAfter = int(openParen.Token().Start)
+	if closeParen := childToken(suffix, ")"); closeParen.Ok() {
+		return openAfter, int(closeParen.Token().Start)
+	}
+	if suffix.StopIndex() >= 0 {
+		return openAfter, int(suffix.Stop().End)
+	}
+	return openAfter, openAfter + 1
+}
+
+// childToken is the first child token of n whose text is literal, or no token.
+func childToken(n native.GalaNodeRef, literal string) native.GalaTerminal {
+	for i := range n.ChildCount() {
+		if t := n.Child(i).Terminal(); t.Ok() && t.GetText() == literal {
+			return t
+		}
+	}
+	return native.GalaTerminal{}
+}
+
+// callShapeNative is the callShape of the call callSuffix of parent, and false
+// when callSuffix is none of parent's suffixes.
+func callShapeNative(callSuffix, parent native.GalaNodeRef) (callShape, bool) {
+	var suffixes []native.GalaNodeRef
+	callIdx := -1
+	for s := range parser.NativeKids(parent, native.GalaKIND_postfixSuffix) {
+		if s == callSuffix {
+			callIdx = len(suffixes)
+		}
+		suffixes = append(suffixes, s)
+		if callIdx >= 0 {
+			break
+		}
+	}
+	if callIdx < 0 {
+		return callShape{}, false
+	}
+
+	shape := callShape{primary: nativeSourceText(native.PostfixExprNode{GalaNodeRef: parent}.PrimaryExpr().GalaNodeRef)}
+	if callIdx > 0 {
+		prev := suffixes[callIdx-1]
+		if id := (native.PostfixSuffixNode{GalaNodeRef: prev}).Identifier(); id.Ok() && !childToken(prev, "(").Ok() && !childToken(prev, "[").Ok() {
+			shape.method = id.GetText()
+			shape.receiver = shape.primary
+			for _, s := range suffixes[:callIdx-1] {
+				shape.receiver += nativeSourceText(s)
+			}
+		}
+	}
+
+	if open := childToken(callSuffix, "("); open.Ok() {
+		shape.argStarts = append(shape.argStarts, int(open.Token().Start))
+	}
+	argList := native.PostfixSuffixNode{GalaNodeRef: callSuffix}.ArgumentList()
+	if !argList.Ok() {
+		return shape, true
+	}
+	for i := range argList.ChildCount() {
+		if t := argList.Child(i).Terminal(); t.Ok() && t.GetText() == "," {
+			shape.argStarts = append(shape.argStarts, int(t.Token().Start))
+		}
+	}
+	for arg := range parser.NativeKids(argList.GalaNodeRef, native.GalaKIND_argument) {
+		if arg.StopIndex() < arg.StartIndex() { // no tokens, as walk tests it
+			continue
+		}
+		ca := callArg{start: int(arg.Start().Start), end: int(arg.Stop().End)}
+		if id := (native.ArgumentNode{GalaNodeRef: arg}).Identifier(); id.Ok() {
+			ca.name = id.GetText()
+		}
+		shape.args = append(shape.args, ca)
+	}
+	return shape, true
+}
+
+// nativeSourceText is the source text n covers, verbatim, or "" for no node or
+// one without tokens.
+func nativeSourceText(n native.GalaNodeRef) string {
+	if !n.Ok() {
+		return ""
+	}
+	return n.SourceText()
 }
 
 // callShape is what signature help reads of a call from the parse tree: the

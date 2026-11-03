@@ -31,7 +31,7 @@ type walkRun struct {
 	stmts     int                     // the statements the native walk lowered, each counted once
 	stmtLines map[int]bool            // the lines those statements start on
 	stmtNodes map[int]bool            // those statements' node indices
-	root      native.GalaNodeRef      // the native tree's root, when the analysis converted it
+	root      native.GalaNodeRef      // the native tree's root, converted after the transpile if the analysis did not: converted, not root.Ok, says whether it did
 	lambdas   int                     // the lambdas lowered on the native tree, each counted once
 	captures  int                     // the Sendable capture checks run on the native tree
 	exprs     int                     // the expressions the native walk lowered, each counted once

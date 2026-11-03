@@ -103,7 +103,7 @@ func VisitNativeTokens(input string, visit func(text string)) {
 func lexNativeRecovered(input string) (ts *native.GalaTokens) {
 	defer func() {
 		if r := recover(); r != nil {
-			noteGalopPanic(input, r)
+			noteGalopPanic("lexer", input, r)
 			ts = nil
 		}
 	}()
@@ -130,7 +130,7 @@ var ErrConvertExpression = errors.New("parser: galop's converter failed on the e
 func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionNode, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			noteGalopPanic(src, r)
+			noteGalopPanic("parser", src, r)
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: panic: %v", ErrNativeExpression, r)
 		}
 	}()
@@ -224,7 +224,7 @@ func ParseExpressionTree(src string) (native.ExpressionNode, []error) {
 func convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStream, src string) (expr native.ExpressionNode, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			noteGalopPanic(src, r)
+			noteGalopPanic("parser", src, r)
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
 		}
 	}()

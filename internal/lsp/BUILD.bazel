@@ -17,7 +17,6 @@ go_library(
         "position.go",
         "server.go",
         "signature_help.go",
-        "signature_help_native.go",
         "symbols.go",
         "typeatpos.go",
     ],

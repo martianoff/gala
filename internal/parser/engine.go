@@ -99,16 +99,16 @@ func currentEngine() (Engine, error) {
 	return c.engine, c.err
 }
 
-// galopPanics counts the panics galop's parser recovered from.
+// galopPanics counts the panics galop's lexer and parser recovered from.
 var galopPanics atomic.Int64
 
-// noteGalopPanic records that galop's parser panicked on input and ANTLR's
-// parsed it instead. Each panic is a galop bug that costs a second parse, so
-// it is reported on standard error: the first, then the 10th, 100th, ... with
-// the running count. GALA_PANIC_STACK=1 prints every one with its stack. The
-// input is named by its size and first line: the parser is given text, not a
-// file.
-func noteGalopPanic(input string, r any) {
+// noteGalopPanic records that galop's stage, "lexer" or "parser", panicked on
+// input and ANTLR's lexer or parser read it instead. Each panic is a galop bug
+// that costs a second pass, so it is reported on standard error, naming the
+// stage: the first, then the 10th, 100th, ... with the running count.
+// GALA_PANIC_STACK=1 prints every one with its stack. The input is named by
+// its size and first line: the lexer and parser are given text, not a file.
+func noteGalopPanic(stage, input string, r any) {
 	n := galopPanics.Add(1)
 	stack := os.Getenv("GALA_PANIC_STACK") == "1"
 	if !stack && !isPowerOf10(n) {
@@ -118,8 +118,8 @@ func noteGalopPanic(input string, r any) {
 	if len(first) > 80 {
 		first = first[:80]
 	}
-	fmt.Fprintf(os.Stderr, "gala: warning: galop's parser panicked (%d so far in this process) on %d bytes starting %q: %v; parsed with ANTLR's parser instead\n",
-		n, len(input), first, r)
+	fmt.Fprintf(os.Stderr, "gala: warning: galop's %[1]s panicked (%[2]d so far in this process) on %[3]d bytes starting %[4]q: %[5]v; used ANTLR's %[1]s instead\n",
+		stage, n, len(input), first, r)
 	if stack {
 		os.Stderr.Write(debug.Stack())
 	}

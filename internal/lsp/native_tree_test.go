@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,17 +25,23 @@ import (
 // resolves their imports.
 func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 	t.Helper()
-	// Parse with galop's engine, the CLI's default, whatever the build's or
-	// environment's default engine.
-	parser.RequestEngine(string(parser.EngineGalop))
-	t.Cleanup(func() { parser.RequestEngine("") })
-	c := testcorpus.Extract(t)
+	c := galopCorpus(t)
 	paths := c.GalaFiles()
 	texts := make(map[string]string, len(paths))
 	for _, path := range paths {
 		texts[path] = galaerr.StripBOM(testcorpus.Files()[c.Rel(path)])
 	}
 	return texts, paths, c.Root
+}
+
+// galopCorpus is the frozen corpus, extracted, for a test that parses with
+// galop's engine, the CLI's default, whatever the build's or environment's
+// default engine.
+func galopCorpus(t *testing.T) testcorpus.Corpus {
+	t.Helper()
+	parser.RequestEngine(string(parser.EngineGalop))
+	t.Cleanup(func() { parser.RequestEngine("") })
+	return testcorpus.Extract(t)
 }
 
 // callCursors is the byte offsets in text signature help is asked at: on and
@@ -236,22 +241,43 @@ func TestBufferAnalysisTrees(t *testing.T) {
 	}
 }
 
-// TestBufferTreeFollowsEdits opens one document with a clean text, then a
-// broken one, then the clean one again: after each, the document's analysis
-// and native tree are the new text's, and no earlier text's tree is kept.
+// TestBufferTreeFollowsEdits opens one document with a clean text and edits
+// it, through DidChange, which analyzes in the background: to a broken text,
+// then to a clean text that declares a function of its own, each edit's
+// analysis awaited; then to the broken text and another such clean text back
+// to back, so the two analyses overlap and the broken one, the slower, may
+// finish last. Once each edit's analyses are done, the document's native tree
+// is the last edit's text's, and so, for a clean text, is its analysis.
 func TestBufferTreeFollowsEdits(t *testing.T) {
 	clean, broken, uri, root := bufferTexts(t)
 	h := NewGalaHandler()
 	h.SetSearchPaths([]string{root})
-	var prev bufferState
-	for i, text := range []string{clean, broken, clean} {
-		name := fmt.Sprintf("text %d", i)
-		got := openBuffer(t, h, uri, text)
+	openBuffer(t, h, uri, clean)
+	edited := func(fn string) string { return clean + "\nfunc " + fn + "() int = 1\n" }
+	version := 1
+	for i, step := range []struct {
+		edits []string
+		fn    string // the function the last edit's text declares, or ""
+	}{
+		{[]string{broken}, ""},
+		{[]string{edited("zzFirst")}, "zzFirst"},
+		{[]string{broken, edited("zzSecond")}, "zzSecond"},
+	} {
+		for _, text := range step.edits {
+			version++
+			require.NoError(t, h.DidChange(context.Background(), &lsp.DidChangeTextDocumentParams{
+				TextDocument:   lsp.VersionedTextDocumentIdentifier{TextDocumentIdentifier: lsp.TextDocumentIdentifier{URI: uri}, Version: version},
+				ContentChanges: []lsp.TextDocumentContentChangeEvent{{Text: text}},
+			}))
+		}
+		h.analyses.Wait()
+		name := fmt.Sprintf("edit %d", i)
+		got := bufferOf(h, uri)
 		require.NotNil(t, got.richAST, "%s: no analysis", name)
-		assertTreeOf(t, name, got, text)
-		assert.NotSame(t, prev.richAST, got.richAST, "%s: the analysis is an earlier text's", name)
-		assert.NotSame(t, prev.handle, got.handle, "%s: the native tree is an earlier text's", name)
-		prev = got
+		assertTreeOf(t, name, got, step.edits[len(step.edits)-1])
+		if step.fn != "" {
+			assert.NotNil(t, findFunction(got.richAST, step.fn), "%s: the analysis is not of the edited text", name)
+		}
 	}
 }
 
@@ -259,14 +285,12 @@ func TestBufferTreeFollowsEdits(t *testing.T) {
 // and with a syntax error, with the file's URI and the corpus root.
 func bufferTexts(t *testing.T) (clean, broken string, uri lsp.DocumentURI, root string) {
 	t.Helper()
-	_, _, root = nativeCorpus(t)
-	path := filepath.Join(root, "collection_immutable", "array.gala")
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	clean = galaerr.StripBOM(string(data))
+	c := galopCorpus(t)
+	const rel = "collection_immutable/array.gala"
+	clean = galaerr.StripBOM(testcorpus.Files()[rel])
 	broken = strings.Replace(clean, "func ", "func (", 1)
 	require.NotEqual(t, clean, broken)
-	return clean, broken, lsp.DocumentURI("file:///" + filepath.ToSlash(path)), root
+	return clean, broken, lsp.DocumentURI("file:///" + filepath.ToSlash(c.Path(rel))), c.Root
 }
 
 // bufferState is what a handler keeps of a document for its features.
@@ -282,6 +306,11 @@ type bufferState struct {
 func openBuffer(t *testing.T, h *GalaHandler, uri lsp.DocumentURI, text string) bufferState {
 	t.Helper()
 	require.NoError(t, h.DidOpen(context.Background(), &lsp.DidOpenTextDocumentParams{TextDocument: lsp.TextDocumentItem{URI: uri, LanguageID: "gala", Text: text}}))
+	return bufferOf(h, uri)
+}
+
+// bufferOf is what h keeps of uri.
+func bufferOf(h *GalaHandler, uri lsp.DocumentURI) bufferState {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	key := string(uri)
