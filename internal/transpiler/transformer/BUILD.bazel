@@ -6,6 +6,7 @@ go_library(
         "address_of.go",
         "addressable_receiver.go",
         "alternative_pattern.go",
+        "anonymous_struct.go",
         "args_source.go",
         "bind.go",
         "branching_calls.go",

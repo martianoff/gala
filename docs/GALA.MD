@@ -4370,7 +4370,7 @@ removes. Each has a GALA-native form or a sanctioned interop wrapper:
 | `append(s, v)` | `go_interop.SliceAppend(s, v)` / `SliceAppendAll(s, more)`, or an `Array`/`List` |
 | `make([]T, n)` | `go_interop.SliceWithSize` / `SliceWithCapacity`; `MapEmpty` for maps |
 | `delete(m, k)` | `go_interop.MapDelete(m, k)`, or `HashMap.Remove(k)` |
-| `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a signal channel) |
+| `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a `go_interop.Signal`; see [signal channels](GO_INTEROP.MD#signal-channels-and-anonymous-struct-types)) |
 | `complex`/`real`/`imag` | `go_interop.Complex` / `Real` / `Imag` |
 | `panic(v)` | `go_builtins.Panic(v)` — but prefer `Option` / `Try` / `Either` |
 | `recover()` | not available — `Try` captures panics (`Try(() => …)` / `TryApply`) |

@@ -71,6 +71,30 @@ func ContainsUnusable(t Type) bool {
 	return false
 }
 
+// ContainsStruct reports whether t is, or holds anywhere inside it, an
+// anonymous Go struct type (StructType), which GALA cannot write.
+func ContainsStruct(t Type) bool {
+	switch v := t.(type) {
+	case StructType:
+		return true
+	case ArrayType:
+		return ContainsStruct(v.Elem)
+	case ChanType:
+		return ContainsStruct(v.Elem)
+	case InterfaceType:
+		return slices.ContainsFunc(v.MethodTypes(), ContainsStruct)
+	case PointerType:
+		return ContainsStruct(v.Elem)
+	case MapType:
+		return ContainsStruct(v.Key) || ContainsStruct(v.Elem)
+	case GenericType:
+		return ContainsStruct(v.Base) || slices.ContainsFunc(v.Params, ContainsStruct)
+	case FuncType:
+		return slices.ContainsFunc(v.Params, ContainsStruct) || slices.ContainsFunc(v.Results, ContainsStruct)
+	}
+	return false
+}
+
 // IsUnusableOrAny extends IsUnusable to also reject the unparametrized
 // `any` placeholder. Use this in type-inference contexts where falling
 // back to `any` would defeat the inference (e.g. resolving a generic

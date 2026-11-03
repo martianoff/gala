@@ -1557,10 +1557,10 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 func goTypeToTranspilerType(t types.Type) transpiler.Type { return convertGoType(t, false) }
 
 // convertGoType is goTypeToTranspilerType. When exact, as for an anonymous
-// struct's field, t is spelled as Go has it: a fixed-length array keeps its
+// struct's field, t is typed as Go has it: a fixed-length array keeps its
 // length, a generic type instance its type arguments and an inline interface
-// its methods. The caller checks spellsExactly(t) first. Elsewhere those
-// stay as they have been: a slice, the bare type name and `any`.
+// its methods. Elsewhere those stay as they have been: a slice, the bare type
+// name and `any`.
 func convertGoType(t types.Type, exact bool) transpiler.Type {
 	if t == nil {
 		return transpiler.NilType{}
@@ -1681,13 +1681,12 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 
 	case *types.Struct:
 		// An anonymous struct, such as a signal channel's `struct{}`, keeps
-		// its fields, so it is spelled as Go has it. One GALA cannot spell
-		// exactly stays the placeholder it was: an unexported field makes the
-		// same spelling another type in another package.
-		// Inside a field (exact), the outermost struct already checked it.
-		if !exact && !spellsExactly(t) {
-			return transpiler.BasicType{Name: "any"}
-		}
+		// its fields, so a value of it can be typed and its fields read. GALA
+		// never spells it in generated Go: wherever it would have to, the
+		// transformer reports GALA-E0090. So a struct with an unexported
+		// field, or a field Go spells in a way the type model does not
+		// (unsafe.Pointer, a variadic function), is typed the same way
+		// instead of being erased to any.
 		var st transpiler.StructType
 		for i := 0; i < t.NumFields(); i++ {
 			f := t.Field(i)
@@ -1707,77 +1706,6 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 	default:
 		return transpiler.NilType{}
 	}
-}
-
-// spellsExactly reports whether convertGoType, exact, spells t as Go has it,
-// so that the spelling names the same type: every array length, type
-// argument and interface method is kept. A name only t's own package can
-// write (an unexported field, method or type), a type reached through a
-// package's alias, unsafe.Pointer and a variadic function type have no
-// spelling in the type model.
-func spellsExactly(t types.Type) bool {
-	switch t := t.(type) {
-	case *types.Basic:
-		return t.Kind() != types.Invalid && t.Kind() != types.UnsafePointer && t.Info()&types.IsUntyped == 0
-	case *types.TypeParam:
-		return true
-	case *types.Alias:
-		// An alias is spelled as the type it names, which another package
-		// may not be able to write (an internal package's type); only the
-		// universe's `any` is kept.
-		return t.Obj().Pkg() == nil && spellsExactly(types.Unalias(t))
-	case *types.Named:
-		obj := t.Obj()
-		if obj.IsAlias() {
-			return obj.Pkg() == nil && spellsExactly(types.Unalias(t))
-		}
-		if obj.Pkg() != nil && !obj.Exported() {
-			return false
-		}
-		for i := 0; i < t.TypeArgs().Len(); i++ {
-			if !spellsExactly(t.TypeArgs().At(i)) {
-				return false
-			}
-		}
-		return true
-	case *types.Pointer:
-		return spellsExactly(t.Elem())
-	case *types.Slice:
-		return spellsExactly(t.Elem())
-	case *types.Array:
-		return spellsExactly(t.Elem())
-	case *types.Map:
-		return spellsExactly(t.Key()) && spellsExactly(t.Elem())
-	case *types.Chan:
-		return spellsExactly(t.Elem())
-	case *types.Signature:
-		return !t.Variadic() && spellsExactly(t.Params()) && spellsExactly(t.Results())
-	case *types.Tuple:
-		for i := 0; i < t.Len(); i++ {
-			if !spellsExactly(t.At(i).Type()) {
-				return false
-			}
-		}
-		return true
-	case *types.Interface:
-		if !t.IsMethodSet() {
-			return false
-		}
-		for i := 0; i < t.NumMethods(); i++ {
-			if m := t.Method(i); !m.Exported() || !spellsExactly(m.Type()) {
-				return false
-			}
-		}
-		return true
-	case *types.Struct:
-		for i := 0; i < t.NumFields(); i++ {
-			if f := t.Field(i); !f.Exported() || !spellsExactly(f.Type()) {
-				return false
-			}
-		}
-		return true
-	}
-	return false
 }
 
 // extractFromAST is a fallback that extracts minimal type info from Go AST

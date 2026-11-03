@@ -867,6 +867,13 @@ const (
 	// `go build` and fail there ("mismatched types untyped bool and int")
 	// against the generated condition.
 	CodeNonBoolGuard ErrorCode = "GALA-E0089"
+
+	// E0090: the generated Go would have to write an anonymous Go struct
+	// type, such as the `struct{}` of a signal channel: as a type argument,
+	// a var, field or parameter type, or a result type. GALA has no syntax
+	// for one, so it cannot be named in GALA either. A value of such a type
+	// that passes through without its type being written is accepted.
+	CodeAnonymousStructType ErrorCode = "GALA-E0090"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

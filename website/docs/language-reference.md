@@ -1513,7 +1513,7 @@ Bare Go builtins are **not** part of GALA's surface: calling one is a transpile 
 | `append(s, v)` | `go_interop.SliceAppend(s, v)` / `SliceAppendAll(s, more)`, or an `Array`/`List` |
 | `make([]T, n)` | `go_interop.SliceWithSize` / `SliceWithCapacity`; `MapEmpty` for maps |
 | `delete(m, k)` | `go_interop.MapDelete(m, k)`, or `HashMap.Remove(k)` |
-| `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a signal channel) |
+| `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a `go_interop.Signal`; see [signal channels](/docs/go-interop/#signal-channels-and-anonymous-struct-types)) |
 | `panic(v)` | `go_builtins.Panic(v)` — but prefer `Option` / `Try` / `Either` |
 | `recover()` | not available — `Try` captures panics |
 

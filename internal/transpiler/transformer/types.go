@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"strconv"
@@ -268,9 +269,17 @@ var goChanDir = [...]ast.ChanDir{
 	transpiler.ChanSend: ast.SEND,
 }
 
+// typeToExpr spells typ in the generated Go. A type that is or holds an
+// anonymous Go struct type is GALA-E0090: it has no spelling in GALA, so
+// GALA does not write it in the generated Go either (see
+// anonymousStructTypeMessage). It is raised at the last tracked position.
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	if typ.IsNil() {
 		return ast.NewIdent("any")
+	}
+	if transpiler.ContainsStruct(typ) {
+		panic(galaerr.NewCodedSemanticError(galaerr.CodeAnonymousStructType, t.lastLine, t.lastCol,
+			t.anonymousStructTypeMessage(typ), anonymousStructTypeHint))
 	}
 	switch v := typ.(type) {
 	case transpiler.BasicType:
@@ -341,24 +350,6 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			elem = &ast.ParenExpr{X: elem} // chan (<-chan T), see transpiler.ChanType
 		}
 		return &ast.ChanType{Dir: goChanDir[v.Dir], Value: elem}
-	case transpiler.StructType:
-		if len(v.Fields) == 0 {
-			// go/printer breaks the braces of an empty field list that has
-			// no source positions: `struct {\n}`.
-			return ast.NewIdent("struct{}")
-		}
-		fields := &ast.FieldList{}
-		for _, f := range v.Fields {
-			field := &ast.Field{Type: t.typeToExpr(f.Type)}
-			if !f.Embedded {
-				field.Names = []*ast.Ident{ast.NewIdent(f.Name)}
-			}
-			if f.Tag != "" {
-				field.Tag = &ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(f.Tag)}
-			}
-			fields.List = append(fields.List, field)
-		}
-		return &ast.StructType{Fields: fields}
 	case transpiler.InterfaceType:
 		methods := &ast.FieldList{}
 		for _, m := range v.Methods {
@@ -552,9 +543,6 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 	}
 	switch e := expr.(type) {
 	case *ast.Ident:
-		if e.Name == "struct{}" { // the empty struct as typeToExpr emits it
-			return transpiler.StructType{}
-		}
 		// Resolve in the type namespace first (handles dot imports, std types, etc.)
 		if resolved := t.lookupTypeName(e.Name); !resolved.IsNil() {
 			return resolved
@@ -650,23 +638,6 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 			dir = transpiler.ChanSend
 		}
 		return transpiler.ChanType{Elem: t.astTypeToTranspilerType(e.Value), Dir: dir}
-	case *ast.StructType:
-		var st transpiler.StructType
-		for _, f := range e.Fields.List {
-			field := transpiler.StructField{Type: t.astTypeToTranspilerType(f.Type)}
-			if f.Tag != nil {
-				field.Tag, _ = strconv.Unquote(f.Tag.Value)
-			}
-			if len(f.Names) == 0 {
-				field.Name, field.Embedded = transpiler.EmbeddedFieldName(field.Type), true
-				st.Fields = append(st.Fields, field)
-			}
-			for _, name := range f.Names {
-				field.Name = name.Name
-				st.Fields = append(st.Fields, field)
-			}
-		}
-		return st
 	case *ast.FuncType:
 		// Handle function types like func(S) Option[Tuple[T, S]]
 		var params []transpiler.Type

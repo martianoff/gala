@@ -2,23 +2,21 @@ package main
 
 import "martianoff/gala/examples/anonymous_struct_field_types/bridge"
 
-// An anonymous Go struct keeps its type when a field's type is a fixed-length
-// array, a generic type instance or an inline interface: each one is spelled
-// as Go has it, so the struct can be held in a GALA container and its fields
-// read back with their own types.
+// A Go function can return an anonymous struct type. GALA cannot write that
+// type (GALA-E0090), but it types the value: the value can be bound with
+// `val` and its fields read with their own types, whether a field is a
+// fixed-length array, a generic type instance or an inline interface. A
+// field's own type has a GALA spelling, so a field value fits in an Option.
 func main() {
-    val grid = Some(bridge.Grid())
-    val g = grid.Get()
+    val g = bridge.Grid()
     Println(g.Name, g.Cells)
     Println(Some(g.Cells).Get())
 
-    val boxed = Some(bridge.Boxed())
-    val inner = Some(boxed.Get().Inner)
-    Println(inner.Get().Value + 1)
-    Println(Some(inner.Get().Value).Map((v) => v * 2).Get())
+    val inner = bridge.Boxed().Inner
+    Println(inner.Value + 1)
+    Println(Some(inner).Map((b) => b.Value * 2).Get())
 
-    val shaped = Some(bridge.Shaped())
-    val shape = Some(shaped.Get().Shape)
-    Println(shape.Get().Area())
-    Println(Some(shape.Get().Area()).Map((a) => a + 1).Get())
+    val shape = bridge.Shaped().Shape
+    Println(shape.Area())
+    Println(Some(bridge.Shaped().Shape.Area()).Map((a) => a + 1).Get())
 }

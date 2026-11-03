@@ -1,0 +1,35 @@
+package main
+
+import (
+    "context"
+    "time"
+
+    "martianoff/gala/examples/anonymous_struct_type/bridge"
+    "martianoff/gala/go_interop"
+)
+
+// A signal channel's element type, struct{}, is an anonymous Go struct type,
+// which GALA cannot write (GALA-E0090). go_interop.Signal names the channel,
+// so a Signal fits in an Option and passes to Go APIs that take a
+// chan struct{} or a <-chan struct{}. A channel a Go API returns, such as
+// ctx.Done(), is used through the go_interop helpers without writing its type.
+func main() {
+    val signal = go_interop.NewSignal()
+    val held = Some(signal)
+    Println(go_interop.IsClosed(signal))
+    bridge.Fire(signal)
+    Println(bridge.Await(held.Get()), go_interop.IsClosed(held.Get()))
+    go_interop.WaitClosed(signal)
+    val received = <-signal
+    Println(received)
+
+    val fired = bridge.Fired()
+    Println(go_interop.IsClosed(fired), go_interop.WaitClosedTimeout(fired, time.Second))
+    go_interop.WaitClosed(bridge.Fired())
+
+    val (ctx, cancel) = context.WithCancel(context.Background())
+    Println(go_interop.IsDone(ctx), go_interop.WaitDoneTimeout(ctx, time.Millisecond))
+    cancel()
+    go_interop.WaitDone(ctx)
+    Println(go_interop.IsDone(ctx), go_interop.IsClosed(ctx.Done()), bridge.Await(ctx.Done()))
+}

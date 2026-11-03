@@ -343,6 +343,7 @@ for k, v := range config {
 | Channel for single async result | `ch := make(chan T, 1); go func() { ch <- f() }(); <-ch` — `make`, `go`, and `chan` are hard errors (`GALA-E0035` / `GALA-E0036`) | `Future(f())` then `.Await()` or `.Map()` |
 | Channel for timeout | `select { case r := <-ch: ... case <-time.After(d): ... }` — `select` is a hard error (`GALA-E0036`) | `future.WithTimeout(d)` or `FirstCompletedOf` |
 | Channel for fan-out | Spawning goroutines writing to shared channel | `Sequence(futures)` or `Traverse(items, f)` (top-level functions in `concurrent`) |
+| Signal channel from a Go API | `<-ctx.Done()`, or holding one in a type argument such as `Some(ctx.Done())` — writing its `struct{}` element type is a hard error (`GALA-E0090`) | `go_interop.WaitDone(ctx)` / `IsDone(ctx)` / `WaitDoneTimeout(ctx, d)`; for any `<-chan struct{}`, `WaitClosed(ch)` / `IsClosed(ch)` / `WaitClosedTimeout(ch, d)`; own signals are a `go_interop.Signal` (`NewSignal()`) |
 | WaitGroup for completion | `sync.WaitGroup` + goroutines | `Sequence(ArrayOf(futures...))` |
 | Mutex for shared state | `sync.Mutex` protecting shared map/counter | Use immutable data + `Future` composition, or `WithLock(mu, () => ...)` from `resource` with a `go_interop.Mutex` |
 
