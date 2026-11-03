@@ -264,7 +264,6 @@ func TestNativeMatchCases(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
 			n, _, ok := checkWalk(t, w, path, c.src, true)
 			require.True(t, ok, "the case does not parse cleanly with galop")
-			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 			require.Positive(t, n.cases, "no case clause was read on the native tree; error: %v", n.err)
 			if c.name == patternShapes {
 				require.NoError(t, n.err, "the case does not transpile")

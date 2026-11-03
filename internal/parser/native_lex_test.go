@@ -202,6 +202,52 @@ func TestNativeLexMatchesANTLR(t *testing.T) {
 	t.Logf("%d re-typed tokens, %d doc comments", retyped, documented)
 }
 
+// TestNativeTokenStreamMatchesANTLR: over the corpus, every input galop's
+// native lexer lexes without errors gives, as ANTLR's token stream
+// (nativeTokenStream), the tokens ANTLR's lexer and newlineTokenSource give:
+// their types, channels, code-point offsets, lines, columns, text, indexes,
+// input stream and token source. ANTLR's parser reads that stream after a
+// syntax error galop's native parser reported.
+func TestNativeTokenStreamMatchesANTLR(t *testing.T) {
+	compared := 0
+	for k, input := range corpusInputs(t) {
+		ts := lexNative(input, 0, 0)
+		if len(ts.Errors) > 0 {
+			continue
+		}
+		want := antlrStream(t, ts.Src, 0, 0, nil).GetAllTokens()
+		is := antlr.NewInputStream(ts.Src)
+		stream := nativeTokenStream(ts, is)
+		stream.Fill()
+		got := stream.GetAllTokens()
+		if d := firstTokenDiff(tokensFields(want), tokensFields(got)); d != "" {
+			t.Errorf("input %d (%.60q): %s", k, input, d)
+			continue
+		}
+		for i, tok := range got {
+			if tok.GetInputStream() != is || tok.GetTokenSource() == nil {
+				t.Errorf("input %d (%.60q): token %d has no input stream or token source of its own", k, input, i)
+				break
+			}
+		}
+		compared++
+	}
+	if compared < 500 {
+		t.Errorf("only %d inputs compared", compared)
+	}
+}
+
+// tokensFields prints, for each of toks, what ANTLR's parser, its error
+// messages and galop's converter read of it.
+func tokensFields(toks []antlr.Token) []string {
+	out := make([]string, len(toks))
+	for i, tok := range toks {
+		out[i] = fmt.Sprintf("%d/%d [%d,%d] %d:%d #%d %q", tok.GetTokenType(), tok.GetChannel(),
+			tok.GetStart(), tok.GetStop(), tok.GetLine(), tok.GetColumn(), tok.GetTokenIndex(), tok.GetText())
+	}
+	return out
+}
+
 // TestVisitNativeTokensMatchesVisitTokens: over the corpus, a BOM and invalid
 // UTF-8 included, VisitNativeTokens visits the texts of the default-channel
 // tokens VisitTokens visits, in order.
@@ -326,11 +372,9 @@ func TestCheckEmptyLinesNativeMatchesANTLR(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		// galop's engine builds ANTLR's tree, the same tree as ANTLR's parser
-		// for input that parses (TestEnginesAgree), at a fraction of the cost.
-		r := parseSourceFile(input, EngineGalop)
+		r := parseSourceFile(input)
 		if len(r.errors) > 0 {
-			t.Errorf("input %d (%.60q): native parses, galop's ANTLR-tree parse does not: %v", k, input, r.errors)
+			t.Errorf("input %d (%.60q): native parses, ANTLR's parser does not: %v", k, input, r.errors)
 			continue
 		}
 		want := fmt.Sprint(p.checkEmptyLines(r.input, r.tree))
@@ -421,15 +465,15 @@ func nativeTerminals(b *strings.Builder, n native.GalaNodeRef) {
 }
 
 // TestParseExpressionNativeAtMatchesANTLR: over the corpus's expressions,
-// ParseExpressionNativeAt accepts exactly what ParseExpressionAt with ANTLR's
-// engine accepts, with the same tree and token positions, and fails with
-// ErrNativeExpression on the rest.
+// ParseExpressionNativeAt accepts exactly what ANTLR's parser accepts
+// (antlrExpressionAtChecked), with the same tree and token positions, and
+// fails with ErrNativeExpression on the rest.
 func TestParseExpressionNativeAtMatchesANTLR(t *testing.T) {
 	accepted, rejected := 0, 0
 	samples := corpusExpressions(t)
 	withEngine(EngineANTLR, func() {
 		for _, s := range samples {
-			want, wantErr := ParseExpressionAt(s.src, s.line, s.col, "test expression")
+			want, _, wantErr := antlrExpressionAtChecked(s.src, s.line, s.col, "test expression")
 			got, err := ParseExpressionNativeAt(s.src, s.line, s.col)
 			switch {
 			case err != nil && !errors.Is(err, ErrNativeExpression):
@@ -466,7 +510,7 @@ func TestParseExpressionCheckedAtConvertsANTLR(t *testing.T) {
 	samples := corpusExpressions(t)
 	withEngine(EngineANTLR, func() {
 		for _, s := range samples {
-			want, wantErr := ParseExpressionAt(s.src, s.line, s.col, "test expression")
+			want, _, wantErr := antlrExpressionAtChecked(s.src, s.line, s.col, "test expression")
 			got, engineParsed, err := ParseExpressionCheckedAt(s.src, s.line, s.col, "test expression")
 			switch {
 			case err == nil && !engineParsed:

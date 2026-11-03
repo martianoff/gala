@@ -7,7 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 
@@ -19,58 +18,59 @@ import (
 // handle.
 var errNoNative = errors.New("parser: no native tree for this parse")
 
-// Native is a parse's tree in galop's native form (internal/parser/native),
-// converted the first time it is asked for, with the bridge between it and
-// the ANTLR tree. While the tree's consumers move to the native tree one by
-// one, code on either side crosses over with Node and Ctx. A Native belongs
-// to one parse and converts at most once. A nil *Native is valid and has no
-// tree: Tree reports errNoNative, Ctx and Node find nothing.
+// Native is a parse's tree in galop's native form (internal/parser/native).
+// galop's native parser builds it directly (nativeHandle); a tree of ANTLR's
+// parser, with ANTLR's engine or for a file with errors, is converted the
+// first time it is asked for (newNative). A Native belongs to one parse and
+// converts at most once. A nil *Native is valid and has no tree: Tree reports
+// errNoNative.
 type Native struct {
 	once sync.Once
-	// converted is set once Tree has converted the tree (see Converted).
+	// converted is set once Tree has its tree (see Converted).
 	converted atomic.Bool
-	root      antlr.ParserRuleContext
-	// stream and src are what the conversion reads. The ANTLR tree keeps its
-	// tokens, their lexer and its input alive, but reaches the token stream
-	// only through the recognition exceptions of error-recovered contexts, and
-	// never the source text. So until the conversion the handle is what holds
-	// the stream (its token slice, hidden tokens included) and the text.
-	// Converting lets the stream go; the text stays, as the native tree keeps
-	// it (its tokens point into it).
-	stream *antlr.CommonTokenStream
-	src    string
+	// trimmed is TreeOnly's trim of the tree (trimSpare), done once.
+	trimmed sync.Once
+	// root, stream and src are what the conversion reads, with toNative,
+	// galop's converter. The ANTLR tree keeps its tokens, their lexer and its
+	// input alive, but reaches the token stream only through the recognition
+	// exceptions of error-recovered contexts, and never the source text. So
+	// until the conversion the handle is what holds the stream (its token
+	// slice, hidden tokens included) and the text. Converting lets all three
+	// go; the text stays, as the native tree keeps it (its tokens point into
+	// it).
+	root     antlr.ParserRuleContext
+	stream   *antlr.CommonTokenStream
+	src      string
+	toNative func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree
 
 	tree *native.GalaTree
 	err  error
-	// ctxs is the ANTLR context of each native node, by node index.
-	ctxs []antlr.ParserRuleContext
-	// bridged, settled on the first call to Bridged, is whether the bridge
-	// holds.
-	bridgedOnce sync.Once
-	bridged     bool
-	// nodes, built on the first call to Node, maps a context to its node.
-	nodesOnce sync.Once
-	nodes     map[antlr.ParserRuleContext]int32
-	// kinds, built kind by kind by NodeOfKind, maps a context to its node of
-	// that kind.
-	kindsMu sync.Mutex
-	kinds   map[native.GalaKind]map[antlr.ParserRuleContext]int32
 }
 
-// newNative returns the native-tree handle of root, read from stream over
-// src, or nil when there is no source-file tree.
-func newNative(root antlr.Tree, stream *antlr.CommonTokenStream, src string) *Native {
+// newNative returns the native-tree handle of root, an ANTLR tree read from
+// stream over src, converted by toNative on the first call to Tree, or nil
+// when there is no source-file tree.
+func newNative(root antlr.Tree, stream *antlr.CommonTokenStream, src string,
+	toNative func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree) *Native {
 	sf, ok := root.(*grammar.SourceFileContext)
 	if !ok || sf == nil {
 		return nil
 	}
-	return &Native{root: sf, stream: stream, src: src}
+	return &Native{root: sf, stream: stream, src: src, toNative: toNative}
 }
 
-// Tree is the native tree, converted from the ANTLR tree on the first call,
-// once, safely from any goroutine. An error says there is none: see
-// errNoNative, or the conversion panicked (a bug in galop's converter); the
-// caller then works on the ANTLR tree.
+// nativeHandle returns the handle of tree, which galop's native parser built.
+func nativeHandle(tree *native.GalaTree) *Native {
+	t := &Native{tree: tree}
+	t.once.Do(func() {})
+	t.converted.Store(true)
+	return t
+}
+
+// Tree is the native tree: galop's native parse, or ANTLR's tree converted on
+// the first call, once, safely from any goroutine. An error says there is
+// none: see errNoNative, or the conversion panicked (a bug in galop's
+// converter).
 func (t *Native) Tree() (*native.GalaTree, error) {
 	if t == nil {
 		return nil, errNoNative
@@ -79,159 +79,77 @@ func (t *Native) Tree() (*native.GalaTree, error) {
 	return t.tree, t.err
 }
 
-// Converted reports whether Tree has run the conversion already, so that
-// calling it costs nothing, without converting. A consumer that would not pay
-// for the conversion itself reads the native tree only when this holds. A nil
-// *Native has not converted.
+// Converted reports whether the tree is there already: always for galop's
+// native parse, and for ANTLR's tree once Tree converted it. A nil *Native
+// has not converted.
 func (t *Native) Converted() bool {
 	return t != nil && t.converted.Load()
 }
 
-// Root is the root of the native tree, converting the tree if nothing has
-// yet; no node and false for a nil handle or a tree that did not convert.
+// Root is the root of the native tree, converting it if nothing has yet; no
+// node and false when there is none (see Tree).
 func (t *Native) Root() (native.GalaNodeRef, bool) {
 	tree, err := t.Tree()
 	if err != nil {
 		return native.GalaNodeRef{}, false
 	}
-	root := tree.Root()
-	return root, root.Ok()
+	return tree.Root(), true
 }
 
-func (t *Native) convert() {
-	defer func() {
-		if r := recover(); r != nil {
-			t.tree, t.ctxs, t.err = nil, nil, fmt.Errorf("parser: converting the tree to galop's native tree panicked: %v", r)
-		}
-		// The native tree keeps the text it was given; the handle needs
-		// neither any more, and after a failure nothing does.
-		t.stream, t.src = nil, ""
-		t.converted.Store(true)
-	}()
-	if t.tree, t.ctxs = galop.ToNative(t.root, t.stream, t.src); t.tree == nil {
-		t.err = errNoNative
-		return
-	}
-	// The converter sizes the node, child and context slices by an estimate
-	// and grows them by doubling, so up to half of each is spare capacity. A
-	// handle outlives its conversion (the analyzer's parsed-file cache keeps
-	// every file it parsed for the life of a build worker), so the slices are
-	// cut to their length, before any node reference exists.
-	t.tree.Nodes = slices.Clone(t.tree.Nodes)
-	t.tree.Kids = slices.Clone(t.tree.Kids)
-	t.ctxs = slices.Clone(t.ctxs)
-}
-
-// Bridged reports whether the tree converted and its bridge to the ANTLR
-// tree holds: one context per node, the root is a source file with its
-// context, and every node has a context of its own rule, so a crossing back
-// to a context of the node's rule (Ctx) cannot miss. The analyzer, the scope
-// walk and the transformer read the native tree alone and never ask; only the
-// language server's remaining ANTLR readers do. The one rule with labeled
-// alternatives, pattern, is not checked for its alternative's context type;
-// nothing crosses there by type. It is checked once, on the first call,
-// safely from any goroutine. A nil *Native is not bridged.
-func (t *Native) Bridged() bool {
-	tree, err := t.Tree()
-	if err != nil {
-		return false
-	}
-	t.bridgedOnce.Do(func() { t.bridged = bridgeHolds(tree, t.ctxs) })
-	return t.bridged
-}
-
-// TreeOnly is a handle on t's native tree alone: no bridge to ANTLR's tree
-// (Bridged is false; Ctx and Node find nothing), for the readers of the
-// native tree alone (the analyzer, the scope walk, the transformer). A holder
-// that keeps a handle long, such as the analyzer's parsed-file cache, keeps
-// this one, so the contexts of a bridge nothing crosses are not kept with it.
-// A nil t, or one with no tree, gives nil.
+// TreeOnly is t once its tree is there (converting it if nothing has yet),
+// nil when there is none: the handle for a holder that keeps it long. A
+// converted handle holds nothing of ANTLR's parse (its conversion drops the
+// ANTLR tree, the token stream and the text), and the first call cuts the
+// spare capacity off the tree's slices (trimSpare), so the holder keeps
+// neither. That replaces the slices under the tree's readers: call it before
+// the tree is read on any other goroutine. Later calls change nothing.
 func (t *Native) TreeOnly() *Native {
 	tree, err := t.Tree()
 	if err != nil {
 		return nil
 	}
-	u := &Native{tree: tree}
-	u.once.Do(func() {})
-	u.converted.Store(true)
-	u.bridgedOnce.Do(func() {})
-	return u
+	t.trimmed.Do(func() { trimSpare(tree) })
+	return t
 }
 
-// bridgeHolds is Bridged's check of tree, whose nodes' contexts are ctxs.
-func bridgeHolds(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
-	if len(ctxs) != len(tree.Nodes) {
-		return false
-	}
-	root := tree.Root()
-	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
-		return false
-	}
-	if _, ok := ctxs[root.Index()].(*grammar.SourceFileContext); !ok {
-		return false
-	}
-	for i, ctx := range ctxs {
-		if ctx == nil || ctx.GetRuleIndex() != tree.Node(i).Rule() {
-			return false
-		}
-	}
-	return true
+// trimSpare cuts tree's slices to their length where much of them is spare
+// capacity. The lexer, the parser and the converter size the token, node and
+// child slices by estimates of the input (and grow them by doubling past
+// them), which overshoot by a fifth to a third. A kept handle outlives its
+// parse (the analyzer's parsed-file cache keeps every file it parsed for the
+// life of a build worker), so the spare is cut where a handle is kept
+// (TreeOnly), not on every parse. The tokens and hidden tokens are the
+// tree's *native.GalaTokens', which nothing but the tree holds once its
+// parse returned.
+func trimSpare(tree *native.GalaTree) {
+	tree.Nodes = trimmed(tree.Nodes)
+	tree.Kids = trimmed(tree.Kids)
+	tree.Tokens = trimmed(tree.Tokens)
+	tree.Hidden = trimmed(tree.Hidden)
+	tree.TokenLabels = trimmed(tree.TokenLabels)
 }
 
-// Ctx is the ANTLR context of native node n, or nil when n is no node of this
-// tree.
-func (t *Native) Ctx(n native.GalaNodeRef) antlr.ParserRuleContext {
-	if tree, err := t.Tree(); err != nil || !n.Ok() || n.Tree() != tree || n.Index() >= len(t.ctxs) {
-		return nil
+// trimmed is s cut to its length, or s when less than an eighth of it is
+// spare: copying it would cost more than the spare holds.
+func trimmed[S ~[]E, E any](s S) S {
+	if cap(s)-len(s) <= len(s)/8 {
+		return s
 	}
-	return t.ctxs[n.Index()]
+	return slices.Clone(s)
 }
 
-// Node is the native node of ctx, or no node when ctx is not in the tree.
-func (t *Native) Node(ctx antlr.ParserRuleContext) native.GalaNodeRef {
-	tree, err := t.Tree()
-	if err != nil {
-		return native.GalaNodeRef{}
-	}
-	t.nodesOnce.Do(func() {
-		t.nodes = make(map[antlr.ParserRuleContext]int32, len(t.ctxs))
-		for i, c := range t.ctxs {
-			t.nodes[c] = int32(i)
+func (t *Native) convert() {
+	defer func() {
+		if r := recover(); r != nil {
+			t.tree, t.err = nil, fmt.Errorf("parser: converting the tree to galop's native tree panicked: %v", r)
 		}
-	})
-	if i, ok := t.nodes[ctx]; ok {
-		return tree.Node(int(i))
+		// The native tree keeps the text it was given; the handle needs no
+		// ANTLR tree, stream, text or converter any more, and after a
+		// failure nothing does.
+		t.root, t.stream, t.src, t.toNative = nil, nil, "", nil
+		t.converted.Store(true)
+	}()
+	if t.tree = t.toNative(t.root, t.stream, t.src); t.tree == nil {
+		t.err = errNoNative
 	}
-	return native.GalaNodeRef{}
-}
-
-// NodeOfKind is Node for a context whose node is of kind, and no node when
-// it has none of that kind. It indexes only the nodes of kind, on its first
-// call for kind, so a caller that crosses at a few kinds of node does not pay
-// for a map of the whole tree. ctx may be nil, or a typed nil: neither is in
-// the tree.
-func (t *Native) NodeOfKind(ctx antlr.ParserRuleContext, kind native.GalaKind) native.GalaNodeRef {
-	tree, err := t.Tree()
-	if err != nil {
-		return native.GalaNodeRef{}
-	}
-	t.kindsMu.Lock()
-	nodes, ok := t.kinds[kind]
-	if !ok {
-		nodes = map[antlr.ParserRuleContext]int32{}
-		for i, c := range t.ctxs {
-			if tree.Node(i).Kind() == kind {
-				nodes[c] = int32(i)
-			}
-		}
-		if t.kinds == nil {
-			t.kinds = map[native.GalaKind]map[antlr.ParserRuleContext]int32{}
-		}
-		t.kinds[kind] = nodes
-	}
-	t.kindsMu.Unlock()
-	if i, ok := nodes[ctx]; ok {
-		return tree.Node(int(i))
-	}
-	return native.GalaNodeRef{}
 }

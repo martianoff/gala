@@ -45,12 +45,6 @@ func withEngine(e Engine, f func()) {
 	f()
 }
 
-// render prints what a parse gives: the tree with every node's position (see
-// positions), then the doc comments and the errors.
-func render(tree antlr.Tree, docs Docs, errs []error) string {
-	return renderText(treeText(tree), tree, docs, errs)
-}
-
 // treeText is tree in ANTLR's LISP-like form, "" for no tree.
 func treeText(tree antlr.Tree) string {
 	if tree == nil {
@@ -59,7 +53,9 @@ func treeText(tree antlr.Tree) string {
 	return antlr.TreesStringTree(tree, grammar.GalaParserStaticData.RuleNames, nil)
 }
 
-// renderText is render with the tree's text already printed (treeText).
+// renderText prints what a parse gives: text, the tree's text (treeText),
+// and the tree with every node's position (see positions), then the doc
+// comments and the errors.
 func renderText(text string, tree antlr.Tree, docs Docs, errs []error) string {
 	var b strings.Builder
 	if tree != nil {
@@ -85,25 +81,43 @@ func renderText(text string, tree antlr.Tree, docs Docs, errs []error) string {
 // fileParse is a parse of a source file with one engine, and its rendering.
 type fileParse struct {
 	parsed *Parsed
-	text   string // treeText of the parse's tree
+	text   string // treeText of the parse's ANTLR tree, "" for none
 	out    string // render of the parse
+	// native is dumpNative of the parse's clean native tree, "" for none.
+	native string
+	// recovered is dumpNative of the native tree of a parse with errors (see
+	// Parsed.RecoveredNative), "" for none.
+	recovered string
 }
 
-// parseFileAs parses src with engine e.
+// parseFileAs parses src with engine e. A parse's native tree is converted
+// (with ANTLR's engine, or for a parse with errors) and printed.
 func parseFileAs(e Engine, src string) fileParse {
 	var f fileParse
 	withEngine(e, func() {
 		f.parsed = NewAntlrGalaParser().ParseFile(src)
 		f.text = treeText(f.parsed.Tree)
 		f.out = renderText(f.text, f.parsed.Tree, f.parsed.Docs, f.parsed.Errors)
+		tree, err := f.parsed.RecoveredNative().Tree()
+		switch {
+		case err != nil:
+		case len(f.parsed.Errors) == 0:
+			f.native = dumpNative(tree)
+		default:
+			f.recovered = dumpNative(tree)
+		}
 	})
 	return f
 }
 
-// parseFileWith parses src with engine e and renders the result (see
-// render).
-func parseFileWith(e Engine, src string) string {
-	return parseFileAs(e, src).out
+// docsAndErrorsDiff is "" when want and got give the same doc comments and
+// errors, else where they first differ.
+func docsAndErrorsDiff(want, got fileParse) string {
+	w := renderText("", nil, want.parsed.Docs, want.parsed.Errors)
+	if g := renderText("", nil, got.parsed.Docs, got.parsed.Errors); g != w {
+		return diffAt(w, g)
+	}
+	return ""
 }
 
 // diffAt shows where want and got first differ: the line number, and each
@@ -128,32 +142,45 @@ func diffAt(want, got string) string {
 	return fmt.Sprintf("first difference at line %d, byte %d\n  want: %s\n  got:  %s", line, i, window(want), window(got))
 }
 
-func parseExpressionWith(e Engine, src string) (out string) {
+// renderExpression prints a native expression tree (dumpNative and its
+// LISP-like form) and errors.
+func renderExpression(expr native.ExpressionNode, errs []error) string {
+	var tree string
+	if expr.Ok() {
+		tree = expr.ToStringTree() + "\n" + dumpNative(expr.Tree())
+	}
+	return tree + renderText("", nil, nil, errs)
+}
+
+// parseExpressionWith parses src with ParseExpressionTree with engine e.
+func parseExpressionWith(e Engine, src string) string {
+	return parseExpressionUsing(galopParsers, e, src)
+}
+
+// parseExpressionUsing is parseExpressionWith with g's parser and converter.
+func parseExpressionUsing(g *nativeParsers, e Engine, src string) (out string) {
 	withEngine(e, func() {
-		expr, errs := NewAntlrGalaParser().ParseExpression(src)
-		var tree antlr.Tree
-		if expr != nil {
-			tree = expr
-		}
-		out = render(tree, nil, errs)
+		out = renderExpression(g.expressionTree(src))
 	})
 	return out
 }
 
-// parseExpressionAtWith parses src with ParseExpressionAt, at line and col,
-// with engine e.
-func parseExpressionAtWith(e Engine, src string, line, col int) (out string) {
+// parseExpressionAtWith parses src with ParseExpressionCheckedAt, at line and
+// col, with engine e.
+func parseExpressionAtWith(e Engine, src string, line, col int) string {
+	return parseExpressionAtUsing(galopParsers, e, src, line, col)
+}
+
+// parseExpressionAtUsing is parseExpressionAtWith with g's parser and
+// converter.
+func parseExpressionAtUsing(g *nativeParsers, e Engine, src string, line, col int) (out string) {
 	withEngine(e, func() {
-		expr, err := ParseExpressionAt(src, line, col, "test expression")
-		var tree antlr.Tree
+		expr, _, err := g.expressionCheckedAt(src, line, col, "test expression")
 		var errs []error
-		if expr != nil {
-			tree = expr
-		}
 		if err != nil {
 			errs = []error{err}
 		}
-		out = render(tree, nil, errs)
+		out = renderExpression(expr, errs)
 	})
 	return out
 }
@@ -206,46 +233,63 @@ func breakSource(r *rand.Rand, src string) string {
 var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
 
 // TestEnginesAgree parses every GALA source of the repository, and two broken
-// variants of each, with galop's engine and with ANTLR's: the trees, doc
-// comments and errors must be the same. It does the same for expressions:
-// the corpus's interpolated expressions, runs of tokens from every file, and
-// broken variants of both. galop's parser builds ANTLR's tree on input that
-// parses and leaves the rest to ANTLR, so any difference is a bug.
+// variants of each, with galop's engine and with ANTLR's: the doc comments
+// and errors must be the same; a parse without errors must have the same
+// native tree (galop's native parse with galop's engine, ANTLR's tree
+// converted with ANTLR's), and no ANTLR tree with galop's engine; a parse
+// with errors must be ANTLR's with both, the same error-recovered tree, but
+// for one whose only error is a missing blank line, which galop's engine
+// leaves to its native parse; either way the recovered native trees must be
+// the same. It
+// does the same for expressions: the corpus's interpolated expressions, runs
+// of tokens from every file, and broken variants of both. Any difference is
+// a bug.
 func TestEnginesAgree(t *testing.T) {
 	grammar.GalaParserInit()
 	// r draws the broken variants and token runs; positions draws where
-	// ParseExpressionAt places an expression, from its own stream so that the
+	// ParseExpressionCheckedAt places an expression, from its own stream so that the
 	// samples r draws stay the same.
 	r := rand.New(rand.NewSource(1))
 	positions := rand.New(rand.NewSource(2))
-	files, accepted, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0
-	// compareFile parses input with both engines, reports a difference, and
-	// checks the native trees: each engine's parse without errors has one.
-	// When native is set, it checks the native tree
-	// (checkNative) of both engines' clean parses, or, when galop's has
-	// errors, of ANTLR's error-recovered tree converted (parseConverted). It
+	files, accepted, blankLineOnly, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0, 0
+	// compareFile parses input with both engines and reports a difference.
+	// When check is set, it also checks galop's engine's native tree
+	// (checkNative) against ANTLR's tree, clean or error-recovered. It
 	// returns ANTLR's rendering.
-	compareFile := func(what, input string, native bool) string {
+	compareFile := func(what, input string, check bool) string {
 		want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
-		if got.out != want.out {
-			t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
-		}
-		if clean := len(want.parsed.Errors) == 0; clean && want.parsed.Native == nil {
-			t.Errorf("%s: the clean parse with ANTLR's engine has no native tree", what)
-		} else if clean && native {
-			if msg := checkNative(want.parsed, want.text); msg != "" {
-				t.Errorf("%s: the native tree of ANTLR's engine's parse: %s", what, msg)
+		if len(want.parsed.Errors) > 0 {
+			if got.parsed.Tree == nil {
+				// galop's native parse settled it: a missing blank line is its
+				// only error.
+				blankLineOnly++
+				if d := docsAndErrorsDiff(want, got); d != "" {
+					t.Errorf("%s: the engines disagree on the doc comments or errors: %s", what, d)
+				}
+			} else if got.out != want.out {
+				// Both are ANTLR's parse, error-recovered.
+				t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
+			}
+			if got.recovered != want.recovered {
+				t.Errorf("%s: the recovered native trees differ: %s", what, diffAt(want.recovered, got.recovered))
+			}
+		} else {
+			if d := docsAndErrorsDiff(want, got); d != "" {
+				t.Errorf("%s: the engines disagree on the doc comments or errors: %s", what, d)
+			}
+			switch {
+			case want.native == "":
+				t.Errorf("%s: the clean parse with ANTLR's engine has no native tree", what)
+			case got.native == "":
+				t.Errorf("%s: galop's clean parse has no native tree", what)
+			case got.parsed.Tree != nil:
+				t.Errorf("%s: galop's clean parse has an ANTLR tree", what)
+			case got.native != want.native:
+				t.Errorf("%s: the native trees differ (want ANTLR's converted, got galop's): %s", what, diffAt(want.native, got.native))
 			}
 		}
-		checked, text := got.parsed, got.text
-		if len(got.parsed.Errors) > 0 {
-			checked, text = parseConverted(input), want.text
-		} else if got.parsed.Native == nil {
-			t.Errorf("%s: galop's clean parse has no native tree", what)
-			native = false
-		}
-		if native {
-			if msg := checkNative(checked, text); msg != "" {
+		if check {
+			if msg := checkNative(got.parsed, input); msg != "" {
 				t.Errorf("%s: native tree: %s", what, msg)
 			}
 		}
@@ -260,7 +304,7 @@ func TestEnginesAgree(t *testing.T) {
 	compareExpressionAt := func(what, input string, line, col int) bool {
 		want, got := parseExpressionAtWith(EngineANTLR, input, line, col), parseExpressionAtWith(EngineGalop, input, line, col)
 		if got != want {
-			t.Errorf("%s at %d:%d: the engines disagree\nANTLR: %.300s\ngalop: %.300s", what, line, col, want, got)
+			t.Errorf("%s at %d:%d: the engines disagree: %s", what, line, col, diffAt(want, got))
 		}
 		return !strings.Contains(want, "error:")
 	}
@@ -285,11 +329,11 @@ func TestEnginesAgree(t *testing.T) {
 			crlf++
 		}
 		for k, input := range inputs {
-			// The native tree of each file's source, and of every tenth file's
-			// first broken variant, for error-recovered trees: converting each
+			// checkNative on each file's source, and on every tenth file's
+			// first broken variant, for error-recovered trees: checking each
 			// variant would double the suite's time for little more coverage.
-			native := k == 0 || k == 1 && n%10 == 0
-			want := compareFile(fmt.Sprintf("%s (variant %d)", path, k), input, native)
+			check := k == 0 || k == 1 && n%10 == 0
+			want := compareFile(fmt.Sprintf("%s (variant %d)", path, k), input, check)
 			files++
 			if !strings.Contains(want, "\nerror:") {
 				accepted++
@@ -310,7 +354,7 @@ func TestEnginesAgree(t *testing.T) {
 			for k, input := range []string{expr, breakSource(r, expr)} {
 				want, got := parseExpressionWith(EngineANTLR, input), parseExpressionWith(EngineGalop, input)
 				if got != want {
-					t.Errorf("%s: expression %q (variant %d): the engines disagree\nANTLR: %.300s\ngalop: %.300s", path, expr, k, want, got)
+					t.Errorf("%s: expression %q (variant %d): the engines disagree: %s", path, expr, k, diffAt(want, got))
 				}
 				exprs++
 				if !strings.Contains(want, "error:") {
@@ -327,11 +371,11 @@ func TestEnginesAgree(t *testing.T) {
 	if want := (len(sources) + 14) / 15; crlf != want {
 		t.Errorf("%d files compared with CRLF line ends, want %d", crlf, want)
 	}
-	t.Logf("%d source inputs (%d without errors, %d of them CRLF copies); %d expressions, %d without errors through ParseExpression and %d through ParseExpressionAt",
-		files, accepted, crlf, exprs, exprsAccepted, exprsAtAccepted)
+	t.Logf("%d source inputs (%d without errors, %d with a missing blank line alone, %d CRLF copies); %d expressions, %d without errors through ParseExpressionTree and %d through ParseExpressionCheckedAt",
+		files, accepted, blankLineOnly, crlf, exprs, exprsAccepted, exprsAtAccepted)
 }
 
-// expressionAtInputs are expressions placed by ParseExpressionAt, among them
+// expressionAtInputs are expressions placed by ParseExpressionCheckedAt, among them
 // ones that span lines, where the starting column applies to the first line
 // only (a multi-line default value).
 var expressionAtInputs = []string{
@@ -359,54 +403,23 @@ func lexed(src string) []antlr.Token {
 	return toks
 }
 
-// TestGalopPanicFallsBack makes galop's parser panic: the parse must still
-// succeed, with ANTLR's result.
-func TestGalopPanicFallsBack(t *testing.T) {
-	savedFile, savedExpr := galopSourceFile, galopExpression
-	defer func() { galopSourceFile, galopExpression = savedFile, savedExpr }()
-	galopSourceFile = func(*antlr.CommonTokenStream) (grammar.ISourceFileContext, bool) { panic("injected") }
-	galopExpression = func(*antlr.CommonTokenStream) (grammar.IExpressionContext, bool) { panic("injected") }
-
-	before := galopPanics.Load()
-	defer func() {
-		if n := galopPanics.Load() - before; n != 2 {
-			t.Errorf("%d galop panics counted, want 2", n)
-		}
-	}()
-	src := "package main\n\nfunc main() {\n    Println(\"hi\")\n}\n"
-	want := parseFileWith(EngineANTLR, src)
-	got := parseFileAs(EngineGalop, src)
-	if got.out != want {
-		t.Errorf("source file after a panic:\n got: %s\nwant: %s", got.out, want)
-	}
-	if got.parsed.Native == nil {
-		t.Error("ANTLR's fallback parse after a panic has no native tree")
-	}
-	if strings.Contains(want, "error:") {
-		t.Fatalf("the source does not parse: %s", want)
-	}
-	if got, want := parseExpressionWith(EngineGalop, "a + b"), parseExpressionWith(EngineANTLR, "a + b"); got != want {
-		t.Errorf("expression after a panic:\n got: %s\nwant: %s", got, want)
-	}
-}
-
 // TestParseExpressionTreeReportsConversionFailure: when galop's converter
 // gives no tree, ParseExpressionTree gives the zero node and says why
 // (ErrConvertExpression), whether the converter returned nothing or panicked.
 func TestParseExpressionTreeReportsConversionFailure(t *testing.T) {
 	RequestEngine(string(EngineANTLR))
-	saved := galopToNative
-	defer func() { galopToNative = saved; RequestEngine("") }()
-	for name, conv := range map[string]func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext){
-		"no tree": func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext) {
-			return nil, nil
+	defer RequestEngine("")
+	for name, conv := range map[string]func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree{
+		"no tree": func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree {
+			return nil
 		},
-		"panic": func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext) {
+		"panic": func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree {
 			panic("injected")
 		},
 	} {
-		galopToNative = conv
-		expr, errs := ParseExpressionTree("a + b")
+		faulty := *galopParsers
+		faulty.toNative = conv
+		expr, errs := faulty.expressionTree("a + b")
 		if expr.Ok() {
 			t.Errorf("%s: got a tree", name)
 		}
@@ -418,9 +431,8 @@ func TestParseExpressionTreeReportsConversionFailure(t *testing.T) {
 			t.Errorf("%s: errors %v do not report the conversion failure", name, errs)
 		}
 	}
-	galopToNative = saved
 	if expr, errs := ParseExpressionTree("a + b"); !expr.Ok() || len(errs) > 0 {
-		t.Errorf("with the converter back: tree %v, errors %v", expr.Ok(), errs)
+		t.Errorf("with galop's converter: tree %v, errors %v", expr.Ok(), errs)
 	}
 }
 
@@ -441,7 +453,7 @@ func TestEngineSelection(t *testing.T) {
 		t.Fatalf("--parser=galop over GALA_PARSER=antlr: engine %q, error %v", e, err)
 	}
 	RequestEngine("yacc")
-	_, _, errs := NewAntlrGalaParser().ParseFile("package main\n").Lenient()
+	errs := NewAntlrGalaParser().ParseFile("package main\n").Errors
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `unknown parser "yacc"`) {
 		t.Fatalf("--parser=yacc: errors %v", errs)
 	}

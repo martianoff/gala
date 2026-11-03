@@ -161,12 +161,10 @@ func walkRunner(t *testing.T, engine galaparser.Engine, w walkPipeline) func(t *
 }
 
 // goldenWalk holds the walk of src, written at path, to its golden
-// (checkWalk), requires the walk to have read the native tree, and returns
-// its run.
+// (checkWalk) and returns its run.
 func goldenWalk(t *testing.T, w *walkPipeline, path, src string) walkRun {
 	n, _, ok := checkWalk(t, w, path, src, true)
 	require.True(t, ok, "the case does not parse cleanly with galop")
-	require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 	t.Logf("the native walk lowered %d expressions; error: %v", n.exprs, n.err)
 	return n
 }

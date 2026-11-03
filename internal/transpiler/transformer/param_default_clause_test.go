@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
@@ -26,8 +27,12 @@ import (
 // cut before its native tree converts.
 func TestParamDefaultClauseWithoutValue(t *testing.T) {
 	const src = "package main\n\nfunc f(x int = 1) int = x\n"
+	// The cut is made on ANTLR's tree, which only ANTLR's engine gives a
+	// clean parse.
+	parser.RequestEngine(string(parser.EngineANTLR))
+	t.Cleanup(func() { parser.RequestEngine("") })
 	parsed := transpiler.NewAntlrGalaParser().ParseFile(src)
-	tree, _, err := parsed.Strict()
+	tree, err := parsed.Tree, parsed.Err()
 	require.NoError(t, err)
 	clause := firstParamDefault(tree)
 	require.NotNil(t, clause, "no default clause")

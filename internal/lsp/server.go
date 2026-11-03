@@ -371,19 +371,14 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	// One parse gives both the errors and the error-recovered tree, so a
 	// keystroke on a broken file parses it once.
 	parsed := h.parser.ParseFile(text)
+	// The features that read the tree get this text's native tree alone
+	// (Native.TreeOnly), error-recovered when the parse has errors; nil when
+	// there is none, so no older text's tree outlives the edit. It is taken
+	// before the analysis reads the tree, as TreeOnly trims it.
+	kept := parsed.RecoveredNative().TreeOnly() // converts: not under h.mu
 	if errs := parsed.Errors; len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
-		// The features that read the tree get this text's error-recovered
-		// tree, the native tree alone (Native.TreeOnly), before the analysis
-		// runs; nil when there is none, so no older text's tree outlives the
-		// edit.
-		handle := parsed.RecoveredNative().TreeOnly() // converts: not under h.mu
-		h.mu.Lock()
-		if h.isCurrentLocked(uri, text) {
-			h.parseNatives[uri] = handle
-			h.parseTexts[uri] = text
-		}
-		h.mu.Unlock()
+		h.keepTree(uri, kept, text)
 		// The parse failed: if the analyzer can extract type metadata from
 		// the partial tree, cache the richAST so completion/hover/definition
 		// work while mid-edit.
@@ -394,6 +389,9 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
+		// No AST to publish, but hover and signature help read this text's
+		// tree (its dot imports, its calls), not an older text's.
+		h.keepTree(uri, kept, text)
 		return diagnostics
 	}
 
@@ -707,6 +705,18 @@ func (h *GalaHandler) transformAndPublish(uri, doc string, richAST *transpiler.R
 	h.mu.Unlock()
 
 	return result, err
+}
+
+// keepTree stores handle, the native tree of text alone, as uri's tree for
+// the features that read it, when text is still uri's document (see
+// isCurrentLocked).
+func (h *GalaHandler) keepTree(uri string, handle *parser.Native, text string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.isCurrentLocked(uri, text) {
+		h.parseNatives[uri] = handle
+		h.parseTexts[uri] = text
+	}
 }
 
 // isCurrentLocked reports whether uri is an open document whose text is doc;

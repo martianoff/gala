@@ -281,6 +281,42 @@ func TestBufferTreeFollowsEdits(t *testing.T) {
 	}
 }
 
+// TestBufferTreeFollowsFailedAnalysis edits a document that dot-imports a
+// package into one that parses cleanly but fails analysis, and imports the
+// package by name instead: the document's native tree, which hover reads the
+// dot imports from, is the new text's, and hover finds no dot import of the
+// old text in it. The test reads the dot imports off the kept tree, as hover
+// does: hover's answer can come out the same either way, as a bare name it
+// cannot place is looked up in every package.
+func TestBufferTreeFollowsFailedAnalysis(t *testing.T) {
+	_, _, root := nativeCorpus(t)
+	const dotted = "martianoff/gala/collection_immutable"
+	body := "\nfunc main() {\n    val a = ArrayOf(1, 2)\n    Println(a.Size())\n}\n"
+	analyzed := "package main\n\nimport . \"" + dotted + "\"\n" + body
+	// A method named like a field of its struct (GALA-E0081) fails analysis.
+	failing := "package main\n\nimport \"" + dotted + "\"\n\nstruct Box(Name string)\n\nfunc (b Box) Name() string = \"box\"\n" + body
+	uri := lsp.DocumentURI("file:///" + filepath.ToSlash(filepath.Join(root, "edited", "main.gala")))
+	h := NewGalaHandler()
+	h.SetSearchPaths([]string{root})
+
+	first := openBuffer(t, h, uri, analyzed)
+	require.NotNil(t, first.richAST, "the first text is not analyzed")
+	assertTreeOf(t, "first text", first, analyzed)
+	require.Equal(t, []string{dotted}, dotImportPathsOf(first.handle))
+
+	parsed := h.parser.ParseFile(failing)
+	require.Empty(t, parsed.Errors, "the failing text does not parse cleanly")
+	path := uriToPath(string(uri))
+	_, err := h.newAnalyzer(path, failing).AnalyzeParsed(parsed, path)
+	require.Error(t, err, "the failing text's analysis succeeds")
+
+	second := openBuffer(t, h, uri, failing)
+	require.Same(t, first.richAST, second.richAST, "the failing text published an analysis")
+	assertTreeOf(t, "failing text", second, failing)
+	assert.NotSame(t, first.handle, second.handle, "the native tree is the first text's")
+	assert.Empty(t, dotImportPathsOf(second.handle), "hover reads the first text's dot imports")
+}
+
 // bufferTexts is collection_immutable/array.gala of the corpus, clean
 // and with a syntax error, with the file's URI and the corpus root.
 func bufferTexts(t *testing.T) (clean, broken string, uri lsp.DocumentURI, root string) {
@@ -322,7 +358,7 @@ func bufferOf(h *GalaHandler, uri lsp.DocumentURI) bufferState {
 func assertTreeOf(t *testing.T, name string, got bufferState, text string) {
 	t.Helper()
 	require.NotNil(t, got.handle, "%s: no native tree kept", name)
-	assert.False(t, got.handle.Bridged(), "%s: the bridge to ANTLR's tree is kept", name)
+	assert.True(t, got.handle.Converted(), "%s: the kept handle still holds a parse to convert", name)
 	assert.Equal(t, text, got.text, "%s: the kept tree's text", name)
 	root, ok := got.handle.Root()
 	require.True(t, ok, "%s: the kept tree has no root", name)

@@ -26,12 +26,12 @@ genrule(
     tools = ["@antlr4_tool//jar"],
 )
 
-# galop's lexer and parser for the same grammar, in its antlr flavor: they build
-# the context types ANTLR generates above, so they share this package and every
-# consumer of the tree works with either parser (see internal/parser). With
-# nativePackage galop also writes gala_galop_native.go, the converter from
-# these trees (and ANTLR's, error-recovered ones included) to the native tree
-# of internal/parser/native.
+# galop's antlr flavor for the same grammar. internal/parser uses only its
+# converter, gala_galop_native.go (written with nativePackage), from ANTLR's
+# trees, error-recovered ones included, to the native tree of
+# internal/parser/native: GALA parses with galop's native flavor
+# (internal/parser/native) and with ANTLR's parser above. The flavor's own
+# lexer and parser, generated with the converter, are not used.
 #
 # galop runs on the build host, from the prebuilt binaries rules_gala
 # registers; building GALA needs one (see CONTRIBUTING.MD for the hosts).

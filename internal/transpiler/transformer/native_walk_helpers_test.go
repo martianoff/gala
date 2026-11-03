@@ -21,8 +21,8 @@ import (
 )
 
 // walkRun is one transpile of a file: its Go, or its error, how many of its
-// top-level declarations the native walk lowered, and whether the analysis
-// converted the parse's native tree, which the walk reads only then.
+// top-level declarations the native walk lowered, and what it read off the
+// native tree.
 type walkRun struct {
 	path      string // the file transpiled
 	out       string
@@ -31,7 +31,7 @@ type walkRun struct {
 	stmts     int                     // the statements the native walk lowered, each counted once
 	stmtLines map[int]bool            // the lines those statements start on
 	stmtNodes map[int]bool            // those statements' node indices
-	root      native.GalaNodeRef      // the native tree's root, converted after the transpile if the analysis did not: converted, not root.Ok, says whether it did
+	root      native.GalaNodeRef      // the native tree's root
 	lambdas   int                     // the lambdas lowered on the native tree, each counted once
 	captures  int                     // the Sendable capture checks run on the native tree
 	exprs     int                     // the expressions the native walk lowered, each counted once
@@ -48,8 +48,7 @@ type walkRun struct {
 	engineTrees, fallbackTrees int
 	// hints is each look at the hint stack's top, in order: a take or a
 	// withhold, and whether the hint there was the asking value's.
-	hints     []byte
-	converted bool
+	hints []byte
 }
 
 // walkPipeline transpiles files the way the CLI does, with the engine the
@@ -127,10 +126,9 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		}
 		run.hints = append(run.hints, b)
 	})
-	p :=&handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
+	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.path = path
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths, w.root), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
-	run.converted = p.compiled.Converted()
 	run.root, _ = p.compiled.Root()
 	run.stmts, run.lambdas, run.exprs, run.cases = len(run.stmtNodes), len(lambdas), len(exprs), len(cases)
 	return run
@@ -192,7 +190,6 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 	sort.Strings(paths)
 	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
 }
-
 
 // treeCounts is what the walk of a file must lower, counted on its native
 // tree: its top-level declarations, the statements of its top-level

@@ -21,10 +21,9 @@ import (
 // the types and sealed type declarations its walk lowered off the native
 // tree.
 type typeRun struct {
-	out       string
-	err       error
-	lines     map[int]bool
-	converted bool
+	out   string
+	err   error
+	lines map[int]bool
 }
 
 // transpileTypes transpiles src as walkPipeline.transpile does, with the
@@ -36,7 +35,6 @@ func transpileTypes(searchPaths []string, path, src string) typeRun {
 	transformer.OnNativeType(tr, func(line int) { run.lines[line] = true })
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
-	run.converted = p.compiled.Converted()
 	return run
 }
 
@@ -224,7 +222,6 @@ func TestNativeTypeCases(t *testing.T) {
 			require.NotNil(t, transpiler.NewAntlrGalaParser().ParseFile(c.src).CleanNative(), "the case does not parse cleanly with galop")
 			n := transpileTypes(searchPaths, path, c.src)
 			checkGolden(t, path, searchPaths, n.out, n.err)
-			require.True(t, n.converted, "the parse has no native tree")
 			if c.want != "" {
 				require.ErrorContains(t, n.err, c.want, "the case does not fail with its diagnostic")
 			} else {
