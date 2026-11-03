@@ -29,7 +29,7 @@ func TestNewNativeNoTree(t *testing.T) {
 	stream := antlr.NewCommonTokenStream(grammar.NewgalaLexer(antlr.NewInputStream("")), antlr.TokenDefaultChannel)
 	var typedNil *grammar.SourceFileContext
 	for name, root := range map[string]antlr.Tree{"nil": nil, "typed nil": typedNil} {
-		if n := newNative(root, stream, ""); n != nil {
+		if n := newNative(root, stream, "", galopParsers.toNative); n != nil {
 			t.Errorf("%s root: got a handle", name)
 		}
 	}

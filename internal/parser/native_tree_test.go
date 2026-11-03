@@ -202,17 +202,67 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 	}
 }
 
-// TestNativeParsePanicFallsBack makes galop's native parser panic: the parse
-// must still succeed, on ANTLR's parser, with its tree converted.
+// TestTreeOnlyTrims: a parse leaves its native tree's slices as the parser
+// sized them, and TreeOnly, which a holder that keeps the handle calls, cuts
+// the spare capacity off them and keeps the tree, for galop's native parse
+// and for ANTLR's tree converted. The comments make the token slice, which
+// galop's lexer sizes by the length of the text, mostly spare.
+func TestTreeOnlyTrims(t *testing.T) {
+	src := "package main\n\n" + strings.Repeat("// a comment line, which holds no default-channel token\n", 40) +
+		"func f(a int) int = a + 1\n"
+	// untrimmed names tree's slices of which more than an eighth is spare.
+	untrimmed := func(tree *native.GalaTree) []string {
+		var out []string
+		for name, s := range map[string][2]int{
+			"nodes":  {len(tree.Nodes), cap(tree.Nodes)},
+			"kids":   {len(tree.Kids), cap(tree.Kids)},
+			"tokens": {len(tree.Tokens), cap(tree.Tokens)},
+			"hidden": {len(tree.Hidden), cap(tree.Hidden)},
+			"labels": {len(tree.TokenLabels), cap(tree.TokenLabels)},
+		} {
+			if s[1]-s[0] > s[0]/8 {
+				out = append(out, name)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	for name, p := range map[string]*Parsed{"galop": parseWithGalop(src), "ANTLR": parseConverted(src)} {
+		tree, err := p.Native.Tree()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		dump := dumpNative(tree)
+		if before := untrimmed(tree); name == "galop" && !slices.Contains(before, "tokens") {
+			t.Fatalf("%s: the parse's token slice has little spare (untrimmed: %v), so the test checks nothing", name, before)
+		}
+		if p.Native.TreeOnly() != p.Native {
+			t.Errorf("%s: TreeOnly gives another handle", name)
+		}
+		after, _ := p.Native.Tree()
+		if after != tree || dumpNative(after) != dump {
+			t.Errorf("%s: TreeOnly changed the tree", name)
+		}
+		if spare := untrimmed(after); len(spare) > 0 {
+			t.Errorf("%s: after TreeOnly, %v keep more than an eighth spare", name, spare)
+		}
+	}
+}
+
+// TestNativeParsePanicFallsBack makes galop's native parser panic, through
+// a parser of the test's own: the parse must still succeed, on ANTLR's
+// parser, with its tree converted.
 func TestNativeParsePanicFallsBack(t *testing.T) {
-	savedFile, savedExpr := nativeParseSourceFile, nativeParseExpression
-	defer func() { nativeParseSourceFile, nativeParseExpression = savedFile, savedExpr }()
-	nativeParseSourceFile = func(*native.GalaTokens) (native.SourceFileNode, error) { panic("injected") }
-	nativeParseExpression = func(*native.GalaTokens) (native.ExpressionNode, error) { panic("injected") }
+	faulty := &nativeParsers{
+		sourceFile: func(*native.GalaTokens) (native.SourceFileNode, error) { panic("injected") },
+		expression: func(*native.GalaTokens) (native.ExpressionNode, error) { panic("injected") },
+		toNative:   galopParsers.toNative,
+	}
 	before := galopPanics.Load()
 
 	const src = "package main\n\nval x = 1\n"
-	p := parseWithGalop(src)
+	var p *Parsed
+	withEngine(EngineGalop, func() { p = (&AntlrGalaParser{galop: faulty}).ParseFile(src) })
 	if len(p.Errors) > 0 || p.Tree == nil {
 		t.Fatalf("the fallback parse failed: errors %v, tree %v", p.Errors, p.Tree)
 	}
@@ -222,10 +272,10 @@ func TestNativeParsePanicFallsBack(t *testing.T) {
 
 	// The expression entry points fall back to ANTLR's parser, converted.
 	want, wantTree := parseExpressionAtWith(EngineANTLR, "a + b", 3, 4), parseExpressionWith(EngineANTLR, "a + b")
-	if got := parseExpressionAtWith(EngineGalop, "a + b", 3, 4); got != want || strings.Contains(got, "error:") {
+	if got := parseExpressionAtUsing(faulty, EngineGalop, "a + b", 3, 4); got != want || strings.Contains(got, "error:") {
 		t.Errorf("ParseExpressionCheckedAt after a panic: %s", diffAt(want, got))
 	}
-	if gotTree := parseExpressionWith(EngineGalop, "a + b"); gotTree != wantTree {
+	if gotTree := parseExpressionUsing(faulty, EngineGalop, "a + b"); gotTree != wantTree {
 		t.Errorf("ParseExpressionTree after a panic: %s", diffAt(wantTree, gotTree))
 	}
 	if n := galopPanics.Load() - before; n != 3 {
@@ -258,6 +308,33 @@ func TestCleanNative(t *testing.T) {
 			if p.Native != nil || p.CleanNative() != nil {
 				t.Errorf("%s (%s): a parse with an error has a native tree", name, engine)
 			}
+		}
+	}
+}
+
+// TestMissingBlankLineStaysNative: with galop's engine, a file whose only
+// error is a missing blank line is galop's native parse, with no ANTLR tree:
+// the same errors and doc comments as ANTLR's engine gives, and its native
+// tree, as the recovered tree, the same as ANTLR's tree converted.
+func TestMissingBlankLineStaysNative(t *testing.T) {
+	for _, src := range []string{
+		"package main\n// Doc of x.\nval x = 1\n",
+		"package main\n\nimport \"fmt\"\nfunc f() = fmt.Println(1)\n",
+		"package main\nimport \"fmt\"\n\nfunc f() = fmt.Println(1)\n",
+		"package main\n\nimport (\n    \"fmt\"\n)\n// Doc of f.\nfunc f() = fmt.Println(\"ünïcödé\")\n",
+	} {
+		want, got := parseFileAs(EngineANTLR, src), parseFileAs(EngineGalop, src)
+		if len(want.parsed.Errors) != 1 || want.parsed.Tree == nil {
+			t.Fatalf("%q: ANTLR's engine gives errors %v", src, want.parsed.Errors)
+		}
+		if got.parsed.Tree != nil {
+			t.Errorf("%q: galop's engine parsed with ANTLR's parser", src)
+		}
+		if d := docsAndErrorsDiff(want, got); d != "" {
+			t.Errorf("%q: the engines disagree on the doc comments or errors: %s", src, d)
+		}
+		if got.recovered != want.recovered || got.recovered == "" {
+			t.Errorf("%q: the recovered native trees differ: %s", src, diffAt(want.recovered, got.recovered))
 		}
 	}
 }

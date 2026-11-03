@@ -18,7 +18,8 @@ func TestLineStartTokenStartsStatement(t *testing.T) {
 	for _, tt := range lineStartCases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := lineStartInput(tt.body)
-			tree, _, errs := parseConverted(input).Lenient()
+			parsed := parseConverted(input)
+			tree, errs := parsed.Tree, parsed.Errors
 			require.Empty(t, errs)
 			block := tree.(grammar.ISourceFileContext).TopLevelDeclaration(0).FunctionDeclaration().Block()
 			assert.Len(t, block.AllStatement(), tt.stmts)
@@ -142,7 +143,7 @@ var lineStartCases = []struct {
 func TestLineStartTokenInDeclarations(t *testing.T) {
 	for _, tt := range lineStartDeclCases {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.decl + "\n").Lenient()
+			errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.decl + "\n").Errors
 			assert.Empty(t, errs)
 		})
 	}
@@ -169,7 +170,8 @@ var lineStartDeclCases = []struct {
 func TestBlockAfterHeaderEndingInType(t *testing.T) {
 	for _, tt := range headerTypeCases {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, _, errs := parseConverted("package main\n\n" + tt.src + "\n").Lenient()
+			parsed := parseConverted("package main\n\n" + tt.src + "\n")
+			tree, errs := parsed.Tree, parsed.Errors
 			require.Empty(t, errs)
 			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
 			body := decls[len(decls)-1].FunctionDeclaration().Block()
@@ -238,7 +240,8 @@ func TestSplitHeaderOpensBlock(t *testing.T) {
 	for _, tt := range splitHeaderCases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := "package main\n\n" + tt.src + "\n"
-			tree, _, errs := parseConverted(input).Lenient()
+			parsed := parseConverted(input)
+			tree, errs := parsed.Tree, parsed.Errors
 			require.Empty(t, errs)
 			// The body is the block whose first statement is `val q = 1`.
 			var body grammar.IBlockContext
@@ -264,14 +267,14 @@ func TestSplitHeaderOpensBlock(t *testing.T) {
 	}
 }
 
-// ParseExpressionAt re-parses text it holds apart from its file, so it has to
+// antlrExpressionAtChecked parses text held apart from its file, so it has to
 // apply the same rule: a '(' on a new line does not call the line before.
-func TestNewlineParenInParseExpressionAt(t *testing.T) {
-	_, err := ParseExpressionAt("f(1)\n(2)", 3, 4, "default value")
+func TestNewlineParenInANTLRExpressionAt(t *testing.T) {
+	_, _, err := antlrExpressionAtChecked("f(1)\n(2)", 3, 4, "default value")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unexpected "(" in default value`)
 
-	_, err = ParseExpressionAt("f(1)(2)", 3, 4, "default value")
+	_, _, err = antlrExpressionAtChecked("f(1)(2)", 3, 4, "default value")
 	assert.NoError(t, err)
 }
 
@@ -303,13 +306,13 @@ func TestNewlineTokensAbsentFromSyntaxErrors(t *testing.T) {
 		"package main\n\nsealed type S {\n    case A\n    (\n}\n",
 		"package main\n\nfunc f() {\n    val x = 1\n    *}\n",
 	} {
-		_, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
+		errs := NewAntlrGalaParser().ParseFile(input).Errors
 		require.NotEmpty(t, errs, input)
 		for _, err := range errs {
 			assert.NotContains(t, err.Error(), "NL_", input)
 		}
 	}
-	_, _, errs := NewAntlrGalaParser().ParseFile("package main\n\nval f func int = g\n").Lenient()
+	errs := NewAntlrGalaParser().ParseFile("package main\n\nval f func int = g\n").Errors
 	require.NotEmpty(t, errs)
 	assert.Contains(t, errs[0].Error(), "missing '(' at 'int'")
 }

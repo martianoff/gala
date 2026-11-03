@@ -32,7 +32,7 @@ func TestParamDefaultClauseWithoutValue(t *testing.T) {
 	parser.RequestEngine(string(parser.EngineANTLR))
 	t.Cleanup(func() { parser.RequestEngine("") })
 	parsed := transpiler.NewAntlrGalaParser().ParseFile(src)
-	tree, _, err := parsed.Strict()
+	tree, err := parsed.Tree, parsed.Err()
 	require.NoError(t, err)
 	clause := firstParamDefault(tree)
 	require.NotNil(t, clause, "no default clause")

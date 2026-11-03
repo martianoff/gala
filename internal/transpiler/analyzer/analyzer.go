@@ -4020,7 +4020,13 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	// and a converted handle no longer holds the token stream (see
 	// parser.Parsed.Native). A clean parse that does not convert is a bug in
 	// galop's converter, which no reader can work around: every reader fails
-	// with it, as an internal error (not as the file's syntax error).
+	// with it, as an internal error (not as the file's syntax error). The
+	// entry keeps the native tree alone (Native.TreeOnly), not a parse's
+	// ANTLR tree (ANTLR's engine's), trimmed before the cache shares it, as
+	// the cache keeps the entry for the life of a build worker.
+	kept := parsed.CleanNative().TreeOnly()
+	// The handle, not kept, which is nil when the conversion failed: its
+	// error says why.
 	nf, err := nativeFileOf(parsed.CleanNative())
 	if err != nil {
 		return a.cacheParsedFile(canonPath, &parsedFileEntry{internalErr: &InternalError{File: path, Err: err}, mtime: info.ModTime(), size: info.Size()})
@@ -4030,11 +4036,8 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	if !clause.Ok() || !name.Ok() {
 		return nil
 	}
-	// The entry keeps the native tree alone (Native.TreeOnly), not a parse's
-	// ANTLR tree (ANTLR's engine's): every reader takes the native tree, and
-	// the cache keeps the entry for the life of a build worker.
 	return a.cacheParsedFile(canonPath, &parsedFileEntry{
-		parsed:  &galaparser.Parsed{Docs: parsed.Docs, Native: parsed.Native.TreeOnly()},
+		parsed:  &galaparser.Parsed{Docs: parsed.Docs, Native: kept},
 		nf:      nf,
 		pkgName: galaparser.NativeText(name.GalaNodeRef),
 		pkgPos:  nativePos(clause.GalaNodeRef),

@@ -28,62 +28,43 @@ type Native struct {
 	once sync.Once
 	// converted is set once Tree has its tree (see Converted).
 	converted atomic.Bool
-	root      antlr.ParserRuleContext
-	// root, stream and src are what the conversion reads. The ANTLR tree
-	// keeps its tokens, their lexer and its input alive, but reaches the
-	// token stream only through the recognition exceptions of error-recovered
-	// contexts, and never the source text. So until the conversion the handle
-	// is what holds the stream (its token slice, hidden tokens included) and
-	// the text. Converting lets all three go; the text stays, as the native
-	// tree keeps it (its tokens point into it).
-	stream *antlr.CommonTokenStream
-	src    string
+	// trimmed is TreeOnly's trim of the tree (trimSpare), done once.
+	trimmed sync.Once
+	// root, stream and src are what the conversion reads, with toNative,
+	// galop's converter. The ANTLR tree keeps its tokens, their lexer and its
+	// input alive, but reaches the token stream only through the recognition
+	// exceptions of error-recovered contexts, and never the source text. So
+	// until the conversion the handle is what holds the stream (its token
+	// slice, hidden tokens included) and the text. Converting lets all three
+	// go; the text stays, as the native tree keeps it (its tokens point into
+	// it).
+	root     antlr.ParserRuleContext
+	stream   *antlr.CommonTokenStream
+	src      string
+	toNative func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree
 
 	tree *native.GalaTree
 	err  error
 }
 
 // newNative returns the native-tree handle of root, an ANTLR tree read from
-// stream over src, converted on the first call to Tree, or nil when there is
-// no source-file tree.
-func newNative(root antlr.Tree, stream *antlr.CommonTokenStream, src string) *Native {
+// stream over src, converted by toNative on the first call to Tree, or nil
+// when there is no source-file tree.
+func newNative(root antlr.Tree, stream *antlr.CommonTokenStream, src string,
+	toNative func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree) *Native {
 	sf, ok := root.(*grammar.SourceFileContext)
 	if !ok || sf == nil {
 		return nil
 	}
-	return &Native{root: sf, stream: stream, src: src}
+	return &Native{root: sf, stream: stream, src: src, toNative: toNative}
 }
 
 // nativeHandle returns the handle of tree, which galop's native parser built.
 func nativeHandle(tree *native.GalaTree) *Native {
-	trimSpare(tree)
 	t := &Native{tree: tree}
 	t.once.Do(func() {})
 	t.converted.Store(true)
 	return t
-}
-
-// trimSpare cuts tree's slices to their length where much of them is spare
-// capacity. The lexer, the parser and the converter size the token, node and
-// child slices by estimates of the input (and grow them by doubling past
-// them), which overshoot by a fifth to a third. A handle outlives its parse
-// (the analyzer's parsed-file cache keeps every file it parsed for the life
-// of a build worker), so the spare is cut, before any node reference exists.
-func trimSpare(tree *native.GalaTree) {
-	tree.Nodes = trimmed(tree.Nodes)
-	tree.Kids = trimmed(tree.Kids)
-	tree.Tokens = trimmed(tree.Tokens)
-	tree.Hidden = trimmed(tree.Hidden)
-	tree.TokenLabels = trimmed(tree.TokenLabels)
-}
-
-// trimmed is s cut to its length, or s when less than an eighth of it is
-// spare: copying it would cost more than the spare holds.
-func trimmed[S ~[]E, E any](s S) S {
-	if cap(s)-len(s) <= len(s)/8 {
-		return s
-	}
-	return slices.Clone(s)
 }
 
 // Tree is the native tree: galop's native parse, or ANTLR's tree converted on
@@ -115,15 +96,46 @@ func (t *Native) Root() (native.GalaNodeRef, bool) {
 	return tree.Root(), true
 }
 
-// TreeOnly is t once its tree is there (converting it if nothing has yet), nil
-// when there is none. A converted handle holds nothing of ANTLR's parse (its
-// conversion drops the ANTLR tree, the token stream and the text), so a
-// holder that keeps a handle long keeps this one.
+// TreeOnly is t once its tree is there (converting it if nothing has yet),
+// nil when there is none: the handle for a holder that keeps it long. A
+// converted handle holds nothing of ANTLR's parse (its conversion drops the
+// ANTLR tree, the token stream and the text), and the first call cuts the
+// spare capacity off the tree's slices (trimSpare), so the holder keeps
+// neither. That replaces the slices under the tree's readers: call it before
+// the tree is read on any other goroutine. Later calls change nothing.
 func (t *Native) TreeOnly() *Native {
-	if _, err := t.Tree(); err != nil {
+	tree, err := t.Tree()
+	if err != nil {
 		return nil
 	}
+	t.trimmed.Do(func() { trimSpare(tree) })
 	return t
+}
+
+// trimSpare cuts tree's slices to their length where much of them is spare
+// capacity. The lexer, the parser and the converter size the token, node and
+// child slices by estimates of the input (and grow them by doubling past
+// them), which overshoot by a fifth to a third. A kept handle outlives its
+// parse (the analyzer's parsed-file cache keeps every file it parsed for the
+// life of a build worker), so the spare is cut where a handle is kept
+// (TreeOnly), not on every parse. The tokens and hidden tokens are the
+// tree's *native.GalaTokens', which nothing but the tree holds once its
+// parse returned.
+func trimSpare(tree *native.GalaTree) {
+	tree.Nodes = trimmed(tree.Nodes)
+	tree.Kids = trimmed(tree.Kids)
+	tree.Tokens = trimmed(tree.Tokens)
+	tree.Hidden = trimmed(tree.Hidden)
+	tree.TokenLabels = trimmed(tree.TokenLabels)
+}
+
+// trimmed is s cut to its length, or s when less than an eighth of it is
+// spare: copying it would cost more than the spare holds.
+func trimmed[S ~[]E, E any](s S) S {
+	if cap(s)-len(s) <= len(s)/8 {
+		return s
+	}
+	return slices.Clone(s)
 }
 
 func (t *Native) convert() {
@@ -132,14 +144,12 @@ func (t *Native) convert() {
 			t.tree, t.err = nil, fmt.Errorf("parser: converting the tree to galop's native tree panicked: %v", r)
 		}
 		// The native tree keeps the text it was given; the handle needs no
-		// ANTLR tree, stream or text any more, and after a failure nothing
-		// does.
-		t.root, t.stream, t.src = nil, nil, ""
+		// ANTLR tree, stream, text or converter any more, and after a
+		// failure nothing does.
+		t.root, t.stream, t.src, t.toNative = nil, nil, "", nil
 		t.converted.Store(true)
 	}()
-	if t.tree = galopToNative(t.root, t.stream, t.src); t.tree == nil {
+	if t.tree = t.toNative(t.root, t.stream, t.src); t.tree == nil {
 		t.err = errNoNative
-		return
 	}
-	trimSpare(t.tree)
 }

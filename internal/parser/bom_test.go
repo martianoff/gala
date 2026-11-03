@@ -72,8 +72,8 @@ val x = 10`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, plainErrs := p.ParseFile(tt.input).Lenient()
-			_, _, bomErrs := p.ParseFile(utf8BOM + tt.input).Lenient()
+			plainErrs := p.ParseFile(tt.input).Errors
+			bomErrs := p.ParseFile(utf8BOM + tt.input).Errors
 
 			if tt.wantErr {
 				assert.NotEmpty(t, plainErrs, "expected the BOM-free input to fail")
@@ -108,7 +108,7 @@ func main() {
 `
 
 	parsed := NewAntlrGalaParser().ParseFile(utf8BOM + src)
-	_, _, errs := parsed.Lenient()
+	errs := parsed.Errors
 
 	require.NotNil(t, parsed.RecoveredNative())
 	for _, err := range errs {
@@ -126,8 +126,8 @@ func TestParseWithLeadingBOMPreservesPositions(t *testing.T) {
 	// whose column we can compare across both inputs.
 	const src = "@@@\n\npackage main\n"
 
-	_, _, plainErrs := NewAntlrGalaParser().ParseFile(src).Lenient()
-	_, _, bomErrs := NewAntlrGalaParser().ParseFile(utf8BOM + src).Lenient()
+	plainErrs := NewAntlrGalaParser().ParseFile(src).Errors
+	bomErrs := NewAntlrGalaParser().ParseFile(utf8BOM + src).Errors
 
 	require.NotEmpty(t, plainErrs)
 	require.Equal(t, len(plainErrs), len(bomErrs))
@@ -146,7 +146,7 @@ func TestParseWithLeadingBOMPreservesPositions(t *testing.T) {
 func TestParseBOMOnlyAtStartIsStripped(t *testing.T) {
 	src := "package main\n\nval s = \"a" + utf8BOM + "b\"\n"
 
-	_, _, errs := NewAntlrGalaParser().ParseFile(src).Lenient()
+	errs := NewAntlrGalaParser().ParseFile(src).Errors
 	require.Len(t, errs, 1, "%v", errs)
 	var se *galaerr.SemanticError
 	require.ErrorAs(t, errs[0], &se)
@@ -154,7 +154,7 @@ func TestParseBOMOnlyAtStartIsStripped(t *testing.T) {
 	assert.Equal(t, 3, se.Line)
 	assert.Equal(t, 10, se.Column)
 
-	_, _, errs = NewAntlrGalaParser().ParseFile("package main\n\nval s = \"a\\uFEFFb\"\n").Lenient()
+	errs = NewAntlrGalaParser().ParseFile("package main\n\nval s = \"a\\uFEFFb\"\n").Errors
 	assert.Empty(t, errs, "the escaped spelling must parse: %v", errs)
 }
 

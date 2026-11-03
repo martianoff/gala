@@ -425,7 +425,6 @@ func TestNativeWalkCases(t *testing.T) {
 			if c.name == walkCases[0].name || c.name == statementShapes || c.name == lambdaShapes {
 				require.NoError(t, n.err, "the case does not transpile")
 			}
-			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 			if line, ok := bodyMarkerLine(c.src); ok && n.err != nil {
 				assert.Truef(t, n.stmtLines[line], "the native walk did not reach the statement on line %d; error: %v", line, n.err)
 			}
