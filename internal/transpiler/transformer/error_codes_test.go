@@ -488,6 +488,103 @@ func main() {
 			expectContains: "case guard `v` has type string, not bool",
 		},
 		{
+			// A type argument: Some(x) is std.Some[T], and T here is the
+			// receive-only signal channel ctx.Done() returns.
+			name: "GALA-E0090 anonymous struct type as a type argument",
+			input: `package main
+
+import "context"
+
+func main() {
+    val held = Some(context.Background().Done())
+    Println(held.IsDefined())
+}`,
+			expectCode:     galaerr.CodeAnonymousStructType,
+			expectContains: "error_codes_test.gala:6:20 type `<-chan struct{}` holds an anonymous Go struct type, which GALA cannot write (hint: give the type a name on the Go side; for a signal channel use go_interop.Signal",
+		},
+		{
+			// The value received from a signal channel is a struct{}.
+			name: "GALA-E0090 received struct{} as a type argument",
+			input: `package main
+
+import "martianoff/gala/go_interop"
+
+func main() {
+    val s = go_interop.NewSignal()
+    go_interop.CloseSignal(s)
+    val v = <-s
+    Println(Some(v).IsDefined())
+}`,
+			expectCode:     galaerr.CodeAnonymousStructType,
+			expectContains: "type `struct{}` is an anonymous Go struct type, which GALA cannot write",
+		},
+		{
+			// A lambda's result type is written in its Go func literal.
+			name: "GALA-E0090 anonymous struct type as a lambda result",
+			input: `package main
+
+import "context"
+
+func main() {
+    val ctx = context.Background()
+    val f = () => ctx.Done()
+    Println(f != nil)
+}`,
+			expectCode:     galaerr.CodeAnonymousStructType,
+			expectContains: "type `<-chan struct{}` holds an anonymous Go struct type",
+		},
+		{
+			// A lambda's parameter type is written too: here it is the type
+			// argument inferred for T.
+			name: "GALA-E0090 anonymous struct type as an inferred type argument and lambda parameter",
+			input: `package main
+
+import (
+    "context"
+
+    "martianoff/gala/go_interop"
+)
+
+func check[T any](x T, f func(T) bool) bool = f(x)
+
+func main() {
+    val ctx = context.Background()
+    Println(check(ctx.Done(), (d) => go_interop.IsClosed(d)))
+}`,
+			expectCode:     galaerr.CodeAnonymousStructType,
+			expectContains: "type `<-chan struct{}` holds an anonymous Go struct type",
+		},
+		{
+			// A branching value is held in a declared var before its branches
+			// assign it.
+			name: "GALA-E0090 anonymous struct type as a var type",
+			input: `package main
+
+import "context"
+
+func main() {
+    val a = context.Background()
+    val d = if (a.Err() == nil) a.Done() else a.Done()
+    Println(d != nil)
+}`,
+			expectCode:     galaerr.CodeAnonymousStructType,
+			expectContains: "type `<-chan struct{}` holds an anonymous Go struct type",
+		},
+		{
+			// A method's type argument inferred from a lambda's result.
+			name: "GALA-E0090 anonymous struct type as a Map result",
+			input: `package main
+
+import "context"
+
+func main() {
+    val o = Some(context.Background()).Map((c) => c.Done())
+    Println(o.IsDefined())
+}`,
+			expectCode:     galaerr.CodeAnonymousStructType,
+			expectContains: "type `<-chan struct{}` holds an anonymous Go struct type",
+		},
+		{
 			// GALA-E0040 is the one code in this table raised during PARSING
 			// rather than analysis, so it also pins that a coded parse-phase
 			// diagnostic survives the pipeline with its code intact.
@@ -1440,6 +1537,59 @@ func main() {
 	// A Some pattern's test is a typed bool, which Go joins with && only to
 	// a bool: the opaque guard is converted.
 	assert.Contains(t, out, "&& bool(o)")
+}
+
+// TestAnonymousStructValuesPassThrough is the positive companion to
+// GALA-E0090: a value of an anonymous Go struct type whose type is never
+// written is accepted. That is a val binding, a Go call's result passed to
+// another Go call, a bare or val-bound receive, a local of a block lambda
+// that is not its result, and a go_interop.Signal, which names the channel,
+// in a type argument.
+func TestAnonymousStructValuesPassThrough(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	input := `package main
+
+import (
+    "context"
+    "time"
+
+    "martianoff/gala/go_interop"
+)
+
+func main() {
+    val (ctx, cancel) = context.WithCancel(context.Background())
+    val done = ctx.Done()
+    cancel()
+    <-done
+    val v = <-ctx.Done()
+    go_interop.WaitClosed(ctx.Done())
+    Println(v, go_interop.IsClosed(done), go_interop.WaitClosedTimeout(done, time.Second))
+
+    // A block lambda whose result is a local: its other locals are not typed.
+    val f = () => {
+        val d = ctx.Done()
+        go_interop.WaitClosed(d)
+        val r = 1
+        return r
+    }
+    Println(f())
+
+    val s = go_interop.NewSignal()
+    val held = Some(s)
+    go_interop.CloseSignal(s)
+    <-held.Get()
+    Println(go_interop.IsClosed(held.Get()), go_interop.IsDone(ctx))
+}`
+	out, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+	assert.Contains(t, out, "var done = ctx.Done()")
+	assert.Contains(t, out, "std.Some[go_interop.Signal]")
+	assert.NotContains(t, out, "struct{}")
 }
 
 // TestT6VariantArityPositive is the positive half of T6 — the same sealed

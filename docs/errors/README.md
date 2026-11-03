@@ -104,6 +104,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0087` | Name is both a std type and a dot-imported value | [GALA-E0087.md](GALA-E0087.md) |
 | `GALA-E0088` | Parameter with no name | [GALA-E0088.md](GALA-E0088.md) |
 | `GALA-E0089` | Case guard is not a bool | [GALA-E0089.md](GALA-E0089.md) |
+| `GALA-E0090` | Anonymous Go struct type would have to be written | [GALA-E0090.md](GALA-E0090.md) |
 
 ### Retired codes
 

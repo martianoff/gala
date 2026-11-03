@@ -11,10 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// An anonymous Go struct is typed concretely when every field's type has an
-// exact spelling: a fixed-length array keeps its length, a generic type
-// instance its type arguments and an inline interface its methods. One that
-// cannot be spelled outside its package stays the placeholder.
+// An anonymous Go struct is typed concretely, its fields' types exact: a
+// fixed-length array keeps its length, a generic type instance its type
+// arguments and an inline interface its methods. One that could not be
+// written outside its package (an unexported field, method or type) or with
+// a field the type model does not spell (a variadic function) is typed the
+// same way, not erased to any: GALA never writes the type (GALA-E0090).
 func TestAnonymousStructFieldTypes(t *testing.T) {
 	const src = `package p
 
@@ -60,11 +62,11 @@ func TopLevel() [3]int
 		{"Embedded", "struct{R interface{Close() error; Read() int}}"},
 		{"Named", "struct{F func(int) string}"},
 		{"Nested", "struct{A struct{B [1]p.Box[string]}}"},
-		{"Hidden", "any"},
-		{"HiddenMethod", "any"},
-		{"Variadic", "any"},
-		{"HiddenType", "any"},
-		{"Aliased", "any"},
+		{"Hidden", "struct{x int}"},
+		{"HiddenMethod", "struct{R any}"},
+		{"Variadic", "struct{F func([]int)}"},
+		{"HiddenType", "struct{C []p.cell}"},
+		{"Aliased", "struct{R p.Reader; A any}"},
 		// Outside an anonymous struct an array stays the slice it has been.
 		{"AnyField", "struct{A any; E error}"},
 		{"TopLevel", "[]int"},

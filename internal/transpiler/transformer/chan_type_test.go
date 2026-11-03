@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"testing"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 
 	"github.com/stretchr/testify/assert"
@@ -44,23 +45,42 @@ func TestNestedChanTypeExpr(t *testing.T) {
 	}
 }
 
-// An anonymous Go struct type is emitted as Go spells it, so a signal
-// channel's element is `struct{}`, not `any`.
-func TestStructTypeExpr(t *testing.T) {
+// An anonymous Go struct type is never written in the generated Go: a type
+// that is or holds one is GALA-E0090, however deep the struct sits.
+func TestStructTypeExprRejected(t *testing.T) {
+	tr := NewGalaASTTransformer().(*galaASTTransformer)
+	empty := transpiler.StructType{}
+	for _, typ := range []transpiler.Type{
+		empty,
+		transpiler.ChanType{Elem: empty, Dir: transpiler.ChanRecv},
+		transpiler.GenericType{Base: transpiler.NamedType{Package: "std", Name: "Option"}, Params: []transpiler.Type{empty}},
+		transpiler.FuncType{Results: []transpiler.Type{transpiler.PointerType{Elem: empty}}},
+		transpiler.MapType{Key: transpiler.BasicType{Name: "string"}, Elem: transpiler.ArrayType{Elem: empty}},
+		transpiler.StructType{Fields: []transpiler.StructField{
+			{Name: "X", Type: transpiler.BasicType{Name: "int"}, Tag: `json:"x"`},
+		}},
+	} {
+		func() {
+			defer func() {
+				err, ok := recover().(*galaerr.SemanticError)
+				if assert.True(t, ok, "%s: expected a semantic error", typ) {
+					assert.Equal(t, galaerr.CodeAnonymousStructType, err.Code, typ.String())
+				}
+			}()
+			tr.typeToExpr(typ)
+		}()
+	}
+}
+
+// An inline interface, and a fixed-length array (as an anonymous struct's
+// field reads), are emitted as Go spells them.
+func TestFieldTypeExpr(t *testing.T) {
 	tr := NewGalaASTTransformer().(*galaASTTransformer)
 	for _, tt := range []struct {
 		typ  transpiler.Type
 		want string
 	}{
-		{transpiler.ChanType{Elem: transpiler.StructType{}, Dir: transpiler.ChanRecv}, "<-chan struct{}"},
-		{transpiler.StructType{Fields: []transpiler.StructField{
-			{Name: "X", Type: transpiler.BasicType{Name: "int"}, Tag: `json:"x"`},
-			{Name: "Point", Type: transpiler.BasicType{Name: "Point"}, Embedded: true},
-		}}, "struct {\n\tX\tint\t\"json:\\\"x\\\"\"\n\tPoint\n}"},
-		{transpiler.StructType{Fields: []transpiler.StructField{
-			{Name: "Cells", Type: transpiler.ArrayType{Elem: transpiler.BasicType{Name: "int"}, Len: 3, Fixed: true}},
-			{Name: "Rows", Type: transpiler.ArrayType{Elem: transpiler.ArrayType{Elem: transpiler.BasicType{Name: "string"}, Len: 2, Fixed: true}}},
-		}}, "struct {\n\tCells\t[3]int\n\tRows\t[][2]string\n}"},
+		{transpiler.ArrayType{Elem: transpiler.ArrayType{Elem: transpiler.BasicType{Name: "string"}, Len: 2, Fixed: true}}, "[][2]string"},
 		{transpiler.InterfaceType{Methods: []transpiler.InterfaceMethod{
 			{Name: "Area", Type: transpiler.FuncType{Results: []transpiler.Type{transpiler.BasicType{Name: "int"}}}},
 			{Name: "Scale", Type: transpiler.FuncType{Params: []transpiler.Type{transpiler.BasicType{Name: "int"}}}},

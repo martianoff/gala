@@ -190,7 +190,11 @@ import (
 // type instance or an inline interface is a transpiler.StructType, with the
 // field typed by a fixed ArrayType, a GenericType or an InterfaceType. A v38
 // payload names such a struct as any.
-const CacheVersion = "v39"
+//
+// v40: every anonymous Go struct is a transpiler.StructType, one with an
+// unexported field or a variadic function field included. A v39 payload
+// names such a struct as any.
+const CacheVersion = "v40"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

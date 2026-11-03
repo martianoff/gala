@@ -281,12 +281,24 @@ Go slice and map **types** may be written wherever a type is expected (parameter
 |----|------|
 | `go f()` | `go_interop.Spawn(() => f())`, or a `Future` from `concurrent` |
 | `defer x.Close()` | `use x = open(...)`, or `Using(res, (r) => ...)` from `resource` |
-| `chan T`, `select`, `close(ch)` | `Future`/`Promise`/`Stream`; `go_interop.Signal`, `CloseChan` for Go APIs that hand you one |
+| `chan T`, `select`, `close(ch)` | `Future`/`Promise`/`Stream`; `go_interop.Signal` and its helpers ([signal channels](#signal-channels-and-anonymous-struct-types)), `CloseChan` for Go APIs that hand you one |
 | `panic` / `recover` | `go_builtins.Panic` / `Try(...)` |
 | `if v, err := f(); err != nil` | `f() match { ... }` or `f().GetOrElse(...)` ([GALA-E0047](errors/GALA-E0047.md)) |
 | Struct tags, `` Name string `json:"name"` `` | `Codec[T]` with `.Rename(field, key)`, `.Omit`, `.OmitEmpty`; a type a Go library reads through its tags goes in a [`.go` file of the package](#part-3-one-package-two-languages) ([GALA-E0085](errors/GALA-E0085.md)) |
 
 The bare builtins and statement keywords are compile errors ([GALA-E0035](errors/GALA-E0035.md), [GALA-E0036](errors/GALA-E0036.md)) whose messages name the replacement.
+
+### Signal channels and anonymous struct types
+
+A Go struct type with no name, such as the `struct{}` of a signal channel (`chan struct{}`, or the `<-chan struct{}` that `ctx.Done()` returns), has no GALA spelling. GALA still types such a value: it can be bound with `val`, passed to another Go call and received from (`<-done`), and a returned struct's fields can be read. A use that would make the generated Go write the type is [GALA-E0090](errors/GALA-E0090.md): `Some(ctx.Done())`, a collection of such values, a lambda that takes or returns one. The `go_interop` helpers cover signal channels without writing their type:
+
+| Go | GALA (`go_interop`) |
+|----|------|
+| `make(chan struct{})`, `close(s)` | `NewSignal()`, `CloseSignal(s)`; a `Signal` is a named type, so it fits in an `Option` or a collection |
+| `<-ch`; a `select` with a `default`; a `select` with `time.After(d)` | `WaitClosed(ch)`, `IsClosed(ch)`, `WaitClosedTimeout(ch, d)`, for any `<-chan struct{}`, a `Signal` included |
+| `<-ctx.Done()` and the same checks | `WaitDone(ctx)`, `IsDone(ctx)`, `WaitDoneTimeout(ctx, d)` |
+
+A `Signal` passes as it is to a Go API that takes a `chan struct{}` or a `<-chan struct{}`, as Go allows. A struct with fields that your own Go code returns can be given a name on the Go side.
 
 ---
 

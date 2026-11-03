@@ -1028,8 +1028,8 @@ func syntacticGoType(expr ast.Expr, imports map[string]string, pkgName string, t
 		return syntacticGoType(e.X, imports, pkgName, typeParams)
 
 	case *ast.StructType:
-		// Only the empty struct: a field's spelling needs the type checker
-		// to be exact (see goTypeToTranspilerType).
+		// Only the empty struct: typing a field exactly needs the type
+		// checker (see goTypeToTranspilerType).
 		if e.Fields == nil || len(e.Fields.List) == 0 {
 			return transpiler.StructType{}
 		}
@@ -1557,10 +1557,10 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 func goTypeToTranspilerType(t types.Type) transpiler.Type { return convertGoType(t, false) }
 
 // convertGoType is goTypeToTranspilerType. When exact, as for an anonymous
-// struct's field, t is spelled as Go has it: a fixed-length array keeps its
+// struct's field, t is typed as Go has it: a fixed-length array keeps its
 // length, a generic type instance its type arguments and an inline interface
-// its methods. The caller checks spellsExactly(t) first. Elsewhere those
-// stay as they have been: a slice, the bare type name and `any`.
+// its methods. Elsewhere those stay as they have been: a slice, the bare type
+// name and `any`.
 func convertGoType(t types.Type, exact bool) transpiler.Type {
 	if t == nil {
 		return transpiler.NilType{}
@@ -1681,19 +1681,21 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 
 	case *types.Struct:
 		// An anonymous struct, such as a signal channel's `struct{}`, keeps
-		// its fields, so it is spelled as Go has it. One GALA cannot spell
-		// exactly stays the placeholder it was: an unexported field makes the
-		// same spelling another type in another package.
-		// Inside a field (exact), the outermost struct already checked it.
-		if !exact && !spellsExactly(t) {
-			return transpiler.BasicType{Name: "any"}
-		}
+		// its fields, so a value of it can be typed and its fields read. GALA
+		// never spells it in generated Go: wherever it would have to, the
+		// transformer reports GALA-E0090. So a struct with an unexported
+		// field, or a field Go spells in a way the type model does not
+		// (unsafe.Pointer, a variadic function), is typed too instead of
+		// being erased to any. A field's type is exact (an array keeps its
+		// length) when the model spells it as Go has it; otherwise it is
+		// typed as the same type is outside a struct, so reading the field
+		// never yields a type that names a different Go type.
 		var st transpiler.StructType
 		for i := 0; i < t.NumFields(); i++ {
 			f := t.Field(i)
 			st.Fields = append(st.Fields, transpiler.StructField{
 				Name:     f.Name(),
-				Type:     convertGoType(f.Type(), true),
+				Type:     convertGoType(f.Type(), spellsExactly(f.Type())),
 				Embedded: f.Embedded(),
 				Tag:      t.Tag(i),
 			})
@@ -1709,12 +1711,12 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 	}
 }
 
-// spellsExactly reports whether convertGoType, exact, spells t as Go has it,
-// so that the spelling names the same type: every array length, type
+// spellsExactly reports whether convertGoType, exact, types t as Go has it,
+// so that the type names the same Go type: every array length, type
 // argument and interface method is kept. A name only t's own package can
 // write (an unexported field, method or type), a type reached through a
 // package's alias, unsafe.Pointer and a variadic function type have no
-// spelling in the type model.
+// exact form in the type model.
 func spellsExactly(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic:

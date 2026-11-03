@@ -16,15 +16,15 @@ collection_mutable/treemap.gala: half-typed declaration	13262f3188edcfe9	342a956
 collection_mutable/treemap.gala: member being typed	21b8a09df1972b3c	7cf1da869836bda1
 collection_mutable/treeset.gala: half-typed declaration	f15fb99ec6d60a71	1ea89df3909c1b5e
 collection_mutable/treeset.gala: unclosed call	5b445f10d04e9850	d6212fc4807190d4
-concurrent/future.gala: half-typed declaration	621dfa9347a2ab1e	dd65ff68816dd7b7
+concurrent/future.gala: half-typed declaration	621dfa9347a2ab1e	d0d31ccc4f84d8b4
 concurrent/future.gala: member being typed	426677edeebcebed	2fcdda01691a0b6a
 concurrent/future.gala: truncated	60c6dd0681c21584	5a3d1a2aae52a3f8
 concurrent/future.gala: unclosed call	e566b9efb0c5fd30	3e1f5f6615f14b84
 examples/fix024_match_arm_return_in_loop.gala: half-typed declaration	abff6295371acc62	a3468838c3870d11
 examples/fix024_match_arm_return_in_loop.gala: unclosed call	dbad94e0bad370fb	f6cc4aabbd047572
-examples/for_range_groupby_key_type.gala: half-typed declaration	220d2af3d84160df	c464b139ec49a9f3
+examples/for_range_groupby_key_type.gala: half-typed declaration	220d2af3d84160df	628df1a0084056f5
 examples/for_range_groupby_key_type.gala: truncated	4cc06cc1f10c1981	bc3d227d31b945a0
-examples/for_range_groupby_key_type.gala: unclosed call	a06113fe93d5dbf3	12d7eb011629d191
+examples/for_range_groupby_key_type.gala: unclosed call	a06113fe93d5dbf3	047d1e74688d0763
 examples/local_function_lambda.gala: half-typed declaration	bc31ad85ab8eb496	9ab6e7cc8039f129
 examples/local_function_lambda.gala: member being typed	b3476c65a775725c	59217b7e3322a73c
 examples/local_function_lambda.gala: truncated	f8da3bc2cbd1b575	bc2943b9dc1777f8

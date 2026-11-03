@@ -2459,18 +2459,23 @@ gala_exec_test(
     expected = "case_guard_bool.out",
 )
 
-# Verification: an anonymous Go struct type (a signal channel's struct{}) is
-# typed concretely, so the channel and its received value fit in an Option.
+# Verification: a signal channel, whose element type struct{} GALA cannot
+# write (GALA-E0090), is named go_interop.Signal and fits in an Option; a
+# Signal passes to Go APIs taking chan struct{} and <-chan struct{}; a signal
+# channel from Go and ctx.Done() are used through the go_interop helpers.
 gala_exec_test(
     name = "anonymous_struct_type",
-    src = "anonymous_struct_type.gala",
-    expected = "anonymous_struct_type.out",
-    deps = ["//go_interop"],
+    src = "anonymous_struct_type/main.gala",
+    expected = "anonymous_struct_type/main.out",
+    deps = [
+        "//examples/anonymous_struct_type/bridge",
+        "//go_interop",
+    ],
 )
 
 # Verification: an anonymous Go struct whose fields are a fixed-length array,
 # a generic type instance and an inline interface is typed concretely, so it
-# fits in an Option and its fields keep their types.
+# can be bound with val and its fields read with their own types.
 gala_exec_test(
     name = "anonymous_struct_field_types",
     src = "anonymous_struct_field_types/main.gala",

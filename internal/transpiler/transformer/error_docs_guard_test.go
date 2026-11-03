@@ -1350,6 +1350,22 @@ func main() {
 			},
 		},
 		{
+			name: "anonymous Go struct type written in the generated Go",
+			code: galaerr.CodeAnonymousStructType, // GALA-E0090
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "context"
+
+func main() {
+    val ctx = context.Background()
+    val done = Some(ctx.Done())
+    Println(done.IsDefined())
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

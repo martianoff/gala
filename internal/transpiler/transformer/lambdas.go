@@ -524,8 +524,10 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 		}
 		// A void call, or a match or if-expression with no value, makes the
 		// lambda return nothing, as it does at the tail of a block lambda.
-		if body == nil {
-			if typ := t.getExprType(expr); isVoidIIFE(expr) || isVoidTypeIdent(typ) {
+		if body == nil && isVoidIIFE(expr) {
+			body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
+		} else if body == nil {
+			if typ := t.getExprType(expr); isVoidTypeIdent(typ) {
 				body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
 			} else {
 				retType = typ
@@ -883,20 +885,28 @@ func isSimpleOrPrimitive(typ transpiler.Type) bool {
 }
 
 // blockLocals types the locals a block declares, for a returned name the
-// scope can no longer type. The declarations are typed on the first lookup
-// only: most return expressions are typed directly.
+// scope can no longer type. A local is typed only when it is looked up: most
+// return expressions are typed directly, and typing a local whose type the
+// generated Go never writes could raise GALA-E0090 for nothing.
 type blockLocals struct {
 	t     *galaASTTransformer
 	block *ast.BlockStmt
-	types map[string]ast.Expr // nil until the first lookup
+	decls map[string]blockLocal // nil until the first lookup
+}
+
+// blockLocal is a local's last declaration in its block: its declared type,
+// else its value, and whether it has been typed.
+type blockLocal struct {
+	typ, value ast.Expr
+	typed      bool
 }
 
 // typeOf returns the type of the local name declared in the block — `var name
 // T = x`, `var name = x` or `name := x` — and whether the block declares it;
 // the type is nil when the declaration cannot be typed.
 func (b *blockLocals) typeOf(name string) (ast.Expr, bool) {
-	if b.types == nil {
-		b.types = make(map[string]ast.Expr)
+	if b.decls == nil {
+		b.decls = make(map[string]blockLocal)
 		for _, stmt := range b.block.List {
 			switch s := stmt.(type) {
 			case *ast.DeclStmt:
@@ -907,7 +917,7 @@ func (b *blockLocals) typeOf(name string) (ast.Expr, bool) {
 				for _, spec := range genDecl.Specs {
 					if vs, ok := spec.(*ast.ValueSpec); ok && len(vs.Names) == len(vs.Values) {
 						for i, n := range vs.Names {
-							b.record(n.Name, vs.Type, vs.Values[i])
+							b.decls[n.Name] = blockLocal{typ: vs.Type, value: vs.Values[i]}
 						}
 					}
 				}
@@ -917,23 +927,23 @@ func (b *blockLocals) typeOf(name string) (ast.Expr, bool) {
 				}
 				for i, lhs := range s.Lhs {
 					if id, ok := lhs.(*ast.Ident); ok {
-						b.record(id.Name, nil, s.Rhs[i])
+						b.decls[id.Name] = blockLocal{value: s.Rhs[i]}
 					}
 				}
 			}
 		}
 	}
-	typ, declared := b.types[name]
-	return typ, declared
-}
-
-// record types name by its declared type, else by its value's (nil when
-// that cannot be typed).
-func (b *blockLocals) record(name string, typ, value ast.Expr) {
-	if typ == nil {
-		typ = b.t.getExprType(value)
+	local, declared := b.decls[name]
+	if declared && !local.typed {
+		// By its declared type, else by its value's (nil when that cannot
+		// be typed).
+		if local.typ == nil {
+			local.typ = b.t.getExprType(local.value)
+		}
+		local.typed = true
+		b.decls[name] = local
 	}
-	b.types[name] = typ
+	return local.typ, declared
 }
 
 // containsAny checks if the given type expression contains "any" as a type or type parameter.

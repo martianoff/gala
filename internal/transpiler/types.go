@@ -2,7 +2,6 @@ package transpiler
 
 import (
 	"go/token"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -48,25 +47,47 @@ func HasResult(t Type) bool {
 // anywhere inside it: go/types resolves `[]box.Box` whose package failed to
 // load to a slice whose ELEMENT is unresolved, so a top-level check alone
 // would let `[]<nothing>` through.
-func ContainsUnusable(t Type) bool {
-	if IsUnusable(t) {
+func ContainsUnusable(t Type) bool { return containsType(t, IsUnusable) }
+
+// ContainsStruct reports whether t is, or holds anywhere inside it, an
+// anonymous Go struct type (StructType), which GALA cannot write.
+func ContainsStruct(t Type) bool { return containsType(t, isStructType) }
+
+func isStructType(t Type) bool {
+	_, ok := t.(StructType)
+	return ok
+}
+
+// containsType reports whether match holds for t or for any type inside it.
+func containsType(t Type, match func(Type) bool) bool {
+	if match(t) {
 		return true
 	}
 	switch v := t.(type) {
 	case ArrayType:
-		return ContainsUnusable(v.Elem)
+		return containsType(v.Elem, match)
 	case ChanType:
-		return ContainsUnusable(v.Elem)
+		return containsType(v.Elem, match)
 	case StructType, InterfaceType:
-		return slices.ContainsFunc(MemberTypes(v), ContainsUnusable)
+		return anyContainsType(MemberTypes(v), match)
 	case PointerType:
-		return ContainsUnusable(v.Elem)
+		return containsType(v.Elem, match)
 	case MapType:
-		return ContainsUnusable(v.Key) || ContainsUnusable(v.Elem)
+		return containsType(v.Key, match) || containsType(v.Elem, match)
 	case GenericType:
-		return ContainsUnusable(v.Base) || slices.ContainsFunc(v.Params, ContainsUnusable)
+		return containsType(v.Base, match) || anyContainsType(v.Params, match)
 	case FuncType:
-		return slices.ContainsFunc(v.Params, ContainsUnusable) || slices.ContainsFunc(v.Results, ContainsUnusable)
+		return anyContainsType(v.Params, match) || anyContainsType(v.Results, match)
+	}
+	return false
+}
+
+// anyContainsType reports whether containsType(t, match) holds for any t in ts.
+func anyContainsType(ts []Type, match func(Type) bool) bool {
+	for _, t := range ts {
+		if containsType(t, match) {
+			return true
+		}
 	}
 	return false
 }

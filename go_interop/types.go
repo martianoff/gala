@@ -357,12 +357,15 @@ func MapCopy[K comparable, V any](m map[K]V) map[K]V {
 
 // === Concurrency Primitives ===
 
-// Signal is an empty channel used for signaling completion.
-type Signal = chan struct{}
+// Signal is a channel closed to signal completion. It is a defined type over
+// chan struct{}, so GALA can name it (an anonymous struct type has no GALA
+// spelling, see GALA-E0090) and Go APIs that take a chan struct{} or a
+// <-chan struct{} accept it as is.
+type Signal chan struct{}
 
 // NewSignal creates a new signal channel.
 func NewSignal() Signal {
-	return make(chan struct{})
+	return make(Signal)
 }
 
 // CloseSignal closes a signal channel to broadcast completion.
@@ -372,18 +375,65 @@ func CloseSignal(s Signal) {
 
 // WaitSignal blocks until the signal is closed.
 func WaitSignal(s Signal) {
-	<-s
+	WaitClosed(s)
 }
 
 // WaitSignalTimeout waits for a signal with timeout.
 // Returns true if signal was received, false if timeout occurred.
 func WaitSignalTimeout(s Signal, timeout time.Duration) bool {
+	return WaitClosedTimeout(s, timeout)
+}
+
+// WaitClosed blocks until ch, a signal channel such as a Signal or one a Go
+// API returns, is closed.
+func WaitClosed(ch <-chan struct{}) {
+	<-ch
+}
+
+// IsClosed reports whether ch, a signal channel, is closed. It never blocks.
+// A signal channel carries no values, only its close; a value sent on ch
+// would be received here and reported as closed.
+func IsClosed(ch <-chan struct{}) bool {
 	select {
-	case <-s:
+	case <-ch:
 		return true
-	case <-time.After(timeout):
+	default:
 		return false
 	}
+}
+
+// WaitClosedTimeout waits up to timeout for ch, a signal channel, to be
+// closed. It returns true if it was, false if the timeout elapsed first.
+// A channel already closed is reported as such whatever the timeout, so a
+// timeout of 0 is a reliable poll.
+func WaitClosedTimeout(ch <-chan struct{}, timeout time.Duration) bool {
+	if IsClosed(ch) {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ch:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+// WaitDone blocks until ctx is done: cancelled, or past its deadline.
+func WaitDone(ctx context.Context) {
+	<-ctx.Done()
+}
+
+// IsDone reports whether ctx is done. It never blocks.
+func IsDone(ctx context.Context) bool {
+	return ctx.Err() != nil
+}
+
+// WaitDoneTimeout waits up to timeout for ctx to be done. It returns true if
+// it was, false if the timeout elapsed first.
+func WaitDoneTimeout(ctx context.Context, timeout time.Duration) bool {
+	return WaitClosedTimeout(ctx.Done(), timeout)
 }
 
 // === Cancellation ===
