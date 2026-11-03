@@ -99,7 +99,7 @@ func nativeTopLevelDecls(root native.GalaNodeRef) iter.Seq[native.GalaNodeRef] {
 	}
 }
 
-// nativePos is transpiler.PosFromToken of n's first token.
+// nativePos is the SourcePos of n's first token.
 func nativePos(n native.GalaNodeRef) transpiler.SourcePos {
 	return nativeTokenPos(n.Start())
 }

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/resolver"
 )
 
@@ -88,11 +87,11 @@ func TestLookupSymbolHonorsTheFileDotImports(t *testing.T) {
 		"import \"martianoff/gala/json\"\nimport ( . \"martianoff/gala/yaml\" )\n",
 	} {
 		src := "package app\n\n" + imports + "\nfunc main() {}\n"
-		tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
-		if err != nil {
-			t.Fatalf("%q: %v", imports, err)
+		handle := transpiler.NewAntlrGalaParser().ParseFile(src).CleanNative()
+		if handle == nil {
+			t.Fatalf("%q: does not parse", imports)
 		}
-		got := lookupSymbol(rich, "AsIs", func() *resolver.TypeResolver { return fileResolver(rich, analyzer.DotImportPaths(tree)) })
+		got := lookupSymbol(rich, "AsIs", func() *resolver.TypeResolver { return fileResolver(rich, dotImportPathsOf(handle)) })
 		if !strings.Contains(got, "AsIs of yaml.") {
 			t.Errorf("%q: AsIs hovered as\n%s\nwant yaml's case", imports, got)
 		}

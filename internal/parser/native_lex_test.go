@@ -202,6 +202,25 @@ func TestNativeLexMatchesANTLR(t *testing.T) {
 	t.Logf("%d re-typed tokens, %d doc comments", retyped, documented)
 }
 
+// TestVisitNativeTokensMatchesVisitTokens: over the corpus, a BOM and invalid
+// UTF-8 included, VisitNativeTokens visits the texts of the default-channel
+// tokens VisitTokens visits, in order.
+func TestVisitNativeTokensMatchesVisitTokens(t *testing.T) {
+	inputs := append(corpusInputs(t), "\xef\xbb\xbfpackage main\n\n// a \x94\nval s = \"a\x94b\" // (\n")
+	for k, input := range inputs {
+		var want, got []string
+		VisitTokens(input, func(tok antlr.Token) {
+			if tok.GetChannel() == antlr.TokenDefaultChannel {
+				want = append(want, tok.GetText())
+			}
+		})
+		VisitNativeTokens(input, func(text string) { got = append(got, text) })
+		if !slices.Equal(want, got) {
+			t.Errorf("input %d (%.60q): the visited tokens differ", k, input)
+		}
+	}
+}
+
 // TestNativeLexInvalidUTF8: a byte that is not valid UTF-8, in a comment, a
 // doc comment, a string or an identifier, lexes as ANTLR lexes it, as U+FFFD:
 // the same token text, columns and doc comments.

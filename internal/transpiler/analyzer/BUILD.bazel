@@ -34,7 +34,6 @@ go_library(
     deps = [
         "//galaerr",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/genheader",
@@ -45,7 +44,6 @@ go_library(
         "//internal/transpiler/scopewalk",
         "//internal/transpiler/scopewalk/nativewalk",
         "//internal/transpiler/transformer",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 
@@ -167,4 +165,16 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
+)
+
+# gazelle:exclude no_antlr_test.go
+go_test(
+    # keep
+    name = "no_antlr_test",
+    srcs = ["no_antlr_test.go"],
+    data = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ) + ["BUILD.bazel"],
+    deps = ["//internal/noantlr"],
 )

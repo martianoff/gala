@@ -16,8 +16,9 @@ import (
 // doc comments come from their hidden channel (nativeDocComments), and the
 // blank-line check reads the native tree (checkEmptyLinesNative). Each
 // matches its ANTLR counterpart, which the tests hold it to over the corpus.
-// Nothing on the build path calls them yet: they are the groundwork for
-// parsing with galop's native flavor directly.
+// Under galop's engine the transformer parses the expressions of string
+// interpolations with them (ParseExpressionCheckedAt), and the language
+// server lexes with them (VisitNativeTokens).
 
 // RetypeNewlines applies GALA's line-break rule (see lineBreakRule) to ts in
 // place, as newlineTokenSource applies it to ANTLR's lexer: a '(' that starts
@@ -71,6 +72,44 @@ func lexNative(src string, line, col int) *native.GalaTokens {
 	return ts
 }
 
+// VisitNativeTokens lexes input with galop's native lexer and calls visit
+// with the text of every default-channel token, in order, stopping at EOF:
+// VisitTokens on galop's lexer, whose tokens match ANTLR's lexer's
+// (TestNativeLexMatchesANTLR). Lexical errors are not reported. A panic in
+// galop's lexer is recovered and reported through noteGalopPanic, and input
+// is then lexed with ANTLR's lexer instead, before any token is visited.
+//
+// Like ParseFile it is safe to call from several goroutines at once.
+func VisitNativeTokens(input string, visit func(text string)) {
+	ts := lexNativeRecovered(input)
+	if ts == nil {
+		VisitTokens(input, func(tok antlr.Token) {
+			if tok.GetChannel() == antlr.TokenDefaultChannel {
+				visit(tok.GetText())
+			}
+		})
+		return
+	}
+	for _, tok := range ts.Tokens {
+		if tok.Type == native.GalaEOF {
+			return
+		}
+		visit(tok.Text(ts.Src))
+	}
+}
+
+// lexNativeRecovered is lexNative of input at its start, or nil when galop's
+// lexer panics on it (reported through noteGalopPanic).
+func lexNativeRecovered(input string) (ts *native.GalaTokens) {
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic("lexer", input, r)
+			ts = nil
+		}
+	}()
+	return lexNative(input, 0, 0)
+}
+
 // ErrNativeExpression is what ParseExpressionNativeAt returns when galop's
 // native lexer and parser do not settle the input: a lexical or syntax error,
 // a token left over after the expression, or a panic. Reporting the error is
@@ -91,7 +130,7 @@ var ErrConvertExpression = errors.New("parser: galop's converter failed on the e
 func ParseExpressionNativeAt(src string, line, col int) (expr native.ExpressionNode, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			noteGalopPanic(src, r)
+			noteGalopPanic("parser", src, r)
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: panic: %v", ErrNativeExpression, r)
 		}
 	}()
@@ -185,7 +224,7 @@ func ParseExpressionTree(src string) (native.ExpressionNode, []error) {
 func convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStream, src string) (expr native.ExpressionNode, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			noteGalopPanic(src, r)
+			noteGalopPanic("parser", src, r)
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
 		}
 	}()

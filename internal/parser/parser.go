@@ -278,7 +278,7 @@ func lexWithGalop(input string, line, col int) (*lexedInput, *GalaErrorListener)
 func tryGalop[T any](input string, in *lexedInput, parse func(*antlr.CommonTokenStream) (T, bool)) (tree T, ok, panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			noteGalopPanic(input, r)
+			noteGalopPanic("parser", input, r)
 			var zero T
 			tree, ok, panicked = zero, false, true
 		}

@@ -14,10 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/registry"
@@ -218,48 +215,6 @@ func (fi fileImport) SpelledName() string {
 		return fi.Alias
 	}
 	return transpiler.LastPathSegment(fi.Path)
-}
-
-// scanFileImports decodes every import spec the file declares.
-func scanFileImports(sf *grammar.SourceFileContext) []fileImport {
-	var out []fileImport
-	for _, impDecl := range sf.AllImportDeclaration() {
-		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
-		if !ok {
-			continue
-		}
-		for _, spec := range ctx.AllImportSpec() {
-			s, ok := spec.(*grammar.ImportSpecContext)
-			if !ok || s.STRING() == nil {
-				continue
-			}
-			str := s.STRING().GetSymbol()
-			fi := fileImport{
-				Path:   strings.Trim(str.GetText(), "\""),
-				At:     transpiler.PosFromToken(s.GetStart()),
-				PathAt: transpiler.PosFromToken(str),
-			}
-			if alias := s.Identifier(); alias != nil {
-				fi.Alias = alias.GetText()
-			} else {
-				// No identifier but an extra child is the `.` form (the same
-				// test the dot-import scan in Analyze makes).
-				fi.IsDot = s.GetChildCount() > 1
-			}
-			out = append(out, fi)
-		}
-	}
-	return out
-}
-
-// DotImportPaths is the paths the file with this parse tree dot-imports, in
-// source order (scanFileImports), or nil for a tree that is no source file.
-func DotImportPaths(tree antlr.Tree) []string {
-	sf, ok := tree.(*grammar.SourceFileContext)
-	if !ok {
-		return nil
-	}
-	return dotImportPaths(scanFileImports(sf))
 }
 
 // dotImportPaths is the paths of the dot imports among imports, in order.

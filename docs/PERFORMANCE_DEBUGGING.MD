@@ -110,9 +110,10 @@ and a warm `gala build` from 5.1 s to 3.5 s. A Bazel build with
 `--//internal/parser:antlr` makes ANTLR's parser the default of the
 binaries it builds; galop's is still built in.
 
-A panic in galop's parser falls back to ANTLR's and prints
+A panic in galop's lexer or parser falls back to ANTLR's and prints
 `gala: warning: galop's parser panicked (N so far in this process) ...`
-for the 1st, 10th, 100th, ... panic: each one costs a second parse and is
+(`galop's lexer` for the lexer) for the 1st, 10th, 100th, ... panic: each
+one costs a second pass and is
 a galop bug worth reporting. `GALA_PANIC_STACK=1` prints every one, with
 its stack.
 

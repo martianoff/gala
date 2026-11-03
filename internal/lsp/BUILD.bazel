@@ -17,7 +17,6 @@ go_library(
         "position.go",
         "server.go",
         "signature_help.go",
-        "signature_help_native.go",
         "symbols.go",
         "typeatpos.go",
     ],
@@ -28,7 +27,6 @@ go_library(
         "//internal/build",
         "//internal/depman/mod",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
@@ -36,7 +34,6 @@ go_library(
         "//internal/transpiler/module",
         "//internal/transpiler/resolver",
         "//internal/transpiler/transformer",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//server",
     ],
@@ -112,19 +109,16 @@ go_test(
 go_test(
     # keep
     name = "lsp_native_test",
-    # Walks the corpus, and serves requests on broken buffers of it.
+    # Walks the frozen corpus, and serves requests on it and on broken buffers of it.
     size = "large",
     srcs = [
         "broken_buffer_golden_test.go",
+        "calls_golden_test.go",
         "native_tree_test.go",
     ],
     data = [
-        "//:all_gala_sources",
-        "//collection_immutable:gala_sources",
-        "//examples:all_gala_sources",
-        "//go_interop:types.go",
-        "//std:gala_sources",
         "testdata/broken_buffers.golden",
+        "testdata/calls.golden",
         "testdata/handler_answers.golden",
     ],
     embed = [":lsp"],
@@ -139,6 +133,17 @@ go_test(
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@rules_go//go/tools/bazel",
     ],
+)
+
+# gazelle:exclude no_antlr_test.go
+go_test(
+    # keep
+    name = "no_antlr_test",
+    srcs = ["no_antlr_test.go"],
+    data = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ) + ["BUILD.bazel"],
+    deps = ["//internal/noantlr"],
 )

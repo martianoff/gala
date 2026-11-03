@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 	golsp "github.com/owenrumney/go-lsp/server"
 
@@ -73,22 +72,19 @@ type GalaHandler struct {
 	docVersions     map[string]int64               // URI -> monotonic edit version
 	analysisCancels map[string]context.CancelFunc  // URI -> cancel func for in-flight analysis
 	richASTs        map[string]*transpiler.RichAST // URI -> analyzed AST
-	// parseTrees caches the raw ANTLR parse tree for the most recent
-	// successful analysis. Features like signatureHelp walk the tree to
+	// parseNatives is, by URI, the native-tree handle of the document's latest
+	// parse (parser.Parsed.RecoveredNative): of its error-recovered tree when
+	// the parse has syntax errors. Features like signatureHelp walk the tree to
 	// locate the call expression at a cursor position rather than doing
-	// byte-level scans.
-	parseTrees map[string]antlr.Tree
-	// parseNatives is, by URI, the native-tree handle of the parse that gave
-	// parseTrees[URI] (parser.Parsed.CleanNative), nil when there is none.
-	// The document's analysis converts it (see analyzeClean).
+	// byte-level scans. It is kept after the document's analysis, as the native
+	// tree alone (Native.TreeOnly).
 	parseNatives map[string]*parser.Native
-	parseTexts   map[string]string                       // URI -> the source that produced parseTrees[URI] (may be surgically patched)
-	// onTreeRead, when set, is told of each read of a document's tree by a
-	// feature with a native twin: which read, and whether it took the native
-	// tree. It is for tests, which compare the trees' answers; to keep a
-	// handler on ANTLR's tree alone, they give it a parser whose parses have
-	// no native-tree handle.
-	onTreeRead  func(what string, onNative bool)
+	parseTexts   map[string]string // URI -> the source that produced parseNatives[URI] (may be surgically patched)
+	// signatureTrees is, by URI, the native tree signature help last parsed
+	// itself, of a text patchTextForSignature closed and no analysis parsed
+	// (see findCallAtCaret), so a request repeated on that text does not parse
+	// and convert it again.
+	signatureTrees map[string]patchedTree
 	// parsedFiles is the parsed-file cache every document's analysis shares:
 	// the parses and native trees of the files on disk that the analyses
 	// read (a package's other files, the files of imported packages), kept
@@ -96,6 +92,10 @@ type GalaHandler struct {
 	parsedFiles *analyzer.ParsedFiles
 	varTypes    map[string]map[string]string            // URI -> (varName -> type) from transpiler
 	lambdaHints map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
+
+	// analyses counts the analyses DidChange runs in the background, so a
+	// caller can wait for them to finish, cancelled ones included.
+	analyses sync.WaitGroup
 }
 
 // SetClient implements server.ClientHandler — receives the LSP client for notifications.
@@ -146,23 +146,14 @@ func (h *GalaHandler) DebugVarTypes(uri string) map[string]string {
 	return h.varTypes[uri]
 }
 
-// DebugParseTree returns the cached parse tree and the source text it was
-// parsed from (may be surgically patched for signatureHelp / completion).
-// For tests.
-func (h *GalaHandler) DebugParseTree(uri string) (antlr.Tree, string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.parseTrees[uri], h.parseTexts[uri]
-}
-
 // NewGalaHandler creates a new GALA LSP handler.
 func NewGalaHandler() *GalaHandler {
 	return &GalaHandler{
 		documents:       make(map[string]string),
 		richASTs:        make(map[string]*transpiler.RichAST),
-		parseTrees:      make(map[string]antlr.Tree),
 		parseNatives:    make(map[string]*parser.Native),
 		parseTexts:      make(map[string]string),
+		signatureTrees:  make(map[string]patchedTree),
 		varTypes:        make(map[string]map[string]string),
 		lambdaHints:     make(map[string][]transpiler.LambdaParamHint),
 		docVersions:     make(map[string]int64),
@@ -277,6 +268,7 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	h.documents[uri] = text
 	h.docVersions[uri]++
 	version := h.docVersions[uri]
+	delete(h.signatureTrees, uri) // of an earlier text: no request can reuse it
 
 	// Cancel any in-flight analysis for this URI
 	if cancel, ok := h.analysisCancels[uri]; ok {
@@ -286,7 +278,9 @@ func (h *GalaHandler) DidChange(ctx context.Context, params *lsp.DidChangeTextDo
 	h.analysisCancels[uri] = cancel
 	h.mu.Unlock()
 
+	h.analyses.Add(1)
 	go func() {
+		defer h.analyses.Done()
 		filePath := uriToPath(uri)
 		diagnostics := h.analyzeFile(uri, filePath, text)
 
@@ -324,9 +318,9 @@ func (h *GalaHandler) DidClose(ctx context.Context, params *lsp.DidCloseTextDocu
 	delete(h.documents, uri)
 	delete(h.docVersions, uri)
 	delete(h.richASTs, uri)
-	delete(h.parseTrees, uri)
 	delete(h.parseNatives, uri)
 	delete(h.parseTexts, uri)
+	delete(h.signatureTrees, uri)
 	delete(h.varTypes, uri)
 	delete(h.lambdaHints, uri)
 	h.mu.Unlock()
@@ -374,35 +368,36 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	diagnostics := make([]lsp.Diagnostic, 0) // must be [] not null in JSON
 	x := h.index(text)
 
-	// One parse gives both the errors and ANTLR's error-recovered tree, so a
+	// One parse gives both the errors and the error-recovered tree, so a
 	// keystroke on a broken file parses it once.
 	parsed := h.parser.ParseFile(text)
-	tree, _, errs := parsed.Lenient()
-	if len(errs) > 0 {
+	if errs := parsed.Errors; len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
+		// The features that read the tree get this text's error-recovered
+		// tree, the native tree alone (Native.TreeOnly), before the analysis
+		// runs; nil when there is none, so no older text's tree outlives the
+		// edit.
+		handle := parsed.RecoveredNative().TreeOnly() // converts: not under h.mu
+		h.mu.Lock()
+		if h.isCurrentLocked(uri, text) {
+			h.parseNatives[uri] = handle
+			h.parseTexts[uri] = text
+		}
+		h.mu.Unlock()
 		// The parse failed: if the analyzer can extract type metadata from
 		// the partial tree, cache the richAST so completion/hover/definition
 		// work while mid-edit.
-		if tree != nil {
-			h.mu.Lock()
-			if h.isOpenLocked(uri) {
-				h.parseTrees[uri] = tree
-				h.parseNatives[uri] = nil // an error-recovered tree is ANTLR's alone
-				h.parseTexts[uri] = text
-			}
-			h.mu.Unlock()
-		}
 		h.tryAnalyzePartial(uri, filePath, text, parsed)
 		return diagnostics
 	}
 
-	richAST, err := h.analyzeClean(parsed, filePath, text)
+	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
 		return diagnostics
 	}
 
-	result, transformErr := h.transformAndPublish(uri, richAST, parsed, text)
+	result, transformErr := h.transformAndPublish(uri, text, richAST, parsed, text)
 	if transformErr != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr, x, filePath)...)
 	}
@@ -414,7 +409,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 			typeMap[name] = cleanGoTypeForDisplay(typ.String())
 		}
 		h.mu.Lock()
-		if h.isOpenLocked(uri) {
+		if h.isCurrentLocked(uri, text) {
 			h.varTypes[uri] = typeMap
 			h.lambdaHints[uri] = result.LambdaParamHints
 		}
@@ -434,14 +429,6 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	}
 
 	return diagnostics
-}
-
-// analyzeClean analyzes parsed, a parse of text without syntax errors. The
-// analyzer reads the native tree only (a parse without one is an internal
-// error), as it reads the other files it takes in.
-func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
-	h.noteTreeRead(treeReadAnalysis, true)
-	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 }
 
 // newAnalyzer builds the analyzer for one document: search paths, Go source
@@ -539,7 +526,6 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, parsed *pars
 	}
 	defer func() { recover() }()
 
-	h.noteTreeRead(treeReadAnalysis, true)
 	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 	if err != nil || richAST == nil {
 		return
@@ -551,7 +537,7 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, parsed *pars
 	// transform means no in-place mutation, so publishing directly is safe here
 	// — if a transform is ever added, it has to go through transformAndPublish.
 	h.mu.Lock()
-	if h.isOpenLocked(uri) {
+	if h.isCurrentLocked(uri, text) {
 		h.richASTs[uri] = richAST
 	}
 	h.mu.Unlock()
@@ -582,7 +568,7 @@ func (h *GalaHandler) ensureAnalysis(uri string, line, char int) {
 		return
 	}
 	// Remove just the dot, producing e.g. "Text(\"hello\")" from "Text(\"hello\")."
-	h.analyzeAndCache(uri, text[:dot]+text[dot+1:], "ensureAnalysis")
+	h.analyzeAndCache(uri, text, text[:dot]+text[dot+1:], "ensureAnalysis")
 }
 
 // memberDotOffset returns the offset of the dot selecting the member being
@@ -637,23 +623,24 @@ func (h *GalaHandler) ensureAnalysisForSignature(uri string, line, char int) {
 	// The same text the call is then looked up in, so the analysis and the
 	// tree walk agree on the document.
 	if cleanText, offset := patchTextForSignature(text, line, char); offset >= 0 {
-		h.analyzeAndCache(uri, cleanText, "ensureAnalysisForSignature")
+		h.analyzeAndCache(uri, text, cleanText, "ensureAnalysisForSignature")
 	}
 }
 
 // analyzeAndCache parses + analyzes + runs the transformer on the given
 // (possibly surgically patched) document text, caching the resulting
-// richAST / varTypes / lambdaHints under the URI. A nil or failing
+// richAST / varTypes / lambdaHints under the URI while the document's text
+// is still doc, the text cleanText was patched from. A nil or failing
 // analysis is logged and silently skipped; LSP features then fall back
 // to their normal "no data" behavior.
-func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
+func (h *GalaHandler) analyzeAndCache(uri, doc, cleanText, caller string) {
 	parsed := h.parser.ParseFile(cleanText)
 	if parsed.Err() != nil {
 		return
 	}
 
 	filePath := uriToPath(uri)
-	richAST, aerr := h.analyzeClean(parsed, filePath, cleanText)
+	richAST, aerr := h.newAnalyzer(filePath, cleanText).AnalyzeParsed(parsed, filePath)
 	if aerr != nil {
 		fmt.Fprintf(os.Stderr, "[%s] analyze failed: %v\n", caller, aerr)
 		return
@@ -663,14 +650,14 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 		return
 	}
 
-	result, _ := h.transformAndPublish(uri, richAST, parsed, cleanText)
+	result, _ := h.transformAndPublish(uri, doc, richAST, parsed, cleanText)
 	if result != nil && result.VarTypes != nil {
 		typeMap := make(map[string]string, len(result.VarTypes))
 		for name, typ := range result.VarTypes {
 			typeMap[name] = cleanGoTypeForDisplay(typ.String())
 		}
 		h.mu.Lock()
-		if h.isOpenLocked(uri) {
+		if h.isCurrentLocked(uri, doc) {
 			h.varTypes[uri] = typeMap
 			h.lambdaHints[uri] = result.LambdaParamHints
 		}
@@ -691,8 +678,9 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 //
 // Publication does not depend on the transform succeeding: a failed transform
 // still leaves the analyzer's metadata available, which is what publishing early
-// was really buying. It does depend on the document still being open (see
-// isOpenLocked).
+// was really buying. It does depend on the document's text still being doc,
+// the text the analysis was of (see isCurrentLocked); text is what parsed
+// was parsed from, doc itself or a patch of it.
 //
 // It also cost something, worth naming: for the duration of the transform,
 // hover, completion and signature help keep answering from the PREVIOUS
@@ -701,20 +689,19 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 // that latency back means giving readers a view that is not the map the
 // transformer writes — a copy, or a per-URI generation — not resurrecting the
 // ordering that crashed the server.
-func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAST, parsed *parser.Parsed, text string) (*transpiler.TransformResult, error) {
+func (h *GalaHandler) transformAndPublish(uri, doc string, richAST *transpiler.RichAST, parsed *parser.Parsed, text string) (*transpiler.TransformResult, error) {
 	// The transform walks the native tree the analysis converted (see the
 	// transformer's walkSource); the published AST does not keep it.
 	handle := parsed.CleanNative()
 	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
-	h.noteTreeRead(treeReadTransform, true) // the transformer reads the native tree only
+	kept := handle.TreeOnly() // the native tree alone, for the features
 
 	h.mu.Lock()
-	if h.isOpenLocked(uri) {
+	if h.isCurrentLocked(uri, doc) {
 		h.richASTs[uri] = richAST
-		h.parseTrees[uri] = parsed.Tree
-		h.parseNatives[uri] = handle
+		h.parseNatives[uri] = kept
 		h.parseTexts[uri] = text
 	}
 	h.mu.Unlock()
@@ -722,16 +709,20 @@ func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAS
 	return result, err
 }
 
-// isOpenLocked reports whether uri is an open document; h.mu must be held.
+// isCurrentLocked reports whether uri is an open document whose text is doc;
+// h.mu must be held.
 //
 // Every store of an analysis's results checks it under the same lock as the
-// store. An analysis runs unlocked and can outlive its document: DidClose
-// cancels it and drops the URI's entries, but the analysis looks at its
-// context only after storing, so without the check it would put a closed
-// document's tree, text and AST back, and nothing would remove them again.
-func (h *GalaHandler) isOpenLocked(uri string) bool {
-	_, open := h.documents[uri]
-	return open
+// store, with the document text the analysis was of. An analysis runs
+// unlocked and looks at its context only after storing, so it can outlive its
+// document or its text. DidClose cancels it and drops the URI's entries, and
+// without the check it would put a closed document's tree, text and AST back,
+// and nothing would remove them again. DidChange starts a new analysis
+// without waiting for the one in flight, and without the check the older one,
+// finishing last, would replace the newer text's results with its own.
+func (h *GalaHandler) isCurrentLocked(uri, doc string) bool {
+	cur, open := h.documents[uri]
+	return open && cur == doc
 }
 
 // --- Helpers ---

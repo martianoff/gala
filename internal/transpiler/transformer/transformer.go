@@ -452,8 +452,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			msgs = append(msgs, "  - "+w)
 		}
 		errLine, errCol := 1, 0
-		if tree, err := richAST.Native.Tree(); err == nil && tree.Root().Ok() {
-			start := tree.Root().Start()
+		if root, ok := richAST.Native.Root(); ok {
+			start := root.Start()
 			errLine, errCol = int(start.Line), int(start.Column)
 		}
 		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol,
