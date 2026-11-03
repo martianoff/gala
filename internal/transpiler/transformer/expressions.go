@@ -442,8 +442,14 @@ func isNilIdent(expr ast.Expr) bool {
 // against s (see lowerIfExprBranch). The statements before its end are lowered
 // as any block's (walkBlock); its value is its trailing expression, or the
 // value of the `bind` chain or the trailing if/else chain it ends in.
+//
+// The branch is a block of its own: the names it declares are local to it,
+// and its value is typed before they go out of scope (see typeValue), so a
+// value naming a branch-local val keeps that val's type.
 func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (loweredIfBranch, error) {
-	return walkBlock(t, b.statements(), func(e blockEnd) (loweredIfBranch, error) {
+	t.pushScope()
+	defer t.popScope()
+	lowered, err := walkBlock(t, b.statements(), func(e blockEnd) (loweredIfBranch, error) {
 		if len(e.rest) == 0 {
 			return noValueBranch(nil), nil
 		}
@@ -503,6 +509,10 @@ func (t *galaASTTransformer) lowerIfExprBranchBlock(b blockSrc, s slot) (lowered
 		}
 		return noValueBranch(stmts), nil
 	})
+	if err == nil {
+		t.typeValue(lowered.expr)
+	}
+	return lowered, err
 }
 
 // lowerIfExprBranchValue lowers e, an if-expression branch that is an
@@ -585,14 +595,13 @@ func (t *galaASTTransformer) checkChainValueTypes(at srcNode, promoted *ast.IfSt
 // slot s the if-expression fills, or, when that is not known, the branch's
 // trailing value. Never the enclosing function's result type — the
 // if-expression's value need not be what the function returns. The chain's
-// bound names are local to the branch.
+// bound names are local to the branch, whose scope lowerIfExprBranchBlock
+// pushes.
 func (t *galaASTTransformer) lowerIfExprBranchBind(stmts []stmtSrc, s slot) (ast.Expr, error) {
 	if err := t.checkNoEscapeAfterBind(stmts, "an if-expression branch"); err != nil {
 		return nil, err
 	}
 	typ := s.closedType()
-	t.pushScope()
-	defer t.popScope()
 	// A hoisted if-expression enters no IIFE slot of its own, so the chain's
 	// result would otherwise come from the enclosing function's.
 	defer t.enterIIFEReturnSlot(typ)()

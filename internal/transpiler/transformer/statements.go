@@ -718,28 +718,34 @@ func (t *galaASTTransformer) takePendingMatchBlock() *ast.BlockStmt {
 }
 
 // typeBlockValue types the trailing value of a value-carrying block, whose
-// lowered statements are stmts, while the block's scope is still open.
-//
-// The block's consumer — a match arm, a partial-function arm, a branch of a
-// trailing if/else — types the value only after this function returns and the
-// scope closes. A value that reads a local the block declares
-// (`{ val tag = s"item-$x"; tag }`) no longer resolves by then: it was counted
-// as unresolved, and a match whose arms were all like it was lowered as void
-// and its value used. A successful lookup is cached on the expression node, so
-// typing it here is what the consumer's later query finds.
+// lowered statements are stmts, while the block's scope is still open (see
+// typeValue).
 func (t *galaASTTransformer) typeBlockValue(stmts []ast.Stmt) {
 	if len(stmts) == 0 {
 		return
 	}
-	var value ast.Expr
 	switch last := stmts[len(stmts)-1].(type) {
 	case *ast.ExprStmt:
-		value = last.X
+		t.typeValue(last.X)
 	case *ast.ReturnStmt:
 		if len(last.Results) == 1 {
-			value = last.Results[0]
+			t.typeValue(last.Results[0])
 		}
 	}
+}
+
+// typeValue types value, the value of a block — a value-carrying block's
+// trailing value or an if-expression branch's — while the block's scope is
+// still open.
+//
+// The block's consumer — a match arm, a partial-function arm, a branch of a
+// trailing if/else, an if-expression — types the value only after the scope
+// closes. A value that reads a local the block declares
+// (`{ val tag = s"item-$x"; tag }`) no longer resolves by then, or resolves to
+// an outer name it shadows: a match whose arms were all like it was lowered
+// as void and its value used. A successful lookup is cached on the expression
+// node, so typing it here is what the consumer's later query finds.
+func (t *galaASTTransformer) typeValue(value ast.Expr) {
 	if value != nil && !t.isNoReturnCallExpr(value) {
 		t.inferResultType(value)
 	}

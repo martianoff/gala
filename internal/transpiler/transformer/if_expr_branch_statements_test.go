@@ -120,3 +120,61 @@ func run(n int) Option[int] {
 		})
 	}
 }
+
+// A val declared in an if-expression's block branch is local to the branch:
+// after the if-expression the outer name keeps its type, so a closure over
+// it returns a string. The branch's value is typed in the branch's scope,
+// so a value naming the shadowing val keeps the shadowing val's type. The
+// runtime example if_expr_branch_scope covers the same cases end to end.
+func TestIfExpressionBranchValIsLocalToTheBranch(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       []string
+	}{
+		{"then branch", `
+    val r = if (c) {
+        val m = 41
+        m + 1
+    } else 0`, []string{"var r = func() int {"}},
+		{"branch value is the shadowing val", `
+    val r = if (c) {
+        val m = 41
+        m
+    } else 0`, []string{"var r = func() int {"}},
+		{"else branch of a hoisted if-expression", `
+    val r = if (c) {
+        if (n > 100) { return "big" }
+        n
+    } else {
+        val m = 2
+        m
+    }`, []string{`"%s %d"`}},
+		{"nested branches", `
+    val r = if (c) {
+        val m = 10
+        val inner = if (n > 1) {
+            val m = "inner"
+            m.Size()
+        } else {
+            val m = true
+            if (m) 1 else 0
+        }
+        m + inner
+    } else 0`, []string{"var inner = func() int {"}},
+		{"bind continuation", `
+    val r = if (c) {
+        val m = 5
+        bind x = Some(m)
+        Some(x + m)
+    } else None()`, []string{"var r = func() std.Option[int] {"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package main\n\nfunc run(c bool, n int) string {\n    val m = \"outer\"" + tc.body + `
+    val f = () => m
+    s"${f()} $r"
+}
+`
+			assertTranspiled(t, src, append(tc.want, "var f = func() string {"), nil)
+		})
+	}
+}
