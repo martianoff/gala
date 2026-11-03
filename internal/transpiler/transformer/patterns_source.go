@@ -110,7 +110,7 @@ type patExpr struct {
 	exprSrc
 }
 
-// sourceText is e as written, whitespace included (transpiler.SourceText).
+// sourceText is e as written, whitespace included.
 func (e patExpr) sourceText() string { return e.at().sourceText() }
 
 // start is the line and column of e's first token.

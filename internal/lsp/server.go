@@ -436,13 +436,11 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	return diagnostics
 }
 
-// analyzeClean analyzes parsed, a parse of text without syntax errors, on its
-// native tree when it has one, as the analyzer reads the other files it
-// takes in.
+// analyzeClean analyzes parsed, a parse of text without syntax errors. The
+// analyzer reads the native tree only (a parse without one is an internal
+// error), as it reads the other files it takes in.
 func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
-	if h.onTreeRead != nil { // Bridged converts: only a test's hook asks first
-		h.noteTreeRead(treeReadAnalysis, parsed.CleanNative().Bridged())
-	}
+	h.noteTreeRead(treeReadAnalysis, true)
 	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 }
 
@@ -529,25 +527,20 @@ func (h *GalaHandler) loadProjectModule(rootPath string) {
 	}
 }
 
-// tryAnalyzePartial analyzes parsed, a parse with syntax errors, on ANTLR's
-// error-recovered tree. The transformer's inference of the file's
-// package-level vals reads the native tree alone, so the analysis is given
-// the native tree of the recovered tree (parser.Parsed.RecoveredNative)
-// without its bridge (Native.TreeOnly): the analyzer's own reads stay on
-// ANTLR's tree. The tree may lack nodes or hold error tokens, so this is
-// wrapped in a panic recovery — a crash just means we skip caching rather
-// than losing the LSP connection. When it succeeds, the cached
-// richAST/varTypes keep completion and go-to-def working while the user is
-// mid-edit.
+// tryAnalyzePartial analyzes parsed, a parse with syntax errors, on the
+// native tree of its error-recovered tree (parser.Parsed.RecoveredNative).
+// The tree may lack nodes or hold error tokens, so this is wrapped in a panic
+// recovery — a crash just means we skip caching rather than losing the
+// LSP connection. When it succeeds, the cached richAST/varTypes keep
+// completion and go-to-def working while the user is mid-edit.
 func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, parsed *parser.Parsed) {
-	if parsed.Tree == nil {
+	if parsed.RecoveredNative() == nil {
 		return
 	}
 	defer func() { recover() }()
 
-	h.noteTreeRead(treeReadAnalysis, false) // the analyzer reads an error-recovered tree on ANTLR's
-	recovered := &parser.Parsed{Tree: parsed.Tree, Docs: parsed.Docs, Native: parsed.RecoveredNative().TreeOnly()}
-	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(recovered, filePath)
+	h.noteTreeRead(treeReadAnalysis, true)
+	richAST, err := h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
 	if err != nil || richAST == nil {
 		return
 	}
@@ -715,7 +708,7 @@ func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAS
 	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
-	h.noteTreeRead(treeReadTransform, result != nil && result.WalkedNative)
+	h.noteTreeRead(treeReadTransform, true) // the transformer reads the native tree only
 
 	h.mu.Lock()
 	if h.isOpenLocked(uri) {

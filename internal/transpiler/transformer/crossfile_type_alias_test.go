@@ -49,11 +49,11 @@ func main() {
 	p := transpiler.NewAntlrGalaParser()
 
 	parsed := p.ParseFile(mainCode)
-	tree, _, err := parsed.Strict()
+	err := parsed.Err()
 	assert.NoError(t, err)
 
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{typesPath})
-	richAST, err := transpiler.Analyze(a, tree, nil, mainPath)
+	richAST, err := a.AnalyzeParsed(parsed, mainPath)
 	withNative(richAST, parsed)
 	assert.NoError(t, err)
 

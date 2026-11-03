@@ -58,9 +58,10 @@ func TestCacheE2E_HitRecursionRebuildsTransitiveView(t *testing.T) {
 
 	// Cold pass — populates disk cache (no in-memory analyzedPkgs entries).
 	cold := NewBatchAnalyzer(parser, searchPaths, tmp)
-	coldTree, _, err := parser.ParseFile(string(body)).Strict()
+	coldParsed := parser.ParseFile(string(body))
+	err = coldParsed.Err()
 	require.NoError(t, err)
-	_, err = transpiler.Analyze(cold, coldTree, nil, aFile)
+	_, err = cold.AnalyzeParsed(coldParsed, aFile)
 	require.NoError(t, err)
 
 	// Confirm pkg_b's cached entry is local-only (BType present, CType absent)
@@ -74,9 +75,10 @@ func TestCacheE2E_HitRecursionRebuildsTransitiveView(t *testing.T) {
 	// Warm pass — fresh analyzer instance. Every transitive type must
 	// arrive via the cache-HIT recursion since analyzedPkgs starts empty.
 	warm := NewBatchAnalyzer(parser, searchPaths, tmp)
-	warmTree, _, err := parser.ParseFile(string(body)).Strict()
+	warmParsed := parser.ParseFile(string(body))
+	err = warmParsed.Err()
 	require.NoError(t, err)
-	res, err := transpiler.Analyze(warm, warmTree, nil, aFile)
+	res, err := warm.AnalyzeParsed(warmParsed, aFile)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
@@ -130,9 +132,10 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 	topFile := filepath.Join(top, "top.gala")
 	body, err := os.ReadFile(topFile)
 	require.NoError(t, err)
-	tree, _, err := parser.ParseFile(string(body)).Strict()
+	parsed := parser.ParseFile(string(body))
+	err = parsed.Err()
 	require.NoError(t, err)
-	_, err = transpiler.Analyze(a, tree, nil, topFile)
+	_, err = a.AnalyzeParsed(parsed, topFile)
 	require.NoError(t, err)
 
 	// 64 KiB matches the unit test's budget. With 80 fanout types
@@ -151,10 +154,11 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 	// cap traps the symptom of a 100-MB-class entry's gob decode.
 	const maxWarmAnalyzeWall = 5 * time.Second
 	warm := NewBatchAnalyzer(parser, searchPaths, tmp)
-	warmTree, _, err := parser.ParseFile(string(body)).Strict()
+	warmParsed := parser.ParseFile(string(body))
+	err = warmParsed.Err()
 	require.NoError(t, err)
 	start := time.Now()
-	_, err = transpiler.Analyze(warm, warmTree, nil, topFile)
+	_, err = warm.AnalyzeParsed(warmParsed, topFile)
 	require.NoError(t, err)
 	elapsed := time.Since(start)
 	if elapsed > maxWarmAnalyzeWall {

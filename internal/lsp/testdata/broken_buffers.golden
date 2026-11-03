@@ -1,0 +1,39 @@
+# The language server's answers on broken buffers; see brokenBufferGolden in broken_buffer_golden_test.go.
+collection_immutable/array.gala: half-typed declaration	6ba126d319d03678	bf9898b2b3036250
+collection_immutable/array.gala: member being typed	af52844628c5f161	a50b40006887207b
+collection_immutable/array.gala: truncated	05e6fe89e3ce4ff5	e291eda1677b3d68
+collection_immutable/array.gala: unclosed call	81ac77d51324b7dd	91a658ff0764cc81
+collection_immutable/list.gala: half-typed declaration	d3b30c2162ee94a0	de7ab52feef0ed1f
+collection_immutable/list.gala: member being typed	056979fe44783c8c	5fdc4bcbf0fefda5
+collection_immutable/list.gala: truncated	c19b0e50ea3bbfaa	547ed6408b8d1cbf
+collection_immutable/treemap.gala: half-typed declaration	64d64c9c457d3714	7959fc436d1b9964
+collection_immutable/treemap.gala: truncated	e5aac40788c0a6f1	b17bd9e5ccca509b
+collection_immutable/treemap.gala: unclosed call	015b9396791330b6	ab4df28d47a7ab8a
+collection_immutable/treeset.gala: half-typed declaration	d23ffafd391a17b0	5c35d6d766b62d66
+collection_immutable/treeset.gala: member being typed	457bee51d8dc2ab3	a28bb9cb9c40d0f3
+collection_immutable/treeset.gala: unclosed call	18003a07cb7320ee	42f242c3920a35e1
+collection_mutable/treemap.gala: half-typed declaration	13262f3188edcfe9	342a9564fe35af2a
+collection_mutable/treemap.gala: member being typed	21b8a09df1972b3c	7cf1da869836bda1
+collection_mutable/treeset.gala: half-typed declaration	f15fb99ec6d60a71	1ea89df3909c1b5e
+collection_mutable/treeset.gala: unclosed call	5b445f10d04e9850	d6212fc4807190d4
+concurrent/future.gala: half-typed declaration	621dfa9347a2ab1e	dd65ff68816dd7b7
+concurrent/future.gala: member being typed	426677edeebcebed	2fcdda01691a0b6a
+concurrent/future.gala: truncated	60c6dd0681c21584	5a3d1a2aae52a3f8
+concurrent/future.gala: unclosed call	e566b9efb0c5fd30	3e1f5f6615f14b84
+examples/fix024_match_arm_return_in_loop.gala: half-typed declaration	abff6295371acc62	a3468838c3870d11
+examples/fix024_match_arm_return_in_loop.gala: unclosed call	dbad94e0bad370fb	f6cc4aabbd047572
+examples/for_range_groupby_key_type.gala: half-typed declaration	220d2af3d84160df	c464b139ec49a9f3
+examples/for_range_groupby_key_type.gala: truncated	4cc06cc1f10c1981	bc3d227d31b945a0
+examples/for_range_groupby_key_type.gala: unclosed call	a06113fe93d5dbf3	12d7eb011629d191
+examples/local_function_lambda.gala: half-typed declaration	bc31ad85ab8eb496	9ab6e7cc8039f129
+examples/local_function_lambda.gala: member being typed	b3476c65a775725c	59217b7e3322a73c
+examples/local_function_lambda.gala: truncated	f8da3bc2cbd1b575	bc2943b9dc1777f8
+examples/local_function_lambda.gala: unclosed call	085d1fd94e8f80eb	656eaf2324c1285e
+examples/match_stmt_true_dangle.gala: half-typed declaration	3a6c3ca2c56ce85d	54737337d478dc37
+examples/match_stmt_true_dangle.gala: member being typed	ce48222291036438	fde64019904987b2
+examples/match_stmt_true_dangle.gala: truncated	58dcb1ba5456131f	2d3b644da66308c4
+examples/match_stmt_true_dangle.gala: unclosed call	db6b159a02e0ed89	d3d81dd3b32e0c30
+examples/sourcemap_imports_demo.gala: unclosed call	ec39e3dc68c13ac0	22a580a5a681c918
+examples/struct_field_defaults.gala: member being typed	79914670814b7ef0	bbbf881ea96ea0ac
+examples/struct_field_defaults.gala: truncated	7dbb061c634cec70	1c5b90f29a1866da
+examples/struct_field_defaults.gala: unclosed call	cfab5b63ada2c751	83e4b2ff20425b10

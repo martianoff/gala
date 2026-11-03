@@ -85,9 +85,10 @@ func TestCompanionKeysE2E(t *testing.T) {
 			for run := 0; run < 12; run++ {
 				// Run 0 is cold and writes the disk cache; every later run
 				// is a fresh analyzer that loads pkg_a and pkg_b from it.
-				tree, _, err := parser.ParseFile(tt.consumer).Strict()
+				parsed := parser.ParseFile(tt.consumer)
+				err := parsed.Err()
 				require.NoError(t, err)
-				res, err := transpiler.Analyze(NewBatchAnalyzer(parser, searchPaths, tmp), tree, nil, file)
+				res, err := NewBatchAnalyzer(parser, searchPaths, tmp).AnalyzeParsed(parsed, file)
 				require.NoError(t, err)
 				if run == 0 {
 					readDiskCacheEntry(t, tmp, "pkg_a")

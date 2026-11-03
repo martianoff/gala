@@ -75,9 +75,10 @@ func TestBatchAnalyzer_AnalyzedPkgsStoresOnlyOwnTypes(t *testing.T) {
 	cFile := filepath.Join(pkgC, "c.gala")
 	body, err := os.ReadFile(cFile)
 	require.NoError(t, err)
-	tree, _, err := parser.ParseFile(string(body)).Strict()
+	parsed := parser.ParseFile(string(body))
+	err = parsed.Err()
 	require.NoError(t, err)
-	_, err = transpiler.Analyze(batch, tree, nil, cFile)
+	_, err = batch.AnalyzeParsed(parsed, cFile)
 	require.NoError(t, err)
 
 	// After analysing the leaf, both transitive dependencies must have

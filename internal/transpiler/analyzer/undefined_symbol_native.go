@@ -7,14 +7,15 @@ import (
 	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
 
-// The undefined-symbol check (GALA-E0023) on galop's native tree: each
-// function here is the twin of the one it is named after, which reads ANTLR's
-// tree, and makes the same decisions, through the same checker methods, in
-// the same order. The check reads a file's native tree exactly when the
-// file's declarations were collected on it (see collect_native.go), and then
-// reads no ANTLR context. TestUndefinedCheckAgrees holds the pair together.
+// The undefined-symbol check (GALA-E0023) on galop's native tree, the tree
+// the file's declarations were collected on (see collect_native.go). The
+// functions here read the tree; the decisions are the checker methods'
+// (undefined_symbol.go).
 
-// walkSourceFileNative is walkSourceFile of root, a file's native tree.
+// walkSourceFileNative drives the shared walker over root, a file's native
+// tree. Only declarations that hold value-position expressions are entered: a
+// `type` / `sealed type` / `embed` declaration contains types and string
+// literals, never a value this check inspects.
 func (c *undefChecker) walkSourceFileNative(root native.GalaNodeRef) {
 	w := c.walker
 	nw := nativewalk.New(w, bindFunctionDeclarationScopeNative)
@@ -41,7 +42,10 @@ func (c *undefChecker) walkSourceFileNative(root native.GalaNodeRef) {
 	}
 }
 
-// bindFileLevelNamesNative is bindFileLevelNames of root.
+// bindFileLevelNamesNative registers the tuple-pattern package vals and vars
+// (`val (a, b) = ...`) of root, a file's native tree, so they bind whatever
+// metadata the check runs against, and `embed val` directives, which no
+// richAST metadata lists.
 func (c *undefChecker) bindFileLevelNamesNative(root native.GalaNodeRef) {
 	for _, d := range c.rich.EmbedDirectives {
 		c.walker.Bind(d.VarName)
@@ -60,7 +64,16 @@ func (c *undefChecker) bindFileLevelNamesNative(root native.GalaNodeRef) {
 	}
 }
 
-// bindFunctionDeclarationScopeNative is bindFunctionDeclarationScope of fn.
+// bindFunctionDeclarationScopeNative binds a function or method declaration's
+// own type parameters, and, for a method, its receiver name together with any
+// type parameters the receiver type introduces (`func (l *List[T]) …` brings
+// both `l` and `T` into scope).
+//
+// The receiver's type arguments are the method's view of the type's
+// parameters; they can sit behind a pointer or nest (`*List[T]`, `Pair[K,
+// V]`), so every identifier in the receiver type is bound. Binding the type's
+// own name alongside them is harmless — it is a declaration in this package
+// either way.
 func bindFunctionDeclarationScopeNative(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
 	bindTypeParametersNative(w, fn.TypeParameters())
 	recv := fn.Receiver()
@@ -71,14 +84,54 @@ func bindFunctionDeclarationScopeNative(w *scopewalk.Walker, fn native.FunctionD
 	nativewalk.BindIdentifiersIn(w, recv.Type_().GalaNodeRef)
 }
 
-// bindTypeParametersNative is bindTypeParameters of tps.
+// bindTypeParametersNative binds the name of each type parameter tps
+// declares.
 func bindTypeParametersNative(w *scopewalk.Walker, tps native.TypeParametersNode) {
 	for p := range galaparser.NativeKids(tps.TypeParameterList().GalaNodeRef, native.GalaKIND_typeParameter) {
 		nativewalk.BindID(w, native.TypeParameterNode{GalaNodeRef: p}.Identifier(0))
 	}
 }
 
-// checkTypeNamesNative is checkTypeNames of root.
+// checkTypeNamesNative checks the type names written in TYPE positions of
+// root, a file's native tree. It reports a package qualifier that no import
+// brings into scope, so `var sb strings.Builder` in a file that never imports
+// `strings` is a GALA diagnostic rather than a Go one, and an unqualified type
+// name that does not resolve.
+//
+// The shared scope walker is a VALUE-reference walker: it short-circuits type
+// nodes by design, because a type name is not a value and leaking one into the
+// reference stream would break the capture analysis built on the same walker.
+// That left type positions unchecked. The call half of
+//
+//	var sb strings.Builder                 // unreported
+//	sb.WriteString(strings.Repeat("-", n)) // GALA-E0023
+//
+// was caught and the type half was not; a file whose ONLY offending use was a
+// type position got no GALA error at all and fell through to `go build`.
+//
+// It is a method rather than a free function so it shares the caller's
+// qualifier set, error slice and `reported` map; an earlier revision built a
+// second checker and reported a doubly-missing qualifier twice.
+//
+// Only the QUALIFIER is checked, never the member. `strings.Builder` asks
+// whether `strings` is in scope, not whether it exports `Builder` — the
+// qualifier is unambiguously a package name, while resolving the member would
+// need the full type surface of every imported Go package and would misfire
+// whenever that surface is incomplete (no Go SDK, an unanalyzed package).
+//
+// An unqualified type name is reported when nothing declares it (see
+// typeNameExists), or when only GALA packages out of this file's scope do
+// (see galaScope), unless the file binds it itself (see
+// collectFileTypeBindersNative). It uses the value check's symbol table, so it
+// stands down under the same conditions (see fileImportsFullyLoaded).
+//
+// In the signature of a method whose receiver type is declared in another
+// file of the package, the packages that file dot-imports count as well — the
+// allowance GALA-E0025 makes for method signatures. receiverImports returns
+// them. The method body gets no allowance, for type and value names alike.
+//
+// Nested type nodes are visited too: `map[string]strings.Builder` and
+// `[]pkg.T` carry their named type below an outer type.
 func (c *undefChecker) checkTypeNamesNative(root native.GalaNodeRef) {
 	c.inTypePass = true
 	defer func() { c.inTypePass = false }()
@@ -120,7 +173,9 @@ func (c *undefChecker) checkTypeNamesNative(root native.GalaNodeRef) {
 	walk(root, nil)
 }
 
-// checkTypeNameNative is checkTypeName of t.
+// checkTypeNameNative checks the type name a single type node t spells, if
+// any: a bare name against checkBareTypeName, a qualified one's qualifier
+// against checkTypeQualifier.
 func (c *undefChecker) checkTypeNameNative(t native.TypeNode, typeParams, extra map[string]bool) {
 	qi := t.QualifiedIdentifier()
 	if !qi.Ok() {
@@ -134,7 +189,10 @@ func (c *undefChecker) checkTypeNameNative(t native.TypeNode, typeParams, extra 
 	c.checkTypeQualifier(name, at)
 }
 
-// checkBareTypePositionsNative is checkBareTypePositions of n.
+// checkBareTypePositionsNative checks the bare-identifier type positions n
+// holds directly — a type alias's identifier, a type parameter's constraint,
+// and the untyped parameters of a function type's signature; see
+// checkBareTypeName.
 func (c *undefChecker) checkBareTypePositionsNative(n native.GalaNodeRef, typeParams, extra map[string]bool) {
 	check := func(id native.GalaNodeRef) {
 		name, at := nativewalk.IdentifierSite(id)
@@ -161,8 +219,12 @@ func (c *undefChecker) checkBareTypePositionsNative(n native.GalaNodeRef, typePa
 	}
 }
 
-// tupleDestructureTypeNative is tupleDestructureType of n: the type node, or
-// no node.
+// tupleDestructureTypeNative returns the type node a `val (a, b)` / `var (a,
+// b)` declaration n was parsed with, or no node. A destructuring takes no
+// type, and GALA-E0056 rejects one with the message that fits. The grammar is
+// blind to newlines, so for `var (a, b)` the first identifier of the next line
+// parses as this type: checking it as a type name would report that
+// identifier instead.
 func tupleDestructureTypeNative(n native.GalaNodeRef) native.GalaNodeRef {
 	var tuple native.TuplePatternNode
 	var typ native.TypeNode
@@ -182,13 +244,15 @@ func tupleDestructureTypeNative(n native.GalaNodeRef) native.GalaNodeRef {
 	return native.GalaNodeRef{}
 }
 
-// receiverBaseTypeNameNative is receiverBaseTypeName of t.
+// receiverBaseTypeNameNative reduces a receiver's type t (`*Box[T]`,
+// `Ptr[Box[T]]`) to the bare type name (`Box`).
 func receiverBaseTypeNameNative(t native.TypeNode) string {
 	elem, _ := galaparser.NativePointerElem(t)
 	return receiverBaseTypeOf(galaparser.NativeTypeText(elem))
 }
 
-// collectReceiverTypeArgsNative is collectReceiverTypeArgs of n.
+// collectReceiverTypeArgsNative adds to out the names the type arguments of a
+// receiver type n bind: `Box[K, V]` and `*Box[T]` bind K, V and T.
 func collectReceiverTypeArgsNative(n native.GalaNodeRef, out map[string]bool) {
 	n.Walk(func(n native.GalaNodeRef) bool {
 		if n.Kind() != native.GalaKIND_typeArguments {
@@ -205,7 +269,13 @@ func collectReceiverTypeArgsNative(n native.GalaNodeRef, out map[string]bool) {
 	})
 }
 
-// collectFileTypeBindersNative is collectFileTypeBinders of root.
+// collectFileTypeBindersNative returns every type name the file root binds
+// itself: the type parameters it declares on any function, method or type —
+// including the names a method receiver binds (`func (b Box[T]) ...` binds T)
+// — and the types it declares at any depth, sealed variants included. The
+// package-level types are in the metadata as well; one declared inside a
+// function body is only here. Like the type parameters, they are recognised
+// file-wide, which can only suppress a report.
 func collectFileTypeBindersNative(root native.GalaNodeRef) map[string]bool {
 	out := make(map[string]bool)
 	bind := func(id native.IdentifierNode) {

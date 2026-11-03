@@ -47,11 +47,11 @@ func main() {
 
 	t.Run("single-file-has-std-types", func(t *testing.T) {
 		parsed := p.ParseFile(lookupCode)
-		tree, _, err := parsed.Strict()
+		err := parsed.Err()
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-		richAST, err := transpiler.Analyze(a, tree, nil, "")
+		richAST, err := a.AnalyzeParsed(parsed, "")
 		withNative(richAST, parsed)
 		assert.NoError(t, err)
 
@@ -71,11 +71,11 @@ func main() {
 
 	t.Run("multi-file-has-std-types", func(t *testing.T) {
 		parsed := p.ParseFile(lookupCode)
-		tree, _, err := parsed.Strict()
+		err := parsed.Err()
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{mainPath})
-		richAST, err := transpiler.Analyze(a, tree, nil, lookupPath)
+		richAST, err := a.AnalyzeParsed(parsed, lookupPath)
 		withNative(richAST, parsed)
 		assert.NoError(t, err)
 

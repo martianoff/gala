@@ -52,7 +52,6 @@ func TestParamDefaultClauseWithoutValue(t *testing.T) {
 		"lambdaSignatureOf: a default clause without its value respelled")
 
 	_, _, err = NewGalaASTTransformer().Transform(&transpiler.RichAST{
-		Tree:             tree,
 		Native:           parsed.Native,
 		PackageName:      "main",
 		Types:            make(map[string]*transpiler.TypeMetadata),

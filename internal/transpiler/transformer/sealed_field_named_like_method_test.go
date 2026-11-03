@@ -339,9 +339,10 @@ func TestSealedFieldNamedLikeGoSiblingMethod(t *testing.T) {
 // of its case is no field GALA code (or the editor) reads by that Go name.
 func TestSealedCaseStorageFieldsAreNotGalaFields(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
-	tree, _, err := p.ParseFile("package main\n\n" + transitionDecl + "\n" + transitionTargetMethod).Strict()
+	parsed := p.ParseFile("package main\n\n" + transitionDecl + "\n" + transitionTargetMethod)
+	err := parsed.Err()
 	require.NoError(t, err)
-	richAST, err := transpiler.Analyze(analyzer.NewGalaAnalyzer(p, getStdSearchPath()), tree, nil, "main.gala")
+	richAST, err := analyzer.NewGalaAnalyzer(p, getStdSearchPath()).AnalyzeParsed(parsed, "main.gala")
 	require.NoError(t, err)
 	meta := richAST.Types["Transition"]
 	require.NotNil(t, meta)

@@ -18,7 +18,6 @@ go_library(
         "//internal/parser",
         "//internal/transpiler/profiler",
         "//internal/transpiler/registry",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 
@@ -46,4 +45,16 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
+)
+
+# gazelle:exclude no_antlr_test.go
+go_test(
+    # keep
+    name = "no_antlr_test",
+    srcs = ["no_antlr_test.go"],
+    data = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ) + ["BUILD.bazel"],
+    deps = ["//internal/noantlr"],
 )

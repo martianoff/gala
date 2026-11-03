@@ -1,0 +1,10 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "digestgolden",
+    testonly = True,
+    srcs = ["digestgolden.go"],
+    importpath = "martianoff/gala/internal/digestgolden",
+    visibility = ["//:__subpackages__"],
+    deps = ["@rules_go//go/tools/bazel"],
+)

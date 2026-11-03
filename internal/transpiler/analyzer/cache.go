@@ -1005,7 +1005,7 @@ func hashImportPaths(dirPath string) string {
 // The list is sorted and deduplicated so it can be persisted in a cache
 // entry and replayed deterministically.
 //
-// This is a quick line-based scan (no full ANTLR parse) that mirrors the
+// This is a quick line-based scan (no full parse) that mirrors the
 // scan used by hashImportPaths. It treats any quoted string containing a
 // "/" on a non-comment line as a possible import. The analyzer further
 // filters this list — entries that don't resolve to GALA packages are

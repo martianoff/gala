@@ -5,52 +5,16 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
 // The reads of the package's other files on galop's native tree: a sibling
 // of the analyzed file, or a file of a package it imports, is read on its
-// native tree when its parse came with a handle that bridges (nativeFileOf),
-// as the analyzed file is, and on ANTLR's tree otherwise. The handle rides
-// in the parsed-file cache with the file's tree (parsedFileEntry), so every
-// route a sibling takes to the analysis (the explicit package files, the
-// sibling-tree cache, a directory scan) finds it there. Each function here
-// is the twin of the one it is named after, which reads ANTLR's tree, and
-// hands the same values to the same tree-free code. TestCollectionsAgree
-// holds the pairs together and proves which tree each read took.
-
-// notePackageRead tells a.onPackageRead, when set, of a read of a file of the
-// package, beyond those readTree reports: what it read and whether it took
-// the native tree. The read cannot be made again: it records metadata.
-func (a *galaAnalyzer) notePackageRead(filePath, what string, onNative bool) {
-	if a.onPackageRead != nil {
-		a.onPackageRead(treeRead{filePath: filePath, what: what, native: onNative})
-	}
-}
-
-// packageFileImports is the imports of the file at path, read on nf, its
-// native tree, when that is one, and on tree otherwise; a.onPackageRead is
-// told of the read.
-func (a *galaAnalyzer) packageFileImports(path string, tree *grammar.SourceFileContext, nf nativeFile) []fileImport {
-	return readOn(a.onPackageRead, path, "imports", nf, scanFileImportsNative,
-		func() []fileImport { return scanFileImports(tree) })
-}
-
-// packageFileNames is ownNamesOf the file at path, read as packageFileImports
-// reads its imports.
-func (a *galaAnalyzer) packageFileNames(path string, tree *grammar.SourceFileContext, nf nativeFile) ownNames {
-	return readOn(a.onPackageRead, path, "top-level names", nf, ownNamesNative,
-		func() ownNames { return ownNamesOf(tree) })
-}
-
-// packageFileTypeNames is typeNamesOf the file at path (packageFileNames
-// without the methods), read as packageFileImports reads its imports.
-func (a *galaAnalyzer) packageFileTypeNames(path string, tree *grammar.SourceFileContext, nf nativeFile) map[string]bool {
-	return readOn(a.onPackageRead, path, "top-level type names", nf, typeNamesNative,
-		func() map[string]bool { return typeNamesOf(tree) })
-}
+// native tree, as the analyzed file is. The handle rides in the parsed-file
+// cache with the file's parse (parsedFileEntry), so every route a sibling
+// takes to the analysis (the explicit package files, the sibling cache, a
+// directory scan) finds it there.
 
 // add records into o the names other introduces.
 func (o ownNames) add(other ownNames) {
@@ -196,8 +160,10 @@ func (a *galaAnalyzer) recordSiblingAlias(richAST *transpiler.RichAST, typeName,
 	richAST.TypeAliases[typeName] = underlying
 }
 
-// extractSiblingDeclsNative is extractSiblingDecls of nf, the sibling's
-// native tree.
+// extractSiblingDeclsNative is extractSiblingFullMetadata's reading of nf,
+// the sibling's native tree: it records the sibling's types, sealed and
+// opaque types, methods, functions and package-level bindings into sx's
+// RichAST.
 func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtraction) error {
 	pkgName, richAST, absSibPath, sibDisplay, docs, decls := sx.pkgName, sx.richAST, sx.absSibPath, sx.sibDisplay, sx.docs, sx.decls
 	// 1. Collect struct types with full field info, and shorthand structs.
@@ -242,7 +208,14 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 					meta.Methods[methodName] = methodMeta
 				}
 			}
-			// Type aliases: see extractSiblingDecls.
+			// Type aliases (e.g., type Handler func(Request) Future[Response]).
+			//
+			// `typeAlias: identifier | type`, and both branches name an alias:
+			// `type Millis int64` and `type Coord Point` take the identifier
+			// branch. Reading only the `type` branch would leave those
+			// invisible to sibling files and to anything declared above them,
+			// so an alias used before its declaration would be reported as an
+			// unknown type.
 			a.recordSiblingAlias(richAST, typeName, nativeTypeAliasTarget(ctx), pkgName, meta.TypeParams)
 
 		case native.GalaKIND_structShorthandDeclaration:
@@ -328,7 +301,13 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			recvNames := nativeReceiverTypeArgNames(recvType)
 			allTypeParams := sm.typeParamScope(richAST, recvNames, methodMeta.TypeParams)
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
-			// The function-form flag: see extractSiblingDecls.
+			// Mirror collectFileFuncsNative's IsGeneric detection so that
+			// sibling-extracted methods carry the same function-form flag as
+			// methods analyzed directly. Without this, merging a sibling's
+			// Analyze result (with IsGeneric=true) on top of an earlier
+			// sibling's result (with IsGeneric=false from extraction here)
+			// would clobber the true flag and the transpiler would emit
+			// method-syntax calls against a standalone-function definition.
 			if a.nativeCausesInstantiationCycle(recvType, sig) {
 				methodMeta.IsGeneric = true
 			}
@@ -359,7 +338,8 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 		richAST.Functions[sf.fullName] = funcMeta
 	}
 
-	// The sibling's package-level bindings: see extractSiblingDecls.
+	// The sibling's package-level bindings, recorded here rather than by the
+	// caller so they reuse the canonical path and docs map sx carries.
 	a.extractPackageValsNative(nf, pkgName, richAST, docs, absSibPath)
 	return nil
 }

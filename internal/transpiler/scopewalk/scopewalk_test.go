@@ -9,14 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
 	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
 
-// TestMain parses with galop's engine, whatever the build's default, so the
-// native walk has a tree to agree with ANTLR's on.
+// TestMain parses with galop's engine, whatever the build's default.
 func TestMain(m *testing.M) {
 	parser.RequestEngine(string(parser.EngineGalop))
 	os.Exit(m.Run())
@@ -50,45 +48,32 @@ func (c *collector) sorted() []string {
 }
 
 // walkFuncBody parses a whole source file and walks the body of its single
-// top-level function, returning the unbound references. It walks ANTLR's tree
-// and the native tree, and requires the same result.
+// top-level function, returning the unbound references.
 func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 	t.Helper()
 	return walkFuncBodyHooked(t, src, opts, nil)
 }
 
-// walkFuncBodyHooked is walkFuncBody whose native walk calls enter, the
-// counterpart of opts' EnterFunctionScope.
+// walkFuncBodyHooked is walkFuncBody whose walk calls enter for each function
+// declaration.
 func walkFuncBodyHooked(t *testing.T, src string, opts scopewalk.Options, enter nativewalk.EnterFunctionScope) *collector {
 	t.Helper()
-	parsed := parser.NewAntlrGalaParser().ParseFile(src)
-	tree, _, errs := parsed.Strict()
-	require.Empty(t, errs, "source must parse")
-	sf, ok := tree.(*grammar.SourceFileContext)
-	require.True(t, ok)
+	nf := parser.NewAntlrGalaParser().ParseFile(src).CleanNative()
+	require.NotNil(t, nf, "source must parse")
+	tree, err := nf.Tree()
+	require.NoError(t, err)
+	sf := native.SourceFileNode{GalaNodeRef: tree.Root()}
 
-	walk := func(onNative bool) *collector {
-		c := newCollector()
-		w := scopewalk.New(c, opts)
-		nw := nativewalk.New(w, enter)
-		w.PushScope()
-		for _, td := range sf.AllTopLevelDeclaration() {
-			fd := td.FunctionDeclaration()
-			switch {
-			case fd == nil:
-			case onNative:
-				node := parsed.Native.Node(fd)
-				require.True(t, node.Ok(), "the declaration must have a native node")
-				nw.WalkFunctionDeclaration(native.FunctionDeclarationNode{GalaNodeRef: node})
-			default:
-				w.WalkFunctionDeclaration(fd)
-			}
+	c := newCollector()
+	w := scopewalk.New(c, opts)
+	nw := nativewalk.New(w, enter)
+	w.PushScope()
+	for _, td := range sf.AllTopLevelDeclaration() {
+		if fd := td.FunctionDeclaration(); fd.Ok() {
+			nw.WalkFunctionDeclaration(fd)
 		}
-		w.PopScope()
-		return c
 	}
-	c := walk(false)
-	require.Equal(t, c, walk(true), "the native walk must agree with ANTLR's")
+	w.PopScope()
 	return c
 }
 
@@ -211,7 +196,7 @@ func TestInterpolationFragmentParsing(t *testing.T) {
 	assert.Equal(t, []string{"x"}, walkFuncBody(t, prefixSrc, strict).sorted())
 
 	// A fragment whose prefix is malformed errors out and contributes nothing,
-	// so ANTLR's error-recovered tree can never become a reference.
+	// so an error-recovered tree can never become a reference.
 	badSrc := "package main\n\nfunc subject(p int) string {\n    return s\"${(}\"\n}\n"
 	assert.Empty(t, walkFuncBody(t, badSrc, strict).sorted())
 }
@@ -284,11 +269,7 @@ func TestEnterFunctionScopeHook(t *testing.T) {
 	without := walkFuncBody(t, src, scopewalk.Options{})
 	assert.Equal(t, []string{"extra"}, without.sorted())
 
-	with := walkFuncBodyHooked(t, src, scopewalk.Options{
-		EnterFunctionScope: func(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
-			w.Bind("extra")
-		},
-	}, func(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
+	with := walkFuncBodyHooked(t, src, scopewalk.Options{}, func(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
 		w.Bind("extra")
 	})
 	assert.Empty(t, with.sorted(), "the hook's bindings are in scope for the body")

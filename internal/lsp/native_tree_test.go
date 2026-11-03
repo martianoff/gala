@@ -21,21 +21,8 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
-
-// antlrOnlyParser parses as its GalaParser does but drops each parse's
-// native-tree handle, so that a handler parsing with it analyzes,
-// transforms and answers on ANTLR's tree alone, its documents and the files
-// their analysis reads alike.
-type antlrOnlyParser struct{ transpiler.GalaParser }
-
-func (p antlrOnlyParser) ParseFile(input string) *parser.Parsed {
-	parsed := p.GalaParser.ParseFile(input)
-	parsed.Native = nil
-	return parsed
-}
 
 // nativeCorpus is the GALA sources staged as the test's data, sorted, with
 // their text as the handler holds it (BOM-stripped) and with LF line endings,
@@ -344,11 +331,10 @@ func jsonOf(t *testing.T, v any) string {
 }
 
 // TestBufferAnalysisTrees: a buffer that parses cleanly is analyzed and
-// transformed on its native tree, a buffer with a syntax error is analyzed
-// on ANTLR's error-recovered tree and not transformed, and a handler on
-// ANTLR's tree alone analyzes and transforms the clean buffer on ANTLR's
-// tree. A collection_immutable file is opened, so its siblings are read
-// too.
+// transformed on its native tree, and a buffer with a syntax error is
+// analyzed on the native tree of its error-recovered tree and not
+// transformed. A collection_immutable file is opened, so its siblings are
+// read too.
 func TestBufferAnalysisTrees(t *testing.T) {
 	_, _, root := nativeCorpus(t)
 	path := filepath.Join(root, "collection_immutable", "array.gala")
@@ -358,20 +344,15 @@ func TestBufferAnalysisTrees(t *testing.T) {
 	broken := strings.Replace(clean, "func ", "func (", 1)
 	uri := lsp.DocumentURI("file:///" + filepath.ToSlash(path))
 	for _, c := range []struct {
-		name      string
-		antlrOnly bool
-		text      string
-		want      map[string]bool
+		name string
+		text string
+		want map[string]bool
 	}{
-		{"clean", false, clean, map[string]bool{treeReadAnalysis: true, treeReadTransform: true}},
-		{"syntax error", false, broken, map[string]bool{treeReadAnalysis: false}},
-		{"clean, ANTLR's tree alone", true, clean, map[string]bool{treeReadAnalysis: false, treeReadTransform: false}},
+		{"clean", clean, map[string]bool{treeReadAnalysis: true, treeReadTransform: true}},
+		{"syntax error", broken, map[string]bool{treeReadAnalysis: true}},
 	} {
 		h := NewGalaHandler()
 		h.SetSearchPaths([]string{root})
-		if c.antlrOnly {
-			h.parser = antlrOnlyParser{h.parser}
-		}
 		got := map[string]bool{}
 		h.onTreeRead = func(what string, onNative bool) {
 			if prev, seen := got[what]; seen && prev != onNative {

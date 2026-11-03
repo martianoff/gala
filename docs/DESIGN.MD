@@ -289,36 +289,42 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     parser, not the tree the transpiler reads: ANTLR's engine bypasses galop's lexer and
     parser, but every parse without errors, whichever parser made it, comes with a native tree
     (`Parsed.Native`), converted from ANTLR's tree by galop's converter, and the analyzer, the
-    transformer and the language server read that tree. A parse with errors has none, so its
-    error-recovered tree is read on the ANTLR paths end to end.
+    transformer and the language server read that tree. A parse with errors has none; the
+    language server analyzes its error-recovered tree converted to the native tree
+    (`Parsed.RecoveredNative`).
   - **Building GALA needs galop.** It runs at build time from prebuilt release binaries, which
     Bazel (rules_gala's galop toolchain) and nix download for linux and macOS (amd64 and arm64)
     and windows-amd64. No other host can build GALA.
   - **galop's native tree comes next.** galop also generates its own tree (in
     `internal/parser/native`): flat arrays of nodes, far smaller than ANTLR's contexts. Each
-    parse galop's parser makes (`Parsed.Native` from `ParseFile`) can build it on first use and
-    pair every native node with its ANTLR context, so code can move to the native tree one
-    consumer at a time. The analyzer reads the compiled file on it, from its first read on
-    (its package clause, imports and names, and the checks on them), collects the file's
-    declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
-    the transformer reads the native tree alone: it has no ANTLR reader left, and its
-    library does not depend on ANTLR's runtime or generated parser
-    (`TestTransformerReadsNoANTLR`). Only a clean parse is transformed, and every clean
-    parse carries a native handle, ANTLR's engine included (through the converter), so a
-    file without a native tree is an internal error. The default values and interpolated
-    expressions it lowers are each parsed on their own by the engine's parser (galop's
-    native parser, or ANTLR's and galop's converter); when that parse does not settle the
-    text, ANTLR's parser alone parses it and its tree is converted, so a syntax error is
-    reported with ANTLR's message. The state keyed by a subtree (the expected-type hints,
-    the escape cache) is keyed by its native node. The compiled file's sibling files, the
-    files of imported packages and clean LSP buffers are read on the native tree too; an
-    LSP buffer with syntax errors stays on ANTLR's tree. `transpile()` drops the handle
-    after the transform, and the transformer keeps neither it nor a node of it; the
-    analyzer's parsed-file cache keeps a sibling file's converted tree for the later reads
-    of that file. For the compiled file: until it converts, it holds the token stream and
-    the source text, which a clean parse's ANTLR tree doesn't keep alive (after
-    converting, the native tree keeps the text). Doc comments are keyed by line and
-    column (`parser.DocKey`), which both trees share.
+    parse galop's parser makes (`Parsed.Native` from `ParseFile`) can build it on first use
+    and pair every native node with its ANTLR context, so code can move to the native tree
+    one consumer at a time. The analyzer and the transformer read the native tree alone: the
+    analyzer reads every file it takes in on it (its package clause, imports, declarations
+    and checks; the undefined-symbol check is a walk of it, `nativewalk.New`) and keeps no
+    ANTLR tree on its result, and the transformer has no ANTLR reader left. The transformer,
+    the scope walk and the transpiler's own library do not depend on ANTLR's runtime,
+    generated parser or galop's converter directly: no non-test source of theirs imports
+    one, and their Bazel libraries name none as a dependency (`TestTransformerReadsNoANTLR`,
+    `noantlr.Check`). They still reach all three transitively through `//internal/parser`,
+    which parses with them, until the parser no longer does; the guard does not check
+    that. Only a clean parse is transformed, and every clean parse carries a native handle,
+    ANTLR's engine included (through the converter), so a file without a native tree is an
+    internal error, never read on ANTLR's tree instead. The
+    default values and interpolated expressions it lowers are each parsed on their own by
+    the engine's parser (galop's native parser, or ANTLR's and galop's converter); when that
+    parse does not settle the text, ANTLR's parser alone parses it and its tree is
+    converted, so a syntax error is reported with ANTLR's message. The state keyed by a
+    subtree (the expected-type hints, the escape cache) is keyed by its native node. The
+    compiled file's sibling files, the files of imported packages and LSP buffers are
+    analyzed on the native tree too; the language server's signature help and hover on a
+    buffer with syntax errors still read ANTLR's tree. `transpile()` drops the handle after
+    the transform, and the transformer keeps neither it nor a node of it; the analyzer's
+    parsed-file cache keeps a sibling file's converted tree for the later reads of that
+    file. For the compiled file: until it converts, it holds the token stream and the source
+    text, which a clean parse's ANTLR tree doesn't keep alive (after converting, the native
+    tree keeps the text). Doc comments are keyed by line and column (`parser.DocKey`), which
+    both trees share.
   - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
     and errors on every GALA source of the repository, and that the native tree matches
     ANTLR's; CI runs the suite under each.

@@ -37,39 +37,29 @@ func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
 
 // analyzeEachFile writes files (name -> source) as the package repro in a
 // fresh module and analyzes each of them in turn, in name order, with the
-// others as its package files, as a build does. It does so once per twin of
-// the collection, as a subtest, and gives check each file's error, or nil.
-// The analyzed file is read on its native tree when its parse comes with
-// one, and on ANTLR's tree when the analysis gets no native handle.
+// others as its package files, as a build does, and gives check each file's
+// error, or nil.
 func analyzeEachFile(t *testing.T, files map[string]string, check func(t *testing.T, errs map[string]error)) {
 	t.Helper()
-	for _, twin := range []string{"antlr", "native"} {
-		t.Run(twin, func(t *testing.T) {
-			galaparser.RequestEngine(string(galaparser.EngineGalop))
-			t.Cleanup(func() { galaparser.RequestEngine("") })
-			tmp := t.TempDir()
-			if err := os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/repro\n\ngala dev\n"), 0644); err != nil {
-				t.Fatal(err)
-			}
-			paths := writePackage(t, tmp, files)
-			p := transpiler.NewAntlrGalaParser()
-			batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
-			errs := make(map[string]error, len(paths))
-			for _, name := range slices.Sorted(maps.Keys(paths)) {
-				parsed := p.ParseFile(files[name])
-				if err := parsed.Err(); err != nil {
-					t.Fatalf("parse %s: %v", name, err)
-				}
-				batch.SetPackageFiles(siblingsOf(paths, name))
-				if twin == "native" {
-					_, errs[name] = batch.AnalyzeParsed(parsed, paths[name])
-				} else {
-					_, errs[name] = transpiler.Analyze(batch, parsed.Tree, parsed.Docs, paths[name])
-				}
-			}
-			check(t, errs)
-		})
+	galaparser.RequestEngine(string(galaparser.EngineGalop))
+	t.Cleanup(func() { galaparser.RequestEngine("") })
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/repro\n\ngala dev\n"), 0644); err != nil {
+		t.Fatal(err)
 	}
+	paths := writePackage(t, tmp, files)
+	p := transpiler.NewAntlrGalaParser()
+	batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
+	errs := make(map[string]error, len(paths))
+	for _, name := range slices.Sorted(maps.Keys(paths)) {
+		parsed := p.ParseFile(files[name])
+		if err := parsed.Err(); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		batch.SetPackageFiles(siblingsOf(paths, name))
+		_, errs[name] = batch.AnalyzeParsed(parsed, paths[name])
+	}
+	check(t, errs)
 }
 
 // requireNoErrors fails t for each file of errs whose analysis failed; why

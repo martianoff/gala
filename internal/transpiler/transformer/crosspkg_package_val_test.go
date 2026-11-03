@@ -272,10 +272,11 @@ func main() {
     Println(colors.ToSgr(colors.Green), theme.Dark.Name, split.Derived, voids.Done, users.Admin)
 }`
 	p := transpiler.NewAntlrGalaParser()
-	tree, _, err := p.ParseFile(src).Strict()
+	parsed := p.ParseFile(src)
+	err := parsed.Err()
 	require.NoError(t, err)
 	a := analyzer.NewGalaAnalyzer(p, append([]string{root}, getStdSearchPath()...), root)
-	richAST, err := transpiler.Analyze(a, tree, nil, filepath.Join(root, "main.gala"))
+	richAST, err := a.AnalyzeParsed(parsed, filepath.Join(root, "main.gala"))
 	require.NoError(t, err)
 
 	assert.Empty(t, richAST.PackageVals, "imported bindings must not become the importer's own")

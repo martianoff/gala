@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "noantlr",
+    testonly = True,
+    srcs = ["noantlr.go"],
+    importpath = "martianoff/gala/internal/noantlr",
+    visibility = ["//:__subpackages__"],
+)

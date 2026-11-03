@@ -3,8 +3,6 @@ package analyzer
 import (
 	"slices"
 
-	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -71,25 +69,4 @@ func renameReceiverTypeParams(meta *transpiler.MethodMetadata, recvNames, typeTy
 	for i, rt := range meta.GoResults {
 		meta.GoResults[i] = transpiler.SubstituteTypeParams(rt, renames)
 	}
-}
-
-// receiverTypeArgNames lists the type arguments a receiver type spells, as
-// written and in order: [U] for `Box[U]` and `*Box[U]`, nil for a
-// non-generic receiver.
-func receiverTypeArgNames(ctx grammar.ITypeContext) []string {
-	ctx, _ = galaparser.PointerElem(ctx)
-	for ctx != nil && ctx.QualifiedIdentifier() == nil {
-		if len(ctx.AllType_()) != 1 {
-			return nil
-		}
-		ctx = ctx.Type_(0)
-	}
-	if ctx == nil || ctx.TypeArguments() == nil || ctx.TypeArguments().TypeList() == nil {
-		return nil
-	}
-	var names []string
-	for _, arg := range ctx.TypeArguments().TypeList().AllType_() {
-		names = append(names, arg.GetText())
-	}
-	return names
 }

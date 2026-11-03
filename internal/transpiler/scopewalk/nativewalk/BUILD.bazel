@@ -15,25 +15,30 @@ go_library(
 
 go_test(
     name = "nativewalk_test",
-    srcs = ["nativewalk_test.go"],
-    # The test walks the GALA sources TestEnginesAgree parses.
-    data = [
-        "//:all_gala_sources",
-        "//examples:all_gala_sources",
-        "//lazy:gala_sources",
-        "//resource:gala_sources",
-        "//std:gala_sources",
-        "//stream:gala_sources",
-        "//subprocess:gala_sources",
-        "//test:gala_sources",
+    srcs = [
+        "interpolation_failure_test.go",
+        "nativewalk_test.go",
+        "walk_golden_test.go",
     ],
+    data = ["testdata/walks.golden"],
     embed = [":nativewalk"],
     deps = [
+        "//internal/digestgolden",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep
+        "//internal/testcorpus",
         "//internal/transpiler/scopewalk",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
-        "@rules_go//go/tools/bazel",
     ],
+)
+
+# gazelle:exclude no_antlr_test.go
+go_test(
+    # keep
+    name = "no_antlr_test",
+    srcs = ["no_antlr_test.go"],
+    data = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ) + ["BUILD.bazel"],
+    deps = ["//internal/noantlr"],
 )

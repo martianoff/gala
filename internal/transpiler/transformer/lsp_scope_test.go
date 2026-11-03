@@ -47,12 +47,10 @@ func run() {
 func lspCollectionRichAST(tb testing.TB) *transpiler.RichAST {
 	tb.Helper()
 	parsed := transpiler.NewAntlrGalaParser().ParseFile(lspCollectionSource)
-	tree, _, err := parsed.Strict()
-	if err != nil {
+	if err := parsed.Err(); err != nil {
 		tb.Fatal(err)
 	}
 	return &transpiler.RichAST{
-		Tree:             tree,
 		Native:           parsed.CleanNative(),
 		PackageName:      "main",
 		Types:            make(map[string]*transpiler.TypeMetadata),

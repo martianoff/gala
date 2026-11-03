@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "testcorpus",
+    testonly = True,
+    srcs = ["testcorpus.go"],
+    embedsrcs = ["testdata/corpus.txtar"],
+    importpath = "martianoff/gala/internal/testcorpus",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "testcorpus_test",
+    srcs = ["testcorpus_test.go"],
+    embed = [":testcorpus"],
+)

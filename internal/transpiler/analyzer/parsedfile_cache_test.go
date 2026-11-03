@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/parser"
@@ -55,13 +54,14 @@ func TestParsedFileCache_AmortizesAcrossBatch(t *testing.T) {
 	counter := &parsedFileCounter{inner: innerParser}
 	batch := analyzer.NewBatchAnalyzer(counter, getStdSearchPath(), dir)
 
-	bodies := make(map[string]antlr.Tree)
+	bodies := make(map[string]*parser.Parsed)
 	for _, p := range paths {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.ParseFile(string(body)).Strict()
+		parsed := innerParser.ParseFile(string(body))
+		err = parsed.Err()
 		require.NoError(t, err)
-		bodies[p] = tree
+		bodies[p] = parsed
 	}
 
 	transpileAll := func() {
@@ -73,7 +73,7 @@ func TestParsedFileCache_AmortizesAcrossBatch(t *testing.T) {
 				}
 			}
 			batch.SetPackageFiles(siblings)
-			_, err := transpiler.Analyze(batch, bodies[current], nil, current)
+			_, err := batch.AnalyzeParsed(bodies[current], current)
 			require.NoError(t, err)
 		}
 	}
@@ -103,21 +103,22 @@ func TestParsedFileCache_InvalidatesOnSizeChange(t *testing.T) {
 	counter := &parsedFileCounter{inner: innerParser}
 	batch := analyzer.NewBatchAnalyzer(counter, getStdSearchPath(), dir)
 
-	parse := func(p string) antlr.Tree {
+	parse := func(p string) *parser.Parsed {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.ParseFile(string(body)).Strict()
+		parsed := innerParser.ParseFile(string(body))
+		err = parsed.Err()
 		require.NoError(t, err)
-		return tree
+		return parsed
 	}
 
 	batch.SetPackageFiles([]string{b})
-	_, err := transpiler.Analyze(batch, parse(a), nil, a)
+	_, err := batch.AnalyzeParsed(parse(a), a)
 	require.NoError(t, err)
 	first := atomic.LoadInt64(&counter.calls)
 
 	batch.SetPackageFiles([]string{b})
-	_, err = transpiler.Analyze(batch, parse(a), nil, a)
+	_, err = batch.AnalyzeParsed(parse(a), a)
 	require.NoError(t, err)
 	require.Equal(t, first, atomic.LoadInt64(&counter.calls), "expected cache hit on unchanged file")
 
@@ -125,7 +126,7 @@ func TestParsedFileCache_InvalidatesOnSizeChange(t *testing.T) {
 	require.NoError(t, os.WriteFile(b, []byte("package pkg\n\nval b2 = 99\nval bExtra = 42\n"), 0644))
 
 	batch.SetPackageFiles([]string{b})
-	_, err = transpiler.Analyze(batch, parse(a), nil, a)
+	_, err = batch.AnalyzeParsed(parse(a), a)
 	require.NoError(t, err)
 	if atomic.LoadInt64(&counter.calls) <= first {
 		t.Fatalf("expected re-parse after b.gala size changed; counter still at %d", atomic.LoadInt64(&counter.calls))

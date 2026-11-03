@@ -3,6 +3,8 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
@@ -113,43 +115,85 @@ func isDotCompletion(text string, line, char int) bool {
 	return ok
 }
 
+// typeCompletions offers the exported types of richAST and the cases of its
+// sealed types, one item per name. Of the entries spelling one name (a sealed
+// type's case and the case's own type entry, say), the one of the smallest
+// key is offered, every time, as in packageCompletions and
+// matchCaseCompletions; a type not offered offers none of its cases either.
+// Only the types sharing a name with another entry are sorted for that: the
+// others are offered as they come. The items are in no particular order (an
+// editor sorts them).
 func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
+	// claims counts, by name, the entries that would offer it.
+	claims := make(map[string]int, len(richAST.Types))
+	for key, tm := range richAST.Types {
+		if name := typeItemName(key, tm); isExported(name) {
+			claims[name]++
+			for _, v := range tm.SealedVariants {
+				claims[v.Name]++
+			}
+		}
+	}
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
+	var contested []string
 	for key, tm := range richAST.Types {
-		name := tm.Name
-		if name == "" {
-			if idx := strings.LastIndex(key, "."); idx >= 0 {
-				name = key[idx+1:]
-			} else {
-				name = key
-			}
-		}
-		if seen[name] || !isExported(name) {
+		name := typeItemName(key, tm)
+		if !isExported(name) {
 			continue
 		}
-		seen[name] = true
-		kind := lsp.CompletionItemKindClass
-		detail := "type"
-		switch {
-		case tm.IsSealed:
-			detail = "sealed type"
-		case tm.IsOpaque:
-			detail = "opaque type"
+		if claims[name] > 1 || slices.ContainsFunc(tm.SealedVariants, func(v transpiler.SealedVariant) bool { return claims[v.Name] > 1 }) {
+			contested = append(contested, key)
+			continue
 		}
-		items = append(items, withRef(
-			lsp.CompletionItem{Label: name, Kind: kindPtr(kind), Detail: detail},
-			completionRef{Kind: refKindType, Key: key}))
+		items = appendTypeItems(items, seen, key, tm, name)
+	}
+	// Every entry claiming a contested name is contested itself, so walking
+	// them in key order picks what a walk of every type in key order would.
+	slices.Sort(contested)
+	for _, key := range contested {
+		tm := richAST.Types[key]
+		if name := typeItemName(key, tm); !seen[name] {
+			items = appendTypeItems(items, seen, key, tm, name)
+		}
+	}
+	return items
+}
 
-		for _, v := range tm.SealedVariants {
-			if !seen[v.Name] {
-				seen[v.Name] = true
-				items = append(items, withRef(lsp.CompletionItem{
-					Label:  v.Name,
-					Kind:   kindPtr(lsp.CompletionItemKindConstructor),
-					Detail: "case of " + name,
-				}, completionRef{Kind: refKindVariant, Key: key, Name: v.Name}))
-			}
+// typeItemName is the name a type entry is offered under: its own, or the
+// last segment of its key.
+func typeItemName(key string, tm *transpiler.TypeMetadata) string {
+	if tm.Name != "" {
+		return tm.Name
+	}
+	if idx := strings.LastIndex(key, "."); idx >= 0 {
+		return key[idx+1:]
+	}
+	return key
+}
+
+// appendTypeItems appends the item of the type tm, named name, and of each of
+// its cases not seen yet, and marks them seen.
+func appendTypeItems(items []lsp.CompletionItem, seen map[string]bool, key string, tm *transpiler.TypeMetadata, name string) []lsp.CompletionItem {
+	seen[name] = true
+	detail := "type"
+	switch {
+	case tm.IsSealed:
+		detail = "sealed type"
+	case tm.IsOpaque:
+		detail = "opaque type"
+	}
+	items = append(items, withRef(
+		lsp.CompletionItem{Label: name, Kind: kindPtr(lsp.CompletionItemKindClass), Detail: detail},
+		completionRef{Kind: refKindType, Key: key}))
+	for _, v := range tm.SealedVariants {
+		if !seen[v.Name] {
+			seen[v.Name] = true
+			items = append(items, withRef(lsp.CompletionItem{
+				Label:  v.Name,
+				Kind:   kindPtr(lsp.CompletionItemKindConstructor),
+				Detail: "case of " + name,
+			}, completionRef{Kind: refKindVariant, Key: key, Name: v.Name}))
 		}
 	}
 	return items
@@ -213,7 +257,8 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string, snippets bo
 	seen := make(map[string]bool)
 
 	// Types from this package
-	for key, tm := range richAST.Types {
+	for _, key := range slices.Sorted(maps.Keys(richAST.Types)) {
+		tm := richAST.Types[key]
 		name := tm.Name
 		if name == "" {
 			if idx := strings.LastIndex(key, "."); idx >= 0 {
@@ -332,7 +377,8 @@ func isMatchCaseContext(text string, line, _ int) bool {
 func matchCaseCompletions(richAST *transpiler.RichAST, matchedType string) []lsp.CompletionItem {
 	items := make([]lsp.CompletionItem, 0)
 	seen := make(map[string]bool)
-	for key, tm := range richAST.Types {
+	for _, key := range slices.Sorted(maps.Keys(richAST.Types)) {
+		tm := richAST.Types[key]
 		if !tm.IsSealed {
 			continue
 		}

@@ -6,10 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -201,12 +198,13 @@ func TestDocCacheGrowth(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		tree, docs, perr := p.ParseFile(string(src)).Strict()
+		parsed := p.ParseFile(string(src))
+		perr := parsed.Err()
 		if perr != nil {
 			continue
 		}
 		a := NewGalaAnalyzer(p, []string{root})
-		rich, aerr := transpiler.Analyze(a, tree, docs, path)
+		rich, aerr := a.AnalyzeParsed(parsed, path)
 		if aerr != nil || rich == nil {
 			continue
 		}
@@ -301,14 +299,15 @@ type Holder struct {
 	p := parser.NewAntlrGalaParser()
 	a := NewGalaAnalyzer(p, nil)
 
-	tree1, docs1, err := p.ParseFile(v1).Strict()
+	parsed1 := p.ParseFile(v1)
+	err := parsed1.Err()
 	if err != nil {
 		t.Fatalf("parse v1: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(v1), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rich, err := transpiler.Analyze(a, tree1, docs1, path)
+	rich, err := a.AnalyzeParsed(parsed1, path)
 	if err != nil {
 		t.Fatalf("analyze v1: %v", err)
 	}
@@ -318,14 +317,15 @@ type Holder struct {
 
 	// Re-analyze the edited source through the SAME analyzer, so the existing
 	// TypeMetadata is reused rather than rebuilt.
-	tree2, docs2, err := p.ParseFile(v2).Strict()
+	parsed2 := p.ParseFile(v2)
+	err = parsed2.Err()
 	if err != nil {
 		t.Fatalf("parse v2: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(v2), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rich2, err := transpiler.Analyze(a, tree2, docs2, path)
+	rich2, err := a.AnalyzeParsed(parsed2, path)
 	if err != nil {
 		t.Fatalf("analyze v2: %v", err)
 	}
@@ -338,47 +338,6 @@ type Holder struct {
 	}
 
 }
-
-// setDoc backs the re-analysis and sibling-merge paths, where a TypeMetadata
-// may already carry documentation from a cache load or an earlier pass. An
-// absent doc must leave that value alone; a real one must replace it.
-func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
-	docs := parser.Docs{{Line: 3, Column: 4}: "fresh doc"}
-	tok := &stubToken{line: 3, column: 4}
-	missing := &stubToken{line: 3, column: 9}
-
-	cases := []struct {
-		name  string
-		start antlr.Token
-		docs  parser.Docs
-		in    string
-		want  string
-	}{
-		{"absent leaves existing", missing, docs, "existing", "existing"},
-		{"nil map leaves existing", tok, nil, "existing", "existing"},
-		{"present replaces existing", tok, docs, "existing", "fresh doc"},
-		{"present fills empty", tok, docs, "", "fresh doc"},
-		{"absent leaves empty", missing, docs, "", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := tc.in
-			setDoc(&got, tc.docs, tc.start)
-			if got != tc.want {
-				t.Errorf("setDoc = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// stubToken is the minimal antlr.Token surface setDoc/docAt touch.
-type stubToken struct {
-	antlr.Token
-	line, column int
-}
-
-func (s *stubToken) GetLine() int   { return s.line }
-func (s *stubToken) GetColumn() int { return s.column }
 
 // PackageDoc describes the package being analyzed. Merge is also how an import
 // closure is folded in, so without a package-name check an undocumented package
@@ -411,9 +370,10 @@ func TestPackageDocDoesNotCrossPackages(t *testing.T) {
 	})
 }
 
-// Doc offsets are parse-local, so docs must only be handed to the caller
-// holding the tree they were harvested from.
-func TestCachedForTreeRejectsForeignTree(t *testing.T) {
+// TestParsedFileEntryKeepsDocsAndNative: the parsed-file cache keeps a file's
+// doc comments with its native tree, converted already, which every read of
+// the file takes, and its package clause.
+func TestParsedFileEntryKeepsDocsAndNative(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.gala")
 	src := "package spkg\n\n// Thing does a thing.\nfunc Thing() int = 1\n"
@@ -421,31 +381,19 @@ func TestCachedForTreeRejectsForeignTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := parser.NewAntlrGalaParser()
-	a := NewGalaAnalyzer(p, nil).(*galaAnalyzer)
-
-	tree, _, err := a.parseFileCached(path)
-	if err != nil || tree == nil {
-		t.Fatalf("parseFileCached: %v", err)
+	a := NewGalaAnalyzer(parser.NewAntlrGalaParser(), nil).(*galaAnalyzer)
+	entry, err := a.parseFile(path)
+	if err != nil || entry == nil {
+		t.Fatalf("parseFile: %v", err)
 	}
-	key := a.parsedFileCacheKey(path)
-	got, _ := a.cachedForTree(key, tree)
-	if got == nil || len(got.Docs) == 0 {
-		t.Fatal("matching tree returned no docs")
+	if len(entry.parsed.Docs) == 0 {
+		t.Error("the cached parse has no docs")
 	}
-	if !got.Native.Converted() || !got.Native.Bridged() {
-		t.Error("the parsed-file cache keeps no converted native tree that bridges, which the file's reads take")
+	if !entry.parsed.Native.Converted() || !entry.nf.root.Ok() {
+		t.Error("the parsed-file cache keeps no converted native tree, which the file's reads take")
 	}
-
-	// A tree from a different parse of the same path must not be paired with
-	// the cached offsets, even though the path matches.
-	otherTree, _, _ := p.ParseFile(src).Strict()
-	other, _ := otherTree.(*grammar.SourceFileContext)
-	if other == nil {
-		t.Fatal("second parse produced no source file")
-	}
-	if got, _ := a.cachedForTree(key, other); got != nil {
-		t.Errorf("a parse handed to a tree from a different parse: %v", got.Docs)
+	if entry.pkgName != "spkg" || entry.pkgPos != (transpiler.SourcePos{Line: 1, Column: 0}) {
+		t.Errorf("package clause: %q at %+v, want spkg at 1:0", entry.pkgName, entry.pkgPos)
 	}
 }
 
@@ -466,7 +414,7 @@ func TestSharedParsedFiles(t *testing.T) {
 		return a
 	}
 	first := analyzerSharing().parseFileEntry(path)
-	if first == nil || first.tree() == nil || !first.nf.ok() {
+	if first == nil || first.parsed == nil || !first.nf.root.Ok() {
 		t.Fatal("the file has no cached parse with a native tree")
 	}
 	if again := analyzerSharing().parseFileEntry(path); again != first {

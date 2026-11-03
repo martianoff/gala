@@ -2,9 +2,9 @@ package analyzer
 
 import (
 	"fmt"
+	"martianoff/gala/internal/transpiler"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -224,128 +224,73 @@ func cafeAt(i int) string = "é"
 `}}},
 }
 
-// fileReads is the reads of the compiled file analyze makes through readTree,
-// in order.
-var fileReads = []string{"go keyword names", "generated codec names", "package clause", "imports", "dot-import collisions", "top-level names"}
-
-// TestFileChecksAgree holds analyze's reads of the compiled file on its
-// native tree (file_checks_native.go) to the same reads on ANTLR's: its
-// package clause, its imports, its top-level names, and the checks
-// GALA-E0055, GALA-E0058 and GALA-E0066. Each GALA source staged as data
-// (those TestEnginesAgree parses), each example of the error reference pages
-// and each of fileCheckInputs is analyzed as the CLI analyzes a file, and
-// every read is made again on the file's ANTLR tree in the same state: both
-// must give the same value, an error equal in code, message, hint, position
-// and span. Every read of a file with a native tree must have taken it.
-// Each input of fileCheckInputs must also stop with its error, or none, and
-// analyze exactly as an analyzer on ANTLR's tree alone analyzes it.
-func TestFileChecksAgree(t *testing.T) {
+// TestHandwrittenInputs: each handwritten input the analysis golden records
+// (analysis_golden_test.go) still does what it was written to: the compiled
+// file of each of collectionErrorInputs stops the analysis with an error, of
+// fileCheckInputs with its code or none, of undefinedInputs with an error
+// unless it is clean, and each of valInferenceInputs analyzes. So a golden
+// refreshed after a change cannot quietly turn an input into one that no
+// longer exercises its check.
+func TestHandwrittenInputs(t *testing.T) {
 	parseWithGalop(t)
-	paths, searchPaths := collectionCorpus(t)
-	p := galaparser.NewAntlrGalaParser()
-	nativeA := newCollectionAnalyzer(t, p, searchPaths)
-	antlrA := newCollectionAnalyzer(t, antlrOnly{p}, searchPaths)
-
+	_, searchPaths := collectionCorpus(t)
+	a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), searchPaths)
 	type input struct {
-		name    string
-		files   [][2]string
-		subject bool
-		code    galaerr.ErrorCode
+		name  string
+		files [][2]string
+		// fails says the analysis must stop with an error, of code when it
+		// is set.
+		fails bool
+		code  galaerr.ErrorCode
 	}
 	var inputs []input
-	for _, path := range paths {
-		text, err := os.ReadFile(path)
-		require.NoError(t, err)
-		inputs = append(inputs, input{name: path, files: [][2]string{{path, string(text)}}})
-	}
-	for i, files := range docExamples(t) {
-		inputs = append(inputs, input{name: fmt.Sprintf("error reference example %d (%s)", i, files[0][0]), files: files})
+	for _, in := range collectionErrorInputs {
+		inputs = append(inputs, input{"collection: " + in.name, in.files, true, ""})
 	}
 	for _, in := range fileCheckInputs {
-		inputs = append(inputs, input{in.name, in.files, true, in.code})
+		inputs = append(inputs, input{"file checks: " + in.name, in.files, in.code != "", in.code})
 	}
-
-	files, reads, errs := 0, 0, 0
+	for _, in := range undefinedInputs {
+		inputs = append(inputs, input{"undefined: " + in.name, in.files, !in.clean, ""})
+	}
+	for i, text := range valInferenceInputs {
+		inputs = append(inputs, input{fmt.Sprintf("val inference %d", i), [][2]string{{"main.gala", text}}, false, ""})
+	}
 	for _, in := range inputs {
-		paths := []string{in.files[0][0]}
-		if !filepath.IsAbs(paths[0]) {
-			paths = nil
-			dir := t.TempDir()
-			for _, f := range in.files {
-				path := filepath.Join(dir, f[0])
-				require.NoError(t, os.WriteFile(path, []byte(f[1]), 0o644))
-				paths = append(paths, path)
-			}
+		dir := t.TempDir()
+		var paths []string
+		for _, f := range in.files {
+			path := filepath.Join(dir, f[0])
+			require.NoError(t, os.WriteFile(path, []byte(f[1]), 0o644))
+			paths = append(paths, path)
 		}
-		// The subject alone: a package's other files are its siblings.
 		var packageFiles []string
 		if len(paths) > 1 {
 			packageFiles = paths[1:]
 		}
-		name := in.name + ": " + filepath.Base(paths[0])
-		parsed := nativeA.parser.ParseFile(in.files[0][1])
-		if parsed.Err() != nil {
-			assert.False(t, in.subject, "%s: does not parse: %v", name, parsed.Err())
-			continue
-		}
-		// Each read is compared as it is made: what a read gives may change
-		// later (the top-level names take the siblings' in).
-		var made []string
-		nativeA.onTreeRead = func(r treeRead) {
-			if r.filePath != paths[0] {
-				return
-			}
-			made = append(made, r.what)
-			assert.True(t, r.native, "%s: the read of the %s took ANTLR's tree", name, r.what)
-			assert.Equal(t, r.antlr(), r.got, "%s: the read of the %s differs between the trees", name, r.what)
-			if err, ok := r.got.(error); ok && err != nil {
-				errs++
-			}
-		}
-		an := analyzeParsedForCollection(t, nativeA, paths[0], parsed, packageFiles)
-		nativeA.onTreeRead = nil
-
-		files++
-		reads += len(made)
-		// The reads come in order, and an analysis that succeeds makes them
-		// all; one that fails stops after some.
-		_, failed := an.result.(error)
-		assert.NotEmpty(t, made, "%s: analyze made no read", name)
-		if assert.LessOrEqual(t, len(made), len(fileReads), "%s: reads %v", name, made) {
-			assert.Equal(t, fileReads[:len(made)], made, "%s: the reads", name)
-		}
-		if !failed {
-			assert.Len(t, made, len(fileReads), "%s: reads %v", name, made)
-		}
-		if !in.subject {
+		an, ok := analyzeForCollection(t, a, paths[0], in.files[0][1], packageFiles)
+		if !assert.True(t, ok, "%s: does not parse", in.name) {
 			continue
 		}
 		err, _ := an.result.(error)
-		if in.code == "" {
-			assert.NoError(t, err, "%s", name)
-		} else if assert.Error(t, err, "%s", name) {
-			var se *galaerr.SemanticError
-			if assert.ErrorAs(t, err, &se, "%s", name) {
-				assert.Equal(t, in.code, se.Code, "%s: %v", name, err)
-			}
-			t.Logf("%s: %v", name, err)
+		if !in.fails {
+			assert.NoError(t, err, "%s", in.name)
+			continue
 		}
-		a, ok := analyzeForCollection(t, antlrA, paths[0], in.files[0][1], packageFiles)
-		require.True(t, ok, name)
-		if diff := firstDiff(reflect.ValueOf(an.result), reflect.ValueOf(a.result), "", map[visit]bool{}); diff != "" {
-			t.Errorf("%s: the analysis on the native tree differs from ANTLR's at %s", name, diff)
+		if !assert.Error(t, err, "%s", in.name) || in.code == "" {
+			continue
+		}
+		var se *galaerr.SemanticError
+		if assert.ErrorAs(t, err, &se, "%s", in.name) {
+			assert.Equal(t, in.code, se.Code, "%s: %v", in.name, err)
 		}
 	}
-	// Every staged source parses with a native tree; floors catch the sources
-	// not being staged or the native path going unused.
-	require.GreaterOrEqual(t, files, 600, "files read")
-	require.GreaterOrEqual(t, errs, 20, "errors found")
-	t.Logf("%d files, all read on the native tree: %d reads, %d errors", files, reads, errs)
 }
 
-// TestLSPBuffers: the LSP analyzer reads a buffer that parses cleanly on its
-// native tree, its collection and every other read alike, and a buffer with
-// syntax errors, whose parse has no handle, on ANTLR's error-recovered tree.
+// TestLSPBuffers: the LSP analyzer analyzes a buffer that parses cleanly on
+// its native tree, and a buffer with syntax errors on the native tree of its
+// error-recovered tree (Parsed.RecoveredNative), so completion and hover keep
+// answering mid-edit.
 func TestLSPBuffers(t *testing.T) {
 	parseWithGalop(t)
 	_, searchPaths := collectionCorpus(t)
@@ -356,30 +301,19 @@ func TestLSPBuffers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "main.gala")
 	for _, c := range []struct {
 		name, src string
-		native    bool
+		clean     bool
 	}{
 		{"clean", "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x)\n}\n", true},
-		{"syntax error", "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x\n}\n", false},
+		{"syntax error", "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc helper() int = 1\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x\n}\n", false},
 	} {
 		require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
 		parsed := a.parser.ParseFile(c.src)
-		require.Equal(t, c.native, parsed.Err() == nil, "%s: whether it parses", c.name)
-		require.Equal(t, c.native, parsed.CleanNative() != nil, "%s: whether the parse comes with a handle", c.name)
-
-		var reads []treeRead
-		a.onTreeRead = func(r treeRead) {
-			if r.filePath == path {
-				reads = append(reads, r)
-			}
-		}
+		require.Equal(t, c.clean, parsed.Err() == nil, "%s: whether it parses", c.name)
+		require.NotNil(t, parsed.RecoveredNative(), "%s: the parse has a native tree", c.name)
 		an := analyzeParsedForCollection(t, a, path, parsed, nil)
-		a.onTreeRead = nil
-
-		require.Equal(t, path, an.trace.filePath, "%s: the buffer's declarations are collected", c.name)
-		assert.Equal(t, c.native, an.trace.native, "%s: the buffer was collected on its native tree", c.name)
-		require.NotEmpty(t, reads, "%s: the buffer's file checks report their reads", c.name)
-		for _, r := range reads {
-			assert.Equal(t, c.native, r.native, "%s: the read of the %s took the native tree", c.name, r.what)
-		}
+		rich, ok := an.result.(*transpiler.RichAST)
+		require.True(t, ok, "%s: analyze: %v", c.name, an.result)
+		assert.Equal(t, "main", rich.PackageName, c.name)
+		assert.Contains(t, rich.Functions, "main", "%s: the buffer's functions are collected", c.name)
 	}
 }

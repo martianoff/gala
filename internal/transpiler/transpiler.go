@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler/profiler"
@@ -118,7 +116,6 @@ type PackageValMetadata struct {
 
 // RichAST provides metadata about a Gala source file.
 type RichAST struct {
-	Tree             antlr.Tree
 	PackageName      string
 	OwnImportPath    string // this package's import path, when known; types carrying it are emitted unqualified
 	Types            map[string]*TypeMetadata
@@ -169,14 +166,14 @@ type RichAST struct {
 	// body may not. Per-file, never merged or cached.
 	ReceiverDotImports map[string][]string
 
-	// Docs is this file's doc-comment table from the parse that produced Tree,
+	// Docs is this file's doc-comment table from the parse that produced Native,
 	// keyed by the line and column of each documented declaration's first
 	// token (see parser.DocKey). The transpile pipeline sets it so
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
 	Docs galaparser.Docs
 
-	// Native is the native-tree handle of the parse that produced Tree, or
+	// Native is the native-tree handle of the parse of this file, or
 	// nil. The transpile pipeline sets it for the transform, whose top-level
 	// walk reads the native tree when there is one (see the transformer's
 	// walkSource), and drops it after; it is per-file and never merged or
@@ -621,18 +618,6 @@ func PosFromToken(tok antlrToken) SourcePos {
 	return SourcePos{Line: tok.GetLine(), Column: tok.GetColumn()}
 }
 
-// SourceText returns the source characters a rule context spans, whitespace
-// included — GetText() joins the tokens, turning `(a int) int` into
-// `(aint)int`. It falls back to GetText() only when the tokens carry no input
-// stream (a tree built by hand rather than parsed).
-func SourceText(ctx antlr.ParserRuleContext) string {
-	start, stop := ctx.GetStart(), ctx.GetStop()
-	if start == nil || stop == nil || start.GetInputStream() == nil || stop.GetStop() < start.GetStart() {
-		return ctx.GetText()
-	}
-	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
-}
-
 // SealedVariant holds metadata about a single case in a sealed type declaration.
 type SealedVariant struct {
 	Name       string
@@ -821,16 +806,9 @@ type GalaParser interface {
 
 // Analyzer analyzes a parse of a GALA file and produces a RichAST. It reads
 // the parse's tree and doc comments and attaches neither to the result: the
-// transpile pipeline sets RichAST.Docs. A caller holding only a tree uses
-// Analyze.
+// transpile pipeline sets RichAST.Docs.
 type Analyzer interface {
 	AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*RichAST, error)
-}
-
-// Analyze analyzes tree, with its doc comments docs (which may be nil), with
-// a.
-func Analyze(a Analyzer, tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error) {
-	return a.AnalyzeParsed(&galaparser.Parsed{Tree: tree, Docs: docs}, filePath)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.
@@ -845,9 +823,6 @@ type TransformResult struct {
 	// inferred from the expected call-site type. Used by the LSP for
 	// reliable inlay hint placement without text-based parsing.
 	LambdaParamHints []LambdaParamHint
-	// WalkedNative is whether the transform's top-level walk read the native
-	// tree of RichAST.Native, rather than ANTLR's tree.
-	WalkedNative bool
 }
 
 // LambdaParamHint records a single lambda parameter whose type was inferred

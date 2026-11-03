@@ -4,59 +4,16 @@ import (
 	"strings"
 
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
-	"martianoff/gala/internal/transpiler"
 )
 
 // The reads analyze makes of the compiled file before and around its
 // collection, on galop's native tree: its package clause, its imports, the
 // names its top-level declarations introduce, and the checks GALA-E0055,
-// GALA-E0058 and GALA-E0066. Each function here is the twin of the one it is
-// named after, which reads ANTLR's tree, and hands the same values to the
-// same tree-free code. analyze reads a file on its native tree exactly when
-// it collects the file's declarations there (see nativeFileOf), so a file is
-// read on one tree or the other, never a mix. TestFileChecksAgree holds each
-// pair together.
+// GALA-E0058 and GALA-E0066.
 
-// readTree is one read of the compiled file at filePath: onNative of its
-// native tree when it is read on nf, a native tree (see nativeFileOf), and
-// onANTLR otherwise. what names the read for galaAnalyzer.onTreeRead, which,
-// when set, is told of it, with a way to make it on ANTLR's tree in the same
-// state.
-func readTree[T any](a *galaAnalyzer, filePath, what string, nf nativeFile, onNative func(native.GalaNodeRef) T, onANTLR func() T) T {
-	return readOn(a.onTreeRead, filePath, what, nf, onNative, onANTLR)
-}
-
-// readOn is readTree telling hook, when set, of the read.
-func readOn[T any](hook func(treeRead), filePath, what string, nf nativeFile, onNative func(native.GalaNodeRef) T, onANTLR func() T) T {
-	var got T
-	if nf.ok() {
-		got = onNative(nf.root.GalaNodeRef)
-	} else {
-		got = onANTLR()
-	}
-	if hook != nil {
-		hook(treeRead{filePath: filePath, what: what, native: nf.ok(), got: got, antlr: func() any { return onANTLR() }})
-	}
-	return got
-}
-
-// treeRead is what readTree tells galaAnalyzer.onTreeRead about a read: the
-// file, the read, whether it took the native tree, what it gave, and how to
-// make it again, in the same state, on ANTLR's tree. A read that records
-// metadata cannot be made again: it has no got and no antlr (see
-// notePackageRead).
-type treeRead struct {
-	filePath, what string
-	native         bool
-	got            any
-	antlr          func() any
-}
-
-// ownNames is the names a file's top-level declarations introduce, as
-// collectTopLevelDeclaredNames records them: whether each names a type, and
-// the methods by receiver type.
+// ownNames is the names a file's top-level declarations introduce: whether
+// each names a type, and the methods by receiver type.
 type ownNames struct {
 	types   map[string]bool
 	methods map[string]map[string]bool
@@ -64,13 +21,6 @@ type ownNames struct {
 
 func newOwnNames() ownNames {
 	return ownNames{types: make(map[string]bool), methods: make(map[string]map[string]bool)}
-}
-
-// ownNamesOf is the names sf's top-level declarations introduce.
-func ownNamesOf(sf *grammar.SourceFileContext) ownNames {
-	o := newOwnNames()
-	collectTopLevelDeclaredNames(sf, o.types, o.methods)
-	return o
 }
 
 // packageClause is what a file's package clause says: the package's name, and
@@ -111,34 +61,27 @@ func scanFileImportsNative(root native.GalaNodeRef) []fileImport {
 	return out
 }
 
-// ownNamesNative is ownNamesOf root.
+// ownNamesNative is the names the top-level declarations of root, a file's
+// native tree, introduce.
 func ownNamesNative(root native.GalaNodeRef) ownNames {
 	o := newOwnNames()
 	forEachTopLevelNameNative(root, topLevelNameRecorder(o.types, o.methods))
 	return o
 }
 
-// typeNamesOf is ownNamesOf sf's names without its methods: each name, and
-// whether it names a type.
-func typeNamesOf(sf *grammar.SourceFileContext) map[string]bool {
-	names := make(map[string]bool)
-	collectTopLevelDeclaredNames(sf, names, nil)
-	return names
-}
-
-// typeNamesNative is typeNamesOf root.
+// typeNamesNative is ownNamesNative of root without its methods: each name,
+// and whether it names a type.
 func typeNamesNative(root native.GalaNodeRef) map[string]bool {
 	names := make(map[string]bool)
 	forEachTopLevelNameNative(root, topLevelNameRecorder(names, nil))
 	return names
 }
 
-// checkDotImportCollisionsNative is checkDotImportCollisions of root.
-func checkDotImportCollisionsNative(root native.GalaNodeRef, dotImports map[string][]string, richAST *transpiler.RichAST) error {
-	return dotImportCollisions(dotImports, richAST, func(v topLevelVisitor) { forEachTopLevelNameNative(root, v) })
-}
-
-// forEachTopLevelNameNative is forEachTopLevelName of root.
+// forEachTopLevelNameNative tells v every name the top-level declarations of
+// root, a file's native tree, introduce, and the kind of declaration: free
+// functions, types, struct shorthands, sealed types and their case variants,
+// package vals/vars (including tuple-pattern destructuring), and embed
+// bindings; and, when v.method is set, every method.
 func forEachTopLevelNameNative(root native.GalaNodeRef, v topLevelVisitor) {
 	report := func(id native.IdentifierNode, kind string) {
 		if id.Ok() {
@@ -185,7 +128,11 @@ func forEachTopLevelNameNative(root native.GalaNodeRef, v topLevelVisitor) {
 	}
 }
 
-// checkGoKeywordNamesNative is checkGoKeywordNames of root.
+// checkGoKeywordNamesNative reports the first identifier in root, a file's
+// native tree, spelled like a Go keyword, preferring a declaration over a use,
+// so a function named `go` that is called above its declaration is reported
+// where it is declared — the place the rename starts. It returns nil when the
+// file has none.
 func checkGoKeywordNamesNative(root native.GalaNodeRef) error {
 	var k keywordNames
 	root.Walk(func(n native.GalaNodeRef) bool {
@@ -216,7 +163,10 @@ func isNativePattern(n native.GalaNodeRef) bool {
 	return false
 }
 
-// inPatternNative is inPattern of id.
+// inPatternNative reports whether the identifier id is part of a case
+// pattern, where a name is a binding (`case break =>`, `case Some(break) =>`),
+// never loop control. Call arguments are patterns in the grammar too, so only
+// the pattern of a case clause counts.
 func inPatternNative(id native.GalaNodeRef) bool {
 	prev := id
 	for node := id.Parent(); node.Ok(); prev, node = node, node.Parent() {
@@ -227,7 +177,12 @@ func inPatternNative(id native.GalaNodeRef) bool {
 	return false
 }
 
-// isBareStatementNative is isBareStatement of id.
+// isBareStatementNative reports whether the identifier id is a whole
+// statement on its own: `break` in a loop body or a match arm. The
+// identifier's ancestors up to that statement each wrap a single child, so the
+// walk climbs while that holds. A skipped `defer` / `go` / ... statement is
+// left to GALA-E0036 (the transformer's checkForbiddenStatementKeyword), which
+// inspects statements of this shape.
 func isBareStatementNative(id native.GalaNodeRef) bool {
 	node := id
 	for {
@@ -242,7 +197,10 @@ func isBareStatementNative(id native.GalaNodeRef) bool {
 	}
 }
 
-// declaresNameNative is declaresName of id.
+// declaresNameNative reports whether the identifier id is the name a
+// declaration introduces, as opposed to a reference. Pattern bindings (`case
+// go =>`) are expressions in the grammar and count as uses; they are still
+// reported, only after any declaration.
 func declaresNameNative(id native.GalaNodeRef) bool {
 	parent := id.Parent()
 	if !parent.Ok() {

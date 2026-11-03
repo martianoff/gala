@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"martianoff/gala/internal/parser"
 )
 
 // writeFixture writes content to a uniquely-named .gala file in dir and
@@ -183,6 +185,16 @@ func main( {
 	assert.Equal(t, bad, results[1].File)
 	assert.NotEmpty(t, results[1].Error)
 	assert.Equal(t, []importInfo{}, results[1].Imports)
+}
+
+// TestImportsReportConversionFailure: a clean parse with no native tree (one
+// galop's converter failed on) is reported as the file's error, not as a
+// file without imports.
+func TestImportsReportConversionFailure(t *testing.T) {
+	got := importsOfParse("f.gala", &parser.Parsed{})
+	assert.Equal(t, "f.gala", got.File)
+	assert.NotEmpty(t, got.Error)
+	assert.Equal(t, []importInfo{}, got.Imports)
 }
 
 func TestImportsUsageErrors(t *testing.T) {

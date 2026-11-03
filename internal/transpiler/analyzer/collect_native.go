@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 	"strings"
@@ -12,37 +13,17 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// The collection of the compiled file's own declarations on galop's native
-// tree (internal/parser/native): each function here is the twin of the one
-// it is named after, which reads ANTLR's tree, and records the same metadata,
-// in the same order, with the same diagnostics. TestCollectionsAgree and
-// TestCollectionDiagnosticsAgree hold each pair together.
-//
-// analyze reads a file on its native tree, from its first read on
-// (file_checks_native.go), when its parse came with a handle that bridges
-// (see nativeFileOf): the compiled file, an LSP buffer, a sibling and a file
-// of an imported package alike (siblings_native.go). The undefined-symbol
-// check reads that tree too (undefined_symbol_native.go). A file is
-// collected on ANTLR's tree when its parse had syntax errors (no handle, see
-// Parsed.CleanNative) or a caller handed in a bare tree. A file is collected
-// on one tree or the other, never on a mix, and the native collection reads
-// no ANTLR context: the initializers of package-level bindings are inferred
-// on the native tree too (infer_native.go).
+// The collection of a file's own declarations on galop's native tree
+// (internal/parser/native). analyze reads every file on its native tree,
+// from its first read on (file_checks_native.go): the compiled file, an LSP
+// buffer (an error-recovered one included, see Parsed.RecoveredNative), a
+// sibling and a file of an imported package alike (siblings_native.go). The
+// undefined-symbol check reads that tree too (undefined_symbol_native.go),
+// and the initializers of package-level bindings are inferred on it
+// (infer_native.go).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
-
-// collectTrace is what analyze tells galaAnalyzer.onCollect about a file:
-// whether the undefined-symbol check runs on it, whether its parse came with
-// a native-tree handle, and whether its declarations are collected on the
-// native tree, which they are exactly when it has a handle and the tree
-// converts and bridges (nativeFileOf).
-type collectTrace struct {
-	filePath        string
-	checksUndefined bool
-	hasHandle       bool
-	native          bool
-}
 
 // nativeFile is a file's native tree, with its top-level declarations by
 // kind; or the zero nativeFile: no tree (see ok).
@@ -50,24 +31,25 @@ type nativeFile struct {
 	root native.SourceFileNode
 	// The top-level declarations, in source order, bucketed as the
 	// collection reads them: the type and struct shorthand declarations
-	// together (collectFileTypes takes them in one pass), the sealed types,
+	// together (collectFileTypesNative takes them in one pass), the sealed types,
 	// the opaque types, the functions and methods, the embeds, and the val
 	// and var declarations together.
 	types, sealed, opaque, funcs, embeds, vals []native.GalaNodeRef
 }
 
 // nativeFileOf is the native tree of a parse's handle h, converted now if it
-// was not yet, with its top-level declarations bucketed in one pass; or no
-// tree when there is none (a nil handle, the conversion failed, or the tree
-// does not bridge to ANTLR's: see Native.Bridged), and the file is collected, and
-// checked, on ANTLR's tree. Neither the collection nor the undefined-symbol
-// check crosses from the native tree to ANTLR's.
-func nativeFileOf(h *galaparser.Native) nativeFile {
-	if !h.Bridged() {
-		return nativeFile{}
+// was not yet, with its top-level declarations bucketed in one pass. An error
+// says there is none: a nil handle, or the conversion failed (a bug in galop's
+// converter), which no reader of the file can work around.
+func nativeFileOf(h *galaparser.Native) (nativeFile, error) {
+	tree, err := h.Tree()
+	if err != nil {
+		return nativeFile{}, err
 	}
-	tree, _ := h.Tree()
 	root := tree.Root()
+	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
+		return nativeFile{}, errors.New("the native tree is not a source file")
+	}
 	nf := nativeFile{root: native.SourceFileNode{GalaNodeRef: root}}
 	for decl := range nativeTopLevelDecls(root) {
 		switch decl.Kind() {
@@ -85,10 +67,12 @@ func nativeFileOf(h *galaparser.Native) nativeFile {
 			nf.vals = append(nf.vals, decl)
 		}
 	}
-	return nf
+	return nf, nil
 }
 
-// methodReceiverTypesNative is methodReceiverTypes of nf.
+// methodReceiverTypesNative is the base type name (receiverBaseTypeNameNative)
+// of the receiver of each method among nf's top-level declarations, in source
+// order.
 func methodReceiverTypesNative(nf nativeFile) iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for _, fn := range nf.funcs {
@@ -115,9 +99,6 @@ func nativeTopLevelDecls(root native.GalaNodeRef) iter.Seq[native.GalaNodeRef] {
 	}
 }
 
-// ok reports whether f is a native tree, not the zero nativeFile.
-func (f nativeFile) ok() bool { return f.root.Ok() }
-
 // nativePos is transpiler.PosFromToken of n's first token.
 func nativePos(n native.GalaNodeRef) transpiler.SourcePos {
 	return nativeTokenPos(n.Start())
@@ -129,8 +110,9 @@ func nativeTokenPos(tok native.GalaToken) transpiler.SourcePos {
 	return transpiler.SourcePos{Line: int(tok.Line), Column: int(tok.Column)}
 }
 
-// nativeDocAt is docAt of n's first token: the doc comment of the
-// declaration n is.
+// nativeDocAt returns the doc comment attached to the declaration n, keyed by
+// its first token (the `func`, `type`, `sealed`, `case` or `val` keyword), or
+// "" when the declaration is undocumented or docs is nil.
 func nativeDocAt(docs galaparser.Docs, n native.GalaNodeRef) string {
 	if docs == nil || !n.Ok() {
 		return ""
@@ -138,14 +120,23 @@ func nativeDocAt(docs galaparser.Docs, n native.GalaNodeRef) string {
 	return docs[galaparser.NativeDocKeyOf(n)]
 }
 
-// nativeSetDoc is setDoc of n's first token.
+// nativeSetDoc records the doc comment of the declaration n on a metadata
+// entry that may already carry one.
+//
+// The re-analysis and sibling-merge paths reuse a TypeMetadata that an earlier
+// pass — or a cache load — already populated. Those passes may run with a nil
+// docs map (a caller that did not thread one), and assigning unconditionally
+// would erase documentation that is already correct. An empty result therefore
+// leaves the existing value alone; only a real doc comment overwrites.
 func nativeSetDoc(dst *string, docs galaparser.Docs, n native.GalaNodeRef) {
 	if d := nativeDocAt(docs, n); d != "" {
 		*dst = d
 	}
 }
 
-// nativeTypeParamsOf is typeParamsOf.
+// nativeTypeParamsOf returns the names of the type parameters tps declares on
+// a declaration, in order, and the constraint each is declared with (`B
+// Bumper` maps B to Bumper); both are nil when it declares none.
 func nativeTypeParamsOf(tps native.TypeParametersNode) ([]string, map[string]string) {
 	list := tps.TypeParameterList()
 	if !list.Ok() {
@@ -167,7 +158,12 @@ func nativeTypeParamsOf(tps native.TypeParametersNode) ([]string, map[string]str
 	return names, constraints
 }
 
-// nativeDeclaredTypeParams is declaredTypeParams.
+// nativeDeclaredTypeParams is nativeTypeParamsOf for a function or method of
+// package pkgName, with each constraint resolved where it is declared — the
+// package's own type, a dot-import's or std's — and recorded qualified
+// ("api.Bumper") unless it is the package's own in main or test, so a caller
+// in another package finds the same interface. `any` and `comparable` are
+// kept as they are.
 func (a *galaAnalyzer) nativeDeclaredTypeParams(tps native.TypeParametersNode, pkgName string) ([]string, map[string]string) {
 	names, constraints := nativeTypeParamsOf(tps)
 	for tp, c := range constraints {
@@ -178,7 +174,10 @@ func (a *galaAnalyzer) nativeDeclaredTypeParams(tps native.TypeParametersNode, p
 	return names, constraints
 }
 
-// nativeBaseTypeName is getBaseTypeName.
+// nativeBaseTypeName is the name of the type t is built on, as written: its
+// qualified identifier (`std.Option`, `Option`), looked through pointers
+// (`*T`, `Ptr[T]`) and other nested types, and `[]` followed by the element's
+// for a slice. It is "" when t names no type.
 func nativeBaseTypeName(t native.TypeNode) string {
 	if !t.Ok() {
 		return ""
@@ -199,7 +198,9 @@ func nativeBaseTypeName(t native.TypeNode) string {
 	return ""
 }
 
-// nativeReceiverTypeArgNames is receiverTypeArgNames.
+// nativeReceiverTypeArgNames lists the type arguments a receiver type t
+// spells, as written and in order: [U] for `Box[U]` and `*Box[U]`, nil for a
+// non-generic receiver.
 func nativeReceiverTypeArgNames(t native.TypeNode) []string {
 	t, _ = galaparser.NativePointerElem(t)
 	for t.Ok() && !t.QualifiedIdentifier().Ok() {
@@ -220,9 +221,10 @@ func nativeReceiverTypeArgNames(t native.TypeNode) []string {
 	return names
 }
 
-// nativeReceiverPointers is isPointerReceiver and isPtrReceiver of a
-// receiver of type t: whether it is a pointer, `*T` or `Ptr[T]`, and whether
-// it is the non-null `Ptr[T]`.
+// nativeReceiverPointers reports whether a method receiver of type t is
+// declared as a pointer, `*T` (`func (c *Counter) Bump()`) or `Ptr[T]`, and
+// whether it is declared as the non-null `Ptr[T]` (`func (c Ptr[Counter])
+// Bump()`).
 func nativeReceiverPointers(t native.TypeNode) (pointer, ptr bool) {
 	if galaparser.NativePtrElem(t).Ok() {
 		return true, true
@@ -231,7 +233,10 @@ func nativeReceiverPointers(t native.TypeNode) (pointer, ptr bool) {
 	return pointer, false
 }
 
-// nativeSignatureResult is signatureResult.
+// nativeSignatureResult resolves a declared signature's result: its result
+// type, or for a Go result list (`(int, error)`) the GALA value a call of it
+// is (see transpiler.GoResultValueOf) together with the Go result types. A
+// signature with no result is VoidType, with no Go result types.
 func (a *galaAnalyzer) nativeSignatureResult(sig native.SignatureNode, pkgName string, typeParams []string) (transpiler.Type, []transpiler.Type) {
 	if typ := sig.Type_(); typ.Ok() {
 		return a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, typeParams), nil
@@ -248,11 +253,11 @@ func (a *galaAnalyzer) nativeSignatureResult(sig native.SignatureNode, pkgName s
 	return value.Type, results
 }
 
-// nativeSignatureParams are a signature's parameters as collectFileFuncs and
-// collectFileTypes record them, from its parameters node: each one's type
-// (NilType for one written without), whether the signature is variadic,
+// nativeSignatureParams are a signature's parameters as collectFileFuncsNative
+// and collectFileTypesNative record them, from its parameters node: each one's
+// type (NilType for one written without), whether the signature is variadic,
 // each one's name ("" for one without), each default by parameter index
-// (recordParamDefault), and the source span of each default (spanOfCtx).
+// (nativeDefaultExpr), and the source span of each default (nativeSpanOf).
 // Types are resolved with typeParams in scope.
 type nativeSignatureParams struct {
 	types    []transpiler.Type
@@ -290,7 +295,20 @@ func (a *galaAnalyzer) nativeParamsOf(params native.ParametersNode, pkgName stri
 	return sp
 }
 
-// nativeCausesInstantiationCycle is causesInstantiationCycle.
+// nativeCausesInstantiationCycle checks if a method return type would cause a
+// Go generics instantiation cycle. This happens when:
+//   - The receiver is a generic type (e.g., MyList[T])
+//   - The return type is the same base type (e.g., MyList)
+//   - But with different type arguments (e.g., MyList[Pair[T, int]])
+//
+// Go's compiler detects this as a potential infinite instantiation chain.
+// The return type is the signature's result, or the first of its Go result
+// list (what Go returns), and pointers (`*MyList[T]`, `Ptr[MyList[T]]`) are
+// looked through on both sides.
+//
+// This is the only place the decision is made: the result, recorded as
+// MethodMetadata.IsGeneric, is what the transformer reads both to lower the
+// declaration in its own package and to call it from any package (#814).
 func (a *galaAnalyzer) nativeCausesInstantiationCycle(recvType native.TypeNode, sig native.SignatureNode) bool {
 	retType := sig.Type_()
 	if list := sig.GoResults(); list.Ok() {
@@ -308,7 +326,7 @@ func (a *galaAnalyzer) nativeCausesInstantiationCycle(recvType native.TypeNode, 
 	return instantiationCycle(recvText, galaparser.NativeTypeText(nativePointee(retType)))
 }
 
-// nativePointee is pointee.
+// nativePointee strips every pointer, `*T` or `Ptr[T]`, from t.
 func nativePointee(t native.TypeNode) native.TypeNode {
 	for {
 		elem, isPtr := galaparser.NativePointerElem(t)
@@ -319,7 +337,10 @@ func nativePointee(t native.TypeNode) native.TypeNode {
 	}
 }
 
-// nativeTypeAliasTarget is typeAliasTarget.
+// nativeTypeAliasTarget returns the target of a `type X Y` declaration as
+// written, or "" when the declaration is a struct or interface. `typeAlias:
+// identifier | type`, and both branches name an alias: `type Millis int64`
+// and `type Coord Point` take the identifier branch.
 func nativeTypeAliasTarget(typeDecl native.TypeDeclarationNode) string {
 	alias := typeDecl.TypeAlias()
 	if !alias.Ok() {
@@ -328,7 +349,15 @@ func nativeTypeAliasTarget(typeDecl native.TypeDeclarationNode) string {
 	return galaparser.NativeAliasText(alias)
 }
 
-// nativeRecordFieldDefault is recordFieldDefault.
+// nativeRecordFieldDefault stores the source text of a shorthand struct
+// field's default expression, p's, on the type metadata.
+//
+// The shorthand form `struct Cfg(Name string, Tries int = 3)` reuses the
+// grammar's `parameter` rule, so `= 3` parses as a `paramDefault` exactly as it
+// would on a function parameter. Capturing it here is what lets construction
+// sites fill an omitted field with its declared default instead of leaving Go's
+// zero value in place, and lets them tell an omitted-but-defaulted field apart
+// from an omitted required one.
 func nativeRecordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, p native.ParameterNode) {
 	pd := p.ParamDefault()
 	if !pd.Ok() {
@@ -340,14 +369,24 @@ func nativeRecordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, p
 	meta.FieldDefaults[fieldName] = nativeDefaultExpr(pd.Expression())
 }
 
-// nativeDefaultExpr is paramDefaultSource's DefaultExpr of default
-// expression e: its source text, as transpiler.SourceText gives a context's,
-// and its position.
+// nativeDefaultExpr is the DefaultExpr of default expression e: its text
+// exactly as it is written in the source, whitespace included, and the
+// position of its first token.
+//
+// The text is re-parsed at every call or construction site that omits the
+// argument, so it must survive a second lexing. Concatenating token texts
+// would drop the hidden-channel whitespace between them, which turns `(a int)
+// => a + 1` into `(aint)=>a+1` — a lambda whose one parameter is named `aint`.
+// The source text covered by the expression's tokens keeps every space,
+// newline and comment as written.
 func nativeDefaultExpr(e native.ExpressionNode) transpiler.DefaultExpr {
 	return transpiler.DefaultExpr{Text: e.SourceText(), Pos: nativePos(e.GalaNodeRef)}
 }
 
-// nativeSpanOf is spanOfCtx. Columns are code points, as ANTLR's are.
+// nativeSpanOf returns the source span covering n, from its start token's
+// position to one past its stop token. Columns are 0-based code points, as
+// ANTLR's are; endCol is exclusive. When n spans multiple lines the renderer
+// clamps the caret to the start line, so only line/startCol matter there.
 func nativeSpanOf(n native.GalaNodeRef) defaultExprSpan {
 	start := n.Start()
 	sp := defaultExprSpan{line: int(start.Line), startCol: int(start.Column)}
@@ -359,7 +398,8 @@ func nativeSpanOf(n native.GalaNodeRef) defaultExprSpan {
 	return sp
 }
 
-// nativeSealedDeclOf is sealedDeclOf.
+// nativeSealedDeclOf reads n, a sealed type declaration, with the doc
+// comments of its file.
 func nativeSealedDeclOf(n native.SealedTypeDeclarationNode, docs galaparser.Docs) sealedDecl {
 	id := n.Identifier()
 	d := sealedDecl{
@@ -391,7 +431,8 @@ func nativeSealedDeclOf(n native.SealedTypeDeclarationNode, docs galaparser.Docs
 	return d
 }
 
-// nativeOpaqueDeclOf is opaqueDeclOf.
+// nativeOpaqueDeclOf reads n, an opaque type declaration, with the doc
+// comments of its file.
 func nativeOpaqueDeclOf(n native.OpaqueTypeDeclarationNode, docs galaparser.Docs) opaqueDecl {
 	id := n.Identifier()
 	d := opaqueDecl{
@@ -421,8 +462,8 @@ func nativeParams(params native.ParametersNode) iter.Seq2[int, native.ParameterN
 }
 
 // recordStructFieldNative records on meta the struct field fctx declares,
-// resolved with meta's type parameters, as collectFileTypes and the sibling
-// pass record one: its type, its order and mutability, where its name is and
+// resolved with meta's type parameters, as collectFileTypesNative and the
+// sibling pass record one: its type, its order and mutability, where its name is and
 // its doc comment.
 func (a *galaAnalyzer) recordStructFieldNative(meta *transpiler.TypeMetadata, fctx native.StructFieldNode, pkgName string, docs galaparser.Docs) {
 	fieldID := fctx.Identifier()
@@ -457,7 +498,7 @@ func (a *galaAnalyzer) interfaceMethodNative(meta *transpiler.TypeMetadata, msCt
 
 // recordShorthandFieldNative records on meta the field pctx, a parameter of a
 // struct shorthand, declares, through decls (see recordShorthandField), as
-// collectFileTypes and the sibling pass record one: its type, resolved with
+// collectFileTypesNative and the sibling pass record one: its type, resolved with
 // meta's type parameters, where its name is and its default.
 func (a *galaAnalyzer) recordShorthandFieldNative(meta *transpiler.TypeMetadata, pctx native.ParameterNode, pkgName string, decls *packageDecls) {
 	fieldID := pctx.Identifier()
@@ -474,7 +515,8 @@ func (a *galaAnalyzer) recordShorthandFieldNative(meta *transpiler.TypeMetadata,
 	nativeRecordFieldDefault(meta, fieldName, pctx)
 }
 
-// collectFileTypesNative is collectFileTypes.
+// collectFileTypesNative records the struct, shorthand-struct and interface
+// types nf declares (analyze's section 1).
 func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) error {
 	richAST, pkgName, filePath, absFilePath, docs, decls := fd.richAST, fd.pkgName, fd.filePath, fd.absFilePath, fd.docs, fd.decls
 	for _, decl := range nf.types {
@@ -511,7 +553,12 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 					fieldID := fctx.Identifier()
 					fieldName := fieldID.GetText()
 					// Reject duplicate field names within a single struct
-					// declaration (see collectFileTypes).
+					// declaration. Without this, the second declaration
+					// silently overwrote the first in the Fields map and
+					// duplicated the name in FieldNames, producing invalid
+					// Go output. This guard is scoped to one parse of one
+					// struct (Fields was cleared for this declaration above),
+					// so it does not need an existing.DefinedIn check.
 					if _, exists := meta.Fields[fieldName]; exists {
 						pos := nativePos(fieldID.GalaNodeRef)
 						return galaerr.NewCodedSemanticError(
@@ -529,7 +576,11 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 			// Extract interface method signatures as type methods
 			if ifaceType := ctx.InterfaceType(); ifaceType.Ok() {
 				meta.IsInterface = true
-				// seenSpecs: see collectFileTypes.
+				// seenSpecs is a per-declaration dedup so re-analysis (which
+				// preserves the Methods map across calls) does not falsely
+				// trigger the redeclaration check on already-registered
+				// specs. Within one walk of the method specs we still
+				// catch genuine duplicates.
 				seenSpecs := make(map[string]bool)
 				for msNode := range galaparser.NativeKids(ifaceType.GalaNodeRef, native.GalaKIND_methodSpec) {
 					msCtx := native.MethodSpecNode{GalaNodeRef: msNode}
@@ -582,7 +633,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 					fieldID := pctx.Identifier()
 					fieldName := fieldID.GetText()
 					// Reject duplicate field names within a shorthand
-					// struct declaration (see collectFileTypes).
+					// struct declaration, as for a struct type above.
 					if _, exists := meta.Fields[fieldName]; exists {
 						fieldPos := nativePos(fieldID.GalaNodeRef)
 						return galaerr.NewCodedSemanticError(
@@ -602,7 +653,10 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 	return nil
 }
 
-// collectFileFuncsNative is collectFileFuncs.
+// collectFileFuncsNative records the sealed and opaque types, methods and
+// top-level functions nf declares (analyze's sections 1.5 to 2), and queues on
+// fd the functions and sealed cases whose parameter defaults analyze checks
+// once the siblings are in.
 func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) error {
 	richAST, pkgName, filePath, absFilePath, docs, decls := fd.richAST, fd.pkgName, fd.filePath, fd.absFilePath, fd.docs, fd.decls
 	// 1.5 Collect sealed types.
@@ -669,8 +723,9 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			}
 			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 
-			// The receiver type's parameters, for resolving the signature (see
-			// collectFileFuncs).
+			// The receiver type's parameters, for resolving the signature:
+			// for `func (s Some[T]) Unapply(o Option[T])`, T is a type
+			// parameter.
 			var typeTypeParams []string
 			if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 				typeTypeParams = typeMeta.TypeParams
@@ -679,7 +734,9 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
-			// Go generics instantiation cycle: see collectFileFuncs.
+			// A Go generics instantiation cycle: a receiver Container[T]
+			// returning Container[SomeType[T, ...]] is an infinite
+			// instantiation to Go.
 			if a.nativeCausesInstantiationCycle(recvType, sig) {
 				methodMeta.IsGeneric = true
 			}
@@ -699,7 +756,13 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 							declPos.Line, declPos.Column,
 							existing.DefinedIn, filePath, existing.Pos)
 					}
-					// Merge IsGeneric: see collectFileFuncs.
+					// Merge IsGeneric: preserve a pre-populated flag (e.g. from a
+					// sibling-metadata pass) without clobbering a fresh true that
+					// nativeCausesInstantiationCycle just set. Either source may
+					// legitimately flag the method as needing function-form
+					// generation; once flagged, never flip back to false (Go
+					// generation would emit method syntax against a function
+					// definition).
 					methodMeta.IsGeneric = methodMeta.IsGeneric || existing.IsGeneric
 				}
 				typeMeta.Methods[methodName] = methodMeta
@@ -712,8 +775,12 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 					Fields:  make(map[string]transpiler.Type),
 				}
 			}
-			// Record the declaration for the sibling pass: see
-			// collectFileFuncs.
+			// Record the declaration so the sibling pass can detect a
+			// second definition of this method in another file of the
+			// package. This also catches a duplicate within this file
+			// when the receiver type is declared in a sibling: the
+			// check above sees only a placeholder entry whose
+			// DefinedIn is still empty, and would let it through.
 			if prev, dup := decls.recordMethod(fullBaseType+"."+methodName, filePath, methodMeta.Pos); dup {
 				return methodRedefinedError(methodName, baseType, pkgName,
 					declPos.Line, declPos.Column,
@@ -752,7 +819,14 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			})
 		}
 		// Reject redeclaration of a top-level function within the same
-		// package: see collectFileFuncs.
+		// package. The sibling-metadata pass may have already registered
+		// the function from another file; if it lives in a different
+		// file, that's a true redeclaration (mirrors Go's "redeclared
+		// in this block"). Skip when the existing entry is empty
+		// (placeholder / cache) or refers to this same file
+		// (re-analysis of the same source). recordFunc records the
+		// declaration so the sibling pass can detect a second
+		// definition in another file of the package.
 		if existing, ok := richAST.Functions[fullFuncName]; ok {
 			if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 				return funcRedeclaredError(funcName, pkgName,
@@ -770,7 +844,8 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 	return nil
 }
 
-// collectFileEmbedsNative is collectFileEmbeds.
+// collectFileEmbedsNative records the embed declarations nf makes (analyze's
+// section 2.75).
 func collectFileEmbedsNative(nf nativeFile, richAST *transpiler.RichAST) {
 	for _, decl := range nf.embeds {
 		ctx := native.EmbedDeclarationNode{GalaNodeRef: decl}
@@ -786,7 +861,8 @@ func collectFileEmbedsNative(nf nativeFile, richAST *transpiler.RichAST) {
 	}
 }
 
-// fileTypeAliasesNative is fileTypeAliases.
+// fileTypeAliasesNative maps each alias nf declares (`type Millis int64`) to
+// the type it names.
 func (a *galaAnalyzer) fileTypeAliasesNative(nf nativeFile, pkgName string) map[string]transpiler.Type {
 	aliases := make(map[string]transpiler.Type)
 	for _, decl := range nf.types {
@@ -809,7 +885,22 @@ func (a *galaAnalyzer) fileTypeAliasesNative(nf nativeFile, pkgName string) map[
 	return aliases
 }
 
-// extractPackageValsNative is extractPackageVals.
+// extractPackageValsNative records package-level `val`/`var` declarations
+// from nf into richAST.PackageVals. The transformer pre-registers these so
+// that a reference to a package-level `val` in another file of the same
+// package is unwrapped from its `std.Immutable[T]` wrapper at the use site —
+// exactly as a same-file reference already is. Without this, the cross-file
+// reference emits the raw wrapper where a plain `T` is expected and `go
+// build` rejects it.
+//
+// A package's exported records reach its importers as RichAST.ImportedVals
+// (see RichAST.AddImportedVals), which is how an importer unwraps `pkg.Name`.
+//
+// The element type is recorded when it can be determined cheaply (an explicit
+// annotation, or an initializer shape inferPackageValInitTypeNative
+// understands); otherwise it is left as NilType. The unwrap itself only needs
+// the val/var classification, so an unknown type still produces correct code
+// — it merely yields weaker downstream type inference for that identifier.
 func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs, absFilePath string) {
 	for _, decl := range nf.vals {
 		var (
@@ -827,7 +918,10 @@ func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, r
 			idList, typeCtx, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
 		}
 		if tp.Ok() {
-			// A tuple destructuring: see extractPackageVals.
+			// A tuple destructuring (`val (a, b) = pair`) records its names
+			// with no type: each is one component of the initializer, which
+			// the cross-file unwrap does not need to infer, since it needs
+			// only the val/var classification.
 			idList, typeCtx, exprList = tp.IdentifierList(), native.TypeNode{}, native.ExpressionListNode{}
 		}
 		if !idList.Ok() {
@@ -840,8 +934,12 @@ func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, r
 			exprs = exprList.AllExpression()
 		}
 
-		// The declaration's doc, shared by every name it binds (see
-		// extractPackageVals). Its first token is its topLevelDeclaration's.
+		// The declaration's doc, shared by every name it binds (`val a, b =
+		// 1, 2`), the way Go documents a grouped declaration; the position
+		// is each identifier's own. Doc, position and file are written
+		// together with the type, as one declaration's description: merging
+		// them field-wise across passes would pair one file's prose with
+		// another's location. Its first token is its topLevelDeclaration's.
 		doc := nativeDocAt(docs, decl)
 		for i, idCtx := range names {
 			name := idCtx.GetText()
@@ -854,7 +952,7 @@ func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, r
 			} else if len(exprs) == len(names) {
 				valType = a.inferPackageValInitTypeNative(exprs[i], pkgName, richAST)
 				if a.onInferInit != nil {
-					a.onInferInit(exprs[i], pkgName, richAST, valType)
+					a.onInferInit(exprs[i], valType)
 				}
 			}
 			valType = knownType(valType)
