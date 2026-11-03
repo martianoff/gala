@@ -1028,8 +1028,8 @@ func syntacticGoType(expr ast.Expr, imports map[string]string, pkgName string, t
 		return syntacticGoType(e.X, imports, pkgName, typeParams)
 
 	case *ast.StructType:
-		// Only the empty struct: a field's spelling needs the type checker
-		// to be exact (see goTypeToTranspilerType).
+		// Only the empty struct: typing a field exactly needs the type
+		// checker (see goTypeToTranspilerType).
 		if e.Fields == nil || len(e.Fields.List) == 0 {
 			return transpiler.StructType{}
 		}
@@ -1685,14 +1685,17 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 		// never spells it in generated Go: wherever it would have to, the
 		// transformer reports GALA-E0090. So a struct with an unexported
 		// field, or a field Go spells in a way the type model does not
-		// (unsafe.Pointer, a variadic function), is typed the same way
-		// instead of being erased to any.
+		// (unsafe.Pointer, a variadic function), is typed too instead of
+		// being erased to any. A field's type is exact (an array keeps its
+		// length) when the model spells it as Go has it; otherwise it is
+		// typed as the same type is outside a struct, so reading the field
+		// never yields a type that names a different Go type.
 		var st transpiler.StructType
 		for i := 0; i < t.NumFields(); i++ {
 			f := t.Field(i)
 			st.Fields = append(st.Fields, transpiler.StructField{
 				Name:     f.Name(),
-				Type:     convertGoType(f.Type(), true),
+				Type:     convertGoType(f.Type(), spellsExactly(f.Type())),
 				Embedded: f.Embedded(),
 				Tag:      t.Tag(i),
 			})
@@ -1706,6 +1709,77 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 	default:
 		return transpiler.NilType{}
 	}
+}
+
+// spellsExactly reports whether convertGoType, exact, types t as Go has it,
+// so that the type names the same Go type: every array length, type
+// argument and interface method is kept. A name only t's own package can
+// write (an unexported field, method or type), a type reached through a
+// package's alias, unsafe.Pointer and a variadic function type have no
+// exact form in the type model.
+func spellsExactly(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Basic:
+		return t.Kind() != types.Invalid && t.Kind() != types.UnsafePointer && t.Info()&types.IsUntyped == 0
+	case *types.TypeParam:
+		return true
+	case *types.Alias:
+		// An alias is spelled as the type it names, which another package
+		// may not be able to write (an internal package's type); only the
+		// universe's `any` is kept.
+		return t.Obj().Pkg() == nil && spellsExactly(types.Unalias(t))
+	case *types.Named:
+		obj := t.Obj()
+		if obj.IsAlias() {
+			return obj.Pkg() == nil && spellsExactly(types.Unalias(t))
+		}
+		if obj.Pkg() != nil && !obj.Exported() {
+			return false
+		}
+		for i := 0; i < t.TypeArgs().Len(); i++ {
+			if !spellsExactly(t.TypeArgs().At(i)) {
+				return false
+			}
+		}
+		return true
+	case *types.Pointer:
+		return spellsExactly(t.Elem())
+	case *types.Slice:
+		return spellsExactly(t.Elem())
+	case *types.Array:
+		return spellsExactly(t.Elem())
+	case *types.Map:
+		return spellsExactly(t.Key()) && spellsExactly(t.Elem())
+	case *types.Chan:
+		return spellsExactly(t.Elem())
+	case *types.Signature:
+		return !t.Variadic() && spellsExactly(t.Params()) && spellsExactly(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if !spellsExactly(t.At(i).Type()) {
+				return false
+			}
+		}
+		return true
+	case *types.Interface:
+		if !t.IsMethodSet() {
+			return false
+		}
+		for i := 0; i < t.NumMethods(); i++ {
+			if m := t.Method(i); !m.Exported() || !spellsExactly(m.Type()) {
+				return false
+			}
+		}
+		return true
+	case *types.Struct:
+		for i := 0; i < t.NumFields(); i++ {
+			if f := t.Field(i); !f.Exported() || !spellsExactly(f.Type()) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // extractFromAST is a fallback that extracts minimal type info from Go AST

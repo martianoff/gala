@@ -1542,8 +1542,9 @@ func main() {
 // TestAnonymousStructValuesPassThrough is the positive companion to
 // GALA-E0090: a value of an anonymous Go struct type whose type is never
 // written is accepted. That is a val binding, a Go call's result passed to
-// another Go call, a bare or val-bound receive, and a go_interop.Signal,
-// which names the channel, in a type argument.
+// another Go call, a bare or val-bound receive, a local of a block lambda
+// that is not its result, and a go_interop.Signal, which names the channel,
+// in a type argument.
 func TestAnonymousStructValuesPassThrough(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -1568,6 +1569,15 @@ func main() {
     val v = <-ctx.Done()
     go_interop.WaitClosed(ctx.Done())
     Println(v, go_interop.IsClosed(done), go_interop.WaitClosedTimeout(done, time.Second))
+
+    // A block lambda whose result is a local: its other locals are not typed.
+    val f = () => {
+        val d = ctx.Done()
+        go_interop.WaitClosed(d)
+        val r = 1
+        return r
+    }
+    Println(f())
 
     val s = go_interop.NewSignal()
     val held = Some(s)

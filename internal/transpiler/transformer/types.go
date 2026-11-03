@@ -273,13 +273,20 @@ var goChanDir = [...]ast.ChanDir{
 // anonymous Go struct type is GALA-E0090: it has no spelling in GALA, so
 // GALA does not write it in the generated Go either (see
 // anonymousStructTypeMessage). It is raised at the last tracked position.
+// Only call it for a type the generated Go will contain.
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
-	if typ.IsNil() {
-		return ast.NewIdent("any")
-	}
-	if transpiler.ContainsStruct(typ) {
+	if !typ.IsNil() && transpiler.ContainsStruct(typ) {
 		panic(galaerr.NewCodedSemanticError(galaerr.CodeAnonymousStructType, t.lastLine, t.lastCol,
 			t.anonymousStructTypeMessage(typ), anonymousStructTypeHint))
+	}
+	return t.spellType(typ)
+}
+
+// spellType is typeToExpr without the anonymous-struct check, which
+// typeToExpr has already made for the whole of typ.
+func (t *galaASTTransformer) spellType(typ transpiler.Type) ast.Expr {
+	if typ.IsNil() {
+		return ast.NewIdent("any")
 	}
 	switch v := typ.(type) {
 	case transpiler.BasicType:
@@ -315,12 +322,12 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		// transpiler.UnwrapSendable). Keeps the marker out of generated Go when a
 		// type is reconstructed from metadata (e.g. a thunk's expected result).
 		if inner, ok := transpiler.UnwrapSendable(v); ok {
-			return t.typeToExpr(inner)
+			return t.spellType(inner)
 		}
-		base := t.typeToExpr(v.Base)
+		base := t.spellType(v.Base)
 		params := make([]ast.Expr, len(v.Params))
 		for i, p := range v.Params {
-			params[i] = t.typeToExpr(p)
+			params[i] = t.spellType(p)
 		}
 		// std.Tuple covers 2 type args; 3+ type args map to std.Tuple3..Tuple10.
 		// Mirrors the rewrite in transformType (source-level) so types
@@ -332,20 +339,20 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		}
 		return &ast.IndexListExpr{X: base, Indices: params}
 	case transpiler.ArrayType:
-		arr := &ast.ArrayType{Elt: t.typeToExpr(v.Elem)}
+		arr := &ast.ArrayType{Elt: t.spellType(v.Elem)}
 		if v.Fixed {
 			arr.Len = &ast.BasicLit{Kind: token.INT, Value: strconv.FormatInt(v.Len, 10)}
 		}
 		return arr
 	case transpiler.PointerType:
 		if v.NonNull {
-			return t.ptrStar(t.typeToExpr(v.Elem))
+			return t.ptrStar(t.spellType(v.Elem))
 		}
-		return &ast.StarExpr{X: t.typeToExpr(v.Elem)}
+		return &ast.StarExpr{X: t.spellType(v.Elem)}
 	case transpiler.MapType:
-		return &ast.MapType{Key: t.typeToExpr(v.Key), Value: t.typeToExpr(v.Elem)}
+		return &ast.MapType{Key: t.spellType(v.Key), Value: t.spellType(v.Elem)}
 	case transpiler.ChanType:
-		elem := t.typeToExpr(v.Elem)
+		elem := t.spellType(v.Elem)
 		if e, ok := v.Elem.(transpiler.ChanType); ok && v.Dir == transpiler.ChanBoth && e.Dir == transpiler.ChanRecv {
 			elem = &ast.ParenExpr{X: elem} // chan (<-chan T), see transpiler.ChanType
 		}
@@ -355,7 +362,7 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		for _, m := range v.Methods {
 			methods.List = append(methods.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(m.Name)},
-				Type:  t.typeToExpr(m.Type),
+				Type:  t.spellType(m.Type),
 			})
 		}
 		return &ast.InterfaceType{Methods: methods}
@@ -364,13 +371,13 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 		// no results, so a nil list panics the printer on `func()`.
 		params := &ast.FieldList{}
 		for _, p := range v.Params {
-			params.List = append(params.List, &ast.Field{Type: t.typeToExpr(p)})
+			params.List = append(params.List, &ast.Field{Type: t.spellType(p)})
 		}
 		var results *ast.FieldList
 		if len(v.Results) > 0 {
 			results = &ast.FieldList{}
 			for _, r := range v.Results {
-				results.List = append(results.List, &ast.Field{Type: t.typeToExpr(r)})
+				results.List = append(results.List, &ast.Field{Type: t.spellType(r)})
 			}
 		}
 		return &ast.FuncType{Params: params, Results: results}

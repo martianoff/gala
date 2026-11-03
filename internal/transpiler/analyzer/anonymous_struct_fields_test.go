@@ -63,9 +63,9 @@ func TopLevel() [3]int
 		{"Named", "struct{F func(int) string}"},
 		{"Nested", "struct{A struct{B [1]p.Box[string]}}"},
 		{"Hidden", "struct{x int}"},
-		{"HiddenMethod", "struct{R interface{read()}}"},
+		{"HiddenMethod", "struct{R any}"},
 		{"Variadic", "struct{F func([]int)}"},
-		{"HiddenType", "struct{C [3]p.cell}"},
+		{"HiddenType", "struct{C []p.cell}"},
 		{"Aliased", "struct{R p.Reader; A any}"},
 		// Outside an anonymous struct an array stays the slice it has been.
 		{"AnyField", "struct{A any; E error}"},

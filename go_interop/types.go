@@ -375,18 +375,13 @@ func CloseSignal(s Signal) {
 
 // WaitSignal blocks until the signal is closed.
 func WaitSignal(s Signal) {
-	<-s
+	WaitClosed(s)
 }
 
 // WaitSignalTimeout waits for a signal with timeout.
 // Returns true if signal was received, false if timeout occurred.
 func WaitSignalTimeout(s Signal, timeout time.Duration) bool {
-	select {
-	case <-s:
-		return true
-	case <-time.After(timeout):
-		return false
-	}
+	return WaitClosedTimeout(s, timeout)
 }
 
 // WaitClosed blocks until ch, a signal channel such as a Signal or one a Go
@@ -409,7 +404,12 @@ func IsClosed(ch <-chan struct{}) bool {
 
 // WaitClosedTimeout waits up to timeout for ch, a signal channel, to be
 // closed. It returns true if it was, false if the timeout elapsed first.
+// A channel already closed is reported as such whatever the timeout, so a
+// timeout of 0 is a reliable poll.
 func WaitClosedTimeout(ch <-chan struct{}, timeout time.Duration) bool {
+	if IsClosed(ch) {
+		return true
+	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
