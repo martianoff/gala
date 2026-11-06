@@ -111,15 +111,31 @@ func NativeStartText(n native.GalaNodeRef) string {
 
 // NativeText is GetText of n without building a string where it can: a node
 // of one token, an identifier's, is that token's text, a slice of the source.
-// A tree converted from ANTLR's error recovery can hold conjured tokens
-// ("<missing 'package'>"), which sit past the stream's tokens and so are
-// outside the span StartIndex and StopIndex give; a node there that spans one
-// token may hold one, so in such a tree every node takes GetText.
+//
+// A node's span (StartIndex to StopIndex) does not always hold every token
+// under it. In a tree converted from ANTLR's error recovery a node can hold
+// a conjured token ("<missing 'package'>"), which sits past the stream's
+// tokens, or the EOF token, which ANTLR adds as a child but leaves out of the
+// span. So a node takes the fast path only when it is a chain of single
+// children down to the one token its span starts at.
 func NativeText(n native.GalaNodeRef) string {
-	if i := n.StartIndex(); n.StopIndex() == i && len(n.Tree().Conjured) == 0 {
+	if i, ok := soleToken(n); ok && i == n.StartIndex() && n.StopIndex() == i {
 		return n.Tree().Text(i)
 	}
 	return n.GetText()
+}
+
+// soleToken is the index of the one token under n, and whether n holds
+// exactly one: each node from n down has a single child, the last a token.
+func soleToken(n native.GalaNodeRef) (int, bool) {
+	for n.ChildCount() == 1 {
+		c := n.Child(0)
+		if c.IsToken() {
+			return c.Terminal().Index(), !c.IsError()
+		}
+		n = c.Node()
+	}
+	return 0, false
 }
 
 // NativeKids is n's child nodes of kind, in order, in one pass over its

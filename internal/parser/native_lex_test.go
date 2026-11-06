@@ -126,7 +126,7 @@ func firstTokenDiff(want, got []string) string {
 // character), about one in 15 with CRLF line ends, and the position inputs.
 // Each file's variants are drawn from the file's own text, so they are the
 // same whichever files a test lane stages.
-func corpusInputs(t *testing.T) []string {
+func corpusInputs(t testing.TB) []string {
 	t.Helper()
 	inputs := slices.Clone(positionInputs)
 	for _, src := range sourceTexts(t) {
@@ -372,7 +372,9 @@ func TestCheckEmptyLinesNativeMatchesANTLR(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		r := parseSourceFile(input)
+		// lexNative drops a leading BOM, as ParseFile does before either
+		// parser reads the text.
+		r := parseSourceFile(galaerr.StripBOM(input))
 		if len(r.errors) > 0 {
 			t.Errorf("input %d (%.60q): native parses, ANTLR's parser does not: %v", k, input, r.errors)
 			continue

@@ -184,6 +184,35 @@ func TestNativeTextConjuredToken(t *testing.T) {
 	}
 }
 
+// TestNativeTextEOFChild: in a tree converted from ANTLR's error recovery, a
+// node whose span is one token can also hold the EOF token, which ANTLR adds
+// as a child but leaves out of the span. NativeText includes its text, as
+// GetText does.
+func TestNativeTextEOFChild(t *testing.T) {
+	for _, src := range []string{
+		"package\n",
+		"package",
+		"s\"${a}\"",
+		"val\n",
+	} {
+		p := parseConverted(src)
+		tree, err := p.RecoveredNative().Tree()
+		if err != nil {
+			t.Fatalf("%q: %v", src, err)
+		}
+		root := tree.Root()
+		if root.StopIndex() != root.StartIndex() {
+			t.Fatalf("%q: the recovered source file spans tokens %d to %d, not one", src, root.StartIndex(), root.StopIndex())
+		}
+		if got, want := NativeText(root), root.GetText(); got != want || !strings.HasSuffix(got, "<EOF>") {
+			t.Errorf("%q: NativeText is %q, GetText %q", src, got, want)
+		}
+		if msg := checkNative(p, src); msg != "" {
+			t.Errorf("%q: %s", src, msg)
+		}
+	}
+}
+
 // TestNativeDocKeyOfGalopParse checks NativeDocKeyOf on a tree galop's native
 // parser makes itself, from galop's native lexer, rather than one converted
 // from ANTLR's (whose tokens carry ANTLR's lines and columns): after
