@@ -17,17 +17,23 @@ import (
 	"martianoff/gala/internal/parser/native"
 )
 
-// gatherSources returns the .gala files staged as data of parser_test.
+// gatherSources returns the .gala files staged as data of parser_test; under
+// plain `go test` (tools/fuzz.sh), which stages no runfiles, the repository's
+// own .gala files.
 func gatherSources(t testing.TB) []string {
 	t.Helper()
-	files, err := bazel.ListRunfiles()
-	if err != nil {
-		t.Fatalf("cannot list the runfiles: %v", err)
-	}
 	var paths []string
-	for _, f := range files {
-		if strings.HasSuffix(f.ShortPath, ".gala") {
-			paths = append(paths, f.Path)
+	if os.Getenv("TEST_SRCDIR") == "" {
+		paths = repoSources(t)
+	} else {
+		files, err := bazel.ListRunfiles()
+		if err != nil {
+			t.Fatalf("cannot list the runfiles: %v", err)
+		}
+		for _, f := range files {
+			if strings.HasSuffix(f.ShortPath, ".gala") {
+				paths = append(paths, f.Path)
+			}
 		}
 	}
 	sort.Strings(paths)
@@ -232,18 +238,63 @@ func breakSource(r *rand.Rand, src string) string {
 // the transpiler re-parses as expressions.
 var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
 
-// TestEnginesAgree parses every GALA source of the repository, and two broken
-// variants of each, with galop's engine and with ANTLR's: the doc comments
-// and errors must be the same; a parse without errors must have the same
-// native tree (galop's native parse with galop's engine, ANTLR's tree
+// compareEngines parses input with ANTLR's engine and with galop's, and
+// returns ANTLR's parse, whether galop's engine settled a parse whose only
+// error is a missing blank line, and every way the two differ. The doc
+// comments and errors must be the same; a parse without errors must have the
+// same native tree (galop's native parse with galop's engine, ANTLR's tree
 // converted with ANTLR's), and no ANTLR tree with galop's engine; a parse
 // with errors must be ANTLR's with both, the same error-recovered tree, but
 // for one whose only error is a missing blank line, which galop's engine
 // leaves to its native parse; either way the recovered native trees must be
-// the same. It
-// does the same for expressions: the corpus's interpolated expressions, runs
-// of tokens from every file, and broken variants of both. Any difference is
-// a bug.
+// the same. When check is set, galop's engine's native tree, clean or
+// error-recovered, is also checked against ANTLR's tree (checkNative).
+func compareEngines(input string, check bool) (want fileParse, blankLineOnly bool, diffs []string) {
+	want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
+	if len(want.parsed.Errors) > 0 {
+		if got.parsed.Tree == nil {
+			// galop's native parse settled it: a missing blank line is its
+			// only error.
+			blankLineOnly = true
+			if d := docsAndErrorsDiff(want, got); d != "" {
+				diffs = append(diffs, "the engines disagree on the doc comments or errors: "+d)
+			}
+		} else if got.out != want.out {
+			// Both are ANTLR's parse, error-recovered.
+			diffs = append(diffs, "the engines disagree (want ANTLR's, got galop's): "+diffAt(want.out, got.out))
+		}
+		if got.recovered != want.recovered {
+			diffs = append(diffs, "the recovered native trees differ: "+diffAt(want.recovered, got.recovered))
+		}
+	} else {
+		if d := docsAndErrorsDiff(want, got); d != "" {
+			diffs = append(diffs, "the engines disagree on the doc comments or errors: "+d)
+		}
+		switch {
+		case want.native == "":
+			diffs = append(diffs, "the clean parse with ANTLR's engine has no native tree")
+		case got.native == "":
+			diffs = append(diffs, "galop's clean parse has no native tree")
+		case got.parsed.Tree != nil:
+			diffs = append(diffs, "galop's clean parse has an ANTLR tree")
+		case got.native != want.native:
+			diffs = append(diffs, "the native trees differ (want ANTLR's converted, got galop's): "+diffAt(want.native, got.native))
+		}
+	}
+	if check {
+		if msg := checkNative(got.parsed, input); msg != "" {
+			diffs = append(diffs, "native tree: "+msg)
+		}
+	}
+	return want, blankLineOnly, diffs
+}
+
+// TestEnginesAgree parses every GALA source of the repository, and two broken
+// variants of each, with galop's engine and with ANTLR's, and holds them to
+// compareEngines. It does the same for expressions: the corpus's
+// interpolated expressions, runs of tokens from every file, and broken
+// variants of both. Any difference is a bug. FuzzParserEngines holds
+// arbitrary input to the same checks.
 func TestEnginesAgree(t *testing.T) {
 	grammar.GalaParserInit()
 	// r draws the broken variants and token runs; positions draws where
@@ -252,46 +303,15 @@ func TestEnginesAgree(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 	positions := rand.New(rand.NewSource(2))
 	files, accepted, blankLineOnly, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0, 0
-	// compareFile parses input with both engines and reports a difference.
-	// When check is set, it also checks galop's engine's native tree
-	// (checkNative) against ANTLR's tree, clean or error-recovered. It
-	// returns ANTLR's rendering.
+	// compareFile parses input with both engines and reports every
+	// difference (see compareEngines). It returns ANTLR's rendering.
 	compareFile := func(what, input string, check bool) string {
-		want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
-		if len(want.parsed.Errors) > 0 {
-			if got.parsed.Tree == nil {
-				// galop's native parse settled it: a missing blank line is its
-				// only error.
-				blankLineOnly++
-				if d := docsAndErrorsDiff(want, got); d != "" {
-					t.Errorf("%s: the engines disagree on the doc comments or errors: %s", what, d)
-				}
-			} else if got.out != want.out {
-				// Both are ANTLR's parse, error-recovered.
-				t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
-			}
-			if got.recovered != want.recovered {
-				t.Errorf("%s: the recovered native trees differ: %s", what, diffAt(want.recovered, got.recovered))
-			}
-		} else {
-			if d := docsAndErrorsDiff(want, got); d != "" {
-				t.Errorf("%s: the engines disagree on the doc comments or errors: %s", what, d)
-			}
-			switch {
-			case want.native == "":
-				t.Errorf("%s: the clean parse with ANTLR's engine has no native tree", what)
-			case got.native == "":
-				t.Errorf("%s: galop's clean parse has no native tree", what)
-			case got.parsed.Tree != nil:
-				t.Errorf("%s: galop's clean parse has an ANTLR tree", what)
-			case got.native != want.native:
-				t.Errorf("%s: the native trees differ (want ANTLR's converted, got galop's): %s", what, diffAt(want.native, got.native))
-			}
+		want, blankOnly, diffs := compareEngines(input, check)
+		if blankOnly {
+			blankLineOnly++
 		}
-		if check {
-			if msg := checkNative(got.parsed, input); msg != "" {
-				t.Errorf("%s: native tree: %s", what, msg)
-			}
+		for _, d := range diffs {
+			t.Errorf("%s: %s", what, d)
 		}
 		return want.out
 	}

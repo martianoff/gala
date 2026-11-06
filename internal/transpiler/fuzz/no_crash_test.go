@@ -30,6 +30,16 @@ var crashSeeds = []string{
 	"package main\r\n\r\nfunc main() {\r\n    Println(\"crlf\")\r\n}\r\n",
 	"package main\n\nfunc main() {\n    val perm = 0644\n    val bad = 08\n    Println(perm, bad)\n}\n",
 	"package main\n\nimport \"martianoff/gala/nosuch/pkg\"\n\nfunc main() {\n    Println(pkg.X, Undefined1, Undefined2)\n}\n",
+	// A parameter declared with a type and no name.
+	"package main\n\nfunc g(...int) int = 0\n\nfunc f(a int, ...int) int = a\n\nstruct S(int)\n\nfunc main() {\n    val h = (int) => 1\n    Println(g(1), f(1), h)\n}\n",
+	// An interface method with type parameters of its own.
+	"package main\n\ntype Named interface {\n    Map[T any](f func(string) T) T\n}\n\nfunc main() = Println(\"ok\")\n",
+	// Channel receive.
+	"package main\n\nimport \"time\"\n\nfunc main() {\n    val v = <-time.After(time.Millisecond)\n    Println(v)\n}\n",
+	// Two imported packages with a case of the same name: the companion
+	// each pattern names must not depend on map order (checked by the
+	// determinism pass below).
+	"package main\n\nimport (\n    \"martianoff/gala/json\"\n    \"martianoff/gala/yaml\"\n)\n\nfunc main() {\n    Println(json.AsIs() match {\n        case json.AsIs() => \"json\"\n        case _ => \"other\"\n    })\n    Println(yaml.AsIs() match {\n        case yaml.AsIs() => \"yaml\"\n        case _ => \"other\"\n    })\n}\n",
 }
 
 // FuzzTranspileNoCrash feeds arbitrary bytes and mutated example programs to

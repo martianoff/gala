@@ -133,11 +133,18 @@ detector (`--@rules_go//go/config:race`).
 | `FuzzSourceEncoding` | examples with a leading BOM, non-ASCII comments, raw vs escaped non-ASCII in strings | both spellings give the same Go (ignoring comments and literal spelling), or the same diagnostics on the same lines |
 | `FuzzValueBlocks` | generated programs nesting `bind`, if-expressions, `match`, lambdas, partial functions and trailing `if`/`else`, valid and invalid | a positioned diagnostic, or Go that type-checks against the standard library |
 | `FuzzFunctionValues` | generated valid programs whose values have random nested function types (`func()`, functions taking and returning functions, `Option` of functions), built through if-expressions, `match`, block branches, typed and untyped lambdas, generic calls and top-level functions used as values, then called | accepted, and Go that type-checks against the standard library |
-| `FuzzPrograms` | generated programs of one or two packages — a library imported qualified, aliased or dot-imported; std and collection_immutable imported each way — matching values against generated patterns (extractors, nested, named and alternative sub-patterns, stable identifiers, guards, tuples, sequences, exhaustiveness, partial functions) | a positioned diagnostic where the program must be rejected; otherwise Go that type-checks, builds and prints exactly the output the generator computed. Each input is built with the Go toolchain: fuzz it with `-parallel 2` |
+| `FuzzPrograms` | generated programs of one or two packages — a library imported qualified, aliased or dot-imported; std and collection_immutable imported each way — matching values against generated patterns (extractors, nested, named and alternative sub-patterns, stable identifiers, guards, non-bool guards, tuples, sequences, exhaustiveness, partial functions, partial functions applied in an argument, `any` subjects), plus if-expressions followed by a `match`, a `match` applied to a self call in tail-recursive functions, vals shadowed inside branches, arms and lambdas, statements before a branch's value, package-level vals whose types are inferred from their initializers, struct types declared inside a function, and functions named like std types | a positioned diagnostic (with the code the generator expects) where the program must be rejected; otherwise Go that type-checks, builds and prints exactly the output the generator computed. Each input is built with the Go toolchain: fuzz it with `-parallel 2` |
 
-`bazel test //internal/transpiler/fuzz:fuzz_test` runs each target over its seed
-corpus — the `f.Add` seeds plus `testdata/fuzz/<Target>/*` — as an ordinary unit
-test, so it is part of `bazel test //...`. To generate new inputs, run the fuzzer
+Two more targets sit next to the code they check:
+
+| Target | Package | Input | Property |
+|--------|---------|-------|----------|
+| `FuzzParserEngines` | `internal/parser` | arbitrary bytes and mutated corpus files, parsed whole and as an expression at an offset | galop never panics; its lexer gives ANTLR's tokens (hidden ones, lexical errors and doc comments included); both engines agree on every parse, with the same native tree and node text |
+| `FuzzRecollect` | `internal/transpiler/analyzer` | two versions of a file whose declarations change form (shorthand or block struct, interface, sealed type with cases added, dropped and moved, opaque type, methods added and deleted) | re-collecting the second version over the first, as the analyzed file or as a sibling, gives the entries a fresh collection does; collecting a version twice changes nothing |
+
+`bazel test` of each package runs its targets over their seed corpus — the
+`f.Add` seeds plus `testdata/fuzz/<Target>/*` — as ordinary unit tests, so they
+are part of `bazel test //...`. To generate new inputs, run the fuzzer
 itself:
 
 ```bash
@@ -145,8 +152,10 @@ tools/fuzz.sh                               # list the targets
 tools/fuzz.sh FuzzStringLiterals 15m        # fuzz one target for 15 minutes
 ```
 
-The script builds the Bazel-generated ANTLR sources, copies them next to the
-grammar (they are git-ignored, and the copies it created are removed when it exits), and runs `go test -fuzz`: Go's fuzzer needs its
+The script builds the Bazel-generated ANTLR and galop sources, copies them
+into `internal/parser/grammar` and `internal/parser/native` (they are git-ignored,
+and the copies it created are removed when it exits), finds the package that
+declares the target, and runs `go test -fuzz`: Go's fuzzer needs its
 own coverage-instrumented build, which a Bazel `go_test` does not produce. When it
 finds a failure it writes the input to `testdata/fuzz/<Target>/`; fix the bug and
 commit that file so the seed pass replays it from then on.

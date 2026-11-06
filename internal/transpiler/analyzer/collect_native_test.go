@@ -311,10 +311,12 @@ func collectOnce(tb testing.TB, a *galaAnalyzer, collect typeCollector, path, sr
 // then of again as the same file under another spelling, so the second
 // collection reuses the entries of the first rather than reporting them
 // redefined. between, when not nil, runs on the first collection's result.
-// The returned fileDecls has the second spelling as its filePath.
+// The returned fileDecls has the second spelling as its filePath. The file is
+// never read or written (the sources are parsed from memory and the paths
+// only compared), so its directory need not exist.
 func collectTwice(tb testing.TB, a *galaAnalyzer, collect typeCollector, first, again string, between func(*fileDecls)) *fileDecls {
 	tb.Helper()
-	dir := tb.TempDir()
+	dir := filepath.Join(os.TempDir(), "gala-collect-twice")
 	fd := collectOnce(tb, a, collect, filepath.Join(dir, "box.gala"), first)
 	if between != nil {
 		between(fd)
@@ -342,7 +344,7 @@ func TestRecollectedTypeChangesForm(t *testing.T) {
 		{"interface", "package box\n\ntype Cfg interface {\n    Name() string\n    Tries(n int) int\n}\n"},
 	}
 	// A method another file declares on Cfg, added between the collections.
-	declared := &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: "other.gala"}
+	declared := recollectDescribe("other.gala")
 	for _, from := range forms {
 		for _, to := range forms {
 			if from.name == to.name {

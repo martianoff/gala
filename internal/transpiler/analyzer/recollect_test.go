@@ -1,7 +1,9 @@
 package analyzer
 
 import (
+	"fmt"
 	"maps"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -90,37 +92,113 @@ func TestRecollectedDeclarationDropsStaleMethods(t *testing.T) {
 			again:       "package box\n\nsealed type ID {\n    case Big(N int)\n}\n\nopaque type Small int64\n",
 			wantMethods: []string{"Describe", "isBig"},
 		},
+		{
+			// Large moves to ID, which is collected first: Other's reset
+			// must not drop the companion ID has just made for it.
+			name:        "case_moves_to_an_earlier_type",
+			first:       "package box\n\nsealed type ID {\n    case Small(N int)\n}\n\nsealed type Other {\n    case Large(N int)\n}\n",
+			again:       "package box\n\nsealed type ID {\n    case Small(N int)\n    case Large(N int)\n}\n\nsealed type Other {\n    case Big()\n}\n",
+			wantMethods: []string{"Describe", "isLarge", "isSmall"},
+		},
+		{
+			name:        "cases_swap_types",
+			first:       "package box\n\nsealed type ID {\n    case Small(N int)\n}\n\nsealed type Other {\n    case Large(N int)\n}\n",
+			again:       "package box\n\nsealed type ID {\n    case Large(N int)\n}\n\nsealed type Other {\n    case Small(N int)\n}\n",
+			wantMethods: []string{"Describe", "isLarge"},
+		},
 	}
-	// A method another file declares on ID, recorded between the collections.
-	declared := &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: "other.gala"}
 	for _, c := range cases {
 		for name, collect := range declCollectors {
 			t.Run(c.name+"/"+name, func(t *testing.T) {
-				fromInterface := c.name == "interface_to_opaque"
-				a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-				fd := collectTwice(t, a, collect, c.first, c.again, func(fd *fileDecls) {
-					// A new Analyze call: the declarations seen are its own.
-					fd.decls = newPackageDecls(fd.filePath)
-					if !fromInterface {
-						fd.richAST.Types["box.ID"].Methods[declared.Name] = declared
-					}
-				})
-				got := fd.richAST.Types["box.ID"]
+				got := recollectDeclaration(t, collect, c.first, c.again).Types["box.ID"]
 				if names := methodNamesOf(got); !reflect.DeepEqual(names, c.wantMethods) {
 					t.Errorf("methods = %v, want %v", names, c.wantMethods)
 				}
-				// Every entry, so a companion of a case the file no longer
-				// declares is caught too.
-				fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-				want := collectOnce(t, fresh, collect, fd.filePath, c.again).richAST.Types
-				if !fromInterface {
-					want["box.ID"].Methods[declared.Name] = declared
-				}
-				if !reflect.DeepEqual(fd.richAST.Types, want) {
-					t.Errorf("re-collected entries differ from a first collection at %s", firstDiff(reflect.ValueOf(fd.richAST.Types), reflect.ValueOf(want), "", map[visit]bool{}))
-				}
 			})
 		}
+	}
+}
+
+// recollectDeclaration collects first, then again, as the analyzed file
+// box.gala with collect, and returns the result after failing tb unless it is
+// the one a first collection of again gives: every entry and companion, so a
+// companion of a case the file no longer declares is caught too.
+//
+// Between the collections a new Analyze call starts (the declarations seen
+// are its own), and another file declares Describe on box.ID — unless ID was
+// an interface, on which no file declares a method. The two exceptions to
+// "a first collection of again" are that method, which survives, and the
+// DefinedIn an interface does not record (keepInterfaceDefinedIn).
+func recollectDeclaration(tb testing.TB, collect typeCollector, first, again string) *transpiler.RichAST {
+	tb.Helper()
+	other := recollectDescribe("other.gala")
+	addsOther := false
+	var firstDefinedIn map[string]string
+	a := newCollectionAnalyzer(tb, galaparser.NewAntlrGalaParser(), nil)
+	fd := collectTwice(tb, a, collect, first, again, func(fd *fileDecls) {
+		firstDefinedIn = definedInOf(fd.richAST.Types)
+		fd.decls = newPackageDecls(fd.filePath)
+		if id := fd.richAST.Types["box.ID"]; id != nil && !id.IsInterface {
+			id.Methods[other.Name] = other
+			addsOther = true
+		}
+	})
+	fresh := newCollectionAnalyzer(tb, galaparser.NewAntlrGalaParser(), nil)
+	want := collectOnce(tb, fresh, collect, fd.filePath, again).richAST
+	if addsOther {
+		want.Types["box.ID"].Methods[other.Name] = other
+	}
+	keepInterfaceDefinedIn(want.Types, firstDefinedIn)
+	requireSameTypes(tb, "analyzed file", fd.richAST, want, first, again)
+	return fd.richAST
+}
+
+// recollectDescribe is the method Describe that the file definedIn declares
+// on box.ID.
+func recollectDescribe(definedIn string) *transpiler.MethodMetadata {
+	return &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: definedIn}
+}
+
+// keepInterfaceDefinedIn applies the documented exception to want: an
+// interface declaration does not record DefinedIn, so an entry that is an
+// interface keeps the one its first collection recorded. firstDefinedIn is
+// read off the first collection before the second runs, never off the
+// re-collected entry, so a DefinedIn from any other declaration still fails;
+// an entry the first collection did not have keeps a fresh collection's.
+func keepInterfaceDefinedIn(want map[string]*transpiler.TypeMetadata, firstDefinedIn map[string]string) {
+	for key, meta := range want {
+		if meta.IsInterface {
+			if d, ok := firstDefinedIn[key]; ok {
+				meta.DefinedIn = d
+			}
+		}
+	}
+}
+
+// definedInOf is the DefinedIn of each entry of types.
+func definedInOf(types map[string]*transpiler.TypeMetadata) map[string]string {
+	out := make(map[string]string, len(types))
+	for key, meta := range types {
+		out[key] = meta.DefinedIn
+	}
+	return out
+}
+
+// requireSameTypes fails tb when got's entries or companions differ from
+// want's, at the first place they do.
+func requireSameTypes(tb testing.TB, what string, got, want *transpiler.RichAST, first, again string) {
+	tb.Helper()
+	gotKeys, wantKeys := slices.Sorted(maps.Keys(got.Types)), slices.Sorted(maps.Keys(want.Types))
+	diff := ""
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		diff = fmt.Sprintf("types %v, want %v", gotKeys, wantKeys)
+	} else if d := firstDiff(reflect.ValueOf(got.Types), reflect.ValueOf(want.Types), "Types", map[visit]bool{}); d != "" {
+		diff = d
+	} else if d := firstDiff(reflect.ValueOf(got.CompanionObjects), reflect.ValueOf(want.CompanionObjects), "CompanionObjects", map[visit]bool{}); d != "" {
+		diff = d
+	}
+	if diff != "" {
+		tb.Fatalf("%s: re-collected entries differ from a first collection at %s\nfirst:\n%s\nagain:\n%s", what, diff, first, again)
 	}
 }
 
@@ -174,67 +252,67 @@ func TestRecollectedSiblingDeclaration(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
-			mainFile := filepath.Join(dir, "main.gala")
-			sibFile := filepath.Join(dir, "id.gala")
-			// The method the analyzed file declares on ID, which its
-			// collection records before the siblings' types.
-			declared := func() *transpiler.MethodMetadata {
-				return &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: mainFile}
-			}
-			extract := func(a *galaAnalyzer, richAST *transpiler.RichAST, src string) {
-				t.Helper()
-				parsed := parseClean(t, src)
-				nf, err := nativeFileOf(parsed.CleanNative())
-				if err != nil {
-					t.Fatalf("the sibling has no native tree: %v", err)
-				}
-				sib := pkgFile{sibFile, &parsedFileEntry{parsed: parsed, nf: nf, pkgName: "box"}}
-				if err := a.extractSiblingFullMetadata(sib, fileQualifiers{}, "box", richAST, newPackageDecls(mainFile)); err != nil {
-					t.Fatalf("sibling extraction: %v", err)
-				}
-			}
-			// addDeclared records the analyzed file's method as its
-			// collection does: on the entry, or on a placeholder for it.
-			addDeclared := func(richAST *transpiler.RichAST) {
-				if meta := richAST.Types["box.ID"]; meta != nil {
-					meta.Methods["Describe"] = declared()
-					return
-				}
-				richAST.Types["box.ID"] = &transpiler.TypeMetadata{
-					Name: "ID", Package: "box",
-					Methods: map[string]*transpiler.MethodMetadata{"Describe": declared()},
-					Fields:  make(map[string]transpiler.Type),
-				}
-			}
-
-			a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-			richAST := newCollectedFile(a, "box", mainFile, nil).richAST
-			extract(a, richAST, c.first)
-			firstDefinedIn := richAST.Types["box.ID"].DefinedIn
-			addDeclared(richAST)
-			extract(a, richAST, c.again)
-			got := richAST.Types["box.ID"]
+			got := recollectSibling(t, c.first, c.again).Types["box.ID"]
 			if names := methodNamesOf(got); !reflect.DeepEqual(names, c.wantMethods) {
 				t.Errorf("methods = %v, want %v", names, c.wantMethods)
 			}
-
-			fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-			freshAST := newCollectedFile(fresh, "box", mainFile, nil).richAST
-			addDeclared(freshAST)
-			extract(fresh, freshAST, c.again)
-			if gotKeys, wantKeys := slices.Sorted(maps.Keys(richAST.Types)), slices.Sorted(maps.Keys(freshAST.Types)); !reflect.DeepEqual(gotKeys, wantKeys) {
-				t.Errorf("types = %v, want %v", gotKeys, wantKeys)
-			}
-			want := freshAST.Types["box.ID"]
-			// An interface declaration does not record DefinedIn, so the
-			// one recorded before stays.
-			if want.IsInterface {
-				want.DefinedIn = firstDefinedIn
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("re-collected entry differs from a first collection at %s", firstDiff(reflect.ValueOf(got), reflect.ValueOf(want), "", map[visit]bool{}))
-			}
 		})
 	}
+}
+
+// The analyzed file and its sibling in recollectSibling. Neither is read or
+// written: the sources are parsed from memory and the paths only compared,
+// so they need no directory.
+var (
+	recollectMainFile = filepath.Join(os.TempDir(), "gala-recollect", "main.gala")
+	recollectSibFile  = filepath.Join(os.TempDir(), "gala-recollect", "id.gala")
+)
+
+// recollectSibling extracts first, then again, as a sibling of the analyzed
+// file, which declares Describe on box.ID, and returns the result after
+// failing tb unless it is the one a first extraction of again gives, every
+// entry and companion: but for the DefinedIn an interface does not record
+// (keepInterfaceDefinedIn).
+func recollectSibling(tb testing.TB, first, again string) *transpiler.RichAST {
+	tb.Helper()
+	extract := func(a *galaAnalyzer, richAST *transpiler.RichAST, src string) {
+		tb.Helper()
+		parsed := parseClean(tb, src)
+		nf, err := nativeFileOf(parsed.CleanNative())
+		if err != nil {
+			tb.Fatalf("the sibling has no native tree: %v", err)
+		}
+		sib := pkgFile{recollectSibFile, &parsedFileEntry{parsed: parsed, nf: nf, pkgName: "box"}}
+		if err := a.extractSiblingFullMetadata(sib, fileQualifiers{}, "box", richAST, newPackageDecls(recollectMainFile)); err != nil {
+			tb.Fatalf("sibling extraction: %v\nsource:\n%s", err, src)
+		}
+	}
+	// addDeclared records the analyzed file's method as its collection
+	// does, before the siblings' types: on the entry, or on a placeholder
+	// for it.
+	addDeclared := func(richAST *transpiler.RichAST) {
+		if meta := richAST.Types["box.ID"]; meta != nil {
+			meta.Methods["Describe"] = recollectDescribe(recollectMainFile)
+			return
+		}
+		richAST.Types["box.ID"] = &transpiler.TypeMetadata{
+			Name: "ID", Package: "box",
+			Methods: map[string]*transpiler.MethodMetadata{"Describe": recollectDescribe(recollectMainFile)},
+			Fields:  make(map[string]transpiler.Type),
+		}
+	}
+	a := newCollectionAnalyzer(tb, galaparser.NewAntlrGalaParser(), nil)
+	richAST := newCollectedFile(a, "box", recollectMainFile, nil).richAST
+	extract(a, richAST, first)
+	firstDefinedIn := definedInOf(richAST.Types)
+	addDeclared(richAST)
+	extract(a, richAST, again)
+
+	fresh := newCollectionAnalyzer(tb, galaparser.NewAntlrGalaParser(), nil)
+	want := newCollectedFile(fresh, "box", recollectMainFile, nil).richAST
+	addDeclared(want)
+	extract(fresh, want, again)
+	keepInterfaceDefinedIn(want.Types, firstDefinedIn)
+	requireSameTypes(tb, "sibling", richAST, want, first, again)
+	return richAST
 }

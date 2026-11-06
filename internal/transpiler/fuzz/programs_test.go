@@ -73,14 +73,13 @@ func checkProgram(t testing.TB, p program) {
 	if res.Panic != nil {
 		t.Fatalf("transpiler panicked: %v\n%s\ninput:\n%s", res.Panic, res.Stack, describe(p))
 	}
-	if p.rejected {
+	if r := p.rejection; r != nil {
 		if res.Err == nil {
-			t.Fatalf("a match with no default that is not exhaustive was accepted\ninput:\n%s", describe(p))
+			t.Fatalf("an invalid program was accepted (it must be rejected with %+v)\ninput:\n%s", *r, describe(p))
 		}
 		checkDiagnostics(t, p.main, res.Err)
-		if !hasCode(res.Err, galaerr.CodeNonExhaustiveMatch) {
-			t.Fatalf("a match with no default that is not exhaustive must be %s, got: %v\ninput:\n%s",
-				galaerr.CodeNonExhaustiveMatch, res.Err, describe(p))
+		if !hasDiagnostic(res.Err, *r) {
+			t.Fatalf("the program must be rejected with %+v, got: %v\ninput:\n%s", *r, res.Err, describe(p))
 		}
 		return
 	}
@@ -120,11 +119,12 @@ func writeLibrary(tb testing.TB, p program) {
 	}
 }
 
-// hasCode reports whether one of err's diagnostics has code.
-func hasCode(err error, code galaerr.ErrorCode) bool {
+// hasDiagnostic reports whether one of err's diagnostics is r: it has r's code
+// (any, when r has none) and its message holds r's text.
+func hasDiagnostic(err error, r rejection) bool {
 	for _, leaf := range leafErrors(err) {
 		var se *galaerr.SemanticError
-		if errors.As(leaf, &se) && se.Code == code {
+		if errors.As(leaf, &se) && (r.code == "" || se.Code == r.code) && strings.Contains(se.Msg, r.text) {
 			return true
 		}
 	}

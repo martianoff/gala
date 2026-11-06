@@ -141,6 +141,7 @@ go_test(
 # gazelle:exclude file_checks_native_test.go
 # gazelle:exclude internal_error_test.go
 # gazelle:exclude recollect_test.go
+# gazelle:exclude recollect_fuzz_test.go
 go_test(
     # keep
     name = "collect_native_test",
@@ -149,10 +150,15 @@ go_test(
         "collect_native_test.go",
         "file_checks_native_test.go",
         "internal_error_test.go",
+        "recollect_fuzz_test.go",
         "recollect_test.go",
         "undefined_symbol_native_test.go",
     ],
-    data = ["testdata/analysis.golden"],
+    # testdata/fuzz: the inputs FuzzRecollect replays as seeds.
+    data = ["testdata/analysis.golden"] + glob(
+        ["testdata/fuzz/**"],
+        allow_empty = True,
+    ),
     embed = [":analyzer"],
     deps = [
         "//galaerr",
