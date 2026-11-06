@@ -90,6 +90,20 @@ func TestRecollectedDeclarationDropsStaleMethods(t *testing.T) {
 			again:       "package box\n\nsealed type ID {\n    case Big(N int)\n}\n\nopaque type Small int64\n",
 			wantMethods: []string{"Describe", "isBig"},
 		},
+		{
+			// Large moves to ID, which is collected first: Other's reset
+			// must not drop the companion ID has just made for it.
+			name:        "case_moves_to_an_earlier_type",
+			first:       "package box\n\nsealed type ID {\n    case Small(N int)\n}\n\nsealed type Other {\n    case Large(N int)\n}\n",
+			again:       "package box\n\nsealed type ID {\n    case Small(N int)\n    case Large(N int)\n}\n\nsealed type Other {\n    case Big()\n}\n",
+			wantMethods: []string{"Describe", "isLarge", "isSmall"},
+		},
+		{
+			name:        "cases_swap_types",
+			first:       "package box\n\nsealed type ID {\n    case Small(N int)\n}\n\nsealed type Other {\n    case Large(N int)\n}\n",
+			again:       "package box\n\nsealed type ID {\n    case Large(N int)\n}\n\nsealed type Other {\n    case Small(N int)\n}\n",
+			wantMethods: []string{"Describe", "isLarge"},
+		},
 	}
 	// A method another file declares on ID, recorded between the collections.
 	declared := &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: "other.gala"}

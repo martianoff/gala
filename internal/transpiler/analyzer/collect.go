@@ -62,7 +62,8 @@ func qualifiedName(pkgName, name string) string {
 // interface's method specs, a sealed type's case predicates): collecting
 // file gives again those it still declares. So are the companions of an old
 // sealed declaration's cases, which registerSealedType makes again for the
-// cases there still are. Doc is kept as well: the caller's nativeSetDoc replaces
+// cases there still are — but not a case another sealed type has taken since
+// (isCompanionOf). Doc is kept as well: the caller's nativeSetDoc replaces
 // it only when the declaration has a doc comment. So is DefinedIn, which a
 // struct declaration sets and other forms leave as an earlier pass recorded
 // it.
@@ -80,7 +81,7 @@ func (a *galaAnalyzer) startTypeEntry(richAST *transpiler.RichAST, key, name, pk
 	}
 	for _, v := range meta.SealedVariants {
 		caseKey := qualifiedName(pkg, v.Name)
-		if c := richAST.Types[caseKey]; c != nil && c.Package == pkg && c.Methods["Apply"] != nil && c.Methods["Apply"].OfTypeDecl {
+		if c := richAST.Types[caseKey]; c != nil && c.Package == pkg && isCompanionOf(c, key) {
 			delete(richAST.Types, caseKey)
 		}
 	}
@@ -94,6 +95,16 @@ func (a *galaAnalyzer) startTypeEntry(richAST *transpiler.RichAST, key, name, pk
 		DefinedIn: meta.DefinedIn,
 	}
 	return meta
+}
+
+// isCompanionOf reports whether c is the companion of a case of the sealed
+// type keyed parentKey: registerSealedType's, whose Apply builds that type. A
+// case the collection has meanwhile registered for another sealed type of the
+// file, as when a case moves to a type declared further up, builds that
+// other type, so its companion is not this one's to drop.
+func isCompanionOf(c *transpiler.TypeMetadata, parentKey string) bool {
+	apply := c.Methods["Apply"]
+	return apply != nil && apply.OfTypeDecl && apply.ReturnType != nil && apply.ReturnType.BaseName() == parentKey
 }
 
 // embedDirective is the directive of `embed val varName typeName = patterns`,
