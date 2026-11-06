@@ -75,12 +75,13 @@ func checkProgram(t testing.TB, p program) {
 	}
 	if p.rejected {
 		if res.Err == nil {
-			t.Fatalf("a match with no default that is not exhaustive was accepted\ninput:\n%s", describe(p))
+			t.Fatalf("an invalid program was accepted (it must be rejected with %v)\ninput:\n%s", p.rejectCodes, describe(p))
 		}
 		checkDiagnostics(t, p.main, res.Err)
-		if !hasCode(res.Err, galaerr.CodeNonExhaustiveMatch) {
-			t.Fatalf("a match with no default that is not exhaustive must be %s, got: %v\ninput:\n%s",
-				galaerr.CodeNonExhaustiveMatch, res.Err, describe(p))
+		for _, code := range p.rejectCodes {
+			if code != "" && !hasCode(res.Err, code) {
+				t.Fatalf("the program must be rejected with %s, got: %v\ninput:\n%s", code, res.Err, describe(p))
+			}
 		}
 		return
 	}

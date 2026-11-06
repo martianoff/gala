@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Run the transpiler's native Go fuzz targets (internal/transpiler/fuzz).
+# Run the native Go fuzz targets: the transpiler's (internal/transpiler/fuzz),
+# the parser engines' (internal/parser) and the analyzer's (its re-collection).
 #
 #   tools/fuzz.sh                                  # list the targets
 #   tools/fuzz.sh FuzzStringLiterals               # fuzz one target for 10m
@@ -8,8 +9,8 @@
 #   tools/fuzz.sh FuzzSourceEncoding 20m -parallel 8   # extra `go test` flags
 #   tools/fuzz.sh FuzzSourceEncoding -parallel 8       # ... with the default time
 #
-# `bazel test //internal/transpiler/fuzz:fuzz_test` runs every target over its
-# seed corpus as an ordinary unit test; that is what CI does. Generating new
+# `bazel test` of each package runs its targets over their seed corpus as
+# ordinary unit tests; that is what CI does. Generating new
 # inputs needs `go test -fuzz`, which builds the coverage-instrumented binary
 # the fuzzer is guided by — something a Bazel go_test does not produce. Plain
 # `go test` in turn needs the parser sources Bazel generates and the repository
@@ -20,7 +21,7 @@
 # a grammar change.
 #
 # A failing input is written to
-# internal/transpiler/fuzz/testdata/fuzz/<Target>/<hash>. Fix the bug, then
+# <package>/testdata/fuzz/<Target>/<hash>. Fix the bug, then
 # commit that file: it becomes a permanent seed that `bazel test` replays.
 #
 # Set GALA_FUZZ_REQUIRE_CODES=1 to also fail on semantic diagnostics that carry
@@ -39,18 +40,32 @@ usage() {
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
-pkg=./internal/transpiler/fuzz/
+# The packages that hold fuzz targets.
+fuzz_dirs=(internal/transpiler/fuzz internal/parser internal/transpiler/analyzer)
 
 if [[ $# -eq 0 || "$1" == -* ]]; then
   usage
   echo
   echo "Targets:"
-  grep -ho '^func Fuzz[A-Za-z0-9_]*' internal/transpiler/fuzz/*_test.go | sed 's/^func /  /'
+  for dir in "${fuzz_dirs[@]}"; do
+    grep -ho '^func Fuzz[A-Za-z0-9_]*' "$dir"/*_test.go | sed "s|^func \(.*\)|  \1  ($dir)|"
+  done
   exit 0
 fi
 
 target="$1"
 shift
+pkg=""
+for dir in "${fuzz_dirs[@]}"; do
+  if grep -q "^func ${target}(" "$dir"/*_test.go; then
+    pkg="./$dir/"
+    break
+  fi
+done
+if [[ -z "$pkg" ]]; then
+  echo "unknown fuzz target: $target (run tools/fuzz.sh with no arguments to list them)" >&2
+  exit 2
+fi
 fuzztime=10m
 # The time is optional: a second argument that looks like a flag is the
 # first of the extra `go test` flags instead.

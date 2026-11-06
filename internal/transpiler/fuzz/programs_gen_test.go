@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
+
+	"martianoff/gala/galaerr"
 )
 
 // programs_gen_test.go generates the programs FuzzPrograms runs, together
@@ -18,8 +20,9 @@ import (
 // implicitly, dot-imported or imported qualified, and collection_immutable
 // dot-imported, qualified or aliased. The program then matches generated
 // values against generated patterns in several positions — a val, a
-// function, a lambda, an if-expression branch, a partial function — and calls
-// into the domain.
+// function, a lambda, an if-expression branch, a partial function, a function
+// taking `any`, a partial function applied in an argument — and calls into
+// the domain. programs_shapes_gen_test.go adds the other statement shapes.
 
 // importStyle is how main reaches a package.
 type importStyle int
@@ -80,20 +83,24 @@ type program struct {
 	// lib is the library package's source and import path; "" when the
 	// domain is declared in main.
 	lib, libPath string
-	// rejected says the program must be rejected with a diagnostic;
+	// rejected says the program must be rejected with a diagnostic, one
+	// with each of rejectCodes among them ("" stands for any diagnostic);
 	// otherwise it must print want.
-	rejected bool
-	want     string
+	rejected    bool
+	rejectCodes []galaerr.ErrorCode
+	want        string
 }
 
 // progGen generates a program from fuzz bytes; once they run out every
 // choice is the first option, so generation always terminates.
 type progGen struct {
-	data []byte
-	pos  int
-	q    string // the qualifier the domain's names are spelled with in main
-	sp   string // the qualifier std's names are spelled with
-	cp   string // the qualifier collection_immutable's names are spelled with
+	data   []byte
+	pos    int
+	style  importStyle // how main reaches the domain
+	stdDot bool        // std is dot-imported explicitly
+	q      string      // the qualifier the domain's names are spelled with in main
+	sp     string      // the qualifier std's names are spelled with
+	cp     string      // the qualifier collection_immutable's names are spelled with
 	// usesArrays: the program uses collection_immutable, which is then
 	// imported.
 	usesArrays bool
@@ -101,8 +108,16 @@ type progGen struct {
 	funcs      []string // main's top-level functions besides main
 	body       []string // main's statements
 	out        []string // the lines main must print
-	// rejected: a statement the transpiler must reject was emitted.
-	rejected bool
+	// rejected: a statement the transpiler must reject was emitted (see
+	// reject).
+	rejected    bool
+	rejectCodes []galaerr.ErrorCode
+	// pkgVals are package-level vals the domain declares besides Limit.
+	pkgVals []string
+	// shadows are the domain's functions named like std types, by name.
+	shadows map[string]string
+	// helpers are main's top-level helper functions, by name (see helper).
+	helpers map[string]bool
 }
 
 func (g *progGen) pick(n int) int {
@@ -179,6 +194,7 @@ func generateProgram(data []byte) program {
 	}
 	stdLine, sp := stdImport(std)
 	g.sp = sp
+	g.stdDot = std == dotImported
 	coll := importStyle(1 + g.pick(3))
 	collLine := ""
 	switch coll {
@@ -192,28 +208,36 @@ func generateProgram(data []byte) program {
 		collLine = "import . \"martianoff/gala/collection_immutable\"\n"
 	}
 
+	g.style = style
+	switch style {
+	case qualified:
+		g.q = "lib."
+	case aliased:
+		g.q = "l."
+	}
+
+	for range 1 + g.pick(5) {
+		g.statement()
+	}
+
+	// The domain is written after the statements, which may add to it.
+	dom := domain(sp) + g.domainExtras()
 	var p program
-	lib := "package lib\n\n" + stdLine + "\n" + domain(sp)
 	libImport := ""
 	if style != samePackage {
+		lib := "package lib\n\n" + stdLine + "\n" + dom
 		h := fnv.New64a()
 		h.Write([]byte(lib))
 		p.lib = lib
 		p.libPath = fmt.Sprintf("martianoff/gala/fuzzgen/p%016x/lib", h.Sum64())
 		switch style {
 		case qualified:
-			g.q = "lib."
 			libImport = fmt.Sprintf("import %q\n", p.libPath)
 		case aliased:
-			g.q = "l."
 			libImport = fmt.Sprintf("import l %q\n", p.libPath)
 		case dotImported:
 			libImport = fmt.Sprintf("import . %q\n", p.libPath)
 		}
-	}
-
-	for range 1 + g.pick(5) {
-		g.statement()
 	}
 
 	var b strings.Builder
@@ -225,7 +249,7 @@ func generateProgram(data []byte) program {
 	b.WriteString(libImport)
 	b.WriteString("\n")
 	if style == samePackage {
-		b.WriteString(domain(sp))
+		b.WriteString(dom)
 		b.WriteString("\n")
 	}
 	for _, f := range g.funcs {
@@ -238,15 +262,22 @@ func generateProgram(data []byte) program {
 	b.WriteString("}\n")
 	p.main = b.String()
 	p.rejected = g.rejected
+	p.rejectCodes = g.rejectCodes
 	if len(g.out) > 0 {
 		p.want = strings.Join(g.out, "\n") + "\n"
 	}
 	return p
 }
 
-// statement adds a statement that prints one line to main.
+// statement adds a statement that prints one line to main, or one of the
+// shapes, which may print several.
 func (g *progGen) statement() {
-	switch g.pick(10) {
+	c := g.pick(10 + len(shapes))
+	if c >= 10 {
+		shapes[c-10](g)
+		return
+	}
+	switch c {
 	case 0:
 		s := g.value(kShape, 2)
 		g.print(fmt.Sprintf("%sArea(%s)", g.q, g.expr(s)), area(s))
@@ -722,19 +753,36 @@ type arm struct {
 func (g *progGen) match() {
 	k := valueKind(g.pick(int(valueKinds)))
 	subject := g.value(k, 2)
-	position := g.pick(5)
-	partial := position == 4
+	position := g.pick(8)
+	// Position 5 matches a subject of static type `any`: a sealed variant's
+	// or a struct's extractor must check the dynamic type first.
+	if position == 5 && k != kShape && k != kPoint {
+		position = 0
+	}
+	anySubject := position == 5
+	partial := position == 4 || position == 6 || position == 7
 
 	var arms []arm
 	covered := map[string]bool{}
 	catchAll := false
 	for i := range 1 + g.pick(4) {
 		p := g.pattern(k, 3, false)
+		if anySubject && ((p.irrefutable && len(p.binders) > 0) || strings.Contains(p.src, " = ")) {
+			// A binder of the whole subject would be an `any`, which the
+			// arm's body cannot read as the domain type; and a named
+			// sub-pattern needs the subject's static type (GALA-E0073).
+			p = pattern{src: "_", match: always(true), irrefutable: true}
+		}
 		guard, guarded := "", false
 		var guardIdx, guardMin int
 		if len(p.binders) > 0 && g.pick(3) == 0 {
 			guardIdx, guardMin = g.pick(len(p.binders)), g.pick(5)
 			guard, guarded = fmt.Sprintf(" if %s > %d", p.binders[guardIdx].use, guardMin), true
+			if !g.rejected && g.pick(12) == 0 {
+				// A guard that is an int, not a bool.
+				guard = " if " + p.binders[guardIdx].use
+				g.reject(galaerr.CodeNonBoolGuard)
+			}
 		}
 		if p.irrefutable && !guarded && !partial {
 			// A catch-all arm goes last, after at least one other.
@@ -778,7 +826,7 @@ func (g *progGen) match() {
 	}
 
 	exhaustive := catchAll
-	if vs := variantsOf(k); vs != nil && !exhaustive {
+	if vs := variantsOf(k); vs != nil && !exhaustive && !anySubject {
 		exhaustive = true
 		for _, v := range vs {
 			exhaustive = exhaustive && covered[v]
@@ -789,14 +837,14 @@ func (g *progGen) match() {
 	// which must be rejected.
 	if !exhaustive && !partial {
 		missing := false
-		if vs := variantsOf(k); vs != nil && g.pick(10) == 0 {
+		if vs := variantsOf(k); vs != nil && !anySubject && !g.rejected && g.pick(10) == 0 {
 			all := strings.Join(armSources(arms), " ")
 			for _, v := range vs {
 				missing = missing || !strings.Contains(all, v+"(")
 			}
 		}
 		if missing {
-			g.rejected = true
+			g.reject(galaerr.CodeNonExhaustiveMatch)
 		} else {
 			arms = append(arms, arm{src: "case _ => -1", eval: func(value) (bool, int) { return true, -1 }})
 		}
@@ -835,6 +883,26 @@ func (g *progGen) match() {
 		name := g.name("p")
 		g.body = append(g.body, fmt.Sprintf("val %s func(%s) %sOption[int] = {\n    %s\n}", name, typ, g.sp, body))
 		g.print(fmt.Sprintf("%s(%s).GetOrElse(-7)", name, subj), want)
+	case 5:
+		name := g.name("a")
+		g.funcs = append(g.funcs, fmt.Sprintf("func %s(x any) int = x match {\n    %s\n}", name, body))
+		g.print(fmt.Sprintf("%s(%s)", name, subj), want)
+	case 6, 7:
+		// A partial function applied in an argument: to the subject, which
+		// passes its Option result, or to a placeholder, which passes a
+		// lambda. The subject is a typed val, so the arms' untyped patterns
+		// take its type.
+		x := g.name("x")
+		g.body = append(g.body, fmt.Sprintf("val %s %s = %s", x, typ, subj))
+		opt := g.sp + "Option[int]"
+		if position == 6 {
+			h := g.helper("passOpt", fmt.Sprintf("func passOpt(o %s) %s = o", opt, opt))
+			g.print(fmt.Sprintf("%s({ %s }(%s)).GetOrElse(-7)", h, strings.Join(armSources(arms), " "), x), want)
+			return
+		}
+		h := g.name("apply")
+		g.funcs = append(g.funcs, fmt.Sprintf("func %s(f func(%s) %s, v %s) %s = f(v)", h, typ, opt, typ, opt))
+		g.print(fmt.Sprintf("%s({ %s }(_), %s).GetOrElse(-7)", h, strings.Join(armSources(arms), " "), x), want)
 	}
 }
 
