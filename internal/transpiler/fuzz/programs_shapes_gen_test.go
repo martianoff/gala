@@ -3,8 +3,6 @@ package fuzz_test
 import (
 	"fmt"
 	"strings"
-
-	"martianoff/gala/galaerr"
 )
 
 // programs_shapes_gen_test.go adds to FuzzPrograms' generator the statement
@@ -41,17 +39,17 @@ var shapes = []func(*progGen){
 }
 
 // canReject reports whether a generator may still emit an invalid
-// statement. A program holds at most one, so the code it must be rejected
-// with is required even if the transpiler stops at the first error.
-func (g *progGen) canReject() bool { return !g.rejected }
+// statement. A program holds at most one, so the diagnostic it must be
+// rejected with is required even if the transpiler stops at the first error.
+func (g *progGen) canReject() bool { return g.rejection == nil }
 
-// reject records that the program must be rejected with a diagnostic with
-// code ("" for one with no code). Callers check canReject first.
-func (g *progGen) reject(code galaerr.ErrorCode) {
-	if g.rejected {
+// reject records that the program must be rejected with r. Callers check
+// canReject first.
+func (g *progGen) reject(r rejection) {
+	if g.rejection != nil {
 		panic("a second invalid statement in one program")
 	}
-	g.rejected, g.rejectCode = true, code
+	g.rejection = &r
 }
 
 // helper declares main's top-level function name, with source src, once.
@@ -294,12 +292,13 @@ func (g *progGen) branchStatements() {
 			g.print("0", 0)
 			return
 		}
-		// A value evaluated but not used: a diagnostic, not a Go error.
+		// A value evaluated but not used: a GALA diagnostic, not a Go
+		// error. It has no code, so its message is checked.
 		n, v := g.name("n"), g.name("v")
 		g.body = append(g.body, fmt.Sprintf("val %s = %d", n, x))
 		g.body = append(g.body, fmt.Sprintf("val %s = if (%s > %d) {\n    %s + 1\n    5\n} else { 2 }", v, n, t, n))
 		g.print(v, 0)
-		g.reject("")
+		g.reject(rejection{text: "is evaluated but not used"})
 	}
 }
 

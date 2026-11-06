@@ -83,11 +83,17 @@ type program struct {
 	// lib is the library package's source and import path; "" when the
 	// domain is declared in main.
 	lib, libPath string
-	// rejected says the program must be rejected with a diagnostic with
-	// rejectCode ("" for any diagnostic); otherwise it must print want.
-	rejected   bool
-	rejectCode galaerr.ErrorCode
-	want       string
+	// rejection is the diagnostic the program must be rejected with; nil
+	// when it is valid and must print want.
+	rejection *rejection
+	want      string
+}
+
+// rejection is a diagnostic a program must be rejected with: one with code,
+// one whose message holds text, or both.
+type rejection struct {
+	code galaerr.ErrorCode
+	text string
 }
 
 // progGen generates a program from fuzz bytes; once they run out every
@@ -107,10 +113,9 @@ type progGen struct {
 	funcs      []string // main's top-level functions besides main
 	body       []string // main's statements
 	out        []string // the lines main must print
-	// rejected: a statement the transpiler must reject was emitted, to be
-	// rejected with rejectCode (see reject).
-	rejected   bool
-	rejectCode galaerr.ErrorCode
+	// rejection: a statement the transpiler must reject was emitted (see
+	// reject).
+	rejection *rejection
 	// pkgVals are package-level vals the domain declares besides Limit.
 	pkgVals []string
 	// shadows are the domain's functions named like std types, by name.
@@ -260,7 +265,7 @@ func generateProgram(data []byte) program {
 	}
 	b.WriteString("}\n")
 	p.main = b.String()
-	p.rejected, p.rejectCode = g.rejected, g.rejectCode
+	p.rejection = g.rejection
 	if len(g.out) > 0 {
 		p.want = strings.Join(g.out, "\n") + "\n"
 	}
@@ -778,7 +783,7 @@ func (g *progGen) match() {
 			if g.canReject() && g.pick(12) == 0 {
 				// A guard that is an int, not a bool.
 				guard = " if " + p.binders[guardIdx].use
-				g.reject(galaerr.CodeNonBoolGuard)
+				g.reject(rejection{code: galaerr.CodeNonBoolGuard})
 			}
 		}
 		if p.irrefutable && !guarded && !partial {
@@ -841,7 +846,7 @@ func (g *progGen) match() {
 			}
 		}
 		if missing {
-			g.reject(galaerr.CodeNonExhaustiveMatch)
+			g.reject(rejection{code: galaerr.CodeNonExhaustiveMatch})
 		} else {
 			arms = append(arms, arm{src: "case _ => -1", eval: func(value) (bool, int) { return true, -1 }})
 		}

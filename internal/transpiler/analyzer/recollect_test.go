@@ -161,7 +161,10 @@ func recollectDescribe(definedIn string) *transpiler.MethodMetadata {
 
 // keepInterfaceDefinedIn applies the documented exception to want: an
 // interface declaration does not record DefinedIn, so an entry that is an
-// interface keeps the one its first collection recorded.
+// interface keeps the one its first collection recorded. firstDefinedIn is
+// read off the first collection before the second runs, never off the
+// re-collected entry, so a DefinedIn from any other declaration still fails;
+// an entry the first collection did not have keeps a fresh collection's.
 func keepInterfaceDefinedIn(want map[string]*transpiler.TypeMetadata, firstDefinedIn map[string]string) {
 	for key, meta := range want {
 		if meta.IsInterface {

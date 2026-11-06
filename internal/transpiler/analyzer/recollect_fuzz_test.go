@@ -26,7 +26,8 @@ import (
 // DefinedIn, so the one recorded before stays; and a version that declares
 // no doc comment keeps the doc recorded before (TestNativeSetDocKeeps-
 // ExistingWhenAbsent), which the generator keeps out of reach by never
-// dropping a doc it wrote. Every name the first version declares at top
+// dropping a doc it wrote: a name documented in the first version, as a
+// declaration or as a case, is documented in the second whichever it is. Every name the first version declares at top
 // level is declared again by the second: within one analysis, entries are
 // reused only for declarations read again (each Analyze starts a fresh
 // RichAST), so a type deleted outright is not a re-collection.
@@ -153,6 +154,12 @@ func (g *recollectGen) version(required, docs map[string]bool) recollectVersion 
 			for n := 1 + g.pick(2); n > 0 && len(free) > 0; n-- {
 				c := free[g.pick(len(free))]
 				free = slices.DeleteFunc(free, func(s string) bool { return s == c })
+				// A case is documented as a declaration is, so a doc a
+				// stand-alone declaration of c had stays when c becomes a case.
+				if docs[c] || g.pick(4) == 0 {
+					v.docs[c] = true
+					fmt.Fprintf(&b, "    // %s is version %d's.\n", c, g.pick(3))
+				}
 				if g.pick(3) == 0 {
 					fmt.Fprintf(&b, "    case %s()\n", c)
 				} else {
