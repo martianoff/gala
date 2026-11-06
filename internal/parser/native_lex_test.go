@@ -130,16 +130,23 @@ func corpusInputs(t testing.TB) []string {
 	t.Helper()
 	inputs := slices.Clone(positionInputs)
 	for _, src := range sourceTexts(t) {
-		h := fnv.New64a()
-		h.Write([]byte(src))
-		seed := h.Sum64()
-		r := rand.New(rand.NewSource(int64(seed)))
-		inputs = append(inputs, src, breakSource(r, src), breakSource(r, src))
-		if seed%15 == 0 {
-			inputs = append(inputs, strings.ReplaceAll(src, "\n", "\r\n"))
-		}
+		inputs = append(inputs, fileVariants(src)...)
 	}
 	return inputs
+}
+
+// fileVariants is src and its corpus variants (see corpusInputs), drawn from
+// src's own text alone.
+func fileVariants(src string) []string {
+	h := fnv.New64a()
+	h.Write([]byte(src))
+	seed := h.Sum64()
+	r := rand.New(rand.NewSource(int64(seed)))
+	out := []string{src, breakSource(r, src), breakSource(r, src)}
+	if seed%15 == 0 {
+		out = append(out, strings.ReplaceAll(src, "\n", "\r\n"))
+	}
+	return out
 }
 
 // TestNativeVocabularyIsANTLRs: nativeKinds reads galop's native vocabulary,
@@ -161,80 +168,108 @@ func TestNativeVocabularyIsANTLRs(t *testing.T) {
 	}
 }
 
-// TestNativeLexMatchesANTLR lexes every corpus input once with galop's native
-// lexer and RetypeNewlines and once with ANTLR's lexer and newlineTokenSource:
-// the tokens (types after re-typing, channels, lines, columns, text), the
-// lexical errors and the doc comments read from the hidden channel must be
-// the same. A source with a leading BOM lexes as ParseFile and VisitTokens
-// lex it: without the BOM.
+// lexComparison is what compareLexers saw of an input, for the corpus test's
+// counts.
+type lexComparison struct {
+	tokens []string // galop's tokens and lexical errors, as printNative prints them
+	docs   int      // ANTLR's doc comments
+	// streamCompared: galop lexed the input without errors, so its token
+	// stream was compared.
+	streamCompared bool
+}
+
+// compareLexers lexes src from its start with galop's native lexer and
+// RetypeNewlines and with ANTLR's lexer and newlineTokenSource, and returns
+// what it saw and every way the two differ:
+//
+//   - the tokens (types after re-typing, channels, lines, columns, text), the
+//     lexical errors and the doc comments read from the hidden channel must
+//     be the same; a leading BOM is dropped, as ParseFile and VisitTokens
+//     drop it;
+//   - where galop lexes without errors, its tokens as ANTLR's token stream
+//     (nativeTokenStream), which ANTLR's parser reads after a syntax error
+//     galop's native parser reported, must be the tokens ANTLR's lexer gives:
+//     their types, channels, code-point offsets, lines, columns, text and
+//     indexes, each with the stream's input stream and a token source;
+//   - VisitNativeTokens must visit the texts of the default-channel tokens
+//     VisitTokens visits, in order.
+func compareLexers(tb testing.TB, src string) (seen lexComparison, diffs []string) {
+	tb.Helper()
+	want, stream := antlrLex(tb, galaerr.StripBOM(src), 0, 0)
+	ts := lexNative(src, 0, 0)
+	seen.tokens = printNative(ts)
+	if d := firstTokenDiff(want, seen.tokens); d != "" {
+		diffs = append(diffs, "the lexers disagree: "+d)
+	}
+	wantDocs, gotDocs := extractDocComments(stream.GetAllTokens()), nativeDocComments(ts)
+	if fmt.Sprint(wantDocs) != fmt.Sprint(gotDocs) {
+		diffs = append(diffs, fmt.Sprintf("doc comments differ\nANTLR:  %q\nnative: %q", wantDocs, gotDocs))
+	}
+	seen.docs = len(wantDocs)
+	if len(ts.Errors) == 0 {
+		seen.streamCompared = true
+		is := antlr.NewInputStream(ts.Src)
+		ns := nativeTokenStream(ts, is)
+		ns.Fill()
+		got := ns.GetAllTokens()
+		if d := firstTokenDiff(tokensFields(stream.GetAllTokens()), tokensFields(got)); d != "" {
+			diffs = append(diffs, "the token streams disagree: "+d)
+		}
+		for i, tok := range got {
+			if tok.GetInputStream() != is || tok.GetTokenSource() == nil {
+				diffs = append(diffs, fmt.Sprintf("token %d of the native token stream has no input stream or token source of its own", i))
+				break
+			}
+		}
+	}
+	var visited, nativeVisited []string
+	VisitTokens(src, func(tok antlr.Token) {
+		if tok.GetChannel() == antlr.TokenDefaultChannel {
+			visited = append(visited, tok.GetText())
+		}
+	})
+	VisitNativeTokens(src, func(text string) { nativeVisited = append(nativeVisited, text) })
+	if !slices.Equal(visited, nativeVisited) {
+		diffs = append(diffs, fmt.Sprintf("the visited tokens differ\nVisitTokens:       %q\nVisitNativeTokens: %q", visited, nativeVisited))
+	}
+	return seen, diffs
+}
+
+// TestNativeLexMatchesANTLR holds galop's native lexer to ANTLR's over every
+// corpus input, ten of them again with a leading BOM, and one with a BOM and
+// invalid UTF-8 (compareLexers). FuzzParserEngines does the same on
+// arbitrary input.
 func TestNativeLexMatchesANTLR(t *testing.T) {
-	retyped, documented := 0, 0
+	retyped, documented, streams := 0, 0, 0
 	nl := []string{"NL_LPAREN/", "NL_STAR/", "NL_AMP/"}
 	inputs := corpusInputs(t)
 	for _, input := range inputs[:10] {
 		inputs = append(inputs, "\xef\xbb\xbf"+input) // a UTF-8 BOM
 	}
+	inputs = append(inputs, "\xef\xbb\xbfpackage main\n\n// a \x94\nval s = \"a\x94b\" // (\n")
 	for k, input := range inputs {
-		want, stream := antlrLex(t, galaerr.StripBOM(input), 0, 0)
-		ts := lexNative(input, 0, 0)
-		got := printNative(ts)
-		if d := firstTokenDiff(want, got); d != "" {
+		seen, diffs := compareLexers(t, input)
+		for _, d := range diffs {
 			t.Errorf("input %d (%.60q): %s", k, input, d)
 		}
-		for _, tok := range got {
+		for _, tok := range seen.tokens {
 			for _, p := range nl {
 				if strings.HasPrefix(tok, p) {
 					retyped++
 				}
 			}
 		}
-		wantDocs, gotDocs := extractDocComments(stream.GetAllTokens()), nativeDocComments(ts)
-		if fmt.Sprint(wantDocs) != fmt.Sprint(gotDocs) {
-			t.Errorf("input %d (%.60q): doc comments differ\nANTLR:  %q\nnative: %q", k, input, wantDocs, gotDocs)
+		documented += seen.docs
+		if seen.streamCompared {
+			streams++
 		}
-		documented += len(wantDocs)
 	}
-	// The corpus re-types and documents plenty; too few would mean a pass did
-	// nothing.
-	if retyped < 50 || documented < 1000 {
-		t.Errorf("only %d tokens re-typed and %d doc comments over the corpus", retyped, documented)
+	// The corpus re-types, documents and lexes cleanly plenty; too few would
+	// mean a pass did nothing.
+	if retyped < 50 || documented < 1000 || streams < 500 {
+		t.Errorf("only %d tokens re-typed, %d doc comments and %d token streams compared over the corpus", retyped, documented, streams)
 	}
-	t.Logf("%d re-typed tokens, %d doc comments", retyped, documented)
-}
-
-// TestNativeTokenStreamMatchesANTLR: over the corpus, every input galop's
-// native lexer lexes without errors gives, as ANTLR's token stream
-// (nativeTokenStream), the tokens ANTLR's lexer and newlineTokenSource give:
-// their types, channels, code-point offsets, lines, columns, text, indexes,
-// input stream and token source. ANTLR's parser reads that stream after a
-// syntax error galop's native parser reported.
-func TestNativeTokenStreamMatchesANTLR(t *testing.T) {
-	compared := 0
-	for k, input := range corpusInputs(t) {
-		ts := lexNative(input, 0, 0)
-		if len(ts.Errors) > 0 {
-			continue
-		}
-		want := antlrStream(t, ts.Src, 0, 0, nil).GetAllTokens()
-		is := antlr.NewInputStream(ts.Src)
-		stream := nativeTokenStream(ts, is)
-		stream.Fill()
-		got := stream.GetAllTokens()
-		if d := firstTokenDiff(tokensFields(want), tokensFields(got)); d != "" {
-			t.Errorf("input %d (%.60q): %s", k, input, d)
-			continue
-		}
-		for i, tok := range got {
-			if tok.GetInputStream() != is || tok.GetTokenSource() == nil {
-				t.Errorf("input %d (%.60q): token %d has no input stream or token source of its own", k, input, i)
-				break
-			}
-		}
-		compared++
-	}
-	if compared < 500 {
-		t.Errorf("only %d inputs compared", compared)
-	}
+	t.Logf("%d re-typed tokens, %d doc comments, %d token streams", retyped, documented, streams)
 }
 
 // tokensFields prints, for each of toks, what ANTLR's parser, its error
@@ -246,25 +281,6 @@ func tokensFields(toks []antlr.Token) []string {
 			tok.GetStart(), tok.GetStop(), tok.GetLine(), tok.GetColumn(), tok.GetTokenIndex(), tok.GetText())
 	}
 	return out
-}
-
-// TestVisitNativeTokensMatchesVisitTokens: over the corpus, a BOM and invalid
-// UTF-8 included, VisitNativeTokens visits the texts of the default-channel
-// tokens VisitTokens visits, in order.
-func TestVisitNativeTokensMatchesVisitTokens(t *testing.T) {
-	inputs := append(corpusInputs(t), "\xef\xbb\xbfpackage main\n\n// a \x94\nval s = \"a\x94b\" // (\n")
-	for k, input := range inputs {
-		var want, got []string
-		VisitTokens(input, func(tok antlr.Token) {
-			if tok.GetChannel() == antlr.TokenDefaultChannel {
-				want = append(want, tok.GetText())
-			}
-		})
-		VisitNativeTokens(input, func(text string) { got = append(got, text) })
-		if !slices.Equal(want, got) {
-			t.Errorf("input %d (%.60q): the visited tokens differ", k, input)
-		}
-	}
 }
 
 // TestNativeLexInvalidUTF8: a byte that is not valid UTF-8, in a comment, a
@@ -279,14 +295,9 @@ func TestNativeLexInvalidUTF8(t *testing.T) {
 		"package main\n\n// cut at the end \xe2\x82",
 		"\xef\xbb\xbfpackage main\n\n// after a BOM \x94\nval x = 1\n",
 	} {
-		want, stream := antlrLex(t, galaerr.StripBOM(src), 0, 0)
-		ts := lexNative(src, 0, 0)
-		if d := firstTokenDiff(want, printNative(ts)); d != "" {
+		_, diffs := compareLexers(t, src)
+		for _, d := range diffs {
 			t.Errorf("%q: %s", src, d)
-		}
-		wantDocs, gotDocs := extractDocComments(stream.GetAllTokens()), nativeDocComments(ts)
-		if fmt.Sprint(wantDocs) != fmt.Sprint(gotDocs) {
-			t.Errorf("%q: doc comments differ\nANTLR:  %q\nnative: %q", src, wantDocs, gotDocs)
 		}
 	}
 	// The same holds for an expression lexed at an offset.

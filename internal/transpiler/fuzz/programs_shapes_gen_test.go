@@ -40,20 +40,22 @@ var shapes = []func(*progGen){
 	(*progGen).stdShadow,
 }
 
+// canReject reports whether a generator may still emit an invalid
+// statement. A program holds at most one, so the code it must be rejected
+// with is required even if the transpiler stops at the first error.
+func (g *progGen) canReject() bool { return !g.rejected }
+
 // reject records that the program must be rejected with a diagnostic with
-// code ("" for one with no code). Generators emit at most one invalid
-// statement per program (they check g.rejected first), so the code is
-// required even if the transpiler stops at the first error.
+// code ("" for one with no code). Callers check canReject first.
 func (g *progGen) reject(code galaerr.ErrorCode) {
-	g.rejected = true
-	g.rejectCodes = append(g.rejectCodes, code)
+	if g.rejected {
+		panic("a second invalid statement in one program")
+	}
+	g.rejected, g.rejectCode = true, code
 }
 
 // helper declares main's top-level function name, with source src, once.
 func (g *progGen) helper(name, src string) string {
-	if g.helpers == nil {
-		g.helpers = map[string]bool{}
-	}
 	if !g.helpers[name] {
 		g.helpers[name] = true
 		g.funcs = append(g.funcs, src)
@@ -121,18 +123,15 @@ func (g *progGen) ifTrailingMatch() {
 			want = eval(x)
 		}
 	}
-	switch g.pick(4) {
+	switch g.pick(3) {
 	case 0:
-		name := g.name("r")
-		g.body = append(g.body, fmt.Sprintf("val %s int = %s", name, src))
+		// A val, with or without its type written.
+		name, typ := g.name("r"), []string{" int", ""}[g.pick(2)]
+		g.body = append(g.body, fmt.Sprintf("val %s%s = %s", name, typ, src))
 		g.print(name, want)
 	case 1:
-		name := g.name("r")
-		g.body = append(g.body, fmt.Sprintf("val %s = %s", name, src))
-		g.print(name, want)
-	case 2:
 		g.print(src, want)
-	case 3:
+	case 2:
 		// A function's tail: the if-expression's condition reads the
 		// parameter.
 		name, p := g.name("t"), g.name("n")
@@ -158,16 +157,19 @@ func (g *progGen) tailRecursion() {
 	call := fmt.Sprintf("%s(n - 1, acc + %d)", name, step)
 	var src string
 	var f func(n, acc int) int
+	// matchedCall is the model of a function whose self call has the match
+	// applied: not a tail call.
+	matchedCall := func(n, acc int) int {
+		if n <= 0 {
+			return acc
+		}
+		return mm(f(n-1, acc+step))
+	}
 	switch g.pick(4) {
 	case 0:
-		// The match applies to the self call: not a tail call.
+		// An expression body: the match applies to the else branch's call.
 		src = fmt.Sprintf("func %s(n int, acc int) int = if (n <= 0) acc else %s %s", name, call, m)
-		f = func(n, acc int) int {
-			if n <= 0 {
-				return acc
-			}
-			return mm(f(n-1, acc+step))
-		}
+		f = matchedCall
 	case 1:
 		// The match applies to the if-expression: runs on every level.
 		src = fmt.Sprintf("func %s(n int, acc int) int = if (n <= 0) { acc } else { %s } %s", name, call, m)
@@ -182,12 +184,7 @@ func (g *progGen) tailRecursion() {
 		// A block body whose trailing self call has a match applied.
 		src = fmt.Sprintf("func %s(n int, acc int) int {\n    if (n <= 0) {\n        return acc\n    }\n    %s %s\n}",
 			name, call, strings.ReplaceAll(m, "\n", "\n    "))
-		f = func(n, acc int) int {
-			if n <= 0 {
-				return acc
-			}
-			return mm(f(n-1, acc+step))
-		}
+		f = matchedCall
 	case 3:
 		// A tail call proper.
 		src = fmt.Sprintf("func %s(n int, acc int) int = if (n <= 0) acc else %s", name, call)
@@ -293,7 +290,7 @@ func (g *progGen) branchStatements() {
 		}
 		g.print(v, want)
 	case 4:
-		if g.rejected {
+		if !g.canReject() {
 			g.print("0", 0)
 			return
 		}
@@ -379,16 +376,14 @@ func (g *progGen) localStruct() {
 var stdShadowNames = []string{"Void", "Ordered", "Hashable"}
 
 // stdShadow: a domain function named like a std type, which the domain's
-// name must resolve to. Not generated when main dot-imports the domain or
-// std, where the two names meet in one scope.
+// name must resolve to. Not generated where the function and std's type meet
+// in one scope: when main dot-imports the domain, or when std is
+// dot-imported, as the domain's file (main's or the library's) then does too.
 func (g *progGen) stdShadow() {
 	name := stdShadowNames[g.pick(len(stdShadowNames))]
-	if g.style == dotImported || g.stdDot || g.shadows[name] != "" {
+	if _, declared := g.shadows[name]; declared || g.style == dotImported || g.stdDot {
 		g.print("1", 1)
 		return
-	}
-	if g.shadows == nil {
-		g.shadows = map[string]string{}
 	}
 	k := g.pick(9)
 	switch name {

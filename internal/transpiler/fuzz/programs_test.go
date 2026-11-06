@@ -75,13 +75,11 @@ func checkProgram(t testing.TB, p program) {
 	}
 	if p.rejected {
 		if res.Err == nil {
-			t.Fatalf("an invalid program was accepted (it must be rejected with %v)\ninput:\n%s", p.rejectCodes, describe(p))
+			t.Fatalf("an invalid program was accepted (it must be rejected with %q)\ninput:\n%s", p.rejectCode, describe(p))
 		}
 		checkDiagnostics(t, p.main, res.Err)
-		for _, code := range p.rejectCodes {
-			if code != "" && !hasCode(res.Err, code) {
-				t.Fatalf("the program must be rejected with %s, got: %v\ninput:\n%s", code, res.Err, describe(p))
-			}
+		if p.rejectCode != "" && !hasCode(res.Err, p.rejectCode) {
+			t.Fatalf("the program must be rejected with %s, got: %v\ninput:\n%s", p.rejectCode, res.Err, describe(p))
 		}
 		return
 	}

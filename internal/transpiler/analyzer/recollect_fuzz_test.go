@@ -2,16 +2,10 @@ package analyzer
 
 import (
 	"fmt"
-	"maps"
 	"math/rand"
-	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
-
-	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/transpiler"
 )
 
 // FuzzRecollect generates two versions of a file of package box and checks
@@ -46,9 +40,14 @@ func FuzzRecollect(f *testing.F) {
 	parseWithGalop(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		first, again := generateRecollectPair(data)
-		checkRecollected(t, first, again)
-		checkRecollected(t, again, again)
-		checkSiblingRecollected(t, first, again)
+		collect := declCollectors["native"]
+		recollectDeclaration(t, collect, first.src, again.src)
+		if first.src != again.src {
+			// Collecting again over itself; the pair already did when the
+			// two versions are the same.
+			recollectDeclaration(t, collect, again.src, again.src)
+		}
+		recollectSibling(t, first.src, again.src)
 	})
 }
 
@@ -84,8 +83,6 @@ type recollectVersion struct {
 	src string
 	// tops: the names it declares at top level; docs: those with a doc.
 	tops, docs map[string]bool
-	// interfaces: the top names declared as interfaces.
-	interfaces map[string]bool
 }
 
 // generateRecollectPair generates the two versions.
@@ -102,7 +99,7 @@ func generateRecollectPair(data []byte) (first, again recollectVersion) {
 // version generates a version declaring every name in required at top level
 // or as a case, and giving each name in docs a doc comment.
 func (g *recollectGen) version(required, docs map[string]bool) recollectVersion {
-	v := recollectVersion{tops: map[string]bool{}, docs: map[string]bool{}, interfaces: map[string]bool{}}
+	v := recollectVersion{tops: map[string]bool{}, docs: map[string]bool{}}
 	var b strings.Builder
 	b.WriteString("package box\n")
 	free := slices.Clone(recollectCases)
@@ -134,7 +131,6 @@ func (g *recollectGen) version(required, docs map[string]bool) recollectVersion 
 				fmt.Fprintf(&b, "type %s struct {\n    var Name string\n    Size int\n}\n", name)
 			}
 		case 2:
-			v.interfaces[name] = true
 			fmt.Fprintf(&b, "type %s interface {\n", name)
 			specs := []string{"Raw() int64", "Name() string", "Tries(n int) int"}
 			for i, s := range specs {
@@ -192,120 +188,3 @@ func (g *recollectGen) version(required, docs map[string]bool) recollectVersion 
 	return v
 }
 
-// recollectDescribe is a method another file declares on box.ID.
-func recollectDescribe(definedIn string) *transpiler.MethodMetadata {
-	return &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: definedIn}
-}
-
-// keepInterfaceDefinedIn applies the documented exception to want: an
-// interface declaration does not record DefinedIn, so an entry that is an
-// interface keeps the one its first collection recorded.
-func keepInterfaceDefinedIn(want map[string]*transpiler.TypeMetadata, firstDefinedIn map[string]string) {
-	for key, meta := range want {
-		if meta.IsInterface {
-			if d, ok := firstDefinedIn[key]; ok {
-				meta.DefinedIn = d
-			}
-		}
-	}
-}
-
-func definedInOf(types map[string]*transpiler.TypeMetadata) map[string]string {
-	out := make(map[string]string, len(types))
-	for key, meta := range types {
-		out[key] = meta.DefinedIn
-	}
-	return out
-}
-
-// requireSameTypes fails t when got and want differ, at the first place they
-// do.
-func requireSameTypes(t *testing.T, what string, got, want *transpiler.RichAST, first, again recollectVersion) {
-	t.Helper()
-	gotKeys, wantKeys := slices.Sorted(maps.Keys(got.Types)), slices.Sorted(maps.Keys(want.Types))
-	diff := ""
-	if !reflect.DeepEqual(gotKeys, wantKeys) {
-		diff = fmt.Sprintf("types %v, want %v", gotKeys, wantKeys)
-	} else if d := firstDiff(reflect.ValueOf(got.Types), reflect.ValueOf(want.Types), "Types", map[visit]bool{}); d != "" {
-		diff = d
-	} else if d := firstDiff(reflect.ValueOf(got.CompanionObjects), reflect.ValueOf(want.CompanionObjects), "CompanionObjects", map[visit]bool{}); d != "" {
-		diff = d
-	}
-	if diff != "" {
-		t.Fatalf("%s: re-collected entries differ from a first collection at %s\nfirst:\n%s\nagain:\n%s", what, diff, first.src, again.src)
-	}
-}
-
-// checkRecollected collects first, then again, as the analyzed file, and
-// compares the result with a first collection of again.
-func checkRecollected(t *testing.T, first, again recollectVersion) {
-	t.Helper()
-	collect := declCollectors["native"]
-	addsDescribe := !first.interfaces["ID"]
-	other := recollectDescribe("other.gala")
-	var firstDefinedIn map[string]string
-	a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-	fd := collectTwice(t, a, collect, first.src, again.src, func(fd *fileDecls) {
-		firstDefinedIn = definedInOf(fd.richAST.Types)
-		// A new Analyze call: the declarations seen are its own.
-		fd.decls = newPackageDecls(fd.filePath)
-		if addsDescribe {
-			fd.richAST.Types["box.ID"].Methods[other.Name] = other
-		}
-	})
-	fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-	want := collectOnce(t, fresh, collect, fd.filePath, again.src).richAST
-	if addsDescribe {
-		want.Types["box.ID"].Methods[other.Name] = other
-	}
-	keepInterfaceDefinedIn(want.Types, firstDefinedIn)
-	requireSameTypes(t, "analyzed file", fd.richAST, want, first, again)
-}
-
-// checkSiblingRecollected extracts first, then again, as a sibling of the
-// analyzed file, which declares a method on box.ID, and compares the result
-// with a first extraction of again.
-func checkSiblingRecollected(t *testing.T, first, again recollectVersion) {
-	t.Helper()
-	dir := t.TempDir()
-	mainFile := filepath.Join(dir, "main.gala")
-	sibFile := filepath.Join(dir, "id.gala")
-	extract := func(a *galaAnalyzer, richAST *transpiler.RichAST, src string) {
-		t.Helper()
-		parsed := parseClean(t, src)
-		nf, err := nativeFileOf(parsed.CleanNative())
-		if err != nil {
-			t.Fatalf("the sibling has no native tree: %v", err)
-		}
-		sib := pkgFile{sibFile, &parsedFileEntry{parsed: parsed, nf: nf, pkgName: "box"}}
-		if err := a.extractSiblingFullMetadata(sib, fileQualifiers{}, "box", richAST, newPackageDecls(mainFile)); err != nil {
-			t.Fatalf("sibling extraction: %v\nsource:\n%s", err, src)
-		}
-	}
-	// addDeclared records the analyzed file's method as its collection
-	// does: on the entry, or on a placeholder for it.
-	addDeclared := func(richAST *transpiler.RichAST) {
-		if meta := richAST.Types["box.ID"]; meta != nil {
-			meta.Methods["Describe"] = recollectDescribe(mainFile)
-			return
-		}
-		richAST.Types["box.ID"] = &transpiler.TypeMetadata{
-			Name: "ID", Package: "box",
-			Methods: map[string]*transpiler.MethodMetadata{"Describe": recollectDescribe(mainFile)},
-			Fields:  make(map[string]transpiler.Type),
-		}
-	}
-	a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-	richAST := newCollectedFile(a, "box", mainFile, nil).richAST
-	extract(a, richAST, first.src)
-	firstDefinedIn := definedInOf(richAST.Types)
-	addDeclared(richAST)
-	extract(a, richAST, again.src)
-
-	fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-	freshAST := newCollectedFile(fresh, "box", mainFile, nil).richAST
-	addDeclared(freshAST)
-	extract(fresh, freshAST, again.src)
-	keepInterfaceDefinedIn(freshAST.Types, firstDefinedIn)
-	requireSameTypes(t, "sibling", richAST, freshAST, first, again)
-}

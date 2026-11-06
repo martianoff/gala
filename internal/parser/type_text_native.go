@@ -119,8 +119,10 @@ func NativeStartText(n native.GalaNodeRef) string {
 // span. So a node takes the fast path only when it is a chain of single
 // children down to the one token its span starts at.
 func NativeText(n native.GalaNodeRef) string {
-	if i, ok := soleToken(n); ok && i == n.StartIndex() && n.StopIndex() == i {
-		return n.Tree().Text(i)
+	if i := n.StartIndex(); n.StopIndex() == i {
+		if j, ok := soleToken(n); ok && j == i {
+			return n.Tree().Text(i)
+		}
 	}
 	return n.GetText()
 }

@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -9,16 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 )
 
 // FuzzParserEngines holds galop's lexer and parser to ANTLR's on arbitrary
-// input, as the corpus tests (TestNativeLexMatchesANTLR,
-// TestNativeTokenStreamMatchesANTLR, TestVisitNativeTokensMatchesVisitTokens,
-// TestLexNativeAt, TestEnginesAgree) hold them on the repository's sources
-// and a few broken variants of each:
+// input, as the corpus tests (TestNativeLexMatchesANTLR, TestLexNativeAt,
+// TestEnginesAgree) hold them on the repository's sources and a few broken
+// variants of each, through the same compareLexers and compareEngines:
 //
 //   - galop never panics: its lexer and parser recover a panic and hand the
 //     input to ANTLR's, which hides it from every other check, but each one
@@ -64,42 +60,24 @@ func FuzzParserEngines(f *testing.F) {
 // differs from ANTLR's (see FuzzParserEngines).
 func checkEnginesAgree(t *testing.T, src string, line, col int) {
 	t.Helper()
-	// The lexers, from the start of the input.
-	want, stream := antlrLex(t, galaerr.StripBOM(src), 0, 0)
-	ts := lexNative(src, 0, 0)
-	if d := firstTokenDiff(want, printNative(ts)); d != "" {
-		t.Errorf("the lexers disagree: %s", d)
+	// The lexers from the start of the input: tokens, doc comments, the
+	// token stream and the token visits.
+	_, diffs := compareLexers(t, src)
+	for _, d := range diffs {
+		t.Error(d)
 	}
-	wantDocs, gotDocs := extractDocComments(stream.GetAllTokens()), nativeDocComments(ts)
-	if fmt.Sprint(wantDocs) != fmt.Sprint(gotDocs) {
-		t.Errorf("doc comments differ\nANTLR:  %q\nnative: %q", wantDocs, gotDocs)
-	}
-	if len(ts.Errors) == 0 {
-		is := antlr.NewInputStream(ts.Src)
-		ns := nativeTokenStream(ts, is)
-		ns.Fill()
-		if d := firstTokenDiff(tokensFields(antlrStream(t, ts.Src, 0, 0, nil).GetAllTokens()), tokensFields(ns.GetAllTokens())); d != "" {
-			t.Errorf("the token streams disagree: %s", d)
+	// The lexers at an offset. With line <= 0 both start at 1:0, whatever
+	// col (lexNative, seedLexer), as compareLexers lexed. lexNative drops a
+	// leading BOM, as ParseFile does before ANTLR's lexer reads the text.
+	if line > 0 {
+		if d := firstTokenDiff(antlrTokens(t, galaerr.StripBOM(src), line, col), nativeTokens(src, line, col)); d != "" {
+			t.Errorf("the lexers disagree at %d:%d: %s", line, col, d)
 		}
-	}
-	// The lexers at an offset. lexNative drops a leading BOM, as ParseFile
-	// does before ANTLR's lexer reads the text.
-	if d := firstTokenDiff(antlrTokens(t, galaerr.StripBOM(src), line, col), nativeTokens(src, line, col)); d != "" {
-		t.Errorf("the lexers disagree at %d:%d: %s", line, col, d)
-	}
-	// The token visits.
-	var visited, nativeVisited []string
-	VisitTokens(src, func(tok antlr.Token) {
-		if tok.GetChannel() == antlr.TokenDefaultChannel {
-			visited = append(visited, tok.GetText())
-		}
-	})
-	VisitNativeTokens(src, func(text string) { nativeVisited = append(nativeVisited, text) })
-	if !slices.Equal(visited, nativeVisited) {
-		t.Errorf("the visited tokens differ\nVisitTokens:       %q\nVisitNativeTokens: %q", visited, nativeVisited)
 	}
 	// The parsers: a source file, an expression, an expression at an offset.
-	_, _, diffs := compareEngines(src, true)
+	// The last is parsed at 0:0 too: it is the checked parse (exactly one
+	// expression, errors naming what is parsed), not ParseExpressionTree's.
+	_, _, diffs = compareEngines(src, true)
 	for _, d := range diffs {
 		t.Errorf("source file: %s", d)
 	}
@@ -111,21 +89,21 @@ func checkEnginesAgree(t *testing.T, src string, line, col int) {
 	}
 }
 
-// maxEngineSeeds caps the corpus inputs FuzzParserEngines seeds from, so its
-// seed pass under `bazel test` takes seconds: TestEnginesAgree already
-// compares the whole corpus. The sample is spread evenly over the inputs.
-const maxEngineSeeds = 80
+// maxEngineSeedFiles caps the source files FuzzParserEngines seeds from, so
+// its seed pass under `bazel test` takes seconds: TestEnginesAgree already
+// compares the whole corpus. The sample is spread evenly over the files.
+const maxEngineSeedFiles = 25
 
-// engineSeeds is an even sample of the corpus inputs (corpusInputs: the
-// staged sources, broken variants of each, CRLF copies), and inputs around
-// what galop has got wrong before.
+// engineSeeds is the position inputs, an even sample of the staged sources
+// with their corpus variants (fileVariants: broken variants, a CRLF copy),
+// and inputs around what galop has got wrong before.
 func engineSeeds(tb testing.TB) []string {
 	tb.Helper()
-	corpus := corpusInputs(tb)
-	step := max(1, (len(corpus)+maxEngineSeeds-1)/maxEngineSeeds)
-	var seeds []string
-	for i := 0; i < len(corpus); i += step {
-		seeds = append(seeds, corpus[i])
+	files := sourceTexts(tb)
+	step := max(1, (len(files)+maxEngineSeedFiles-1)/maxEngineSeedFiles)
+	seeds := slices.Clone(positionInputs)
+	for i := 0; i < len(files); i += step {
+		seeds = append(seeds, fileVariants(files[i])...)
 	}
 	seeds = append(seeds, brokenInputs...)
 	seeds = append(seeds, emptyLineInputs...)

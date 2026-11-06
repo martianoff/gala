@@ -45,7 +45,7 @@ func RetypeNewlines(ts *native.GalaTokens) {
 // errors and re-typed (RetypeNewlines), hidden tokens included, as ANTLR's
 // token stream: the tokens ANTLR's lexer and newlineTokenSource give for the
 // text, with ANTLR's types, channels, code-point offsets, lines, columns and
-// token source (TestNativeTokenStreamMatchesANTLR). ANTLR's parser reads it
+// token source (TestNativeLexMatchesANTLR). ANTLR's parser reads it
 // without lexing the text again.
 func nativeTokenStream(ts *native.GalaTokens, is *antlr.InputStream) *antlr.CommonTokenStream {
 	lexer := grammar.NewgalaLexer(is)

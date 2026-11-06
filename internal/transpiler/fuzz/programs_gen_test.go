@@ -83,12 +83,11 @@ type program struct {
 	// lib is the library package's source and import path; "" when the
 	// domain is declared in main.
 	lib, libPath string
-	// rejected says the program must be rejected with a diagnostic, one
-	// with each of rejectCodes among them ("" stands for any diagnostic);
-	// otherwise it must print want.
-	rejected    bool
-	rejectCodes []galaerr.ErrorCode
-	want        string
+	// rejected says the program must be rejected with a diagnostic with
+	// rejectCode ("" for any diagnostic); otherwise it must print want.
+	rejected   bool
+	rejectCode galaerr.ErrorCode
+	want       string
 }
 
 // progGen generates a program from fuzz bytes; once they run out every
@@ -108,10 +107,10 @@ type progGen struct {
 	funcs      []string // main's top-level functions besides main
 	body       []string // main's statements
 	out        []string // the lines main must print
-	// rejected: a statement the transpiler must reject was emitted (see
-	// reject).
-	rejected    bool
-	rejectCodes []galaerr.ErrorCode
+	// rejected: a statement the transpiler must reject was emitted, to be
+	// rejected with rejectCode (see reject).
+	rejected   bool
+	rejectCode galaerr.ErrorCode
 	// pkgVals are package-level vals the domain declares besides Limit.
 	pkgVals []string
 	// shadows are the domain's functions named like std types, by name.
@@ -184,7 +183,7 @@ func stdImport(s importStyle) (line, qual string) {
 }
 
 func generateProgram(data []byte) program {
-	g := &progGen{data: data}
+	g := &progGen{data: data, shadows: map[string]string{}, helpers: map[string]bool{}}
 	style := importStyle(g.pick(int(importStyles)))
 	// std: implicit (the samePackage slot), qualified or dot-imported; an
 	// alias of std is not generated.
@@ -261,8 +260,7 @@ func generateProgram(data []byte) program {
 	}
 	b.WriteString("}\n")
 	p.main = b.String()
-	p.rejected = g.rejected
-	p.rejectCodes = g.rejectCodes
+	p.rejected, p.rejectCode = g.rejected, g.rejectCode
 	if len(g.out) > 0 {
 		p.want = strings.Join(g.out, "\n") + "\n"
 	}
@@ -315,8 +313,7 @@ func (g *progGen) statement() {
 
 // print adds `Println(expr)` to main, which must print want.
 func (g *progGen) print(expr string, want int) {
-	g.body = append(g.body, "Println("+expr+")")
-	g.out = append(g.out, fmt.Sprint(want))
+	g.printLine(expr, fmt.Sprint(want))
 }
 
 // typeName spells the type of a value of kind k.
@@ -778,7 +775,7 @@ func (g *progGen) match() {
 		if len(p.binders) > 0 && g.pick(3) == 0 {
 			guardIdx, guardMin = g.pick(len(p.binders)), g.pick(5)
 			guard, guarded = fmt.Sprintf(" if %s > %d", p.binders[guardIdx].use, guardMin), true
-			if !g.rejected && g.pick(12) == 0 {
+			if g.canReject() && g.pick(12) == 0 {
 				// A guard that is an int, not a bool.
 				guard = " if " + p.binders[guardIdx].use
 				g.reject(galaerr.CodeNonBoolGuard)
@@ -837,7 +834,7 @@ func (g *progGen) match() {
 	// which must be rejected.
 	if !exhaustive && !partial {
 		missing := false
-		if vs := variantsOf(k); vs != nil && !anySubject && !g.rejected && g.pick(10) == 0 {
+		if vs := variantsOf(k); vs != nil && !anySubject && g.canReject() && g.pick(10) == 0 {
 			all := strings.Join(armSources(arms), " ")
 			for _, v := range vs {
 				missing = missing || !strings.Contains(all, v+"(")
@@ -894,15 +891,15 @@ func (g *progGen) match() {
 		// take its type.
 		x := g.name("x")
 		g.body = append(g.body, fmt.Sprintf("val %s %s = %s", x, typ, subj))
-		opt := g.sp + "Option[int]"
+		opt, pf := g.sp+"Option[int]", strings.Join(armSources(arms), " ")
 		if position == 6 {
 			h := g.helper("passOpt", fmt.Sprintf("func passOpt(o %s) %s = o", opt, opt))
-			g.print(fmt.Sprintf("%s({ %s }(%s)).GetOrElse(-7)", h, strings.Join(armSources(arms), " "), x), want)
+			g.print(fmt.Sprintf("%s({ %s }(%s)).GetOrElse(-7)", h, pf, x), want)
 			return
 		}
 		h := g.name("apply")
 		g.funcs = append(g.funcs, fmt.Sprintf("func %s(f func(%s) %s, v %s) %s = f(v)", h, typ, opt, typ, opt))
-		g.print(fmt.Sprintf("%s({ %s }(_), %s).GetOrElse(-7)", h, strings.Join(armSources(arms), " "), x), want)
+		g.print(fmt.Sprintf("%s({ %s }(_), %s).GetOrElse(-7)", h, pf, x), want)
 	}
 }
 
