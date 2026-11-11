@@ -1,5 +1,7 @@
 package coreexport
 
+import "slices"
+
 // This file is the Core JSON schema as Go types. SCHEMA.md documents the same
 // node kinds and fields; schema_test.go checks that the two agree.
 
@@ -40,7 +42,7 @@ type Meta struct {
 func (m *Meta) setMeta(v Meta) { *m = v }
 
 // Unsupported stands for a construct outside the subset, in place of the
-// node it would be. What names the construct (see UnsupportedKinds).
+// node it would be. What names the construct (see UnsupportedKinds()).
 type Unsupported struct {
 	What string `json:"unsupported"`
 	Pos  Pos    `json:"pos"`
@@ -370,7 +372,7 @@ const (
 	UnsupportedImport           = "import"
 	UnsupportedEmbed            = "embed"
 	UnsupportedOpaqueType       = "opaque-type"
-	UnsupportedTypeAlias        = "type-alias"
+	UnsupportedDefinedType      = "defined-type"
 	UnsupportedInterface        = "interface"
 	UnsupportedGenericDecl      = "generic-decl"
 	UnsupportedMethod           = "method"
@@ -393,6 +395,7 @@ const (
 	UnsupportedSpreadArg        = "spread-arg"
 	UnsupportedUnit             = "unit"
 	UnsupportedOneTuple         = "one-tuple"
+	UnsupportedLeadingZero      = "leading-zero"
 	UnsupportedFloatLiteral     = "float-literal"
 	UnsupportedCharLiteral      = "char-literal"
 	UnsupportedNil              = "nil"
@@ -416,18 +419,23 @@ const (
 	UnsupportedParenPattern     = "paren-pattern"
 )
 
-// UnsupportedKinds is every name an Unsupported node can carry.
-var UnsupportedKinds = []string{
-	UnsupportedImport, UnsupportedEmbed, UnsupportedOpaqueType, UnsupportedTypeAlias,
+// unsupportedKinds is every name an Unsupported node can carry.
+var unsupportedKinds = []string{
+	UnsupportedImport, UnsupportedEmbed, UnsupportedOpaqueType, UnsupportedDefinedType,
 	UnsupportedInterface, UnsupportedGenericDecl, UnsupportedMethod, UnsupportedGoResults,
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
 	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedLambda, UnsupportedPartialFunction,
 	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedArg, UnsupportedSpreadArg,
-	UnsupportedUnit, UnsupportedOneTuple, UnsupportedFloatLiteral, UnsupportedCharLiteral,
+	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedStringEscape, UnsupportedGenericType,
 	UnsupportedQualifiedType, UnsupportedSliceType, UnsupportedPointerType, UnsupportedMapType,
 	UnsupportedFuncType, UnsupportedOtherType, UnsupportedDeref, UnsupportedAddressOf, UnsupportedReceive,
 	UnsupportedTypedPattern, UnsupportedRestPattern, UnsupportedSelectPattern,
 	UnsupportedExprPattern, UnsupportedParenPattern,
+}
+
+// UnsupportedKinds is every name an Unsupported node can carry.
+func UnsupportedKinds() []string {
+	return slices.Clone(unsupportedKinds)
 }

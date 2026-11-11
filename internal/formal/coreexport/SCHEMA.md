@@ -60,6 +60,8 @@ Every supported node is a JSON object that starts with:
   - `off`, `end`: byte offsets of the start of its first token and the end of its
     last token. `source[off:end]` is the node's text.
 
+  Positions are in the file as given, a leading byte order mark included.
+
 A child's span lies within its parent's.
 
 Optional child nodes are `null` when absent. Lists are never `null`; an empty list is
@@ -321,7 +323,7 @@ strings are unsupported.
 - `value` (string): its contents, with escapes decoded as Go decodes them (the
   transpiler emits string literals unchanged).
 - `raw` (bool): true for a backquoted literal, whose `value` is its text without the
-  quotes.
+  quotes and, as in Go, without carriage returns.
 
 ```json
 { "kind": "string", "pos": "…", "text": "\"a\\tb\"", "value": "a\tb", "raw": false }
@@ -512,7 +514,7 @@ Every name an `unsupported` node can carry.
 | `import` | an `import` declaration |
 | `embed` | an `embed val` declaration |
 | `opaque-type` | an `opaque type` declaration |
-| `type-alias` | a `type` declaration that is not a struct: an alias or a defined type |
+| `defined-type` | a `type` declaration that is neither a struct nor an interface, `type ID int` |
 | `interface` | an interface type declaration |
 | `generic-decl` | a function, struct or sealed type with type parameters |
 | `method` | a function with a receiver |
@@ -535,6 +537,7 @@ Every name an `unsupported` node can carry.
 | `spread-arg` | a spread argument, `f(xs...)` |
 | `unit` | `()` |
 | `one-tuple` | `(a,)` |
+| `leading-zero` | an integer literal with a leading zero, `0755`, which Go reads as octal |
 | `float-literal` | a floating-point literal |
 | `char-literal` | a rune literal, `'c'` |
 | `nil` | `nil` |

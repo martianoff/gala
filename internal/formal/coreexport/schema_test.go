@@ -92,7 +92,7 @@ func TestSchemaDocumentsEveryKind(t *testing.T) {
 }
 
 // TestSchemaDocumentsEveryUnsupported checks that SCHEMA.md's table of
-// unsupported constructs lists exactly UnsupportedKinds.
+// unsupported constructs lists exactly unsupportedKinds.
 func TestSchemaDocumentsEveryUnsupported(t *testing.T) {
 	var listed []string
 	table := section(t, readSchema(t), "Unsupported constructs")
@@ -100,13 +100,13 @@ func TestSchemaDocumentsEveryUnsupported(t *testing.T) {
 		listed = append(listed, m[1])
 	}
 	slices.Sort(listed)
-	reported := slices.Sorted(slices.Values(UnsupportedKinds))
+	reported := slices.Sorted(slices.Values(unsupportedKinds))
 	if !slices.Equal(listed, reported) {
 		t.Errorf("SCHEMA.md lists unsupported constructs\n%v\nthe exporter reports\n%v", listed, reported)
 	}
 }
 
-// TestUnsupportedKindsListsEveryConstant checks that UnsupportedKinds holds
+// TestUnsupportedKindsListsEveryConstant checks that unsupportedKinds holds
 // the value of every Unsupported constant in schema.go, and nothing else.
 func TestUnsupportedKindsListsEveryConstant(t *testing.T) {
 	f, err := parser.ParseFile(token.NewFileSet(), "schema.go", nil, 0)
@@ -129,7 +129,7 @@ func TestUnsupportedKindsListsEveryConstant(t *testing.T) {
 		return true
 	})
 	slices.Sort(consts)
-	if listed := slices.Sorted(slices.Values(UnsupportedKinds)); !slices.Equal(consts, listed) {
-		t.Errorf("the Unsupported constants are\n%v\nUnsupportedKinds is\n%v", consts, listed)
+	if listed := slices.Sorted(slices.Values(unsupportedKinds)); !slices.Equal(consts, listed) {
+		t.Errorf("the Unsupported constants are\n%v\nunsupportedKinds is\n%v", consts, listed)
 	}
 }

@@ -16,7 +16,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 )
@@ -53,14 +55,21 @@ func Export(srcs []Source, opts Options) (*Program, error) {
 		if err != nil {
 			return nil, fmt.Errorf("coreexport: %s: %w", src.Path, err)
 		}
-		p.Files = append(p.Files, ExportTree(src.Path, tree, opts))
+		// The parser drops a leading byte order mark; positions are in the
+		// file as given, so they count it back in.
+		bom := len(src.Text) - len(galaerr.StripBOM(src.Text))
+		p.Files = append(p.Files, exportTree(src.Path, tree, opts, bom))
 	}
 	return p, nil
 }
 
-// ExportTree exports one file's native tree.
+// ExportTree exports one file's native tree, positions in the tree's text.
 func ExportTree(path string, tree *native.GalaTree, opts Options) *File {
-	e := &exporter{tree: tree, opts: opts}
+	return exportTree(path, tree, opts, 0)
+}
+
+func exportTree(path string, tree *native.GalaTree, opts Options, bom int) *File {
+	e := &exporter{tree: tree, opts: opts, bom: bom}
 	return e.file(path, native.SourceFileNode{GalaNodeRef: tree.Root()})
 }
 
@@ -80,6 +89,8 @@ func Marshal(p *Program) ([]byte, error) {
 type exporter struct {
 	tree *native.GalaTree
 	opts Options
+	// bom is the length of the byte order mark the parser dropped, 0 for none.
+	bom int
 }
 
 // metaNode is a supported node, whose Meta the exporter fills in.
@@ -112,7 +123,11 @@ func (e *exporter) span(first, last int) Pos {
 	if last >= first {
 		end = e.tree.Token(last).End
 	}
-	return Pos{Line: int(s.Line), Col: int(s.Column) + 1, Off: int(s.Start), End: int(end)}
+	pos := Pos{Line: int(s.Line), Col: int(s.Column) + 1, Off: int(s.Start) + e.bom, End: int(end) + e.bom}
+	if e.bom > 0 && pos.Line == 1 {
+		pos.Col++ // the mark is a code point of line 1
+	}
+	return pos
 }
 
 // mapNodes is f of each of xs: an empty list (never null) for none.
@@ -255,7 +270,7 @@ func (e *exporter) typeDecl(t native.TypeDeclarationNode) Node {
 	case t.InterfaceType().Ok():
 		return e.unsupported(UnsupportedInterface, t.GalaNodeRef)
 	case t.TypeAlias().Ok():
-		return e.unsupported(UnsupportedTypeAlias, t.GalaNodeRef)
+		return e.unsupported(UnsupportedDefinedType, t.GalaNodeRef)
 	}
 	fields := mapNodes(t.StructType().AllStructField(), func(f native.StructFieldNode) Node {
 		return of(e, &Field{Name: f.Identifier().GetText(), Type: e.typ(f.Type_()), Mutable: f.VAR().Ok()},
@@ -564,7 +579,12 @@ func (e *exporter) parenthesised(p native.PrimaryNode) ([]native.ExpressionNode,
 func (e *exporter) literal(l native.LiteralNode) Node {
 	switch {
 	case l.INT_LIT().Ok():
-		n := of(e, &Int{Text: l.GetText()}, l.GalaNodeRef)
+		text := l.GetText()
+		if len(text) > 1 && text[0] == '0' && text[1] >= '0' && text[1] <= '9' {
+			// `0755`: the grammar reads decimal digits, Go reads octal.
+			return e.unsupported(UnsupportedLeadingZero, l.GalaNodeRef)
+		}
+		n := of(e, &Int{Text: text}, l.GalaNodeRef)
 		if e.opts.LiteralType != nil {
 			if typ, ok := e.opts.LiteralType(l); ok {
 				n.Hint = &Hint{Type: typ}
@@ -583,7 +603,9 @@ func (e *exporter) literal(l native.LiteralNode) Node {
 		return of(e, &String{Text: text, Value: value}, l.GalaNodeRef)
 	case l.RAW_STRING().Ok():
 		text := l.GetText()
-		return of(e, &String{Text: text, Value: text[1 : len(text)-1], Raw: true}, l.GalaNodeRef)
+		// As in Go, a raw string holds no carriage returns.
+		value := strings.ReplaceAll(text[1:len(text)-1], "\r", "")
+		return of(e, &String{Text: text, Value: value, Raw: true}, l.GalaNodeRef)
 	case l.FLOAT_LIT().Ok():
 		return e.unsupported(UnsupportedFloatLiteral, l.GalaNodeRef)
 	case l.CHAR_LIT().Ok():

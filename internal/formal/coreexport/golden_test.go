@@ -203,6 +203,25 @@ func TestHintsAreOptional(t *testing.T) {
 	require.Contains(t, string(withHints), `"type": "int"`)
 }
 
+// TestSourceTextEdges checks the cases where the source text and the
+// program's meaning part: a byte order mark, carriage returns in a raw
+// string, and an integer literal Go reads as octal.
+func TestSourceTextEdges(t *testing.T) {
+	src := coreexport.Source{Path: "edges.gala",
+		Text: string(rune(0xFEFF)) + "package main\r\n\r\nval s = `a\r\nb`\r\nval o = 0755\r\nval z = 0\r\n"}
+	p, err := coreexport.Export([]coreexport.Source{src}, hinted)
+	require.NoError(t, err)
+	data, err := coreexport.Marshal(p)
+	require.NoError(t, err)
+	require.NoError(t, checkDocument(data, src))
+
+	decls := p.Files[0].Decls
+	require.Equal(t, "a\nb", decls[0].(*coreexport.Val).Values[0].(*coreexport.String).Value)
+	require.Equal(t, &coreexport.Unsupported{What: coreexport.UnsupportedLeadingZero,
+		Pos: coreexport.Pos{Line: 5, Col: 9, Off: 43, End: 47}}, decls[1].(*coreexport.Val).Values[0])
+	require.Equal(t, "0", decls[2].(*coreexport.Val).Values[0].(*coreexport.Int).Text)
+}
+
 // TestSyntaxErrorIsAnError checks that a file that does not parse is an
 // error, not a document.
 func TestSyntaxErrorIsAnError(t *testing.T) {

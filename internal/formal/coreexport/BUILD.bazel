@@ -13,6 +13,7 @@ go_library(
     importpath = "martianoff/gala/internal/formal/coreexport",
     visibility = ["//internal/formal:__subpackages__"],
     deps = [
+        "//galaerr",
         "//internal/parser",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
     ],

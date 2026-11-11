@@ -58,6 +58,12 @@ func checkDocument(data []byte, srcs ...coreexport.Source) error {
 	return nil
 }
 
+// The schema's kinds and unsupported names, read once.
+var (
+	schemaKinds       = coreexport.Kinds()
+	schemaUnsupported = coreexport.UnsupportedKinds()
+)
+
 type pos struct{ off, end int }
 
 type posChecker struct{ src string }
@@ -69,9 +75,9 @@ func (c *posChecker) node(v map[string]any, outer pos) error {
 	switch {
 	case isKind == isUnsupported:
 		return fmt.Errorf("node with neither or both of kind and unsupported: %v", v)
-	case isKind && !slices.Contains(coreexport.Kinds(), kind):
+	case isKind && !slices.Contains(schemaKinds, kind):
 		return fmt.Errorf("kind %q is not in the schema", kind)
-	case isUnsupported && !slices.Contains(coreexport.UnsupportedKinds, what):
+	case isUnsupported && !slices.Contains(schemaUnsupported, what):
 		return fmt.Errorf("unsupported %q is not in the schema", what)
 	}
 	p, err := c.pos(v)
