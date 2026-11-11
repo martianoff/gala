@@ -23,6 +23,8 @@ func (c Conn) Close() error = errors.New(s"close ${c.Name}")
 
 func (c Conn) Send[T any](msg T) error = errors.New(s"send $msg on ${c.Name}")
 
+struct Pool(conn Conn)
+
 func describe(t Try[Void]) string = t match {
     case Success(_) => "Success"
     case Failure(err) => s"Failure($err)"
@@ -50,6 +52,8 @@ func main() {
     Println(describe(Try(succeed)))
     val conn = Conn("cache")
     Println(describe(Try(conn.Close)))
+    val pool = Pool(Conn("pooled"))
+    Println(describe(Try(pool.conn.Close)))
     // A Go method value too: closing a file twice fails, flushing an empty
     // buffer does not.
     val file = os.CreateTemp("", "try-gala-error-call").Get()
@@ -73,6 +77,15 @@ func main() {
         case Failure(err) => s"failed: $err"
     }
     Println(msg)
+    // A thunk that also returns a plain error value has that error as its
+    // value, so the call returned beside it is a value too.
+    val plain = errors.New("plain")
+    Println(Try(() => {
+        if (Conn("y").Name == "x") {
+            return check(-5)
+        }
+        return plain
+    }))
     // Asking for a Try[error] keeps the error as the value.
     Println(Try[error](fail()))
     // An error that is only a value, not a call's declared result, stays one.

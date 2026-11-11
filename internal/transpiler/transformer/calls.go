@@ -4720,7 +4720,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 // tryThunk marks the thunk of Try(...): a call there runs with its error
 // turned into the panic Try catches (see tryThunkValue). The one function
 // value that is wrapped is Try(f) with f returning only an `error`, which
-// means Try(() => f()) (see isErrorFuncRef).
+// means Try(() => f()) (see errorFuncThunk).
 func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type, tryThunk bool) (ast.Expr, bool) {
 	if expr == nil || expectedType == nil || expectedType.IsNil() {
 		return expr, false
@@ -4737,9 +4737,10 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	exprType := t.getExprTypeName(expr)
 	// Try(f) with f returning only an `error` means Try(() => f()): the error
 	// is the Failure, as it is for the call (see tryThunkValue).
-	if tryThunk && isErrorFuncRef(expr, exprType) {
-		body, resultType := t.errorThunk(&ast.CallExpr{Fun: expr})
-		return thunkLit(body, resultType), true
+	if tryThunk {
+		if thunk, ok := t.errorFuncThunk(expr, exprType); ok {
+			return thunk, true
+		}
 	}
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
 		return expr, false

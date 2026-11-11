@@ -84,6 +84,39 @@ func (t *galaASTTransformer) lambdaArgCall(l lambdaSrc) (callSrc, bool) {
 	return callSrc{post: postfixSrc{node: post}, suffix: suffixSrc{node: suffix}}, true
 }
 
+// lowerTryThunkReturns lowers each return of the block body of a Try thunk
+// with tryThunkValue. When some return yields an `error` that is a plain
+// value (or nil), not an error-only call, the thunk's value is that error, so the
+// error-only calls returned beside it stay values too: lowering them to Void
+// would give the thunk two result types.
+func (t *galaASTTransformer) lowerTryThunkReturns(b *ast.BlockStmt) {
+	var returns []*ast.ReturnStmt
+	ast.Inspect(b, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false // a nested function's returns are its own
+		case *ast.ReturnStmt:
+			if len(n.Results) == 1 {
+				returns = append(returns, n)
+			}
+		}
+		return true
+	})
+	errorValue := false
+	for _, ret := range returns {
+		value := ret.Results[0]
+		if !t.isErrorOnlyCall(value) && (isNilIdent(value) || isErrorType(t.getExprTypeName(value))) {
+			errorValue = true
+		}
+	}
+	for _, ret := range returns {
+		if errorValue && t.isErrorOnlyCall(ret.Results[0]) {
+			continue
+		}
+		ret.Results[0] = t.tryThunkIIFE(ret.Results[0])
+	}
+}
+
 // isTryThunk reports whether l is the lambda being lowered as the thunk of
 // Try(...) (see tryThunkValue).
 func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
@@ -418,17 +451,7 @@ func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSr
 	// tryThunkValue), not a Try inside the Try. Every return of the thunk is
 	// lowered alike, so an early `return f()` agrees with the trailing one.
 	if t.isTryThunk(l) {
-		ast.Inspect(b, func(n ast.Node) bool {
-			switch n := n.(type) {
-			case *ast.FuncLit:
-				return false // a nested function's returns are its own
-			case *ast.ReturnStmt:
-				if len(n.Results) == 1 {
-					n.Results[0] = t.tryThunkIIFE(n.Results[0])
-				}
-			}
-			return true
-		})
+		t.lowerTryThunkReturns(b)
 	}
 	// Returns deferred until the slot was known are lowered now, before the
 	// result type is read off the body.

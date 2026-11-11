@@ -136,7 +136,7 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
 ([§9 Go functions that return several results](GALA.MD#go-functions-that-return-several-results))
 
 - **A Go call returning `(T, error)` is already a `Try[T]`** — `strconv.Atoi(s)` is a `Try[int]`. Match on it, or use `GetOrElse` / `Map` / `FlatMap`, or `bind n = strconv.Atoi(s)` inside a `Try` block. Using it where `T` is expected is a compile error (GALA-E0049).
-- **Don't wrap a `(T, error)` call in `Try(...)`** — `Try(strconv.Atoi(s))` is the same `Try[int]`. Reach for `Try(...)` only when you also want a panic in the call captured as `Failure`, or for a Go call that returns **only** `error`: `Try(os.Remove(p))` is a `Try[Void]` that fails on a non-nil error (`FromError(os.Remove(p))` is equivalent).
+- **Don't wrap a `(T, error)` call in `Try(...)`** — `Try(strconv.Atoi(s))` is the same `Try[int]`. Reach for `Try(...)` only when you also want a panic in the call captured as `Failure`, or for a call (Go or GALA) that returns **only** `error`: `Try(os.Remove(p))` is a `Try[Void]` that fails on a non-nil error (`FromError(os.Remove(p))` is equivalent).
 - **Destructure multi-value Go results as a Tuple** — `val (key, value, found) = strings.Cut(line, "=")`.
 - **`val v, err = goCall()` only to hand raw results back to Go** — the multi-name form skips the `Try` and gives Go's plain values; in GALA code prefer the `Try`.
 - **Implement `io.Writer`, `json.Marshaler` and friends in GALA** — declare Go's result list, `func (c *Counter) Write(p []byte) (int, error)`, and give the `Try` (or Tuple) in the body; a lambda passed as a Go `func() (T, error)` callback likewise gives a `Try`. ([Returning several results to Go](GALA.MD#returning-several-results-to-go))

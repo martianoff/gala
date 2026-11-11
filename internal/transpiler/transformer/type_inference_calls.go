@@ -57,8 +57,10 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			return fType
 		}
 		// A Go method value (`file.Close`): its Go signature, as for a Go
-		// function reference below.
-		if sig := t.lookupGoCallSignature(&ast.CallExpr{Fun: e}); sig != nil {
+		// function reference below — when the signature spells the method's
+		// type exactly. A FuncType has no variadic marker, and an inexact or
+		// generic signature would not match what Go infers for the value.
+		if sig := t.lookupGoCallSignature(&ast.CallExpr{Fun: e}); sig != nil && !sig.IsVariadic && !sig.Inexact && len(sig.TypeParams) == 0 {
 			return goSignatureFuncType(sig)
 		}
 	}

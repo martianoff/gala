@@ -446,11 +446,18 @@ func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, 
 	if block, retType := t.tryWrapGoMultiReturnWithErrorPanic(raw); block != nil {
 		return block, retType, true
 	}
-	if !t.isGoErrorOnlyCall(raw) && !t.isErrorCall(raw) {
+	if !t.isErrorOnlyCall(raw) {
 		return nil, nil, false
 	}
 	body, resultType = t.errorThunk(raw)
 	return body, resultType, true
+}
+
+// isErrorOnlyCall reports whether expr is a call returning only an `error`,
+// Go or GALA, whose error a Try thunk turns into the Failure.
+func (t *galaASTTransformer) isErrorOnlyCall(expr ast.Expr) bool {
+	raw := t.rawGoCall(expr)
+	return t.isGoErrorOnlyCall(raw) || t.isErrorCall(raw)
 }
 
 // errorThunk is the body of a Try thunk running call, which returns only an
@@ -505,23 +512,52 @@ func (t *galaASTTransformer) isErrorCall(expr ast.Expr) bool {
 	return true
 }
 
-// isErrorFuncRef reports whether expr, of type fn, names a function that takes
-// nothing and returns only an `error` — a GALA function `fail`, a Go method
-// value `file.Close` — so that Try(f) means Try(() => f()). Only a name or a
-// selector on a name qualifies: anything else would be evaluated inside the
-// thunk instead of before the call.
-func isErrorFuncRef(expr ast.Expr, typ transpiler.Type) bool {
+// errorFuncThunk is the thunk of Try(f) for f, of type typ, a function value
+// that takes nothing and returns only an `error` — a GALA function `fail`, a
+// method value `conn.Close`, a field `c.conn.Close` — so that Try(f) means
+// Try(() => f()). ok is false for any other f.
+//
+// A name, or a selector on a name, is called inside the thunk as it is. Any
+// other f is evaluated once, before the thunk runs, as passing it would:
+// func(_f func() error) func() Void { return func() Void { ... _f() ... } }(f).
+func (t *galaASTTransformer) errorFuncThunk(f ast.Expr, typ transpiler.Type) (ast.Expr, bool) {
+	fn, ok := typ.(transpiler.FuncType)
+	if !ok || len(fn.Params) != 0 || len(fn.Results) != 1 || !isErrorType(fn.Results[0]) {
+		return nil, false
+	}
+	// A lambda written at the call is lowered as the thunk itself, where
+	// only a returned call's error is the Failure (see tryThunkValue).
+	if _, lambda := f.(*ast.FuncLit); lambda {
+		return nil, false
+	}
+	if isNameRef(f) {
+		body, resultType := t.errorThunk(&ast.CallExpr{Fun: f})
+		return thunkLit(body, resultType), true
+	}
+	body, resultType := t.errorThunk(&ast.CallExpr{Fun: ast.NewIdent("_f")})
+	thunk := thunkLit(body, resultType)
+	errorFunc := &ast.FuncType{Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("error")}}}}
+	bind := &ast.FuncLit{
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("_f")}, Type: errorFunc}}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: thunk.Type}}},
+		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{thunk}}}},
+	}
+	return &ast.CallExpr{Fun: bind, Args: []ast.Expr{f}}, true
+}
+
+// isNameRef reports whether expr is a name or a selector on a name, which
+// reading later gives the same value as reading now.
+func isNameRef(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.Ident:
+		return true
 	case *ast.SelectorExpr:
-		if _, ok := e.X.(*ast.Ident); !ok {
-			return false
-		}
-	default:
-		return false
+		_, ok := e.X.(*ast.Ident)
+		return ok
 	}
-	fn, ok := typ.(transpiler.FuncType)
-	return ok && len(fn.Params) == 0 && len(fn.Results) == 1 && isErrorType(fn.Results[0])
+	return false
 }
 
 // thunkLit is the zero-parameter func literal returning resultType.
