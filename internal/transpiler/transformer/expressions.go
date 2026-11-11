@@ -323,6 +323,13 @@ func (t *galaASTTransformer) checkIfBranchTypes(at srcNode, s slot, thenT, elseT
 		t.pickMoreSpecificType(thenT, elseT) == nil || t.typesCompatible(thenT, elseT) {
 		return nil
 	}
+	// Compared as the types they resolve to: `Option[Millis]` is an
+	// `Option[int64]` for `type Millis int64`. A part still open matches.
+	thenKey, closedThen := t.typeArgKey(thenT)
+	elseKey, closedElse := t.typeArgKey(elseT)
+	if !closedThen || !closedElse || thenKey == elseKey {
+		return nil
+	}
 	if _, ok := t.unifyWithSealedWidening(thenT, elseT); ok {
 		return nil
 	}

@@ -355,7 +355,8 @@ func (r *RichAST) Merge(other *RichAST) {
 		// siblings see it; another package names it qualified (`lib.Seq`,
 		// see addQualifiedTypeAliases). Folded into an importer, the bare key
 		// would make the importer's own `Seq` read as the import's alias.
-		foreign := r.PackageName != "" && other.PackageName != "" && r.PackageName != other.PackageName
+		foreign := r.PackageName != "" && other.PackageName != "" && r.PackageName != other.PackageName ||
+			r.OwnImportPath != "" && other.OwnImportPath != "" && r.OwnImportPath != other.OwnImportPath
 		for k, v := range other.TypeAliases {
 			if foreign && !strings.Contains(k, ".") {
 				continue

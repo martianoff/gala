@@ -170,6 +170,13 @@ func TestMergeKeepsImportedBareAliasesOut(t *testing.T) {
 	if _, ok := r.TypeAliases["Millis"]; !ok {
 		t.Fatalf("Merge dropped a sibling's bare alias key: %v", r.TypeAliases)
 	}
+
+	// A package of the importer's name at another path is foreign too.
+	u := &RichAST{PackageName: "util", OwnImportPath: "a/util"}
+	u.Merge(&RichAST{PackageName: "util", OwnImportPath: "b/util", TypeAliases: map[string]Type{"Seq": alias}})
+	if _, ok := u.TypeAliases["Seq"]; ok {
+		t.Fatalf("Merge carried a same-named import's bare alias key: %v", u.TypeAliases)
+	}
 }
 
 // TestAddImportedValsKeyedByPath: two imported packages sharing a name keep

@@ -656,6 +656,18 @@ func main() {
 			expectContains: "the constant 300 cannot be a byte, the type of the other operand of +: it is out of the range of byte",
 		},
 		{
+			// In a chain the left operand is the constant expression so far.
+			name: "GALA-E0091 constant chain on the left of an int",
+			input: `package main
+
+func main() {
+    val x = 3
+    Println(1.5 + 1 + x)
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "error_codes_test.gala:5:12 the constant 1.5 + 1 cannot be an int, the type of the other operand of +: it is not a whole number",
+		},
+		{
 			// A number for a string parameter.
 			name: "GALA-E0091 number for a string parameter",
 			input: `package main

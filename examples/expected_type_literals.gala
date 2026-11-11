@@ -10,6 +10,8 @@ sealed type Shape[T any] {
     case Circle(R T)
 }
 
+type Millis int64
+
 func lookup(m HashMap[string, float64]) float64 = m.GetOrElse("x", 0.0)
 
 type Peekable[T any] interface {
@@ -30,8 +32,18 @@ func main() {
     val sum = ArrayOf(1.5, 2.5, 3.0).FoldLeft(0, (acc, x) => acc + x)
     Println(sum)
     Println(sum / 2)
+    Println(sum * 0.5)
     val count = ArrayOf(1.5, 2.5).FoldLeft(0, (acc, _) => acc + 1)
     Println(count / 2)
+    Println(ArrayOf(1.5, 2.5).FoldLeft(0, (acc, x) => acc * 0.5 + x))
+    val ys = ArrayOf(1.0, 2.0)
+    Println(ArrayOf(1.5, 2.5).FoldLeft(0, (acc, x) => acc + x + ys.FoldLeft(0, (a, y) => a + y)))
+
+    // Branches whose types are the same once an alias is followed unify.
+    val c = count > 1
+    val ms Millis = 5
+    val ns int64 = 6
+    Println(if (c) Some(ms) else Some(ns))
 
     // An untyped constant inside a tuple inside a constructor call.
     val m HashMap[string, float64] = HashMapOf(("a", 1), ("b", 2))

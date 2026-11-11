@@ -649,10 +649,12 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	// type variable for another.
 	foreign := append(append([]string{}, freshParamNames...), structTypeParams...)
 
-	// Try to infer type params from each argument
-	for i, arg := range args {
+	// Try to infer type params from each argument, untyped constants last
+	// (constantsLast): `FoldLeft(0, f)` takes U from f when f fixes it.
+	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+		arg := args[i]
 		if i >= len(substitutedParamTypes) {
-			break
+			continue
 		}
 		paramType := substitutedParamTypes[i]
 
@@ -927,12 +929,30 @@ func (t *galaASTTransformer) constSlotTypeArgs(fMeta *transpiler.FunctionMetadat
 	return out
 }
 
+// constantsLast is the indices of args, those of the untyped constants
+// (isConst) after the others. Go binds a type parameter from an untyped
+// constant argument only when no typed argument binds it, so inference that
+// unifies the arguments in this order binds what Go does.
+func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) []int {
+	order := make([]int, 0, len(args))
+	var consts []int
+	for i, arg := range args {
+		if arg != nil && isConst(arg) {
+			consts = append(consts, i)
+		} else {
+			order = append(order, i)
+		}
+	}
+	return append(order, consts...)
+}
+
 // argTypeArgs binds fMeta's type parameters from the lowered arguments of a
 // call, unifying each parameter type with its argument's type; only those an
 // argument determines appear in the result. A nil argument binds nothing.
 func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
-	for i, arg := range args {
+	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+		arg := args[i]
 		if arg == nil {
 			continue
 		}

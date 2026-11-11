@@ -1,10 +1,12 @@
 package transformer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
 	"go/token"
+	"go/types"
 	"maps"
 	"slices"
 
@@ -22,20 +24,21 @@ import (
 // leaving `go build` to report "1.5 (untyped float constant) truncated to int"
 // against the generated code.
 
-// checkConstOperand rejects a binary operation tok whose operand at leftAt or
-// rightAt is an untyped constant that the type of the other operand cannot
-// hold (constMisfit): a constant with a fractional part for an integer
-// (`x * 1.5`), one out of the type's range (`b + 300` for a `byte` b). bin is
-// the lowered operation.
-func (t *galaASTTransformer) checkConstOperand(tok token.Token, leftAt, rightAt srcNode, bin ast.Expr) error {
+// checkConstOperand rejects a binary operation tok whose left operand (written
+// from leftFrom to leftTo: in a chain `1.5 + 1 + x` the left operand of the
+// last `+` is `1.5 + 1`) or right operand (rightAt) is an untyped constant
+// that the type of the other operand cannot hold (constMisfit): a constant
+// with a fractional part for an integer (`x * 1.5`), one out of the type's
+// range (`b + 300` for a `byte` b). bin is the lowered operation.
+func (t *galaASTTransformer) checkConstOperand(tok token.Token, leftFrom, leftTo, rightAt srcNode, bin ast.Expr) error {
 	e, ok := bin.(*ast.BinaryExpr)
 	if !ok || !isNumericOperator(tok) {
 		return nil
 	}
 	t.countOperandMismatch(e)
-	constAt, lit, typed := rightAt, e.Y, e.X
+	from, to, lit, typed := rightAt, rightAt, e.Y, e.X
 	if !isUntypedConstExpr(lit) {
-		constAt, lit, typed = leftAt, e.X, e.Y
+		from, to, lit, typed = leftFrom, leftTo, e.X, e.Y
 	}
 	if !isUntypedConstExpr(lit) || t.isUntypedConstArg(typed) {
 		return nil
@@ -45,9 +48,8 @@ func (t *galaASTTransformer) checkConstOperand(tok token.Token, leftAt, rightAt 
 	if why == "" {
 		return nil
 	}
-	r := constAt.rng()
-	return spanErrorAt(galaerr.CodeConstantMisfit, r, r,
-		fmt.Sprintf("the constant %s cannot be %s, the type of the other operand of %s: %s", constAt.sourceText(), withArticle(displayType(typ)), tok, why),
+	return spanErrorAt(galaerr.CodeConstantMisfit, from.rng(), to.rng(),
+		fmt.Sprintf("the constant %s cannot be %s, the type of the other operand of %s: %s", types.ExprString(lit), withArticle(displayType(typ)), tok, why),
 		"convert the other operand to the type you mean (e.g. `float64(x)`); GALA converts no number implicitly")
 }
 
@@ -132,9 +134,11 @@ func (t *galaASTTransformer) countOperandMismatch(e *ast.BinaryExpr) {
 // type its position needs, as in Go: when the lambda lowered with the default
 // type mixes number types, each number type the lambda's other parameters
 // have (`float64`) that the constant converts to is tried instead, and the
-// first under which the lambda mixes none is the binding. Go then infers the
-// same type argument from the lambda. With none, the default stays, and
-// GALA-E0091 or Go reports the operation.
+// first under which the lambda mixes none is the binding. A constant in the
+// lambda the default type cannot hold (GALA-E0091, `acc * 0.5`) is such a
+// mix too. Go then infers the same type argument from the lambda (the
+// constant argument binds last, see constantsLast). With none, the lambda is
+// lowered with the default type, and GALA-E0091 or Go reports the operation.
 func (t *galaASTTransformer) lowerLambdaOverWeakConst(param transpiler.Type, weak map[string]transpiler.Type, typeSubst typeSubstMap, lower func() (ast.Expr, error)) (ast.Expr, error) {
 	ft := t.resolveTranspilerTypeAsFuncType(param)
 	var tps []string
@@ -148,24 +152,42 @@ func (t *galaASTTransformer) lowerLambdaOverWeakConst(param transpiler.Type, wea
 	}
 	t.mismatchProbes++
 	defer func() { t.mismatchProbes-- }()
-	before := t.operandMismatches
-	expr, err := lower()
-	if err != nil || t.operandMismatches == before {
+	// Each lowering starts from the same state: the mismatches a discarded
+	// one counted, and the editor hints it recorded, are dropped.
+	start, hints := t.operandMismatches, len(t.lspLambdaParamHints)
+	try := func() (ast.Expr, bool, error) {
+		t.operandMismatches = start
+		t.lspLambdaParamHints = t.lspLambdaParamHints[:hints]
+		expr, err := lower()
+		if isConstMisfit(err) {
+			return nil, false, err
+		}
+		return expr, err == nil && t.operandMismatches == start, err
+	}
+	expr, clean, err := try()
+	if clean || (err != nil && !isConstMisfit(err)) {
 		return expr, err
 	}
 	for _, tp := range tps {
 		def := weak[tp]
-		delete(weak, tp)
 		for _, candidate := range t.weakConstCandidates(*ft, tps, def) {
 			typeSubst[tp] = candidate
-			before := t.operandMismatches
-			if probe, perr := lower(); perr == nil && t.operandMismatches == before {
+			if probe, ok, _ := try(); ok {
+				delete(weak, tp)
+				t.operandMismatches = start
 				return probe, nil
 			}
 		}
 		typeSubst[tp] = def
 	}
+	expr, _, err = try()
 	return expr, err
+}
+
+// isConstMisfit reports whether err is GALA-E0091.
+func isConstMisfit(err error) bool {
+	var se *galaerr.SemanticError
+	return errors.As(err, &se) && se.Code == galaerr.CodeConstantMisfit
 }
 
 // weakConstCandidates lists the number types among the parameters of ft that
