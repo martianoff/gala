@@ -173,7 +173,11 @@ func (t *galaASTTransformer) lowerOperatorsNative(n native.GalaNodeRef) (ast.Exp
 			continue
 		}
 		t.nativeShape(n, "operator")
-		if result, err = t.binaryOperation(op, t.getBinaryToken(op), srcNode{node: n}, result, right); err != nil {
+		tok := t.getBinaryToken(op)
+		if result, err = t.binaryOperation(op, tok, srcNode{node: n}, result, right); err != nil {
+			return nil, err
+		}
+		if err = t.checkConstOperand(tok, srcNode{node: prev}, srcNode{node: operand}, result); err != nil {
 			return nil, err
 		}
 		if level == native.GalaKIND_equalityExpr {

@@ -351,7 +351,15 @@ func (r *RichAST) Merge(other *RichAST) {
 		if r.TypeAliases == nil {
 			r.TypeAliases = make(map[string]Type)
 		}
+		// A bare key is an alias a file of other's package declares, as its
+		// siblings see it; another package names it qualified (`lib.Seq`,
+		// see addQualifiedTypeAliases). Folded into an importer, the bare key
+		// would make the importer's own `Seq` read as the import's alias.
+		foreign := r.PackageName != "" && other.PackageName != "" && r.PackageName != other.PackageName
 		for k, v := range other.TypeAliases {
+			if foreign && !strings.Contains(k, ".") {
+				continue
+			}
 			r.TypeAliases[k] = v
 		}
 	}

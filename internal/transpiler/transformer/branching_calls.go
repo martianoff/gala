@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"strings"
 
 	"martianoff/gala/galaerr"
 )
@@ -167,12 +168,13 @@ func isTrailingStmtOfFuncBody(fn, block, stmt ast.Node) bool {
 	return false
 }
 
-// withArticle is kind, "match" or "if-expression", with its article.
-func withArticle(kind string) string {
-	if kind == "match" {
-		return "a match"
+// withArticle is name, such as "match", "if-expression" or a type name,
+// after "a" or "an" (by its first letter: "a uint8", "an int").
+func withArticle(name string) string {
+	if name != "" && strings.ContainsRune("aeioAEIO", rune(name[0])) {
+		return "an " + name
 	}
-	return "an " + kind
+	return "a " + name
 }
 
 // branchNoun names a branch of a construct of kind: an arm of a match, a

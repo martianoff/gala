@@ -186,6 +186,9 @@ func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, e
 			novalue++
 		}
 	}
+	if err := t.checkIfBranchTypes(e.at(), s, unified[0], unified[1]); err != nil {
+		return nil, err
+	}
 	retType := t.unifyBranchTypes(unified[0], unified[1])
 	if novalue == len(unified) {
 		// No branch has a value: the if-expression is void.
@@ -308,6 +311,26 @@ func (t *galaASTTransformer) unifyBranchTypes(thenT, elseT transpiler.Type) tran
 	return transpiler.NilType{}
 }
 
+// checkIfBranchTypes rejects an if-expression filling s, written at at, when
+// s has no type and its branches' value types thenT and elseT are instances of one
+// generic type that do not unify, as a match's arms are
+// (inferCommonResultTypeAt): `if (c) Some(1) else Some(2.5)` is an
+// `Option[int]` and an `Option[float64]`, and neither is the value's type.
+// A sealed case and its parent unify to the parent. Types that are not
+// instances of one type are left to unifyBranchTypes.
+func (t *galaASTTransformer) checkIfBranchTypes(at srcNode, s slot, thenT, elseT transpiler.Type) error {
+	if !transpiler.IsUnusable(s.typ) || transpiler.IsUnusableOrAny(thenT) || transpiler.IsUnusableOrAny(elseT) ||
+		t.pickMoreSpecificType(thenT, elseT) == nil || t.typesCompatible(thenT, elseT) {
+		return nil
+	}
+	if _, ok := t.unifyWithSealedWidening(thenT, elseT); ok {
+		return nil
+	}
+	return t.semanticErrorAtNode(at, fmt.Sprintf(
+		"type mismatch in if-expression: the then-branch returns '%s' but the else-branch returns '%s'. Both branches must return the same type",
+		thenT, elseT))
+}
+
 // loweredIfBranch is a lowered branch of an if-expression (see
 // lowerIfExprBranch): stmts run first, then expr is its value, unless the
 // branch terminates.
@@ -411,6 +434,9 @@ func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slo
 		}
 	}
 	allLeave := branches[0].terminates && branches[1].terminates
+	if err := t.checkIfBranchTypes(e.at(), s, types[0], types[1]); err != nil {
+		return nil, err
+	}
 	typ, err := t.hoistedType("if-expression", t.unifyBranchTypes(types[0], types[1]), s, allLeave,
 		line, col, branches[0].stmts, branches[1].stmts)
 	if err != nil {
@@ -756,6 +782,9 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		}
 		// A nil, or a pointer that may be nil, never fills a Ptr.
 		if err := t.checkPtrSlot(expr, s.typ, e.at()); err != nil {
+			return nil, err
+		}
+		if err := t.checkConstSlot(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
 	}

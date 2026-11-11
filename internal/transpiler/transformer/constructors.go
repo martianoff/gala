@@ -414,6 +414,54 @@ func (t *galaASTTransformer) isUntypedConstArg(expr ast.Expr) bool {
 	return ok
 }
 
+// typedPartType is typ, the type of expr, a lowered argument, with every part
+// an untyped constant gives left unknown (NilType): all of it for a constant,
+// an element for a tuple literal holding one (`("a", 1)` is a
+// `Tuple[string, ?]`). A type parameter only such parts bind takes the type
+// of the slot the call fills, as a Go assignment converts a constant.
+func (t *galaASTTransformer) typedPartType(expr ast.Expr, typ transpiler.Type) transpiler.Type {
+	if t.isUntypedConstArg(expr) {
+		return transpiler.NilType{}
+	}
+	lit, isLit := expr.(*ast.CompositeLit)
+	gen, isGen := typ.(transpiler.GenericType)
+	if !isLit || !isGen || !t.isTupleTypeName(gen.Base.String()) || len(lit.Elts) != len(gen.Params) {
+		return typ
+	}
+	params := make([]transpiler.Type, len(gen.Params))
+	for i, elt := range lit.Elts {
+		if kv, ok := elt.(*ast.KeyValueExpr); ok {
+			elt = kv.Value
+		}
+		params[i] = t.typedPartType(newImmutableArg(elt), gen.Params[i])
+	}
+	return transpiler.GenericType{Base: gen.Base, Params: params}
+}
+
+// newImmutableArg is the value a `NewImmutable(value)` call wraps, or expr
+// itself when it is no such call.
+func newImmutableArg(expr ast.Expr) ast.Expr {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return expr
+	}
+	fun := call.Fun
+	if idx, ok := fun.(*ast.IndexExpr); ok {
+		fun = idx.X
+	}
+	var name string
+	switch f := fun.(type) {
+	case *ast.Ident:
+		name = f.Name
+	case *ast.SelectorExpr:
+		name = f.Sel.Name
+	}
+	if name != transpiler.FuncNewImmutable {
+		return expr
+	}
+	return call.Args[0]
+}
+
 // goUntypedNumericConstDefault reports the default type of a reference to an
 // untyped numeric constant of an imported Go package (`math.MaxInt8` → int).
 func (t *galaASTTransformer) goUntypedNumericConstDefault(expr ast.Expr) (string, bool) {

@@ -1,0 +1,56 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// The expected type reaches an untyped constant or an empty constructor
+// wherever the value fills a typed position.
+
+sealed type Shape[T any] {
+    case Dot()
+    case Circle(R T)
+}
+
+func lookup(m HashMap[string, float64]) float64 = m.GetOrElse("x", 0.0)
+
+type Peekable[T any] interface {
+    Peek() Option[T]
+}
+
+struct Slot[T any](V Option[T])
+
+func (s Slot[T]) Peek() Option[T] = s.V
+
+func emptySlot[T any]() Slot[T] = Slot(None[T]())
+
+func peekOr(p Peekable[int], d int) int = p.Peek().GetOrElse(d)
+
+func main() {
+    // A FoldLeft accumulator given as an untyped constant takes the type
+    // the lambda needs: the element type here.
+    val sum = ArrayOf(1.5, 2.5, 3.0).FoldLeft(0, (acc, x) => acc + x)
+    Println(sum)
+    Println(sum / 2)
+    val count = ArrayOf(1.5, 2.5).FoldLeft(0, (acc, _) => acc + 1)
+    Println(count / 2)
+
+    // An untyped constant inside a tuple inside a constructor call.
+    val m HashMap[string, float64] = HashMapOf(("a", 1), ("b", 2))
+    Println(m.GetOrElse("a", 0.0) / 4)
+    Println(lookup(HashMapOf(("x", 3))) / 2)
+
+    // An empty variadic constructor takes its type argument from the slot.
+    val xs Array[int] = ArrayOf()
+    Println(xs.Size())
+    Println(xs.Append(4))
+
+    // A generic constructor filling an interface-typed parameter takes its
+    // type argument from the interface the slot names.
+    Println(peekOr(emptySlot(), 9))
+
+    // The argument of a generated Equal takes the receiver's type.
+    Println(Some(1).Equal(None()))
+    Println(None[string]().Equal(None()))
+    val s Shape[int] = Circle(2)
+    Println(s.Equal(Dot()))
+    Println(s.Equal(Circle(2)))
+}

@@ -63,6 +63,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"signatureDots", t.signatureDots != nil},
 		{"equalOwner", t.equalOwner != nil},
 		{"typeNameDepth", t.typeNameDepth != 0},
+		{"mismatchProbes", t.mismatchProbes != 0},
 	}
 }
 
@@ -82,6 +83,7 @@ func scopedStateFieldNames() []string {
 // are therefore exempt from the residue check.
 var accumulatedStateFields = []string{
 	"packageName",
+	"operandMismatches",
 	"variantNames",
 	"immutFields",
 	"structImmutFields",
@@ -198,6 +200,7 @@ func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, lambdaSrc{}, nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil
 	t.signatureDots, t.equalOwner, t.typeNameDepth = nil, nil, 0
+	t.mismatchProbes = 0
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the

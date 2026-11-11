@@ -740,7 +740,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		return fun, nil
 	}
-	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, funcMeta.ParamTypes)
+	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, filledParamTypes(funcMeta, len(args), hasSpread))
 	if len(phantom) == 0 && !slices.ContainsFunc(args, t.isUntypedConstArg) {
 		// Every type param is determined by an argument — leave it to Go.
 		return fun, nil
@@ -787,10 +787,23 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	return instantiated, nil
 }
 
-// instantiateNullaryGenericCall gives a call to a generic GALA function that
-// takes no parameters, such as `magic[T any]() Option[T]`, its type arguments
-// from the slot the call fills (see injectFuncPhantomTypeArgs): Go infers type
-// arguments from call arguments only. line/col locate its `(`.
+// filledParamTypes is the types of the parameters of funcMeta that a call with
+// nargs arguments fills: a variadic parameter no argument reaches binds no
+// type parameter, so `ArrayOf()` takes its `T` from the slot, as a call of a
+// function with no parameters does.
+func filledParamTypes(funcMeta *transpiler.FunctionMetadata, nargs int, hasSpread bool) []transpiler.Type {
+	params := funcMeta.ParamTypes
+	if funcMeta.Variadic && !hasSpread && nargs < len(params) {
+		return params[:len(params)-1]
+	}
+	return params
+}
+
+// instantiateNullaryGenericCall gives a call with no arguments to a generic
+// GALA function that needs none, such as `magic[T any]() Option[T]` or the
+// variadic `ArrayOf[T any](elements ...T)`, its type arguments from the slot
+// the call fills (see injectFuncPhantomTypeArgs): Go infers type arguments
+// from call arguments only. line/col locate its `(`.
 func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, col int) (ast.Expr, error) {
 	switch fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
@@ -801,7 +814,7 @@ func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, c
 		return fun, nil
 	}
 	meta := t.getFunction(name)
-	if meta == nil || len(meta.TypeParams) == 0 || len(meta.ParamTypes) > 0 {
+	if meta == nil || len(meta.TypeParams) == 0 || len(filledParamTypes(meta, 0, false)) > 0 {
 		return fun, nil
 	}
 	pending := t.expectedArgTypes.peek()

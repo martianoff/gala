@@ -80,6 +80,7 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"signatureDots":         func(t *galaASTTransformer) { t.signatureDots = []string{"collection_immutable"} },
 	"equalOwner":            func(t *galaASTTransformer) { t.equalOwner = &transpiler.TypeMetadata{Name: "Cell"} },
 	"typeNameDepth":         func(t *galaASTTransformer) { t.typeNameDepth = 1 },
+	"mismatchProbes":        func(t *galaASTTransformer) { t.mismatchProbes = 1 },
 }
 
 // TestScopedStateResidueCoversEveryScopedField asserts the hand-written

@@ -218,6 +218,16 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# The expected type reaches an untyped constant or an empty constructor: a
+# FoldLeft accumulator, a tuple inside a call, an empty ArrayOf(), a generic
+# constructor in an interface slot, the argument of a generated Equal.
+gala_exec_test(
+    name = "expected_type_literals",
+    src = "expected_type_literals.gala",
+    expected = "expected_type_literals.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_exec_test(
     name = "lambda_return_slot",
     src = "lambda_return_slot.gala",

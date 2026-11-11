@@ -875,6 +875,15 @@ const (
 	// that passes through without its type being written is accepted.
 	CodeAnonymousStructType ErrorCode = "GALA-E0090"
 
+	// E0091: an untyped constant written with literals does not fit the type
+	// it takes: the type of the other operand of a binary operator (`x * 1.5`
+	// for an `int` x, `b + 300` for a `byte` b) or the type of the slot it
+	// fills (`3` for a `string` parameter or field). GALA follows Go's rules
+	// for untyped constants and converts nothing implicitly; such code used
+	// to reach `go build`, which reported "1.5 (untyped float constant)
+	// truncated to int" against the generated code.
+	CodeConstantMisfit ErrorCode = "GALA-E0091"
+
 	// E0093: a sealed type declares a method the transpiler would otherwise
 	// generate for it — String, or the case predicate is<Case> — with
 	// another signature than the generated one, `String() string` or
