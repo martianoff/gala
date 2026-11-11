@@ -43,47 +43,59 @@ jobs:
         # a version without one fails rather than installing unverified.
         id: lean
         run: |
-          version="$(sed -n 's|^leanprover/lean4:v||p' lean-toolchain)"
+          # The release assets in the table are for x86_64 Linux.
+          if [ "$RUNNER_OS-$RUNNER_ARCH" != Linux-X64 ]; then
+            echo "::error::the Lean checksum table covers Linux X64 only, not $RUNNER_OS-$RUNNER_ARCH"
+            exit 1
+          fi
+          pin="$(tr -d '[:space:]' < lean-toolchain)"
+          version="$(printf '%s' "$pin" | sed -nE 's#^leanprover/lean4:v?([0-9]+\.[0-9]+\.[0-9]+)$#\1#p')"
+          if [ -z "$version" ]; then
+            echo "::error file=formal/lean-toolchain::expected leanprover/lean4:vX.Y.Z, found '$pin'"
+            exit 1
+          fi
           case "$version" in
             4.35.0) sha256=7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d ;;
             *)
-              echo "::error file=formal/lean-toolchain::formal/lean-toolchain pins '$version', which has no SHA-256 in .github/workflows/formal.yml; add one"
+              echo "::error file=formal/lean-toolchain::formal/lean-toolchain pins $version, which has no SHA-256 in .github/workflows/formal.yml; add one"
               exit 1 ;;
           esac
           {
             echo "version=$version"
             echo "sha256=$sha256"
-            echo "dir=$HOME/.lean/lean-$version-linux"
+            echo "archive=$HOME/.lean-dist/lean-$version-linux.tar.zst"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Cache the Lean toolchain
+      - name: Cache the Lean release archive
         # A CI-private cache, never served to anyone, so not re-hosting
-        # (docs/FORMAL_SEMANTICS.MD, "Licensing"). Keyed on the checksum.
+        # (docs/FORMAL_SEMANTICS.MD, "Licensing"). It holds the archive, not the
+        # unpacked tree, so the checksum below is verified on every run.
         uses: actions/cache@v4
         with:
-          path: ${{ steps.lean.outputs.dir }}
+          path: ${{ steps.lean.outputs.archive }}
           key: lean-${{ runner.os }}-${{ steps.lean.outputs.sha256 }}
 
       - name: Install the Lean toolchain
-        # Fetched from Lean's own release hosts and verified against the pinned SHA-256.
-        # No elan: the verified toolchain's bin/ goes on PATH, so lake runs exactly it.
+        # Fetched from Lean's own release host (which redirects to the GitHub release; the
+        # direct GitHub URL is the fallback), verified against the pinned SHA-256 and
+        # unpacked. No elan: the verified toolchain's bin/ goes on PATH, so lake runs
+        # exactly it.
         env:
           VERSION: ${{ steps.lean.outputs.version }}
           SHA256: ${{ steps.lean.outputs.sha256 }}
-          DIR: ${{ steps.lean.outputs.dir }}
+          ARCHIVE: ${{ steps.lean.outputs.archive }}
         run: |
-          if [ ! -x "$DIR/bin/lake" ]; then
-            asset="lean-$VERSION-linux.tar.zst"
-            tmp="$(mktemp -d)"
+          asset="$(basename "$ARCHIVE")"
+          if [ ! -f "$ARCHIVE" ]; then
+            mkdir -p "$(dirname "$ARCHIVE")"
             for host in https://releases.lean-lang.org/lean4 https://github.com/leanprover/lean4/releases/download; do
-              curl -sSfL --retry 2 -o "$tmp/$asset" "$host/v$VERSION/$asset" && break
+              curl -sSfL --retry 2 -o "$ARCHIVE" "$host/v$VERSION/$asset" && break
             done
-            echo "$SHA256  $tmp/$asset" | sha256sum -c -
-            mkdir -p "$(dirname "$DIR")"
-            tar --zstd -xf "$tmp/$asset" -C "$(dirname "$DIR")"
-            rm -rf "$tmp"
           fi
-          echo "$DIR/bin" >> "$GITHUB_PATH"
+          echo "$SHA256  $ARCHIVE" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/lean"
+          tar --zstd -xf "$ARCHIVE" -C "$RUNNER_TEMP/lean"
+          echo "$RUNNER_TEMP/lean/lean-$VERSION-linux/bin" >> "$GITHUB_PATH"
 
       - name: Show toolchain
         env:
@@ -91,6 +103,8 @@ jobs:
         run: |
           lean --version | tee /dev/stderr | grep -qF "version $VERSION," \
             || { echo "::error::lean on PATH is not $VERSION"; exit 1; }
+          [ "$(command -v lake)" = "$(dirname "$(command -v lean)")/lake" ] \
+            || { echo "::error::lake on PATH is not the pinned toolchain's"; exit 1; }
 
       - name: Cache Lake build
         uses: actions/cache@v4

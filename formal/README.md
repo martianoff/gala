@@ -48,7 +48,7 @@ Each definition's doc comment says what it models, and each file's header names 
 
 | Path | Purpose |
 |---|---|
-| `lean-toolchain` | The pinned Lean version. elan reads it. |
+| `lean-toolchain` | The pinned Lean version. elan reads it locally; CI also needs its SHA-256 in `formal.yml` (see below). |
 | `lakefile.toml` | The Lake project: the library `Gala`, built from `Gala.lean` and every file under `Gala/`, and the executables `galaspec` and `galaspec-tests`. |
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
 | `Gala.lean` | Root module, for `import Gala`. The build and the proof check find modules by directory, not through it. |
