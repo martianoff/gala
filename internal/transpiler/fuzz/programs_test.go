@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"math/rand"
@@ -66,39 +67,50 @@ const programSeeds = 40
 
 func checkProgram(t testing.TB, p program) {
 	t.Helper()
+	if failure := programFailure(t, p); failure != "" {
+		t.Fatal(failure)
+	}
+}
+
+// programFailure runs p and describes how it went wrong: a transpiler
+// panic, a wrong verdict, Go that does not type-check, build or run, or the
+// wrong output. It is "" when p does what it must.
+func programFailure(t testing.TB, p program) string {
+	t.Helper()
 	if p.lib != "" {
 		writeLibrary(t, p)
 	}
 	res := transpile(t, p.main)
 	if res.Panic != nil {
-		t.Fatalf("transpiler panicked: %v\n%s\ninput:\n%s", res.Panic, res.Stack, describe(p))
+		return fmt.Sprintf("transpiler panicked: %v\n%s\ninput:\n%s", res.Panic, res.Stack, describe(p))
 	}
 	if r := p.rejection; r != nil {
 		if res.Err == nil {
-			t.Fatalf("an invalid program was accepted (it must be rejected with %+v)\ninput:\n%s", *r, describe(p))
+			return fmt.Sprintf("an invalid program was accepted (it must be rejected with %+v)\ninput:\n%s", *r, describe(p))
 		}
 		checkDiagnostics(t, p.main, res.Err)
 		if !hasDiagnostic(res.Err, *r) {
-			t.Fatalf("the program must be rejected with %+v, got: %v\ninput:\n%s", *r, res.Err, describe(p))
+			return fmt.Sprintf("the program must be rejected with %+v, got: %v\ninput:\n%s", *r, res.Err, describe(p))
 		}
-		return
+		return ""
 	}
 	if res.Err != nil {
-		t.Fatalf("the transpiler rejected a valid program: %v\ninput:\n%s", res.Err, describe(p))
+		return fmt.Sprintf("the transpiler rejected a valid program: %v\ninput:\n%s", res.Err, describe(p))
 	}
 	checkGeneratedGo(t, p.main, res.Go)
 	imp := oracleImporter(t)
 	if tc := imp.TypeCheck("main.go", res.Go); tc.Skipped != "" || len(tc.Errors) > 0 {
-		t.Fatalf("the Go generated for a valid program does not type-check: %s%s\ninput:\n%s\ngenerated:\n%s",
+		return fmt.Sprintf("the Go generated for a valid program does not type-check: %s%s\ninput:\n%s\ngenerated:\n%s",
 			tc.Skipped, strings.Join(tc.Errors, "\n  "), describe(p), res.Go)
 	}
 	got, err := runGenerated(t, imp, res.Go)
 	if err != nil {
-		t.Fatalf("the generated program failed: %v\ninput:\n%s\ngenerated:\n%s", err, describe(p), res.Go)
+		return fmt.Sprintf("the generated program failed: %v\ninput:\n%s\ngenerated:\n%s", err, describe(p), res.Go)
 	}
 	if got != p.want {
-		t.Fatalf("the program printed\n%s\nbut must print\n%s\ninput:\n%s\ngenerated:\n%s", got, p.want, describe(p), res.Go)
+		return fmt.Sprintf("the program printed\n%s\nbut must print\n%s\ninput:\n%s\ngenerated:\n%s", got, p.want, describe(p), res.Go)
 	}
+	return ""
 }
 
 // writeLibrary writes the program's library package under generatedRoot.

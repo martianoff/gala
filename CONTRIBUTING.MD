@@ -134,6 +134,16 @@ detector (`--@rules_go//go/config:race`).
 | `FuzzValueBlocks` | generated programs nesting `bind`, if-expressions, `match`, lambdas, partial functions and trailing `if`/`else`, valid and invalid | a positioned diagnostic, or Go that type-checks against the standard library |
 | `FuzzFunctionValues` | generated valid programs whose values have random nested function types (`func()`, functions taking and returning functions, `Option` of functions), built through if-expressions, `match`, block branches, typed and untyped lambdas, generic calls and top-level functions used as values, then called | accepted, and Go that type-checks against the standard library |
 | `FuzzPrograms` | generated programs of one or two packages — a library imported qualified, aliased or dot-imported; std and collection_immutable imported each way — matching values against generated patterns (extractors, nested, named and alternative sub-patterns, stable identifiers, guards, non-bool guards, tuples, sequences, exhaustiveness, partial functions, partial functions applied in an argument, `any` subjects), plus if-expressions followed by a `match`, a `match` applied to a self call in tail-recursive functions, vals shadowed inside branches, arms and lambdas, statements before a branch's value, package-level vals whose types are inferred from their initializers, struct types declared inside a function, and functions named like std types | a positioned diagnostic (with the code the generator expects) where the program must be rejected; otherwise Go that type-checks, builds and prints exactly the output the generator computed. Each input is built with the Go toolchain: fuzz it with `-parallel 2` |
+| `FuzzAlphaRenaming` | generated programs (vals, tuple vals, functions with named and default arguments, typed lambdas bound to vals, `Option.Map` with untyped and placeholder lambdas, nested matches with extractors, guards and named sub-patterns, if-expressions with block branches) whose local binders are renamed to hostile names: `obj`, `_tmp_1`, `_tmp_2`, `std`, `panic`, `string`, `len`, `fmt`, `__p0`, and the names of other binders in scope where shadowing keeps every reference resolving as before | Go that builds and prints exactly the output the generator computed; on failure the same program with plain names is run too, to tell a renaming bug from another one. Fuzz with `-parallel 2` |
+| `FuzzEvaluationOrder` | the same generator, with operands, positional and named arguments, constructor and default arguments, match subjects, guards and extractors calling tracing functions | the program prints the trace the generator computed from source order: left to right, an extractor only after the sibling sub-patterns before it matched, a match subject once, one if branch. Fuzz with `-parallel 2` |
+
+The two metamorphic targets leave out the shapes of open bugs listed in
+`knownFailures` (`metamorphic_test.go`), keyed by issue number, and log which
+they left out. `TestKnownFailuresStillFail` runs each entry's repro and fails
+once it passes, so the PR that fixes the bug also removes its entry. Set
+`GALA_FUZZ_IGNORE_KNOWN_FAILURES` to `all`, or to a comma-separated list of issue
+numbers, to generate the listed shapes anyway (under `bazel test`, pass it with
+`--test_env`).
 
 Two more targets sit next to the code they check:
 
