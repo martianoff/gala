@@ -214,6 +214,12 @@ func sourceTempNames(src string) map[string]bool {
 	return names
 }
 
+// isTransformerTemp reports whether name is a temporary nextTempVar made,
+// not a binding of the source spelled like one (which a temporary skips).
+func (t *galaASTTransformer) isTransformerTemp(name string) bool {
+	return isTempVarName(name) && !t.sourceTempNames[name]
+}
+
 // freshTempName returns prefix followed by the next value of *counter that
 // spells no name of the file's source, advancing the counter past it.
 func (t *galaASTTransformer) freshTempName(prefix string, counter *int) string {

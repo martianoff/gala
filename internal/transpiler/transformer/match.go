@@ -1256,17 +1256,17 @@ func (t *galaASTTransformer) isSimpleIdentifier(s string) bool {
 
 // extractUserPatternVarNames walks pattern bindings AST and collects user-defined variable names.
 // It skips internal temp vars (_tmp_* prefix) and blank identifiers (_).
-func extractUserPatternVarNames(bindings []ast.Stmt) []string {
+func (t *galaASTTransformer) extractUserPatternVarNames(bindings []ast.Stmt) []string {
 	var names []string
 	for _, stmt := range bindings {
-		extractUserVarsFromStmt(stmt, &names)
+		t.extractUserVarsFromStmt(stmt, &names)
 	}
 	return names
 }
 
-func extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
+func (t *galaASTTransformer) extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
 	addName := func(name string) {
-		if name != "_" && !isTempVarName(name) {
+		if name != "_" && !t.isTransformerTemp(name) {
 			*names = append(*names, name)
 		}
 	}
@@ -1294,13 +1294,13 @@ func extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
 		}
 	case *ast.BlockStmt:
 		for _, inner := range s.List {
-			extractUserVarsFromStmt(inner, names)
+			t.extractUserVarsFromStmt(inner, names)
 		}
 	case *ast.IfStmt:
 		// Walk the body (guarded assignments may define vars inside if blocks)
 		if s.Body != nil {
 			for _, inner := range s.Body.List {
-				extractUserVarsFromStmt(inner, names)
+				t.extractUserVarsFromStmt(inner, names)
 			}
 		}
 	}
@@ -1465,7 +1465,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(cc caseSrc, paramName s
 
 	// Check for unused pattern variables: user vars that appear in bindings but
 	// are not referenced in the body or guard expression.
-	userVars := extractUserPatternVarNames(bindings)
+	userVars := t.extractUserPatternVarNames(bindings)
 	if len(userVars) > 0 {
 		// Collect identifiers referenced in body and guard
 		var nodesToCheck []ast.Node

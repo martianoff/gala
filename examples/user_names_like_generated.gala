@@ -63,6 +63,15 @@ func main() {
         case Square(s) => s + _tmp_1
     }
     Println(sum)
+    // ... and as pattern bindings, scoped to their own case.
+    val inner = Some(2) match {
+        case Some(_tmp_2) => Circle(_tmp_2) match {
+            case _tmp_2 if label(_tmp_2, "") == "" => 1
+            case _ => _tmp_2
+        }
+        case _ => 0
+    }
+    Println(inner)
 
     // __p0: a local, beside the placeholder lambda's parameter.
     val __p0 = 10
