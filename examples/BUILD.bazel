@@ -4912,3 +4912,26 @@ gala_exec_test(
     expected = "try_combinator_panics.out",
     deps = ["//go_builtins"],
 )
+
+# A case's pattern variables are visible in that case only
+gala_exec_test(
+    name = "match_binder_scope",
+    src = "match_binder_scope.gala",
+    expected = "match_binder_scope.out",
+    deps = ["//collection_immutable"],
+)
+
+# A match's subject never captures, nor is captured by, a user `obj`
+gala_exec_test(
+    name = "match_subject_hygiene",
+    src = "match_subject_hygiene.gala",
+    expected = "match_subject_hygiene.out",
+)
+
+# Sibling sub-patterns are tested left to right, stopping at the first failure
+gala_exec_test(
+    name = "match_sibling_order",
+    src = "match_sibling_order.gala",
+    expected = "match_sibling_order.out",
+    deps = ["//collection_immutable"],
+)

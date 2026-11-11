@@ -1,0 +1,97 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A case's pattern variables are visible in that case only: its guard and its
+// body. A later case reads the names around the match, whether the earlier
+// case failed its pattern or its guard.
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(Side int)
+}
+
+struct Label(Text string)
+
+func (l Label) String() string = "label:" + l.Text
+
+// The binder `r` of the first case is not the parameter `r` of the second.
+func area(s Shape, r int) int = s match {
+    case Circle(r)    => r * 100
+    case Square(side) => side + r
+}
+
+// A case whose guard fails binds nothing for the cases after it.
+func guarded(s Shape, r int) int = s match {
+    case Circle(r) if r > 100 => r
+    case Square(side)         => side + r
+    case Circle(_)            => r
+}
+
+// A nested pattern that never matched binds nothing either.
+func nested(o Option[Shape], r int) string = o match {
+    case Some(Circle(r)) if r > 10 => s"big circle $r"
+    case Some(_)                   => s"other r=$r"
+    case None()                    => s"none r=$r"
+}
+
+func headOf(xs Array[int], head int) string = xs match {
+    case Array(head, rest...) if rest.Size() > 5 => s"long, head $head"
+    case _                                       => s"short, head $head"
+}
+
+func firstOf(xs List[int], h int) string = xs match {
+    case List(h, _...) if h > 100 => s"big $h"
+    case _                        => s"h=$h"
+}
+
+func named(s Shape, h int) int = s match {
+    case Circle(R = h) if h > 100 => h
+    case _                        => h
+}
+
+// A match whose value a declaration stores.
+func stored(s Shape, r int) int {
+    val x = s match {
+        case Circle(r)    => r
+        case Square(side) => side + r
+    }
+    x
+}
+
+// A match run for its effect.
+func printed(s Shape, r int) {
+    s match {
+        case Circle(r) if r > 100 => Println(s"circle $r")
+        case _                    => Println(s"r=$r")
+    }
+}
+
+// A match whose arm returns from the function.
+func early(s Shape, r int) int {
+    s match {
+        case Circle(r) if r > 100 => { return r }
+        case _                    => Println(s"no early return, r=$r")
+    }
+    r
+}
+
+// The binder `s` is an int; the parameter `s` the later case reads is a Label.
+func typed(sh Shape, s Label) string = sh match {
+    case Circle(s)    => s"circle $s"
+    case Square(side) => s"square $side ${s.String()}"
+}
+
+func main() {
+    Println(area(Square(3), 7))
+    Println(guarded(Circle(5), 7))
+    Println(nested(Some(Circle(3)), 9))
+    Println(nested(None(), 9))
+    Println(headOf(ArrayOf(1, 2, 3), 42))
+    Println(firstOf(ListOf(1, 2), 42))
+    Println(named(Circle(5), 42))
+    Println(stored(Square(3), 7))
+    printed(Circle(5), 7)
+    Println(early(Circle(5), 7))
+    Println(typed(Square(2), Label("x")))
+}

@@ -53,7 +53,7 @@ sealed type Dir {
 		{
 			name: "match arm guard",
 			input: sealedDecl + `func flip(d Dir) string = d match {
-	case other if other == RightToLeft() => "rtl"
+	case _ if d == RightToLeft() => "rtl"
 	case _ => "ltr"
 }`,
 		},

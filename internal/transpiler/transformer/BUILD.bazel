@@ -47,6 +47,7 @@ go_library(
         "local_types.go",
         "loop_control.go",
         "match.go",
+        "match_arm_scope.go",
         "match_source.go",
         "method_receiver_alias.go",
         "methods.go",

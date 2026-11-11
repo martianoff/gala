@@ -178,8 +178,8 @@ func locals() {
 	var x = 3
 //line $DIR/main.gala:85
 	func() {
-		obj := x
-		if obj == 3 {
+		_subj := x
+		if _subj == 3 {
 			fmt.Println("three")
 		} else {
 			fmt.Println("other")

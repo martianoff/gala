@@ -51,7 +51,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
     case Some(n) => s"some $n"
     case None()  => "none"
 }`,
-			want:      []string{"obj := m.MatchView()", "std.Some[_T0]{}.Unapply(v)"},
+			want:      []string{"_subj := m.MatchView()", "std.Some[_T0]{}.Unapply(v)"},
 			wantViews: 1,
 		},
 		{
@@ -60,7 +60,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
     case None    => "none"
     case Some(n) => s"some $n"
 }`,
-			want:      []string{"obj := m.MatchView()", "std.None[_T0]{}.Unapply(v)"},
+			want:      []string{"_subj := m.MatchView()", "std.None[_T0]{}.Unapply(v)"},
 			wantViews: 1,
 		},
 		{
@@ -69,7 +69,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
     case std.None => "none"
     case Some(n)  => s"some $n"
 }`,
-			want:      []string{"obj := m.MatchView()", "std.None[_T0]{}.Unapply(v)"},
+			want:      []string{"_subj := m.MatchView()", "std.None[_T0]{}.Unapply(v)"},
 			wantViews: 1,
 		},
 		{
@@ -77,7 +77,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
 			body: `func f(g Gauge) string = g match {
     case Low() | High(_) => "any"
 }`,
-			want:      []string{"obj := g.MatchView()"},
+			want:      []string{"_subj := g.MatchView()"},
 			wantViews: 1,
 		},
 		{
@@ -86,7 +86,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
     case MaybeInt(r) => r
     case _           => 0
 }`,
-			want:      []string{"obj := m\n"},
+			want:      []string{"_subj := m\n"},
 			wantViews: 0,
 		},
 		{
@@ -109,7 +109,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
         case _                             => "other"
     }
 }`,
-			want:      []string{"obj := m.MatchView()"},
+			want:      []string{"_subj := m.MatchView()"},
 			wantViews: 1,
 		},
 		{
@@ -121,7 +121,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
 }
 
 val Zero Option[int] = Some(0)`,
-			want:      []string{"obj := m.MatchView()"},
+			want:      []string{"_subj := m.MatchView()"},
 			wantViews: 1,
 		},
 		{
@@ -160,7 +160,7 @@ func f(o Option[Dir]) int = o match {
     case Some(None)    => 0
     case None()        => -1
 }`,
-			want:      []string{"obj := o\n", "std.None[_T0]{}.Unapply(v)"},
+			want:      []string{"_subj := o\n", "std.None[_T0]{}.Unapply(v)"},
 			wantViews: 2,
 		},
 		{
@@ -169,7 +169,7 @@ func f(o Option[Dir]) int = o match {
     case (Some(_), _) => a
     case (_, other)   => other
 }`,
-			want:      []string{":= obj.V1.Get().MatchView()", "other := obj.V2.Get()"},
+			want:      []string{":= _subj.V1.Get().MatchView()", "other := _subj.V2.Get()"},
 			wantViews: 1,
 		},
 	}

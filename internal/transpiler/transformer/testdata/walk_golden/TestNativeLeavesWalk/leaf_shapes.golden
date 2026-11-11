@@ -345,14 +345,15 @@ func bodies() int {
 //line $DIR/main.gala:58
 	var pick = func(s Shape) int {
 		{
-			obj := s
+			_subj := s
 			{
-				_tmp_21 := Circle{}.Unapply(obj)
+				_tmp_21 := Circle{}.Unapply(_subj)
 				_tmp_22 := _tmp_21.IsDefined()
 				_tmp_23 := _tmp_21.Value.Get()
 				_ = _tmp_23
-				r := _tmp_23
+				_tmp_r := _tmp_23
 				if _tmp_22 {
+					r := _tmp_r
 					return r
 				} else {
 					return 0

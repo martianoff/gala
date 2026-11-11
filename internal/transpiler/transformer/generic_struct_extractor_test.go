@@ -51,7 +51,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Box(mm, _) => mm
     case _          => b.Md
 }`,
-			contains:    []string{"mm := obj.Md.Get()"},
+			contains:    []string{"mm := _subj.Md.Get()"},
 			notContains: []string{".V1"},
 		},
 		{
@@ -60,7 +60,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Inner(x) => x
     case _        => b.In.X
 }`,
-			contains:    []string{"x := obj.X.Get()"},
+			contains:    []string{"x := _subj.X.Get()"},
 			notContains: []string{".V1"},
 		},
 		{
@@ -69,7 +69,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Inner(x) => x + 1
     case _        => 0
 }`,
-			contains:    []string{"x := obj.X.Get()"},
+			contains:    []string{"x := _subj.X.Get()"},
 			notContains: []string{".V1"},
 		},
 		{
@@ -78,7 +78,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Box(A(_), _) => "a"
     case _            => "o"
 }`,
-			contains:    []string{"A[_T0]{}.Unapply(v)", "_A(obj.Md.Get())"},
+			contains:    []string{"A[_T0]{}.Unapply(v)", "_A(_subj.Md.Get())"},
 			notContains: []string{"A :="},
 		},
 		{
@@ -97,7 +97,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Pair(k, v)   => s"$k${v + 2}"
     case _            => ""
 }`,
-			contains:    []string{`obj.Key.Get() == "k"`, "v := obj.Val.Get()", "k := obj.Key.Get()"},
+			contains:    []string{`_subj.Key.Get() == "k"`, "v := _subj.Val.Get()", "k := _subj.Key.Get()"},
 			notContains: []string{".V1", ".V2"},
 		},
 		{
@@ -106,7 +106,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Box(_, Inner(x)) if x > 5 => x
     case _                         => 0
 }`,
-			contains:    []string{"x := obj.In.Get().X.Get()"},
+			contains:    []string{"x := _subj.In.Get().X.Get()"},
 			notContains: []string{".V1", ".V2"},
 		},
 		{
@@ -115,7 +115,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Holder(Circle(r), n) => r * n
     case _                    => 0
 }`,
-			contains:    []string{"Circle{}.Unapply(obj.Sh.Get())", "n := obj.N.Get()"},
+			contains:    []string{"Circle{}.Unapply(_subj.Sh.Get())", "n := _subj.N.Get()"},
 			notContains: []string{"Circle :="},
 		},
 		{
@@ -124,7 +124,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case (Circle(r), n) => r * n
     case _              => 0
 }`,
-			contains:    []string{"Circle{}.Unapply(obj.V1.Get())"},
+			contains:    []string{"Circle{}.Unapply(_subj.V1.Get())"},
 			notContains: []string{"Circle :="},
 		},
 	}

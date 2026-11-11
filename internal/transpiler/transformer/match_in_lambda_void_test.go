@@ -16,7 +16,7 @@ import (
 // match expression whose every arm is void (assignment / `{}` / void call)
 // is lowered as a void-returning lambda — not as a value-returning lambda
 // wrapping the void IIFE in `return`. The pre-fix lowering emitted
-// `return func(obj T) { ... }(scrutinee)` and Go rejected with
+// `return func(_subj T) { ... }(scrutinee)` and Go rejected with
 // "(no value) used as value", or it emitted `func(...) void { ... }`
 // using the literal `void` ident as the lambda's Go return type.
 //
@@ -80,7 +80,7 @@ func main() {
 				// Lambda is void.
 				"return func(m Member) {",
 				// Match IIFE remains a bare expression statement.
-				"obj := CloseSession(m)",
+				"_subj := CloseSession(m)",
 			},
 		},
 		{

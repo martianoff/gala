@@ -19,7 +19,7 @@ import (
 // enclosing function, not as a return that only escapes the synthetic
 // IIFE that lowers the match.
 //
-// The pre-fix behavior wrapped the match body in `func(obj T) { ... }(s)`
+// The pre-fix behavior wrapped the match body in `func(_subj T) { ... }(s)`
 // and the user's `return X` was trapped inside that lambda — the
 // surrounding gala function never returned, and any enclosing for-loop
 // spun forever.
@@ -68,8 +68,8 @@ func main() {
 			mustMiss: []string{
 				// The match must NOT be lowered as a value-returning IIFE
 				// (which would trap `return x` in the lambda).
-				"func(obj std.Option[int]) int",
-				"func(obj std.Option[int]) string",
+				"func(_subj std.Option[int]) int",
+				"func(_subj std.Option[int]) string",
 				"func() int {",
 				"func() string {",
 			},
@@ -105,7 +105,7 @@ func firstOdd(xs Array[int]) int {
 			mustMiss: []string{
 				// The outer match must NOT be lowered as a value-returning
 				// IIFE that would swallow `return x`.
-				"func(obj std.Option[int]) int {",
+				"func(_subj std.Option[int]) int {",
 				"func() int {",
 			},
 		},

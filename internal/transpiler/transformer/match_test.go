@@ -40,10 +40,10 @@ import "martianoff/gala/std"
 
 var x std.Immutable[int] = std.NewImmutable[int](5)
 var res = std.NewImmutable(func() string {
-	obj := x.Get()
-	if obj == 1 {
+	_subj := x.Get()
+	if _subj == 1 {
 		return "one"
-	} else if obj == 2 {
+	} else if _subj == 2 {
 		return "two"
 	} else {
 		return "many"
@@ -66,8 +66,8 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
 var res = std.NewImmutable(func() int {
-	obj := x.Get()
-	if obj == 10 {
+	_subj := x.Get()
+	if _subj == 10 {
 		return 1
 	} else {
 		return 0
@@ -90,8 +90,8 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable("hello")
 var res = std.NewImmutable(func() string {
-	obj := x.Get()
-	if obj == "hello" {
+	_subj := x.Get()
+	if _subj == "hello" {
 		return "world"
 	} else {
 		return "fail"
@@ -114,10 +114,11 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable(42)
 var res = std.NewImmutable(func() int {
-	obj := x.Get()
+	_subj := x.Get()
 	{
-		y := obj
+		_tmp_y := _subj
 		if true {
+			y := _tmp_y
 			return y + 1
 		} else {
 			return 0
@@ -141,14 +142,15 @@ import "martianoff/gala/std"
 
 var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some[int]{}.Apply(1))
 var res = std.NewImmutable(func() int {
-	obj := x.Get()
+	_subj := x.Get()
 	{
-		_tmp_1 := _unapply_std_Some(obj)
+		_tmp_1 := _unapply_std_Some(_subj)
 		_tmp_2 := _tmp_1.IsDefined()
 		_tmp_3 := _tmp_1.Value.Get()
 		_ = _tmp_3
-		y := _tmp_3
+		_tmp_y := _tmp_3
 		if _tmp_2 {
+			y := _tmp_y
 			return y
 		} else {
 			return 0
@@ -176,18 +178,19 @@ import "martianoff/gala/std"
 
 var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some[any]{}.Apply("test"))
 var res = std.NewImmutable(func() string {
-	obj := x.Get()
+	_subj := x.Get()
 	{
-		_tmp_1 := _unapply_std_Some(obj)
+		_tmp_1 := _unapply_std_Some(_subj)
 		_tmp_2 := _tmp_1.IsDefined()
 		_tmp_3 := _tmp_1.Value.Get()
-		var s string
+		var _tmp_s string
 		var _tmp_4 bool
 		if _tmp_2 {
-			s, _tmp_4 = std.As[string](_tmp_3)
+			_tmp_s, _tmp_4 = std.As[string](_tmp_3)
 		}
 		_ = _tmp_3
 		if _tmp_2 && _tmp_4 {
+			s := _tmp_s
 			return s
 		} else {
 			return "unknown"
@@ -321,13 +324,13 @@ func NewLightOff() Light {
 }
 func describe(l Light) string {
 	{
-		obj := l
+		_subj := l
 		{
-			_tmp_1 := On{}.Unapply(obj)
+			_tmp_1 := On{}.Unapply(_subj)
 			if _tmp_1 {
 				return "on"
 			} else {
-				_tmp_2 := Off{}.Unapply(obj)
+				_tmp_2 := Off{}.Unapply(_subj)
 				if _tmp_2 {
 					return "off"
 				} else {
@@ -429,13 +432,13 @@ func NewLightOff() Light {
 }
 func describe(l Light) string {
 	{
-		obj := l
+		_subj := l
 		{
-			_tmp_1 := On{}.Unapply(obj)
+			_tmp_1 := On{}.Unapply(_subj)
 			if _tmp_1 {
 				return "on"
 			} else {
-				_tmp_2 := Off{}.Unapply(obj)
+				_tmp_2 := Off{}.Unapply(_subj)
 				if _tmp_2 {
 					return "off"
 				} else {
@@ -472,10 +475,10 @@ func describe(b bool) string = b match {
 
 func describe(b bool) string {
 	{
-		obj := b
-		if obj == true {
+		_subj := b
+		if _subj == true {
 			return "yes"
-		} else if obj == false {
+		} else if _subj == false {
 			return "no"
 		} else {
 			panic("unreachable")
@@ -527,10 +530,15 @@ import "martianoff/gala/std"
 
 var x = std.NewImmutable(42)
 var res = std.NewImmutable(func() int {
-	obj := x.Get()
+	_subj := x.Get()
 	{
-		y := obj
-		if true && y > 10 {
+		_tmp_y := _subj
+		var _tmp_1 bool
+		{
+			y := _tmp_y
+			_tmp_1 = y > 10
+		}
+		if _tmp_1 {
 			return 1
 		} else {
 			return 0
@@ -552,10 +560,10 @@ func describe(b bool) string = b match {
 
 func describe(b bool) string {
 	{
-		obj := b
-		if obj == true {
+		_subj := b
+		if _subj == true {
 			return "yes"
-		} else if obj == false {
+		} else if _subj == false {
 			return "no"
 		} else {
 			return "unknown"
@@ -678,17 +686,18 @@ func NewHolder(cell Cell[int]) Holder {
 }
 func unwrap(h Holder) int {
 	{
-		obj := h.Cell.Get().Get()
+		_subj := h.Cell.Get().Get()
 		{
-			_tmp_1 := _unapply_std_Some(obj)
+			_tmp_1 := _unapply_std_Some(_subj)
 			_tmp_2 := _tmp_1.IsDefined()
 			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
-			v := _tmp_3
+			_tmp_v := _tmp_3
 			if _tmp_2 {
+				v := _tmp_v
 				return v
 			} else {
-				_tmp_4 := _unapply_std_None(obj)
+				_tmp_4 := _unapply_std_None(_subj)
 				if _tmp_4 {
 					return 0
 				} else {
@@ -725,17 +734,18 @@ import "martianoff/gala/std"
 
 func resolve(opt std.Option[int]) int {
 	{
-		obj := opt
+		_subj := opt
 		{
-			_tmp_1 := _unapply_std_Some(obj)
+			_tmp_1 := _unapply_std_Some(_subj)
 			_tmp_2 := _tmp_1.IsDefined()
 			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
-			n := _tmp_3
+			_tmp_n := _tmp_3
 			if _tmp_2 {
+				n := _tmp_n
 				return n
 			} else {
-				_tmp_4 := _unapply_std_None(obj)
+				_tmp_4 := _unapply_std_None(_subj)
 				if _tmp_4 {
 					panic("missing")
 				} else {
@@ -769,10 +779,10 @@ func describe(code int) string {
 
 func describe(code int) string {
 	{
-		obj := code
-		if obj == 0 {
+		_subj := code
+		if _subj == 0 {
 			return "ok"
-		} else if obj == 1 {
+		} else if _subj == 1 {
 			return "warn"
 		} else {
 			panic("invalid")

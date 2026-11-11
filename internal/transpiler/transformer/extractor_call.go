@@ -33,17 +33,27 @@ func (t *galaASTTransformer) extractorUnapplyCall(
 	objExpr ast.Expr,
 	matchedType transpiler.Type,
 ) ast.Expr {
+	var call *ast.CallExpr
 	if helper, ok := t.unapplyHelper(extractorName, meta, inferredTypes, unapplyMeta, matchedType); ok {
-		return &ast.CallExpr{Fun: ast.NewIdent(helper), Args: []ast.Expr{objExpr}}
+		call = &ast.CallExpr{Fun: ast.NewIdent(helper), Args: []ast.Expr{objExpr}}
+	} else {
+		typeArgs := make([]ast.Expr, len(inferredTypes))
+		for i, tp := range inferredTypes {
+			typeArgs[i] = t.typeToExpr(tp)
+		}
+		call = &ast.CallExpr{
+			Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: withTypeArgs(t.ident(extractorName), typeArgs)}, Sel: ast.NewIdent("Unapply")},
+			Args: []ast.Expr{objExpr},
+		}
 	}
-	typeArgs := make([]ast.Expr, len(inferredTypes))
-	for i, tp := range inferredTypes {
-		typeArgs[i] = t.typeToExpr(tp)
+	// A sealed case's Unapply is generated: it only tests the case.
+	if t.sealedParentMetaOfVariant(extractorName) != nil {
+		if t.patternReads == nil {
+			t.patternReads = make(map[*ast.CallExpr]bool)
+		}
+		t.patternReads[call] = true
 	}
-	return &ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: withTypeArgs(t.ident(extractorName), typeArgs)}, Sel: ast.NewIdent("Unapply")},
-		Args: []ast.Expr{objExpr},
-	}
+	return call
 }
 
 // unapplyHelper returns the name of the generic helper that calls the generic

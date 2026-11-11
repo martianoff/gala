@@ -72,7 +72,7 @@ func main() { Println(describe(LineFrame("x"))) }`,
 }
 
 func main() { Println(describe(endFrame())) }`,
-			wantContains: []string{"lineFrame{}.Unapply(obj)"},
+			wantContains: []string{"lineFrame{}.Unapply(_subj)"},
 		},
 		{
 			name: "missing lowercase variant is reported",
@@ -92,8 +92,8 @@ func main() { Println(describe(lineFrame("x"))) }`,
 }
 
 func main() { Println(describe(endFrame())) }`,
-			wantContains: []string{"endFrame{}.Unapply(obj)", `matched none of its cases: it is a zero value`},
-			wantAbsent:   []string{"endFrame := obj"},
+			wantContains: []string{"endFrame{}.Unapply(_subj)", `matched none of its cases: it is a zero value`},
+			wantAbsent:   []string{"endFrame := _subj"},
 		},
 		{
 			name: "guarded bare zero-field variant matches it",
@@ -103,8 +103,8 @@ func main() { Println(describe(endFrame())) }`,
 }
 
 func main() { Println(describe(endFrame(), true)) }`,
-			wantContains: []string{"endFrame{}.Unapply(obj)"},
-			wantAbsent:   []string{"endFrame := obj"},
+			wantContains: []string{"endFrame{}.Unapply(_subj)"},
+			wantAbsent:   []string{"endFrame := _subj"},
 		},
 		{
 			name: "bare field-bearing variant is rejected",
@@ -125,7 +125,7 @@ func main() { Println(describe(endFrame())) }`,
 }
 
 func main() { Println(describe(lineFrame("x"))) }`,
-			wantContains: []string{"endFrame{}.Unapply(obj)", "other := obj"},
+			wantContains: []string{"endFrame{}.Unapply(_subj)", "other := _subj"},
 		},
 		{
 			// A name spelled like a zero-field variant of some OTHER sealed
@@ -146,7 +146,7 @@ func main() {
     Println(opt(Some(4)))
     Println(endFrame())
 }`,
-			wantContains: []string{"endFrame := obj"},
+			wantContains: []string{"endFrame := _subj"},
 			wantAbsent:   []string{"endFrame{}.Unapply("},
 		},
 		{
@@ -167,7 +167,7 @@ func main() {
     Println(pair((1, 2)))
     Println(endFrame())
 }`,
-			wantContains: []string{"endFrame := obj"},
+			wantContains: []string{"endFrame := _subj"},
 			wantAbsent:   []string{"endFrame{}.Unapply("},
 		},
 		{
@@ -214,7 +214,7 @@ func main() {
     Println(describe(2))
     Println(endFrame())
 }`,
-			wantContains: []string{"endFrame := obj"},
+			wantContains: []string{"endFrame := _subj"},
 			wantAbsent:   []string{"endFrame{}.Unapply("},
 		},
 		{
@@ -232,7 +232,7 @@ func describe(m maybe[frame]) string = m match {
 
 func main() { Println(describe(just[frame](endFrame()))) }`,
 			wantContains: []string{"endFrame{}.Unapply(", "nothing[_T0]{}.Unapply(v)", `matched none of its cases: it is a zero value`},
-			wantAbsent:   []string{"endFrame := ", "nothing := obj"},
+			wantAbsent:   []string{"endFrame := ", "nothing := _subj"},
 		},
 		{
 			name: "nested inside Option",

@@ -45,8 +45,8 @@ func (_ Even) Unapply(i int) bool = i % 2 == 0
     case Circle(r) => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](obj)"},
-			absent:   []string{"Unapply(obj)"},
+			contains: []string{"std.As[Shape](_subj)"},
+			absent:   []string{"Unapply(_subj)"},
 		},
 		{
 			name: "cases of several sealed types, a guard and a type pattern",
@@ -57,8 +57,8 @@ func (_ Even) Unapply(i int) bool = i % 2 == 0
     case i: int => fmt.Sprint(i)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](obj)", "std.As[Wrapped](obj)", "std.As[int](obj)"},
-			absent:   []string{"Unapply(obj)"},
+			contains: []string{"std.As[Shape](_subj)", "std.As[Wrapped](_subj)", "std.As[int](_subj)"},
+			absent:   []string{"Unapply(_subj)"},
 		},
 		{
 			name: "sealed case nested in a field of type any",
@@ -74,8 +74,8 @@ func (_ Even) Unapply(i int) bool = i % 2 == 0
     case Even() => "even"
     case _ => "other"
 }`,
-			contains: []string{"std.As[int](obj)"},
-			absent:   []string{"Unapply(obj)"},
+			contains: []string{"std.As[int](_subj)"},
+			absent:   []string{"Unapply(_subj)"},
 		},
 		{
 			name: "bare guard extractor on an any subject",
@@ -83,8 +83,8 @@ func (_ Even) Unapply(i int) bool = i % 2 == 0
     case Even => "even"
     case _ => "other"
 }`,
-			contains: []string{"std.As[int](obj)"},
-			absent:   []string{"Unapply(obj)"},
+			contains: []string{"std.As[int](_subj)"},
+			absent:   []string{"Unapply(_subj)"},
 		},
 		{
 			name: "instance extractor on an any subject",
@@ -94,8 +94,8 @@ func describe(v any) string = v match {
     case even() => "even"
     case _ => "other"
 }`,
-			contains: []string{"std.As[int](obj)"},
-			absent:   []string{"Unapply(obj)"},
+			contains: []string{"std.As[int](_subj)"},
+			absent:   []string{"Unapply(_subj)"},
 		},
 		{
 			name: "sealed case on a type parameter subject",
@@ -103,7 +103,7 @@ func describe(v any) string = v match {
     case Circle(r) => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](any(obj))"},
+			contains: []string{"std.As[Shape](any(_subj))"},
 		},
 		{
 			// A subject of the sealed type itself is passed to Unapply as it is.
@@ -112,7 +112,7 @@ func describe(v any) string = v match {
     case Circle(r) => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"Unapply(obj)"},
+			contains: []string{"Unapply(_subj)"},
 			absent:   []string{"std.As[Shape]"},
 		},
 	}

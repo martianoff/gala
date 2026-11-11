@@ -186,14 +186,14 @@ sealed type Slot[T any] {
     case Square => "square"
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](obj)", "Circle{}.Unapply(", "Square{}.Unapply("},
+			contains: []string{"std.As[Shape](_subj)", "Circle{}.Unapply(", "Square{}.Unapply("},
 		},
 		{
 			name: "lowercase case of a generic sealed type binds",
 			body: `func describe(v any) string = v match {
     case blank => fmt.Sprint(blank)
 }`,
-			contains: []string{"blank := obj"},
+			contains: []string{"blank := _subj"},
 		},
 		{
 			name: "generic case with its type arguments",
@@ -202,7 +202,7 @@ sealed type Slot[T any] {
     case Some[int](n) => fmt.Sprint(n)
     case _ => "other"
 }`,
-			contains: []string{"std.As[std.Option[int]](obj)"},
+			contains: []string{"std.As[std.Option[int]](_subj)"},
 		},
 		{
 			// A capitalized value in scope is compared, as before, even when

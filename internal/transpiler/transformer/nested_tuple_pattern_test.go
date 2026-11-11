@@ -50,7 +50,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case _            => "none"
 }`,
 			// The tuple's bindings are hoisted out of the extractor's guard.
-			contains: []string{"var n int", "var s string", ".V1.Get()", ".V2.Get()"},
+			contains: []string{"var _tmp_n int", "var _tmp_s string", ".V1.Get()", ".V2.Get()"},
 		},
 		{
 			name: "tuple inside Right",
@@ -58,7 +58,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case Right((a, b)) => a + b
     case Left(_)       => 0
 }`,
-			contains: []string{"var a int", "var b int"},
+			contains: []string{"var _tmp_a int", "var _tmp_b int"},
 		},
 		{
 			name: "tuple with a literal inside Success",
@@ -66,7 +66,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case Success((s, true)) => s
     case _                  => ""
 }`,
-			contains: []string{"var s string", "== true"},
+			contains: []string{"var _tmp_s string", "== true"},
 		},
 		{
 			name: "tuple inside a user variant next to another field",
@@ -74,7 +74,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case Move((x, y), label) => s"$label $x $y"
     case Quit()              => "quit"
 }`,
-			contains: []string{"var x int", "var y int", ".V1.Get().V1.Get()", ".V2.Get()"},
+			contains: []string{"var _tmp_x int", "var _tmp_y int", ".V1.Get().V1.Get()", ".V2.Get()"},
 		},
 		{
 			name: "tuple inside a struct extractor",
@@ -82,7 +82,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case Holder((k, v), tag) => s"$tag $k ${v + 1}"
     case _                   => ""
 }`,
-			contains: []string{"obj.Pair.Get().V1.Get()", "obj.Pair.Get().V2.Get()"},
+			contains: []string{"_subj.Pair.Get().V1.Get()", "_subj.Pair.Get().V2.Get()"},
 		},
 		{
 			name: "tuple as a sequence element",
@@ -90,7 +90,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case Array((k, v), _) => s"$k ${v + 1}"
     case _                => ""
 }`,
-			contains: []string{"var k string", "var v int"},
+			contains: []string{"var _tmp_k string", "var _tmp_v int"},
 		},
 		{
 			name: "tuple inside a tuple",
@@ -98,7 +98,7 @@ func TestNestedTuplePattern(t *testing.T) {
     case ((a, b), s) => s"$s ${a * b}"
     case _           => ""
 }`,
-			contains: []string{"obj.V1.Get().V1.Get()", "obj.V1.Get().V2.Get()"},
+			contains: []string{"_subj.V1.Get().V1.Get()", "_subj.V1.Get().V2.Get()"},
 		},
 	}
 	for _, tt := range tests {

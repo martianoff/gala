@@ -1,0 +1,10 @@
+other
+x
+constructor: other [E3;]
+constructor: even 2 [E2;P4;]
+alternatives: small [P4;]
+tuple: other [E3;]
+option: other [E3;]
+opaque: other []
+struct: other []
+sequence: other []

@@ -53,7 +53,7 @@ func main() {
 			expected: []string{
 				"func wrap() std.Option[std.Tuple3[int, int, int]]",
 				"func() std.Tuple3[int, int, int] {",
-				"obj := wrap()",
+				"_subj := wrap()",
 				"_tmp_3 := _tmp_1.Value.Get()",
 			},
 			notExpected: []string{

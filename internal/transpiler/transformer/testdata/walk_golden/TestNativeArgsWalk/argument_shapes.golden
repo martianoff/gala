@@ -93,12 +93,12 @@ func args(p P) int {
 //line $DIR/main.gala:32
 	var _tmp_1 int
 	{
-		obj := p.x.Get()
-		if obj == 0 {
+		_subj := p.x.Get()
+		if _subj == 0 {
 //line $DIR/main.gala:34
 			return 0
 		} else {
-			n := obj
+			n := _subj
 			_tmp_1 = n
 		}
 	}

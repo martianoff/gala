@@ -63,7 +63,7 @@ func main() {
     Println(r)
 }`,
 			wantContains: "std.None[_T0]{}.Unapply(v)",
-			wantAbsent:   "None := obj",
+			wantAbsent:   "None := _subj",
 		},
 		{
 			// Same shape, declared by the user rather than by std. The
@@ -85,7 +85,7 @@ func main() {
     Println(describe(Just(42)))
 }`,
 			wantContains: "Nothing[_T0]{}.Unapply(v)",
-			wantAbsent:   "Nothing := obj",
+			wantAbsent:   "Nothing := _subj",
 		},
 		{
 			name: "non-generic user-declared variant",
@@ -104,8 +104,8 @@ func describe(s Shape) string = s match {
 func main() {
     Println(describe(Circle(1.0)))
 }`,
-			wantContains: "Empty{}.Unapply(obj)",
-			wantAbsent:   "Empty := obj",
+			wantContains: "Empty{}.Unapply(_subj)",
+			wantAbsent:   "Empty := _subj",
 		},
 	}
 
@@ -225,6 +225,6 @@ func main() {
     Println(Circle(1.0))
 }`)
 	require.NoError(t, err)
-	require.Contains(t, out, "Circle := obj",
+	require.Contains(t, out, "Circle := _subj",
 		"a bare name that is not a variant of the matched type must still bind")
 }

@@ -38,8 +38,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"obj.V1.Get()",
-				"obj.V2.Get()",
+				"_subj.V1.Get()",
+				"_subj.V2.Get()",
 			},
 		},
 		{
@@ -56,8 +56,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
-				"_unapply_std_Left(obj)",
-				"_unapply_std_Right(obj)",
+				"_unapply_std_Left(_subj)",
+				"_unapply_std_Right(_subj)",
 			},
 		},
 		{
@@ -74,8 +74,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
-				"_unapply_std_Left(obj)",
-				"_unapply_std_Right(obj)",
+				"_unapply_std_Left(_subj)",
+				"_unapply_std_Right(_subj)",
 			},
 		},
 		{
@@ -106,11 +106,11 @@ func main() {
     }
 }`,
 			expected: []string{
-				// The helper is used only when obj is exactly the extractor's
+				// The helper is used only when _subj is exactly the extractor's
 				// parameter type, so this also shows the subject typed
 				// Either[int, string] (a mistyped subject keeps the
 				// std.Left[...]{} literal).
-				"_unapply_std_Left(obj)",
+				"_unapply_std_Left(_subj)",
 				"func _unapply_std_Left[_T0 any, _T1 any](v std.Either[_T0, _T1]) std.Option[_T0]",
 			},
 		},
@@ -196,9 +196,9 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
-				"obj.V1.Get()",
-				"obj.V2.Get()",
-				"obj.V3.Get()",
+				"_subj.V1.Get()",
+				"_subj.V2.Get()",
+				"_subj.V3.Get()",
 			},
 		},
 		{
@@ -216,8 +216,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"obj.V1.Get()",
-				"obj.V2.Get()",
+				"_subj.V1.Get()",
+				"_subj.V2.Get()",
 			},
 		},
 		{
@@ -233,7 +233,7 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"obj.V1.Get()",
+				"_subj.V1.Get()",
 			},
 		},
 		{
@@ -251,8 +251,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
-				"obj.V1.Get()",
-				"obj.V2.Get()",
+				"_subj.V1.Get()",
+				"_subj.V2.Get()",
 			},
 		},
 		{
@@ -270,9 +270,9 @@ func main() {
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
-				"obj.V1.Get()",
-				"obj.V2.Get()",
-				"obj.V3.Get()",
+				"_subj.V1.Get()",
+				"_subj.V2.Get()",
+				"_subj.V3.Get()",
 			},
 		},
 		{

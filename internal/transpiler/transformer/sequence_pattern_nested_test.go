@@ -49,12 +49,12 @@ func transpileSequencePattern(t *testing.T, body string) (string, error) {
 }
 
 // guardBlockOf returns the body of the first `if <sizeCheck> { ... }` block
-// that follows the size check `<name> := obj.Size() == N` (`>= N` for a
+// that follows the size check `<name> := _subj.Size() == N` (`>= N` for a
 // pattern with a rest), so a test can assert what runs inside the guard and
 // what runs after it.
 func guardBlockOf(t *testing.T, code string) (guard string, after string) {
 	t.Helper()
-	m := regexp.MustCompile(`(_tmp_\d+) := obj\.Size\(\) (?:==|>=) \d+`).FindStringSubmatch(code)
+	m := regexp.MustCompile(`(_tmp_\d+) := _subj\.Size\(\) (?:==|>=) \d+`).FindStringSubmatch(code)
 	require.NotNil(t, m, "size check not found in:\n%s", code)
 	start := strings.Index(code, "if "+m[1]+" {")
 	require.NotEqual(t, -1, start, "size guard not found in:\n%s", code)
@@ -78,8 +78,8 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case Array(Square(s), _) => s
     case _                   => 0
 }`,
-			inGuard:     []string{"= obj.Get(0)", "Square{}.Unapply(", "s = "},
-			notContains: []string{"Square :=", "var Square", "s := "},
+			inGuard:     []string{"= _subj.Get(0)", "Square{}.Unapply(", "_tmp_s = "},
+			notContains: []string{"Square :=", "var Square", "_tmp_s := "},
 		},
 		{
 			name: "doubly nested extractor with a rest binding",
@@ -87,8 +87,8 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case Array(Some(Square(s)), rest...) => s + rest.Size()
     case _                               => 0
 }`,
-			inGuard:     []string{"rest = obj.SeqDrop(1)", "_unapply_std_Some", "Square{}.Unapply(", "s = "},
-			notContains: []string{"Some :=", "Square :=", "s := "},
+			inGuard:     []string{"_tmp_rest = _subj.SeqDrop(1)", "_unapply_std_Some", "Square{}.Unapply(", "_tmp_s = "},
+			notContains: []string{"Some :=", "Square :=", "_tmp_s := "},
 		},
 		{
 			name: "plain element binds inside the guard, the literal compares in the arm condition",
@@ -96,7 +96,7 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case List(0, second, _...) => second
     case _                     => 0
 }`,
-			inGuard:    []string{"second = "},
+			inGuard:    []string{"_tmp_second = "},
 			afterGuard: []string{"== 0"},
 		},
 		{
@@ -107,8 +107,8 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case Array(Node(v), rest...) => v + rest.Size()
     case _                       => 0
 }`,
-			inGuard:     []string{".V.Get()", "v = "},
-			notContains: []string{"v := "},
+			inGuard:     []string{".V.Get()", "_tmp_v = "},
+			notContains: []string{"_tmp_v := "},
 		},
 		{
 			// A user extractor must not run (or count) for an arm whose
@@ -160,9 +160,9 @@ func TestExtractorSubPatternRunsInsideGuard(t *testing.T) {
 	require.NotEqual(t, -1, end)
 	guard := got[start : start+end]
 	assert.Contains(t, guard, payload+".V.Get()", "the field read must be inside the guard")
-	assert.Contains(t, guard, "v = ")
-	assert.Contains(t, got[:start], "var v int", "v must be declared before the guard")
-	assert.NotContains(t, got, "v := ")
+	assert.Contains(t, guard, "_tmp_v = ")
+	assert.Contains(t, got[:start], "var _tmp_v int", "v must be declared before the guard")
+	assert.NotContains(t, got, "_tmp_v := ")
 }
 
 // A binding whose declared type is `any` (a field declared `any`, a tuple
@@ -179,7 +179,7 @@ func TestHoistedBindingOfDeclaredAnyType(t *testing.T) {
     case Some(AnyHolder(v)) => s"$v"
     case _                  => ""
 }`,
-			contains: []string{"var v any", "v = "},
+			contains: []string{"var _tmp_v any", "_tmp_v = "},
 		},
 		{
 			name: "tuple element typed any inside an extractor payload",
@@ -187,7 +187,7 @@ func TestHoistedBindingOfDeclaredAnyType(t *testing.T) {
     case Some(Tuple(a, n)) => s"$a${n + 1}"
     case _                 => ""
 }`,
-			contains: []string{"var a any", "var n int"},
+			contains: []string{"var _tmp_a any", "var _tmp_n int"},
 		},
 		{
 			name: "struct field declared any inside a sequence element",
@@ -195,7 +195,7 @@ func TestHoistedBindingOfDeclaredAnyType(t *testing.T) {
     case Array(AnyHolder(v), _) => s"$v"
     case _                      => ""
 }`,
-			contains: []string{"var v any", "v = "},
+			contains: []string{"var _tmp_v any", "_tmp_v = "},
 		},
 	}
 	for _, tt := range tests {
@@ -260,11 +260,11 @@ func TestSequencePatternTypedElementOkFlagDeclaredOutside(t *testing.T) {
     case _                => 0
 }`)
 	require.NoError(t, err)
-	m := regexp.MustCompile(`n, (_tmp_\d+) = std\.As\[int\]\((_tmp_\d+)\)`).FindStringSubmatch(got)
+	m := regexp.MustCompile(`_tmp_n, (_tmp_\d+) = std\.As\[int\]\((_tmp_\d+)\)`).FindStringSubmatch(got)
 	require.NotNil(t, m, "typed element should assign through std.As:\n%s", got)
 	assert.Contains(t, got, "var "+m[1]+" bool")
-	assert.Contains(t, got, "var n int")
-	assert.Contains(t, got, m[2]+" = obj.Get(0)")
+	assert.Contains(t, got, "var _tmp_n int")
+	assert.Contains(t, got, m[2]+" = _subj.Get(0)")
 }
 
 func TestGenericStructPatternOnAnySubject(t *testing.T) {
@@ -279,7 +279,7 @@ func TestGenericStructPatternOnAnySubject(t *testing.T) {
     case Box[int](v, _) => v + 1
     case _              => 0
 }`,
-			contains: []string{"std.As[Box[int]](obj)", "v := "},
+			contains: []string{"std.As[Box[int]](_subj)", "v := "},
 		},
 		{
 			name: "two type arguments type both fields",
@@ -287,7 +287,7 @@ func TestGenericStructPatternOnAnySubject(t *testing.T) {
     case Pair[string, int](k, v) => s"$k${v * 2}"
     case _                       => ""
 }`,
-			contains: []string{"std.As[Pair[string, int]](obj)"},
+			contains: []string{"std.As[Pair[string, int]](_subj)"},
 		},
 		{
 			name: "non-generic struct still asserts to itself",
@@ -312,7 +312,7 @@ func TestGenericStructPatternOnAnySubject(t *testing.T) {
 }
 
 // Without type arguments there is no instantiation to assert to, so the
-// pattern is rejected instead of emitting `obj.(Box)`.
+// pattern is rejected instead of emitting `_subj.(Box)`.
 func TestGenericStructPatternOnAnySubjectNeedsTypeArgs(t *testing.T) {
 	_, err := transpileSequencePattern(t, `func f(x any) string = x match {
     case Box(_, tag) => tag
@@ -328,11 +328,11 @@ func TestGenericStructPatternOnAnySubjectNeedsTypeArgs(t *testing.T) {
 // many.
 func TestSequencePatternLength(t *testing.T) {
 	for _, tc := range []struct{ pattern, body, check string }{
-		{"Array(x, y)", "x + y", "obj.Size() == 2"},
-		{"Array()", "0", "obj.Size() == 0"},
-		{"Array(x, _...)", "x", "obj.Size() >= 1"},
-		{"Array(x, rest...)", "x + rest.Size()", "obj.Size() >= 1"},
-		{"Array(_...)", "0", "obj.Size() >= 0"},
+		{"Array(x, y)", "x + y", "_subj.Size() == 2"},
+		{"Array()", "0", "_subj.Size() == 0"},
+		{"Array(x, _...)", "x", "_subj.Size() >= 1"},
+		{"Array(x, rest...)", "x + rest.Size()", "_subj.Size() >= 1"},
+		{"Array(_...)", "0", "_subj.Size() >= 0"},
 	} {
 		t.Run(tc.pattern, func(t *testing.T) {
 			got, err := transpileSequencePattern(t, "func f(a Array[int]) int = a match {\n    case "+tc.pattern+" => "+tc.body+"\n    case _ => -1\n}")

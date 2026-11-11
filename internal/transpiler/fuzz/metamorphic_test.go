@@ -107,59 +107,6 @@ type knownFailure struct {
 }
 
 var knownFailures = []knownFailure{
-	{996, "match-arm pattern variables leak into later arms", program{
-		main: `package main
-
-sealed type Shape {
-    case Circle(R int)
-    case Square(Side int)
-}
-
-func area(s Shape, r int) int = s match {
-    case Circle(r) => r * 100
-    case Square(side) => side + r
-}
-
-func main() {
-    Println(area(Square(3), 7))
-}
-`,
-		want: "10\n",
-	}, "but must print"},
-	{997, "the match subject is bound to the fixed Go name obj", program{
-		main: `package main
-
-func classify(obj int, x int) string = x match {
-    case 0 => s"zero (limit $obj)"
-    case n if n > obj => s"$n above limit $obj"
-    case n => s"$n within limit $obj"
-}
-
-func main() {
-    Println(classify(10, 5))
-    Println(classify(10, 50))
-}
-`,
-		want: "5 within limit 10\n50 above limit 10\n",
-	}, "but must print"},
-	{998, "sibling sub-patterns run their extractors after an earlier sibling failed", program{
-		main: `package main
-
-struct NonZeroDiv()
-
-func (d NonZeroDiv) Unapply(i int) bool = 100 / i > 1
-
-func classify(a int, b int) string = (a, b) match {
-    case (0, NonZeroDiv()) => "x"
-    case _ => "other"
-}
-
-func main() {
-    Println(classify(1, 0))
-}
-`,
-		want: "other\n",
-	}, "integer divide by zero"},
 	{1000, "named arguments are evaluated in parameter order", program{
 		main: `package main
 

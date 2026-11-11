@@ -60,7 +60,7 @@ func log(s Shape) {
 			mustHave: []string{
 				`func log(s Shape) {`,
 				`func() {`, // IIFE with no result — void dispatch
-				`obj := s`,
+				`_subj := s`,
 				`doStuff()`,
 				`fmt.Println("line")`,
 				`log(inner)`,

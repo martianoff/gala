@@ -43,9 +43,9 @@ type Celsius int
 }`,
 			dispatched: true,
 			contains: []string{
-				"switch _tmp_", ":= any(obj).(type)",
+				"switch _tmp_", ":= any(_subj).(type)",
 				"case std.ImmutableUnwrapper, std.Transparent:",
-				"= std.As[int](obj)", "= std.As[string](obj)",
+				"= std.As[int](_subj)", "= std.As[string](_subj)",
 				"case int:", "case string:",
 			},
 		},
@@ -56,7 +56,7 @@ type Celsius int
     case _ => "other"
 }`,
 			dispatched: true,
-			contains:   []string{":= any(obj).(type)"},
+			contains:   []string{":= any(_subj).(type)"},
 		},
 		{
 			name: "interface arm boxes the subject afresh",
@@ -65,7 +65,7 @@ type Celsius int
     case _ => "none"
 }`,
 			dispatched: true,
-			contains:   []string{"switch any(obj).(type)", "case std.Hashable:", "= any(obj).(std.Hashable), 1"},
+			contains:   []string{"switch any(_subj).(type)", "case std.Hashable:", "= any(_subj).(std.Hashable), 1"},
 		},
 		{
 			name: "guarded wildcard and binding arms stay in the chain",

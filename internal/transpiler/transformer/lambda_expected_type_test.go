@@ -875,7 +875,7 @@ func pick(up bool) func(int) int = up match {
 func main() {
     Println(pick(false)(1))
 }`,
-			contains: []string{"obj := up", "return func(x int) int {"},
+			contains: []string{"_subj := up", "return func(x int) int {"},
 		},
 		{
 			name: "match nested in an if branch",
@@ -891,7 +891,7 @@ func main() {
     } else (x) => x)
     Println(o.F(1))
 }`,
-			contains: []string{"func() func(int) int {", "obj := up"},
+			contains: []string{"func() func(int) int {", "_subj := up"},
 		},
 		{
 			name: "if-expression as a Copy override",

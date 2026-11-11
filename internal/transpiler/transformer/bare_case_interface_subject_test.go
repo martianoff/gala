@@ -48,8 +48,8 @@ sealed type Mark {
     case Square => "square"
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](obj)", "Square{}.Unapply("},
-			absent:   []string{"Square := obj"},
+			contains: []string{"std.As[Shape](_subj)", "Square{}.Unapply("},
+			absent:   []string{"Square := _subj"},
 		},
 		{
 			name: "guarded, beside a case of another sealed type",
@@ -58,7 +58,7 @@ sealed type Mark {
     case Empty => "empty"
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](obj)", "std.As[Wrapped](obj)", "Empty{}.Unapply("},
+			contains: []string{"std.As[Shape](_subj)", "std.As[Wrapped](_subj)", "Empty{}.Unapply("},
 		},
 		{
 			name: "nested in a field of type any",
@@ -74,7 +74,7 @@ sealed type Mark {
     case Square => "square"
     case _ => "other"
 }`,
-			contains: []string{"std.As[Shape](any(obj))"},
+			contains: []string{"std.As[Shape](any(_subj))"},
 		},
 		{
 			// An unexported case name binds on a subject that is not its own
@@ -83,7 +83,7 @@ sealed type Mark {
 			body: `func describe(v any) string = v match {
     case dot => fmt.Sprint(dot)
 }`,
-			contains: []string{"dot := obj"},
+			contains: []string{"dot := _subj"},
 			absent:   []string{"std.As[Mark]"},
 		},
 		{
@@ -94,7 +94,7 @@ sealed type Mark {
     case Square => "square"
     case Circle(_) => "circle"
 }`,
-			contains: []string{"Square{}.Unapply(obj)"},
+			contains: []string{"Square{}.Unapply(_subj)"},
 			absent:   []string{"std.As[Shape]"},
 		},
 	}
@@ -174,8 +174,8 @@ func main() {}
 `,
 			// The dot import is kept, so the generated Go names the case
 			// unqualified too.
-			contains: []string{"std.As[Shape](obj)", "Square{}.Unapply(_tmp_"},
-			absent:   []string{"Square := obj"},
+			contains: []string{"std.As[Shape](_subj)", "Square{}.Unapply(_tmp_"},
+			absent:   []string{"Square := _subj"},
 		},
 		{
 			name: "qualified and aliased, any subject",
@@ -200,7 +200,7 @@ func main() {}
 `,
 			// The two imports of one path are emitted as one, under the
 			// alias.
-			contains: []string{"std.As[sh.Shape](obj)", "std.As[sh.Shape](_tmp_", "sh.Square{}.Unapply("},
+			contains: []string{"std.As[sh.Shape](_subj)", "std.As[sh.Shape](_tmp_", "sh.Square{}.Unapply("},
 			absent:   []string{"== shapes.Square", "== sh.Square"},
 		},
 		{
@@ -216,7 +216,7 @@ func describe(s shapes.Shape) string = s match {
 
 func main() {}
 `,
-			contains: []string{"shapes.Square{}.Unapply(obj)"},
+			contains: []string{"shapes.Square{}.Unapply(_subj)"},
 			absent:   []string{"std.As[shapes.Shape]", "== shapes.Square"},
 		},
 	}
