@@ -550,16 +550,9 @@ func TestArrayFlatMapDataIntegrity(t T) T {
     return Eq[int](t6, flattened.Get(5), 30)
 }
 
-// Test Concat data integrity (using manual iteration since Array.Concat expects Iterable)
+// Test Concat data integrity
 func TestArrayConcatDataIntegrity(t T) T {
-    val arr1 = ArrayOf(1, 2, 3)
-    val arr2 = ArrayOf(4, 5, 6)
-
-    // Manually concatenate since Array doesn't implement Iterable interface
-    var concatenated = arr1
-    for i := 0; i < arr2.Length(); i++ {
-        concatenated = concatenated.Append(arr2.Get(i))
-    }
+    val concatenated = ArrayOf(1, 2, 3).Concat(ArrayOf(4, 5, 6))
 
     val t1 = Eq[int](t, concatenated.Length(), 6)
     var allCorrect = true

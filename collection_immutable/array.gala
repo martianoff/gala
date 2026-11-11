@@ -806,17 +806,8 @@ func (a Array[T]) Collect[U any](pf func(T) Option[U]) Array[U] {
 }
 
 // Concat returns a new array containing all elements of this array followed by
-// all elements of the other iterable. Uses arrayBuilder.
-func (a Array[T]) Concat(other Iterable[T]) Array[T] {
-    var builder = newArrayBuilder[T]()
-    for i := 0; i < a.length; i++ {
-        builder.Add(a.Get(i))
-    }
-    other.ForEach((elem T) => {
-        builder.Add(elem)
-    })
-    return builder.Result()
-}
+// all elements of other, as AppendAll does.
+func (a Array[T]) Concat(other Array[T]) Array[T] = a.AppendAll(other)
 
 // Filter returns a new array with only elements that satisfy the predicate.
 // Uses arrayBuilder to avoid intermediate slice conversion.
