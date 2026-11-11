@@ -1,0 +1,411 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 246
+      },
+      "path": "if_blocks.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 155
+          },
+          "name": "sign",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 3,
+                "col": 11,
+                "off": 24,
+                "end": 29
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 13,
+                  "off": 26,
+                  "end": 29
+                },
+                "name": "int"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 3,
+              "col": 18,
+              "off": 31,
+              "end": 37
+            },
+            "name": "string"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 3,
+              "col": 25,
+              "off": 38,
+              "end": 155
+            },
+            "stmts": [
+              {
+                "kind": "if",
+                "pos": {
+                  "line": 4,
+                  "col": 5,
+                  "off": 44,
+                  "end": 131
+                },
+                "cond": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 4,
+                    "col": 8,
+                    "off": 47,
+                    "end": 52
+                  },
+                  "op": "<",
+                  "left": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 4,
+                      "col": 8,
+                      "off": 47,
+                      "end": 48
+                    },
+                    "name": "n"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 4,
+                      "col": 12,
+                      "off": 51,
+                      "end": 52
+                    },
+                    "text": "0",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "block",
+                  "pos": {
+                    "line": 4,
+                    "col": 14,
+                    "off": 53,
+                    "end": 86
+                  },
+                  "stmts": [
+                    {
+                      "kind": "return",
+                      "pos": {
+                        "line": 5,
+                        "col": 9,
+                        "off": 63,
+                        "end": 80
+                      },
+                      "value": {
+                        "kind": "string",
+                        "pos": {
+                          "line": 5,
+                          "col": 16,
+                          "off": 70,
+                          "end": 80
+                        },
+                        "text": "\"negative\"",
+                        "value": "negative",
+                        "raw": false
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "kind": "if",
+                  "pos": {
+                    "line": 6,
+                    "col": 12,
+                    "off": 92,
+                    "end": 131
+                  },
+                  "cond": {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 6,
+                      "col": 15,
+                      "off": 95,
+                      "end": 101
+                    },
+                    "op": "==",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 6,
+                        "col": 15,
+                        "off": 95,
+                        "end": 96
+                      },
+                      "name": "n"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 6,
+                        "col": 20,
+                        "off": 100,
+                        "end": 101
+                      },
+                      "text": "0",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  "then": {
+                    "kind": "block",
+                    "pos": {
+                      "line": 6,
+                      "col": 22,
+                      "off": 102,
+                      "end": 131
+                    },
+                    "stmts": [
+                      {
+                        "kind": "return",
+                        "pos": {
+                          "line": 7,
+                          "col": 9,
+                          "off": 112,
+                          "end": 125
+                        },
+                        "value": {
+                          "kind": "string",
+                          "pos": {
+                            "line": 7,
+                            "col": 16,
+                            "off": 119,
+                            "end": 125
+                          },
+                          "text": "\"zero\"",
+                          "value": "zero",
+                          "raw": false
+                        }
+                      }
+                    ]
+                  },
+                  "else": null
+                }
+              },
+              {
+                "kind": "return",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 136,
+                  "end": 153
+                },
+                "value": {
+                  "kind": "string",
+                  "pos": {
+                    "line": 9,
+                    "col": 12,
+                    "off": 143,
+                    "end": 153
+                  },
+                  "text": "\"positive\"",
+                  "value": "positive",
+                  "raw": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 12,
+            "col": 1,
+            "off": 157,
+            "end": 246
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 12,
+              "col": 13,
+              "off": 169,
+              "end": 246
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 13,
+                  "col": 5,
+                  "off": 175,
+                  "end": 229
+                },
+                "names": [
+                  "s"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "if-expr",
+                    "pos": {
+                      "line": 13,
+                      "col": 13,
+                      "off": 183,
+                      "end": 229
+                    },
+                    "cond": {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 13,
+                        "col": 17,
+                        "off": 187,
+                        "end": 208
+                      },
+                      "op": "==",
+                      "left": {
+                        "kind": "call",
+                        "pos": {
+                          "line": 13,
+                          "col": 17,
+                          "off": 187,
+                          "end": 194
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 13,
+                            "col": 17,
+                            "off": 187,
+                            "end": 191
+                          },
+                          "name": "sign"
+                        },
+                        "args": [
+                          {
+                            "kind": "int",
+                            "pos": {
+                              "line": 13,
+                              "col": 22,
+                              "off": 192,
+                              "end": 193
+                            },
+                            "text": "3",
+                            "hint": {
+                              "type": "int"
+                            }
+                          }
+                        ]
+                      },
+                      "right": {
+                        "kind": "string",
+                        "pos": {
+                          "line": 13,
+                          "col": 28,
+                          "off": 198,
+                          "end": 208
+                        },
+                        "text": "\"positive\"",
+                        "value": "positive",
+                        "raw": false
+                      }
+                    },
+                    "then": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 40,
+                        "off": 210,
+                        "end": 215
+                      },
+                      "text": "\"yes\"",
+                      "value": "yes",
+                      "raw": false
+                    },
+                    "else": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 13,
+                        "col": 51,
+                        "off": 221,
+                        "end": 229
+                      },
+                      "stmts": [
+                        {
+                          "kind": "string",
+                          "pos": {
+                            "line": 13,
+                            "col": 53,
+                            "off": 223,
+                            "end": 227
+                          },
+                          "text": "\"no\"",
+                          "value": "no",
+                          "raw": false
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 14,
+                  "col": 5,
+                  "off": 234,
+                  "end": 244
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 14,
+                    "col": 5,
+                    "off": 234,
+                    "end": 241
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 14,
+                      "col": 13,
+                      "off": 242,
+                      "end": 243
+                    },
+                    "name": "s"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

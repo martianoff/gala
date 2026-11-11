@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# A test-support library for the formal semantics (docs/FORMAL_SEMANTICS.MD).
+# Its visibility keeps it out of the gala CLI and every other shipped binary.
+go_library(
+    name = "coreexport",
+    srcs = [
+        "coverage.go",
+        "export.go",
+        "pattern.go",
+        "schema.go",
+    ],
+    importpath = "martianoff/gala/internal/formal/coreexport",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+    ],
+)
+
+go_test(
+    name = "coreexport_test",
+    srcs = [
+        "check_test.go",
+        "examples_test.go",
+        "golden_test.go",
+        "schema_test.go",
+    ],
+    # examples_test.go exports every example; schema_test.go reads SCHEMA.md
+    # and schema.go.
+    data = glob(["testdata/**"]) + [
+        "SCHEMA.md",
+        "schema.go",
+        "//examples:all_gala_sources",
+    ],
+    embed = [":coreexport"],
+    deps = [
+        "//internal/formal/coreexport/analyzerhints",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)

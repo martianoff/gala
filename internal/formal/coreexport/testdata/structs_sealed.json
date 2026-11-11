@@ -1,0 +1,509 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 297
+      },
+      "path": "structs_sealed.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 59
+          },
+          "name": "Point",
+          "shorthand": false,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 4,
+                "col": 5,
+                "off": 38,
+                "end": 43
+              },
+              "name": "X",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 4,
+                  "col": 7,
+                  "off": 40,
+                  "end": 43
+                },
+                "name": "int"
+              },
+              "mutable": false
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 5,
+                "col": 5,
+                "off": 48,
+                "end": 57
+              },
+              "name": "Y",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 5,
+                  "col": 11,
+                  "off": 54,
+                  "end": 57
+                },
+                "name": "int"
+              },
+              "mutable": true
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 8,
+            "col": 1,
+            "off": 61,
+            "end": 96
+          },
+          "name": "Pair",
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 8,
+                "col": 13,
+                "off": 73,
+                "end": 81
+              },
+              "name": "Left",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 8,
+                  "col": 18,
+                  "off": 78,
+                  "end": 81
+                },
+                "name": "int"
+              },
+              "mutable": false
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 8,
+                "col": 23,
+                "off": 83,
+                "end": 95
+              },
+              "name": "Right",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 8,
+                  "col": 29,
+                  "off": 89,
+                  "end": 95
+                },
+                "name": "string"
+              },
+              "mutable": false
+            }
+          ]
+        },
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 10,
+            "col": 1,
+            "off": 98,
+            "end": 190
+          },
+          "name": "Shape",
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 11,
+                "col": 5,
+                "off": 122,
+                "end": 145
+              },
+              "name": "Circle",
+              "default": false,
+              "fields": [
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 11,
+                    "col": 17,
+                    "off": 134,
+                    "end": 144
+                  },
+                  "name": "Radius",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 11,
+                      "col": 24,
+                      "off": 141,
+                      "end": 144
+                    },
+                    "name": "int"
+                  },
+                  "mutable": false
+                }
+              ]
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 12,
+                "col": 5,
+                "off": 150,
+                "end": 173
+              },
+              "name": "Rect",
+              "default": false,
+              "fields": [
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 12,
+                    "col": 15,
+                    "off": 160,
+                    "end": 165
+                  },
+                  "name": "W",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 12,
+                      "col": 17,
+                      "off": 162,
+                      "end": 165
+                    },
+                    "name": "int"
+                  },
+                  "mutable": false
+                },
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 12,
+                    "col": 22,
+                    "off": 167,
+                    "end": 172
+                  },
+                  "name": "H",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 12,
+                      "col": 24,
+                      "off": 169,
+                      "end": 172
+                    },
+                    "name": "int"
+                  },
+                  "mutable": false
+                }
+              ]
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 13,
+                "col": 5,
+                "off": 178,
+                "end": 188
+              },
+              "name": "Empty",
+              "default": false,
+              "fields": []
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 16,
+            "col": 1,
+            "off": 192,
+            "end": 297
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 16,
+              "col": 13,
+              "off": 204,
+              "end": 297
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 17,
+                  "col": 5,
+                  "off": 210,
+                  "end": 229
+                },
+                "names": [
+                  "p"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 17,
+                      "col": 13,
+                      "off": 218,
+                      "end": 229
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 17,
+                        "col": 13,
+                        "off": 218,
+                        "end": 223
+                      },
+                      "name": "Point"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 17,
+                          "col": 19,
+                          "off": 224,
+                          "end": 225
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 17,
+                          "col": 22,
+                          "off": 227,
+                          "end": 228
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 18,
+                  "col": 5,
+                  "off": 234,
+                  "end": 272
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 18,
+                    "col": 5,
+                    "off": 234,
+                    "end": 241
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 18,
+                      "col": 13,
+                      "off": 242,
+                      "end": 251
+                    },
+                    "op": "+",
+                    "left": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 18,
+                        "col": 13,
+                        "off": 242,
+                        "end": 245
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 18,
+                          "col": 13,
+                          "off": 242,
+                          "end": 243
+                        },
+                        "name": "p"
+                      },
+                      "name": "X"
+                    },
+                    "right": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 18,
+                        "col": 19,
+                        "off": 248,
+                        "end": 251
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 18,
+                          "col": 19,
+                          "off": 248,
+                          "end": 249
+                        },
+                        "name": "p"
+                      },
+                      "name": "Y"
+                    }
+                  },
+                  {
+                    "kind": "select",
+                    "pos": {
+                      "line": 18,
+                      "col": 24,
+                      "off": 253,
+                      "end": 271
+                    },
+                    "target": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 18,
+                        "col": 24,
+                        "off": 253,
+                        "end": 265
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 18,
+                          "col": 24,
+                          "off": 253,
+                          "end": 257
+                        },
+                        "name": "Pair"
+                      },
+                      "args": [
+                        {
+                          "kind": "int",
+                          "pos": {
+                            "line": 18,
+                            "col": 29,
+                            "off": 258,
+                            "end": 259
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        },
+                        {
+                          "kind": "string",
+                          "pos": {
+                            "line": 18,
+                            "col": 32,
+                            "off": 261,
+                            "end": 264
+                          },
+                          "text": "\"a\"",
+                          "value": "a",
+                          "raw": false
+                        }
+                      ]
+                    },
+                    "name": "Right"
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 19,
+                  "col": 5,
+                  "off": 277,
+                  "end": 295
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 19,
+                    "col": 5,
+                    "off": 277,
+                    "end": 284
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 19,
+                      "col": 13,
+                      "off": 285,
+                      "end": 294
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 19,
+                        "col": 13,
+                        "off": 285,
+                        "end": 291
+                      },
+                      "name": "Circle"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 19,
+                          "col": 20,
+                          "off": 292,
+                          "end": 293
+                        },
+                        "text": "3",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

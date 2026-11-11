@@ -1,0 +1,410 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 182
+      },
+      "path": "val_var_assign.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "val",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 26
+          },
+          "names": [
+            "top"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "int",
+              "pos": {
+                "line": 3,
+                "col": 11,
+                "off": 24,
+                "end": 26
+              },
+              "text": "10",
+              "hint": {
+                "type": "int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 5,
+            "col": 1,
+            "off": 28,
+            "end": 182
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 5,
+              "col": 13,
+              "off": 40,
+              "end": 182
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 46,
+                  "end": 55
+                },
+                "names": [
+                  "a"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 6,
+                      "col": 13,
+                      "off": 54,
+                      "end": 55
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 7,
+                  "col": 5,
+                  "off": 60,
+                  "end": 73
+                },
+                "names": [
+                  "b"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 7,
+                    "col": 11,
+                    "off": 66,
+                    "end": 69
+                  },
+                  "name": "int"
+                },
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 7,
+                      "col": 17,
+                      "off": 72,
+                      "end": 73
+                    },
+                    "text": "2",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 78,
+                  "end": 91
+                },
+                "names": [
+                  "c"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 8,
+                      "col": 13,
+                      "off": 86,
+                      "end": 91
+                    },
+                    "op": "+",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 8,
+                        "col": 13,
+                        "off": 86,
+                        "end": 87
+                      },
+                      "name": "a"
+                    },
+                    "right": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 8,
+                        "col": 17,
+                        "off": 90,
+                        "end": 91
+                      },
+                      "name": "b"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 96,
+                  "end": 105
+                },
+                "names": [
+                  "d"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 9,
+                    "col": 11,
+                    "off": 102,
+                    "end": 105
+                  },
+                  "name": "int"
+                },
+                "values": []
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 10,
+                  "col": 5,
+                  "off": 110,
+                  "end": 119
+                },
+                "op": "=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 10,
+                      "col": 5,
+                      "off": 110,
+                      "end": 111
+                    },
+                    "name": "c"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 9,
+                      "off": 114,
+                      "end": 119
+                    },
+                    "op": "+",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 10,
+                        "col": 9,
+                        "off": 114,
+                        "end": 115
+                      },
+                      "name": "c"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 13,
+                        "off": 118,
+                        "end": 119
+                      },
+                      "text": "1",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 11,
+                  "col": 5,
+                  "off": 124,
+                  "end": 130
+                },
+                "op": "+=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 11,
+                      "col": 5,
+                      "off": 124,
+                      "end": 125
+                    },
+                    "name": "c"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 11,
+                      "col": 10,
+                      "off": 129,
+                      "end": 130
+                    },
+                    "text": "2",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "incdec",
+                "pos": {
+                  "line": 12,
+                  "col": 5,
+                  "off": 135,
+                  "end": 138
+                },
+                "op": "++",
+                "target": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 12,
+                    "col": 5,
+                    "off": 135,
+                    "end": 136
+                  },
+                  "name": "d"
+                }
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 13,
+                  "col": 5,
+                  "off": 143,
+                  "end": 162
+                },
+                "names": [
+                  "x",
+                  "y"
+                ],
+                "destructure": true,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "tuple",
+                    "pos": {
+                      "line": 13,
+                      "col": 18,
+                      "off": 156,
+                      "end": 162
+                    },
+                    "elems": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 13,
+                          "col": 19,
+                          "off": 157,
+                          "end": 158
+                        },
+                        "name": "c"
+                      },
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 13,
+                          "col": 22,
+                          "off": 160,
+                          "end": 161
+                        },
+                        "name": "d"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 14,
+                  "col": 5,
+                  "off": 167,
+                  "end": 180
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 14,
+                    "col": 5,
+                    "off": 167,
+                    "end": 174
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 14,
+                      "col": 13,
+                      "off": 175,
+                      "end": 176
+                    },
+                    "name": "x"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 14,
+                      "col": 16,
+                      "off": 178,
+                      "end": 179
+                    },
+                    "name": "y"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
