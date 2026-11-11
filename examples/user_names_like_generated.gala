@@ -54,6 +54,9 @@ func main() {
     }
     Println(picked)
     Println(label(Square(4), "a"))
+    // In a type position, string is still the type.
+    val suffixed = (s string) => s + string
+    Println(suffixed("x"))
 
     // _tmp_1: a local, beside the match's temporaries.
     val _tmp_1 = 10

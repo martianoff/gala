@@ -1412,6 +1412,19 @@ func main() {
 			},
 		},
 		{
+			name: "identifier with the reserved _gala_ prefix",
+			code: galaerr.CodeReservedNamePrefix, // GALA-E0097
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val _gala_total = 3
+    Println(_gala_total)
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

@@ -48,6 +48,12 @@ func CheckGeneratedCodecNamesNative(root native.GalaNodeRef) error {
 // generatedCodecNameIn is the first identifier of root spelled like a
 // generated codec metadata type, or no node.
 func generatedCodecNameIn(root native.GalaNodeRef) native.GalaNodeRef {
+	return firstIdentifier(root, IsGeneratedCodecName)
+}
+
+// firstIdentifier is the first identifier of root, in source order, whose
+// name satisfies match, or no node.
+func firstIdentifier(root native.GalaNodeRef, match func(string) bool) native.GalaNodeRef {
 	var found native.GalaNodeRef
 	root.Walk(func(n native.GalaNodeRef) bool {
 		if found.Ok() {
@@ -56,7 +62,7 @@ func generatedCodecNameIn(root native.GalaNodeRef) native.GalaNodeRef {
 		if n.Kind() != native.GalaKIND_identifier {
 			return true
 		}
-		if IsGeneratedCodecName(galaparser.NativeText(n)) {
+		if match(galaparser.NativeText(n)) {
 			found = n
 		}
 		return false

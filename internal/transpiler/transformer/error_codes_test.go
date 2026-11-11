@@ -520,6 +520,95 @@ func main() = Println(Red())`,
 			expectContains: "method Light.isRed must have the signature `isRed() bool`",
 		},
 		{
+			name: "GALA-E0097 local with the reserved prefix",
+			input: `package main
+
+func main() {
+    val _gala_len = 2
+    Println(_gala_len)
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "error_codes_test.gala:4:8 identifier _gala_len starts with _gala_, a prefix reserved for names the transpiler generates",
+		},
+		{
+			name: "GALA-E0097 parameter with the reserved prefix",
+			input: `package main
+
+func twice(_gala_n int) int = _gala_n * 2
+
+func main() = Println(twice(2))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier _gala_n starts with _gala_",
+		},
+		{
+			name: "GALA-E0097 top-level function with the reserved prefix",
+			input: `package main
+
+func _gala_helper() int = 1
+
+func main() = Println(_gala_helper())`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier _gala_helper starts with _gala_",
+		},
+		{
+			name: "GALA-E0097 field with the reserved prefix",
+			input: `package main
+
+struct Point(_gala_x int, y int)
+
+func main() = Println(Point(1, 2).y)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier _gala_x starts with _gala_",
+		},
+		{
+			// No binding can be declared with the prefix, so an
+			// interpolated reference names nothing: the local len is
+			// emitted as _gala_len, but GALA code cannot reach it so.
+			name: "GALA-E0023 reserved prefix in an interpolated expression",
+			input: `package main
+
+func main() {
+    val len = 3
+    Println(s"${_gala_len}")
+}`,
+			expectCode:     galaerr.CodeUndefinedVariable,
+			expectContains: "undefined: _gala_len",
+		},
+		{
+			name: "GALA-E0097 lambda parameter with the reserved prefix",
+			input: `package main
+
+func main() {
+    Println(Some(1).Map((_gala_x) => _gala_x + 1))
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier _gala_x starts with _gala_",
+		},
+		{
+			name: "GALA-E0097 pattern binding with the reserved prefix",
+			input: `package main
+
+func main() {
+    val n = Some(1) match {
+        case Some(_gala_v) => _gala_v
+        case _ => 0
+    }
+    Println(n)
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier _gala_v starts with _gala_",
+		},
+		{
+			name: "GALA-E0097 type with the reserved prefix",
+			input: `package main
+
+type _gala_Id int
+
+func main() = Println(_gala_Id(1))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier _gala_Id starts with _gala_",
+		},
+		{
 			// A type argument: Some(x) is std.Some[T], and T here is the
 			// receive-only signal channel ctx.Done() returns.
 			name: "GALA-E0090 anonymous struct type as a type argument",
