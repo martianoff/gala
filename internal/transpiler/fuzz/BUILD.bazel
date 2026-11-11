@@ -10,6 +10,8 @@ go_test(
     srcs = [
         "function_values_test.go",
         "harness_test.go",
+        "metamorphic_gen_test.go",
+        "metamorphic_test.go",
         "no_crash_test.go",
         "source_encoding_test.go",
         "programs_gen_test.go",

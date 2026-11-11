@@ -1,0 +1,260 @@
+package fuzz_test
+
+import (
+	"flag"
+	"fmt"
+	"math/rand"
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// FuzzAlphaRenaming checks that renaming local binders does not change what
+// a program does. It generates a program (metamorphic_gen_test.go), renames
+// every val, parameter, lambda parameter and pattern variable to a hostile
+// name — obj, _tmp_1, std, panic, string, len, fmt, __p0, or the name of
+// another binder in scope, shadowing it where that keeps every reference
+// resolving as before — and checks that the program builds and prints
+// exactly the output the generator computed. When it does not, the same
+// program with plain names is run too, so the report says whether the
+// renaming is to blame.
+//
+// Each input is built with the Go toolchain: fuzz it with -parallel 2, as
+// FuzzPrograms.
+func FuzzAlphaRenaming(f *testing.F) {
+	fuzzMeta(f, metaConfig{hostile: true, traceOdds: 6, known: openIssue}, 3)
+}
+
+// FuzzEvaluationOrder checks that GALA evaluates left to right. Its
+// programs call tracing functions from operands, positional and named
+// arguments, constructor arguments, default arguments, match subjects,
+// guards and extractors in sub-patterns, and must print the trace the
+// generator computed from source order: left to right, an extractor only
+// after the sibling sub-patterns before it matched, a match subject once,
+// one if branch.
+func FuzzEvaluationOrder(f *testing.F) {
+	fuzzMeta(f, metaConfig{traceOdds: 2, known: openIssue}, 4)
+}
+
+// metaSeeds is how many generated programs the seed pass of each
+// metamorphic target builds and runs. Each costs a Go build, so it is kept
+// small, as programSeeds is.
+const metaSeeds = 12
+
+func fuzzMeta(f *testing.F, cfg metaConfig, seed int64) {
+	rng := rand.New(rand.NewSource(seed))
+	for range metaSeeds {
+		data := make([]byte, 160)
+		rng.Read(data)
+		f.Add(data)
+	}
+	warmUp(f)
+	// As in FuzzPrograms: under -fuzz each worker builds a program before
+	// its inputs are timed.
+	if fl := flag.Lookup("test.fuzz"); fl != nil && fl.Value.String() != "" {
+		checkMeta(f, generateMeta(nil, cfg))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		checkMeta(t, generateMeta(data, cfg))
+	})
+}
+
+func checkMeta(t testing.TB, p metaProgram) {
+	t.Helper()
+	failure := programFailure(t, program{main: p.src, want: p.want})
+	if failure == "" {
+		if len(p.steered) > 0 {
+			t.Logf("shapes of open issues %v were left out (knownFailures)", issueList(p.steered))
+		}
+		return
+	}
+	if p.plain == p.src {
+		t.Fatal(failure)
+	}
+	plain := programFailure(t, program{main: p.plain, want: p.want})
+	if plain == "" {
+		t.Fatalf("renaming the binders changed what the program does:\n%s\n\nthe same program with plain names passes:\n%s", failure, p.plain)
+	}
+	t.Fatalf("the program fails with plain names too, so the renaming is not the cause:\n%s\n\nwith the binders renamed:\n%s", plain, failure)
+}
+
+func issueList(issues []int) string {
+	s := ""
+	for i, n := range issues {
+		if i > 0 {
+			s += ", "
+		}
+		s += fmt.Sprintf("#%d", n)
+	}
+	return s
+}
+
+// knownFailure is an open issue the metamorphic generators would hit. While
+// it is listed, the generators leave out the shapes that hit it (see the
+// calls of metaGen.known) and log that they did.
+//
+// TestKnownFailuresStillFail runs each entry's repro and fails once it
+// passes: the fix for the issue must remove the entry, so the generators
+// cover the shape again. The check runs offline, in the PR that fixes the
+// bug, which a query of the issue tracker could not. An issue closed
+// without a change — a language decision that keeps today's behaviour — is
+// removed by hand, together with the generator's shape for it.
+type knownFailure struct {
+	issue int
+	title string
+	repro program // fails (the transpiler, Go or the output) while the issue is open
+}
+
+var knownFailures = []knownFailure{
+	{996, "match-arm pattern variables leak into later arms", program{
+		main: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(Side int)
+}
+
+func area(s Shape, r int) int = s match {
+    case Circle(r) => r * 100
+    case Square(side) => side + r
+}
+
+func main() {
+    Println(area(Square(3), 7))
+}
+`,
+		want: "10\n",
+	}},
+	{997, "the match subject is bound to the fixed Go name obj", program{
+		main: `package main
+
+func classify(obj int, x int) string = x match {
+    case 0 => s"zero (limit $obj)"
+    case n if n > obj => s"$n above limit $obj"
+    case n => s"$n within limit $obj"
+}
+
+func main() {
+    Println(classify(10, 5))
+    Println(classify(10, 50))
+}
+`,
+		want: "5 within limit 10\n50 above limit 10\n",
+	}},
+	{998, "sibling sub-patterns run their extractors after an earlier sibling failed", program{
+		main: `package main
+
+struct NonZeroDiv()
+
+func (d NonZeroDiv) Unapply(i int) bool = 100 / i > 1
+
+func classify(a int, b int) string = (a, b) match {
+    case (0, NonZeroDiv()) => "x"
+    case _ => "other"
+}
+
+func main() {
+    Println(classify(1, 0))
+}
+`,
+		want: "other\n",
+	}},
+	{1000, "named arguments are evaluated in parameter order", program{
+		main: `package main
+
+struct Point(X int, Y int)
+
+func t(name string, v int) int {
+    Print(name)
+    v
+}
+
+func main() {
+    val p = Point(Y = t("y", 2), X = t("x", 1))
+    Println(p.X)
+}
+`,
+		want: "yx1\n",
+	}},
+	{1001, "a variable operand is read after a later call's side effect", program{
+		main: `package main
+
+var counter = 1
+
+func bump() int {
+    counter = counter + 10
+    counter
+}
+
+func main() {
+    Println(counter + bump())
+}
+`,
+		want: "12\n",
+	}},
+	{1002, "user names std, panic, string, _tmp_N and __p0 are captured by generated code", program{
+		main: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Empty()
+}
+
+func size(panic int, s Shape) int = s match {
+    case Circle(r) => r + panic
+    case Empty() => panic
+}
+
+func main() {
+    val std = 7
+    Println(Some(std).GetOrElse(0))
+    Println(size(1, Circle(2)))
+    val string = 3
+    Println(string match {
+        case 3 => "three"
+        case _ => "other"
+    })
+    val _tmp_1 = 5
+    Println(Some(4) match {
+        case Some(n) => n + _tmp_1
+        case _ => 0
+    })
+    val __p0 = 2
+    Println(Some(1).Map(_ + __p0).GetOrElse(0))
+}
+`,
+		want: "7\n3\nthree\n9\n3\n",
+	}},
+}
+
+// ignoredKnownFailures makes the generators generate the shapes of listed
+// issues anyway, to show that they find them: GALA_FUZZ_IGNORE_KNOWN_FAILURES
+// is "all" or a comma-separated list of issue numbers.
+var ignoredKnownFailures = os.Getenv("GALA_FUZZ_IGNORE_KNOWN_FAILURES")
+
+// openIssue reports whether the generators leave out issue's shapes.
+func openIssue(issue int) bool {
+	if ignoredKnownFailures == "all" || slices.Contains(strings.Split(ignoredKnownFailures, ","), strconv.Itoa(issue)) {
+		return false
+	}
+	for _, k := range knownFailures {
+		if k.issue == issue {
+			return true
+		}
+	}
+	return false
+}
+
+// TestKnownFailuresStillFail fails when a listed issue's repro passes: the
+// issue is fixed, and its entry must go.
+func TestKnownFailuresStillFail(t *testing.T) {
+	for _, k := range knownFailures {
+		t.Run(fmt.Sprintf("issue_%d", k.issue), func(t *testing.T) {
+			if programFailure(t, k.repro) == "" {
+				t.Fatalf("#%d (%s) no longer reproduces: remove it from knownFailures so the metamorphic generators cover it again", k.issue, k.title)
+			}
+		})
+	}
+}
