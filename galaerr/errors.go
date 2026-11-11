@@ -874,6 +874,14 @@ const (
 	// for one, so it cannot be named in GALA either. A value of such a type
 	// that passes through without its type being written is accepted.
 	CodeAnonymousStructType ErrorCode = "GALA-E0090"
+
+	// E0093: a sealed type declares a method the transpiler would otherwise
+	// generate for it — String, or the case predicate is<Case> — with
+	// another signature than the generated one, `String() string` or
+	// `is<Case>() bool`. A method of that signature replaces the generated
+	// one; one of another signature would leave the type without it, and
+	// used to fail in `go build` ("method already declared").
+	CodeSealedMethodSignature ErrorCode = "GALA-E0093"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

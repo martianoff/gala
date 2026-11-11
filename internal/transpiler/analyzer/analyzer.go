@@ -1848,9 +1848,13 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn st
 		richAST.Types[fullCompanionName] = companionMeta
 	}
 
-	// Register isXxx() methods on parent type (private)
+	// Register isXxx() methods on parent type (private), but for one a file
+	// of the package declares itself: that one replaces the generated one.
 	for _, vi := range variants {
 		isMethodName := "is" + vi.name
+		if m := parentMeta.Methods[isMethodName]; m != nil && !m.OfTypeDecl {
+			continue
+		}
 		parentMeta.Methods[isMethodName] = &transpiler.MethodMetadata{
 			Name:       isMethodName,
 			Package:    pkgName,

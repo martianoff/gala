@@ -109,6 +109,8 @@ var accumulatedStateFields = []string{
 	"cachedTypeResolver",
 	"cachedTypeResolverRev",
 	"tempVarCount",
+	"sourceTempNames",
+	"localRefs",
 	"typeAliases",
 	"fileTypeDeclTargets",
 	"goTypeInfo",

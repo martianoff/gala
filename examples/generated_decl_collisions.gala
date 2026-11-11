@@ -1,0 +1,64 @@
+package main
+
+// Declarations the transpiler generates must not collide with the
+// program's own: a sealed type's String and is<Case> methods, its case tag
+// constants, and the function a generic method lowers to.
+
+// A String method of its own replaces the generated one.
+sealed type Expr {
+    case Num(n int)
+    case Neg(e Expr)
+}
+
+func (e Expr) String() string = e match {
+    case Num(n) => s"$n"
+    case Neg(x) => s"-${x.String()}"
+}
+
+// So does an is<Case> predicate of its own; this one answers the opposite
+// of the generated one, so the output shows which one ran.
+sealed type Light {
+    case Red()
+    case Green()
+}
+
+func (l Light) isRed() bool = l match {
+    case Green() => true
+    case _ => false
+}
+
+// The tags of A_B's case C and of A's case B_C are distinct constants.
+sealed type A_B {
+    case C()
+    case D()
+}
+
+sealed type A {
+    case B_C()
+    case E()
+}
+
+// A generic method beside a function named like what it lowers to.
+type Box[T any] struct {
+    v T
+}
+
+func (b Box[T]) Map[U any](f func(T) U) Box[U] = Box(f(b.v))
+
+func Box_Map(x int) int = x + 1
+
+func main() {
+    Println(Neg(Num(3)))
+    Println(Neg(Num(3)).String())
+    Println(s"${Num(5)}")
+    Println(Red().isRed())
+    Println(Green().isRed())
+    Println(C())
+    Println(B_C())
+    val ab A_B = D()
+    Println(ab.isC())
+    val a A = B_C()
+    Println(a.isB_C())
+    Println(Box(1).Map((x) => x * 2).v)
+    Println(Box_Map(1))
+}

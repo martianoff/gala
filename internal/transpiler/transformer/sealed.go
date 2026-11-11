@@ -53,7 +53,7 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 		sc := &d.cases[ci]
 		vi := sealedVariantInfo{
 			name:     sc.name,
-			tagConst: fmt.Sprintf("_%s_%s", name, sc.name),
+			tagConst: sealedTagConst(name, sc.name),
 		}
 		if sc.isDefault {
 			if defaultCase != nil {
@@ -226,9 +226,18 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 		decls = append(decls, companionDecls...)
 	}
 
-	// 4. Generate isXxx() methods on parent, and IsXxx() for Go callers
+	// 4. Generate isXxx() methods on parent, and IsXxx() for Go callers. A
+	// method the source declares itself is not generated (see
+	// userSealedMethod), here and for String below.
 	for _, vi := range variants {
-		decls = append(decls, t.generateSealedIsMethod(name, "is"+vi.name, "", vi, tParams))
+		isName := "is" + vi.name
+		declared, err := t.userSealedMethod(name, isName, "bool")
+		if err != nil {
+			return nil, err
+		}
+		if !declared {
+			decls = append(decls, t.generateSealedIsMethod(name, isName, "", vi, tParams))
+		}
 	}
 	decls = append(decls, t.sealedGoPredicates(name, variants, parentFields, tParams)...)
 
@@ -252,8 +261,13 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 	}
 
 	// 6. Generate String() method on parent
-	stringMethod := t.generateSealedStringMethod(name, variants, tParams, recursiveFields, funcFields)
-	decls = append(decls, stringMethod)
+	hasString, err := t.userSealedMethod(name, "String", "string")
+	if err != nil {
+		return nil, err
+	}
+	if !hasString {
+		decls = append(decls, t.generateSealedStringMethod(name, variants, tParams, recursiveFields, funcFields))
+	}
 
 	// 7. For generic sealed types, generate InstanceMarker
 	if tParams != nil {
@@ -273,6 +287,53 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 	decls = append(decls, ctors...)
 
 	return decls, nil
+}
+
+// sealedTagConst names the Go constant holding the tag of case variant of
+// sealed type parent: `_Shape_Circle`. Joined by `_`, names that hold one
+// would be ambiguous (`A_B`'s case `C` and `A`'s case `B_C`), so then the
+// name starts with the length of parent: `_3_A_B_C`, `_1_A_B_C`. A type name
+// cannot start with a digit, so the two forms never meet.
+func sealedTagConst(parent, variant string) string {
+	if strings.Contains(parent, "_") || strings.Contains(variant, "_") {
+		return fmt.Sprintf("_%d_%s_%s", len(parent), parent, variant)
+	}
+	return "_" + parent + "_" + variant
+}
+
+// userSealedMethod reports whether the source declares the method name, one
+// the transformer would generate, on sealed type typeName itself — in GALA,
+// or in a hand-written .go file of its package — so the generated one is left
+// out. The declared method must take no parameters and return result alone,
+// as the generated one does; one of another signature is GALA-E0093.
+func (t *galaASTTransformer) userSealedMethod(typeName, name, result string) (bool, error) {
+	meta := t.getTypeMeta(typeName)
+	if meta == nil {
+		return false, nil
+	}
+	pos, fits := meta.Pos, false
+	if m := meta.Methods[name]; m != nil && !m.OfTypeDecl {
+		if m.Pos.Line != 0 {
+			pos = m.Pos
+		}
+		fits = len(m.ParamTypes) == 0 && len(m.TypeParams) == 0 && m.GoResults == nil && isBasicNamed(m.ReturnType, result)
+	} else if sig, inGo := t.goMethodsOnGalaType(meta)[name]; inGo {
+		fits = len(sig.Params) == 0 && len(sig.Returns) == 1 && isBasicNamed(sig.Returns[0], result)
+	} else {
+		return false, nil // not declared: generate it
+	}
+	if !fits {
+		return true, galaerr.NewCodedSemanticError(galaerr.CodeSealedMethodSignature, pos.Line, pos.Column,
+			fmt.Sprintf("method %s.%s must have the signature `%s() %s`: it replaces the %s method generated for sealed type %s", typeName, name, name, result, name, typeName),
+			fmt.Sprintf("give it the signature %s() %s, or rename it", name, result))
+	}
+	return true, nil
+}
+
+// isBasicNamed reports whether typ is the basic type name.
+func isBasicNamed(typ transpiler.Type, name string) bool {
+	b, ok := typ.(transpiler.BasicType)
+	return ok && b.Name == name
 }
 
 // generateSealedCompanion generates companion struct + Apply + Unapply for a single variant.
@@ -346,7 +407,7 @@ func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVar
 			return nil, err
 		}
 		params.List = append(params.List, &ast.Field{
-			Names: []*ast.Ident{ast.NewIdent(f.name)},
+			Names: []*ast.Ident{ast.NewIdent(localGoName(f.name))},
 			Type:  typ,
 		})
 	}
@@ -360,13 +421,13 @@ func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVar
 			// Recursive field: store as pointer &value
 			valueExpr = &ast.UnaryExpr{
 				Op: token.AND,
-				X:  ast.NewIdent(f.name), // param name is the original (user-facing) name
+				X:  ast.NewIdent(localGoName(f.name)), // the parameter (see localGoName)
 			}
 		} else {
 			// Normal field: wrap in NewImmutable
 			valueExpr = &ast.CallExpr{
 				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{ast.NewIdent(f.name)}, // param name is the original name
+				Args: []ast.Expr{ast.NewIdent(localGoName(f.name))}, // the parameter
 			}
 		}
 		elts = append(elts, &ast.KeyValueExpr{

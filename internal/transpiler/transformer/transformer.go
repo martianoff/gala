@@ -81,6 +81,8 @@ type galaASTTransformer struct {
 	cachedTypeResolver     *resolver.TypeResolver
 	cachedTypeResolverRev  uint64 // import-manager revision cachedTypeResolver was built at
 	tempVarCount           int
+	sourceTempNames        map[string]bool                               // names in the file's source spelled like a temporary; see freshTempName
+	localRefs              map[*ast.Ident]bool                           // source references to local bindings, renamed by renameShadowingLocals
 	returnSlot             returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
@@ -405,6 +407,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
+	t.sourceTempNames = sourceTempNames(richAST.SourceContent)
+	t.localRefs = nil
 	t.structMetas = make(map[string]*structMetaConfig)
 	t.interfaceLiterals = make(map[string]string)
 	t.interfaceLiteralMisses = make(map[string]bool)
@@ -557,6 +561,12 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			return nil, nil, err
 		}
 		if lowered != nil {
+			if declaresCode(td) {
+				for _, d := range lowered {
+					t.renameShadowingLocals(d)
+				}
+			}
+			t.localRefs = nil
 			t.attachTopDeclDocs(td, lowered)
 			// Source-mapped `//line` directive: mark the declaration with its
 			// originating GALA line so panics in top-level initializers report a

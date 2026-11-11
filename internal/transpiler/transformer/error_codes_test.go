@@ -488,6 +488,38 @@ func main() {
 			expectContains: "case guard `v` has type string, not bool",
 		},
 		{
+			// A String method of its own replaces the generated one, so it
+			// must have the generated one's signature.
+			name: "GALA-E0093 sealed String of another signature",
+			input: `package main
+
+sealed type Expr {
+    case Num(n int)
+    case Neg(e Expr)
+}
+
+func (e Expr) String() int = 1
+
+func main() = Println(Num(1))`,
+			expectCode:     galaerr.CodeSealedMethodSignature,
+			expectContains: "error_codes_test.gala:8:14 method Expr.String must have the signature `String() string`: it replaces the String method generated for sealed type Expr",
+		},
+		{
+			name: "GALA-E0093 sealed case predicate of another signature",
+			input: `package main
+
+sealed type Light {
+    case Red()
+    case Green()
+}
+
+func (l Light) isRed(strict bool) bool = strict
+
+func main() = Println(Red())`,
+			expectCode:     galaerr.CodeSealedMethodSignature,
+			expectContains: "method Light.isRed must have the signature `isRed() bool`",
+		},
+		{
 			// A type argument: Some(x) is std.Some[T], and T here is the
 			// receive-only signal channel ctx.Done() returns.
 			name: "GALA-E0090 anonymous struct type as a type argument",

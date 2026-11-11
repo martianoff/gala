@@ -1149,10 +1149,10 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 	if !recvType.IsNil() {
 		recvPkg := recvType.GetPackage()
 		if recvPkg == registry.StdPackageName || hasStdPrefix(lookupBaseName) {
-			baseName := stripStdPrefix(lookupBaseName)
-			funExpr = t.stdIdent(baseName + "_" + method)
+			baseName := withStdPrefix(stripStdPrefix(lookupBaseName))
+			funExpr = t.stdIdent(stripStdPrefix(t.genericMethodFuncName(baseName, method)))
 		} else {
-			funExpr = t.ident(lookupBaseName + "_" + method)
+			funExpr = t.ident(t.genericMethodFuncName(lookupBaseName, method))
 		}
 	} else {
 		funExpr = ast.NewIdent(method)

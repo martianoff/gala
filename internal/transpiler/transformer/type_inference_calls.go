@@ -380,7 +380,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			// Try all possible underscore split points to find valid type + method
 			for offset := strings.Index(sel.Sel.Name, "_"); offset != -1; {
 				receiverType := pkgName + "." + sel.Sel.Name[:offset]
-				methodName := sel.Sel.Name[offset+1:]
+				methodName := strings.TrimRight(sel.Sel.Name[offset+1:], "_") // see genericMethodFuncName
 				if result := t.resolveMethodCallType(receiverType, methodName, typeArgs, e.Args, 0); !result.IsNil() {
 					return result
 				}
@@ -621,7 +621,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	// Try all possible underscore split points to find valid type + method
 	for offset := strings.Index(id.Name, "_"); offset != -1; {
 		receiverType := id.Name[:offset]
-		methodName := id.Name[offset+1:]
+		methodName := strings.TrimRight(id.Name[offset+1:], "_") // see genericMethodFuncName
 		resolvedRecvType := t.lookupTypeName(receiverType)
 		resolvedRecvTypeName := resolvedRecvType.String()
 		if resolvedRecvType.IsNil() {

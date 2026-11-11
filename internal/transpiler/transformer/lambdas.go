@@ -1484,6 +1484,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// Walk the produced AST and rename each `_` ident to a fresh parameter
 	// name, left-to-right. We also record the param types at each position.
 	paramNames := make([]string, 0, placeholderCount)
+	paramCounter := -1
 	var renameWalk func(parent ast.Node)
 	renameWalk = func(n ast.Node) {
 		if n == nil {
@@ -1493,7 +1494,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		switch node := n.(type) {
 		case *ast.Ident:
 			if node.Name == "_" {
-				fresh := fmt.Sprintf("__p%d", len(paramNames))
+				fresh := t.freshTempName("__p", &paramCounter)
 				node.Name = fresh
 				paramNames = append(paramNames, fresh)
 			}
