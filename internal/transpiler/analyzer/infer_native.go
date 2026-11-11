@@ -46,7 +46,7 @@ func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pk
 		if len(suffixes) > 0 {
 			return transpiler.NilType{}
 		}
-		return nativeLiteralType(lit)
+		return NativeLiteralType(lit)
 	}
 	id := primary.Identifier()
 	if !id.Ok() {
@@ -86,8 +86,9 @@ func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pk
 	return a.packageValCallType(op, args, pkgName, richAST)
 }
 
-// nativeLiteralType is the type of a literal, by its token; NilType for `nil`.
-func nativeLiteralType(lit native.LiteralNode) transpiler.Type {
+// NativeLiteralType is the type of a literal, by its token: the type an
+// untyped constant takes by default; NilType for `nil`.
+func NativeLiteralType(lit native.LiteralNode) transpiler.Type {
 	switch {
 	case lit.INT_LIT().Ok():
 		return transpiler.BasicType{Name: "int"}

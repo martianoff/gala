@@ -1,0 +1,554 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 216
+      },
+      "path": "functions_recursion.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 71
+          },
+          "name": "fact",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 3,
+                "col": 11,
+                "off": 24,
+                "end": 29
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 13,
+                  "off": 26,
+                  "end": 29
+                },
+                "name": "int"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 3,
+              "col": 18,
+              "off": 31,
+              "end": 34
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "if-expr",
+            "pos": {
+              "line": 3,
+              "col": 24,
+              "off": 37,
+              "end": 71
+            },
+            "cond": {
+              "kind": "binary",
+              "pos": {
+                "line": 3,
+                "col": 28,
+                "off": 41,
+                "end": 47
+              },
+              "op": "<=",
+              "left": {
+                "kind": "name",
+                "pos": {
+                  "line": 3,
+                  "col": 28,
+                  "off": 41,
+                  "end": 42
+                },
+                "name": "n"
+              },
+              "right": {
+                "kind": "int",
+                "pos": {
+                  "line": 3,
+                  "col": 33,
+                  "off": 46,
+                  "end": 47
+                },
+                "text": "1",
+                "hint": {
+                  "type": "int"
+                }
+              }
+            },
+            "then": {
+              "kind": "int",
+              "pos": {
+                "line": 3,
+                "col": 36,
+                "off": 49,
+                "end": 50
+              },
+              "text": "1",
+              "hint": {
+                "type": "int"
+              }
+            },
+            "else": {
+              "kind": "binary",
+              "pos": {
+                "line": 3,
+                "col": 43,
+                "off": 56,
+                "end": 71
+              },
+              "op": "*",
+              "left": {
+                "kind": "name",
+                "pos": {
+                  "line": 3,
+                  "col": 43,
+                  "off": 56,
+                  "end": 57
+                },
+                "name": "n"
+              },
+              "right": {
+                "kind": "call",
+                "pos": {
+                  "line": 3,
+                  "col": 47,
+                  "off": 60,
+                  "end": 71
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 3,
+                    "col": 47,
+                    "off": 60,
+                    "end": 64
+                  },
+                  "name": "fact"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 3,
+                      "col": 52,
+                      "off": 65,
+                      "end": 70
+                    },
+                    "op": "-",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 3,
+                        "col": 52,
+                        "off": 65,
+                        "end": 66
+                      },
+                      "name": "n"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 3,
+                        "col": 56,
+                        "off": 69,
+                        "end": 70
+                      },
+                      "text": "1",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 5,
+            "col": 1,
+            "off": 73,
+            "end": 169
+          },
+          "name": "fib",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 5,
+                "col": 10,
+                "off": 82,
+                "end": 87
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 5,
+                  "col": 12,
+                  "off": 84,
+                  "end": 87
+                },
+                "name": "int"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 5,
+              "col": 17,
+              "off": 89,
+              "end": 92
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 5,
+              "col": 21,
+              "off": 93,
+              "end": 169
+            },
+            "stmts": [
+              {
+                "kind": "if",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 99,
+                  "end": 132
+                },
+                "cond": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 6,
+                    "col": 8,
+                    "off": 102,
+                    "end": 107
+                  },
+                  "op": "<",
+                  "left": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 6,
+                      "col": 8,
+                      "off": 102,
+                      "end": 103
+                    },
+                    "name": "n"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 6,
+                      "col": 12,
+                      "off": 106,
+                      "end": 107
+                    },
+                    "text": "2",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "block",
+                  "pos": {
+                    "line": 6,
+                    "col": 14,
+                    "off": 108,
+                    "end": 132
+                  },
+                  "stmts": [
+                    {
+                      "kind": "return",
+                      "pos": {
+                        "line": 7,
+                        "col": 9,
+                        "off": 118,
+                        "end": 126
+                      },
+                      "value": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 7,
+                          "col": 16,
+                          "off": 125,
+                          "end": 126
+                        },
+                        "name": "n"
+                      }
+                    }
+                  ]
+                },
+                "else": null
+              },
+              {
+                "kind": "return",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 137,
+                  "end": 167
+                },
+                "value": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 9,
+                    "col": 12,
+                    "off": 144,
+                    "end": 167
+                  },
+                  "op": "+",
+                  "left": {
+                    "kind": "call",
+                    "pos": {
+                      "line": 9,
+                      "col": 12,
+                      "off": 144,
+                      "end": 154
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 12,
+                        "off": 144,
+                        "end": 147
+                      },
+                      "name": "fib"
+                    },
+                    "args": [
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 9,
+                          "col": 16,
+                          "off": 148,
+                          "end": 153
+                        },
+                        "op": "-",
+                        "left": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 9,
+                            "col": 16,
+                            "off": 148,
+                            "end": 149
+                          },
+                          "name": "n"
+                        },
+                        "right": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 9,
+                            "col": 20,
+                            "off": 152,
+                            "end": 153
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "right": {
+                    "kind": "call",
+                    "pos": {
+                      "line": 9,
+                      "col": 25,
+                      "off": 157,
+                      "end": 167
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 25,
+                        "off": 157,
+                        "end": 160
+                      },
+                      "name": "fib"
+                    },
+                    "args": [
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 9,
+                          "col": 29,
+                          "off": 161,
+                          "end": 166
+                        },
+                        "op": "-",
+                        "left": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 9,
+                            "col": 29,
+                            "off": 161,
+                            "end": 162
+                          },
+                          "name": "n"
+                        },
+                        "right": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 9,
+                            "col": 33,
+                            "off": 165,
+                            "end": 166
+                          },
+                          "text": "2",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 12,
+            "col": 1,
+            "off": 171,
+            "end": 216
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 12,
+              "col": 13,
+              "off": 183,
+              "end": 216
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 13,
+                  "col": 5,
+                  "off": 189,
+                  "end": 214
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 13,
+                    "col": 5,
+                    "off": 189,
+                    "end": 196
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 13,
+                      "col": 13,
+                      "off": 197,
+                      "end": 204
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 13,
+                        "col": 13,
+                        "off": 197,
+                        "end": 201
+                      },
+                      "name": "fact"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 13,
+                          "col": 18,
+                          "off": 202,
+                          "end": 203
+                        },
+                        "text": "5",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 13,
+                      "col": 22,
+                      "off": 206,
+                      "end": 213
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 13,
+                        "col": 22,
+                        "off": 206,
+                        "end": 209
+                      },
+                      "name": "fib"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 13,
+                          "col": 26,
+                          "off": 210,
+                          "end": 212
+                        },
+                        "text": "10",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

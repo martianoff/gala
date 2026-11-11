@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "analyzerhints",
+    srcs = ["analyzerhints.go"],
+    importpath = "martianoff/gala/internal/formal/coreexport/analyzerhints",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [
+        "//internal/formal/coreexport",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+    ],
+)
