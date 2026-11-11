@@ -181,6 +181,9 @@ func (l List[T]) AppendAll(other List[T]) List[T] {
     if l.length == 0 {
         return other
     }
+    if other.length == 0 {
+        return l
+    }
     // Iterative implementation using a stack to reverse, then prepend
     var stack = emptyList[T]()
     var current = l

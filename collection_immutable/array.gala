@@ -585,8 +585,15 @@ func (a Array[T]) Append(value T) Array[T] {
     return Array[T](root = SomePtr(newRoot), length = a.length + 1, depth = newDepth, prefix = a.prefix)
 }
 
-// AppendAll appends all elements from another array.
+// AppendAll appends all elements from another array. An empty side returns
+// the other array as is.
 func (a Array[T]) AppendAll(other Array[T]) Array[T] {
+    if other.length == 0 {
+        return a
+    }
+    if a.length == 0 {
+        return other
+    }
     var builder = newArrayBuilder[T]()
     for i := 0; i < a.length; i++ {
         builder.Add(a.Get(i))

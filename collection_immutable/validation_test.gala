@@ -553,15 +553,7 @@ func TestArrayFlatMapDataIntegrity(t T) T {
 // Test Concat data integrity
 func TestArrayConcatDataIntegrity(t T) T {
     val concatenated = ArrayOf(1, 2, 3).Concat(ArrayOf(4, 5, 6))
-
-    val t1 = Eq[int](t, concatenated.Length(), 6)
-    var allCorrect = true
-    for i := 0; i < 6; i++ {
-        if concatenated.Get(i) != (i + 1) {
-            allCorrect = false
-        }
-    }
-    return IsTrue(t1, allCorrect)
+    return IsTrue(t, concatenated.Equal(ArrayOf(1, 2, 3, 4, 5, 6)))
 }
 
 // Test Partition data integrity

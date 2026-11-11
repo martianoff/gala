@@ -200,8 +200,9 @@ list.PrependAll(ListOf(0, 1))  // List(0, 1, 2, 3, 4)
 // Append - O(n)
 list.Append(5)               // List(2, 3, 4, 5)
 
-// AppendAll
+// AppendAll (Concat is the same)
 list.AppendAll(ListOf(5, 6))   // List(2, 3, 4, 5, 6)
+list.Concat(EmptyList())       // List(2, 3, 4)
 ```
 
 ### Slicing Operations
@@ -427,8 +428,9 @@ val arr = ArrayOf(2, 3, 4)
 // Append - O(eC)
 arr.Append(5)                // Array(2, 3, 4, 5)
 
-// AppendAll
+// AppendAll (Concat is the same)
 arr.AppendAll(ArrayOf(5, 6))   // Array(2, 3, 4, 5, 6)
+arr.Concat(EmptyArray())       // Array(2, 3, 4)
 
 // Prepend - O(1) amortized (uses prefix buffer)
 arr.Prepend(1)               // Array(1, 2, 3, 4)
