@@ -27,7 +27,7 @@ examples/for_range_groupby_key_type.gala: truncated	4cc06cc1f10c1981	bc3d227d31b
 examples/for_range_groupby_key_type.gala: unclosed call	a06113fe93d5dbf3	047d1e74688d0763
 examples/local_function_lambda.gala: half-typed declaration	bc31ad85ab8eb496	9ab6e7cc8039f129
 examples/local_function_lambda.gala: member being typed	b3476c65a775725c	59217b7e3322a73c
-examples/local_function_lambda.gala: truncated	f8da3bc2cbd1b575	bc2943b9dc1777f8
+examples/local_function_lambda.gala: truncated	f8da3bc2cbd1b575	94371c0e17158024
 examples/local_function_lambda.gala: unclosed call	085d1fd94e8f80eb	656eaf2324c1285e
 examples/match_stmt_true_dangle.gala: half-typed declaration	3a6c3ca2c56ce85d	54737337d478dc37
 examples/match_stmt_true_dangle.gala: member being typed	ce48222291036438	fde64019904987b2
