@@ -940,7 +940,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 			identName = "Unknown"
 		}
 
-		name = identName + "_" + name
+		name = t.genericMethodFuncName(identName, name)
 		// 1. Add receiver as first parameter
 		funcType.Params.List = append([]*ast.Field{receiver.List[0]}, funcType.Params.List...)
 

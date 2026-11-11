@@ -1889,6 +1889,27 @@ gala_exec_test(
     expected = "sealed_field_clash.out",
 )
 
+gala_exec_test(
+    name = "user_names_like_generated",
+    src = "user_names_like_generated.gala",
+    expected = "user_names_like_generated.out",
+)
+
+gala_exec_test(
+    name = "crossfile_generated_names",
+    srcs = [
+        "crossfile_generated_names/light.gala",
+        "crossfile_generated_names/main.gala",
+    ],
+    expected = "crossfile_generated_names/crossfile_generated_names.out",
+)
+
+gala_exec_test(
+    name = "generated_decl_collisions",
+    src = "generated_decl_collisions.gala",
+    expected = "generated_decl_collisions.out",
+)
+
 # Documentation verification tests (GALA.MD)
 gala_exec_test(
     name = "doc_verify_gala_md_basics",

@@ -40,6 +40,7 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 				},
 			}, nil
 		}
+		t.markLocalRef(ident)
 		return ident, nil
 	}
 

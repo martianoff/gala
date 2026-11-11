@@ -1,0 +1,111 @@
+package main
+
+// Local bindings named like something generated code refers to: std's
+// package qualifier, Go's predeclared identifiers (panic, string, int, len,
+// …) and the transformer's temporaries (_tmp_N, __pN). Each must keep its
+// own meaning, and the generated code around it must keep its own.
+
+sealed type Shape {
+    case Circle(r int)
+    case Square(s int)
+}
+
+sealed type Stat {
+    case Spread(std float64, panic int)
+    case Empty()
+}
+
+func area(sh Shape, panic int) int = sh match {
+    case Circle(r) => r * panic
+    case Square(s) => s * s
+}
+
+func countDown(len int, acc int) int = if (len == 0) acc else countDown(len - 1, acc + len)
+
+func label(sh Shape, string string) string = sh match {
+    case Circle(r) => s"$string circle $r"
+    case Square(s) => s"$string square $s"
+}
+
+// A package-level binding keeps its name.
+var max = 0
+
+func raise(x int) {
+    max = x
+}
+
+func main() {
+    raise(5)
+    Println(max)
+
+    // std: a standard deviation, beside generated std.Some.
+    val std = 7
+    Println(Some(std))
+
+    // panic: a parameter, beside the exhaustive match's panic fallback.
+    Println(area(Circle(2), 3))
+
+    // string: a local, beside the match's func() string wrapper.
+    val string = "abc"
+    val x = 3
+    val picked = x match {
+        case 1 => "one"
+        case _ => string
+    }
+    Println(picked)
+    Println(label(Square(4), "a"))
+
+    // _tmp_1: a local, beside the match's temporaries.
+    val _tmp_1 = 10
+    val sh Shape = Circle(2)
+    val sum = sh match {
+        case Circle(r) => r + _tmp_1
+        case Square(s) => s + _tmp_1
+    }
+    Println(sum)
+    // ... and as pattern bindings, scoped to their own case.
+    val inner = Some(2) match {
+        case Some(_tmp_2) => Circle(_tmp_2) match {
+            case _tmp_2 if label(_tmp_2, "") == "" => 1
+            case _ => _tmp_2
+        }
+        case _ => 0
+    }
+    Println(inner)
+
+    // __p0: a local, beside the placeholder lambda's parameter.
+    val __p0 = 10
+    Println(Some(1).Map(_ + __p0))
+
+    // More predeclared names: a var, a function value, a pattern binding,
+    // a recursive parameter and a case field.
+    var len = 3
+    len = len + 1
+    Println(len)
+    val append = (n int) => n * 10
+    Println(append(4))
+    val int = 7
+    val word = int match {
+        case 7 => "seven"
+        case _ => "other"
+    }
+    Println(word)
+    val got = Some(9) match {
+        case Some(min) => min
+        case _ => 0
+    }
+    Println(got)
+    val nested = Some(Some(4)) match {
+        case Some(Some(string)) => string
+        case _ => 0
+    }
+    Println(nested)
+    Println(countDown(4, 0))
+    val spread = Spread(1.5, 2)
+    Println(spread)
+    val shown = spread match {
+        case Spread(std, panic) => s"$std $panic"
+        case Empty() => "empty"
+    }
+    Println(shown)
+}

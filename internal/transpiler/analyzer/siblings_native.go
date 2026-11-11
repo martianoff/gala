@@ -113,7 +113,9 @@ func (sm siblingMethod) add(richAST *transpiler.RichAST, methodMeta *transpiler.
 		}
 		return
 	}
-	if existing, exists := typeMeta.Methods[sm.name]; !exists {
+	if existing, exists := typeMeta.Methods[sm.name]; !exists || existing.OfTypeDecl {
+		// A method a file declares replaces one that came with the type's
+		// declaration, such as a sealed type's case predicate.
 		typeMeta.Methods[sm.name] = methodMeta
 	} else if !existing.IsGeneric && methodMeta.IsGeneric {
 		existing.IsGeneric = true

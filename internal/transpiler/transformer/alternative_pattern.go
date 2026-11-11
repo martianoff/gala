@@ -96,7 +96,7 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []patExpr, objExpr
 		if err != nil {
 			return nil, nil, err
 		}
-		if names := extractUserPatternVarNames(s); len(names) > 0 {
+		if names := t.extractUserPatternVarNames(s); len(names) > 0 {
 			return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
 				alt.line(), alt.col(),
 				fmt.Sprintf("pattern alternative binds '%s'; an alternative pattern cannot bind names", names[0]),

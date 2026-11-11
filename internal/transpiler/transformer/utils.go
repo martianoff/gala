@@ -90,8 +90,7 @@ func extractBindingDefault(clause ast.Stmt) []ast.Stmt {
 }
 
 func (t *galaASTTransformer) nextTempVar() string {
-	t.tempVarCount++
-	return fmt.Sprintf("_tmp_%d", t.tempVarCount)
+	return t.freshTempName("_tmp_", &t.tempVarCount)
 }
 
 func (t *galaASTTransformer) nextTupleID() int {

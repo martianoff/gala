@@ -212,7 +212,9 @@ func main() {
     Println(s"${string}${error}")
 }
 `,
-			want: "var error =",
+			// A local of such a name is emitted under a reserved one, so
+			// generated code still reaches Go's (see localGoName).
+			want: "var _gala_error =",
 		},
 	}
 	for _, tc := range cases {

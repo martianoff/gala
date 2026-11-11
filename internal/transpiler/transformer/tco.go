@@ -335,7 +335,11 @@ func (t *galaASTTransformer) buildTailCallStep(
 	lhs := make([]ast.Expr, len(tc.paramNames))
 	rhs := make([]ast.Expr, len(tc.paramNames))
 	for i := range tc.paramNames {
-		lhs[i] = ast.NewIdent(tc.paramNames[i])
+		param := ast.NewIdent(tc.paramNames[i])
+		if shadowsGeneratedName(param.Name) {
+			t.recordLocalRef(param)
+		}
+		lhs[i] = param
 		rhs[i] = ast.NewIdent(tmpNames[i])
 	}
 	stmts = append(stmts, &ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: rhs})

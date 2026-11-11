@@ -154,6 +154,11 @@ func (t *galaASTTransformer) hoistPatternDecls(stmts []ast.Stmt, subject string,
 				}
 				known[ident.Name] = exprType(typ)
 				decls = append(decls, seqVarDecl(ident.Name, typ))
+				// The binding is now assigned, not declared, here; the
+				// var declares it (see renameShadowingLocals).
+				if shadowsGeneratedName(ident.Name) {
+					t.recordLocalRef(ident)
+				}
 			}
 			guarded = append(guarded, &ast.AssignStmt{Lhs: st.Lhs, Tok: token.ASSIGN, Rhs: st.Rhs})
 		default:

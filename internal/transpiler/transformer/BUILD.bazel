@@ -51,6 +51,7 @@ go_library(
         "match_source.go",
         "method_receiver_alias.go",
         "methods.go",
+        "name_hygiene.go",
         "named_pattern_args.go",
         "nested_function.go",
         "opaque.go",

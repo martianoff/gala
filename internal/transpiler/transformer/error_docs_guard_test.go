@@ -1366,6 +1366,25 @@ func main() {
 			},
 		},
 		{
+			name: "sealed type method of another signature than the generated one",
+			code: galaerr.CodeSealedMethodSignature, // GALA-E0093
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Expr {
+    case Num(n int)
+    case Neg(e Expr)
+}
+
+func (e Expr) String() int = 1
+
+func main() {
+    Println(Num(1))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

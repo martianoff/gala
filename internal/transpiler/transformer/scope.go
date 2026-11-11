@@ -539,7 +539,9 @@ func (t *galaASTTransformer) bindingRead(b binding) ast.Expr {
 	if b.boxed {
 		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent(b.name), Sel: ast.NewIdent(transpiler.MethodGet)}}
 	}
-	return ast.NewIdent(b.name)
+	id := ast.NewIdent(b.name)
+	t.markLocalRef(id)
+	return id
 }
 
 // registerPackageVal binds a package-level val/var in the current scope.
