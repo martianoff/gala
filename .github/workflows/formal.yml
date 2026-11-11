@@ -27,6 +27,8 @@ jobs:
   formal:
     name: Lean proofs
     runs-on: ubuntu-latest
+    # A runaway `decide` or kernel reduction must not hold a runner for hours.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: formal

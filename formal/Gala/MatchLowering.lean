@@ -287,6 +287,7 @@ def encRL : Res (List SVal) → Res (List TVal)
     the encoding of its value, and unbound stays unbound. -/
 def EnvRel (ρ : SEnv) (τ : TEnv) : Prop := ∀ x, look τ (sv x) = (look ρ x).map enc
 
+/-- `look` unfolds one binding. -/
 theorem look_cons {β} (k x : Nat) (v : β) (r) :
     look ((k, v) :: r) x = if k = x then some v else look r x := rfl
 
@@ -306,7 +307,8 @@ theorem EnvRel.bind {ρ τ} (h : EnvRel ρ τ) (x : Nat) (v : SVal) :
   · subst hxy; simp
   · rw [ite_eq_right (show ¬ sv x = sv y by unfold sv; omega), ite_eq_right hxy]; exact h y
 
-theorem encL_getD (fs : List SVal) (i : Nat) :
+/-- Reading a field commutes with encoding, including the zero value for a missing one. -/
+theorem encL_getD(fs : List SVal) (i : Nat) :
     (encL fs).getD i (.int 0) = enc (fs.getD i (.int 0)) := by
   induction fs generalizing i with
   | nil => rfl
@@ -314,7 +316,8 @@ theorem encL_getD (fs : List SVal) (i : Nat) :
     | zero => rfl
     | succ n => exact ih n
 
-theorem look_U_sv (x : Nat) (v : TVal) (τ : TEnv) : look ((sv x, v) :: τ) U = look τ U := by
+/-- Binding a GALA variable never hides the `Unapply` temporary `U`. -/
+theorem look_U_sv(x : Nat) (v : TVal) (τ : TEnv) : look ((sv x, v) :: τ) U = look τ U := by
   rw [look_cons, ite_eq_right (by unfold sv U; omega)]
 
 /-- Binding the fields in Go matches `sbind` in GALA. -/
@@ -416,6 +419,8 @@ def compileLeaky : SExpr → TExpr
   bound (to the zero value) and shadows the parameter in the `Square` arm.
 -/
 
+namespace Counterexample
+
 /-- The pattern variable `r`, which shadows the parameter of the same name. -/
 def r := 0
 /-- The pattern variable `side`. -/
@@ -432,17 +437,17 @@ theorem gala_says_10 : seval paramEnv areaBody = .ok (.int 10) := rfl
 theorem scoped_go_says_10 : teval [(sv r, .int 7)] (compile areaBody) = .ok (.int 10) := rfl
 theorem leaky_go_says_3 : teval [(sv r, .int 7)] (compileLeaky areaBody) = .ok (.int 3) := rfl
 
+end Counterexample
+
+open Counterexample in
 /-- **The leaky lowering is not correct**: there are related environments where it
     disagrees with GALA. -/
 theorem leaky_not_correct :
     ¬ ∀ (e : SExpr) (ρ : SEnv) (τ : TEnv), EnvRel ρ τ →
       teval τ (compileLeaky e) = encR (seval ρ e) := by
   intro hall
-  have h := hall areaBody paramEnv [(sv r, .int 7)] (by
-    intro x; by_cases hx : x = 0
-    · subst hx; rfl
-    · unfold paramEnv; rw [look_cons, look_cons, ite_eq_right (show ¬ sv r = sv x by unfold sv r; omega),
-        ite_eq_right (show ¬ r = x by unfold r; omega)]; rfl)
+  have h := hall areaBody paramEnv [(sv r, .int 7)]
+    (EnvRel.bind (ρ := []) (τ := []) (fun _ => rfl) r (.int 7))
   rw [leaky_go_says_3, gala_says_10] at h
   simp [encR, enc] at h
 

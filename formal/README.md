@@ -24,8 +24,8 @@ flowchart LR
     E -->|leaky lowering| C[counterexample<br/>leaky_not_correct]
 ```
 
-Every definition says in its doc comment what it models and which `docs/GALA.MD` section
-it reflects.
+Each definition's doc comment says what it models, and each file's header names the
+`docs/GALA.MD` sections it reflects.
 
 ## Layout
 
@@ -51,8 +51,10 @@ lake env lean --run scripts/ProofCheck.lean  # fail on sorry or non-standard axi
 
 The proof check is needed because Lean only *warns* when a proof uses `sorry`. The script
 imports every module of the library and fails if any declaration depends on `sorry` or on
-an axiom other than `propext`, `Quot.sound` and `Classical.choice`. Run `lake build`
-first: it checks the built modules, so a stale or missing build fails the check.
+an axiom other than `propext`, `Quot.sound` and `Classical.choice`, private declarations
+included. It also fails if a theorem that COVERAGE.md calls proved is missing. Run
+`lake build` first: the script checks the built modules, so it fails without a build and
+checks old code after a stale one.
 
 CI runs both in [`.github/workflows/formal.yml`](../.github/workflows/formal.yml) on every
 pull request that touches `formal/`.

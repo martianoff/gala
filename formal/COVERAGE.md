@@ -17,13 +17,16 @@ The tiers mean exactly this:
 |---|---|---|---|---|
 | Sealed-type constructors (tag plus fields) | yes, simplified | no | yes, see below | `Gala/MatchLowering.lean` |
 | `match` on a sealed value: variant patterns with variable binders, arms tried in order, no match ↦ panic | yes, simplified | no | yes, see below | `Gala/MatchLowering.lean` |
-| Integer literals, `+`, unary `-`, variables | only as arm bodies | no | no | `Gala/MatchLowering.lean` |
+| Integer literals, `+`, unary `-`, variables | yes, as the expressions around constructors and `match` | no | yes, see below | `Gala/MatchLowering.lean` |
 
 The model is simplified: there are no types, and patterns are a variant tag with variable
 binders only. Nested, literal, wildcard, tuple and sequence patterns, guards, extractors
 and views are not modelled.
 
 ## What is proved
+
+The proof check (`scripts/ProofCheck.lean`) fails if a theorem listed here is missing;
+keep its `requiredTheorems` in step with this table.
 
 | Theorem | Statement |
 |---|---|

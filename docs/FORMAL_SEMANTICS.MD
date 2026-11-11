@@ -113,8 +113,8 @@ formal/
   Gala/Std/*.lean           models of Option, Either, Try, Println formatting
   Gala/Main.lean            `galaspec run prog.json` → stdout + outcome line
   Gala/Theorems/*.lean      proofs about the semantics
-  Gala/Lowering/*.lean      optional: small models of individual lowerings
-  COVERAGE.md               generated, see "Coverage"
+  Gala/*Lowering.lean       optional: small models of individual lowerings
+  COVERAGE.md               hand-written now, generated later; see "Coverage"
 ```
 
 - **What evaluation produces:** printed output plus one outcome: `ok`, `panic <class>`, or
