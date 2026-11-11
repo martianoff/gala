@@ -52,7 +52,6 @@ jobs:
           esac
           {
             echo "version=$version"
-            echo "asset=lean-$version-linux.tar.zst"
             echo "sha256=$sha256"
             echo "dir=$HOME/.lean/lean-$version-linux"
           } >> "$GITHUB_OUTPUT"
@@ -70,17 +69,18 @@ jobs:
         # No elan: the verified toolchain's bin/ goes on PATH, so lake runs exactly it.
         env:
           VERSION: ${{ steps.lean.outputs.version }}
-          ASSET: ${{ steps.lean.outputs.asset }}
           SHA256: ${{ steps.lean.outputs.sha256 }}
           DIR: ${{ steps.lean.outputs.dir }}
         run: |
           if [ ! -x "$DIR/bin/lake" ]; then
+            asset="lean-$VERSION-linux.tar.zst"
             tmp="$(mktemp -d)"
-            curl -sSfL --retry 3 -o "$tmp/$ASSET" "https://releases.lean-lang.org/lean4/v$VERSION/$ASSET" \
-              || curl -sSfL --retry 3 -o "$tmp/$ASSET" "https://github.com/leanprover/lean4/releases/download/v$VERSION/$ASSET"
-            echo "$SHA256  $tmp/$ASSET" | sha256sum -c -
+            for host in https://releases.lean-lang.org/lean4 https://github.com/leanprover/lean4/releases/download; do
+              curl -sSfL --retry 2 -o "$tmp/$asset" "$host/v$VERSION/$asset" && break
+            done
+            echo "$SHA256  $tmp/$asset" | sha256sum -c -
             mkdir -p "$(dirname "$DIR")"
-            tar --zstd -xf "$tmp/$ASSET" -C "$(dirname "$DIR")"
+            tar --zstd -xf "$tmp/$asset" -C "$(dirname "$DIR")"
             rm -rf "$tmp"
           fi
           echo "$DIR/bin" >> "$GITHUB_PATH"
@@ -89,8 +89,7 @@ jobs:
         env:
           VERSION: ${{ steps.lean.outputs.version }}
         run: |
-          lean --version
-          lean --version | grep -qF "version $VERSION," \
+          lean --version | tee /dev/stderr | grep -qF "version $VERSION," \
             || { echo "::error::lean on PATH is not $VERSION"; exit 1; }
 
       - name: Cache Lake build

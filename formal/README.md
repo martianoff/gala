@@ -146,10 +146,8 @@ The files here are licensed like the rest of the repository. Lean is Apache 2.0,
 release binaries bundle LGPL components, so:
 
 - No Lean-built binary ships in GALA releases, the CLI, Docker images or the playground.
-- The Lean toolchain is never vendored, committed, mirrored or re-hosted: no public
-  mirror, no committed archive, no published image or cache that others download from.
-  CI fetches it from Lean's official releases and checks a pinned SHA-256; keeping it in
-  the repository's own GitHub Actions cache is allowed, since that cache is private to CI.
+- The Lean toolchain is never vendored, committed, mirrored or re-hosted. CI fetches it
+  from Lean's official releases and checks a pinned SHA-256.
 - Lake dependencies must be Apache 2.0, MIT or BSD.
 
 Details are in the "Licensing" section of the design.
