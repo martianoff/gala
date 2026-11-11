@@ -140,39 +140,6 @@ func main() {
 `,
 		want: "12\n",
 	}, "but must print"},
-	{1002, "user names std, panic, string, _tmp_N and __p0 are captured by generated code", program{
-		main: `package main
-
-sealed type Shape {
-    case Circle(R int)
-    case Empty()
-}
-
-func size(panic int, s Shape) int = s match {
-    case Circle(r) => r + panic
-    case Empty() => panic
-}
-
-func main() {
-    val std = 7
-    Println(Some(std).GetOrElse(0))
-    Println(size(1, Circle(2)))
-    val string = 3
-    Println(string match {
-        case 3 => "three"
-        case _ => "other"
-    })
-    val _tmp_1 = 5
-    Println(Some(4) match {
-        case Some(n) => n + _tmp_1
-        case _ => 0
-    })
-    val __p0 = 2
-    Println(Some(1).Map(_ + __p0).GetOrElse(0))
-}
-`,
-		want: "7\n3\nthree\n9\n3\n",
-	}, "std.Some is not a type"},
 }
 
 // openIssues are the listed issues whose shapes the generators leave out.

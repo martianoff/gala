@@ -1463,12 +1463,12 @@ var hostileNames = []struct {
 	issue int // the open issue the name hits; 0 for none
 }{
 	{"obj", 997},
-	{"_tmp_1", 1002},
-	{"_tmp_2", 1002},
-	{"std", 1002},
-	{"panic", 1002},
-	{"string", 1002},
-	{"__p0", 1002},
+	{"_tmp_1", 0},
+	{"_tmp_2", 0},
+	{"std", 0},
+	{"panic", 0},
+	{"string", 0},
+	{"__p0", 0},
 	{"len", 0},
 	{"fmt", 0},
 }
