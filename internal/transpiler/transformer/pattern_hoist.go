@@ -193,7 +193,7 @@ type siblingChain struct {
 func (c *siblingChain) add(cond ast.Expr, stmts []ast.Stmt, subject string, subjectType patternType) error {
 	if len(stmts) == 0 || len(c.conds) == 0 || !runsCode(stmts) {
 		c.stmts = append(c.stmts, stmts...)
-		if cond != nil && !isLiteralTrue(cond) {
+		if !isLiteralTrue(cond) {
 			c.conds = append(c.conds, cond)
 		}
 		return nil
@@ -208,7 +208,7 @@ func (c *siblingChain) add(cond ast.Expr, stmts []ast.Stmt, subject string, subj
 	} else if len(c.conds) > 1 {
 		c.stmts = append(c.stmts, assignStmt(c.ok, andAll(c.conds)))
 	}
-	if cond != nil && !isLiteralTrue(cond) {
+	if !isLiteralTrue(cond) {
 		guarded = append(guarded, assignStmt(c.ok, cond))
 	}
 	c.stmts = append(c.stmts, decls...)
@@ -217,42 +217,40 @@ func (c *siblingChain) add(cond ast.Expr, stmts []ast.Stmt, subject string, subj
 	return nil
 }
 
-// result is the joined condition, `true` when nothing is tested, and the
-// statements that run before it.
-func (c *siblingChain) result() (ast.Expr, []ast.Stmt) {
-	if len(c.conds) == 0 {
-		return ast.NewIdent("true"), c.stmts
-	}
-	return andAll(c.conds), c.stmts
+// result is the joined condition and the statements that run before it, as
+// a pattern lowering returns them.
+func (c *siblingChain) result() (ast.Expr, []ast.Stmt, error) {
+	return andAll(c.conds), c.stmts, nil
 }
 
-// lowered is result as a pattern lowering returns it.
-func (c *siblingChain) lowered() (ast.Expr, []ast.Stmt, error) {
-	cond, stmts := c.result()
-	return cond, stmts, nil
-}
-
-// guardSubPatterns returns the statements of the sub-patterns chain joined,
-// run under `if ok { ... }` with the names they declare hoisted before it
-// (see hoistPatternDecls), and their condition, nil when they test nothing.
-// subject/subjectType name the guarded temp they read.
+// guardSubPatterns returns the joined condition of the sub-patterns of chain
+// and their statements, run under `if ok { ... }` with the names they declare
+// hoisted before it (see hoistPatternDecls). subject/subjectType name the
+// guarded temp they read.
 func (t *galaASTTransformer) guardSubPatterns(chain *siblingChain, ok, subject string, subjectType patternType) (ast.Expr, []ast.Stmt, error) {
-	cond, stmts := chain.result()
+	cond, stmts, _ := chain.result()
 	decls, guarded, err := t.hoistPatternDecls(stmts, subject, subjectType)
 	if err != nil {
 		return nil, nil, err
 	}
-	if isLiteralTrue(cond) {
-		cond = nil
-	}
 	return cond, assembleSeqPatternGuardBlock(decls, ok, guarded), nil
 }
 
-// andAll is conds joined with `&&`; conds is not empty.
+// andAll is conds joined with `&&`, leaving out the literal `true`s; `true`
+// when nothing is left.
 func andAll(conds []ast.Expr) ast.Expr {
-	cond := conds[0]
-	for _, c := range conds[1:] {
-		cond = &ast.BinaryExpr{X: cond, Op: token.LAND, Y: c}
+	var cond ast.Expr
+	for _, c := range conds {
+		switch {
+		case isLiteralTrue(c):
+		case cond == nil:
+			cond = c
+		default:
+			cond = &ast.BinaryExpr{X: cond, Op: token.LAND, Y: c}
+		}
+	}
+	if cond == nil {
+		return ast.NewIdent("true")
 	}
 	return cond
 }

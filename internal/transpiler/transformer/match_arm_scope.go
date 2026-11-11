@@ -43,18 +43,16 @@ type binderTemp struct {
 // body } }`, with names, the pattern variables stmts declare, visible only in
 // the guard and the body (see above). guard is nil when the case has none.
 func (t *galaASTTransformer) scopeArmBindings(cond ast.Expr, stmts []ast.Stmt, names []string, guard ast.Expr, body []ast.Stmt) ast.Stmt {
-	binders := hideBinders(stmts, cond, names)
+	binders := hideBinders(stmts, names)
 	bodyBlock := &ast.BlockStmt{List: t.bindIn(binders, body)}
-	if guard == nil || !t.readsAnyBinder(binders, []ast.Node{guard}) {
+	if guard == nil || !t.readsAnyBinder(binders, guard) {
 		return armBlock(stmts, &ast.IfStmt{Cond: joinGuard(cond, guard), Body: bodyBlock})
 	}
 	matched := t.nextTempVar()
-	guardBody := t.bindIn(binders, []ast.Stmt{&ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(matched)}, Tok: token.ASSIGN, Rhs: []ast.Expr{guard},
-	}})
-	var test ast.Stmt = &ast.BlockStmt{List: guardBody}
+	guardBlock := &ast.BlockStmt{List: t.bindIn(binders, []ast.Stmt{assignStmt(matched, guard)})}
+	var test ast.Stmt = guardBlock
 	if !isLiteralTrue(cond) {
-		test = &ast.IfStmt{Cond: cond, Body: &ast.BlockStmt{List: guardBody}}
+		test = &ast.IfStmt{Cond: cond, Body: guardBlock}
 	}
 	stmts = append(stmts, seqVarDecl(matched, ast.NewIdent("bool")), test)
 	return armBlock(stmts, &ast.IfStmt{Cond: ast.NewIdent(matched), Body: bodyBlock})
@@ -68,85 +66,49 @@ func armBlock(stmts []ast.Stmt, test *ast.IfStmt) ast.Stmt {
 	return &ast.BlockStmt{List: append(stmts, test)}
 }
 
-// hideBinders renames each of names, the pattern variables stmts and cond
-// declare, to a temp of its own, `_tmp_<name>`, from its declaration on, and
-// returns them with their temps. A name read before the pattern declares it
-// (an extractor value of the enclosing scope) keeps reading that value.
-func hideBinders(stmts []ast.Stmt, cond ast.Expr, names []string) []binderTemp {
-	if len(names) == 0 {
-		return nil
-	}
-	r := binderRenamer{temps: map[string]string{}, live: map[string]bool{}}
+// hideBinders renames each of names, the pattern variables stmts declare, to
+// a temp of its own, `_tmp_<name>`, and returns them with their temps. A
+// pattern only stores its variables, never reads them, so only the names it
+// declares and assigns are renamed: a read of a name (a value of the enclosing
+// scope, a type or a package of the same name) is left as it is.
+func hideBinders(stmts []ast.Stmt, names []string) []binderTemp {
+	temps := make(map[string]string, len(names))
 	binders := make([]binderTemp, 0, len(names))
 	for _, n := range names {
-		if _, dup := r.temps[n]; dup {
-			continue
+		if _, dup := temps[n]; !dup {
+			temps[n] = "_tmp_" + n
+			binders = append(binders, binderTemp{name: n, temp: temps[n]})
 		}
-		r.temps[n] = "_tmp_" + n
-		binders = append(binders, binderTemp{name: n, temp: r.temps[n]})
+	}
+	if len(binders) == 0 {
+		return nil
+	}
+	rename := func(id *ast.Ident) {
+		if temp, ok := temps[id.Name]; ok {
+			id.Name = temp
+		}
 	}
 	for _, s := range stmts {
-		r.walk(s)
-	}
-	r.walk(cond)
-	return binders
-}
-
-// binderRenamer renames the pattern variables in temps once they are declared
-// (live), in statement order.
-type binderRenamer struct {
-	temps map[string]string
-	live  map[string]bool
-}
-
-func (r *binderRenamer) declare(id *ast.Ident) {
-	if _, ok := r.temps[id.Name]; ok {
-		r.live[id.Name] = true
-	}
-}
-
-func (r *binderRenamer) walk(n ast.Node) {
-	if n == nil {
-		return
-	}
-	ast.Inspect(n, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.AssignStmt:
-			// The right side is evaluated before the left declares.
-			for _, e := range x.Rhs {
-				r.walk(e)
-			}
-			if x.Tok == token.DEFINE {
+		ast.Inspect(s, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				// A literal's own statements are no pattern's.
+				return false
+			case *ast.AssignStmt:
 				for _, l := range x.Lhs {
 					if id, ok := l.(*ast.Ident); ok {
-						r.declare(id)
+						rename(id)
 					}
 				}
+			case *ast.ValueSpec:
+				for _, id := range x.Names {
+					rename(id)
+				}
 			}
-			for _, e := range x.Lhs {
-				r.walk(e)
-			}
-			return false
-		case *ast.ValueSpec:
-			for _, v := range x.Values {
-				r.walk(v)
-			}
-			for _, id := range x.Names {
-				r.declare(id)
-				r.walk(id)
-			}
-			return false
-		case *ast.SelectorExpr:
-			// A field or method name is no variable.
-			r.walk(x.X)
-			return false
-		case *ast.Ident:
-			if r.live[x.Name] {
-				x.Name = r.temps[x.Name]
-			}
-		}
-		return true
-	})
+			return true
+		})
+	}
+	return binders
 }
 
 // bindIn is stmts preceded by `name := temp` for each binder stmts may read.
@@ -183,9 +145,9 @@ func (t *galaASTTransformer) bindIn(binders []binderTemp, stmts []ast.Stmt) []as
 	return append(binds, stmts...)
 }
 
-// readsAnyBinder reports whether nodes name any of binders.
-func (t *galaASTTransformer) readsAnyBinder(binders []binderTemp, nodes []ast.Node) bool {
-	refs := t.collectReferencedIdents(nodes)
+// readsAnyBinder reports whether guard names any of binders.
+func (t *galaASTTransformer) readsAnyBinder(binders []binderTemp, guard ast.Expr) bool {
+	refs := t.collectReferencedIdents([]ast.Node{guard})
 	return slices.ContainsFunc(binders, func(b binderTemp) bool { return refs[b.name] })
 }
 

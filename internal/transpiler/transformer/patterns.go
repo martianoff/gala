@@ -951,7 +951,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 	}
 
 	t.needsStdImport = true
-	return chain.lowered()
+	return chain.result()
 }
 
 // generateDirectStructFieldMatch generates direct field access code for struct patterns.
@@ -992,7 +992,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	}
 
 	if len(args.list) == 0 {
-		return chain.lowered()
+		return chain.result()
 	}
 
 	if len(args.list) > len(fields) {
@@ -1065,7 +1065,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	}
 
 	t.needsStdImport = true
-	return chain.lowered()
+	return chain.result()
 }
 
 // patternAssertSubject returns the expression a pattern asserts to typeName
@@ -1361,15 +1361,7 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, args args
 
 	t.needsStdImport = true
 
-	// Combine all conditions into a single && chain.
-	if len(conds) == 0 {
-		return ast.NewIdent("true"), stmts, nil
-	}
-	finalCond := conds[0]
-	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{X: finalCond, Op: token.LAND, Y: conds[i]}
-	}
-	return finalCond, stmts, nil
+	return andAll(conds), stmts, nil
 }
 
 // emitSizeCheck generates `_tmpN := obj.Size() == count` (exact) or
@@ -1449,16 +1441,13 @@ func (t *galaASTTransformer) emitNonRestBindings(
 		}
 		argIndex++
 	}
-	cond, stmts := chain.result()
+	cond, stmts, _ := chain.result()
 	// The element temps' declarations give hoistPatternDecls their types.
 	varDecls, guardedAssigns, err = t.hoistPatternDecls(stmts, "", nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if !isLiteralTrue(cond) {
-		extraConds = []ast.Expr{cond}
-	}
-	return varDecls, guardedAssigns, extraConds, nil
+	return varDecls, guardedAssigns, []ast.Expr{cond}, nil
 }
 
 // seqVarDecl builds `var name T` (`var name T = value` with a value) as a
@@ -1554,7 +1543,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []patExpr, objEx
 	}
 
 	t.needsStdImport = true
-	return chain.lowered()
+	return chain.result()
 }
 
 // inferExtractorTypeParams attempts to infer type parameters for a generic extractor
@@ -1989,26 +1978,11 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 		if err != nil {
 			return nil, nil, err
 		}
-		if nestedCond != nil {
-			conds = append(conds, nestedCond)
-		}
+		conds = append(conds, nestedCond)
 		allBindings = spliceStmts(allBindings, guardIdx, guardBlock)
 	}
 
-	// Build final condition by ANDing all conditions
-	if len(conds) == 0 {
-		return ast.NewIdent("true"), allBindings, nil
-	}
-	var finalCond ast.Expr = conds[0]
-	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{
-			X:  finalCond,
-			Op: token.LAND,
-			Y:  conds[i],
-		}
-	}
-
-	return finalCond, allBindings, nil
+	return andAll(conds), allBindings, nil
 }
 
 // unapplyAssertType returns the type an extractor's Unapply takes when it is a
@@ -2290,24 +2264,9 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 		if err != nil {
 			return nil, nil, err
 		}
-		if nestedCond != nil {
-			conds = append(conds, nestedCond)
-		}
+		conds = append(conds, nestedCond)
 		allBindings = spliceStmts(allBindings, guardIdx, guardBlock)
 	}
 
-	// Build final condition by ANDing all conditions
-	if len(conds) == 0 {
-		return ast.NewIdent("true"), allBindings, nil
-	}
-	var finalCond ast.Expr = conds[0]
-	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{
-			X:  finalCond,
-			Op: token.LAND,
-			Y:  conds[i],
-		}
-	}
-
-	return finalCond, allBindings, nil
+	return andAll(conds), allBindings, nil
 }

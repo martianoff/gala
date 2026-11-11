@@ -142,7 +142,7 @@ func (t *galaASTTransformer) generateOpaquePattern(
 			// Only the assertion is checked; its value goes unused.
 			chain.stmts = blankAssignTempVar(chain.stmts, cast.Name)
 		}
-		return chain.lowered()
+		return chain.result()
 	}
 	underlying, ok := t.underlyingOf(meta)
 	if !ok {
@@ -171,7 +171,7 @@ func (t *galaASTTransformer) generateOpaquePattern(
 	default:
 		return failAt(sub.at(), "unsupported sub-pattern inside %s(...)", name)
 	}
-	return chain.lowered()
+	return chain.result()
 }
 
 // holdsAnyType reports whether a match subject of type typ (usable) may hold
