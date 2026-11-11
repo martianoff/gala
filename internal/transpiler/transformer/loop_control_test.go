@@ -12,7 +12,7 @@ import (
 
 // TestLoopControlInStatementMatch pins that a `break` / `continue` in an arm of
 // a match used as a statement controls the enclosing loop. The match used to be
-// lowered to a closure, `func(obj int) { ... }(i)`, in which the `break` of
+// lowered to a closure, `func(_subj int) { ... }(i)`, in which the `break` of
 // `case 2 => { break }` became a `return` from the closure: the loop silently
 // kept going. A match whose arms hold loop control is now inlined as an
 // if-else chain, as one whose arms return already was.
@@ -208,10 +208,10 @@ func main() {
 				require.Contains(t, gen, "\t"+w+"\n", "generated:\n%s", gen)
 			}
 			// The statement match is inlined: no closure over the subject.
-			require.NotContains(t, gen, "func(obj int) {", "generated:\n%s", gen)
-			require.NotContains(t, gen, "func(obj main.Cmd) {", "generated:\n%s", gen)
-			require.NotContains(t, gen, "func(obj Cmd) {", "generated:\n%s", gen)
-			require.NotRegexp(t, `func\(\) \{\n\s*(obj :|_ )= `, gen, "generated:\n%s", gen)
+			require.NotContains(t, gen, "func(_subj int) {", "generated:\n%s", gen)
+			require.NotContains(t, gen, "func(_subj main.Cmd) {", "generated:\n%s", gen)
+			require.NotContains(t, gen, "func(_subj Cmd) {", "generated:\n%s", gen)
+			require.NotRegexp(t, `func\(\) \{\n\s*(_subj :|_ )= `, gen, "generated:\n%s", gen)
 		})
 	}
 }

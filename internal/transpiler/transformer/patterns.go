@@ -901,8 +901,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 		return ast.NewIdent("true"), nil, nil
 	}
 
-	var stmts []ast.Stmt
-	var conds []ast.Expr
+	chain := siblingChain{t: t}
 
 	// Extract element types from matched type if available
 	var elementTypes []transpiler.Type
@@ -946,28 +945,13 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 		if err != nil {
 			return nil, nil, err
 		}
-		stmts = append(stmts, nestedStmts...)
-		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-			conds = append(conds, nestedCond)
+		if err := chain.add(nestedCond, nestedStmts, "", nil); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	t.needsStdImport = true
-
-	// Combine all conditions
-	if len(conds) == 0 {
-		return ast.NewIdent("true"), stmts, nil
-	}
-
-	finalCond := conds[0]
-	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{
-			X:  finalCond,
-			Op: token.LAND,
-			Y:  conds[i],
-		}
-	}
-	return finalCond, stmts, nil
+	return chain.lowered()
 }
 
 // generateDirectStructFieldMatch generates direct field access code for struct patterns.
@@ -975,8 +959,7 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 // generates: name := obj.Name.Get(); age := obj.Age.Get() — `.Get()` only for
 // non-`var` fields, which are stored as Immutable[T].
 func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, args argsSrc, explicitTypeArgs []exprSrc, fields []string, structName string, matchedType transpiler.Type, pat patExpr) (ast.Expr, []ast.Stmt, error) {
-	var stmts []ast.Stmt
-	var conds []ast.Expr
+	chain := siblingChain{t: t}
 
 	// When the match subject is statically an interface — `any`, `error`, or
 	// another GALA or Go interface — or a type parameter, the struct's fields
@@ -1003,12 +986,13 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		var stmt ast.Stmt
 		var ok ast.Expr
 		baseExpr, stmt, ok = t.assertPatternSubject(assertFrom, assertType)
-		stmts = append(stmts, stmt)
-		conds = append(conds, ok)
+		if err := chain.add(ok, []ast.Stmt{stmt}, "", nil); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	if len(args.list) == 0 {
-		return combineStructMatchConds(conds, stmts)
+		return chain.lowered()
 	}
 
 	if len(args.list) > len(fields) {
@@ -1069,33 +1053,19 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		// nested pattern such as `Circle(r)` or a typed pattern such as
 		// `e: Tagged[_]`, all lowered by the general dispatcher against the
 		// field's type.
+		// Tested after the assertion and the fields before it (see
+		// siblingChain).
 		nestedCond, nestedStmts, err := t.transformPatternWithType(argPat, elemExpr, fieldType)
 		if err != nil {
 			return nil, nil, err
 		}
-		stmts = append(stmts, nestedStmts...)
-		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-			conds = append(conds, nestedCond)
+		if err := chain.add(nestedCond, nestedStmts, "", nil); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	t.needsStdImport = true
-
-	return combineStructMatchConds(conds, stmts)
-}
-
-// combineStructMatchConds ANDs a struct pattern's accumulated conditions into a
-// single expression (or the literal `true` when there are none) and returns it
-// alongside the pattern's binding statements.
-func combineStructMatchConds(conds []ast.Expr, stmts []ast.Stmt) (ast.Expr, []ast.Stmt, error) {
-	if len(conds) == 0 {
-		return ast.NewIdent("true"), stmts, nil
-	}
-	finalCond := conds[0]
-	for i := 1; i < len(conds); i++ {
-		finalCond = &ast.BinaryExpr{X: finalCond, Op: token.LAND, Y: conds[i]}
-	}
-	return finalCond, stmts, nil
+	return chain.lowered()
 }
 
 // patternAssertSubject returns the expression a pattern asserts to typeName
@@ -1441,6 +1411,7 @@ func (t *galaASTTransformer) emitNonRestBindings(
 	elemType transpiler.Type,
 	elemTypeExpr ast.Expr,
 ) (varDecls []ast.Stmt, guardedAssigns []ast.Stmt, extraConds []ast.Expr, err error) {
+	chain := siblingChain{t: t}
 	argIndex := 0
 	for _, arg := range args {
 		patCtx := arg.pattern()
@@ -1465,24 +1436,27 @@ func (t *galaASTTransformer) emitNonRestBindings(
 		// sequence never reads an element or runs a sub-pattern (a field read
 		// through a nil pointer, a user Unapply) on a zero value; the names the
 		// sub-pattern declares are hoisted before the guard so the arm and its
-		// condition see them.
+		// condition see them. An element is read and tested after the
+		// elements before it matched (see siblingChain).
 		tempName := t.nextTempVar()
-		varDecls = append(varDecls, seqVarDecl(tempName, elemTypeExpr))
-		guardedAssigns = append(guardedAssigns, seqGetAssign(tempName, objExpr, argIndex))
 		nestedCond, nestedStmts, nerr := t.transformPatternWithType(patCtx, ast.NewIdent(tempName), elemType)
 		if nerr != nil {
 			return nil, nil, nil, nerr
 		}
-		decls, guarded, herr := t.hoistPatternDecls(nestedStmts, tempName, exprType(elemTypeExpr))
-		if herr != nil {
-			return nil, nil, nil, herr
-		}
-		varDecls = append(varDecls, decls...)
-		guardedAssigns = append(guardedAssigns, guarded...)
-		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-			extraConds = append(extraConds, nestedCond)
+		read := []ast.Stmt{seqVarDecl(tempName, elemTypeExpr), seqGetAssign(tempName, objExpr, argIndex)}
+		if err := chain.add(nestedCond, append(read, nestedStmts...), tempName, exprType(elemTypeExpr)); err != nil {
+			return nil, nil, nil, err
 		}
 		argIndex++
+	}
+	cond, stmts := chain.result()
+	// The element temps' declarations give hoistPatternDecls their types.
+	varDecls, guardedAssigns, err = t.hoistPatternDecls(stmts, "", nil)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !isLiteralTrue(cond) {
+		extraConds = []ast.Expr{cond}
 	}
 	return varDecls, guardedAssigns, extraConds, nil
 }
@@ -1531,8 +1505,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []patExpr, objEx
 		return nil, nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, fmt.Sprintf("tuple patterns must have 2-10 elements, got %d", n))
 	}
 
-	var stmts []ast.Stmt
-	var combinedCond ast.Expr
+	chain := siblingChain{t: t}
 
 	// Extract element types from matched type if available
 	var elementTypes []transpiler.Type
@@ -1569,31 +1542,19 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []patExpr, objEx
 			},
 		}
 
-		// A binding or a nested pattern, both lowered recursively. Bindings
-		// must be appended BEFORE we accumulate the condition so any later
-		// element pattern (e.g. `code` in `(true, code)`) still gets bound.
+		// A binding or a nested pattern, both lowered recursively, and
+		// tested after the elements before it (see siblingChain).
 		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(elem, elemExpr, elemType)
 		if err != nil {
 			return nil, nil, err
 		}
-		stmts = append(stmts, nestedStmts...)
-
-		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-			t.needsStdImport = true
-			if combinedCond == nil {
-				combinedCond = nestedCond
-			} else {
-				combinedCond = &ast.BinaryExpr{X: combinedCond, Op: token.LAND, Y: nestedCond}
-			}
+		if err := chain.add(nestedCond, nestedStmts, "", nil); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	t.needsStdImport = true
-	if combinedCond != nil {
-		return combinedCond, stmts, nil
-	}
-	// All patterns are simple bindings or wildcards, condition is always true
-	return ast.NewIdent("true"), stmts, nil
+	return chain.lowered()
 }
 
 // inferExtractorTypeParams attempts to infer type parameters for a generic extractor
@@ -1952,7 +1913,7 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 		guardIdx := len(allBindings)
 		// Suppress "declared and not used" for inner temp var in case all pattern args are wildcards
 		allBindings = blankAssignTempVar(allBindings, innerName)
-		var hoisted, guardedStmts []ast.Stmt
+		nested := siblingChain{t: t}
 
 		// For each argument pattern, generate direct field access
 		for i, arg := range args.list {
@@ -2013,27 +1974,25 @@ func (t *galaASTTransformer) lowerDirectUnapplyPattern(
 				// Handle nested patterns recursively. The sub-pattern reads
 				// the payload, which is a zero value when the extractor did not match,
 				// so it runs inside the guard; its bindings are declared
-				// before the guard so the arm sees them.
+				// before the guard so the arm sees them. Each runs after the
+				// ones before it matched (see siblingChain).
 				subCond, subBindings, err := t.transformPatternWithType(argPat, elemExpr, elemType)
 				if err != nil {
 					return nil, nil, err
 				}
-				decls, guarded, err := t.hoistPatternDecls(subBindings, innerName, payloadType)
-				if err != nil {
+				if err := nested.add(subCond, subBindings, innerName, payloadType); err != nil {
 					return nil, nil, err
-				}
-				hoisted = append(hoisted, decls...)
-				guardedStmts = append(guardedStmts, guarded...)
-				// Add sub-condition to the list of conditions to check
-				if subCond != nil {
-					// Check if subCond is just "true" - if so, skip it
-					if ident, ok := subCond.(*ast.Ident); !ok || ident.Name != "true" {
-						conds = append(conds, subCond)
-					}
 				}
 			}
 		}
-		allBindings = spliceStmts(allBindings, guardIdx, assembleSeqPatternGuardBlock(hoisted, okName, guardedStmts))
+		nestedCond, guardBlock, err := t.guardSubPatterns(&nested, okName, innerName, payloadType)
+		if err != nil {
+			return nil, nil, err
+		}
+		if nestedCond != nil {
+			conds = append(conds, nestedCond)
+		}
+		allBindings = spliceStmts(allBindings, guardIdx, guardBlock)
 	}
 
 	// Build final condition by ANDing all conditions
@@ -2267,7 +2226,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 		allBindings = append(allBindings, payload)
 		guardIdx := len(allBindings)
 		allBindings = blankAssignTempVar(allBindings, innerName)
-		var hoisted, guardedStmts []ast.Stmt
+		nested := siblingChain{t: t}
 
 		for i, arg := range args.list {
 			argPat := arg.pattern()
@@ -2322,20 +2281,19 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 				if err != nil {
 					return nil, nil, err
 				}
-				decls, guarded, err := t.hoistPatternDecls(subBindings, innerName, payloadType)
-				if err != nil {
+				if err := nested.add(subCond, subBindings, innerName, payloadType); err != nil {
 					return nil, nil, err
-				}
-				hoisted = append(hoisted, decls...)
-				guardedStmts = append(guardedStmts, guarded...)
-				if subCond != nil {
-					if ident, ok := subCond.(*ast.Ident); !ok || ident.Name != "true" {
-						conds = append(conds, subCond)
-					}
 				}
 			}
 		}
-		allBindings = spliceStmts(allBindings, guardIdx, assembleSeqPatternGuardBlock(hoisted, okName, guardedStmts))
+		nestedCond, guardBlock, err := t.guardSubPatterns(&nested, okName, innerName, payloadType)
+		if err != nil {
+			return nil, nil, err
+		}
+		if nestedCond != nil {
+			conds = append(conds, nestedCond)
+		}
+		allBindings = spliceStmts(allBindings, guardIdx, guardBlock)
 	}
 
 	// Build final condition by ANDing all conditions

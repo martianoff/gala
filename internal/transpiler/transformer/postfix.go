@@ -440,8 +440,14 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 	}
 	t.matchInStatementPos = stmtPosition
 	t.nativeShape(p.node, "match")
-	return t.buildMatchExpressionFromClauses(subject, "obj", t.nativeCases(p.node), p.at(), s)
+	return t.buildMatchExpressionFromClauses(subject, matchSubjectName, t.nativeCases(p.node), p.at(), s)
 }
+
+// matchSubjectName is the Go name a match binds its subject to. It lies in
+// the transpiler's own `_`-prefixed namespace, so no user variable or pattern
+// variable (an `obj`, say) captures it or is captured by it. A nested match
+// binds its own subject to the name again, in a scope of its own.
+const matchSubjectName = "_subj"
 
 // lowerPrimaryOf lowers the primary expression of p.
 func (t *galaASTTransformer) lowerPrimaryOf(p postfixSrc) (ast.Expr, error) {
@@ -759,7 +765,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// Statement-position match with a user-written `return X` inside an arm
 	// body cannot use the IIFE lowering. Wrapping the body in
-	// `func(obj T) { ... }(subject)` would trap that `return X` inside the
+	// `func(_subj T) { ... }(subject)` would trap that `return X` inside the
 	// IIFE's lambda — the surrounding gala function never returns, and any
 	// enclosing for-loop spins forever (the bug fired as a runtime hang, not
 	// a compile error). Inline the body instead so user returns become
@@ -810,7 +816,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		resultsField = &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(resultType)}}}
 	}
 
-	// The function literal binds the subject itself (`obj := subject`, as an
+	// The function literal binds the subject itself (`_subj := subject`, as an
 	// inlined match does) instead of taking it as a parameter, so the
 	// subject's type is never written: it may name a package the file does
 	// not import, and the generated Go must not import one. A subject whose

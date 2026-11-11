@@ -162,3 +162,130 @@ func (t *galaASTTransformer) hoistPatternDecls(stmts []ast.Stmt, subject string,
 	}
 	return decls, guarded, nil
 }
+
+// siblingChain joins the sub-patterns of one pattern that sit side by side —
+// tuple elements, a constructor's arguments, a sequence's elements — tested
+// left to right: once one fails, the ones after it do not run. A sub-pattern
+// that runs code (an extractor's Unapply, a sealed view) after one that may
+// fail runs under a flag holding whether every sub-pattern before it matched:
+//
+//	_tmp_5 := _subj.V1.Get() == 0
+//	var _tmp_6 bool
+//	if _tmp_5 {
+//	    _tmp_6 = NonZeroDiv{}.Unapply(_subj.V2.Get())
+//	    _tmp_5 = _tmp_6
+//	}
+//
+// The names it declares are hoisted out of the guard, as a nested
+// sub-pattern's are (see hoistPatternDecls). A sub-pattern that only reads
+// values, or that no failing one precedes, runs as it is, and the conditions
+// are joined with `&&`.
+type siblingChain struct {
+	t     *galaASTTransformer
+	stmts []ast.Stmt
+	conds []ast.Expr
+	// ok is the flag, "" until a sub-pattern needs it.
+	ok string
+}
+
+// add appends a sub-pattern lowered to cond and stmts. subject/subjectType
+// name the temp it was lowered against, as hoistPatternDecls takes them.
+func (c *siblingChain) add(cond ast.Expr, stmts []ast.Stmt, subject string, subjectType patternType) error {
+	if len(stmts) == 0 || len(c.conds) == 0 || !runsCode(stmts) {
+		c.stmts = append(c.stmts, stmts...)
+		if cond != nil && !isLiteralTrue(cond) {
+			c.conds = append(c.conds, cond)
+		}
+		return nil
+	}
+	decls, guarded, err := c.t.hoistPatternDecls(stmts, subject, subjectType)
+	if err != nil {
+		return err
+	}
+	if c.ok == "" {
+		c.ok = c.t.nextTempVar()
+		c.stmts = append(c.stmts, c.t.patternDefine([]string{c.ok}, []patternType{boolPatternType}, andAll(c.conds)))
+	} else if len(c.conds) > 1 {
+		c.stmts = append(c.stmts, assignStmt(c.ok, andAll(c.conds)))
+	}
+	if cond != nil && !isLiteralTrue(cond) {
+		guarded = append(guarded, assignStmt(c.ok, cond))
+	}
+	c.stmts = append(c.stmts, decls...)
+	c.stmts = append(c.stmts, &ast.IfStmt{Cond: ast.NewIdent(c.ok), Body: &ast.BlockStmt{List: guarded}})
+	c.conds = []ast.Expr{ast.NewIdent(c.ok)}
+	return nil
+}
+
+// result is the joined condition, `true` when nothing is tested, and the
+// statements that run before it.
+func (c *siblingChain) result() (ast.Expr, []ast.Stmt) {
+	if len(c.conds) == 0 {
+		return ast.NewIdent("true"), c.stmts
+	}
+	return andAll(c.conds), c.stmts
+}
+
+// lowered is result as a pattern lowering returns it.
+func (c *siblingChain) lowered() (ast.Expr, []ast.Stmt, error) {
+	cond, stmts := c.result()
+	return cond, stmts, nil
+}
+
+// guardSubPatterns returns the statements of the sub-patterns chain joined,
+// run under `if ok { ... }` with the names they declare hoisted before it
+// (see hoistPatternDecls), and their condition, nil when they test nothing.
+// subject/subjectType name the guarded temp they read.
+func (t *galaASTTransformer) guardSubPatterns(chain *siblingChain, ok, subject string, subjectType patternType) (ast.Expr, []ast.Stmt, error) {
+	cond, stmts := chain.result()
+	decls, guarded, err := t.hoistPatternDecls(stmts, subject, subjectType)
+	if err != nil {
+		return nil, nil, err
+	}
+	if isLiteralTrue(cond) {
+		cond = nil
+	}
+	return cond, assembleSeqPatternGuardBlock(decls, ok, guarded), nil
+}
+
+// andAll is conds joined with `&&`; conds is not empty.
+func andAll(conds []ast.Expr) ast.Expr {
+	cond := conds[0]
+	for _, c := range conds[1:] {
+		cond = &ast.BinaryExpr{X: cond, Op: token.LAND, Y: c}
+	}
+	return cond
+}
+
+// runsCode reports whether stmts call anything but the reads a pattern makes
+// of a value it already holds: an Immutable field's or an Option's `Get()`, a
+// sequence element's `Get(i)` (behind the size check), `IsDefined()`, and
+// std.As.
+func runsCode(stmts []ast.Stmt) bool {
+	found := false
+	for _, s := range stmts {
+		ast.Inspect(s, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok && !found && !isPatternRead(call) {
+				found = true
+			}
+			return !found
+		})
+	}
+	return found
+}
+
+// isPatternRead reports whether call is one of the reads runsCode allows.
+func isPatternRead(call *ast.CallExpr) bool {
+	switch fun := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		return fun.Sel.Name == "Get" || len(call.Args) == 0 && fun.Sel.Name == "IsDefined"
+	case *ast.IndexExpr:
+		switch as := fun.X.(type) {
+		case *ast.SelectorExpr:
+			return as.Sel.Name == "As"
+		case *ast.Ident:
+			return as.Name == "As"
+		}
+	}
+	return false
+}

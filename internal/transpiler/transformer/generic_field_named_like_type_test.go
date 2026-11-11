@@ -45,7 +45,7 @@ func (b Box[T]) Run(x int) T = b.Mode match {
     case A(fn) => fn(x)
     case B(fn) => fn("")
 }`,
-			want: []string{"Mode std.Immutable[Mode[T]]", "obj := b.Mode.Get()", "(v Mode[_T0])"},
+			want: []string{"Mode std.Immutable[Mode[T]]", "_subj := b.Mode.Get()", "(v Mode[_T0])"},
 		},
 		{
 			name: "match on the field in a generic function",
@@ -56,7 +56,7 @@ func kind[T any](b Box[T]) string = b.Mode match {
     case A(_) => "a"
     case B(_) => "b"
 }`,
-			want: []string{"obj := b.Mode.Get()", "(v Mode[_T0])"},
+			want: []string{"_subj := b.Mode.Get()", "(v Mode[_T0])"},
 		},
 		{
 			name: "match through a field access chain",
@@ -68,7 +68,7 @@ func (o Outer[T]) Deep(x int) T = o.Box.Mode match {
     case A(fn) => fn(x)
     case B(fn) => fn("")
 }`,
-			want: []string{"Box std.Immutable[Box[T]]", "obj := o.Box.Get().Mode.Get()", "(v Mode[_T0])"},
+			want: []string{"Box std.Immutable[Box[T]]", "_subj := o.Box.Get().Mode.Get()", "(v Mode[_T0])"},
 		},
 		{
 			name: "two type parameters in a library package",
@@ -109,7 +109,7 @@ func (p Plain) Kind() string = p.Mode match {
     case A(_) => "a"
     case B(_) => "b"
 }`,
-			want: []string{"Mode std.Immutable[Mode[int]]", "obj := p.Mode.Get()", "(v Mode[_T0])"},
+			want: []string{"Mode std.Immutable[Mode[int]]", "_subj := p.Mode.Get()", "(v Mode[_T0])"},
 		},
 	}
 	for _, tc := range tests {

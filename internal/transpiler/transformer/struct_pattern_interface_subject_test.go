@@ -49,8 +49,8 @@ func (b Box[T]) Error() string = "box"
     case NotFound(k) => k
     case _ => "other"
 }`,
-			contains: []string{"std.As[NotFound](obj)", ".Key.Get()"},
-			absent:   []string{"obj.Key"},
+			contains: []string{"std.As[NotFound](_subj)", ".Key.Get()"},
+			absent:   []string{"_subj.Key"},
 		},
 		{
 			name: "error subject with a guard",
@@ -58,8 +58,8 @@ func (b Box[T]) Error() string = "box"
     case NotFound(k) if k == "x" => "x"
     case _ => "other"
 }`,
-			contains: []string{"std.As[NotFound](obj)"},
-			absent:   []string{"obj.Key"},
+			contains: []string{"std.As[NotFound](_subj)"},
+			absent:   []string{"_subj.Key"},
 		},
 		{
 			name: "generic struct names its type arguments",
@@ -67,8 +67,8 @@ func (b Box[T]) Error() string = "box"
     case Box[int](v) => fmt.Sprint(v)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Box[int]](obj)"},
-			absent:   []string{"obj.V"},
+			contains: []string{"std.As[Box[int]](_subj)"},
+			absent:   []string{"_subj.V"},
 		},
 		{
 			name: "GALA interface subject",
@@ -76,8 +76,8 @@ func (b Box[T]) Error() string = "box"
     case Circle(r) => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Circle](obj)"},
-			absent:   []string{"obj.R"},
+			contains: []string{"std.As[Circle](_subj)"},
+			absent:   []string{"_subj.R"},
 		},
 		{
 			name: "Go interface subject",
@@ -85,8 +85,8 @@ func (b Box[T]) Error() string = "box"
     case Circle(r) => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Circle](obj)"},
-			absent:   []string{"obj.R"},
+			contains: []string{"std.As[Circle](_subj)"},
+			absent:   []string{"_subj.R"},
 		},
 		{
 			name: "nested in Some",
@@ -103,8 +103,8 @@ func (b Box[T]) Error() string = "box"
     case Circle(r) => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"std.As[Circle](any(obj))"},
-			absent:   []string{"obj.R"},
+			contains: []string{"std.As[Circle](any(_subj))"},
+			absent:   []string{"_subj.R"},
 		},
 		{
 			// A concrete subject keeps reading fields directly.
@@ -113,7 +113,7 @@ func (b Box[T]) Error() string = "box"
     case Circle(r) if r > 0 => fmt.Sprint(r)
     case _ => "other"
 }`,
-			contains: []string{"obj.R.Get()"},
+			contains: []string{"_subj.R.Get()"},
 			absent:   []string{"std.As[Circle]"},
 		},
 	}

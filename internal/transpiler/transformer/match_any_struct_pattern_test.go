@@ -39,12 +39,12 @@ func describe(v any) string = v match {
 `
 		got, err := newTranspiler().Transpile(input, "")
 		require.NoError(t, err, "any-subject struct destructuring must transpile")
-		// The match subject is bound to `obj` in the generated closure; it must be
-		// type-asserted (`std.As[Person](obj)`) before field access. Note the always-present
-		// Unapply method asserts `v.(Person)`, so we match on the `obj` subject.
-		assert.Contains(t, got, "std.As[Person](obj)", "must type-assert the any subject before field access")
+		// The match subject is bound to `_subj` in the generated closure; it must be
+		// type-asserted (`std.As[Person](_subj)`) before field access. Note the always-present
+		// Unapply method asserts `v.(Person)`, so we match on the `_subj` subject.
+		assert.Contains(t, got, "std.As[Person](_subj)", "must type-assert the any subject before field access")
 		// Fields must be read off the asserted value, never off the bare `any` subject.
-		assert.NotContains(t, got, "obj.Name", "must not read fields directly off the any subject")
+		assert.NotContains(t, got, "_subj.Name", "must not read fields directly off the any subject")
 	})
 
 	t.Run("concrete subject does not assert", func(t *testing.T) {
@@ -59,10 +59,10 @@ func describe(p Person) string = p match {
 `
 		got, err := newTranspiler().Transpile(input, "")
 		require.NoError(t, err, "concrete-subject struct destructuring must transpile")
-		// A concretely-typed subject must read fields straight off `obj` with no
-		// assertion — `obj.(Person)` on a non-interface value is a Go compile error.
-		// (The Unapply method still asserts `v.(Person)`; that is why we check `obj`.)
-		assert.NotContains(t, got, "std.As[Person](obj)", "a concretely-typed subject must not be type-asserted (Go rejects asserting a non-interface)")
-		assert.Contains(t, got, "obj.Name.Get()", "a concretely-typed subject reads fields directly")
+		// A concretely-typed subject must read fields straight off `_subj` with no
+		// assertion — `_subj.(Person)` on a non-interface value is a Go compile error.
+		// (The Unapply method still asserts `v.(Person)`; that is why we check `_subj`.)
+		assert.NotContains(t, got, "std.As[Person](_subj)", "a concretely-typed subject must not be type-asserted (Go rejects asserting a non-interface)")
+		assert.Contains(t, got, "_subj.Name.Get()", "a concretely-typed subject reads fields directly")
 	})
 }

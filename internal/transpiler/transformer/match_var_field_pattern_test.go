@@ -5,7 +5,7 @@ import "testing"
 // A struct pattern reads each field directly off the matched value. A `var`
 // field is a plain Go field, so it must be read as is; only a non-`var` field
 // is a std.Immutable[T] and gets `.Get()`. Unwrapping a `var` field emits
-// `obj.X.Get()` on an int, which Go rejects.
+// `_subj.X.Get()` on an int, which Go rejects.
 func TestStructPatternVarFieldsAreNotUnwrapped(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -24,8 +24,8 @@ func origin(p Point) string = p match {
     case _ => "none"
 }
 `,
-			contains:   []string{"x := obj.X", "y := obj.Y"},
-			notContain: []string{"obj.X.Get()", "obj.Y.Get()"},
+			contains:   []string{"x := _subj.X", "y := _subj.Y"},
+			notContain: []string{"_subj.X.Get()", "_subj.Y.Get()"},
 		},
 		{
 			name: "mixed var and immutable fields",
@@ -38,8 +38,8 @@ func show(l Labeled) string = l match {
     case _ => "none"
 }
 `,
-			contains:   []string{"n := obj.Name", "w := obj.Weight.Get()"},
-			notContain: []string{"obj.Name.Get()"},
+			contains:   []string{"n := _subj.Name", "w := _subj.Weight.Get()"},
+			notContain: []string{"_subj.Name.Get()"},
 		},
 		{
 			name: "literal sub-pattern and guard on var fields",
@@ -53,8 +53,8 @@ func axis(p Point) string = p match {
     case _ => "none"
 }
 `,
-			contains:   []string{"y := obj.Y", "x := obj.X"},
-			notContain: []string{"obj.X.Get()", "obj.Y.Get()"},
+			contains:   []string{"y := _subj.Y", "x := _subj.X"},
+			notContain: []string{"_subj.X.Get()", "_subj.Y.Get()"},
 		},
 		{
 			name: "brace-body struct declaration",
@@ -70,8 +70,8 @@ func show(c Cell) string = c match {
     case _ => "none"
 }
 `,
-			contains:   []string{"r := obj.Row", "l := obj.Label.Get()"},
-			notContain: []string{"obj.Row.Get()"},
+			contains:   []string{"r := _subj.Row", "l := _subj.Label.Get()"},
+			notContain: []string{"_subj.Row.Get()"},
 		},
 		{
 			name: "nested pattern through a var field",
@@ -85,8 +85,8 @@ func ends(s Segment) string = s match {
     case _ => "none"
 }
 `,
-			contains:   []string{"obj.From.Get()"},
-			notContain: []string{"obj.To.Get()", ".X.Get()", ".Y.Get()"},
+			contains:   []string{"_subj.From.Get()"},
+			notContain: []string{"_subj.To.Get()", ".X.Get()", ".Y.Get()"},
 		},
 		{
 			name: "generic struct with a var field",
@@ -99,8 +99,8 @@ func show[T any](b Box[T]) string = b match {
     case _ => "none"
 }
 `,
-			contains:   []string{"item := obj.Item", "tag := obj.Tag.Get()"},
-			notContain: []string{"obj.Item.Get()"},
+			contains:   []string{"item := _subj.Item", "tag := _subj.Tag.Get()"},
+			notContain: []string{"_subj.Item.Get()"},
 		},
 		{
 			name: "any subject reads var fields off the asserted value",
@@ -113,7 +113,7 @@ func typed(v any) string = v match {
     case _ => "none"
 }
 `,
-			contains:   []string{"std.As[Point](obj)", "std.As[int](", ".X)", ".Y\n"},
+			contains:   []string{"std.As[Point](_subj)", "std.As[int](", ".X)", ".Y\n"},
 			notContain: []string{".X.Get()", ".Y.Get()"},
 		},
 	}

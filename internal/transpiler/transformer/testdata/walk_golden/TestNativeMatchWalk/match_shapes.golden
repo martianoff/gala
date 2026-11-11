@@ -48,12 +48,12 @@ var Limit = std.NewImmutable(10)
 //line $DIR/main.gala:16
 func literals(x int) string {
 	{
-		obj := x
-		if obj == 0 {
+		_subj := x
+		if _subj == 0 {
 			return "zéro"
-		} else if obj == 1 || obj == 2 || obj == 3 {
+		} else if _subj == 1 || _subj == 2 || _subj == 3 {
 			return "small"
-		} else if obj == Limit.Get() {
+		} else if _subj == Limit.Get() {
 			return "limit"
 		} else {
 			return "other"
@@ -65,18 +65,18 @@ func literals(x int) string {
 func subjects(b Bag, s string) int {
 //line $DIR/main.gala:24
 	var n = func() int {
-		obj := b.items.Get().Size()
-		if obj == 0 {
+		_subj := b.items.Get().Size()
+		if _subj == 0 {
 			return 0
 		} else {
-			k := obj
+			k := _subj
 			return k
 		}
 	}()
 //line $DIR/main.gala:28
 	func() {
-		obj := strings.ToUpper(s)
-		if obj == "ü" || obj == "Ä" {
+		_subj := strings.ToUpper(s)
+		if _subj == "ü" || _subj == "Ä" {
 			fmt.Println("umlaut")
 		} else {
 			fmt.Println(s)
@@ -90,14 +90,15 @@ func subjects(b Bag, s string) int {
 func heads(o std.Option[int], x any) int {
 //line $DIR/main.gala:36
 	var a = func() int {
-		obj := o
+		_subj := o
 		{
-			_tmp_1 := _unapply_std_Some_e5564f09(obj)
+			_tmp_1 := _unapply_std_Some_e5564f09(_subj)
 			_tmp_2 := _tmp_1.IsDefined()
 			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
-			v := _tmp_3
+			_tmp_v := _tmp_3
 			if _tmp_2 {
+				v := _tmp_v
 				return v
 			} else {
 				return 0
@@ -105,11 +106,12 @@ func heads(o std.Option[int], x any) int {
 		}
 	}()
 //line $DIR/main.gala:40
-	var b = func(obj any) int {
+	var b = func(_subj any) int {
 		{
-			_tmp_4, _tmp_5 := std.As[Box[int]](obj)
-			v := _tmp_4.v.Get()
+			_tmp_4, _tmp_5 := std.As[Box[int]](_subj)
+			_tmp_v := _tmp_4.v.Get()
 			if _tmp_5 {
+				v := _tmp_v
 				return v
 			} else {
 				return 0
@@ -125,8 +127,8 @@ func hoisted(x int) int {
 //line $DIR/main.gala:48
 	var _tmp_6 int
 	{
-		obj := x
-		if obj == 1 {
+		_subj := x
+		if _subj == 1 {
 //line $DIR/main.gala:49
 			return 10
 		} else {
@@ -141,18 +143,19 @@ func hoisted(x int) int {
 //line $DIR/main.gala:55
 func nested(o std.Option[std.Option[string]]) string {
 	{
-		obj := o
+		_subj := o
 		{
-			_tmp_7 := _unapply_std_Some_e5564f09(obj)
+			_tmp_7 := _unapply_std_Some_e5564f09(_subj)
 			_tmp_8 := _tmp_7.IsDefined()
 			_tmp_9 := _tmp_7.Value.Get()
 			_ = _tmp_9
-			inner := _tmp_9
+			_tmp_inner := _tmp_9
 			if _tmp_8 {
+				inner := _tmp_inner
 				{
-					obj := inner
+					_subj := inner
 					{
-						_tmp_10 := _unapply_std_Some_e5564f09(obj)
+						_tmp_10 := _unapply_std_Some_e5564f09(_subj)
 						_tmp_11 := _tmp_10.IsDefined()
 						_tmp_12 := _tmp_10.Value.Get()
 						_ = _tmp_12

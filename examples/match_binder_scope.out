@@ -1,0 +1,12 @@
+10
+7
+other r=9
+none r=9
+short, head 42
+h=42
+42
+10
+r=7
+no early return, r=7
+7
+square 2 label:x

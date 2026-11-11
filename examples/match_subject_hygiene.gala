@@ -1,0 +1,44 @@
+package main
+
+// The value a match tests is held under a name of its own: a variable or a
+// pattern variable called `obj` is just a name, and never the matched value.
+
+sealed type Tree {
+    case Leaf()
+    case Node(Left Tree, V int)
+}
+
+func classify(obj int, x int) string = x match {
+    case 0               => s"zero (limit $obj)"
+    case n if n > obj    => s"$n above limit $obj"
+    case n               => s"$n within limit $obj"
+}
+
+// The binder `obj` of the first case does not replace the matched tree for
+// the cases after it.
+func describe(t Tree) string = t match {
+    case Node(obj, v) if v > 100 => s"big node over ${depth(obj)}"
+    case Leaf()                  => "leaf"
+    case Node(_, v)              => s"node $v"
+}
+
+func depth(t Tree) int = t match {
+    case Leaf()     => 0
+    case Node(l, _) => 1 + depth(l)
+}
+
+// `obj` is an Option here, the matched value an int.
+func pick(obj Option[int], x int) int = x match {
+    case 0 => obj.GetOrElse(-1)
+    case n => n + obj.GetOrElse(0)
+}
+
+func main() {
+    Println(classify(10, 5))
+    Println(classify(10, 50))
+    Println(classify(10, 0))
+    Println(describe(Node(Leaf(), 1)))
+    Println(describe(Node(Node(Leaf(), 2), 200)))
+    Println(pick(Some(4), 0))
+    Println(pick(Some(4), 3))
+}

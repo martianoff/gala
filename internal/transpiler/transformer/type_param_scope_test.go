@@ -69,7 +69,7 @@ func pick(bs Array[*testing.B]) int {
     }
     return r.N
 }`,
-			mustContain: []string{"func() *testing.B {", "obj := bs.HeadOption()"},
+			mustContain: []string{"func() *testing.B {", "_subj := bs.HeadOption()"},
 			mustNotHave: []string{") any {"},
 		},
 		{

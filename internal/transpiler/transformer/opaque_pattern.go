@@ -101,15 +101,15 @@ func (t *galaASTTransformer) generateOpaquePattern(
 		}
 	}
 
-	var stmts []ast.Stmt
-	var conds []ast.Expr
+	chain := siblingChain{t: t}
 	base := objExpr
 	assertSubject := func(subject ast.Expr) {
 		var stmt ast.Stmt
 		var ok ast.Expr
 		base, stmt, ok = t.assertPatternSubject(subject, assertType)
-		stmts = append(stmts, stmt)
-		conds = append(conds, ok)
+		// Read first: the sub-pattern below runs once it holds (see siblingChain).
+		chain.stmts = append(chain.stmts, stmt)
+		chain.conds = append(chain.conds, ok)
 	}
 	viaAny := func() ast.Expr { return &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}} }
 	switch {
@@ -140,9 +140,9 @@ func (t *galaASTTransformer) generateOpaquePattern(
 	if isWildcard(sub.text()) {
 		if cast, asserted := base.(*ast.Ident); asserted && base != objExpr {
 			// Only the assertion is checked; its value goes unused.
-			stmts = blankAssignTempVar(stmts, cast.Name)
+			chain.stmts = blankAssignTempVar(chain.stmts, cast.Name)
 		}
-		return combineStructMatchConds(conds, stmts)
+		return chain.lowered()
 	}
 	underlying, ok := t.underlyingOf(meta)
 	if !ok {
@@ -163,16 +163,15 @@ func (t *galaASTTransformer) generateOpaquePattern(
 		if err != nil {
 			return nil, nil, err
 		}
-		stmts = append(stmts, nestedStmts...)
-		if !isLiteralTrue(nestedCond) {
-			conds = append(conds, nestedCond)
+		if err := chain.add(nestedCond, nestedStmts, "", nil); err != nil {
+			return nil, nil, err
 		}
 	case patKindTyped:
 		return failAt(sub.at(), "the value inside %s(...) is always a %s; bind it with a name, not a typed pattern", name, underlying.String())
 	default:
 		return failAt(sub.at(), "unsupported sub-pattern inside %s(...)", name)
 	}
-	return combineStructMatchConds(conds, stmts)
+	return chain.lowered()
 }
 
 // holdsAnyType reports whether a match subject of type typ (usable) may hold

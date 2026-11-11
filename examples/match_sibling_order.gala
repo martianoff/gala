@@ -1,0 +1,74 @@
+package main
+
+// The parts of a pattern are tested left to right, and testing stops at the
+// first part that fails: an extractor after it never runs.
+
+struct NonZeroDiv()
+
+func (d NonZeroDiv) Unapply(i int) bool = 100 / i > 1
+
+// Records the extractors that ran.
+struct Trace(var Log string)
+
+func (t *Trace) Add(s string) {
+    t.Log = t.Log + s
+}
+
+val trace = &Trace(Log = "")
+
+struct Even()
+
+func (e Even) Unapply(i int) Option[int] {
+    trace.Add(s"E$i;")
+    if (i % 2 == 0) Some(i) else None()
+}
+
+struct Pos()
+
+func (p Pos) Unapply(i int) bool {
+    trace.Add(s"P$i;")
+    i > 0
+}
+
+struct Pair(A int, B int)
+
+func divides(a int, b int) string = (a, b) match {
+    case (0, NonZeroDiv()) => "x"
+    case _                 => "other"
+}
+
+func constructorArgs(p Pair) string = p match {
+    case Pair(Even(a), Pos()) => s"even $a"
+    case _                    => "other"
+}
+
+func alternatives(p Pair) string = p match {
+    case Pair(0, Pos()) | Pair(1, Pos()) => "small"
+    case _                               => "other"
+}
+
+func tupleArgs(p Tuple[int, int]) string = p match {
+    case (Even(a), Pos()) => s"even $a"
+    case _                => "other"
+}
+
+func optionArgs(o Option[Pair]) string = o match {
+    case Some(Pair(Even(a), Pos())) => s"even $a"
+    case _                          => "other"
+}
+
+func run(name string, f func() string) {
+    trace.Log = ""
+    val result = f()
+    Println(s"$name: $result [${trace.Log}]")
+}
+
+func main() {
+    Println(divides(1, 0))
+    Println(divides(0, 5))
+    run("constructor", () => constructorArgs(Pair(3, 4)))
+    run("constructor", () => constructorArgs(Pair(2, 4)))
+    run("alternatives", () => alternatives(Pair(1, 4)))
+    run("tuple", () => tupleArgs((3, 4)))
+    run("option", () => optionArgs(Some(Pair(3, 4))))
+}

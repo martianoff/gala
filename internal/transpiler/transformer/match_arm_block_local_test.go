@@ -15,7 +15,7 @@ import (
 // to be typed after the block's scope had closed, so the local no longer
 // resolved: it was counted as unresolved, and when no other arm or expected
 // type supplied one, the match was lowered as void and its value used — Go
-// rejected `func(obj int) {…}(n) (no value) used as value` — and a
+// rejected `func(_subj int) {…}(n) (no value) used as value` — and a
 // partial-function arm became `Option[void]` wrapping `Some[any]`.
 func TestMatchArmBlockLocalIsTyped(t *testing.T) {
 	t.Setenv("GALA_WARN_TYPES", "1")

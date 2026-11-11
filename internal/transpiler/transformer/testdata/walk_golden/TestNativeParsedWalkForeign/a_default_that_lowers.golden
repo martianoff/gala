@@ -11,9 +11,9 @@ import "example.com/parsed/lib"
 func main() {
 //line $DIR/main.gala:9
 	fmt.Println(lib.Matched(func() string {
-		obj := std.Some[pa.KindA]{}.Apply(pa.Same{}.Apply())
+		_subj := std.Some[pa.KindA]{}.Apply(pa.Same{}.Apply())
 		{
-			_tmp_1 := _unapply_std_Some_e5564f09(obj)
+			_tmp_1 := _unapply_std_Some_e5564f09(_subj)
 			_tmp_2 := _tmp_1.IsDefined()
 			_tmp_3 := _tmp_1.Value.Get()
 			var _tmp_4 bool

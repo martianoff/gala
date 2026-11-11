@@ -30,7 +30,7 @@ func small(n int) string = n match {
 func main() {
     Println(small(1))
 }`,
-			wantContains: []string{"if obj == 1 || obj == 2 {"},
+			wantContains: []string{"if _subj == 1 || _subj == 2 {"},
 		},
 		{
 			name: "string literals",
@@ -44,7 +44,7 @@ func mode(m string) string = m match {
 func main() {
     Println(mode("debug"))
 }`,
-			wantContains: []string{`if obj == "debug" || obj == "development" {`},
+			wantContains: []string{`if _subj == "debug" || _subj == "development" {`},
 		},
 		{
 			name: "parenthesized alternatives are alternatives",
@@ -58,7 +58,7 @@ func f(n int) string = n match {
 func main() {
     Println(f(1))
 }`,
-			wantContains: []string{"if obj == 1 || obj == 2 {"},
+			wantContains: []string{"if _subj == 1 || _subj == 2 {"},
 		},
 		{
 			name: "nested inside an extractor",
@@ -86,7 +86,7 @@ func f(n int, ok bool) string = n match {
 func main() {
     Println(f(1, true))
 }`,
-			wantContains: []string{"(obj == 1 || obj == 2) && ok"},
+			wantContains: []string{"(_subj == 1 || _subj == 2) && ok"},
 		},
 	}
 
@@ -124,9 +124,9 @@ func main() {
 }`
 	out, err := transpileBareVariant(t, src)
 	require.NoError(t, err)
-	circle := strings.Index(out, "Circle{}.Unapply(obj)")
+	circle := strings.Index(out, "Circle{}.Unapply(_subj)")
 	guard := strings.Index(out, "if !_tmp_")
-	rect := strings.Index(out, "Rect{}.Unapply(obj)")
+	rect := strings.Index(out, "Rect{}.Unapply(_subj)")
 	require.True(t, circle >= 0 && guard > circle && rect > guard,
 		"Rect's extractor must run only under the guard that Circle did not match:\n%s", out)
 }

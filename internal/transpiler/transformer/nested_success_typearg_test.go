@@ -19,11 +19,11 @@ import (
 //
 // Without expected-param propagation through the `return` statement, the
 // lambda's untyped parameter widened to any, the matched type degraded to
-// Try[any], the IIFE wrapper became `func(obj Try[any])`, and the inner
+// Try[any], the IIFE wrapper became `func(_subj Try[any])`, and the inner
 // constructor's Unapply call (e.g., ChunkArrived{}.Unapply) ended up
 // receiving a value of type any instead of Msg — Go rejected with:
 //
-//	cannot use Try[Msg] as Try[any] value in argument to func(obj Try[any])
+//	cannot use Try[Msg] as Try[any] value in argument to func(_subj Try[any])
 //	cannot use _tmp_NN (variable of interface type any) as Msg value in
 //	argument to ChunkArrived{}.Unapply: need type assertion
 //
@@ -116,8 +116,8 @@ func main() {}
 			gen := stripGeneratedHeader(got)
 
 			// Match-IIFE param must use Try[Msg], never Try[any].
-			assert.False(t, strings.Contains(gen, "func(obj std.Try[any])") ||
-				strings.Contains(gen, "func(obj Try[any])"),
+			assert.False(t, strings.Contains(gen, "func(_subj std.Try[any])") ||
+				strings.Contains(gen, "func(_subj Try[any])"),
 				"match-IIFE parameter must NOT widen to Try[any]\n--- generated ---\n%s", gen)
 			// Lambda surfaced from `return (t) => ...` must spell its
 			// parameter as Try[Msg], not any.

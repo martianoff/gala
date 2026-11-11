@@ -50,7 +50,7 @@ func main() {
     Println(describe(Production))
 }`,
 			wantContains: []string{"== Development.Get()", "== Production"},
-			wantAbsent:   []string{"Development := obj", "Production := obj"},
+			wantAbsent:   []string{"Development := _subj", "Production := _subj"},
 		},
 		{
 			name: "local val",
@@ -66,7 +66,7 @@ func main() {
     Println(r)
 }`,
 			wantContains: []string{"== Limit"},
-			wantAbsent:   []string{"Limit := obj"},
+			wantAbsent:   []string{"Limit := _subj"},
 		},
 		{
 			name: "nested inside an extractor",
@@ -161,7 +161,7 @@ func main() {
     }
     Println(r)
 }`,
-			wantBinds: "limit := obj",
+			wantBinds: "limit := _subj",
 		},
 		{
 			name: "capitalized name that is not a value",
@@ -174,7 +174,7 @@ func main() {
     }
     Println(r)
 }`,
-			wantBinds: "Other := obj",
+			wantBinds: "Other := _subj",
 		},
 	}
 
@@ -212,7 +212,7 @@ func main() {
     Println(at(1, 2))
 }`,
 			wantContains: []string{"== Limit"},
-			wantAbsent:   []string{"Limit := obj"},
+			wantAbsent:   []string{"Limit := _subj"},
 		},
 		{
 			name: "binding of an enclosing arm",
@@ -246,7 +246,7 @@ func main() {
     Println(top(127))
 }`,
 			wantContains: []string{"== math.MaxInt8"},
-			wantAbsent:   []string{"math := obj"},
+			wantAbsent:   []string{"math := _subj"},
 		},
 		{
 			name: "capitalized name repeated in one pattern",
@@ -322,7 +322,7 @@ func Describe(env string) string = env match {
 }
 `,
 			want:    "== Development",
-			notWant: "Development := obj",
+			notWant: "Development := _subj",
 		},
 		{
 			name:  "import sharing the package name",
@@ -339,7 +339,7 @@ func Kind(m int) string = m match {
 
 func Perm() iofs.FileMode = iofs.ModePerm
 `,
-			want:    "ModeDir := obj",
+			want:    "ModeDir := _subj",
 			notWant: "== ModeDir",
 		},
 	}

@@ -76,7 +76,7 @@ func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName str
 
 // readsName reports whether stmts read the identifier name declared before
 // them. Once a statement declares name again (`name := ...`, as a nested
-// inlined match declares its own `obj`), the statements after it read the new
+// inlined match declares its own subject), the statements after it read the new
 // one, and so does a function literal with a parameter of that name. A
 // selector's field name is no read.
 func readsName(stmts []ast.Stmt, name string) bool {
@@ -602,7 +602,7 @@ func stmtContainsBareReturn(stmt ast.Stmt) bool {
 //
 // A match lowered to a function literal (hoisted false) emits Go like:
 //
-//	func(obj T) string { ...; return /* no value */ }(subject)
+//	func(_subj T) string { ...; return /* no value */ }(subject)
 //
 // which fails to compile with "not enough return values". The user intent is
 // ambiguous between "exit the outer function" and "exit the match IIFE", so we
@@ -1398,12 +1398,12 @@ func (t *galaASTTransformer) transformCaseClauseWithType(cc caseSrc, paramName s
 		return nil, nil, srcNode{}, err
 	}
 
-	// The guard is kept apart too, for the unused-binding check below.
+	// The guard is kept apart, for the unused-binding check below and to bind
+	// the pattern variables it reads (see scopeArmBindings).
 	guardExpr, err := t.lowerCaseGuard(cc)
 	if err != nil {
 		return nil, nil, srcNode{}, err
 	}
-	cond = joinGuard(cond, guardExpr)
 
 	var body []ast.Stmt
 	var resultType transpiler.Type
@@ -1486,20 +1486,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(cc caseSrc, paramName s
 		}
 	}
 
-	bodyBlock := &ast.BlockStmt{List: body}
-
-	ifStmt := &ast.IfStmt{
-		Cond: cond,
-		Body: bodyBlock,
-	}
-
-	if len(bindings) > 0 {
-		return &ast.BlockStmt{
-			List: append(bindings, ifStmt),
-		}, resultType, noValue, nil
-	}
-
-	return ifStmt, resultType, noValue, nil
+	return t.scopeArmBindings(cond, bindings, userVars, guardExpr, body), resultType, noValue, nil
 }
 
 // matchArm is one lowered case clause of a match: a regular arm's clause, or
