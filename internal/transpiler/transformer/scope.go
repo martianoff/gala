@@ -13,6 +13,9 @@ type scope struct {
 	// While the pattern is lowered, a name found in this scope was bound
 	// earlier in the same pattern, never by the code around the match.
 	caseArm bool
+	// matchSubject is the Go name of the subject the match that pushed this
+	// scope binds (see freshSubjectName), "" in any other scope.
+	matchSubject string
 	// mutable records names that are genuinely reassignable `var` bindings —
 	// only real `var` declarations and `var`-marked parameters. It intentionally
 	// does NOT include the many val-by-semantics bindings that also route through

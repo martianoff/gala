@@ -4933,4 +4933,5 @@ gala_exec_test(
     name = "match_sibling_order",
     src = "match_sibling_order.gala",
     expected = "match_sibling_order.out",
+    deps = ["//collection_immutable"],
 )

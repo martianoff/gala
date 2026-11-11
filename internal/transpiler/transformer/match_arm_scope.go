@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/token"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 // A match lowers to an if-else chain, each case's pattern statements in a
@@ -34,6 +36,30 @@ import (
 //	}
 //	if _tmp_2 { r := _tmp_r; ... body } else { ... }
 
+// freshName is base, or base with the first number from 2 on appended that
+// makes it a name taken does not report.
+func freshName(base string, taken func(string) bool) string {
+	name := base
+	for i := 2; taken(name); i++ {
+		name = base + strconv.Itoa(i)
+	}
+	return name
+}
+
+// visibleName reports whether name is bound in the current scope chain to
+// something other than the subject of an enclosing match, which a nested
+// match may bind its own subject over.
+func (t *galaASTTransformer) visibleName(name string) bool {
+	s := t.bindingScope(name)
+	return s != nil && s.matchSubject != name
+}
+
+// isTempVarName reports whether name is one nextTempVar makes, `_tmp_<n>`.
+func isTempVarName(name string) bool {
+	digits, ok := strings.CutPrefix(name, "_tmp_")
+	return ok && digits != "" && strings.Trim(digits, "0123456789") == ""
+}
+
 // binderTemp is a pattern variable and the temp its pattern stores it in.
 type binderTemp struct {
 	name, temp string
@@ -43,7 +69,7 @@ type binderTemp struct {
 // body } }`, with names, the pattern variables stmts declare, visible only in
 // the guard and the body (see above). guard is nil when the case has none.
 func (t *galaASTTransformer) scopeArmBindings(cond ast.Expr, stmts []ast.Stmt, names []string, guard ast.Expr, body []ast.Stmt) ast.Stmt {
-	binders := hideBinders(stmts, names)
+	binders := t.hideBinders(stmts, names)
 	bodyBlock := &ast.BlockStmt{List: t.bindIn(binders, body)}
 	if guard == nil || !t.readsAnyBinder(binders, guard) {
 		return armBlock(stmts, &ast.IfStmt{Cond: joinGuard(cond, guard), Body: bodyBlock})
@@ -67,16 +93,24 @@ func armBlock(stmts []ast.Stmt, test *ast.IfStmt) ast.Stmt {
 }
 
 // hideBinders renames each of names, the pattern variables stmts declare, to
-// a temp of its own, `_tmp_<name>`, and returns them with their temps. A
+// a temp of its own, `_tmp_<name>` unless a name in scope has it, and returns
+// them with their temps. A
 // pattern only stores its variables, never reads them, so only the names it
 // declares and assigns are renamed: a read of a name (a value of the enclosing
 // scope, a type or a package of the same name) is left as it is.
-func hideBinders(stmts []ast.Stmt, names []string) []binderTemp {
+func (t *galaASTTransformer) hideBinders(stmts []ast.Stmt, names []string) []binderTemp {
 	temps := make(map[string]string, len(names))
+	used := make(map[string]bool, 2*len(names))
+	for _, n := range names {
+		used[n] = true
+	}
+	// A temp is a name no pattern variable, other temp or visible name has.
+	taken := func(name string) bool { return used[name] || t.visibleName(name) }
 	binders := make([]binderTemp, 0, len(names))
 	for _, n := range names {
 		if _, dup := temps[n]; !dup {
-			temps[n] = "_tmp_" + n
+			temps[n] = freshName("_tmp_"+n, taken)
+			used[temps[n]] = true
 			binders = append(binders, binderTemp{name: n, temp: temps[n]})
 		}
 	}

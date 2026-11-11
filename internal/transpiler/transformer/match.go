@@ -1266,7 +1266,7 @@ func extractUserPatternVarNames(bindings []ast.Stmt) []string {
 
 func extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
 	addName := func(name string) {
-		if name != "_" && !strings.HasPrefix(name, "_tmp_") {
+		if name != "_" && !isTempVarName(name) {
 			*names = append(*names, name)
 		}
 	}

@@ -1,5 +1,7 @@
 package main
 
+import . "martianoff/gala/collection_immutable"
+
 // The parts of a pattern are tested left to right, and testing stops at the
 // first part that fails: an extractor after it never runs.
 
@@ -57,6 +59,25 @@ func optionArgs(o Option[Pair]) string = o match {
     case _                          => "other"
 }
 
+opaque type Count int
+
+// The extractor inside runs only once the value is a Count.
+func opaqueOf[T comparable](v T) string = v match {
+    case Count(Pos()) => "positive count"
+    case _            => "other"
+}
+
+// The field's extractor runs only once the value is a Pair.
+func structOf[T comparable](v T) string = v match {
+    case Pair(Pos(), _) => "pair"
+    case _              => "other"
+}
+
+func sequence(xs Array[int]) string = xs match {
+    case Array(0, Pos()) => "zero then positive"
+    case _               => "other"
+}
+
 func run(name string, f func() string) {
     trace.Log = ""
     val result = f()
@@ -71,4 +92,7 @@ func main() {
     run("alternatives", () => alternatives(Pair(1, 4)))
     run("tuple", () => tupleArgs((3, 4)))
     run("option", () => optionArgs(Some(Pair(3, 4))))
+    run("opaque", () => opaqueOf("s"))
+    run("struct", () => structOf("s"))
+    run("sequence", () => sequence(ArrayOf(1, 4)))
 }

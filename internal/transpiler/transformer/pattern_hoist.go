@@ -166,7 +166,7 @@ func (t *galaASTTransformer) hoistPatternDecls(stmts []ast.Stmt, subject string,
 // siblingChain joins the sub-patterns of one pattern that sit side by side —
 // tuple elements, a constructor's arguments, a sequence's elements — tested
 // left to right: once one fails, the ones after it do not run. A sub-pattern
-// that runs code (an extractor's Unapply, a sealed view) after one that may
+// that runs code (a user extractor's Unapply, a sealed view) after one that may
 // fail runs under a flag holding whether every sub-pattern before it matched:
 //
 //	_tmp_5 := _subj.V1.Get() == 0
@@ -191,7 +191,7 @@ type siblingChain struct {
 // add appends a sub-pattern lowered to cond and stmts. subject/subjectType
 // name the temp it was lowered against, as hoistPatternDecls takes them.
 func (c *siblingChain) add(cond ast.Expr, stmts []ast.Stmt, subject string, subjectType patternType) error {
-	if len(stmts) == 0 || len(c.conds) == 0 || !runsCode(stmts) {
+	if len(stmts) == 0 || len(c.conds) == 0 || !c.t.runsCode(stmts) {
 		c.stmts = append(c.stmts, stmts...)
 		if !isLiteralTrue(cond) {
 			c.conds = append(c.conds, cond)
@@ -257,13 +257,13 @@ func andAll(conds []ast.Expr) ast.Expr {
 
 // runsCode reports whether stmts call anything but the reads a pattern makes
 // of a value it already holds: an Immutable field's or an Option's `Get()`, a
-// sequence element's `Get(i)` (behind the size check), `IsDefined()`, and
-// std.As.
-func runsCode(stmts []ast.Stmt) bool {
+// sequence element's `Get(i)` (behind the size check), `IsDefined()`, std.As,
+// a conversion to `any`, and a sealed case's generated Unapply (patternReads).
+func (t *galaASTTransformer) runsCode(stmts []ast.Stmt) bool {
 	found := false
 	for _, s := range stmts {
 		ast.Inspect(s, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok && !found && !isPatternRead(call) {
+			if call, ok := n.(*ast.CallExpr); ok && !found && !t.patternReads[call] && !isPatternRead(call) {
 				found = true
 			}
 			return !found
@@ -272,9 +272,12 @@ func runsCode(stmts []ast.Stmt) bool {
 	return found
 }
 
-// isPatternRead reports whether call is one of the reads runsCode allows.
+// isPatternRead reports whether call is one of the reads runsCode allows by
+// its shape.
 func isPatternRead(call *ast.CallExpr) bool {
 	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return fun.Name == "any" && len(call.Args) == 1
 	case *ast.SelectorExpr:
 		return fun.Sel.Name == "Get" || len(call.Args) == 0 && fun.Sel.Name == "IsDefined"
 	case *ast.IndexExpr:

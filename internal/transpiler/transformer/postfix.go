@@ -443,10 +443,10 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 	return t.buildMatchExpressionFromClauses(subject, matchSubjectName, t.nativeCases(p.node), p.at(), s)
 }
 
-// matchSubjectName is the Go name a match binds its subject to. It lies in
-// the transpiler's own `_`-prefixed namespace, so no user variable or pattern
-// variable (an `obj`, say) captures it or is captured by it. A nested match
-// binds its own subject to the name again, in a scope of its own.
+// matchSubjectName is the Go name a match binds its subject to, numbered
+// when a name in scope has it (see buildMatchExpressionFromClauses), so no
+// user variable (an `obj`, say) captures it or is captured by it. A nested
+// match binds its own subject to the name again, in a scope of its own.
 const matchSubjectName = "_subj"
 
 // lowerPrimaryOf lowers the primary expression of p.
@@ -493,8 +493,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// with 'any'. Keeping the original parametric type allows correct extractor type inference
 	// and valid Go code generation when inside a generic function where type parameters are in scope.
 
+	// A user name may still spell the subject's name: then it takes a number.
+	paramName = freshName(paramName, t.visibleName)
 	t.pushScope()
 	defer t.popScope()
+	t.currentScope.matchSubject = paramName
 	t.addVar(paramName, subjectType)
 
 	// Consume the statement-position marker set by lowerExprStatement. Arm bodies

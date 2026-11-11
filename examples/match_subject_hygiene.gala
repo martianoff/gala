@@ -33,6 +33,17 @@ func pick(obj Option[int], x int) int = x match {
     case n => n + obj.GetOrElse(0)
 }
 
+// Names spelled like the transpiler's own are names too.
+func underscored(_subj int, x int) int = x match {
+    case 0 => _subj
+    case _ => -1
+}
+
+func underscoredTemp(t Tree, _tmp_v int) int = t match {
+    case Node(_, v) if v > 100 => v
+    case _                     => _tmp_v
+}
+
 func main() {
     Println(classify(10, 5))
     Println(classify(10, 50))
@@ -41,4 +52,6 @@ func main() {
     Println(describe(Node(Node(Leaf(), 2), 200)))
     Println(pick(Some(4), 0))
     Println(pick(Some(4), 3))
+    Println(underscored(7, 0))
+    Println(underscoredTemp(Node(Leaf(), 5), 9))
 }

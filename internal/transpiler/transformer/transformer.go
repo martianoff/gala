@@ -138,6 +138,10 @@ type galaASTTransformer struct {
 	// declares, so a sub-pattern's statements can be split into declarations
 	// outside a guard and assignments inside it (see hoistPatternDecls).
 	patternDefineTypes map[*ast.AssignStmt][]patternType
+	// patternReads records the extractor calls of patterns that only read the
+	// value they test (a sealed case's generated Unapply), which siblingChain
+	// runs without a guard (see runsCode).
+	patternReads map[*ast.CallExpr]bool
 
 	// valTypes, when non-nil, puts transform in the mode InferPackageValTypes
 	// runs it in: only the file's package-level val/var declarations are
@@ -377,6 +381,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.ptrStars = nil
 	t.patternDefineTypes = nil
+	t.patternReads = nil
 	t.genericMethods = make(map[string]map[string]bool)
 	t.resultGenericMethods = make(map[string]bool)
 	t.functions = richAST.Functions

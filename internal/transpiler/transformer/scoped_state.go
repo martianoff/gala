@@ -131,6 +131,7 @@ var accumulatedStateFields = []string{
 	"genericGoResultCalls",
 	"goIdentSignatures",
 	"patternDefineTypes",
+	"patternReads",
 	"parsedExprs",
 	"warnTypeInference",
 	"inferenceWarnings",
