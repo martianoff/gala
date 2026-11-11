@@ -56,6 +56,11 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 		if fType := t.getGoFieldType(t.goTypeLookupName(xType), e.Sel.Name); !fType.IsNil() {
 			return fType
 		}
+		// A Go method value (`file.Close`): its Go signature, as for a Go
+		// function reference below.
+		if sig := t.lookupGoCallSignature(&ast.CallExpr{Fun: e}); sig != nil {
+			return goSignatureFuncType(sig)
+		}
 	}
 	// It might be a package-qualified name
 	if x, ok := e.X.(*ast.Ident); ok {
@@ -105,17 +110,23 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 				// Check if this is a Go function reference (e.g., os.TempDir without parens).
 				// Return a FuncType so it can unify with expected func() T parameters.
 				if sig := t.goTypeInfo.GetFuncSignature(qualName); sig != nil {
-					var params []transpiler.Type
-					for _, p := range sig.Params {
-						params = append(params, p.Type)
-					}
-					return transpiler.FuncType{Params: params, Results: sig.Returns}
+					return goSignatureFuncType(sig)
 				}
 			}
 			return transpiler.NamedType{Package: pkgName, Name: e.Sel.Name}
 		}
 	}
 	return transpiler.NilType{}
+}
+
+// goSignatureFuncType is the function type of a Go function or method value
+// with signature sig.
+func goSignatureFuncType(sig *transpiler.GoFuncSignature) transpiler.FuncType {
+	var params []transpiler.Type
+	for _, p := range sig.Params {
+		params = append(params, p.Type)
+	}
+	return transpiler.FuncType{Params: params, Results: sig.Returns}
 }
 
 // methodValueType is the type of a method value — a GALA method named without

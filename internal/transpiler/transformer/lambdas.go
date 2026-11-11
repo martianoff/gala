@@ -414,12 +414,21 @@ func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSr
 			b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{last.X}}
 		}
 	}
-	// The thunk of Try(...): a trailing Go call's error is the Failure (see
-	// tryThunkValue), not a Try inside the Try.
-	if t.isTryThunk(l) && len(b.List) > 0 {
-		if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
-			ret.Results[0] = t.tryThunkIIFE(ret.Results[0])
-		}
+	// The thunk of Try(...): a returned call's error is the Failure (see
+	// tryThunkValue), not a Try inside the Try. Every return of the thunk is
+	// lowered alike, so an early `return f()` agrees with the trailing one.
+	if t.isTryThunk(l) {
+		ast.Inspect(b, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.FuncLit:
+				return false // a nested function's returns are its own
+			case *ast.ReturnStmt:
+				if len(n.Results) == 1 {
+					n.Results[0] = t.tryThunkIIFE(n.Results[0])
+				}
+			}
+			return true
+		})
 	}
 	// Returns deferred until the slot was known are lowered now, before the
 	// result type is read off the body.

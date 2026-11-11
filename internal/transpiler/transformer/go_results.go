@@ -158,22 +158,35 @@ func (t *galaASTTransformer) stdHelperIdent(name string) ast.Expr {
 // isGalaCallee reports whether call names a GALA function or method, which
 // never returns several values even when a Go function of the same name does.
 func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
+	_, ok := t.galaCalleeResult(call)
+	return ok
+}
+
+// galaCalleeResult returns the declared result type of the GALA function or
+// method call names, and whether it names one.
+func (t *galaASTTransformer) galaCalleeResult(call *ast.CallExpr) (transpiler.Type, bool) {
 	fun, _ := splitCallFunTypeArgs(call.Fun)
 	switch f := fun.(type) {
 	case *ast.Ident:
-		return t.getFunction(f.Name) != nil
+		if fn := t.getFunction(f.Name); fn != nil {
+			return fn.ReturnType, true
+		}
 	case *ast.SelectorExpr:
 		if id, ok := f.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
-			return t.getFunction(id.Name+"."+f.Sel.Name) != nil
+			if fn := t.getFunction(id.Name + "." + f.Sel.Name); fn != nil {
+				return fn.ReturnType, true
+			}
+			return nil, false
 		}
 		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
 		if meta := t.getTypeMeta(key); meta != nil {
 			// A Go type's metadata, synthesized from Go, holds Go methods.
-			m, ok := meta.Methods[f.Sel.Name]
-			return ok && !m.GoDeclared
+			if m, ok := meta.Methods[f.Sel.Name]; ok && !m.GoDeclared {
+				return m.ReturnType, true
+			}
 		}
 	}
-	return false
+	return nil, false
 }
 
 // declaredGoResultsSignature returns the signature of a call whose callee GALA
@@ -422,8 +435,8 @@ func (t *galaASTTransformer) spreadGoResultArg(sig *transpiler.GoFuncSignature, 
 // turns an error into a Failure, so a Go call's error becomes the panic Try
 // catches instead of a Try inside the Try. For a call that returns (T, error),
 // or (A, B, error) and so on, that is a func body running the call and
-// panicking on the error; for a Go call returning only `error`, one that
-// yields Void. ok is false when expr is neither.
+// panicking on the error; for a call returning only `error`, Go or GALA, one
+// that yields Void. ok is false when expr is neither.
 func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, resultType ast.Expr, ok bool) {
 	if res := t.goResults[asCall(expr)]; res != nil && !res.Fails {
 		// A Tuple of values that cannot fail is the thunk's value as it is.
@@ -433,21 +446,28 @@ func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, 
 	if block, retType := t.tryWrapGoMultiReturnWithErrorPanic(raw); block != nil {
 		return block, retType, true
 	}
-	if !t.isGoErrorOnlyCall(raw) {
+	if !t.isGoErrorOnlyCall(raw) && !t.isErrorCall(raw) {
 		return nil, nil, false
 	}
+	body, resultType = t.errorThunk(raw)
+	return body, resultType, true
+}
+
+// errorThunk is the body of a Try thunk running call, which returns only an
+// `error`: the error is the panic Try catches, and the thunk's value is Void.
+func (t *galaASTTransformer) errorThunk(call ast.Expr) (*ast.BlockStmt, ast.Expr) {
 	// func() std.Void { if _err := call; _err != nil { panic(_err) }; return std.Void{} }
 	void := t.stdIdent("Void")
 	return &ast.BlockStmt{List: []ast.Stmt{
 		&ast.IfStmt{
-			Init: &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_err")}, Tok: token.DEFINE, Rhs: []ast.Expr{raw}},
+			Init: &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_err")}, Tok: token.DEFINE, Rhs: []ast.Expr{call}},
 			Cond: &ast.BinaryExpr{X: ast.NewIdent("_err"), Op: token.NEQ, Y: ast.NewIdent("nil")},
 			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: &ast.CallExpr{
 				Fun: ast.NewIdent("panic"), Args: []ast.Expr{ast.NewIdent("_err")},
 			}}}},
 		},
 		&ast.ReturnStmt{Results: []ast.Expr{&ast.CompositeLit{Type: void}}},
-	}}, void, true
+	}}, void
 }
 
 // isGoErrorOnlyCall reports whether expr calls a Go function or method whose
@@ -455,10 +475,53 @@ func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, 
 // dot-imported and generic ones included.
 func (t *galaASTTransformer) isGoErrorOnlyCall(expr ast.Expr) bool {
 	sig := t.resolveGoCallSignature(expr)
-	if sig == nil || len(sig.Returns) != 1 || sig.Returns[0] == nil || sig.Returns[0].String() != "error" {
+	if sig == nil || len(sig.Returns) != 1 || !isErrorType(sig.Returns[0]) {
 		return false
 	}
 	return !t.isGalaCallee(expr.(*ast.CallExpr))
+}
+
+// isErrorCall reports whether expr is a call of type `error` to a GALA
+// function, method or function value. Inside Try(...) its error is the
+// Failure, exactly as a Go call's is (isGoErrorOnlyCall), so the language the
+// callee is written in does not change what Try(f()) means. A GALA callee
+// whose declared result is a type parameter (`errs.Head()` on a List[error])
+// and an IIFE the transpiler made of an if or match yield an error as a value.
+func (t *galaASTTransformer) isErrorCall(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	// The call's own type, already inferred, rules out almost every call
+	// before its callee is looked at.
+	if !ok || !isErrorType(t.getExprTypeName(call)) {
+		return false
+	}
+	if _, iife := call.Fun.(*ast.FuncLit); iife {
+		return false
+	}
+	if result, ok := t.galaCalleeResult(call); ok {
+		return isErrorType(result)
+	}
+	// A function value, or a method with type parameters of its own, lowered
+	// to a free function.
+	return true
+}
+
+// isErrorFuncRef reports whether expr, of type fn, names a function that takes
+// nothing and returns only an `error` — a GALA function `fail`, a Go method
+// value `file.Close` — so that Try(f) means Try(() => f()). Only a name or a
+// selector on a name qualifies: anything else would be evaluated inside the
+// thunk instead of before the call.
+func isErrorFuncRef(expr ast.Expr, typ transpiler.Type) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+	case *ast.SelectorExpr:
+		if _, ok := e.X.(*ast.Ident); !ok {
+			return false
+		}
+	default:
+		return false
+	}
+	fn, ok := typ.(transpiler.FuncType)
+	return ok && len(fn.Params) == 0 && len(fn.Results) == 1 && isErrorType(fn.Results[0])
 }
 
 // thunkLit is the zero-parameter func literal returning resultType.
@@ -507,6 +570,19 @@ func isTryThunkParam(callCtx callContext, argIdx int) bool {
 	}
 	ft, ok := params[argIdx].(transpiler.FuncType)
 	return ok && len(ft.Params) == 0 && len(ft.Results) == 1 && ft.Results[0].String() == gen.Params[0].String()
+}
+
+// thunkReturnsError reports whether the thunk slot's result is already fixed
+// to `error` — `Try[error](...)`, or a Try-shaped helper taking a
+// `func() error`. The error is then the Try's value, not its failure.
+func thunkReturnsError(slot transpiler.Type) bool {
+	ft, ok := slot.(transpiler.FuncType)
+	return ok && len(ft.Results) == 1 && isErrorType(ft.Results[0])
+}
+
+// isErrorType reports whether typ is the predeclared `error`.
+func isErrorType(typ transpiler.Type) bool {
+	return typ != nil && typ.String() == "error"
 }
 
 // checkGoResultAgainst reports a converted Go call — or a val bound to one —

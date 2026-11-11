@@ -1,0 +1,81 @@
+package main
+
+import "bufio"
+import "errors"
+import "os"
+import . "martianoff/gala/collection_immutable"
+
+// Inside Try(...), a call returning only an `error` is a Failure when the error
+// is non-nil and a Success(Void) when it is nil, whether the callee is written
+// in Go or in GALA.
+
+func fail() error = errors.New("boom")
+
+func succeed() error = nil
+
+func check(n int) error = if (n < 0) errors.New(s"negative: $n") else nil
+
+type Conn struct {
+    Name string
+}
+
+func (c Conn) Close() error = errors.New(s"close ${c.Name}")
+
+func (c Conn) Send[T any](msg T) error = errors.New(s"send $msg on ${c.Name}")
+
+func describe(t Try[Void]) string = t match {
+    case Success(_) => "Success"
+    case Failure(err) => s"Failure($err)"
+}
+
+func main() {
+    // A GALA function, called.
+    Println(describe(Try(fail())))
+    Println(describe(Try(succeed())))
+    Println(describe(Try(check(-1))))
+    Println(describe(Try(check(1))))
+    // A GALA method.
+    Println(describe(Try(Conn("db").Close())))
+    Println(describe(Try(Conn("db").Send(42))))
+    // The lambda form means the same, on every path that returns a call.
+    Println(describe(Try(() => fail())))
+    Println(describe(Try(() => {
+        if (Conn("x").Name == "x") {
+            return check(-4)
+        }
+        return succeed()
+    })))
+    // A function reference means the same as calling it in a lambda.
+    Println(describe(Try(fail)))
+    Println(describe(Try(succeed)))
+    val conn = Conn("cache")
+    Println(describe(Try(conn.Close)))
+    // A Go method value too: closing a file twice fails, flushing an empty
+    // buffer does not.
+    val file = os.CreateTemp("", "try-gala-error-call").Get()
+    file.Close()
+    Println(Try(file.Close).IsFailure())
+    FromError(os.Remove(file.Name()))
+    val buffer = bufio.NewWriter(os.Stdout)
+    Println(describe(Try(buffer.Flush)))
+    // A function value returning an error.
+    val validate = (n int) => check(n)
+    Println(describe(Try(validate(-2))))
+    // A Go function returning only an error, for comparison.
+    Println(describe(Try(os.Chdir("."))))
+    Println(Try(os.Remove("")).IsFailure())
+    // The Failure holds the callee's own error.
+    Println(Try(fail()).GetError().Error())
+    // Inferred without an expected type, and matched later.
+    val inferred = Try(check(-3))
+    val msg = inferred match {
+        case Success(_) => "ok"
+        case Failure(err) => s"failed: $err"
+    }
+    Println(msg)
+    // Asking for a Try[error] keeps the error as the value.
+    Println(Try[error](fail()))
+    // An error that is only a value, not a call's declared result, stays one.
+    val errs = ListOf(errors.New("first"))
+    Println(Try(errs.Head()))
+}

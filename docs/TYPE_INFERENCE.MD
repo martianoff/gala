@@ -896,7 +896,8 @@ used as a value, is inferred as one GALA type built from the Go signature:
 | `error` only | `error` | `os.Remove(p)` → `error` |
 
 - `Try(call)` and `Try(() => call)` over such a call infer the call's own type
-  (`Try[T]`, never `Try[Try[T]]`); over an error-only call they infer `Try[Void]`.
+  (`Try[T]`, never `Try[Try[T]]`); over a call returning only an `error`, Go or GALA, they infer `Try[Void]`, and
+  so does `Try(f)` over a reference to such a function (`Try(file.Close)`).
 - A binding of several names (`val a, err = goCall()`, `var …`, `a, err := …`)
   gives each name the type of its Go result — `a` is `T`, `err` is `error`.
 - `val (a, b, c) = strings.Cut(...)` destructures the inferred Tuple; each name
