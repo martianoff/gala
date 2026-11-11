@@ -270,6 +270,32 @@ flowchart LR
   GALA_SPEC_BIN=$PWD/.lake/build/bin/galaspec bazel test //internal/formal:difftest
   ```
 
+## Licensing
+
+- **Lean 4 is Apache 2.0**: the compiler, Lake, the core library and the runtime. That is
+  the same license as GALA.
+- **The release binaries bundle third-party components.** They are listed in the
+  toolchain's `LICENSES` file:
+  - LLVM/clang: Apache 2.0 with LLVM exceptions
+  - CaDiCaL: MIT
+  - **GNU MP: LGPL v3**
+  - **the GNU C library: LGPL**, in Linux builds
+- **The spec and proofs are our own code.** The files in `formal/` are licensed like the
+  rest of the repository. Lean's license does not extend to programs written in Lean.
+
+To keep our obligations at zero:
+
+1. **`galaspec` and every other Lean-built binary is a development and CI tool only.**
+   None of them ships in GALA releases, the CLI, Docker images or the playground. Shipping
+   one would require Lean's Apache NOTICE, and would require letting users relink the
+   runtime's LGPL GNU MP code. Any change to this rule needs a maintainer decision first.
+2. **The Lean toolchain is never vendored, committed, mirrored or re-hosted.** This
+   covers the repository, Bazel mirrors, cache buckets and Docker layers. CI and any Bazel
+   integration fetch the pinned release from `releases.lean-lang.org` and verify a
+   checksum. Re-hosting it would make us a distributor of its LGPL components.
+3. **New Lean dependencies (Lake packages) must be permissively licensed**: Apache 2.0,
+   MIT or BSD. Mathlib is Apache 2.0. Check a package's license before adding it.
+
 ## Plan
 
 The estimates assume one maintainer working with AI agents. Weeks 1–4 are the commitment;
