@@ -1,0 +1,315 @@
+# Formal Semantics and Spec-Based Testing
+
+Status: **design proposal**. Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
+
+This document describes how GALA gets an executable, machine-checked definition of what
+programs mean, and how the transpiler is tested against it. Nothing here is built yet.
+
+## Summary
+
+- We write **GALA's semantics in Lean 4**. A Lean definition says what every supported
+  program means. Lean compiles that definition into a **reference interpreter**.
+- We **do not model Go**. Generated code is tested by running it: the real transpiler and
+  the real Go toolchain run the program, and the reference interpreter must print the
+  same output.
+- We **prove properties of the language**, not of the transpiler. Examples: names
+  resolve to their nearest binding, evaluation runs left to right, and an exhaustive match
+  on a constructed value never panics. Lean's kernel checks these proofs.
+- **Coverage is partial and is published honestly.** The spec covers a stated subset of
+  GALA. Every program outside that subset is counted and reported. It is never silently
+  passed.
+
+## Why
+
+GALA has no formal definition. Its meaning is whatever the transpiler emits, and the
+documentation describes that in prose. Tests compare against expected outputs that people
+wrote, so a wrong expectation enshrines a bug.
+
+A first Lean model of `match` (sealed types, arm order, pattern variables) took about an
+hour to write. Writing the lowering down precisely showed that pattern variables leak into
+later arms ([#996](https://github.com/martianoff/gala/issues/996)). A targeted search for
+the same kinds of bug then found twelve more.
+
+| Issue | Bug | Class |
+|---|---|---|
+| [#996](https://github.com/martianoff/gala/issues/996) | Match-arm pattern variables leak into later arms | wrong result, scoping |
+| [#997](https://github.com/martianoff/gala/issues/997) | Match subject bound to a fixed Go name `obj` | wrong result, scoping |
+| [#998](https://github.com/martianoff/gala/issues/998) | Sibling sub-patterns run their extractors after an earlier sibling failed | crash, evaluation |
+| [#999](https://github.com/martianoff/gala/issues/999) | Default parameter values resolved in the caller's scope | wrong result, scoping |
+| [#1000](https://github.com/martianoff/gala/issues/1000) | Named arguments evaluated in parameter order | wrong result, evaluation |
+| [#1001](https://github.com/martianoff/gala/issues/1001) | Operand evaluation order unspecified | needs a decision |
+| [#1002](https://github.com/martianoff/gala/issues/1002) | User names captured by generated code (`std`, `panic`, `string`, …) | rejected program, scoping |
+| [#1003](https://github.com/martianoff/gala/issues/1003) | Generated declarations collide with user code | rejected program, scoping |
+| [#1004](https://github.com/martianoff/gala/issues/1004) | Sealed `Copy` with another variant's field; `Equal` compares inactive fields | wrong result, values |
+| [#1005](https://github.com/martianoff/gala/issues/1005) | `==` on a `comparable` type parameter is Go identity | wrong result, values |
+| [#1006](https://github.com/martianoff/gala/issues/1006) | Expected type not passed to literals and empty constructors | rejected program, typing |
+| [#1007](https://github.com/martianoff/gala/issues/1007) | `Try.Map` does not catch panics; `Try` of a GALA error function | wrong result, std |
+| [#1008](https://github.com/martianoff/gala/issues/1008) | Programs that pass GALA's checks but fail in `go build` (collection) | rejected program |
+
+Seven of the thirteen are about **names** or **evaluation order**. Those are exactly the
+properties a formal semantics makes precise, and the existing fuzzer cannot see them: its
+generator never reuses a name across scopes, and never orders side effects against each
+other.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SRC[GALA program] --> P[galop parser]
+    P --> EXP[core exporter<br/>surface syntax → Core JSON]
+    EXP --> SPEC[galaspec<br/>Lean reference interpreter]
+    SRC --> TR[gala transpiler] --> GO[go build + run]
+    SPEC --> V{compare<br/>stdout + outcome}
+    GO --> V
+    V -->|agree| OK[AGREE]
+    V -->|differ| BAD[DISAGREE<br/>fails CI]
+    SPEC -->|construct outside subset| UNS[UNSUPPORTED<br/>counted in coverage]
+```
+
+The only code both sides share is the parser. That parser is already fuzzed against the
+ANTLR grammar. Everything after it is independent: the spec does its own name resolution,
+desugaring and evaluation, and never sees the transformer's output.
+
+### 1. Core JSON exporter (Go)
+
+- **Package:** `internal/formal/coreexport`, a test-support library. It is not a `gala`
+  subcommand, so the CLI does not grow.
+- **Input:** the galop native tree of one or more files.
+- **Output:** JSON for the *surface* syntax of the supported subset, with source positions.
+- **It deliberately does not:**
+  - resolve names;
+  - fill in default arguments;
+  - reorder named arguments;
+  - desugar `match`.
+
+  Those are the transpiler steps under test, and the spec redoes each of them itself.
+- **Type annotations:** the analyzer's inferred types are attached only where meaning
+  depends on a type: the width and kind of a numeric literal, and the type an untyped
+  constant takes. The spec checks that each annotation is consistent with its own rules.
+  This is a known trust point, listed under [What is trusted](#what-is-trusted).
+- **Unsupported constructs:** a construct outside the subset is exported as
+  `{"unsupported": "<construct>"}`, so the spec can name what is missing.
+- **Versioning:** the schema is versioned (`"core": 1`). The Lean decoder rejects a
+  version it doesn't know.
+
+### 2. `galaspec`: the semantics in Lean
+
+The semantics lives in a Lake project at `formal/`:
+
+```
+formal/
+  lean-toolchain            pinned Lean version
+  lakefile.toml             no Mathlib dependency at the start
+  Gala/Syntax.lean          surface AST (mirrors Core JSON)
+  Gala/Json.lean            decoder, rejects unknown schema versions
+  Gala/Scope.lean           name resolution: binders, shadowing, defaults
+  Gala/Eval.lean            big-step semantics with fuel, outcomes below
+  Gala/Std/*.lean           models of Option, Either, Try, Println formatting
+  Gala/Main.lean            `galaspec run prog.json` → stdout + outcome line
+  Gala/Theorems/*.lean      proofs about the semantics
+  Gala/Lowering/*.lean      optional: small models of individual lowerings
+  COVERAGE.MD               generated, see "Coverage"
+```
+
+- **What evaluation produces:** printed output plus one outcome: `ok`, `panic <class>`, or
+  `fuel`. `fuel` means the interpreter ran out of steps. Such a run is reported as
+  inconclusive, never as agreement.
+- **Errors are values:** an evaluation error is a result, not a crash. "No arm matched"
+  becomes `panic match`, so it can be compared with the Go panic.
+- **Executable and provable:** the evaluator is an ordinary Lean function. It runs fast
+  enough to serve as an oracle, and theorems can be stated about it directly.
+- **Precise where Go is loose:** where Go leaves something unspecified, the spec defines it
+  (see [Decisions the spec forces](#decisions-the-spec-forces)).
+
+### 3. Differential harness (Go, under Bazel)
+
+- **Package:** `internal/formal/difftest`.
+- **For each input program:**
+  1. Export it to Core JSON and run `galaspec`.
+  2. Transpile, build and run it with the machinery `FuzzPrograms` already uses.
+  3. Compare stdout and outcome. Each comparison is one of four verdicts: `AGREE`,
+     `DISAGREE`, `UNSUPPORTED` or `INCONCLUSIVE`.
+- **Where `galaspec` comes from:** the `GALA_SPEC_BIN` environment variable. Without it,
+  the target fails with a clear message. It never passes silently.
+- **Plain `bazel test //...` stays Lean-free:** the target is tagged `manual`, and the
+  formal CI job runs it explicitly.
+
+```mermaid
+flowchart TD
+    D[DISAGREE] --> Q{Does the spec match<br/>docs/GALA.MD?}
+    Q -->|yes| TB[transpiler bug:<br/>file issue + regression example]
+    Q -->|no| SB[spec bug:<br/>fix the Lean definition]
+    Q -->|docs silent| DEC[language decision:<br/>maintainer decides, then docs + spec]
+```
+
+### 4. Program sources
+
+| Source | What it gives | Needs Lean |
+|---|---|---|
+| **Metamorphic: alpha-renaming.** Rename every local binder to hostile names (`obj`, `_tmp_1`, `std`, `panic`, `string`, `__p0`, and names of other binders in scope). Output must not change. | Catches #996, #997, #999, #1002, #1003 directly. | No |
+| **Metamorphic: order tracing.** Wrap operands, named arguments, sub-patterns and guards in tracing calls. The trace must match left-to-right source order, and failed patterns must stop early. | Catches #998, #1000, #1001. | No |
+| **`examples/*.gala` with `.out`.** Three-way comparison: spec, `.out` file, Go. | Spec conformance on 400+ real programs; finds `.out` files that enshrine bugs. | Yes |
+| **`FuzzPrograms` generator.** Its hand-written model of expected output is replaced by `galaspec`. During the switch, all three are compared. | Endless random programs, with an oracle we can review. | Yes |
+
+The two metamorphic generators are cheap and need no spec at all. They ship first. Their
+correctness argument is also a theorem we prove about the spec: *renaming bound variables
+does not change a program's meaning*. That ties the test to the proof.
+
+### 5. Theorems
+
+These are proved about the spec, in order of value:
+
+| # | Statement (informal) | Guards against |
+|---|---|---|
+| T1 | Evaluation is deterministic. | spec bugs |
+| T2 | **Alpha-invariance:** renaming bound variables apart does not change the outcome. | #996, #997, #999, #1002 |
+| T3 | **Left-to-right:** the effects of operands, arguments (including named ones) and sub-patterns happen in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 |
+| T4 | **Default arguments** are evaluated in the callee's scope, with earlier parameters bound. | #999 |
+| T5 | **Exhaustiveness:** a well-typed exhaustive match on a value built by a constructor never ends in `panic match`. | match lowering |
+| T6 | **Equality:** `Equal` on sealed values is an equivalence that depends only on the active variant's fields. | #1004, #1005 |
+| T7 | **Type soundness** for the subset: well-typed programs do not get stuck (stretch goal). | typing bugs |
+
+A theorem counts as **proved** only if it type-checks with no `sorry`, and
+`#print axioms` lists only Lean's standard axioms (`propext`, `Quot.sound`,
+`Classical.choice`). CI checks both.
+
+### 6. Optional: lowering models
+
+For the riskiest lowerings, a small Lean model of only the Go that GALA emits for them can
+be proved correct against the spec. This is *not* a Go semantics. The existing prototype
+does this for sealed `match`. It proves that a scoped lowering preserves meaning, and that
+the current lowering does not. Candidates are `match`, default and named arguments, and
+sealed `Equal`/`Copy`. Each model is about 100–300 lines, and each is opt-in.
+
+## What is trusted
+
+The table is honest about what the guarantees rest on.
+
+| Component | Trusted because | Mitigation |
+|---|---|---|
+| Lean kernel | Small, widely used | none needed |
+| The spec's definitions | They *are* the definition of GALA | Reviewable size; every definition cites its `docs/GALA.MD` section; the 400+ examples are a conformance suite |
+| galop parser | Shared by both sides | Already fuzzed against the ANTLR grammar |
+| Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; round-trip test (export → print → parse → export) |
+| Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
+| Go toolchain and runtime | We run it, not model it | Out of scope |
+| The transformer | **Not trusted.** It is what we test | — |
+
+## Coverage
+
+Coverage is reported in three tiers, so nobody reads "tested" as "proved":
+
+- **Modelled:** the construct is in the spec. Programs using it can run through `galaspec`.
+- **Tested against the spec:** at least N generated programs and every example using the
+  construct agree.
+- **Proved:** a theorem from the table above covers it.
+
+`formal/COVERAGE.MD` is generated in CI and committed with each formal change. It holds:
+- a per-construct table with the three tiers;
+- the number of examples in each verdict;
+- every `UNSUPPORTED` construct, with how often it occurs;
+- the list of known disagreements.
+
+**Wording rules for docs, release notes and the README:**
+- "Proved" is used only for kernel-checked theorems about the spec.
+- "Tested against the spec" is used for differential results.
+- Neither is used for constructs outside the subset.
+- We never claim the transpiler is verified.
+
+**Ratchets in CI:**
+- The number of examples that run fully inside the subset may not go down.
+- A `DISAGREE` fails the build, unless that exact program appears in
+  `formal/known_disagreements.json` with an **open** issue number. When the issue is
+  closed, the CI job requires the entry to be removed.
+
+### Subsets
+
+| Subset | Constructs | Out of scope until later |
+|---|---|---|
+| S1 | int/bool/string literals and operators; `val`/`var`; `if`; blocks; functions and recursion; structs; sealed types; `match` with nested, tuple, literal and wildcard patterns and guards; `Println`/`Print` with documented formatting | everything else |
+| S2 | lambdas and closures; default and named arguments; `Option`/`Either`/`Try` (Lean models of the std behaviour); string interpolation | |
+| S3 | generics (erased semantics); `Copy`/`Equal`/`==`; immutable `Array`/`List`/`HashMap` basics; partial functions | |
+| Not planned | goroutines, `Future`, channels, Go interop, mutable collections, `use`/`defer`, reflection, performance | stated in COVERAGE.MD |
+
+## Decisions the spec forces
+
+The spec must say what Go leaves open and what the docs don't cover. Each of these needs a
+maintainer decision before the spec can encode it:
+
+1. **Operand evaluation order:** strict left-to-right? ([#1001](https://github.com/martianoff/gala/issues/1001))
+2. **Default parameters:** may a default refer to earlier parameters? ([#999](https://github.com/martianoff/gala/issues/999))
+3. **Named arguments:** evaluated in source order? ([#1000](https://github.com/martianoff/gala/issues/1000))
+4. **`Try` combinators:** do they catch panics? The doc comment says yes; the code says no.
+   ([#1007](https://github.com/martianoff/gala/issues/1007))
+5. **Printing:** how plain structs format under `Println` and string interpolation.
+   ([#1008](https://github.com/martianoff/gala/issues/1008))
+
+## CI and build
+
+```mermaid
+flowchart LR
+    PR[pull request] --> T[test.yml<br/>bazel test //... — unchanged, no Lean]
+    PR --> M[metamorphic generators<br/>part of bazel test — no Lean]
+    PR --> F[formal.yml]
+    F --> L1[install Lean from lean-toolchain<br/>cache .lake]
+    L1 --> L2[lake build<br/>proofs + galaspec]
+    L2 --> L3[axioms check<br/>no sorryAx]
+    L2 --> L4[bazel test //internal/formal:difftest<br/>GALA_SPEC_BIN=galaspec]
+    L4 --> L5[COVERAGE.MD + job summary<br/>ratchets]
+```
+
+- **Lean is built with Lake, not Bazel.** No Bazel rules for Lean are maintained. Every Go
+  part (exporter, harness, generators) is built and tested with Bazel, as AGENTS.md requires.
+- **Running only for formal changes:** `formal.yml` runs only on PRs that touch `formal/`,
+  `internal/formal/`, `internal/transpiler/` or `std/`. It is required for those PRs once
+  S1 is stable.
+- **Local use:** install Lean with `elan` (it reads `formal/lean-toolchain`), then:
+
+  ```shell
+  cd formal && lake build && lake exe galaspec run prog.json
+  GALA_SPEC_BIN=$PWD/.lake/build/bin/galaspec bazel test //internal/formal:difftest
+  ```
+
+## Plan
+
+The estimates assume one maintainer working with AI agents. Weeks 1–4 are the commitment;
+weeks 5–6 are stretch goals.
+
+```mermaid
+gantt
+    dateFormat  YYYY-MM-DD
+    axisFormat  W%W
+    section No Lean needed
+    Metamorphic renaming + order generators   :m1, 2026-11-16, 5d
+    Fix scoping bugs they catch (#996 #997 #998) :m2, after m1, 5d
+    section Spec
+    formal/ scaffold, CI job, prototype moved  :s0, 2026-11-16, 3d
+    Core JSON exporter v1 (S1)                 :s1, after s0, 4d
+    galaspec S1 + difftest over examples       :s2, after s1, 5d
+    FuzzPrograms oracle switch                 :s3, after s2, 4d
+    S2 (lambdas, defaults, named args, std)    :s4, after s3, 7d
+    S3 (generics, Equal/Copy, collections)     :s5, after s4, 7d
+    section Proofs
+    T1 determinism, T2 alpha-invariance        :p1, after s2, 5d
+    T3 left-to-right, T4 defaults              :p2, after s4, 5d
+    T5 exhaustiveness, T6 equality             :p3, after s5, 5d
+    T7 type soundness for S1 (stretch)         :p4, after p3, 10d
+```
+
+| Week | Deliverable | Done when |
+|---|---|---|
+| 1 | The two metamorphic generators in `internal/transpiler/fuzz`. `formal/` scaffold with the match prototype; `formal.yml` builds it and checks axioms. | The generators reproduce #996–#1003 on `master`, and their failing cases are committed as seeds. |
+| 2 | Core JSON exporter for S1; `galaspec` S1; `difftest` over `examples/`; first `COVERAGE.MD`. Fixes for #996, #997, #998. | Baseline coverage published; zero unexplained `DISAGREE`. |
+| 3 | `FuzzPrograms` uses `galaspec` as its oracle. Theorems T1 and T2. Decisions on #1000, #1001 and #999. | T1 and T2 proved; fuzzing runs against the spec in CI. |
+| 4 | S2 in the spec. Theorems T3 and T4. Fixes for #999 and #1000. | Lambdas, defaults and named arguments are modelled, tested against the spec, and T3/T4 are proved. |
+| 5–6 (stretch) | S3; theorems T5 and T6; T7 for S1; a lowering model for the fixed `match`. | As in the tables above. |
+
+**Risks:**
+- **The spec is wrong.** Mitigation: the three-way check against `.out` files; a reviewer
+  reads every definition next to `docs/GALA.MD`.
+- **Proof effort is underestimated.** Mitigation: theorems are optional per week, and
+  testing against the spec delivers value without them.
+- **Language churn.** Mitigation: the spec covers a stated subset; new features start as
+  `UNSUPPORTED` and are reported, not hidden.
+- **Lean expertise.** Mitigation: no Mathlib; plain functional definitions in the style
+  of the prototype. AI agents write most proofs, and the kernel checks them.
