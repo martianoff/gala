@@ -3,8 +3,9 @@ package fuzz_test
 import (
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math/rand"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -137,9 +138,9 @@ func (s *mState) trace(tok string) { s.out.WriteString(tok + " ") }
 type mEnv map[*mBinder]mVal
 
 func (e mEnv) with(b *mBinder, v mVal) mEnv {
-	n := make(mEnv, len(e)+1)
-	for k, x := range e {
-		n[k] = x
+	n := maps.Clone(e)
+	if n == nil {
+		n = mEnv{}
 	}
 	n[b] = v
 	return n
@@ -184,8 +185,6 @@ type mPat interface {
 	match(s *mState, v mVal, bind func(*mBinder, mVal)) bool
 	render() string
 	refutable() bool
-	// effects: it holds an extractor, which prints.
-	effects() bool
 }
 
 // mScan walks a finished tree with the stack of binders in scope, and
@@ -196,10 +195,11 @@ type mScan struct {
 	stack    []*mBinder
 	refs     []*mBinder // every read, in order
 	distinct map[*mBinder]map[*mBinder]bool
-	// avoid996: also keep a pattern variable's name apart from outer names
-	// the later arms of its match read (see knownFailures).
-	avoid996 bool
-	steered  map[int]bool
+	// avoid reports whether the shapes of an open issue are left out, and
+	// records that they were (metaGen.avoid). The scan uses it for #996:
+	// a pattern variable's name is then kept apart from the outer names
+	// the later arms of its match read.
+	avoid func(issue int) bool
 }
 
 func (c *mScan) differ(a, b *mBinder) {
@@ -255,8 +255,7 @@ func (e eLit) render() string          { return fmt.Sprint(e.n) }
 func (e eLit) scan(*mScan)             {}
 func (e eLit) ordered() bool           { return false }
 
-// eRef reads a binder: an int as it is, a Shape through area, an Option
-// through GetOrElse(7), anything else as the bare name.
+// eRef reads a binder as a value of its own type.
 type eRef struct{ b *mBinder }
 
 func (e eRef) eval(_ *mState, env mEnv) mVal {
@@ -529,10 +528,6 @@ func (e eMatch) render() string {
 
 func (e eMatch) scan(c *mScan) {
 	e.subj.scan(c)
-	outer := map[*mBinder]bool{}
-	for _, b := range c.stack {
-		outer[b] = true
-	}
 	armRefs := make([][]*mBinder, len(e.arms))
 	for i, a := range e.arms {
 		mark, from := len(c.stack), len(c.refs)
@@ -546,18 +541,22 @@ func (e eMatch) scan(c *mScan) {
 		armRefs[i] = c.refs[from:]
 		c.stack = c.stack[:mark]
 	}
-	if !c.avoid996 {
+	// #996: an arm's pattern variables are also in scope in the later arms,
+	// so they would capture the outer names those read.
+	if c.avoid == nil {
 		return
+	}
+	outer := map[*mBinder]bool{}
+	for _, b := range c.stack {
+		outer[b] = true
 	}
 	for i, a := range e.arms {
 		for _, later := range armRefs[i+1:] {
 			for _, x := range later {
-				if !outer[x] {
-					continue
-				}
-				for _, p := range a.binders {
-					c.differ(p, x)
-					c.steered[996] = true
+				if outer[x] && len(a.binders) > 0 && c.avoid(996) {
+					for _, p := range a.binders {
+						c.differ(p, x)
+					}
 				}
 			}
 		}
@@ -779,7 +778,6 @@ type pWild struct{}
 func (pWild) match(*mState, mVal, func(*mBinder, mVal)) bool { return true }
 func (pWild) render() string                                 { return "_" }
 func (pWild) refutable() bool                                { return false }
-func (pWild) effects() bool                                  { return false }
 
 type pBind struct{ b *mBinder }
 
@@ -789,14 +787,12 @@ func (p pBind) match(_ *mState, v mVal, bind func(*mBinder, mVal)) bool {
 }
 func (p pBind) render() string  { return p.b.name }
 func (p pBind) refutable() bool { return false }
-func (p pBind) effects() bool   { return false }
 
 type pLit struct{ n int }
 
 func (p pLit) match(_ *mState, v mVal, _ func(*mBinder, mVal)) bool { return v.n == p.n }
 func (p pLit) render() string                                       { return fmt.Sprint(p.n) }
 func (p pLit) refutable() bool                                      { return true }
-func (p pLit) effects() bool                                        { return false }
 
 // pAlt is `a | b`: the alternatives are tried in order until one matches.
 type pAlt struct{ alts []mPat }
@@ -818,14 +814,6 @@ func (p pAlt) render() string {
 	return strings.Join(parts, " | ")
 }
 func (p pAlt) refutable() bool { return true }
-func (p pAlt) effects() bool {
-	for _, a := range p.alts {
-		if a.effects() {
-			return true
-		}
-	}
-	return false
-}
 
 // pTest is Even() or Pos(): a boolean extractor that prints.
 type pTest struct{ name string }
@@ -839,7 +827,6 @@ func (p pTest) match(s *mState, v mVal, _ func(*mBinder, mVal)) bool {
 }
 func (p pTest) render() string  { return p.name + "()" }
 func (p pTest) refutable() bool { return true }
-func (p pTest) effects() bool   { return true }
 
 // pDec is Dec(sub): it prints, and matches a positive int, passing it less
 // one to sub.
@@ -851,7 +838,6 @@ func (p pDec) match(s *mState, v mVal, bind func(*mBinder, mVal)) bool {
 }
 func (p pDec) render() string  { return "Dec(" + p.sub.render() + ")" }
 func (p pDec) refutable() bool { return true }
-func (p pDec) effects() bool   { return true }
 
 // pCtor is a variant's (or a tuple's, tag "") pattern: subs[i] matches field
 // fields[i]; with labels it is written with named sub-patterns.
@@ -897,15 +883,6 @@ func (p pCtor) refutable() bool {
 	return false
 }
 
-func (p pCtor) effects() bool {
-	for _, sub := range p.subs {
-		if sub.effects() {
-			return true
-		}
-	}
-	return false
-}
-
 // ---- the generator
 
 // metaConfig selects what a generated program exercises.
@@ -914,9 +891,6 @@ type metaConfig struct {
 	hostile bool
 	// traceOdds: one expression in traceOdds is wrapped in a tracing call.
 	traceOdds int
-	// known reports whether the shapes of an open issue are steered away
-	// from (see knownFailures); nil steers away from none.
-	known func(issue int) bool
 }
 
 // metaProgram is a generated program: its source with the binders named
@@ -950,10 +924,15 @@ func (g *metaGen) pick(n int) int {
 	return c
 }
 
-func (g *metaGen) known(issue int) bool { return g.cfg.known != nil && g.cfg.known(issue) }
-
-// steer records that issue's shape was avoided.
-func (g *metaGen) steer(issue int) { g.steered[issue] = true }
+// avoid reports whether the shapes of issue are left out because it is
+// open (see knownFailures), and records that they were.
+func (g *metaGen) avoid(issue int) bool {
+	if !openIssue(issue) {
+		return false
+	}
+	g.steered[issue] = true
+	return true
+}
 
 func (g *metaGen) region() int {
 	g.regions++
@@ -1040,8 +1019,7 @@ func (g *metaGen) intExpr0(d int, flat bool) mExpr {
 			return g.call(d, flat)
 		}
 	case 4:
-		if g.known(1001) {
-			g.steer(1001)
+		if g.avoid(1001) {
 			break
 		}
 		g.counter = true
@@ -1052,7 +1030,7 @@ func (g *metaGen) intExpr0(d int, flat bool) mExpr {
 	case 5, 6:
 		return g.match(d)
 	case 7:
-		return eIf{g.cond(d - 1), g.branch(d - 1), g.branch(d - 1)}
+		return eIf{g.cond(d - 1), g.body(d-1, g.region(), 3), g.body(d-1, g.region(), 3)}
 	case 8:
 		if fs := g.visibleOf(mFn); len(fs) > 0 {
 			f := fs[g.pick(len(fs))]
@@ -1107,7 +1085,7 @@ func (g *metaGen) ctor(tag string, fields []string, d int, flat bool) mExpr {
 		e.args = append(e.args, g.intExpr(d-1, flat))
 	}
 	e.order = g.argOrder(e.args)
-	if g.pick(2) == 0 || !isIdentity(e.order) {
+	if g.pick(2) == 0 || !slices.IsSorted(e.order) {
 		e.names = fields
 	}
 	return e
@@ -1128,28 +1106,16 @@ func (g *metaGen) argOrder(args []mExpr) []int {
 		j := g.pick(i + 1)
 		order[i], order[j] = order[j], order[i]
 	}
-	if !isIdentity(order) && g.known(1000) {
-		ordered := 0
-		for _, a := range args {
-			if a != nil && a.ordered() {
-				ordered++
-			}
+	ordered := 0
+	for _, a := range args {
+		if a.ordered() {
+			ordered++
 		}
-		if ordered > 1 {
-			g.steer(1000)
-			sort.Ints(order)
-		}
+	}
+	if ordered > 1 && !slices.IsSorted(order) && g.avoid(1000) {
+		slices.Sort(order)
 	}
 	return order
-}
-
-func isIdentity(order []int) bool {
-	for i, o := range order {
-		if i != o {
-			return false
-		}
-	}
-	return true
 }
 
 // call calls a generated function: positionally or with named arguments
@@ -1157,16 +1123,17 @@ func isIdentity(order []int) bool {
 func (g *metaGen) call(d int, flat bool) mExpr {
 	f := g.funcs[g.pick(len(g.funcs))]
 	e := eCall{f: f, args: make([]mExpr, len(f.params))}
-	for i, p := range f.params {
-		e.args[i] = g.expr(p.typ, d-1, flat)
-	}
+	// The defaulted argument is left out before the others are generated:
+	// a read in an argument that is then dropped would count as a use.
 	given := e.args
 	if f.def != nil && g.pick(2) == 0 {
 		given = e.args[:len(e.args)-1]
-		e.args[len(e.args)-1] = nil
+	}
+	for i := range given {
+		given[i] = g.expr(f.params[i].typ, d-1, flat)
 	}
 	e.order = g.argOrder(given)
-	e.named = g.pick(2) == 0 || !isIdentity(e.order)
+	e.named = g.pick(2) == 0 || !slices.IsSorted(e.order)
 	return e
 }
 
@@ -1188,10 +1155,11 @@ func (g *metaGen) cond(d int) mExpr {
 	return g.maybeTrace(c, true)
 }
 
-// branch is an if branch: an expression, or a block in a scope of its own.
-func (g *metaGen) branch(d int) mExpr {
-	if g.pick(3) == 0 {
-		return g.block(d, g.region())
+// body is an int expression or, one time in odds, a block whose vals are
+// in region: an if branch, an arm's or a lambda's body.
+func (g *metaGen) body(d, region, odds int) mExpr {
+	if g.pick(odds) == 0 {
+		return g.block(d, region)
 	}
 	return g.intExpr(d, false)
 }
@@ -1208,9 +1176,7 @@ func (g *metaGen) block(d int, region int) mExpr {
 		g.visible = append(g.visible, b)
 	}
 	blk.result = g.intExpr(d, false)
-	for _, v := range blk.vals {
-		g.useAll([]*mBinder{v.b}, &blk.result)
-	}
+	g.useAll(g.visible[mark:], &blk.result)
 	g.visible = g.visible[:mark]
 	return blk
 }
@@ -1226,11 +1192,7 @@ func (g *metaGen) optMap(d int) mExpr {
 	mark := len(g.visible)
 	e.param = g.binder(mInt, region)
 	g.visible = append(g.visible, e.param)
-	if g.pick(3) == 0 {
-		e.body = g.block(d-1, region)
-	} else {
-		e.body = g.intExpr(d-1, false)
-	}
+	e.body = g.body(d-1, region, 3)
 	g.useAll([]*mBinder{e.param}, &e.body)
 	g.visible = g.visible[:mark]
 	return e
@@ -1250,28 +1212,29 @@ func (g *metaGen) match(d int) mExpr {
 			// The match ends in the one default case `case _` a match
 			// may have.
 			if t == mPair {
-				a.pat = g.ctorPat("", []mType{mInt, mInt}, nil, 0, false, true, region, a)
+				a.pat = g.ctorPat("", []mType{mInt, mInt}, 0, false, true, region, a)
 			} else {
-				b := g.binder(t, region)
-				a.binders = append(a.binders, b)
-				g.visible = append(g.visible, b)
-				a.pat = pBind{b}
+				a.pat = g.patVar(t, region, a)
 			}
 		}
 		if g.pick(3) == 0 {
 			a.guard = g.cond(d - 1)
 		}
-		if g.pick(4) == 0 {
-			a.body = g.block(d-1, region)
-		} else {
-			a.body = g.intExpr(d-1, false)
-		}
+		a.body = g.body(d-1, region, 4)
 		g.useAll(a.binders, &a.body)
 		g.visible = g.visible[:mark]
 		m.arms = append(m.arms, a)
 	}
 	m.arms = append(m.arms, &mArm{pat: pWild{}, body: g.intExpr(d-1, false)})
 	return m
+}
+
+// patVar is a pattern variable of type t, bound by arm a.
+func (g *metaGen) patVar(t mType, region int, a *mArm) mPat {
+	b := g.binder(t, region)
+	a.binders = append(a.binders, b)
+	g.visible = append(g.visible, b)
+	return pBind{b}
 }
 
 // pattern is a pattern for values of type t. noBind keeps it free of
@@ -1281,10 +1244,7 @@ func (g *metaGen) pattern(t mType, d int, noBind, effects bool, region int, a *m
 		if noBind || t == mPair {
 			return pWild{}
 		}
-		b := g.binder(t, region)
-		a.binders = append(a.binders, b)
-		g.visible = append(g.visible, b)
-		return pBind{b}
+		return g.patVar(t, region, a)
 	}
 	c := g.pick(7)
 	if d <= 0 && c > 2 {
@@ -1306,8 +1266,7 @@ func (g *metaGen) pattern(t mType, d int, noBind, effects bool, region int, a *m
 			// is open: the others' would run whatever the first did.
 			alts := []mPat{g.intLeaf(effects)}
 			later := effects
-			if later && g.known(998) {
-				g.steer(998)
+			if later && g.avoid(998) {
 				later = false
 			}
 			second := g.intLeaf(later)
@@ -1324,9 +1283,9 @@ func (g *metaGen) pattern(t mType, d int, noBind, effects bool, region int, a *m
 	case mShape:
 		switch c {
 		case 3:
-			return g.ctorPat("Circle", []mType{mInt}, nil, d, noBind, effects, region, a)
+			return g.ctorPat("Circle", []mType{mInt}, d, noBind, effects, region, a)
 		case 4:
-			return g.ctorPat("Rect", []mType{mInt, mInt}, nil, d, noBind, effects, region, a)
+			return g.ctorPat("Rect", []mType{mInt, mInt}, d, noBind, effects, region, a)
 		case 5:
 			// One named sub-pattern.
 			f := g.pick(2)
@@ -1337,17 +1296,17 @@ func (g *metaGen) pattern(t mType, d int, noBind, effects bool, region int, a *m
 			return pCtor{tag: "Empty"}
 		}
 		alts := []mPat{
-			g.ctorPat("Circle", []mType{mInt}, nil, d, true, effects, region, a),
+			g.ctorPat("Circle", []mType{mInt}, d, true, effects, region, a),
 			pCtor{tag: "Empty"},
 		}
 		return pAlt{alts}
 	case mOpt:
 		if c%2 == 0 {
-			return g.ctorPat("Some", []mType{mInt}, nil, d, noBind, effects, region, a)
+			return g.ctorPat("Some", []mType{mInt}, d, noBind, effects, region, a)
 		}
 		return pCtor{tag: "None"}
 	}
-	return g.ctorPat("", []mType{mInt, mInt}, nil, d, noBind, effects, region, a)
+	return g.ctorPat("", []mType{mInt, mInt}, d, noBind, effects, region, a)
 }
 
 // intLeaf is an int pattern without variables: a literal or, when effects
@@ -1361,13 +1320,12 @@ func (g *metaGen) intLeaf(effects bool) mPat {
 
 // ctorPat is tag(sub, ...). While #998 is open a sub-pattern runs an
 // extractor only if every sibling before it always matches.
-func (g *metaGen) ctorPat(tag string, fields []mType, labels []string, d int, noBind, effects bool, region int, a *mArm) mPat {
-	p := pCtor{tag: tag, labels: labels}
+func (g *metaGen) ctorPat(tag string, fields []mType, d int, noBind, effects bool, region int, a *mArm) mPat {
+	p := pCtor{tag: tag}
 	refutable := false
 	for i, t := range fields {
 		allow := effects
-		if allow && refutable && g.known(998) {
-			g.steer(998)
+		if allow && refutable && g.avoid(998) {
 			allow = false
 		}
 		sub := g.pattern(t, d-1, noBind, allow, region, a)
@@ -1424,12 +1382,7 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 			p := g.binder(mInt, region)
 			mark := len(g.visible)
 			g.visible = append(g.visible, p)
-			var body mExpr
-			if g.pick(3) == 0 {
-				body = g.block(2, region)
-			} else {
-				body = g.intExpr(2, false)
-			}
+			body := g.body(2, region, 3)
 			g.useAll([]*mBinder{p}, &body)
 			g.visible = g.visible[:mark]
 			f := g.binder(mFn, mainRegion)
@@ -1455,8 +1408,10 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 	}
 
 	// Scoping.
-	c := &mScan{distinct: map[*mBinder]map[*mBinder]bool{}, steered: g.steered}
-	c.avoid996 = cfg.hostile && g.known(996)
+	c := &mScan{distinct: map[*mBinder]map[*mBinder]bool{}}
+	if cfg.hostile {
+		c.avoid = g.avoid
+	}
 	for _, f := range g.funcs {
 		c.stack = nil
 		for _, p := range f.params {
@@ -1492,13 +1447,10 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 	p.plain = render()
 	p.src = p.plain
 	if cfg.hostile {
-		g.nameHostile(data, c)
+		g.nameHostile(c)
 		p.src = render()
 	}
-	for issue := range g.steered {
-		p.steered = append(p.steered, issue)
-	}
-	sort.Ints(p.steered)
+	p.steered = slices.Sorted(maps.Keys(g.steered))
 	return p
 }
 
@@ -1526,14 +1478,13 @@ var hostileNames = []struct {
 // among those that keep every reference resolving as before (c.distinct).
 // The choices are seeded from data, so a program renders the same each
 // time.
-func (g *metaGen) nameHostile(data []byte, c *mScan) {
+func (g *metaGen) nameHostile(c *mScan) {
 	h := fnv.New64a()
-	h.Write(data)
+	h.Write(g.data)
 	rng := rand.New(rand.NewSource(int64(h.Sum64())))
 	var pool []string
 	for _, n := range hostileNames {
-		if n.issue != 0 && g.known(n.issue) {
-			g.steer(n.issue)
+		if n.issue != 0 && g.avoid(n.issue) {
 			continue
 		}
 		pool = append(pool, n.name)

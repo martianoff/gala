@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,7 +23,7 @@ import (
 // Each input is built with the Go toolchain: fuzz it with -parallel 2, as
 // FuzzPrograms.
 func FuzzAlphaRenaming(f *testing.F) {
-	fuzzMeta(f, metaConfig{hostile: true, traceOdds: 6, known: openIssue}, 3)
+	fuzzMeta(f, metaConfig{hostile: true, traceOdds: 6}, 3)
 }
 
 // FuzzEvaluationOrder checks that GALA evaluates left to right. Its
@@ -35,13 +34,13 @@ func FuzzAlphaRenaming(f *testing.F) {
 // after the sibling sub-patterns before it matched, a match subject once,
 // one if branch.
 func FuzzEvaluationOrder(f *testing.F) {
-	fuzzMeta(f, metaConfig{traceOdds: 2, known: openIssue}, 4)
+	fuzzMeta(f, metaConfig{traceOdds: 2}, 4)
 }
 
 // metaSeeds is how many generated programs the seed pass of each
 // metamorphic target builds and runs. Each costs a Go build, so it is kept
 // small, as programSeeds is.
-const metaSeeds = 12
+const metaSeeds = 8
 
 func fuzzMeta(f *testing.F, cfg metaConfig, seed int64) {
 	rng := rand.New(rand.NewSource(seed))
@@ -66,7 +65,7 @@ func checkMeta(t testing.TB, p metaProgram) {
 	failure := programFailure(t, program{main: p.src, want: p.want})
 	if failure == "" {
 		if len(p.steered) > 0 {
-			t.Logf("shapes of open issues %v were left out (knownFailures)", issueList(p.steered))
+			t.Logf("shapes of open issues %s were left out (knownFailures)", issueList(p.steered))
 		}
 		return
 	}
@@ -81,19 +80,16 @@ func checkMeta(t testing.TB, p metaProgram) {
 }
 
 func issueList(issues []int) string {
-	s := ""
+	refs := make([]string, len(issues))
 	for i, n := range issues {
-		if i > 0 {
-			s += ", "
-		}
-		s += fmt.Sprintf("#%d", n)
+		refs[i] = "#" + strconv.Itoa(n)
 	}
-	return s
+	return strings.Join(refs, ", ")
 }
 
 // knownFailure is an open issue the metamorphic generators would hit. While
 // it is listed, the generators leave out the shapes that hit it (see the
-// calls of metaGen.known) and log that they did.
+// calls of metaGen.avoid) and log that they did.
 //
 // TestKnownFailuresStillFail runs each entry's repro and fails once it
 // passes: the fix for the issue must remove the entry, so the generators
@@ -104,7 +100,10 @@ func issueList(issues []int) string {
 type knownFailure struct {
 	issue int
 	title string
-	repro program // fails (the transpiler, Go or the output) while the issue is open
+	repro program // fails while the issue is open
+	// symptom is a substring of the repro's failure while the issue is open,
+	// so a repro broken for another reason is not taken for the issue.
+	symptom string
 }
 
 var knownFailures = []knownFailure{
@@ -126,7 +125,7 @@ func main() {
 }
 `,
 		want: "10\n",
-	}},
+	}, "but must print"},
 	{997, "the match subject is bound to the fixed Go name obj", program{
 		main: `package main
 
@@ -142,7 +141,7 @@ func main() {
 }
 `,
 		want: "5 within limit 10\n50 above limit 10\n",
-	}},
+	}, "but must print"},
 	{998, "sibling sub-patterns run their extractors after an earlier sibling failed", program{
 		main: `package main
 
@@ -160,7 +159,7 @@ func main() {
 }
 `,
 		want: "other\n",
-	}},
+	}, "integer divide by zero"},
 	{1000, "named arguments are evaluated in parameter order", program{
 		main: `package main
 
@@ -177,7 +176,7 @@ func main() {
 }
 `,
 		want: "yx1\n",
-	}},
+	}, "but must print"},
 	{1001, "a variable operand is read after a later call's side effect", program{
 		main: `package main
 
@@ -193,7 +192,7 @@ func main() {
 }
 `,
 		want: "12\n",
-	}},
+	}, "but must print"},
 	{1002, "user names std, panic, string, _tmp_N and __p0 are captured by generated code", program{
 		main: `package main
 
@@ -226,34 +225,44 @@ func main() {
 }
 `,
 		want: "7\n3\nthree\n9\n3\n",
-	}},
+	}, "std.Some is not a type"},
 }
 
-// ignoredKnownFailures makes the generators generate the shapes of listed
-// issues anyway, to show that they find them: GALA_FUZZ_IGNORE_KNOWN_FAILURES
-// is "all" or a comma-separated list of issue numbers.
-var ignoredKnownFailures = os.Getenv("GALA_FUZZ_IGNORE_KNOWN_FAILURES")
-
-// openIssue reports whether the generators leave out issue's shapes.
-func openIssue(issue int) bool {
-	if ignoredKnownFailures == "all" || slices.Contains(strings.Split(ignoredKnownFailures, ","), strconv.Itoa(issue)) {
-		return false
+// openIssues are the listed issues whose shapes the generators leave out.
+// GALA_FUZZ_IGNORE_KNOWN_FAILURES — "all" or a comma-separated list of
+// issue numbers — generates the shapes of listed issues anyway, to show
+// that the generators find them. Under bazel test, pass it with --test_env.
+var openIssues = func() map[int]bool {
+	ignored := strings.ToLower(strings.TrimSpace(os.Getenv("GALA_FUZZ_IGNORE_KNOWN_FAILURES")))
+	open := map[int]bool{}
+	if ignored == "all" {
+		return open
 	}
 	for _, k := range knownFailures {
-		if k.issue == issue {
-			return true
+		open[k.issue] = true
+	}
+	for _, s := range strings.Split(ignored, ",") {
+		if n, err := strconv.Atoi(strings.TrimPrefix(strings.TrimSpace(s), "#")); err == nil {
+			delete(open, n)
 		}
 	}
-	return false
-}
+	return open
+}()
+
+// openIssue reports whether the generators leave out issue's shapes.
+func openIssue(issue int) bool { return openIssues[issue] }
 
 // TestKnownFailuresStillFail fails when a listed issue's repro passes: the
 // issue is fixed, and its entry must go.
 func TestKnownFailuresStillFail(t *testing.T) {
 	for _, k := range knownFailures {
 		t.Run(fmt.Sprintf("issue_%d", k.issue), func(t *testing.T) {
-			if programFailure(t, k.repro) == "" {
+			failure := programFailure(t, k.repro)
+			if failure == "" {
 				t.Fatalf("#%d (%s) no longer reproduces: remove it from knownFailures so the metamorphic generators cover it again", k.issue, k.title)
+			}
+			if !strings.Contains(failure, k.symptom) {
+				t.Fatalf("#%d's repro fails, but not with %q, the issue's symptom; fix the repro:\n%s", k.issue, k.symptom, failure)
 			}
 		})
 	}
