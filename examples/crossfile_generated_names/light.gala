@@ -1,0 +1,11 @@
+package main
+
+// The sealed type, and a package-level val spelled like a transformer
+// temporary; main.gala declares the type's isRed and reads the val.
+
+sealed type Light {
+    case Red()
+    case Green()
+}
+
+val _tmp_1 = 10

@@ -73,9 +73,8 @@ func (t *galaASTTransformer) recordLocalRef(id *ast.Ident) {
 // (markLocalRef). A generated reference of the same name is not marked and
 // keeps meaning std or Go's predeclared identifier.
 //
-// Every local such declaration in decl is the source's, and so is every
-// variable of such a name decl assigns: generated code declares no local of
-// such a name, and std or a predeclared identifier cannot be assigned.
+// Every local such declaration in decl is the source's: generated code
+// declares no local of such a name.
 func (t *galaASTTransformer) renameShadowingLocals(decl ast.Decl) {
 	rename := func(id *ast.Ident) {
 		if id != nil {
@@ -102,18 +101,12 @@ func (t *galaASTTransformer) renameShadowingLocals(decl ast.Decl) {
 			renameFields(n.Params)
 			renameFields(n.Results)
 		case *ast.AssignStmt:
-			// Declared here, or assigned: a binding hoisted out of a
-			// pattern is declared by a var and assigned later
-			// (pattern_hoist.go). Neither std nor a predeclared
-			// identifier can be assigned, so every such target is a local.
-			for _, lhs := range n.Lhs {
-				if id, ok := lhs.(*ast.Ident); ok {
-					rename(id)
+			if n.Tok == token.DEFINE {
+				for _, lhs := range n.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						rename(id)
+					}
 				}
-			}
-		case *ast.IncDecStmt:
-			if id, ok := n.X.(*ast.Ident); ok {
-				rename(id)
 			}
 		case *ast.RangeStmt:
 			if n.Tok == token.DEFINE {
@@ -176,6 +169,16 @@ func (t *galaASTTransformer) genericMethodFuncName(typeName, method string) stri
 	return name
 }
 
+// loweredMethodNames returns the method names the part after the type in the
+// name of a generic method's free function may stand for: itself, and, for
+// one genericMethodFuncName gave `_` suffixes, the name without them.
+func loweredMethodNames(part string) []string {
+	if trimmed := strings.TrimRight(part, "_"); trimmed != part && trimmed != "" {
+		return []string{part, trimmed}
+	}
+	return []string{part}
+}
+
 // declaresCode reports whether the top-level declaration td is a function,
 // method, val or var: one whose lowering holds the source's code, and so its
 // local bindings (see renameShadowingLocals). What a type declaration lowers
@@ -195,9 +198,11 @@ func declaresCode(td native.GalaNodeRef) bool {
 // tempNamePattern matches the names the transformer gives its temporaries.
 var tempNamePattern = regexp.MustCompile(`\b(?:_tmp_|__p)\d+\b`)
 
-// sourceTempNames collects the names of src that are spelled like a
-// temporary of the transformer's, which freshTempName then skips; nil for
-// the source that spells none, which is nearly every one.
+// sourceTempNames collects the names of src, the file's source, that are
+// spelled like a temporary of the transformer's, which freshTempName then
+// skips; nil for a source that spells none, as nearly every one. A binding
+// declared elsewhere (a sibling file's val) is hidden only where it is
+// referenced, and a reference spells it here.
 func sourceTempNames(src string) map[string]bool {
 	if !strings.Contains(src, "_tmp_") && !strings.Contains(src, "__p") {
 		return nil

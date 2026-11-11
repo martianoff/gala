@@ -1,0 +1,20 @@
+package main
+
+// An is<Case> predicate declared in another file than its sealed type
+// replaces the generated one; it answers the opposite of the generated one,
+// so the output shows which one ran.
+func (l Light) isRed() bool = l match {
+    case Green() => true
+    case _ => false
+}
+
+func main() {
+    Println(Red().isRed())
+    Println(Green().isRed())
+    val l Light = Red()
+    val sum = l match {
+        case Red() => _tmp_1 + 1
+        case Green() => _tmp_1 + 2
+    }
+    Println(sum)
+}

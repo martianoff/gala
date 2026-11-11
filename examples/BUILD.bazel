@@ -1896,6 +1896,15 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "crossfile_generated_names",
+    srcs = [
+        "crossfile_generated_names/light.gala",
+        "crossfile_generated_names/main.gala",
+    ],
+    expected = "crossfile_generated_names/crossfile_generated_names.out",
+)
+
+gala_exec_test(
     name = "generated_decl_collisions",
     src = "generated_decl_collisions.gala",
     expected = "generated_decl_collisions.out",
