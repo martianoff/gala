@@ -234,15 +234,16 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 ## Decisions the spec forces
 
 The spec must say what Go leaves open and what the docs don't cover. Each of these needs a
-maintainer decision before the spec can encode it:
+maintainer decision before the spec can encode it.
 
-1. **Operand evaluation order:** strict left-to-right? ([#1001](https://github.com/martianoff/gala/issues/1001))
-2. **Default parameters:** may a default refer to earlier parameters? ([#999](https://github.com/martianoff/gala/issues/999))
-3. **Named arguments:** evaluated in source order? ([#1000](https://github.com/martianoff/gala/issues/1000))
-4. **`Try` combinators:** do they catch panics? The doc comment says yes; the code says no.
-   ([#1007](https://github.com/martianoff/gala/issues/1007))
-5. **Printing:** how plain structs format under `Println` and string interpolation.
-   ([#1008](https://github.com/martianoff/gala/issues/1008))
+| Question | Decision | Issue |
+|---|---|---|
+| Operand evaluation order | **Strict left-to-right** for operands, arguments, interpolation parts and literals, as in Scala and Kotlin | [#1001](https://github.com/martianoff/gala/issues/1001) |
+| Named arguments | **Source order**: evaluated in the order written, then passed in parameter order | [#1000](https://github.com/martianoff/gala/issues/1000) |
+| Default parameters | **May refer to earlier parameters.** Evaluated in the callee's scope, left to right; the caller's locals are never visible | [#999](https://github.com/martianoff/gala/issues/999) |
+| `Try(f())` where `f` is a GALA function returning `error` | **A non-nil error is a `Failure`**, the same as for Go functions | [#1007](https://github.com/martianoff/gala/issues/1007) |
+| Do `Try` combinators catch panics? | `Map` and `Recover`: yes, as their docs promise. `FlatMap`, `Filter`, `RecoverWith`, `Transform`: **open** | [#1007](https://github.com/martianoff/gala/issues/1007) |
+| How plain structs print under `Println` and interpolation | **Open** | [#1008](https://github.com/martianoff/gala/issues/1008) |
 
 ## CI and build
 
