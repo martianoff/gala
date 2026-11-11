@@ -258,8 +258,19 @@ flowchart LR
     L4 --> L5[COVERAGE.MD + job summary<br/>ratchets]
 ```
 
-- **Lean is built with Lake, not Bazel.** No Bazel rules for Lean are maintained. Every Go
-  part (exporter, harness, generators) is built and tested with Bazel, as AGENTS.md requires.
+- **Lean is built with Lake at first.** Every Go part (the exporter, the harness and the
+  generators) is built and tested with Bazel, as AGENTS.md requires.
+- **Bazel support comes later and is opt-in.** A Bazel toolchain for Lean will be added
+  once `difftest` gates merges. It will be a separate Bazel module, so `difftest` can
+  depend on `galaspec` directly.
+  - **Why opt-in:** a Lean toolchain is about 620 MB to download and 3.3 GB unpacked, and
+    every Bazel output base gets its own copy. So:
+    - Lean targets are `manual` or sit behind `--config=formal`;
+    - a default `bazel build //...` or `bazel test //...` never fetches Lean;
+    - agent worktrees never fetch it either.
+  - **Existing Bazel rules for Lean:** several young community rulesets exist. None is in
+    the Bazel Central Registry, and none supports Windows. The module will be chosen or
+    built with both in mind.
 - **Running only for formal changes:** `formal.yml` runs only on PRs that touch `formal/`,
   `internal/formal/`, `internal/transpiler/` or `std/`. It is required for those PRs once
   S1 is stable.
