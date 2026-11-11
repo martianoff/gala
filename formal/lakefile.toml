@@ -1,0 +1,9 @@
+# The Lean semantics of GALA. See README.md and docs/FORMAL_SEMANTICS.MD.
+# No dependencies, no Mathlib. A package added here must be Apache 2.0, MIT or BSD.
+name = "gala-formal"
+defaultTargets = ["Gala"]
+
+[[lean_lib]]
+name = "Gala"
+# Build the root module and every module under Gala/.
+globs = ["Gala", "Gala.+"]

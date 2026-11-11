@@ -3,7 +3,8 @@
 Status: **design proposal**. Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 
 This document describes how GALA gets an executable, machine-checked definition of what
-programs mean, and how the transpiler is tested against it. Nothing here is built yet.
+programs mean, and how the transpiler is tested against it. Only the first step exists: the
+`formal/` project with the match lowering model and its CI job.
 
 ## Summary
 
@@ -94,12 +95,17 @@ desugaring and evaluation, and never sees the transformer's output.
 
 ### 2. `galaspec`: the semantics in Lean
 
-The semantics lives in a Lake project at `formal/`:
+The semantics lives in a Lake project at `formal/`. Its
+[README](../formal/README.md) says what exists today and how to build it. The planned
+layout:
 
 ```
 formal/
   lean-toolchain            pinned Lean version
   lakefile.toml             no Mathlib dependency at the start
+  Gala.lean                 root module, imports every module
+  scripts/ProofCheck.lean   fails on sorry and non-standard axioms
+  Gala/MatchLowering.lean   the match lowering model (exists today)
   Gala/Syntax.lean          surface AST (mirrors Core JSON)
   Gala/Json.lean            decoder, rejects unknown schema versions
   Gala/Scope.lean           name resolution: binders, shadowing, defaults
@@ -108,7 +114,7 @@ formal/
   Gala/Main.lean            `galaspec run prog.json` → stdout + outcome line
   Gala/Theorems/*.lean      proofs about the semantics
   Gala/Lowering/*.lean      optional: small models of individual lowerings
-  COVERAGE.MD               generated, see "Coverage"
+  COVERAGE.md               generated, see "Coverage"
 ```
 
 - **What evaluation produces:** printed output plus one outcome: `ok`, `panic <class>`, or
@@ -204,7 +210,7 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
   construct agree.
 - **Proved:** a theorem from the table above covers it.
 
-`formal/COVERAGE.MD` is generated in CI and committed with each formal change. It holds:
+`formal/COVERAGE.md` is generated in CI and committed with each formal change. It holds:
 - a per-construct table with the three tiers;
 - the number of examples in each verdict;
 - every `UNSUPPORTED` construct, with how often it occurs;
@@ -229,7 +235,7 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 | S1 | int/bool/string literals and operators; `val`/`var`; `if`; blocks; functions and recursion; structs; sealed types; `match` with nested, tuple, literal and wildcard patterns and guards; `Println`/`Print` with documented formatting | everything else |
 | S2 | lambdas and closures; default and named arguments; `Option`/`Either`/`Try` (Lean models of the std behaviour); string interpolation | |
 | S3 | generics (erased semantics); `Copy`/`Equal`/`==`; immutable `Array`/`List`/`HashMap` basics; partial functions | |
-| Not planned | goroutines, `Future`, channels, Go interop, mutable collections, `use`/`defer`, reflection, performance | stated in COVERAGE.MD |
+| Not planned | goroutines, `Future`, channels, Go interop, mutable collections, `use`/`defer`, reflection, performance | stated in COVERAGE.md |
 
 ## Decisions the spec forces
 
@@ -256,7 +262,7 @@ flowchart LR
     L1 --> L2[lake build<br/>proofs + galaspec]
     L2 --> L3[axioms check<br/>no sorryAx]
     L2 --> L4[bazel test //internal/formal:difftest<br/>GALA_SPEC_BIN=galaspec]
-    L4 --> L5[COVERAGE.MD + job summary<br/>ratchets]
+    L4 --> L5[COVERAGE.md + job summary<br/>ratchets]
 ```
 
 - **Lean is built with Lake at first.** Every Go part (the exporter, the harness and the
@@ -337,7 +343,7 @@ gantt
 | Week | Deliverable | Done when |
 |---|---|---|
 | 1 | The two metamorphic generators in `internal/transpiler/fuzz`. `formal/` scaffold with the match prototype; `formal.yml` builds it and checks axioms. | The generators reproduce #996–#1003 on `master`, and their failing cases are committed as seeds. |
-| 2 | Core JSON exporter for S1; `galaspec` S1; `difftest` over `examples/`; first `COVERAGE.MD`. Fixes for #996, #997, #998. | Baseline coverage published; zero unexplained `DISAGREE`. |
+| 2 | Core JSON exporter for S1; `galaspec` S1; `difftest` over `examples/`; first `COVERAGE.md`. Fixes for #996, #997, #998. | Baseline coverage published; zero unexplained `DISAGREE`. |
 | 3 | `FuzzPrograms` uses `galaspec` as its oracle. Theorems T1 and T2. Decisions on #1000, #1001 and #999. | T1 and T2 proved; fuzzing runs against the spec in CI. |
 | 4 | S2 in the spec. Theorems T3 and T4. Fixes for #999 and #1000. | Lambdas, defaults and named arguments are modelled, tested against the spec, and T3/T4 are proved. |
 | 5–6 (stretch) | S3; theorems T5 and T6; T7 for S1; a lowering model for the fixed `match`. | As in the tables above. |

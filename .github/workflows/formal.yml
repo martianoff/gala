@@ -1,0 +1,75 @@
+name: Formal
+
+# Builds the Lean semantics in formal/ and checks its proofs. See formal/README.md and
+# docs/FORMAL_SEMANTICS.MD. Lean is built with Lake here, never with Bazel, so the
+# Bazel workflows stay Lean-free.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'formal/**'
+      - '.github/workflows/formal.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'formal/**'
+      - '.github/workflows/formal.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  formal:
+    name: Lean proofs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: formal
+    env:
+      # elan itself, from its official GitHub release. The Lean toolchain is pinned by
+      # formal/lean-toolchain; elan fetches it from Lean's official release. Neither is
+      # ever mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing").
+      ELAN_VERSION: v4.2.4
+      ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache elan and the Lean toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ env.ELAN_VERSION }}-${{ hashFiles('formal/lean-toolchain') }}
+
+      - name: Cache Lake build
+        uses: actions/cache@v4
+        with:
+          path: formal/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
+
+      - name: Install elan
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            tmp="$(mktemp -d)"
+            curl -sSfL -o "$tmp/elan.tar.gz" \
+              "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz"
+            echo "$ELAN_SHA256  $tmp/elan.tar.gz" | sha256sum -c -
+            tar -xzf "$tmp/elan.tar.gz" -C "$tmp"
+            "$tmp/elan-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain
+        # Installs the toolchain formal/lean-toolchain pins, if the cache missed.
+        run: lean --version
+
+      - name: Build
+        # --wfail: a warning (an unused simp argument, a deprecated lemma) fails too.
+        run: lake build --wfail
+
+      - name: Check proofs
+        # lake build only warns on sorry; this fails on sorry and non-standard axioms.
+        run: lake env lean --run scripts/ProofCheck.lean
