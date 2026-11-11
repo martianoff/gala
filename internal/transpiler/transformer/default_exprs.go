@@ -38,6 +38,13 @@ type defaultSource struct {
 	recv     string
 	recvType transpiler.Type
 	recvExpr ast.Expr
+
+	// params is the parameters before this one whose arguments the call
+	// supplies, explicitly or by their own defaults: the default reads them
+	// (see default_scope.go). later is this parameter and the ones after it,
+	// which a default may not read (GALA-E0094).
+	params []defaultParam
+	later  []string
 }
 
 // defaultLowering is set on the transformer while a declared default is being
@@ -408,6 +415,15 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		_, pointer := src.recvType.(transpiler.PointerType)
 		t.addReceiver(src.recv, src.recvType, pointer)
 	}
+	if len(src.params) > 0 {
+		// The earlier parameters are bound as in the callee's body.
+		t.pushScope()
+		defer t.popScope()
+		for _, p := range src.params {
+			t.addVal(p.name, t.substituteInType(p.typ, src.typeArgs))
+		}
+	}
+	useScope := t.loweringDefault.useScope
 
 	// Reported at the use site, in the file being transformed, wherever the
 	// default was declared.
@@ -430,11 +446,15 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if err == nil {
 		expr, err = t.lowerDefault(def, src)
 		if err != nil {
-			// What it failed on may be a name only this file's imports
-			// declare: report that, at the name.
-			if scopeErr := t.outOfLexicalScope(def, nil, src); scopeErr != nil {
+			// What it failed on may be a later parameter, or a name only
+			// this file's imports declare: report that, at the name.
+			if laterErr := laterParamError(def, src.later, nil); laterErr != nil {
+				err = laterErr
+			} else if scopeErr := t.outOfLexicalScope(def, nil, src); scopeErr != nil {
 				err = scopeErr
 			}
+		} else {
+			err = laterParamError(def, src.later, expr)
 		}
 	}
 	if err == nil {
@@ -458,9 +478,11 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if err != nil {
 		return nil, err
 	}
-	if src.recv != "" {
-		expr = replaceReceiver(expr, src.recv, src.recvExpr)
+	expr, err = t.bindDefaultNames(expr, src, useScope, useLine, useCol)
+	if err != nil {
+		return nil, err
 	}
+	t.recordCallDefault(expr)
 	return expr, nil
 }
 

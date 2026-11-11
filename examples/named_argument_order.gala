@@ -1,0 +1,60 @@
+package main
+
+// Named arguments are evaluated in the order they are written, then passed in
+// parameter order. Each trace lists the arguments in evaluation order.
+
+var trace = ""
+
+func t(name string, v int) int {
+    trace = trace + name
+    v
+}
+
+func show(label string, value string) {
+    Println(s"$label: $trace -> $value")
+    trace = ""
+}
+
+struct Point(X int, Y int)
+
+struct Point3(X int, Y int, Z int)
+
+sealed type Shape {
+    case Circ(Tag int, R int)
+    case Sq(Side int)
+}
+
+func h(a int, b int, c int) int = a * 100 + b * 10 + c
+
+struct Calc(Base int)
+
+func (k Calc) Mix(a int, b int) int = k.Base + a * 10 + b
+
+func withDefault(a int, b int = 5, c int = 7) int = a * 100 + b * 10 + c
+
+func main() {
+    val p = Point(Y = t("y", 2), X = t("x", 1))
+    show("struct", s"${p.X},${p.Y}")
+
+    val q = Point3(1, Z = t("z", 3), Y = t("y", 2))
+    show("struct mixed", s"${q.X},${q.Y},${q.Z}")
+
+    val c = p.Copy(Y = t("y", 20), X = t("x", 10))
+    show("copy", s"${c.X},${c.Y}")
+
+    val shape = Circ(R = t("r", 9), Tag = t("tag", 4))
+    val desc = shape match {
+        case Circ(tag, r) => s"$tag,$r"
+        case Sq(side) => s"$side"
+    }
+    show("sealed variant", desc)
+
+    val r = h(c = t("c", 3), a = t("a", 1), b = t("b", 2))
+    show("function", s"$r")
+
+    val m = Calc(1000).Mix(b = t("b", 2), a = t("a", 1))
+    show("method", s"$m")
+
+    val d = withDefault(c = t("c", 3), a = t("a", 1))
+    show("with default", s"$d")
+}

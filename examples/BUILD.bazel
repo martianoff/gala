@@ -4971,3 +4971,27 @@ gala_exec_test(
     expected = "try_gala_error_call.out",
     deps = ["//collection_immutable"],
 )
+
+# Operands, call arguments (receiver first), interpolation parts and literal
+# elements are evaluated left to right.
+gala_exec_test(
+    name = "evaluation_order",
+    src = "evaluation_order.gala",
+    expected = "evaluation_order.out",
+    deps = ["//collection_immutable"],
+)
+
+# Named arguments are evaluated in the order they are written.
+gala_exec_test(
+    name = "named_argument_order",
+    src = "named_argument_order.gala",
+    expected = "named_argument_order.out",
+)
+
+# A default value is evaluated in the callee's scope with the earlier
+# parameters bound; the caller's locals are never visible to it.
+gala_exec_test(
+    name = "default_argument_scope",
+    src = "default_argument_scope.gala",
+    expected = "default_argument_scope.out",
+)

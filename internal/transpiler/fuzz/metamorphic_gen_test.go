@@ -166,9 +166,6 @@ type mExpr interface {
 	eval(s *mState, env mEnv) mVal
 	render() string
 	scan(c *mScan)
-	// ordered: its evaluation prints or reads state that another
-	// operand may change, so where it runs relative to its siblings shows.
-	ordered() bool
 }
 
 // mStmt is a statement of main or of a block.
@@ -253,7 +250,6 @@ type eLit struct{ n int }
 func (e eLit) eval(*mState, mEnv) mVal { return mVal{n: e.n} }
 func (e eLit) render() string          { return fmt.Sprint(e.n) }
 func (e eLit) scan(*mScan)             {}
-func (e eLit) ordered() bool           { return false }
 
 // eRef reads a binder as a value of its own type.
 type eRef struct{ b *mBinder }
@@ -267,7 +263,6 @@ func (e eRef) eval(_ *mState, env mEnv) mVal {
 }
 func (e eRef) render() string { return e.b.name }
 func (e eRef) scan(c *mScan)  { c.ref(e.b) }
-func (e eRef) ordered() bool  { return false }
 
 // eRead reads a Shape or Option binder as an int.
 type eRead struct{ b *mBinder }
@@ -290,7 +285,6 @@ func (e eRead) render() string {
 	return e.b.name + ".GetOrElse(7)"
 }
 func (e eRead) scan(c *mScan) { c.ref(e.b) }
-func (e eRead) ordered() bool { return false }
 
 func metaArea(v mVal) int {
 	switch v.tag {
@@ -335,7 +329,6 @@ func (e eBin) eval(s *mState, env mEnv) mVal {
 }
 func (e eBin) render() string { return "(" + e.l.render() + " " + e.op + " " + e.r.render() + ")" }
 func (e eBin) scan(c *mScan)  { e.l.scan(c); e.r.scan(c) }
-func (e eBin) ordered() bool  { return e.l.ordered() || e.r.ordered() }
 
 // eTrace is tr(id, e) or, for a condition, tb(id, e).
 type eTrace struct {
@@ -358,7 +351,6 @@ func (e eTrace) render() string {
 	return fmt.Sprintf("%s(%d, %s)", f, e.id, e.e.render())
 }
 func (e eTrace) scan(c *mScan) { e.e.scan(c) }
-func (e eTrace) ordered() bool { return true }
 
 // mFunc is a generated top-level function returning an int. Its last
 // parameter, when an int, may have a default: a traced constant.
@@ -435,7 +427,6 @@ func (e eCall) scan(c *mScan) {
 		e.args[i].scan(c)
 	}
 }
-func (e eCall) ordered() bool { return true }
 
 // eCtor builds a Shape variant, Some, None or a tuple (tag ""). With names
 // the arguments are written named, in order (indices into names).
@@ -473,15 +464,6 @@ func (e eCtor) scan(c *mScan) {
 	for _, i := range e.order {
 		e.args[i].scan(c)
 	}
-}
-
-func (e eCtor) ordered() bool {
-	for _, a := range e.args {
-		if a.ordered() {
-			return true
-		}
-	}
-	return false
 }
 
 // mArm is a case of a match; binders are its pattern's variables.
@@ -562,7 +544,6 @@ func (e eMatch) scan(c *mScan) {
 		}
 	}
 }
-func (e eMatch) ordered() bool { return true }
 
 type eIf struct{ cond, then, els mExpr }
 
@@ -577,7 +558,6 @@ func (e eIf) render() string {
 	return "(if (" + e.cond.render() + ") " + e.then.render() + " else " + e.els.render() + ")"
 }
 func (e eIf) scan(c *mScan) { e.cond.scan(c); e.then.scan(c); e.els.scan(c) }
-func (e eIf) ordered() bool { return true }
 
 // eBlock is `{ val ...; result }`, an if branch, an arm's or a lambda's
 // body.
@@ -611,7 +591,6 @@ func (e eBlock) scan(c *mScan) {
 	e.result.scan(c)
 	c.stack = c.stack[:mark]
 }
-func (e eBlock) ordered() bool { return true }
 
 // eApply calls a lambda bound to a val.
 type eApply struct {
@@ -625,7 +604,6 @@ func (e eApply) eval(s *mState, env mEnv) mVal {
 }
 func (e eApply) render() string { return e.f.name + "(" + e.arg.render() + ")" }
 func (e eApply) scan(c *mScan)  { c.ref(e.f); e.arg.scan(c) }
-func (e eApply) ordered() bool  { return true }
 
 // eOptMap is opt.Map(lambda).GetOrElse(0): the lambda (param) => body, or
 // the placeholder lambda `_ + body` when param is nil.
@@ -663,7 +641,6 @@ func (e eOptMap) scan(c *mScan) {
 	e.body.scan(c)
 	c.stack = c.stack[:mark]
 }
-func (e eOptMap) ordered() bool { return true }
 
 // eCounter reads the package-level var counter; eBump changes it.
 type eCounter struct{}
@@ -671,7 +648,6 @@ type eCounter struct{}
 func (eCounter) eval(s *mState, _ mEnv) mVal { return mVal{n: s.counter} }
 func (eCounter) render() string              { return "counter" }
 func (eCounter) scan(*mScan)                 {}
-func (eCounter) ordered() bool               { return true }
 
 type eBump struct{ n int }
 
@@ -681,7 +657,6 @@ func (e eBump) eval(s *mState, _ mEnv) mVal {
 }
 func (e eBump) render() string { return fmt.Sprintf("bump(%d)", e.n) }
 func (e eBump) scan(*mScan)    {}
-func (e eBump) ordered() bool  { return true }
 
 // ---- statements
 
@@ -1019,9 +994,6 @@ func (g *metaGen) intExpr0(d int, flat bool) mExpr {
 			return g.call(d, flat)
 		}
 	case 4:
-		if g.avoid(1001) {
-			break
-		}
 		g.counter = true
 		if g.pick(2) == 0 {
 			return eCounter{}
@@ -1092,8 +1064,6 @@ func (g *metaGen) ctor(tag string, fields []string, d int, flat bool) mExpr {
 }
 
 // argOrder is the order arguments are written in: their own, or shuffled.
-// A shuffle that would run two ordered arguments out of parameter order
-// is not made while #1000 is open.
 func (g *metaGen) argOrder(args []mExpr) []int {
 	order := make([]int, len(args))
 	for i := range order {
@@ -1105,15 +1075,6 @@ func (g *metaGen) argOrder(args []mExpr) []int {
 	for i := len(order) - 1; i > 0; i-- {
 		j := g.pick(i + 1)
 		order[i], order[j] = order[j], order[i]
-	}
-	ordered := 0
-	for _, a := range args {
-		if a.ordered() {
-			ordered++
-		}
-	}
-	if ordered > 1 && !slices.IsSorted(order) && g.avoid(1000) {
-		slices.Sort(order)
 	}
 	return order
 }

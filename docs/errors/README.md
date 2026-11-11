@@ -106,6 +106,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0089` | Case guard is not a bool | [GALA-E0089.md](GALA-E0089.md) |
 | `GALA-E0090` | Anonymous Go struct type would have to be written | [GALA-E0090.md](GALA-E0090.md) |
 | `GALA-E0093` | Sealed type method replaces a generated one with another signature | [GALA-E0093.md](GALA-E0093.md) |
+| `GALA-E0094` | Default value reads a later parameter | [GALA-E0094.md](GALA-E0094.md) |
 
 ### Retired codes
 

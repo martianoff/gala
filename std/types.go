@@ -100,6 +100,12 @@ func unwrapImmutable(obj any) any {
 	return obj
 }
 
+// EvalOperand returns v. GALA evaluates operands and arguments left to right;
+// Go does not order a plain variable read against a call in the same
+// expression. Generated code wraps such a read in EvalOperand, a call, so it
+// happens before the calls to its right.
+func EvalOperand[T any](v T) T { return v }
+
 func Copy[T any](v T) T {
 	val := reflect.ValueOf(v)
 

@@ -106,41 +106,7 @@ type knownFailure struct {
 	symptom string
 }
 
-var knownFailures = []knownFailure{
-	{1000, "named arguments are evaluated in parameter order", program{
-		main: `package main
-
-struct Point(X int, Y int)
-
-func t(name string, v int) int {
-    Print(name)
-    v
-}
-
-func main() {
-    val p = Point(Y = t("y", 2), X = t("x", 1))
-    Println(p.X)
-}
-`,
-		want: "yx1\n",
-	}, "but must print"},
-	{1001, "a variable operand is read after a later call's side effect", program{
-		main: `package main
-
-var counter = 1
-
-func bump() int {
-    counter = counter + 10
-    counter
-}
-
-func main() {
-    Println(counter + bump())
-}
-`,
-		want: "12\n",
-	}, "but must print"},
-}
+var knownFailures = []knownFailure{}
 
 // openIssues are the listed issues whose shapes the generators leave out.
 // GALA_FUZZ_IGNORE_KNOWN_FAILURES — "all" or a comma-separated list of

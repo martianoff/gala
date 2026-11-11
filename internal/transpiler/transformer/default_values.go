@@ -27,7 +27,22 @@ import (
 // defaultValue returns the expression GALA uses for a value of typ where its
 // code needs one and none is written, nil when Go's zero value is that value,
 // and GALA-E0075 when typ has none. seen guards recursive types.
+//
+// It is a construction no call wrote, so it keeps a call frame of its own: a
+// field default that reads an earlier field reads it once (see
+// call_order.go).
 func (t *galaASTTransformer) defaultValue(typ transpiler.Type, line, col int, seen map[string]bool) (ast.Expr, error) {
+	frame := &callFrame{}
+	t.callFrames = append(t.callFrames, frame)
+	expr, err := t.lowerDefaultValue(typ, line, col, seen)
+	t.callFrames = t.callFrames[:len(t.callFrames)-1]
+	if err != nil || expr == nil {
+		return expr, err
+	}
+	return t.sequenceCall(expr, nil, frame, line, col)
+}
+
+func (t *galaASTTransformer) lowerDefaultValue(typ transpiler.Type, line, col int, seen map[string]bool) (ast.Expr, error) {
 	if transpiler.IsUnusable(typ) {
 		return nil, nil
 	}
@@ -70,7 +85,7 @@ func (t *galaASTTransformer) defaultValue(typ transpiler.Type, line, col int, se
 	}
 	typeExpr := t.typeToExpr(typ)
 	elts, err := t.fillOmittedStructFields(stripPackagePrefix(typ.BaseName()), resolved, fields,
-		func(int, string) bool { return false }, t.structTypeArgSubst(typeExpr, resolved), line, col, false, seen)
+		func(int, string) bool { return false }, nil, t.structTypeArgSubst(typeExpr, resolved), line, col, false, seen)
 	if err != nil || len(elts) == 0 {
 		return nil, err
 	}
@@ -115,7 +130,7 @@ func (t *galaASTTransformer) sealedDefaultValue(typ transpiler.Type, meta *trans
 	for i, ft := range dv.FieldTypes {
 		if apply != nil {
 			if _, ok := apply.DefaultExprs[i]; ok {
-				v, err := t.methodDefaultArg(apply, i, &ast.CompositeLit{Type: companionExpr}, companion, nil, line, col)
+				v, err := t.methodDefaultArg(apply, i, values, &ast.CompositeLit{Type: companionExpr}, companion, nil, line, col)
 				if err != nil {
 					return nil, err
 				}

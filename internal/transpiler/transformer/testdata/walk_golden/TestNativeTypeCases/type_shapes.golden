@@ -118,5 +118,5 @@ func main() {
 //line $DIR/main.gala:51
 	var later std.Option[string]
 //line $DIR/main.gala:52
-	fmt.Println(typed.Get(), counter, local, later, Pair[int, string]{first: std.NewImmutable(1), second: std.Some[string]{}.Apply("ü")})
+	fmt.Println(typed.Get(), std.EvalOperand(counter), local, later, Pair[int, string]{first: std.NewImmutable(1), second: std.Some[string]{}.Apply("ü")})
 }

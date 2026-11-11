@@ -147,7 +147,7 @@ func (t *galaASTTransformer) recordLSPVarType(name string, typeName transpiler.T
 func (t *galaASTTransformer) getType(name string) transpiler.Type {
 	if !strings.Contains(name, ".") {
 		// Local variables have the highest priority in expression position.
-		for s := t.currentScope; s != nil; s = s.parent {
+		for s := t.skipUseSite(t.currentScope); s != nil; s = t.skipUseSite(s.parent) {
 			if typeName, ok := s.valTypes[name]; ok {
 				t.traceType(nil, typeName, "scope:local:"+name)
 				return typeName
@@ -234,7 +234,9 @@ func (t *galaASTTransformer) lookupTypeName(name string) transpiler.Type {
 // declaration's scopes and the package scope (the root), as in Go, so a
 // package-level binding of its name is not found.
 func (t *galaASTTransformer) bindingScope(name string) *scope {
-	for s := t.currentScope; s != nil; s = s.parent {
+	// A default lowered at a use site sees its own bindings and the package
+	// scope, never the use site's locals (see shadowingScope).
+	for s := t.skipUseSite(t.currentScope); s != nil; s = t.skipUseSite(s.parent) {
 		if t.typeParamHides(s, name) {
 			return nil
 		}
@@ -341,6 +343,7 @@ func (t *galaASTTransformer) isVar(name string) bool {
 func (t *galaASTTransformer) markMutable(name string) {
 	if t.currentScope != nil {
 		t.currentScope.mutable[name] = true
+		t.recordMutableVar(name, t.currentScope.valTypes[name])
 	}
 }
 
@@ -754,4 +757,17 @@ func (t *galaASTTransformer) importedFunction(entry *ImportEntry, name string) *
 func (t *galaASTTransformer) functionForQualifier(qualifier, name string) (*transpiler.FunctionMetadata, bool) {
 	fm, _ := t.qualifiedFunction(qualifier, name)
 	return fm, fm != nil
+}
+
+// skipUseSite returns s, or, when s is the use site of the default being
+// lowered, the package scope: a default sees its own bindings and the package
+// scope, never the locals of the code it is lowered into.
+func (t *galaASTTransformer) skipUseSite(s *scope) *scope {
+	if t.loweringDefault == nil || s == nil || s != t.loweringDefault.useScope {
+		return s
+	}
+	for s.parent != nil {
+		s = s.parent
+	}
+	return s
 }

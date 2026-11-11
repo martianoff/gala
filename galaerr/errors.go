@@ -882,6 +882,11 @@ const (
 	// one; one of another signature would leave the type without it, and
 	// used to fail in `go build` ("method already declared").
 	CodeSealedMethodSignature ErrorCode = "GALA-E0093"
+
+	// E0094: a parameter's default value reads its own parameter or a later
+	// one. A default is evaluated in the callee's scope with only the earlier
+	// parameters bound, as in Scala and Kotlin.
+	CodeDefaultReadsLaterParam ErrorCode = "GALA-E0094"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
