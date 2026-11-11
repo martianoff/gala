@@ -234,14 +234,36 @@ func equalPrimitive[T any](v1, v2 T) (eq bool, ok bool) {
 // panicking frames are still on the goroutine's stack; nothing is captured on
 // the success path.
 func tryRecover[T any](f func() T) (result Try[T]) {
-	defer func() {
-		if r := recover(); r != nil {
-			result = Try[T]{Err: NewImmutable(recoveredError(r)), _variant: _Try_Failure}
-		}
-	}()
+	defer recoverToFailure(&result)
 	v := f()
 	result = Try[T]{Value: NewImmutable(v), _variant: _Try_Success}
 	return
+}
+
+// tryApply is tryRecover for f(a), used by the Try combinators (Map, Recover,
+// Filter). Taking the argument rather than a thunk keeps the combinator free
+// of a closure: with Go's open-coded defer the success path costs about what
+// a plain call does, and nothing is allocated.
+func tryApply[A, R any](a A, f func(A) R) (result Try[R]) {
+	defer recoverToFailure(&result)
+	return Try[R]{Value: NewImmutable(f(a)), _variant: _Try_Success}
+}
+
+// tryApplyTry is tryApply for an f that already returns a Try (FlatMap,
+// RecoverWith, Transform): f's Try is the result as it is, and a panic in f
+// becomes a Failure.
+func tryApplyTry[A, R any](a A, f func(A) Try[R]) (result Try[R]) {
+	defer recoverToFailure(&result)
+	return f(a)
+}
+
+// recoverToFailure is the deferred half of tryRecover, tryApply and
+// tryApplyTry: it recovers a panic and stores it in *result as a Failure. It
+// must be deferred directly, so that its recover() stops the panic.
+func recoverToFailure[T any](result *Try[T]) {
+	if r := recover(); r != nil {
+		*result = Try[T]{Err: NewImmutable(recoveredError(r)), _variant: _Try_Failure}
+	}
 }
 
 // recoveredError turns a recovered panic value into the error a Failure holds.

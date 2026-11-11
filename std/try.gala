@@ -86,60 +86,70 @@ func (t Try[T]) ForEach(f func(T)) {
 }
 
 // Map applies the function f to the value if this is a Success.
-// Returns a new Try containing the result. If f panics, the result is a Failure.
+// Returns a new Try containing the result. If f panics, the result is a
+// Failure holding the panic, as from Try(...).
 func (t Try[T]) Map[U any](f func(T) U) Try[U] {
     if t.isFailure() {
         return Failure[U](t.Err)
     }
-    return Success[U](f(t.Value))
+    return tryApply[T, U](t.Value, f)
 }
 
 // FlatMap applies the function f to the value if this is a Success.
 // Returns the Try returned by f. If this is a Failure, returns the Failure.
+// If f panics, the result is a Failure holding the panic.
 func (t Try[T]) FlatMap[U any](f func(T) Try[U]) Try[U] {
     if t.isFailure() {
         return Failure[U](t.Err)
     }
-    return f(t.Value)
+    return tryApplyTry[T, U](t.Value, f)
 }
 
 // Filter returns this Try if this is a Success and the predicate p returns true.
 // Returns a Failure with NoSuchElementError if predicate returns false.
+// If p panics, the result is a Failure holding the panic.
 func (t Try[T]) Filter(p func(T) bool) Try[T] {
     if t.isFailure() {
         return t
     }
-    if p(t.Value) {
+    val holds = tryApply[T, bool](t.Value, p)
+    if holds.isFailure() {
+        return Failure[T](holds.Err)
+    }
+    if holds.Value {
         return t
     }
     return Failure[T](NoSuchElementError(Message = "Predicate does not hold"))
 }
 
 // Recover applies the recovery function pf to the error if this is a Failure.
-// Returns a Success with the recovered value. If pf panics, the result is still a Failure.
+// Returns a Success with the recovered value. If pf panics, the result is
+// still a Failure, holding the panic.
 func (t Try[T]) Recover(pf func(error) T) Try[T] {
     if t.isSuccess() {
         return t
     }
-    return Success[T](pf(t.Err))
+    return tryApply[error, T](t.Err, pf)
 }
 
 // RecoverWith applies the recovery function pf to the error if this is a Failure.
 // Returns the Try returned by pf. If this is a Success, returns this Try.
+// If pf panics, the result is a Failure holding the panic.
 func (t Try[T]) RecoverWith(pf func(error) Try[T]) Try[T] {
     if t.isSuccess() {
         return t
     }
-    return pf(t.Err)
+    return tryApplyTry[error, T](t.Err, pf)
 }
 
 // Transform applies s if this is a Success, f if this is a Failure.
-// Both functions return a new Try.
+// Both functions return a new Try. If the one applied panics, the result is
+// a Failure holding the panic.
 func (t Try[T]) Transform[U any](s func(T) Try[U], f func(error) Try[U]) Try[U] {
     if t.isSuccess() {
-        return s(t.Value)
+        return tryApplyTry[T, U](t.Value, s)
     }
-    return f(t.Err)
+    return tryApplyTry[error, U](t.Err, f)
 }
 
 // Fold applies fa if this is a Failure, fs if this is a Success.

@@ -4905,3 +4905,10 @@ gala_exec_test(
     src = "block_end_line_markers.gala",
     expected = "block_end_line_markers.out",
 )
+
+gala_exec_test(
+    name = "try_combinator_panics",
+    src = "try_combinator_panics.gala",
+    expected = "try_combinator_panics.out",
+    deps = ["//go_builtins"],
+)
