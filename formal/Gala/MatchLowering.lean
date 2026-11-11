@@ -392,15 +392,15 @@ theorem program_correct (e : SExpr) : teval [] (compile e) = encR (seval [] e) :
 /-- Leaky lowering of the arms: an arm's pattern variables are declared *before* the
     arm's `if`, so they are still in scope in the arms after it and shadow outer
     variables of the same name. This is the shape reported in issue #996. -/
-def compileArmsLeaky (body : SExpr → TExpr) : SArms → TExpr
+def compileArmsLeaky : SArms → TExpr
   | .nil => .panic
   | .cons t xs b r =>
     .letIn U (.unapply t (.var O))
-      (bindFields xs 0 (.ite (.isDef (.var U)) (body b) (compileArmsLeaky body r)))
+      (bindFields xs 0 (.ite (.isDef (.var U)) (compile b) (compileArmsLeaky r)))
 
 /-- Leaky lowering of the outermost `match` only; enough for the counterexample. -/
 def compileLeaky : SExpr → TExpr
-  | .mtch s arms => .letIn O (compile s) (compileArmsLeaky compile arms)
+  | .mtch s arms => .letIn O (compile s) (compileArmsLeaky arms)
   | e => compile e
 
 /-

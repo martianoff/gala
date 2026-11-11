@@ -20,7 +20,7 @@ open Lean System
 def allowedAxioms : List Name := [``propext, ``Quot.sound, ``Classical.choice]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/
-partial def galaModules : IO (Array Name) := do
+def galaModules : IO (Array Name) := do
   let mut mods : Array Name := #[`Gala]
   for path in ← FilePath.walkDir "Gala" do
     if path.extension != some "lean" then continue
@@ -34,17 +34,17 @@ def main : IO UInt32 := do
   let env ← importModules (mods.map fun m => { module := m }) {}
   let mut failures : Array String := #[]
   let mut checked := 0
-  for (name, _) in env.constants.map₁.toList do
-    let some idx := env.getModuleIdxFor? name | continue
-    let mod := env.header.moduleNames[idx.toNat]!
+  -- Only the constants of our own modules, not the whole imported environment.
+  for (mod, data) in env.header.moduleNames.zip env.header.moduleData do
     unless mods.contains mod do continue
-    if name.isInternal then continue
-    checked := checked + 1
-    let (axioms, _) ← (Lean.collectAxioms name : CoreM (Array Name)).toIO
-      { fileName := "<proofcheck>", fileMap := default } { env }
-    let bad := axioms.filter (fun a => !allowedAxioms.contains a)
-    unless bad.isEmpty do
-      failures := failures.push s!"  {name} ({mod}) depends on {bad.toList}"
+    for name in data.constNames do
+      if name.isInternal then continue
+      checked := checked + 1
+      let (axioms, _) ← (Lean.collectAxioms name : CoreM (Array Name)).toIO
+        { fileName := "<proofcheck>", fileMap := default } { env }
+      let bad := axioms.filter (fun a => !allowedAxioms.contains a)
+      unless bad.isEmpty do
+        failures := failures.push s!"  {name} ({mod}) depends on {bad.toList}"
   if checked == 0 then
     IO.eprintln s!"proofcheck: no declarations found in {mods.toList}"
     return 1

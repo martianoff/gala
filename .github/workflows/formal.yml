@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes the running check.
+concurrency:
+  group: formal-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   formal:
     name: Lean proofs
@@ -28,7 +33,9 @@ jobs:
     env:
       # elan itself, from its official GitHub release. The Lean toolchain is pinned by
       # formal/lean-toolchain; elan fetches it from Lean's official release. Neither is
-      # ever mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing").
+      # ever mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing"). elan is
+      # installed by hand, pinned to a version and checksum, rather than through a
+      # third-party action or an unpinned install script.
       ELAN_VERSION: v4.2.4
       ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
 

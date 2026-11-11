@@ -103,7 +103,7 @@ layout:
 formal/
   lean-toolchain            pinned Lean version
   lakefile.toml             no Mathlib dependency at the start
-  Gala.lean                 root module, imports every module
+  Gala.lean                 root module
   scripts/ProofCheck.lean   fails on sorry and non-standard axioms
   Gala/MatchLowering.lean   the match lowering model (exists today)
   Gala/Syntax.lean          surface AST (mirrors Core JSON)

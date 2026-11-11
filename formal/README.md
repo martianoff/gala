@@ -10,11 +10,9 @@ build, the `gala` CLI or a GALA release.
 
 ## What is modelled
 
-Only one lowering model so far:
-
-| File | Models | Main results |
-|---|---|---|
-| `Gala/MatchLowering.lean` | Sealed-type constructors and `match` in a small GALA core, and the Go constructs the transpiler lowers them to (tagged struct, `Unapply` chain, panic) | The scoped lowering is correct (`compile_correct`); the leaky lowering from [#996](https://github.com/martianoff/gala/issues/996) is not (`leaky_not_correct`) |
+One lowering model so far, `Gala/MatchLowering.lean`: sealed-type constructors and `match`
+in a small GALA core, and the Go constructs the transpiler lowers them to (tagged struct,
+`Unapply` chain, panic). [COVERAGE.md](COVERAGE.md) lists what is modelled and proved.
 
 ```mermaid
 flowchart LR
@@ -36,7 +34,7 @@ it reflects.
 | `lean-toolchain` | The pinned Lean version. elan reads it. |
 | `lakefile.toml` | The Lake project: one library, `Gala`, built from `Gala.lean` and every file under `Gala/`. |
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
-| `Gala.lean` | Root module; imports every module. |
+| `Gala.lean` | Root module, for `import Gala`. The build and the proof check find modules by directory, not through it. |
 | `Gala/*.lean` | The models and proofs. |
 | `scripts/ProofCheck.lean` | The proof check (below). |
 | `COVERAGE.md` | What is modelled, tested and proved. |
