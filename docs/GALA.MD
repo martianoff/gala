@@ -3054,6 +3054,12 @@ func processOrder(id int) Try[Receipt] =
 | `ToOption()` | Convert to Option |
 | `ToEither()` | Convert to Either[error, T] |
 
+As in `Try(...)`, a panic inside the function given to `Map`, `FlatMap`,
+`Filter`, `Recover`, `RecoverWith` or `Transform` becomes a `Failure`:
+`Success(1).Map((x) => 10 / (x - 1))` is a `Failure`, not a crash. `ForEach`,
+`Fold`, `OnSuccess` and `OnFailure` run their function as it is, so a panic
+there propagates.
+
 #### Panic Stack Traces
 
 When `Try` turns a panic into a `Failure`, it also keeps the stack trace of the

@@ -1,0 +1,78 @@
+package main
+
+import . "martianoff/gala/go_builtins"
+
+// A panic in the function given to Map, FlatMap, Filter, Recover, RecoverWith
+// or Transform becomes a Failure instead of crashing the program.
+
+func describe(t Try[int]) string = t match {
+    case Success(v) => s"Success($v)"
+    case Failure(err) => s"Failure($err)"
+}
+
+func main() {
+    // Map: a runtime panic (integer division by zero) in f.
+    Println(describe(Success(1).Map((x) => 10 / (x - 1))))
+    // Map: an explicit panic with a string and with an error.
+    Println(describe(Success(2).Map((x) => {
+        Panic("boom in Map")
+        x
+    })))
+    Println(describe(Success(3).Map((x) => {
+        Panic(NoSuchElementError(Message = "missing in Map"))
+        x
+    })))
+    // Map still maps a Success and passes a Failure through untouched.
+    Println(describe(Success(4).Map((x) => 10 / (x - 2))))
+    Println(describe(Failure[int](NoSuchElementError(Message = "earlier")).Map((x) => 10 / x)))
+    // The Failure from a panic keeps the panic's stack.
+    Println(PanicStack(Success(1).Map((x) => 10 / (x - 1)).GetError()).IsDefined())
+
+    // Recover: a panic in pf leaves the Try a Failure.
+    val failed = Failure[int](NoSuchElementError(Message = "original"))
+    Println(describe(failed.Recover((err) => {
+        Panic(s"recovery failed: $err")
+        0
+    })))
+    // Recover still recovers, and leaves a Success alone.
+    Println(describe(failed.Recover((err) => -1)))
+    Println(describe(Success(5).Recover((err) => {
+        Panic("not called")
+        0
+    })))
+
+    // FlatMap: a panic in f, and the Try f returns otherwise.
+    Println(describe(Success(1).FlatMap((x) => Success(10 / (x - 1)))))
+    Println(describe(Success(3).FlatMap((x) => Success(10 / (x - 1)))))
+    Println(describe(Success(3).FlatMap((x) => Failure[int](NoSuchElementError(Message = "from FlatMap")))))
+
+    // Filter: a panic in the predicate, and the predicate's verdict otherwise.
+    Println(describe(Success(1).Filter((x) => 10 / (x - 1) > 0)))
+    Println(describe(Success(3).Filter((x) => 10 / (x - 1) > 0)))
+    Println(describe(Success(-3).Filter((x) => 10 / (x - 1) > 0)))
+
+    // RecoverWith: a panic in pf, and the Try pf returns otherwise.
+    Println(describe(failed.RecoverWith((err) => {
+        Panic(s"RecoverWith failed: $err")
+        Success(0)
+    })))
+    Println(describe(failed.RecoverWith((err) => Success(err.Error().Size()))))
+
+    // Transform: a panic in the function for either side.
+    Println(describe(Success(1).Transform((x) => Success(10 / (x - 1)), (err) => Success(-1))))
+    Println(describe(failed.Transform((x) => Success(x), (err) => {
+        Panic(s"Transform failed: $err")
+        Success(0)
+    })))
+    Println(describe(Success(3).Transform((x) => Success(10 / (x - 1)), (err) => Success(-1))))
+    Println(describe(failed.Transform((x) => Success(x), (err) => Success(-1))))
+
+    // A chain keeps going after the panic: later steps see the Failure.
+    Println(describe(Success(0)
+        .Map((x) => 100 / x)
+        .Map((x) => x + 1)
+        .Recover((err) => -100)))
+    Println(describe(Success(0)
+        .Map((x) => 100 / x)
+        .Map((x) => x + 1)))
+}
