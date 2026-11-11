@@ -76,7 +76,10 @@ checks old code after a stale one.
 
 CI runs both, and the galaspec tests below, in
 [`.github/workflows/formal.yml`](../.github/workflows/formal.yml) on every pull request
-that touches `formal/`.
+that touches `formal/`. It does not use elan: it downloads the release `lean-toolchain`
+pins, checks it against a SHA-256 in the workflow, and puts its `bin/` on `PATH`. Bumping
+`lean-toolchain` therefore needs the new release's Linux SHA-256 added to the workflow;
+without it the job fails.
 
 ## Running galaspec
 
@@ -143,8 +146,10 @@ The files here are licensed like the rest of the repository. Lean is Apache 2.0,
 release binaries bundle LGPL components, so:
 
 - No Lean-built binary ships in GALA releases, the CLI, Docker images or the playground.
-- The Lean toolchain is never vendored, committed, mirrored or re-hosted. CI fetches it
-  from the official releases.
+- The Lean toolchain is never vendored, committed, mirrored or re-hosted: no public
+  mirror, no committed archive, no published image or cache that others download from.
+  CI fetches it from Lean's official releases and checks a pinned SHA-256; keeping it in
+  the repository's own GitHub Actions cache is allowed, since that cache is private to CI.
 - Lake dependencies must be Apache 2.0, MIT or BSD.
 
 Details are in the "Licensing" section of the design.

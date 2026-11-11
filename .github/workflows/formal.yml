@@ -32,24 +32,66 @@ jobs:
     defaults:
       run:
         working-directory: formal
-    env:
-      # elan itself, from its official GitHub release. The Lean toolchain is pinned by
-      # formal/lean-toolchain; elan fetches it from Lean's official release. Neither is
-      # ever mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing"). elan is
-      # installed by hand, pinned to a version and checksum, rather than through a
-      # third-party action or an unpinned install script.
-      ELAN_VERSION: v4.2.4
-      ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cache elan and the Lean toolchain
+      - name: Resolve the pinned toolchain
+        # formal/lean-toolchain is the only place the version is set. Each version needs
+        # the SHA-256 of its Linux release asset here (from the release's asset digests);
+        # a version without one fails rather than installing unverified.
+        id: lean
+        run: |
+          version="$(sed -n 's|^leanprover/lean4:v||p' lean-toolchain)"
+          case "$version" in
+            4.35.0) sha256=7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d ;;
+            *)
+              echo "::error file=formal/lean-toolchain::formal/lean-toolchain pins '$version', which has no SHA-256 in .github/workflows/formal.yml; add one"
+              exit 1 ;;
+          esac
+          {
+            echo "version=$version"
+            echo "asset=lean-$version-linux.tar.zst"
+            echo "sha256=$sha256"
+            echo "dir=$HOME/.lean/lean-$version-linux"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Lean toolchain
+        # A CI-private cache, never served to anyone, so not re-hosting
+        # (docs/FORMAL_SEMANTICS.MD, "Licensing"). Keyed on the checksum.
         uses: actions/cache@v4
         with:
-          path: ~/.elan
-          key: elan-${{ runner.os }}-${{ env.ELAN_VERSION }}-${{ hashFiles('formal/lean-toolchain') }}
+          path: ${{ steps.lean.outputs.dir }}
+          key: lean-${{ runner.os }}-${{ steps.lean.outputs.sha256 }}
+
+      - name: Install the Lean toolchain
+        # Fetched from Lean's own release hosts and verified against the pinned SHA-256.
+        # No elan: the verified toolchain's bin/ goes on PATH, so lake runs exactly it.
+        env:
+          VERSION: ${{ steps.lean.outputs.version }}
+          ASSET: ${{ steps.lean.outputs.asset }}
+          SHA256: ${{ steps.lean.outputs.sha256 }}
+          DIR: ${{ steps.lean.outputs.dir }}
+        run: |
+          if [ ! -x "$DIR/bin/lake" ]; then
+            tmp="$(mktemp -d)"
+            curl -sSfL --retry 3 -o "$tmp/$ASSET" "https://releases.lean-lang.org/lean4/v$VERSION/$ASSET" \
+              || curl -sSfL --retry 3 -o "$tmp/$ASSET" "https://github.com/leanprover/lean4/releases/download/v$VERSION/$ASSET"
+            echo "$SHA256  $tmp/$ASSET" | sha256sum -c -
+            mkdir -p "$(dirname "$DIR")"
+            tar --zstd -xf "$tmp/$ASSET" -C "$(dirname "$DIR")"
+            rm -rf "$tmp"
+          fi
+          echo "$DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain
+        env:
+          VERSION: ${{ steps.lean.outputs.version }}
+        run: |
+          lean --version
+          lean --version | grep -qF "version $VERSION," \
+            || { echo "::error::lean on PATH is not $VERSION"; exit 1; }
 
       - name: Cache Lake build
         uses: actions/cache@v4
@@ -58,22 +100,6 @@ jobs:
           key: lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
           restore-keys: |
             lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
-
-      - name: Install elan
-        run: |
-          if [ ! -x "$HOME/.elan/bin/elan" ]; then
-            tmp="$(mktemp -d)"
-            curl -sSfL -o "$tmp/elan.tar.gz" \
-              "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz"
-            echo "$ELAN_SHA256  $tmp/elan.tar.gz" | sha256sum -c -
-            tar -xzf "$tmp/elan.tar.gz" -C "$tmp"
-            "$tmp/elan-init" -y --no-modify-path --default-toolchain none
-          fi
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-      - name: Show toolchain
-        # Installs the toolchain formal/lean-toolchain pins, if the cache missed.
-        run: lean --version
 
       - name: Build
         # --wfail: a warning (an unused simp argument, a deprecated lemma) fails too.

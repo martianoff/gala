@@ -310,10 +310,13 @@ To keep our obligations at zero:
    None of them ships in GALA releases, the CLI, Docker images or the playground. Shipping
    one would require Lean's Apache NOTICE, and would require letting users relink the
    runtime's LGPL GNU MP code. Any change to this rule needs a maintainer decision first.
-2. **The Lean toolchain is never vendored, committed, mirrored or re-hosted.** This
-   covers the repository, Bazel mirrors, cache buckets and Docker layers. CI and any Bazel
-   integration fetch the pinned release from `releases.lean-lang.org` and verify a
-   checksum. Re-hosting it would make us a distributor of its LGPL components.
+2. **The Lean toolchain is never vendored, committed, mirrored or re-hosted.** That means
+   no public mirror, no archive committed to the repository, and no published image,
+   Bazel mirror or cache that others download from. CI and any Bazel integration fetch
+   the pinned release from `releases.lean-lang.org` (GitHub releases as a fallback) and
+   verify a pinned SHA-256. Re-hosting it would make us a distributor of its LGPL
+   components. A CI-private cache, such as the repository's own GitHub Actions cache, is
+   allowed: it is never served to anyone, so it is not distribution.
 3. **New Lean dependencies (Lake packages) must be permissively licensed**: Apache 2.0,
    MIT or BSD. Mathlib is Apache 2.0. Check a package's license before adding it.
 
