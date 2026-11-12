@@ -1434,8 +1434,13 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 	}
 
 	// A constructor for Go callers, and the doc comment naming it.
+	// Its field defaults see no field (GALA-E0098), so it is built outside
+	// the scope that binds the fields.
 	line, col := d.at.start()
+	fieldScope := t.currentScope
+	t.currentScope = fieldScope.parent
 	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, line, col)
+	t.currentScope = fieldScope
 	if err != nil {
 		return nil, err
 	}

@@ -689,7 +689,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 		// The fields a keyed literal leaves out take their declared defaults,
 		// or their types' default values (see fillOmittedStructFields).
 		if len(fields) > 0 && !meta.IsSealed && (len(elts) == 0 || keyed) {
-			omitted, err := inOwnCallFrame(t, func() ([]ast.Expr, error) {
+			omitted, err := withoutCallFrame(t, func() ([]ast.Expr, error) {
 				return t.fillOmittedStructFields(typeName, resolvedTypeName, fields,
 					func(_ int, name string) bool { return given[name] },
 					typeArgSubst, line, col, false, nil)

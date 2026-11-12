@@ -14,8 +14,10 @@ last_modified_at: 2026-11-11
 **When it fires.** The default value of a shorthand struct's field or a
 sealed case's field reads a field of the same struct or case: another field,
 or the field itself, directly or anywhere in the expression. A field default
-is evaluated on its own, with no field bound. It may read package-level names
-and constants. A function's default, by contrast, may read the parameters
+is evaluated with no field of its type in scope: a name in it that is declared
+outside the type (a package-level val or constant, a type, an import) means
+that, even where a field is spelled the same, and one that is not, but is
+spelled like a field, is this error. A function's default, by contrast, may read the parameters
 before it (see [GALA-E0094](/docs/errors/gala-e0094/)).
 
 **Minimal repro.**

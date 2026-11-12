@@ -456,8 +456,10 @@ func main() {
 Field defaults are stricter. The default of a struct field or a sealed case
 field may not read any field of its own struct or case, before or after it
 ([GALA-E0098](errors/GALA-E0098.md)), as in Scala: `struct Rect(W int, H int = W)`
-is an error. Compute such a field in a constructor function instead. A field
-default may still read package-level names and constants.
+is an error. Compute such a field in a constructor function instead. No field
+is in scope in a field default, so a name in it means what it means outside the
+type: a package-level val or constant, a type, an import, even where a field
+is spelled the same.
 
 Expression functions also support defaults:
 
@@ -805,7 +807,8 @@ struct Entry(Msg string, At time.Time = time.Now())
 ```
 
 A field default may not read a field of the struct, its own or another
-([GALA-E0098](errors/GALA-E0098.md)); it may read package-level names.
+([GALA-E0098](errors/GALA-E0098.md)); it may read package-level names, which a
+field spelled the same does not hide.
 
 Omitting a field that declares **no** default is an error
 ([GALA-E0045](errors/GALA-E0045.md)), so a constructor call cannot quietly leave

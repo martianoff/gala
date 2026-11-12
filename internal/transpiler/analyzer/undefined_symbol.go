@@ -309,6 +309,10 @@ type undefChecker struct {
 
 	// inTypePass is set while checkTypeNamesNative runs; see reportWith.
 	inTypePass bool
+
+	// fieldDefault is the field whose default the walk is in, nil outside
+	// one (see field_default_refs.go).
+	fieldDefault *fieldDefaultSite
 }
 
 // checkUndefinedSymbols runs the existence check over nf, the file's native
@@ -977,6 +981,9 @@ func addQualifierOf(q map[string]bool, qualified string) {
 // site.
 func (c *undefChecker) Reference(name string, at scopewalk.Site, use scopewalk.Use) {
 	if c.resolves(name) {
+		return
+	}
+	if c.reportFieldRead(name, at) {
 		return
 	}
 	c.report(name, at)

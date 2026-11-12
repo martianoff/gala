@@ -5068,3 +5068,11 @@ gala_exec_test(
         "//collection_mutable",
     ],
 )
+
+# A field default's type argument named like a field is the type (#1039).
+gala_exec_test(
+    name = "field_default_type_named_like_field",
+    src = "field_default_type_named_like_field.gala",
+    expected = "field_default_type_named_like_field.out",
+    deps = ["//collection_immutable"],
+)

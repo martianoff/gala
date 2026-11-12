@@ -639,6 +639,23 @@ func main() = Println(Rect().H)`,
 			expectContains: "the default value of field H reads field W of Rect",
 		},
 		{
+			// The type argument Pos is the type; Origin is a field read.
+			name: "GALA-E0098 field default reads a field beside a type named like one",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Pos(Line int, Col int)
+
+val NoPos = Pos(0, 0)
+
+struct Model(Origin Pos = NoPos, Pos Pos = NoPos, NodePos Array[Pos] = ArrayOf[Pos](Origin))
+
+func main() = Println(Model().NodePos.Size())`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field NodePos reads field Origin of Model",
+		},
+		{
 			name: "GALA-E0098 struct field default reads itself",
 			input: `package main
 

@@ -211,14 +211,17 @@ func main() { Println(Item("a")) }`,
 			},
 		},
 		{
-			// A field default may read a package-level name, and a lambda's
-			// own parameter named like a field: neither is a field.
+			// A field default may read a package-level name, a lambda's own
+			// parameter named like a field, and a type a field is named
+			// like: none is a field.
 			name: "defaults that read package-level names",
 			src: `package main
 
 val side = 2
 
-struct Grid(W int, H int = side * 2, F func(int) int = (W int) => W + side)
+struct Retry(N int)
+
+struct Grid(W int, H int = side * 2, F func(int) int = (W int) => W + side, Retry Retry = Retry(3))
 
 sealed type Shape {
     case Square(W int, H int = side)
@@ -229,6 +232,7 @@ func main() { Println(Grid(1).H, Square(1)) }`,
 				"// From Go, create it with NewGrid.",
 				"func NewGrid(w int, _opts ...GridOption) Grid {",
 				"func WithGridH(v int) GridOption {",
+				"func WithGridRetry(v Retry) GridOption {",
 				"func NewShapeSquare(w int, _opts ...ShapeSquareOption) Shape {",
 				"func WithShapeSquareH(v int) ShapeSquareOption {",
 			},

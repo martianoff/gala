@@ -151,7 +151,8 @@ func main() {
 ```
 
 Fields with defaults come after the fields without them
-([GALA-E0013](/docs/errors/gala-e0013/)). A default case's defaults also make
+([GALA-E0013](/docs/errors/gala-e0013/)), and a field's default may not read a field of
+its case ([GALA-E0098](/docs/errors/gala-e0098/)). A default case's defaults also make
 the type's [default value](/docs/language-reference/#default-values): what an
 uninitialized `var` or an omitted field holds.
 

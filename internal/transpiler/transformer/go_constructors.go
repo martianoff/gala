@@ -133,7 +133,7 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 		caseName: vi.name,
 		params:   params,
 		defaultOf: func(i int) (ast.Expr, error) {
-			return t.methodDefaultArg(applyMeta, i, nil, &ast.CompositeLit{Type: companionType}, genericType(vi.name, tParams), nil, line, col)
+			return t.caseFieldDefault(applyMeta, i, &ast.CompositeLit{Type: companionType}, genericType(vi.name, tParams), line, col)
 		},
 		build:   func(args []ast.Expr) ast.Expr { return applyCall(companionType, args) },
 		doc:     doc,

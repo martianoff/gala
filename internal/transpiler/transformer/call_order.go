@@ -68,12 +68,12 @@ func (t *galaASTTransformer) recordCallArg(v argValue, expr ast.Expr) {
 	frame.args = append(frame.args, frameArg{line: line, col: col, expr: expr})
 }
 
-// inOwnCallFrame runs lower with no call frame on top. A construction no call
+// withoutCallFrame runs lower with no call frame on top. A construction no call
 // wrote (a literal's omitted fields, a type's default value) fills in field
 // defaults, which read no other field (GALA-E0098) and so need no sequencing;
 // with no frame they are not recorded at all, nor taken for the defaults of
 // the call being lowered around it.
-func inOwnCallFrame[T any](t *galaASTTransformer, lower func() (T, error)) (T, error) {
+func withoutCallFrame[T any](t *galaASTTransformer, lower func() (T, error)) (T, error) {
 	t.callFrames = append(t.callFrames, nil)
 	defer func() { t.callFrames = t.callFrames[:len(t.callFrames)-1] }()
 	return lower()

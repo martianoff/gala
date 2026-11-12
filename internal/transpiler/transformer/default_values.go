@@ -28,10 +28,10 @@ import (
 // code needs one and none is written, nil when Go's zero value is that value,
 // and GALA-E0075 when typ has none. seen guards recursive types.
 //
-// It is a construction no call wrote: the defaults it fills in are its own
-// (see inOwnCallFrame).
+// It is a construction no call wrote: the defaults it fills in are not the
+// enclosing call's (see withoutCallFrame).
 func (t *galaASTTransformer) defaultValue(typ transpiler.Type, line, col int, seen map[string]bool) (ast.Expr, error) {
-	return inOwnCallFrame(t, func() (ast.Expr, error) { return t.lowerDefaultValue(typ, line, col, seen) })
+	return withoutCallFrame(t, func() (ast.Expr, error) { return t.lowerDefaultValue(typ, line, col, seen) })
 }
 
 func (t *galaASTTransformer) lowerDefaultValue(typ transpiler.Type, line, col int, seen map[string]bool) (ast.Expr, error) {
@@ -122,8 +122,7 @@ func (t *galaASTTransformer) sealedDefaultValue(typ transpiler.Type, meta *trans
 	for i, ft := range dv.FieldTypes {
 		if apply != nil {
 			if _, ok := apply.DefaultExprs[i]; ok {
-				// No earlier field is bound: a field default reads none (GALA-E0098).
-				v, err := t.methodDefaultArg(apply, i, nil, &ast.CompositeLit{Type: companionExpr}, companion, nil, line, col)
+				v, err := t.caseFieldDefault(apply, i, &ast.CompositeLit{Type: companionExpr}, companion, line, col)
 				if err != nil {
 					return nil, err
 				}
