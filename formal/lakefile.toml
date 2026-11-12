@@ -7,3 +7,15 @@ defaultTargets = ["Gala"]
 name = "Gala"
 # Build the root module and every module under Gala/.
 globs = ["Gala", "Gala.+"]
+
+# The reference interpreter, `lake exe galaspec run prog.json` (see README.md).
+# A development and CI tool only; it never ships with GALA.
+[[lean_exe]]
+name = "galaspec"
+root = "Gala.Main"
+
+# The fixture tests, `lake exe galaspec-tests` (see tests/GalaTests.lean).
+[[lean_exe]]
+name = "galaspec-tests"
+srcDir = "tests"
+root = "GalaTests"

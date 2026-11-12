@@ -1,0 +1,8 @@
+package main
+
+func spin(n int) int = spin(n + 1)
+
+func main() {
+    Println("start")
+    Println(spin(0))
+}

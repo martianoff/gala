@@ -1,0 +1,951 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 708
+      },
+      "path": "examples/match_nested_subject_unread.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 7,
+            "col": 1,
+            "off": 243,
+            "end": 262
+          },
+          "name": "Box",
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 7,
+                "col": 12,
+                "off": 254,
+                "end": 261
+              },
+              "name": "obj",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 7,
+                  "col": 16,
+                  "off": 258,
+                  "end": 261
+                },
+                "name": "int"
+              },
+              "mutable": false
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 9,
+            "col": 1,
+            "off": 266,
+            "end": 433
+          },
+          "name": "pick",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 9,
+                "col": 11,
+                "off": 276,
+                "end": 281
+              },
+              "name": "x",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 9,
+                  "col": 13,
+                  "off": 278,
+                  "end": 281
+                },
+                "name": "int"
+              }
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 9,
+                "col": 18,
+                "off": 283,
+                "end": 288
+              },
+              "name": "y",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 9,
+                  "col": 20,
+                  "off": 285,
+                  "end": 288
+                },
+                "name": "int"
+              }
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 9,
+                "col": 25,
+                "off": 290,
+                "end": 299
+              },
+              "name": "flag",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 9,
+                  "col": 30,
+                  "off": 295,
+                  "end": 299
+                },
+                "name": "bool"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 9,
+              "col": 36,
+              "off": 301,
+              "end": 307
+            },
+            "name": "string"
+          },
+          "body": {
+            "kind": "match",
+            "pos": {
+              "line": 9,
+              "col": 45,
+              "off": 310,
+              "end": 433
+            },
+            "subject": {
+              "kind": "name",
+              "pos": {
+                "line": 9,
+                "col": 45,
+                "off": 310,
+                "end": 311
+              },
+              "name": "x"
+            },
+            "cases": [
+              {
+                "kind": "case",
+                "pos": {
+                  "line": 10,
+                  "col": 5,
+                  "off": 325,
+                  "end": 411
+                },
+                "pattern": {
+                  "kind": "pat-wild",
+                  "pos": {
+                    "line": 10,
+                    "col": 10,
+                    "off": 330,
+                    "end": 331
+                  }
+                },
+                "guard": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 10,
+                    "col": 15,
+                    "off": 335,
+                    "end": 339
+                  },
+                  "name": "flag"
+                },
+                "body": {
+                  "kind": "match",
+                  "pos": {
+                    "line": 10,
+                    "col": 23,
+                    "off": 343,
+                    "end": 411
+                  },
+                  "subject": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 10,
+                      "col": 23,
+                      "off": 343,
+                      "end": 344
+                    },
+                    "name": "y"
+                  },
+                  "cases": [
+                    {
+                      "kind": "case",
+                      "pos": {
+                        "line": 11,
+                        "col": 9,
+                        "off": 362,
+                        "end": 377
+                      },
+                      "pattern": {
+                        "kind": "pat-lit",
+                        "pos": {
+                          "line": 11,
+                          "col": 14,
+                          "off": 367,
+                          "end": 368
+                        },
+                        "value": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 14,
+                            "off": 367,
+                            "end": 368
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      },
+                      "guard": null,
+                      "body": {
+                        "kind": "string",
+                        "pos": {
+                          "line": 11,
+                          "col": 19,
+                          "off": 372,
+                          "end": 377
+                        },
+                        "text": "\"one\"",
+                        "value": "one",
+                        "raw": false
+                      }
+                    },
+                    {
+                      "kind": "case",
+                      "pos": {
+                        "line": 12,
+                        "col": 9,
+                        "off": 387,
+                        "end": 404
+                      },
+                      "pattern": {
+                        "kind": "pat-wild",
+                        "pos": {
+                          "line": 12,
+                          "col": 14,
+                          "off": 392,
+                          "end": 393
+                        }
+                      },
+                      "guard": null,
+                      "body": {
+                        "kind": "string",
+                        "pos": {
+                          "line": 12,
+                          "col": 19,
+                          "off": 397,
+                          "end": 404
+                        },
+                        "text": "\"other\"",
+                        "value": "other",
+                        "raw": false
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "kind": "case",
+                "pos": {
+                  "line": 14,
+                  "col": 5,
+                  "off": 417,
+                  "end": 430
+                },
+                "pattern": {
+                  "kind": "pat-wild",
+                  "pos": {
+                    "line": 14,
+                    "col": 10,
+                    "off": 422,
+                    "end": 423
+                  }
+                },
+                "guard": null,
+                "body": {
+                  "kind": "string",
+                  "pos": {
+                    "line": 14,
+                    "col": 15,
+                    "off": 427,
+                    "end": 430
+                  },
+                  "text": "\"z\"",
+                  "value": "z",
+                  "raw": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 17,
+            "col": 1,
+            "off": 437,
+            "end": 532
+          },
+          "name": "field",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 17,
+                "col": 12,
+                "off": 448,
+                "end": 453
+              },
+              "name": "x",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 17,
+                  "col": 14,
+                  "off": 450,
+                  "end": 453
+                },
+                "name": "int"
+              }
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 17,
+                "col": 19,
+                "off": 455,
+                "end": 460
+              },
+              "name": "b",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 17,
+                  "col": 21,
+                  "off": 457,
+                  "end": 460
+                },
+                "name": "Box"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 17,
+              "col": 26,
+              "off": 462,
+              "end": 465
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "match",
+            "pos": {
+              "line": 17,
+              "col": 32,
+              "off": 468,
+              "end": 532
+            },
+            "subject": {
+              "kind": "name",
+              "pos": {
+                "line": 17,
+                "col": 32,
+                "off": 468,
+                "end": 469
+              },
+              "name": "x"
+            },
+            "cases": [
+              {
+                "kind": "case",
+                "pos": {
+                  "line": 18,
+                  "col": 5,
+                  "off": 483,
+                  "end": 511
+                },
+                "pattern": {
+                  "kind": "pat-wild",
+                  "pos": {
+                    "line": 18,
+                    "col": 10,
+                    "off": 488,
+                    "end": 489
+                  }
+                },
+                "guard": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 18,
+                    "col": 15,
+                    "off": 493,
+                    "end": 502
+                  },
+                  "op": ">",
+                  "left": {
+                    "kind": "select",
+                    "pos": {
+                      "line": 18,
+                      "col": 15,
+                      "off": 493,
+                      "end": 498
+                    },
+                    "target": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 18,
+                        "col": 15,
+                        "off": 493,
+                        "end": 494
+                      },
+                      "name": "b"
+                    },
+                    "name": "obj"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 18,
+                      "col": 23,
+                      "off": 501,
+                      "end": 502
+                    },
+                    "text": "0",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                },
+                "body": {
+                  "kind": "select",
+                  "pos": {
+                    "line": 18,
+                    "col": 28,
+                    "off": 506,
+                    "end": 511
+                  },
+                  "target": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 18,
+                      "col": 28,
+                      "off": 506,
+                      "end": 507
+                    },
+                    "name": "b"
+                  },
+                  "name": "obj"
+                }
+              },
+              {
+                "kind": "case",
+                "pos": {
+                  "line": 19,
+                  "col": 5,
+                  "off": 517,
+                  "end": 529
+                },
+                "pattern": {
+                  "kind": "pat-wild",
+                  "pos": {
+                    "line": 19,
+                    "col": 10,
+                    "off": 522,
+                    "end": 523
+                  }
+                },
+                "guard": null,
+                "body": {
+                  "kind": "unary",
+                  "pos": {
+                    "line": 19,
+                    "col": 15,
+                    "off": 527,
+                    "end": 529
+                  },
+                  "op": "-",
+                  "operand": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 19,
+                      "col": 16,
+                      "off": 528,
+                      "end": 529
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 22,
+            "col": 1,
+            "off": 536,
+            "end": 708
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 22,
+              "col": 13,
+              "off": 548,
+              "end": 708
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 23,
+                  "col": 5,
+                  "off": 555,
+                  "end": 580
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 23,
+                    "col": 5,
+                    "off": 555,
+                    "end": 562
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 23,
+                      "col": 13,
+                      "off": 563,
+                      "end": 579
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 23,
+                        "col": 13,
+                        "off": 563,
+                        "end": 567
+                      },
+                      "name": "pick"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 23,
+                          "col": 18,
+                          "off": 568,
+                          "end": 569
+                        },
+                        "text": "5",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 23,
+                          "col": 21,
+                          "off": 571,
+                          "end": 572
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "bool",
+                        "pos": {
+                          "line": 23,
+                          "col": 24,
+                          "off": 574,
+                          "end": 578
+                        },
+                        "value": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 24,
+                  "col": 5,
+                  "off": 586,
+                  "end": 611
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 24,
+                    "col": 5,
+                    "off": 586,
+                    "end": 593
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 24,
+                      "col": 13,
+                      "off": 594,
+                      "end": 610
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 24,
+                        "col": 13,
+                        "off": 594,
+                        "end": 598
+                      },
+                      "name": "pick"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 24,
+                          "col": 18,
+                          "off": 599,
+                          "end": 600
+                        },
+                        "text": "5",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 24,
+                          "col": 21,
+                          "off": 602,
+                          "end": 603
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "bool",
+                        "pos": {
+                          "line": 24,
+                          "col": 24,
+                          "off": 605,
+                          "end": 609
+                        },
+                        "value": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 25,
+                  "col": 5,
+                  "off": 617,
+                  "end": 643
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 25,
+                    "col": 5,
+                    "off": 617,
+                    "end": 624
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 25,
+                      "col": 13,
+                      "off": 625,
+                      "end": 642
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 25,
+                        "col": 13,
+                        "off": 625,
+                        "end": 629
+                      },
+                      "name": "pick"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 25,
+                          "col": 18,
+                          "off": 630,
+                          "end": 631
+                        },
+                        "text": "5",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 25,
+                          "col": 21,
+                          "off": 633,
+                          "end": 634
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "bool",
+                        "pos": {
+                          "line": 25,
+                          "col": 24,
+                          "off": 636,
+                          "end": 641
+                        },
+                        "value": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 26,
+                  "col": 5,
+                  "off": 649,
+                  "end": 674
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 26,
+                    "col": 5,
+                    "off": 649,
+                    "end": 656
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 26,
+                      "col": 13,
+                      "off": 657,
+                      "end": 673
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 26,
+                        "col": 13,
+                        "off": 657,
+                        "end": 662
+                      },
+                      "name": "field"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 26,
+                          "col": 19,
+                          "off": 663,
+                          "end": 664
+                        },
+                        "text": "0",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 26,
+                          "col": 22,
+                          "off": 666,
+                          "end": 672
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 26,
+                            "col": 22,
+                            "off": 666,
+                            "end": 669
+                          },
+                          "name": "Box"
+                        },
+                        "args": [
+                          {
+                            "kind": "int",
+                            "pos": {
+                              "line": 26,
+                              "col": 26,
+                              "off": 670,
+                              "end": 671
+                            },
+                            "text": "7",
+                            "hint": {
+                              "type": "int"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 27,
+                  "col": 5,
+                  "off": 680,
+                  "end": 705
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 27,
+                    "col": 5,
+                    "off": 680,
+                    "end": 687
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 27,
+                      "col": 13,
+                      "off": 688,
+                      "end": 704
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 27,
+                        "col": 13,
+                        "off": 688,
+                        "end": 693
+                      },
+                      "name": "field"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 27,
+                          "col": 19,
+                          "off": 694,
+                          "end": 695
+                        },
+                        "text": "0",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 27,
+                          "col": 22,
+                          "off": 697,
+                          "end": 703
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 27,
+                            "col": 22,
+                            "off": 697,
+                            "end": 700
+                          },
+                          "name": "Box"
+                        },
+                        "args": [
+                          {
+                            "kind": "int",
+                            "pos": {
+                              "line": 27,
+                              "col": 26,
+                              "off": 701,
+                              "end": 702
+                            },
+                            "text": "0",
+                            "hint": {
+                              "type": "int"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

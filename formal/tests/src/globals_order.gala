@@ -1,0 +1,27 @@
+package main
+
+val r = classify(7)
+val Max = 7
+
+func classify(n int) string = n match {
+    case Max => "max"
+    case _ => "other"
+}
+
+val a = first()
+val b = second()
+
+func first() int {
+    val b = 1
+    Println("a")
+    b
+}
+
+func second() int {
+    Println("b")
+    2
+}
+
+func main() {
+    Println(r, a, b)
+}

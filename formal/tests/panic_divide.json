@@ -1,0 +1,267 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 131
+      },
+      "path": "formal/tests/src/panic_divide.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 48
+          },
+          "name": "div",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 3,
+                "col": 10,
+                "off": 23,
+                "end": 28
+              },
+              "name": "a",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 12,
+                  "off": 25,
+                  "end": 28
+                },
+                "name": "int"
+              }
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 3,
+                "col": 17,
+                "off": 30,
+                "end": 35
+              },
+              "name": "b",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 19,
+                  "off": 32,
+                  "end": 35
+                },
+                "name": "int"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 3,
+              "col": 24,
+              "off": 37,
+              "end": 40
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "binary",
+            "pos": {
+              "line": 3,
+              "col": 30,
+              "off": 43,
+              "end": 48
+            },
+            "op": "/",
+            "left": {
+              "kind": "name",
+              "pos": {
+                "line": 3,
+                "col": 30,
+                "off": 43,
+                "end": 44
+              },
+              "name": "a"
+            },
+            "right": {
+              "kind": "name",
+              "pos": {
+                "line": 3,
+                "col": 34,
+                "off": 47,
+                "end": 48
+              },
+              "name": "b"
+            }
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 5,
+            "col": 1,
+            "off": 50,
+            "end": 131
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 5,
+              "col": 13,
+              "off": 62,
+              "end": 131
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 68,
+                  "end": 85
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 6,
+                    "col": 5,
+                    "off": 68,
+                    "end": 75
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 6,
+                      "col": 13,
+                      "off": 76,
+                      "end": 84
+                    },
+                    "text": "\"before\"",
+                    "value": "before",
+                    "raw": false
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 7,
+                  "col": 5,
+                  "off": 90,
+                  "end": 108
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 7,
+                    "col": 5,
+                    "off": 90,
+                    "end": 97
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 7,
+                      "col": 13,
+                      "off": 98,
+                      "end": 107
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 7,
+                        "col": 13,
+                        "off": 98,
+                        "end": 101
+                      },
+                      "name": "div"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 17,
+                          "off": 102,
+                          "end": 103
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 20,
+                          "off": 105,
+                          "end": 106
+                        },
+                        "text": "0",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 113,
+                  "end": 129
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 8,
+                    "col": 5,
+                    "off": 113,
+                    "end": 120
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 8,
+                      "col": 13,
+                      "off": 121,
+                      "end": 128
+                    },
+                    "text": "\"after\"",
+                    "value": "after",
+                    "raw": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

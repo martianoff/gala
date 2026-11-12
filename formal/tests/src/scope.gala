@@ -1,0 +1,35 @@
+package main
+
+struct Counter(Name string, var N int)
+
+func early(n int) string {
+    if n < 0 {
+        return "neg"
+    }
+    val m = n * 2
+    if (m > 10) "big" else "small"
+}
+
+func main() {
+    var total = 0
+    val x = 1
+    if total == 0 {
+        val x = 2
+        total = total + x
+    }
+    total = total + x
+    Println(total, x)
+    var c = Counter("c", 0)
+    c.N = c.N + 5
+    c.N++
+    Println(c, c.N, c.Name)
+    var a = 1
+    var b = 2
+    a, b = b, a
+    Println(a, b)
+    Println(early(-1), early(3), early(8))
+    var d int
+    var s string
+    var ok bool
+    Println(d, s, ok, s == "")
+}

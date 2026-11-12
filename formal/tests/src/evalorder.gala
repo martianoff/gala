@@ -1,0 +1,27 @@
+package main
+
+var counter = 1
+var log = ""
+
+func bump() int {
+    counter = counter + 10
+    counter
+}
+
+func note(s string, v int) int {
+    log = log + s
+    v
+}
+
+func three(a int, b int, c int) int = a * 100 + b * 10 + c
+
+func main() {
+    Println(counter + bump())
+    Println(counter)
+    Println(three(note("a", 1), note("b", 2), note("c", 3)), log)
+    val t = (note("x", 1), note("y", 2))
+    Println(t, log)
+    val ok = note("p", 0) == 1 && note("q", 1) == 1
+    val alt = note("r", 1) == 1 || note("s", 1) == 1
+    Println(ok, alt, log)
+}

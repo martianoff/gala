@@ -1,0 +1,551 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 309
+      },
+      "path": "formal/tests/src/globals_order.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "val",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 33
+          },
+          "names": [
+            "r"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "call",
+              "pos": {
+                "line": 3,
+                "col": 9,
+                "off": 22,
+                "end": 33
+              },
+              "callee": {
+                "kind": "name",
+                "pos": {
+                  "line": 3,
+                  "col": 9,
+                  "off": 22,
+                  "end": 30
+                },
+                "name": "classify"
+              },
+              "args": [
+                {
+                  "kind": "int",
+                  "pos": {
+                    "line": 3,
+                    "col": 18,
+                    "off": 31,
+                    "end": 32
+                  },
+                  "text": "7",
+                  "hint": {
+                    "type": "int"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "val",
+          "pos": {
+            "line": 4,
+            "col": 1,
+            "off": 34,
+            "end": 45
+          },
+          "names": [
+            "Max"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "int",
+              "pos": {
+                "line": 4,
+                "col": 11,
+                "off": 44,
+                "end": 45
+              },
+              "text": "7",
+              "hint": {
+                "type": "int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 6,
+            "col": 1,
+            "off": 47,
+            "end": 132
+          },
+          "name": "classify",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 6,
+                "col": 15,
+                "off": 61,
+                "end": 66
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 6,
+                  "col": 17,
+                  "off": 63,
+                  "end": 66
+                },
+                "name": "int"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 6,
+              "col": 22,
+              "off": 68,
+              "end": 74
+            },
+            "name": "string"
+          },
+          "body": {
+            "kind": "match",
+            "pos": {
+              "line": 6,
+              "col": 31,
+              "off": 77,
+              "end": 132
+            },
+            "subject": {
+              "kind": "name",
+              "pos": {
+                "line": 6,
+                "col": 31,
+                "off": 77,
+                "end": 78
+              },
+              "name": "n"
+            },
+            "cases": [
+              {
+                "kind": "case",
+                "pos": {
+                  "line": 7,
+                  "col": 5,
+                  "off": 91,
+                  "end": 108
+                },
+                "pattern": {
+                  "kind": "pat-name",
+                  "pos": {
+                    "line": 7,
+                    "col": 10,
+                    "off": 96,
+                    "end": 99
+                  },
+                  "name": "Max"
+                },
+                "guard": null,
+                "body": {
+                  "kind": "string",
+                  "pos": {
+                    "line": 7,
+                    "col": 17,
+                    "off": 103,
+                    "end": 108
+                  },
+                  "text": "\"max\"",
+                  "value": "max",
+                  "raw": false
+                }
+              },
+              {
+                "kind": "case",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 113,
+                  "end": 130
+                },
+                "pattern": {
+                  "kind": "pat-wild",
+                  "pos": {
+                    "line": 8,
+                    "col": 10,
+                    "off": 118,
+                    "end": 119
+                  }
+                },
+                "guard": null,
+                "body": {
+                  "kind": "string",
+                  "pos": {
+                    "line": 8,
+                    "col": 15,
+                    "off": 123,
+                    "end": 130
+                  },
+                  "text": "\"other\"",
+                  "value": "other",
+                  "raw": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "val",
+          "pos": {
+            "line": 11,
+            "col": 1,
+            "off": 134,
+            "end": 149
+          },
+          "names": [
+            "a"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "call",
+              "pos": {
+                "line": 11,
+                "col": 9,
+                "off": 142,
+                "end": 149
+              },
+              "callee": {
+                "kind": "name",
+                "pos": {
+                  "line": 11,
+                  "col": 9,
+                  "off": 142,
+                  "end": 147
+                },
+                "name": "first"
+              },
+              "args": []
+            }
+          ]
+        },
+        {
+          "kind": "val",
+          "pos": {
+            "line": 12,
+            "col": 1,
+            "off": 150,
+            "end": 166
+          },
+          "names": [
+            "b"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "call",
+              "pos": {
+                "line": 12,
+                "col": 9,
+                "off": 158,
+                "end": 166
+              },
+              "callee": {
+                "kind": "name",
+                "pos": {
+                  "line": 12,
+                  "col": 9,
+                  "off": 158,
+                  "end": 164
+                },
+                "name": "second"
+              },
+              "args": []
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 14,
+            "col": 1,
+            "off": 168,
+            "end": 225
+          },
+          "name": "first",
+          "params": [],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 14,
+              "col": 14,
+              "off": 181,
+              "end": 184
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 14,
+              "col": 18,
+              "off": 185,
+              "end": 225
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 15,
+                  "col": 5,
+                  "off": 191,
+                  "end": 200
+                },
+                "names": [
+                  "b"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 15,
+                      "col": 13,
+                      "off": 199,
+                      "end": 200
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 16,
+                  "col": 5,
+                  "off": 205,
+                  "end": 217
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 16,
+                    "col": 5,
+                    "off": 205,
+                    "end": 212
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 16,
+                      "col": 13,
+                      "off": 213,
+                      "end": 216
+                    },
+                    "text": "\"a\"",
+                    "value": "a",
+                    "raw": false
+                  }
+                ]
+              },
+              {
+                "kind": "name",
+                "pos": {
+                  "line": 17,
+                  "col": 5,
+                  "off": 222,
+                  "end": 223
+                },
+                "name": "b"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 20,
+            "col": 1,
+            "off": 227,
+            "end": 271
+          },
+          "name": "second",
+          "params": [],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 20,
+              "col": 15,
+              "off": 241,
+              "end": 244
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 20,
+              "col": 19,
+              "off": 245,
+              "end": 271
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 21,
+                  "col": 5,
+                  "off": 251,
+                  "end": 263
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 21,
+                    "col": 5,
+                    "off": 251,
+                    "end": 258
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 21,
+                      "col": 13,
+                      "off": 259,
+                      "end": 262
+                    },
+                    "text": "\"b\"",
+                    "value": "b",
+                    "raw": false
+                  }
+                ]
+              },
+              {
+                "kind": "int",
+                "pos": {
+                  "line": 22,
+                  "col": 5,
+                  "off": 268,
+                  "end": 269
+                },
+                "text": "2",
+                "hint": {
+                  "type": "int"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 25,
+            "col": 1,
+            "off": 273,
+            "end": 309
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 25,
+              "col": 13,
+              "off": 285,
+              "end": 309
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 26,
+                  "col": 5,
+                  "off": 291,
+                  "end": 307
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 26,
+                    "col": 5,
+                    "off": 291,
+                    "end": 298
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 26,
+                      "col": 13,
+                      "off": 299,
+                      "end": 300
+                    },
+                    "name": "r"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 26,
+                      "col": 16,
+                      "off": 302,
+                      "end": 303
+                    },
+                    "name": "a"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 26,
+                      "col": 19,
+                      "off": 305,
+                      "end": 306
+                    },
+                    "name": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

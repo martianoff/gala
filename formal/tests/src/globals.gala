@@ -1,0 +1,11 @@
+package main
+
+val a = b + 1
+val b = f()
+val c = 5
+
+func f() int = c * 2
+
+func main() {
+    Println(a, b, c)
+}

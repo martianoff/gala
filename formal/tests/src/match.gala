@@ -1,0 +1,56 @@
+package main
+
+sealed type Expr {
+    case Num(Value int)
+    case Add(L Expr, R Expr)
+    case Neg(E Expr)
+    case Zero
+}
+
+func eval(e Expr) int = e match {
+    case Num(v) => v
+    case Add(l, r) => eval(l) + eval(r)
+    case Neg(Num(v)) => -v
+    case Neg(x) => -eval(x)
+    case Zero => 0
+}
+
+val Limit = 10
+
+func classify(n int) string = n match {
+    case 0 => "zero"
+    case -1 => "minus one"
+    case Limit => "limit"
+    case x if x > 100 => "big"
+    case _ if n < 0 => "negative"
+    case _ => "other"
+}
+
+func main() {
+    Println(eval(Add(Num(1), Neg(Add(Num(2), Num(3))))), eval(Neg(Num(4))), eval(Zero()))
+    Println(classify(0), classify(-1), classify(10), classify(500), classify(-5), classify(7))
+    val t = (1, "a", true)
+    val r = t match {
+        case (2, _, _) => "two"
+        case (1, s, false) => s + "f"
+        case (1, s, true) => s + "t"
+        case _ => "none"
+    }
+    Println(r)
+    val x = 5
+    val y = 7 match {
+        case x if x > 6 => x * 10
+        case _ => x
+    }
+    Println(x, y)
+    val nested = (Num(1), (2, "q")) match {
+        case (Num(a), (b, "q")) => a + b
+        case _ => 0
+    }
+    Println(nested)
+    val b = true match {
+        case true => "yes"
+        case false => "no"
+    }
+    Println(b, Num(1) == Num(1), Num(1) != Num(2), Add(Zero(), Num(1)) == Add(Zero(), Num(1)))
+}

@@ -1,0 +1,522 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 547
+      },
+      "path": "examples/composite_lit_if_cond.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 16,
+            "end": 96
+          },
+          "name": "HttpMethod",
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 4,
+                "col": 5,
+                "off": 46,
+                "end": 56
+              },
+              "name": "GET",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 5,
+                "col": 5,
+                "off": 62,
+                "end": 73
+              },
+              "name": "POST",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 6,
+                "col": 5,
+                "off": 79,
+                "end": 93
+              },
+              "name": "OPTIONS",
+              "default": false,
+              "fields": []
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 9,
+            "col": 1,
+            "off": 100,
+            "end": 423
+          },
+          "name": "checkMethod",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 9,
+                "col": 18,
+                "off": 117,
+                "end": 129
+              },
+              "name": "m",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 9,
+                  "col": 20,
+                  "off": 119,
+                  "end": 129
+                },
+                "name": "HttpMethod"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 9,
+              "col": 32,
+              "off": 131,
+              "end": 137
+            },
+            "name": "string"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 9,
+              "col": 39,
+              "off": 138,
+              "end": 423
+            },
+            "stmts": [
+              {
+                "kind": "if",
+                "pos": {
+                  "line": 12,
+                  "col": 5,
+                  "off": 280,
+                  "end": 420
+                },
+                "cond": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 12,
+                    "col": 8,
+                    "off": 283,
+                    "end": 297
+                  },
+                  "op": "==",
+                  "left": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 12,
+                      "col": 8,
+                      "off": 283,
+                      "end": 284
+                    },
+                    "name": "m"
+                  },
+                  "right": {
+                    "kind": "call",
+                    "pos": {
+                      "line": 12,
+                      "col": 13,
+                      "off": 288,
+                      "end": 297
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 12,
+                        "col": 13,
+                        "off": 288,
+                        "end": 295
+                      },
+                      "name": "OPTIONS"
+                    },
+                    "args": []
+                  }
+                },
+                "then": {
+                  "kind": "block",
+                  "pos": {
+                    "line": 12,
+                    "col": 23,
+                    "off": 298,
+                    "end": 332
+                  },
+                  "stmts": [
+                    {
+                      "kind": "return",
+                      "pos": {
+                        "line": 13,
+                        "col": 9,
+                        "off": 309,
+                        "end": 325
+                      },
+                      "value": {
+                        "kind": "string",
+                        "pos": {
+                          "line": 13,
+                          "col": 16,
+                          "off": 316,
+                          "end": 325
+                        },
+                        "text": "\"options\"",
+                        "value": "options",
+                        "raw": false
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "kind": "if",
+                  "pos": {
+                    "line": 14,
+                    "col": 12,
+                    "off": 338,
+                    "end": 420
+                  },
+                  "cond": {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 14,
+                      "col": 15,
+                      "off": 341,
+                      "end": 351
+                    },
+                    "op": "==",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 14,
+                        "col": 15,
+                        "off": 341,
+                        "end": 342
+                      },
+                      "name": "m"
+                    },
+                    "right": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 14,
+                        "col": 20,
+                        "off": 346,
+                        "end": 351
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 14,
+                          "col": 20,
+                          "off": 346,
+                          "end": 349
+                        },
+                        "name": "GET"
+                      },
+                      "args": []
+                    }
+                  },
+                  "then": {
+                    "kind": "block",
+                    "pos": {
+                      "line": 14,
+                      "col": 26,
+                      "off": 352,
+                      "end": 382
+                    },
+                    "stmts": [
+                      {
+                        "kind": "return",
+                        "pos": {
+                          "line": 15,
+                          "col": 9,
+                          "off": 363,
+                          "end": 375
+                        },
+                        "value": {
+                          "kind": "string",
+                          "pos": {
+                            "line": 15,
+                            "col": 16,
+                            "off": 370,
+                            "end": 375
+                          },
+                          "text": "\"get\"",
+                          "value": "get",
+                          "raw": false
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "kind": "block",
+                    "pos": {
+                      "line": 16,
+                      "col": 12,
+                      "off": 388,
+                      "end": 420
+                    },
+                    "stmts": [
+                      {
+                        "kind": "return",
+                        "pos": {
+                          "line": 17,
+                          "col": 9,
+                          "off": 399,
+                          "end": 413
+                        },
+                        "value": {
+                          "kind": "string",
+                          "pos": {
+                            "line": 17,
+                            "col": 16,
+                            "off": 406,
+                            "end": 413
+                          },
+                          "text": "\"other\"",
+                          "value": "other",
+                          "raw": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 21,
+            "col": 1,
+            "off": 427,
+            "end": 547
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 21,
+              "col": 13,
+              "off": 439,
+              "end": 547
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 22,
+                  "col": 5,
+                  "off": 446,
+                  "end": 477
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 22,
+                    "col": 5,
+                    "off": 446,
+                    "end": 453
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 22,
+                      "col": 13,
+                      "off": 454,
+                      "end": 476
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 22,
+                        "col": 13,
+                        "off": 454,
+                        "end": 465
+                      },
+                      "name": "checkMethod"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 22,
+                          "col": 25,
+                          "off": 466,
+                          "end": 475
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 22,
+                            "col": 25,
+                            "off": 466,
+                            "end": 473
+                          },
+                          "name": "OPTIONS"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 23,
+                  "col": 5,
+                  "off": 483,
+                  "end": 510
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 23,
+                    "col": 5,
+                    "off": 483,
+                    "end": 490
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 23,
+                      "col": 13,
+                      "off": 491,
+                      "end": 509
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 23,
+                        "col": 13,
+                        "off": 491,
+                        "end": 502
+                      },
+                      "name": "checkMethod"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 23,
+                          "col": 25,
+                          "off": 503,
+                          "end": 508
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 23,
+                            "col": 25,
+                            "off": 503,
+                            "end": 506
+                          },
+                          "name": "GET"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 24,
+                  "col": 5,
+                  "off": 516,
+                  "end": 544
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 24,
+                    "col": 5,
+                    "off": 516,
+                    "end": 523
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 24,
+                      "col": 13,
+                      "off": 524,
+                      "end": 543
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 24,
+                        "col": 13,
+                        "off": 524,
+                        "end": 535
+                      },
+                      "name": "checkMethod"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 24,
+                          "col": 25,
+                          "off": 536,
+                          "end": 542
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 24,
+                            "col": 25,
+                            "off": 536,
+                            "end": 540
+                          },
+                          "name": "POST"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

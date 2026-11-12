@@ -1,0 +1,1954 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 608
+      },
+      "path": "formal/tests/src/arith.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 608
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 3,
+              "col": 13,
+              "off": 26,
+              "end": 608
+            },
+            "stmts": [
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 4,
+                  "col": 5,
+                  "off": 32,
+                  "end": 61
+                },
+                "names": [
+                  "big"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 4,
+                      "col": 15,
+                      "off": 42,
+                      "end": 61
+                    },
+                    "text": "9223372036854775807",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 5,
+                  "col": 5,
+                  "off": 66,
+                  "end": 74
+                },
+                "op": "+=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 5,
+                      "col": 5,
+                      "off": 66,
+                      "end": 69
+                    },
+                    "name": "big"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 5,
+                      "col": 12,
+                      "off": 73,
+                      "end": 74
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 79,
+                  "end": 117
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 6,
+                    "col": 5,
+                    "off": 79,
+                    "end": 86
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 6,
+                      "col": 13,
+                      "off": 87,
+                      "end": 90
+                    },
+                    "name": "big"
+                  },
+                  {
+                    "kind": "unary",
+                    "pos": {
+                      "line": 6,
+                      "col": 18,
+                      "off": 92,
+                      "end": 96
+                    },
+                    "op": "-",
+                    "operand": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 6,
+                        "col": 19,
+                        "off": 93,
+                        "end": 96
+                      },
+                      "name": "big"
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 6,
+                      "col": 24,
+                      "off": 98,
+                      "end": 106
+                    },
+                    "op": "/",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 6,
+                        "col": 24,
+                        "off": 98,
+                        "end": 101
+                      },
+                      "name": "big"
+                    },
+                    "right": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 6,
+                        "col": 30,
+                        "off": 104,
+                        "end": 106
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 6,
+                          "col": 31,
+                          "off": 105,
+                          "end": 106
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 6,
+                      "col": 34,
+                      "off": 108,
+                      "end": 116
+                    },
+                    "op": "%",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 6,
+                        "col": 34,
+                        "off": 108,
+                        "end": 111
+                      },
+                      "name": "big"
+                    },
+                    "right": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 6,
+                        "col": 40,
+                        "off": 114,
+                        "end": 116
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 6,
+                          "col": 41,
+                          "off": 115,
+                          "end": 116
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 7,
+                  "col": 5,
+                  "off": 122,
+                  "end": 175
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 7,
+                    "col": 5,
+                    "off": 122,
+                    "end": 129
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 7,
+                      "col": 13,
+                      "off": 130,
+                      "end": 136
+                    },
+                    "op": "/",
+                    "left": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 7,
+                        "col": 13,
+                        "off": 130,
+                        "end": 132
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 14,
+                          "off": 131,
+                          "end": 132
+                        },
+                        "text": "7",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 18,
+                        "off": 135,
+                        "end": 136
+                      },
+                      "text": "2",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 7,
+                      "col": 21,
+                      "off": 138,
+                      "end": 144
+                    },
+                    "op": "%",
+                    "left": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 7,
+                        "col": 21,
+                        "off": 138,
+                        "end": 140
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 22,
+                          "off": 139,
+                          "end": 140
+                        },
+                        "text": "7",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 26,
+                        "off": 143,
+                        "end": 144
+                      },
+                      "text": "2",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 7,
+                      "col": 29,
+                      "off": 146,
+                      "end": 152
+                    },
+                    "op": "/",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 29,
+                        "off": 146,
+                        "end": 147
+                      },
+                      "text": "7",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 7,
+                        "col": 33,
+                        "off": 150,
+                        "end": 152
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 34,
+                          "off": 151,
+                          "end": 152
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 7,
+                      "col": 37,
+                      "off": 154,
+                      "end": 160
+                    },
+                    "op": "%",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 37,
+                        "off": 154,
+                        "end": 155
+                      },
+                      "text": "7",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 7,
+                        "col": 41,
+                        "off": 158,
+                        "end": 160
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 42,
+                          "off": 159,
+                          "end": 160
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 7,
+                      "col": 45,
+                      "off": 162,
+                      "end": 167
+                    },
+                    "op": "/",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 45,
+                        "off": 162,
+                        "end": 163
+                      },
+                      "text": "7",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 49,
+                        "off": 166,
+                        "end": 167
+                      },
+                      "text": "2",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 7,
+                      "col": 52,
+                      "off": 169,
+                      "end": 174
+                    },
+                    "op": "%",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 52,
+                        "off": 169,
+                        "end": 170
+                      },
+                      "text": "7",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 7,
+                        "col": 56,
+                        "off": 173,
+                        "end": 174
+                      },
+                      "text": "2",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 180,
+                  "end": 189
+                },
+                "names": [
+                  "s"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 8,
+                      "col": 13,
+                      "off": 188,
+                      "end": 189
+                    },
+                    "text": "3",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 194,
+                  "end": 256
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 9,
+                    "col": 5,
+                    "off": 194,
+                    "end": 201
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 13,
+                      "off": 202,
+                      "end": 208
+                    },
+                    "op": "<<",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 13,
+                        "off": 202,
+                        "end": 203
+                      },
+                      "text": "1",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 18,
+                        "off": 207,
+                        "end": 208
+                      },
+                      "name": "s"
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 21,
+                      "off": 210,
+                      "end": 218
+                    },
+                    "op": ">>",
+                    "left": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 9,
+                        "col": 21,
+                        "off": 210,
+                        "end": 213
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 9,
+                          "col": 22,
+                          "off": 211,
+                          "end": 213
+                        },
+                        "text": "16",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 28,
+                        "off": 217,
+                        "end": 218
+                      },
+                      "name": "s"
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 31,
+                      "off": 220,
+                      "end": 227
+                    },
+                    "op": "<<",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 31,
+                        "off": 220,
+                        "end": 221
+                      },
+                      "name": "s"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 36,
+                        "off": 225,
+                        "end": 227
+                      },
+                      "text": "62",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 40,
+                      "off": 229,
+                      "end": 236
+                    },
+                    "op": "<<",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 40,
+                        "off": 229,
+                        "end": 230
+                      },
+                      "name": "s"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 45,
+                        "off": 234,
+                        "end": 236
+                      },
+                      "text": "64",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 49,
+                      "off": 238,
+                      "end": 246
+                    },
+                    "op": ">>",
+                    "left": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 9,
+                        "col": 49,
+                        "off": 238,
+                        "end": 240
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 9,
+                          "col": 50,
+                          "off": 239,
+                          "end": 240
+                        },
+                        "text": "5",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 55,
+                        "off": 244,
+                        "end": 246
+                      },
+                      "text": "70",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 59,
+                      "off": 248,
+                      "end": 255
+                    },
+                    "op": ">>",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 59,
+                        "off": 248,
+                        "end": 249
+                      },
+                      "text": "5",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 64,
+                        "off": 253,
+                        "end": 255
+                      },
+                      "text": "70",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 10,
+                  "col": 5,
+                  "off": 261,
+                  "end": 333
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 10,
+                    "col": 5,
+                    "off": 261,
+                    "end": 268
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "unary",
+                    "pos": {
+                      "line": 10,
+                      "col": 13,
+                      "off": 269,
+                      "end": 271
+                    },
+                    "op": "^",
+                    "operand": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 14,
+                        "off": 270,
+                        "end": 271
+                      },
+                      "text": "5",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 17,
+                      "off": 273,
+                      "end": 279
+                    },
+                    "op": "&^",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 17,
+                        "off": 273,
+                        "end": 274
+                      },
+                      "text": "6",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 22,
+                        "off": 278,
+                        "end": 279
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 25,
+                      "off": 281,
+                      "end": 286
+                    },
+                    "op": "&",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 25,
+                        "off": 281,
+                        "end": 282
+                      },
+                      "text": "6",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 29,
+                        "off": 285,
+                        "end": 286
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 32,
+                      "off": 288,
+                      "end": 293
+                    },
+                    "op": "|",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 32,
+                        "off": 288,
+                        "end": 289
+                      },
+                      "text": "6",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 36,
+                        "off": 292,
+                        "end": 293
+                      },
+                      "text": "1",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 39,
+                      "off": 295,
+                      "end": 300
+                    },
+                    "op": "^",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 39,
+                        "off": 295,
+                        "end": 296
+                      },
+                      "text": "6",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 43,
+                        "off": 299,
+                        "end": 300
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 46,
+                      "off": 302,
+                      "end": 311
+                    },
+                    "op": "&",
+                    "left": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 10,
+                        "col": 46,
+                        "off": 302,
+                        "end": 304
+                      },
+                      "op": "-",
+                      "operand": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 10,
+                          "col": 47,
+                          "off": 303,
+                          "end": 304
+                        },
+                        "text": "6",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 51,
+                        "off": 307,
+                        "end": 311
+                      },
+                      "text": "0xff",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 10,
+                      "col": 57,
+                      "off": 313,
+                      "end": 326
+                    },
+                    "op": "|",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 57,
+                        "off": 313,
+                        "end": 319
+                      },
+                      "text": "0b1010",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 10,
+                        "col": 66,
+                        "off": 322,
+                        "end": 326
+                      },
+                      "text": "0o17",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 10,
+                      "col": 72,
+                      "off": 328,
+                      "end": 332
+                    },
+                    "text": "0X1f",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 11,
+                  "col": 5,
+                  "off": 338,
+                  "end": 388
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 11,
+                    "col": 5,
+                    "off": 338,
+                    "end": 345
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 11,
+                      "col": 13,
+                      "off": 346,
+                      "end": 367
+                    },
+                    "op": "-",
+                    "left": {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 11,
+                        "col": 13,
+                        "off": 346,
+                        "end": 355
+                      },
+                      "op": "+",
+                      "left": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 11,
+                          "col": 13,
+                          "off": 346,
+                          "end": 347
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      "right": {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 11,
+                          "col": 17,
+                          "off": 350,
+                          "end": 355
+                        },
+                        "op": "*",
+                        "left": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 17,
+                            "off": 350,
+                            "end": 351
+                          },
+                          "text": "2",
+                          "hint": {
+                            "type": "int"
+                          }
+                        },
+                        "right": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 21,
+                            "off": 354,
+                            "end": 355
+                          },
+                          "text": "3",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 11,
+                        "col": 25,
+                        "off": 358,
+                        "end": 367
+                      },
+                      "op": "%",
+                      "left": {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 11,
+                          "col": 25,
+                          "off": 358,
+                          "end": 363
+                        },
+                        "op": "/",
+                        "left": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 25,
+                            "off": 358,
+                            "end": 359
+                          },
+                          "text": "4",
+                          "hint": {
+                            "type": "int"
+                          }
+                        },
+                        "right": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 29,
+                            "off": 362,
+                            "end": 363
+                          },
+                          "text": "2",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      },
+                      "right": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 11,
+                          "col": 33,
+                          "off": 366,
+                          "end": 367
+                        },
+                        "text": "3",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 11,
+                      "col": 36,
+                      "off": 369,
+                      "end": 380
+                    },
+                    "op": "*",
+                    "left": {
+                      "kind": "paren",
+                      "pos": {
+                        "line": 11,
+                        "col": 36,
+                        "off": 369,
+                        "end": 376
+                      },
+                      "expr": {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 11,
+                          "col": 37,
+                          "off": 370,
+                          "end": 375
+                        },
+                        "op": "+",
+                        "left": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 37,
+                            "off": 370,
+                            "end": 371
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        },
+                        "right": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 41,
+                            "off": 374,
+                            "end": 375
+                          },
+                          "text": "2",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 11,
+                        "col": 46,
+                        "off": 379,
+                        "end": 380
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "unary",
+                    "pos": {
+                      "line": 11,
+                      "col": 49,
+                      "off": 382,
+                      "end": 387
+                    },
+                    "op": "-",
+                    "operand": {
+                      "kind": "paren",
+                      "pos": {
+                        "line": 11,
+                        "col": 50,
+                        "off": 383,
+                        "end": 387
+                      },
+                      "expr": {
+                        "kind": "unary",
+                        "pos": {
+                          "line": 11,
+                          "col": 51,
+                          "off": 384,
+                          "end": 386
+                        },
+                        "op": "-",
+                        "operand": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 11,
+                            "col": 52,
+                            "off": 385,
+                            "end": 386
+                          },
+                          "text": "3",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 12,
+                  "col": 5,
+                  "off": 393,
+                  "end": 462
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 12,
+                    "col": 5,
+                    "off": 393,
+                    "end": 400
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 12,
+                      "col": 13,
+                      "off": 401,
+                      "end": 415
+                    },
+                    "op": "&&",
+                    "left": {
+                      "kind": "bool",
+                      "pos": {
+                        "line": 12,
+                        "col": 13,
+                        "off": 401,
+                        "end": 405
+                      },
+                      "value": true
+                    },
+                    "right": {
+                      "kind": "unary",
+                      "pos": {
+                        "line": 12,
+                        "col": 21,
+                        "off": 409,
+                        "end": 415
+                      },
+                      "op": "!",
+                      "operand": {
+                        "kind": "bool",
+                        "pos": {
+                          "line": 12,
+                          "col": 22,
+                          "off": 410,
+                          "end": 415
+                        },
+                        "value": false
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 12,
+                      "col": 29,
+                      "off": 417,
+                      "end": 430
+                    },
+                    "op": "||",
+                    "left": {
+                      "kind": "bool",
+                      "pos": {
+                        "line": 12,
+                        "col": 29,
+                        "off": 417,
+                        "end": 422
+                      },
+                      "value": false
+                    },
+                    "right": {
+                      "kind": "bool",
+                      "pos": {
+                        "line": 12,
+                        "col": 38,
+                        "off": 426,
+                        "end": 430
+                      },
+                      "value": true
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 12,
+                      "col": 44,
+                      "off": 432,
+                      "end": 437
+                    },
+                    "op": "<",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 44,
+                        "off": 432,
+                        "end": 433
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 48,
+                        "off": 436,
+                        "end": 437
+                      },
+                      "text": "4",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 12,
+                      "col": 51,
+                      "off": 439,
+                      "end": 445
+                    },
+                    "op": ">=",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 51,
+                        "off": 439,
+                        "end": 440
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 56,
+                        "off": 444,
+                        "end": 445
+                      },
+                      "text": "4",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 12,
+                      "col": 59,
+                      "off": 447,
+                      "end": 453
+                    },
+                    "op": "!=",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 59,
+                        "off": 447,
+                        "end": 448
+                      },
+                      "text": "3",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 64,
+                        "off": 452,
+                        "end": 453
+                      },
+                      "text": "4",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 12,
+                      "col": 67,
+                      "off": 455,
+                      "end": 461
+                    },
+                    "op": "<=",
+                    "left": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 67,
+                        "off": 455,
+                        "end": 456
+                      },
+                      "text": "4",
+                      "hint": {
+                        "type": "int"
+                      }
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 12,
+                        "col": 72,
+                        "off": 460,
+                        "end": 461
+                      },
+                      "text": "4",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 13,
+                  "col": 5,
+                  "off": 467,
+                  "end": 536
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 13,
+                    "col": 5,
+                    "off": 467,
+                    "end": 474
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 13,
+                      "col": 13,
+                      "off": 475,
+                      "end": 485
+                    },
+                    "op": "<",
+                    "left": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 13,
+                        "off": 475,
+                        "end": 479
+                      },
+                      "text": "\"ab\"",
+                      "value": "ab",
+                      "raw": false
+                    },
+                    "right": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 20,
+                        "off": 482,
+                        "end": 485
+                      },
+                      "text": "\"b\"",
+                      "value": "b",
+                      "raw": false
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 13,
+                      "col": 25,
+                      "off": 487,
+                      "end": 498
+                    },
+                    "op": "<=",
+                    "left": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 25,
+                        "off": 487,
+                        "end": 490
+                      },
+                      "text": "\"b\"",
+                      "value": "b",
+                      "raw": false
+                    },
+                    "right": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 32,
+                        "off": 494,
+                        "end": 498
+                      },
+                      "text": "\"ab\"",
+                      "value": "ab",
+                      "raw": false
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 13,
+                      "col": 38,
+                      "off": 500,
+                      "end": 509
+                    },
+                    "op": "+",
+                    "left": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 38,
+                        "off": 500,
+                        "end": 503
+                      },
+                      "text": "\"x\"",
+                      "value": "x",
+                      "raw": false
+                    },
+                    "right": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 44,
+                        "off": 506,
+                        "end": 509
+                      },
+                      "text": "\"y\"",
+                      "value": "y",
+                      "raw": false
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 13,
+                      "col": 49,
+                      "off": 511,
+                      "end": 521
+                    },
+                    "op": "==",
+                    "left": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 49,
+                        "off": 511,
+                        "end": 514
+                      },
+                      "text": "\"a\"",
+                      "value": "a",
+                      "raw": false
+                    },
+                    "right": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 56,
+                        "off": 518,
+                        "end": 521
+                      },
+                      "text": "\"a\"",
+                      "value": "a",
+                      "raw": false
+                    }
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 13,
+                      "col": 61,
+                      "off": 523,
+                      "end": 535
+                    },
+                    "op": ">",
+                    "left": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 61,
+                        "off": 523,
+                        "end": 529
+                      },
+                      "text": "\"a\\tb\"",
+                      "value": "a\tb",
+                      "raw": false
+                    },
+                    "right": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 13,
+                        "col": 70,
+                        "off": 532,
+                        "end": 535
+                      },
+                      "text": "\"a\"",
+                      "value": "a",
+                      "raw": false
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 14,
+                  "col": 5,
+                  "off": 541,
+                  "end": 550
+                },
+                "names": [
+                  "m"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 14,
+                      "col": 13,
+                      "off": 549,
+                      "end": 550
+                    },
+                    "text": "7",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 15,
+                  "col": 5,
+                  "off": 555,
+                  "end": 561
+                },
+                "op": "-=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 15,
+                      "col": 5,
+                      "off": 555,
+                      "end": 556
+                    },
+                    "name": "m"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 15,
+                      "col": 10,
+                      "off": 560,
+                      "end": 561
+                    },
+                    "text": "2",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 16,
+                  "col": 5,
+                  "off": 566,
+                  "end": 572
+                },
+                "op": "*=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 16,
+                      "col": 5,
+                      "off": 566,
+                      "end": 567
+                    },
+                    "name": "m"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 16,
+                      "col": 10,
+                      "off": 571,
+                      "end": 572
+                    },
+                    "text": "3",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 17,
+                  "col": 5,
+                  "off": 577,
+                  "end": 583
+                },
+                "op": "/=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 17,
+                      "col": 5,
+                      "off": 577,
+                      "end": 578
+                    },
+                    "name": "m"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 17,
+                      "col": 10,
+                      "off": 582,
+                      "end": 583
+                    },
+                    "text": "4",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "incdec",
+                "pos": {
+                  "line": 18,
+                  "col": 5,
+                  "off": 588,
+                  "end": 591
+                },
+                "op": "--",
+                "target": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 18,
+                    "col": 5,
+                    "off": 588,
+                    "end": 589
+                  },
+                  "name": "m"
+                }
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 19,
+                  "col": 5,
+                  "off": 596,
+                  "end": 606
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 19,
+                    "col": 5,
+                    "off": 596,
+                    "end": 603
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 19,
+                      "col": 13,
+                      "off": 604,
+                      "end": 605
+                    },
+                    "name": "m"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
