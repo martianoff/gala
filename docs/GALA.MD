@@ -2740,6 +2740,13 @@ so the calls chain and the caller gets its own type back. A type that
 implements `Seq[int, Nums]` with `Nums` itself can be passed:
 
 ```gala
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+}
+
+func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+
 struct Nums(xs Array[int])
 
 func (s Nums) Rest() Nums = Nums(s.xs.Tail())
