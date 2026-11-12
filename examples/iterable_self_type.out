@@ -1,10 +1,10 @@
 Array(2, 4, 6) 2
-List(2, 4, 8) List(0, 2, 4, 8)
-y
-Array(a) Array(b, c) c
-(List(1.5), List(2.5))
+List(4, 8) List(0, 4, 8)
+y Array(2.5)
+Array(a, b) Array(c) c
+(List(1, 2), List())
 Array(7) Array(8, 9)
 size=2 head=Some(8) [8, 9]
 size=0 head=None() []
-Array(2, 4, 10) Array(1, 2, 3, 4)
-List(3) List(4, 5) (List(3), List(4, 5))
+Array(2, 4, 10) Array(1, 2, 3, 4) (Array(1, 2), Array(3, 4))
+List(3) List(4, 5, 6) List(4, 5) size=4 head=Some(3) [3, 4, 5, 6]

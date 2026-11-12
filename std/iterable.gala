@@ -26,11 +26,12 @@ type Traversable[T any] interface {
 // lets a collection implement the interface while keeping its concrete results.
 // The immutable `Array[T]` implements `Iterable[T, Array[T]]` and `List[T]`
 // implements `Iterable[T, List[T]]`; the mutable ones implement it through their
-// pointer, `Ptr[Array[T]]` as `Iterable[T, Ptr[Array[T]]]`. Generic code takes
-// an Iterable[T, C] and gets the caller's concrete collection back; T and C are
-// inferred from the argument:
+// pointer, `Ptr[Array[T]]` as `Iterable[T, Ptr[Array[T]]]`. Generic code bounds
+// the self type by the interface, chains the sub-collection methods and gets
+// the caller's concrete collection back; T and C are inferred from the argument:
 //
-//     func dropFirst[T any, C any](xs Iterable[T, C]) C = xs.Tail()
+//     func evensAfterFirst[T any, C Iterable[T, C]](xs C, even func(T) bool) C =
+//         xs.Tail().Filter(even)
 //
 // HashSet, TreeSet, the maps and stream.Stream do not implement Iterable: sets
 // have no positional methods, maps traverse key-value pairs, and a Stream's

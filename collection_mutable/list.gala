@@ -726,13 +726,21 @@ func (l Ptr[List[T]]) SplitAt(n int) Tuple[Ptr[List[T]], Ptr[List[T]]] {
 // Span splits the list into a prefix/suffix pair according to a predicate.
 // The first element contains the longest prefix of elements that satisfy p.
 func (l Ptr[List[T]]) Span(p func(T) bool) Tuple[Ptr[List[T]], Ptr[List[T]]] {
+    val prefix = EmptyList[T]()
+    val suffix = EmptyList[T]()
+    var inPrefix = true
     var current = l.head
-    var index = 0
-    for current.IsDefined() && p(current.Get().value) {
-        current = current.Get().next
-        index++
+    for current.IsDefined() {
+        val node = current.Get()
+        inPrefix = inPrefix && p(node.value)
+        if inPrefix {
+            prefix.Append(node.value)
+        } else {
+            suffix.Append(node.value)
+        }
+        current = node.next
     }
-    return l.SplitAt(index)
+    (prefix, suffix)
 }
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.

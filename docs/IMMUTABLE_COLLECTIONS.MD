@@ -67,21 +67,21 @@ import . "martianoff/gala/collection_immutable"
 
 `std.Iterable[T, C]` is the interface `Array` and `List` share. `C` is the collection's own type: the methods that return a sub-collection (`Tail`, `Init`, `Slice`, `Take`, `Drop`, `TakeWhile`, `DropWhile`, `Filter`, `FilterNot`) return `C`, and `SplitAt`, `Span` and `Partition` return `Tuple[C, C]`. So `Array[T]` implements `Iterable[T, Array[T]]` and `List[T]` implements `Iterable[T, List[T]]`, each with its own concrete results.
 
-A generic function takes an `Iterable[T, C]` and gets the caller's collection back:
+A generic function bounds the self type by the interface. Each sub-collection method returns `C`, so the calls chain, and the caller gets its own collection back:
 
 ```gala
-func evens[C any](xs Iterable[int, C]) C = xs.Filter((x) => x % 2 == 0)
+func evensAfterFirst[C Iterable[int, C]](xs C) C = xs.Tail().Filter((x) => x % 2 == 0)
 
-func rest[T any, C any](xs Iterable[T, C]) C = xs.Tail()
+func middle[T any, C Iterable[T, C]](xs C) C = xs.Drop(1).Init()
 
 func main() {
-    val arr = evens(rest(ArrayOf(1, 2, 3, 4)))  // Array(2, 4)
-    val list = evens(ListOf(2, 4, 5, 8))        // List(2, 4, 8)
-    Println(arr.Get(0), list.Prepend(0))
+    val arr = evensAfterFirst(ArrayOf(1, 2, 3, 4))  // Array(2, 4)
+    val list = middle(ListOf("x", "y", "z"))        // List(y)
+    Println(arr.Get(0), list.Prepend("w"))
 }
 ```
 
-`T` and `C` are inferred from the argument, so no type arguments are written, and the result is the concrete collection with all of its own methods. Inside such a function `C` is an unconstrained type parameter, so its methods can't be called there: chain the sub-collection methods at the call site, as `evens(rest(...))` does. The other methods are `ForEach`, `Size`, `IsEmpty`, `NonEmpty`, `Head`, `Last`, `HeadOption`, `LastOption`, `Find`, `Exists`, `ForAll`, `Count`, `Reduce`, `String` and `MkString`. Methods with type parameters of their own (`Map`, `FlatMap`, `FoldLeft`, ...) and `Concat` are on the concrete collections only.
+`C` is inferred from the argument and `T` from `C`'s methods, so no type arguments are written, and the result is the concrete collection with all of its own methods. The other methods are `ForEach`, `Size`, `IsEmpty`, `NonEmpty`, `Head`, `Last`, `HeadOption`, `LastOption`, `Find`, `Exists`, `ForAll`, `Count`, `Reduce`, `String` and `MkString`. Methods with type parameters of their own (`Map`, `FlatMap`, `FoldLeft`, ...) and `Concat` are on the concrete collections only.
 
 `HashSet`, `TreeSet`, `HashMap` and `TreeMap` do not implement `Iterable`: sets have no positional methods (`Tail`, `Take`, `SplitAt`, ...), and maps traverse key-value pairs. `stream.Stream` does not either: it is lazy and possibly infinite, so `Head` and `Reduce` return an `Option` and `Count` takes no predicate.
 

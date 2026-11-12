@@ -154,6 +154,20 @@ func main() = rank(Mute(1))`,
 			contains: "collection_immutable.Array[int] does not implement Iterable[int, collection_immutable.List[int]]: method Tail returns collection_immutable.Array[int], not collection_immutable.List[int]",
 		},
 		{
+			name: "set as a self-typed Iterable type argument",
+			body: `func evens[C Iterable[int, C]](xs C) C = xs.Tail().Filter((x) => x % 2 == 0)
+
+func main() = Println(evens(HashSetOf(1, 2)))`,
+			contains: "collection_immutable.HashSet[int], the type argument for C of evens, does not implement its constraint Iterable[int, collection_immutable.HashSet[int]]: it has no method Last",
+		},
+		{
+			name: "sequence of another element type as a self-typed Iterable type argument",
+			body: `func evens[C Iterable[int, C]](xs C) C = xs.Tail().Filter((x) => x % 2 == 0)
+
+func main() = Println(evens(ListOf("a")))`,
+			contains: "collection_immutable.List[string], the type argument for C of evens, does not implement its constraint Iterable[int, collection_immutable.List[string]]: method ForEach takes (func(string)), not (func(int))",
+		},
+		{
 			name: "error",
 			body: `func fail() error = Mute(1)
 
@@ -279,7 +293,7 @@ func sizeOf[T any](b Box[T]) int {
 }
 
 // A std collection implements Iterable with itself as the self type.
-func evens[C any](xs Iterable[int, C]) C = xs.Filter((x) => x % 2 == 0)
+func evens[C Iterable[int, C]](xs C) C = xs.Tail().Filter((x) => x % 2 == 0)
 
 func main() {
     val it Iterable[int, Array[int]] = ArrayOf(1, 2, 3)

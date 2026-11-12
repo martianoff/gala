@@ -5,35 +5,40 @@ import (
     "martianoff/gala/collection_mutable"
 )
 
-// Iterable[T, C] carries the collection's own type C, so generic code over any
-// iterable gets the concrete collection back from Filter, Tail and the other
-// sub-collection methods. T and C are inferred from the argument.
+// Iterable[T, C] carries the collection's own type C. Bounding C by
+// Iterable[T, C] lets generic code chain the sub-collection methods (each
+// returns C) and hand the caller's concrete collection back. T and C are
+// inferred from the argument.
 
-// evens keeps the even elements. The result is the caller's own collection
-// type: an Array for an Array, a List for a List.
-func evens[C any](xs Iterable[int, C]) C = xs.Filter((x) => x % 2 == 0)
+// evensAfterFirst drops the first element and keeps the even ones: an Array
+// for an Array, a List for a List.
+func evensAfterFirst[C Iterable[int, C]](xs C) C = xs.Tail().Filter((x) => x % 2 == 0)
 
-// rest drops the first element, whatever the element type.
-func rest[T any, C any](xs Iterable[T, C]) C = xs.Tail()
+// middle drops the first and the last element, whatever the element type.
+func middle[T any, C Iterable[T, C]](xs C) C = xs.Drop(1).Init()
 
-// halves splits any iterable at its middle into two collections of its type.
-func halves[T any, C any](xs Iterable[T, C]) Tuple[C, C] = xs.SplitAt(xs.Size() / 2)
+// halves splits at the middle and keeps the prefix of the back half that
+// satisfies p.
+func halves[T any, C Iterable[T, C]](xs C, p func(T) bool) Tuple[C, C] {
+    val (front, back) = xs.SplitAt(xs.Size() / 2)
+    (front, back.TakeWhile(p))
+}
 
-// describe uses only the element-level methods.
-func describe[T any, C any](xs Iterable[T, C]) string =
+// describe reads the elements through the interface.
+func describe[T any, C Iterable[T, C]](xs C) string =
     s"size=${xs.Size()} head=${xs.HeadOption()} [${xs.MkString(", ")}]"
 
 func main() {
-    val arr = evens(rest(ArrayOf(1, 2, 3, 4, 5, 6)))
-    val list = evens(ListOf(2, 4, 5, 8))
     // The results are the concrete collections, with their own methods.
+    val arr = evensAfterFirst(ArrayOf(1, 2, 3, 4, 5, 6))
+    val list = evensAfterFirst(ListOf(2, 4, 5, 8))
     Println(arr, arr.Get(0))
     Println(list, list.Prepend(0))
-    Println(rest(ListOf("x", "y", "z")).Head())
+    Println(middle(ListOf("x", "y", "z")).Head(), middle(ArrayOf(1.5, 2.5, 3.5)))
 
-    val (front, back) = halves(ArrayOf("a", "b", "c"))
+    val (front, back) = halves(ArrayOf("a", "b", "c", "d"), (s) => s == "c")
     Println(front, back, back.Last())
-    Println(halves(ListOf(1.5, 2.5)))
+    Println(halves(ListOf(1, 2, 3, 4), (n) => n > 5))
 
     // A value of the concrete type fills an Iterable slot directly.
     val it Iterable[int, Array[int]] = ArrayOf(7, 8, 9)
@@ -45,10 +50,10 @@ func main() {
     // The mutable collections implement it through their pointer,
     // Ptr[Array[T]] as Iterable[T, Ptr[Array[T]]].
     val buf = collection_mutable.ArrayOf(1, 2, 3, 4)
-    val even = evens(buf)
-    even.Append(10)
-    Println(even, buf)
-    val queue = collection_mutable.ListOf(3, 4, 5)
+    val evens = evensAfterFirst(buf)
+    evens.Append(10)
+    Println(evens, buf, buf.Span((x) => x < 3))
+    val queue = collection_mutable.ListOf(3, 4, 5, 6)
     val (odd, others) = queue.Span((x) => x % 2 == 1)
-    Println(odd, others, halves(queue))
+    Println(odd, others, middle(queue), describe(queue))
 }
