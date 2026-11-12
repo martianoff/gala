@@ -2453,7 +2453,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 			typeMeta, _ := t.getTypeMetaResolved(funcName)
 			if typeMeta != nil {
 				if applyMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
-					ctx.applyMethodMeta = applyMeta
+					ctx.applyMethodMeta = t.writtenApplyParams(applyMeta)
 					ctx.applyTypeParams = typeMeta.TypeParams
 					ctx.applyTypeSubst = explicitTypeArgSubst(typeMeta.TypeParams, t.extractFuncCallTypeArgs(fun))
 					// A partial list (`Mk[int](2, (x) => …)`) is completed
@@ -2462,9 +2462,9 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 					if n := len(ctx.applyTypeSubst); n > 0 && n < len(typeMeta.TypeParams) && args.at.ok() {
 						ctx.applyTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(&transpiler.FunctionMetadata{
 							TypeParams: typeMeta.TypeParams,
-							ParamTypes: applyMeta.ParamTypes,
-							ParamNames: applyMeta.ParamNames,
-							Variadic:   applyMeta.Variadic,
+							ParamTypes: ctx.applyMethodMeta.ParamTypes,
+							ParamNames: ctx.applyMethodMeta.ParamNames,
+							Variadic:   ctx.applyMethodMeta.Variadic,
 						}, args, ctx.applyTypeSubst, nil)
 					}
 				}

@@ -1459,6 +1459,30 @@ func main() {
 			},
 		},
 		{
+			name: "value whose type does not implement the interface of its slot",
+			code: galaerr.CodeInterfaceNotImplemented, // GALA-E0100
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Shape interface {
+    Area() float64
+    Scale(k float64) Shape
+}
+
+struct Square(side float64)
+
+func (s Square) Area() float64 = s.side * s.side
+func (s Square) Scale(k float64) Square = Square(s.side * k)
+
+func total(s Shape) float64 = s.Area()
+
+func main() {
+    Println(total(Square(2.0)))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

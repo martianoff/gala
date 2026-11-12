@@ -813,6 +813,9 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		if err := t.checkConstSlot(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
+		if err := t.checkInterfaceSlot(expr, s.typ, e.at()); err != nil {
+			return nil, err
+		}
 	}
 	return expr, nil
 }
