@@ -1,4 +1,4 @@
-# Core JSON, version 3
+# Core JSON, version 4
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -11,7 +11,8 @@ the parts of S2 listed here:
 - `match` with nested, tuple, literal and wildcard patterns, and guards;
 - `Println` and `Print`;
 - interpolated strings, `s"..."` (S2);
-- lambdas, function types and functions as values (S2).
+- lambdas, function types and functions as values (S2);
+- default values of parameters and fields, and named arguments (S2).
 
 The Go types in [schema.go](schema.go) are the same schema. `schema_test.go` checks
 that every kind and field there is documented here, and that the two lists of
@@ -44,7 +45,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 3,
+  "core": 4,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -161,14 +162,17 @@ receiver) and a generic function are unsupported.
 
 ### `param`
 
-A function or lambda parameter. Defaults, variadic parameters and `val`/`var` modifiers
-are unsupported.
+A function or lambda parameter. Variadic parameters and `val`/`var` modifiers are
+unsupported.
 
 - `name` (string).
 - `type` (type or null): null when left out.
+- `default` (expression or null): the default value, `n int = 1`. It is not filled in:
+  the spec decides where and when it is evaluated.
 
 ```json
-{ "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "name": "int" } }
+{ "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "name": "int" },
+  "default": null }
 ```
 
 ### `struct`
@@ -182,20 +186,22 @@ are unsupported.
 ```json
 { "kind": "struct", "pos": "…", "name": "Pair", "shorthand": true, "fields": [
   { "kind": "field", "pos": "…", "name": "Left", "type": { "kind": "type-name", "pos": "…", "name": "int" },
-    "mutable": false } ] }
+    "mutable": false, "default": null } ] }
 ```
 
 ### `field`
 
-A field of a struct or of a sealed variant. A field with a default is unsupported.
+A field of a struct or of a sealed variant.
 
 - `name` (string).
 - `type` (type, or null for a shorthand field written without one).
 - `mutable` (bool): true for a `var` field.
+- `default` (expression or null): the default value of a shorthand struct's or a
+  variant's field, `Tries int = 3`.
 
 ```json
 { "kind": "field", "pos": "…", "name": "Y", "type": { "kind": "type-name", "pos": "…", "name": "int" },
-  "mutable": true }
+  "mutable": true, "default": null }
 ```
 
 ### `sealed`
@@ -222,7 +228,7 @@ One `case` of a sealed type. `case Empty` and `case Empty()` are the same varian
 ```json
 { "kind": "variant", "pos": "…", "name": "Circle", "default": false, "fields": [
   { "kind": "field", "pos": "…", "name": "Radius", "type": { "kind": "type-name", "pos": "…", "name": "int" },
-    "mutable": false } ] }
+    "mutable": false, "default": null } ] }
 ```
 
 ### `type-name`
@@ -371,11 +377,12 @@ one level nests to the left: `a - b - c` is `(a - b) - c`.
 ### `call`
 
 `callee(args)`. Struct and variant construction (`Point(1, 2)`) and printing
-(`Println(x)`) are calls too: the exporter does not tell them apart. Named arguments and
-spread arguments are unsupported; a lambda argument is a [`lambda`](#lambda).
+(`Println(x)`) are calls too: the exporter does not tell them apart. Spread arguments are
+unsupported; a lambda argument is a [`lambda`](#lambda).
 
 - `callee` (expression).
-- `args` (list of expressions), in source order.
+- `args` (list): in source order, each an expression or a [`named-arg`](#named-arg).
+  The exporter does not reorder named arguments or fill in defaults.
 
 ```json
 { "kind": "call", "pos": "…", "callee": { "kind": "name", "pos": "…", "name": "Println" },
@@ -508,6 +515,18 @@ The pattern `(p1, p2, ...)`, two or more elements.
   "args": [ { "kind": "pat-name", "pos": "…", "name": "v" } ] }
 ```
 
+### `named-arg`
+
+A named argument of a call, `f(x = 1)` (S2), in its place among the arguments.
+
+- `name` (string): the parameter or field it names.
+- `value` (expression or [`lambda`](#lambda)).
+
+```json
+{ "kind": "named-arg", "pos": "…", "name": "divisor",
+  "value": { "kind": "int", "pos": "…", "text": "4" } }
+```
+
 ### `lambda`
 
 A lambda, `(x int) => x * x` or `(n int) int => { ... }` (S2), wherever it is written: as
@@ -580,7 +599,7 @@ Every name an `unsupported` node can carry.
 | `method` | a function with a receiver |
 | `go-results` | a Go-style multiple result list `(T1, T2)` |
 | `param-modifier` | a function parameter marked `val` or `var` |
-| `param-default` | a parameter or field with a default value |
+| `param-default` | a parameter of a function type with a default value, `func(x int = 1)` |
 | `variadic-param` | a variadic parameter or field, `xs ...T` |
 | `unnamed-param` | a parameter or field with a type and no name |
 | `bind` | a `bind` declaration |
@@ -593,7 +612,7 @@ Every name an `unsupported` node can carry.
 | `placeholder-lambda` | a placeholder lambda, `_ * 2`, which the transpiler rewrites from the expected type |
 | `composite-literal` | a Go composite literal, `T{...}` |
 | `index` | indexing or explicit type arguments, `x[i]` |
-| `named-arg` | a named argument, `f(x = 1)` |
+| `named-sub-pattern` | a named sub-pattern of an extractor, `case Rect(Height = h)` |
 | `spread-arg` | a spread argument, `f(xs...)` |
 | `unit` | `()` |
 | `one-tuple` | `(a,)` |

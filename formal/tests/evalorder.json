@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -196,7 +196,8 @@
                   "end": 122
                 },
                 "name": "string"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -216,7 +217,8 @@
                   "end": 129
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -333,7 +335,8 @@
                   "end": 180
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -353,7 +356,8 @@
                   "end": 187
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -373,7 +377,8 @@
                   "end": 194
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {

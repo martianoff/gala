@@ -39,6 +39,8 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.evalList_nil",
     "Gala.Spec.capturedEnv_captured",
     "Gala.Spec.lookup_captured",
+    "Gala.Spec.defaultFrame_other",
+    "Gala.Spec.defaultFrame_last",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the

@@ -161,6 +161,23 @@ func main() {
     Println(apply(1, (var z int) => z), apply(1, _ * 2))
 }
 `},
+		{"defaults_named", `package main
+
+func scale(a int, b int = a * 2) int = a + b
+
+struct Cfg(Name string, Tries int = 3)
+
+sealed type Shape {
+    case Rect(W int, H int = 2)
+}
+
+func main() {
+    Println(scale(1), scale(b = 5, a = 1), Cfg(Name = "a"), Rect(3))
+    Println(Rect(3) match {
+        case Rect(H = h) => h
+    })
+}
+`},
 		{"unsupported", `package main
 
 import "fmt"

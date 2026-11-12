@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -42,7 +42,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -74,7 +75,8 @@
                   "end": 281
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -94,7 +96,8 @@
                   "end": 288
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -114,7 +117,8 @@
                   "end": 299
                 },
                 "name": "bool"
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -332,7 +336,8 @@
                   "end": 453
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -352,7 +357,8 @@
                   "end": 460
                 },
                 "name": "Box"
-              }
+              },
+              "default": null
             }
           ],
           "result": {

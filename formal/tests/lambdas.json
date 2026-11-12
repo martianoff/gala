@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -42,7 +42,8 @@
                 },
                 "name": "string"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -84,7 +85,8 @@
                   "name": "int"
                 }
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -138,7 +140,8 @@
                       "name": "int"
                     }
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 }
               ]
             },
@@ -212,7 +215,8 @@
                   "end": 154
                 },
                 "name": "string"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -232,7 +236,8 @@
                   "end": 161
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -349,7 +354,8 @@
                   "end": 212
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -390,7 +396,8 @@
                   },
                   "name": "int"
                 }
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -484,7 +491,8 @@
                   },
                   "name": "int"
                 }
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -545,7 +553,8 @@
                     "end": 293
                   },
                   "name": "int"
-                }
+                },
+                "default": null
               }
             ],
             "result": null,
@@ -631,7 +640,8 @@
                   "end": 324
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -716,7 +726,8 @@
                   },
                   "name": "int"
                 }
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -841,7 +852,8 @@
                             "end": 490
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,
@@ -1685,7 +1697,8 @@
                             "end": 1200
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": {
@@ -2040,7 +2053,8 @@
                             "end": 1431
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       },
                       {
                         "kind": "param",
@@ -2060,7 +2074,8 @@
                             "end": 1438
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,
@@ -2313,7 +2328,8 @@
                                 "end": 1606
                               },
                               "name": "int"
-                            }
+                            },
+                            "default": null
                           }
                         ],
                         "result": null,
@@ -2843,7 +2859,8 @@
                             "end": 1928
                           },
                           "name": "string"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,
@@ -2988,7 +3005,8 @@
                             "end": 2007
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       },
                       {
                         "kind": "param",
@@ -3008,7 +3026,8 @@
                             "end": 2014
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,
@@ -3312,7 +3331,8 @@
                               "end": 2243
                             },
                             "name": "y",
-                            "type": null
+                            "type": null,
+                            "default": null
                           }
                         ],
                         "result": null,
@@ -3484,7 +3504,8 @@
                             "end": 2398
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,

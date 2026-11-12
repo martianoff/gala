@@ -25,7 +25,6 @@ func main() {
     Println(s"nested ${s"in${n}ner"} end")
     Println(s"")
     Println(s"plain")
-    // Literal text in s"...": the transpiler prints 7one, 7 and %!d(MISSING)
-    // (issues #1042 and #1043); this fixture's .out is the spec's answer.
+    // A `%` is literal text in s"...", and so is an escape for it.
     Println(s"$n%done ${n}%x a $n \x25d")
 }

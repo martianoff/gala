@@ -256,8 +256,6 @@ func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 		return e.unsupported(UnsupportedVariadicParam, p.GalaNodeRef)
 	case !p.Identifier().Ok():
 		return e.unsupported(UnsupportedUnnamedParam, p.GalaNodeRef)
-	case p.ParamDefault().Ok():
-		return e.unsupported(UnsupportedParamDefault, p.GalaNodeRef)
 	}
 	return nil
 }
@@ -269,7 +267,16 @@ func (e *exporter) param(p native.ParameterNode) Node {
 	if bad := e.unsupportedParam(p); bad != nil {
 		return bad
 	}
-	return of(e, &Param{Name: p.Identifier().GetText(), Type: e.optType(p.Type_())}, p.GalaNodeRef)
+	return of(e, &Param{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Default: e.paramDefault(p.ParamDefault())},
+		p.GalaNodeRef)
+}
+
+// paramDefault is the default value d declares, or nil (JSON null) for none.
+func (e *exporter) paramDefault(d native.ParamDefaultNode) Node {
+	if !d.Ok() {
+		return nil
+	}
+	return e.expr(d.Expression().GalaNodeRef)
 }
 
 func (e *exporter) typeDecl(t native.TypeDeclarationNode) Node {
@@ -300,8 +307,8 @@ func (e *exporter) shorthandField(p native.ParameterNode) Node {
 	if bad := e.unsupportedParam(p); bad != nil {
 		return bad
 	}
-	return of(e, &Field{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Mutable: p.VAR().Ok()},
-		p.GalaNodeRef)
+	return of(e, &Field{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Mutable: p.VAR().Ok(),
+		Default: e.paramDefault(p.ParamDefault())}, p.GalaNodeRef)
 }
 
 func (e *exporter) sealed(d native.SealedTypeDeclarationNode) Node {
@@ -314,10 +321,8 @@ func (e *exporter) sealed(d native.SealedTypeDeclarationNode) Node {
 
 func (e *exporter) variant(c native.SealedCaseNode) Node {
 	fields := mapNodes(c.SealedCaseFieldList().AllSealedCaseField(), func(f native.SealedCaseFieldNode) Node {
-		if f.ParamDefault().Ok() {
-			return e.unsupported(UnsupportedParamDefault, f.GalaNodeRef)
-		}
-		return of(e, &Field{Name: f.Identifier().GetText(), Type: e.typ(f.Type_())}, f.GalaNodeRef)
+		return of(e, &Field{Name: f.Identifier().GetText(), Type: e.typ(f.Type_()),
+			Default: e.paramDefault(f.ParamDefault())}, f.GalaNodeRef)
 	})
 	return of(e, &Variant{Name: c.Identifier().GetText(), Default: c.DEFAULT().Ok(), Fields: fields},
 		c.GalaNodeRef)
@@ -513,24 +518,31 @@ func (e *exporter) postfix(p native.PostfixExprNode) Node {
 	return of(e, &Match{Subject: cur, Cases: mapNodes(p.AllCaseClause(), e.caseClause)}, p.GalaNodeRef)
 }
 
-// unsupportedArg is what makes a, a call argument or an extractor's
+// unsupportedArg is what makes a, an extractor's
 // sub-pattern, unsupported; nil when nothing does, and a is a pattern.
 func (e *exporter) unsupportedArg(a native.ArgumentNode) Node {
 	switch {
 	case a.Identifier().Ok():
-		return e.unsupported(UnsupportedNamedArg, a.GalaNodeRef)
-	case a.LambdaExpression().Ok(): // in a pattern; arg exports it as an argument
+		return e.unsupported(UnsupportedNamedSubPattern, a.GalaNodeRef)
+	case a.LambdaExpression().Ok():
 		return e.unsupported(UnsupportedExprPattern, a.GalaNodeRef)
 	}
 	return nil
 }
 
 func (e *exporter) arg(a native.ArgumentNode) Node {
-	if l := a.LambdaExpression(); l.Ok() && !a.Identifier().Ok() {
-		return e.lambda(l)
+	if a.Identifier().Ok() {
+		// `name = value`: the value is exported as a positional argument would be,
+		// unsupported or not, so the argument keeps its name.
+		return of(e, &NamedArg{Name: a.Identifier().GetText(), Value: e.argValue(a)}, a.GalaNodeRef)
 	}
-	if bad := e.unsupportedArg(a); bad != nil {
-		return bad
+	return e.argValue(a)
+}
+
+// argValue exports the value of call argument a: a lambda or an expression.
+func (e *exporter) argValue(a native.ArgumentNode) Node {
+	if l := a.LambdaExpression(); l.Ok() {
+		return e.lambda(l)
 	}
 	p := a.Pattern()
 	if ep, ok := p.AsExpressionPattern(); ok {

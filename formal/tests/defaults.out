@@ -1,0 +1,9 @@
+3 6 hi bob yo ann 100 LOCAL
+5 4
+1 2 20 BC
+1 2 7 caB
+1 2 9 cB
+Cfg(a, 3, hi) Cfg(b, 3, t) Cfg(c, 9, hi)
+Circle(1) Rect(3, 2) Rect(5, 4)
+Point(1, 2) yx
+yo eve hey dan ELD

@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 773
+        "end": 688
       },
       "path": "formal/tests/src/interp.gala",
       "package": "main",
@@ -42,7 +42,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -63,7 +64,8 @@
                 },
                 "name": "string"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -107,7 +109,8 @@
                     },
                     "name": "int"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 }
               ]
             },
@@ -181,7 +184,8 @@
                   "end": 135
                 },
                 "name": "string"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -201,7 +205,8 @@
                   "end": 142
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -296,7 +301,7 @@
             "line": 17,
             "col": 1,
             "off": 181,
-            "end": 773
+            "end": 688
           },
           "name": "main",
           "params": [],
@@ -307,7 +312,7 @@
               "line": 17,
               "col": 13,
               "off": 193,
-              "end": 773
+              "end": 688
             },
             "stmts": [
               {
@@ -1276,18 +1281,18 @@
               {
                 "kind": "call",
                 "pos": {
-                  "line": 30,
+                  "line": 29,
                   "col": 5,
-                  "off": 734,
-                  "end": 771
+                  "off": 649,
+                  "end": 686
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
-                    "line": 30,
+                    "line": 29,
                     "col": 5,
-                    "off": 734,
-                    "end": 741
+                    "off": 649,
+                    "end": 656
                   },
                   "name": "Println"
                 },
@@ -1295,90 +1300,70 @@
                   {
                     "kind": "interp",
                     "pos": {
-                      "line": 30,
+                      "line": 29,
                       "col": 13,
-                      "off": 742,
-                      "end": 770
+                      "off": 657,
+                      "end": 685
                     },
                     "text": "s\"$n%done ${n}%x a $n \\x25d\"",
                     "parts": [
                       {
                         "kind": "name",
                         "pos": {
-                          "line": 30,
+                          "line": 29,
                           "col": 16,
-                          "off": 745,
-                          "end": 746
+                          "off": 660,
+                          "end": 661
                         },
                         "name": "n"
                       },
                       {
                         "kind": "interp-text",
                         "pos": {
-                          "line": 30,
+                          "line": 29,
                           "col": 17,
-                          "off": 746,
-                          "end": 748
+                          "off": 661,
+                          "end": 667
                         },
-                        "value": "%d"
-                      },
-                      {
-                        "kind": "interp-text",
-                        "pos": {
-                          "line": 30,
-                          "col": 19,
-                          "off": 748,
-                          "end": 752
-                        },
-                        "value": "one "
+                        "value": "%done "
                       },
                       {
                         "kind": "name",
                         "pos": {
-                          "line": 30,
+                          "line": 29,
                           "col": 25,
-                          "off": 754,
-                          "end": 755
+                          "off": 669,
+                          "end": 670
                         },
                         "name": "n"
                       },
                       {
                         "kind": "interp-text",
                         "pos": {
-                          "line": 30,
+                          "line": 29,
                           "col": 27,
-                          "off": 756,
-                          "end": 758
+                          "off": 671,
+                          "end": 676
                         },
-                        "value": "%x"
-                      },
-                      {
-                        "kind": "interp-text",
-                        "pos": {
-                          "line": 30,
-                          "col": 29,
-                          "off": 758,
-                          "end": 761
-                        },
-                        "value": " a "
+                        "value": "%x a "
                       },
                       {
                         "kind": "name",
                         "pos": {
-                          "line": 30,
+                          "line": 29,
                           "col": 33,
-                          "off": 762,
-                          "end": 763
+                          "off": 677,
+                          "end": 678
                         },
                         "name": "n"
                       },
                       {
                         "kind": "interp-text",
                         "pos": {
-                          "line": 30,
+                          "line": 29,
                           "col": 34,
-                          "off": 763,
-                          "end": 769
+                          "off": 678,
+                          "end": 684
                         },
                         "value": " %d"
                       }

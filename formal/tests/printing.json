@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -42,7 +42,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -63,7 +64,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -97,7 +99,8 @@
                 },
                 "name": "string"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -118,7 +121,8 @@
                 },
                 "name": "int"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -152,7 +156,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -173,7 +178,8 @@
                 },
                 "name": "string"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -207,7 +213,8 @@
                 },
                 "name": "Pt"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -228,7 +235,8 @@
                 },
                 "name": "Shape"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -249,7 +257,8 @@
                 },
                 "name": "bool"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -283,7 +292,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -304,7 +314,8 @@
                 },
                 "name": "string"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -338,7 +349,8 @@
                 },
                 "name": "Pt"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -359,7 +371,8 @@
                 },
                 "name": "Pt"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             },
             {
               "kind": "field",
@@ -380,7 +393,8 @@
                 },
                 "name": "In"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -414,7 +428,8 @@
                 },
                 "name": "In"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -435,7 +450,8 @@
                 },
                 "name": "In"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -469,7 +485,8 @@
                 },
                 "name": "Shape"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -503,7 +520,8 @@
                 },
                 "name": "Shape"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -559,7 +577,8 @@
                     },
                     "name": "int"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 }
               ]
             },
@@ -593,7 +612,8 @@
                     },
                     "name": "In"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 },
                 {
                   "kind": "field",
@@ -614,7 +634,8 @@
                     },
                     "name": "string"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 }
               ]
             },

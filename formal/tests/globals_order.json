@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -119,7 +119,8 @@
                   "end": 66
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {

@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 3
+const Version = 4
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -100,6 +100,8 @@ type Param struct {
 	Meta
 	Name string `json:"name"`
 	Type Node   `json:"type"`
+	// Default is the default value, null for none.
+	Default Node `json:"default"`
 }
 
 // Struct is `type Name struct { fields }`, or with Shorthand
@@ -118,6 +120,8 @@ type Field struct {
 	Name    string `json:"name"`
 	Type    Node   `json:"type"`
 	Mutable bool   `json:"mutable"`
+	// Default is the default value, null for none.
+	Default Node `json:"default"`
 }
 
 // Sealed is `sealed type Name { variants }`.
@@ -313,6 +317,14 @@ type PatExtract struct {
 	Args   []Node `json:"args"`
 }
 
+// NamedArg is a named call argument `name = value`, in its place among the
+// arguments.
+type NamedArg struct {
+	Meta
+	Name  string `json:"name"`
+	Value Node   `json:"value"`
+}
+
 // --- Functions as values ---
 
 // Lambda is `(params) [result] => body`. A parameter's Type is null when it
@@ -383,6 +395,7 @@ func (*PatName) Kind() string     { return "pat-name" }
 func (*PatLit) Kind() string      { return "pat-lit" }
 func (*PatTuple) Kind() string    { return "pat-tuple" }
 func (*PatExtract) Kind() string  { return "pat-extract" }
+func (*NamedArg) Kind() string    { return "named-arg" }
 func (*Lambda) Kind() string      { return "lambda" }
 func (*TypeFunc) Kind() string    { return "type-func" }
 func (*Interp) Kind() string      { return "interp" }
@@ -396,7 +409,7 @@ var nodeTypes = []Node{
 	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
 	&PatWild{}, &PatName{}, &PatLit{}, &PatTuple{}, &PatExtract{},
-	&Lambda{}, &TypeFunc{},
+	&NamedArg{}, &Lambda{}, &TypeFunc{},
 	&Interp{}, &InterpText{},
 }
 
@@ -434,7 +447,7 @@ const (
 	UnsupportedPlaceholder      = "placeholder-lambda"
 	UnsupportedCompositeLiteral = "composite-literal"
 	UnsupportedIndex            = "index"
-	UnsupportedNamedArg         = "named-arg"
+	UnsupportedNamedSubPattern  = "named-sub-pattern"
 	UnsupportedSpreadArg        = "spread-arg"
 	UnsupportedUnit             = "unit"
 	UnsupportedOneTuple         = "one-tuple"
@@ -470,7 +483,7 @@ var unsupportedKinds = []string{
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
 	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction, UnsupportedPlaceholder,
-	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedArg, UnsupportedSpreadArg,
+	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedSubPattern, UnsupportedSpreadArg,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,
 	UnsupportedStringEscape, UnsupportedGenericType,

@@ -1,0 +1,16 @@
+package main
+
+// In s"...", a `%` is literal text, even right after an embedded
+// expression, and an escape that stands for `%` is a literal `%`. The
+// program uses only what the formal spec models, so the differential test
+// checks this output against it.
+
+struct Pt(X int, Y int)
+
+func main() {
+    val n = 7
+    val p = Pt(1, 2)
+    Println(s"$n%done ${n}%x a $n \x25d")
+    Println(s"100% of $n, $$5, $p%v, ${p.X}%")
+    Println(s"no exprs 100% \x25d")
+}

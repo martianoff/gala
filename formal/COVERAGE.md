@@ -36,6 +36,7 @@ The tiers mean exactly this:
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | no |
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | no |
 | S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | no |
+| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | no |
 | Determinism of every run (T1) | — | — | yes |
 
 Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
@@ -68,7 +69,9 @@ A run ends `unsupported:<kind>` when it reaches:
   variant constructor used as a value (`func-value`); a placeholder lambda `_ * 2`
   (`placeholder-lambda`); a plain expression passed as a by-name argument, which only a
   typed `func() T` parameter turns into a thunk (`by-name-arg`); the zero value of a
-  function type, `nil` (`nil`); a type outside S1 (`type-<name>`); an
+  function type, `nil` (`nil`); a lambda parameter with a default (`param-default`); a
+  named argument to a function value (`named-arg`); a positional argument after a named
+  one (`positional-after-named`); a type outside S1 (`type-<name>`); an
   integer constant outside int64 (`int-constant-overflow`); a cycle in package-level
   initialization (`init-cycle`); a program without `main` (`no-main`);
 - printing a struct or sealed value in a program that declares methods (a `String`
@@ -80,15 +83,13 @@ A run ends `unsupported:<kind>` when it reaches:
 
 `lake exe galaspec-tests` runs the fixtures in [`tests/`](tests):
 
-- 13 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
-  interpolated strings, lambdas and closures,
+- 14 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+  interpolated strings, lambdas and closures, named arguments and defaults,
   package-level initialization and its order, scoping, three panic classes, fuel), and a
   document with
   an unknown `core` version, which is malformed.
   Each `.out` is what the program prints when built and run with the `gala` CLI; for
-  `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer; so it is for the
-  last line of `interp`, which the transpiler prints wrongly ([#1042](https://github.com/martianoff/gala/issues/1042),
-  [#1043](https://github.com/martianoff/gala/issues/1043)).
+  `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer.
 - 14 S1 examples from `examples/`: 8 run to the end and print the example's `.out`, 2 end
   in fuel after a prefix of it, 4 are unsupported (`println`, `Some`, `Equal`).
 
@@ -111,6 +112,7 @@ fail if a theorem listed here is missing; keep `requiredTheorems` there and
 | `Gala.Spec.update_length`, `exitScope_push` | An assignment keeps the scope stack's shape, so leaving a block drops its own bindings and keeps its assignments to outer variables. |
 | `Gala.Spec.evalList_cons`, `evalList_nil` | **T3, for operand lists.** The arguments of every call (function, lambda, constructor, `Println`), the elements of a tuple and the parts of an interpolated string are evaluated first to last, each completely before the next. The statement is the definition's own equation: the theorem records it, as T1 does. |
 | `Gala.Spec.capturedEnv_captured`, `lookup_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in: every name resolves as it did there, a `var` to the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells, as evaluation builds them; that evaluation keeps this invariant is not proved. |
+| `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, for scoping.** A default value is evaluated in a scope holding only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That the order of evaluation is the decided one (arguments as written, then defaults in parameter order) is the definition of `bindArgs`, not a theorem. |
 
 These are theorems about the *spec* (and a model of one lowering), not about the
 transpiler. T2 for whole programs (renaming every binder leaves the outcome unchanged) is
@@ -118,8 +120,7 @@ not proved: the lemmas above are the name-resolution part of it.
 
 ## What is not covered
 
-Everything outside S1: the rest of S2 (default and named arguments,
-`Option`/`Either`/`Try`, format strings `f"..."`), generics, methods (and so `Copy`/`Equal`
+Everything outside S1: the rest of S2 (`Option`/`Either`/`Try`, format strings `f"..."`), generics, methods (and so `Copy`/`Equal`
 calls), collections, loops, Go interop, and the rest. The section below, generated from a differential run, gives
 every example's verdict.
 
@@ -135,12 +136,12 @@ say the programs below behave as the spec says, not that the transpiler is corre
 
 | Verdict | Examples | Generated programs |
 |---|---|---|
-| AGREE | 20 | 1 |
+| AGREE | 28 | 1 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 436 | 34 |
+| UNSUPPORTED | 431 | 34 |
 | INCONCLUSIVE | 0 | 0 |
 
-Examples that run wholly inside the subset and agree with the spec: **20** (ratchet baseline 20).
+Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
 
 ### Constructs
 
@@ -152,70 +153,71 @@ nothing about it.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved |
 |---|---|---|---|
-| `file` | yes | yes: 21 agree | no |
-| `val` | yes | yes: 8 agree | no |
-| `var` | yes | yes: 3 agree | no |
-| `func` | yes | yes: 21 agree | no |
-| `param` | yes | yes: 19 agree | no |
-| `struct` | yes | no: 1 agree | no |
-| `field` | yes | no: 2 agree | no |
-| `sealed` | yes | yes: 4 agree | no |
-| `variant` | yes | yes: 4 agree | no |
-| `type-name` | yes | yes: 19 agree | no |
-| `block` | yes | yes: 21 agree | no |
+| `file` | yes | yes: 29 agree | no |
+| `val` | yes | yes: 11 agree | no |
+| `var` | yes | yes: 4 agree | no |
+| `func` | yes | yes: 29 agree | no |
+| `param` | yes | yes: 26 agree | no |
+| `struct` | yes | yes: 3 agree | no |
+| `field` | yes | yes: 7 agree | no |
+| `sealed` | yes | yes: 7 agree | no |
+| `variant` | yes | yes: 7 agree | no |
+| `type-name` | yes | yes: 27 agree | no |
+| `block` | yes | yes: 29 agree | no |
 | `if` | yes | yes: 6 agree | no |
-| `return` | yes | yes: 4 agree | no |
-| `assign` | yes | yes: 3 agree | no |
+| `return` | yes | yes: 5 agree | no |
+| `assign` | yes | yes: 4 agree | no |
 | `incdec` | not seen | no | no |
-| `int` | yes | yes: 19 agree | no |
-| `bool` | yes | yes: 6 agree | no |
-| `string` | yes | yes: 14 agree | no |
-| `name` | yes | yes: 21 agree | no |
+| `int` | yes | yes: 26 agree | no |
+| `bool` | yes | yes: 8 agree | no |
+| `string` | yes | yes: 21 agree | no |
+| `name` | yes | yes: 29 agree | no |
 | `unary` | yes | yes: 5 agree | no |
-| `binary` | yes | yes: 19 agree | no |
-| `call` | yes | yes: 21 agree | no |
-| `select` | yes | no: 2 agree | no |
+| `binary` | yes | yes: 22 agree | no |
+| `call` | yes | yes: 29 agree | no |
+| `select` | yes | yes: 4 agree | no |
 | `paren` | yes | no: 1 agree | no |
 | `tuple` | not seen | no | no |
-| `if-expr` | yes | yes: 9 agree | no |
-| `match` | yes | yes: 11 agree | no |
-| `case` | yes | yes: 11 agree | no |
+| `if-expr` | yes | yes: 10 agree | no |
+| `match` | yes | yes: 13 agree | no |
+| `case` | yes | yes: 13 agree | no |
 | `pat-wild` | yes | yes: 7 agree | no |
-| `pat-name` | yes | yes: 5 agree | no |
+| `pat-name` | yes | yes: 7 agree | no |
 | `pat-lit` | yes | yes: 7 agree | no |
 | `pat-tuple` | not seen | no | no |
-| `pat-extract` | yes | no: 2 agree | no |
-| `lambda` | yes | yes: 4 agree | no |
-| `type-func` | yes | no: 2 agree | no |
-| `interp` | yes | yes: 5 agree | no |
-| `interp-text` | yes | yes: 5 agree | no |
+| `pat-extract` | yes | yes: 4 agree | no |
+| `named-arg` | yes | yes: 5 agree | no |
+| `lambda` | yes | yes: 5 agree | no |
+| `type-func` | yes | yes: 3 agree | no |
+| `interp` | yes | yes: 13 agree | no |
+| `interp-text` | yes | yes: 13 agree | no |
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (40 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (41 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 124 |
-| `method-call` | 113 |
-| `index` | 69 |
-| `generic-type` | 52 |
-| `named-arg` | 15 |
-| `generic-decl` | 14 |
+| `import` | 123 |
+| `method-call` | 119 |
+| `index` | 72 |
+| `generic-type` | 53 |
+| `generic-decl` | 15 |
+| `address-of` | 9 |
 | `unresolved-name` | 9 |
-| `address-of` | 8 |
 | `float-literal` | 8 |
-| `param-default` | 8 |
-| `composite-literal` | 5 |
-| `by-name-arg` | 4 |
+| `composite-literal` | 7 |
 | `local-struct` | 4 |
 | `stuck` | 4 |
+| `by-name-arg` | 3 |
 | `slice-type` | 3 |
+| `char-literal` | 2 |
 | `expression-pattern` | 2 |
 | `for` | 2 |
+| `format-string` | 2 |
 | `method` | 2 |
 | `type-Value` | 2 |
-| `typed-pattern` | 2 |
+| `type-any` | 2 |
 
 ### Known disagreements
 

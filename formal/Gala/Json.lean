@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 3
+def supportedCore : Nat := 4
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -105,14 +105,6 @@ private def optTy (j : Json) (k : String) : D (Option Ty) := do
 def firstUnsupported (js : List Json) : D (Option String) :=
   js.findSomeM? unsupportedOf
 
-/-- The parameters of a function or lambda, or the first unsupported one's name: a default, a
-    variadic or `val`/`var` parameter makes the whole declaration unsupported. -/
-def decodeParams (params : List Json) : D (Except String (List Param)) := do
-  if let some k ← firstUnsupported params then return .error k
-  return .ok (← params.mapM fun p => do
-    unless (← kindOf p) == "param" do throw "expected a param"
-    return ({ name := ← str p "name", type := ← optTy p "type" } : Param))
-
 /-- A literal node: `int`, `bool` or `string`. An `int` whose hint is not `int` is
     rejected: S1 has one integer type, and the hint is checked against it. -/
 def decodeLit (j : Json) : D Lit := do
@@ -159,12 +151,6 @@ partial def decodePat (j : Json) : D Pat := do
     | k => throw s!"extractor callee of kind `{k}`"
   | k => throw s!"expected a pattern, got kind `{k}`"
 
-/-- A field of a struct or variant. An unsupported field makes its whole declaration
-    unsupported, which `decodeTop` checks first. -/
-def decodeField (j : Json) : D Field := do
-  unless (← kindOf j) == "field" do throw "expected a field"
-  return { name := ← str j "name", type := ← optTy j "type", mutable := ← bool j "mutable" }
-
 mutual
 /-- An expression or statement node. -/
 partial def decodeExpr (j : Json) : D Expr := do
@@ -200,11 +186,15 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "interp" => return .interp (← (← arr j "parts").mapM decodePart)
   | "val" => decodeDecl .val j
   | "var" => decodeDecl .var j
-  -- S1 models neither local functions nor local types.
+  | "named-arg" => return .named (← str j "name") (← decodeExpr (← field j "value"))
   | "lambda" =>
     match ← decodeParams (← arr j "params") with
     | .error k => return .unsupported k
-    | .ok ps => return .lambda ps (← optTy j "result") (← decodeExpr (← field j "body"))
+    | .ok (ps, ds) =>
+      -- A lambda's parameters take no defaults (a call of a function value passes them all).
+      if ds.any (·.isSome) then return .unsupported "param-default"
+      return .lambda ps (← optTy j "result") (← decodeExpr (← field j "body"))
+  -- S1 models neither local functions nor local types.
   | "func" => return .unsupported "local-func"
   | "struct" => return .unsupported "local-struct"
   | k => throw s!"expected an expression or statement, got kind `{k}`"
@@ -219,6 +209,23 @@ partial def decodePart (j : Json) : D Expr := do
       throw "an interpolated string's part is a statement"
     | _ => pure ()
   decodeExpr j
+
+/-- An optional expression child: `null` is absent. -/
+partial def optExpr (j : Json) (k : String) : D (Option Expr) := do
+  match ← opt j k with
+  | none => pure none
+  | some e => some <$> decodeExpr e
+
+/-- The parameters of a function or lambda and their default values, or the first
+    unsupported one's name: a variadic or `val`/`var` parameter makes the whole
+    declaration unsupported. -/
+partial def decodeParams (params : List Json) :
+    D (Except String (List Param × List (Option Expr))) := do
+  if let some k ← firstUnsupported params then return .error k
+  let ps ← params.mapM fun p => do
+    unless (← kindOf p) == "param" do throw "expected a param"
+    return (({ name := ← str p "name", type := ← optTy p "type" } : Param), ← optExpr p "default")
+  return .ok (ps.map (·.1), ps.map (·.2))
 
 /-- A `val` or `var` in a block. -/
 partial def decodeDecl (m : Mut) (j : Json) : D Expr := do
@@ -236,6 +243,13 @@ partial def decodeCase (j : Json) : D (Pat × Option Expr × Expr) := do
   return (← decodePat (← field j "pattern"), g, ← decodeExpr (← field j "body"))
 end
 
+/-- A field of a struct or variant, with its default value. An unsupported field makes
+    its whole declaration unsupported, which `decodeTop` checks first. -/
+def decodeField (j : Json) : D Field := do
+  unless (← kindOf j) == "field" do throw "expected a field"
+  return { name := ← str j "name", type := ← optTy j "type", mutable := ← bool j "mutable",
+           default := ← optExpr j "default" }
+
 /-- A top-level declaration. -/
 def decodeTop (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
@@ -243,8 +257,8 @@ def decodeTop (j : Json) : D Decl := do
   | "func" =>
     match ← decodeParams (← arr j "params") with
     | .error k => return .unsupported k
-    | .ok ps =>
-    return .func { name := ← str j "name", params := ps, result := ← optTy j "result",
+    | .ok (ps, ds) =>
+    return .func { name := ← str j "name", params := ps, defaults := ds, result := ← optTy j "result",
                    body := ← decodeExpr (← field j "body") }
   | "struct" =>
     let fields ← arr j "fields"

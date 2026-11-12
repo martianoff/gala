@@ -38,7 +38,9 @@ def requiredTheorems : List Name := [
   `Gala.Spec.evalList_cons,
   `Gala.Spec.evalList_nil,
   `Gala.Spec.capturedEnv_captured,
-  `Gala.Spec.lookup_captured
+  `Gala.Spec.lookup_captured,
+  `Gala.Spec.defaultFrame_other,
+  `Gala.Spec.defaultFrame_last
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

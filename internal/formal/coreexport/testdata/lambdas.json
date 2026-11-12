@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -40,7 +40,8 @@
                   "end": 30
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -81,7 +82,8 @@
                   },
                   "name": "int"
                 }
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -154,7 +156,8 @@
                   "end": 77
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {
@@ -225,7 +228,8 @@
                     "end": 110
                   },
                   "name": "int"
-                }
+                },
+                "default": null
               }
             ],
             "result": null,
@@ -333,7 +337,8 @@
                             "end": 161
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,
@@ -411,7 +416,8 @@
                             "end": 192
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       },
                       {
                         "kind": "param",
@@ -431,7 +437,8 @@
                             "end": 199
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": {
@@ -557,7 +564,8 @@
                               "end": 253
                             },
                             "name": "y",
-                            "type": null
+                            "type": null,
+                            "default": null
                           }
                         ],
                         "result": null,

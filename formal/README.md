@@ -15,7 +15,7 @@ GALA release.
 - **`galaspec`, the reference interpreter for subset S1 and part of S2**: the executable
   semantics of int/bool/string operators, `val`/`var`, blocks, `if`, functions and
   recursion, structs, sealed types, `match`, `Println`/`Print` and, from S2, interpolated
-  strings `s"..."`, lambdas and closures. It reads a program as Core JSON (written
+  strings `s"..."`, lambdas and closures, named arguments and default values. It reads a program as Core JSON (written
   by `internal/formal/coreexport`) and prints what the program prints, plus how it ends.
 
   ```mermaid

@@ -1,0 +1,66 @@
+package main
+
+val prefix = "hi"
+
+var log = ""
+
+func t(s string, v int) int {
+    log = log + s
+    v
+}
+
+func ts(s string, v string) string {
+    log = log + s
+    v
+}
+
+func scale(a int, b int = a * 2) int = a + b
+
+func greet(name string, greeting string = prefix) string = s"$greeting $name"
+
+func three(a int, b int = t("B", a + 1), c int = t("C", b * 10)) string = s"$a $b $c"
+
+func divide(dividend int, divisor int) int = dividend / divisor
+
+struct Cfg(Name string, Tries int = 3, Tag string = prefix)
+
+sealed type Shape {
+    case Circle(R int = 1)
+    case Rect(W int, H int = 2)
+}
+
+struct Point(X int, Y int)
+
+// Package-level initialization follows the defaults a call leaves out, and only
+// those: `early` gives the greeting, `defaulted` waits for `late`.
+var order = ""
+
+func mark(s string, v string) string {
+    order = order + s
+    v
+}
+
+func hello(name string, greeting string = late) string = s"$greeting $name"
+
+val early = hello(mark("E", "eve"), "yo")
+val defaulted = hello(mark("D", "dan"))
+val late = mark("L", "hey")
+
+func main() {
+    val a = 100
+    val prefix = "LOCAL"
+    Println(scale(1), scale(1, 5), greet("bob"), greet("ann", "yo"), a, prefix)
+    Println(divide(divisor = 4, dividend = 20), divide(20, divisor = 5))
+    log = ""
+    Println(three(1), log)
+    log = ""
+    Println(three(c = t("c", 7), a = t("a", 1)), log)
+    log = ""
+    Println(three(1, c = t("c", 9)), log)
+    Println(Cfg("a"), Cfg(Name = "b", Tag = "t"), Cfg(Tries = 9, Name = "c"))
+    Println(Circle(), Rect(3), Rect(H = 4, W = 5))
+    log = ""
+    val p = Point(Y = t("y", 2), X = t("x", 1))
+    Println(p, log)
+    Println(early, defaulted, order)
+}

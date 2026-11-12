@@ -2682,6 +2682,13 @@ gala_exec_test(
     expected = "interpolation_percent.out",
 )
 
+# The same, within the formal spec's subset, so the differential test checks it
+gala_exec_test(
+    name = "interpolation_percent_text",
+    src = "interpolation_percent_text.gala",
+    expected = "interpolation_percent_text.out",
+)
+
 # FIX-GS-003 verification: struct lambda parameter type inference
 gala_exec_test(
     name = "struct_lambda_inference",
