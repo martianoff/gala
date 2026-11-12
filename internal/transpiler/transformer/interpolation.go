@@ -29,7 +29,7 @@ func (t *galaASTTransformer) rewriteBuiltinPrintFuncs(base ast.Expr) ast.Expr {
 // fmtAlias is the name generated code imports Go's fmt under when its own
 // name is taken here, so that a call GALA lowers to fmt (Println, s"...")
 // does not reach what took it.
-const fmtAlias = "_gala_fmt"
+const fmtAlias = localNamePrefix + "fmt"
 
 // fmtPackage names Go's fmt package where generated code calls it, and makes
 // the file import it under that name: the name the file imports fmt under, or

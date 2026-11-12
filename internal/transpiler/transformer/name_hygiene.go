@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -8,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -26,8 +29,28 @@ import (
 // fmt is handled where it is used instead (see fmtPackage).
 
 // localNamePrefix starts the Go name of a local binding renamed by
-// localGoName. The `_gala_` prefix is the transpiler's (see fmtAlias).
+// localGoName. The `_gala_` prefix is the transpiler's (see fmtAlias): no
+// GALA identifier may start with it (CheckReservedPrefixNative).
 const localNamePrefix = "_gala_"
+
+// CheckReservedPrefixNative reports GALA-E0097 for the first identifier below
+// root, a node of the native tree, that starts with localNamePrefix, or nil
+// when none does. The prefix is the transpiler's: a user name spelled with it
+// could meet a renamed local (localGoName) or another name the transpiler
+// emits. The analyzer checks each source file with it. An interpolated
+// expression needs no check: no binding can carry the prefix, so a name with
+// it there is undefined (GALA-E0023).
+func CheckReservedPrefixNative(root native.GalaNodeRef) error {
+	id := firstIdentifier(root, func(name string) bool { return strings.HasPrefix(name, localNamePrefix) })
+	if !id.Ok() {
+		return nil
+	}
+	name := galaparser.NativeText(id)
+	line, col := srcNode{node: id}.start()
+	return galaerr.NewCodedSemanticError(galaerr.CodeReservedNamePrefix, line, col,
+		fmt.Sprintf("identifier %s starts with %s, a prefix reserved for names the transpiler generates", name, localNamePrefix),
+		fmt.Sprintf("rename it so it does not start with %s", localNamePrefix))
+}
 
 // shadowsGeneratedName reports whether a local binding named name would hide
 // a name generated code refers to: std's qualifier or a Go predeclared

@@ -4525,10 +4525,21 @@ Two uses of these words are not names and are not affected: a bare `break` or
 `go`, `goto`, `fallthrough`, `select` or `chan` statement is GALA-E0036 (above).
 
 Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max`,
-`copy` and so on — are not keywords. A local binding may shadow one
-(`val min = m.PopMinEntry()`), exactly as in Go; after that, the name means the
-binding for the rest of its scope, so `val string = "a"` followed by a lambda
-parameter typed `string` in the same scope does not compile.
+`copy` and so on — are not keywords. A local binding may take one
+(`val min = m.PopMinEntry()`); in a value position the name then means the
+binding for the rest of its scope, and in a type position the type, so
+`val string = "a"` followed by a lambda parameter typed `string` compiles.
+
+### Names starting with `_gala_` are reserved
+
+An identifier may not start with `_gala_`. The prefix is reserved for names the
+transpiler generates, so using it for a local, a parameter, a top-level
+function, val or var, a field or a type is a transpile error (**GALA-E0097**).
+
+<!-- doc-check: fragment -->
+```gala
+val _gala_total = 3         // GALA-E0097: the _gala_ prefix is reserved
+```
 
 ### The `if` initializer statement is forbidden
 
