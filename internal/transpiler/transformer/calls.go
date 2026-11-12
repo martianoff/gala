@@ -3615,7 +3615,7 @@ func (t *galaASTTransformer) resultSlotTypeArgs(result transpiler.Type, typePara
 
 // unifyThroughInterface binds typeParams, into args, from a slot of a generic
 // GALA interface type that a value of type result fills: `Array[T]` in an
-// `Iterable[int]` slot. Each method the interface declares is unified with the
+// `Iterable[int, Array[int]]` slot. Each method the interface declares is unified with the
 // same-named method of result's type, both instantiated (`Head() T` with
 // `Head() int` binds T to int), so the binding is the one Go's
 // implementation check would need.

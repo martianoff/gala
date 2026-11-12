@@ -61,6 +61,10 @@ The `collection_mutable` package provides mutable data structures optimized for 
 import . "martianoff/gala/collection_mutable"
 ```
 
+### `Iterable[T, C]`
+
+The mutable `Array` and `List` declare their methods on the pointer, and their sub-collection methods return a new pointer (`Tail() Ptr[Array[T]]`). So the pointer implements `std.Iterable` with itself as the self type: `Ptr[Array[T]]` is an `Iterable[T, Ptr[Array[T]]]` and `Ptr[List[T]]` an `Iterable[T, Ptr[List[T]]]`. `ArrayOf`, `ListOf` and the other constructors return the pointer, so their results can be passed straight to generic code over `Iterable` (see [Immutable Collections](IMMUTABLE_COLLECTIONS.MD#generic-code-over-sequences-iterablet-c)). The sets and maps do not implement `Iterable`.
+
 ## Performance Characteristics
 
 ### Sequences
@@ -244,6 +248,9 @@ arr.Init()               // new Array(1, 2, 3, 4)
 
 // Reversed copy
 arr.Reversed()           // new Array(5, 4, 3, 2, 1)
+
+// Longest prefix that satisfies p, and the rest
+arr.Span((x) => x < 3)   // (new Array(1, 2), new Array(3, 4, 5))
 ```
 
 ### Functional Operations

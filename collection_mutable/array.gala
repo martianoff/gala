@@ -423,24 +423,18 @@ func (a Ptr[Array[T]]) Partition(p func(T) bool) Tuple[Ptr[Array[T]], Ptr[Array[
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
-func (a Ptr[Array[T]]) TakeWhile(p func(T) bool) Ptr[Array[T]] {
-    var result = EmptyArray[T]()
-    for i := 0; i < a.elements.Size(); i++ {
-        if !p(a.elements[i]) {
-            return result
-        }
-        result.Append(a.elements[i])
-    }
-    return result
-}
+func (a Ptr[Array[T]]) TakeWhile(p func(T) bool) Ptr[Array[T]] = a.Take(a.prefixLength(p))
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
-func (a Ptr[Array[T]]) DropWhile(p func(T) bool) Ptr[Array[T]] {
-    var start = 0
-    for start < a.elements.Size() && p(a.elements[start]) {
-        start++
+func (a Ptr[Array[T]]) DropWhile(p func(T) bool) Ptr[Array[T]] = a.Drop(a.prefixLength(p))
+
+// prefixLength is the length of the longest prefix of elements that satisfy p.
+func (a Ptr[Array[T]]) prefixLength(p func(T) bool) int {
+    var n = 0
+    for n < a.elements.Size() && p(a.elements[n]) {
+        n++
     }
-    return a.Drop(start)
+    n
 }
 
 // === Reduction Operations ===
@@ -577,6 +571,10 @@ func (a Ptr[Array[T]]) Distinct() Ptr[Array[T]] = a.Filter(firstOccurrence[T]())
 func (a Ptr[Array[T]]) SplitAt(n int) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {
     return (a.Take(n), a.Drop(n))
 }
+
+// Span splits the array into a prefix/suffix pair according to a predicate.
+// The first element contains the longest prefix of elements that satisfy p.
+func (a Ptr[Array[T]]) Span(p func(T) bool) Tuple[Ptr[Array[T]], Ptr[Array[T]]] = a.SplitAt(a.prefixLength(p))
 
 // Grouped splits the array into groups of size n.
 func (a Ptr[Array[T]]) Grouped(n int) Ptr[Array[Ptr[Array[T]]]] {

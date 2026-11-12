@@ -136,6 +136,7 @@ go_test(
     name = "collection_mutable_differential_test",
     size = "medium",
     srcs = [
+        "iterable_impl_test.go",
         "map_set_differential_test.go",
         "seq_differential_test.go",
     ],
