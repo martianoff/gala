@@ -64,7 +64,7 @@ bazel_dep(name = "gala_gazelle", version = "0.4.0", dev_dependency = True)
 # rules_lean builds the Lean spec in formal/, only under `--config=formal` (see
 # formal/README.md). A dev dependency, so modules that depend on gala never see
 # it.
-bazel_dep(name = "rules_lean", version = "0.1.1", dev_dependency = True)
+bazel_dep(name = "rules_lean", version = "0.1.2", dev_dependency = True)
 
 lean = use_extension("@rules_lean//lean:extensions.bzl", "lean", dev_dependency = True)
 

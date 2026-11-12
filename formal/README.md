@@ -145,15 +145,30 @@ it happens only under `--config=formal`. Without the config, `bazel build //...`
 `bazel test //...` skip the Lean targets and never download Lean. Switching the config
 on and off in one output base makes Bazel discard its analysis cache each time.
 
-Lake's `--wfail` has no Bazel counterpart yet: rules_lean reports Lean warnings but does
-not fail on them, so the Lake job is the one that catches a new warning.
+The Bazel build is held to the same rules as Lake's: every library is built with
+`warnings_as_errors` (`formal/lean.bzl` sets it), like `lake build --wfail`, and
+`//formal:proofs` checks what `scripts/ProofCheck.lean` checks, with one difference: it
+skips compiler-generated auxiliary declarations (`_proof_1` and the like), whose axioms
+show up in the declarations that use them.
 
 | Target | What it is |
 |---|---|
 | `//formal:gala` | `lean_library` of what `import Gala` covers: every module under `Gala/` except `Main`, built on `:galaspec_lib` (the interpreter modules that `galaspec` and its tests link). Module names are `Gala.X`, as with Lake. |
-| `//formal:proofs` | `lean_proof_test` over every module under `Gala/`: fails on `sorry` and on axioms other than `propext`, `Quot.sound` and `Classical.choice`, like `scripts/ProofCheck.lean`. The check that every theorem COVERAGE.md calls proved exists runs only under Lake. |
-| `//formal:galaspec` | `lean_binary` of `Gala.Main`: the same `galaspec` as `lake exe galaspec`, for the differential harness (`bazel run --config=formal //formal:galaspec -- run "$PWD/prog.json"`; `bazel run` starts it in its runfiles, so pass an absolute path). |
+| `//formal:proofs` | `lean_proof_test` over every module under `Gala/`: fails on `sorry` and on axioms other than `propext`, `Quot.sound` and `Classical.choice` in any declaration, private ones included, and when a theorem in `REQUIRED_THEOREMS` (the ones COVERAGE.md calls proved) is missing. `tools/check_repo_policy.sh` keeps that list equal to `requiredTheorems` in `scripts/ProofCheck.lean`. |
+| `//formal:galaspec` | `lean_binary` of `Gala.Main`: the same `galaspec` as `lake exe galaspec` (`bazel run --config=formal //formal:galaspec -- run "$PWD/prog.json"`; `bazel run` starts it in its runfiles, so pass an absolute path). |
 | `//formal:galaspec_tests` | Runs the fixtures in `tests/`, like `lake exe galaspec-tests`. |
+| `//formal:galaspec_cli_test` | Checks the command-line contract the differential harness relies on (exit code and outcome line on a panic, deep recursion with `--fuel`), like the smoke steps of the Lake job. |
+
+The differential run uses `//formal:galaspec` under the config, so it too needs nothing
+but Bazel:
+
+```shell
+bazel test --config=formal //internal/formal/difftest/differential:differential_test
+```
+
+To use another galaspec, e.g. a Lake-built one, run it without the config and pass
+`GALA_SPEC_BIN` (with `--test_env=GALA_SPEC_BIN`). It also overrides the Bazel-built one
+under the config, but the config builds that one anyway.
 
 **Adding a module:** add the file under `Gala/` and to `BUILD.bazel`: to `GALASPEC_SRCS`
 if galaspec needs it, otherwise to `GALA_SRCS` before `Gala.lean`; in both, after the
@@ -162,6 +177,8 @@ module under `Gala/` is in neither list.
 **Changing the Lean version:** change `lean-toolchain` and `lean.toolchain(version = …)`
 in `MODULE.bazel` together (`tools/check_repo_policy.sh` fails if they differ); rules_lean
 must know the version.
+**Proving a theorem COVERAGE.md lists:** add it to `requiredTheorems` in
+`scripts/ProofCheck.lean` and to `REQUIRED_THEOREMS` in `BUILD.bazel`.
 
 ## Honest coverage
 

@@ -3,14 +3,19 @@
 // of FuzzPrograms' generated programs, each compared three ways — galaspec,
 // the real transpiler and Go, and the program's own oracle.
 //
-// It needs galaspec, so its target is manual and the formal CI job runs it:
+// It needs galaspec, so its target is manual and the formal CI job runs it.
+// --config=formal builds //formal:galaspec with rules_lean and uses it:
+//
+//	bazel test --config=formal //internal/formal/difftest/differential:differential_test
+//
+// GALA_SPEC_BIN, when set, names another galaspec instead (e.g. a Lake build):
 //
 //	GALA_SPEC_BIN=/path/to/galaspec bazel test //internal/formal/difftest/differential:differential_test \
 //	    --test_env=GALA_SPEC_BIN
 //
-// Without GALA_SPEC_BIN it fails; it never passes without comparing
-// anything. It writes the coverage section of formal/COVERAGE.md and a
-// summary to its undeclared outputs (see difftest.Render).
+// With neither it fails; it never passes without comparing anything. It
+// writes the coverage section of formal/COVERAGE.md and a summary to its
+// undeclared outputs (see difftest.Render).
 package differential_test
 
 import (
@@ -23,6 +28,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
 	"martianoff/gala/internal/formal/difftest"
@@ -36,16 +42,40 @@ const defaultGenerated = 40
 // programs from run to run.
 const generatorSeed = 961
 
+// specRlocationEnv names //formal:galaspec in the runfiles; the target sets it
+// under --config=formal.
+const specRlocationEnv = "GALA_SPEC_RLOCATION"
+
+// specBin is the galaspec to compare with: GALA_SPEC_BIN when set, otherwise
+// the //formal:galaspec that --config=formal puts in the runfiles.
+func specBin(t *testing.T) string {
+	if bin := os.Getenv(difftest.SpecEnv); bin != "" {
+		if _, err := os.Stat(bin); err != nil {
+			t.Fatalf("%s=%s: %v", difftest.SpecEnv, bin, err)
+		}
+		return bin
+	}
+	if loc := os.Getenv(specRlocationEnv); loc != "" {
+		bin, err := runfiles.Rlocation(loc)
+		if err == nil {
+			_, err = os.Stat(bin)
+		}
+		if err != nil {
+			t.Fatalf("finding //formal:galaspec (%s) in the runfiles: %v", loc, err)
+		}
+		return bin
+	}
+	t.Fatalf("no galaspec: the differential run needs one and passes nothing without it. Either\n"+
+		"  bazel test --config=formal //internal/formal/difftest/differential:differential_test\n"+
+		"(builds //formal:galaspec with rules_lean), or point %s at a galaspec, e.g. one built with\n"+
+		"`lake build galaspec` in formal/:\n"+
+		"  %s=/path/to/galaspec bazel test //internal/formal/difftest/differential:differential_test --test_env=%s",
+		difftest.SpecEnv, difftest.SpecEnv, difftest.SpecEnv)
+	return ""
+}
+
 func TestDifferential(t *testing.T) {
-	bin := os.Getenv(difftest.SpecEnv)
-	if bin == "" {
-		t.Fatalf("%s is not set: the differential run needs galaspec (build it with `lake build galaspec` in formal/) and passes nothing without it.\n"+
-			"Run: %s=/path/to/galaspec bazel test //internal/formal/difftest/differential:differential_test --test_env=%s",
-			difftest.SpecEnv, difftest.SpecEnv, difftest.SpecEnv)
-	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Fatalf("%s=%s: %v", difftest.SpecEnv, bin, err)
-	}
+	bin := specBin(t)
 	fuel := envInt(t, "GALA_SPEC_FUEL", 0)
 	known, err := difftest.ParseKnown(readData(t, "known_disagreements.json"))
 	if err != nil {

@@ -120,6 +120,19 @@ if [[ -z "$bazel_lean" || "$bazel_lean" != "$lake_lean" ]]; then
   fail "Lean versions differ: MODULE.bazel lean.toolchain '$bazel_lean', formal/lean-toolchain '$lake_lean'"
 fi
 
+# The theorems COVERAGE.md calls proved are listed twice: for Lake in
+# formal/scripts/ProofCheck.lean, for Bazel in formal/BUILD.bazel.
+# Every line between the brackets is one name; anything else is kept as is, so
+# a line in a shape this parse does not know makes the lists differ.
+lake_theorems="$(sed -n '/^def requiredTheorems/,/^\]/p' formal/scripts/ProofCheck.lean \
+  | sed -e '1d;$d' -E -e 's/^ *`(.*[^,]),?$/\1/' | sort)"
+bazel_theorems="$(sed -n '/^REQUIRED_THEOREMS = \[/,/^\]/p' formal/BUILD.bazel \
+  | sed -e '1d;$d' -E -e 's/^ *"(.*)",$/\1/' | sort)"
+if [[ -z "$lake_theorems" || "$lake_theorems" != "$bazel_theorems" ]]; then
+  fail "required theorems differ between formal/scripts/ProofCheck.lean (requiredTheorems) and formal/BUILD.bazel (REQUIRED_THEOREMS):"
+  diff <(echo "$lake_theorems") <(echo "$bazel_theorems") >&2 || true
+fi
+
 # A plain `bazel build //...` must never download Lean (AGENTS.md rule 4).
 # formal/lean.bzl gates every Lean rule behind --config=formal, so the rules
 # are loaded from there and nowhere else.

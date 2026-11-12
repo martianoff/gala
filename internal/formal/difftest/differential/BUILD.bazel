@@ -1,14 +1,18 @@
 load("@rules_go//go:def.bzl", "go_test")
 
-# The differential run against galaspec. It needs GALA_SPEC_BIN, so it is
-# manual: plain `bazel test //...` stays Lean-free, and the formal CI job
-# runs it (.github/workflows/formal.yml).
+# The differential run against galaspec. It is manual, so plain
+# `bazel test //...` never runs it. Under --config=formal it gets
+# //formal:galaspec (built with rules_lean); without the config it needs
+# GALA_SPEC_BIN, e.g. a Lake-built galaspec. The formal CI job runs it with
+# the config (.github/workflows/formal.yml).
 go_test(
     name = "differential_test",
     # Builds and runs every example inside the spec's subset with Go, one at a
     # time; "enormous" matches the CI job's budget.
     size = "enormous",
     srcs = ["differential_test.go"],
+    # Lean only under --config=formal: without it, nothing here refers to a
+    # Lean target, so building this test never downloads Lean.
     data = [
         "//examples:all_gala_sources",
         "//examples:expected_outputs",
@@ -16,10 +20,18 @@ go_test(
         "//internal/formal/difftest:known_disagreements.json",
         "//internal/formal/difftest:proved_constructs.json",
         "//internal/formal/difftest:stdlib_sources",
-    ],
+    ] + select({
+        "//formal:lean_enabled": ["//formal:galaspec"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//formal:lean_enabled": {"GALA_SPEC_RLOCATION": "$(rlocationpath //formal:galaspec)"},
+        "//conditions:default": {},
+    }),
     tags = ["manual"],
     deps = [
         "//internal/formal/difftest",
+        "@rules_go//go/runfiles",
         "@rules_go//go/tools/bazel",
     ],
 )
