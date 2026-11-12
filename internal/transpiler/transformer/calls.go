@@ -425,7 +425,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 				// a message about a conversion the author never wrote.
 				elts, derr := t.fillOmittedStructFields(
 					typeName, resolved, fields,
-					func(int, string) bool { return false }, nil,
+					func(int, string) bool { return false },
 					t.structTypeArgSubst(base, resolved),
 					line, col, true, nil)
 				if derr != nil {
@@ -1091,6 +1091,20 @@ func bindMethodArguments(c callSrc, methodMeta *transpiler.MethodMetadata) ([]ar
 // arguments the call has bound so far; a declared parameter type that still
 // mentions an unbound type parameter is not threaded into the default.
 func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, args []ast.Expr, callSiteReceiver ast.Expr, recvType transpiler.Type, typeSubst typeSubstMap, line, col int) (ast.Expr, error) {
+	return t.lowerMethodDefault(methodMeta, i, args, true, callSiteReceiver, recvType, typeSubst, line, col)
+}
+
+// caseFieldDefault is the default of field i of a sealed case, whose
+// companion's Apply is apply, at line/col: a field default, which sees no
+// field of its case (GALA-E0098), so a name spelled like one means what it
+// means outside the case.
+func (t *galaASTTransformer) caseFieldDefault(apply *transpiler.MethodMetadata, i int, companion ast.Expr, companionType transpiler.Type, line, col int) (ast.Expr, error) {
+	return t.lowerMethodDefault(apply, i, nil, false, companion, companionType, nil, line, col)
+}
+
+// lowerMethodDefault is methodDefaultArg, with the earlier parameters bound
+// to args only when bindParams is set.
+func (t *galaASTTransformer) lowerMethodDefault(methodMeta *transpiler.MethodMetadata, i int, args []ast.Expr, bindParams bool, callSiteReceiver ast.Expr, recvType transpiler.Type, typeSubst typeSubstMap, line, col int) (ast.Expr, error) {
 	// A default may use the receiver (`f func(int) int = (x) => x * b.K`): it
 	// is lowered with the receiver bound as in the method body, so `b.K`
 	// resolves — and unwraps an immutable field — as it does there, and the
@@ -1109,7 +1123,9 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 		recvType:    recvType,
 		recvExpr:    callSiteReceiver,
 	}
-	src.params, src.later = defaultParams(methodMeta.ParamNames, methodMeta.ParamTypes, i, args)
+	if bindParams {
+		src.params, src.later = defaultParams(methodMeta.ParamNames, methodMeta.ParamTypes, i, args)
+	}
 	// The receiver's own type arguments (`T` of a Box[int] receiver) are bound
 	// by the receiver, whichever call form reached here.
 	if recvMeta := t.getTypeMeta(t.resolveStructTypeName(recvType.BaseName())); recvMeta != nil && len(recvMeta.TypeParams) > 0 {
@@ -1932,7 +1948,6 @@ func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, typeName, res
 		defaulted, err := t.fillOmittedStructFields(
 			typeName, resolvedTypeName, fields,
 			func(i int, _ string) bool { return i < len(args) },
-			func(i int) ast.Expr { return args[i] },
 			typeArgSubst, line, col, true, nil)
 		if err != nil {
 			return nil, err
@@ -3220,7 +3235,7 @@ func (t *galaASTTransformer) variantApplyArgs(fun ast.Expr, typeName string, app
 			missing = append(missing, name)
 			continue
 		}
-		val, err := t.methodDefaultArg(apply, i, ordered, &ast.CompositeLit{Type: fun}, t.astTypeToTranspilerType(fun), nil, line, col)
+		val, err := t.caseFieldDefault(apply, i, &ast.CompositeLit{Type: fun}, t.astTypeToTranspilerType(fun), line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -3282,7 +3297,7 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 	// Fields the call site left out take their declared default; one with no
 	// default is required, and omitting it is an error rather than a silent
 	// Go zero value. See struct_defaults.go.
-	defaulted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, func(i int) ast.Expr { return namedArgs[fields[i]] }, typeArgSubst, line, col, true, nil)
+	defaulted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, typeArgSubst, line, col, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3350,7 +3365,7 @@ func (t *galaASTTransformer) preferMissingFieldError(
 	provided func(i int, fieldName string) bool,
 	line, col int,
 ) error {
-	if _, missingErr := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, nil, nil, line, col, true, nil); missingErr != nil {
+	if _, missingErr := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, nil, line, col, true, nil); missingErr != nil {
 		return missingErr
 	}
 	return inferErr

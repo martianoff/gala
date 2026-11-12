@@ -2,6 +2,7 @@ package main
 
 // A default value is evaluated in the callee's scope, left to right, with the
 // earlier parameters bound. The caller's locals are never visible to it.
+// A field default reads no field of its type (GALA-E0098).
 
 val prefix = "hi"
 
@@ -24,7 +25,10 @@ func once(a int, b int = a, c int = a) string = s"$a $b $c"
 
 struct Cfg(Host string, Port int = defaultPort)
 
-struct Rect(W int, H int = W * 2)
+val Width = 7
+
+// No field is in scope in a field default: Width here is the package val.
+struct Panel(Width int, Height int = Width)
 
 struct Meter(var Total int)
 
@@ -38,7 +42,8 @@ struct Counter(Start int)
 func (c Counter) From(step int, end int = c.Start + step) string = s"${c.Start}..$end"
 
 sealed type Item {
-    case Box(W int, H int = W)
+    case Box(W int, H int = defaultPort)
+    case Tile(Width int, Height int = Width)
 }
 
 func main() {
@@ -60,12 +65,11 @@ func main() {
     val c = -1
     Println(s"receiver in default: ${Counter(10).From(5)} (local c = $c)")
 
-    val W = 0
-    val rect = Rect(next())
-    Println(s"struct field reads earlier field: ${rect.W} x ${rect.H} (local W = $W)")
+    val keyed = Cfg{Host: "example.org"}
+    Println(s"keyed literal: ${keyed.Port} (local defaultPort = $defaultPort)")
 
-    val keyed = Rect{W: next()}
-    Println(s"keyed literal: ${keyed.W} x ${keyed.H}")
+    val panel = Panel(2)
+    Println(s"field default reads the package val: ${panel.Width} x ${panel.Height}")
 
     var meter = Meter(1)
     meter.Add()
@@ -74,6 +78,12 @@ func main() {
     val box = Box(3)
     val dims = box match {
         case Box(w, h) => s"$w x $h"
+        case Tile(w, h) => s"tile $w x $h"
     }
     Println(s"sealed variant default: $dims")
+    val tile = Tile(2) match {
+        case Tile(w, h) => s"$w x $h"
+        case _ => ""
+    }
+    Println(s"case field default reads the package val: $tile")
 }

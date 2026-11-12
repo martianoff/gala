@@ -1,0 +1,28 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A name in a field default's type position (a type argument, an annotation)
+// is the type, even where a field is spelled the same: Pos in
+// EmptyArray[Pos]() is the type Pos, not the field Pos.
+
+struct Pos(Line int, Col int)
+
+val NoPos = Pos(0, 0)
+
+struct Model(Pos Pos = NoPos, NodePos Array[Pos] = EmptyArray[Pos]())
+
+sealed type Node {
+    case Leaf(Pos Pos = NoPos, Kids Array[Pos] = EmptyArray[Pos]())
+}
+
+func main() {
+    val m = Model()
+    Println(s"model: ${m.Pos.Line}:${m.Pos.Col}, ${m.NodePos.Size()} node positions")
+    val withNodes = Model(Pos(1, 2), ArrayOf(Pos(3, 4)))
+    Println(s"model with nodes: ${withNodes.NodePos.Size()} node position")
+    val kids = Leaf() match {
+        case Leaf(p, ks) => s"${p.Line}:${p.Col}, ${ks.Size()} kids"
+    }
+    Println(s"leaf: $kids")
+}

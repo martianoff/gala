@@ -31,12 +31,16 @@ func (c *undefChecker) walkSourceFileNative(root native.GalaNodeRef) {
 			nw.Walk(native.ValDeclarationNode{GalaNodeRef: decl}.ExpressionList().GalaNodeRef)
 		case native.GalaKIND_varDeclaration:
 			nw.Walk(native.VarDeclarationNode{GalaNodeRef: decl}.ExpressionList().GalaNodeRef)
-		case native.GalaKIND_structShorthandDeclaration:
-			d := native.StructShorthandDeclarationNode{GalaNodeRef: decl}
+		case native.GalaKIND_structShorthandDeclaration, native.GalaKIND_sealedTypeDeclaration:
+			// A field default is walked with no field bound: a field is
+			// not in scope there (GALA-E0098).
 			w.PushScope()
-			bindTypeParametersNative(w, d.TypeParameters())
-			nativewalk.BindParameters(w, d.Parameters())
-			nw.WalkParameterDefaults(d.Parameters())
+			bindTypeParametersNative(w, declTypeParametersNative(decl))
+			for f := range fieldDefaultsNative(decl) {
+				c.fieldDefault = &f.site
+				nw.Walk(f.def)
+			}
+			c.fieldDefault = nil
 			w.PopScope()
 		}
 	}

@@ -5,7 +5,8 @@ argument evaluated once: 1 1 1 (calls = 1)
 shadowed package val: hi bob (local prefix = LOCAL)
 struct field default: 80 (local defaultPort = 1)
 receiver in default: 10..15 (local c = -1)
-struct field reads earlier field: 2 x 4 (local W = 0)
-keyed literal: 3 x 6
+keyed literal: 80 (local defaultPort = 1)
+field default reads the package val: 2 x 7
 pointer receiver in default: 2
-sealed variant default: 3 x 3
+sealed variant default: 3 x 80
+case field default reads the package val: 2 x 7

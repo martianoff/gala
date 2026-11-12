@@ -660,8 +660,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		// GALA-E0097: the _gala_ prefix is the transpiler's.
 		if err := transformer.CheckReservedPrefixNative(root); err != nil {
 			return nil, err
-		}
-	}
+		}	}
 
 	clause := packageClauseNative(root, docs)
 	pkgName := clause.name

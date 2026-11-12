@@ -10,6 +10,7 @@ go_library(
         "collect_native.go",
         "default_scope.go",
         "dot_import_collision.go",
+        "field_default_refs.go",
         "field_method_names.go",
         "file_checks_native.go",
         "go_export_importer.go",

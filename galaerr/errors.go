@@ -911,6 +911,12 @@ const (
 	// `_gala_fmt`). A user name with the prefix could meet one of them.
 	CodeReservedNamePrefix ErrorCode = "GALA-E0097"
 
+	// E0098: the default value of a shorthand struct's field or a sealed
+	// case's field reads a field of its own type. A field default is
+	// evaluated on its own, as in Scala; a function's default may read the
+	// parameters before it (see E0094).
+	CodeFieldDefaultReadsField ErrorCode = "GALA-E0098"
+
 	// E0099: a pointer to a type fills a slot of that type itself — an
 	// argument, a val/var declaration or assignment, a return or a
 	// constructor field — as in a `Ptr[Array[int]]` from
