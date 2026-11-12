@@ -1,0 +1,36 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// `==` on a type parameter constrained by comparable compares as `==` does on
+// the type it stands for: by Equal, so a generic function gives the same
+// answer as the comparison written out.
+
+sealed type Tree {
+    case Leaf()
+    case Node(l Tree, v int, r Tree)
+}
+
+struct P(name string, xs Array[int])
+
+func eq[T comparable](a T, b T) bool = a == b
+
+func ne[T comparable](a T, b T) bool = a != b
+
+func count[T comparable](xs Array[T], x T) int = xs.Count((e) => e == x)
+
+func main() {
+    val t1 = Node(Leaf(), 1, Leaf())
+    val t2 = Node(Leaf(), 1, Leaf())
+    Println(t1 == t2, eq(t1, t2), ne(t1, t2), eq(t1, Node(Leaf(), 2, Leaf())))
+
+    val a = P("p", ArrayOf(1, 2))
+    val b = P("p", ArrayOf(1, 2))
+    Println(a == b, eq(a, b), ne(a, b), eq(a, P("p", ArrayOf(1))))
+    Println(Some(a) == Some(b), eq(Some(a), Some(b)), ne(Some(a), Some(b)), eq(Some(a), None[P]()))
+
+    Println(count(ArrayOf(t1, t2, Leaf()), t2), count(ArrayOf(a, b), a))
+
+    // Primitives compare as before.
+    Println(eq(1, 1), ne(1, 2), eq("x", "y"), eq(1.5, 1.5))
+}

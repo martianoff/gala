@@ -3897,6 +3897,23 @@ gala_exec_test(
     expected = "sealed_equal.out",
 )
 
+# A sealed value's Copy sets only its own case's fields, and Equal, ==,
+# and a HashMap key lookup compare only those.
+gala_exec_test(
+    name = "sealed_copy_equal",
+    src = "sealed_copy_equal.gala",
+    expected = "sealed_copy_equal.out",
+    deps = ["//collection_immutable"],
+)
+
+# `==` on a type parameter constrained by comparable compares by Equal.
+gala_exec_test(
+    name = "generic_comparable_equal",
+    src = "generic_comparable_equal.gala",
+    expected = "generic_comparable_equal.out",
+    deps = ["//collection_immutable"],
+)
+
 # Sealed-case widening at function-call argument sites (cross-package
 # dot-import; the gala_team Status shape).  Both positional and
 # named-arg construction must widen to the parent sealed type, the

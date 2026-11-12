@@ -955,13 +955,14 @@ func main() {
 
 Where Go's `==` gives the same answer as `Equal`, the comparison stays Go's `==` and costs nothing extra: a type made of primitives only, through its fields, cases and type arguments, with no `Equal` of its own anywhere in it — `struct Point(x int, y int)`, `Option[int]`, `(int, string)`, a sealed type whose cases hold primitives. A float compares by IEEE rules either way, so a NaN equals nothing.
 
+On a type parameter constrained by `comparable`, `a == b` is true when Go's `==` is, or when the values' `Equal` method says so: a `List` passed as `T` compares by its elements, a struct or sealed type by value, a primitive and a pointer with Go's `==`. A Go type with an `Equal` method, such as `time.Time`, is compared by that method here.
+
 `==` keeps Go's meaning where there is no `Equal`:
 
 | Operands | `==` compares |
 |----------|---------------|
 | pointers (`*T`, `Ptr[T]`), and so a mutable collection, which is used through one | identity. A struct *holding* a pointer compares with `Equal`, which compares what the pointer points to |
 | interfaces (`any`, a GALA interface) | as Go compares interface values |
-| a type parameter (`T comparable`) | with Go's `==`: the type is not known statically, so a `List` passed as `T` compares by identity. Call `Equal(a, b)` for value equality |
 | a Go type (`time.Time`, any Go struct) | with Go's `==`, even when the Go type has an `Equal` method |
 | a value and `nil` | as Go does |
 
@@ -1425,7 +1426,7 @@ This generates:
 - Empty companion structs `Circle{}`, `Rectangle{}`, `Point{}`
 - `Apply` methods on each companion for construction
 - `Unapply` methods for pattern matching
-- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so sealed values compare structurally. `a == b` is `a.Equal(b)` ([Equality](#equality--and-)); it stays Go's `==` when every case holds primitives only, which gives the same answer.
+- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then compares only that case's fields via `std.Equal`, so sealed values compare structurally. `Copy(field = ...)` on a `Shape` value sets only a field every case has, since the value may be any case; on a constructor call, such as `Circle(1.0).Copy(Radius = 2.0)`, it sets that case's own fields. To set a field of one case, match the case and build it anew: `case Circle(_) => Circle(2.0)`. Any other field is [GALA-E0092](errors/GALA-E0092.md). `a == b` is `a.Equal(b)` ([Equality](#equality--and-)); it stays Go's `==` when every case holds primitives only, which gives the same answer.
 
 A variant is a constructor and a pattern, not a type. Every value `Circle(...)` builds is a `Shape`, and GALA has no type for a single variant: narrowing to one is what a `match` arm does. Naming a variant where a type is expected — a parameter, result, field, `val`/`var` annotation, type argument (`Array[Some[int]]`, `ArrayOf[Circle](...)`), typed pattern (`case c: Circle`), receiver or alias target — is rejected with [GALA-E0061](errors/GALA-E0061.md). Take the sealed type instead and match on the variant:
 

@@ -69,6 +69,9 @@ const (
 	// FuncAddrOfCopy gives a pointer-receiver method an addressable copy of a
 	// receiver Go cannot address (a val's Get(), a call result).
 	FuncAddrOfCopy = "AddrOfCopy"
+	// FuncEqualComparable is == on a type parameter constrained by
+	// comparable: Go's ==, else the values' Equal.
+	FuncEqualComparable = "EqualComparable"
 
 	// Sendable is the transparent concurrency-boundary marker. A parameter
 	// typed `Sendable[F]` behaves EXACTLY like its inner type `F` for

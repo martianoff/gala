@@ -86,7 +86,16 @@ func (s Shape) Copy() Shape {
 	return Shape{r: std.Copy(s.r), w: std.Copy(s.w), h: std.Copy(s.h), _variant: std.Copy(s._variant)}
 }
 func (s Shape) Equal(other Shape) bool {
-	return std.Equal(s.r, other.r) && std.Equal(s.w, other.w) && std.Equal(s.h, other.h) && std.Equal(s._variant, other._variant)
+	if s._variant != other._variant {
+		return false
+	}
+	switch s._variant {
+	case _Shape_Circle:
+		return std.Equal(s.r, other.r)
+	case _Shape_Rect:
+		return std.Equal(s.w, other.w) && std.Equal(s.h, other.h)
+	}
+	return true
 }
 func (s Shape) String() string {
 	switch s._variant {

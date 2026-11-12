@@ -1,0 +1,54 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A sealed value's Copy sets the fields of the value's own case, and Equal
+// compares only those. A field only some cases have is set by matching the
+// case and building it anew.
+
+sealed type Shape {
+    case Circle(r float64, label string)
+    case Sq(side float64, label string)
+}
+
+func (s Shape) Hash() uint32 = s match {
+    case Circle(r, label) => HashCombine(HashFloat(r), HashString(label))
+    case Sq(side, label) => HashCombine(HashFloat(side), HashString(label))
+}
+
+// grow sets r, a field of Circle only, on a Circle and leaves a Sq as it is.
+func grow(s Shape) Shape = s match {
+    case Circle(_, label) => Circle(9.0, label)
+    case _ => s
+}
+
+// x is an int in B and a string in A.
+sealed type V {
+    case A(x string)
+    case B(x int, y int)
+}
+
+sealed type Node {
+    case Leaf(v int)
+    case Named(name string)
+    case Pair(l Node, r Node)
+}
+
+func main() {
+    val s Shape = Sq(2.0, "s")
+    val s2 = grow(s)
+    Println(s2, s2.Equal(Sq(2.0, "s")), s2 == Sq(2.0, "s"), s2 != s, grow(Circle(1.0, "c")))
+
+    // A field every case has is set on whichever case the value is.
+    Println(s.Copy(label = "t"), Circle(1.0, "c").Copy(label = "d"))
+
+    // The value is a HashMap key that finds the same entry.
+    val m = HashMapOf((s, "square"))
+    Println(m.Get(s2), m.Contains(s.Copy(label = "s")))
+
+    // A constructor call's case is known, so its own x is set.
+    Println(B(1, 2).Copy(x = 5), A("a").Copy(x = "b"), Sq(2.0, "s").Copy(side = 3.0))
+
+    // A nested value of the type itself compares by its Equal.
+    Println(Pair(Leaf(1), Named("n")) == Pair(Leaf(1), Named("n")), Pair(Leaf(1), Leaf(2)) == Pair(Leaf(1), Leaf(3)))
+}

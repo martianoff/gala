@@ -300,7 +300,7 @@ func (s Light) Copy() Light {
 	return Light{_variant: std.Copy(s._variant)}
 }
 func (s Light) Equal(other Light) bool {
-	return std.Equal(s._variant, other._variant)
+	return s._variant == other._variant
 }
 func (s Light) String() string {
 	switch s._variant {
@@ -408,7 +408,7 @@ func (s Light) Copy() Light {
 	return Light{_variant: std.Copy(s._variant)}
 }
 func (s Light) Equal(other Light) bool {
-	return std.Equal(s._variant, other._variant)
+	return s._variant == other._variant
 }
 func (s Light) String() string {
 	switch s._variant {

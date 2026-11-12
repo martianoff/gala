@@ -381,6 +381,16 @@ func As[T any](obj any) (T, bool) {
 	return zero, false
 }
 
+// EqualComparable is GALA's == on two values of a type parameter constrained
+// by comparable: the transpiler lowers `a == b` on such a parameter to it.
+// They are equal when Go's == says so, or by their Equal method
+// (KeysEqualByValue), as == compares a GALA struct, sealed type or
+// collection. A pointer with no Equal taking it compares by identity, and a
+// primitive costs one ==, plus a type switch when they differ.
+func EqualComparable[T comparable](a, b T) bool {
+	return a == b || KeysEqualByValue(a, b)
+}
+
 // KeysEqualByValue reports whether a and b, keys that are not ==, are the
 // same key all the same: by their Equal method, when they have one. A List or
 // a HashSet compares by its elements that way, though == compares them by

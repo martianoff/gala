@@ -884,6 +884,14 @@ const (
 	// truncated to int" against the generated code.
 	CodeConstantMisfit ErrorCode = "GALA-E0091"
 
+	// E0092: `Copy(field = ...)` on a sealed value names a field Copy cannot
+	// set: one not every case has (on a value whose case is not known), one
+	// the case a constructor call builds does not have, one no case has, or
+	// one the cases store separately. Copy used to check the name against
+	// the struct holding every case's fields, so a field of another case was
+	// set on a value that cannot hold it.
+	CodeSealedCopyField ErrorCode = "GALA-E0092"
+
 	// E0093: a sealed type declares a method the transpiler would otherwise
 	// generate for it — String, or the case predicate is<Case> — with
 	// another signature than the generated one, `String() string` or

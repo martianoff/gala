@@ -13,6 +13,13 @@ func describe(s shapes.Shape) string = s match {
     case shapes.Square(n) => s"square $n"
 }
 
+// grow sets R, a field of Circle only: Copy on a Shape may set only a field
+// every case has, so the case is matched and built anew.
+func grow(s shapes.Shape) shapes.Shape = s match {
+    case shapes.Circle(_) => sh.Circle(10)
+    case _ => s
+}
+
 func main() {
     val a = sh.Point(2, 3).Copy(Y = 2)
     val p = shapes.Point(2, 3)
@@ -25,8 +32,7 @@ func main() {
     Println(pr.Copy(Second = "b"), sh.Pair(true, 2.5).Copy(First = false))
 
     val c = sh.Circle(1)
-    val bigger = c.Copy(R = 10)
-    Println(describe(c), describe(bigger), describe(shapes.Square(3).Copy(S = 4)))
+    Println(describe(c), describe(grow(c)), describe(shapes.Square(3).Copy(S = 4)), describe(sh.Circle(1).Copy(R = 10)))
 
     val acc = sh.NewAccount("alice", 100)
     val renamed = acc.Copy(Name = "bob")

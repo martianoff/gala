@@ -194,19 +194,21 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, args argsSrc) 
 		if fieldName == "" {
 			return nil, galaerr.NewSemanticErrorAt(argLine, argCol, "Copy overrides must be named: Copy(field = value)")
 		}
-		found := false
-		for _, f := range fields {
-			if f == fieldName {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if (meta == nil || !meta.IsSealed) && !slices.Contains(fields, fieldName) {
 			return nil, galaerr.NewSemanticErrorAt(argLine, argCol, fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
 		}
+		// Visibility is the GALA name's: a sealed case field stored under a
+		// Go name of its case (`Bx`) is as private as `x`.
 		if meta != nil && !visibleFrom(fieldName, meta, t.packageName) {
 			return nil, galaerr.NewSemanticErrorAt(argLine, argCol,
 				fmt.Sprintf("field %s of %s is unexported, so only package %s can set it", fieldName, typeName, meta.Package))
+		}
+		if meta != nil && meta.IsSealed {
+			goName, err := sealedCopyField(meta, fieldName, sealedCaseOf(receiver, meta), argLine, argCol)
+			if err != nil {
+				return nil, err
+			}
+			fieldName = goName
 		}
 		// A lambda override parses as the argument rule's lambdaExpression
 		// alternative rather than as a pattern, so read the argument the way

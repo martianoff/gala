@@ -34,6 +34,12 @@ sealed type Shape {
     case Square(S int)
 }
 
+// x is private, and stored per case: the cases give it different types.
+sealed type Tagged {
+    case Named(x string)
+    case Counted(x int, N int)
+}
+
 func Origin() Point = Point(0, 0)
 
 struct Account(Name string, balance int)
@@ -124,10 +130,9 @@ func TestCopyOverridesCrossPackageHiddenFields(t *testing.T) {
 import l "example.com/copyx/lib"
 
 func main() {
-    val s = l.Circle(1)
-    Println(s.Copy(R = 2))
+    Println(l.Circle(1).Copy(R = 2))
 }`,
-			contains: []string{" l.Shape) l.Shape {", ".R = std.NewImmutable(2)", "(s.Copy())"},
+			contains: []string{" l.Shape) l.Shape {", ".R = std.NewImmutable(2)", ".Copy())"},
 		},
 		{
 			name: "sealed variant through a qualified import",
@@ -147,10 +152,9 @@ func main() {
 import . "example.com/copyx/lib"
 
 func main() {
-    val s = Circle(1)
-    Println(s.Copy(R = 2))
+    Println(Circle(1).Copy(R = 2))
 }`,
-			contains: []string{" Shape) Shape {", ".R = std.NewImmutable(2)", "(s.Copy())"},
+			contains: []string{" Shape) Shape {", ".R = std.NewImmutable(2)", ".Copy())"},
 		},
 		{
 			name: "struct with a private field",
@@ -187,5 +191,30 @@ func main() {
 }`)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "field balance of lib.Account is unexported, so only package lib can set it")
+	})
+
+	t.Run("a private sealed field stored under a Go name of its case stays private", func(t *testing.T) {
+		_, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/copyx/lib"
+
+func main() {
+    Println(lib.Counted(1, 2).Copy(x = 5))
+}`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "field x of lib.Tagged is unexported, so only package lib can set it")
+	})
+
+	t.Run("a field of one case on a value of the sealed type is rejected", func(t *testing.T) {
+		_, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/copyx/lib"
+
+func main() {
+    val s = lib.Circle(1)
+    Println(s.Copy(R = 2))
+}`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "R is a field of Circle but not of Square, and a Shape value may be any of its cases")
 	})
 }
