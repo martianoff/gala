@@ -1,11 +1,11 @@
-package fuzz_test
+package proggen
 
 import (
 	"fmt"
 	"strings"
 )
 
-// programs_shapes_gen_test.go adds to FuzzPrograms' generator the statement
+// shapes.go adds to FuzzPrograms' generator the statement
 // shapes behind past bugs that its matches and calls could not build. Each
 // shape models what it generates, as the rest of the generator does, so the
 // program's output is known:
@@ -45,7 +45,7 @@ func (g *progGen) canReject() bool { return g.rejection == nil }
 
 // reject records that the program must be rejected with r. Callers check
 // canReject first.
-func (g *progGen) reject(r rejection) {
+func (g *progGen) reject(r Rejection) {
 	if g.rejection != nil {
 		panic("a second invalid statement in one program")
 	}
@@ -298,7 +298,7 @@ func (g *progGen) branchStatements() {
 		g.body = append(g.body, fmt.Sprintf("val %s = %d", n, x))
 		g.body = append(g.body, fmt.Sprintf("val %s = if (%s > %d) {\n    %s + 1\n    5\n} else { 2 }", v, n, t, n))
 		g.print(v, 0)
-		g.reject(rejection{text: "is evaluated but not used"})
+		g.reject(Rejection{Text: "is evaluated but not used"})
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"martianoff/gala/internal/transpiler/fuzz/proggen"
 )
 
 // FuzzAlphaRenaming checks that renaming local binders does not change what
@@ -62,7 +64,7 @@ func fuzzMeta(f *testing.F, cfg metaConfig, seed int64) {
 
 func checkMeta(t testing.TB, p metaProgram) {
 	t.Helper()
-	failure := programFailure(t, program{main: p.src, want: p.want})
+	failure := programFailure(t, proggen.Program{Main: p.src, Want: p.want})
 	if failure == "" {
 		if len(p.steered) > 0 {
 			t.Logf("shapes of open issues %s were left out (knownFailures)", issueList(p.steered))
@@ -72,7 +74,7 @@ func checkMeta(t testing.TB, p metaProgram) {
 	if p.plain == p.src {
 		t.Fatal(failure)
 	}
-	plain := programFailure(t, program{main: p.plain, want: p.want})
+	plain := programFailure(t, proggen.Program{Main: p.plain, Want: p.want})
 	if plain == "" {
 		t.Fatalf("renaming the binders changed what the program does:\n%s\n\nthe same program with plain names passes:\n%s", failure, p.plain)
 	}
@@ -100,7 +102,7 @@ func issueList(issues []int) string {
 type knownFailure struct {
 	issue int
 	title string
-	repro program // fails while the issue is open
+	repro proggen.Program // fails while the issue is open
 	// symptom is a substring of the repro's failure while the issue is open,
 	// so a repro broken for another reason is not taken for the issue.
 	symptom string
