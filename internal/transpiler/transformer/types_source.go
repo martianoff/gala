@@ -202,14 +202,12 @@ func (t *galaASTTransformer) lowerFuncTypeArgument(sig native.SignatureNode, at 
 		err := galaerr.NewSemanticErrorInFile(t.filePath, r.line, r.col,
 			fmt.Sprintf("function type %s is not a value", at.sourceText()))
 		err.Hint = "write a function type only where a type is expected, such as an explicit type argument (`EmptyArray[func() int]()`); a function value is a lambda, `(x int) => x + 1`"
+		if r.stopLine == r.line {
+			err = err.WithSpan(r.stopEnd)
+		}
 		return nil, err
 	}
 	return t.lowerSignatureType(sig)
-}
-
-// lowerFuncTypeSignature is the Go function type of s, a function type.
-func (t *galaASTTransformer) lowerFuncTypeSignature(s typeSrc) (*ast.FuncType, error) {
-	return t.lowerSignatureType(s.node.Signature())
 }
 
 // lowerSignatureType is the Go function type of the signature sig. A

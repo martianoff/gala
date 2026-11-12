@@ -1388,6 +1388,37 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 			params = append(params, t.exprToTypeString(idx))
 		}
 		return t.exprToTypeString(e.X) + "[" + strings.Join(params, ", ") + "]"
+	case *ast.Ellipsis:
+		return "..." + t.exprToTypeString(e.Elt)
+	case *ast.FuncType:
+		// A function type written as an explicit type argument
+		// (`Some[func(int) int](f)`).
+		known := true
+		fieldTypes := func(fl *ast.FieldList) []string {
+			var out []string
+			if fl != nil {
+				for _, f := range fl.List {
+					for range max(1, len(f.Names)) {
+						ft := t.exprToTypeString(f.Type)
+						known = known && ft != ""
+						out = append(out, ft)
+					}
+				}
+			}
+			return out
+		}
+		s := "func(" + strings.Join(fieldTypes(e.Params), ", ") + ")"
+		switch results := fieldTypes(e.Results); len(results) {
+		case 0:
+		case 1:
+			s += " " + results[0]
+		default:
+			s += " (" + strings.Join(results, ", ") + ")"
+		}
+		if !known {
+			return ""
+		}
+		return s
 	}
 	return ""
 }

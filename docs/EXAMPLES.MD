@@ -248,6 +248,21 @@ func main() {
 }
 ```
 
+## Function Types as Type Arguments Example
+
+```gala
+package main
+
+import "martianoff/gala/collection_mutable"
+
+func main() {
+    val steps = collection_mutable.EmptyArray[func(int) int]()
+    steps.Append((n) => n + 1)
+    steps.Append((n) => n * 10)
+    Println(steps.FoldLeft(4, (acc, f) => f(acc)))   // 50
+}
+```
+
 ## Immutable Parameters, Lambda Parameters and Receivers
 
 ```gala
