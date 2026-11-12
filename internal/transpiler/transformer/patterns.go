@@ -685,13 +685,13 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(pat patExpr, objExp
 			// binding that has to be hoisted out of a guard with an unknown
 			// subject type takes the bound temp's declared type or is rejected
 			// (see hoistPatternDecls).
-			var bindingType ast.Expr
+			var bindingType patternType
 			if matchedType != nil && matchedType.IsAny() {
-				bindingType = ast.NewIdent("any")
+				bindingType = exprType(ast.NewIdent("any"))
 			} else if matchedType != nil {
-				bindingType = t.knownTypeExpr(matchedType)
+				bindingType = t.lazyKnownType(matchedType)
 			}
-			assign := t.patternDefine([]string{name}, []patternType{exprType(bindingType)}, objExpr)
+			assign := t.patternDefine([]string{name}, []patternType{bindingType}, objExpr)
 			return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 		}
 	}
@@ -1339,9 +1339,9 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, args args
 
 	// Determine the element type for non-rest arg bindings.
 	elemType := t.getSeqElementType(matchedType)
-	elemTypeExpr := t.typeToExpr(elemType)
-	if elemTypeExpr == nil {
-		elemTypeExpr = ast.NewIdent("any")
+	elemTypeExpr := exprType(ast.NewIdent("any"))
+	if elemType != nil {
+		elemTypeExpr = t.lazyType(elemType)
 	}
 
 	// Emit bindings for the non-rest arguments.
@@ -1401,7 +1401,7 @@ func (t *galaASTTransformer) emitNonRestBindings(
 	args []argSrc,
 	objExpr ast.Expr,
 	elemType transpiler.Type,
-	elemTypeExpr ast.Expr,
+	elemTypeExpr patternType,
 ) (varDecls []ast.Stmt, guardedAssigns []ast.Stmt, extraConds []ast.Expr, err error) {
 	chain := siblingChain{t: t}
 	argIndex := 0
@@ -1435,14 +1435,16 @@ func (t *galaASTTransformer) emitNonRestBindings(
 		if nerr != nil {
 			return nil, nil, nil, nerr
 		}
-		read := []ast.Stmt{seqVarDecl(tempName, elemTypeExpr), seqGetAssign(tempName, objExpr, argIndex)}
-		if err := chain.add(nestedCond, append(read, nestedStmts...), tempName, exprType(elemTypeExpr)); err != nil {
+		read := t.patternDefine([]string{tempName}, []patternType{elemTypeExpr}, &ast.CallExpr{
+			Fun:  &ast.SelectorExpr{X: objExpr, Sel: ast.NewIdent("Get")},
+			Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprint(argIndex)}},
+		})
+		if err := chain.add(nestedCond, append([]ast.Stmt{read}, nestedStmts...), tempName, elemTypeExpr); err != nil {
 			return nil, nil, nil, err
 		}
 		argIndex++
 	}
 	cond, stmts, _ := chain.result()
-	// The element temps' declarations give hoistPatternDecls their types.
 	varDecls, guardedAssigns, err = t.hoistPatternDecls(stmts, "", nil)
 	if err != nil {
 		return nil, nil, nil, err
@@ -1463,21 +1465,6 @@ func seqVarDecl(name string, typeExpr ast.Expr, value ...ast.Expr) ast.Stmt {
 					Type:   typeExpr,
 					Values: value,
 				},
-			},
-		},
-	}
-}
-
-// seqGetAssign builds `name = obj.Get(i)` as an AssignStmt for seq-pattern
-// guarded bindings. Helper used by emitNonRestBindings.
-func seqGetAssign(name string, objExpr ast.Expr, index int) ast.Stmt {
-	return &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(name)},
-		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{
-			&ast.CallExpr{
-				Fun:  &ast.SelectorExpr{X: objExpr, Sel: ast.NewIdent("Get")},
-				Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", index)}},
 			},
 		},
 	}

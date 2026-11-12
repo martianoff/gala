@@ -1,0 +1,58 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/match_transitive_binding_type/geo"
+)
+
+// Each binding below is declared before the code that assigns it, and its
+// type comes from a package this file does not import.
+
+// An extractor after a sibling that can fail.
+func afterSibling(tag int, n int) string = (tag, n) match {
+    case (0, geo.AsPoint(p)) => s"point ${p.X},${p.Y}"
+    case _                   => "other"
+}
+
+// A nested sub-pattern.
+func nested(w Option[geo.Wrapper]) string = w match {
+    case Some(geo.Wrapper("a", at)) => s"a at ${at.X},${at.Y}"
+    case _                          => "other"
+}
+
+// A nested sub-pattern reading through a pointer, which is nil on None.
+func nestedRef(w Option[*geo.Wrapper]) string = w match {
+    case Some(geo.Wrapper("a", at)) => s"ref a at ${at.X},${at.Y}"
+    case _                          => "other"
+}
+
+// A sequence element's extractor.
+func element(xs Array[int]) string = xs match {
+    case Array(0, geo.AsPoint(p)) => s"element ${p.X},${p.Y}"
+    case _                        => "other"
+}
+
+// A sequence whose element type lives in that package.
+func second(n int) string = geo.Points(n) match {
+    case Array(_, p) => s"second ${p.X},${p.Y}"
+    case _           => "other"
+}
+
+func main() {
+    Println(afterSibling(0, 3))
+    Println(afterSibling(1, 3))
+    Println(afterSibling(0, -3))
+    Println(nested(Some(geo.Wrap("a", 2))))
+    Println(nested(Some(geo.Wrap("b", 2))))
+    Println(nested(None()))
+    Println(nestedRef(Some(geo.WrapRef("a", 4))))
+    Println(nestedRef(Some(geo.WrapRef("b", 4))))
+    Println(nestedRef(None()))
+    Println(element(ArrayOf(0, 5)))
+    Println(element(ArrayOf(1, 5)))
+    Println(element(ArrayOf(0, -5)))
+    Println(element(ArrayOf(0)))
+    Println(second(2))
+    Println(second(3))
+    Println(second(1))
+}

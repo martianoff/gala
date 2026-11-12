@@ -1,0 +1,23 @@
+package geo
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/match_transitive_binding_type/shape"
+)
+
+// A positive number n becomes the point (n, n).
+struct AsPoint()
+
+func (a AsPoint) Unapply(n int) Option[shape.Point] =
+    if (n > 0) Some(shape.Point(X = n, Y = n)) else None()
+
+struct Wrapper(Label string, At shape.Point)
+
+func Wrap(label string, n int) Wrapper = Wrapper(Label = label, At = shape.Point(X = n, Y = -n))
+
+func WrapRef(label string, n int) *Wrapper {
+    var w = Wrap(label, n)
+    &w
+}
+
+func Points(n int) Array[shape.Point] = ArrayTabulate(n, (i) => shape.Point(X = i, Y = i * 10))
