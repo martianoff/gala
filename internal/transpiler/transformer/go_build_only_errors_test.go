@@ -62,7 +62,7 @@ func main() {
 }`,
 			code:     galaerr.CodePointerForValue,
 			line:     9,
-			contains: []string{"cannot use &pt (Ptr[Pt]) as Pt", "`*&pt`"},
+			contains: []string{"cannot use &pt (Ptr[Pt]) as Pt", "declare the parameter, field or variable as Ptr[Pt], or pass the value itself: `pt`"},
 		},
 		{
 			name: "field of a collection type initialised with EmptyArray()",
@@ -78,7 +78,10 @@ func main() {
 }`,
 			code:     galaerr.CodePointerForValue,
 			line:     8,
-			contains: []string{"collection_mutable.EmptyArray(...)", "as collection_mutable.Array[int]"},
+			contains: []string{
+				"cannot use collection_mutable.EmptyArray(...) (Ptr[collection_mutable.Array[int]]) as collection_mutable.Array[int]",
+				"as Ptr[collection_mutable.Array[int]], as mutable collections are passed",
+			},
 		},
 		{
 			name: "field of a collection type initialised with EmptyArray[int]()",
@@ -181,7 +184,19 @@ func main() {
     Println(a)
 }`,
 			line:     4,
-			contains: []string{"unused val 'b'", "write `_` for a component you do not need"},
+			contains: []string{"unused val 'b'", "write `_` in its place"},
+		},
+		{
+			name: "var that is only ever assigned",
+			input: `package main
+
+func main() {
+    var n = 0
+    n = 5
+    Println("hi")
+}`,
+			line:     4,
+			contains: []string{"unused var 'n'"},
 		},
 		{
 			name: "if-expression mixing int and float64",

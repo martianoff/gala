@@ -118,17 +118,33 @@ func (t *galaASTTransformer) checkPointerForValue(expr ast.Expr, expected transp
 	if !ok || t.valueTypeMeta(ptr.Elem) != meta {
 		return nil
 	}
-	return pointerForValueError(at.rng(), at.sourceText(), ptr, expected)
+	text := at.sourceText()
+	fix := fmt.Sprintf("dereference the pointer: `*%s`", text)
+	if addressed, ok := strings.CutPrefix(text, "&"); ok {
+		fix = fmt.Sprintf("pass the value itself: `%s`", addressed)
+	}
+	return pointerForValueError(at.rng(), text, ptr, expected, meta, fix)
 }
 
 // pointerForValueError is GALA-E0099 over r for the value spelled text, of
-// type ptr, filling a slot of the type expected that ptr points to.
-func pointerForValueError(r srcRange, text string, ptr transpiler.PointerType, expected transpiler.Type) error {
-	ptrType := transpiler.PointerType{Elem: expected, NonNull: true}
+// type ptr, filling a slot of the type expected, described by meta, that ptr
+// points to. fix, when not "", is the other way out the hint offers.
+func pointerForValueError(r srcRange, text string, ptr transpiler.PointerType, expected transpiler.Type, meta *transpiler.TypeMetadata, fix string) error {
+	hint := fmt.Sprintf("declare the parameter, field or variable as %s", displayType(transpiler.PointerType{Elem: expected, NonNull: true}))
+	if meta.Package == mutableCollectionsPackage {
+		hint += ", as mutable collections are passed"
+	}
+	if fix != "" {
+		hint += ", or " + fix
+	}
 	return spanErrorAt(galaerr.CodePointerForValue, r, r,
 		fmt.Sprintf("cannot use %s (%s) as %s: it is a pointer to the value, not the value", text, displayType(ptr), displayType(expected)),
-		fmt.Sprintf("declare the parameter, field or variable as %s, as mutable collections are passed, or dereference the pointer: `*%s`", displayType(ptrType), text))
+		hint)
 }
+
+// mutableCollectionsPackage is the package of GALA's mutable collections,
+// whose constructors return a Ptr: they are shared through it.
+const mutableCollectionsPackage = "collection_mutable"
 
 // valueTypeMeta is the metadata of typ when typ is a GALA struct or sealed
 // type used by value, nil otherwise.

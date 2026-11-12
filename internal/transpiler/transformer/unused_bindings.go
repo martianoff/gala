@@ -21,19 +21,19 @@ import (
 // match arm is (see lowerCaseClause).
 //
 // The check runs on the generated Go, after the whole file is lowered, so it
-// judges exactly what Go will: a binding counts as read when its Go name
-// appears anywhere after its declaration in the block that declares it. That
-// over-counts reads (a later binding of the same name in a nested block, or an
-// assignment, also counts), never under-counts them, so the check never
-// rejects a program Go would accept.
+// judges what Go will: a binding counts as read when its Go name appears after
+// its declaration in the block that declares it, anywhere but as the whole
+// target of a plain assignment (`x = v`). That over-counts reads (a later
+// binding of the same name in a nested block also counts, as does `x += 1`),
+// never under-counts them, so the check never rejects a program Go accepts.
 
 // localBinding is a local val or var a declaration emits: its GALA keyword,
-// its name and where the name is written, and whether it names a component
-// of a tuple destructuring.
+// its name and where the name is written, and whether the declaration binds
+// other names too (a tuple destructuring, or `val v, ok = ...`).
 type localBinding struct {
 	keyword, name string
 	line, col     int
-	component     bool
+	oneOfSeveral  bool
 }
 
 // unusedBindingSuffix ends the message of every unused-binding diagnostic.
@@ -62,7 +62,7 @@ func (t *galaASTTransformer) declaredName(d bindingDecl, keyword string, id decl
 		t.localBindings = make(map[*ast.Ident]localBinding)
 	}
 	line, col := id.at.start()
-	t.localBindings[ident] = localBinding{keyword: keyword, name: id.text, line: line, col: col, component: d.tuple.ok()}
+	t.localBindings[ident] = localBinding{keyword: keyword, name: id.text, line: line, col: col, oneOfSeveral: len(d.names) > 1}
 	return ident
 }
 
@@ -74,19 +74,13 @@ func (t *galaASTTransformer) checkUnusedBindings(file *ast.File) error {
 	}
 	var unused []localBinding
 	ast.Inspect(file, func(n ast.Node) bool {
-		var list []ast.Stmt
 		switch s := n.(type) {
 		case *ast.BlockStmt:
-			list = s.List
+			unused = t.appendUnread(unused, s.List)
 		case *ast.CaseClause:
-			list = s.Body
+			unused = t.appendUnread(unused, s.Body)
 		case *ast.CommClause:
-			list = s.Body
-		default:
-			return true
-		}
-		for i, stmt := range list {
-			unused = append(unused, t.unreadIn(stmt, list[i+1:])...)
+			unused = t.appendUnread(unused, s.Body)
 		}
 		return true
 	})
@@ -99,53 +93,66 @@ func (t *galaASTTransformer) checkUnusedBindings(file *ast.File) error {
 	err := galaerr.NewSemanticErrorInFile(t.filePath, b.line, b.col,
 		fmt.Sprintf("unused %s '%s'%s", b.keyword, b.name, unusedBindingSuffix))
 	err.Hint = "use it, or remove the declaration; to run its initializer only for its effect, write the expression as a statement on its own"
-	if b.component {
-		err.Hint = "use it, or write `_` for a component you do not need"
+	if b.oneOfSeveral {
+		err.Hint = "use it, or write `_` in its place"
 	}
 	return err.WithSpan(b.col + len([]rune(b.name)))
 }
 
-// unreadIn returns the tracked bindings stmt declares that neither a later
-// spec of its declaration nor rest, the statements after it, mentions.
-func (t *galaASTTransformer) unreadIn(stmt ast.Stmt, rest []ast.Stmt) []localBinding {
-	decl, ok := stmt.(*ast.DeclStmt)
-	if !ok {
-		return nil
-	}
-	gen, ok := decl.Decl.(*ast.GenDecl)
-	if !ok || gen.Tok != token.VAR {
-		return nil
-	}
-	var unread []localBinding
-	for i, spec := range gen.Specs {
-		vs, ok := spec.(*ast.ValueSpec)
-		if !ok {
-			continue
-		}
-		for _, ident := range vs.Names {
-			b, tracked := t.localBindings[ident]
-			if !tracked || mentions(ident.Name, gen.Specs[i+1:]) || mentions(ident.Name, rest) {
+// appendUnread appends to unused the tracked bindings the statements of list
+// declare that nothing after their declaration reads. The list is walked
+// once, from its end, gathering the names read after each statement.
+func (t *galaASTTransformer) appendUnread(unused []localBinding, list []ast.Stmt) []localBinding {
+	var read map[string]bool
+	for i := len(list) - 1; i >= 0; i-- {
+		if decl, ok := list[i].(*ast.DeclStmt); ok {
+			if gen, ok := decl.Decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
+				// A spec's names are in scope from the next spec on.
+				for j := len(gen.Specs) - 1; j >= 0; j-- {
+					vs, ok := gen.Specs[j].(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, ident := range vs.Names {
+						if b, tracked := t.localBindings[ident]; tracked && !read[ident.Name] {
+							unused = append(unused, b)
+						}
+					}
+					read = gatherReads(read, gen.Specs[j])
+				}
 				continue
 			}
-			unread = append(unread, b)
 		}
+		read = gatherReads(read, list[i])
 	}
-	return unread
+	return unused
 }
 
-// mentions reports whether an identifier spelled name appears in any of nodes.
-func mentions[N ast.Node](name string, nodes []N) bool {
-	found := false
-	for _, n := range nodes {
-		ast.Inspect(n, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok && id.Name == name {
-				found = true
-			}
-			return !found
-		})
-		if found {
-			return true
-		}
+// gatherReads adds to read the name of every identifier n mentions, except
+// the whole target of a plain assignment, which Go does not count as a use.
+func gatherReads(read map[string]bool, n ast.Node) map[string]bool {
+	if read == nil {
+		read = make(map[string]bool)
 	}
-	return false
+	ast.Inspect(n, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.AssignStmt:
+			if n.Tok != token.ASSIGN {
+				return true
+			}
+			for _, lhs := range n.Lhs {
+				if _, bare := lhs.(*ast.Ident); !bare {
+					gatherReads(read, lhs)
+				}
+			}
+			for _, rhs := range n.Rhs {
+				gatherReads(read, rhs)
+			}
+			return false
+		case *ast.Ident:
+			read[n.Name] = true
+		}
+		return true
+	})
+	return read
 }
