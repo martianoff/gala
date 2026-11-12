@@ -660,7 +660,8 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		// GALA-E0097: the _gala_ prefix is the transpiler's.
 		if err := transformer.CheckReservedPrefixNative(root); err != nil {
 			return nil, err
-		}	}
+		}
+	}
 
 	clause := packageClauseNative(root, docs)
 	pkgName := clause.name
@@ -1189,7 +1190,10 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
 	// checksUndefined says whether the undefined-symbol check (GALA-E0023,
 	// below, after the collection) runs: only once every import loaded.
-	checksUndefined := isTopLevel && !a.skipUndefinedCheck && a.fileImportsFullyLoaded(fileImports, richAST)
+	// The LSP analyzer, which skips it, still runs its GALA-E0098 half: a
+	// field default that reads a field is a mistake in a declaration, not a
+	// name still being typed. A file with no field default costs it nothing.
+	checksUndefined := isTopLevel && (!a.skipUndefinedCheck || fieldDefaultsMaySpellFieldsNative(root)) && a.fileImportsFullyLoaded(fileImports, richAST)
 
 	// 1. Collect all types
 	if err = a.collectFileTypesNative(nf, fd); err != nil {
@@ -1331,7 +1335,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if checksUndefined {
-			errs, err := a.checkUndefinedSymbols(nf, fileImports, richAST, filePath, fileDotImportSets)
+			errs, err := a.checkUndefinedSymbols(nf, fileImports, richAST, filePath, fileDotImportSets, a.skipUndefinedCheck)
 			if err != nil {
 				return nil, err
 			}

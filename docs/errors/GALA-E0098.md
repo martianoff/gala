@@ -3,10 +3,11 @@
 **When it fires.** The default value of a shorthand struct's field or a
 sealed case's field reads a field of the same struct or case: another field,
 or the field itself, directly or anywhere in the expression. A field default
-is evaluated with no field of its type in scope: a name in it that is declared
-outside the type (a package-level val or constant, a type, an import) means
-that, even where a field is spelled the same, and one that is not, but is
-spelled like a field, is this error. A function's default, by contrast, may read the parameters
+is evaluated with no field of its type in scope. A name spelled like a field
+that resolves to nothing else is this error, and so is one that resolves to a
+package-level val or var: the default would read the val where the field was
+almost certainly meant. A type, a function or an import spelled like a field
+keeps its meaning: `Retry Retry = Retry(3)` calls the type's constructor. A function's default, by contrast, may read the parameters
 before it (see [GALA-E0094](GALA-E0094.md)).
 
 **Minimal repro.**
@@ -46,6 +47,50 @@ func main() {
     Println(square(2).H)
 }
 ```
+
+**A package-level val spelled like a field.** No field is in scope in a field
+default, so a name spelled like a field that resolves to a package-level `val`
+or `var` reads that val. The field was almost certainly meant, so this is the
+same error:
+
+```gala
+package main
+
+val W = 7
+
+struct Rect(W int, H int = W)
+
+func main() {
+    Println(Rect(2).H)
+}
+```
+
+```
+error[GALA-E0098]: the default value of field H of Rect reads package-level val W, which has the same name as field W
+  --> main.gala:5:28
+  |
+5 | struct Rect(W int, H int = W)
+  |                            ^ rename the val or the field
+  |
+  = hint: rename the val or the field; a field default cannot read a field, so W here is the val
+```
+
+Rename the val (or the field), so the default says what it reads:
+
+```gala
+package main
+
+val defaultHeight = 7
+
+struct Rect(W int, H int = defaultHeight)
+
+func main() {
+    Println(Rect(2).H)
+}
+```
+
+A type, a function or an import spelled like a field is no val: it keeps its
+meaning, and `Retry Retry = Retry(3)` calls the type's constructor.
 
 **Rationale.** Go code builds the struct through its generated `New<T>`
 constructor, which sets each field to its default before it applies the

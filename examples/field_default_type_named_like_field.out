@@ -1,3 +1,5 @@
 model: 0:0, 0 node positions
 model with nodes: 1 node position
 leaf: 0:0, 0 kids
+policy: 3 5 OK
+plan: 2 5 ok

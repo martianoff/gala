@@ -329,9 +329,11 @@ Field defaults are stricter. The default of a struct field or a sealed case
 field may not read any field of its own struct or case, before or after it
 ([GALA-E0098](/docs/errors/gala-e0098/)), as in Scala: `struct Rect(W int, H int = W)`
 is an error. Compute such a field in a constructor function instead. No field
-is in scope in a field default, so a name in it means what it means outside the
-type: a package-level val or constant, a type, an import, even where a field
-is spelled the same.
+is in scope in a field default, so a type, a function or an import spelled like
+a field keeps its meaning there: `Retry Retry = Retry(3)` calls the type's
+constructor. A package-level val or var spelled like a field is an error too
+(GALA-E0098): the default would read the val where the field was almost
+certainly meant.
 
 Expression functions also support defaults:
 

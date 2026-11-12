@@ -781,6 +781,45 @@ func main() {
 			expectContains: "cannot discard error return from check in void lambda",
 		},
 		{
+			// No field is in scope, so W is the package val: a mistake.
+			name: "GALA-E0098 struct field default reads a package val named like a field",
+			input: `package main
+
+val W = 7
+
+struct Rect(W int, H int = W)
+
+func main() = Println(Rect(2).H)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "error_codes_test.gala:5:27 the default value of field H of Rect reads package-level val W, which has the same name as field W (hint: rename the val or the field; a field default cannot read a field, so W here is the val)",
+		},
+		{
+			name: "GALA-E0098 field default reads a tuple-pattern val named like a field",
+			input: `package main
+
+val (W, D) = (7, 0)
+
+struct Rect(W int, H int = W + D)
+
+func main() = Println(Rect(2).H)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field H of Rect reads package-level val W, which has the same name as field W",
+		},
+		{
+			name: "GALA-E0098 sealed case field default reads a package var named like a field",
+			input: `package main
+
+var Width = 7
+
+sealed type Shape {
+    case Tile(Width int, Height int = Width * 2)
+}
+
+func main() = Println(Tile(2))`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field Height of Tile reads package-level var Width, which has the same name as field Width",
+		},
+		{
 			// A type argument: Some(x) is std.Some[T], and T here is the
 			// receive-only signal channel ctx.Done() returns.
 			name: "GALA-E0090 anonymous struct type as a type argument",

@@ -1457,6 +1457,22 @@ func main() {
 			},
 		},
 		{
+			name: "field default that reads a package val spelled like a field",
+			code: galaerr.CodeFieldDefaultReadsField, // GALA-E0098
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+val W = 7
+
+struct Rect(W int, H int = W)
+
+func main() {
+    Println(Rect(2).H)
+}
+`)
+			},
+		},
+		{
 			name: "pointer to a mutable collection where the collection is expected",
 			code: galaerr.CodePointerForValue, // GALA-E0099
 			render: func(t *testing.T) string {

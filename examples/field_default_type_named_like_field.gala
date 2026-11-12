@@ -1,6 +1,10 @@
 package main
 
-import . "martianoff/gala/collection_immutable"
+import (
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+)
 
 // A name in a field default's type position (a type argument, an annotation)
 // is the type, even where a field is spelled the same: Pos in
@@ -12,8 +16,17 @@ val NoPos = Pos(0, 0)
 
 struct Model(Pos Pos = NoPos, NodePos Array[Pos] = EmptyArray[Pos]())
 
+// A field named like a type, a function or an imported package: the default
+// calls the constructor, the function, the package. None of them is a field.
+struct Retry(N int)
+
+func span() int = 5
+
+struct Policy(Retry Retry = Retry(3), span int = span(), strings string = strings.ToUpper("ok"))
+
 sealed type Node {
     case Leaf(Pos Pos = NoPos, Kids Array[Pos] = EmptyArray[Pos]())
+    case Plan(Retry Retry = Retry(2), span int = span(), strings string = strings.ToLower("OK"))
 }
 
 func main() {
@@ -23,6 +36,14 @@ func main() {
     Println(s"model with nodes: ${withNodes.NodePos.Size()} node position")
     val kids = Leaf() match {
         case Leaf(p, ks) => s"${p.Line}:${p.Col}, ${ks.Size()} kids"
+        case _ => ""
     }
     Println(s"leaf: $kids")
+    val p = Policy()
+    Println(s"policy: ${p.Retry.N} ${p.span} ${p.strings}")
+    val plan = Plan() match {
+        case Plan(r, sp, st) => s"${r.N} $sp $st"
+        case _ => ""
+    }
+    Println(s"plan: $plan")
 }

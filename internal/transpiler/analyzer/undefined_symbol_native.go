@@ -3,6 +3,7 @@ package analyzer
 import (
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/scopewalk"
 	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
@@ -15,14 +16,30 @@ import (
 // walkSourceFileNative drives the shared walker over root, a file's native
 // tree. Only declarations that hold value-position expressions are entered: a
 // `type` / `sealed type` / `embed` declaration contains types and string
-// literals, never a value this check inspects.
+// literals, never a value this check inspects. With c.onlyFieldDefaults it
+// walks the field defaults alone (see checkUndefinedSymbols).
 func (c *undefChecker) walkSourceFileNative(root native.GalaNodeRef) {
 	w := c.walker
 	nw := nativewalk.New(w, bindFunctionDeclarationScopeNative)
+	c.fileVals = fileLevelValNamesNative(root, c.rich)
+
+	// Field defaults first, before the file-level vals are bound: Reference
+	// must see a val a default reads, to report one spelled like a field
+	// (GALA-E0098). c.fileVals resolves them there instead.
+	for decl := range nativeTopLevelDecls(root) {
+		if k := decl.Kind(); k == native.GalaKIND_structShorthandDeclaration || k == native.GalaKIND_sealedTypeDeclaration {
+			c.walkFieldDefaultsNative(nw, decl)
+		}
+	}
+	if c.onlyFieldDefaults {
+		return
+	}
+
 	w.PushScope()
 	defer w.PopScope()
-	c.bindFileLevelNamesNative(root)
-
+	for name := range c.fileVals {
+		w.Bind(name)
+	}
 	for decl := range nativeTopLevelDecls(root) {
 		switch decl.Kind() {
 		case native.GalaKIND_functionDeclaration:
@@ -31,28 +48,33 @@ func (c *undefChecker) walkSourceFileNative(root native.GalaNodeRef) {
 			nw.Walk(native.ValDeclarationNode{GalaNodeRef: decl}.ExpressionList().GalaNodeRef)
 		case native.GalaKIND_varDeclaration:
 			nw.Walk(native.VarDeclarationNode{GalaNodeRef: decl}.ExpressionList().GalaNodeRef)
-		case native.GalaKIND_structShorthandDeclaration, native.GalaKIND_sealedTypeDeclaration:
-			// A field default is walked with no field bound: a field is
-			// not in scope there (GALA-E0098).
-			w.PushScope()
-			bindTypeParametersNative(w, declTypeParametersNative(decl))
-			for f := range fieldDefaultsNative(decl) {
-				c.fieldDefault = &f.site
-				nw.Walk(f.def)
-			}
-			c.fieldDefault = nil
-			w.PopScope()
 		}
 	}
 }
 
-// bindFileLevelNamesNative registers the tuple-pattern package vals and vars
-// (`val (a, b) = ...`) of root, a file's native tree, so they bind whatever
-// metadata the check runs against, and `embed val` directives, which no
-// richAST metadata lists.
-func (c *undefChecker) bindFileLevelNamesNative(root native.GalaNodeRef) {
-	for _, d := range c.rich.EmbedDirectives {
-		c.walker.Bind(d.VarName)
+// walkFieldDefaultsNative walks the field defaults of decl, a struct
+// shorthand or sealed type declaration, with no field bound: a field is not
+// in scope there (GALA-E0098).
+func (c *undefChecker) walkFieldDefaultsNative(nw nativewalk.Walker, decl native.GalaNodeRef) {
+	w := c.walker
+	w.PushScope()
+	defer w.PopScope()
+	bindTypeParametersNative(w, declTypeParametersNative(decl))
+	for f := range fieldDefaultsNative(decl) {
+		c.fieldDefault = &f.site
+		nw.Walk(f.def)
+	}
+	c.fieldDefault = nil
+}
+
+// fileLevelValNamesNative is the tuple-pattern package vals and vars
+// (`val (a, b) = ...`) of root, a file's native tree, which the check binds
+// whatever metadata it runs against, and the file's `embed val` directives,
+// which no richAST metadata lists.
+func fileLevelValNamesNative(root native.GalaNodeRef, rich *transpiler.RichAST) map[string]bool {
+	names := map[string]bool{}
+	for _, d := range rich.EmbedDirectives {
+		names[d.VarName] = true
 	}
 	for decl := range nativeTopLevelDecls(root) {
 		var tp native.TuplePatternNode
@@ -62,10 +84,15 @@ func (c *undefChecker) bindFileLevelNamesNative(root native.GalaNodeRef) {
 		case native.GalaKIND_varDeclaration:
 			tp = native.VarDeclarationNode{GalaNodeRef: decl}.TuplePattern()
 		case native.GalaKIND_embedDeclaration:
-			nativewalk.BindID(c.walker, native.EmbedDeclarationNode{GalaNodeRef: decl}.Identifier())
+			if id := (native.EmbedDeclarationNode{GalaNodeRef: decl}).Identifier(); id.Ok() {
+				names[galaparser.NativeText(id.GalaNodeRef)] = true
+			}
 		}
-		nativewalk.BindIdentifierList(c.walker, tp.IdentifierList())
+		for id := range galaparser.NativeKids(tp.IdentifierList().GalaNodeRef, native.GalaKIND_identifier) {
+			names[galaparser.NativeText(id)] = true
+		}
 	}
+	return names
 }
 
 // bindFunctionDeclarationScopeNative binds a function or method declaration's

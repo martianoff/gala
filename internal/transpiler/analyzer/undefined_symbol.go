@@ -313,6 +313,10 @@ type undefChecker struct {
 	// fieldDefault is the field whose default the walk is in, nil outside
 	// one (see field_default_refs.go).
 	fieldDefault *fieldDefaultSite
+	// onlyFieldDefaults reports GALA-E0098 alone (see checkUndefinedSymbols).
+	onlyFieldDefaults bool
+	// fileVals is the file's tuple-pattern and embed vals (fileLevelValNamesNative).
+	fileVals map[string]bool
 }
 
 // checkUndefinedSymbols runs the existence check over nf, the file's native
@@ -321,19 +325,23 @@ type undefChecker struct {
 // fileDotImportSets maps each file of the package (by canonical path) to the
 // GALA package names it dot-imports; a method whose receiver type lives in
 // another file may use that file's dot imports in its signature, the
-// bare-name form of the allowance GALA-E0025 makes.
+// bare-name form of the allowance GALA-E0025 makes. With onlyFieldDefaults
+// (the LSP analyzer, see skipUndefinedCheck) it checks the field defaults
+// alone, and reports only GALA-E0098.
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	nf nativeFile,
 	imports []fileImport,
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
+	onlyFieldDefaults bool,
 ) ([]*galaerr.SemanticError, error) {
 	c, err := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
 	if err != nil {
 		return nil, err
 	}
 	c.walker = scopewalk.New(c, undefWalkOptions())
+	c.onlyFieldDefaults = onlyFieldDefaults
 	// The value walk, then the type pass. Type positions are invisible to the
 	// value walker, so they get their own pass over the same qualifier set.
 	// Sharing the checker shares its `reported` map too, so a qualifier
@@ -344,7 +352,9 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	// checkTypeNamesNative.
 	root := nf.root.GalaNodeRef
 	c.walkSourceFileNative(root)
-	c.checkTypeNamesNative(root)
+	if !onlyFieldDefaults {
+		c.checkTypeNamesNative(root)
+	}
 	if err := c.walker.Err(); err != nil {
 		// Part of the file went unchecked.
 		return nil, &InternalError{File: filePath, Err: err}
@@ -980,10 +990,11 @@ func addQualifierOf(q map[string]bool, qualified string) {
 // not need — existence is existence however the name is spelled at the call
 // site.
 func (c *undefChecker) Reference(name string, at scopewalk.Site, use scopewalk.Use) {
-	if c.resolves(name) {
+	if c.resolves(name) || c.fileVals[name] {
+		c.reportFieldNamedVal(name, at)
 		return
 	}
-	if c.reportFieldRead(name, at) {
+	if c.reportFieldRead(name, at) || c.onlyFieldDefaults {
 		return
 	}
 	c.report(name, at)
