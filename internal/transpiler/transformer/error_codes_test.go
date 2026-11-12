@@ -709,7 +709,7 @@ func main() {
     Some(-1).ForEach((n) => save(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "error_codes_test.gala:8:22 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
+			expectContains: "error_codes_test.gala:8:21 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 GALA method discarded in a void block lambda",

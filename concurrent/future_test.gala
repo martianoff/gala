@@ -6,6 +6,8 @@ import (
     . "martianoff/gala/concurrent"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/time_utils"
+    . "martianoff/gala/go_builtins"
+    "martianoff/gala/go_interop"
 )
 
 func TestFutureOf(t T) T {
@@ -523,4 +525,45 @@ func TestNoCancellationCompletesNormally(t T) T {
     val result = f.Await()
     val t1 = IsSuccess(t, result)
     return Eq(t1, result.Get(), 86)
+}
+
+// reportingEC runs tasks on a single worker and completes reported with the
+// first failure reported to it.
+struct reportingEC(inner go_interop.ExecutionContext, reported Promise[string])
+
+func (e reportingEC) Execute(task func()) = e.inner.Execute(task)
+
+func (e reportingEC) ExecuteWithRecover(task func(), onPanic func(any)) = e.inner.ExecuteWithRecover(task, onPanic)
+
+func (e reportingEC) ReportFailure(err error) {
+    e.reported.Success(err.Error())
+}
+
+func (e reportingEC) Shutdown() = e.inner.Shutdown()
+
+func newReportingEC() reportingEC = reportingEC(NewSingleThreadEC(), NewPromise[string]())
+
+// A panic in a callback is reported to the ExecutionContext, whose worker
+// keeps running, rather than crashing the process.
+func TestCallbackPanicIsReported(t T) T {
+    val onSuccess = newReportingEC()
+    FutureOf(1, onSuccess).OnSuccess((x) => { Panic(s"onSuccess $x") })
+    val onFailure = newReportingEC()
+    FutureFailed[int](FutureError(Message = "failed"), onFailure).OnFailure((e) => { Panic("onFailure") })
+    val onComplete = newReportingEC()
+    FutureOf(2, onComplete).OnComplete((r) => { Panic("onComplete") })
+    val t1 = Eq(t, onSuccess.reported.Future().Get(), "onSuccess 1")
+    val t2 = Eq(t1, onFailure.reported.Future().Get(), "onFailure")
+    val t3 = Eq(t2, onComplete.reported.Future().Get(), "onComplete")
+    return Eq(t3, FutureOf(3, onComplete).Map((x) => x + 1).Get(), 4)
+}
+
+// AndThen reports a panic in its callback and still completes with the
+// original result.
+func TestAndThenPanicKeepsResult(t T) T {
+    val ec = newReportingEC()
+    val result = FutureOf(5, ec).AndThen((r) => { Panic("andThen") }).Await()
+    val t1 = IsSuccess(t, result)
+    val t2 = Eq(t1, result.Get(), 5)
+    return Eq(t2, ec.reported.Future().Get(), "andThen")
 }

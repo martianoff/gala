@@ -2,7 +2,6 @@ package main
 
 import (
     "errors"
-    "martianoff/gala/go_interop"
     . "martianoff/gala/concurrent"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/go_builtins"
@@ -10,10 +9,9 @@ import (
 
 // A panic in the function a Future combinator applies fails the resulting
 // Future, as it does for the Try combinators: Map, FlatMap, Filter, Recover,
-// RecoverWith, Transform and TransformWith, and Traverse's function. A panic
-// in a callback (OnComplete, OnSuccess, OnFailure, AndThen) is reported to the
-// ExecutionContext and does not crash the process; AndThen's Future keeps the
-// original result.
+// RecoverWith, Transform and TransformWith, and Traverse's function. (A panic
+// in a callback is reported to the ExecutionContext; concurrent/future_test.gala
+// covers that.)
 
 func divide(n int, d int) int = n / d
 
@@ -22,18 +20,6 @@ func explode[T any](msg string, unused T) T {
     Panic(errors.New(msg))
     unused
 }
-
-// ReportingEC runs tasks on inner and prints what is reported to it, which
-// the built-in contexts write to stderr with the panic's stack.
-struct ReportingEC(inner go_interop.ExecutionContext)
-
-func (e ReportingEC) Execute(task func()) = e.inner.Execute(task)
-
-func (e ReportingEC) ExecuteWithRecover(task func(), onPanic func(any)) = e.inner.ExecuteWithRecover(task, onPanic)
-
-func (e ReportingEC) ReportFailure(err error) = Println(s"reported: $err")
-
-func (e ReportingEC) Shutdown() = e.inner.Shutdown()
 
 func show[T any](f Future[T]) string = f.Await() match {
     case Success(v) => s"Success($v)"
@@ -46,7 +32,7 @@ func hasStack[T any](f Future[T]) bool = f.Await() match {
 }
 
 func main() {
-    val one = FutureOf(1)
+    val one = FutureOf[int](1)
     val failed = FutureFailed[int](errors.New("original"))
 
     // Map, Filter and Recover already failed their Future on a panic.
@@ -54,34 +40,22 @@ func main() {
     Println(show(one.Filter((x) => explode("filter", true))))
     Println(show(failed.Recover((e) => explode("recover", 0))))
     // FlatMap, RecoverWith, Transform and TransformWith, on either side.
-    Println(show(one.FlatMap((x) => explode("flatMap", FutureOf(0)))))
-    Println(show(one.FlatMap((x) => FutureOf(divide(10, x)))))
-    Println(show(failed.RecoverWith((e) => explode("recoverWith", FutureOf(0)))))
-    Println(show(failed.RecoverWith((e) => FutureOf(7))))
+    Println(show(one.FlatMap((x) => explode("flatMap", FutureOf[int](0)))))
+    Println(show(one.FlatMap((x) => FutureOf[int](divide(10, x)))))
+    Println(show(failed.RecoverWith((e) => explode("recoverWith", FutureOf[int](0)))))
+    Println(show(failed.RecoverWith((e) => FutureOf[int](7))))
     Println(show(one.Transform((x) => explode("transform success", Success("unused")), (e) => Success("unused"))))
     Println(show(failed.Transform((x) => Success("unused"), (e) => explode("transform failure", Success("unused")))))
     Println(show(one.Transform((x) => Success(s"v$x"), (e) => Failure[string](e))))
-    Println(show(one.TransformWith((x) => explode("transformWith success", FutureOf("unused")), (e) => FutureOf("unused"))))
-    Println(show(failed.TransformWith((x) => FutureOf("unused"), (e) => explode("transformWith failure", FutureOf("unused")))))
-    Println(show(failed.TransformWith((x) => FutureOf("unused"), (e) => FutureOf(s"handled $e"))))
+    Println(show(one.TransformWith((x) => explode("transformWith success", FutureOf[string]("unused")), (e) => FutureOf[string]("unused"))))
+    Println(show(failed.TransformWith((x) => FutureOf[string]("unused"), (e) => explode("transformWith failure", FutureOf[string]("unused")))))
+    Println(show(failed.TransformWith((x) => FutureOf[string]("unused"), (e) => FutureOf[string](s"handled $e"))))
     // Built on FlatMap and Map, and Traverse's function.
-    Println(show(one.ZipWith(FutureOf(0), (a, b) => divide(a, b))))
-    Println(show(Traverse(ArrayOf(1, 0), (x) => FutureOf(divide(1, x)))))
-    Println(show(Traverse(ArrayOf(1, 2), (x) => explode("traverse", FutureOf(0)))))
-    Println(show(Fold(ArrayOf(FutureOf(1), FutureOf(0)), 1, (acc, x) => divide(acc, x))))
+    Println(show(one.ZipWith(FutureOf[int](0), (a, b) => divide(a, b))))
+    Println(show(Traverse(ArrayOf(1, 0), (x) => FutureOf[int](divide(1, x)))))
+    Println(show(Traverse(ArrayOf(1, 2), (x) => explode("traverse", FutureOf[int](0)))))
+    Println(show(Fold(ArrayOf(FutureOf[int](1), FutureOf[int](0)), 1, (acc, x) => divide(acc, x))))
     // The Failure keeps the panic's stack.
-    Println(hasStack(one.FlatMap((x) => explode("stack", FutureOf(0)))))
-    Println(hasStack(failed.TransformWith((x) => FutureOf(x), (e) => explode("stack", FutureOf(0)))))
-    // A panicking callback does not crash the process, and AndThen's Future
-    // keeps the original result. One worker runs the callbacks in order, so the
-    // last Map runs after every callback before it.
-    val ec = ReportingEC(NewSingleThreadEC())
-    val queued = FutureOf(1, ec)
-    val queuedFailed = FutureFailed[int](errors.New("queued"), ec)
-    Println(show(queued.AndThen((r) => { Panic("andThen") })))
-    queued.OnSuccess((x) => { Panic("onSuccess") })
-    queuedFailed.OnFailure((e) => { Panic("onFailure") })
-    queued.OnComplete((r) => { Panic("onComplete") })
-    Println(show(queued.Map((x) => x + 1)))
-    ec.Shutdown()
+    Println(hasStack(one.FlatMap((x) => explode("stack", FutureOf[int](0)))))
+    Println(hasStack(failed.TransformWith((x) => FutureOf[int](x), (e) => explode("stack", FutureOf[int](0)))))
 }

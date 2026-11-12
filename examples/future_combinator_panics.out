@@ -17,9 +17,3 @@ Failure(traverse)
 Failure(runtime error: integer divide by zero)
 true
 true
-reported: andThen
-Success(1)
-reported: onSuccess
-reported: onFailure
-reported: onComplete
-Success(2)

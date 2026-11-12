@@ -5067,7 +5067,6 @@ gala_exec_test(
         "//collection_immutable",
         "//concurrent",
         "//go_builtins",
-        "//go_interop",
     ],
 )
 

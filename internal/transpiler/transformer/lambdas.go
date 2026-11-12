@@ -640,11 +640,22 @@ func (t *galaASTTransformer) sourcePath(expr ast.Expr) (string, bool) {
 	case *ast.ParenExpr:
 		return t.sourcePath(e.X)
 	case *ast.CallExpr:
-		if t.isImmutableUnwrapCall(e) {
+		if t.isImmutableUnwrapCall(e) || t.isValFieldUnwrap(e) {
 			return t.sourcePath(immutableGetReceiver(e).X)
 		}
 	}
 	return "", false
+}
+
+// isValFieldUnwrap reports whether expr is the `.Get()` that reads a val
+// field, `x.field.Get()`, through its std.Immutable wrapper.
+func (t *galaASTTransformer) isValFieldUnwrap(expr ast.Expr) bool {
+	get := immutableGetReceiver(expr)
+	if get == nil {
+		return false
+	}
+	field, ok := get.X.(*ast.SelectorExpr)
+	return ok && t.isImmutableField(t.getExprTypeName(field.X), field, field.Sel.Name)
 }
 
 // tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function
