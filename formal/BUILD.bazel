@@ -35,6 +35,10 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.lookup_rename",
     "Gala.Spec.update_rename",
     "Gala.Spec.exitScope_rename",
+    "Gala.Spec.evalList_cons",
+    "Gala.Spec.evalList_nil",
+    "Gala.Spec.capturedEnv_captured",
+    "Gala.Spec.lookup_captured",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
