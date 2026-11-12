@@ -578,6 +578,16 @@ func (a Ptr[Array[T]]) SplitAt(n int) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {
     return (a.Take(n), a.Drop(n))
 }
 
+// Span splits the array into a prefix/suffix pair according to a predicate.
+// The first element contains the longest prefix of elements that satisfy p.
+func (a Ptr[Array[T]]) Span(p func(T) bool) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {
+    var idx = 0
+    for idx < a.elements.Size() && p(a.elements[idx]) {
+        idx++
+    }
+    return a.SplitAt(idx)
+}
+
 // Grouped splits the array into groups of size n.
 func (a Ptr[Array[T]]) Grouped(n int) Ptr[Array[Ptr[Array[T]]]] {
     if n <= 0 {

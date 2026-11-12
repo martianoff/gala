@@ -5144,3 +5144,15 @@ gala_exec_test(
     expected = "field_default_type_named_like_field.out",
     deps = ["//collection_immutable"],
 )
+
+# A generic function over Iterable[T, C] gets the concrete collection back,
+# for immutable and mutable Array and List
+gala_exec_test(
+    name = "iterable_self_type",
+    src = "iterable_self_type.gala",
+    expected = "iterable_self_type.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)

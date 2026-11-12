@@ -20,12 +20,28 @@ type Traversable[T any] interface {
 // It extends the concept of Traversable by providing rich iteration capabilities
 // similar to Scala's Iterable trait.
 //
+// C is the collection's own type, a self type as in Scala's collection design.
+// The methods that return a sub-collection (Tail, Filter, Take, SplitAt, ...)
+// return C rather than Iterable: Go has no covariant result types, so this is what
+// lets a collection implement the interface while keeping its concrete results.
+// The immutable `Array[T]` implements `Iterable[T, Array[T]]` and `List[T]`
+// implements `Iterable[T, List[T]]`; the mutable ones implement it through their
+// pointer, `Ptr[Array[T]]` as `Iterable[T, Ptr[Array[T]]]`. Generic code takes
+// an Iterable[T, C] and gets the caller's concrete collection back; T and C are
+// inferred from the argument:
+//
+//     func dropFirst[T any, C any](xs Iterable[T, C]) C = xs.Tail()
+//
+// HashSet, TreeSet, the maps and stream.Stream do not implement Iterable: sets
+// have no positional methods, maps traverse key-value pairs, and a Stream's
+// Head and Reduce return an Option.
+//
 // Note: Generic methods (Map, FlatMap, Collect, FoldLeft, FoldRight, PartitionMap,
 // GroupBy, GroupMap, GroupMapReduce) are implemented on concrete collection types
 // because Go interfaces do not support methods with additional type parameters.
 // Concat is not part of Iterable either: Array, List and Stream each define it
 // taking and returning their own type (`Array[T].Concat(Array[T]) Array[T]`).
-type Iterable[T any] interface {
+type Iterable[T any, C any] interface {
     // Traversable methods
     ForEach(f func(T))
     Size() int
@@ -48,20 +64,20 @@ type Iterable[T any] interface {
     Reduce(f func(T, T) T) T
 
     // Sub-collection retrieval
-    Tail() Iterable[T]
-    Init() Iterable[T]
-    Slice(from int, until int) Iterable[T]
-    Take(n int) Iterable[T]
-    Drop(n int) Iterable[T]
-    TakeWhile(p func(T) bool) Iterable[T]
-    DropWhile(p func(T) bool) Iterable[T]
-    Filter(p func(T) bool) Iterable[T]
-    FilterNot(p func(T) bool) Iterable[T]
+    Tail() C
+    Init() C
+    Slice(from int, until int) C
+    Take(n int) C
+    Drop(n int) C
+    TakeWhile(p func(T) bool) C
+    DropWhile(p func(T) bool) C
+    Filter(p func(T) bool) C
+    FilterNot(p func(T) bool) C
 
     // Subdivision operations
-    SplitAt(n int) Tuple[Iterable[T], Iterable[T]]
-    Span(p func(T) bool) Tuple[Iterable[T], Iterable[T]]
-    Partition(p func(T) bool) Tuple[Iterable[T], Iterable[T]]
+    SplitAt(n int) Tuple[C, C]
+    Span(p func(T) bool) Tuple[C, C]
+    Partition(p func(T) bool) Tuple[C, C]
 
     // String representation
     String() string

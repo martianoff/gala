@@ -18,6 +18,7 @@ This document describes the immutable collection data structures available in GA
 ## Table of Contents
 
 1. [Overview](#overview)
+   - [Generic code over sequences: `Iterable[T, C]`](#generic-code-over-sequences-iterablet-c)
 2. [Performance Characteristics](#performance-characteristics)
 3. [List[T]](#listt)
    - [Construction](#construction)
@@ -69,6 +70,28 @@ The `collection_immutable` package provides persistent (immutable) data structur
 ```gala
 import . "martianoff/gala/collection_immutable"
 ```
+
+### Generic code over sequences: `Iterable[T, C]`
+
+`std.Iterable[T, C]` is the interface `Array` and `List` share. `C` is the collection's own type: the methods that return a sub-collection (`Tail`, `Init`, `Slice`, `Take`, `Drop`, `TakeWhile`, `DropWhile`, `Filter`, `FilterNot`) return `C`, and `SplitAt`, `Span` and `Partition` return `Tuple[C, C]`. So `Array[T]` implements `Iterable[T, Array[T]]` and `List[T]` implements `Iterable[T, List[T]]`, each with its own concrete results.
+
+A generic function takes an `Iterable[T, C]` and gets the caller's collection back:
+
+```gala
+func evens[C any](xs Iterable[int, C]) C = xs.Filter((x) => x % 2 == 0)
+
+func rest[T any, C any](xs Iterable[T, C]) C = xs.Tail()
+
+func main() {
+    val arr = evens(rest(ArrayOf(1, 2, 3, 4)))  // Array(2, 4)
+    val list = evens(ListOf(2, 4, 5, 8))        // List(2, 4, 8)
+    Println(arr.Get(0), list.Prepend(0))
+}
+```
+
+`T` and `C` are inferred from the argument, so no type arguments are written, and the result is the concrete collection with all of its own methods. Inside such a function `C` is an unconstrained type parameter, so its methods can't be called there: chain the sub-collection methods at the call site, as `evens(rest(...))` does. The other methods are `ForEach`, `Size`, `IsEmpty`, `NonEmpty`, `Head`, `Last`, `HeadOption`, `LastOption`, `Find`, `Exists`, `ForAll`, `Count`, `Reduce`, `String` and `MkString`. Methods with type parameters of their own (`Map`, `FlatMap`, `FoldLeft`, ...) and `Concat` are on the concrete collections only.
+
+`HashSet`, `TreeSet`, `HashMap` and `TreeMap` do not implement `Iterable`: sets have no positional methods (`Tail`, `Take`, `SplitAt`, ...), and maps traverse key-value pairs. `stream.Stream` does not either: it is lazy and possibly infinite, so `Head` and `Reduce` return an `Option` and `Count` takes no predicate.
 
 ## Performance Characteristics
 

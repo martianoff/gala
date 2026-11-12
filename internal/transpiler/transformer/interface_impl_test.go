@@ -146,12 +146,12 @@ func main() = rank(Mute(1))`,
 			contains: "Mute does not implement Ranked: it has no method Compare",
 		},
 		{
-			name: "std collection as Iterable",
+			name: "std collection as Iterable of another self type",
 			body: `func main() {
-    val it Iterable[int] = ArrayOf(1, 2)
+    val it Iterable[int, List[int]] = ArrayOf(1, 2)
     Println(it.Size())
 }`,
-			contains: "collection_immutable.Array[int] does not implement Iterable[int]: method Tail returns collection_immutable.Array[int], not Iterable[int]",
+			contains: "collection_immutable.Array[int] does not implement Iterable[int, List[int]]: method Tail returns collection_immutable.Array[int], not List[int]",
 		},
 		{
 			name: "error",
@@ -278,7 +278,13 @@ func sizeOf[T any](b Box[T]) int {
     s.Size()
 }
 
+// A std collection implements Iterable with itself as the self type.
+func evens[C any](xs Iterable[int, C]) C = xs.Filter((x) => x % 2 == 0)
+
 func main() {
+    val it Iterable[int, Array[int]] = ArrayOf(1, 2, 3)
+    val ls Iterable[string, List[string]] = ListOf("a")
+    Println(it.Tail().Get(0), ls.Size(), evens(ArrayOf(1, 2)).Get(0), evens(ListOf(3, 4)).Head())
     var c = Counter(1)
     inc(&c)
     val s Shape = Square(2.0)

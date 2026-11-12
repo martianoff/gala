@@ -723,6 +723,18 @@ func (l Ptr[List[T]]) SplitAt(n int) Tuple[Ptr[List[T]], Ptr[List[T]]] {
     return (l.Take(n), l.Drop(n))
 }
 
+// Span splits the list into a prefix/suffix pair according to a predicate.
+// The first element contains the longest prefix of elements that satisfy p.
+func (l Ptr[List[T]]) Span(p func(T) bool) Tuple[Ptr[List[T]], Ptr[List[T]]] {
+    var current = l.head
+    var index = 0
+    for current.IsDefined() && p(current.Get().value) {
+        current = current.Get().next
+        index++
+    }
+    return l.SplitAt(index)
+}
+
 // GroupBy partitions this list into a map of lists according to a discriminator function.
 func (l Ptr[List[T]]) GroupBy[K comparable](f func(T) K) map[K]Ptr[List[T]] {
     var result = go_interop.MapEmpty[K, Ptr[List[T]]]()
