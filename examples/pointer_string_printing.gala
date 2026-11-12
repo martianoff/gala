@@ -1,0 +1,39 @@
+package main
+
+// A type whose String is declared on a pointer receiver prints with it
+// wherever GALA prints a value of the type: Println, Print, s"..." and
+// f"...", and a field, a sealed case or an Option printed by GALA's own
+// format. The value need not be addressable: GALA calls String on a copy.
+
+struct Pt(X int, Y int)
+
+func (p *Pt) String() string = s"<${p.X},${p.Y}>"
+
+struct Box[T any](Value T)
+
+func (b *Box[T]) String() string = s"box of ${b.Value}"
+
+struct Line(From Pt, To Pt)
+
+sealed type Shape {
+    case Dot(At Pt)
+    case Segment(L Line)
+}
+
+func origin() Pt = Pt(0, 0)
+
+func main() {
+    var p = Pt(1, 2)
+    Println(p)
+    Println(Pt(3, 4))
+    Println(origin())
+    Print(p, origin(), "\n")
+    Println(s"at $p and ${origin()}")
+    Println(f"at $p%s, ${p}%#v")
+    Println(Box(7))
+    Println(Line(p, Pt(5, 6)))
+    Println(Dot(p))
+    Println(Segment(Line(origin(), p)))
+    Println(Some(p))
+    Println(&p)
+}

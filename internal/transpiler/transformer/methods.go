@@ -446,6 +446,29 @@ func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames 
 	return t.stringMethodDecl(name, tParams, &ast.ReturnStmt{Results: []ast.Expr{t.formatStructExpr(name, fields)}})
 }
 
+// printedValue is expr, a value Println, Print or an interpolation prints,
+// as it is passed to fmt: a value of a GALA type whose String is declared on
+// a pointer receiver only becomes `std.PtrString(expr)`, the text that String
+// gives it, which fmt, given the value, would not call. typ is expr's type;
+// ok reports the rewrite.
+func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type) (ast.Expr, bool) {
+	if typ == nil || transpiler.IsUnusableOrAny(typ) {
+		return expr, false
+	}
+	if _, isPtr := typ.(transpiler.PointerType); isPtr {
+		return expr, false
+	}
+	meta := t.getTypeMeta(typ.BaseName())
+	if meta == nil {
+		return expr, false
+	}
+	m := meta.Methods["String"]
+	if m == nil || !m.PointerReceiver || m.GoDeclared || len(m.ParamTypes) != 0 || !isBasicNamed(m.ReturnType, "string") {
+		return expr, false
+	}
+	return &ast.CallExpr{Fun: t.stdIdent("PtrString"), Args: []ast.Expr{expr}}, true
+}
+
 // formatStructExpr is the text a struct or sealed case called name prints
 // as, from its field values fields: `std.FormatStruct("Pt", s.X, s.Y)`, or
 // the literal "Pt()" for no fields.
