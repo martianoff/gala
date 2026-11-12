@@ -56,16 +56,16 @@ const (
 	TypeIterable    = "Iterable"
 	TypeEmbeddedFS  = "EmbeddedFS"
 
-	FuncSome         = "Some"
-	FuncNone         = "None"
-	FuncLeft         = "Left"
-	FuncRight        = "Right"
-	FuncSuccess      = "Success"
-	FuncFailure      = "Failure"
+	FuncSome          = "Some"
+	FuncNone          = "None"
+	FuncLeft          = "Left"
+	FuncRight         = "Right"
+	FuncSuccess       = "Success"
+	FuncFailure       = "Failure"
 	FuncNewImmutable  = "NewImmutable"
 	FuncNewEmbeddedFS = "NewEmbeddedFS"
 	FuncCopy          = "Copy"
-	MethodGet        = "Get"
+	MethodGet         = "Get"
 	// FuncAddrOfCopy gives a pointer-receiver method an addressable copy of a
 	// receiver Go cannot address (a val's Get(), a call result).
 	FuncAddrOfCopy = "AddrOfCopy"
@@ -123,14 +123,14 @@ type RichAST struct {
 	OwnImportPath    string // this package's import path, when known; types carrying it are emitted unqualified
 	Types            map[string]*TypeMetadata
 	Functions        map[string]*FunctionMetadata
-	Packages         map[string]string                   // path -> pkgName
-	ImportAliases    map[string]string                   // alias -> pkgName (e.g., "im" -> "collection_immutable")
-	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
-	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
-	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
-	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
-	EmbedDirectives  []EmbedDirective                    // embed val declarations
-	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
+	Packages         map[string]string                         // path -> pkgName
+	ImportAliases    map[string]string                         // alias -> pkgName (e.g., "im" -> "collection_immutable")
+	CompanionObjects map[string]*CompanionObjectMetadata       // companion name -> metadata
+	GoExports        map[string][]string                       // pkgName -> exported symbol names (from Go-only packages)
+	GoTypeInfo       *GoTypeInfo                               // type info extracted from Go source files and packages
+	TypeAliases      map[string]Type                           // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
+	EmbedDirectives  []EmbedDirective                          // embed val declarations
+	PackageVals      map[string]*PackageValMetadata            // package-level val/var name -> metadata (for cross-file Immutable unwrap)
 	ImportedVals     map[string]map[string]*PackageValMetadata // import path -> exported package-level val/var name -> metadata (see AddImportedVals)
 	// PackageKeys holds, by import path, the key each imported package is
 	// recorded under when another package of its name is reached too (see
@@ -139,14 +139,14 @@ type RichAST struct {
 	// MergedPackages holds, by package name, the import path of the imported
 	// package merged under that name, for finding a second package of it.
 	MergedPackages map[string]string
-	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
-	GoImportNames    map[string]string                   // this file's Go import path -> the package's real name, when the loaded Go package tells it (k8s.io/api/core/v1 -> v1)
+	ImportPathMap  map[string]string // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
+	GoImportNames  map[string]string // this file's Go import path -> the package's real name, when the loaded Go package tells it (k8s.io/api/core/v1 -> v1)
 	// PackageImportPaths holds the GALA import paths written by this file or a sibling.
 	PackageImportPaths map[string]bool
-	FilePath         string                              // source file path (for error reporting)
-	SourceContent    string                              // raw source text (for error snippets)
-	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
-	PackageDoc       string                              // doc comment above the `package` clause
+	FilePath           string   // source file path (for error reporting)
+	SourceContent      string   // raw source text (for error snippets)
+	AnalysisWarnings   []string // warnings from package analysis (e.g., unresolved GALA imports)
+	PackageDoc         string   // doc comment above the `package` clause
 
 	// SiblingSyntaxErrors holds the syntax errors (each stamped with its own
 	// file) of the package's other files that did not parse, or nil. Those
@@ -412,15 +412,15 @@ func PreferPackageVal(existing, candidate *PackageValMetadata) bool {
 }
 
 type TypeMetadata struct {
-	Name                 string
-	Package              string
-	Doc                  string            // Doc comment above the declaration ("" when undocumented)
-	FieldDocs            map[string]string // Field name -> doc comment
-	Pos                  SourcePos         // Position of the type name identifier in DefinedIn
-	Methods              map[string]*MethodMetadata
-	Fields               map[string]Type // Name -> Type
-	FieldNames           []string        // To preserve order
-	FieldPositions       map[string]SourcePos // Name -> (line, column) of the field declaration identifier
+	Name           string
+	Package        string
+	Doc            string            // Doc comment above the declaration ("" when undocumented)
+	FieldDocs      map[string]string // Field name -> doc comment
+	Pos            SourcePos         // Position of the type name identifier in DefinedIn
+	Methods        map[string]*MethodMetadata
+	Fields         map[string]Type      // Name -> Type
+	FieldNames     []string             // To preserve order
+	FieldPositions map[string]SourcePos // Name -> (line, column) of the field declaration identifier
 	// FieldDefaults maps a field name to its declared default expression, for
 	// the shorthand form `struct Cfg(Tries int = 3)`. A field absent from this
 	// map is required: constructing the struct with call syntax and omitting it
@@ -438,23 +438,23 @@ type TypeMetadata struct {
 	// `= value`. Block-form fields have no such syntax, so requiring all of
 	// them would leave no way to opt out; block structs keep Go's partial
 	// construction.
-	IsShorthand          bool
+	IsShorthand bool
 	// IsInterface is true for a GALA interface declaration
 	// `type Repo interface { ... }`. Companion objects and fieldless block
 	// structs share an interface's shape (methods, no fields), so the shape
 	// alone cannot tell them apart.
 	IsInterface          bool
 	TypeParams           []string
-	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
+	TypeParamConstraints map[string]Type // TypeParam name -> constraint (e.g., "T" -> comparable); see ConstraintIs
 	ImmutFlags           []bool
 	// StoredAsDeclared marks, by position, the shorthand fields declared
 	// without a keyword as Immutable[T] or an alias of it. Such a field is
 	// stored as declared, not wrapped in another Immutable, and Fields records
 	// it as T.
 	StoredAsDeclared []bool
-	IsSealed             bool            // True if this type was generated from a sealed type declaration
-	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
-	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
+	IsSealed         bool            // True if this type was generated from a sealed type declaration
+	SealedVariants   []SealedVariant // Variant info for sealed types (empty for non-sealed)
+	DefinedIn        string          // Source file where the type definition (fields/variants) was first seen
 	// IsOpaque is true for `opaque type UserID int64`: a distinct Go defined
 	// type whose representation is Underlying. It is never a type alias:
 	// inference, unification and method lookup never see through it. Only
@@ -754,18 +754,20 @@ type MethodMetadata struct {
 	// its GALA value (Try/Tuple).
 	GoResults []Type
 	// TypeParamConstraints maps a type parameter to the constraint it is
-	// declared with (`B Bumper`), named in the declaring package.
-	TypeParamConstraints map[string]string
+	// declared with: a bare name (`B Bumper`, `K comparable`) or a generic
+	// interface with type arguments (`C Iterable[T, C]`), resolved in the
+	// declaring package. A parameter declared `any` may be absent.
+	TypeParamConstraints map[string]Type
 }
 
 type FunctionMetadata struct {
-	Name       string
-	Package    string
-	Doc        string    // Doc comment above the declaration ("" when undocumented)
-	Pos        SourcePos // Position of the function name identifier in DefinedIn
-	ParamTypes []Type
-	ParamNames []string // Parameter names (for named argument matching and default injection)
-	ReturnType   Type   // VoidType for no result; nil when it could not be resolved (see HasResult)
+	Name         string
+	Package      string
+	Doc          string    // Doc comment above the declaration ("" when undocumented)
+	Pos          SourcePos // Position of the function name identifier in DefinedIn
+	ParamTypes   []Type
+	ParamNames   []string // Parameter names (for named argument matching and default injection)
+	ReturnType   Type     // VoidType for no result; nil when it could not be resolved (see HasResult)
 	TypeParams   []string
 	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
 	DefinedIn    string              // Source file where this function was defined
@@ -775,7 +777,7 @@ type FunctionMetadata struct {
 	// MethodMetadata.GoResults); ReturnType holds a call's GALA value.
 	GoResults []Type
 	// TypeParamConstraints is MethodMetadata.TypeParamConstraints.
-	TypeParamConstraints map[string]string
+	TypeParamConstraints map[string]Type
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

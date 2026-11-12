@@ -466,7 +466,7 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 		b.WriteString("type " + meta.Name)
 	}
 	if len(meta.TypeParams) > 0 {
-		b.WriteString("[" + strings.Join(meta.TypeParams, ", ") + "]")
+		b.WriteString("[" + transpiler.TypeParamList(meta.TypeParams, meta.TypeParamConstraints) + "]")
 	}
 	if underlying, ok := meta.OpaqueUnderlying(); ok {
 		b.WriteString(" " + underlying.String())
@@ -543,7 +543,7 @@ func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
 	var b strings.Builder
 	b.WriteString("func " + meta.Name)
 	if len(meta.TypeParams) > 0 {
-		b.WriteString("[" + strings.Join(meta.TypeParams, ", ") + "]")
+		b.WriteString("[" + transpiler.TypeParamList(meta.TypeParams, meta.TypeParamConstraints) + "]")
 	}
 	b.WriteString("(")
 	for i, pn := range meta.ParamNames {
@@ -565,7 +565,7 @@ func formatMethodMeta(owner *transpiler.TypeMetadata, m *transpiler.MethodMetada
 	var b strings.Builder
 	b.WriteString("func (" + owner.Name + ") " + m.Name)
 	if len(m.TypeParams) > 0 {
-		b.WriteString("[" + strings.Join(m.TypeParams, ", ") + "]")
+		b.WriteString("[" + transpiler.TypeParamList(m.TypeParams, m.TypeParamConstraints) + "]")
 	}
 	b.WriteString("(" + formatMethodParams(m) + ")")
 	b.WriteString(resultSuffix(m.ReturnType, m.GoResults))

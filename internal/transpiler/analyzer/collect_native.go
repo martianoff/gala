@@ -135,8 +135,10 @@ func nativeSetDoc(dst *string, docs galaparser.Docs, n native.GalaNodeRef) {
 }
 
 // nativeTypeParamsOf returns the names of the type parameters tps declares on
-// a declaration, in order, and the constraint each is declared with (`B
-// Bumper` maps B to Bumper); both are nil when it declares none.
+// a declaration, in order, and the constraint each is declared with, as
+// written (`B Bumper` maps B to "Bumper", `C Iterable[T, C]` maps C to
+// "Iterable[T, C]"); both are nil when it declares none. resolveConstraints
+// turns the texts into types.
 func nativeTypeParamsOf(tps native.TypeParametersNode) ([]string, map[string]string) {
 	list := tps.TypeParameterList()
 	if !list.Ok() {
@@ -146,32 +148,44 @@ func nativeTypeParamsOf(tps native.TypeParametersNode) ([]string, map[string]str
 	var constraints map[string]string
 	for n := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_typeParameter) {
 		tp := native.TypeParameterNode{GalaNodeRef: n}
-		name, constraint := tp.Identifier(0).GetText(), tp.Identifier(1)
+		name, constraint := tp.Identifier().GetText(), tp.Type_()
 		names = append(names, name)
 		if constraint.Ok() {
 			if constraints == nil {
 				constraints = make(map[string]string)
 			}
-			constraints[name] = constraint.GetText()
+			constraints[name] = galaparser.NativeTypeText(constraint)
 		}
 	}
 	return names, constraints
 }
 
-// nativeDeclaredTypeParams is nativeTypeParamsOf for a function or method of
-// package pkgName, with each constraint resolved where it is declared — the
-// package's own type, a dot-import's or std's — and recorded qualified
-// ("api.Bumper") unless it is the package's own in main or test, so a caller
-// in another package finds the same interface. `any` and `comparable` are
-// kept as they are.
-func (a *galaAnalyzer) nativeDeclaredTypeParams(tps native.TypeParametersNode, pkgName string) ([]string, map[string]string) {
-	names, constraints := nativeTypeParamsOf(tps)
-	for tp, c := range constraints {
-		if c != "any" && c != "comparable" {
-			constraints[tp] = a.resolveBaseName(c, pkgName).String()
-		}
+// resolveConstraints resolves texts, the constraints of the type parameters
+// names of a declaration of package pkgName, where they are declared — the
+// package's own type, an import's, a dot-import's or std's — so a user in
+// another package finds the same interface. A constraint's type arguments
+// may name the list's own parameters (`C Iterable[T, C]`), which stay type
+// parameters; `comparable` stays the predeclared constraint.
+func (a *galaAnalyzer) resolveConstraints(names []string, texts map[string]string, pkgName string) map[string]transpiler.Type {
+	if texts == nil {
+		return nil
 	}
-	return names, constraints
+	out := make(map[string]transpiler.Type, len(texts))
+	for tp, text := range texts {
+		if text == "comparable" {
+			out[tp] = transpiler.BasicType{Name: text}
+			continue
+		}
+		out[tp] = a.resolveTypeWithParams(text, pkgName, names)
+	}
+	return out
+}
+
+// nativeDeclaredTypeParams is nativeTypeParamsOf with each constraint
+// resolved in package pkgName (resolveConstraints).
+func (a *galaAnalyzer) nativeDeclaredTypeParams(tps native.TypeParametersNode, pkgName string) ([]string, map[string]transpiler.Type) {
+	names, texts := nativeTypeParamsOf(tps)
+	return names, a.resolveConstraints(names, texts, pkgName)
 }
 
 // nativeBaseTypeName is the name of the type t is built on, as written: its
@@ -545,7 +559,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 			}
 			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, nativePos(id.GalaNodeRef), absFilePath)
 			nativeSetDoc(&meta.Doc, docs, decl)
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
+			meta.TypeParams, meta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 
 			if structType := ctx.StructType(); structType.Ok() {
 				for fNode := range galaparser.NativeKids(structType.GalaNodeRef, native.GalaKIND_structField) {
@@ -626,7 +640,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 			}
 			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absFilePath)
 			nativeSetDoc(&meta.Doc, docs, decl)
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
+			meta.TypeParams, meta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 
 			if params := ctx.Parameters(); params.Ok() {
 				for _, pctx := range nativeParams(params) {

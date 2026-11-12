@@ -119,7 +119,7 @@ func bindFunctionDeclarationScopeNative(w *scopewalk.Walker, fn native.FunctionD
 // declares.
 func bindTypeParametersNative(w *scopewalk.Walker, tps native.TypeParametersNode) {
 	for p := range galaparser.NativeKids(tps.TypeParameterList().GalaNodeRef, native.GalaKIND_typeParameter) {
-		nativewalk.BindID(w, native.TypeParameterNode{GalaNodeRef: p}.Identifier(0))
+		nativewalk.BindID(w, native.TypeParameterNode{GalaNodeRef: p}.Identifier())
 	}
 }
 
@@ -221,8 +221,8 @@ func (c *undefChecker) checkTypeNameNative(t native.TypeNode, typeParams, extra 
 }
 
 // checkBareTypePositionsNative checks the bare-identifier type positions n
-// holds directly — a type alias's identifier, a type parameter's constraint,
-// and the untyped parameters of a function type's signature; see
+// holds directly — a type alias's identifier and the
+// untyped parameters of a function type's signature; see
 // checkBareTypeName.
 func (c *undefChecker) checkBareTypePositionsNative(n native.GalaNodeRef, typeParams, extra map[string]bool) {
 	check := func(id native.GalaNodeRef) {
@@ -233,12 +233,6 @@ func (c *undefChecker) checkBareTypePositionsNative(n native.GalaNodeRef, typePa
 	case native.GalaKIND_typeAlias:
 		if id := (native.TypeAliasNode{GalaNodeRef: n}).Identifier(); id.Ok() {
 			check(id.GalaNodeRef)
-		}
-	case native.GalaKIND_typeParameter:
-		// The constraint, of a parameter of exactly two identifiers.
-		tp := native.TypeParameterNode{GalaNodeRef: n}
-		if second := tp.Identifier(1); second.Ok() && !tp.Identifier(2).Ok() {
-			check(second.GalaNodeRef)
 		}
 	case native.GalaKIND_type:
 		params := native.TypeNode{GalaNodeRef: n}.Signature().Parameters()
@@ -317,7 +311,7 @@ func collectFileTypeBindersNative(root native.GalaNodeRef) map[string]bool {
 	root.Walk(func(n native.GalaNodeRef) bool {
 		switch n.Kind() {
 		case native.GalaKIND_typeParameter:
-			bind(native.TypeParameterNode{GalaNodeRef: n}.Identifier(0))
+			bind(native.TypeParameterNode{GalaNodeRef: n}.Identifier())
 			return false
 		case native.GalaKIND_receiver:
 			if rt := (native.ReceiverNode{GalaNodeRef: n}).Type_(); rt.Ok() {

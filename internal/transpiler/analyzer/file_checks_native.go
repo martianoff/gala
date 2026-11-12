@@ -228,9 +228,8 @@ func declaresNameNative(id native.GalaNodeRef) bool {
 		native.GalaKIND_typedPattern:
 		return true
 	case native.GalaKIND_typeParameter:
-		// `[T any]`: the first identifier is the parameter, the second its
-		// constraint.
-		return native.TypeParameterNode{GalaNodeRef: parent}.Identifier(0).GalaNodeRef == id
+		// `[T any]`: the identifier is the parameter; its constraint is a type.
+		return native.TypeParameterNode{GalaNodeRef: parent}.Identifier().GalaNodeRef == id
 	}
 	return false
 }

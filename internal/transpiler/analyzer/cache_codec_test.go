@@ -157,7 +157,7 @@ func buildSyntheticCache() *CachedRichAST {
 					PointerReceiver:      true,
 					PtrReceiver:          true,
 					TypeParams:           []string{"B"},
-					TypeParamConstraints: map[string]string{"B": "Bumper"},
+					TypeParamConstraints: map[string]transpiler.Type{"B": transpiler.NamedType{Package: "synthetic", Name: "Bumper"}},
 					Name:                 "M1", Package: "synthetic",
 					ParamTypes:   []transpiler.Type{transpiler.BasicType{Name: "int"}},
 					ReturnType:   transpiler.BasicType{Name: "string"},
@@ -190,7 +190,7 @@ func buildSyntheticCache() *CachedRichAST {
 			},
 			ReturnType:           transpiler.NamedType{Package: "std", Name: "Either"},
 			TypeParams:           []string{"T"},
-			TypeParamConstraints: map[string]string{"T": "Bumper"},
+			TypeParamConstraints: map[string]transpiler.Type{"T": transpiler.GenericType{Base: transpiler.NamedType{Package: "synthetic", Name: "Seq"}, Params: []transpiler.Type{transpiler.BasicType{Name: "T"}}}},
 			Variadic:             true,
 			DefaultExprs:         map[int]transpiler.DefaultExpr{1: {Text: "(s string) => s + \"!\"", Pos: transpiler.SourcePos{Line: 5, Column: 30}}},
 		}

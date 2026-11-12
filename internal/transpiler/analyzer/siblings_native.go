@@ -184,7 +184,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			}
 			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absSibPath)
 			meta.Doc = nativeDocAt(docs, decl)
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
+			meta.TypeParams, meta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 			if structType := ctx.StructType(); structType.Ok() {
 				for fNode := range galaparser.NativeKids(structType.GalaNodeRef, native.GalaKIND_structField) {
 					a.recordStructFieldNative(meta, native.StructFieldNode{GalaNodeRef: fNode}, pkgName, docs)
@@ -236,7 +236,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			if meta.DefinedIn == "" {
 				meta.DefinedIn = absSibPath
 			}
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
+			meta.TypeParams, meta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 			for _, pctx := range nativeParams(ctx.Parameters()) {
 				a.recordShorthandFieldNative(meta, pctx, pkgName, decls)
 			}

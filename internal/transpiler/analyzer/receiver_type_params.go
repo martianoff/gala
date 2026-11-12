@@ -56,10 +56,18 @@ func renameReceiverTypeParams(meta *transpiler.MethodMetadata, recvNames, typeTy
 		taken = append(taken, fresh)
 		renames[name] = transpiler.BasicType{Name: fresh}
 		methodParams[i] = fresh
-		if c, ok := meta.TypeParamConstraints[name]; ok {
-			delete(meta.TypeParamConstraints, name)
-			meta.TypeParamConstraints[fresh] = c
+	}
+	// A constraint is renamed with its parameter, and the parameters its type
+	// arguments name (`C Iterable[T, C]`) with theirs.
+	if meta.TypeParamConstraints != nil {
+		constraints := make(map[string]transpiler.Type, len(meta.TypeParamConstraints))
+		for name, c := range meta.TypeParamConstraints {
+			if r, ok := renames[name]; ok && slices.Contains(typeTypeParams, name) {
+				name = r.String()
+			}
+			constraints[name] = transpiler.SubstituteTypeParams(c, renames)
 		}
+		meta.TypeParamConstraints = constraints
 	}
 	meta.TypeParams = methodParams
 	for i, pt := range meta.ParamTypes {

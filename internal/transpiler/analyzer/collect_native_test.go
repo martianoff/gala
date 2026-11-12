@@ -222,14 +222,25 @@ type Box[T comparable] struct {
 }
 
 struct Pair[A any, B comparable](a A, b B)
+
+type Cmp[T any, C any] interface {
+    Less(other C) bool
+}
+
+struct Ord[T any, C Cmp[T, C]](c C)
 `
+	anyT, comparable := transpiler.BasicType{Name: "any"}, transpiler.BasicType{Name: "comparable"}
 	type typeParams struct {
 		params      []string
-		constraints map[string]string
+		constraints map[string]transpiler.Type
 	}
 	genericWant := map[string]typeParams{
-		"box.Box":  {[]string{"T"}, map[string]string{"T": "comparable"}},
-		"box.Pair": {[]string{"A", "B"}, map[string]string{"A": "any", "B": "comparable"}},
+		"box.Box":  {[]string{"T"}, map[string]transpiler.Type{"T": comparable}},
+		"box.Pair": {[]string{"A", "B"}, map[string]transpiler.Type{"A": anyT, "B": comparable}},
+		"box.Ord": {[]string{"T", "C"}, map[string]transpiler.Type{"T": anyT, "C": transpiler.GenericType{
+			Base:   transpiler.NamedType{Package: "box", Name: "Cmp"},
+			Params: []transpiler.Type{transpiler.BasicType{Name: "T"}, transpiler.BasicType{Name: "C"}},
+		}}},
 	}
 	cases := []struct {
 		name  string
@@ -245,7 +256,7 @@ type Box[K any] struct {
 
 struct Pair(a int, b int)
 `, map[string]typeParams{
-			"box.Box":  {[]string{"K"}, map[string]string{"K": "any"}},
+			"box.Box":  {[]string{"K"}, map[string]transpiler.Type{"K": anyT}},
 			"box.Pair": {nil, nil},
 		}},
 	}

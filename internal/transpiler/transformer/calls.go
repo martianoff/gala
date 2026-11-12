@@ -297,6 +297,9 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 				return nil, err
 			}
+			if err := t.checkTypeParamMethod(receiver, method, c); err != nil {
+				return nil, err
+			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
@@ -517,6 +520,12 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr, 
 func (t *galaASTTransformer) methodReceiverType(recv transpiler.Type, method string) transpiler.Type {
 	if ptr, ok := recv.(transpiler.PointerType); ok {
 		return transpiler.PointerType{Elem: t.methodReceiverType(ptr.Elem, method), NonNull: ptr.NonNull}
+	}
+	// A value of a type parameter has the methods of its constraint, with
+	// the constraint's type arguments (`C Iterable[T, C]`): its Tail()
+	// returns a C.
+	if c, ok := t.typeParamConstraint(recv); ok {
+		recv = c
 	}
 	return t.walkAliasChain(recv, func(typ transpiler.Type) bool {
 		return t.typeHasMethod(typ.BaseName(), method)
@@ -2731,6 +2740,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 		return nil, err
 	}
+	if err := t.checkTypeParamMethod(receiver, method, c); err != nil {
+		return nil, err
+	}
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
@@ -2755,6 +2767,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 
 	// --- Section 5: Regular function call context gathering ---
 	callCtx := t.collectFunctionCallContext(fun, c.args, pendingExpected)
+	if err := t.checkConstraintInference(fun, c, callCtx); err != nil {
+		return nil, err
+	}
 
 	// --- Section 5.5: a value whose type is not a function, called anyway ---
 	// Checked before the arguments are transformed, so named arguments or an
@@ -2773,6 +2788,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 		return nil, err
 	}
 	if err := t.checkPtrCallTypeArgs(fun, c.args, args, namedArgs, callCtx); err != nil {
+		return nil, err
+	}
+	if err := t.checkConstraintTypeArgs(fun, c, args, hasSpread, callCtx); err != nil {
 		return nil, err
 	}
 
@@ -5166,6 +5184,7 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 		typed = make(map[string]transpiler.Type)
 	}
 	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(args, funcMeta.ParamNames), typed)
+	t.inferFromConstraints(funcMeta.TypeParams, funcMeta.TypeParamConstraints, inferred)
 	for tp, typ := range fromSlot {
 		_, bound := inferred[tp]
 		if _, byTyped := typed[tp]; bound && !byTyped {

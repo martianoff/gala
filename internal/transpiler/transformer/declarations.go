@@ -902,7 +902,10 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 	// Type Parameters
 	var typeParams *ast.FieldList
 	if len(d.typeParams) > 0 {
-		typeParams = lowerTypeParams(d.typeParams)
+		var err error
+		if typeParams, err = t.lowerTypeParams(d.typeParams); err != nil {
+			return nil, err
+		}
 	}
 	// The function's own type parameters are in scope for the signature and
 	// the body, and shadow any same-named type declared outside.
@@ -1302,7 +1305,10 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 	// Process Type Parameters first (mirrors lowerTypeDecl).
 	var tParams *ast.FieldList
 	if len(d.typeParams) > 0 {
-		tParams = lowerTypeParams(d.typeParams)
+		var err error
+		if tParams, err = t.lowerTypeParams(d.typeParams); err != nil {
+			return nil, err
+		}
 		defer t.bindTypeParams(tParams.List...)()
 	}
 
@@ -1520,8 +1526,14 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl, local bool) ([]ast.Decl, 
 	// Process Type Parameters first
 	var tParams *ast.FieldList
 	if len(d.typeParams) > 0 {
-		tParams = lowerTypeParams(d.typeParams)
+		var err error
+		if tParams, err = t.lowerTypeParams(d.typeParams); err != nil {
+			return nil, err
+		}
 		defer t.bindTypeParams(tParams.List...)()
+		if localMeta != nil {
+			t.constrainLocalType(localMeta)
+		}
 	}
 
 	switch d.kind {
@@ -1918,19 +1930,32 @@ func (t *galaASTTransformer) lowerStructField(f structFieldDecl) (*ast.Field, er
 	return field, nil
 }
 
-// typeParam is a declared type parameter: its name and its constraint.
-type typeParam struct{ name, constraint string }
+// typeParam is a declared type parameter: its name and its constraint, a type
+// (`any`, `comparable`, `Shower`, `Iterable[T, C]`).
+type typeParam struct {
+	name       string
+	constraint typeSrc
+}
 
-// lowerTypeParams lowers a type parameter list.
-func lowerTypeParams(params []typeParam) *ast.FieldList {
+// lowerTypeParams lowers a type parameter list. A constraint may name any
+// parameter of the list (`[T any, C Iterable[T, C]]`), so every name is bound
+// while the constraints are lowered; the caller binds them for the rest of
+// the declaration (bindTypeParams).
+func (t *galaASTTransformer) lowerTypeParams(params []typeParam) (*ast.FieldList, error) {
 	list := &ast.FieldList{}
 	for _, tp := range params {
-		list.List = append(list.List, &ast.Field{
-			Names: []*ast.Ident{ast.NewIdent(tp.name)},
-			Type:  ast.NewIdent(tp.constraint),
-		})
+		list.List = append(list.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(tp.name)}})
 	}
-	return list
+	unbind := t.bindTypeParams(list.List...)
+	defer unbind()
+	for i, tp := range params {
+		constraint, err := t.lowerType(tp.constraint)
+		if err != nil {
+			return nil, err
+		}
+		list.List[i].Type = constraint
+	}
+	return list, nil
 }
 
 // lowerSignature lowers the signature sig of a function, a method or a
@@ -2008,7 +2033,10 @@ func (t *galaASTTransformer) lowerInterfaceType(specs []methodSpecDecl) (*ast.In
 		// Check for method-level type parameters
 		var typeParams *ast.FieldList
 		if len(spec.typeParams) > 0 {
-			typeParams = lowerTypeParams(spec.typeParams)
+			var err error
+			if typeParams, err = t.lowerTypeParams(spec.typeParams); err != nil {
+				return nil, err
+			}
 		}
 
 		// The parameter names bind only within the method's signature; left

@@ -199,7 +199,7 @@ func typeParamInScopeNative(n native.GalaNodeRef, name string) bool {
 		}
 		list := native.TypeParametersNode{GalaNodeRef: params}.TypeParameterList()
 		for tp := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_typeParameter) {
-			if (native.TypeParameterNode{GalaNodeRef: tp}).Identifier(0).GetText() == name {
+			if (native.TypeParameterNode{GalaNodeRef: tp}).Identifier().GetText() == name {
 				return true
 			}
 		}

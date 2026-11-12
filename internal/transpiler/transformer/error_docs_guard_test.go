@@ -1571,6 +1571,28 @@ func main() {
 			},
 		},
 		{
+			name: "type parameter only a constraint mentions, needed by a lambda",
+			code: galaerr.CodeConstraintInference, // GALA-E0104
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Labeled[T any] interface {
+    Label() string
+}
+
+struct Box(n int)
+
+func (b Box) Label() string = s"box ${b.n}"
+
+func describe[T any, C Labeled[T]](c C, show func(T) string) string = c.Label()
+
+func main() {
+    Println(describe(Box(1), (x) => s"$x"))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

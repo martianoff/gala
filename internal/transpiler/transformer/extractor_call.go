@@ -79,7 +79,7 @@ func (t *galaASTTransformer) unapplyHelper(
 		return "", false
 	}
 	for _, tp := range meta.TypeParams {
-		if c := meta.TypeParamConstraints[tp]; c != "" && c != "any" && c != "comparable" {
+		if transpiler.IsInterfaceConstraint(meta.TypeParamConstraints[tp]) {
 			return "", false
 		}
 	}
@@ -107,10 +107,8 @@ func (t *galaASTTransformer) unapplyHelper(
 	typeArgs := make([]ast.Expr, len(meta.TypeParams))
 	for i, tp := range meta.TypeParams {
 		p := placeholders[i].String()
-		constraint := meta.TypeParamConstraints[tp]
-		if constraint == "" {
-			constraint = "any"
-		}
+		// Only `any` and `comparable` get here.
+		constraint := transpiler.ConstraintString(meta.TypeParamConstraints[tp])
 		typeParams.List = append(typeParams.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(p)}, Type: ast.NewIdent(constraint)})
 		typeArgs[i] = ast.NewIdent(p)
 	}

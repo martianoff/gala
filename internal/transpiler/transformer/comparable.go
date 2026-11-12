@@ -351,7 +351,7 @@ func (c *comparer) bareName(name string, env map[string]typeArg) (r typeEq, done
 	if !c.t.activeTypeParams[name] {
 		return typeEq{}, false
 	}
-	if c.t.typeParamConstraints[name] == "any" {
+	if cons, ok := c.t.typeParamConstraints[name]; ok && transpiler.ConstraintIs(cons, "any") {
 		return typeEq{bad: &incomparable{leaf: transpiler.NamedType{Name: name}, kind: kindUnconstrainedParam}}, true
 	}
 	return typeEq{}, true
@@ -512,7 +512,8 @@ func (t *galaASTTransformer) isComparableTypeParam(typ transpiler.Type) bool {
 	default:
 		return false
 	}
-	return t.activeTypeParams[name] && t.typeParamConstraints[name] == "comparable"
+	cons, ok := t.typeParamConstraints[name]
+	return t.activeTypeParams[name] && ok && transpiler.ConstraintIs(cons, "comparable")
 }
 
 // isLiteral reports whether expr is a literal, optionally negated: an operand

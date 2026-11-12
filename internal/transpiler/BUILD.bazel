@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "transpiler",
     srcs = [
+        "constraints.go",
         "go_result_value.go",
         "go_type_info.go",
         "import_names.go",

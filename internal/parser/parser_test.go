@@ -41,6 +41,29 @@ opaque type Id[T any] int64`,
 			wantErr: false,
 		},
 		{
+			name: "Type-parameter constraints with type arguments",
+			input: `package main
+
+type Seq[T any, C any] interface {
+    Rest() C
+}
+
+func f[T any, C Seq[T, C]](xs C) C = xs.Rest()
+func g[C Seq[int, C], K comparable, S fmt.Stringer, M std.Option[Array[int]]](xs C) C = xs
+struct Wrap[T any, C Seq[T, C]](inner C)
+sealed type Tree[T any, C Seq[T, C]] {
+    case Leaf(c C)
+}`,
+			wantErr: false,
+		},
+		{
+			name: "A type parameter without a constraint is rejected",
+			input: `package main
+
+func f[T](x T) T = x`,
+			wantErr: true,
+		},
+		{
 			name: "opaque is a keyword, not a name",
 			input: `package main
 

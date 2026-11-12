@@ -51,8 +51,8 @@ type galaASTTransformer struct {
 	// emits, with where its GALA name is written (see unused_bindings.go).
 	localBindings map[*ast.Ident]localBinding
 	// typeParamConstraints is the declared constraint of each active type
-	// parameter that has one: "any", "comparable" or an interface name.
-	typeParamConstraints map[string]string
+	// parameter that has one: any, comparable or an interface, generic or not.
+	typeParamConstraints map[string]transpiler.Type
 	// resultGenericMethods holds the name of every known method whose own
 	// type parameters its result mentions (see isResultGenericMethodCall).
 	resultGenericMethods map[string]bool
@@ -393,7 +393,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
-	t.typeParamConstraints = make(map[string]string)
+	t.typeParamConstraints = make(map[string]transpiler.Type)
 	t.typeParamNames = nil
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)

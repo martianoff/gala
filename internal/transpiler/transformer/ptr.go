@@ -316,27 +316,17 @@ func (t *galaASTTransformer) nullablePtrMethod(typ transpiler.Type, methods []st
 // typeParamOwner is a generic function, method or type whose type
 // parameters a call or a type fills.
 type typeParamOwner struct {
-	name        string            // as the source names it
-	params      []string          // its type parameters, in order
-	constraints map[string]string // the constraint of each, named in pkg
-	pkg         string            // the declaring package
+	name        string                     // as the source names it
+	params      []string                   // its type parameters, in order
+	constraints map[string]transpiler.Type // the constraint of each, resolved where declared
 }
 
 // ptrConstraint returns the constraint of o's type parameter tp, and its
 // methods some type declares on a `Ptr` receiver, when it has any.
 func (t *galaASTTransformer) ptrConstraint(o typeParamOwner, tp string) (transpiler.Type, []string) {
-	c := o.constraints[tp]
-	if c == "" || c == "any" || c == "comparable" {
+	iface := o.constraints[tp]
+	if !transpiler.IsInterfaceConstraint(iface) {
 		return nil, nil
-	}
-	// A function's or method's constraint is recorded qualified where it is
-	// not the package's own (declaredTypeParams); a type's as written, in its
-	// own package.
-	var iface transpiler.Type = transpiler.NamedType{Name: c}
-	if dot := strings.LastIndex(c, "."); dot >= 0 {
-		iface = transpiler.NamedType{Package: c[:dot], Name: c[dot+1:]}
-	} else if !t.isLocalPackage(o.pkg) {
-		iface = transpiler.NamedType{Package: o.pkg, Name: c}
 	}
 	key := iface.String()
 	methods, ok := t.ptrConstraintMethods[key]
@@ -467,18 +457,18 @@ func (t *galaASTTransformer) checkPtrFuncRefSlot(expr ast.Expr, expected transpi
 
 // funcTypeParamOwner is the typeParamOwner of the function m, which name names.
 func funcTypeParamOwner(name string, m *transpiler.FunctionMetadata) typeParamOwner {
-	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
+	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints}
 }
 
 // methodTypeParamOwner is the typeParamOwner of the method m's own type
 // parameters, which name names.
 func methodTypeParamOwner(name string, m *transpiler.MethodMetadata) typeParamOwner {
-	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
+	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints}
 }
 
 // typeTypeParamOwner is the typeParamOwner of the generic type m, which name names.
 func typeTypeParamOwner(name string, m *transpiler.TypeMetadata) typeParamOwner {
-	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
+	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints}
 }
 
 // checkPtrWrittenTypeArgsAt checks the written type arguments args of o, the

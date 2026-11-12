@@ -206,6 +206,20 @@ and GALA asks you to annotate it explicitly (`None[int]()`) rather than guess.
 
 ---
 
+## Inference From Type-Parameter Constraints
+
+A constraint can name other type parameters of the same list:
+`func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C`. A call binds
+`C` from the argument, and `T` from the methods of `C`'s type argument, as Go
+does: a `Nums` whose `Keep` takes a `func(int) bool` gives `T = int`, so the
+lambda in `dropFirstKeep(nums, (x) => x > 1)` needs no annotation. Inside the
+function, `xs.Rest()` is typed by the constraint's `Rest() C`, so calls chain
+and keep the caller's type. When nothing determines such a parameter and a
+lambda needs it, GALA asks for the type arguments
+([GALA-E0104](/docs/errors/gala-e0104/)).
+
+---
+
 ## What Is NOT Inferred
 
 GALA does not infer types in these contexts — you must provide explicit annotations:

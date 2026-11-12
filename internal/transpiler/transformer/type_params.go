@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 
 	"martianoff/gala/internal/transpiler"
 )
@@ -80,8 +81,9 @@ func (t *galaASTTransformer) isUnboundTypeParam(name string) bool {
 // bindTypeParams brings the type parameters a generic declaration declares into
 // scope for the rest of that declaration and returns the function that takes
 // them back out. A name the enclosing scope already bound stays bound on exit.
-// A parameter declared with a constraint (`T comparable`) records it in
-// typeParamConstraints.
+// A parameter declared with a constraint (`T comparable`, `C Iterable[T, C]`)
+// records it in typeParamConstraints; the constraint is read once every name
+// of the list is bound, since it may name any of them.
 func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 	var added []string
 	for _, field := range params {
@@ -89,9 +91,16 @@ func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 			if !t.activeTypeParams[n.Name] {
 				t.activeTypeParams[n.Name] = true
 				added = append(added, n.Name)
-				if c, ok := field.Type.(*ast.Ident); ok {
-					t.constrainTypeParam(n.Name, c.Name)
-				}
+			}
+		}
+	}
+	for _, field := range params {
+		if field.Type == nil {
+			continue
+		}
+		for _, n := range field.Names {
+			if slices.Contains(added, n.Name) {
+				t.constrainTypeParam(n.Name, t.astTypeToTranspilerType(field.Type))
 			}
 		}
 	}
@@ -106,26 +115,69 @@ func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 // constrainReceiverTypeParams records the constraints of the type parameters
 // a receiver type declares (`func (b Box[U]) ...`): those meta, the receiver
 // type, declares at the same positions. A receiver repeats no constraint, so
-// bindTypeParams has none for them.
+// bindTypeParams has none for them. A constraint naming the type's parameters
+// (`C Iterable[T, C]`) names the receiver's instead.
 func (t *galaASTTransformer) constrainReceiverTypeParams(params []*ast.Field, meta *transpiler.TypeMetadata) {
-	if meta == nil {
+	if meta == nil || len(meta.TypeParamConstraints) == 0 {
 		return
 	}
-	for i := range min(len(params), len(meta.TypeParams)) {
-		if c := meta.TypeParamConstraints[meta.TypeParams[i]]; c != "" {
+	n := min(len(params), len(meta.TypeParams))
+	renames := make(map[string]transpiler.Type, n)
+	for i := range n {
+		if len(params[i].Names) == 1 {
+			renames[meta.TypeParams[i]] = transpiler.BasicType{Name: params[i].Names[0].Name}
+		}
+	}
+	for i := range n {
+		if c := meta.TypeParamConstraints[meta.TypeParams[i]]; c != nil {
 			for _, n := range params[i].Names {
-				t.constrainTypeParam(n.Name, c)
+				t.constrainTypeParam(n.Name, transpiler.SubstituteTypeParams(t.inPackage(c, meta), renames))
 			}
 		}
 	}
 }
 
 // constrainTypeParam records constraint as the active type parameter name's.
-func (t *galaASTTransformer) constrainTypeParam(name, constraint string) {
+func (t *galaASTTransformer) constrainTypeParam(name string, constraint transpiler.Type) {
 	if t.typeParamConstraints == nil {
-		t.typeParamConstraints = make(map[string]string)
+		t.typeParamConstraints = make(map[string]transpiler.Type)
 	}
 	t.typeParamConstraints[name] = constraint
+}
+
+// typeParamConstraint is the constraint of the type parameter typ names, when
+// typ names one of the enclosing declaration that a named interface
+// constrains (`C Iterable[T, C]`, `T Shower`): the type whose methods a value
+// of typ has. ok is false for any other type, a parameter constrained by
+// `any` or `comparable` included.
+func (t *galaASTTransformer) typeParamConstraint(typ transpiler.Type) (transpiler.Type, bool) {
+	_, c, ok := t.constrainedTypeParam(typ)
+	if !ok || !transpiler.IsInterfaceConstraint(c) {
+		return nil, false
+	}
+	return c, true
+}
+
+// constrainedTypeParam returns the name of the type parameter of the
+// enclosing declaration typ names, and its recorded constraint. ok is false
+// when typ names no such parameter, or one with no recorded constraint.
+func (t *galaASTTransformer) constrainedTypeParam(typ transpiler.Type) (name string, constraint transpiler.Type, ok bool) {
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		name = v.Name
+	case transpiler.NamedType:
+		if v.Package != "" {
+			return "", nil, false
+		}
+		name = v.Name
+	default:
+		return "", nil, false
+	}
+	if !t.activeTypeParams[name] {
+		return "", nil, false
+	}
+	constraint, ok = t.typeParamConstraints[name]
+	return name, constraint, ok
 }
 
 // typeParamMisuseErrorAt reports name, a type parameter of the enclosing
@@ -144,7 +196,7 @@ func (t *galaASTTransformer) typeParamMisuseErrorAt(at srcNode, name, what strin
 func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
 	enclosing, constraints := t.activeTypeParams, t.typeParamConstraints
 	t.activeTypeParams = make(map[string]bool, len(names))
-	t.typeParamConstraints = map[string]string{}
+	t.typeParamConstraints = map[string]transpiler.Type{}
 	for _, name := range names {
 		t.activeTypeParams[name] = true
 	}

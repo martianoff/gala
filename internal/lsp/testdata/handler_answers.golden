@@ -1,8 +1,8 @@
 # TestHandlerAnswers: per file of the sample, a digest of its text and of the handler's answers on it; see handlerGolden in native_tree_test.go.
-collection_immutable/array.gala	fcceeed5f79dfdbd	a35348d5d46abb2e
-collection_immutable/list.gala	790dcdf2f9259245	73f34c68796a6454
-collection_immutable/treemap.gala	4ccd332d928feb7e	1c66135d6d95ee0b
-collection_immutable/treeset.gala	8020effe7cb5e86f	d870ff34e5d5ce31
-collection_mutable/treemap.gala	7015ea25237f4e00	3edc3764e0f59ecb
-collection_mutable/treeset.gala	b3447ca5bb07cd21	1b159486f000c41d
-concurrent/future.gala	a01d60986bf3b892	bfc44b693e266419
+collection_immutable/array.gala	fcceeed5f79dfdbd	74d486f0d823e865
+collection_immutable/list.gala	790dcdf2f9259245	045adb5dd9fc2d95
+collection_immutable/treemap.gala	4ccd332d928feb7e	e184105e58789b79
+collection_immutable/treeset.gala	8020effe7cb5e86f	1ebbe4be4f577a9a
+collection_mutable/treemap.gala	7015ea25237f4e00	70ab7e6b1f89fdf7
+collection_mutable/treeset.gala	b3447ca5bb07cd21	f85554ae00bb1ffa
+concurrent/future.gala	a01d60986bf3b892	6c860a41f068558b
