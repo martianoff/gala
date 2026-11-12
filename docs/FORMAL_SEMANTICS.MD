@@ -297,8 +297,9 @@ flowchart LR
     - agent worktrees never fetch it either.
   - **One Lean version:** `lean.toolchain(version = …)` in `MODULE.bazel` must match
     `formal/lean-toolchain`. `tools/check_repo_policy.sh` fails when they differ.
-  - **Caching:** CI keeps only Bazel's repository cache between runs, which holds the
-    downloaded Lean archive. It is private to the repository's CI; see Licensing.
+  - **Caching:** the Bazel job keeps only Bazel's repository cache between runs, which
+    holds the downloaded Lean archive. It is private to the repository's CI; see
+    Licensing.
 - **Running only for formal changes:** `formal.yml` runs only on PRs that can move a
   verdict (`formal/`, `internal/formal/`, `internal/transpiler/`, the standard library
   packages and `examples/`) or touch the Bazel setup the opt-in build depends on
