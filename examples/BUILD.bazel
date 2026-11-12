@@ -1253,6 +1253,34 @@ gala_exec_test(
     ],
 )
 
+# A pattern binding declared ahead of the code that assigns it, whose type
+# comes from a package the matching file reaches only through another one.
+gala_library(
+    name = "match_transitive_binding_type_shape",
+    srcs = ["match_transitive_binding_type/shape/shape.gala"],
+    importpath = "martianoff/gala/examples/match_transitive_binding_type/shape",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "match_transitive_binding_type_geo",
+    srcs = ["match_transitive_binding_type/geo/geo.gala"],
+    importpath = "martianoff/gala/examples/match_transitive_binding_type/geo",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":match_transitive_binding_type_shape",
+        "//collection_immutable",
+    ],
+)
+
+gala_exec_test(
+    name = "match_transitive_binding_type",
+    src = "match_transitive_binding_type/main.gala",
+    expected = "match_transitive_binding_type/main.out",
+    gala_deps = [":match_transitive_binding_type_geo"],
+    deps = ["//collection_immutable"],
+)
+
 # Temporarily enabled for debugging
 gala_exec_test(
     name = "try_recovery",
