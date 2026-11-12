@@ -78,10 +78,10 @@ func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpil
 	return nil
 }
 
-// checkPtrAndInterfaceSlot is checkPtrSlot then checkInterfaceSlot, for a
-// value that fills a slot of type typ outside lowerAgainst (a target of a
-// multiple assignment, a tail call's argument).
-func (t *galaASTTransformer) checkPtrAndInterfaceSlot(expr ast.Expr, typ transpiler.Type, at srcNode) error {
+// checkSlotFill is checkPtrSlot then checkInterfaceSlot, for a value that
+// fills a slot of type typ outside lowerAgainst: a target of a multiple
+// assignment, a tail call's argument, a clause of a bind group's Zip.
+func (t *galaASTTransformer) checkSlotFill(expr ast.Expr, typ transpiler.Type, at srcNode) error {
 	if err := t.checkPtrSlot(expr, typ, at); err != nil {
 		return err
 	}
@@ -94,17 +94,30 @@ func (t *galaASTTransformer) checkPtrAndInterfaceSlot(expr ast.Expr, typ transpi
 // slot's type arguments), or a Go interface. ok is false for any other type,
 // or an interface the check cannot read.
 func (t *galaASTTransformer) requiredMethods(slotType transpiler.Type) (func() []ifaceMethod, bool) {
-	if b, ok := slotType.(transpiler.BasicType); ok && b.Name == "error" {
-		return func() []ifaceMethod {
-			return []ifaceMethod{{name: "Error", results: []transpiler.Type{transpiler.BasicType{Name: "string"}}, exact: true}}
-		}, true
+	// Only a named type can be an interface with methods.
+	switch s := slotType.(type) {
+	case transpiler.BasicType:
+		if s.Name == "error" {
+			return func() []ifaceMethod {
+				return []ifaceMethod{{name: "Error", results: []transpiler.Type{transpiler.BasicType{Name: "string"}}, exact: true}}
+			}, true
+		}
+		if transpiler.IsPrimitiveType(s.Name) {
+			return nil, false
+		}
+	case transpiler.NamedType, transpiler.GenericType:
+	default:
+		return nil, false
 	}
 	// A GALA type is what its GALA declaration says, though a Go type may
 	// share its key (GALA's `fs.FileInfo` struct beside io/fs's interface).
 	nt, named := slotType.(transpiler.NamedType)
 	meta := t.getTypeMeta(slotType.BaseName())
-	goTyped := named && t.isGoTyped(nt) || goDeclared(meta)
-	if goTyped || meta == nil {
+	goTyped := (named && t.isGoTyped(nt)) || goDeclared(meta)
+	if meta != nil && !meta.IsInterface && !goTyped {
+		return nil, false
+	}
+	if meta == nil || goTyped {
 		if t.goTypeInfo == nil {
 			return nil, false
 		}
@@ -199,17 +212,13 @@ func (t *galaASTTransformer) implTypeOf(typ transpiler.Type) (implType, bool) {
 	if g, ok := typ.(transpiler.GenericType); ok {
 		base, out.args = g.Base, g.Params
 	}
-	switch b := base.(type) {
-	case transpiler.BasicType:
-	case transpiler.NamedType:
-		if t.isGoTyped(b) {
-			return implType{}, false
-		}
-	default:
+	// nominal also turns away Immutable and Sendable, which Go sees as
+	// another type.
+	if _, _, ok := nominal(base); !ok {
 		return implType{}, false
 	}
-	if _, _, ok := nominal(base); !ok {
-		return implType{}, false // Immutable or Sendable: Go sees another type
+	if n, ok := base.(transpiler.NamedType); ok && t.isGoTyped(n) {
+		return implType{}, false
 	}
 	out.meta = t.getTypeMeta(base.BaseName())
 	if out.meta == nil || out.meta.IsInterface || goDeclared(out.meta) || len(out.args) != len(out.meta.TypeParams) || slices.ContainsFunc(out.args, transpiler.IsUnusable) {
@@ -266,18 +275,10 @@ func (t *galaASTTransformer) implMismatch(impl implType, want ifaceMethod) (why,
 // (`isCircle`, `IsCircle`) on a sealed type; Hash and Compare on an opaque
 // type.
 func (t *galaASTTransformer) mayBeGeneratedMethod(meta *transpiler.TypeMetadata, name string) bool {
-	switch {
-	case meta.IsOpaque:
+	if meta.IsOpaque {
 		return t.isSynthesizedOpaqueMethod(meta, name)
-	case meta.IsSealed:
-		if name == "Copy" || name == "Equal" || name == "String" {
-			return true
-		}
-		return slices.ContainsFunc(meta.SealedVariants, func(v transpiler.SealedVariant) bool {
-			return name == "is"+v.Name || name == "Is"+v.Name
-		})
 	}
-	return name == "Copy" || name == "Equal" || name == "Unapply"
+	return transpiler.GeneratedMethodNames(meta)[name] || transpiler.SealedGoPredicateNames(meta)[name]
 }
 
 // declaredOnAlias reports whether a GALA alias of meta's type declares name
@@ -401,14 +402,15 @@ func goDeclared(meta *transpiler.TypeMetadata) bool {
 
 // spellParams is m's parameter types as GALA spells them.
 func spellParams(m ifaceMethod) string {
-	parts := make([]string, len(m.params))
-	for i, p := range m.params {
-		parts[i] = displayType(p)
-		if m.variadic && i == len(m.params)-1 {
-			parts[i] = "..." + parts[i]
-		}
+	n := len(m.params)
+	if !m.variadic || n == 0 {
+		return joinDisplayTypes(m.params)
 	}
-	return strings.Join(parts, ", ")
+	last := "..." + displayType(m.params[n-1])
+	if n == 1 {
+		return last
+	}
+	return joinDisplayTypes(m.params[:n-1]) + ", " + last
 }
 
 // spellResults is a result list as GALA spells it: nothing, one type, or a
@@ -420,9 +422,5 @@ func spellResults(results []transpiler.Type) string {
 	case 1:
 		return displayType(results[0])
 	}
-	parts := make([]string, len(results))
-	for i, r := range results {
-		parts[i] = displayType(r)
-	}
-	return "(" + strings.Join(parts, ", ") + ")"
+	return "(" + joinDisplayTypes(results) + ")"
 }

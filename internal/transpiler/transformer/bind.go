@@ -395,7 +395,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []stmtSrc,
 		arg := prepped[i].recvExpr
 		if param := paramIndex(i-1, zip.ParamTypes, zip.Variadic); param >= 0 {
 			paramType := t.substituteTranspilerTypeParams(zip.ParamTypes[param], subst)
-			if err := t.checkPtrSlot(arg, paramType, prepped[i].expr.at()); err != nil {
+			if err := t.checkSlotFill(arg, paramType, prepped[i].expr.at()); err != nil {
 				return nil, err
 			}
 			// A clause is a monad value wherever it stands in the group: a
