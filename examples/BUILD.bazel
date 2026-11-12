@@ -2139,6 +2139,15 @@ gala_exec_test(
     ],
 )
 
+# Sealed cases print like shorthand structs: pointer fields print their
+# target, and a cycle through a pointer prints <cycle>
+gala_exec_test(
+    name = "sealed_case_printing",
+    src = "sealed_case_printing.gala",
+    expected = "sealed_case_printing.out",
+    deps = ["//collection_mutable"],
+)
+
 # Sorted API on collections
 gala_exec_test(
     name = "sorted",

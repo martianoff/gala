@@ -17,7 +17,8 @@ import (
 // Each concrete type misses its interface by one method: Tags returns its own
 // type where Seq declares Seq[T] (no covariant results), Wide takes a string
 // where Sink takes an int, Counter has Inc on a pointer receiver, Mute has no
-// Speak.
+// Speak, and Plain, a block-form struct with no generated String, has no
+// String.
 const interfaceImplDecls = `package main
 
 import "fmt"
@@ -54,6 +55,11 @@ type Speaker interface {
 }
 
 struct Mute(id int)
+
+// A block-form struct has no generated String.
+type Plain struct {
+    ID int
+}
 
 struct Holder(s Speaker)
 
@@ -156,20 +162,15 @@ func main() = Println(fail())`,
 		},
 		{
 			name: "Go interface",
-			// A block-form struct gets no generated String.
-			body: `type Plain struct {
-    ID int
-}
-
-func main() = Println(show(Plain(ID = 1)))`,
+			body: `func main() = Println(show(Plain(ID = 1)))`,
 			contains: "Plain does not implement fmt.Stringer: it has no method String",
 		},
 		{
 			name: "Go interface, wrong result",
-			body: `func (m Mute) String() int = 1
+			body: `func (p Plain) String() int = 1
 
-func main() = Println(show(Mute(1)))`,
-			contains: "Mute does not implement fmt.Stringer: method String returns int, not string",
+func main() = Println(show(Plain(ID = 1)))`,
+			contains: "Plain does not implement fmt.Stringer: method String returns int, not string",
 		},
 	}
 	for _, tc := range cases {

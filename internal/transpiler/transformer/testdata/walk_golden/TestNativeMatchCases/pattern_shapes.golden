@@ -103,9 +103,9 @@ func (s Shape) Equal(other Shape) bool {
 func (s Shape) String() string {
 	switch s._variant {
 	case _Shape_Circle:
-		return fmt.Sprintf("Circle(%v)", s.Radius.Get())
+		return std.FormatStruct("Circle", s.Radius.Get())
 	case _Shape_Rect:
-		return fmt.Sprintf("Rect(%v, %v)", s.Width.Get(), s.Height.Get())
+		return std.FormatStruct("Rect", s.Width.Get(), s.Height.Get())
 	case _Shape_Dot:
 		return "Dot()"
 	default:

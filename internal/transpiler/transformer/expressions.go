@@ -459,7 +459,14 @@ func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slo
 	if err := t.checkIfBranchTypes(e.at(), s, types[0], types[1]); err != nil {
 		return nil, err
 	}
-	typ, err := t.hoistedType("if-expression", t.unifyBranchTypes(types[0], types[1]), s, allLeave,
+	unified := t.unifyBranchTypes(types[0], types[1])
+	// Both branches have a type, and they differ: `if (c) 1 else 2.5`, as
+	// for an if-expression lowered to a function literal.
+	if transpiler.IsUnusable(t.branchingResultType(unified, s)) &&
+		!transpiler.IsUnusableOrAny(types[0]) && !transpiler.IsUnusableOrAny(types[1]) {
+		return nil, t.ifBranchMismatchError(e.at(), types[0], types[1])
+	}
+	typ, err := t.hoistedType("if-expression", unified, s, allLeave,
 		line, col, branches[0].stmts, branches[1].stmts)
 	if err != nil {
 		return nil, err

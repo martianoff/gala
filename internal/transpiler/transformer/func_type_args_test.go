@@ -64,7 +64,7 @@ func main() {
 func main() {
     val f = func() int
     Println(f)
-}`, "", 4, "function type func() int is not a value"},
+}`, galaerr.CodeFuncTypeAsValue, 4, "function type func() int"},
 		{"sealed variant inside a function type argument", `package main
 
 import "martianoff/gala/collection_mutable"

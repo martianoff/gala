@@ -417,11 +417,16 @@ func (t *galaASTTransformer) initGenericMethods() {
 // generated String method: when transpiler.GeneratedMethodNames lists it (the
 // struct has no field named String, which Go cannot hold beside a method of
 // the name) and the source does not declare a String itself, in GALA or in a
-// hand-written .go file of its package (of any signature: it replaces the
-// generated one).
-func (t *galaASTTransformer) generatesStructString(name string) bool {
+// hand-written .go file of its package. A declared String replaces the
+// generated one, so it must be `String() string` (GALA-E0093, see
+// userGeneratedMethod).
+func (t *galaASTTransformer) generatesStructString(name string) (bool, error) {
 	meta := t.getTypeMeta(name)
-	return meta != nil && transpiler.GeneratedMethodNames(meta)["String"] && !t.declaresMethods(name, "String")["String"]
+	if meta == nil || !transpiler.GeneratedMethodNames(meta)["String"] {
+		return false, nil
+	}
+	declared, err := t.userGeneratedMethod(name, "struct", "String", "string")
+	return !declared, err
 }
 
 // generateStructStringMethod generates the String method of a shorthand

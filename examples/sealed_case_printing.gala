@@ -1,0 +1,48 @@
+package main
+
+import "martianoff/gala/collection_mutable"
+
+// A sealed case prints as a shorthand struct does: Case(field, ...), with
+// each field in its own format. A pointer field prints the value it points
+// to, and a pointer reached again through a cycle prints <cycle>.
+
+struct Counter(var N int)
+
+sealed type Ref {
+    case ToInt(P Ptr[int])
+    case MaybeInt(O OptionPtr[int])
+    case ToText(T *string)
+    case ToCounter(C Ptr[Counter])
+    case ToArray(A Ptr[collection_mutable.Array[int]])
+    case Calc(F func(int) int, Label string)
+    case Nothing()
+}
+
+// A value that reaches itself: a Holder's field holds a case that points
+// back to the Holder.
+sealed type Tree {
+    case Leaf(Value int)
+    case Back(To Ptr[Holder])
+}
+
+struct Holder(var T Tree)
+
+func main() {
+    var n = 7
+    var text = "hi"
+    Println(ToInt(&n))
+    Println(MaybeInt(SomePtr(&n)))
+    Println(MaybeInt(EmptyOptionPtr[int]()))
+    Println(ToText(&text))
+    Println(ToCounter(&Counter(3)))
+    Println(ToArray(collection_mutable.ArrayOf(1, 2)))
+    Println(Calc((x) => x + 1, "inc"))
+    Println(Nothing())
+    Println(s"interpolated: ${ToInt(&n)}")
+
+    var holder = Holder(Leaf(1))
+    Println(holder)
+    holder.T = Back(&holder)
+    Println(holder.T)
+    Println(holder)
+}

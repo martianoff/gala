@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 
+	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 )
@@ -199,6 +200,7 @@ func (t *galaASTTransformer) lowerFuncTypeArgument(sig native.SignatureNode, at 
 	if t.typeNameDepth == 0 {
 		r := at.rng()
 		err := t.semanticErrorIn(r, fmt.Sprintf("function type %s is not a value", at.sourceText()))
+		err.Code = galaerr.CodeFuncTypeAsValue
 		err.Hint = "write a function type only where a type is expected, such as an explicit type argument (`EmptyArray[func() int]()`); a function value is a lambda, `(x int) => x + 1`"
 		if r.stopLine == r.line {
 			err = err.WithSpan(r.stopEnd)

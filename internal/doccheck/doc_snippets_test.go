@@ -474,7 +474,10 @@ func compileAddingImports(root, src string, depth int) error {
 	// A fragment's bindings are read by the code it leaves out; failing only
 	// because one is never read, it lowers cleanly otherwise. A program
 	// never comes through here, so it has to read every binding it declares.
-	if transformer.IsUnusedBinding(err) {
+	// The unused-binding check (GALA-E0102) is the last check of a file, so a
+	// fragment failing with it lowers cleanly otherwise.
+	var se *galaerr.SemanticError
+	if errors.As(err, &se) && se.Code == galaerr.CodeUnusedBinding {
 		return nil
 	}
 	if err == nil || depth == 0 {

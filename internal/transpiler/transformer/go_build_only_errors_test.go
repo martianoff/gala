@@ -76,8 +76,8 @@ func main() {
     val b = Box(collection_mutable.EmptyArray())
     Println(b.items.Length())
 }`,
-			code:     galaerr.CodePointerForValue,
-			line:     8,
+			code: galaerr.CodePointerForValue,
+			line: 8,
 			contains: []string{
 				"cannot use collection_mutable.EmptyArray(...) (Ptr[collection_mutable.Array[int]]) as collection_mutable.Array[int]",
 				"as Ptr[collection_mutable.Array[int]], as mutable collections are passed",
@@ -147,8 +147,9 @@ func main() {
     val x = 5
     Println("hi")
 }`,
+			code:     galaerr.CodeUnusedBinding,
 			line:     4,
-			contains: []string{"unused val 'x': it is declared but never used"},
+			contains: []string{"unused val 'x'"},
 		},
 		{
 			name: "unused var",
@@ -158,8 +159,9 @@ func main() {
     var n = 0
     Println("hi")
 }`,
+			code:     galaerr.CodeUnusedBinding,
 			line:     4,
-			contains: []string{"unused var 'n': it is declared but never used"},
+			contains: []string{"unused var 'n'"},
 		},
 		{
 			name: "unused val in a lambda body",
@@ -172,6 +174,7 @@ func main() {
     }
     Println(f(1))
 }`,
+			code:     galaerr.CodeUnusedBinding,
 			line:     5,
 			contains: []string{"unused val 'doubled'"},
 		},
@@ -183,6 +186,7 @@ func main() {
     val (a, b) = (1, "x")
     Println(a)
 }`,
+			code:     galaerr.CodeUnusedBinding,
 			line:     4,
 			contains: []string{"unused val 'b'", "write `_` in its place"},
 		},
@@ -195,6 +199,7 @@ func main() {
     n = 5
     Println("hi")
 }`,
+			code:     galaerr.CodeUnusedBinding,
 			line:     4,
 			contains: []string{"unused var 'n'"},
 		},
@@ -208,6 +213,31 @@ func main() {
     Println(v)
 }`,
 			line: 5,
+			contains: []string{
+				"type mismatch in if-expression: the then-branch returns 'int' but the else-branch returns 'float64'",
+				"numeric types do not convert implicitly",
+			},
+		},
+		{
+			// A branch with a `return` lowers the if-expression to
+			// statements, which reported "no branch has a typed value".
+			name: "if-expression mixing int and float64 with a return in a branch",
+			input: `package main
+
+func pick(c bool, d bool) float64 {
+    val v = if (c) 1 else {
+        if (d) {
+            return 0.0
+        }
+        2.5
+    }
+    return v
+}
+
+func main() {
+    Println(pick(true, false))
+}`,
+			line: 4,
 			contains: []string{
 				"type mismatch in if-expression: the then-branch returns 'int' but the else-branch returns 'float64'",
 				"numeric types do not convert implicitly",
