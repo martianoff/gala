@@ -188,6 +188,8 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures "buffer" (ty
 
 <!-- doc-check: error GALA-E0037 -->
 ```gala
+import . "martianoff/gala/collection_immutable"
+
 struct AppModel(team string, statuses Array[int], var attempts int)
 
 val model = AppModel("qa", ArrayOf(1, 2, 3), 0)

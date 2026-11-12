@@ -68,6 +68,8 @@ Four shapes trigger it:
    out at a type that is itself not deeply immutable.
 
    ```gala
+   import . "martianoff/gala/collection_immutable"
+
    struct AppModel(team string, statuses Array[int], var attempts int)
    val model = AppModel("qa", ArrayOf(1, 2, 3), 0)
    Future(() => model.attempts + 1)   // ← GALA-E0037: reads the `var` field
