@@ -253,8 +253,8 @@ Named arguments work with struct construction, `Copy()` method overrides, and re
 
 Positional arguments come first. Once an argument is named, every argument
 after it is named too, in every call form: function and method calls, struct
-and sealed case constructors, and `Copy()`. A positional argument after a named
-one is [GALA-E0105](/docs/errors/gala-e0105/):
+and sealed case constructors, and `Copy()` (whose overrides are all named). A
+positional argument after a named one is [GALA-E0105](/docs/errors/gala-e0105/):
 
 <!-- doc-check: error GALA-E0105 -->
 ```gala

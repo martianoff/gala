@@ -38,6 +38,7 @@ sealed type Shape {
 		name      string
 		body      string
 		wantError string
+		copyHint  bool // a Copy's hint: its overrides are all named
 	}{
 		{
 			name:      "function call",
@@ -73,6 +74,12 @@ sealed type Shape {
 			name:      "Copy",
 			body:      `func main() { Println(Point(1, 2).Copy(X = 3, 4)) }`,
 			wantError: "positional argument `4` follows named argument `X`",
+			copyHint:  true,
+		},
+		{
+			name:      "a raw string is not quoted in backticks",
+			body:      "func main() { Println(g(y = \"a\", `b`)) }",
+			wantError: "a positional argument follows named argument `y`",
 		},
 		{
 			name:      "lambda after a named argument",
@@ -95,7 +102,11 @@ sealed type Shape {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), string(galaerr.CodePositionalAfterNamed))
 			require.Contains(t, err.Error(), tc.wantError)
-			require.Contains(t, err.Error(), "name it, or move it before the named arguments")
+			hint := "name it, or move it before the named arguments"
+			if tc.copyHint {
+				hint = "name it: Copy overrides are all named, Copy(field = value)"
+			}
+			require.Contains(t, err.Error(), hint)
 		})
 	}
 

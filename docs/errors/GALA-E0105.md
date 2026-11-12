@@ -30,7 +30,8 @@ error[GALA-E0105]: positional argument `4` follows named argument `dividend`
   = hint: name it, or move it before the named arguments
 ```
 
-**Fix.** Name the argument too, or move it before the named arguments:
+**Fix.** Name the argument too, or move it before the named arguments. A
+`Copy()` takes named overrides only, so name the argument there:
 
 ```gala
 package main

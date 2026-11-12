@@ -3058,8 +3058,9 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 // after a named one in args, the arguments of any call (GALA-E0105): once an
 // argument is named, every later one is named too. Positional arguments fill
 // the leading parameters or fields, so one after a named argument has no
-// position to take.
-func checkPositionalAfterNamed(args argsSrc) error {
+// position to take. copyCall is set for a `.Copy(...)` call, whose overrides
+// are all named, so its hint does not suggest moving the argument.
+func checkPositionalAfterNamed(args argsSrc, copyCall bool) error {
 	var firstNamed string
 	for _, arg := range args.list {
 		if name, _ := arg.name(); name != "" {
@@ -3075,10 +3076,13 @@ func checkPositionalAfterNamed(args argsSrc) error {
 			if text := arg.at().sourceText(); quotable(text) {
 				quoted = "positional argument `" + text + "`"
 			}
+			hint := "name it, or move it before the named arguments"
+			if copyCall {
+				hint = "name it: Copy overrides are all named, Copy(field = value)"
+			}
 			r := arg.at().rng()
 			return spanErrorAt(galaerr.CodePositionalAfterNamed, r, r,
-				fmt.Sprintf("%s follows named argument `%s`", quoted, firstNamed),
-				"name it, or move it before the named arguments")
+				fmt.Sprintf("%s follows named argument `%s`", quoted, firstNamed), hint)
 		}
 	}
 	return nil

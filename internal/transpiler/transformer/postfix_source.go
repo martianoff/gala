@@ -200,7 +200,8 @@ func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes [
 		case "(":
 			t.suffixShape(s, "call")
 			args := s.args()
-			if err := checkPositionalAfterNamed(args); err != nil {
+			copyCall := i > 0 && suffixes[i-1].ident() == "Copy"
+			if err := checkPositionalAfterNamed(args, copyCall); err != nil {
 				return nil, err
 			}
 			return t.applyGoCallSuffix(base, callSrc{post: p, suffix: s, args: args})

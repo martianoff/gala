@@ -139,9 +139,10 @@ func (c callSrc) calleeText() string {
 }
 
 // quotable reports whether a diagnostic quotes source text as written: when
-// it is non-empty, on one line and at most 60 code points.
+// it is non-empty, on one line, at most 60 code points and free of the
+// backticks a diagnostic quotes it in.
 func quotable(text string) bool {
-	return text != "" && utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r")
+	return text != "" && utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r`")
 }
 
 // at is where p is written.
