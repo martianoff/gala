@@ -471,11 +471,10 @@ var goStdPackages = map[string]string{
 // never comes through here.
 func compileAddingImports(root, src string, depth int) error {
 	err := compile(root, src)
-	// A fragment's bindings are read by the code it leaves out; failing only
-	// because one is never read, it lowers cleanly otherwise. A program
-	// never comes through here, so it has to read every binding it declares.
-	// The unused-binding check (GALA-E0102) is the last check of a file, so a
-	// fragment failing with it lowers cleanly otherwise.
+	// A fragment's bindings are read by the code it leaves out. The
+	// unused-binding check (GALA-E0102) is the last check of a file, so a
+	// fragment failing only with it lowers cleanly otherwise. A program never
+	// comes through here, so it has to read every binding it declares.
 	var se *galaerr.SemanticError
 	if errors.As(err, &se) && se.Code == galaerr.CodeUnusedBinding {
 		return nil

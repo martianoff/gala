@@ -209,11 +209,9 @@ func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, e
 	// one. When every branch produces no value (`{}`, a trailing statement or
 	// a void call) it runs like the void case below; any other untyped value
 	// has no type the closure could return.
+	// (Two typed branches that do not unify are rejected by
+	// checkIfBranchTypes.)
 	if transpiler.IsUnusable(t.branchingResultType(retType, s)) {
-		// Both branches have a type, and they differ: `if (c) 1 else 2.5`.
-		if !transpiler.IsUnusableOrAny(unified[0]) && !transpiler.IsUnusableOrAny(unified[1]) {
-			return nil, t.ifBranchMismatchError(e.at(), unified[0], unified[1])
-		}
 		for i, b := range lowered {
 			if !b.noValue && !branchTypes[i].IsVoid() {
 				return nil, unknownBranchTypeError(line, col)
@@ -316,15 +314,21 @@ func (t *galaASTTransformer) unifyBranchTypes(thenT, elseT transpiler.Type) tran
 }
 
 // checkIfBranchTypes rejects an if-expression filling s, written at at, when
-// s has no type and its branches' value types thenT and elseT are instances of one
-// generic type that do not unify, as a match's arms are
-// (inferCommonResultTypeAt): `if (c) Some(1) else Some(2.5)` is an
+// s has no type and its branches' value types thenT and elseT do not unify,
+// as a match's arms are (inferCommonResultTypeAt), whether the if-expression
+// is lowered to a function literal or to statements. Two types that do not
+// unify at all, `if (c) 1 else 2.5`, are rejected; so are instances of one
+// generic type that do not unify: `if (c) Some(1) else Some(2.5)` is an
 // `Option[int]` and an `Option[float64]`, and neither is the value's type.
-// A sealed case and its parent unify to the parent. Types that are not
-// instances of one type are left to unifyBranchTypes.
+// A sealed case and its parent unify to the parent.
 func (t *galaASTTransformer) checkIfBranchTypes(at srcNode, s slot, thenT, elseT transpiler.Type) error {
-	if !transpiler.IsUnusable(s.typ) || transpiler.IsUnusableOrAny(thenT) || transpiler.IsUnusableOrAny(elseT) ||
-		t.pickMoreSpecificType(thenT, elseT) == nil || t.typesCompatible(thenT, elseT) {
+	if !transpiler.IsUnusable(s.typ) || transpiler.IsUnusableOrAny(thenT) || transpiler.IsUnusableOrAny(elseT) {
+		return nil
+	}
+	if transpiler.IsUnusable(t.unifyBranchTypes(thenT, elseT)) {
+		return t.ifBranchMismatchError(at, thenT, elseT)
+	}
+	if thenT.String() == elseT.String() || t.typesCompatible(thenT, elseT) {
 		return nil
 	}
 	// Compared as the types they resolve to: `Option[Millis]` is an
@@ -459,14 +463,7 @@ func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slo
 	if err := t.checkIfBranchTypes(e.at(), s, types[0], types[1]); err != nil {
 		return nil, err
 	}
-	unified := t.unifyBranchTypes(types[0], types[1])
-	// Both branches have a type, and they differ: `if (c) 1 else 2.5`, as
-	// for an if-expression lowered to a function literal.
-	if transpiler.IsUnusable(t.branchingResultType(unified, s)) &&
-		!transpiler.IsUnusableOrAny(types[0]) && !transpiler.IsUnusableOrAny(types[1]) {
-		return nil, t.ifBranchMismatchError(e.at(), types[0], types[1])
-	}
-	typ, err := t.hoistedType("if-expression", unified, s, allLeave,
+	typ, err := t.hoistedType("if-expression", t.unifyBranchTypes(types[0], types[1]), s, allLeave,
 		line, col, branches[0].stmts, branches[1].stmts)
 	if err != nil {
 		return nil, err

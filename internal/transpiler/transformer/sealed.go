@@ -844,37 +844,22 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName, name, doc string
 func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool) *ast.FuncDecl {
 	var cases []ast.Stmt
 	for _, vi := range variants {
-		var retExpr ast.Expr = stringLit(vi.name + "()")
-		if len(vi.fields) > 0 {
-			args := []ast.Expr{stringLit(vi.name)}
-			for _, f := range vi.fields {
-				args = append(args, sealedFieldAccessExpr("s", f.structFieldName, recursiveFields[f.structFieldName]))
-			}
-			retExpr = &ast.CallExpr{Fun: t.stdIdent("FormatStruct"), Args: args}
+		fields := make([]ast.Expr, len(vi.fields))
+		for i, f := range vi.fields {
+			fields[i] = sealedFieldAccessExpr("s", f.structFieldName, recursiveFields[f.structFieldName])
 		}
 		cases = append(cases, &ast.CaseClause{
 			List: []ast.Expr{ast.NewIdent(vi.tagConst)},
-			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{retExpr}}},
+			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{t.formatStructExpr(vi.name, fields)}}},
 		})
 	}
 	cases = append(cases, &ast.CaseClause{
 		Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{stringLit(parentName + "(<unknown>)")}}},
 	})
-	return &ast.FuncDecl{
-		Recv: &ast.FieldList{List: []*ast.Field{{
-			Names: []*ast.Ident{ast.NewIdent("s")},
-			Type:  t.buildGenericTypeExpr(parentName, tParams),
-		}}},
-		Name: ast.NewIdent("String"),
-		Type: &ast.FuncType{
-			Params:  &ast.FieldList{},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("string")}}},
-		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.SwitchStmt{
-			Tag:  &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent("_variant")},
-			Body: &ast.BlockStmt{List: cases},
-		}}},
-	}
+	return t.stringMethodDecl(parentName, tParams, &ast.SwitchStmt{
+		Tag:  &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent("_variant")},
+		Body: &ast.BlockStmt{List: cases},
+	})
 }
 
 // generateSealedEqualMethod generates Equal on the parent sealed type: two
