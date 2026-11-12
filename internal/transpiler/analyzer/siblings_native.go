@@ -299,9 +299,12 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 				PtrReceiver:     ptr,
 				DefinedIn:       absSibPath,
 			}
-			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
+			var constraintTexts map[string]string
+			methodMeta.TypeParams, constraintTexts = nativeTypeParamsOf(ctx.TypeParameters())
 			recvNames := nativeReceiverTypeArgNames(recvType)
 			allTypeParams := sm.typeParamScope(richAST, recvNames, methodMeta.TypeParams)
+			// A constraint may name the receiver's type parameters too.
+			methodMeta.TypeParamConstraints = a.resolveConstraints(allTypeParams, constraintTexts, pkgName)
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
 			// Mirror collectFileFuncsNative's IsGeneric detection so that
 			// sibling-extracted methods carry the same function-form flag as

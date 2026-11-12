@@ -87,6 +87,32 @@ func main() = Println(Wrap[int, Nums](Nums(3)).Next().Keep((x) => x > 0))`,
 			contains: []string{"type Wrap[T any, C Seq[T, C]] struct"},
 		},
 		{
+			name: "generic struct construction infers T from C's methods",
+			body: `struct Box[T any, C Seq[T, C]](inner C)
+
+func main() = Println(Box(Nums(3)))`,
+			contains: []string{"Box[int, Nums]"},
+		},
+		{
+			name: "a written leading type argument drives constraint inference",
+			body: `func g[C Seq[T, C], T any](xs C, p func(T) bool) C = xs.Keep(p)
+
+func main() = Println(g[Nums](Nums(3), (x) => x > 1))`,
+			contains: []string{"func(x int) bool"},
+		},
+		{
+			name: "an annotated lambda needs no inference from the constraint",
+			body: `type Labeled[T any] interface {
+    Label() string
+}
+
+func (s Nums) Label() string = "n"
+
+func describe[T any, C Labeled[T]](c C, show func(T) string) string = c.Label()
+
+func main() = Println(describe(Nums(1), (x int) => s"$x"))`,
+		},
+		{
 			name: "bare constraints keep working",
 			body: `type Shower interface {
     Show() string
@@ -159,13 +185,29 @@ func main() = Println(size(Nums(3)))`,
 			contains: "Odd, the type argument for C of dropFirstKeep, does not implement its constraint Seq[int, Odd]: method Keep returns Nums, not Odd",
 		},
 		{
-			name: "type parameter only a constraint determines",
-			body: `func main() {
+			name: "interface type argument does not implement its constraint",
+			body: `func dropFirst[T any, C Seq[T, C]](xs C) C = xs.Rest()
+
+func main() {
     val s Seq[int, Nums] = Nums(1)
-    Println(dropFirstKeep(s, (x) => x > 0))
+    Println(dropFirst(s))
 }`,
+			code:     galaerr.CodeInterfaceNotImplemented,
+			contains: "Seq[int, Nums], the type argument for C of dropFirst, does not implement its constraint Seq[int, Seq[int, Nums]]",
+		},
+		{
+			name: "type parameter only a constraint mentions, and no method determines",
+			body: `type Labeled[T any] interface {
+    Label() string
+}
+
+func (s Nums) Label() string = "n"
+
+func describe[T any, C Labeled[T]](c C, show func(T) string) string = c.Label()
+
+func main() = Println(describe(Nums(1), (x) => s"$x"))`,
 			code:     galaerr.CodeConstraintInference,
-			contains: "cannot infer T in this call of dropFirstKeep: T appears only in Seq[T, C], the constraint of C",
+			contains: "cannot infer T in this call of describe: T appears only in Labeled[T], the constraint of C, and the methods of C's type argument Nums do not determine it",
 		},
 	}
 	for _, tc := range cases {

@@ -129,7 +129,7 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 		t.structFieldTypes[name] = make(map[string]transpiler.Type)
 	}
 
-	addedFields := make(map[string]bool)     // track struct field names already added to parent struct
+	addedFields := make(map[string]bool)    // track struct field names already added to parent struct
 	recursiveFields := make(map[string]bool) // track which struct field names are self-referential
 	for _, vi := range variants {
 		for _, f := range vi.fields {

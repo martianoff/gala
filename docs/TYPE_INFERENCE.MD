@@ -882,11 +882,13 @@ then unifies each method the constraint requires with the same method of
 `C`'s type argument: `Keep(p func(T) bool) C` against
 `Keep(p func(int) bool) Nums` binds `T = int`. It repeats until nothing new is
 bound, and runs both before the lambda arguments are lowered (so their
-parameters are typed) and when the call's result type is computed.
+parameters are typed) and when the call's result type is computed, and binds a
+generic struct's type arguments at a construction (`Box(nums)` for
+`struct Box[T any, C Seq[T, C]](inner C)`).
 
 When a lambda argument needs a parameter that only a constraint mentions and
-the methods of the bound type argument do not determine it (an interface
-value, or a type without GALA metadata), the call is
+the methods of the bound type argument do not determine it (no method
+mentions it, or the type has no GALA metadata), the call is
 [GALA-E0104](errors/GALA-E0104.md), with the type arguments to write. With the
 call's type arguments known, each one must implement its constraint,
 instantiated with them; one that does not is

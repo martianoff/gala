@@ -735,7 +735,8 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				PtrReceiver:     ptr,
 				DefinedIn:       filePath,
 			}
-			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
+			var constraintTexts map[string]string
+			methodMeta.TypeParams, constraintTexts = nativeTypeParamsOf(ctx.TypeParameters())
 
 			// The receiver type's parameters, for resolving the signature:
 			// for `func (s Some[T]) Unapply(o Option[T])`, T is a type
@@ -746,6 +747,8 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			}
 			recvNames := nativeReceiverTypeArgNames(recvType)
 			allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
+			// A constraint may name the receiver's type parameters too.
+			methodMeta.TypeParamConstraints = a.resolveConstraints(allTypeParams, constraintTexts, pkgName)
 
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
 			// A Go generics instantiation cycle: a receiver Container[T]

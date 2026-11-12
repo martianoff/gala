@@ -2327,6 +2327,9 @@ type functionCallContext struct {
 	// an `any` placeholder (see inferFuncTypeSubstFromArgs), so the call's
 	// argument slots are open.
 	typeArgPlaceholders bool
+	// placeholderTypeParams names the type parameters filled with that
+	// placeholder.
+	placeholderTypeParams map[string]bool
 	// A generic struct / sealed-variant constructor's type parameters and the
 	// type arguments known before its lambdas are lowered (structCtorTypeSubst).
 	structTypeParams []string
@@ -2440,6 +2443,9 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 						typeParams, ctorFun, fromSlot := t.structCtorSlotArgs(fun, funcName, resolved, typeMeta.TypeParams, slotType)
 						ctx.structTypeParams = typeParams
 						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, args, fromSlot)
+						if ctx.structTypeSubst != nil {
+							t.inferFromConstraints(typeParams, structMeta.TypeParamConstraints, ctx.structTypeSubst)
+						}
 						for i, ft := range ctx.structFieldExpectedTypes {
 							ctx.structFieldExpectedTypes[i] = t.substituteTranspilerTypeParams(ft, ctx.structTypeSubst)
 						}
@@ -2467,7 +2473,8 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 			// the rest from the arguments, and so does this, so no lambda is
 			// lowered against a bare type-parameter name.
 			fromSlot := t.resultSlotTypeArgs(ctx.funcMeta.ReturnType, ctx.funcMeta.TypeParams, slotType)
-			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, args, explicit, fromSlot)
+			ctx.inferredTypeSubst, ctx.placeholderTypeParams = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, args, explicit, fromSlot)
+			ctx.typeArgPlaceholders = len(ctx.placeholderTypeParams) > 0
 		}
 	}
 
@@ -2490,12 +2497,15 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 					// from the arguments as a generic function call's is, so
 					// no argument is lowered against a bare type-parameter name.
 					if n := len(ctx.applyTypeSubst); n > 0 && n < len(typeMeta.TypeParams) && args.at.ok() {
-						ctx.applyTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(&transpiler.FunctionMetadata{
-							TypeParams: typeMeta.TypeParams,
-							ParamTypes: ctx.applyMethodMeta.ParamTypes,
-							ParamNames: ctx.applyMethodMeta.ParamNames,
-							Variadic:   ctx.applyMethodMeta.Variadic,
+						var placeholders map[string]bool
+						ctx.applyTypeSubst, placeholders = t.inferFuncTypeSubstFromArgs(&transpiler.FunctionMetadata{
+							TypeParams:           typeMeta.TypeParams,
+							TypeParamConstraints: typeMeta.TypeParamConstraints,
+							ParamTypes:           ctx.applyMethodMeta.ParamTypes,
+							ParamNames:           ctx.applyMethodMeta.ParamNames,
+							Variadic:             ctx.applyMethodMeta.Variadic,
 						}, args, ctx.applyTypeSubst, nil)
+						ctx.typeArgPlaceholders = len(placeholders) > 0
 					}
 				}
 			}
@@ -2767,7 +2777,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 
 	// --- Section 5: Regular function call context gathering ---
 	callCtx := t.collectFunctionCallContext(fun, c.args, pendingExpected)
-	if err := t.checkConstraintInference(fun, c, callCtx); err != nil {
+	if err := t.checkConstraintInference(c, callCtx); err != nil {
 		return nil, err
 	}
 
@@ -3434,6 +3444,9 @@ func (t *galaASTTransformer) structLiteralType(
 	}
 
 	inferred := t.structTypeArgs(typeMeta.TypeParams, t.writtenTypeArgs(typeMeta.TypeParams, written), resolvedTypeName, slotType, bind)
+	if inferred != nil {
+		t.inferFromConstraints(typeMeta.TypeParams, typeMeta.TypeParamConstraints, inferred)
+	}
 	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
 	if missing != nil {
 		return nil, t.uninferredTypeArgError(line, col, base, nil, typeMeta.TypeParams, inferred, missing)
@@ -5170,7 +5183,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // inferFuncTypeSubstFromArgs pre-scans non-lambda arguments of a generic function call
 // to infer type parameter substitutions. For example, in Iterate(1, (x) => x * 2),
 // it infers T = int from the first argument (1), enabling the lambda param x to be typed as int.
-// placeholders reports that some type parameter was filled with `any`.
+// placeholders names the type parameters filled with `any`.
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
 // fromSlot holds the type arguments the slot the call fills gives (see
@@ -5178,23 +5191,30 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // so `HashMapOf(("a", 1))` in a `HashMap[string, float64]` slot lowers its
 // tuple as a `Tuple[string, float64]`, as `ArrayOf(1)` in an `Array[int64]`
 // one is an `ArrayOf[int64]`.
-func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, args argsSrc, preset, fromSlot typeSubstMap) (subst typeSubstMap, placeholders bool) {
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, args argsSrc, preset, fromSlot typeSubstMap) (subst typeSubstMap, placeholders map[string]bool) {
 	var typed map[string]transpiler.Type
 	if len(fromSlot) > 0 {
 		typed = make(map[string]transpiler.Type)
 	}
 	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(args, funcMeta.ParamNames), typed)
-	t.inferFromConstraints(funcMeta.TypeParams, funcMeta.TypeParamConstraints, inferred)
 	for tp, typ := range fromSlot {
 		_, bound := inferred[tp]
 		if _, byTyped := typed[tp]; bound && !byTyped {
 			inferred[tp] = typ
 		}
 	}
+	// A type parameter only a constraint mentions comes from the methods of
+	// the one it constrains, written or inferred (constraint_inference.go).
+	for tp, typ := range preset {
+		if _, bound := inferred[tp]; !bound {
+			inferred[tp] = typ
+		}
+	}
+	t.inferFromConstraints(funcMeta.TypeParams, funcMeta.TypeParamConstraints, inferred)
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
-		return nil, false
+		return nil, nil
 	}
 
 	// Type params neither written nor bound by a non-lambda argument (e.g. `A`
@@ -5209,7 +5229,10 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 			subst[tp] = v
 		} else {
 			subst[tp] = anyTypeArg
-			placeholders = true
+			if placeholders == nil {
+				placeholders = make(map[string]bool)
+			}
+			placeholders[tp] = true
 		}
 	}
 	return subst, placeholders

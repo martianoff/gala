@@ -124,7 +124,7 @@ func (t *galaASTTransformer) constrainReceiverTypeParams(params []*ast.Field, me
 	n := min(len(params), len(meta.TypeParams))
 	renames := make(map[string]transpiler.Type, n)
 	for i := range n {
-		if len(params[i].Names) == 1 {
+		if len(params[i].Names) == 1 && params[i].Names[0].Name != "_" {
 			renames[meta.TypeParams[i]] = transpiler.BasicType{Name: params[i].Names[0].Name}
 		}
 	}

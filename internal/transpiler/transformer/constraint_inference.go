@@ -45,22 +45,18 @@ func (t *galaASTTransformer) inferFromConstraints(typeParams []string, constrain
 // that unifying the methods the constraint c requires with those of arg, the
 // type argument c constrains, determines. It reports whether it bound any.
 func (t *galaASTTransformer) inferFromConstraint(c, arg transpiler.Type, typeParams []string, bound map[string]transpiler.Type) bool {
-	required, ok := t.requiredMethods(c)
+	required, ok := t.requiredMethods(t.followAliasChain(c))
 	if !ok {
 		return false
 	}
-	impl, ok := t.implTypeOf(arg)
+	method, ok := t.methodsOf(arg)
 	if !ok {
 		return false
 	}
 	before := len(bound)
 	for _, want := range required() {
-		m := impl.meta.Methods[want.name]
-		if m == nil || len(m.TypeParams) > 0 || !want.exact {
-			continue
-		}
-		have := t.instantiateMethod(m, impl.meta.TypeParams, impl.args)
-		if !have.exact {
+		have, ok := method(want.name)
+		if !ok || !want.exact || !have.exact {
 			continue
 		}
 		t.unifyForInference(
@@ -71,12 +67,41 @@ func (t *galaASTTransformer) inferFromConstraint(c, arg transpiler.Type, typePar
 	return len(bound) > before
 }
 
+// methodsOf returns the lookup of the methods a value of type typ has,
+// instantiated with its type arguments: those of a GALA type (implTypeOf) or
+// of an interface (requiredMethods). A method with type parameters of its own
+// is not found. ok is false for any other type.
+func (t *galaASTTransformer) methodsOf(typ transpiler.Type) (func(name string) (ifaceMethod, bool), bool) {
+	if impl, ok := t.implTypeOf(typ); ok {
+		return func(name string) (ifaceMethod, bool) {
+			m := impl.meta.Methods[name]
+			if m == nil || len(m.TypeParams) > 0 || m.IsGeneric {
+				return ifaceMethod{}, false
+			}
+			return t.instantiateMethod(m, impl.meta.TypeParams, impl.args), true
+		}, true
+	}
+	if listed, ok := t.requiredMethods(t.followAliasChain(typ)); ok {
+		return func(name string) (ifaceMethod, bool) {
+			for _, m := range listed() {
+				if m.name == name {
+					return m, true
+				}
+			}
+			return ifaceMethod{}, false
+		}, true
+	}
+	return nil, false
+}
+
 // checkConstraintTypeArgs rejects a call of a generic function (callCtx's)
 // whose type argument for a parameter constrained by an interface does not
 // implement that interface, instantiated with the call's type arguments
 // (GALA-E0100): `dropFirstKeep(words, p)` for `C Seq[T, C]` needs the
 // argument's type to implement Seq[T, C] with T and C bound. args are the
-// call's lowered positional arguments; hasSpread marks an `xs...` one.
+// call's lowered positional arguments; hasSpread marks an `xs...` one. The
+// call's type arguments are those it writes, then those its arguments and
+// the constraints bind.
 func (t *galaASTTransformer) checkConstraintTypeArgs(fun ast.Expr, c callSrc, args []ast.Expr, hasSpread bool, callCtx functionCallContext) error {
 	fm := callCtx.funcMeta
 	if fm == nil || !slices.ContainsFunc(fm.TypeParams, func(tp string) bool {
@@ -84,12 +109,16 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(fun ast.Expr, c callSrc, ar
 	}) {
 		return nil
 	}
-	bound := t.argTypeArgs(fm, args, hasSpread)
-	for i, typeArg := range t.extractFuncCallTypeArgs(fun) {
-		if i < len(fm.TypeParams) {
-			bound[fm.TypeParams[i]] = transpiler.ParseType(typeArg)
+	bound := explicitTypeArgSubst(fm.TypeParams, t.extractFuncCallTypeArgs(fun))
+	if bound == nil {
+		bound = typeSubstMap{}
+	}
+	for tp, typ := range t.argTypeArgs(fm, args, hasSpread) {
+		if _, written := bound[tp]; !written {
+			bound[tp] = typ
 		}
 	}
+	t.inferFromConstraints(fm.TypeParams, fm.TypeParamConstraints, bound)
 	for _, tp := range fm.TypeParams {
 		constraint, typeArg := fm.TypeParamConstraints[tp], bound[tp]
 		if typeArg == nil || !transpiler.IsInterfaceConstraint(constraint) {
@@ -103,23 +132,57 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(fun ast.Expr, c callSrc, ar
 		if !ok {
 			continue
 		}
-		impl, ok := t.implTypeOf(typeArg)
-		if !ok {
+		why, hint := t.constraintMismatch(typeArg, required())
+		if why == "" {
 			continue
 		}
-		for _, m := range required() {
-			why, hint := t.implMismatch(impl, m)
-			if why == "" {
-				continue
-			}
-			r := c.anchor().rng()
-			return spanErrorAt(galaerr.CodeInterfaceNotImplemented, r, r,
-				fmt.Sprintf("%s, the type argument for %s of %s, does not implement its constraint %s: %s",
-					displayType(typeArg), tp, fm.Name, displayType(inst), why),
-				hint)
-		}
+		r := c.anchor().rng()
+		return spanErrorAt(galaerr.CodeInterfaceNotImplemented, r, r,
+			fmt.Sprintf("%s, the type argument for %s of %s, does not implement its constraint %s: %s",
+				displayType(typeArg), tp, fm.Name, displayType(inst), why),
+			hint)
 	}
 	return nil
+}
+
+// constraintMismatch says why typeArg lacks one of required, the methods of
+// its instantiated constraint, and how to fix it; "" when it has them all or
+// that cannot be told exactly. A GALA type is judged as checkInterfaceSlot
+// judges it (implMismatch); an interface by its methods' signatures.
+func (t *galaASTTransformer) constraintMismatch(typeArg transpiler.Type, required []ifaceMethod) (why, hint string) {
+	if impl, ok := t.implTypeOf(typeArg); ok {
+		for _, m := range required {
+			if why, hint := t.implMismatch(impl, m); why != "" {
+				return why, hint
+			}
+		}
+		return "", ""
+	}
+	listed, ok := t.requiredMethods(t.followAliasChain(typeArg))
+	if !ok {
+		return "", ""
+	}
+	have := make(map[string]ifaceMethod)
+	for _, m := range listed() {
+		have[m.name] = m
+	}
+	for _, want := range required {
+		h, ok := have[want.name]
+		signatureHint := "pass a type whose " + want.name + " has the constraint's exact signature"
+		switch {
+		case !ok:
+			return "it has no method " + want.name, signatureHint
+		case !want.exact || !h.exact:
+			continue
+		}
+		if same, known := t.identicalTypeLists(h.params, want.params); known && (!same || h.variadic != want.variadic) {
+			return fmt.Sprintf("method %s takes (%s), not (%s)", want.name, spellParams(h), spellParams(want)), signatureHint
+		}
+		if same, known := t.identicalTypeLists(h.results, want.results); known && !same {
+			return fmt.Sprintf("method %s returns %s, not %s", want.name, spellResults(h.results), spellResults(want.results)), signatureHint
+		}
+	}
+	return "", ""
 }
 
 // checkConstraintInference rejects a call of a generic function (callCtx's)
@@ -129,17 +192,13 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(fun ast.Expr, c callSrc, ar
 // `func f[T any, C Seq[T, C]](xs C, p func(T) bool)` with an `s` whose type's
 // methods do not reveal T. The lambda would otherwise be lowered against
 // `any`. The diagnostic names the type arguments to write.
-func (t *galaASTTransformer) checkConstraintInference(fun ast.Expr, c callSrc, callCtx functionCallContext) error {
+func (t *galaASTTransformer) checkConstraintInference(c callSrc, callCtx functionCallContext) error {
 	fm := callCtx.funcMeta
-	if fm == nil || !callCtx.typeArgPlaceholders || len(fm.TypeParamConstraints) == 0 {
+	if fm == nil || len(callCtx.placeholderTypeParams) == 0 || len(fm.TypeParamConstraints) == 0 {
 		return nil
 	}
-	written := len(t.extractFuncCallTypeArgs(fun))
 	subst := callCtx.inferredTypeSubst
-	placeholder := func(i int) bool {
-		v := subst[fm.TypeParams[i]]
-		return i >= written && v != nil && v.String() == anyTypeArg.String()
-	}
+	placeholder := func(i int) bool { return callCtx.placeholderTypeParams[fm.TypeParams[i]] }
 	for i, tp := range fm.TypeParams {
 		if !placeholder(i) {
 			continue
