@@ -122,20 +122,18 @@ func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 	return t.unknownMethodError(typeMeta, sel.Sel.Name, recvType, line, col, exact)
 }
 
-// checkTypeParamMethod reports a method call on receiver, a value whose type
-// is a type parameter of the enclosing declaration constrained by `any` or
-// `comparable` (GALA-E0044): such a constraint gives a value no methods, so Go
-// would reject the call against the generated code. A parameter constrained
-// by an interface has that interface's methods (methodReceiverType), and the
-// interface is judged like any other receiver type.
-func (t *galaASTTransformer) checkTypeParamMethod(receiver ast.Expr, method string, c callSrc) error {
-	if receiver == nil || method == "" || len(t.typeParamConstraints) == 0 {
+// checkTypeParamMethod reports a method call on a receiver of type recvType
+// (resolveReceiverTypeAndLookupKey), when that is a type parameter of the
+// enclosing declaration constrained by `any` or `comparable` (GALA-E0044):
+// such a constraint gives a value no methods, so Go would reject the call
+// against the generated code. A parameter constrained by an interface has
+// that interface's methods (methodReceiverType), and the interface is judged
+// like any other receiver type.
+func (t *galaASTTransformer) checkTypeParamMethod(recvType transpiler.Type, method string, c callSrc) error {
+	if method == "" || len(t.typeParamConstraints) == 0 || recvType == nil {
 		return nil
 	}
-	if id, isIdent := receiver.(*ast.Ident); isIdent && t.importManager.IsPackage(id.Name) {
-		return nil
-	}
-	typ := t.getExprTypeName(receiver)
+	typ := recvType
 	if p, ok := typ.(transpiler.PointerType); ok {
 		typ = p.Elem
 	}

@@ -500,20 +500,8 @@ func (t *galaASTTransformer) isConcreteOperand(typ transpiler.Type) bool {
 // isComparableTypeParam reports whether typ is a type parameter of the
 // enclosing declaration constrained by comparable.
 func (t *galaASTTransformer) isComparableTypeParam(typ transpiler.Type) bool {
-	var name string
-	switch tt := typ.(type) {
-	case transpiler.BasicType:
-		name = tt.Name
-	case transpiler.NamedType:
-		if tt.Package != "" {
-			return false
-		}
-		name = tt.Name
-	default:
-		return false
-	}
-	cons, ok := t.typeParamConstraints[name]
-	return t.activeTypeParams[name] && ok && transpiler.ConstraintIs(cons, "comparable")
+	_, c, ok := t.constrainedTypeParam(typ)
+	return ok && transpiler.ConstraintIs(c, "comparable")
 }
 
 // isLiteral reports whether expr is a literal, optionally negated: an operand

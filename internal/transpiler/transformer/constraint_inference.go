@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"fmt"
-	"go/ast"
 	"slices"
 	"strings"
 
@@ -24,18 +23,26 @@ import (
 // the constraints of the bound ones determine (see above), until no more are
 // found.
 func (t *galaASTTransformer) inferFromConstraints(typeParams []string, constraints map[string]transpiler.Type, bound map[string]transpiler.Type) {
-	if len(constraints) == 0 || len(bound) == len(typeParams) {
+	if len(bound) == 0 || len(bound) == len(typeParams) {
 		return
 	}
+	// Only a constraint that names another parameter of the list can bind it.
+	var owners []string
+	for _, tp := range typeParams {
+		if c := constraints[tp]; transpiler.IsInterfaceConstraint(c) && typeMentionsTypeParam(c, typeParams) {
+			owners = append(owners, tp)
+		}
+	}
+	// Each owner is read once its type argument is known.
+	done := make(map[string]bool, len(owners))
 	for grew := true; grew; {
 		grew = false
-		for _, tp := range typeParams {
-			c, arg := constraints[tp], bound[tp]
-			if arg == nil || !transpiler.IsInterfaceConstraint(c) || !typeMentionsTypeParam(c, typeParams) {
-				continue
-			}
-			if t.inferFromConstraint(c, arg, typeParams, bound) {
-				grew = true
+		for _, tp := range owners {
+			if arg := bound[tp]; arg != nil && !done[tp] {
+				done[tp] = true
+				if t.inferFromConstraint(constraints[tp], arg, typeParams, bound) {
+					grew = true
+				}
 			}
 		}
 	}
@@ -81,44 +88,40 @@ func (t *galaASTTransformer) methodsOf(typ transpiler.Type) (func(name string) (
 			return t.instantiateMethod(m, impl.meta.TypeParams, impl.args), true
 		}, true
 	}
-	if listed, ok := t.requiredMethods(t.followAliasChain(typ)); ok {
-		return func(name string) (ifaceMethod, bool) {
-			for _, m := range listed() {
-				if m.name == name {
-					return m, true
-				}
-			}
-			return ifaceMethod{}, false
-		}, true
+	listed, ok := t.requiredMethods(t.followAliasChain(typ))
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	byName := make(map[string]ifaceMethod)
+	for _, m := range listed() {
+		byName[m.name] = m
+	}
+	return func(name string) (ifaceMethod, bool) {
+		m, ok := byName[name]
+		return m, ok
+	}, true
 }
 
 // checkConstraintTypeArgs rejects a call of a generic function (callCtx's)
 // whose type argument for a parameter constrained by an interface does not
 // implement that interface, instantiated with the call's type arguments
 // (GALA-E0100): `dropFirstKeep(words, p)` for `C Seq[T, C]` needs the
-// argument's type to implement Seq[T, C] with T and C bound. args are the
-// call's lowered positional arguments; hasSpread marks an `xs...` one. The
-// call's type arguments are those it writes, then those its arguments and
-// the constraints bind.
-func (t *galaASTTransformer) checkConstraintTypeArgs(fun ast.Expr, c callSrc, args []ast.Expr, hasSpread bool, callCtx functionCallContext) error {
+// argument's type to implement Seq[T, C] with T and C bound. The call's type
+// arguments are the ones its lambdas were lowered against
+// (inferFuncTypeSubstFromArgs), placeholders left out.
+func (t *galaASTTransformer) checkConstraintTypeArgs(c callSrc, callCtx functionCallContext) error {
 	fm := callCtx.funcMeta
-	if fm == nil || !slices.ContainsFunc(fm.TypeParams, func(tp string) bool {
+	if fm == nil || len(callCtx.inferredTypeSubst) == 0 || !slices.ContainsFunc(fm.TypeParams, func(tp string) bool {
 		return transpiler.IsInterfaceConstraint(fm.TypeParamConstraints[tp])
 	}) {
 		return nil
 	}
-	bound := explicitTypeArgSubst(fm.TypeParams, t.extractFuncCallTypeArgs(fun))
-	if bound == nil {
-		bound = typeSubstMap{}
-	}
-	for tp, typ := range t.argTypeArgs(fm, args, hasSpread) {
-		if _, written := bound[tp]; !written {
+	bound := make(typeSubstMap, len(callCtx.inferredTypeSubst))
+	for tp, typ := range callCtx.inferredTypeSubst {
+		if !callCtx.placeholderTypeParams[tp] {
 			bound[tp] = typ
 		}
 	}
-	t.inferFromConstraints(fm.TypeParams, fm.TypeParamConstraints, bound)
 	for _, tp := range fm.TypeParams {
 		constraint, typeArg := fm.TypeParamConstraints[tp], bound[tp]
 		if typeArg == nil || !transpiler.IsInterfaceConstraint(constraint) {
@@ -158,28 +161,21 @@ func (t *galaASTTransformer) constraintMismatch(typeArg transpiler.Type, require
 		}
 		return "", ""
 	}
-	listed, ok := t.requiredMethods(t.followAliasChain(typeArg))
+	method, ok := t.methodsOf(typeArg)
 	if !ok {
 		return "", ""
 	}
-	have := make(map[string]ifaceMethod)
-	for _, m := range listed() {
-		have[m.name] = m
-	}
 	for _, want := range required {
-		h, ok := have[want.name]
 		signatureHint := "pass a type whose " + want.name + " has the constraint's exact signature"
-		switch {
-		case !ok:
+		have, ok := method(want.name)
+		if !ok {
 			return "it has no method " + want.name, signatureHint
-		case !want.exact || !h.exact:
+		}
+		if !want.exact || !have.exact {
 			continue
 		}
-		if same, known := t.identicalTypeLists(h.params, want.params); known && (!same || h.variadic != want.variadic) {
-			return fmt.Sprintf("method %s takes (%s), not (%s)", want.name, spellParams(h), spellParams(want)), signatureHint
-		}
-		if same, known := t.identicalTypeLists(h.results, want.results); known && !same {
-			return fmt.Sprintf("method %s returns %s, not %s", want.name, spellResults(h.results), spellResults(want.results)), signatureHint
+		if why := t.signatureMismatch(have, want); why != "" {
+			return why, signatureHint
 		}
 	}
 	return "", ""
@@ -194,20 +190,20 @@ func (t *galaASTTransformer) constraintMismatch(typeArg transpiler.Type, require
 // `any`. The diagnostic names the type arguments to write.
 func (t *galaASTTransformer) checkConstraintInference(c callSrc, callCtx functionCallContext) error {
 	fm := callCtx.funcMeta
-	if fm == nil || len(callCtx.placeholderTypeParams) == 0 || len(fm.TypeParamConstraints) == 0 {
+	placeholder := callCtx.placeholderTypeParams
+	if fm == nil || len(placeholder) == 0 {
 		return nil
 	}
 	subst := callCtx.inferredTypeSubst
-	placeholder := func(i int) bool { return callCtx.placeholderTypeParams[fm.TypeParams[i]] }
-	for i, tp := range fm.TypeParams {
-		if !placeholder(i) {
+	for _, tp := range fm.TypeParams {
+		if !placeholder[tp] {
 			continue
 		}
 		// The bound parameter whose constraint names tp.
 		var owner string
 		var constraint transpiler.Type
-		for j, other := range fm.TypeParams {
-			if oc := fm.TypeParamConstraints[other]; j != i && !placeholder(j) && transpiler.IsInterfaceConstraint(oc) && typeMentionsTypeParam(oc, []string{tp}) {
+		for _, other := range fm.TypeParams {
+			if oc := fm.TypeParamConstraints[other]; !placeholder[other] && transpiler.IsInterfaceConstraint(oc) && typeMentionsTypeParam(oc, []string{tp}) {
 				owner, constraint = other, oc
 				break
 			}
@@ -217,7 +213,7 @@ func (t *galaASTTransformer) checkConstraintInference(c callSrc, callCtx functio
 		}
 		spelled := make([]string, len(fm.TypeParams))
 		for k, p := range fm.TypeParams {
-			if placeholder(k) {
+			if placeholder[p] {
 				spelled[k] = "<" + p + ">"
 			} else {
 				spelled[k] = displayType(subst[p])

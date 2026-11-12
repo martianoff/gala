@@ -297,7 +297,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 				return nil, err
 			}
-			if err := t.checkTypeParamMethod(receiver, method, c); err != nil {
+			if err := t.checkTypeParamMethod(recvType, method, c); err != nil {
 				return nil, err
 			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
@@ -2443,9 +2443,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 						typeParams, ctorFun, fromSlot := t.structCtorSlotArgs(fun, funcName, resolved, typeMeta.TypeParams, slotType)
 						ctx.structTypeParams = typeParams
 						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, args, fromSlot)
-						if ctx.structTypeSubst != nil {
-							t.inferFromConstraints(typeParams, structMeta.TypeParamConstraints, ctx.structTypeSubst)
-						}
+						t.inferFromConstraints(typeParams, structMeta.TypeParamConstraints, ctx.structTypeSubst)
 						for i, ft := range ctx.structFieldExpectedTypes {
 							ctx.structFieldExpectedTypes[i] = t.substituteTranspilerTypeParams(ft, ctx.structTypeSubst)
 						}
@@ -2750,7 +2748,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 		return nil, err
 	}
-	if err := t.checkTypeParamMethod(receiver, method, c); err != nil {
+	if err := t.checkTypeParamMethod(recvType, method, c); err != nil {
 		return nil, err
 	}
 
@@ -2800,7 +2798,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	if err := t.checkPtrCallTypeArgs(fun, c.args, args, namedArgs, callCtx); err != nil {
 		return nil, err
 	}
-	if err := t.checkConstraintTypeArgs(fun, c, args, hasSpread, callCtx); err != nil {
+	if err := t.checkConstraintTypeArgs(c, callCtx); err != nil {
 		return nil, err
 	}
 
@@ -3444,9 +3442,7 @@ func (t *galaASTTransformer) structLiteralType(
 	}
 
 	inferred := t.structTypeArgs(typeMeta.TypeParams, t.writtenTypeArgs(typeMeta.TypeParams, written), resolvedTypeName, slotType, bind)
-	if inferred != nil {
-		t.inferFromConstraints(typeMeta.TypeParams, typeMeta.TypeParamConstraints, inferred)
-	}
+	t.inferFromConstraints(typeMeta.TypeParams, typeMeta.TypeParamConstraints, inferred)
 	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
 	if missing != nil {
 		return nil, t.uninferredTypeArgError(line, col, base, nil, typeMeta.TypeParams, inferred, missing)
