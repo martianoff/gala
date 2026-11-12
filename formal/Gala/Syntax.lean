@@ -126,7 +126,8 @@ structure Func where
 /-- A top-level declaration. -/
 inductive Decl
   | func (f : Func)
-  | struct_ (name : String) (fields : List Field)
+  /-- A struct: `shorthand` for the `struct Name(...)` form, which prints as `Name(...)`. -/
+  | struct_ (name : String) (shorthand : Bool) (fields : List Field)
   | sealed (name : String) (variants : List Variant)
   /-- A package-level `val` or `var`. -/
   | global (m : Mut) (names : List String) (destructure : Bool) (type : Option Ty)

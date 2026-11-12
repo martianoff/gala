@@ -630,10 +630,11 @@ def initGlobals (ds : Decls) (d : Nat) (gs : List GlobalDecl) : M Unit := do
 
 /-- The declarations of a program, and its package-level variables in source order. -/
 def collect (p : Program) : Decls × List GlobalDecl :=
-  p.files.foldl (init := ({ funcs := [], structs := [], sealeds := [], unsupported := [] }, []))
+  p.files.foldl (init := ({ funcs := [], structs := [], shorthands := [], sealeds := [], unsupported := [] }, []))
     fun acc file => file.decls.foldl (init := acc) fun (ds, gs) d => match d with
       | .func f => ({ ds with funcs := ds.funcs ++ [(f.name, f)] }, gs)
-      | .struct_ n fs => ({ ds with structs := ds.structs ++ [(n, fs)] }, gs)
+      | .struct_ n sh fs => ({ ds with structs := ds.structs ++ [(n, fs)],
+                                        shorthands := if sh then ds.shorthands ++ [n] else ds.shorthands }, gs)
       | .sealed n vs => ({ ds with sealeds := ds.sealeds ++ [(n, vs)] }, gs)
       | .global m ns dz t vs =>
         let g : GlobalDecl := ⟨m == Mut.var, ns, dz, t, vs⟩

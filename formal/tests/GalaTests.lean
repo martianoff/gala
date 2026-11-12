@@ -29,7 +29,7 @@ open Gala.Spec
 #guard Json.parseIntLit "1a" == none
 
 -- Println and Print spacing.
-private def noDecls : Decls := { funcs := [], structs := [], sealeds := [], unsupported := [] }
+private def noDecls : Decls := { funcs := [], structs := [], shorthands := [], sealeds := [], unsupported := [] }
 #guard (Print.println noDecls [.int 1, .str "a", .bool true]).toOption == some "1 a true\n"
 #guard (Print.print noDecls [.str "a", .int 1, .int 2, .str "b", .str "c"]).toOption == some "a1 2bc"
 #guard (Print.println noDecls [.tuple [.int 1, .str "x"], .sealed "S" "C" [.int 2]]).toOption == some "(1, x) C(2)\n"

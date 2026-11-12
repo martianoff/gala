@@ -43,14 +43,14 @@ compile time, while galaspec wraps it at run time. Only programs Go rejects diff
 `int64` is accepted as a type and means the same as `int`. Every other numeric type is
 outside S1 and reported as unsupported.
 
-### Printing follows master and will change
+### Printing
 
-`Println` of a plain struct prints today what Go's `fmt` prints for the struct GALA
-generates: `{1 2}` for `Pt(1, 2)`, `{1}` for a lowercase `val` field (its
+A shorthand struct prints as `Pt(1, 2)`, through the `String` method GALA generates for
+it (docs/GALA.MD, "How Values Print"). A block-form struct (`type T struct { ... }`) prints
+what Go's `fmt` prints for it: `{1 2}`, `{1}` for a lowercase `val` field (its
 `Immutable` wrapper, whose `Format` method `fmt` cannot call through an unexported field),
 and for a sealed value reached through such a field, its Go layout. `Gala/Print.lean`
-models exactly that. A pending change prints plain structs as `Pt(1, 2)`; when it lands,
-`Gala/Print.lean` and the `printing` fixture must change with it.
+models both.
 
 ### Where galaspec stops
 
@@ -130,7 +130,7 @@ say the programs below behave as the spec says, not that the transpiler is corre
 |---|---|---|
 | AGREE | 16 | 1 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 436 | 34 |
+| UNSUPPORTED | 438 | 34 |
 | INCONCLUSIVE | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **16** (ratchet baseline 16).
@@ -188,7 +188,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 | Construct | Programs |
 |---|---|
 | `method-call` | 133 |
-| `import` | 107 |
+| `import` | 108 |
 | `index` | 66 |
 | `generic-type` | 40 |
 | `named-arg` | 15 |
@@ -197,7 +197,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 | `address-of` | 8 |
 | `param-default` | 8 |
 | `unresolved-name` | 8 |
-| `float-literal` | 6 |
+| `float-literal` | 7 |
 | `func-type` | 6 |
 | `composite-literal` | 5 |
 | `local-struct` | 4 |

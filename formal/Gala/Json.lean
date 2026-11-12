@@ -234,7 +234,7 @@ def decodeTop (j : Json) : D Decl := do
   | "struct" =>
     let fields ← arr j "fields"
     if let some k ← firstUnsupported fields then return .unsupported k
-    return .struct_ (← str j "name") (← fields.mapM decodeField)
+    return .struct_ (← str j "name") (← bool j "shorthand") (← fields.mapM decodeField)
   | "sealed" =>
     let variants ← arr j "variants"
     let fieldsOf (v : Json) : D (List Json) := arr v "fields"

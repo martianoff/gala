@@ -1,13 +1,13 @@
-{1 2} {{a} 3} {4 b} {}
-Circle(5) Sq({{1} a}, z) Dot()
-{{1 2} Circle(3) true}
-(1, a) ({1 2}, Circle(1), s, true) ((1, 2), x)
+Pt(1, 2) Lo(a, 3) {4 b} E()
+Circle(5) Sq(In(1, a), z) Dot()
+Wrap(Pt(1, 2), Circle(3), true)
+(1, a) (Pt(1, 2), Circle(1), s, true) ((1, 2), x)
 a 1 b true 
-a1 2btrue false {1 2} {3 4}
+a1 2btrue false Pt(1, 2) Pt(3, 4)
 Circle(1) Circle(2) (1, 2) (3, 4)
 
-{{{{1} {2}}} {{3} {4}} {{5} {x}}}
-{{{1} a} {{2} b}}
-{{{{1} {{{0} {}}} {} 1}}} {{{0} {{{0} {}}} {} 3}} {{{{0} {{{1} {a}}} {n} 2}}}
+Hid(Pt(1, 2), Pt(3, 4), In(5, x))
+Up(In(1, a), In(2, b))
+Sh(Circle(1)) Sv(Dot()) Sh(Sq(In(1, a), n))
 multi
 line raw\n

@@ -8,18 +8,19 @@
   * `int`, `bool`, `string`: as Go prints them (a string without quotes).
   * a tuple: its `String()` method, `(a, b)`, each element printed with `%v`.
   * a sealed value: its generated `String()` method, `Case(f1, f2)`, or `Case()`.
-  * a plain struct has no `String()` method, so `fmt` prints its Go struct: `{f1 f2}`.
-    A `val` field is stored in an `Immutable[T]` wrapper and a `var` field is not.
-    `fmt` calls a method (`Immutable`'s `Format`, a tuple's or sealed type's `String`)
-    only on a value it reaches through exported fields; through an unexported (lowercase)
-    field it prints the raw Go struct instead: `{1}` for an `Immutable[int]`, and for a
-    sealed value its Go layout, every case's fields and then the case tag.
+  * a shorthand struct (`struct Pt(...)`): its generated `String()` method, `Pt(f1, f2)`,
+    each field printed with `%v`, its `Immutable` wrapper looked through (docs/GALA.MD,
+    "How Values Print"). A struct with a field named `String` has no such method.
+  * a block-form struct (`type T struct { ... }`) has no `String()` method, so `fmt`
+    prints its Go struct: `{f1 f2}`. A `val` field is stored in an `Immutable[T]`
+    wrapper and a `var` field is not. `fmt` calls a method (`Immutable`'s `Format`, a
+    tuple's, sealed type's or shorthand struct's `String`) only on a value it reaches
+    through exported fields; through an unexported (lowercase) field it prints the raw
+    Go struct instead: `{1}` for an `Immutable[int]`, and for a sealed value its Go
+    layout, every case's fields and then the case tag.
 
   `Println` separates its operands with spaces and ends with a newline. `Print` adds a
   space between two operands only when neither is a string.
-
-  This is the format `master` prints today. A pending change prints plain structs as
-  `Pt(1, 2)`; when it lands, `fmtV` on a struct changes with it (see COVERAGE.md).
 -/
 import Gala.Scope
 
@@ -115,7 +116,11 @@ def fmtV (ds : Decls) (methods : Bool) : Val → P String
     else pure ("{" ++ " ".intercalate ((← fmtVs ds false vs).map (wrapImm tupleField)) ++ "}")
   | .struct_ ty fs => do
     let fields := (ds.structs.lookup ty).getD []
-    pure ("{" ++ " ".intercalate (← fmtFields ds methods fields fs) ++ "}")
+    if methods && ds.shorthands.contains ty && !fields.any (·.name == "String") then
+      -- Its generated `String`: each field through `%v`, an `Immutable` looked through.
+      pure (ty ++ "(" ++ ", ".intercalate (← fmtVs ds true fs) ++ ")")
+    else
+      pure ("{" ++ " ".intercalate (← fmtFields ds methods fields fs) ++ "}")
   | .sealed ty c fs => do
     if methods then pure (c ++ "(" ++ ", ".intercalate (← fmtVs ds true fs) ++ ")")
     else
