@@ -340,7 +340,9 @@ val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred a
    undetermined is an error naming it rather than a partial list in the
    output (or GALA-E0018 first, when the argument that should determine it
    is a bare `None()`). A generic alias's written type arguments are its own
-   and are not completed.
+   and are not completed. A written type argument may be a function type,
+   which types the lambdas it fills: in `Some[func(int) int]((x) => x + 1)`,
+   `x` is an `int`.
 
 6. **Conversion to a named function type** — for `type Handler func(int) int`,
    `Handler((x) => x + 1)` types the lambda by `Handler`'s signature. So does a

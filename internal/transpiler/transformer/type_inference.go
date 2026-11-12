@@ -1388,8 +1388,46 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 			params = append(params, t.exprToTypeString(idx))
 		}
 		return t.exprToTypeString(e.X) + "[" + strings.Join(params, ", ") + "]"
+	case *ast.Ellipsis:
+		if elt := t.exprToTypeString(e.Elt); elt != "" {
+			return "..." + elt
+		}
+	case *ast.FuncType:
+		// A function type written as an explicit type argument
+		// (`Some[func(int) int](f)`), spelled as transpiler.FuncType is.
+		params, ok := t.fieldTypeStrings(e.Params)
+		results, okResults := t.fieldTypeStrings(e.Results)
+		if !ok || !okResults {
+			return ""
+		}
+		s := "func(" + strings.Join(params, ", ") + ")"
+		if len(results) == 1 {
+			s += " " + results[0]
+		} else if len(results) > 1 {
+			s += " (" + strings.Join(results, ", ") + ")"
+		}
+		return s
 	}
 	return ""
+}
+
+// fieldTypeStrings spells the type of each entry of fl, a function type's
+// parameters or results, once per name; false when one has no spelling.
+func (t *galaASTTransformer) fieldTypeStrings(fl *ast.FieldList) ([]string, bool) {
+	if fl == nil {
+		return nil, true
+	}
+	var out []string
+	for _, f := range fl.List {
+		ft := t.exprToTypeString(f.Type)
+		if ft == "" {
+			return nil, false
+		}
+		for range max(1, len(f.Names)) {
+			out = append(out, ft)
+		}
+	}
+	return out, true
 }
 
 // substituteTranspilerTypeParams substitutes type parameters in a type with their concrete values.

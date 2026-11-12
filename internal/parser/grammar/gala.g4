@@ -214,11 +214,15 @@ partialFunctionLiteral: '{' caseClause+ '}';
 argumentList: argument (',' argument)* ','?;  // Allow trailing comma for multiline formatting
 argument: (identifier '=')? (lambdaExpression | pattern);
 
+// A function type is no value: `'func' signature` is here so that it can be
+// written as an explicit type argument (`EmptyArray[func() int]()`), whose
+// list parses as expressions. Anywhere else the transformer rejects it.
 primary
     : identifier
     | literal
     | ('(' | NL_LPAREN) tupleExpressionList? ')'
     | compositeLiteral
+    | 'func' signature
     ;
 
 // Parenthesized tuple/grouping expressions allow an optional trailing comma so

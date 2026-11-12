@@ -5050,3 +5050,13 @@ gala_exec_test(
     src = "default_argument_scope.gala",
     expected = "default_argument_scope.out",
 )
+
+gala_exec_test(
+    name = "func_type_args",
+    src = "func_type_args.gala",
+    expected = "func_type_args.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)

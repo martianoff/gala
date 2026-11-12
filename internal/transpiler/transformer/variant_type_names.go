@@ -211,14 +211,15 @@ func typeParamInScopeNative(n native.GalaNodeRef, name string) bool {
 // the signature of a function type (`func(...)` in a type position) rather
 // than of a function, method or lambda, whose untyped parameters are names.
 func isFuncTypeSignatureNative(p native.GalaNodeRef) bool {
-	// parameter → parameterList → parameters → signature → type
+	// parameter → parameterList → parameters → signature → type, or the
+	// primary of a function type written as a type argument.
 	n := p
 	for range 4 {
 		if n = n.Parent(); !n.Ok() {
 			return false
 		}
 	}
-	return n.Kind() == native.GalaKIND_type
+	return n.Kind() == native.GalaKIND_type || n.Kind() == native.GalaKIND_primary
 }
 
 // checkVariantTypeArgs reports a sealed variant written as an explicit type

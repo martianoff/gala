@@ -95,7 +95,7 @@ func (e *exporter) patArg(a native.ArgumentNode) Node {
 func (e *exporter) patPrimary(p native.PrimaryExprNode) Node {
 	pr := p.Primary()
 	switch {
-	case !pr.Ok(), pr.CompositeLiteral().Ok():
+	case !pr.Ok(), pr.CompositeLiteral().Ok(), pr.Signature().Ok():
 		return e.unsupported(UnsupportedExprPattern, p.GalaNodeRef)
 	case pr.Identifier().Ok():
 		if name := pr.Identifier().GetText(); name != "_" {

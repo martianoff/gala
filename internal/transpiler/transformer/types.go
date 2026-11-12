@@ -194,7 +194,7 @@ func (t *galaASTTransformer) lowerType(s typeSrc) (ast.Expr, error) {
 		}
 		return &ast.MapType{Key: keyType, Value: valueType}, nil
 	case shapeFunc:
-		return t.lowerFuncTypeSignature(s)
+		return t.lowerSignatureType(s.node.Signature())
 	}
 	return ast.NewIdent(s.text()), nil
 }

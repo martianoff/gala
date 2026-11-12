@@ -551,6 +551,8 @@ func (e *exporter) primary(p native.PrimaryNode) Node {
 		return e.literal(p.Literal())
 	case p.CompositeLiteral().Ok():
 		return e.unsupported(UnsupportedCompositeLiteral, p.GalaNodeRef)
+	case p.Signature().Ok():
+		return e.unsupported(UnsupportedFuncType, p.GalaNodeRef)
 	}
 	elems, bad := e.parenthesised(p)
 	switch {
