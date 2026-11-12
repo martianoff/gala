@@ -258,6 +258,22 @@ jobs:
             ref: b79743ba1faa2cfd1a5cc24e36f80cfaa4c12a85
             commands: test
             goflags: ""
+          # galop, the parser generator GALA's own parser comes from. Its
+          # sources use more of the language than the projects above: a
+          # field-default regression (#1039) broke its build and no lane
+          # noticed. The two binaries import every non-test package, so they
+          # compile all of galop except its tests (~14 min cold). `gala test`
+          # is left to galop's own CI: cold, it adds well over 15 minutes.
+          # GOGC=25 and -p=2 are what galop's own CI uses: its largest
+          # packages peak at 7-9 GB per compile.
+          - name: galop
+            repo: martianoff/galop
+            ref: 1de17cd9e3a55ada7271c443435587bde91db4b1
+            commands: |
+              build -o galop ./cmd/galop
+              build -o galop-sample ./cmd/galop-sample
+            goflags: -p=2
+            gogc: "25"
     steps:
       - name: Checkout ${{ matrix.repo }}
         uses: actions/checkout@v4
@@ -286,16 +302,20 @@ jobs:
         env:
           GOFLAGS: ${{ matrix.goflags }}
           GOMEMLIMIT: ${{ matrix.gomemlimit }}
+          GOGC: ${{ matrix.gogc }}
+          # One gala invocation per line; its arguments are split on spaces.
+          # The lines are read from fd 3 so a command cannot consume them.
           COMMANDS: ${{ matrix.commands }}
         run: |
           set -euo pipefail
           gala="${RUNNER_TEMP}/gala-cli/gala-linux_amd64"
           chmod +x "$gala"
           "$gala" version
-          for cmd in $COMMANDS; do
-            echo "::group::gala $cmd"
+          while read -r -a args <&3; do
+            [ "${#args[@]}" -gt 0 ] || continue
+            echo "::group::gala ${args[*]}"
             start=$(date +%s)
-            "$gala" "$cmd"
-            echo "gala $cmd: $(( $(date +%s) - start ))s"
+            "$gala" "${args[@]}"
+            echo "gala ${args[*]}: $(( $(date +%s) - start ))s"
             echo "::endgroup::"
-          done
+          done 3<<< "$COMMANDS"
