@@ -2612,15 +2612,15 @@ func TestDiagnostics_IntentionalSyntaxErrorThenFix(t *testing.T) {
 func TestDiagnostics_DotAfterParenThenRemove(t *testing.T) {
 	h := newHarness(t)
 
-	// Valid code — Some(42) on last line before closing brace
-	valid := "package main\n\nfunc main() {\n    val x = Some(42)\n}\n"
+	// Valid code — Println(Some(42)) on last line before closing brace
+	valid := "package main\n\nfunc main() {\n    Println(Some(42))\n}\n"
 	uri := openFileOnDisk(t, h, valid)
 	time.Sleep(200 * time.Millisecond)
 	diags0 := h.Diagnostics(uri)
 	t.Logf("step 0 (valid): %d diagnostics", len(diags0))
 
 	// Add "." — "Some(42).\n}" produces parse errors
-	withDot := "package main\n\nfunc main() {\n    val x = Some(42).\n}\n"
+	withDot := "package main\n\nfunc main() {\n    Println(Some(42)).\n}\n"
 	if err := h.DidChange(uri, 1, withDot); err != nil {
 		t.Fatal(err)
 	}
@@ -4706,7 +4706,7 @@ func TestDefinition_MethodDeclNavigation_Repro(t *testing.T) {
 	// defined in a different file than the usage.
 	dir := createTestProject(t, []testProjectFile{
 		{Name: "lib.gala", Src: "package mylib\n\ntype Box[T any] struct {\n    val value T\n}\n\nfunc (b Box[T]) Tail() Box[T] {\n    return b\n}\n\nfunc (b Box[T]) Filter(f func(T) bool) Box[T] {\n    return b\n}\n"},
-		{Name: "main.gala", Src: "package mylib\n\nfunc project(b Box[int]) Box[int] {\n    val t = b.Tail()\n    val f = b.Filter((x) => x > 0)\n    return t\n}\n"},
+		{Name: "main.gala", Src: "package mylib\n\nfunc project(b Box[int]) Box[int] {\n    val t = b.Tail()\n    val f = b.Filter((x) => x > 0)\n    Println(f)\n    return t\n}\n"},
 	})
 	openProjectFile(t, harness, dir, "lib.gala")
 	uri := openProjectFile(t, harness, dir, "main.gala")
