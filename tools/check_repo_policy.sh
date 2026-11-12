@@ -120,6 +120,17 @@ if [[ -z "$bazel_lean" || "$bazel_lean" != "$lake_lean" ]]; then
   fail "Lean versions differ: MODULE.bazel lean.toolchain '$bazel_lean', formal/lean-toolchain '$lake_lean'"
 fi
 
+# The theorems COVERAGE.md calls proved are listed twice: for Lake in
+# formal/scripts/ProofCheck.lean, for Bazel in formal/BUILD.bazel.
+lake_theorems="$(sed -n '/^def requiredTheorems/,/^\]/p' formal/scripts/ProofCheck.lean \
+  | sed -nE 's/^ *`([A-Za-z0-9_.]+),?$/\1/p' | sort)"
+bazel_theorems="$(sed -n '/^REQUIRED_THEOREMS = \[/,/^\]/p' formal/BUILD.bazel \
+  | sed -nE 's/^ *"([A-Za-z0-9_.]+)",?$/\1/p' | sort)"
+if [[ -z "$lake_theorems" || "$lake_theorems" != "$bazel_theorems" ]]; then
+  fail "required theorems differ between formal/scripts/ProofCheck.lean (requiredTheorems) and formal/BUILD.bazel (REQUIRED_THEOREMS):"
+  diff <(echo "$lake_theorems") <(echo "$bazel_theorems") >&2 || true
+fi
+
 # A plain `bazel build //...` must never download Lean (AGENTS.md rule 4).
 # formal/lean.bzl gates every Lean rule behind --config=formal, so the rules
 # are loaded from there and nowhere else.

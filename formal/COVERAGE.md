@@ -89,8 +89,9 @@ version check and the command line, run while the tests compile.
 
 ## What is proved
 
-The proof check (`scripts/ProofCheck.lean`) fails if a theorem listed here is missing;
-keep its `requiredTheorems` in step with this table.
+The proof checks (`scripts/ProofCheck.lean` under Lake, `//formal:proofs` under Bazel)
+fail if a theorem listed here is missing; keep `requiredTheorems` there and
+`REQUIRED_THEOREMS` in `BUILD.bazel` in step with this table.
 
 | Theorem | Statement |
 |---|---|

@@ -15,7 +15,27 @@ bool_flag(
 config_setting(
     name = "lean_enabled",
     flag_values = {":lean": "True"},
+    # For targets outside formal/ that use a Lean target only under the config
+    # (the differential test's data).
+    visibility = ["//internal/formal:__subpackages__"],
 )
+
+# The theorems COVERAGE.md calls proved: the same list as requiredTheorems in
+# scripts/ProofCheck.lean, which tools/check_repo_policy.sh keeps in step.
+REQUIRED_THEOREMS = [
+    "Gala.MatchLowering.compile_correct",
+    "Gala.MatchLowering.program_correct",
+    "Gala.MatchLowering.leaky_not_correct",
+    "Gala.Spec.run_deterministic",
+    "Gala.Spec.eval_deterministic",
+    "Gala.Spec.lookup_bind_self",
+    "Gala.Spec.lookup_bind_other",
+    "Gala.Spec.update_length",
+    "Gala.Spec.exitScope_push",
+    "Gala.Spec.lookup_rename",
+    "Gala.Spec.update_rename",
+    "Gala.Spec.exitScope_rename",
+]
 
 # The modules under Gala/, in dependency order: a module may import only the
 # modules listed before it (in its own list or in a library it depends on).
@@ -69,8 +89,10 @@ lean_library(
     deps = [":galaspec_lib"],
 )
 
-# Fails on sorry and on axioms other than Lean's standard three, in every
-# module under Gala/ (Main included), like scripts/ProofCheck.lean under Lake.
+# Like scripts/ProofCheck.lean under Lake: fails on sorry and on axioms other
+# than Lean's standard three, in every declaration (private ones included) of
+# every module under Gala/ (Main included), and when a theorem COVERAGE.md
+# calls proved is missing.
 lean_proof_test(
     name = "proofs",
     allowed_axioms = [
@@ -78,6 +100,7 @@ lean_proof_test(
         "Quot.sound",
         "Classical.choice",
     ],
+    required_theorems = REQUIRED_THEOREMS,
     deps = [
         ":gala",
         ":galaspec_lib",

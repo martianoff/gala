@@ -1,5 +1,7 @@
 """rules_lean wrappers for formal/: every Lean target builds only under --config=formal.
 
+Libraries also fail on any Lean warning, like `lake build --wfail`.
+
 Without the config the targets are incompatible with the target platform, so
 `bazel build //...` and `bazel test //...` skip them and never download Lean.
 Load the Lean rules from here, never from @rules_lean directly, so no target
@@ -27,6 +29,8 @@ def _gated(rule, kwargs):
     )
 
 def lean_library(**kwargs):
+    # A warning fails the build, as with `lake build --wfail` in CI.
+    kwargs.setdefault("warnings_as_errors", True)
     _gated(_lean_library, kwargs)
 
 def lean_binary(**kwargs):
