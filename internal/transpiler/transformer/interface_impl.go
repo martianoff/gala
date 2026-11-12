@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"go/ast"
+	"maps"
 	"slices"
 	"strings"
 
@@ -56,7 +57,7 @@ func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpil
 	}
 	slotType = t.followAliasChain(slotType)
 	required, ok := t.requiredMethods(slotType)
-	if !ok || len(required) == 0 {
+	if !ok {
 		return nil
 	}
 	valType := t.probeExprType(expr)
@@ -64,7 +65,7 @@ func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpil
 	if !ok {
 		return nil
 	}
-	for _, m := range required {
+	for _, m := range required() {
 		why, hint := t.implMismatch(impl, m)
 		if why == "" {
 			continue
@@ -77,13 +78,26 @@ func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpil
 	return nil
 }
 
-// requiredMethods returns the methods slotType requires when it is an
-// interface whose method signatures are known: `error`, a GALA interface
-// (instantiated with the slot's type arguments), or a Go interface. ok is
-// false for any other type, or an interface the check cannot read.
-func (t *galaASTTransformer) requiredMethods(slotType transpiler.Type) ([]ifaceMethod, bool) {
+// checkPtrAndInterfaceSlot is checkPtrSlot then checkInterfaceSlot, for a
+// value that fills a slot of type typ outside lowerAgainst (a target of a
+// multiple assignment, a tail call's argument).
+func (t *galaASTTransformer) checkPtrAndInterfaceSlot(expr ast.Expr, typ transpiler.Type, at srcNode) error {
+	if err := t.checkPtrSlot(expr, typ, at); err != nil {
+		return err
+	}
+	return t.checkInterfaceSlot(expr, typ, at)
+}
+
+// requiredMethods returns, to be listed once a value is known to need them,
+// the methods slotType requires when it is an interface with methods whose
+// signatures are known: `error`, a GALA interface (instantiated with the
+// slot's type arguments), or a Go interface. ok is false for any other type,
+// or an interface the check cannot read.
+func (t *galaASTTransformer) requiredMethods(slotType transpiler.Type) (func() []ifaceMethod, bool) {
 	if b, ok := slotType.(transpiler.BasicType); ok && b.Name == "error" {
-		return []ifaceMethod{{name: "Error", results: []transpiler.Type{transpiler.BasicType{Name: "string"}}, exact: true}}, true
+		return func() []ifaceMethod {
+			return []ifaceMethod{{name: "Error", results: []transpiler.Type{transpiler.BasicType{Name: "string"}}, exact: true}}
+		}, true
 	}
 	// A GALA type is what its GALA declaration says, though a Go type may
 	// share its key (GALA's `fs.FileInfo` struct beside io/fs's interface).
@@ -94,46 +108,41 @@ func (t *galaASTTransformer) requiredMethods(slotType transpiler.Type) ([]ifaceM
 		if t.goTypeInfo == nil {
 			return nil, false
 		}
-		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(slotType)); td != nil {
-			return goInterfaceMethods(td)
+		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(slotType)); td != nil && td.Kind == "interface" && len(td.TypeParams) == 0 && len(td.Methods) > 0 {
+			return func() []ifaceMethod { return goInterfaceMethods(td) }, true
 		}
-		return nil, false
-	}
-	if !meta.IsInterface {
 		return nil, false
 	}
 	var typeArgs []transpiler.Type
 	if g, ok := slotType.(transpiler.GenericType); ok {
 		typeArgs = g.Params
 	}
-	if len(typeArgs) != len(meta.TypeParams) {
+	if !meta.IsInterface || len(meta.Methods) == 0 || len(typeArgs) != len(meta.TypeParams) {
 		return nil, false
 	}
-	methods := make([]*transpiler.MethodMetadata, 0, len(meta.Methods))
 	for _, m := range meta.Methods {
 		if len(m.TypeParams) > 0 {
 			return nil, false
 		}
-		methods = append(methods, m)
 	}
-	// The first mismatch reported is the first method the interface declares.
-	slices.SortFunc(methods, func(a, b *transpiler.MethodMetadata) int {
-		return cmp.Or(cmp.Compare(a.Pos.Line, b.Pos.Line), cmp.Compare(a.Pos.Column, b.Pos.Column), strings.Compare(a.Name, b.Name))
-	})
-	out := make([]ifaceMethod, len(methods))
-	for i, m := range methods {
-		out[i] = t.instantiateMethod(m, meta.TypeParams, typeArgs)
-	}
-	return out, true
+	return func() []ifaceMethod {
+		methods := slices.Collect(maps.Values(meta.Methods))
+		// The first mismatch reported is the first method the interface declares.
+		slices.SortFunc(methods, func(a, b *transpiler.MethodMetadata) int {
+			return cmp.Or(cmp.Compare(a.Pos.Line, b.Pos.Line), cmp.Compare(a.Pos.Column, b.Pos.Column), strings.Compare(a.Name, b.Name))
+		})
+		out := make([]ifaceMethod, len(methods))
+		for i, m := range methods {
+			out[i] = t.instantiateMethod(m, meta.TypeParams, typeArgs)
+		}
+		return out
+	}, true
 }
 
-// goInterfaceMethods returns the methods of td, a Go type, when it is a
-// non-generic interface, sorted by name. Its method set holds the methods of
-// the interfaces it embeds.
-func goInterfaceMethods(td *transpiler.GoTypeData) ([]ifaceMethod, bool) {
-	if td.Kind != "interface" || len(td.TypeParams) > 0 {
-		return nil, false
-	}
+// goInterfaceMethods returns the methods of td, a non-generic Go interface,
+// sorted by name. Its method set holds the methods of the interfaces it
+// embeds.
+func goInterfaceMethods(td *transpiler.GoTypeData) []ifaceMethod {
 	out := make([]ifaceMethod, 0, len(td.Methods))
 	for name, sig := range td.Methods {
 		m := ifaceMethod{name: name, results: sig.Returns, variadic: sig.IsVariadic, exact: !sig.Inexact && !sig.IsVariadic && len(sig.TypeParams) == 0}
@@ -143,7 +152,7 @@ func goInterfaceMethods(td *transpiler.GoTypeData) ([]ifaceMethod, bool) {
 		out = append(out, m)
 	}
 	slices.SortFunc(out, func(a, b ifaceMethod) int { return strings.Compare(a.name, b.name) })
-	return out, true
+	return out
 }
 
 // instantiateMethod is m's signature with typeParams bound to typeArgs. Its
@@ -217,7 +226,11 @@ func (t *galaASTTransformer) implMismatch(impl implType, want ifaceMethod) (why,
 	signatureHint := "declare " + want.name + " with the interface's exact signature"
 	m := impl.meta.Methods[want.name]
 	if m == nil {
-		if _, inGo := t.goMethodsOnGalaType(impl.meta)[want.name]; inGo || mayBeGeneratedMethod(impl.meta, want.name) {
+		// Without Go type info, methods .go files of the package declare are
+		// not known.
+		_, inGo := t.goMethodsOnGalaType(impl.meta)[want.name]
+		if t.goTypeInfo == nil || inGo ||
+			t.mayBeGeneratedMethod(impl.meta, want.name) || t.declaredOnAlias(impl.meta, want.name) {
 			return "", ""
 		}
 		return "it has no method " + want.name, signatureHint
@@ -249,14 +262,37 @@ func (t *galaASTTransformer) implMismatch(impl implType, want ifaceMethod) (why,
 
 // mayBeGeneratedMethod reports whether name may be a method the transformer
 // generates on meta's type rather than one declared on it: Copy, Equal and
-// Unapply on a struct, String, Copy, Equal and the case predicates on a
-// sealed type, Hash and Compare on an opaque type, Apply on a companion.
-func mayBeGeneratedMethod(meta *transpiler.TypeMetadata, name string) bool {
-	switch name {
-	case "Copy", "Equal", "Unapply", "Apply", "Hash", "Compare":
-		return true
+// Unapply on a struct; Copy, Equal, String and the case predicates
+// (`isCircle`, `IsCircle`) on a sealed type; Hash and Compare on an opaque
+// type.
+func (t *galaASTTransformer) mayBeGeneratedMethod(meta *transpiler.TypeMetadata, name string) bool {
+	switch {
+	case meta.IsOpaque:
+		return t.isSynthesizedOpaqueMethod(meta, name)
+	case meta.IsSealed:
+		if name == "Copy" || name == "Equal" || name == "String" {
+			return true
+		}
+		return slices.ContainsFunc(meta.SealedVariants, func(v transpiler.SealedVariant) bool {
+			return name == "is"+v.Name || name == "Is"+v.Name
+		})
 	}
-	return meta.IsSealed && (name == "String" || strings.HasPrefix(name, "Is") || strings.HasPrefix(name, "is"))
+	return name == "Copy" || name == "Equal" || name == "Unapply"
+}
+
+// declaredOnAlias reports whether a GALA alias of meta's type declares name
+// (`type Coord Point; func (c Coord) Sum() int`): Go sees the alias as the
+// type itself, so the method is the type's.
+func (t *galaASTTransformer) declaredOnAlias(meta *transpiler.TypeMetadata, name string) bool {
+	for alias, target := range t.typeAliases {
+		if t.getTypeMeta(t.followAliasChain(target).BaseName()) != meta {
+			continue
+		}
+		if am := t.getTypeMeta(alias); am != nil && am != meta && am.Methods[name] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // identicalTypeLists reports whether as and bs are pairwise identical types,

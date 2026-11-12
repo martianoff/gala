@@ -229,10 +229,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	if len(lhsExprs) > 1 && len(rhsExprs) == len(lhsExprs) {
 		values := d.rhs.exprs()
 		for i, rhs := range rhsExprs {
-			if err := t.checkPtrSlot(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
-				return nil, err
-			}
-			if err := t.checkInterfaceSlot(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
+			if err := t.checkPtrAndInterfaceSlot(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
 				return nil, err
 			}
 		}

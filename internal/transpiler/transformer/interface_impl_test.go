@@ -129,6 +129,17 @@ func main() = Println(asSpeaker())`,
 			contains: "Mute does not implement Speaker: it has no method Speak",
 		},
 		{
+			name: "missing method named like one generated on other kinds of type",
+			body: `type Ranked interface {
+    Compare(other Mute) int
+}
+
+func rank(r Ranked) {}
+
+func main() = rank(Mute(1))`,
+			contains: "Mute does not implement Ranked: it has no method Compare",
+		},
+		{
 			name: "std collection as Iterable",
 			body: `func main() {
     val it Iterable[int] = ArrayOf(1, 2)
@@ -235,6 +246,17 @@ func (f Fault) Error() string = f.Msg
 
 func (p Point) String() string = "point"
 
+// A method declared on an alias is the aliased type's.
+type Summer interface {
+    Sum() int
+}
+
+type Coord Point
+
+func (c Coord) Sum() int = c.X + c.Y
+
+func sum(s Summer) int = s.Sum()
+
 func size(s Seq[int]) int = s.Size()
 func inc(i Incer) {}
 func area(s Shape) float64 = s.Area()
@@ -254,7 +276,7 @@ func main() {
     var t Shape = Circle(1.0)
     t = s
     Println(size(Box[int](1)), area(Circle(1.0)), eq(Point(1, 2)), show(Point(1, 2)), fail(), asShape().Name(), t.Name())
-    Println(area(Holder(Square(1.0)).s), size(Pair[int](2)), ArrayOf[Shape](Circle(1.0), Square(1.0)), sizeOf(Box[string](0)))
+    Println(area(Holder(Square(1.0)).s), size(Pair[int](2)), sum(Point(1, 2)),ArrayOf[Shape](Circle(1.0), Square(1.0)), sizeOf(Box[string](0)))
 }
 `
 	_, err := newInterfaceImplTranspiler().Transpile(input, "")
