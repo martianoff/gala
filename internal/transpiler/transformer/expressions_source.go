@@ -255,6 +255,8 @@ func (t *galaASTTransformer) lowerPrimaryNative(p native.PrimaryNode) (ast.Expr,
 			return t.lowerLiteral(nativeLiteral(native.LiteralNode{GalaNodeRef: kid}))
 		case native.GalaKIND_compositeLiteral:
 			return t.transformCompositeLiteral(compositeSrc{node: kid})
+		case native.GalaKIND_signature:
+			return t.lowerFuncTypeArgument(native.SignatureNode{GalaNodeRef: kid}, at)
 		case native.GalaKIND_tupleExpressionList:
 			list = kid
 		}

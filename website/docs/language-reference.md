@@ -1244,6 +1244,8 @@ type Box[T any] struct { Value T }
 
 A call that writes only its leading type arguments infers the rest from the arguments — for a generic function, a generic struct constructor and a companion `Apply` alike: `Pair[int64](1, "one")` is a `Pair[int64, string]`. A generic struct construction takes the type parameters its arguments leave undetermined from its expected type — the result type it is returned as, an annotated `val`, a parameter, a field — when that names the same struct, directly or through an alias: with `struct Tag[T any](Name string)`, `func label() Tag[int] = Tag("x")` is a `Tag[int]`. Any type parameter still undetermined is an error naming it.
 
+An explicit type argument may be a function type, as any other type: `collection_mutable.EmptyArray[func() int]()`, `EmptyHashMap[string, func(int, int) int]()`. A function type is no value, so anywhere else in an expression it is an error.
+
 ## 9. Standard Library Types {#9-standard-library-types}
 
 ### Option Monad

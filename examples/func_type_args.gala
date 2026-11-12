@@ -1,0 +1,33 @@
+package main
+
+import (
+    "martianoff/gala/collection_immutable"
+    "martianoff/gala/collection_mutable"
+)
+
+// A function type is written as an explicit type argument as any other type:
+// the call's type arguments may be function types, alone or nested.
+
+func apply[T any](fs collection_immutable.Array[func(T) T], x T) T = fs.FoldLeft(x, (acc, f) => f(acc))
+
+func main() {
+    // A mutable collection of functions.
+    val thunks = collection_mutable.EmptyArray[func() int]()
+    thunks.Append(() => 1)
+    thunks.Append(() => 2)
+    Println(thunks.Map((f) => f()))
+
+    // A function type among several type arguments.
+    val ops = collection_immutable.EmptyHashMap[string, func(int, int) int]()
+        .Put("add", (a, b) => a + b)
+        .Put("mul", (a, b) => a * b)
+    Println(ops.Get("add").Get()(3, 4), ops.Get("mul").Get()(3, 4))
+
+    // A function type with several results, and one nested in Option.
+    val parse = None[func(string) (int, error)]()
+    Println(parse.IsEmpty())
+    val pipeline = collection_immutable.EmptyArray[func(int) int]()
+        .Append((n) => n + 1)
+        .Append((n) => n * 10)
+    Println(apply(pipeline, 4))
+}

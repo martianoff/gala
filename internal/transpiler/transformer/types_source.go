@@ -1,8 +1,10 @@
 package transformer
 
 import (
+	"fmt"
 	"go/ast"
 
+	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 )
@@ -158,9 +160,8 @@ type funcTypeParam struct {
 	variadic bool
 }
 
-// funcSignature is the parameters and results of s, a function type.
-func (s typeSrc) funcSignature() ([]funcTypeParam, []typeSrc) {
-	sig := s.node.Signature()
+// signatureParts is the parameters and results of the signature sig.
+func signatureParts(sig native.SignatureNode) ([]funcTypeParam, []typeSrc) {
 	var params []funcTypeParam
 	for p := range galaparser.NativeKids(sig.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		param := native.ParameterNode{GalaNodeRef: p}
@@ -191,10 +192,30 @@ func (t *galaASTTransformer) noteNativeType(n srcNode) {
 	}
 }
 
-// lowerFuncTypeSignature is the Go function type of s, a function type. A
-// parameter written without a type is a type itself (`func(T) bool`).
+// lowerFuncTypeArgument lowers `func` sig, a function type written where an
+// expression is parsed, at at: an explicit type argument
+// (`EmptyArray[func() int]()`), whose list the grammar reads as expressions.
+// A function type is no value, so anywhere else it is an error.
+func (t *galaASTTransformer) lowerFuncTypeArgument(sig native.SignatureNode, at srcNode) (ast.Expr, error) {
+	if t.typeNameDepth == 0 {
+		r := at.rng()
+		err := galaerr.NewSemanticErrorInFile(t.filePath, r.line, r.col,
+			fmt.Sprintf("function type %s is not a value", at.sourceText()))
+		err.Hint = "write a function type only where a type is expected, such as an explicit type argument (`EmptyArray[func() int]()`); a function value is a lambda, `(x int) => x + 1`"
+		return nil, err
+	}
+	return t.lowerSignatureType(sig)
+}
+
+// lowerFuncTypeSignature is the Go function type of s, a function type.
 func (t *galaASTTransformer) lowerFuncTypeSignature(s typeSrc) (*ast.FuncType, error) {
-	params, resultTypes := s.funcSignature()
+	return t.lowerSignatureType(s.node.Signature())
+}
+
+// lowerSignatureType is the Go function type of the signature sig. A
+// parameter written without a type is a type itself (`func(T) bool`).
+func (t *galaASTTransformer) lowerSignatureType(sig native.SignatureNode) (*ast.FuncType, error) {
+	params, resultTypes := signatureParts(sig)
 	fieldList := &ast.FieldList{}
 	for _, p := range params {
 		field := &ast.Field{}

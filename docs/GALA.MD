@@ -2692,6 +2692,15 @@ val p = Pair[int64](1, "one")   // Pair[int64, string]
 func label() Tag[int] = Tag("x")   // Tag[int]: no field names T
 ```
 
+An explicit type argument may be a function type, as any other type. A function
+type is no value, so anywhere else in an expression it is an error:
+
+```gala
+import "martianoff/gala/collection_mutable"
+
+val thunks = collection_mutable.EmptyArray[func() int]()
+```
+
 ## 9. Standard Library Types
 
 GALA provides several built-in types in the `std` package for common patterns.
