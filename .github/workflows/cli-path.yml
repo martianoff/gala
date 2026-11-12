@@ -261,17 +261,17 @@ jobs:
           # galop, the parser generator GALA's own parser comes from. Its
           # sources use more of the language than the projects above: a
           # field-default regression (#1039) broke its build and no lane
-          # noticed. `gala test` compiles every package that has tests; the
-          # two binaries cover the rest (codegen, cmd/*). GOGC=25 and -p=2
-          # are what galop's own CI uses: its largest packages peak at 7-9 GB
-          # per compile.
+          # noticed. The two binaries import every non-test package, so they
+          # compile all of galop except its tests (~14 min cold). `gala test`
+          # is left to galop's own CI: cold, it adds well over 15 minutes.
+          # GOGC=25 and -p=2 are what galop's own CI uses: its largest
+          # packages peak at 7-9 GB per compile.
           - name: galop
             repo: martianoff/galop
             ref: 1de17cd9e3a55ada7271c443435587bde91db4b1
             commands: |
               build -o galop ./cmd/galop
               build -o galop-sample ./cmd/galop-sample
-              test
             goflags: -p=2
             gogc: "25"
     steps:
