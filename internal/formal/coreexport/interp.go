@@ -30,7 +30,8 @@ func (e *exporter) interpolated(l native.LiteralNode) Node {
 	}
 
 	out := []Node{}
-	for _, p := range interpolation.Split(content) {
+	// s"..." has no format specs: a `%` is literal text (#1042).
+	for _, p := range interpolation.Split(content, false) {
 		if p.IsLiteral {
 			// The run's text is a Go string literal's contents once `$$` is
 			// read as `$`: the transpiler writes it into one.
@@ -53,13 +54,6 @@ func (e *exporter) interpolated(l native.LiteralNode) Node {
 		}
 		sub := &exporter{tree: expr.Tree(), opts: e.opts, bom: e.bom, base: e.base + contentOff + p.Offset}
 		out = append(out, sub.expr(expr.GalaNodeRef))
-		if p.FormatSpec != "" {
-			// The lexical split reads `%d` after `$x` as a format spec, but
-			// only f"..." has format specs: in s"..." it is literal text
-			// (docs/GALA.MD, "String Interpolation"; the transpiler drops
-			// it, #1042).
-			out = append(out, textRun(p.End, p.End+len(p.FormatSpec), p.FormatSpec))
-		}
 	}
 	return of(e, &Interp{Text: text, Parts: out}, l.GalaNodeRef)
 }
