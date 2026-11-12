@@ -194,7 +194,10 @@ import (
 // v40: every anonymous Go struct is a transpiler.StructType, one with an
 // unexported field or a variadic function field included. A v39 payload
 // names such a struct as any.
-const CacheVersion = "v40"
+//
+// v41: a type parameter's constraint is a transpiler.Type, which may carry
+// type arguments (`C Iterable[T, C]`). A v40 payload records it as a name.
+const CacheVersion = "v41"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

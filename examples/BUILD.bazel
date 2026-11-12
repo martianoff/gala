@@ -3978,6 +3978,16 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A type-parameter constraint with type arguments, F-bounded
+# (`[T any, C Seq[T, C]]`): the constraint's methods chain on C across two
+# concrete types, and T is inferred from C's methods.
+gala_exec_test(
+    name = "type_param_constraint_args",
+    src = "type_param_constraint_args.gala",
+    expected = "type_param_constraint_args.out",
+    deps = ["//collection_immutable"],
+)
+
 # Sealed-case widening at function-call argument sites (cross-package
 # dot-import; the gala_team Status shape).  Both positional and
 # named-arg construction must widen to the parent sealed type, the

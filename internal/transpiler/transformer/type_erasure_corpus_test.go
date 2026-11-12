@@ -115,7 +115,15 @@ func sourceRequestsAny(src string) bool {
 		if i := strings.Index(code, "//"); i >= 0 {
 			code = code[:i]
 		}
-		code = typeParamListRE.ReplaceAllStringFunc(code, dropAnyConstraints)
+		// Innermost lists first, then the lists that held them: a constraint
+		// with type arguments nests one (`[T any, C Seq[T, C]]`).
+		for {
+			next := typeParamListRE.ReplaceAllStringFunc(code, dropAnyConstraints)
+			if next == code {
+				break
+			}
+			code = next
+		}
 		for _, f := range strings.FieldsFunc(code, func(r rune) bool {
 			return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
 		}) {
@@ -137,7 +145,8 @@ var typeParamListRE = regexp.MustCompile(`\[[^\[\]]*\]`)
 var anyConstraintRE = regexp.MustCompile(`^\s*[A-Za-z_][A-Za-z0-9_]*\s+any\s*$`)
 
 // dropAnyConstraints removes the `any` constraints from a bracketed list,
-// keeping every other entry.
+// keeping every other entry, and marks the list done with `⟨⟩` so the list
+// around it is innermost on the next pass.
 func dropAnyConstraints(list string) string {
 	entries := strings.Split(list[1:len(list)-1], ",")
 	for i, e := range entries {
@@ -145,7 +154,7 @@ func dropAnyConstraints(list string) string {
 			entries[i] = strings.TrimSuffix(strings.TrimSpace(e), "any")
 		}
 	}
-	return "[" + strings.Join(entries, ",") + "]"
+	return "⟨" + strings.Join(entries, ",") + "⟩"
 }
 
 // findErasedTypes returns the positions in generated Go where a type is `any`

@@ -121,7 +121,10 @@ ELLIPSIS: '...';
 
 typeParameters: '[' typeParameterList ']';
 typeParameterList: typeParameter (',' typeParameter)*;
-typeParameter: identifier identifier; // e.g. [T any]
+// A constraint is any type: a bare name (`T any`, `K comparable`), or a
+// generic interface with type arguments, which may name type parameters of the
+// same list (F-bounded: `[T any, C Iterable[T, C]]`).
+typeParameter: identifier type;
 
 // Block bodies accept optional ';' separators between statements, so
 // Go-style one-liners like `if v < 0 { neg = true; v = -v }` parse.

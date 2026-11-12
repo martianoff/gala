@@ -122,6 +122,37 @@ func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 	return t.unknownMethodError(typeMeta, sel.Sel.Name, recvType, line, col, exact)
 }
 
+// checkTypeParamMethod reports a method call on a receiver of type recvType
+// (resolveReceiverTypeAndLookupKey), when that is a type parameter of the
+// enclosing declaration constrained by `any` or `comparable` (GALA-E0044):
+// such a constraint gives a value no methods, so Go would reject the call
+// against the generated code. A parameter constrained by an interface has
+// that interface's methods (methodReceiverType), and the interface is judged
+// like any other receiver type.
+func (t *galaASTTransformer) checkTypeParamMethod(recvType transpiler.Type, method string, c callSrc) error {
+	if method == "" || len(t.typeParamConstraints) == 0 || recvType == nil {
+		return nil
+	}
+	typ := recvType
+	if p, ok := typ.(transpiler.PointerType); ok {
+		typ = p.Elem
+	}
+	name, constraint, ok := t.constrainedTypeParam(typ)
+	if !ok || transpiler.IsInterfaceConstraint(constraint) {
+		return nil
+	}
+	line, col, exact := callAnchorPos(c)
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeUnknownMethod, line, col,
+		fmt.Sprintf("%s has no method %s: it is a type parameter constrained by %s, which declares no methods", name, method, transpiler.ConstraintString(constraint)),
+		fmt.Sprintf("constrain %s by an interface that declares %s: `[%s Has%s]`, with `type Has%s interface { %s(...) ... }`", name, method, name, method, method, method),
+	)
+	if exact {
+		err = err.WithSpan(col + len([]rune(method)))
+	}
+	return err
+}
+
 // unknownMethodError applies the guards and builds the diagnostic. Shared by
 // the argument-carrying and zero-argument call paths so the two cannot drift.
 //

@@ -184,7 +184,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			}
 			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absSibPath)
 			meta.Doc = nativeDocAt(docs, decl)
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
+			meta.TypeParams, meta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 			if structType := ctx.StructType(); structType.Ok() {
 				for fNode := range galaparser.NativeKids(structType.GalaNodeRef, native.GalaKIND_structField) {
 					a.recordStructFieldNative(meta, native.StructFieldNode{GalaNodeRef: fNode}, pkgName, docs)
@@ -236,7 +236,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			if meta.DefinedIn == "" {
 				meta.DefinedIn = absSibPath
 			}
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
+			meta.TypeParams, meta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 			for _, pctx := range nativeParams(ctx.Parameters()) {
 				a.recordShorthandFieldNative(meta, pctx, pkgName, decls)
 			}
@@ -299,9 +299,12 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 				PtrReceiver:     ptr,
 				DefinedIn:       absSibPath,
 			}
-			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
+			var constraintTexts map[string]string
+			methodMeta.TypeParams, constraintTexts = nativeTypeParamsOf(ctx.TypeParameters())
 			recvNames := nativeReceiverTypeArgNames(recvType)
 			allTypeParams := sm.typeParamScope(richAST, recvNames, methodMeta.TypeParams)
+			// A constraint may name the receiver's type parameters too.
+			methodMeta.TypeParamConstraints = a.resolveConstraints(allTypeParams, constraintTexts, pkgName)
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
 			// Mirror collectFileFuncsNative's IsGeneric detection so that
 			// sibling-extracted methods carry the same function-form flag as

@@ -192,6 +192,36 @@ func main() {
 
 See also: [Language Reference - Generics](/docs/language-reference/#8-generics)
 
+## Type-Parameter Constraints Example
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+    Show() string
+}
+
+struct Nums(xs Array[int])
+
+func (s Nums) Rest() Nums = Nums(s.xs.Tail())
+func (s Nums) Keep(p func(int) bool) Nums = Nums(s.xs.Filter(p))
+func (s Nums) Show() string = s.xs.MkString(", ")
+
+// C is constrained by an interface of itself: Rest and Keep return a C.
+func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+
+func main() {
+    // C = Nums from the argument, T = int from Nums.Keep.
+    Println(dropFirstKeep(Nums(ArrayOf(1, 2, 3, 4)), (x) => x > 2).Show())   // 3, 4
+}
+```
+
+See also: [Language Reference - Type-parameter constraints](/docs/language-reference/#type-parameter-constraints)
+
 ## Function Types as Type Arguments Example
 
 ```gala

@@ -1672,7 +1672,8 @@ func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName, definedIn st
 	typeName := decl.name
 	fullTypeName := qualifiedName(pkgName, typeName)
 
-	typeParams, typeParamConstraints := decl.typeParams, decl.typeParamConstraints
+	typeParams := decl.typeParams
+	typeParamConstraints := a.resolveConstraints(typeParams, decl.typeParamConstraints, pkgName)
 
 	// Process each case to collect fields (two passes: collect, then resolve conflicts)
 	var variants []sealedCase

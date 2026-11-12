@@ -15,7 +15,7 @@ func TestFormatTypeMetaOpaqueGeneric(t *testing.T) {
 		TypeParams: []string{"T"},
 		Underlying: transpiler.BasicType{Name: "int64"},
 	})
-	for _, want := range []string{"opaque type Id[T] int64", "`Compare(other Id[T]) int` *(synthesized)*"} {
+	for _, want := range []string{"opaque type Id[T any] int64", "`Compare(other Id[T]) int` *(synthesized)*"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q\n--- got ---\n%s", want, got)
 		}

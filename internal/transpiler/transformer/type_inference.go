@@ -989,6 +989,7 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyForInference(paramType, argType, fMeta.TypeParams, inferredMap)
 	}
+	t.inferFromConstraints(fMeta.TypeParams, fMeta.TypeParamConstraints, inferredMap)
 	return inferredMap
 }
 

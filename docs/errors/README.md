@@ -116,6 +116,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0101` | Error return discarded in a void lambda | [GALA-E0101.md](GALA-E0101.md) |
 | `GALA-E0102` | Unused local val or var | [GALA-E0102.md](GALA-E0102.md) |
 | `GALA-E0103` | Function type used as a value | [GALA-E0103.md](GALA-E0103.md) |
+| `GALA-E0104` | Type parameter only a constraint determines cannot be inferred | [GALA-E0104.md](GALA-E0104.md) |
 
 ### Retired codes
 

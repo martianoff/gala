@@ -479,69 +479,33 @@ func (t *galaASTTransformer) isAnyType(typeExpr ast.Expr) bool {
 	return false
 }
 
+// extractTypeParams is the type parameters the receiver type typ declares
+// (`Box[T]`, `*Pair[A, B]`), each with the constraint its type declares for
+// it, named as the receiver names the parameters (constrainReceiverTypeParams).
 func (t *galaASTTransformer) extractTypeParams(typ ast.Expr) []*ast.Field {
-	var params []*ast.Field
+	var args []ast.Expr
 	switch e := typ.(type) {
 	case *ast.StarExpr:
 		// Handle pointer types like *Array[T] - recurse into the base type
 		return t.extractTypeParams(e.X)
 	case *ast.IndexExpr:
-		if id, ok := e.Index.(*ast.Ident); ok {
-			constraint := t.getTypeParamConstraint(e.X, id.Name, 0)
-			params = append(params, &ast.Field{
-				Names: []*ast.Ident{id},
-				Type:  ast.NewIdent(constraint),
-			})
-		}
+		args = []ast.Expr{e.Index}
 	case *ast.IndexListExpr:
-		for i, index := range e.Indices {
-			if id, ok := index.(*ast.Ident); ok {
-				constraint := t.getTypeParamConstraint(e.X, id.Name, i)
-				params = append(params, &ast.Field{
-					Names: []*ast.Ident{id},
-					Type:  ast.NewIdent(constraint),
-				})
-			}
+		args = e.Indices
+	}
+	var params []*ast.Field
+	for _, arg := range args {
+		id, ok := arg.(*ast.Ident)
+		if !ok {
+			continue
 		}
+		constraint := ast.Expr(ast.NewIdent("any"))
+		if c, ok := t.typeParamConstraints[id.Name]; ok {
+			constraint = t.typeToExpr(c)
+		}
+		params = append(params, &ast.Field{Names: []*ast.Ident{id}, Type: constraint})
 	}
 	return params
-}
-
-// getTypeParamConstraint looks up the constraint for a type parameter from the type's metadata.
-// baseType is the type expression (e.g., the "Container" in "Container[T]")
-// paramName is the name of the type parameter (e.g., "T")
-// paramIndex is the position of the type parameter (used when paramName doesn't match)
-func (t *galaASTTransformer) getTypeParamConstraint(baseType ast.Expr, paramName string, paramIndex int) string {
-	typeName := ""
-	switch bt := baseType.(type) {
-	case *ast.Ident:
-		typeName = bt.Name
-	case *ast.SelectorExpr:
-		if id, ok := bt.X.(*ast.Ident); ok {
-			typeName = id.Name + "." + bt.Sel.Name
-		}
-	}
-
-	if typeName == "" {
-		return "any"
-	}
-
-	// Use unified resolution to find the type in metadata
-	if meta := t.getTypeMeta(typeName); meta != nil {
-		// First try to match by parameter name
-		if constraint, ok := meta.TypeParamConstraints[paramName]; ok {
-			return constraint
-		}
-		// If no match by name, try by index
-		if paramIndex < len(meta.TypeParams) {
-			tpName := meta.TypeParams[paramIndex]
-			if constraint, ok := meta.TypeParamConstraints[tpName]; ok {
-				return constraint
-			}
-		}
-	}
-
-	return "any"
 }
 
 func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.Type {

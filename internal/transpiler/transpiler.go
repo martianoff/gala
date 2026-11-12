@@ -445,7 +445,7 @@ type TypeMetadata struct {
 	// alone cannot tell them apart.
 	IsInterface          bool
 	TypeParams           []string
-	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
+	TypeParamConstraints map[string]Type // TypeParam name -> constraint (e.g., "T" -> comparable); see ConstraintIs
 	ImmutFlags           []bool
 	// StoredAsDeclared marks, by position, the shorthand fields declared
 	// without a keyword as Immutable[T] or an alias of it. Such a field is
@@ -754,8 +754,10 @@ type MethodMetadata struct {
 	// its GALA value (Try/Tuple).
 	GoResults []Type
 	// TypeParamConstraints maps a type parameter to the constraint it is
-	// declared with (`B Bumper`), named in the declaring package.
-	TypeParamConstraints map[string]string
+	// declared with: a bare name (`B Bumper`, `K comparable`) or a generic
+	// interface with type arguments (`C Iterable[T, C]`), resolved in the
+	// declaring package.
+	TypeParamConstraints map[string]Type
 }
 
 type FunctionMetadata struct {
@@ -775,7 +777,7 @@ type FunctionMetadata struct {
 	// MethodMetadata.GoResults); ReturnType holds a call's GALA value.
 	GoResults []Type
 	// TypeParamConstraints is MethodMetadata.TypeParamConstraints.
-	TypeParamConstraints map[string]string
+	TypeParamConstraints map[string]Type
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

@@ -2715,6 +2715,56 @@ import "martianoff/gala/collection_mutable"
 val thunks = collection_mutable.EmptyArray[func() int]()
 ```
 
+### Type-parameter constraints
+
+Every type parameter has a constraint, written after its name. The constraint
+is a type: `any`, `comparable`, an interface, or a generic interface with type
+arguments. The type arguments may name parameters of the same list, so a
+parameter can be constrained by an interface of itself (an F-bounded
+constraint):
+
+```gala
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+}
+
+func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+
+func evens[C Seq[int, C]](xs C) C = xs.Rest().Keep((x) => x % 2 == 0)
+```
+
+A value of a type parameter has the methods of its constraint, with the
+constraint's type arguments in place: in `dropFirstKeep`, `xs.Rest()` is a `C`,
+so the calls chain and the caller gets its own type back. A type that
+implements `Seq[int, Nums]` with `Nums` itself can be passed:
+
+```gala
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+}
+
+func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+
+struct Nums(xs Array[int])
+
+func (s Nums) Rest() Nums = Nums(s.xs.Tail())
+func (s Nums) Keep(p func(int) bool) Nums = Nums(s.xs.Filter(p))
+
+val kept = dropFirstKeep(Nums(ArrayOf(1, 2, 3)), (x) => x > 1)   // a Nums
+```
+
+`any` and `comparable` give a value no methods. Calling a method on a value of
+a parameter constrained by them is an error (GALA-E0044); constrain the
+parameter by an interface that declares the method instead. On a parameter
+constrained by `comparable`, `==` compares as described in
+[Equality: `==` and `!=`](#equality--and-).
+
+A type argument must implement its constraint, instantiated with the call's
+type arguments; one that does not is GALA-E0100. The constraint is emitted to
+Go as written.
+
 ## 9. Standard Library Types
 
 GALA provides several built-in types in the `std` package for common patterns.

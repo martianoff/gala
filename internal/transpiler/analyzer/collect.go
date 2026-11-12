@@ -199,7 +199,7 @@ func genericInterfaceMethodError(line, col int, iface *transpiler.TypeMetadata, 
 		}
 	}
 	for _, tp := range iface.TypeParams {
-		add(tp, iface.TypeParamConstraints[tp])
+		add(tp, transpiler.ConstraintString(iface.TypeParamConstraints[tp]))
 	}
 	for _, tp := range methodTPs {
 		add(tp, methodCons[tp])

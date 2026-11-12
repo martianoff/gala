@@ -1254,6 +1254,23 @@ A call that writes only its leading type arguments infers the rest from the argu
 
 An explicit type argument may be a function type, as any other type: `collection_mutable.EmptyArray[func() int]()`, `EmptyHashMap[string, func(int, int) int]()`. A function type is no value, so anywhere else in an expression it is an error.
 
+### Type-parameter constraints {#type-parameter-constraints}
+
+Every type parameter has a constraint: `any`, `comparable`, an interface, or a generic interface with type arguments. The type arguments may name parameters of the same list, so a parameter can be constrained by an interface of itself (F-bounded):
+
+```gala
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+}
+
+func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+```
+
+A value of a type parameter has the methods of its constraint, with the constraint's type arguments in place: `xs.Rest()` is a `C`, so calls chain and the caller gets its own type back. A call infers `T` from the methods of `C`'s type argument, as Go does: for a `Nums` whose `Keep` takes a `func(int) bool`, `dropFirstKeep(nums, (x) => x > 1)` binds `C = Nums` and `T = int`. When nothing determines such a parameter and a lambda needs it, the call is [GALA-E0104](/docs/errors/gala-e0104/).
+
+`any` and `comparable` give a value no methods; calling one is [GALA-E0044](/docs/errors/gala-e0044/). A type argument must implement its constraint, instantiated with the call's type arguments ([GALA-E0100](/docs/errors/gala-e0100/)). The constraint is emitted to Go as written.
+
 ## 9. Standard Library Types {#9-standard-library-types}
 
 ### Option Monad

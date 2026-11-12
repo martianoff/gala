@@ -307,8 +307,8 @@ func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral, line i
 	var recvArgs []ast.Expr
 	for _, tp := range meta.TypeParams {
 		constraint := ast.Expr(ast.NewIdent("any"))
-		if c := meta.TypeParamConstraints[tp]; c != "" {
-			constraint = t.typeToExpr(t.inPackage(transpiler.ParseType(c), meta))
+		if c := meta.TypeParamConstraints[tp]; c != nil {
+			constraint = t.typeToExpr(t.inPackage(c, meta))
 		}
 		typeParams.List = append(typeParams.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(tp)}, Type: constraint})
 		recvArgs = append(recvArgs, ast.NewIdent(tp))

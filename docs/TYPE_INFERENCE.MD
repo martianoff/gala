@@ -24,10 +24,11 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 9. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
 10. [Opaque Types](#opaque-types)
 11. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-12. [Alternative Patterns](#alternative-patterns)
-13. [Go Type Inference](#go-type-inference)
-14. [Limitations and Edge Cases](#limitations-and-edge-cases)
-15. [Key Files](#key-files)
+12. [Type-Parameter Constraints](#type-parameter-constraints)
+13. [Alternative Patterns](#alternative-patterns)
+14. [Go Type Inference](#go-type-inference)
+15. [Limitations and Edge Cases](#limitations-and-edge-cases)
+16. [Key Files](#key-files)
 
 ---
 
@@ -851,6 +852,55 @@ sealed-case constructors.
 |------|------|
 | `transformer/type_inference.go::injectFuncPhantomTypeArgs` | Fills phantom function type params from args + the slot type; wraps the target in explicit type args when all resolve, reports GALA-E0067 when a phantom one does not |
 | `transformer/calls.go::transformCallWithArgsCtx` | Invokes the fill just before the verbatim-call fallback, passing the consumed call-site hint |
+
+---
+
+## Type-Parameter Constraints
+
+A constraint is a type, recorded in the metadata as one
+(`TypeParamConstraints map[string]transpiler.Type`), resolved in the declaring
+package. Its type arguments may name parameters of the same list
+(`[T any, C Seq[T, C]]`); they stay type parameters.
+
+### Methods of a type parameter
+
+A value whose type is a type parameter with an interface constraint has the
+constraint's methods. Method lookup (`methodReceiverType`) replaces the
+parameter with its constraint, type arguments included, so `xs.Rest()` on
+`xs C` with `C Seq[T, C]` is typed by `Seq`'s `Rest() C`, with `Seq`'s own
+parameters substituted by `T` and `C`. The result is `C`, so a chain keeps
+the type, and a lambda passed to `Keep(p func(T) bool)` is typed `func(T) bool`.
+
+A parameter constrained by `any` or `comparable` has no methods: calling one is
+[GALA-E0044](errors/GALA-E0044.md).
+
+### Inferring a parameter from a constraint
+
+`f(nums)` for `func f[T any, C Seq[T, C]](xs C)` binds `C` from the argument;
+nothing binds `T` directly. As Go does, inference (`inferFromConstraints`)
+then unifies each method the constraint requires with the same method of
+`C`'s type argument: `Keep(p func(T) bool) C` against
+`Keep(p func(int) bool) Nums` binds `T = int`. It repeats until nothing new is
+bound, and runs both before the lambda arguments are lowered (so their
+parameters are typed) and when the call's result type is computed, and binds a
+generic struct's type arguments at a construction (`Box(nums)` for
+`struct Box[T any, C Seq[T, C]](inner C)`).
+
+When a lambda argument needs a parameter that only a constraint mentions and
+the methods of the bound type argument do not determine it (no method
+mentions it, or the type has no GALA metadata), the call is
+[GALA-E0104](errors/GALA-E0104.md), with the type arguments to write. With the
+call's type arguments known, each one must implement its constraint,
+instantiated with them; one that does not is
+[GALA-E0100](errors/GALA-E0100.md).
+
+### Pointers
+
+| File | Role |
+|------|------|
+| `analyzer/collect_native.go::resolveConstraints` | Resolves a declaration's constraint texts to types |
+| `transformer/type_params.go::typeParamConstraint` | The constraint whose methods a type parameter's value has |
+| `transformer/constraint_inference.go` | Inference from constraints, GALA-E0100 on type arguments, GALA-E0104 |
 
 ---
 

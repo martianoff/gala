@@ -1,0 +1,54 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A type-parameter constraint is any type: here a generic interface whose
+// type arguments name the list's own parameters (F-bounded). C is the
+// concrete collection type, so Rest and Keep return a C, not a Seq, and the
+// calls chain without losing it.
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+    Show() string
+}
+
+struct Nums(xs Array[int])
+
+func (s Nums) Rest() Nums = Nums(s.xs.Tail())
+func (s Nums) Keep(p func(int) bool) Nums = Nums(s.xs.Filter(p))
+func (s Nums) Show() string = s"Nums(${s.xs.MkString(", ")})"
+
+struct Words(xs List[string])
+
+func (w Words) Rest() Words = Words(w.xs.Tail())
+func (w Words) Keep(p func(string) bool) Words = Words(w.xs.Filter(p))
+func (w Words) Show() string = s"Words(${w.xs.MkString(" ")})"
+
+// T is inferred from the methods of C's type argument: Nums.Keep takes a
+// func(int) bool, so T is int.
+func dropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+
+// A constraint may fix some of the interface's type arguments.
+func evens[C Seq[int, C]](xs C) C = xs.Rest().Keep((x) => x % 2 == 0)
+
+// A val of a constraint method's result is a C, so it keeps the caller's
+// concrete type (the val is deliberate: it is what this checks).
+func twice[T any, C Seq[T, C]](xs C) C {
+    val once = xs.Rest()
+    once.Rest()
+}
+
+// Bare-name constraints keep working beside the new form.
+func same[K comparable](a K, b K) bool = a == b
+
+func main() {
+    val nums = Nums(ArrayOf(1, 2, 3, 4, 5, 6))
+    val words = Words(ListOf("a", "bb", "ccc", "dddd"))
+
+    Println(dropFirstKeep(nums, (x) => x > 2).Show())
+    Println(dropFirstKeep(words, (w) => w.Size() > 2).Show())
+    Println(evens(nums).Show())
+    Println(twice(words).Show())
+    Println(twice(nums).Rest().Show())
+    Println(same("a", "a"))
+}

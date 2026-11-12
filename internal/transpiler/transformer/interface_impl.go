@@ -260,13 +260,23 @@ func (t *galaASTTransformer) implMismatch(impl implType, want ifaceMethod) (why,
 	if !have.exact {
 		return "", ""
 	}
-	if same, known := t.identicalTypeLists(have.params, want.params); known && (!same || have.variadic != want.variadic) {
-		return fmt.Sprintf("method %s takes (%s), not (%s)", want.name, spellParams(have), spellParams(want)), signatureHint
-	}
-	if same, known := t.identicalTypeLists(have.results, want.results); known && !same {
-		return fmt.Sprintf("method %s returns %s, not %s", want.name, spellResults(have.results), spellResults(want.results)), signatureHint
+	if why := t.signatureMismatch(have, want); why != "" {
+		return why, signatureHint
 	}
 	return "", ""
+}
+
+// signatureMismatch says how the signature of have, a method, differs from
+// want, the one an interface declares: "" when they are identical or that
+// cannot be told.
+func (t *galaASTTransformer) signatureMismatch(have, want ifaceMethod) string {
+	if same, known := t.identicalTypeLists(have.params, want.params); known && (!same || have.variadic != want.variadic) {
+		return fmt.Sprintf("method %s takes (%s), not (%s)", want.name, spellParams(have), spellParams(want))
+	}
+	if same, known := t.identicalTypeLists(have.results, want.results); known && !same {
+		return fmt.Sprintf("method %s returns %s, not %s", want.name, spellResults(have.results), spellResults(want.results))
+	}
+	return ""
 }
 
 // mayBeGeneratedMethod reports whether name may be a method the transformer

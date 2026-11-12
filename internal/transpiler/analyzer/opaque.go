@@ -33,7 +33,7 @@ func (a *galaAnalyzer) registerOpaqueType(decl opaqueDecl, pkgName, definedIn st
 	meta.Doc = decl.doc
 	meta.DefinedIn = definedIn
 	meta.IsOpaque = true
-	meta.TypeParams, meta.TypeParamConstraints = decl.typeParams, decl.typeParamConstraints
+	meta.TypeParams, meta.TypeParamConstraints = decl.typeParams, a.resolveConstraints(decl.typeParams, decl.typeParamConstraints, pkgName)
 	if decl.underlying != "" {
 		meta.Underlying = a.resolveTypeWithParams(decl.underlying, pkgName, meta.TypeParams)
 	}

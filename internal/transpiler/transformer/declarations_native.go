@@ -47,7 +47,7 @@ func nativeTypeParams(tps native.TypeParametersNode) []typeParam {
 	var params []typeParam
 	for n := range galaparser.NativeKids(tps.TypeParameterList().GalaNodeRef, native.GalaKIND_typeParameter) {
 		tp := native.TypeParameterNode{GalaNodeRef: n}
-		params = append(params, typeParam{name: tp.Identifier(0).GetText(), constraint: tp.Identifier(1).GetText()})
+		params = append(params, typeParam{name: tp.Identifier().GetText(), constraint: nativeType(tp.Type_())})
 	}
 	return params
 }

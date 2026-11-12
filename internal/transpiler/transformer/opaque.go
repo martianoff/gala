@@ -383,7 +383,10 @@ func (t *galaASTTransformer) lowerOpaqueDecl(d opaqueDecl) ([]ast.Decl, error) {
 
 	var tParams *ast.FieldList
 	if len(d.typeParams) > 0 {
-		tParams = lowerTypeParams(d.typeParams)
+		var err error
+		if tParams, err = t.lowerTypeParams(d.typeParams); err != nil {
+			return nil, err
+		}
 		defer t.bindTypeParams(tParams.List...)()
 	}
 

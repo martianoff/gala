@@ -49,15 +49,22 @@ func (t *galaASTTransformer) declareLocalType(d typeDecl) *transpiler.TypeMetada
 	}
 	for _, p := range d.typeParams {
 		meta.TypeParams = append(meta.TypeParams, p.name)
-		if p.constraint != "" {
-			if meta.TypeParamConstraints == nil {
-				meta.TypeParamConstraints = map[string]string{}
-			}
-			meta.TypeParamConstraints[p.name] = p.constraint
-		}
 	}
 	t.typeMetas[d.name] = meta
 	return meta
+}
+
+// constrainLocalType records in meta, a local struct's metadata, the
+// constraints of its type parameters, once they are bound (bindTypeParams).
+func (t *galaASTTransformer) constrainLocalType(meta *transpiler.TypeMetadata) {
+	for _, p := range meta.TypeParams {
+		if c, ok := t.typeParamConstraints[p]; ok {
+			if meta.TypeParamConstraints == nil {
+				meta.TypeParamConstraints = map[string]transpiler.Type{}
+			}
+			meta.TypeParamConstraints[p] = c
+		}
+	}
 }
 
 // scopeLocalTypeName clears the transformer's bare-name entries for name, and

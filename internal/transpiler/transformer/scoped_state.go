@@ -181,7 +181,7 @@ var accumulatedStateFields = []string{
 type scopedStateSnapshot struct {
 	currentScope         *scope
 	activeTypeParams     map[string]bool
-	typeParamConstraints map[string]string
+	typeParamConstraints map[string]transpiler.Type
 	returnSlot           returnSlot
 	argDepth             int
 }
