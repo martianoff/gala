@@ -4956,3 +4956,10 @@ gala_exec_test(
     expected = "match_sibling_order.out",
     deps = ["//collection_immutable"],
 )
+
+gala_exec_test(
+    name = "try_gala_error_call",
+    src = "try_gala_error_call.gala",
+    expected = "try_gala_error_call.out",
+    deps = ["//collection_immutable"],
+)

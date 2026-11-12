@@ -216,7 +216,7 @@ type Void struct {}
 
 // FromError converts a Go error return into a Try[Void].
 // Returns Success[Void] if err is nil, Failure[Void] otherwise.
-// `Try(goCall())` over a Go call returning only an error means the same.
+// `Try(call())` over a call returning only an error, Go or GALA, means the same.
 //
 // A Go call returning (T, error) needs no conversion: used as a value it
 // already is a Try[T].

@@ -2784,7 +2784,11 @@ Go function such as `fmt.Println`, the GALA value is what is passed:
 A Go function that returns only an `error` gives you that error as a value;
 wrap the call in `Try(...)` to treat a non-nil error as a failure:
 `Try(os.Remove(path))` is a `Try[Void]`. `FromError(os.Remove(path))` means the
-same.
+same. A GALA function returning `error` works the same way inside `Try(...)`:
+`Try(validate(x))` and `Try(() => validate(x))` are each a `Try[Void]` that
+fails when the error is non-nil. So is a reference to a function that takes
+nothing and returns only an `error`: `Try(flush)` and `Try(file.Close)` mean
+`Try(() => flush())` and `Try(() => file.Close())`.
 
 `Try(goCall())` is the call's own Try — the conversion is not applied twice —
 so `Try(strconv.Atoi(s))`, `Try(() => strconv.Atoi(s))` and `strconv.Atoi(s)`

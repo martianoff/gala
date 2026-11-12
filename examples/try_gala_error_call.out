@@ -1,0 +1,22 @@
+Failure(boom)
+Success
+Failure(negative: -1)
+Success
+Failure(close db)
+Failure(send 42 on db)
+Failure(boom)
+Failure(negative: -4)
+Failure(boom)
+Success
+Failure(close cache)
+Failure(close pooled)
+true
+Success
+Failure(negative: -2)
+Success
+true
+boom
+failed: negative: -3
+Success(plain)
+Success(boom)
+Success(first)

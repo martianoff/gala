@@ -2003,7 +2003,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
-		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, argIdx)
+		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, argIdx) && !thunkReturnsError(expectedType)
 		expr, aerr := t.lowerFunctionArg(v, expectedType, callCtx, tryThunk)
 		if aerr != nil {
 			return nil, nil, false, aerr
@@ -4717,8 +4717,10 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 // the sugar does not apply, including when the thunk's result type cannot be
 // determined (so the normal type error surfaces instead of masking it).
 //
-// tryThunk marks the thunk of Try(...): a Go call there runs with its error
-// turned into the panic Try catches (see tryThunkValue).
+// tryThunk marks the thunk of Try(...): a call there runs with its error
+// turned into the panic Try catches (see tryThunkValue). The one function
+// value that is wrapped is Try(f) with f returning only an `error`, which
+// means Try(() => f()) (see errorFuncThunk).
 func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type, tryThunk bool) (ast.Expr, bool) {
 	if expr == nil || expectedType == nil || expectedType.IsNil() {
 		return expr, false
@@ -4729,11 +4731,17 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
-	// Already a function value: pass through untouched. This preserves the
-	// pre-sugar behavior of handing an existing thunk (a `func() T` value or a
-	// method/eta reference) directly to the parameter, and guarantees we never
-	// re-wrap a valid program.
+	// Already a function value: pass through untouched, handing an existing
+	// thunk (a `func() T` value or a method/eta reference) directly to the
+	// parameter — except Try(f) over a function returning only an error.
 	exprType := t.getExprTypeName(expr)
+	// Try(f) with f returning only an `error` means Try(() => f()): the error
+	// is the Failure, as it is for the call (see tryThunkValue).
+	if tryThunk {
+		if thunk, ok := t.errorFuncThunk(expr, exprType); ok {
+			return thunk, true
+		}
+	}
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
 		return expr, false
 	}
