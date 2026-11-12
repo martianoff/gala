@@ -1,0 +1,27 @@
+package main
+
+// In s"...", a `%` is literal text: format specs exist only in f"...".
+// An escape that stands for `%` (`\x25`, `\045`, `%`) is a literal
+// `%` in both.
+
+func main() {
+    val n = 7
+    val name = "go"
+
+    // A % right after an embedded expression stays in the text.
+    Println(s"$n%done")
+    Println(s"${n}%x")
+    Println(s"$name%s and $n%d")
+    Println(s"$n%")
+    Println(s"100% of $n")
+
+    // An escape for % is a literal %, not a format verb.
+    Println(s"a $n \x25d")
+    Println(s"a $n \045d %s")
+    Println(s"no exprs \x25d")
+    Println(f"$n%03d \x25d")
+
+    // f"..." keeps its format specs.
+    Println(f"$n%03d done")
+    Println(f"${n * 2}%x")
+}

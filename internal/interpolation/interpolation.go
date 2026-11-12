@@ -53,9 +53,10 @@ type Part struct {
 
 // Split parses the CONTENT of an interpolated/format string — i.e. the text
 // between the opening `s"`/`f"` and the closing `"` — into ordered parts.
-// Handles `$identifier`, `${expression}`, and `$$` (literal `$`); for format
-// strings it also captures a `%spec` following an embedded expression.
-func Split(content string) []Part {
+// Handles `$identifier`, `${expression}`, and `$$` (literal `$`). With
+// formatSpecs, for an `f"..."` string, it also captures a `%spec` following
+// an embedded expression; in an `s"..."` string a `%` is literal text.
+func Split(content string, formatSpecs bool) []Part {
 	var parts []Part
 	var literal strings.Builder
 	i := 0
@@ -119,7 +120,7 @@ func Split(content string) []Part {
 			end := j
 
 			fmtSpec := ""
-			if j < len(content) && content[j] == '%' {
+			if formatSpecs && j < len(content) && content[j] == '%' {
 				fmtSpec, j = extractFormatSpec(content, j)
 			}
 
@@ -146,7 +147,7 @@ func Split(content string) []Part {
 			end := j
 
 			fmtSpec := ""
-			if j < len(content) && content[j] == '%' {
+			if formatSpecs && j < len(content) && content[j] == '%' {
 				fmtSpec, j = extractFormatSpec(content, j)
 			}
 

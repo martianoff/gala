@@ -2666,6 +2666,13 @@ gala_exec_test(
     expected = "string_interpolation.out",
 )
 
+# A % in s"..." is literal text, and an escape for % is never a format verb
+gala_exec_test(
+    name = "interpolation_percent",
+    src = "interpolation_percent.gala",
+    expected = "interpolation_percent.out",
+)
+
 # FIX-GS-003 verification: struct lambda parameter type inference
 gala_exec_test(
     name = "struct_lambda_inference",

@@ -269,7 +269,7 @@ func (w *Walker) WalkInterpolatedParts(lit Site, walkPart func(part string)) {
 
 	// Strip the `s"`/`f"` prefix and the closing `"`, matching the transformer.
 	content := raw[2 : len(raw)-1]
-	for _, part := range interpolation.Split(content) {
+	for _, part := range interpolation.Split(content, raw[0] == 'f') {
 		if !part.IsLiteral {
 			walkPart(part.Text)
 		}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"go/ast"
 	"go/token"
+	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -75,7 +76,7 @@ func (t *galaASTTransformer) isBuiltinPrint(base ast.Expr) bool {
 func (t *galaASTTransformer) transformInterpolatedString(tok litTok) (ast.Expr, error) {
 	// Strip s" prefix and " suffix
 	content := tok.text[2 : len(tok.text)-1]
-	parts := interpolation.Split(content)
+	parts := interpolation.Split(content, false)
 	line, col := interpContentOrigin(tok)
 	return t.buildSprintfCall(parts, false, content, line, col)
 }
@@ -85,7 +86,7 @@ func (t *galaASTTransformer) transformInterpolatedString(tok litTok) (ast.Expr, 
 func (t *galaASTTransformer) transformFormatString(tok litTok) (ast.Expr, error) {
 	// Strip f" prefix and " suffix
 	content := tok.text[2 : len(tok.text)-1]
-	parts := interpolation.Split(content)
+	parts := interpolation.Split(content, true)
 	line, col := interpContentOrigin(tok)
 	return t.buildSprintfCall(parts, true, content, line, col)
 }
@@ -135,14 +136,19 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 		return &ast.BasicLit{Kind: token.STRING, Value: `"` + sb.String() + `"`}, nil
 	}
 
-	// Build format string and argument list
+	// Build the format string, decoded, and the argument list. A literal
+	// run's escapes are decoded before its `%`s are doubled, so an escape
+	// that stands for `%` (`\x25`, `\045`, `%`) is text, not a verb.
 	var formatBuf strings.Builder
 	var args []ast.Expr
 
 	for _, p := range parts {
 		if p.IsLiteral {
-			// Escape any % in literal text for Sprintf
-			formatBuf.WriteString(strings.ReplaceAll(p.Text, "%", "%%"))
+			text, err := decodeEscapes(p.Text)
+			if err != nil {
+				return nil, err
+			}
+			formatBuf.WriteString(strings.ReplaceAll(text, "%", "%%"))
 			continue
 		}
 
@@ -182,7 +188,7 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 	allArgs := make([]ast.Expr, 0, 1+len(args))
 	allArgs = append(allArgs, &ast.BasicLit{
 		Kind:  token.STRING,
-		Value: `"` + formatBuf.String() + `"`,
+		Value: strconv.Quote(formatBuf.String()),
 	})
 	allArgs = append(allArgs, args...)
 

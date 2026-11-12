@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
@@ -73,6 +74,27 @@ func escapeLength(text string, i int, q escapeQuote) (int, bool) {
 		return 0, false
 	}
 	return len(text) - i - len(tail), true
+}
+
+// decodeEscapes is the text of a string literal's body as written, text, with
+// its escapes decoded as Go decodes them: `a\x25d` is `a%d`. The escapes
+// were validated before (checkLiteralEscapes), so an error is not expected.
+func decodeEscapes(text string) (string, error) {
+	var b strings.Builder
+	for text != "" {
+		r, multibyte, tail, err := strconv.UnquoteChar(text, '"')
+		if err != nil {
+			return "", err
+		}
+		if r < utf8.RuneSelf || !multibyte {
+			// A byte escape (`\xff`, `\377`) is that byte, not a rune.
+			b.WriteByte(byte(r))
+		} else {
+			b.WriteRune(r)
+		}
+		text = tail
+	}
+	return b.String(), nil
 }
 
 // explainEscape describes the escape sequence at text[i], which escapeLength
