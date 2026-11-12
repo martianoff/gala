@@ -1,0 +1,79 @@
+package main
+
+// A default value is evaluated in the callee's scope, left to right, with the
+// earlier parameters bound. The caller's locals are never visible to it.
+
+val prefix = "hi"
+
+val defaultPort = 80
+
+var calls = 0
+
+func next() int {
+    calls = calls + 1
+    calls
+}
+
+func scale(a int, b int = a * 2) int = a + b
+
+func chain(a int, b int = a + 1, c int = b * 10) string = s"$a $b $c"
+
+func greet(n string, g string = prefix) string = s"$g $n"
+
+func once(a int, b int = a, c int = a) string = s"$a $b $c"
+
+struct Cfg(Host string, Port int = defaultPort)
+
+struct Rect(W int, H int = W * 2)
+
+struct Meter(var Total int)
+
+func (m *Meter) Add(k int = m.Total) int {
+    m.Total = m.Total + k
+    m.Total
+}
+
+struct Counter(Start int)
+
+func (c Counter) From(step int, end int = c.Start + step) string = s"${c.Start}..$end"
+
+sealed type Item {
+    case Box(W int, H int = W)
+}
+
+func main() {
+    val a = 100
+    Println(s"earlier parameter: ${scale(1)} (local a = $a)")
+    Println(s"chained defaults: ${chain(1)}")
+    Println(s"named, then default: ${chain(b = 4, a = 1)}")
+
+    calls = 0
+    Println(s"argument evaluated once: ${once(next())} (calls = $calls)")
+
+    val prefix = "LOCAL"
+    Println(s"shadowed package val: ${greet("bob")} (local prefix = $prefix)")
+
+    val defaultPort = 1
+    val cfg = Cfg("example.org")
+    Println(s"struct field default: ${cfg.Port} (local defaultPort = $defaultPort)")
+
+    val c = -1
+    Println(s"receiver in default: ${Counter(10).From(5)} (local c = $c)")
+
+    val W = 0
+    val rect = Rect(next())
+    Println(s"struct field reads earlier field: ${rect.W} x ${rect.H} (local W = $W)")
+
+    val keyed = Rect{W: next()}
+    Println(s"keyed literal: ${keyed.W} x ${keyed.H}")
+
+    var meter = Meter(1)
+    meter.Add()
+    Println(s"pointer receiver in default: ${meter.Total}")
+
+    val box = Box(3)
+    val dims = box match {
+        case Box(w, h) => s"$w x $h"
+    }
+    Println(s"sealed variant default: $dims")
+}

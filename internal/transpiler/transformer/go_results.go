@@ -371,7 +371,7 @@ func (t *galaASTTransformer) bindGoResult(name string, value ast.Expr) {
 // boundGoResult finds the conversion a name was bound to in the innermost scope
 // that binds the name.
 func (t *galaASTTransformer) boundGoResult(name string) *goResult {
-	for s := t.currentScope; s != nil; s = s.parent {
+	for s := t.skipUseSite(t.currentScope); s != nil; s = t.skipUseSite(s.parent) {
 		if _, bound := s.vals[name]; bound {
 			return s.goResults[name]
 		}

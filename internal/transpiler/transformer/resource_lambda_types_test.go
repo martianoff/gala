@@ -274,9 +274,9 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 
 	// A declared default is lowered at its use site. A top-level val the
 	// default calls types its lambda there. A use-site local of that name was
-	// not in scope where the default was written: the lowered default would
-	// read the local, so its lambda is refused (GALA-E0033) rather than typed
-	// against the local.
+	// not in scope where the default was written: the default still reads the
+	// package-level val, through an alias the local cannot shadow, and its
+	// lambda is typed against that val.
 	const defaultDecls = "package main\n\nval apply = (h func(string) string) => h(\"x\")\n\n" +
 		"func greet(msg string = apply((s) => s + \"!\")) string = msg\n\n"
 	files, galaFile := samePackageModule(".", "package main\n",
@@ -288,9 +288,9 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 	files, galaFile = samePackageModule(".", "package main\n",
 		defaultDecls+"func run() string {\n    val apply = (h func(int) int) => h(1)\n    Println(apply((n) => n))\n    greet()\n}\n")
 	out, err = transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
 	assert.NotContains(t, out, "func(s int)")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "GALA-E0033")
+	assert.Regexp(t, `greet\(_gala_default_apply_[0-9a-f]+\.Get\(\)\(func\(s string\) string \{`, out)
 }
 
 // TestConversionToGoNamedFuncType covers a conversion to an imported Go

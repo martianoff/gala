@@ -83,6 +83,10 @@ type galaASTTransformer struct {
 	tempVarCount           int
 	sourceTempNames        map[string]bool                               // names in the file's source spelled like a temporary; see freshTempName
 	localRefs              map[*ast.Ident]bool                           // source references to local bindings, renamed by renameShadowingLocals
+	callFrames             []*callFrame                                  // one per call being lowered, innermost last; see call_order.go
+	defaultRefDecls        []ast.Decl                                    // package-level aliases through which a default reads a package-level name a local shadows at its use site; see default_scope.go
+	defaultRefNames        map[string]bool                               // names of defaultRefDecls
+	mutableVars            map[string]transpiler.Type                    // every local `var` and `var` parameter of the file by name, with its type (nil when two disagree); see eval_order.go
 	returnSlot             returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
@@ -360,6 +364,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.goIdentSignatures = nil
 	t.loopControlSites = nil
 	t.branchingCalls = nil
+	t.mutableVars = nil
+	t.defaultRefDecls, t.defaultRefNames = nil, nil
 	t.userReturns = nil
 	t.voidCalls = nil
 	t.hoisted = nil
@@ -589,6 +595,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 
 	file.Decls = append(file.Decls, t.interfaceLiteralDecls...)
 	file.Decls = append(file.Decls, t.unapplyHelperDecls...)
+	file.Decls = append(file.Decls, t.defaultRefDecls...)
 
 	// Method receivers are validated here, not as each method is transformed,
 	// because t.typeAliases fills as declarations are walked: a method written
@@ -618,6 +625,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 
 	// A converted Go call whose value is discarded goes back to the plain call.
 	t.dropDiscardedGoResults(file)
+
+	// GALA evaluates operands left to right; Go orders only the calls among
+	// them (see eval_order.go).
+	t.orderOperands(file)
 
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
 	if err := t.finalizeCodecs(file); err != nil {

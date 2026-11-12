@@ -1398,6 +1398,20 @@ func main() {
 			},
 		},
 		{
+			name: "default value that reads a later parameter",
+			code: galaerr.CodeDefaultReadsLaterParam, // GALA-E0094
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func area(w int = h, h int = 1) int = w * h
+
+func main() {
+    Println(area())
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

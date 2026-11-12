@@ -238,7 +238,7 @@ too.
 
 ### Named Arguments
 
-Function calls support named arguments. Named arguments can appear in any order — the compiler reorders them to match the function signature.
+Function calls support named arguments. Named arguments can appear in any order: each one is passed to the parameter it names.
 
 ```gala
 func divide(dividend int, divisor int) int = dividend / divisor
@@ -249,9 +249,24 @@ divide(20, 4)                        // 5 — positional works too
 
 Named arguments work with struct construction, `Copy()` method overrides, and regular function calls.
 
+Named arguments are evaluated in the order they are written, then passed in
+parameter order. This holds for function and method calls, struct and sealed
+case constructors, and `Copy()`:
+
+```gala
+struct Point(X int, Y int)
+
+func t(name string, v int) int {
+    Print(name)
+    v
+}
+
+val p = Point(Y = t("y", 2), X = t("x", 1))  // prints yx
+```
+
 ### Default Parameter Values
 
-Parameters can have default values. When a function is called without providing a defaulted argument, the default expression is injected at the call site. Default parameters must come after required parameters.
+Parameters can have default values. When a call leaves out a defaulted argument, the parameter takes its default. Default parameters must come after required parameters.
 
 ```gala
 func connect(host string, port int = 8080, tls bool = true) string =
@@ -284,6 +299,34 @@ what the caller's imports do. A default in a file that dot-imports `pa` names
 file. This holds for a call in another package and for one in another file of
 the same package.
 
+A default is evaluated in the **callee's scope**, left to right, after the
+arguments the call passes:
+
+- It may read the parameters **before** its own, bound to the values the call
+  passes for them, explicitly or by their own defaults. An argument is
+  evaluated once, however many defaults read it.
+- It may not read its own parameter or a later one
+  ([GALA-E0094](/docs/errors/gala-e0094/)).
+- The caller's locals are never visible to it. A package-level name it reads
+  is the callee package's, even where a local of the caller has the same name.
+
+```gala
+val prefix = "hi"
+
+func scale(a int, b int = a * 2) int = a + b
+func greet(name string, greeting string = prefix) string = s"$greeting $name"
+
+func main() {
+    val a = 100
+    val prefix = "LOCAL"
+    Println(scale(1))       // 3: b is 1 * 2; the caller's a is not visible
+    Println(greet("bob"))  // hi bob: the package-level prefix
+}
+```
+
+Struct field and sealed case field defaults follow the same rule: a field's
+default may read the fields before it, as in `struct Rect(W int, H int = W)`.
+
 Expression functions also support defaults:
 
 ```gala
@@ -309,6 +352,37 @@ struct Backend(
 The compiler validates defaults at compile time:
 - Default expression type must match the parameter type
 - Parameters with defaults must be contiguous at the end of the parameter list
+
+### Evaluation Order
+
+GALA evaluates expressions strictly **left to right**, as Scala and Kotlin do:
+
+- the left operand of a binary operator before the right one;
+- a call's receiver, then its arguments in the order they are written (named
+  ones included; see [Named Arguments](#named-arguments)), then the defaults
+  of the parameters it leaves out, in parameter order;
+- the parts of an interpolated string, and the elements of a tuple, collection
+  or struct literal, from left to right.
+
+An operand is evaluated completely before the next one starts, so a later
+operand's side effect is never visible to an earlier one, even when the later
+operand is a `match` or `if` expression:
+
+```gala
+var counter = 1
+
+func bump() int {
+    counter = counter + 10
+    counter
+}
+
+func main() {
+    Println(counter + bump())  // 12: counter is read before bump() runs
+    Println(counter)           // 11
+}
+```
+
+`&&` and `||` evaluate their right operand only when it decides the result.
 
 ### Higher-Order Functions
 Functions are first-class values:
@@ -431,7 +505,7 @@ A named argument that names no field is [GALA-E0045](/docs/errors/gala-e0045/), 
 
 Outside its own package, a struct is constructible by call syntax only when every field the call sets is exported. For the shorthand form that is every field, since an omitted one takes its default in the same literal, so `lib.Box(1)` for `struct Box(N int, seen bool = false)` is [GALA-E0043](/docs/errors/gala-e0043/). Call a constructor function the package exports, or start from the zero value `lib.Box{}`.
 
-For Go callers, which build a struct as a composite literal and so skip its defaults, an exported shorthand struct whose fields are all exported gets a constructor `New<T>(...)`: each field without a default is a parameter, and each field with one is an option, `With<T><Field>(v)`, applied over its default. `struct Cfg(Name string, Tries int = 3)` gives Go `NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package already declares. See the [Go interop guide](/docs/go-interop/#shorthand-structs-have-go-constructors).
+For Go callers, which build a struct as a composite literal and so skip its defaults, an exported shorthand struct whose fields are all exported gets a constructor `New<T>(...)`: each field without a default is a parameter, and each field with one is an option, `With<T><Field>(v)`, applied over its default. `struct Cfg(Name string, Tries int = 3)` gives Go `NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package already declares, nor when a field's default reads another field. See the [Go interop guide](/docs/go-interop/#shorthand-structs-have-go-constructors).
 
 ### Automatic Copy and Equal Methods
 

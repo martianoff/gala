@@ -1,0 +1,11 @@
+binary: 12
+binary with match: 6
+binary with if: 17
+call args: 1,11
+interpolation: 1 11
+tuple: 1 11
+array: 1 11 11
+receiver before args: 6
+field read before a pointer method: 21
+conversion: 12
+calls: abc 7

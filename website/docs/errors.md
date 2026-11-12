@@ -142,6 +142,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0090](/docs/errors/gala-e0090/) | Anonymous Go struct type would have to be written | Go surface |
 | [GALA-E0091](/docs/errors/gala-e0091/) | Constant does not fit its type | Types |
 | [GALA-E0093](/docs/errors/gala-e0093/) | Sealed type method replaces a generated one with another signature | Sealed types |
+| [GALA-E0094](/docs/errors/gala-e0094/) | Default value reads a later parameter | Functions |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 

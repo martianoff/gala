@@ -55,6 +55,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	typeName, resolvedTypeName string,
 	fields []string,
 	provided func(i int, fieldName string) bool,
+	valueOf func(i int) ast.Expr,
 	typeArgSubst map[string]ast.Expr,
 	line, col int,
 	requireDeclared bool,
@@ -73,6 +74,12 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	var typeArgs map[string]transpiler.Type // converted on first use
 
 	var missing []string
+	// The value each field takes, for a default that reads an earlier field.
+	values := make([]ast.Expr, len(fields))
+	types := make([]transpiler.Type, len(fields))
+	for i, f := range fields {
+		types[i] = fieldTypes[f]
+	}
 	var elts []ast.Expr
 	// emit adds the value a construction gives field i.
 	emit := func(i int, fieldName string, val ast.Expr) error {
@@ -85,6 +92,9 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	for i, fieldName := range fields {
 		// A field private to another package is that package's to set, with a
 		// constructor it exports; here it keeps Go's zero value.
+		if provided(i, fieldName) && valueOf != nil {
+			values[i] = valueOf(i)
+		}
 		if provided(i, fieldName) || !visibleFrom(fieldName, meta, t.packageName) {
 			continue
 		}
@@ -113,10 +123,12 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 			}
 			continue
 		}
-		val, err := t.declaredFieldDefault(meta, fieldName, fieldTypes[fieldName], typeArgs, line, col)
+		params, later := defaultParams(fields, types, i, values)
+		val, err := t.declaredFieldDefault(meta, fieldName, fieldTypes[fieldName], typeArgs, params, later, line, col)
 		if err != nil {
 			return nil, err
 		}
+		values[i] = val
 		if err := emit(i, fieldName, val); err != nil {
 			return nil, err
 		}
@@ -135,7 +147,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 // at declaration — the same contract function parameter defaults have. The
 // field's declared type is the expected type, as it is for a value passed
 // explicitly.
-func (t *galaASTTransformer) declaredFieldDefault(meta *transpiler.TypeMetadata, field string, fieldType transpiler.Type, typeArgs map[string]transpiler.Type, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) declaredFieldDefault(meta *transpiler.TypeMetadata, field string, fieldType transpiler.Type, typeArgs map[string]transpiler.Type, params []defaultParam, later []string, line, col int) (ast.Expr, error) {
 	src := defaultSource{
 		DefaultExpr: meta.FieldDefaults[field],
 		file:        meta.DefinedIn,
@@ -143,6 +155,7 @@ func (t *galaASTTransformer) declaredFieldDefault(meta *transpiler.TypeMetadata,
 		typeParams:  meta.TypeParams,
 	}
 	t.substituteDeclared(&src, fieldType, typeArgs)
+	src.params, src.later = params, later
 	return t.transformDefaultExpr(src, line, col)
 }
 
@@ -308,7 +321,15 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 	}
 	// Names a lambda default binds itself (its parameters and locals) refer to
 	// those bindings, not to the declaring package, whatever they are called.
+	// So do the earlier parameters and the receiver it reads, bound at the
+	// use site (see bindDefaultNames).
 	bound := boundNames(expr)
+	for _, p := range src.params {
+		bound[p.name] = true
+	}
+	if src.recv != "" {
+		bound[src.recv] = true
+	}
 	holder := &ast.ParenExpr{X: expr}
 	ast.Inspect(holder, func(n ast.Node) bool {
 		if qualified[n] {
@@ -576,4 +597,3 @@ func isZeroLiteralOf(text string, fieldType transpiler.Type) bool {
 	}
 	return false
 }
-

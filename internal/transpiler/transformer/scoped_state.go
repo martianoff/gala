@@ -55,6 +55,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"returnSlot", t.returnSlot.typ != nil || t.returnSlot.fillable || t.returnSlot.deferred != nil || t.returnSlot.typeParams != nil},
 		{"expectedArgTypes", len(t.expectedArgTypes.stack) != 0},
 		{"loweringDefault", t.loweringDefault != nil},
+		{"callFrames", len(t.callFrames) != 0},
 		{"matchInStatementPos", t.matchInStatementPos},
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
 		{"tryThunkLambda", t.tryThunkLambda.ok()},
@@ -153,6 +154,9 @@ var accumulatedStateFields = []string{
 	"synthesizedReturns",
 	"loopControlSites",
 	"branchingCalls",
+	"mutableVars",
+	"defaultRefDecls",
+	"defaultRefNames",
 	"userReturns",
 	"voidCalls",
 	"hoisted",
@@ -198,6 +202,7 @@ func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.typeParamConstraints = s.typeParamConstraints
 	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
 	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, lambdaSrc{}, nil
+	t.callFrames = nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil
 	t.signatureDots, t.equalOwner, t.typeNameDepth = nil, nil, 0
 	t.mismatchProbes = 0

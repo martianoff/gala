@@ -1,0 +1,94 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Operands, arguments, interpolation parts and literal elements are
+// evaluated strictly left to right. Each line prints the value the
+// left-to-right order gives.
+
+var counter = 1
+
+func bump() int {
+    counter = counter + 10
+    counter
+}
+
+func reset() {
+    counter = 1
+}
+
+var trace = ""
+
+func log(name string, v int) int {
+    trace = trace + name
+    v
+}
+
+struct Acc(Total int)
+
+func (a Acc) Plus(n int) int = a.Total + n
+
+func pair(a int, b int) string = s"$a,$b"
+
+struct Tally(var N int)
+
+func (t *Tally) Bump() int {
+    t.N = t.N + 1
+    t.N
+}
+
+func main() {
+    reset()
+    Println(s"binary: ${counter + bump()}")
+
+    var x = 1
+    val r = x + (x match {
+        case 1 => {
+            x = 5
+            x
+        }
+        case _ => 0
+    })
+    Println(s"binary with match: $r")
+
+    var y = 1
+    val withIf = y * 10 + (if (y == 1) {
+        y = 7
+        y
+    } else 0)
+    Println(s"binary with if: $withIf")
+
+    reset()
+    Println(s"call args: ${pair(counter, bump())}")
+
+    reset()
+    Println(s"interpolation: ${counter} ${bump()}")
+
+    reset()
+    val tup = (counter, bump())
+    Println(s"tuple: ${tup.V1} ${tup.V2}")
+
+    reset()
+    val arr = ArrayOf(counter, bump(), counter)
+    Println(s"array: ${arr.Get(0)} ${arr.Get(1)} ${arr.Get(2)}")
+
+    var acc = Acc(1)
+    val sum = acc.Plus(acc match {
+        case _ => {
+            acc = Acc(100)
+            5
+        }
+    })
+    Println(s"receiver before args: $sum")
+
+    var tally = Tally(10)
+    val read = tally.N + tally.Bump()
+    Println(s"field read before a pointer method: $read")
+
+    reset()
+    Println(s"conversion: ${int64(counter) + int64(bump())}")
+
+    trace = ""
+    val total = log("a", 1) + log("b", 2) * log("c", 3)
+    Println(s"calls: $trace $total")
+}
