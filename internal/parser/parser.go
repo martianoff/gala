@@ -30,16 +30,16 @@ func NewAntlrGalaParser() *AntlrGalaParser {
 // as a parse calls them. Every parse calls galopParsers' but a test's, which
 // gives a parser of its own faulty ones (see AntlrGalaParser.galop).
 type nativeParsers struct {
-	sourceFile func(*native.GalaTokens) (native.SourceFileNode, error)
-	expression func(*native.GalaTokens) (native.ExpressionNode, error)
+	sourceFile func(*native.GalaTokens) (native.SourceFileNode, []native.GalaParseError)
+	expression func(*native.GalaTokens) (native.ExpressionNode, []native.GalaParseError)
 	toNative   func(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) *native.GalaTree
 }
 
 // galopParsers is galop's generated parsers and converter. It is never
 // changed.
 var galopParsers = &nativeParsers{
-	sourceFile: native.ParseSourceFile,
-	expression: native.ParseExpression,
+	sourceFile: native.ParseSourceFileWithRecovery,
+	expression: native.ParseExpressionWithRecovery,
 	toNative:   galop.ToNative,
 }
 
@@ -76,23 +76,14 @@ type sourceFileParseResult struct {
 // mutex-protected DFA set (built once) so DFA state is still reused across
 // files. The deserialized ATN stays shared too (it is read-mostly and guards
 // its own lazily-cached token sets with a mutex).
-//
-// tokens, when not nil, is input lexed by galop's native lexer without
-// errors, the line-break rule applied: ANTLR's parser reads them
-// (nativeTokenStream) instead of lexing input again.
-func parseSourceFileAttempt(input string, mode int, tokens *native.GalaTokens) sourceFileParseResult {
+func parseSourceFileAttempt(input string, mode int) sourceFileParseResult {
 	errorListener := &GalaErrorListener{}
 	is := antlr.NewInputStream(input)
-	var stream *antlr.CommonTokenStream
-	if tokens != nil {
-		stream = nativeTokenStream(tokens, is)
-	} else {
-		lexer := grammar.NewgalaLexer(is)
-		isolateLexerCaches(lexer.BaseLexer)
-		lexer.RemoveErrorListeners()
-		lexer.AddErrorListener(errorListener)
-		stream = newTokenStream(lexer)
-	}
+	lexer := grammar.NewgalaLexer(is)
+	isolateLexerCaches(lexer.BaseLexer)
+	lexer.RemoveErrorListeners()
+	lexer.AddErrorListener(errorListener)
+	stream := newTokenStream(lexer)
 	parser := grammar.NewgalaParser(stream)
 	isolateParserCaches(parser.BaseParser)
 	parser.GetInterpreter().SetPredictionMode(mode)
@@ -118,17 +109,15 @@ func parseSourceFileAttempt(input string, mode int, tokens *native.GalaTokens) s
 // Parsed is one parse of a source file: its doc comments, its syntax errors,
 // and its tree, native (Native), ANTLR's (Tree) or both.
 //
-// With galop's engine (the default, see Engine) a parse without errors has a
-// native tree and no ANTLR tree: galop's native lexer and parser made it, and
-// Tree is nil. So has a parse whose only error is a missing blank line
-// (checkEmptyLinesNative), its native tree being RecoveredNative's. A parse
-// with any other error is ANTLR's, error-recovered: Tree holds it, and
-// RecoveredNative its conversion. With ANTLR's engine every parse is ANTLR's,
-// with Tree set, and a clean one's native tree is its conversion.
+// With galop's engine (the default, see Engine) every parse is galop's: its
+// native lexer and recovering parser made the native tree, and Tree is nil. A
+// parse with errors has the error-recovered native tree, in RecoveredNative.
+// With ANTLR's engine every parse is ANTLR's, with Tree set, and its native
+// tree, clean or error-recovered, is that tree's conversion.
 type Parsed struct {
-	// Tree is ANTLR's tree of the parse, nil when galop's native parser parsed
-	// the file (with galop's engine, every clean parse and every one whose
-	// only error is a missing blank line) or no engine could be chosen.
+	// Tree is ANTLR's tree of the parse, nil when galop's parser parsed the
+	// file (every parse with galop's engine but one after a galop panic) or
+	// no engine could be chosen.
 	Tree   antlr.Tree
 	Docs   Docs
 	Errors []error
@@ -147,10 +136,10 @@ type Parsed struct {
 
 // RecoveredNative is the native-tree handle of the parse whether or not it
 // reported errors: Native for a parse without them, and for one with them the
-// handle of ANTLR's error-recovered tree, whose conversion marks the tokens
-// the recovery skipped or made up as error children (native.GalaChild.IsError).
-// nil when the parse gave no tree. An editor reads a file mid-edit through
-// it; everything that needs a well-formed file takes CleanNative.
+// handle of its error-recovered tree, which marks the tokens the recovery
+// skipped or made up as error children (native.GalaChild.IsError). nil when
+// the parse gave no tree. An editor reads a file mid-edit through it;
+// everything that needs a well-formed file takes CleanNative.
 func (p *Parsed) RecoveredNative() *Native {
 	if p == nil {
 		return nil
@@ -186,15 +175,11 @@ func (p *Parsed) Err() error {
 // there is no tree, only the error.
 //
 // With galop's engine (the default, see Engine), galop's native lexer and
-// parser parse input. A parse without errors is the result, and so is one
-// whose only error is a missing blank line (checkEmptyLinesNative): its
-// native tree, and no ANTLR tree. Input they do not settle, for a lexical or
-// syntax error, a source-text error, or a panic (see noteGalopPanic), ANTLR's
-// parser parses again from the start as below, so that every error, hint and
-// recovered tree is the one ANTLR's engine gives. After a syntax error that
-// galop's lexer lexed without errors, ANTLR's parser reads galop's tokens
-// rather than lexing input again (nativeTokenStream), and parses with LL
-// prediction alone: its SLL attempt would report the error too.
+// recovering parser parse input once (parseNativeFile), errors or not: the
+// errors, their hints and the error-recovered tree all come from that parse,
+// and are the ones ANTLR's engine gives. Only a panic in galop's lexer or
+// parser (a galop bug, reported through noteGalopPanic) has ANTLR's parser
+// parse input instead, as below.
 //
 // ANTLR's parser parses input twice when it does not parse cleanly: once with
 // SLL prediction, and, if that attempt reported any syntax error, again from
@@ -222,94 +207,85 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	// The source-text check goes first: an illegal character is the root
 	// cause of any lexer error it provokes, so it should lead the report.
 	charErr := checkSourceChars(input)
-	var retry antlrRetry
-	if engine == EngineGalop && charErr == nil {
-		var parsed *Parsed
-		if parsed, retry = p.parseNativeFile(input); parsed != nil {
+	if engine == EngineGalop {
+		if parsed := p.parseNativeFile(input, charErr); parsed != nil {
 			return parsed
 		}
 	}
-	return p.parseFileANTLR(input, charErr, retry)
+	return p.parseFileANTLR(input, charErr)
 }
 
-// antlrRetry is how ANTLR's parser parses input that galop's native lexer
-// and parser did not settle (see parseNativeFile).
-type antlrRetry struct {
-	// llOnly skips the SLL attempt (see parseSourceFile), for input known to
-	// have a lexical or syntax error, which ANTLR's SLL attempt would report
-	// too: the parsers accept the same input.
-	llOnly bool
-	// tokens, when not nil, is input lexed by galop's native lexer without
-	// errors, for ANTLR's parser to read (see parseSourceFileAttempt).
-	tokens *native.GalaTokens
-}
-
-// parseNativeFile parses input, a source without a leading BOM that passes
-// checkSourceChars, with galop's native lexer and parser. It returns the
-// parse when they settle it: without errors, or with a missing blank line
-// alone (checkEmptyLinesNative), whose native tree is then the recovered
-// tree, the one ANTLR's tree, which has no syntax error either, converts to.
-// It returns nil, and how ANTLR's parser is to parse input instead, on a
-// lexical or syntax error, or on a panic, recovered and reported through
-// noteGalopPanic.
-func (p *AntlrGalaParser) parseNativeFile(input string) (parsed *Parsed, retry antlrRetry) {
+// parseNativeFile parses input, a source without a leading BOM whose
+// source-text error (checkSourceChars) is charErr, if any, with galop's
+// native lexer and recovering parser. The parse's errors are charErr, then
+// the lexical and syntax errors (nativeSyntaxErrors), then a missing blank
+// line (checkEmptyLinesNative), as parseFileANTLR reports ANTLR's. It returns
+// nil on a panic, recovered and reported through noteGalopPanic.
+func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.SemanticError) (parsed *Parsed) {
 	defer func() {
 		if r := recover(); r != nil {
 			noteGalopPanic("parser", input, r)
-			parsed, retry = nil, antlrRetry{}
+			parsed = nil
 		}
 	}()
-	// input has no BOM and is valid UTF-8 (checkSourceChars), so it is lexed
-	// as it is (see lexNative).
-	ts := native.GalaLex(input)
-	if len(ts.Errors) > 0 {
-		return nil, antlrRetry{llOnly: true}
-	}
-	RetypeNewlines(ts)
-	root, err := p.parsers().sourceFile(ts)
-	if err != nil {
-		return nil, antlrRetry{llOnly: true, tokens: ts}
-	}
-	parsed, handle := &Parsed{Docs: nativeDocComments(ts)}, nativeHandle(root.Tree())
-	if err := checkEmptyLinesNative(root); err != nil {
-		parsed.Errors, parsed.recovered = []error{err}, handle
+	var ts *native.GalaTokens
+	if charErr == nil {
+		// input has no BOM and is valid UTF-8 (checkSourceChars), so it is
+		// lexed as it is (see lexNative).
+		ts = native.GalaLex(input)
+		RetypeNewlines(ts)
 	} else {
-		parsed.Native = handle
+		ts = lexNative(input, 0, 0)
 	}
-	return parsed, antlrRetry{}
+	root, parseErrs := p.parsers().sourceFile(ts)
+	errs := withCharErr(charErr, nativeSyntaxErrors(root.Tree(), ts, parseErrs, -1))
+	parsed = &Parsed{Docs: nativeDocComments(ts)}
+	var handle *Native
+	if root.Ok() {
+		handle = nativeHandle(root.Tree())
+		if err := checkEmptyLinesNative(root); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if parsed.Errors = errs; len(errs) == 0 {
+		parsed.Native = handle
+	} else {
+		parsed.recovered = handle
+	}
+	return parsed
+}
+
+// withCharErr is the errors of a parse whose source-text error is charErr:
+// charErr first, then errs. Outside a literal the lexer has no rule for an
+// illegal character either and reports a token recognition error at the same
+// spot; that one says less, so it is dropped rather than shown twice.
+func withCharErr(charErr *galaerr.SemanticError, errs []error) []error {
+	if charErr == nil {
+		return errs
+	}
+	out := []error{charErr}
+	for _, err := range errs {
+		var se *galaerr.SyntaxError
+		if errors.As(err, &se) && se.Line == charErr.Line && se.Column == charErr.Column {
+			continue
+		}
+		out = append(out, err)
+	}
+	return out
 }
 
 // parseFileANTLR is ParseFile with ANTLR's parser, given input's source-text
-// error (checkSourceChars), if any, and retry (see antlrRetry).
-func (p *AntlrGalaParser) parseFileANTLR(input string, charErr *galaerr.SemanticError, retry antlrRetry) *Parsed {
-	var result sourceFileParseResult
-	if retry.llOnly {
-		result = parseSourceFileAttempt(input, antlr.PredictionModeLL, retry.tokens)
-	} else {
-		result = parseSourceFile(input)
-	}
+// error (checkSourceChars), if any.
+func (p *AntlrGalaParser) parseFileANTLR(input string, charErr *galaerr.SemanticError) *Parsed {
+	result := parseSourceFile(input)
 	docs := extractDocComments(result.stream.GetAllTokens())
-
-	// Outside a literal the lexer has no rule for an illegal character either
-	// and reports a token recognition error at the same spot; that one says
-	// less, so it is dropped rather than shown twice.
-	var errs []error
-	if charErr != nil {
-		errs = append(errs, charErr)
-	}
-	for _, err := range result.errors {
-		var se *galaerr.SyntaxError
-		if charErr != nil && errors.As(err, &se) && se.Line == charErr.Line && se.Column == charErr.Column {
-			continue
-		}
-		errs = append(errs, err)
-	}
+	errs := withCharErr(charErr, result.errors)
 	if err := p.checkEmptyLines(result.input, result.tree); err != nil {
 		errs = append(errs, err)
 	}
 
 	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
-	handle := newNative(result.tree, result.stream, input, p.parsers().toNative)
+	handle := newNative(result.tree, result.stream, antlrText(input), p.parsers().toNative)
 	if len(errs) == 0 {
 		parsed.Native = handle
 	} else {
@@ -339,9 +315,9 @@ func seedLexer(lexer *antlr.BaseLexer, line, col int) bool {
 // reason to walk its tokens for doc comments: if it is retained the caller
 // harvests them, and if it is not the LL attempt is harvested instead.
 func parseSourceFile(input string) sourceFileParseResult {
-	result := parseSourceFileAttempt(input, antlr.PredictionModeSLL, nil)
+	result := parseSourceFileAttempt(input, antlr.PredictionModeSLL)
 	if len(result.errors) != 0 || result.tree == nil {
-		result = parseSourceFileAttempt(input, antlr.PredictionModeLL, nil)
+		result = parseSourceFileAttempt(input, antlr.PredictionModeLL)
 	}
 	return result
 }
@@ -636,19 +612,24 @@ func structTagError(recognizer antlr.Recognizer, offendingSymbol interface{}) *g
 		return nil
 	}
 
+	return structTagDiagnostic(tok.GetLine(), tok.GetColumn(), field.Identifier().GetText(), tok.GetText())
+}
+
+// structTagDiagnostic is GALA-E0085 for the tag text at line:col after the
+// field named name.
+func structTagDiagnostic(line, col int, name, text string) *galaerr.SemanticError {
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeStructTag,
-		tok.GetLine(),
-		tok.GetColumn(),
-		fmt.Sprintf("struct field %s has a tag: GALA has no struct tags", field.Identifier().GetText()),
+		line,
+		col,
+		fmt.Sprintf("struct field %s has a tag: GALA has no struct tags", name),
 		"remove the tag; set JSON and YAML keys on Codec[T] with .Rename(field, key), .Omit and .OmitEmpty, "+
 			"and write a type that a Go library reads through its tags in a .go file of the package",
 	)
 	// Span the tag, so the caret covers what has to go. A raw-string tag can
 	// span lines; it is left to the renderer's single-token scan.
-	text := tok.GetText()
 	if !strings.ContainsAny(text, "\r\n") {
-		err = err.WithSpan(tok.GetColumn() + len([]rune(text)))
+		err = err.WithSpan(col + len([]rune(text)))
 	}
 	return err
 }
@@ -729,18 +710,22 @@ func bareLambdaParamError(recognizer antlr.Recognizer, offendingSymbol interface
 		return nil
 	}
 
-	name := prev.GetText()
+	return bareLambdaError(prev.GetLine(), prev.GetColumn(), prev.GetText())
+}
+
+// bareLambdaError is GALA-E0042 for the parameter name at line:col.
+func bareLambdaError(line, col int, name string) *galaerr.SemanticError {
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeBareLambdaParam,
-		prev.GetLine(),
-		prev.GetColumn(),
+		line,
+		col,
 		"lambda parameters must be parenthesized",
 		fmt.Sprintf("use `(%s) => ...`; GALA always parenthesizes a lambda's parameter list, "+
 			"including a single parameter", name),
 	)
 	// Span the parameter itself, so the caret sits under what has to change
 	// rather than under the arrow that happened to trip the parser.
-	return err.WithSpan(prev.GetColumn() + len([]rune(name)))
+	return err.WithSpan(col + len([]rune(name)))
 }
 
 // prevCodeToken returns the nearest default-channel token before idx, skipping
@@ -827,7 +812,7 @@ func goTypeInExpressionError(lit *grammar.CompositeLiteralContext) error {
 		// The suggestion leads and is separated by "; " so the renderer's
 		// terse caret annotation — which cuts the hint at its first clause —
 		// shows the replacement rather than a truncated rule.
-		galaTypeSuggestion(offender, text)+"; Go slice and map types are an interop surface, allowed only where a type is expected: a function signature, a struct field, a val/var annotation, or a type alias",
+		galaTypeSuggestion(offender, text)+goTypeInExpressionRule,
 	)
 
 	// Span the offending type exactly, so the caret covers `[]byte` rather
@@ -844,17 +829,31 @@ func goTypeInExpressionError(lit *grammar.CompositeLiteralContext) error {
 // leaves the reader with the replacement and not just the prohibition.
 func galaTypeSuggestion(offender grammar.ITypeContext, text string) string {
 	args := offender.AllType_()
+	texts := make([]string, len(args))
+	for i, a := range args {
+		texts[i] = a.GetText()
+	}
+	return typeSuggestion(text, texts)
+}
+
+// goTypeInExpressionRule is the rest of GALA-E0040's hint, after the
+// suggestion.
+const goTypeInExpressionRule = "; Go slice and map types are an interop surface, allowed only where a type is expected: a function signature, a struct field, a val/var annotation, or a type alias"
+
+// typeSuggestion is galaTypeSuggestion given the offending type's text and
+// the texts of its type arguments.
+func typeSuggestion(text string, args []string) string {
 	switch {
 	case strings.HasPrefix(text, "map[") && len(args) >= 2:
-		return fmt.Sprintf("use HashMap[%s, %s] instead", args[0].GetText(), args[1].GetText())
+		return fmt.Sprintf("use HashMap[%s, %s] instead", args[0], args[1])
 	case strings.HasPrefix(text, "[]") && len(args) >= 1:
 		// A byte slice is GALA's `string` far more often than it is a
 		// collection of numbers, so name both rather than send text handling
 		// through Array[byte].
-		if args[0].GetText() == "byte" {
+		if args[0] == "byte" {
 			return "use Array[byte], or string for text, instead"
 		}
-		return fmt.Sprintf("use Array[%s] instead", args[0].GetText())
+		return fmt.Sprintf("use Array[%s] instead", args[0])
 	}
 	return "use a GALA collection type (Array/HashMap) instead"
 }

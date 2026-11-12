@@ -37,7 +37,6 @@ func firstSemanticError(t *testing.T, err error) *galaerr.SemanticError {
 // "missing '{' at '('": no code, no named type, and a position on the token
 // AFTER the offending one.
 func TestGoTypeInExpressionDiagnostic(t *testing.T) {
-	p := NewAntlrGalaParser()
 
 	tests := []struct {
 		name string
@@ -134,7 +133,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := p.ParseFile(tt.input).Err()
+			err := parseAgreeing(t, tt.input).Err()
 			se := firstSemanticError(t, err)
 
 			assert.Equal(t, galaerr.CodeGoTypeInExpression, se.Code)
@@ -152,7 +151,6 @@ func main() {
 // must still parse. E0040 lives in the error listener, so a mis-scoped gate
 // would show up here as a parse error on code that has always been valid.
 func TestGoTypeInExpressionLeavesLegalPositionsAlone(t *testing.T) {
-	p := NewAntlrGalaParser()
 
 	tests := []struct {
 		name  string
@@ -246,7 +244,7 @@ func total(xs ...int) int = 0`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := p.ParseFile(tt.input).Err()
+			err := parseAgreeing(t, tt.input).Err()
 			assert.NoError(t, err)
 		})
 	}
@@ -256,7 +254,6 @@ func total(xs ...int) int = 0`,
 // unrelated malformed input must keep producing its own syntax error, uncoded,
 // rather than being relabelled as a Go type in expression position.
 func TestGoTypeInExpressionDoesNotSwallowOtherSyntaxErrors(t *testing.T) {
-	p := NewAntlrGalaParser()
 
 	tests := []struct {
 		name  string
@@ -302,7 +299,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := p.ParseFile(tt.input).Err()
+			err := parseAgreeing(t, tt.input).Err()
 			require.Error(t, err)
 
 			var multi *galaerr.MultiError
@@ -324,7 +321,6 @@ func main() {
 // user gets a message about type positions for a construct whose real problem
 // is the literal itself.
 func TestSliceLiteralStillReachesTheAnalyzer(t *testing.T) {
-	p := NewAntlrGalaParser()
 
 	for _, src := range []string{
 		`package main
@@ -340,7 +336,7 @@ func main() {
     Println(m)
 }`,
 	} {
-		err := p.ParseFile(src).Err()
+		err := parseAgreeing(t, src).Err()
 		assert.NoError(t, err, "literal should parse; rejection belongs to the analyzer")
 	}
 }

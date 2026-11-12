@@ -125,7 +125,7 @@ func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callCon
 	}
 	h.mu.Unlock()
 	if handle == nil {
-		handle = h.parser.ParseFile(src).RecoveredNative().TreeOnly() // converts: not under h.mu
+		handle = h.parser.ParseFile(src).RecoveredNative().TreeOnly() // converts with ANTLR's engine: not under h.mu
 		h.mu.Lock()
 		if h.isCurrentLocked(uri, text) {
 			h.signatureTrees[uri] = patchedTree{text: src, handle: handle}

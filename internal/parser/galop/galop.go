@@ -2,7 +2,7 @@
 // its antlr flavor next to ANTLR's parser in internal/parser/grammar: the
 // converter from ANTLR's trees to galop's native tree. internal/parser parses
 // with galop's native flavor (internal/parser/native) directly; the converter
-// is how a tree of ANTLR's parser (ANTLR's engine, or a file with errors)
+// is how a tree of ANTLR's parser (ANTLR's engine, or a parse after a galop panic)
 // becomes a native tree.
 package galop
 

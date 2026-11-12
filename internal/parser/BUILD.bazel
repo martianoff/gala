@@ -20,6 +20,7 @@ go_library(
         "docs.go",
         "engine.go",
         "expr_native.go",
+        "native_errors.go",
         "native_lex.go",
         "native_tree.go",
         "newline.go",
@@ -48,6 +49,7 @@ go_test(
     srcs = [
         "bare_lambda_param_test.go",
         "bom_test.go",
+        "broken_parse_bench_test.go",
         "docs_test.go",
         "empty_line_unicode_test.go",
         "engine_test.go",
@@ -61,6 +63,7 @@ go_test(
         "parse_expression_at_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
+        "recovery_parity_test.go",
         "source_chars_test.go",
         "struct_tag_test.go",
         "type_text_native_test.go",

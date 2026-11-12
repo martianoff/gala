@@ -204,23 +204,23 @@ let
   # buildPlatform; building GALA needs it, so a platform galop publishes no
   # binary for cannot build GALA. The version must equal MODULE.bazel's
   # galop.toolchain version (tools/check_repo_policy.sh checks it).
-  galopVersion = "0.2.5";
+  galopVersion = "0.3.0";
   galopAssets = {
     x86_64-linux = {
       name = "galop-linux-amd64";
-      hash = "sha256-b+JXI2e970pcDnFDk26/uCLjTx3HsilZZGgqpvvUnI4=";
+      hash = "sha256-ZrGvP+ZCtAysGIoSChO4UrgzNVwyU3tfmQXV+hYUI8Y=";
     };
     aarch64-linux = {
       name = "galop-linux-arm64";
-      hash = "sha256-XgH7xRlI77PQBV9gWqUaygp7f+nAvYSAWxuuglw+KLE=";
+      hash = "sha256-ndBk3toEU2a7+aX5b83XFARPXVQ/P08vuRLHe9/Ph1o=";
     };
     x86_64-darwin = {
       name = "galop-darwin-amd64";
-      hash = "sha256-84x76NTJf0Zr6xxTF7PC7UGn/JK2UVnWZZW34bdZaps=";
+      hash = "sha256-bmDaMhbe+yqxVM9L1xwxrVixVM9T0xkAZZUHH6AIHQM=";
     };
     aarch64-darwin = {
       name = "galop-darwin-arm64";
-      hash = "sha256-bkhmCJ+jQ+FTYZQrglWyuV/U7piAj2R/y4SYwMLJKc8=";
+      hash = "sha256-KUX4hSn5nxg4c+rnZtbTUl3omaQUZeP8/02mITiw3jE=";
     };
   };
   galopAsset =

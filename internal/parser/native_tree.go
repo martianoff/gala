@@ -20,7 +20,7 @@ var errNoNative = errors.New("parser: no native tree for this parse")
 
 // Native is a parse's tree in galop's native form (internal/parser/native).
 // galop's native parser builds it directly (nativeHandle); a tree of ANTLR's
-// parser, with ANTLR's engine or for a file with errors, is converted the
+// parser, with ANTLR's engine or after a galop panic, is converted the
 // first time it is asked for (newNative). A Native belongs to one parse and
 // converts at most once. A nil *Native is valid and has no tree: Tree reports
 // errNoNative.

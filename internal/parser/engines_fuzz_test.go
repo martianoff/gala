@@ -77,7 +77,7 @@ func checkEnginesAgree(t *testing.T, src string, line, col int) {
 	// The parsers: a source file, an expression, an expression at an offset.
 	// The last is parsed at 0:0 too: it is the checked parse (exactly one
 	// expression, errors naming what is parsed), not ParseExpressionTree's.
-	_, _, diffs = compareEngines(src, true)
+	_, diffs = compareEngines(src, true)
 	for _, d := range diffs {
 		t.Errorf("source file: %s", d)
 	}
@@ -109,10 +109,11 @@ func engineSeeds(tb testing.TB) []string {
 	seeds = append(seeds, emptyLineInputs...)
 	return append(seeds,
 		// Invalid UTF-8, which ANTLR reads as U+FFFD, in a doc comment, an
-		// identifier, cut at the end, and after a BOM. Inside a string
-		// literal it is left out until martianoff/galop#45 is fixed: the
-		// converted tree reads the raw byte where ANTLR's reads U+FFFD.
+		// identifier, cut at the end, after a BOM, and in a string literal,
+		// where a byte dropped from a multi-byte character also breaks the
+		// file (see antlrText).
 		"package main\n\n// Two placeho\x94 sum via FoldLeft.\nfunc f() int = 1\n",
+		"package main\n\n// A dash \xe2\x80 cut.\nval s = \"a\x94b\"\nval = \n",
 		"package main\n\nval a\x94b = 1\nval ✓\x94 = 2\n",
 		"package main\n\n// cut at the end \xe2\x82",
 		"\xef\xbb\xbfpackage main\n\n// a \x94\nval x = 1 // (\n",

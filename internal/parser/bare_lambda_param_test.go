@@ -32,8 +32,7 @@ func TestBareLambdaParamIsCoded(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			p := NewAntlrGalaParser()
-			errs := p.ParseFile(tc.input).Errors
+			errs := parseAgreeing(t, tc.input).Errors
 			require.NotEmpty(t, errs, "the bare lambda form must be rejected")
 			var coded *galaerr.SemanticError
 			for _, e := range errs {
@@ -62,8 +61,7 @@ func TestCaseArmWithBareIdentifierStillParses(t *testing.T) {
 		"package main\n\nfunc f(n int) string = n match {\n    case x if x > 0 => \"pos\"\n    case y => \"other\"\n}",
 	}
 	for _, in := range inputs {
-		p := NewAntlrGalaParser()
-		errs := p.ParseFile(in).Errors
+		errs := parseAgreeing(t, in).Errors
 		require.Empty(t, errs, "a bare-identifier case arm must still parse: %s", in)
 	}
 }

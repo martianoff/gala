@@ -13,6 +13,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
@@ -79,9 +80,24 @@ func renderText(text string, tree antlr.Tree, docs Docs, errs []error) string {
 		fmt.Fprintf(&b, "\ndoc %d:%d: %q", k.Line, k.Column, docs[k])
 	}
 	for _, err := range errs {
-		fmt.Fprintf(&b, "\nerror: %v", err)
+		fmt.Fprintf(&b, "\nerror: %v (%s)", err, errorFields(err))
 	}
 	return b.String()
+}
+
+// errorFields prints every field of a diagnostic, what Error leaves out
+// included (the code, the hint, the span), as the CLI, `gala build --json`
+// and the language server render them.
+func errorFields(err error) string {
+	var sem *galaerr.SemanticError
+	var syn *galaerr.SyntaxError
+	switch {
+	case errors.As(err, &sem):
+		return fmt.Sprintf("%T %+v", sem, *sem)
+	case errors.As(err, &syn):
+		return fmt.Sprintf("%T %+v", syn, *syn)
+	}
+	return fmt.Sprintf("%T", err)
 }
 
 // fileParse is a parse of a source file with one engine, and its rendering.
@@ -239,44 +255,33 @@ func breakSource(r *rand.Rand, src string) string {
 var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
 
 // compareEngines parses input with ANTLR's engine and with galop's, and
-// returns ANTLR's parse, whether galop's engine settled a parse whose only
-// error is a missing blank line, and every way the two differ. The doc
-// comments and errors must be the same; a parse without errors must have the
-// same native tree (galop's native parse with galop's engine, ANTLR's tree
-// converted with ANTLR's), and no ANTLR tree with galop's engine; a parse
-// with errors must be ANTLR's with both, the same error-recovered tree, but
-// for one whose only error is a missing blank line, which galop's engine
-// leaves to its native parse; either way the recovered native trees must be
-// the same. When check is set, galop's engine's native tree, clean or
+// returns ANTLR's parse and every way the two differ. galop's engine must
+// parse with galop's parser alone, with no ANTLR tree. The doc comments and
+// the errors must be the same, each error in full: its type, position,
+// message, code, hint and span (renderText). A parse without errors must
+// have the same native tree (galop's native parse with galop's engine,
+// ANTLR's tree converted with ANTLR's); a parse with errors the same
+// error-recovered native tree (galop's recovering parse, ANTLR's recovered
+// tree converted). When check is set, galop's engine's native tree, clean or
 // error-recovered, is also checked against ANTLR's tree (checkNative).
-func compareEngines(input string, check bool) (want fileParse, blankLineOnly bool, diffs []string) {
+func compareEngines(input string, check bool) (want fileParse, diffs []string) {
 	want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
+	if got.parsed.Tree != nil {
+		diffs = append(diffs, "galop's engine parsed with ANTLR's parser")
+	}
+	if d := docsAndErrorsDiff(want, got); d != "" {
+		diffs = append(diffs, "the engines disagree on the doc comments or errors: "+d)
+	}
 	if len(want.parsed.Errors) > 0 {
-		if got.parsed.Tree == nil {
-			// galop's native parse settled it: a missing blank line is its
-			// only error.
-			blankLineOnly = true
-			if d := docsAndErrorsDiff(want, got); d != "" {
-				diffs = append(diffs, "the engines disagree on the doc comments or errors: "+d)
-			}
-		} else if got.out != want.out {
-			// Both are ANTLR's parse, error-recovered.
-			diffs = append(diffs, "the engines disagree (want ANTLR's, got galop's): "+diffAt(want.out, got.out))
-		}
 		if got.recovered != want.recovered {
 			diffs = append(diffs, "the recovered native trees differ: "+diffAt(want.recovered, got.recovered))
 		}
 	} else {
-		if d := docsAndErrorsDiff(want, got); d != "" {
-			diffs = append(diffs, "the engines disagree on the doc comments or errors: "+d)
-		}
 		switch {
 		case want.native == "":
 			diffs = append(diffs, "the clean parse with ANTLR's engine has no native tree")
 		case got.native == "":
 			diffs = append(diffs, "galop's clean parse has no native tree")
-		case got.parsed.Tree != nil:
-			diffs = append(diffs, "galop's clean parse has an ANTLR tree")
 		case got.native != want.native:
 			diffs = append(diffs, "the native trees differ (want ANTLR's converted, got galop's): "+diffAt(want.native, got.native))
 		}
@@ -286,7 +291,7 @@ func compareEngines(input string, check bool) (want fileParse, blankLineOnly boo
 			diffs = append(diffs, "native tree: "+msg)
 		}
 	}
-	return want, blankLineOnly, diffs
+	return want, diffs
 }
 
 // TestEnginesAgree parses every GALA source of the repository, and two broken
@@ -302,14 +307,11 @@ func TestEnginesAgree(t *testing.T) {
 	// samples r draws stay the same.
 	r := rand.New(rand.NewSource(1))
 	positions := rand.New(rand.NewSource(2))
-	files, accepted, blankLineOnly, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0, 0
+	files, accepted, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0
 	// compareFile parses input with both engines and reports every
 	// difference (see compareEngines). It returns ANTLR's rendering.
 	compareFile := func(what, input string, check bool) string {
-		want, blankOnly, diffs := compareEngines(input, check)
-		if blankOnly {
-			blankLineOnly++
-		}
+		want, diffs := compareEngines(input, check)
 		for _, d := range diffs {
 			t.Errorf("%s: %s", what, d)
 		}
@@ -391,8 +393,8 @@ func TestEnginesAgree(t *testing.T) {
 	if want := (len(sources) + 14) / 15; crlf != want {
 		t.Errorf("%d files compared with CRLF line ends, want %d", crlf, want)
 	}
-	t.Logf("%d source inputs (%d without errors, %d with a missing blank line alone, %d CRLF copies); %d expressions, %d without errors through ParseExpressionTree and %d through ParseExpressionCheckedAt",
-		files, accepted, blankLineOnly, crlf, exprs, exprsAccepted, exprsAtAccepted)
+	t.Logf("%d source inputs (%d without errors, %d CRLF copies); %d expressions, %d without errors through ParseExpressionTree and %d through ParseExpressionCheckedAt",
+		files, accepted, crlf, exprs, exprsAccepted, exprsAtAccepted)
 }
 
 // expressionAtInputs are expressions placed by ParseExpressionCheckedAt, among them
