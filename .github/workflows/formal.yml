@@ -262,6 +262,16 @@ jobs:
             --test_output=errors --verbose_failures \
             --action_env=GOROOT="$GOROOT" --action_env=PATH
 
+      - name: Keep the run's report
+        # coverage_section.md is what formal/COVERAGE.md carries; download it and
+        # run splicecoverage on it to update the file.
+        if: always() && steps.spec.outputs.defined == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: difftest-report
+          path: ${{ env.OUTPUTS }}/*.md
+          if-no-files-found: ignore
+
       - name: Publish the coverage summary
         if: always() && steps.spec.outputs.defined == 'true'
         run: |
