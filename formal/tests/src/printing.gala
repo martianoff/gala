@@ -1,0 +1,36 @@
+package main
+
+struct Pt(X int, Y int)
+struct Lo(name string, var n int)
+type Blk struct {
+    A int
+    var B string
+}
+struct Wrap(P Pt, S Shape, T bool)
+struct In(a int, B string)
+struct Hid(p Pt, var q Pt, var r In)
+struct Up(P In, var Q In)
+struct Sh(s Shape)
+struct Sv(var s Shape)
+struct E()
+sealed type Shape {
+    case Circle(R int)
+    case Sq(p In, Name string)
+    case Dot
+}
+
+func main() {
+    Println(Pt(1, 2), Lo("a", 3), Blk(4, "b"), E())
+    Println(Circle(5), Sq(In(1, "a"), "z"), Dot())
+    Println(Wrap(Pt(1, 2), Circle(3), true))
+    Println((1, "a"), (Pt(1, 2), Circle(1), "s", true), ((1, 2), "x"))
+    Println("a", 1, "b", true, "")
+    Print("a", 1, 2, "b", true, false, Pt(1, 2), Pt(3, 4), "\n")
+    Print(Circle(1), Circle(2), (1, 2), (3, 4), "\n")
+    Print()
+    Println()
+    Println(Hid(Pt(1, 2), Pt(3, 4), In(5, "x")))
+    Println(Up(In(1, "a"), In(2, "b")))
+    Println(Sh(Circle(1)), Sv(Dot()), Sh(Sq(In(1, "a"), "n")))
+    Println("multi\nline", `raw\n`)
+}

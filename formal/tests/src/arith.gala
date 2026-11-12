@@ -1,0 +1,20 @@
+package main
+
+func main() {
+    var big = 9223372036854775807
+    big += 1
+    Println(big, -big, big / -1, big % -1)
+    Println(-7 / 2, -7 % 2, 7 / -2, 7 % -2, 7 / 2, 7 % 2)
+    var s = 3
+    Println(1 << s, -16 >> s, s << 62, s << 64, -5 >> 70, 5 >> 70)
+    Println(^5, 6 &^ 3, 6 & 3, 6 | 1, 6 ^ 3, -6 & 0xff, 0b1010 | 0o17, 0X1f)
+    Println(1 + 2 * 3 - 4 / 2 % 3, (1 + 2) * 3, -(-3))
+    Println(true && !false, false || true, 3 < 4, 3 >= 4, 3 != 4, 4 <= 4)
+    Println("ab" < "b", "b" <= "ab", "x" + "y", "a" == "a", "a\tb" > "a")
+    var m = 7
+    m -= 2
+    m *= 3
+    m /= 4
+    m--
+    Println(m)
+}

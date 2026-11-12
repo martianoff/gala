@@ -25,7 +25,16 @@ def allowedAxioms : List Name := [``propext, ``Quot.sound, ``Classical.choice]
 def requiredTheorems : List Name := [
   `Gala.MatchLowering.compile_correct,
   `Gala.MatchLowering.program_correct,
-  `Gala.MatchLowering.leaky_not_correct
+  `Gala.MatchLowering.leaky_not_correct,
+  `Gala.Spec.run_deterministic,
+  `Gala.Spec.eval_deterministic,
+  `Gala.Spec.lookup_bind_self,
+  `Gala.Spec.lookup_bind_other,
+  `Gala.Spec.update_length,
+  `Gala.Spec.exitScope_push,
+  `Gala.Spec.lookup_rename,
+  `Gala.Spec.update_rename,
+  `Gala.Spec.exitScope_rename
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

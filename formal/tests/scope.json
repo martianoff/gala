@@ -1,0 +1,1310 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 607
+      },
+      "path": "formal/tests/src/scope.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 52
+          },
+          "name": "Counter",
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 3,
+                "col": 16,
+                "off": 29,
+                "end": 40
+              },
+              "name": "Name",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 21,
+                  "off": 34,
+                  "end": 40
+                },
+                "name": "string"
+              },
+              "mutable": false
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 3,
+                "col": 29,
+                "off": 42,
+                "end": 51
+              },
+              "name": "N",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 35,
+                  "off": 48,
+                  "end": 51
+                },
+                "name": "int"
+              },
+              "mutable": true
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 5,
+            "col": 1,
+            "off": 54,
+            "end": 177
+          },
+          "name": "early",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 5,
+                "col": 12,
+                "off": 65,
+                "end": 70
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 5,
+                  "col": 14,
+                  "off": 67,
+                  "end": 70
+                },
+                "name": "int"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 5,
+              "col": 19,
+              "off": 72,
+              "end": 78
+            },
+            "name": "string"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 5,
+              "col": 26,
+              "off": 79,
+              "end": 177
+            },
+            "stmts": [
+              {
+                "kind": "if",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 85,
+                  "end": 122
+                },
+                "cond": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 6,
+                    "col": 8,
+                    "off": 88,
+                    "end": 93
+                  },
+                  "op": "<",
+                  "left": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 6,
+                      "col": 8,
+                      "off": 88,
+                      "end": 89
+                    },
+                    "name": "n"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 6,
+                      "col": 12,
+                      "off": 92,
+                      "end": 93
+                    },
+                    "text": "0",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "block",
+                  "pos": {
+                    "line": 6,
+                    "col": 14,
+                    "off": 94,
+                    "end": 122
+                  },
+                  "stmts": [
+                    {
+                      "kind": "return",
+                      "pos": {
+                        "line": 7,
+                        "col": 9,
+                        "off": 104,
+                        "end": 116
+                      },
+                      "value": {
+                        "kind": "string",
+                        "pos": {
+                          "line": 7,
+                          "col": 16,
+                          "off": 111,
+                          "end": 116
+                        },
+                        "text": "\"neg\"",
+                        "value": "neg",
+                        "raw": false
+                      }
+                    }
+                  ]
+                },
+                "else": null
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 127,
+                  "end": 140
+                },
+                "names": [
+                  "m"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 9,
+                      "col": 13,
+                      "off": 135,
+                      "end": 140
+                    },
+                    "op": "*",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 9,
+                        "col": 13,
+                        "off": 135,
+                        "end": 136
+                      },
+                      "name": "n"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 9,
+                        "col": 17,
+                        "off": 139,
+                        "end": 140
+                      },
+                      "text": "2",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "if-expr",
+                "pos": {
+                  "line": 10,
+                  "col": 5,
+                  "off": 145,
+                  "end": 175
+                },
+                "cond": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 10,
+                    "col": 9,
+                    "off": 149,
+                    "end": 155
+                  },
+                  "op": ">",
+                  "left": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 10,
+                      "col": 9,
+                      "off": 149,
+                      "end": 150
+                    },
+                    "name": "m"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 10,
+                      "col": 13,
+                      "off": 153,
+                      "end": 155
+                    },
+                    "text": "10",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "string",
+                  "pos": {
+                    "line": 10,
+                    "col": 17,
+                    "off": 157,
+                    "end": 162
+                  },
+                  "text": "\"big\"",
+                  "value": "big",
+                  "raw": false
+                },
+                "else": {
+                  "kind": "string",
+                  "pos": {
+                    "line": 10,
+                    "col": 28,
+                    "off": 168,
+                    "end": 175
+                  },
+                  "text": "\"small\"",
+                  "value": "small",
+                  "raw": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 13,
+            "col": 1,
+            "off": 179,
+            "end": 607
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 13,
+              "col": 13,
+              "off": 191,
+              "end": 607
+            },
+            "stmts": [
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 14,
+                  "col": 5,
+                  "off": 197,
+                  "end": 210
+                },
+                "names": [
+                  "total"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 14,
+                      "col": 17,
+                      "off": 209,
+                      "end": 210
+                    },
+                    "text": "0",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 15,
+                  "col": 5,
+                  "off": 215,
+                  "end": 224
+                },
+                "names": [
+                  "x"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 15,
+                      "col": 13,
+                      "off": 223,
+                      "end": 224
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "if",
+                "pos": {
+                  "line": 16,
+                  "col": 5,
+                  "off": 229,
+                  "end": 294
+                },
+                "cond": {
+                  "kind": "binary",
+                  "pos": {
+                    "line": 16,
+                    "col": 8,
+                    "off": 232,
+                    "end": 242
+                  },
+                  "op": "==",
+                  "left": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 16,
+                      "col": 8,
+                      "off": 232,
+                      "end": 237
+                    },
+                    "name": "total"
+                  },
+                  "right": {
+                    "kind": "int",
+                    "pos": {
+                      "line": 16,
+                      "col": 17,
+                      "off": 241,
+                      "end": 242
+                    },
+                    "text": "0",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "block",
+                  "pos": {
+                    "line": 16,
+                    "col": 19,
+                    "off": 243,
+                    "end": 294
+                  },
+                  "stmts": [
+                    {
+                      "kind": "val",
+                      "pos": {
+                        "line": 17,
+                        "col": 9,
+                        "off": 253,
+                        "end": 262
+                      },
+                      "names": [
+                        "x"
+                      ],
+                      "destructure": false,
+                      "type": null,
+                      "values": [
+                        {
+                          "kind": "int",
+                          "pos": {
+                            "line": 17,
+                            "col": 17,
+                            "off": 261,
+                            "end": 262
+                          },
+                          "text": "2",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "assign",
+                      "pos": {
+                        "line": 18,
+                        "col": 9,
+                        "off": 271,
+                        "end": 288
+                      },
+                      "op": "=",
+                      "targets": [
+                        {
+                          "kind": "name",
+                          "pos": {
+                            "line": 18,
+                            "col": 9,
+                            "off": 271,
+                            "end": 276
+                          },
+                          "name": "total"
+                        }
+                      ],
+                      "values": [
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 18,
+                            "col": 17,
+                            "off": 279,
+                            "end": 288
+                          },
+                          "op": "+",
+                          "left": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 18,
+                              "col": 17,
+                              "off": 279,
+                              "end": 284
+                            },
+                            "name": "total"
+                          },
+                          "right": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 18,
+                              "col": 25,
+                              "off": 287,
+                              "end": 288
+                            },
+                            "name": "x"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "else": null
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 20,
+                  "col": 5,
+                  "off": 299,
+                  "end": 316
+                },
+                "op": "=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 20,
+                      "col": 5,
+                      "off": 299,
+                      "end": 304
+                    },
+                    "name": "total"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 20,
+                      "col": 13,
+                      "off": 307,
+                      "end": 316
+                    },
+                    "op": "+",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 20,
+                        "col": 13,
+                        "off": 307,
+                        "end": 312
+                      },
+                      "name": "total"
+                    },
+                    "right": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 20,
+                        "col": 21,
+                        "off": 315,
+                        "end": 316
+                      },
+                      "name": "x"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 21,
+                  "col": 5,
+                  "off": 321,
+                  "end": 338
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 21,
+                    "col": 5,
+                    "off": 321,
+                    "end": 328
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 21,
+                      "col": 13,
+                      "off": 329,
+                      "end": 334
+                    },
+                    "name": "total"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 21,
+                      "col": 20,
+                      "off": 336,
+                      "end": 337
+                    },
+                    "name": "x"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 22,
+                  "col": 5,
+                  "off": 343,
+                  "end": 366
+                },
+                "names": [
+                  "c"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 22,
+                      "col": 13,
+                      "off": 351,
+                      "end": 366
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 22,
+                        "col": 13,
+                        "off": 351,
+                        "end": 358
+                      },
+                      "name": "Counter"
+                    },
+                    "args": [
+                      {
+                        "kind": "string",
+                        "pos": {
+                          "line": 22,
+                          "col": 21,
+                          "off": 359,
+                          "end": 362
+                        },
+                        "text": "\"c\"",
+                        "value": "c",
+                        "raw": false
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 22,
+                          "col": 26,
+                          "off": 364,
+                          "end": 365
+                        },
+                        "text": "0",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 23,
+                  "col": 5,
+                  "off": 371,
+                  "end": 384
+                },
+                "op": "=",
+                "targets": [
+                  {
+                    "kind": "select",
+                    "pos": {
+                      "line": 23,
+                      "col": 5,
+                      "off": 371,
+                      "end": 374
+                    },
+                    "target": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 23,
+                        "col": 5,
+                        "off": 371,
+                        "end": 372
+                      },
+                      "name": "c"
+                    },
+                    "name": "N"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 23,
+                      "col": 11,
+                      "off": 377,
+                      "end": 384
+                    },
+                    "op": "+",
+                    "left": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 23,
+                        "col": 11,
+                        "off": 377,
+                        "end": 380
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 23,
+                          "col": 11,
+                          "off": 377,
+                          "end": 378
+                        },
+                        "name": "c"
+                      },
+                      "name": "N"
+                    },
+                    "right": {
+                      "kind": "int",
+                      "pos": {
+                        "line": 23,
+                        "col": 17,
+                        "off": 383,
+                        "end": 384
+                      },
+                      "text": "5",
+                      "hint": {
+                        "type": "int"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "incdec",
+                "pos": {
+                  "line": 24,
+                  "col": 5,
+                  "off": 389,
+                  "end": 394
+                },
+                "op": "++",
+                "target": {
+                  "kind": "select",
+                  "pos": {
+                    "line": 24,
+                    "col": 5,
+                    "off": 389,
+                    "end": 392
+                  },
+                  "target": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 24,
+                      "col": 5,
+                      "off": 389,
+                      "end": 390
+                    },
+                    "name": "c"
+                  },
+                  "name": "N"
+                }
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 25,
+                  "col": 5,
+                  "off": 399,
+                  "end": 422
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 25,
+                    "col": 5,
+                    "off": 399,
+                    "end": 406
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 25,
+                      "col": 13,
+                      "off": 407,
+                      "end": 408
+                    },
+                    "name": "c"
+                  },
+                  {
+                    "kind": "select",
+                    "pos": {
+                      "line": 25,
+                      "col": 16,
+                      "off": 410,
+                      "end": 413
+                    },
+                    "target": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 25,
+                        "col": 16,
+                        "off": 410,
+                        "end": 411
+                      },
+                      "name": "c"
+                    },
+                    "name": "N"
+                  },
+                  {
+                    "kind": "select",
+                    "pos": {
+                      "line": 25,
+                      "col": 21,
+                      "off": 415,
+                      "end": 421
+                    },
+                    "target": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 25,
+                        "col": 21,
+                        "off": 415,
+                        "end": 416
+                      },
+                      "name": "c"
+                    },
+                    "name": "Name"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 26,
+                  "col": 5,
+                  "off": 427,
+                  "end": 436
+                },
+                "names": [
+                  "a"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 26,
+                      "col": 13,
+                      "off": 435,
+                      "end": 436
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 27,
+                  "col": 5,
+                  "off": 441,
+                  "end": 450
+                },
+                "names": [
+                  "b"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 27,
+                      "col": 13,
+                      "off": 449,
+                      "end": 450
+                    },
+                    "text": "2",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "assign",
+                "pos": {
+                  "line": 28,
+                  "col": 5,
+                  "off": 455,
+                  "end": 466
+                },
+                "op": "=",
+                "targets": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 28,
+                      "col": 5,
+                      "off": 455,
+                      "end": 456
+                    },
+                    "name": "a"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 28,
+                      "col": 8,
+                      "off": 458,
+                      "end": 459
+                    },
+                    "name": "b"
+                  }
+                ],
+                "values": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 28,
+                      "col": 12,
+                      "off": 462,
+                      "end": 463
+                    },
+                    "name": "b"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 28,
+                      "col": 15,
+                      "off": 465,
+                      "end": 466
+                    },
+                    "name": "a"
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 29,
+                  "col": 5,
+                  "off": 471,
+                  "end": 484
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 29,
+                    "col": 5,
+                    "off": 471,
+                    "end": 478
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 29,
+                      "col": 13,
+                      "off": 479,
+                      "end": 480
+                    },
+                    "name": "a"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 29,
+                      "col": 16,
+                      "off": 482,
+                      "end": 483
+                    },
+                    "name": "b"
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 30,
+                  "col": 5,
+                  "off": 489,
+                  "end": 527
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 30,
+                    "col": 5,
+                    "off": 489,
+                    "end": 496
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 30,
+                      "col": 13,
+                      "off": 497,
+                      "end": 506
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 30,
+                        "col": 13,
+                        "off": 497,
+                        "end": 502
+                      },
+                      "name": "early"
+                    },
+                    "args": [
+                      {
+                        "kind": "unary",
+                        "pos": {
+                          "line": 30,
+                          "col": 19,
+                          "off": 503,
+                          "end": 505
+                        },
+                        "op": "-",
+                        "operand": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 30,
+                            "col": 20,
+                            "off": 504,
+                            "end": 505
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 30,
+                      "col": 24,
+                      "off": 508,
+                      "end": 516
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 30,
+                        "col": 24,
+                        "off": 508,
+                        "end": 513
+                      },
+                      "name": "early"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 30,
+                          "col": 30,
+                          "off": 514,
+                          "end": 515
+                        },
+                        "text": "3",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 30,
+                      "col": 34,
+                      "off": 518,
+                      "end": 526
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 30,
+                        "col": 34,
+                        "off": 518,
+                        "end": 523
+                      },
+                      "name": "early"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 30,
+                          "col": 40,
+                          "off": 524,
+                          "end": 525
+                        },
+                        "text": "8",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 31,
+                  "col": 5,
+                  "off": 532,
+                  "end": 541
+                },
+                "names": [
+                  "d"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 31,
+                    "col": 11,
+                    "off": 538,
+                    "end": 541
+                  },
+                  "name": "int"
+                },
+                "values": []
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 32,
+                  "col": 5,
+                  "off": 546,
+                  "end": 558
+                },
+                "names": [
+                  "s"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 32,
+                    "col": 11,
+                    "off": 552,
+                    "end": 558
+                  },
+                  "name": "string"
+                },
+                "values": []
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 33,
+                  "col": 5,
+                  "off": 563,
+                  "end": 574
+                },
+                "names": [
+                  "ok"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 33,
+                    "col": 12,
+                    "off": 570,
+                    "end": 574
+                  },
+                  "name": "bool"
+                },
+                "values": []
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 34,
+                  "col": 5,
+                  "off": 579,
+                  "end": 605
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 34,
+                    "col": 5,
+                    "off": 579,
+                    "end": 586
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 34,
+                      "col": 13,
+                      "off": 587,
+                      "end": 588
+                    },
+                    "name": "d"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 34,
+                      "col": 16,
+                      "off": 590,
+                      "end": 591
+                    },
+                    "name": "s"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 34,
+                      "col": 19,
+                      "off": 593,
+                      "end": 595
+                    },
+                    "name": "ok"
+                  },
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 34,
+                      "col": 23,
+                      "off": 597,
+                      "end": 604
+                    },
+                    "op": "==",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 34,
+                        "col": 23,
+                        "off": 597,
+                        "end": 598
+                      },
+                      "name": "s"
+                    },
+                    "right": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 34,
+                        "col": 28,
+                        "off": 602,
+                        "end": 604
+                      },
+                      "text": "\"\"",
+                      "value": "",
+                      "raw": false
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

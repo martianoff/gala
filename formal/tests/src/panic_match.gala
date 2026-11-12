@@ -1,0 +1,12 @@
+package main
+
+// GALA rejects this match as not exhaustive, so Go never runs it; the spec
+// still defines it: no arm matches, which is `panic match`.
+func f(n int) string = n match {
+    case 1 => "one"
+}
+
+func main() {
+    Println(f(1))
+    Println(f(2))
+}

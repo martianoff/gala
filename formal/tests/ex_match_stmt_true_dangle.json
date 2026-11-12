@@ -1,0 +1,1151 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 1345
+      },
+      "path": "examples/match_stmt_true_dangle.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 11,
+            "col": 1,
+            "off": 478,
+            "end": 553
+          },
+          "name": "Mode",
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 12,
+                "col": 5,
+                "off": 502,
+                "end": 513
+              },
+              "name": "Read",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 13,
+                "col": 5,
+                "off": 519,
+                "end": 531
+              },
+              "name": "Write",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 14,
+                "col": 5,
+                "off": 537,
+                "end": 550
+              },
+              "name": "Append",
+              "default": false,
+              "fields": []
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 17,
+            "col": 1,
+            "off": 557,
+            "end": 820
+          },
+          "name": "observeSeen",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 17,
+                "col": 18,
+                "off": 574,
+                "end": 580
+              },
+              "name": "m",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 17,
+                  "col": 20,
+                  "off": 576,
+                  "end": 580
+                },
+                "name": "Mode"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 17,
+              "col": 26,
+              "off": 582,
+              "end": 585
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 17,
+              "col": 30,
+              "off": 586,
+              "end": 820
+            },
+            "stmts": [
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 18,
+                  "col": 5,
+                  "off": 593,
+                  "end": 605
+                },
+                "names": [
+                  "seen"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 18,
+                      "col": 16,
+                      "off": 604,
+                      "end": 605
+                    },
+                    "text": "0",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "match",
+                "pos": {
+                  "line": 19,
+                  "col": 5,
+                  "off": 611,
+                  "end": 807
+                },
+                "subject": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 19,
+                    "col": 5,
+                    "off": 611,
+                    "end": 612
+                  },
+                  "name": "m"
+                },
+                "cases": [
+                  {
+                    "kind": "case",
+                    "pos": {
+                      "line": 20,
+                      "col": 9,
+                      "off": 630,
+                      "end": 679
+                    },
+                    "pattern": {
+                      "kind": "pat-extract",
+                      "pos": {
+                        "line": 20,
+                        "col": 14,
+                        "off": 635,
+                        "end": 641
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 20,
+                          "col": 14,
+                          "off": 635,
+                          "end": 639
+                        },
+                        "name": "Read"
+                      },
+                      "args": []
+                    },
+                    "guard": null,
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 20,
+                        "col": 24,
+                        "off": 645,
+                        "end": 679
+                      },
+                      "stmts": [
+                        {
+                          "kind": "assign",
+                          "pos": {
+                            "line": 21,
+                            "col": 13,
+                            "off": 660,
+                            "end": 668
+                          },
+                          "op": "=",
+                          "targets": [
+                            {
+                              "kind": "name",
+                              "pos": {
+                                "line": 21,
+                                "col": 13,
+                                "off": 660,
+                                "end": 664
+                              },
+                              "name": "seen"
+                            }
+                          ],
+                          "values": [
+                            {
+                              "kind": "int",
+                              "pos": {
+                                "line": 21,
+                                "col": 20,
+                                "off": 667,
+                                "end": 668
+                              },
+                              "text": "1",
+                              "hint": {
+                                "type": "int"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "case",
+                    "pos": {
+                      "line": 23,
+                      "col": 9,
+                      "off": 689,
+                      "end": 739
+                    },
+                    "pattern": {
+                      "kind": "pat-extract",
+                      "pos": {
+                        "line": 23,
+                        "col": 14,
+                        "off": 694,
+                        "end": 701
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 23,
+                          "col": 14,
+                          "off": 694,
+                          "end": 699
+                        },
+                        "name": "Write"
+                      },
+                      "args": []
+                    },
+                    "guard": null,
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 23,
+                        "col": 25,
+                        "off": 705,
+                        "end": 739
+                      },
+                      "stmts": [
+                        {
+                          "kind": "assign",
+                          "pos": {
+                            "line": 24,
+                            "col": 13,
+                            "off": 720,
+                            "end": 728
+                          },
+                          "op": "=",
+                          "targets": [
+                            {
+                              "kind": "name",
+                              "pos": {
+                                "line": 24,
+                                "col": 13,
+                                "off": 720,
+                                "end": 724
+                              },
+                              "name": "seen"
+                            }
+                          ],
+                          "values": [
+                            {
+                              "kind": "int",
+                              "pos": {
+                                "line": 24,
+                                "col": 20,
+                                "off": 727,
+                                "end": 728
+                              },
+                              "text": "2",
+                              "hint": {
+                                "type": "int"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "case",
+                    "pos": {
+                      "line": 26,
+                      "col": 9,
+                      "off": 749,
+                      "end": 800
+                    },
+                    "pattern": {
+                      "kind": "pat-extract",
+                      "pos": {
+                        "line": 26,
+                        "col": 14,
+                        "off": 754,
+                        "end": 762
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 26,
+                          "col": 14,
+                          "off": 754,
+                          "end": 760
+                        },
+                        "name": "Append"
+                      },
+                      "args": []
+                    },
+                    "guard": null,
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 26,
+                        "col": 26,
+                        "off": 766,
+                        "end": 800
+                      },
+                      "stmts": [
+                        {
+                          "kind": "assign",
+                          "pos": {
+                            "line": 27,
+                            "col": 13,
+                            "off": 781,
+                            "end": 789
+                          },
+                          "op": "=",
+                          "targets": [
+                            {
+                              "kind": "name",
+                              "pos": {
+                                "line": 27,
+                                "col": 13,
+                                "off": 781,
+                                "end": 785
+                              },
+                              "name": "seen"
+                            }
+                          ],
+                          "values": [
+                            {
+                              "kind": "int",
+                              "pos": {
+                                "line": 27,
+                                "col": 20,
+                                "off": 788,
+                                "end": 789
+                              },
+                              "text": "3",
+                              "hint": {
+                                "type": "int"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "name",
+                "pos": {
+                  "line": 30,
+                  "col": 5,
+                  "off": 813,
+                  "end": 817
+                },
+                "name": "seen"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 33,
+            "col": 1,
+            "off": 824,
+            "end": 1109
+          },
+          "name": "observePicked",
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 33,
+                "col": 20,
+                "off": 843,
+                "end": 849
+              },
+              "name": "m",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 33,
+                  "col": 22,
+                  "off": 845,
+                  "end": 849
+                },
+                "name": "Mode"
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 33,
+              "col": 28,
+              "off": 851,
+              "end": 857
+            },
+            "name": "string"
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 33,
+              "col": 35,
+              "off": 858,
+              "end": 1109
+            },
+            "stmts": [
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 34,
+                  "col": 5,
+                  "off": 865,
+                  "end": 880
+                },
+                "names": [
+                  "picked"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 34,
+                      "col": 18,
+                      "off": 878,
+                      "end": 880
+                    },
+                    "text": "\"\"",
+                    "value": "",
+                    "raw": false
+                  }
+                ]
+              },
+              {
+                "kind": "match",
+                "pos": {
+                  "line": 35,
+                  "col": 5,
+                  "off": 886,
+                  "end": 1094
+                },
+                "subject": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 35,
+                    "col": 5,
+                    "off": 886,
+                    "end": 887
+                  },
+                  "name": "m"
+                },
+                "cases": [
+                  {
+                    "kind": "case",
+                    "pos": {
+                      "line": 36,
+                      "col": 9,
+                      "off": 905,
+                      "end": 958
+                    },
+                    "pattern": {
+                      "kind": "pat-extract",
+                      "pos": {
+                        "line": 36,
+                        "col": 14,
+                        "off": 910,
+                        "end": 916
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 36,
+                          "col": 14,
+                          "off": 910,
+                          "end": 914
+                        },
+                        "name": "Read"
+                      },
+                      "args": []
+                    },
+                    "guard": null,
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 36,
+                        "col": 24,
+                        "off": 920,
+                        "end": 958
+                      },
+                      "stmts": [
+                        {
+                          "kind": "assign",
+                          "pos": {
+                            "line": 37,
+                            "col": 13,
+                            "off": 935,
+                            "end": 947
+                          },
+                          "op": "=",
+                          "targets": [
+                            {
+                              "kind": "name",
+                              "pos": {
+                                "line": 37,
+                                "col": 13,
+                                "off": 935,
+                                "end": 941
+                              },
+                              "name": "picked"
+                            }
+                          ],
+                          "values": [
+                            {
+                              "kind": "string",
+                              "pos": {
+                                "line": 37,
+                                "col": 22,
+                                "off": 944,
+                                "end": 947
+                              },
+                              "text": "\"r\"",
+                              "value": "r",
+                              "raw": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "case",
+                    "pos": {
+                      "line": 39,
+                      "col": 9,
+                      "off": 968,
+                      "end": 1022
+                    },
+                    "pattern": {
+                      "kind": "pat-extract",
+                      "pos": {
+                        "line": 39,
+                        "col": 14,
+                        "off": 973,
+                        "end": 980
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 39,
+                          "col": 14,
+                          "off": 973,
+                          "end": 978
+                        },
+                        "name": "Write"
+                      },
+                      "args": []
+                    },
+                    "guard": null,
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 39,
+                        "col": 25,
+                        "off": 984,
+                        "end": 1022
+                      },
+                      "stmts": [
+                        {
+                          "kind": "assign",
+                          "pos": {
+                            "line": 40,
+                            "col": 13,
+                            "off": 999,
+                            "end": 1011
+                          },
+                          "op": "=",
+                          "targets": [
+                            {
+                              "kind": "name",
+                              "pos": {
+                                "line": 40,
+                                "col": 13,
+                                "off": 999,
+                                "end": 1005
+                              },
+                              "name": "picked"
+                            }
+                          ],
+                          "values": [
+                            {
+                              "kind": "string",
+                              "pos": {
+                                "line": 40,
+                                "col": 22,
+                                "off": 1008,
+                                "end": 1011
+                              },
+                              "text": "\"w\"",
+                              "value": "w",
+                              "raw": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "case",
+                    "pos": {
+                      "line": 42,
+                      "col": 9,
+                      "off": 1032,
+                      "end": 1087
+                    },
+                    "pattern": {
+                      "kind": "pat-extract",
+                      "pos": {
+                        "line": 42,
+                        "col": 14,
+                        "off": 1037,
+                        "end": 1045
+                      },
+                      "callee": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 42,
+                          "col": 14,
+                          "off": 1037,
+                          "end": 1043
+                        },
+                        "name": "Append"
+                      },
+                      "args": []
+                    },
+                    "guard": null,
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 42,
+                        "col": 26,
+                        "off": 1049,
+                        "end": 1087
+                      },
+                      "stmts": [
+                        {
+                          "kind": "assign",
+                          "pos": {
+                            "line": 43,
+                            "col": 13,
+                            "off": 1064,
+                            "end": 1076
+                          },
+                          "op": "=",
+                          "targets": [
+                            {
+                              "kind": "name",
+                              "pos": {
+                                "line": 43,
+                                "col": 13,
+                                "off": 1064,
+                                "end": 1070
+                              },
+                              "name": "picked"
+                            }
+                          ],
+                          "values": [
+                            {
+                              "kind": "string",
+                              "pos": {
+                                "line": 43,
+                                "col": 22,
+                                "off": 1073,
+                                "end": 1076
+                              },
+                              "text": "\"a\"",
+                              "value": "a",
+                              "raw": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "name",
+                "pos": {
+                  "line": 46,
+                  "col": 5,
+                  "off": 1100,
+                  "end": 1106
+                },
+                "name": "picked"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 49,
+            "col": 1,
+            "off": 1113,
+            "end": 1345
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 49,
+              "col": 13,
+              "off": 1125,
+              "end": 1345
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 50,
+                  "col": 5,
+                  "off": 1132,
+                  "end": 1160
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 50,
+                    "col": 5,
+                    "off": 1132,
+                    "end": 1139
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 50,
+                      "col": 13,
+                      "off": 1140,
+                      "end": 1159
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 50,
+                        "col": 13,
+                        "off": 1140,
+                        "end": 1151
+                      },
+                      "name": "observeSeen"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 50,
+                          "col": 25,
+                          "off": 1152,
+                          "end": 1158
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 50,
+                            "col": 25,
+                            "off": 1152,
+                            "end": 1156
+                          },
+                          "name": "Read"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 51,
+                  "col": 5,
+                  "off": 1166,
+                  "end": 1195
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 51,
+                    "col": 5,
+                    "off": 1166,
+                    "end": 1173
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 51,
+                      "col": 13,
+                      "off": 1174,
+                      "end": 1194
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 51,
+                        "col": 13,
+                        "off": 1174,
+                        "end": 1185
+                      },
+                      "name": "observeSeen"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 51,
+                          "col": 25,
+                          "off": 1186,
+                          "end": 1193
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 51,
+                            "col": 25,
+                            "off": 1186,
+                            "end": 1191
+                          },
+                          "name": "Write"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 52,
+                  "col": 5,
+                  "off": 1201,
+                  "end": 1231
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 52,
+                    "col": 5,
+                    "off": 1201,
+                    "end": 1208
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 52,
+                      "col": 13,
+                      "off": 1209,
+                      "end": 1230
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 52,
+                        "col": 13,
+                        "off": 1209,
+                        "end": 1220
+                      },
+                      "name": "observeSeen"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 52,
+                          "col": 25,
+                          "off": 1221,
+                          "end": 1229
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 52,
+                            "col": 25,
+                            "off": 1221,
+                            "end": 1227
+                          },
+                          "name": "Append"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 53,
+                  "col": 5,
+                  "off": 1237,
+                  "end": 1267
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 53,
+                    "col": 5,
+                    "off": 1237,
+                    "end": 1244
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 53,
+                      "col": 13,
+                      "off": 1245,
+                      "end": 1266
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 53,
+                        "col": 13,
+                        "off": 1245,
+                        "end": 1258
+                      },
+                      "name": "observePicked"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 53,
+                          "col": 27,
+                          "off": 1259,
+                          "end": 1265
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 53,
+                            "col": 27,
+                            "off": 1259,
+                            "end": 1263
+                          },
+                          "name": "Read"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 54,
+                  "col": 5,
+                  "off": 1273,
+                  "end": 1304
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 54,
+                    "col": 5,
+                    "off": 1273,
+                    "end": 1280
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 54,
+                      "col": 13,
+                      "off": 1281,
+                      "end": 1303
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 54,
+                        "col": 13,
+                        "off": 1281,
+                        "end": 1294
+                      },
+                      "name": "observePicked"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 54,
+                          "col": 27,
+                          "off": 1295,
+                          "end": 1302
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 54,
+                            "col": 27,
+                            "off": 1295,
+                            "end": 1300
+                          },
+                          "name": "Write"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 55,
+                  "col": 5,
+                  "off": 1310,
+                  "end": 1342
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 55,
+                    "col": 5,
+                    "off": 1310,
+                    "end": 1317
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 55,
+                      "col": 13,
+                      "off": 1318,
+                      "end": 1341
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 55,
+                        "col": 13,
+                        "off": 1318,
+                        "end": 1331
+                      },
+                      "name": "observePicked"
+                    },
+                    "args": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 55,
+                          "col": 27,
+                          "off": 1332,
+                          "end": 1340
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 55,
+                            "col": 27,
+                            "off": 1332,
+                            "end": 1338
+                          },
+                          "name": "Append"
+                        },
+                        "args": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

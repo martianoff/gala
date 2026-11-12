@@ -1,0 +1,9 @@
+package main
+
+func div(a int, b int) int = a / b
+
+func main() {
+    Println("before")
+    Println(div(1, 0))
+    Println("after")
+}

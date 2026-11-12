@@ -1,0 +1,1176 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 1178
+      },
+      "path": "examples/sealed_equal.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 7,
+            "col": 1,
+            "off": 218,
+            "end": 296
+          },
+          "name": "FocusState",
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 8,
+                "col": 5,
+                "off": 248,
+                "end": 268
+              },
+              "name": "FocusComposer",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 9,
+                "col": 5,
+                "off": 274,
+                "end": 293
+              },
+              "name": "FocusSidebar",
+              "default": false,
+              "fields": []
+            }
+          ]
+        },
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 12,
+            "col": 1,
+            "off": 300,
+            "end": 428
+          },
+          "name": "Status",
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 13,
+                "col": 5,
+                "off": 326,
+                "end": 339
+              },
+              "name": "StIdle",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 14,
+                "col": 5,
+                "off": 345,
+                "end": 384
+              },
+              "name": "StRecovering",
+              "default": false,
+              "fields": [
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 14,
+                    "col": 23,
+                    "off": 363,
+                    "end": 374
+                  },
+                  "name": "Attempt",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 14,
+                      "col": 31,
+                      "off": 371,
+                      "end": 374
+                    },
+                    "name": "int"
+                  },
+                  "mutable": false
+                },
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 14,
+                    "col": 36,
+                    "off": 376,
+                    "end": 383
+                  },
+                  "name": "Max",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 14,
+                      "col": 40,
+                      "off": 380,
+                      "end": 383
+                    },
+                    "name": "int"
+                  },
+                  "mutable": false
+                }
+              ]
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 15,
+                "col": 5,
+                "off": 390,
+                "end": 425
+              },
+              "name": "StHelpWaiting",
+              "default": false,
+              "fields": [
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 15,
+                    "col": 24,
+                    "off": 409,
+                    "end": 424
+                  },
+                  "name": "Question",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 15,
+                      "col": 33,
+                      "off": 418,
+                      "end": 424
+                    },
+                    "name": "string"
+                  },
+                  "mutable": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 18,
+            "col": 1,
+            "off": 432,
+            "end": 1178
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 18,
+              "col": 13,
+              "off": 444,
+              "end": 1178
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 20,
+                  "col": 5,
+                  "off": 532,
+                  "end": 567
+                },
+                "names": [
+                  "f1"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 20,
+                    "col": 12,
+                    "off": 539,
+                    "end": 549
+                  },
+                  "name": "FocusState"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 20,
+                      "col": 25,
+                      "off": 552,
+                      "end": 567
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 20,
+                        "col": 25,
+                        "off": 552,
+                        "end": 565
+                      },
+                      "name": "FocusComposer"
+                    },
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 21,
+                  "col": 5,
+                  "off": 573,
+                  "end": 608
+                },
+                "names": [
+                  "f2"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 21,
+                    "col": 12,
+                    "off": 580,
+                    "end": 590
+                  },
+                  "name": "FocusState"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 21,
+                      "col": 25,
+                      "off": 593,
+                      "end": 608
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 21,
+                        "col": 25,
+                        "off": 593,
+                        "end": 606
+                      },
+                      "name": "FocusComposer"
+                    },
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 22,
+                  "col": 5,
+                  "off": 614,
+                  "end": 648
+                },
+                "names": [
+                  "f3"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 22,
+                    "col": 12,
+                    "off": 621,
+                    "end": 631
+                  },
+                  "name": "FocusState"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 22,
+                      "col": 25,
+                      "off": 634,
+                      "end": 648
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 22,
+                        "col": 25,
+                        "off": 634,
+                        "end": 646
+                      },
+                      "name": "FocusSidebar"
+                    },
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 23,
+                  "col": 5,
+                  "off": 654,
+                  "end": 675
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 23,
+                    "col": 5,
+                    "off": 654,
+                    "end": 661
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 23,
+                      "col": 13,
+                      "off": 662,
+                      "end": 674
+                    },
+                    "callee": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 23,
+                        "col": 13,
+                        "off": 662,
+                        "end": 670
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 23,
+                          "col": 13,
+                          "off": 662,
+                          "end": 664
+                        },
+                        "name": "f1"
+                      },
+                      "name": "Equal"
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 23,
+                          "col": 22,
+                          "off": 671,
+                          "end": 673
+                        },
+                        "name": "f2"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 24,
+                  "col": 5,
+                  "off": 681,
+                  "end": 702
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 24,
+                    "col": 5,
+                    "off": 681,
+                    "end": 688
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 24,
+                      "col": 13,
+                      "off": 689,
+                      "end": 701
+                    },
+                    "callee": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 24,
+                        "col": 13,
+                        "off": 689,
+                        "end": 697
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 24,
+                          "col": 13,
+                          "off": 689,
+                          "end": 691
+                        },
+                        "name": "f1"
+                      },
+                      "name": "Equal"
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 24,
+                          "col": 22,
+                          "off": 698,
+                          "end": 700
+                        },
+                        "name": "f3"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 25,
+                  "col": 5,
+                  "off": 708,
+                  "end": 725
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 25,
+                    "col": 5,
+                    "off": 708,
+                    "end": 715
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 25,
+                      "col": 13,
+                      "off": 716,
+                      "end": 724
+                    },
+                    "op": "==",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 25,
+                        "col": 13,
+                        "off": 716,
+                        "end": 718
+                      },
+                      "name": "f1"
+                    },
+                    "right": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 25,
+                        "col": 19,
+                        "off": 722,
+                        "end": 724
+                      },
+                      "name": "f2"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 26,
+                  "col": 5,
+                  "off": 731,
+                  "end": 748
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 26,
+                    "col": 5,
+                    "off": 731,
+                    "end": 738
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "binary",
+                    "pos": {
+                      "line": 26,
+                      "col": 13,
+                      "off": 739,
+                      "end": 747
+                    },
+                    "op": "==",
+                    "left": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 26,
+                        "col": 13,
+                        "off": 739,
+                        "end": 741
+                      },
+                      "name": "f1"
+                    },
+                    "right": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 26,
+                        "col": 19,
+                        "off": 745,
+                        "end": 747
+                      },
+                      "name": "f3"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 29,
+                  "col": 5,
+                  "off": 837,
+                  "end": 871
+                },
+                "names": [
+                  "s1"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 29,
+                    "col": 12,
+                    "off": 844,
+                    "end": 850
+                  },
+                  "name": "Status"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 29,
+                      "col": 21,
+                      "off": 853,
+                      "end": 871
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 29,
+                        "col": 21,
+                        "off": 853,
+                        "end": 865
+                      },
+                      "name": "StRecovering"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 29,
+                          "col": 34,
+                          "off": 866,
+                          "end": 867
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 29,
+                          "col": 37,
+                          "off": 869,
+                          "end": 870
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 30,
+                  "col": 5,
+                  "off": 877,
+                  "end": 911
+                },
+                "names": [
+                  "s2"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 30,
+                    "col": 12,
+                    "off": 884,
+                    "end": 890
+                  },
+                  "name": "Status"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 30,
+                      "col": 21,
+                      "off": 893,
+                      "end": 911
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 30,
+                        "col": 21,
+                        "off": 893,
+                        "end": 905
+                      },
+                      "name": "StRecovering"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 30,
+                          "col": 34,
+                          "off": 906,
+                          "end": 907
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 30,
+                          "col": 37,
+                          "off": 909,
+                          "end": 910
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 31,
+                  "col": 5,
+                  "off": 917,
+                  "end": 951
+                },
+                "names": [
+                  "s3"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 31,
+                    "col": 12,
+                    "off": 924,
+                    "end": 930
+                  },
+                  "name": "Status"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 31,
+                      "col": 21,
+                      "off": 933,
+                      "end": 951
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 31,
+                        "col": 21,
+                        "off": 933,
+                        "end": 945
+                      },
+                      "name": "StRecovering"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 31,
+                          "col": 34,
+                          "off": 946,
+                          "end": 947
+                        },
+                        "text": "3",
+                        "hint": {
+                          "type": "int"
+                        }
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 31,
+                          "col": 37,
+                          "off": 949,
+                          "end": 950
+                        },
+                        "text": "4",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 32,
+                  "col": 5,
+                  "off": 957,
+                  "end": 981
+                },
+                "names": [
+                  "s4"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 32,
+                    "col": 12,
+                    "off": 964,
+                    "end": 970
+                  },
+                  "name": "Status"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 32,
+                      "col": 21,
+                      "off": 973,
+                      "end": 981
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 32,
+                        "col": 21,
+                        "off": 973,
+                        "end": 979
+                      },
+                      "name": "StIdle"
+                    },
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 33,
+                  "col": 5,
+                  "off": 987,
+                  "end": 1024
+                },
+                "names": [
+                  "s5"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 33,
+                    "col": 12,
+                    "off": 994,
+                    "end": 1000
+                  },
+                  "name": "Status"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 33,
+                      "col": 21,
+                      "off": 1003,
+                      "end": 1024
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 33,
+                        "col": 21,
+                        "off": 1003,
+                        "end": 1016
+                      },
+                      "name": "StHelpWaiting"
+                    },
+                    "args": [
+                      {
+                        "kind": "string",
+                        "pos": {
+                          "line": 33,
+                          "col": 35,
+                          "off": 1017,
+                          "end": 1023
+                        },
+                        "text": "\"why?\"",
+                        "value": "why?",
+                        "raw": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 34,
+                  "col": 5,
+                  "off": 1030,
+                  "end": 1067
+                },
+                "names": [
+                  "s6"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 34,
+                    "col": 12,
+                    "off": 1037,
+                    "end": 1043
+                  },
+                  "name": "Status"
+                },
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 34,
+                      "col": 21,
+                      "off": 1046,
+                      "end": 1067
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 34,
+                        "col": 21,
+                        "off": 1046,
+                        "end": 1059
+                      },
+                      "name": "StHelpWaiting"
+                    },
+                    "args": [
+                      {
+                        "kind": "string",
+                        "pos": {
+                          "line": 34,
+                          "col": 35,
+                          "off": 1060,
+                          "end": 1066
+                        },
+                        "text": "\"why?\"",
+                        "value": "why?",
+                        "raw": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 35,
+                  "col": 5,
+                  "off": 1073,
+                  "end": 1094
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 35,
+                    "col": 5,
+                    "off": 1073,
+                    "end": 1080
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 35,
+                      "col": 13,
+                      "off": 1081,
+                      "end": 1093
+                    },
+                    "callee": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 35,
+                        "col": 13,
+                        "off": 1081,
+                        "end": 1089
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 35,
+                          "col": 13,
+                          "off": 1081,
+                          "end": 1083
+                        },
+                        "name": "s1"
+                      },
+                      "name": "Equal"
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 35,
+                          "col": 22,
+                          "off": 1090,
+                          "end": 1092
+                        },
+                        "name": "s2"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 36,
+                  "col": 5,
+                  "off": 1100,
+                  "end": 1121
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 36,
+                    "col": 5,
+                    "off": 1100,
+                    "end": 1107
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 36,
+                      "col": 13,
+                      "off": 1108,
+                      "end": 1120
+                    },
+                    "callee": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 36,
+                        "col": 13,
+                        "off": 1108,
+                        "end": 1116
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 36,
+                          "col": 13,
+                          "off": 1108,
+                          "end": 1110
+                        },
+                        "name": "s1"
+                      },
+                      "name": "Equal"
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 36,
+                          "col": 22,
+                          "off": 1117,
+                          "end": 1119
+                        },
+                        "name": "s3"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 37,
+                  "col": 5,
+                  "off": 1127,
+                  "end": 1148
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 37,
+                    "col": 5,
+                    "off": 1127,
+                    "end": 1134
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 37,
+                      "col": 13,
+                      "off": 1135,
+                      "end": 1147
+                    },
+                    "callee": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 37,
+                        "col": 13,
+                        "off": 1135,
+                        "end": 1143
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 37,
+                          "col": 13,
+                          "off": 1135,
+                          "end": 1137
+                        },
+                        "name": "s1"
+                      },
+                      "name": "Equal"
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 37,
+                          "col": 22,
+                          "off": 1144,
+                          "end": 1146
+                        },
+                        "name": "s4"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 38,
+                  "col": 5,
+                  "off": 1154,
+                  "end": 1175
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 38,
+                    "col": 5,
+                    "off": 1154,
+                    "end": 1161
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 38,
+                      "col": 13,
+                      "off": 1162,
+                      "end": 1174
+                    },
+                    "callee": {
+                      "kind": "select",
+                      "pos": {
+                        "line": 38,
+                        "col": 13,
+                        "off": 1162,
+                        "end": 1170
+                      },
+                      "target": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 38,
+                          "col": 13,
+                          "off": 1162,
+                          "end": 1164
+                        },
+                        "name": "s5"
+                      },
+                      "name": "Equal"
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 38,
+                          "col": 22,
+                          "off": 1171,
+                          "end": 1173
+                        },
+                        "name": "s6"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
