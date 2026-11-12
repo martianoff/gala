@@ -48,7 +48,7 @@ Each definition's doc comment says what it models, and each file's header names 
 
 | Path | Purpose |
 |---|---|
-| `lean-toolchain` | The pinned Lean version. elan reads it. |
+| `lean-toolchain` | The pinned Lean version. elan reads it locally; CI also needs its SHA-256 in `formal.yml` (see below). |
 | `lakefile.toml` | The Lake project: the library `Gala`, built from `Gala.lean` and every file under `Gala/`, and the executables `galaspec` and `galaspec-tests`. |
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
 | `Gala.lean` | Root module, for `import Gala`. The build and the proof check find modules by directory, not through it. |
@@ -76,7 +76,10 @@ checks old code after a stale one.
 
 CI runs both, and the galaspec tests below, in
 [`.github/workflows/formal.yml`](../.github/workflows/formal.yml) on every pull request
-that touches `formal/`.
+that touches `formal/`. It does not use elan: it downloads the release `lean-toolchain`
+pins, checks it against a SHA-256 in the workflow, and puts its `bin/` on `PATH`. Bumping
+`lean-toolchain` therefore needs the new release's Linux SHA-256 added to the workflow;
+without it the job fails.
 
 ## Running galaspec
 
@@ -144,7 +147,7 @@ release binaries bundle LGPL components, so:
 
 - No Lean-built binary ships in GALA releases, the CLI, Docker images or the playground.
 - The Lean toolchain is never vendored, committed, mirrored or re-hosted. CI fetches it
-  from the official releases.
+  from Lean's official releases and checks a pinned SHA-256.
 - Lake dependencies must be Apache 2.0, MIT or BSD.
 
 Details are in the "Licensing" section of the design.

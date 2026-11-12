@@ -52,24 +52,79 @@ jobs:
     defaults:
       run:
         working-directory: formal
-    env:
-      # elan itself, from its official GitHub release. The Lean toolchain is pinned by
-      # formal/lean-toolchain; elan fetches it from Lean's official release. Neither is
-      # ever mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing"). elan is
-      # installed by hand, pinned to a version and checksum, rather than through a
-      # third-party action or an unpinned install script.
-      ELAN_VERSION: v4.2.4
-      ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cache elan and the Lean toolchain
+      - name: Resolve the pinned toolchain
+        # formal/lean-toolchain is the only place the version is set. Each version needs
+        # the SHA-256 of its Linux release asset here (from the release's asset digests);
+        # a version without one fails rather than installing unverified.
+        id: lean
+        run: |
+          # The release assets in the table are for x86_64 Linux.
+          if [ "$RUNNER_OS-$RUNNER_ARCH" != Linux-X64 ]; then
+            echo "::error::the Lean checksum table covers Linux X64 only, not $RUNNER_OS-$RUNNER_ARCH"
+            exit 1
+          fi
+          pin="$(tr -d '[:space:]' < lean-toolchain)"
+          version="$(printf '%s' "$pin" | sed -nE 's#^leanprover/lean4:v?([0-9]+\.[0-9]+\.[0-9]+)$#\1#p')"
+          if [ -z "$version" ]; then
+            echo "::error file=formal/lean-toolchain::expected leanprover/lean4:vX.Y.Z, found '$pin'"
+            exit 1
+          fi
+          case "$version" in
+            4.35.0) sha256=7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d ;;
+            *)
+              echo "::error file=formal/lean-toolchain::formal/lean-toolchain pins $version, which has no SHA-256 in .github/workflows/formal.yml; add one"
+              exit 1 ;;
+          esac
+          {
+            echo "version=$version"
+            echo "sha256=$sha256"
+            echo "archive=$HOME/.lean-dist/lean-$version-linux.tar.zst"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Lean release archive
+        # A CI-private cache, never served to anyone, so not re-hosting
+        # (docs/FORMAL_SEMANTICS.MD, "Licensing"). It holds the archive, not the
+        # unpacked tree, so the checksum below is verified on every run.
         uses: actions/cache@v4
         with:
-          path: ~/.elan
-          key: elan-${{ runner.os }}-${{ env.ELAN_VERSION }}-${{ hashFiles('formal/lean-toolchain') }}
+          path: ${{ steps.lean.outputs.archive }}
+          key: lean-${{ runner.os }}-${{ steps.lean.outputs.sha256 }}
+
+      - name: Install the Lean toolchain
+        # Fetched from Lean's own release host (which redirects to the GitHub release; the
+        # direct GitHub URL is the fallback), verified against the pinned SHA-256 and
+        # unpacked. No elan: the verified toolchain's bin/ goes on PATH, so lake runs
+        # exactly it.
+        env:
+          VERSION: ${{ steps.lean.outputs.version }}
+          SHA256: ${{ steps.lean.outputs.sha256 }}
+          ARCHIVE: ${{ steps.lean.outputs.archive }}
+        run: |
+          asset="$(basename "$ARCHIVE")"
+          if [ ! -f "$ARCHIVE" ]; then
+            mkdir -p "$(dirname "$ARCHIVE")"
+            for host in https://releases.lean-lang.org/lean4 https://github.com/leanprover/lean4/releases/download; do
+              curl -sSfL --retry 2 -o "$ARCHIVE" "$host/v$VERSION/$asset" && break
+            done
+          fi
+          echo "$SHA256  $ARCHIVE" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/lean"
+          tar --zstd -xf "$ARCHIVE" -C "$RUNNER_TEMP/lean"
+          echo "$RUNNER_TEMP/lean/lean-$VERSION-linux/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain
+        env:
+          VERSION: ${{ steps.lean.outputs.version }}
+        run: |
+          lean --version | tee /dev/stderr | grep -qF "version $VERSION," \
+            || { echo "::error::lean on PATH is not $VERSION"; exit 1; }
+          [ "$(command -v lake)" = "$(dirname "$(command -v lean)")/lake" ] \
+            || { echo "::error::lake on PATH is not the pinned toolchain's"; exit 1; }
 
       - name: Cache Lake build
         uses: actions/cache@v4
@@ -78,22 +133,6 @@ jobs:
           key: lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
           restore-keys: |
             lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
-
-      - name: Install elan
-        run: |
-          if [ ! -x "$HOME/.elan/bin/elan" ]; then
-            tmp="$(mktemp -d)"
-            curl -sSfL -o "$tmp/elan.tar.gz" \
-              "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz"
-            echo "$ELAN_SHA256  $tmp/elan.tar.gz" | sha256sum -c -
-            tar -xzf "$tmp/elan.tar.gz" -C "$tmp"
-            "$tmp/elan-init" -y --no-modify-path --default-toolchain none
-          fi
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-      - name: Show toolchain
-        # Installs the toolchain formal/lean-toolchain pins, if the cache missed.
-        run: lean --version
 
       - name: Build
         # --wfail: a warning (an unused simp argument, a deprecated lemma) fails too.
