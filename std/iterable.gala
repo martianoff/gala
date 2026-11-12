@@ -23,6 +23,8 @@ type Traversable[T any] interface {
 // Note: Generic methods (Map, FlatMap, Collect, FoldLeft, FoldRight, PartitionMap,
 // GroupBy, GroupMap, GroupMapReduce) are implemented on concrete collection types
 // because Go interfaces do not support methods with additional type parameters.
+// Concat is not part of Iterable either: Array, List and Stream each define it
+// taking and returning their own type (`Array[T].Concat(Array[T]) Array[T]`).
 type Iterable[T any] interface {
     // Traversable methods
     ForEach(f func(T))
@@ -60,9 +62,6 @@ type Iterable[T any] interface {
     SplitAt(n int) Tuple[Iterable[T], Iterable[T]]
     Span(p func(T) bool) Tuple[Iterable[T], Iterable[T]]
     Partition(p func(T) bool) Tuple[Iterable[T], Iterable[T]]
-
-    // Concatenation
-    Concat(other Iterable[T]) Iterable[T]
 
     // String representation
     String() string
