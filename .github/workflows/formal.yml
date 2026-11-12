@@ -82,3 +82,31 @@ jobs:
       - name: Check proofs
         # lake build only warns on sorry; this fails on sorry and non-standard axioms.
         run: lake env lean --run scripts/ProofCheck.lean
+
+      - name: Build galaspec
+        run: lake build --wfail galaspec galaspec-tests
+
+      - name: Test galaspec
+        # The #guard checks run while the tests compile; this runs the Core JSON
+        # fixtures in formal/tests through the interpreter.
+        run: lake exe galaspec-tests
+
+      - name: Smoke-test the galaspec command line
+        # The exit code and the last stderr line are the contract the differential
+        # harness relies on.
+        run: |
+          set +e
+          lake exe galaspec run tests/panic_divide.json > out.txt 2> err.txt
+          code=$?
+          set -e
+          cat out.txt err.txt
+          test "$code" = 1
+          test "$(tail -n 1 err.txt)" = "galaspec: outcome=panic:divide"
+          test "$(cat out.txt)" = "before"
+
+      - name: Deep recursion
+        # A million nested calls (examples/tco_deep_sum) must finish, not overflow the
+        # interpreter's stack, when given the fuel for it.
+        run: |
+          out="$(lake exe galaspec run --fuel 100000000 tests/ex_tco_deep_sum.json)"
+          test "$out" = "500000500000"

@@ -1,0 +1,496 @@
+{
+  "core": 1,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 505
+      },
+      "path": "examples/match_sealed_branch_infer.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 16,
+            "end": 505
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 3,
+              "col": 13,
+              "off": 28,
+              "end": 505
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 4,
+                  "col": 5,
+                  "off": 35,
+                  "end": 51
+                },
+                "names": [
+                  "x"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 4,
+                      "col": 13,
+                      "off": 43,
+                      "end": 51
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 4,
+                        "col": 13,
+                        "off": 43,
+                        "end": 47
+                      },
+                      "name": "Some"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 4,
+                          "col": 18,
+                          "off": 48,
+                          "end": 50
+                        },
+                        "text": "42",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 197,
+                  "end": 294
+                },
+                "names": [
+                  "result"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "match",
+                    "pos": {
+                      "line": 8,
+                      "col": 18,
+                      "off": 210,
+                      "end": 294
+                    },
+                    "subject": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 8,
+                        "col": 18,
+                        "off": 210,
+                        "end": 211
+                      },
+                      "name": "x"
+                    },
+                    "cases": [
+                      {
+                        "kind": "case",
+                        "pos": {
+                          "line": 9,
+                          "col": 9,
+                          "off": 229,
+                          "end": 256
+                        },
+                        "pattern": {
+                          "kind": "pat-extract",
+                          "pos": {
+                            "line": 9,
+                            "col": 14,
+                            "off": 234,
+                            "end": 241
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 9,
+                              "col": 14,
+                              "off": 234,
+                              "end": 238
+                            },
+                            "name": "Some"
+                          },
+                          "args": [
+                            {
+                              "kind": "pat-name",
+                              "pos": {
+                                "line": 9,
+                                "col": 19,
+                                "off": 239,
+                                "end": 240
+                              },
+                              "name": "v"
+                            }
+                          ]
+                        },
+                        "guard": null,
+                        "body": {
+                          "kind": "call",
+                          "pos": {
+                            "line": 9,
+                            "col": 25,
+                            "off": 245,
+                            "end": 256
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 9,
+                              "col": 25,
+                              "off": 245,
+                              "end": 249
+                            },
+                            "name": "Some"
+                          },
+                          "args": [
+                            {
+                              "kind": "binary",
+                              "pos": {
+                                "line": 9,
+                                "col": 30,
+                                "off": 250,
+                                "end": 255
+                              },
+                              "op": "*",
+                              "left": {
+                                "kind": "name",
+                                "pos": {
+                                  "line": 9,
+                                  "col": 30,
+                                  "off": 250,
+                                  "end": 251
+                                },
+                                "name": "v"
+                              },
+                              "right": {
+                                "kind": "int",
+                                "pos": {
+                                  "line": 9,
+                                  "col": 34,
+                                  "off": 254,
+                                  "end": 255
+                                },
+                                "text": "2",
+                                "hint": {
+                                  "type": "int"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "case",
+                        "pos": {
+                          "line": 10,
+                          "col": 9,
+                          "off": 266,
+                          "end": 287
+                        },
+                        "pattern": {
+                          "kind": "pat-extract",
+                          "pos": {
+                            "line": 10,
+                            "col": 14,
+                            "off": 271,
+                            "end": 277
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 10,
+                              "col": 14,
+                              "off": 271,
+                              "end": 275
+                            },
+                            "name": "None"
+                          },
+                          "args": []
+                        },
+                        "guard": null,
+                        "body": {
+                          "kind": "call",
+                          "pos": {
+                            "line": 10,
+                            "col": 24,
+                            "off": 281,
+                            "end": 287
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 10,
+                              "col": 24,
+                              "off": 281,
+                              "end": 285
+                            },
+                            "name": "None"
+                          },
+                          "args": []
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 13,
+                  "col": 5,
+                  "off": 302,
+                  "end": 317
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 13,
+                    "col": 5,
+                    "off": 302,
+                    "end": 309
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 13,
+                      "col": 13,
+                      "off": 310,
+                      "end": 316
+                    },
+                    "name": "result"
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 16,
+                  "col": 5,
+                  "off": 391,
+                  "end": 484
+                },
+                "names": [
+                  "y"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "match",
+                    "pos": {
+                      "line": 16,
+                      "col": 13,
+                      "off": 399,
+                      "end": 484
+                    },
+                    "subject": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 16,
+                        "col": 13,
+                        "off": 399,
+                        "end": 405
+                      },
+                      "name": "result"
+                    },
+                    "cases": [
+                      {
+                        "kind": "case",
+                        "pos": {
+                          "line": 17,
+                          "col": 9,
+                          "off": 423,
+                          "end": 445
+                        },
+                        "pattern": {
+                          "kind": "pat-extract",
+                          "pos": {
+                            "line": 17,
+                            "col": 14,
+                            "off": 428,
+                            "end": 435
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 17,
+                              "col": 14,
+                              "off": 428,
+                              "end": 432
+                            },
+                            "name": "Some"
+                          },
+                          "args": [
+                            {
+                              "kind": "pat-wild",
+                              "pos": {
+                                "line": 17,
+                                "col": 19,
+                                "off": 433,
+                                "end": 434
+                              }
+                            }
+                          ]
+                        },
+                        "guard": null,
+                        "body": {
+                          "kind": "call",
+                          "pos": {
+                            "line": 17,
+                            "col": 25,
+                            "off": 439,
+                            "end": 445
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 17,
+                              "col": 25,
+                              "off": 439,
+                              "end": 443
+                            },
+                            "name": "None"
+                          },
+                          "args": []
+                        }
+                      },
+                      {
+                        "kind": "case",
+                        "pos": {
+                          "line": 18,
+                          "col": 9,
+                          "off": 455,
+                          "end": 477
+                        },
+                        "pattern": {
+                          "kind": "pat-extract",
+                          "pos": {
+                            "line": 18,
+                            "col": 14,
+                            "off": 460,
+                            "end": 466
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 18,
+                              "col": 14,
+                              "off": 460,
+                              "end": 464
+                            },
+                            "name": "None"
+                          },
+                          "args": []
+                        },
+                        "guard": null,
+                        "body": {
+                          "kind": "call",
+                          "pos": {
+                            "line": 18,
+                            "col": 24,
+                            "off": 470,
+                            "end": 477
+                          },
+                          "callee": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 18,
+                              "col": 24,
+                              "off": 470,
+                              "end": 474
+                            },
+                            "name": "Some"
+                          },
+                          "args": [
+                            {
+                              "kind": "int",
+                              "pos": {
+                                "line": 18,
+                                "col": 29,
+                                "off": 475,
+                                "end": 476
+                              },
+                              "text": "0",
+                              "hint": {
+                                "type": "int"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 21,
+                  "col": 5,
+                  "off": 492,
+                  "end": 502
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 21,
+                    "col": 5,
+                    "off": 492,
+                    "end": 499
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 21,
+                      "col": 13,
+                      "off": 500,
+                      "end": 501
+                    },
+                    "name": "y"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

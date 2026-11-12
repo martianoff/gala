@@ -10,9 +10,26 @@ build, the `gala` CLI or a GALA release.
 
 ## What is modelled
 
-One lowering model so far, `Gala/MatchLowering.lean`: sealed-type constructors and `match`
-in a small GALA core, and the Go constructs the transpiler lowers them to (tagged struct,
-`Unapply` chain, panic). [COVERAGE.md](COVERAGE.md) lists what is modelled and proved.
+- **`galaspec`, the reference interpreter for subset S1**: the executable semantics of
+  int/bool/string operators, `val`/`var`, blocks, `if`, functions and recursion, structs,
+  sealed types, `match` and `Println`/`Print`. It reads a program as Core JSON (written
+  by `internal/formal/coreexport`) and prints what the program prints, plus how it ends.
+
+  ```mermaid
+  flowchart LR
+      J[Core JSON] --> D[Gala/Json.lean<br/>decode]
+      D --> S[Gala/Syntax.lean<br/>surface AST]
+      S --> E[Gala/Eval.lean<br/>big-step, fuel]
+      SC[Gala/Scope.lean<br/>name resolution] --> E
+      E --> P[Gala/Print.lean<br/>Println / Print]
+      E --> O[stdout + outcome]
+  ```
+
+- **A lowering model**, `Gala/MatchLowering.lean`: sealed-type constructors and `match`
+  in a small GALA core, and the Go constructs the transpiler lowers them to (tagged
+  struct, `Unapply` chain, panic).
+
+[COVERAGE.md](COVERAGE.md) lists what is modelled, tested and proved.
 
 ```mermaid
 flowchart LR
@@ -32,10 +49,11 @@ Each definition's doc comment says what it models, and each file's header names 
 | Path | Purpose |
 |---|---|
 | `lean-toolchain` | The pinned Lean version. elan reads it. |
-| `lakefile.toml` | The Lake project: one library, `Gala`, built from `Gala.lean` and every file under `Gala/`. |
+| `lakefile.toml` | The Lake project: the library `Gala`, built from `Gala.lean` and every file under `Gala/`, and the executables `galaspec` and `galaspec-tests`. |
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
 | `Gala.lean` | Root module, for `import Gala`. The build and the proof check find modules by directory, not through it. |
-| `Gala/*.lean` | The models and proofs. |
+| `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it. |
+| `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
 | `scripts/ProofCheck.lean` | The proof check (below). |
 | `COVERAGE.md` | What is modelled, tested and proved. |
 
@@ -56,8 +74,49 @@ included. It also fails if a theorem that COVERAGE.md calls proved is missing. R
 `lake build` first: the script checks the built modules, so it fails without a build and
 checks old code after a stale one.
 
-CI runs both in [`.github/workflows/formal.yml`](../.github/workflows/formal.yml) on every
-pull request that touches `formal/`.
+CI runs both, and the galaspec tests below, in
+[`.github/workflows/formal.yml`](../.github/workflows/formal.yml) on every pull request
+that touches `formal/`.
+
+## Running galaspec
+
+```shell
+lake build galaspec
+lake exe galaspec run prog.json             # or .lake/build/bin/galaspec run prog.json
+lake exe galaspec run --fuel 100000000 prog.json
+```
+
+`prog.json` is a Core JSON document. To export one from GALA source, from the repository
+root:
+
+```shell
+bazel run //internal/formal/coreexport/galacore -- "$PWD/main.gala" > prog.json
+```
+
+galaspec prints the program's output on stdout, exactly, and on stderr ends with the
+line `galaspec: outcome=<outcome>`. The exit code says the same:
+
+| Exit | Outcome | Meaning |
+|---|---|---|
+| 0 | `ok` | The program ran to the end. |
+| 1 | `panic:CLASS` | It panicked. CLASS is `match` (no arm matched), `divide` (integer division by zero), `index` or `other` (a negative shift count). |
+| 2 | `fuel` | It used up its steps (10^6 unless `--fuel N`). Inconclusive, never agreement. |
+| 3 | `unsupported:KIND` | Execution reached a construct outside S1. KIND is the exporter's `unsupported` name, or one listed in [COVERAGE.md](COVERAGE.md#where-galaspec-stops). |
+| 4 | `malformed` | The input is not a Core JSON v1 document, or the command line is wrong. |
+
+The line before the outcome line, when there is one, says more: the panic message, or
+what was unsupported.
+
+### Tests
+
+```shell
+lake exe galaspec-tests
+```
+
+runs every fixture `tests/<name>.json` and compares its output and outcome with
+`tests/<name>.out` and `tests/<name>.outcome`. After changing the exporter or a source in
+`tests/src/`, re-export the fixtures with `formal/tests/export.sh` from the repository
+root, and check any changed `.out` against `gala run`.
 
 ### Bazel
 
