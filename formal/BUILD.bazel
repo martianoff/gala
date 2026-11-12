@@ -116,6 +116,23 @@ lean_binary(
     deps = [":galaspec_main"],
 )
 
+# The command-line contract the differential harness relies on, for this
+# binary (formal.yml checks the Lake-built one the same way).
+sh_test(
+    name = "galaspec_cli_test",
+    srcs = ["galaspec_cli_test.sh"],
+    args = [
+        "$(rootpath :galaspec)",
+        "$(rootpath tests/panic_divide.json)",
+        "$(rootpath tests/ex_tco_deep_sum.json)",
+    ],
+    data = [
+        "tests/ex_tco_deep_sum.json",
+        "tests/panic_divide.json",
+        ":galaspec",
+    ],
+)
+
 lean_library(
     name = "galaspec_tests_main",
     srcs = ["tests/GalaTests.lean"],

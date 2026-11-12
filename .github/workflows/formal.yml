@@ -3,7 +3,7 @@ name: Formal
 # Builds the Lean semantics in formal/ and checks its proofs, then compares galaspec,
 # the Lean reference interpreter, with the transpiler (internal/formal/difftest). See
 # formal/README.md and docs/FORMAL_SEMANTICS.MD. Lean is built with Lake (the primary
-# build) and, in the bazel and difftest jobs, with Bazel under --config=formal. The
+# build) and, in the difftest job, with Bazel under --config=formal. The
 # other Bazel workflows never use that config, so they stay Lean-free.
 #
 # It runs for every change that can move a differential verdict: the spec, the
@@ -185,7 +185,7 @@ jobs:
   # galaspec and through the transpiler and Go. A DISAGREE not listed in
   # internal/formal/difftest/known_disagreements.json fails it, and so does a fall in
   # the number of agreeing examples. Its coverage section and summary go to the job
-  # summary.
+  # summary. It also runs the Bazel build of formal/ (rules_lean, --config=formal).
   difftest:
     name: Differential run
     runs-on: ubuntu-latest
@@ -238,6 +238,18 @@ jobs:
           disk-cache: ${{ github.workflow }}-difftest-go${{ steps.setup-go.outputs.go-version }}
           repository-cache: true
 
+      - name: Lean proofs and galaspec tests (Bazel)
+        # The Lean spec built with rules_lean under the opt-in --config=formal
+        # (formal/BUILD.bazel): every module with warnings as errors, the proof
+        # check with the theorems COVERAGE.md calls proved, the galaspec fixture
+        # and command-line tests. Lake above stays the primary build. Here, not in
+        # a job of its own, so Lean is fetched and galaspec built once for this
+        # step and the differential run.
+        run: |
+          bazel test --config=formal //formal/... \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+
       - name: Differential run
         # --config=formal builds //formal:galaspec with rules_lean and hands it to
         # the test. The fuel is enough for examples/tco_deep_sum's million nested
@@ -269,6 +281,7 @@ jobs:
           fi
           cat "$OUTPUTS/summary.md" "$OUTPUTS/coverage_section.md" >> "$GITHUB_STEP_SUMMARY"
           # formal/COVERAGE.md carries the section; say when the committed one is stale.
+          # --config=formal only so Bazel keeps the analysis cache of the run above.
           bazel run --config=formal //internal/formal/difftest/splicecoverage \
             --action_env=GOROOT="$GOROOT" --action_env=PATH -- "$PWD/$OUTPUTS/coverage_section.md"
           if ! git diff --quiet -- formal/COVERAGE.md; then
@@ -278,28 +291,3 @@ jobs:
               echo "\`bazel run //internal/formal/difftest/splicecoverage -- <its coverage_section.md>\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  # The same modules built with Bazel through rules_lean, under the opt-in
-  # --config=formal (formal/BUILD.bazel). Lake above stays the primary build.
-  bazel:
-    name: Lean proofs and galaspec (Bazel)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Only the repository cache: it holds the Lean archive rules_lean
-      # downloads (about 600 MB) from Lean's official release hosts, checksum
-      # verified. It is private to this repository's CI; Lean is never
-      # mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing").
-      - name: Setup Bazel
-        uses: bazel-contrib/setup-bazel@0.14.0
-        with:
-          # Keyed on the Lean pin, so an unrelated MODULE.bazel edit does not
-          # download Lean again.
-          repository-cache: formal/lean-toolchain
-
-      - name: Build, check the proofs and run the galaspec tests
-        run: bazel test --config=formal //formal/... --test_output=errors --verbose_failures

@@ -57,6 +57,9 @@ func specBin(t *testing.T) string {
 	}
 	if loc := os.Getenv(specRlocationEnv); loc != "" {
 		bin, err := runfiles.Rlocation(loc)
+		if err == nil {
+			_, err = os.Stat(bin)
+		}
 		if err != nil {
 			t.Fatalf("finding //formal:galaspec (%s) in the runfiles: %v", loc, err)
 		}

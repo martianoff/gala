@@ -136,9 +136,10 @@ formal/
   3. Compare stdout and outcome. Each comparison is one of four verdicts: `AGREE`,
      `DISAGREE`, `UNSUPPORTED` or `INCONCLUSIVE`.
 - **Where `galaspec` comes from:** under `--config=formal`, `//formal:galaspec`, built with
-  rules_lean, is a data dependency of the target. The `GALA_SPEC_BIN` environment
-  variable overrides it, e.g. with a Lake-built galaspec. With neither, the target fails
-  with a clear message. It never passes silently.
+  rules_lean, is a data dependency of the target. Without the config, the
+  `GALA_SPEC_BIN` environment variable names one instead, e.g. a Lake-built galaspec
+  (it also wins under the config). With neither, the target fails with a clear message.
+  It never passes silently.
 - **Plain `bazel test //...` stays Lean-free:** the target is tagged `manual`, it refers
   to `//formal:galaspec` only under `--config=formal`, and the formal CI job runs it
   explicitly.
@@ -278,7 +279,7 @@ flowchart LR
     F --> L1[install Lean from lean-toolchain<br/>cache .lake]
     L1 --> L2[lake build --wfail<br/>proofs + galaspec]
     L2 --> L3[axioms check<br/>no sorryAx]
-    F --> L4[bazel test --config=formal<br/>//internal/formal/difftest/differential:differential_test<br/>with //formal:galaspec]
+    B1 --> L4[bazel test --config=formal<br/>//internal/formal/difftest/differential:differential_test<br/>with //formal:galaspec]
     L4 --> L5[COVERAGE.md + job summary<br/>ratchets]
 ```
 
@@ -287,13 +288,14 @@ flowchart LR
 - **Bazel builds Lean too, opt-in.** [rules_lean](https://github.com/martianoff/rules_lean),
   a separate Bazel module with Windows support, is a dev dependency of the `gala` module
   (so modules that depend on gala never see it). `formal/BUILD.bazel` builds the same
-  modules as strictly as Lake does (warnings fail; a `lean_proof_test` checks every
-  declaration, private ones included, and the theorems COVERAGE.md calls proved), runs
-  the galaspec fixture tests, and links `//formal:galaspec` (a `lean_binary`), which the
-  differential test uses under the config. `formal.yml` runs
-  `bazel test --config=formal //formal/...` in a job next to the Lake one, and the
-  differential run uses the Bazel-built galaspec. Lake stays the primary path until the
-  maintainer decides otherwise.
+  modules under the same rules as Lake (warnings fail; a `lean_proof_test` checks every
+  declaration but compiler auxiliaries, private ones included, and the theorems
+  COVERAGE.md calls proved), runs the galaspec fixture and command-line tests, and links
+  `//formal:galaspec` (a `lean_binary`), which the differential test uses under the
+  config. In `formal.yml` the differential job runs
+  `bazel test --config=formal //formal/...` and then the differential run, so Lean is
+  fetched and galaspec built once; the Lake job runs next to it. Lake stays the primary
+  path until the maintainer decides otherwise.
   - **Why opt-in:** a Lean toolchain is about 620 MB to download and 3.3 GB unpacked, and
     every Bazel output base gets its own copy. So:
     - Lean targets sit behind `--config=formal`: without it they are incompatible with
@@ -303,9 +305,9 @@ flowchart LR
     - agent worktrees never fetch it either.
   - **One Lean version:** `lean.toolchain(version = …)` in `MODULE.bazel` must match
     `formal/lean-toolchain`. `tools/check_repo_policy.sh` fails when they differ.
-  - **Caching:** the Bazel jobs keep Bazel's repository cache, which holds the
-    downloaded Lean archive, and the differential run also keeps a disk cache. Both are
-    private to the repository's CI; see Licensing.
+  - **Caching:** the differential job keeps Bazel's repository cache, which holds the
+    downloaded Lean archive, and a disk cache. Both are private to the repository's CI;
+    see Licensing.
 - **Running only for formal changes:** `formal.yml` runs only on PRs that can move a
   verdict (`formal/`, `internal/formal/`, `internal/transpiler/`, the standard library
   packages and `examples/`) or touch the Bazel setup the opt-in build depends on
