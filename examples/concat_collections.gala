@@ -1,0 +1,14 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Concat joins two collections of one type: an Array with an Array, a List
+// with a List. An empty collection takes its element type from the receiver.
+func main() {
+    Println(ArrayOf(1, 2).Concat(ArrayOf(3)))
+    Println(ListOf(1, 2).Concat(ListOf(3, 4)))
+    Println(ArrayOf(1, 2).Concat(EmptyArray()))
+    Println(ListOf("a").Concat(EmptyList()))
+    Println(EmptyArray[int]().Concat(ArrayOf(5, 6)))
+    Println(EmptyList[int]().Concat(ListOf(7, 8)))
+}

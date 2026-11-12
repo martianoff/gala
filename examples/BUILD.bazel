@@ -210,6 +210,14 @@ gala_exec_test(
     expected = "bind_notation.out",
 )
 
+# Array.Concat and List.Concat join two collections of one type.
+gala_exec_test(
+    name = "concat_collections",
+    src = "concat_collections.gala",
+    expected = "concat_collections.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_exec_test(
     name = "lambda_return_slot",
     src = "lambda_return_slot.gala",
