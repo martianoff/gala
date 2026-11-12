@@ -63,7 +63,7 @@ val p = Point()
 
 **Unapply methods** — Each companion gets an `Unapply` method for use in pattern matching. You never need to call these directly; the `match` expression uses them behind the scenes. To test which variant a value is, `match` on it (see [Pattern Matching](pattern-matching.md)) — that's the idiomatic approach, and it stays exhaustive.
 
-**Copy and Equal** — Like all GALA structs, sealed types get `Copy()` and `Equal()` for free.
+**Copy and Equal** — Like all GALA structs, sealed types get `Copy()` and `Equal()` for free. `Equal` compares the case, then only that case's fields. `Copy(field = ...)` on a value of the sealed type sets only a field every case has; to set a field of one case, match the case and build it anew (`case Circle(_) => Circle(2.0)`), or call `Copy` on a constructor call (`Circle(1.0).Copy(Radius = 2.0)`). Any other field is [GALA-E0092](/docs/errors/gala-e0092/).
 
 ---
 

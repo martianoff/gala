@@ -71,9 +71,9 @@ own Equal is Go's ==, which cannot compare Bag values: field items has type
 func() int, a function`.
 
 **Fix.** In a generic function, constrain the type parameter with
-`comparable` when Go's `==` is what you mean, or compare with `Equal(a, b)`,
-which takes any type and calls the value's `Equal` method. A `List[T]` is not
-a type parameter, so `==` on one calls `List`'s `Equal`:
+`comparable`, or compare with `Equal(a, b)`, which takes any type and calls
+the value's `Equal` method. Either way `==` compares by `Equal`: on a
+`List[T]`, and on a `T comparable` that a `List` is passed as:
 
 ```gala
 package main
@@ -86,12 +86,9 @@ func sameKey[T comparable](a T, b T) bool = a == b
 
 func main() {
     Println(sameList(ListOf(1), ListOf(1))) // true: List's Equal
-    Println(sameKey("a", "a"))              // true
+    Println(sameKey(ListOf(1), ListOf(1)))  // true: List's Equal
 }
 ```
-
-`T comparable` keeps Go's `==`: a `List` passed as `T` compares by identity.
-Use `Equal(a, b)` for value equality in generic code.
 
 A function value cannot be compared at all: compare the values it returns.
 Inside a type's own `Equal`, compare its fields one by one instead of the

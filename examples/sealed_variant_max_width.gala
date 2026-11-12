@@ -26,13 +26,20 @@ func describe(r Option[Row]) string = r match {
     case None() => "none"
 }
 
+// zeroA sets A, a field of Wide only: Copy on a Row may set only a field every
+// case has, so the case is matched and built anew.
+func zeroA(r Row) Row = r match {
+    case Wide(_, b, c, d, e, f, g, h, i, j) => Wide(0, b, c, d, e, f, g, h, i, j)
+    case _ => r
+}
+
 func main() {
     val w = Wide(1, 2, 3, 4, 5, 6, 7, 8, 9, "ten")
     Println(sum(w))
     Println(label(w))
     Println(label(Narrow("n")))
     Println(describe(Some(w)))
-    Println(describe(Some(w.Copy(A = 0))))
+    Println(describe(Some(zeroA(w))))
     Println(describe(Some(Narrow("n"))))
     Println(describe(None()))
 }

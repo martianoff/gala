@@ -185,7 +185,16 @@ func (s Tree) Copy() Tree {
 	return Tree{v: std.Copy(s.v), l: std.Copy(s.l), r: std.Copy(s.r), _variant: std.Copy(s._variant)}
 }
 func (s Tree) Equal(other Tree) bool {
-	return std.Equal(s.v, other.v) && std.Equal(s.l, other.l) && std.Equal(s.r, other.r) && std.Equal(s._variant, other._variant)
+	if s._variant != other._variant {
+		return false
+	}
+	switch s._variant {
+	case _Tree_Leaf:
+		return std.Equal(s.v, other.v)
+	case _Tree_Node:
+		return (s.l == other.l || s.l != nil && other.l != nil && s.l.Equal(*other.l)) && (s.r == other.r || s.r != nil && other.r != nil && s.r.Equal(*other.r))
+	}
+	return true
 }
 func (s Tree) String() string {
 	switch s._variant {

@@ -697,6 +697,85 @@ func main() {
 			expectContains: "the constant 3 cannot be a string, the type expected here: it is a number",
 		},
 		{
+			name: "GALA-E0092 Copy of another case's field on a constructor call",
+			input: `package main
+
+sealed type Shape {
+    case Circle(r float64, label string)
+    case Sq(side float64, label string)
+}
+
+func main() {
+    Println(Sq(2.0, "s").Copy(r = 9.0))
+}`,
+			expectCode:     galaerr.CodeSealedCopyField,
+			expectContains: "case Sq of Shape has no field r (hint: Sq's fields are side, label)",
+		},
+		{
+			name: "GALA-E0092 Copy of one case's field on a value of the sealed type",
+			input: `package main
+
+sealed type Shape {
+    case Circle(r float64, label string)
+    case Sq(side float64, label string)
+}
+
+func main() {
+    val s Shape = Sq(2.0, "s")
+    Println(s.Copy(r = 9.0))
+}`,
+			expectCode:     galaerr.CodeSealedCopyField,
+			expectContains: "r is a field of Circle but not of Sq, and a Shape value may be any of its cases (hint: match the case and build it with the new r; for example `case Circle(_, label) => Circle(r, label)`)",
+		},
+		{
+			name: "GALA-E0092 Copy of a field no case has",
+			input: `package main
+
+sealed type Shape {
+    case Circle(r float64)
+    case Sq(side float64)
+}
+
+func main() {
+    val s Shape = Sq(2.0)
+    Println(s.Copy(width = 9.0))
+}`,
+			expectCode:     galaerr.CodeSealedCopyField,
+			expectContains: "Shape has no field width: none of its cases has one",
+		},
+		{
+			name: "GALA-E0092 Copy of the case tag",
+			input: `package main
+
+sealed type Shape {
+    case Circle(r float64)
+    case Sq(side float64)
+}
+
+func main() {
+    val s Shape = Sq(2.0)
+    Println(s.Copy(_variant = 1))
+}`,
+			expectCode:     galaerr.CodeSealedCopyField,
+			expectContains: "Shape has no field _variant",
+		},
+		{
+			name: "GALA-E0092 Copy of a field the cases give different types",
+			input: `package main
+
+sealed type V {
+    case A(x string)
+    case B(x int, y int)
+}
+
+func main() {
+    val v V = B(1, 2)
+    Println(v.Copy(x = 5))
+}`,
+			expectCode:     galaerr.CodeSealedCopyField,
+			expectContains: "cases A, B of V each have their own field x, so Copy cannot tell which one to set on a V",
+		},
+		{
 			// GALA-E0040 is the one code in this table raised during PARSING
 			// rather than analysis, so it also pins that a coded parse-phase
 			// diagnostic survives the pipeline with its code intact.

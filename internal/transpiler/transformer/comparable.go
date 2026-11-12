@@ -24,11 +24,17 @@ import (
 // of primitives only (by value, through fields, cases and type arguments),
 // with no Equal of its own anywhere in it. Go's == on a float is IEEE's, as
 // std.Equal's is, so a NaN equals nothing either way. Such comparisons, the
-// hot ones, cost what they did.
+// hot ones, cost what they did. (A sealed value keeps the fields of its other
+// cases zero, so Go's == on it compares only its own case's, as Equal does.)
+//
+// A type parameter constrained by comparable may stand for a type with an
+// Equal, so `a == b` on it is `std.EqualComparable(a, b)`: Go's ==, else the
+// values' Equal. A GALA struct, sealed type or collection passed as the
+// parameter compares by value, as == on it does; a pointer by identity.
 //
 // Go's `==` is kept, with Go's meaning, for what has no Equal: pointers
-// (`*T`, Ptr), interfaces, channels, Go types, nil, and type parameters, whose
-// type is not known statically (`T comparable` compares with Go's ==). A type
+// (`*T`, Ptr), interfaces, channels, Go types, nil, and type parameters with
+// another constraint (a union of primitives, whose == is Equal's). A type
 // that is not known is left to Go as well.
 //
 // Inside a type's own Equal method, == on that type is Go's: lowering it to
@@ -46,6 +52,7 @@ type eqMode int
 const (
 	eqGo           eqMode = iota // Go's ==: it gives Equal's answer, or the type has no Equal
 	eqMethod                     // the Equal method
+	eqStd                        // std.EqualComparable: a type parameter constrained by comparable
 	eqIncomparable               // neither: GALA-E0084
 )
 
@@ -450,6 +457,11 @@ func (c *comparer) declaration(typ transpiler.Type, meta *transpiler.TypeMetadat
 // operand of a type that has neither Equal nor Go's == is eqIncomparable,
 // and badType is its type.
 func (t *galaASTTransformer) operandsEquality(xType, yType transpiler.Type, xLiteral bool) (eq equality, badType transpiler.Type, swapped bool) {
+	// The other operand must be known and not an interface, whose == with a T
+	// is Go's (and which std.EqualComparable could not take).
+	if t.isComparableTypeParam(xType) && t.isConcreteOperand(yType) || t.isComparableTypeParam(yType) && t.isConcreteOperand(xType) {
+		return equality{mode: eqStd}, nil, false
+	}
 	ex := t.equalityOf(xType)
 	if ex.mode == eqIncomparable {
 		return ex, xType, false
@@ -479,6 +491,30 @@ func (t *galaASTTransformer) operandsEquality(xType, yType transpiler.Type, xLit
 	return equality{mode: eqGo}, nil, false
 }
 
+// isConcreteOperand reports whether typ, an operand's type, is known and not
+// an interface.
+func (t *galaASTTransformer) isConcreteOperand(typ transpiler.Type) bool {
+	return !transpiler.IsUnusable(typ) && !t.isInterfaceType(typ)
+}
+
+// isComparableTypeParam reports whether typ is a type parameter of the
+// enclosing declaration constrained by comparable.
+func (t *galaASTTransformer) isComparableTypeParam(typ transpiler.Type) bool {
+	var name string
+	switch tt := typ.(type) {
+	case transpiler.BasicType:
+		name = tt.Name
+	case transpiler.NamedType:
+		if tt.Package != "" {
+			return false
+		}
+		name = tt.Name
+	default:
+		return false
+	}
+	return t.activeTypeParams[name] && t.typeParamConstraints[name] == "comparable"
+}
+
 // isLiteral reports whether expr is a literal, optionally negated: an operand
 // whose evaluation order does not matter.
 func isLiteral(expr ast.Expr) bool {
@@ -505,6 +541,8 @@ func (t *galaASTTransformer) lowerEquality(left, right srcNode, cmp ast.Expr) (a
 	switch {
 	case eq.mode == eqIncomparable:
 		return nil, t.incomparableOperandsError(left, right, bin.Op, badType, eq)
+	case eq.mode == eqStd:
+		return t.stdCallExpr(transpiler.FuncEqualComparable, bin.X, bin.Y, bin.Op == token.NEQ), nil
 	case eq.mode == eqMethod && swapped:
 		return t.equalCallExpr(bin.Y, yType, bin.X, bin.Op == token.NEQ, right)
 	case eq.mode == eqMethod:
@@ -527,6 +565,15 @@ func (t *galaASTTransformer) equalCallExpr(x ast.Expr, xType transpiler.Type, y 
 		call = &ast.UnaryExpr{Op: token.NOT, X: call}
 	}
 	return call, nil
+}
+
+// stdCallExpr is `std.<fn>(x, y)`, negated when negate is set.
+func (t *galaASTTransformer) stdCallExpr(fn string, x, y ast.Expr, negate bool) ast.Expr {
+	var call ast.Expr = &ast.CallExpr{Fun: t.stdIdent(fn), Args: []ast.Expr{x, y}}
+	if negate {
+		call = &ast.UnaryExpr{Op: token.NOT, X: call}
+	}
+	return call
 }
 
 // incomparableOperandsError is GALA-E0084 for `left tok right`, whose operand
@@ -591,6 +638,8 @@ func (t *galaASTTransformer) lowerPatternEquality(pat patExpr, pattern, subject 
 			hint)
 	case eqMethod:
 		return t.equalCallExpr(subject, subjectType, pattern, false, pat.at())
+	case eqStd:
+		return t.stdCallExpr(transpiler.FuncEqualComparable, subject, pattern, false), nil
 	}
 	return cond, nil
 }

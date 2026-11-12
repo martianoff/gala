@@ -155,6 +155,11 @@ func describe(p Post) string = p match {
 }
 
 func main() { Println(describe(Post(ListOf("intro")))) }`, want: []string{".Equal(Intro.Get())"}},
+		{name: "type parameter constrained by comparable", src: `func same[T comparable](a T, b T) bool = a == b
+
+func differ[T comparable](a T, b T) bool = a != b
+
+func main() { Println(same(ListOf(1), ListOf(1)), differ(1, 2)) }`, want: []string{"return std.EqualComparable(a, b)", "return !std.EqualComparable(a, b)"}},
 		{name: "a field compared inside another type's Equal", src: `struct W(xs List[int])
 
 func (w W) Equal(o W) bool = w.xs == o.xs
@@ -175,7 +180,7 @@ func main() { Println(W(ListOf(1)) == W(ListOf(1))) }`, want: []string{"w.xs.Get
 // TestEqualityKeepsGoEquality: `==` stays Go's where that gives Equal's
 // answer — a type of primitives only, through fields, cases and type
 // arguments, with no Equal of its own — and, with Go's meaning, where there is
-// no Equal: pointers, interfaces, nil, type parameters and Go types. Inside a
+// no Equal: pointers, interfaces, nil and Go types. Inside a
 // type's own Equal, == on that type is Go's, or the method would call itself.
 // No case's generated Go calls an Equal method outside the synthesized ones.
 func TestEqualityKeepsGoEquality(t *testing.T) {
@@ -236,9 +241,6 @@ func main() { Println(same(nil, nil)) }`, want: "return a == b"},
 		{name: "interface values", src: `func same(a any, b any) bool = a == b
 
 func main() { Println(same(1, ArrayOf(1))) }`, want: "return a == b"},
-		{name: "type parameter constrained by comparable", src: `func same[T comparable](a T, b T) bool = a == b
-
-func main() { Println(same(1, 1)) }`, want: "return a == b"},
 		{name: "comparisons with nil", src: `func f(g func(int) int, m map[string]int, s []int) bool = g == nil || m != nil || nil == s
 
 func main() { Println(f(nil, nil, nil)) }`, want: "return g == nil || m != nil || nil == s"},

@@ -15,9 +15,9 @@ import (
 // TestSealedEqualSynthesized verifies that the transpiler auto-generates
 // an Equal(other) method on every sealed parent type — the same way it
 // does for regular structs (see GALA.MD §4 "Automatic Copy and Equal
-// Methods"). The body must compare every field including _variant via
-// std.Equal, so that distinct variants are inequal even when their
-// non-_variant fields happen to share zero values.
+// Methods"). The body compares _variant first, so distinct variants are
+// unequal, and then only the fields of the value's own case: a field of
+// another case never decides it.
 //
 // gala_team (FocusEquals comment in app/ui/view.gala:728-730) reported
 // having to hand-write equality dispatch for sealed types because Equal
@@ -52,7 +52,7 @@ func main() {
 `,
 			mustHave: []string{
 				"func (s FocusState) Equal(other FocusState) bool",
-				"std.Equal(s._variant, other._variant)",
+				"return s._variant == other._variant",
 			},
 		},
 		{
@@ -73,10 +73,10 @@ func main() {
 `,
 			mustHave: []string{
 				"func (s Status) Equal(other Status) bool",
-				"std.Equal(s.Attempt, other.Attempt)",
-				"std.Equal(s.Max, other.Max)",
-				"std.Equal(s.Question, other.Question)",
-				"std.Equal(s._variant, other._variant)",
+				"if s._variant != other._variant {",
+				// Each case compares only its own fields.
+				"case _Status_StRecovering:\n\t\treturn std.Equal(s.Attempt, other.Attempt) && std.Equal(s.Max, other.Max)\n",
+				"case _Status_StHelpWaiting:\n\t\treturn std.Equal(s.Question, other.Question)\n",
 			},
 		},
 	}

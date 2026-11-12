@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -253,11 +254,7 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 	}
 
 	if !hasEqual {
-		equalMethod, err := t.generateEqualMethod(name, parentFields, tParams)
-		if err != nil {
-			return nil, err
-		}
-		decls = append(decls, equalMethod)
+		decls = append(decls, t.generateSealedEqualMethod(name, variants, tParams))
 	}
 
 	// 6. Generate String() method on parent
@@ -939,6 +936,207 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 			},
 		},
 	}
+}
+
+// generateSealedEqualMethod generates Equal on the parent sealed type: two
+// values are equal when they are the same case with equal fields. Only the
+// case's own fields are compared, so a field another case keeps in the shared
+// struct never decides it:
+//
+//	func (s Shape) Equal(other Shape) bool {
+//		if s._variant != other._variant {
+//			return false
+//		}
+//		switch s._variant {
+//		case _Shape_Circle:
+//			return std.Equal(s.r, other.r) && std.Equal(s.label, other.label)
+//		...
+//		}
+//		return true
+//	}
+//
+// A field of the type itself is held through a pointer and compared by the
+// Equal of its target, so a nested value compares the same way.
+func (t *galaASTTransformer) generateSealedEqualMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
+	field := func(recv, name string) ast.Expr {
+		return &ast.SelectorExpr{X: ast.NewIdent(recv), Sel: ast.NewIdent(name)}
+	}
+	var cases []ast.Stmt
+	for _, vi := range variants {
+		eqs := make([]ast.Expr, len(vi.fields))
+		for i, f := range vi.fields {
+			x, y := field("s", f.structFieldName), field("other", f.structFieldName)
+			if !f.isRecursive {
+				eqs[i] = t.stdCallExpr("Equal", x, y, false)
+			} else {
+				// x == y || x != nil && y != nil && x.Equal(*y)
+				eqs[i] = &ast.ParenExpr{X: &ast.BinaryExpr{
+					X:  &ast.BinaryExpr{X: x, Op: token.EQL, Y: y},
+					Op: token.LOR,
+					Y: &ast.BinaryExpr{
+						X: &ast.BinaryExpr{
+							X:  &ast.BinaryExpr{X: x, Op: token.NEQ, Y: ast.NewIdent("nil")},
+							Op: token.LAND,
+							Y:  &ast.BinaryExpr{X: y, Op: token.NEQ, Y: ast.NewIdent("nil")},
+						},
+						Op: token.LAND,
+						Y:  &ast.CallExpr{Fun: &ast.SelectorExpr{X: x, Sel: ast.NewIdent("Equal")}, Args: []ast.Expr{&ast.StarExpr{X: y}}},
+					},
+				}}
+			}
+		}
+		cond := joinExprs(token.LAND, eqs)
+		if cond == nil {
+			continue // no fields: the same case is equal
+		}
+		cases = append(cases, &ast.CaseClause{
+			List: []ast.Expr{ast.NewIdent(vi.tagConst)},
+			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{cond}}},
+		})
+	}
+
+	// With no case fields, the tags alone decide.
+	body := []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{
+		&ast.BinaryExpr{X: field("s", "_variant"), Op: token.EQL, Y: field("other", "_variant")},
+	}}}
+	if len(cases) > 0 {
+		body = []ast.Stmt{
+			&ast.IfStmt{
+				Cond: &ast.BinaryExpr{X: field("s", "_variant"), Op: token.NEQ, Y: field("other", "_variant")},
+				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("false")}}}},
+			},
+			&ast.SwitchStmt{Tag: field("s", "_variant"), Body: &ast.BlockStmt{List: cases}},
+			&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("true")}},
+		}
+	}
+
+	parentType := t.buildGenericTypeExpr(parentName, tParams)
+	return &ast.FuncDecl{
+		Recv: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("s")}, Type: parentType}}},
+		Name: ast.NewIdent("Equal"),
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("other")}, Type: parentType}}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("bool")}}},
+		},
+		Body: &ast.BlockStmt{List: body},
+	}
+}
+
+// sealedCopyField returns the Go field that `Copy(name = ...)` sets on a value
+// of sealed type meta, whose case is known when known is not nil: the field
+// that case calls name. A value whose case is not known may be any case, so
+// name must be a field of every case, stored once for all of them (not per
+// case, as a field the cases give different types is).
+func sealedCopyField(meta *transpiler.TypeMetadata, name string, known *transpiler.SealedVariant, line, col int) (string, error) {
+	if known != nil {
+		if i := slices.Index(known.FieldNames, name); i >= 0 && i < len(known.GoFieldNames) {
+			return known.GoFieldNames[i], nil
+		}
+		return "", galaerr.NewCodedSemanticError(galaerr.CodeSealedCopyField, line, col,
+			fmt.Sprintf("case %s of %s has no field %s", known.Name, meta.Name, name),
+			sealedFieldsHint(*known))
+	}
+	var goName string
+	var holders, others []transpiler.SealedVariant
+	oneType := true
+	for _, v := range meta.SealedVariants {
+		i := slices.Index(v.FieldNames, name)
+		if i < 0 || i >= len(v.GoFieldNames) {
+			others = append(others, v)
+			continue
+		}
+		if goName != "" && v.GoFieldNames[i] != goName {
+			oneType = false
+		}
+		goName = v.GoFieldNames[i]
+		holders = append(holders, v)
+	}
+	switch {
+	case len(holders) == 0:
+		return "", galaerr.NewCodedSemanticError(galaerr.CodeSealedCopyField, line, col,
+			fmt.Sprintf("%s has no field %s: none of its cases has one", meta.Name, name),
+			"Copy sets the fields of the value's own case")
+	case !oneType:
+		return "", galaerr.NewCodedSemanticError(galaerr.CodeSealedCopyField, line, col,
+			fmt.Sprintf("cases %s of %s each have their own field %s, so Copy cannot tell which one to set on a %s", caseNames(holders), meta.Name, name, meta.Name),
+			sealedRebuildHint(holders[0], name))
+	case len(others) > 0:
+		return "", galaerr.NewCodedSemanticError(galaerr.CodeSealedCopyField, line, col,
+			fmt.Sprintf("%s is a field of %s but not of %s, and a %s value may be any of its cases", name, caseNames(holders), caseNames(others), meta.Name),
+			sealedRebuildHint(holders[0], name))
+	}
+	return goName, nil
+}
+
+// caseNames lists the names of cases, comma-separated.
+func caseNames(cases []transpiler.SealedVariant) string {
+	names := make([]string, len(cases))
+	for i, v := range cases {
+		names[i] = v.Name
+	}
+	return strings.Join(names, ", ")
+}
+
+// sealedRebuildHint shows how to set field name of case v on a value of a
+// sealed type: match the case and build it anew, as
+// `case Circle(_, label) => Circle(r, label)`.
+func sealedRebuildHint(v transpiler.SealedVariant, name string) string {
+	pattern := make([]string, len(v.FieldNames))
+	for i, f := range v.FieldNames {
+		pattern[i] = f
+		if f == name {
+			pattern[i] = "_"
+		}
+	}
+	return fmt.Sprintf("match the case and build it with the new %s; for example `case %s(%s) => %s(%s)`",
+		name, v.Name, strings.Join(pattern, ", "), v.Name, strings.Join(v.FieldNames, ", "))
+}
+
+// joinExprs joins exprs with the binary operator op, left to right; nil for
+// none.
+func joinExprs(op token.Token, exprs []ast.Expr) ast.Expr {
+	var joined ast.Expr
+	for _, e := range exprs {
+		if joined == nil {
+			joined = e
+		} else {
+			joined = &ast.BinaryExpr{X: joined, Op: op, Y: e}
+		}
+	}
+	return joined
+}
+
+// sealedFieldsHint names the fields of case v.
+func sealedFieldsHint(v transpiler.SealedVariant) string {
+	if len(v.FieldNames) == 0 {
+		return fmt.Sprintf("%s has no fields", v.Name)
+	}
+	return fmt.Sprintf("%s's fields are %s", v.Name, strings.Join(v.FieldNames, ", "))
+}
+
+// sealedCaseOf returns the case of sealed type meta that receiver, a lowered
+// expression, builds: a case's constructor call, `Sq{}.Apply(...)`. It is nil
+// for any other expression, whose case is not known statically.
+func sealedCaseOf(receiver ast.Expr, meta *transpiler.TypeMetadata) *transpiler.SealedVariant {
+	call, ok := ast.Unparen(receiver).(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Apply" {
+		return nil
+	}
+	lit, ok := sel.X.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	name, _ := extractTypeNameFromExpr(lit.Type)
+	for i := range meta.SealedVariants {
+		if meta.SealedVariants[i].Name == name {
+			return &meta.SealedVariants[i]
+		}
+	}
+	return nil
 }
 
 // isSelfReferentialSealedField checks if a field type text references the parent sealed type.

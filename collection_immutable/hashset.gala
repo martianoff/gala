@@ -140,12 +140,7 @@ func (s HashSet[T]) Contains(elem T) bool {
 // containsInNode searches for an element in a node.
 func containsInNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) bool {
     if node.isLeaf {
-        for i := 0; i < node.entries.Size(); i++ {
-            if node.entries[i] == elem {
-                return true
-            }
-        }
-        return KeyIndexByValue(node.entries, elem) >= 0
+        return KeyIndex(node.entries, elem) >= 0
     }
 
     val bit = bitpos(hashCode, level)

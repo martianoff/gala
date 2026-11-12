@@ -1,0 +1,5 @@
+Sq(2, s) true true false Circle(9, c)
+Sq(2, t) Circle(1, d)
+Some(square) true
+B(5, 2) A(b) Sq(3, s)
+true false

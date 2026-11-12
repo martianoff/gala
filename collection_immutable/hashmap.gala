@@ -95,12 +95,7 @@ func (m HashMap[K, V]) Contains(key K) bool {
 // containsKeyInNode searches for a key in a node.
 func containsKeyInNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) bool {
     if node.isLeaf {
-        for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] == key {
-                return true
-            }
-        }
-        return KeyIndexByValue(node.keys, key) >= 0
+        return KeyIndex(node.keys, key) >= 0
     }
 
     val bit = hashMapBitpos(hashCode, level)
@@ -124,12 +119,7 @@ func (m HashMap[K, V]) Get(key K) Option[V] {
 // getFromNodeMap searches for a key in a node and returns its value.
 func getFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) Option[V] {
     if node.isLeaf {
-        for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] == key {
-                return Some[V](node.values[i])
-            }
-        }
-        val i = KeyIndexByValue(node.keys, key)
+        val i = KeyIndex(node.keys, key)
         return if (i >= 0) Some[V](node.values[i]) else None[V]()
     }
 

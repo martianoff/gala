@@ -1379,6 +1379,24 @@ func main() {
 			},
 		},
 		{
+			name: "Copy of a field only some cases of the sealed value have",
+			code: galaerr.CodeSealedCopyField, // GALA-E0092
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Circle(r float64, label string)
+    case Sq(side float64, label string)
+}
+
+func main() {
+    val s Shape = Sq(2.0, "s")
+    Println(s.Copy(r = 9.0))
+}
+`)
+			},
+		},
+		{
 			name: "sealed type method of another signature than the generated one",
 			code: galaerr.CodeSealedMethodSignature, // GALA-E0093
 			render: func(t *testing.T) string {
