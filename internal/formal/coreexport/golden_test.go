@@ -150,15 +150,15 @@ func main() {
 
 func apply(x int, f func(int) int) int = f(x)
 
-func make(n int) func(x int) func() = () => Println(n)
+func adder(n int) func(x int) func() int = (x int) => () => n + x
 
 func main() {
     val sq = (x int) => x * x
-    val add = (a int, b) int => {
+    val add = (a int, b int) int => {
         a + b
     }
-    Println(apply(3, (y) => y + 1), sq(2), add(1, 2), make(1)(2)())
-    Println(apply(1, (var z int) => z), apply(1, (z int = 1) => z), apply(1, _ * 2))
+    Println(apply(3, (y) => y + 1), sq(2), add(1, 2), adder(1)(2)())
+    Println(apply(1, (var z int) => z), apply(1, _ * 2))
 }
 `},
 		{"unsupported", `package main

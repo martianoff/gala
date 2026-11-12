@@ -47,7 +47,7 @@ inductive Val
   | sealed (ty : String) (variant : String) (fs : List Val)
   /-- A lambda's value (S2): its parameters, body and the locals it closes over. A
       captured `var` is a `ref`, so the closure shares it with its scope. -/
-  | closure (params : List Param) (result : Option Ty) (body : Expr) (env : List (String × Val))
+  | closure (params : List Param) (body : Expr) (env : List (String × Val))
   /-- A top-level function used as a value. -/
   | fn (f : Func)
   /-- The cell a local `var` lives in (`St.heap`); never the value of an expression. -/

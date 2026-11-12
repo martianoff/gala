@@ -590,6 +590,7 @@ Every name an `unsupported` node can carry.
 | `if-init` | an `if` statement with an init statement, `if x := f(); x > 0` |
 | `short-var-decl` | `a := e` |
 | `partial-function` | a partial function literal, `{ case ... }` |
+| `placeholder-lambda` | a placeholder lambda, `_ * 2`, which the transpiler rewrites from the expected type |
 | `composite-literal` | a Go composite literal, `T{...}` |
 | `index` | indexing or explicit type arguments, `x[i]` |
 | `named-arg` | a named argument, `f(x = 1)` |

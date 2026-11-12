@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 369
+        "end": 357
       },
       "path": "lambdas.gala",
       "package": "main",
@@ -132,26 +132,26 @@
             "line": 5,
             "col": 1,
             "off": 61,
-            "end": 115
+            "end": 126
           },
-          "name": "make",
+          "name": "adder",
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 5,
-                "col": 11,
-                "off": 71,
-                "end": 76
+                "col": 12,
+                "off": 72,
+                "end": 77
               },
               "name": "n",
               "type": {
                 "kind": "type-name",
                 "pos": {
                   "line": 5,
-                  "col": 13,
-                  "off": 73,
-                  "end": 76
+                  "col": 14,
+                  "off": 74,
+                  "end": 77
                 },
                 "name": "int"
               }
@@ -161,18 +161,18 @@
             "kind": "type-func",
             "pos": {
               "line": 5,
-              "col": 18,
-              "off": 78,
-              "end": 96
+              "col": 19,
+              "off": 79,
+              "end": 101
             },
             "params": [
               {
                 "kind": "type-name",
                 "pos": {
                   "line": 5,
-                  "col": 25,
-                  "off": 85,
-                  "end": 88
+                  "col": 26,
+                  "off": 86,
+                  "end": 89
                 },
                 "name": "int"
               }
@@ -181,54 +181,94 @@
               "kind": "type-func",
               "pos": {
                 "line": 5,
-                "col": 30,
-                "off": 90,
-                "end": 96
+                "col": 31,
+                "off": 91,
+                "end": 101
               },
               "params": [],
-              "result": null
+              "result": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 5,
+                  "col": 38,
+                  "off": 98,
+                  "end": 101
+                },
+                "name": "int"
+              }
             }
           },
           "body": {
             "kind": "lambda",
             "pos": {
               "line": 5,
-              "col": 39,
-              "off": 99,
-              "end": 115
+              "col": 44,
+              "off": 104,
+              "end": 126
             },
-            "params": [],
-            "result": null,
-            "body": {
-              "kind": "call",
-              "pos": {
-                "line": 5,
-                "col": 45,
-                "off": 105,
-                "end": 115
-              },
-              "callee": {
-                "kind": "name",
+            "params": [
+              {
+                "kind": "param",
                 "pos": {
                   "line": 5,
                   "col": 45,
                   "off": 105,
-                  "end": 112
+                  "end": 110
                 },
-                "name": "Println"
+                "name": "x",
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 5,
+                    "col": 47,
+                    "off": 107,
+                    "end": 110
+                  },
+                  "name": "int"
+                }
+              }
+            ],
+            "result": null,
+            "body": {
+              "kind": "lambda",
+              "pos": {
+                "line": 5,
+                "col": 55,
+                "off": 115,
+                "end": 126
               },
-              "args": [
-                {
+              "params": [],
+              "result": null,
+              "body": {
+                "kind": "binary",
+                "pos": {
+                  "line": 5,
+                  "col": 61,
+                  "off": 121,
+                  "end": 126
+                },
+                "op": "+",
+                "left": {
                   "kind": "name",
                   "pos": {
                     "line": 5,
-                    "col": 53,
-                    "off": 113,
-                    "end": 114
+                    "col": 61,
+                    "off": 121,
+                    "end": 122
                   },
                   "name": "n"
+                },
+                "right": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 5,
+                    "col": 65,
+                    "off": 125,
+                    "end": 126
+                  },
+                  "name": "x"
                 }
-              ]
+              }
             }
           }
         },
@@ -237,8 +277,8 @@
           "pos": {
             "line": 7,
             "col": 1,
-            "off": 117,
-            "end": 369
+            "off": 128,
+            "end": 357
           },
           "name": "main",
           "params": [],
@@ -248,8 +288,8 @@
             "pos": {
               "line": 7,
               "col": 13,
-              "off": 129,
-              "end": 369
+              "off": 140,
+              "end": 357
             },
             "stmts": [
               {
@@ -257,8 +297,8 @@
                 "pos": {
                   "line": 8,
                   "col": 5,
-                  "off": 135,
-                  "end": 160
+                  "off": 146,
+                  "end": 171
                 },
                 "names": [
                   "sq"
@@ -271,8 +311,8 @@
                     "pos": {
                       "line": 8,
                       "col": 14,
-                      "off": 144,
-                      "end": 160
+                      "off": 155,
+                      "end": 171
                     },
                     "params": [
                       {
@@ -280,8 +320,8 @@
                         "pos": {
                           "line": 8,
                           "col": 15,
-                          "off": 145,
-                          "end": 150
+                          "off": 156,
+                          "end": 161
                         },
                         "name": "x",
                         "type": {
@@ -289,8 +329,8 @@
                           "pos": {
                             "line": 8,
                             "col": 17,
-                            "off": 147,
-                            "end": 150
+                            "off": 158,
+                            "end": 161
                           },
                           "name": "int"
                         }
@@ -302,8 +342,8 @@
                       "pos": {
                         "line": 8,
                         "col": 25,
-                        "off": 155,
-                        "end": 160
+                        "off": 166,
+                        "end": 171
                       },
                       "op": "*",
                       "left": {
@@ -311,8 +351,8 @@
                         "pos": {
                           "line": 8,
                           "col": 25,
-                          "off": 155,
-                          "end": 156
+                          "off": 166,
+                          "end": 167
                         },
                         "name": "x"
                       },
@@ -321,8 +361,8 @@
                         "pos": {
                           "line": 8,
                           "col": 29,
-                          "off": 159,
-                          "end": 160
+                          "off": 170,
+                          "end": 171
                         },
                         "name": "x"
                       }
@@ -335,8 +375,8 @@
                 "pos": {
                   "line": 9,
                   "col": 5,
-                  "off": 165,
-                  "end": 214
+                  "off": 176,
+                  "end": 229
                 },
                 "names": [
                   "add"
@@ -349,8 +389,8 @@
                     "pos": {
                       "line": 9,
                       "col": 15,
-                      "off": 175,
-                      "end": 214
+                      "off": 186,
+                      "end": 229
                     },
                     "params": [
                       {
@@ -358,8 +398,8 @@
                         "pos": {
                           "line": 9,
                           "col": 16,
-                          "off": 176,
-                          "end": 181
+                          "off": 187,
+                          "end": 192
                         },
                         "name": "a",
                         "type": {
@@ -367,8 +407,8 @@
                           "pos": {
                             "line": 9,
                             "col": 18,
-                            "off": 178,
-                            "end": 181
+                            "off": 189,
+                            "end": 192
                           },
                           "name": "int"
                         }
@@ -378,20 +418,29 @@
                         "pos": {
                           "line": 9,
                           "col": 23,
-                          "off": 183,
-                          "end": 184
+                          "off": 194,
+                          "end": 199
                         },
                         "name": "b",
-                        "type": null
+                        "type": {
+                          "kind": "type-name",
+                          "pos": {
+                            "line": 9,
+                            "col": 25,
+                            "off": 196,
+                            "end": 199
+                          },
+                          "name": "int"
+                        }
                       }
                     ],
                     "result": {
                       "kind": "type-name",
                       "pos": {
                         "line": 9,
-                        "col": 26,
-                        "off": 186,
-                        "end": 189
+                        "col": 30,
+                        "off": 201,
+                        "end": 204
                       },
                       "name": "int"
                     },
@@ -399,9 +448,9 @@
                       "kind": "block",
                       "pos": {
                         "line": 9,
-                        "col": 33,
-                        "off": 193,
-                        "end": 214
+                        "col": 37,
+                        "off": 208,
+                        "end": 229
                       },
                       "stmts": [
                         {
@@ -409,8 +458,8 @@
                           "pos": {
                             "line": 10,
                             "col": 9,
-                            "off": 203,
-                            "end": 208
+                            "off": 218,
+                            "end": 223
                           },
                           "op": "+",
                           "left": {
@@ -418,8 +467,8 @@
                             "pos": {
                               "line": 10,
                               "col": 9,
-                              "off": 203,
-                              "end": 204
+                              "off": 218,
+                              "end": 219
                             },
                             "name": "a"
                           },
@@ -428,8 +477,8 @@
                             "pos": {
                               "line": 10,
                               "col": 13,
-                              "off": 207,
-                              "end": 208
+                              "off": 222,
+                              "end": 223
                             },
                             "name": "b"
                           }
@@ -444,16 +493,16 @@
                 "pos": {
                   "line": 12,
                   "col": 5,
-                  "off": 219,
-                  "end": 282
+                  "off": 234,
+                  "end": 298
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 12,
                     "col": 5,
-                    "off": 219,
-                    "end": 226
+                    "off": 234,
+                    "end": 241
                   },
                   "name": "Println"
                 },
@@ -463,16 +512,16 @@
                     "pos": {
                       "line": 12,
                       "col": 13,
-                      "off": 227,
-                      "end": 249
+                      "off": 242,
+                      "end": 264
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 12,
                         "col": 13,
-                        "off": 227,
-                        "end": 232
+                        "off": 242,
+                        "end": 247
                       },
                       "name": "apply"
                     },
@@ -482,8 +531,8 @@
                         "pos": {
                           "line": 12,
                           "col": 19,
-                          "off": 233,
-                          "end": 234
+                          "off": 248,
+                          "end": 249
                         },
                         "text": "3",
                         "hint": {
@@ -495,8 +544,8 @@
                         "pos": {
                           "line": 12,
                           "col": 22,
-                          "off": 236,
-                          "end": 248
+                          "off": 251,
+                          "end": 263
                         },
                         "params": [
                           {
@@ -504,8 +553,8 @@
                             "pos": {
                               "line": 12,
                               "col": 23,
-                              "off": 237,
-                              "end": 238
+                              "off": 252,
+                              "end": 253
                             },
                             "name": "y",
                             "type": null
@@ -517,8 +566,8 @@
                           "pos": {
                             "line": 12,
                             "col": 29,
-                            "off": 243,
-                            "end": 248
+                            "off": 258,
+                            "end": 263
                           },
                           "op": "+",
                           "left": {
@@ -526,8 +575,8 @@
                             "pos": {
                               "line": 12,
                               "col": 29,
-                              "off": 243,
-                              "end": 244
+                              "off": 258,
+                              "end": 259
                             },
                             "name": "y"
                           },
@@ -536,8 +585,8 @@
                             "pos": {
                               "line": 12,
                               "col": 33,
-                              "off": 247,
-                              "end": 248
+                              "off": 262,
+                              "end": 263
                             },
                             "text": "1",
                             "hint": {
@@ -553,16 +602,16 @@
                     "pos": {
                       "line": 12,
                       "col": 37,
-                      "off": 251,
-                      "end": 256
+                      "off": 266,
+                      "end": 271
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 12,
                         "col": 37,
-                        "off": 251,
-                        "end": 253
+                        "off": 266,
+                        "end": 268
                       },
                       "name": "sq"
                     },
@@ -572,8 +621,8 @@
                         "pos": {
                           "line": 12,
                           "col": 40,
-                          "off": 254,
-                          "end": 255
+                          "off": 269,
+                          "end": 270
                         },
                         "text": "2",
                         "hint": {
@@ -587,16 +636,16 @@
                     "pos": {
                       "line": 12,
                       "col": 44,
-                      "off": 258,
-                      "end": 267
+                      "off": 273,
+                      "end": 282
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 12,
                         "col": 44,
-                        "off": 258,
-                        "end": 261
+                        "off": 273,
+                        "end": 276
                       },
                       "name": "add"
                     },
@@ -606,8 +655,8 @@
                         "pos": {
                           "line": 12,
                           "col": 48,
-                          "off": 262,
-                          "end": 263
+                          "off": 277,
+                          "end": 278
                         },
                         "text": "1",
                         "hint": {
@@ -619,8 +668,8 @@
                         "pos": {
                           "line": 12,
                           "col": 51,
-                          "off": 265,
-                          "end": 266
+                          "off": 280,
+                          "end": 281
                         },
                         "text": "2",
                         "hint": {
@@ -634,43 +683,43 @@
                     "pos": {
                       "line": 12,
                       "col": 55,
-                      "off": 269,
-                      "end": 281
+                      "off": 284,
+                      "end": 297
                     },
                     "callee": {
                       "kind": "call",
                       "pos": {
                         "line": 12,
                         "col": 55,
-                        "off": 269,
-                        "end": 279
+                        "off": 284,
+                        "end": 295
                       },
                       "callee": {
                         "kind": "call",
                         "pos": {
                           "line": 12,
                           "col": 55,
-                          "off": 269,
-                          "end": 276
+                          "off": 284,
+                          "end": 292
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 12,
                             "col": 55,
-                            "off": 269,
-                            "end": 273
+                            "off": 284,
+                            "end": 289
                           },
-                          "name": "make"
+                          "name": "adder"
                         },
                         "args": [
                           {
                             "kind": "int",
                             "pos": {
                               "line": 12,
-                              "col": 60,
-                              "off": 274,
-                              "end": 275
+                              "col": 61,
+                              "off": 290,
+                              "end": 291
                             },
                             "text": "1",
                             "hint": {
@@ -684,9 +733,9 @@
                           "kind": "int",
                           "pos": {
                             "line": 12,
-                            "col": 63,
-                            "off": 277,
-                            "end": 278
+                            "col": 64,
+                            "off": 293,
+                            "end": 294
                           },
                           "text": "2",
                           "hint": {
@@ -704,16 +753,16 @@
                 "pos": {
                   "line": 13,
                   "col": 5,
-                  "off": 287,
-                  "end": 367
+                  "off": 303,
+                  "end": 355
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 13,
                     "col": 5,
-                    "off": 287,
-                    "end": 294
+                    "off": 303,
+                    "end": 310
                   },
                   "name": "Println"
                 },
@@ -723,16 +772,16 @@
                     "pos": {
                       "line": 13,
                       "col": 13,
-                      "off": 295,
-                      "end": 321
+                      "off": 311,
+                      "end": 337
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 13,
                         "col": 13,
-                        "off": 295,
-                        "end": 300
+                        "off": 311,
+                        "end": 316
                       },
                       "name": "apply"
                     },
@@ -742,8 +791,8 @@
                         "pos": {
                           "line": 13,
                           "col": 19,
-                          "off": 301,
-                          "end": 302
+                          "off": 317,
+                          "end": 318
                         },
                         "text": "1",
                         "hint": {
@@ -755,8 +804,8 @@
                         "pos": {
                           "line": 13,
                           "col": 22,
-                          "off": 304,
-                          "end": 320
+                          "off": 320,
+                          "end": 336
                         },
                         "params": [
                           {
@@ -764,8 +813,8 @@
                             "pos": {
                               "line": 13,
                               "col": 23,
-                              "off": 305,
-                              "end": 314
+                              "off": 321,
+                              "end": 330
                             }
                           }
                         ],
@@ -775,8 +824,8 @@
                           "pos": {
                             "line": 13,
                             "col": 37,
-                            "off": 319,
-                            "end": 320
+                            "off": 335,
+                            "end": 336
                           },
                           "name": "z"
                         }
@@ -788,16 +837,16 @@
                     "pos": {
                       "line": 13,
                       "col": 41,
-                      "off": 323,
-                      "end": 349
+                      "off": 339,
+                      "end": 354
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 13,
                         "col": 41,
-                        "off": 323,
-                        "end": 328
+                        "off": 339,
+                        "end": 344
                       },
                       "name": "apply"
                     },
@@ -807,73 +856,8 @@
                         "pos": {
                           "line": 13,
                           "col": 47,
-                          "off": 329,
-                          "end": 330
-                        },
-                        "text": "1",
-                        "hint": {
-                          "type": "int"
-                        }
-                      },
-                      {
-                        "kind": "lambda",
-                        "pos": {
-                          "line": 13,
-                          "col": 50,
-                          "off": 332,
-                          "end": 348
-                        },
-                        "params": [
-                          {
-                            "unsupported": "param-default",
-                            "pos": {
-                              "line": 13,
-                              "col": 51,
-                              "off": 333,
-                              "end": 342
-                            }
-                          }
-                        ],
-                        "result": null,
-                        "body": {
-                          "kind": "name",
-                          "pos": {
-                            "line": 13,
-                            "col": 65,
-                            "off": 347,
-                            "end": 348
-                          },
-                          "name": "z"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "kind": "call",
-                    "pos": {
-                      "line": 13,
-                      "col": 69,
-                      "off": 351,
-                      "end": 366
-                    },
-                    "callee": {
-                      "kind": "name",
-                      "pos": {
-                        "line": 13,
-                        "col": 69,
-                        "off": 351,
-                        "end": 356
-                      },
-                      "name": "apply"
-                    },
-                    "args": [
-                      {
-                        "kind": "int",
-                        "pos": {
-                          "line": 13,
-                          "col": 75,
-                          "off": 357,
-                          "end": 358
+                          "off": 345,
+                          "end": 346
                         },
                         "text": "1",
                         "hint": {
@@ -884,28 +868,27 @@
                         "kind": "binary",
                         "pos": {
                           "line": 13,
-                          "col": 78,
-                          "off": 360,
-                          "end": 365
+                          "col": 50,
+                          "off": 348,
+                          "end": 353
                         },
                         "op": "*",
                         "left": {
-                          "kind": "name",
+                          "unsupported": "placeholder-lambda",
                           "pos": {
                             "line": 13,
-                            "col": 78,
-                            "off": 360,
-                            "end": 361
-                          },
-                          "name": "_"
+                            "col": 50,
+                            "off": 348,
+                            "end": 349
+                          }
                         },
                         "right": {
                           "kind": "int",
                           "pos": {
                             "line": 13,
-                            "col": 82,
-                            "off": 364,
-                            "end": 365
+                            "col": 54,
+                            "off": 352,
+                            "end": 353
                           },
                           "text": "2",
                           "hint": {

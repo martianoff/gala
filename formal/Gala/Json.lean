@@ -99,10 +99,16 @@ private def optTy (j : Json) (k : String) : D (Option Ty) := do
   | none => pure none
   | some t => some <$> decodeTy t
 
+/-- The `unsupported` name of the first unsupported node among `js`, if any. A
+    declaration with an unsupported parameter or field (a default, a variadic one) is
+    unsupported as a whole. -/
+def firstUnsupported (js : List Json) : D (Option String) :=
+  js.findSomeM? unsupportedOf
+
 /-- The parameters of a function or lambda, or the first unsupported one's name: a default, a
     variadic or `val`/`var` parameter makes the whole declaration unsupported. -/
 def decodeParams (params : List Json) : D (Except String (List Param)) := do
-  if let some k ← params.findSomeM? unsupportedOf then return .error k
+  if let some k ← firstUnsupported params then return .error k
   return .ok (← params.mapM fun p => do
     unless (← kindOf p) == "param" do throw "expected a param"
     return ({ name := ← str p "name", type := ← optTy p "type" } : Param))
@@ -229,12 +235,6 @@ partial def decodeCase (j : Json) : D (Pat × Option Expr × Expr) := do
     | some g => some <$> decodeExpr g
   return (← decodePat (← field j "pattern"), g, ← decodeExpr (← field j "body"))
 end
-
-/-- The `unsupported` name of the first unsupported node among `js`, if any. A
-    declaration with an unsupported parameter or field (a default, a variadic one) is
-    unsupported as a whole. -/
-def firstUnsupported (js : List Json) : D (Option String) :=
-  js.findSomeM? unsupportedOf
 
 /-- A top-level declaration. -/
 def decodeTop (j : Json) : D Decl := do

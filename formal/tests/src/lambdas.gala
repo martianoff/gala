@@ -86,6 +86,12 @@ func main() {
     }
     Println(firstPos(-1, 5), firstPos(3, 5))
 
+    // A block lambda's trailing value is its result where a value is expected.
+    Println(apply(3, (y) => {
+        val z = y * 2
+        z + 1
+    }))
+
     // A lambda's parameter shadows an outer name only inside it.
     val x = 100
     val addX = (x int) => x + 1

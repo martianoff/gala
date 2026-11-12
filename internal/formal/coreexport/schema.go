@@ -431,6 +431,7 @@ const (
 	UnsupportedIfInit           = "if-init"
 	UnsupportedShortVarDecl     = "short-var-decl"
 	UnsupportedPartialFunction  = "partial-function"
+	UnsupportedPlaceholder      = "placeholder-lambda"
 	UnsupportedCompositeLiteral = "composite-literal"
 	UnsupportedIndex            = "index"
 	UnsupportedNamedArg         = "named-arg"
@@ -468,7 +469,7 @@ var unsupportedKinds = []string{
 	UnsupportedInterface, UnsupportedGenericDecl, UnsupportedMethod, UnsupportedGoResults,
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
-	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction,
+	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction, UnsupportedPlaceholder,
 	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedArg, UnsupportedSpreadArg,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,

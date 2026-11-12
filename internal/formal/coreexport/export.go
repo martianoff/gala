@@ -557,6 +557,9 @@ func (e *exporter) primaryExpr(p native.PrimaryExprNode) Node {
 
 func (e *exporter) primary(p native.PrimaryNode) Node {
 	switch {
+	case p.Identifier().Ok() && p.Identifier().GetText() == "_":
+		// A placeholder lambda `_ * 2`, rewritten from the expected type.
+		return e.unsupported(UnsupportedPlaceholder, p.GalaNodeRef)
 	case p.Identifier().Ok():
 		return of(e, &Name{Name: p.Identifier().GetText()}, p.GalaNodeRef)
 	case p.Literal().Ok():
