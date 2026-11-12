@@ -2,7 +2,8 @@
 
 Without the config the targets are incompatible with the target platform, so
 `bazel build //...` and `bazel test //...` skip them and never download Lean.
-Use these instead of loading @rules_lean directly, so no target misses the gate.
+Load the Lean rules from here, never from @rules_lean directly, so no target
+misses the gate; tools/check_repo_policy.sh enforces that.
 """
 
 load(
@@ -10,6 +11,7 @@ load(
     _lean_binary = "lean_binary",
     _lean_library = "lean_library",
     _lean_proof_test = "lean_proof_test",
+    _lean_test = "lean_test",
 )
 
 _LEAN_ONLY = select({
@@ -17,11 +19,21 @@ _LEAN_ONLY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+def _gated(rule, kwargs):
+    # Constraints of the caller's own (e.g. an OS) are kept, on top of the gate.
+    rule(
+        target_compatible_with = _LEAN_ONLY + kwargs.pop("target_compatible_with", []),
+        **kwargs
+    )
+
 def lean_library(**kwargs):
-    _lean_library(target_compatible_with = _LEAN_ONLY, **kwargs)
+    _gated(_lean_library, kwargs)
 
 def lean_binary(**kwargs):
-    _lean_binary(target_compatible_with = _LEAN_ONLY, **kwargs)
+    _gated(_lean_binary, kwargs)
+
+def lean_test(**kwargs):
+    _gated(_lean_test, kwargs)
 
 def lean_proof_test(**kwargs):
-    _lean_proof_test(target_compatible_with = _LEAN_ONLY, **kwargs)
+    _gated(_lean_proof_test, kwargs)

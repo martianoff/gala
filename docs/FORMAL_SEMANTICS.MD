@@ -299,9 +299,11 @@ flowchart LR
     `formal/lean-toolchain`. `tools/check_repo_policy.sh` fails when they differ.
   - **Caching:** CI keeps only Bazel's repository cache between runs, which holds the
     downloaded Lean archive. It is private to the repository's CI; see Licensing.
-- **Running only for formal changes:** `formal.yml` runs only on PRs that touch `formal/`,
-  `internal/formal/`, `internal/transpiler/` or `std/`. It is required for those PRs once
-  S1 is stable.
+- **Running only for formal changes:** `formal.yml` runs only on PRs that touch `formal/`
+  or the Bazel setup the opt-in build depends on (`MODULE.bazel`, `.bazelrc`,
+  `.bazelversion`, `.bazelignore`). Once `difftest` exists it also runs for
+  `internal/formal/`, `internal/transpiler/` and `std/`, and it is required for those PRs
+  once S1 is stable.
 - **Local use:** `bazel test --config=formal //formal/...` needs nothing but Bazel. For
   Lake, install Lean with `elan` (it reads `formal/lean-toolchain`), then:
 

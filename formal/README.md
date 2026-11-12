@@ -55,9 +55,9 @@ Each definition's doc comment says what it models, and each file's header names 
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
 | `BUILD.bazel` | The Bazel build of the same modules, with rules_lean. Hand-written; gazelle skips `formal/`. |
 | `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
-| `Gala.lean` | Root module, for `import Gala`. The build and the proof check find modules by directory, not through it. |
 | `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it. |
 | `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
+| `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS`. Lake and the Lake proof check find modules by directory, not through it. |
 | `scripts/ProofCheck.lean` | The proof check (below). |
 | `COVERAGE.md` | What is modelled, tested and proved. |
 
@@ -140,7 +140,11 @@ No elan is needed: rules_lean downloads the Lean release that `MODULE.bazel` pin
 same version as `lean-toolchain`) from Lean's official release hosts and verifies its
 checksum. The download is about 600 MB and unpacks to 3.3 GB in each Bazel output base, so
 it happens only under `--config=formal`. Without the config, `bazel build //...` and
-`bazel test //...` skip the Lean targets and never download Lean.
+`bazel test //...` skip the Lean targets and never download Lean. Switching the config
+on and off in one output base makes Bazel discard its analysis cache each time.
+
+Lake's `--wfail` has no Bazel counterpart yet: rules_lean reports Lean warnings but does
+not fail on them, so the Lake job is the one that catches a new warning.
 
 | Target | What it is |
 |---|---|

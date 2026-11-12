@@ -24,6 +24,8 @@ on:
       - 'examples/**'
       - 'MODULE.bazel'
       - '.bazelrc'
+      - '.bazelversion'
+      - '.bazelignore'
       - '.github/workflows/formal.yml'
   push:
     branches: [master]
@@ -39,6 +41,8 @@ on:
       - 'examples/**'
       - 'MODULE.bazel'
       - '.bazelrc'
+      - '.bazelversion'
+      - '.bazelignore'
       - '.github/workflows/formal.yml'
 
 permissions:

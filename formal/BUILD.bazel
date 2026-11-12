@@ -17,7 +17,8 @@ config_setting(
 )
 
 # Gala.lean and every module under Gala/, in dependency order: a module may
-# import only the modules listed before it. This file is the module root, so
+# import only the modules listed before it. Gala.lean imports them all, so it
+# stays last. This file is the module root, so
 # module names are Gala.X, as with Lake.
 GALA_SRCS = [
     "Gala/MatchLowering.lean",
@@ -26,7 +27,8 @@ GALA_SRCS = [
 
 # A module Lake builds but Bazel doesn't would go unchecked here.
 [
-    fail("formal/{} is not in GALA_SRCS in formal/BUILD.bazel; add it after the modules it imports".format(f))
+    fail(("formal/{} is not in GALA_SRCS in formal/BUILD.bazel; add it after the " +
+          "modules it imports and before Gala.lean").format(f))
     for f in glob(["Gala/**/*.lean"])
     if f not in GALA_SRCS
 ]
