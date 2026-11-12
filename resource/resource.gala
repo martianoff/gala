@@ -38,7 +38,7 @@ func Bracket[R any, A any](resource R, release func(R), body func(R) A) A {
 // The Close() error is intentionally discarded, matching the common cleanup
 // idiom; use Bracket if you need it.
 func Using[R Closeable, A any](res R, body func(R) A) A =
-    Bracket(res, (r) => { r.Close() }, body)
+    Bracket(res, (r) => { FromError(r.Close()) }, body)
 
 // WithLock is the mutex idiom built on Bracket: lock mu, run body, and unlock
 // on every exit path (normal or panic). Returns body's result.
