@@ -918,6 +918,15 @@ const (
 	// expected. GALA, like Go, never dereferences implicitly; the slot is
 	// declared as the Ptr, or the value is dereferenced.
 	CodePointerForValue ErrorCode = "GALA-E0099"
+
+	// E0100: a value of a concrete type fills a slot typed by an interface
+	// the type does not implement under Go's rules — an argument, a declared
+	// val, a result, a field, an element or an assignment. A method
+	// implements an interface method only with identical parameter and result
+	// types (Go has no covariant results), and a method on a pointer receiver
+	// is not in a value's method set. Such code used to reach `go build`,
+	// which reported "does not implement" against the generated code.
+	CodeInterfaceNotImplemented ErrorCode = "GALA-E0100"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

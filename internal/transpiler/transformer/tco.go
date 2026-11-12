@@ -311,6 +311,9 @@ func (t *galaASTTransformer) buildTailCallStep(
 		if err := t.checkPtrSlot(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
 			return nil, false, err
 		}
+		if err := t.checkInterfaceSlot(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
+			return nil, false, err
+		}
 		arg = t.wrapWithAssertion(arg, tc.paramTypes[i])
 		// A closure inside a tail-call argument would capture the loop-carried
 		// parameter by reference; once that parameter is reassigned on the next

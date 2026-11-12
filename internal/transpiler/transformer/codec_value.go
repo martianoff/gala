@@ -78,6 +78,29 @@ func (t *galaASTTransformer) injectedMetaParam(ty transpiler.Type) injectedMeta 
 	return noInjectedMeta
 }
 
+// writtenApplyParams is the companion Apply m as its call site writes its
+// arguments: without a first parameter whose metadata the transpiler injects
+// (`Codec[Job](AsIs())` writes only the naming of
+// `Apply(meta StructMeta[T], naming Naming)`), so the written arguments meet
+// the parameters they fill. m itself when it has no such parameter.
+func (t *galaASTTransformer) writtenApplyParams(m *transpiler.MethodMetadata) *transpiler.MethodMetadata {
+	if len(m.ParamTypes) == 0 || t.injectedMetaParam(m.ParamTypes[0]) == noInjectedMeta {
+		return m
+	}
+	written := *m
+	written.ParamTypes = m.ParamTypes[1:]
+	if len(m.ParamNames) > 0 {
+		written.ParamNames = m.ParamNames[1:]
+	}
+	written.DefaultExprs = make(map[int]transpiler.DefaultExpr, len(m.DefaultExprs))
+	for i, d := range m.DefaultExprs {
+		if i > 0 {
+			written.DefaultExprs[i-1] = d
+		}
+	}
+	return &written
+}
+
 // isInterfaceWithMethods reports whether meta describes an interface whose
 // methods are exactly want (name → parameter count).
 func isInterfaceWithMethods(meta *transpiler.TypeMetadata, want map[string]int) bool {
