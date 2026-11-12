@@ -70,7 +70,7 @@ func TestPtrVariadicAllowed(t *testing.T) {
 	tests := []struct {
 		name, body string
 	}{
-		{name: "no arguments", body: `Println(total(), Group("g").Total())`},
+		{name: "no arguments", body: `Println(total(), Group("g").Total(), c)`},
 		{name: "Ptr arguments", body: `Println(total(&c, &c, RequirePtr(lookup(true))), Group("g").Labelled("n", &c, &c, &c))`},
 		{name: "spread slice of Ptr", body: "val xs = SliceOf(&c, &c)\n    Println(total(xs...), Group(\"g\").Labelled(\"n\", xs...))"},
 	}

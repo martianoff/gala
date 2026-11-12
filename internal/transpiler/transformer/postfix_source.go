@@ -22,8 +22,12 @@ import (
 // handles and NativeKids, never through Typed() or the All accessors (see
 // declarations_native.go).
 
-// memberSrc is a member access suffix `.name`.
-type memberSrc struct{ suffixSrc }
+// memberSrc is a member access suffix `.name`; called says the suffix after
+// it is a call, which makes the member a method called.
+type memberSrc struct {
+	suffixSrc
+	called bool
+}
 
 // indexSrc is an index or type-argument suffix `[exprs]`.
 type indexSrc struct{ suffixSrc }
@@ -133,11 +137,10 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 		return nil, err
 	}
 	for i := first; i < len(suffixes); i++ {
-		s := suffixes[i]
 		if i == len(suffixes)-1 {
 			release()
 		}
-		if result, err = t.lowerSuffix(result, p, s); err != nil {
+		if result, err = t.lowerSuffix(result, p, suffixes, i); err != nil {
 			return nil, err
 		}
 	}
@@ -183,12 +186,14 @@ func (t *galaASTTransformer) lowerAppliedPartial(p postfixSrc, call suffixSrc) (
 	return &ast.CallExpr{Fun: lit, Args: []ast.Expr{arg}}, true, nil
 }
 
-// lowerSuffix applies s, a suffix of p, to base: a member access, an index
+// lowerSuffix applies suffixes[i], a suffix of p, to base: a member access, an index
 // or type arguments, or a call.
-func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, s suffixSrc) (ast.Expr, error) {
+func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes []suffixSrc, i int) (ast.Expr, error) {
+	s := suffixes[i]
 	if s.ident() != "" {
 		t.suffixShape(s, "selector")
-		return t.lowerMember(base, memberSrc{s})
+		called := i+1 < len(suffixes) && suffixes[i+1].opener() == "("
+		return t.lowerMember(base, memberSrc{s, called})
 	}
 	if s.childCount() >= 2 {
 		switch s.opener() {

@@ -5604,8 +5604,9 @@ import (
 func main() {
     RunBenchmarks(
         BenchFunc(Name = "BenchmarkAdd", Func = (b B) => {
+            var sum = 0
             for i := 0; i < b.N; i++ {
-                val x = 1 + 1
+                sum = sum + i
             }
         }),
     )

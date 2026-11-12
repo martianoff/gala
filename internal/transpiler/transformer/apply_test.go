@@ -32,9 +32,11 @@ func (a Append) Apply(param string) string = param + a.Name
 func main() {
     val a = Append("cherry")
     val res = a("apple")
+    Println(res)
 }`,
 			expected: `package main
 
+import "fmt"
 import "martianoff/gala/std"
 
 type Append struct {
@@ -62,6 +64,7 @@ func (a Append) Apply(param string) string {
 func main() {
 	var a = Append{Name: std.NewImmutable("cherry")}
 	var res = a.Apply("apple")
+	fmt.Println(res)
 }`,
 		},
 		{
@@ -72,9 +75,11 @@ struct Append(Name string)
 func (a Append) Apply(param string) string = param + a.Name
 func main() {
     val res = Append("cherry")("apple")
+    Println(res)
 }`,
 			expected: `package main
 
+import "fmt"
 import "martianoff/gala/std"
 
 // From Go, create it with NewAppend.
@@ -107,6 +112,7 @@ func (a Append) Apply(param string) string {
 }
 func main() {
 	var res = Append{Name: std.NewImmutable("cherry")}.Apply("apple")
+	fmt.Println(res)
 }`,
 		},
 		{
@@ -117,8 +123,11 @@ type Implode struct {}
 func (i Implode) Apply(param string) string = param + "!"
 func main() {
     val res = Implode("apple")
+    Println(res)
 }`,
 			expected: `package main
+
+import "fmt"
 
 type Implode struct {
 }
@@ -143,6 +152,7 @@ func (i Implode) Apply(param string) string {
 }
 func main() {
 	var res = Implode{}.Apply("apple")
+	fmt.Println(res)
 }`,
 		},
 		{
@@ -153,8 +163,11 @@ type Identity[T any] struct {}
 func (i Identity[T]) Apply(v T) T = v
 func main() {
     val res = Identity[int](10)
+    Println(res)
 }`,
 			expected: `package main
+
+import "fmt"
 
 type Identity[T any] struct {
 }
@@ -187,6 +200,7 @@ func (i Identity[T]) Apply(v T) T {
 }
 func main() {
 	var res = Identity[int]{}.Apply(10)
+	fmt.Println(res)
 }`,
 		},
 	}

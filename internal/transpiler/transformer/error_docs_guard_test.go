@@ -1443,6 +1443,22 @@ func main() {
 			},
 		},
 		{
+			name: "pointer to a mutable collection where the collection is expected",
+			code: galaerr.CodePointerForValue, // GALA-E0099
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "martianoff/gala/collection_mutable"
+
+func total(xs collection_mutable.Array[int]) int = xs.Length()
+
+func main() {
+    Println(total(collection_mutable.ArrayOf(1, 2)))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

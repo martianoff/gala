@@ -30,13 +30,13 @@ func TestAssignment(t *testing.T) {
 
 func main() {
     var x = 10
-    x = 20
+    x = x + 20
 }`,
 			expected: `package main
 
 func main() {
 	var x = 10
-	x = 20
+	x = x + 20
 }`,
 		},
 		{

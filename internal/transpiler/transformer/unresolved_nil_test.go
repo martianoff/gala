@@ -154,11 +154,13 @@ struct Node(Value int)
 `},
 		{"nested block in a branch", `func find(found bool, n *Node) *Node = if (found) n else {
     val m = n
+    Println(m)
     nil
 }
 `},
 		{"lambda with a declared result", `func pick() func(bool) *Node = (b bool) *Node => {
     val ok = b
+    Println(ok)
     nil
 }
 `},

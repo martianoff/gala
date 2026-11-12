@@ -78,10 +78,12 @@ val x = Some(10)
 func test() {
     x.ForEach((v int) => {
         val y = v * 2
+        Println(y)
     })
 }`,
 			expected: `package main
 
+import "fmt"
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(std.Some[int]{}.Apply(10))
@@ -89,6 +91,7 @@ var x = std.NewImmutable(std.Some[int]{}.Apply(10))
 func test() {
 	x.Get().ForEach(func(v int) {
 		var y = v * 2
+		fmt.Println(y)
 	})
 }
 `,

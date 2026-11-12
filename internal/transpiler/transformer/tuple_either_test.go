@@ -35,6 +35,7 @@ func main() {
         case Tuple(a, b) => fmt.Sprintf("%d %s", a, b)
         case _ => ""
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
@@ -53,6 +54,7 @@ func main() {
         case Right(s) => s.Size()
         case _ => 0
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
@@ -71,6 +73,7 @@ func main() {
         case Right(s) => s.Size()
         case _ => 0
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
@@ -85,6 +88,7 @@ func main() {
 func main() {
     val e = Left[int, string](10)
     val mapped = e.Map[int]((s string) => s.Size())
+    Println(mapped)
 }`,
 			expected: []string{
 				// Explicit type args include both method type arg and receiver type args
@@ -104,6 +108,7 @@ func main() {
         case Right(s) => fmt.Sprintf("Right: %s", s)
         case _ => "Unknown"
     }
+    Println(res)
 }`,
 			expected: []string{
 				// The helper is used only when _subj is exactly the extractor's
@@ -145,6 +150,7 @@ func TestTupleSyntax(t *testing.T) {
 
 func main() {
     val pair = (1, "hello")
+    Println(pair)
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
@@ -158,6 +164,7 @@ func main() {
 
 func main() {
     val triple = (42, "world", true)
+    Println(triple)
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
@@ -172,6 +179,7 @@ func main() {
 
 func main() {
     val quad = (1, 2, 3, 4)
+    Println(quad)
 }`,
 			expected: []string{
 				"std.Tuple4[int, int, int, int]",
@@ -193,6 +201,7 @@ func main() {
         case Tuple3(a, b, c) => fmt.Sprintf("%d %s %v", a, b, c)
         case _ => ""
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
@@ -213,6 +222,7 @@ func main() {
         case Tuple(x, y) => fmt.Sprintf("%d %s", x, y)
         case _ => ""
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
@@ -230,6 +240,7 @@ func main() {
         case Tuple(x, _) => x
         case _ => 0
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
@@ -248,6 +259,7 @@ func main() {
         case (x, y) => fmt.Sprintf("%d %s", x, y)
         case _ => ""
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",
@@ -267,6 +279,7 @@ func main() {
         case (a, b, c) => fmt.Sprintf("%d %s %v", a, b, c)
         case _ => ""
     }
+    Println(res)
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, bool]",
@@ -285,6 +298,7 @@ func getPair() Tuple[int, string] {
 
 func main() {
     val p = getPair()
+    Println(p)
 }`,
 			expected: []string{
 				"std.Tuple[int, string]",

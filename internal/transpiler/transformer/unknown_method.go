@@ -145,10 +145,7 @@ func (t *galaASTTransformer) unknownMethodError(
 	// has no methods" or "this type's metadata was loaded without them". For a
 	// type declared in the package being compiled the first reading is certain,
 	// so it can still be judged; for a foreign type the check stands down
-	// rather than risk reporting every call on it.
-	if len(typeMeta.Methods) == 0 && typeMeta.Package != t.packageName {
-		return nil
-	}
+	// rather than risk reporting every call on it (canJudgeMembers).
 	if _, declared := typeMeta.Methods[method]; declared {
 		return nil
 	}
@@ -158,7 +155,7 @@ func (t *galaASTTransformer) unknownMethodError(
 	if _, declared := goMethods[method]; declared {
 		return nil
 	}
-	if !t.receiverNamesAnInstance(typeMeta, recvType) {
+	if !t.canJudgeMembers(typeMeta, recvType) {
 		return nil
 	}
 	// A field holding a function is called the same way a method is; the field

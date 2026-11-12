@@ -102,6 +102,76 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 		hint)
 }
 
+// checkPointerForValue rejects a pointer to a GALA type filling a slot of
+// that type itself (GALA-E0099): `collection_mutable.ArrayOf(1, 2)`, a
+// `Ptr[Array[int]]`, where an `Array[int]` is expected. Only a slot whose
+// type is a GALA type is probed.
+func (t *galaASTTransformer) checkPointerForValue(expr ast.Expr, expected transpiler.Type, at srcNode) error {
+	if !at.ok() || isNilIdent(expr) || t.slotValueTypeMeta(expected) == nil {
+		return nil
+	}
+	ptr, ok := t.probeExprType(expr).(transpiler.PointerType)
+	meta := t.pointeeOfSlot(ptr, expected)
+	if !ok || meta == nil {
+		return nil
+	}
+	text := at.sourceText()
+	fix := fmt.Sprintf("dereference the pointer: `*%s`", text)
+	if addressed, ok := strings.CutPrefix(text, "&"); ok {
+		fix = fmt.Sprintf("pass the value itself: `%s`", addressed)
+	}
+	return pointerForValueError(at.rng(), text, ptr, expected, meta, fix)
+}
+
+// pointerForValueError is GALA-E0099 over r for the value spelled text, of
+// type ptr, filling a slot of the type expected, described by meta, that ptr
+// points to. fix, when not "", is the other way out the hint offers.
+func pointerForValueError(r srcRange, text string, ptr transpiler.PointerType, expected transpiler.Type, meta *transpiler.TypeMetadata, fix string) error {
+	hint := fmt.Sprintf("declare the parameter, field or variable as %s", displayType(transpiler.PointerType{Elem: expected, NonNull: true}))
+	if meta.Package == mutableCollectionsPackage {
+		hint += ", as mutable collections are passed"
+	}
+	if fix != "" {
+		hint += ", or " + fix
+	}
+	return spanErrorAt(galaerr.CodePointerForValue, r, r,
+		fmt.Sprintf("cannot use %s (%s) as %s: it is a pointer to the value, not the value", text, displayType(ptr), displayType(expected)),
+		hint)
+}
+
+// mutableCollectionsPackage is the package of GALA's mutable collections,
+// whose constructors return a Ptr: they are shared through it.
+const mutableCollectionsPackage = "collection_mutable"
+
+// slotValueTypeMeta is valueTypeMeta of the type a slot of type expected
+// holds, followed through aliases; nil for a slot with no type.
+func (t *galaASTTransformer) slotValueTypeMeta(expected transpiler.Type) *transpiler.TypeMetadata {
+	if transpiler.IsUnusable(expected) {
+		return nil
+	}
+	return t.valueTypeMeta(t.followAliasChain(expected))
+}
+
+// pointeeOfSlot is the metadata of the GALA type a slot of type expected
+// holds when ptr points to that type, nil otherwise.
+func (t *galaASTTransformer) pointeeOfSlot(ptr transpiler.PointerType, expected transpiler.Type) *transpiler.TypeMetadata {
+	meta := t.slotValueTypeMeta(expected)
+	if meta == nil || ptr.Elem == nil || t.valueTypeMeta(ptr.Elem) != meta {
+		return nil
+	}
+	return meta
+}
+
+// valueTypeMeta is the metadata of typ when typ is a GALA struct or sealed
+// type used by value, nil otherwise.
+func (t *galaASTTransformer) valueTypeMeta(typ transpiler.Type) *transpiler.TypeMetadata {
+	_, meta, _, ok := t.receiverTypeInfo(typ)
+	if !ok || meta == nil || meta.IsInterface || !declaredInGala(meta) {
+		return nil
+	}
+	return meta
+}
+
 // ptrReceiverMethodNames returns the names of the methods of types declared
 // on a `Ptr` receiver. Only a method of one of these names can need a
 // non-null receiver, so the receiver checks skip every other one.

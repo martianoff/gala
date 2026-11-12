@@ -30,6 +30,7 @@ func TestTypeInference(t *testing.T) {
 func getImm() Immutable[int] = NewImmutable(1)
 func main() {
     var y = (getImm())
+    Println(y)
 }`,
 			expected: []string{
 				"var y = (getImm().Get())",
@@ -42,6 +43,7 @@ func main() {
 func getImm() Immutable[bool] = NewImmutable(true)
 func main() {
     var y = !getImm()
+    Println(y)
 }`,
 			expected: []string{
 				"var y = !getImm().Get()",
@@ -54,6 +56,7 @@ func main() {
 func getImm() Immutable[int] = NewImmutable(1)
 func main() {
     var y = getImm() + 1
+    Println(y)
 }`,
 			expected: []string{
 				"var y = getImm().Get() + 1",
@@ -66,6 +69,7 @@ func main() {
 func getImm() Immutable[int] = NewImmutable(1)
 func main() {
     var y = getImm() == 1
+    Println(y)
 }`,
 			expected: []string{
 				"var y = getImm().Get() == 1",
@@ -78,6 +82,7 @@ func main() {
 func getImm() Immutable[int] = NewImmutable(1)
 func main() {
     var y = (getImm() + 2) * 3
+    Println(y)
 }`,
 			expected: []string{
 				"var y = (getImm().Get() + 2) * 3",
@@ -91,6 +96,7 @@ func main() {
     var x = 1
     var y = &x
     var z = *y
+    Println(z)
 }`,
 			expected: []string{
 				"var y = &x",
@@ -104,6 +110,7 @@ func main() {
 func getImm() Immutable[int] = NewImmutable(1)
 func main() {
     var y = ((getImm()))
+    Println(y)
 }`,
 			expected: []string{
 				"var y = (getImm().Get())",

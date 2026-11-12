@@ -84,6 +84,12 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 		if err := t.goOnlyFieldError(xType, selName, line, col); err != nil {
 			return nil, err
 		}
+		// A member that is called is checked as a method (unknown_method.go).
+		if !m.called {
+			if err := t.checkUnknownField(base, xType, m); err != nil {
+				return nil, err
+			}
+		}
 		if err := t.checkPtrReceiver(base, xType, selName, m); err != nil {
 			return nil, err
 		}
@@ -433,8 +439,9 @@ func (t *galaASTTransformer) lowerMatch(p postfixSrc, s slot) (ast.Expr, error) 
 		return nil, err
 	}
 	var buf [4]suffixSrc
-	for _, suffix := range p.appendSuffixes(buf[:0]) {
-		if subject, err = t.lowerSuffix(subject, p, suffix); err != nil {
+	suffixes := p.appendSuffixes(buf[:0])
+	for i := range suffixes {
+		if subject, err = t.lowerSuffix(subject, p, suffixes, i); err != nil {
 			return nil, err
 		}
 	}

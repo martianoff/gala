@@ -159,6 +159,7 @@ func main() {
     val alice = Person(Name = "Alice", Age = 30)
     val people = ArrayOf(alice, Person(Name = "Bob", Age = 25))
     %s
+    Println(people.Size())
 }
 `, sp.body)
 

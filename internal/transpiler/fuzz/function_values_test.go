@@ -271,14 +271,16 @@ func (g *fnGen) block(t *ftype, ind, depth int) string {
 	})
 }
 
-// local declares a val in a block and puts it in scope.
+// local declares a val in a block, puts it in scope and uses it: a local
+// nothing reads is an error.
 func (g *fnGen) local(ind, depth int) string {
 	t := intType
 	if depth > 0 {
 		t = g.genType(g.pick(2) + 1)
 	}
 	value := g.expr(t, ind, depth)
-	return fmt.Sprintf("val %s = %s", g.declare("v", t).name, value)
+	v := g.declare("v", t)
+	return fmt.Sprintf("val %s = %s\n%s%s", v.name, value, indent(ind), g.use(v, ind, depth))
 }
 
 // literal is a value of type t built directly: a constant, Some/None, or a

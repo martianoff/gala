@@ -142,6 +142,7 @@ func test() {
         }
         return "small"
     })
+    Println(mapped)
 }`,
 			contains: []string{
 				"func(x int) string",
@@ -259,6 +260,7 @@ import . "martianoff/gala/std"
 
 func test() {
     val x = Some[string]("hello")
+    Println(x)
 }`,
 			contains: []string{
 				"Some[string]",
@@ -351,6 +353,7 @@ import . "martianoff/gala/std"
 
 func test() {
     val x = Some(42)
+    Println(x)
 }`,
 			contains: []string{
 				`"martianoff/gala/std"`,

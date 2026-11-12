@@ -39,6 +39,8 @@ import (
 //     and must pass in at least one of them. Fragments routinely leave their
 //     imports to the prose, so when the compiler names the package that
 //     declares an undefined symbol, the harness adds that import and retries.
+//     A fragment may leave a binding unread; the code that reads it is left
+//     to the prose too.
 //   - A block that is not self-contained (it refers to names defined in the
 //     surrounding prose, elides code with `...`, or sketches syntax) is marked
 //     with `<!-- doc-check: fragment -->` on the line before its fence. A
@@ -469,6 +471,12 @@ var goStdPackages = map[string]string{
 // never comes through here.
 func compileAddingImports(root, src string, depth int) error {
 	err := compile(root, src)
+	// A fragment's bindings are read by the code it leaves out; failing only
+	// because one is never read, it lowers cleanly otherwise. A program
+	// never comes through here, so it has to read every binding it declares.
+	if transformer.IsUnusedBinding(err) {
+		return nil
+	}
 	if err == nil || depth == 0 {
 		return err
 	}

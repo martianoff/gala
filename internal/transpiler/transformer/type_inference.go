@@ -779,6 +779,15 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		return nil, t.unknownArgTypeError(line, col, t.argCalleeName(fun), missing, args, true)
 	}
 	if missing != nil {
+		// `EmptyArray()` returns a Ptr[Array[T]]: an Array[int] slot does
+		// not fix T because the call has the wrong type for it.
+		if ptr, ok := funcMeta.ReturnType.(transpiler.PointerType); ok {
+			if meta := t.pointeeOfSlot(ptr, expected); meta != nil {
+				// What it would return given the slot's type arguments.
+				ptr.Elem = expected
+				return nil, pointerForValueError(srcRange{line: line, col: col}, t.argCalleeName(fun)+"(...)", ptr, expected, meta, "")
+			}
+		}
 		return nil, t.uninferredCallTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing, args)
 	}
 	// The slot's type arguments are checked as written ones are; the

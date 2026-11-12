@@ -282,7 +282,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 				if name := id.text; name != "_" {
 					bind(i, name)
 				}
-				names[i] = ast.NewIdent(id.text)
+				names[i] = t.declaredName(d, "val", id)
 			}
 			return &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{
 				&ast.ValueSpec{Names: names, Type: declType, Values: []ast.Expr{callValue}},
@@ -340,7 +340,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 		}
 
 		t.addDeclaredVal(name, typeName)
-		idents = append(idents, ast.NewIdent(name))
+		idents = append(idents, t.declaredName(d, "val", id))
 
 		var val ast.Expr
 		if i < len(rhsExprs) {
@@ -525,7 +525,7 @@ func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) 
 		}
 
 		spec := &ast.ValueSpec{
-			Names:  []*ast.Ident{ast.NewIdent(name)},
+			Names:  []*ast.Ident{t.declaredName(d, keyword, id)},
 			Values: []ast.Expr{value},
 		}
 
@@ -731,7 +731,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 		if len(rhsExprs) == len(namesCtx) {
 			t.bindGoResult(name, rhsExprs[i])
 		}
-		idents = append(idents, ast.NewIdent(name))
+		idents = append(idents, t.declaredName(d, "var", id))
 	}
 
 	spec := &ast.ValueSpec{

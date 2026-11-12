@@ -92,7 +92,7 @@ var matchWalkCases = []struct{ name, src, shape string }{
 	{"bare return in a value match", "package main\n\nfunc f(x int) {\n\tval s = \"ü\"\n\tPrintln(/* ü */ x match {\n\t\tcase 1 => { return }\n\t\tcase _ => s\n\t})\n}\n", "match"},
 	{"sealed view with a Ptr receiver", "package main\n\nstruct M(raw int)\n\nfunc (m Ptr[M]) MatchView() Option[int] = Some(m.raw)\n\nfunc f(m *M) int {\n\tval s = \"ü\"\n\t/* ü */ m match {\n\t\tcase Some(n) => n\n\t\tcase _ => s.Size()\n\t}\n}\n", "match"},
 	{"loop control in a value match", "package main\n\nfunc f(x int) {\n\tval s = \"ü\"\n\tfor {\n\t\tPrintln(/* ü */ x match {\n\t\t\tcase 1 => break\n\t\t\tcase _ => s\n\t\t})\n\t}\n}\n", "match"},
-	{"subject suffix error", "package main\n\nstruct P(x int)\n\nfunc f(p P) int {\n\tval s = \"ü\"\n\t/* ü */ p.nope match {\n\t\tcase _ => s.Size()\n\t}\n}\n", "match"},
+	{"subject suffix error", "package main\n\nstruct P(x int)\n\nfunc f(p P) int {\n\tval s = \"ü\"\n\t/* ü */ p.x.nope match {\n\t\tcase _ => s.Size()\n\t}\n}\n", "match"},
 	{"pattern value compared by == that cannot compare", "package main\n\nval Fn = (x int) => x\n\nfunc f(g func(int) int) int = g match {\n\t/* ü */ case Fn => \"ü\".Size()\n\tcase _ => 0\n}\n", "pattern"},
 	{"variant as a pattern's type argument", "package main\n\nsealed type S {\n\tcase A()\n\tcase B()\n}\n\nstruct Box[T any](v T)\n\nfunc f(x any) int = x match {\n\t/* ü */ case Box[A](v) => \"ü\".Size()\n\tcase _ => 0\n}\n", "extractor"},
 	{"generic struct with the wrong type arguments", "package main\n\nstruct Box[T any](v T)\n\nfunc f(x any) int = x match {\n\t/* ü */ case Box[int, string](v) => \"ü\".Size()\n\tcase _ => 0\n}\n", "extractor"},

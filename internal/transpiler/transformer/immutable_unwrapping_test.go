@@ -31,12 +31,16 @@ func TestImmutableUnwrapping(t *testing.T) {
 func main() {
     val x = 1
     var y = x
+    Println(y)
 }`,
 			expected: `package main
+
+import "fmt"
 
 func main() {
 	var x = 1
 	var y = x
+	fmt.Println(y)
 }`,
 		},
 		{
@@ -46,12 +50,16 @@ func main() {
 func main() {
     val x = 1
     val z = x
+    Println(z)
 }`,
 			expected: `package main
+
+import "fmt"
 
 func main() {
 	var x = 1
 	var z = x
+	fmt.Println(z)
 }`,
 		},
 		{
@@ -78,17 +86,22 @@ val x = 1
 
 func main() {
     val z = x
+    Println(z)
     var y = x
+    Println(y)
 }`,
 			expected: `package main
 
+import "fmt"
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(1)
 
 func main() {
 	var z = x.Get()
+	fmt.Println(z)
 	var y = x.Get()
+	fmt.Println(y)
 }`,
 		},
 		{
@@ -99,9 +112,11 @@ func getImm() Immutable[int] = NewImmutable(1)
 
 func main() {
     var y = getImm()
+    Println(y)
 }`,
 			expected: `package main
 
+import "fmt"
 import "martianoff/gala/std"
 
 func getImm() std.Immutable[int] {
@@ -109,6 +124,7 @@ func getImm() std.Immutable[int] {
 }
 func main() {
 	var y = getImm().Get()
+	fmt.Println(y)
 }`,
 		},
 	}

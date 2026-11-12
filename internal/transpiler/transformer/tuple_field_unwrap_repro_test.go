@@ -171,6 +171,7 @@ func parse(url string) Tuple[string, string] {
 
 func main() {
     val result = parse("/test?q=1")
+    Println(result)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -200,6 +201,7 @@ func parse(url string) Tuple[string, HashMap[string, string]] {
 
 func main() {
     val result = parse("/test")
+    Println(result)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -221,6 +223,7 @@ import . "martianoff/gala/collection_immutable"
 func main() {
     val params = EmptyHashMap[string, string]()
     val pair = ("/test", params)
+    Println(pair)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -237,6 +240,7 @@ func main() {
     val name = "hello"
     val age = 42
     val pair = (name, age)
+    Println(pair)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -252,6 +256,7 @@ func main() {
 func main() {
     val opt = Some(42)
     val pair = ("hello", opt)
+    Println(pair)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -271,6 +276,7 @@ func main() {
     val path = extractPath("/test")
     val query = "q=1"
     val pair = (path, query)
+    Println(pair)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -289,6 +295,7 @@ func main() {
     val path = fmt.Sprintf("/test/%s", "foo")
     val query = "q=1"
     val pair = (path, query)
+    Println(pair)
 }
 `,
 			check: func(t *testing.T, got string) {
@@ -309,6 +316,7 @@ func parse() Tuple[string, string] {
 
 func main() {
     val r = parse()
+    Println(r)
 }
 `,
 			check: func(t *testing.T, got string) {
