@@ -1,6 +1,7 @@
 // Command stubspec stands in for galaspec in the harness's own tests. It
 // implements galaspec's command-line contract for a tiny language: a main
-// whose statements are `val name = expr` and `Println(expr)`/`Print(expr)`,
+// whose statements are `val name = expr`, `Println(expr)`/`Print(expr)` and
+// Go's builtin `println(expr)` (to stderr),
 // where an expression is an int, bool or string literal, a name, or + - * /
 // on ints. Any other construct is unsupported, as `stub-<kind>`.
 //
@@ -134,6 +135,8 @@ func run(args []string) (status int, outcome string) {
 				fmt.Println(v)
 			case "Print":
 				fmt.Print(v)
+			case "println": // Go's builtin, which writes to stderr
+				fmt.Fprintln(os.Stderr, v)
 			default:
 				panic(unsupported(st, "call"))
 			}
