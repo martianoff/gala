@@ -34,6 +34,13 @@ build --action_env=PATH
 # pays off most — is unaffected.
 build --worker_quit_after_build
 
+# The Lean spec in formal/ (rules_lean). Its targets are skipped unless this
+# config is on, so a plain `bazel build //...` / `bazel test //...` never
+# downloads the Lean toolchain (about 600 MB, 3.3 GB unpacked per output base).
+#   bazel test --config=formal //formal/...
+# See formal/README.md.
+common:formal --//formal:lean
+
 # Disk usage. Bazel keys its output base on the *path* of the workspace, so
 # every git worktree of this repo gets its own multi-gigabyte output base and
 # nothing reclaims it when the worktree goes away. Two things keep that in

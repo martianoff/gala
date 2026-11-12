@@ -61,6 +61,17 @@ local_path_override(
 # which drives the import helper from the registered GALA toolchain.
 bazel_dep(name = "gala_gazelle", version = "0.4.0", dev_dependency = True)
 
+# rules_lean builds the Lean spec in formal/, only under `--config=formal` (see
+# formal/README.md). A dev dependency, so modules that depend on gala never see
+# it.
+bazel_dep(name = "rules_lean", version = "0.1.1", dev_dependency = True)
+
+lean = use_extension("@rules_lean//lean:extensions.bzl", "lean", dev_dependency = True)
+
+# Must match formal/lean-toolchain, which elan and Lake read;
+# tools/check_repo_policy.sh fails when the two differ.
+lean.toolchain(version = "4.35.0")
+
 # galop, the parser generator the GALA parser is also built with (see
 # internal/parser/grammar): its prebuilt release binaries, registered as
 # toolchains by rules_gala. Building GALA needs one for the build host (see

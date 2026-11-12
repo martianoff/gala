@@ -271,6 +271,7 @@ flowchart LR
     PR[pull request] --> T[test.yml<br/>bazel test //... — unchanged, no Lean]
     PR --> M[metamorphic generators<br/>part of bazel test — no Lean]
     PR --> F[formal.yml]
+    F --> B1[bazel test --config=formal //formal/...<br/>rules_lean, cache repository cache only]
     F --> L1[install Lean from lean-toolchain<br/>cache .lake]
     L1 --> L2[lake build<br/>proofs + galaspec]
     L2 --> L3[axioms check<br/>no sorryAx]
@@ -278,23 +279,34 @@ flowchart LR
     L4 --> L5[COVERAGE.md + job summary<br/>ratchets]
 ```
 
-- **Lean is built with Lake at first.** Every Go part (the exporter, the harness and the
+- **Lake is the primary Lean build.** Every Go part (the exporter, the harness and the
   generators) is built and tested with Bazel, as AGENTS.md requires.
-- **Bazel support comes later and is opt-in.** A Bazel toolchain for Lean will be added
-  once `difftest` gates merges. It will be a separate Bazel module, so `difftest` can
-  depend on `galaspec` directly.
+- **Bazel builds Lean too, opt-in.** [rules_lean](https://github.com/martianoff/rules_lean),
+  a separate Bazel module with Windows support, is a dev dependency of the `gala` module
+  (so modules that depend on gala never see it). `formal/BUILD.bazel` builds the same
+  modules, runs a `lean_proof_test` and the galaspec fixture tests, and links
+  `//formal:galaspec` (a `lean_binary`), so `difftest` can depend on it directly.
+  `formal.yml` runs `bazel test --config=formal //formal/...` in a job next to the Lake
+  one. Lake stays the primary path until the maintainer decides otherwise.
   - **Why opt-in:** a Lean toolchain is about 620 MB to download and 3.3 GB unpacked, and
     every Bazel output base gets its own copy. So:
-    - Lean targets are `manual` or sit behind `--config=formal`;
+    - Lean targets sit behind `--config=formal`: without it they are incompatible with
+      the target platform, and `bazel build //...` skips them. `formal/lean.bzl` wraps
+      the rules_lean rules so that no target can miss the gate;
     - a default `bazel build //...` or `bazel test //...` never fetches Lean;
     - agent worktrees never fetch it either.
-  - **Existing Bazel rules for Lean:** several young community rulesets exist. None is in
-    the Bazel Central Registry, and none supports Windows. The module will be chosen or
-    built with both in mind.
-- **Running only for formal changes:** `formal.yml` runs only on PRs that touch `formal/`,
-  `internal/formal/`, `internal/transpiler/` or `std/`. It is required for those PRs once
-  S1 is stable.
-- **Local use:** install Lean with `elan` (it reads `formal/lean-toolchain`), then:
+  - **One Lean version:** `lean.toolchain(version = …)` in `MODULE.bazel` must match
+    `formal/lean-toolchain`. `tools/check_repo_policy.sh` fails when they differ.
+  - **Caching:** the Bazel job keeps only Bazel's repository cache between runs, which
+    holds the downloaded Lean archive. It is private to the repository's CI; see
+    Licensing.
+- **Running only for formal changes:** `formal.yml` runs only on PRs that can move a
+  verdict (`formal/`, `internal/formal/`, `internal/transpiler/`, the standard library
+  packages and `examples/`) or touch the Bazel setup the opt-in build depends on
+  (`MODULE.bazel`, `.bazelrc`, `.bazelversion`, `.bazelignore`). It is required for those
+  PRs once S1 is stable.
+- **Local use:** `bazel test --config=formal //formal/...` needs nothing but Bazel. For
+  Lake, install Lean with `elan` (it reads `formal/lean-toolchain`), then:
 
   ```shell
   cd formal && lake build && lake exe galaspec run prog.json

@@ -28,9 +28,11 @@ below apply to every change, whoever or whatever wrote it.
 
 4. **ALWAYS use bazel for testing, compilation** - Both Go and GALA have built-in bazel
    actions for compilation and testing. The one exception is the Lean spec under `formal/`.
-   It is built with Lake, or through an opt-in Bazel config once one exists. A default
-   `bazel build //...` / `bazel test //...` must never fetch the Lean toolchain. See
-   [docs/FORMAL_SEMANTICS.MD](docs/FORMAL_SEMANTICS.MD).
+   It is built with Lake (the primary path), or with Bazel through rules_lean under the
+   opt-in `--config=formal` (`bazel test --config=formal //formal/...`). A default
+   `bazel build //...` / `bazel test //...` must never fetch the Lean toolchain, so every
+   Lean target must be skipped without that config. See
+   [formal/README.md](formal/README.md) and [docs/FORMAL_SEMANTICS.MD](docs/FORMAL_SEMANTICS.MD).
 
 5. **ALWAYS research GALA syntax and best practices before writing GALA code** - Start with
    [docs/GALA_BEST_PRACTICES.MD](docs/GALA_BEST_PRACTICES.MD) for the rule list; fall back to
@@ -149,9 +151,11 @@ Two things to know:
 - **Go SDK**: required for Go type inference. Ensure `go` is on PATH or set `GOROOT`.
   Bazel compiles with its own pinned Go (`go_sdk.download` in `MODULE.bazel`,
   1.25.5), downloaded per output base; the host Go is only used for type inference.
-- **Lean 4** (only for work on `formal/`): install it with
+- **Lean 4** (only for work on `formal/`): for Lake, install it with
   [elan](https://github.com/leanprover/elan), which reads the version pinned in
-  `formal/lean-toolchain`. Lean-built binaries, such as `galaspec`, are for development and
+  `formal/lean-toolchain`. For Bazel, nothing to install: `--config=formal` makes
+  rules_lean download the same version (about 600 MB per output base, so use it only
+  where you need it). Lean-built binaries, such as `galaspec`, are for development and
   CI only and never ship. Never commit, mirror or re-host the Lean toolchain, because its
   release bundles LGPL components. A new Lean package dependency must have a permissive
   license (Apache 2.0, MIT or BSD). The full rules are in

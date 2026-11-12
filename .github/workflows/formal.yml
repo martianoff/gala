@@ -2,11 +2,13 @@ name: Formal
 
 # Builds the Lean semantics in formal/ and checks its proofs, then compares galaspec,
 # the Lean reference interpreter, with the transpiler (internal/formal/difftest). See
-# formal/README.md and docs/FORMAL_SEMANTICS.MD. Lean is built with Lake here, never
-# with Bazel, so the Bazel workflows stay Lean-free.
+# formal/README.md and docs/FORMAL_SEMANTICS.MD. Lean is built with Lake (the primary
+# build) and, in the bazel job, with Bazel under --config=formal. The other Bazel
+# workflows never use that config, so they stay Lean-free.
 #
 # It runs for every change that can move a differential verdict: the spec, the
-# harness and exporter, the transpiler, the standard library and the examples.
+# harness and exporter, the transpiler, the standard library and the examples; and for
+# changes to the Bazel setup the opt-in build depends on.
 on:
   pull_request:
     branches: [master]
@@ -20,6 +22,10 @@ on:
       - 'go_interop/**'
       - 'galaerr/**'
       - 'examples/**'
+      - 'MODULE.bazel'
+      - '.bazelrc'
+      - '.bazelversion'
+      - '.bazelignore'
       - '.github/workflows/formal.yml'
   push:
     branches: [master]
@@ -33,6 +39,10 @@ on:
       - 'go_interop/**'
       - 'galaerr/**'
       - 'examples/**'
+      - 'MODULE.bazel'
+      - '.bazelrc'
+      - '.bazelversion'
+      - '.bazelignore'
       - '.github/workflows/formal.yml'
 
 permissions:
@@ -329,3 +339,28 @@ jobs:
               echo "\`bazel run //internal/formal/difftest/splicecoverage -- <its coverage_section.md>\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # The same modules built with Bazel through rules_lean, under the opt-in
+  # --config=formal (formal/BUILD.bazel). Lake above stays the primary build.
+  bazel:
+    name: Lean proofs and galaspec (Bazel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Only the repository cache: it holds the Lean archive rules_lean
+      # downloads (about 600 MB) from Lean's official release hosts, checksum
+      # verified. It is private to this repository's CI; Lean is never
+      # mirrored or re-hosted (docs/FORMAL_SEMANTICS.MD, "Licensing").
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          # Keyed on the Lean pin, so an unrelated MODULE.bazel edit does not
+          # download Lean again.
+          repository-cache: formal/lean-toolchain
+
+      - name: Build, check the proofs and run the galaspec tests
+        run: bazel test --config=formal //formal/... --test_output=errors --verbose_failures

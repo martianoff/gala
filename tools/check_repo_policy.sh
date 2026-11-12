@@ -111,6 +111,23 @@ if [[ -z "$bazel_galop" || "$bazel_galop" != "$nix_galop" ]]; then
   fail "galop versions differ: MODULE.bazel galop.toolchain '$bazel_galop', nix/gala.nix galopVersion '$nix_galop'"
 fi
 
+# --- 6. one Lean version ----------------------------------------------------
+# rules_lean (Bazel, --config=formal) and elan/Lake build formal/; they must
+# use the same Lean (formal/README.md).
+bazel_lean="$(sed -nE 's/^lean\.toolchain\(version = "([^"]+)"\)/\1/p' MODULE.bazel)"
+lake_lean="$(sed -nE 's|^leanprover/lean4:v([^[:space:]]+)|\1|p' formal/lean-toolchain)"
+if [[ -z "$bazel_lean" || "$bazel_lean" != "$lake_lean" ]]; then
+  fail "Lean versions differ: MODULE.bazel lean.toolchain '$bazel_lean', formal/lean-toolchain '$lake_lean'"
+fi
+
+# A plain `bazel build //...` must never download Lean (AGENTS.md rule 4).
+# formal/lean.bzl gates every Lean rule behind --config=formal, so the rules
+# are loaded from there and nowhere else.
+if hits="$(git grep -nE '@rules_lean//lean:defs\.bzl' -- '*.bazel' '*.bzl' ':!formal/lean.bzl')"; then
+  fail "Lean rules loaded from @rules_lean directly; load them from //formal:lean.bzl so they stay behind --config=formal:"
+  echo "$hits" >&2
+fi
+
 if (( failed )); then
   echo "Repo policy check FAILED." >&2
   exit 1

@@ -5,8 +5,10 @@ This directory holds a machine-checked definition of what GALA programs mean, wr
 [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD). What is covered today is in
 [COVERAGE.md](COVERAGE.md).
 
-It is a Lake project with no dependencies (no Mathlib). Nothing here is part of the Bazel
-build, the `gala` CLI or a GALA release.
+It is a Lake project with no dependencies (no Mathlib). It also builds with Bazel through
+[rules_lean](https://github.com/martianoff/rules_lean), but only on request (see
+[Building with Bazel](#building-with-bazel)). Nothing here is part of the `gala` CLI or a
+GALA release.
 
 ## What is modelled
 
@@ -51,9 +53,12 @@ Each definition's doc comment says what it models, and each file's header names 
 | `lean-toolchain` | The pinned Lean version. elan reads it locally; CI also needs its SHA-256 in `formal.yml` (see below). |
 | `lakefile.toml` | The Lake project: the library `Gala`, built from `Gala.lean` and every file under `Gala/`, and the executables `galaspec` and `galaspec-tests`. |
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
-| `Gala.lean` | Root module, for `import Gala`. The build and the proof check find modules by directory, not through it. |
+| `BUILD.bazel` | The Bazel build of the same modules, with rules_lean. Hand-written; gazelle skips `formal/`. |
+| `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
+| `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS` in `BUILD.bazel`. Lake and the Lake proof check find modules by directory, not through it. |
 | `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it. |
 | `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
+| `galaspec_tests.sh` | Runs the galaspec fixture tests under Bazel, from `formal/` in the runfiles. |
 | `scripts/ProofCheck.lean` | The proof check (below). |
 | `COVERAGE.md` | What is modelled, tested and proved. |
 
@@ -79,7 +84,8 @@ CI runs both, and the galaspec tests below, in
 that touches `formal/`. It does not use elan: it downloads the release `lean-toolchain`
 pins, checks it against a SHA-256 in the workflow, and puts its `bin/` on `PATH`. Bumping
 `lean-toolchain` therefore needs the new release's Linux SHA-256 added to the workflow;
-without it the job fails.
+without it the job fails. Lake is the primary build; the Bazel build below is the second
+path.
 
 ## Running galaspec
 
@@ -121,12 +127,40 @@ runs every fixture `tests/<name>.json` and compares its output and outcome with
 `tests/src/`, re-export the fixtures with `formal/tests/export.sh` from the repository
 root, and check any changed `.out` against `gala run`.
 
-### Bazel
+## Building with Bazel
 
-Lean is built with Lake, not Bazel, and `formal/` is in `.bazelignore`. A plain
-`bazel build //...` never sees it and never downloads Lean. The planned Bazel path is
-[rules_lean](https://github.com/martianoff/rules_lean), added as an opt-in module once it
-is in the Bazel Central Registry (see "CI and build" in the design).
+The same modules also build with [rules_lean](https://github.com/martianoff/rules_lean),
+a dev dependency in `MODULE.bazel`. Its Lean targets are **opt-in**: they build only under
+`--config=formal`. From the repository root:
+
+```shell
+bazel test --config=formal //formal/...   # build every module, check the proofs, test galaspec
+```
+
+No elan is needed: rules_lean downloads the Lean release that `MODULE.bazel` pins (the
+same version as `lean-toolchain`) from Lean's official release hosts and verifies its
+checksum. The download is about 600 MB and unpacks to 3.3 GB in each Bazel output base, so
+it happens only under `--config=formal`. Without the config, `bazel build //...` and
+`bazel test //...` skip the Lean targets and never download Lean. Switching the config
+on and off in one output base makes Bazel discard its analysis cache each time.
+
+Lake's `--wfail` has no Bazel counterpart yet: rules_lean reports Lean warnings but does
+not fail on them, so the Lake job is the one that catches a new warning.
+
+| Target | What it is |
+|---|---|
+| `//formal:gala` | `lean_library` of what `import Gala` covers: every module under `Gala/` except `Main`, built on `:galaspec_lib` (the interpreter modules that `galaspec` and its tests link). Module names are `Gala.X`, as with Lake. |
+| `//formal:proofs` | `lean_proof_test` over every module under `Gala/`: fails on `sorry` and on axioms other than `propext`, `Quot.sound` and `Classical.choice`, like `scripts/ProofCheck.lean`. The check that every theorem COVERAGE.md calls proved exists runs only under Lake. |
+| `//formal:galaspec` | `lean_binary` of `Gala.Main`: the same `galaspec` as `lake exe galaspec`, for the differential harness (`bazel run --config=formal //formal:galaspec -- run "$PWD/prog.json"`; `bazel run` starts it in its runfiles, so pass an absolute path). |
+| `//formal:galaspec_tests` | Runs the fixtures in `tests/`, like `lake exe galaspec-tests`. |
+
+**Adding a module:** add the file under `Gala/` and to `BUILD.bazel`: to `GALASPEC_SRCS`
+if galaspec needs it, otherwise to `GALA_SRCS` before `Gala.lean`; in both, after the
+modules it imports (rules_lean compiles `srcs` in order). Loading `//formal` fails if a
+module under `Gala/` is in neither list.
+**Changing the Lean version:** change `lean-toolchain` and `lean.toolchain(version = …)`
+in `MODULE.bazel` together (`tools/check_repo_policy.sh` fails if they differ); rules_lean
+must know the version.
 
 ## Honest coverage
 
@@ -146,8 +180,8 @@ The files here are licensed like the rest of the repository. Lean is Apache 2.0,
 release binaries bundle LGPL components, so:
 
 - No Lean-built binary ships in GALA releases, the CLI, Docker images or the playground.
-- The Lean toolchain is never vendored, committed, mirrored or re-hosted. CI fetches it
-  from Lean's official releases and checks a pinned SHA-256.
+- The Lean toolchain is never vendored, committed, mirrored or re-hosted. CI and
+  rules_lean fetch it from Lean's official releases and check a pinned SHA-256.
 - Lake dependencies must be Apache 2.0, MIT or BSD.
 
 Details are in the "Licensing" section of the design.
