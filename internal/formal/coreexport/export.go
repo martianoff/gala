@@ -344,7 +344,7 @@ func (e *exporter) typ(t native.TypeNode) Node {
 		return of(e, &TypeName{Name: q.GetText()}, t.GalaNodeRef)
 	}
 	if t.FUNC().Ok() {
-		return e.unsupported(UnsupportedFuncType, t.GalaNodeRef)
+		return e.funcType(t)
 	}
 	switch firstToken(t.GalaNodeRef) {
 	case "[":
@@ -519,13 +519,16 @@ func (e *exporter) unsupportedArg(a native.ArgumentNode) Node {
 	switch {
 	case a.Identifier().Ok():
 		return e.unsupported(UnsupportedNamedArg, a.GalaNodeRef)
-	case a.LambdaExpression().Ok():
-		return e.unsupported(UnsupportedLambda, a.GalaNodeRef)
+	case a.LambdaExpression().Ok(): // in a pattern; arg exports it as an argument
+		return e.unsupported(UnsupportedExprPattern, a.GalaNodeRef)
 	}
 	return nil
 }
 
 func (e *exporter) arg(a native.ArgumentNode) Node {
+	if l := a.LambdaExpression(); l.Ok() && !a.Identifier().Ok() {
+		return e.lambda(l)
+	}
 	if bad := e.unsupportedArg(a); bad != nil {
 		return bad
 	}
@@ -546,7 +549,7 @@ func (e *exporter) primaryExpr(p native.PrimaryExprNode) Node {
 	case p.IfExpression().Ok():
 		return e.ifExpr(p.IfExpression())
 	case p.LambdaExpression().Ok():
-		return e.unsupported(UnsupportedLambda, p.GalaNodeRef)
+		return e.lambda(p.LambdaExpression())
 	default:
 		return e.unsupported(UnsupportedPartialFunction, p.GalaNodeRef)
 	}

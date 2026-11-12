@@ -111,6 +111,10 @@ def fmtV (ds : Decls) (methods : Bool) : Val → P String
   | .bool b => pure (if b then "true" else "false")
   | .str s => pure s
   | .unit => throw "print-unit"
+  -- A function value prints its address with `%v`: not deterministic. Inside a generated
+  -- `String` it prints `<fn>` (`fmtStr`).
+  | .closure .. | .fn _ => throw "print-pointer"
+  | .ref _ => throw "print-ref"
   | .tuple vs => do
     if methods then pure ("(" ++ ", ".intercalate (← fmtVs ds true vs) ++ ")")
     else pure ("{" ++ " ".intercalate ((← fmtVs ds false vs).map (wrapImm tupleField)) ++ "}")
@@ -118,11 +122,11 @@ def fmtV (ds : Decls) (methods : Bool) : Val → P String
     let fields := (ds.structs.lookup ty).getD []
     if methods && ds.shorthands.contains ty && !fields.any (·.name == "String") then
       -- Its generated `String`: each field through `%v`, an `Immutable` looked through.
-      pure (ty ++ "(" ++ ", ".intercalate (← fmtVs ds true fs) ++ ")")
+      pure (ty ++ "(" ++ ", ".intercalate (← fmtStr ds fs) ++ ")")
     else
       pure ("{" ++ " ".intercalate (← fmtFields ds methods fields fs) ++ "}")
   | .sealed ty c fs => do
-    if methods then pure (c ++ "(" ++ ", ".intercalate (← fmtVs ds true fs) ++ ")")
+    if methods then pure (c ++ "(" ++ ", ".intercalate (← fmtStr ds fs) ++ ")")
     else
       let vs := (ds.sealeds.lookup ty).getD []
       let active := (ds.caseFields ty c).map (·.name)
@@ -132,6 +136,15 @@ def fmtV (ds : Decls) (methods : Bool) : Val → P String
 def fmtVs (ds : Decls) (methods : Bool) : List Val → P (List String)
   | [] => pure []
   | v :: vs => do pure ((← fmtV ds methods v) :: (← fmtVs ds methods vs))
+/-- The fields a generated `String` prints (a sealed value's, a shorthand struct's): each
+    with `%v`, a function as `<fn>`. -/
+def fmtStr (ds : Decls) : List Val → P (List String)
+  | [] => pure []
+  | v :: vs => do
+    let s ← match v with
+      | .closure .. | .fn _ => pure "<fn>"
+      | _ => fmtV ds true v
+    pure (s :: (← fmtStr ds vs))
 /-- The fields of a plain struct. With methods allowed, an exported field calls its
     methods (an `Immutable`'s `Format` prints the value it holds); any other field
     prints raw, a `val` field inside its `Immutable`. -/

@@ -10,9 +10,14 @@
     (`exitScope`).
   * **Shadowing.** Lookup takes the newest binding of a name (`lookup`), so an inner
     `val x` or a `case x` hides an outer `x` for the rest of its scope, and only there.
-  * **Function binders.** A call starts a fresh local stack holding only the parameters.
-    S1 has no closures: a function body sees its parameters, its own locals and the
+  * **Function binders.** A call of a top-level function starts a fresh local stack
+    holding only the parameters: its body sees its parameters, its own locals and the
     package-level declarations, never its caller's locals.
+  * **Closures** (S2; docs/FORMAL_SEMANTICS.MD, "Decisions the spec forces"). A lambda
+    captures the locals in scope where it is written, by reference: a local `var` lives
+    in a cell (`Val.ref`, `Gala/Eval.lean`), which the lambda shares with its scope, so
+    each sees the other's assignments. A call of a lambda sees the captured locals and
+    its parameters, never its caller's.
   * **Case binders.** A pattern's variables are pushed for its own guard and body, and
     popped before the next arm is tried (`Gala/Eval.lean`, `evalCases`).
   * **Resolution order** for a name used as an expression (`resolve`): a local, then a
@@ -40,6 +45,13 @@ inductive Val
   | struct_ (ty : String) (fs : List Val)
   /-- A sealed value: its type, its active case, and that case's fields in order. -/
   | sealed (ty : String) (variant : String) (fs : List Val)
+  /-- A lambda's value (S2): its parameters, body and the locals it closes over. A
+      captured `var` is a `ref`, so the closure shares it with its scope. -/
+  | closure (params : List Param) (result : Option Ty) (body : Expr) (env : List (String × Val))
+  /-- A top-level function used as a value. -/
+  | fn (f : Func)
+  /-- The cell a local `var` lives in (`St.heap`); never the value of an expression. -/
+  | ref (n : Nat)
   deriving Repr, Inhabited
 
 /-- A binding: a value and whether it may be assigned (`var`). -/

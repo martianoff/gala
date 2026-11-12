@@ -1,0 +1,93 @@
+package main
+
+struct Ops(Name string, F func(int) int)
+
+sealed type Handler {
+    case On(H func() int)
+    case Off()
+}
+
+var log = ""
+
+func note(s string, v int) int {
+    log = log + s
+    v
+}
+
+func apply(x int, f func(int) int) int = f(x)
+
+func twice(f func(int) int) func(int) int = (x int) => f(f(x))
+
+func double(x int) int = x * 2
+
+func runTwice(body func() int) int = body() + body()
+
+func main() {
+    // A lambda, its call, and a top-level function as a value.
+    val sq = (x int) => x * x
+    Println(sq(5), apply(3, sq), apply(4, double), twice(double)(3))
+
+    // Closures capture by reference: a later assignment is visible inside,
+    // and the lambda's own assignments are visible outside.
+    var count = 0
+    val bump = () int => {
+        count = count + 1
+        count
+    }
+    count = 10
+    Println(bump(), bump(), count)
+
+    // Each call of a function makes fresh variables.
+    val counter = () func() int => {
+        var n = 0
+        () int => {
+            n += 1
+            n
+        }
+    }
+    val c1 = counter()
+    val c2 = counter()
+    Println(c1(), c1(), c2())
+
+    // A lambda that returns early, a block body, a declared result type.
+    val sign = (n int) int => {
+        if n < 0 {
+            return -1
+        }
+        if (n == 0) 0 else 1
+    }
+    Println(sign(-5), sign(0), sign(7))
+
+    // Evaluation order: the callee, then the arguments, left to right.
+    val pick = (a int, b int) => a - b
+    Println(pick(note("a", 10), note("b", 3)), log)
+
+    // Function-typed fields and a by-name argument written as a lambda.
+    val ops = Ops("inc", (x int) => x + 1)
+    Println(ops.F(41), ops.Name, ops)
+    Println(runTwice(() => note("t", 2)), log)
+    val h = On(() => 7)
+    val r = h match {
+        case On(f) => f()
+        case Off() => 0
+    }
+    Println(r, h)
+
+    // A block lambda without a result type is void unless it returns a value.
+    val shout = (s string) => {
+        Println(s + "!")
+    }
+    shout("hi")
+    val firstPos = (a int, b int) => {
+        if a > 0 {
+            return a
+        }
+        return b
+    }
+    Println(firstPos(-1, 5), firstPos(3, 5))
+
+    // A lambda's parameter shadows an outer name only inside it.
+    val x = 100
+    val addX = (x int) => x + 1
+    Println(addX(1), x)
+}

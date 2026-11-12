@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 2
+const Version = 3
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -313,6 +313,25 @@ type PatExtract struct {
 	Args   []Node `json:"args"`
 }
 
+// --- Functions as values ---
+
+// Lambda is `(params) [result] => body`. A parameter's Type is null when it
+// is left out (inferred). Body is a block or an expression.
+type Lambda struct {
+	Meta
+	Params []Node `json:"params"`
+	Result Node   `json:"result"`
+	Body   Node   `json:"body"`
+}
+
+// TypeFunc is a function type `func(T1, T2) R`: its parameter types in order
+// and its result type, null for none.
+type TypeFunc struct {
+	Meta
+	Params []Node `json:"params"`
+	Result Node   `json:"result"`
+}
+
 // --- Interpolated strings ---
 
 // Interp is an interpolated string `s"..."`: Text as written, prefix and
@@ -364,6 +383,8 @@ func (*PatName) Kind() string     { return "pat-name" }
 func (*PatLit) Kind() string      { return "pat-lit" }
 func (*PatTuple) Kind() string    { return "pat-tuple" }
 func (*PatExtract) Kind() string  { return "pat-extract" }
+func (*Lambda) Kind() string      { return "lambda" }
+func (*TypeFunc) Kind() string    { return "type-func" }
 func (*Interp) Kind() string      { return "interp" }
 func (*InterpText) Kind() string  { return "interp-text" }
 func (*Unsupported) Kind() string { return "" }
@@ -375,6 +396,7 @@ var nodeTypes = []Node{
 	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
 	&PatWild{}, &PatName{}, &PatLit{}, &PatTuple{}, &PatExtract{},
+	&Lambda{}, &TypeFunc{},
 	&Interp{}, &InterpText{},
 }
 
@@ -408,7 +430,6 @@ const (
 	UnsupportedFor              = "for"
 	UnsupportedIfInit           = "if-init"
 	UnsupportedShortVarDecl     = "short-var-decl"
-	UnsupportedLambda           = "lambda"
 	UnsupportedPartialFunction  = "partial-function"
 	UnsupportedCompositeLiteral = "composite-literal"
 	UnsupportedIndex            = "index"
@@ -447,7 +468,7 @@ var unsupportedKinds = []string{
 	UnsupportedInterface, UnsupportedGenericDecl, UnsupportedMethod, UnsupportedGoResults,
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
-	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedLambda, UnsupportedPartialFunction,
+	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction,
 	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedArg, UnsupportedSpreadArg,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,

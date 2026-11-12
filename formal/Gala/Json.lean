@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 2
+def supportedCore : Nat := 3
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -83,16 +83,29 @@ def parseIntLit (text : String) : Option Int :=
   n?.map Int.ofNat
 
 /-- A type node. -/
-def decodeTy (j : Json) : D Ty := do
+partial def decodeTy (j : Json) : D Ty := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with
   | "type-name" => return .name (← str j "name")
+  | "type-func" =>
+    let result ← match ← opt j "result" with
+      | none => pure none
+      | some r => some <$> decodeTy r
+    return .func (← (← arr j "params").mapM decodeTy) result
   | k => throw s!"expected a type, got kind `{k}`"
 
 private def optTy (j : Json) (k : String) : D (Option Ty) := do
   match ← opt j k with
   | none => pure none
   | some t => some <$> decodeTy t
+
+/-- The parameters of a function or lambda, or the first unsupported one's name: a default, a
+    variadic or `val`/`var` parameter makes the whole declaration unsupported. -/
+def decodeParams (params : List Json) : D (Except String (List Param)) := do
+  if let some k ← params.findSomeM? unsupportedOf then return .error k
+  return .ok (← params.mapM fun p => do
+    unless (← kindOf p) == "param" do throw "expected a param"
+    return ({ name := ← str p "name", type := ← optTy p "type" } : Param))
 
 /-- A literal node: `int`, `bool` or `string`. An `int` whose hint is not `int` is
     rejected: S1 has one integer type, and the hint is checked against it. -/
@@ -182,6 +195,10 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "val" => decodeDecl .val j
   | "var" => decodeDecl .var j
   -- S1 models neither local functions nor local types.
+  | "lambda" =>
+    match ← decodeParams (← arr j "params") with
+    | .error k => return .unsupported k
+    | .ok ps => return .lambda ps (← optTy j "result") (← decodeExpr (← field j "body"))
   | "func" => return .unsupported "local-func"
   | "struct" => return .unsupported "local-struct"
   | k => throw s!"expected an expression or statement, got kind `{k}`"
@@ -224,11 +241,9 @@ def decodeTop (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with
   | "func" =>
-    let params ← arr j "params"
-    if let some k ← firstUnsupported params then return .unsupported k
-    let ps ← params.mapM fun p => do
-      unless (← kindOf p) == "param" do throw "expected a param"
-      return ({ name := ← str p "name", type := ← optTy p "type" } : Param)
+    match ← decodeParams (← arr j "params") with
+    | .error k => return .unsupported k
+    | .ok ps =>
     return .func { name := ← str j "name", params := ps, result := ← optTy j "result",
                    body := ← decodeExpr (← field j "body") }
   | "struct" =>

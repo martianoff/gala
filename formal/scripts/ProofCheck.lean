@@ -34,7 +34,11 @@ def requiredTheorems : List Name := [
   `Gala.Spec.exitScope_push,
   `Gala.Spec.lookup_rename,
   `Gala.Spec.update_rename,
-  `Gala.Spec.exitScope_rename
+  `Gala.Spec.exitScope_rename,
+  `Gala.Spec.evalList_cons,
+  `Gala.Spec.evalList_nil,
+  `Gala.Spec.capturedEnv_captured,
+  `Gala.Spec.lookup_captured
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

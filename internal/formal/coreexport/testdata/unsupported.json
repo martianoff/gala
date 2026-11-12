@@ -1,5 +1,5 @@
 {
-  "core": 2,
+  "core": 3,
   "files": [
     {
       "kind": "file",
@@ -116,12 +116,34 @@
               },
               "name": "h",
               "type": {
-                "unsupported": "func-type",
+                "kind": "type-func",
                 "pos": {
                   "line": 9,
                   "col": 52,
                   "off": 139,
                   "end": 152
+                },
+                "params": [
+                  {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 9,
+                      "col": 57,
+                      "off": 144,
+                      "end": 147
+                    },
+                    "name": "int"
+                  }
+                ],
+                "result": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 9,
+                    "col": 62,
+                    "off": 149,
+                    "end": 152
+                  },
+                  "name": "int"
                 }
               }
             },
@@ -304,12 +326,68 @@
                 "type": null,
                 "values": [
                   {
-                    "unsupported": "lambda",
+                    "kind": "lambda",
                     "pos": {
                       "line": 22,
                       "col": 13,
                       "off": 338,
                       "end": 354
+                    },
+                    "params": [
+                      {
+                        "kind": "param",
+                        "pos": {
+                          "line": 22,
+                          "col": 14,
+                          "off": 339,
+                          "end": 344
+                        },
+                        "name": "x",
+                        "type": {
+                          "kind": "type-name",
+                          "pos": {
+                            "line": 22,
+                            "col": 16,
+                            "off": 341,
+                            "end": 344
+                          },
+                          "name": "int"
+                        }
+                      }
+                    ],
+                    "result": null,
+                    "body": {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 22,
+                        "col": 24,
+                        "off": 349,
+                        "end": 354
+                      },
+                      "op": "+",
+                      "left": {
+                        "kind": "name",
+                        "pos": {
+                          "line": 22,
+                          "col": 24,
+                          "off": 349,
+                          "end": 350
+                        },
+                        "name": "x"
+                      },
+                      "right": {
+                        "kind": "int",
+                        "pos": {
+                          "line": 22,
+                          "col": 28,
+                          "off": 353,
+                          "end": 354
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
                     }
                   }
                 ]

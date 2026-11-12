@@ -17,6 +17,12 @@
     (`update_length`), so leaving a block drops exactly the block's own bindings and keeps
     its assignments to outer variables (`exitScope_push`).
 
+  * **T3, for operand lists.** `evalList_cons`, `evalList_nil`: arguments, tuple
+    elements and interpolation parts are evaluated first to last (the definition's own
+    equation, recorded as T1 is).
+  * **Closures (S2).** `capturedEnv_captured`, `lookup_captured`: a lambda's call sees
+    exactly the scope it was written in, each `var` by the same cell.
+
   Not proved yet: T2 for whole programs (renaming every binder of a program does not
   change its outcome). It needs a renaming on the syntax and an induction over `eval`.
 -/
@@ -110,5 +116,51 @@ theorem update_rename (σ : String → String) (hσ : ∀ a b, σ a = σ b → a
 theorem exitScope_rename (σ : String → String) (ρ : Env) (depth : Nat) :
     exitScope (renameEnv σ ρ) depth = renameEnv σ (exitScope ρ depth) := by
   simp [exitScope, renameEnv, List.map_drop]
+
+/-! ## T3 for lists of operands -/
+
+/-- **T3, for operand lists.** The arguments of a call (a function's, a lambda's, a
+    constructor's, `Println`'s), the elements of a tuple and the parts of an interpolated
+    string are evaluated by `evalList`: the first one completely, then the rest, so every
+    effect of an earlier operand happens before any effect of a later one. -/
+theorem evalList_cons (ds : Decls) (d : Nat) (e : Expr) (es : List Expr) :
+    evalList ds d (e :: es) = (do
+      let v ← eval ds d e
+      let vs ← evalList ds d es
+      pure (v :: vs)) := by
+  rw [evalList]
+
+/-- An empty operand list evaluates nothing. -/
+theorem evalList_nil (ds : Decls) (d : Nat) : evalList ds d [] = pure [] := by
+  rw [evalList]
+
+/-! ## Closures (S2) -/
+
+/-- A scope as a lambda's evaluation keeps it: each binding is mutable exactly when it is
+    a `var`'s cell. -/
+def cellsMutable (ρ : Env) : Prop := ∀ k b, (k, b) ∈ ρ → b.mutable = (match b.val with
+  | .ref _ => true
+  | _ => false)
+
+/-- **Closures capture their scope.** A lambda's call sees exactly the bindings of the
+    scope it was written in: the same names, shadowed the same way, each `var` by the same
+    cell (so assignments on either side are seen by the other), each `val` by its value. -/
+theorem capturedEnv_captured (ρ : Env) (h : cellsMutable ρ) : capturedEnv (captured ρ) = ρ := by
+  induction ρ with
+  | nil => rfl
+  | cons kb r ih =>
+    obtain ⟨k, ⟨v, m⟩⟩ := kb
+    have hm := h k ⟨v, m⟩ (List.mem_cons_self ..)
+    have hr : cellsMutable r := fun k' b' hb => h k' b' (List.mem_cons_of_mem _ hb)
+    simp only [captured, capturedEnv, List.map] at ih ⊢
+    rw [ih hr]
+    simp only at hm
+    cases v <;> simp_all
+
+/-- What a name resolves to inside a lambda is what it resolved to where the lambda was
+    written (T2's lookup lemma for closures). -/
+theorem lookup_captured (ρ : Env) (h : cellsMutable ρ) (x : String) :
+    lookup (capturedEnv (captured ρ)) x = lookup ρ x := by
+  rw [capturedEnv_captured ρ h]
 
 end Gala.Spec
