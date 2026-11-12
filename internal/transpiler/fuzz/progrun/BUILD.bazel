@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+# Transpile, build and run GALA programs with the real toolchain: shared by
+# the fuzz targets and the formal semantics' differential harness.
+go_library(
+    name = "progrun",
+    testonly = True,
+    srcs = ["progrun.go"],
+    importpath = "martianoff/gala/internal/transpiler/fuzz/progrun",
+    visibility = [
+        "//internal/formal:__subpackages__",
+        "//internal/transpiler/fuzz:__subpackages__",
+    ],
+    deps = [
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/gooracle",
+        "//internal/transpiler/transformer",
+        "@rules_go//go/tools/bazel",
+    ],
+)

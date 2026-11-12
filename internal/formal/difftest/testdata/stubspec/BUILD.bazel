@@ -1,0 +1,10 @@
+load("@rules_go//go:def.bzl", "go_binary")
+
+# A stand-in for galaspec that implements its command-line contract for a
+# tiny language; the harness's own tests run against it.
+go_binary(
+    name = "stubspec",
+    testonly = True,
+    srcs = ["main.go"],
+    visibility = ["//internal/formal/difftest:__pkg__"],
+)

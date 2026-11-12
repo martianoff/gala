@@ -206,8 +206,9 @@ The table is honest about what the guarantees rest on.
 Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 
 - **Modelled:** the construct is in the spec. Programs using it can run through `galaspec`.
-- **Tested against the spec:** at least N generated programs and every example using the
-  construct agree.
+- **Tested against the spec:** at least N programs using the construct (examples or
+  generated) agree with the spec, and none that galaspec ran to the end disagrees or is
+  inconclusive.
 - **Proved:** a theorem from the table above covers it.
 
 `formal/COVERAGE.md` is generated in CI and committed with each formal change. It holds:
@@ -216,6 +217,10 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 - every `UNSUPPORTED` construct, with how often it occurs;
 - the list of known disagreements.
 
+The run writes this as the section between the `<!-- difftest:begin -->` and
+`<!-- difftest:end -->` markers; `bazel run //internal/formal/difftest/splicecoverage`
+puts it into the file and leaves the hand-written rest alone.
+
 **Wording rules for docs, release notes and the README:**
 - "Proved" is used only for kernel-checked theorems about the spec.
 - "Tested against the spec" is used for differential results.
@@ -223,9 +228,10 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 - We never claim the transpiler is verified.
 
 **Ratchets in CI:**
-- The number of examples that run fully inside the subset may not go down.
+- The number of examples that run fully inside the subset and agree may not go down
+  (`internal/formal/difftest/baseline.json`).
 - A `DISAGREE` fails the build, unless that exact program appears in
-  `formal/known_disagreements.json` with an **open** issue number. When the issue is
+  `internal/formal/difftest/known_disagreements.json` with an **open** issue number. When the issue is
   closed, the CI job requires the entry to be removed.
 
 ### Subsets
@@ -264,7 +270,7 @@ flowchart LR
     F --> L1[install Lean from lean-toolchain<br/>cache .lake]
     L1 --> L2[lake build<br/>proofs + galaspec]
     L2 --> L3[axioms check<br/>no sorryAx]
-    L2 --> L4[bazel test //internal/formal:difftest<br/>GALA_SPEC_BIN=galaspec]
+    L2 --> L4[bazel test //internal/formal/difftest/differential:differential_test<br/>GALA_SPEC_BIN=galaspec]
     L4 --> L5[COVERAGE.md + job summary<br/>ratchets]
 ```
 
@@ -288,7 +294,8 @@ flowchart LR
 
   ```shell
   cd formal && lake build && lake exe galaspec run prog.json
-  GALA_SPEC_BIN=$PWD/.lake/build/bin/galaspec bazel test //internal/formal:difftest
+  GALA_SPEC_BIN=$PWD/.lake/build/bin/galaspec bazel test \
+    //internal/formal/difftest/differential:differential_test --test_env=GALA_SPEC_BIN
   ```
 
 ## Licensing

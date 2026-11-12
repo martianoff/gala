@@ -112,3 +112,10 @@ Everything outside S1: lambdas, default and named arguments, `Option`/`Either`/`
 string interpolation, generics, methods (and so `Copy`/`Equal` calls), collections, loops,
 Go interop, and the rest. No program has been tested against the spec by the
 differential harness yet, so no example has a verdict.
+
+<!-- difftest:begin -->
+## Differential testing
+
+No differential run yet. The harness (`internal/formal/difftest`) generates this section
+from a run against galaspec; the first such run fills it in.
+<!-- difftest:end -->
