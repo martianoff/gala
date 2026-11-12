@@ -28,7 +28,7 @@
 
   Static checks are the type checker's job, not this file's: a program GALA rejects can
   evaluate to anything here. Where evaluation meets something a type-correct S1 program
-  cannot produce, it stops as `unsupported "stuck"`, so such a run is never counted as
+  cannot produce, it stops as `stuck` (reported as unsupported), so such a run is never counted as
   agreement.
 -/
 import Gala.Scope
@@ -53,6 +53,9 @@ inductive Stop
   | panic (c : PanicClass) (msg : String)
   | fuel
   | unsupported (kind : String) (detail : String)
+  /-- Evaluation met something no type-correct S1 program does (a type error, a wrong
+      arity): the program is one GALA rejects, or the spec has a gap. -/
+  | stuck (detail : String)
   | ret (v : Val)
   deriving Repr
 
@@ -73,25 +76,23 @@ inductive Outcome
   | panic (c : PanicClass) (msg : String)
   | fuel
   | unsupported (kind : String) (detail : String)
+  | stuck (detail : String)
   deriving Repr
 
 /-! ## Integers -/
 
-def twoPow64 : Int := 18446744073709551616
-def minInt : Int := -9223372036854775808
-def maxInt : Int := 9223372036854775807
+def minInt : Int := Int64.minValue.toInt
+def maxInt : Int := Int64.maxValue.toInt
 
 /-- Reduce to Go's int64, wrapping around. -/
-def wrap (x : Int) : Int :=
-  let m := x % twoPow64
-  if m > maxInt then m - twoPow64 else m
+def wrap (x : Int) : Int := x.bmod Int64.size
 
 private def bits (f : Int64 → Int64 → Int64) (a b : Int) : Int :=
   (f (Int64.ofInt a) (Int64.ofInt b)).toInt
 
 /-! ## Helpers -/
 
-private def stuck (msg : String) : M α := throw (.unsupported "stuck" msg)
+private def stuck (msg : String) : M α := throw (.stuck msg)
 private def unsup (kind : String) (detail : String := "") : M α :=
   throw (.unsupported kind detail)
 
@@ -129,10 +130,10 @@ def checkTy (ds : Decls) : Ty → M String
         || (ds.sealeds.lookup n).isSome then pure n
     else unsup s!"type-{n}"
 
-private def checkFieldTys (ds : Decls) (fs : List Field) : M Unit :=
-  fs.forM fun f => match f.type with
-    | some t => discard (checkTy ds t)
-    | none => stuck s!"field {f.name} has no type"
+/-- The S1 type of a field or parameter, which must state one. -/
+def checkOptTy (ds : Decls) (what : String) : Option Ty → M String
+  | some t => checkTy ds t
+  | none => stuck s!"{what} has no type"
 
 /-- The default value of a type (docs/GALA.MD, "Default Values"): Go's zero value for
     `int`, `bool`, `string`; each field's default for a struct; the default case for a
@@ -143,21 +144,15 @@ def zero (ds : Decls) : Nat → String → M Val
   | _ + 1, "bool" => pure (.bool false)
   | _ + 1, "string" => pure (.str "")
   | n + 1, t =>
+    let zeroFields (fs : List Field) : M (List Val) :=
+      fs.mapM fun f => do zero ds n (← checkOptTy ds s!"field {f.name}" f.type)
     match ds.structs.lookup t with
-    | some fs => do
-      let vs ← fs.mapM fun f => match f.type with
-        | some ty => do zero ds n (← checkTy ds ty)
-        | none => stuck "field without a type"
-      pure (.struct_ t vs)
+    | some fs => do pure (.struct_ t (← zeroFields fs))
     | none =>
     match ds.sealeds.lookup t with
     | some vs =>
       match vs.find? (·.isDefault) with
-      | some v => do
-        let fs ← v.fields.mapM fun f => match f.type with
-          | some ty => do zero ds n (← checkTy ds ty)
-          | none => stuck "field without a type"
-        pure (.sealed t v.name fs)
+      | some v => do pure (.sealed t v.name (← zeroFields v.fields))
       | none => stuck s!"sealed type {t} has no default case"
     | none => unsup s!"type-{t}"
 
@@ -220,9 +215,12 @@ def unresolved (ds : Decls) (x : String) : M α :=
   | k :: _ => unsup k s!"name {x}"
   | [] => unsup "unresolved-name" x
 
-/-- The fields declared by the active case of a sealed value. -/
-def caseFields (ds : Decls) (ty c : String) : List Field :=
-  (((ds.sealeds.lookup ty).bind fun vs => vs.find? (·.name == c)).map (·.fields)).getD []
+/-- Something S1 cannot give a meaning to: with top-level declarations outside S1, most
+    likely one of them (a custom extractor needs a method), else a stuck program. -/
+def outsideS1 (ds : Decls) (detail : String) : M α :=
+  match ds.unsupported with
+  | k :: _ => unsup k detail
+  | [] => stuck detail
 
 /-- Read field `f` of a value. A sealed value's field that its active case lacks reads as
     the zero value of the field's type, as in the Go struct that holds every case. -/
@@ -237,7 +235,7 @@ def getField (ds : Decls) (v : Val) (f : String) : M Val :=
       | k :: _ => unsup k s!"member {f}"
       | [] => unsup "method-value" f
   | .sealed ty c fs =>
-    match (caseFields ds ty c).findIdx? (·.name == f) with
+    match (ds.caseFields ty c).findIdx? (·.name == f) with
     | some i => match fs[i]? with
       | some x => pure x
       | none => stuck "sealed value with missing fields"
@@ -248,8 +246,9 @@ def getField (ds : Decls) (v : Val) (f : String) : M Val :=
       | some t => do zero ds 64 (← checkTy ds t)
       | none => unsup "method-value" f
   | .tuple vs =>
-    match (List.range vs.length).find? (fun i => f == s!"V{i + 1}") with
-    | some i => pure (vs[i]?.getD .unit)
+    -- A tuple's fields are V1, V2, ... (docs/GALA.MD, "Tuple").
+    match if f.startsWith "V" then (f.drop 1).toNat?.bind (fun i => if i = 0 then none else vs[i - 1]?) else none with
+    | some x => pure x
     | none => unsup "method-value" f
   | _ => unsup "method-value" f
 
@@ -266,11 +265,9 @@ def setField (ds : Decls) (v : Val) (f : String) (x : Val) : M Val :=
 def readPlace (ds : Decls) : Expr → M Val
   | .name x => do
     let s ← get
-    match lookup s.locals x with
+    match lookupVar s.locals s.globals x with
     | some b => pure b.val
-    | none => match lookup s.globals x with
-      | some b => pure b.val
-      | none => stuck s!"assignment to {x}, which is not a variable"
+    | none => stuck s!"assignment to {x}, which is not a variable"
   | .select t f => do getField ds (← readPlace ds t) f
   | .paren e => readPlace ds e
   | _ => stuck "assignment to something that is not a variable or field"
@@ -326,16 +323,16 @@ def matchPat (ds : Decls) (locals globals : Env) : Pat → Val → M (Option (Li
     match v with
     | .sealed ty c' fs =>
       match ((ds.sealeds.lookup ty).getD []).find? (·.name == c) with
-      | none => stuck s!"{c} is not a case of {ty}"
+      | none => outsideS1 ds s!"{c} is not a case of {ty}"
       | some cv =>
         if c' != c then pure none
         else if cv.fields.length != ps.length then stuck s!"pattern {c} has the wrong arity"
         else matchPats ds locals globals ps fs
     | .struct_ ty fs =>
-      if c != ty then stuck s!"extractor {c} on a {ty}"
+      if c != ty then outsideS1 ds s!"extractor {c} on a {ty}"
       else if fs.length != ps.length then stuck s!"pattern {c} has the wrong arity"
       else matchPats ds locals globals ps fs
-    | _ => stuck s!"extractor {c} on a value that is not a struct or sealed value"
+    | _ => outsideS1 ds s!"extractor {c} on a value that is not a struct or sealed value"
 /-- Match sub-patterns left to right; the first that fails stops the rest. -/
 def matchPats (ds : Decls) (locals globals : Env) :
     List Pat → List Val → M (Option (List (String × Val)))
@@ -375,6 +372,13 @@ private def printable (ds : Decls) (vs : List Val) : M Unit :=
     unsup "method" "printing a value whose type may have methods"
   else pure ()
 
+/-- The fields of a struct or case built from evaluated arguments, one per field. -/
+private def construct (ds : Decls) (name : String) (fs : List Field) (vs : List Val) :
+    M (List Val) := do
+  for f in fs do discard (checkOptTy ds s!"field {f.name}" f.type)
+  if vs.length != fs.length then stuck s!"{name} takes {fs.length} fields"
+  pure vs
+
 mutual
 /-- Evaluate an expression or statement. A statement's value is `unit`. `d` bounds the
     nesting of evaluation, `St.steps` the total work. -/
@@ -387,12 +391,11 @@ def eval (ds : Decls) : Nat → Expr → M Val
     | .lit (.bool b) => pure (.bool b)
     | .lit (.str s) => pure (.str s)
     | .unsupported k => unsup k
-    | .localDecl k => unsup k
     | .paren x => eval ds d x
     | .name x =>
       let s ← get
       match resolve ds s.locals s.globals x with
-      | .local_ b | .global b => pure b.val
+      | .var b => pure b.val
       | .variant ty c =>
         if c.fields.isEmpty then pure (.sealed ty c.name []) else unsup "func-value" x
       | .unbound => unresolved ds x
@@ -415,23 +418,16 @@ def eval (ds : Decls) : Nat → Expr → M Val
       let s ← get
       match resolve ds s.locals s.globals x with
       | .func f => do callFunc ds d f (← evalList ds d args)
-      | .struct_ n fs => do
-        checkFieldTys ds fs
-        let vs ← evalList ds d args
-        if vs.length != fs.length then stuck s!"{n} takes {fs.length} fields"
-        pure (.struct_ n vs)
+      | .struct_ n fs => do pure (.struct_ n (← construct ds n fs (← evalList ds d args)))
       | .variant ty c => do
-        checkFieldTys ds c.fields
-        let vs ← evalList ds d args
-        if vs.length != c.fields.length then stuck s!"{c.name} takes {c.fields.length} fields"
-        pure (.sealed ty c.name vs)
+        pure (.sealed ty c.name (← construct ds c.name c.fields (← evalList ds d args)))
       | .print nl => do
         let vs ← evalList ds d args
         printable ds vs
         emit (if nl then Print.println ds vs else Print.print ds vs) ds
         pure .unit
       | .unbound => unresolved ds x
-      | .local_ _ | .global _ => unsup "func-value" x
+      | .var _ => unsup "func-value" x
     | .call (.select _ m) _ => unsup "method-call" m
     | .call (.unsupported k) _ => unsup k
     | .call _ _ => stuck "call of an expression"
@@ -532,10 +528,7 @@ def declare (ds : Decls) : Nat → List String → Bool → Option Ty → List E
 def callFunc (ds : Decls) : Nat → Func → List Val → M Val
   | d, f, args => do
     if args.length != f.params.length then stuck s!"{f.name} takes {f.params.length} arguments"
-    for p in f.params do
-      match p.type with
-      | some t => discard (checkTy ds t)
-      | none => stuck "parameter without a type"
+    for p in f.params do discard (checkOptTy ds s!"parameter {p.name}" p.type)
     if let some t := f.result then discard (checkTy ds t)
     let saved := (← get).locals
     let frame := (f.params.zip args).foldl (fun ρ (p, v) => bind ρ p.name ⟨v, false⟩) []
@@ -553,24 +546,39 @@ end
 
 /-! ## Programs -/
 
-/-- The names an expression mentions, for the initialization order of package-level
-    variables. Shadowing is ignored: Go's order uses references, and an S1 program that
-    shadows a package-level name only gains a dependency, never loses one. -/
-partial def mentions : Expr → List String
-  | .lit _ | .unsupported _ | .localDecl _ | .ret none => []
+/-- The bare names a pattern mentions: each may bind, or (capitalized) compare with a
+    package-level value. -/
+partial def patNames : Pat → List String
   | .name x => [x]
-  | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) => mentions e
-  | .binary _ l r => mentions l ++ mentions r
-  | .call c as => mentions c ++ as.flatMap mentions
-  | .tuple es | .block es => es.flatMap mentions
-  | .ifExpr c a b => mentions c ++ mentions a ++ mentions b
-  | .ifStmt c a b => mentions c ++ mentions a ++ (b.map mentions).getD []
-  | .mtch s cs => mentions s ++ cs.flatMap fun (_, g, b) => (g.map mentions).getD [] ++ mentions b
-  | .assign _ ts vs => ts.flatMap mentions ++ vs.flatMap mentions
-  | .decl _ _ _ _ vs => vs.flatMap mentions
+  | .tuple ps | .extract _ ps => ps.flatMap patNames
+  | _ => []
 
-/-- Everything a name reaches: itself, and through every function it names, what that
-    function's body mentions, transitively. -/
+/-- The free names an expression mentions, for the initialization order of package-level
+    variables: names bound by an enclosing declaration, parameter or pattern in `bound`
+    are left out, as Go's order follows references only. A pattern name counts as a
+    mention too, since it may be a stable identifier. -/
+partial def mentions (bound : List String) : Expr → List String
+  | .lit _ | .unsupported _ | .ret none => []
+  | .name x => if bound.contains x then [] else [x]
+  | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) => mentions bound e
+  | .binary _ l r => mentions bound l ++ mentions bound r
+  | .call c as => mentions bound c ++ as.flatMap (mentions bound)
+  | .tuple es => es.flatMap (mentions bound)
+  | .block es =>
+    (es.foldl (init := (bound, [])) fun (b, acc) e =>
+      let b' := match e with | .decl _ ns _ _ _ => ns ++ b | _ => b
+      (b', acc ++ mentions b e)).2
+  | .ifExpr c a b => mentions bound c ++ mentions bound a ++ mentions bound b
+  | .ifStmt c a b => mentions bound c ++ mentions bound a ++ (b.map (mentions bound)).getD []
+  | .mtch s cs => mentions bound s ++ cs.flatMap fun (p, g, b) =>
+    let ns := patNames p
+    ns.filter (!bound.contains ·) ++ (g.map (mentions (ns ++ bound))).getD []
+      ++ mentions (ns ++ bound) b
+  | .assign _ ts vs => ts.flatMap (mentions bound) ++ vs.flatMap (mentions bound)
+  | .decl _ _ _ _ vs => vs.flatMap (mentions bound)
+
+/-- Everything a list of names reaches: the names, and through every function among them,
+    the free names of its body, transitively. -/
 def reach (ds : Decls) (start : List String) : List String :=
   go (ds.funcs.length + 1) start []
 where
@@ -580,7 +588,7 @@ where
     | n + 1, x :: todo, seen =>
       if seen.contains x then go (n + 1) todo seen
       else match ds.funcs.lookup x with
-        | some f => go n (mentions f.body ++ todo) (x :: seen)
+        | some f => go n (mentions (f.params.map (·.name)) f.body ++ todo) (x :: seen)
         | none => go (n + 1) todo (x :: seen)
   termination_by n todo => (n, todo.length)
 
@@ -595,18 +603,20 @@ structure GlobalDecl where
 /-- Initialize the package-level variables in Go's order (see the module doc). -/
 def initGlobals (ds : Decls) (d : Nat) (gs : List GlobalDecl) : M Unit := do
   let all := gs.flatMap (·.names)
-  let deps := gs.map fun g => (reach ds (g.values.flatMap mentions)).filter (all.contains ·)
-  let mut pending := (gs.zip deps)
+  -- Each declaration with its position and the package-level variables it depends on.
+  let mut pending := (List.range gs.length).zip (gs.zip (gs.map fun g =>
+    (reach ds (g.values.flatMap (mentions []))).filter (all.contains ·)))
   let mut done : List String := []
   for _ in gs do
-    match pending.find? (fun (_, ds') => ds'.all done.contains) with
+    match pending.find? (fun (_, _, deps) => deps.all done.contains) with
     | none => unsup "init-cycle"
-    | some (g, ds') =>
-      pending := pending.filter (fun (h, _) => h.names != g.names || ds' != ds')
+    | some (i, g, _) =>
+      pending := pending.filter (·.1 != i)
       modify fun s => { s with locals := [] }
       let bs ← declare ds d g.names g.destructure g.type g.values
       modify fun s => { s with globals := bs.foldl (fun ρ (x, v) => bind ρ x ⟨v, g.mutable⟩) s.globals }
       done := done ++ g.names
+
 
 /-- The declarations of a program, and its package-level variables in source order. -/
 def collect (p : Program) : Decls × List GlobalDecl :=
@@ -636,7 +646,8 @@ def run (p : Program) (fuel : Nat) : Outcome × String :=
     | .error (.panic c m) => .panic c m
     | .error .fuel => .fuel
     | .error (.unsupported k m) => .unsupported k m
-    | .error (.ret _) => .unsupported "stuck" "return outside a function"
+    | .error (.stuck m) => .stuck m
+    | .error (.ret _) => .stuck "return outside a function"
   (o, s.out)
 
 end Gala.Spec

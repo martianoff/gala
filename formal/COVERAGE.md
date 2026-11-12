@@ -37,6 +37,9 @@ The tiers mean exactly this:
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | no |
 | Determinism of every run (T1) | — | — | yes |
 
+Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
+compile time, while galaspec wraps it at run time. Only programs Go rejects differ.
+
 `int64` is accepted as a type and means the same as `int`. Every other numeric type is
 outside S1 and reported as unsupported.
 
@@ -73,8 +76,9 @@ A run ends `unsupported:<kind>` when it reaches:
 
 `lake exe galaspec-tests` runs the fixtures in [`tests/`](tests):
 
-- 10 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
-  package-level initialization, scoping, three panic classes, fuel), and a document with
+- 11 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+  package-level initialization and its order, scoping, three panic classes, fuel), and a
+  document with
   an unknown `core` version, which is malformed.
   Each `.out` is what the program prints when built and run with the `gala` CLI; for
   `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer.
@@ -93,7 +97,7 @@ keep its `requiredTheorems` in step with this table.
 |---|---|
 | `Gala.MatchLowering.compile_correct`, `program_correct` | The scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
 | `Gala.MatchLowering.leaky_not_correct` | A lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
-| `Gala.Spec.run_deterministic`, `eval_deterministic` | **T1.** A program and a fuel budget have one output and one outcome; an evaluation from a given state has one result and final state. |
+| `Gala.Spec.run_deterministic`, `eval_deterministic` | **T1.** A program and a fuel budget have one output and one outcome; an evaluation from a given state has one result and final state. The semantics is a total Lean function, so this holds by construction and the proof is one line; the theorem records it, it does not add a check. |
 | `Gala.Spec.lookup_rename`, `update_rename`, `exitScope_rename` | **T2, for name resolution only.** Under an injective renaming of an environment, a renamed name resolves to the same binding, an assignment updates the same binding, and leaving a scope keeps the same bindings. |
 | `Gala.Spec.lookup_bind_self`, `lookup_bind_other` | A binding shadows its own name and no other. |
 | `Gala.Spec.update_length`, `exitScope_push` | An assignment keeps the scope stack's shape, so leaving a block drops its own bindings and keeps its assignments to outer variables. |

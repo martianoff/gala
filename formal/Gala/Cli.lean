@@ -36,12 +36,14 @@ def outcomeText : Outcome → String
   | .panic c _ => s!"panic:{classText c}"
   | .fuel => "fuel"
   | .unsupported k _ => s!"unsupported:{k}"
+  | .stuck _ => "unsupported:stuck"
 
 /-- The detail line printed before the outcome line, if any. -/
 def detailText : Outcome → Option String
   | .panic _ m => some s!"galaspec: panic: {m}"
   | .unsupported _ "" => none
   | .unsupported k m => some s!"galaspec: unsupported {k}: {m}"
+  | .stuck m => some s!"galaspec: stuck: {m}"
   | _ => none
 
 def usage : String := "usage: galaspec run [--fuel N] <file.json>"

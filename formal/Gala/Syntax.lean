@@ -100,8 +100,6 @@ inductive Expr
       initializers. -/
   | decl (m : Mut) (names : List String) (destructure : Bool) (type : Option Ty)
       (values : List Expr)
-  /-- A declaration inside a block that S1 does not model (a local `func` or `struct`). -/
-  | localDecl (kind : String)
   /-- A construct outside S1. -/
   | unsupported (kind : String)
   deriving Repr, Inhabited
@@ -119,8 +117,6 @@ structure Func where
   result : Option Ty
   /-- The body: a `block`, or the expression of the `= expr` form. -/
   body : Expr
-  /-- True for the `= expr` form. -/
-  exprBody : Bool
   deriving Repr, Inhabited
 
 /-- A top-level declaration. -/

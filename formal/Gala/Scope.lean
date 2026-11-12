@@ -84,8 +84,8 @@ structure Decls where
 
 /-- What a name used as an expression refers to. -/
 inductive Ref
-  | local_ (b : Binding)
-  | global (b : Binding)
+  /-- A local or package-level variable. -/
+  | var (b : Binding)
   | func (f : Func)
   | struct_ (name : String) (fields : List Field)
   /-- A sealed case: its type and the case. -/
@@ -99,13 +99,18 @@ inductive Ref
 def Decls.variant? (ds : Decls) (name : String) : Option (String × Variant) :=
   ds.sealeds.findSome? fun (ty, vs) => (vs.find? (·.name == name)).map (ty, ·)
 
+/-- The fields of case `c` of sealed type `ty`; `[]` if there is no such case. -/
+def Decls.caseFields (ds : Decls) (ty c : String) : List Field :=
+  (((ds.sealeds.lookup ty).bind fun vs => vs.find? (·.name == c)).map (·.fields)).getD []
+
+/-- A variable: the newest local binding, else the package-level one. -/
+def lookupVar (locals globals : Env) (x : String) : Option Binding :=
+  lookup locals x <|> lookup globals x
+
 /-- Resolve a name used as an expression, in the order of the module doc. -/
 def resolve (ds : Decls) (locals globals : Env) (x : String) : Ref :=
-  match lookup locals x with
-  | some b => .local_ b
-  | none =>
-  match lookup globals x with
-  | some b => .global b
+  match lookupVar locals globals x with
+  | some b => .var b
   | none =>
   match ds.funcs.lookup x with
   | some f => .func f
@@ -143,12 +148,8 @@ def classifyPatName (subjectCases : List Variant) (locals globals : Env) (x : St
   match subjectCases.find? (·.name == x) with
   | some v => .variant v
   | none =>
-    if capitalized x then
-      match lookup locals x with
-      | some b => .stable b
-      | none => match lookup globals x with
-        | some b => .stable b
-        | none => .binder
-    else .binder
+    match capitalized x, lookupVar locals globals x with
+    | true, some b => .stable b
+    | _, _ => .binder
 
 end Gala.Spec

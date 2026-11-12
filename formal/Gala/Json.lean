@@ -120,9 +120,12 @@ partial def decodePat (j : Json) : D Pat := do
   | "pat-name" => return .name (← str j "name")
   | "pat-lit" =>
     let v ← field j "value"
+    if let some k ← unsupportedOf v then return .unsupported k
     if (← kindOf v) == "unary" then
       unless (← str v "op") == "-" do throw "a literal pattern's unary operator is not `-`"
-      match ← decodeLit (← field v "operand") with
+      let operand ← field v "operand"
+      if let some k ← unsupportedOf operand then return .unsupported k
+      match ← decodeLit operand with
       | .int n => return .lit (.int (-n))
       | _ => throw "`-` applied to a non-integer literal pattern"
     return .lit (← decodeLit v)
@@ -137,9 +140,9 @@ partial def decodePat (j : Json) : D Pat := do
     | k => throw s!"extractor callee of kind `{k}`"
   | k => throw s!"expected a pattern, got kind `{k}`"
 
-/-- A field of a struct or variant. -/
+/-- A field of a struct or variant. An unsupported field makes its whole declaration
+    unsupported, which `decodeTop` checks first. -/
 def decodeField (j : Json) : D Field := do
-  if let some k ← unsupportedOf j then throw s!"unsupported field ({k}) cannot be modelled"
   unless (← kindOf j) == "field" do throw "expected a field"
   return { name := ← str j "name", type := ← optTy j "type", mutable := ← bool j "mutable" }
 
@@ -177,8 +180,9 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "incdec" => return .incdec (← str j "op") (← decodeExpr (← field j "target"))
   | "val" => decodeDecl .val j
   | "var" => decodeDecl .var j
-  | "func" => return .localDecl "local-func"
-  | "struct" => return .localDecl "local-struct"
+  -- S1 models neither local functions nor local types.
+  | "func" => return .unsupported "local-func"
+  | "struct" => return .unsupported "local-struct"
   | k => throw s!"expected an expression or statement, got kind `{k}`"
 
 /-- A `val` or `var` in a block. -/
@@ -197,28 +201,36 @@ partial def decodeCase (j : Json) : D (Pat × Option Expr × Expr) := do
   return (← decodePat (← field j "pattern"), g, ← decodeExpr (← field j "body"))
 end
 
+/-- The `unsupported` name of the first unsupported node among `js`, if any. A
+    declaration with an unsupported parameter or field (a default, a variadic one) is
+    unsupported as a whole. -/
+def firstUnsupported (js : List Json) : D (Option String) :=
+  js.findSomeM? unsupportedOf
+
 /-- A top-level declaration. -/
 def decodeTop (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with
   | "func" =>
-    let params ← (← arr j "params").mapM fun p => do
-      if let some k ← unsupportedOf p then return Sum.inl k
+    let params ← arr j "params"
+    if let some k ← firstUnsupported params then return .unsupported k
+    let ps ← params.mapM fun p => do
       unless (← kindOf p) == "param" do throw "expected a param"
-      return Sum.inr ({ name := ← str p "name", type := ← optTy p "type" } : Param)
-    -- A function with an unsupported parameter is unsupported as a whole.
-    if let some (.inl k) := params.find? (·.isLeft) then return .unsupported k
-    let ps := params.filterMap fun | .inr p => some p | .inl _ => none
-    let bodyJ ← field j "body"
-    let exprBody := (← kindOf bodyJ <|> pure "") != "block"
+      return ({ name := ← str p "name", type := ← optTy p "type" } : Param)
     return .func { name := ← str j "name", params := ps, result := ← optTy j "result",
-                   body := ← decodeExpr bodyJ, exprBody }
-  | "struct" => return .struct_ (← str j "name") (← (← arr j "fields").mapM decodeField)
+                   body := ← decodeExpr (← field j "body") }
+  | "struct" =>
+    let fields ← arr j "fields"
+    if let some k ← firstUnsupported fields then return .unsupported k
+    return .struct_ (← str j "name") (← fields.mapM decodeField)
   | "sealed" =>
-    let vs ← (← arr j "variants").mapM fun v => do
+    let variants ← arr j "variants"
+    let fieldsOf (v : Json) : D (List Json) := arr v "fields"
+    if let some k ← firstUnsupported (← variants.flatMapM fieldsOf) then return .unsupported k
+    let vs ← variants.mapM fun v => do
       unless (← kindOf v) == "variant" do throw "expected a variant"
       return ({ name := ← str v "name", isDefault := ← bool v "default",
-                fields := ← (← arr v "fields").mapM decodeField } : Variant)
+                fields := ← (← fieldsOf v).mapM decodeField } : Variant)
     return .sealed (← str j "name") vs
   | "val" | "var" =>
     match ← decodeExpr j with

@@ -103,3 +103,10 @@ jobs:
           test "$code" = 1
           test "$(tail -n 1 err.txt)" = "galaspec: outcome=panic:divide"
           test "$(cat out.txt)" = "before"
+
+      - name: Deep recursion
+        # A million nested calls (examples/tco_deep_sum) must finish, not overflow the
+        # interpreter's stack, when given the fuel for it.
+        run: |
+          out="$(lake exe galaspec run --fuel 100000000 tests/ex_tco_deep_sum.json)"
+          test "$out" = "500000500000"
