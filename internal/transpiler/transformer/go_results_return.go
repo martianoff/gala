@@ -185,29 +185,30 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.
 	if fails {
 		values = results[:len(results)-1]
 	}
+	resultName, valueName := t.generatedName(goResultsName), t.generatedName(goValueName)
 	// Declared with its type, so a value of another type is reported against it.
 	stmts := []ast.Stmt{&ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{&ast.ValueSpec{
-		Names: []*ast.Ident{ast.NewIdent(goResultsName)}, Type: valueType, Values: []ast.Expr{value},
+		Names: []*ast.Ident{ast.NewIdent(resultName)}, Type: valueType, Values: []ast.Expr{value},
 	}}}}}
 	if !fails {
-		return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: tupleFieldGets(ast.NewIdent(goResultsName), len(values))})}
+		return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: tupleFieldGets(ast.NewIdent(resultName), len(values))})}
 	}
 	// if _goResult.IsFailure() { return *new(A), ..., _goResult.GetError() }
 	failure := make([]ast.Expr, 0, len(results))
 	for _, v := range values {
 		failure = append(failure, zeroValueExpr(v))
 	}
-	failure = append(failure, methodCall(goResultsName, "GetError"))
+	failure = append(failure, methodCall(resultName, "GetError"))
 	stmts = append(stmts, &ast.IfStmt{
-		Cond: methodCall(goResultsName, "IsFailure"),
+		Cond: methodCall(resultName, "IsFailure"),
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: failure}}},
 	})
-	success := methodCall(goResultsName, transpiler.MethodGet)
+	success := methodCall(resultName, transpiler.MethodGet)
 	successResults := []ast.Expr{success}
 	if len(values) > 1 {
 		// The Tuple is taken out of the Try once: _goValue := _goResult.Get().
-		stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(goValueName)}, Tok: token.DEFINE, Rhs: []ast.Expr{success}})
-		successResults = tupleFieldGets(ast.NewIdent(goValueName), len(values))
+		stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(valueName)}, Tok: token.DEFINE, Rhs: []ast.Expr{success}})
+		successResults = tupleFieldGets(ast.NewIdent(valueName), len(values))
 	}
 	return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: append(successResults, ast.NewIdent("nil"))})}
 }

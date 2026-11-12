@@ -4560,9 +4560,10 @@ Two uses of these words are not names and are not affected: a bare `break` or
 
 Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max`,
 `copy` and so on — are not keywords. A local binding may take one
-(`val min = m.PopMinEntry()`); in a value position the name then means the
-binding for the rest of its scope, and in a type position the type, so
-`val string = "a"` followed by a lambda parameter typed `string` compiles.
+(`val min = m.PopMinEntry()`), and so may a top-level function, val or var; in
+a value position the name then means the binding for the rest of its scope,
+and in a type position the type, so `val string = "a"` followed by a lambda
+parameter typed `string` compiles.
 
 ### Names starting with `_gala_` are reserved
 

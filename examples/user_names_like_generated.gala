@@ -27,7 +27,7 @@ func label(sh Shape, string string) string = sh match {
     case Square(s) => s"$string square $s"
 }
 
-// A package-level binding keeps its name.
+// A package-level var named like a builtin.
 var max = 0
 
 func raise(x int) {

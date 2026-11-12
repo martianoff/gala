@@ -18,13 +18,16 @@ import (
 // Generated code names things a GALA program may also declare: std's
 // package qualifier (`std.Some`), Go's predeclared identifiers (`panic`,
 // `string`, `int`, `nil`, …) and the temporaries the transformer introduces
-// (`_tmp_1`, `__p0`). A local binding of one of those names would capture the
-// generated reference, so:
+// (`_tmp_1`, `__p0`, `__tuple_3`, `_zip`, `_err`, …). A binding of one of
+// those names would capture the generated reference, so:
 //
 //   - a local binding named like std's qualifier or a Go predeclared
-//     identifier is emitted under a reserved name (localGoName); and
-//   - a temporary skips every name the file's own source spells
-//     (freshTempName), so it never hides a user binding.
+//     identifier is emitted under a reserved name (localGoName), and so is a
+//     top-level function, val or var of the package (renameShadowingTopLevel);
+//     and
+//   - a name generated code binds or declares avoids every such name of the
+//     source (generatedName, freshTempName), so it never hides a user
+//     binding or collides with one.
 //
 // fmt is handled where it is used instead (see fmtPackage).
 
@@ -67,15 +70,83 @@ func localGoName(name string) string {
 	return name
 }
 
-// markLocalRef records id, a reference to a binding of the GALA source, for
-// renameShadowingLocals when the binding is a local one whose name
-// shadowsGeneratedName. A package-level binding keeps its name.
-func (t *galaASTTransformer) markLocalRef(id *ast.Ident) {
+// markSourceRef records id, a reference to a binding of the GALA source whose
+// name shadowsGeneratedName: for renameShadowingLocals when the binding is a
+// local one, and for renameShadowingTopLevel when it is a function, val or
+// var of the package (isTopLevelShadower).
+func (t *galaASTTransformer) markSourceRef(id *ast.Ident) {
 	if !shadowsGeneratedName(id.Name) {
 		return
 	}
 	if s := t.bindingScope(id.Name); s != nil && s.parent != nil {
 		t.recordLocalRef(id)
+	} else {
+		t.markTopLevelRef(id)
+	}
+}
+
+// markTopLevelRef records id, a reference to a top-level declaration of the
+// package, for renameShadowingTopLevel when its name is one
+// (isTopLevelShadower).
+func (t *galaASTTransformer) markTopLevelRef(id *ast.Ident) {
+	if !t.isTopLevelShadower(id.Name) {
+		return
+	}
+	if t.topLevelRefs == nil {
+		t.topLevelRefs = make(map[*ast.Ident]bool)
+	}
+	t.topLevelRefs[id] = true
+}
+
+// isTopLevelShadower reports whether name shadowsGeneratedName and is a
+// function, val or var declared at the top level of the package, in this
+// file or another. In Go such a declaration hides the predeclared identifier
+// in every file of the package, so it is emitted under its localGoName, and
+// so is every reference to it (renameShadowingTopLevel). The name is
+// unexported, so no other package refers to it.
+func (t *galaASTTransformer) isTopLevelShadower(name string) bool {
+	if !shadowsGeneratedName(name) {
+		return false
+	}
+	if t.richAST != nil && t.richAST.PackageVals[name] != nil {
+		return true
+	}
+	fm := t.functions[ownFunctionKey(t.packageName, name)]
+	return fm != nil && fm.Package == t.packageName
+}
+
+// renameShadowingTopLevel gives the package's top-level functions, vals and
+// vars that shadowsGeneratedName (isTopLevelShadower), among decls, the file's
+// lowered declarations, their localGoName, where they are declared and where
+// the source refers to them (markSourceRef). A generated reference of the same
+// name is not marked and keeps meaning std or Go's predeclared identifier.
+func (t *galaASTTransformer) renameShadowingTopLevel(decls []ast.Decl) {
+	for _, decl := range decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				t.markTopLevelRef(d.Name)
+			}
+		case *ast.GenDecl:
+			if d.Tok == token.VAR || d.Tok == token.CONST {
+				for _, spec := range d.Specs {
+					for _, name := range spec.(*ast.ValueSpec).Names {
+						t.markTopLevelRef(name)
+					}
+				}
+			}
+		}
+	}
+	if len(t.topLevelRefs) == 0 {
+		return
+	}
+	for _, decl := range decls {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && t.topLevelRefs[id] {
+				id.Name = localGoName(id.Name)
+			}
+			return true
+		})
 	}
 }
 
@@ -93,7 +164,7 @@ func (t *galaASTTransformer) recordLocalRef(id *ast.Ident) {
 // lowered from a function, method, val or var of the source, whose name
 // shadowsGeneratedName its localGoName: where it is declared — a parameter,
 // result, receiver or local variable — and where the source refers to it
-// (markLocalRef). A generated reference of the same name is not marked and
+// (markSourceRef). A generated reference of the same name is not marked and
 // keeps meaning std or Go's predeclared identifier.
 //
 // Every local such declaration in decl is the source's: generated code
@@ -218,38 +289,72 @@ func declaresCode(td native.GalaNodeRef) bool {
 	return false
 }
 
-// tempNamePattern matches the names the transformer gives its temporaries.
-var tempNamePattern = regexp.MustCompile(`\b(?:_tmp_|__p)\d+\b`)
+// sourceNamePattern matches the identifiers spelled with a leading
+// underscore: the shape of every name generated code binds or declares for
+// itself (`_tmp_1`, `__p0`, `__tuple_3`, `_zip`, `_err`, …). A lone `_` is
+// none.
+var sourceNamePattern = regexp.MustCompile(`\b_\w+`)
 
-// sourceTempNames collects the names of src, the file's source, that are
-// spelled like a temporary of the transformer's, which freshTempName then
-// skips; nil for a source that spells none, as nearly every one. A binding
-// declared elsewhere (a sibling file's val) is hidden only where it is
-// referenced, and a reference spells it here.
-func sourceTempNames(src string) map[string]bool {
-	if !strings.Contains(src, "_tmp_") && !strings.Contains(src, "__p") {
+// sourceGenNames collects the names of src, the file's source, spelled like
+// a name generated code binds or declares, which such a name then avoids
+// (see userSpells); nil for a source that spells none. A binding declared
+// elsewhere (a sibling file's val) is hidden only where it is referenced,
+// and a reference spells it here.
+func sourceGenNames(src string) map[string]bool {
+	if strings.IndexByte(src, '_') < 0 {
 		return nil
 	}
-	names := make(map[string]bool)
-	for _, m := range tempNamePattern.FindAllString(src, -1) {
+	matches := sourceNamePattern.FindAllString(src, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	names := make(map[string]bool, len(matches))
+	for _, m := range matches {
 		names[m] = true
 	}
 	return names
 }
 
+// userSpells reports whether name, spelled like a name generated code binds
+// or declares, is also the source's: spelled in the file's source, or
+// declared at package level by any file of the package. A generated binding
+// or declaration of that name would hide it or collide with it.
+func (t *galaASTTransformer) userSpells(name string) bool {
+	if t.sourceGenNames[name] {
+		return true
+	}
+	key := ownFunctionKey(t.packageName, name)
+	return t.functions[key] != nil || t.typeMetas[key] != nil ||
+		t.richAST != nil && t.richAST.PackageVals[name] != nil
+}
+
+// generatedName is the Go name of name, a fixed name generated code binds or
+// declares (`_zip`, `_err`, `__tuple_x`, …): name itself, or, where the
+// source has a name spelled so (userSpells), name under the reserved prefix,
+// which no name of the source has (GALA-E0097). Every fixed generated name
+// is chosen here, and every numbered one by freshTempName, so programs that
+// spell no such name get the same Go as ever.
+func (t *galaASTTransformer) generatedName(name string) string {
+	if t.userSpells(name) {
+		return localNamePrefix + name
+	}
+	return name
+}
+
 // isTransformerTemp reports whether name is a temporary nextTempVar made,
 // not a binding of the source spelled like one (which a temporary skips).
 func (t *galaASTTransformer) isTransformerTemp(name string) bool {
-	return isTempVarName(name) && !t.sourceTempNames[name]
+	return isTempVarName(name) && !t.sourceGenNames[name]
 }
 
 // freshTempName returns prefix followed by the next value of *counter that
-// spells no name of the file's source, advancing the counter past it.
+// the file's source does not spell, advancing the counter past it. A numbered
+// temporary is local, so it can hide only a name the file spells.
 func (t *galaASTTransformer) freshTempName(prefix string, counter *int) string {
 	for {
 		*counter++
 		name := prefix + strconv.Itoa(*counter)
-		if !t.sourceTempNames[name] {
+		if !t.sourceGenNames[name] {
 			return name
 		}
 	}

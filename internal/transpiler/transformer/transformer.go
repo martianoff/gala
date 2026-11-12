@@ -84,8 +84,9 @@ type galaASTTransformer struct {
 	cachedTypeResolver     *resolver.TypeResolver
 	cachedTypeResolverRev  uint64 // import-manager revision cachedTypeResolver was built at
 	tempVarCount           int
-	sourceTempNames        map[string]bool                               // names in the file's source spelled like a temporary; see freshTempName
+	sourceGenNames         map[string]bool                               // names in the file's source spelled like a generated name; see userSpells
 	localRefs              map[*ast.Ident]bool                           // source references to local bindings, renamed by renameShadowingLocals
+	topLevelRefs           map[*ast.Ident]bool                           // source references to top-level declarations, renamed by renameShadowingTopLevel
 	callFrames             []*callFrame                                  // one per call being lowered, innermost last; see call_order.go
 	defaultRefDecls        []ast.Decl                                    // package-level aliases through which a default reads a package-level name a local shadows at its use site; see default_scope.go
 	defaultRefNames        map[string]bool                               // names of defaultRefDecls
@@ -422,8 +423,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
-	t.sourceTempNames = sourceTempNames(richAST.SourceContent)
+	t.sourceGenNames = sourceGenNames(richAST.SourceContent)
 	t.localRefs = nil
+	t.topLevelRefs = nil
 	t.structMetas = make(map[string]*structMetaConfig)
 	t.interfaceLiterals = make(map[string]string)
 	t.interfaceLiteralMisses = make(map[string]bool)
@@ -641,6 +643,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	if err := t.finalizeCodecs(file); err != nil {
 		return nil, nil, err
 	}
+	// Last, once no pass reads a name back: a top-level declaration named
+	// like a Go predeclared identifier gets its Go name.
+	t.renameShadowingTopLevel(file.Decls)
 
 	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)

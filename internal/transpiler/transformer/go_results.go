@@ -464,13 +464,13 @@ func (t *galaASTTransformer) isErrorOnlyCall(expr ast.Expr) bool {
 // `error`: the error is the panic Try catches, and the thunk's value is Void.
 func (t *galaASTTransformer) errorThunk(call ast.Expr) (*ast.BlockStmt, ast.Expr) {
 	// func() std.Void { if _err := call; _err != nil { panic(_err) }; return std.Void{} }
-	void := t.stdIdent("Void")
+	void, errName := t.stdIdent("Void"), t.generatedName("_err")
 	return &ast.BlockStmt{List: []ast.Stmt{
 		&ast.IfStmt{
-			Init: &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_err")}, Tok: token.DEFINE, Rhs: []ast.Expr{call}},
-			Cond: &ast.BinaryExpr{X: ast.NewIdent("_err"), Op: token.NEQ, Y: ast.NewIdent("nil")},
+			Init: &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(errName)}, Tok: token.DEFINE, Rhs: []ast.Expr{call}},
+			Cond: &ast.BinaryExpr{X: ast.NewIdent(errName), Op: token.NEQ, Y: ast.NewIdent("nil")},
 			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: &ast.CallExpr{
-				Fun: ast.NewIdent("panic"), Args: []ast.Expr{ast.NewIdent("_err")},
+				Fun: ast.NewIdent("panic"), Args: []ast.Expr{ast.NewIdent(errName)},
 			}}}},
 		},
 		&ast.ReturnStmt{Results: []ast.Expr{&ast.CompositeLit{Type: void}}},
@@ -534,12 +534,13 @@ func (t *galaASTTransformer) errorFuncThunk(f ast.Expr, typ transpiler.Type) (as
 		body, resultType := t.errorThunk(&ast.CallExpr{Fun: f})
 		return thunkLit(body, resultType), true
 	}
-	body, resultType := t.errorThunk(&ast.CallExpr{Fun: ast.NewIdent("_f")})
+	fName := t.generatedName("_f")
+	body, resultType := t.errorThunk(&ast.CallExpr{Fun: ast.NewIdent(fName)})
 	thunk := thunkLit(body, resultType)
 	errorFunc := &ast.FuncType{Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("error")}}}}
 	bind := &ast.FuncLit{
 		Type: &ast.FuncType{
-			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("_f")}, Type: errorFunc}}},
+			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(fName)}, Type: errorFunc}}},
 			Results: &ast.FieldList{List: []*ast.Field{{Type: thunk.Type}}},
 		},
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{thunk}}}},

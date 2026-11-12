@@ -300,6 +300,8 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 	}
 
 	args := make([]ast.Expr, len(c.params))
+	// The defaults are evaluated where these names are bound.
+	argsVar, optsVar, optVar := t.generatedName("_args"), t.generatedName("_opts"), t.generatedName("_opt")
 	var inits []ast.Expr
 	for _, p := range optional {
 		val, err := c.defaultOf(p.i)
@@ -307,7 +309,7 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 			return nil, err
 		}
 		inits = append(inits, &ast.KeyValueExpr{Key: ast.NewIdent(p.name), Value: val})
-		args[p.i] = &ast.SelectorExpr{X: ast.NewIdent("_args"), Sel: ast.NewIdent(p.name)}
+		args[p.i] = &ast.SelectorExpr{X: ast.NewIdent(argsVar), Sel: ast.NewIdent(p.name)}
 	}
 	// A parameter must not shadow a name the defaults read, nor take another
 	// parameter's name.
@@ -334,7 +336,7 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 	var body []ast.Stmt
 	if len(optional) > 0 {
 		argsType := t.buildGenericTypeExpr(argsName, tParams)
-		argsPtr := &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("_args")}, Type: &ast.StarExpr{X: argsType}}}}
+		argsPtr := &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(argsVar)}, Type: &ast.StarExpr{X: argsType}}}}
 		optionType := t.buildGenericTypeExpr(option, tParams)
 		argsFields := &ast.FieldList{}
 		for _, p := range optional {
@@ -352,7 +354,7 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 			set := &ast.FuncLit{
 				Type: &ast.FuncType{Params: argsPtr},
 				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.AssignStmt{
-					Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("_args"), Sel: ast.NewIdent(p.name)}},
+					Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent(argsVar), Sel: ast.NewIdent(p.name)}},
 					Tok: token.ASSIGN, Rhs: []ast.Expr{ast.NewIdent("v")},
 				}}},
 			}
@@ -361,11 +363,11 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 				tParams, &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("v")}, Type: p.typ}}}, optionType,
 				[]ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{set}}}))
 		}
-		params.List = append(params.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent("_opts")}, Type: &ast.Ellipsis{Elt: optionType}})
+		params.List = append(params.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(optsVar)}, Type: &ast.Ellipsis{Elt: optionType}})
 		body = append(body,
-			&ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_args")}, Tok: token.DEFINE, Rhs: []ast.Expr{&ast.CompositeLit{Type: argsType, Elts: inits}}},
-			&ast.RangeStmt{Key: ast.NewIdent("_"), Value: ast.NewIdent("_opt"), Tok: token.DEFINE, X: ast.NewIdent("_opts"),
-				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: &ast.CallExpr{Fun: ast.NewIdent("_opt"), Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("_args")}}}}}}},
+			&ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(argsVar)}, Tok: token.DEFINE, Rhs: []ast.Expr{&ast.CompositeLit{Type: argsType, Elts: inits}}},
+			&ast.RangeStmt{Key: ast.NewIdent("_"), Value: ast.NewIdent(optVar), Tok: token.DEFINE, X: ast.NewIdent(optsVar),
+				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: &ast.CallExpr{Fun: ast.NewIdent(optVar), Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent(argsVar)}}}}}}},
 		)
 	}
 	body = append(body, &ast.ReturnStmt{Results: []ast.Expr{c.build(args)}})

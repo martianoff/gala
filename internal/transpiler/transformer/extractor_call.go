@@ -102,7 +102,7 @@ func (t *galaASTTransformer) unapplyHelper(
 		return "", false
 	}
 
-	name := "_unapply_" + strings.ReplaceAll(extractorName, ".", "_") + t.codecFileSuffix()
+	name := t.generatedName("_unapply_" + strings.ReplaceAll(extractorName, ".", "_") + t.codecFileSuffix())
 	typeParams := &ast.FieldList{}
 	typeArgs := make([]ast.Expr, len(meta.TypeParams))
 	for i, tp := range meta.TypeParams {

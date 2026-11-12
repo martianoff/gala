@@ -33,6 +33,7 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 			}
 		}
 		if _, boxed := t.valKind(name); boxed {
+			t.markSourceRef(ident)
 			return &ast.CallExpr{
 				Fun: &ast.SelectorExpr{
 					X:   ident,
@@ -40,7 +41,7 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 				},
 			}, nil
 		}
-		t.markLocalRef(ident)
+		t.markSourceRef(ident)
 		return ident, nil
 	}
 
@@ -58,6 +59,7 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 	// function, which is qualified below.
 	ownFunc := t.packageDeclaresFunction(name)
 	if t.packageDeclaresType(name) || ownFunc && !t.loweringForeignDefault() {
+		t.markTopLevelRef(ident)
 		return ident, nil
 	}
 	// Check if this identifier is a std package type (not a variable with std type)

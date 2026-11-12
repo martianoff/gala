@@ -539,11 +539,11 @@ func (t *galaASTTransformer) bindingRead(b binding) ast.Expr {
 	if b.pkg != "" {
 		return t.unwrapImmutable(&ast.SelectorExpr{X: ast.NewIdent(b.pkg), Sel: ast.NewIdent(b.name)})
 	}
-	if b.boxed {
-		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent(b.name), Sel: ast.NewIdent(transpiler.MethodGet)}}
-	}
 	id := ast.NewIdent(b.name)
-	t.markLocalRef(id)
+	t.markSourceRef(id)
+	if b.boxed {
+		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: id, Sel: ast.NewIdent(transpiler.MethodGet)}}
+	}
 	return id
 }
 
