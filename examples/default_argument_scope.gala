@@ -25,11 +25,6 @@ func once(a int, b int = a, c int = a) string = s"$a $b $c"
 
 struct Cfg(Host string, Port int = defaultPort)
 
-val Width = 7
-
-// No field is in scope in a field default: Width here is the package val.
-struct Panel(Width int, Height int = Width)
-
 struct Meter(var Total int)
 
 func (m *Meter) Add(k int = m.Total) int {
@@ -43,7 +38,6 @@ func (c Counter) From(step int, end int = c.Start + step) string = s"${c.Start}.
 
 sealed type Item {
     case Box(W int, H int = defaultPort)
-    case Tile(Width int, Height int = Width)
 }
 
 func main() {
@@ -68,9 +62,6 @@ func main() {
     val keyed = Cfg{Host: "example.org"}
     Println(s"keyed literal: ${keyed.Port} (local defaultPort = $defaultPort)")
 
-    val panel = Panel(2)
-    Println(s"field default reads the package val: ${panel.Width} x ${panel.Height}")
-
     var meter = Meter(1)
     meter.Add()
     Println(s"pointer receiver in default: ${meter.Total}")
@@ -78,12 +69,6 @@ func main() {
     val box = Box(3)
     val dims = box match {
         case Box(w, h) => s"$w x $h"
-        case Tile(w, h) => s"tile $w x $h"
     }
     Println(s"sealed variant default: $dims")
-    val tile = Tile(2) match {
-        case Tile(w, h) => s"$w x $h"
-        case _ => ""
-    }
-    Println(s"case field default reads the package val: $tile")
 }
