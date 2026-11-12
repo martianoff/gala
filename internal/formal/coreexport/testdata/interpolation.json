@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -42,7 +42,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },

@@ -29,20 +29,6 @@ inductive Ty
   | unsupported (kind : String)
   deriving Repr, BEq, Inhabited
 
-/-- A field of a struct or a sealed variant. -/
-structure Field where
-  name : String
-  type : Option Ty
-  mutable : Bool
-  deriving Repr, Inhabited
-
-/-- One `case` of a sealed type. -/
-structure Variant where
-  name : String
-  isDefault : Bool
-  fields : List Field
-  deriving Repr, Inhabited
-
 /-- A literal. Integers are mathematical here; `Gala/Eval.lean` checks they fit `int`. -/
 inductive Lit
   | int (v : Int)
@@ -115,14 +101,33 @@ inductive Expr
   | interp (parts : List Expr)
   /-- A lambda `(params) [result] => body`; the body is a `block` or an expression. -/
   | lambda (params : List Param) (result : Option Ty) (body : Expr)
+  /-- A named argument `name = value`, among a call's arguments (S2). -/
+  | named (name : String) (value : Expr)
   /-- A construct outside S1. -/
   | unsupported (kind : String)
+  deriving Repr, Inhabited
+
+/-- A field of a struct or a sealed variant, with its default value (S2), if any. -/
+structure Field where
+  name : String
+  type : Option Ty
+  mutable : Bool
+  default : Option Expr := none
+  deriving Repr, Inhabited
+
+/-- One `case` of a sealed type. -/
+structure Variant where
+  name : String
+  isDefault : Bool
+  fields : List Field
   deriving Repr, Inhabited
 
 /-- A function declaration. -/
 structure Func where
   name : String
   params : List Param
+  /-- Each parameter's default value (S2), if any, in parameter order. -/
+  defaults : List (Option Expr)
   result : Option Ty
   /-- The body: a `block`, or the expression of the `= expr` form. -/
   body : Expr

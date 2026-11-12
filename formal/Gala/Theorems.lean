@@ -23,6 +23,10 @@
   * **Closures (S2).** `capturedEnv_captured`, `lookup_captured`: a lambda's call sees
     exactly the scope it was written in, each `var` by the same cell.
 
+  * **T4, defaults in the callee's scope.** `defaultFrame_other`, `defaultFrame_last`: a
+    default value sees only the parameters before it, the last one bound to the value the
+    call gave it; never a local of the caller's.
+
   Not proved yet: T2 for whole programs (renaming every binder of a program does not
   change its outcome). It needs a renaming on the syntax and an induction over `eval`.
 -/
@@ -162,5 +166,30 @@ theorem capturedEnv_captured (ρ : Env) (h : cellsMutable ρ) : capturedEnv (cap
 theorem lookup_captured (ρ : Env) (h : cellsMutable ρ) (x : String) :
     lookup (capturedEnv (captured ρ)) x = lookup ρ x := by
   rw [capturedEnv_captured ρ h]
+
+/-! ## T4: defaults in the callee's scope -/
+
+private theorem lookup_foldl_bind_other (x : String) :
+    ∀ (earlier : List (String × Val)) (ρ : Env), x ∉ earlier.map (·.1) →
+      lookup (earlier.foldl (fun ρ (y, v) => bind ρ y ⟨v, false⟩) ρ) x = lookup ρ x
+  | [], _, _ => rfl
+  | (y, v) :: rest, ρ, h => by
+    simp only [List.map, List.mem_cons, not_or] at h
+    simp only [List.foldl]
+    rw [lookup_foldl_bind_other x rest _ h.2, lookup_bind_other ρ y x _ (Ne.symm h.1)]
+
+/-- **T4, scoping.** A default value is evaluated in a scope holding only the parameters
+    before it: any other name, a local of the caller's included, is not bound there, so it
+    resolves to a package-level declaration or to nothing. -/
+theorem defaultFrame_other (earlier : List (String × Val)) (x : String)
+    (h : x ∉ earlier.map (·.1)) : lookup (defaultFrame earlier) x = none :=
+  lookup_foldl_bind_other x earlier [] h
+
+/-- **T4, values.** In that scope the parameter just before is bound to the value the call
+    gave it (explicitly or by its own default). -/
+theorem defaultFrame_last (earlier : List (String × Val)) (x : String) (v : Val)
+    (hx : x ≠ "_") : lookup (defaultFrame (earlier ++ [(x, v)])) x = some ⟨v, false⟩ := by
+  simp only [defaultFrame, List.foldl_append, List.foldl]
+  exact lookup_bind_self _ x _ hx
 
 end Gala.Spec

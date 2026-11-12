@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -66,7 +66,8 @@
                   "off": 101,
                   "end": 107
                 }
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -85,7 +86,8 @@
                   "off": 111,
                   "end": 125
                 }
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -104,7 +106,8 @@
                   "off": 130,
                   "end": 135
                 }
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -145,7 +148,8 @@
                   },
                   "name": "int"
                 }
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -164,7 +168,8 @@
                   "off": 156,
                   "end": 167
                 }
-              }
+              },
+              "default": null
             },
             {
               "kind": "param",
@@ -183,15 +188,40 @@
                   "off": 171,
                   "end": 183
                 }
-              }
+              },
+              "default": null
             },
             {
-              "unsupported": "param-default",
+              "kind": "param",
               "pos": {
                 "line": 9,
                 "col": 98,
                 "off": 185,
                 "end": 194
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 9,
+                  "col": 100,
+                  "off": 187,
+                  "end": 190
+                },
+                "name": "int"
+              },
+              "default": {
+                "kind": "int",
+                "pos": {
+                  "line": 9,
+                  "col": 106,
+                  "off": 193,
+                  "end": 194
+                },
+                "text": "1",
+                "hint": {
+                  "type": "int"
+                }
               }
             }
           ],
@@ -287,7 +317,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -352,7 +383,8 @@
                             "end": 344
                           },
                           "name": "int"
-                        }
+                        },
+                        "default": null
                       }
                     ],
                     "result": null,
@@ -600,12 +632,26 @@
                     },
                     "args": [
                       {
-                        "unsupported": "named-arg",
+                        "kind": "named-arg",
                         "pos": {
                           "line": 28,
                           "col": 22,
                           "off": 505,
                           "end": 510
+                        },
+                        "name": "x",
+                        "value": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 28,
+                            "col": 26,
+                            "off": 509,
+                            "end": 510
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
                         }
                       }
                     ]

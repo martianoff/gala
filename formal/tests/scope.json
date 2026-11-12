@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -42,7 +42,8 @@
                 },
                 "name": "string"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -63,7 +64,8 @@
                 },
                 "name": "int"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -95,7 +97,8 @@
                   "end": 70
                 },
                 "name": "int"
-              }
+              },
+              "default": null
             }
           ],
           "result": {

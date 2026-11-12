@@ -1,5 +1,5 @@
 {
-  "core": 3,
+  "core": 4,
   "files": [
     {
       "kind": "file",
@@ -42,7 +42,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -63,7 +64,8 @@
                 },
                 "name": "int"
               },
-              "mutable": true
+              "mutable": true,
+              "default": null
             }
           ]
         },
@@ -97,7 +99,8 @@
                 },
                 "name": "int"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             },
             {
               "kind": "field",
@@ -118,7 +121,8 @@
                 },
                 "name": "string"
               },
-              "mutable": false
+              "mutable": false,
+              "default": null
             }
           ]
         },
@@ -162,7 +166,8 @@
                     },
                     "name": "int"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 }
               ]
             },
@@ -196,7 +201,8 @@
                     },
                     "name": "int"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 },
                 {
                   "kind": "field",
@@ -217,7 +223,8 @@
                     },
                     "name": "int"
                   },
-                  "mutable": false
+                  "mutable": false,
+                  "default": null
                 }
               ]
             },

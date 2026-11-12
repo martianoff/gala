@@ -15,6 +15,9 @@
     are evaluated in source order, each one
     completely before the next. `&&` and `||` evaluate their right operand only when it
     decides the result. A compound assignment `x op= e` reads `x`, then evaluates `e`.
+  * **Named arguments and defaults** (S2; `bindArgs`): a call's arguments are evaluated
+    as written, then the defaults of the parameters it leaves out, in parameter order,
+    each in the callee's scope.
   * **`match`** (docs/GALA.MD, "Match Expression"), with Scala's semantics: the subject is
     evaluated once; arms are tried in source order; a pattern's variables are in scope in
     its own guard and body only; sub-patterns are tried left to right and the first one
@@ -403,6 +406,21 @@ def captured (ρ : Env) : List (String × Val) := ρ.map fun (k, b) => (k, b.val
 def capturedEnv (env : List (String × Val)) : Env :=
   env.map fun (k, v) => (k, ⟨v, match v with | .ref _ => true | _ => false⟩)
 
+/-- Is an argument a named one, `name = value`? -/
+def isNamed : Expr → Bool
+  | .named .. => true
+  | _ => false
+
+/-- An argument's value expression. -/
+def unnamed : Expr → Expr
+  | .named _ v => v
+  | e => e
+
+/-- The scope a function's default value is evaluated in: the parameters before it, bound
+    to their values, and nothing of the caller's (docs/GALA.MD, "Default Parameter Values"). -/
+def defaultFrame (earlier : List (String × Val)) : Env :=
+  earlier.foldl (fun ρ (x, v) => bind ρ x ⟨v, false⟩) []
+
 /-- A by-name argument (docs/GALA.MD, "By-Name Arguments"): a plain expression passed to a
     parameter of type `func() T` is lifted into `() => expr`. The subset passes lambdas and
     names of function values only; anything else is outside it. A parameter whose type is
@@ -475,6 +493,7 @@ def eval (ds : Decls) : Nat → Expr → M Val
       | .func f => pure (.fn f)
       | .unbound => unresolved ds x
       | _ => unsup "func-value" x
+    | .named .. => stuck "a named argument outside a call's arguments"
     | .lambda ps _ body => do
       -- A lambda closes over the locals in scope: a `var` by its cell (by reference).
       pure (.closure ps body (captured (← get).locals))
@@ -499,11 +518,12 @@ def eval (ds : Decls) : Nat → Expr → M Val
     | .call (.name x) args => do
       let s ← get
       match resolve ds s.locals s.globals x with
-      | .func f => do callFunc ds d f (← evalArgs ds d (f.params.map (·.type)) args)
-      | .struct_ n fs => do pure (.struct_ n (← construct ds n fs (← evalArgs ds d (fs.map (·.type)) args)))
+      | .func f => do callFunc ds d f (← funcArgs ds d f args)
+      | .struct_ n fs => do pure (.struct_ n (← construct ds n fs (← fieldArgs ds d fs args)))
       | .variant ty c => do
-        pure (.sealed ty c.name (← construct ds c.name c.fields (← evalArgs ds d (c.fields.map (·.type)) args)))
+        pure (.sealed ty c.name (← construct ds c.name c.fields (← fieldArgs ds d c.fields args)))
       | .print nl => do
+        if args.any isNamed then stuck "a named argument to Println or Print"
         let vs ← evalList ds d args
         printable ds vs
         emit (if nl then Print.println ds vs else Print.print ds vs) ds
@@ -569,26 +589,81 @@ def evalList (ds : Decls) : Nat → List Expr → M (List Val)
     let v ← eval ds d e
     pure (v :: (← evalList ds d es))
   termination_by d es => (d, 1, es.length)
-/-- Evaluate a call's arguments left to right, for parameters of the given types. -/
-def evalArgs (ds : Decls) : Nat → List (Option Ty) → List Expr → M (List Val)
-  | d, tys, args => do
-    for (t, a) in tys.zip args do
-      unless ← byNameOk ds t a do unsup "by-name-arg" "a plain expression passed as a func() T"
-    evalList ds d args
-  termination_by d _ _ => (d, 2, 0)
+/-- Bind a call's arguments to parameters (or a constructor's to fields), in parameter
+    order (docs/GALA.MD, "Named Arguments", "Default Parameter Values", "Evaluation
+    Order"; docs/FORMAL_SEMANTICS.MD, "Decisions the spec forces"):
+
+    1. the arguments are evaluated in the order they are written, a named one included,
+       and each goes to the parameter at its position or the one it names;
+    2. then each parameter the call leaves out takes its default, in parameter order,
+       evaluated in the callee's scope: a function's default sees the parameters before
+       it, bound to the values the call gives them (explicitly or by their own
+       defaults), and never the caller's locals; a field's default sees no field
+       (`fieldScope`, GALA-E0098), only package-level names.
+
+    A plain expression for a `func() T` parameter is a by-name argument (`byNameOk`). -/
+def bindArgs (ds : Decls) : Nat → List String → List (Option Ty) → List (Option Expr) → Bool →
+    List Expr → M (List Val)
+  | d, names, tys, dflts, fieldScope, args => do
+    -- Each argument's parameter: its position, or the one it names.
+    let mut slots : List Nat := []
+    let mut named := false
+    for a in args do
+      match a with
+      | .named n _ =>
+        named := true
+        match names.idxOf? n with
+        | some j => slots := slots ++ [j]
+        | none => stuck s!"no parameter {n}"
+      | _ =>
+        -- Constructors reject it; a function call passes it to the next free position.
+        -- docs/GALA.MD does not say which, so the subset leaves it out.
+        if named then unsup "positional-after-named"
+        slots := slots ++ [slots.length]
+    if slots.eraseDups.length != slots.length || slots.any (· ≥ names.length) then
+      stuck "an argument given twice, or too many"
+    for (a, j) in args.zip slots do
+      unless ← byNameOk ds (tys.getD j none) (unnamed a) do
+        unsup "by-name-arg" "a plain expression passed as a func() T"
+    let given := slots.zip (← evalList ds d (args.map unnamed))
+    let mut vals : List Val := []
+    for (n, j) in names.zipIdx do
+      match given.lookup j, dflts.getD j none with
+      | some v, _ => vals := vals ++ [v]
+      | none, some e =>
+        -- A default for a `func() T` parameter is a by-name argument too.
+        unless ← byNameOk ds (tys.getD j none) e do
+          unsup "by-name-arg" "a plain expression as the default of a func() T"
+        let frame := if fieldScope then [] else defaultFrame (names.zip vals)
+        vals := vals ++ [← runIn ds d frame e]
+      | none, none => stuck s!"no argument for {n}"
+    pure vals
+  termination_by d _ _ _ _ _ => (d, 2, 0)
+/-- A function's arguments, bound to its parameters. -/
+def funcArgs (ds : Decls) : Nat → Func → List Expr → M (List Val)
+  | d, f, args => bindArgs ds d (f.params.map (·.name)) (f.params.map (·.type)) f.defaults false args
+  termination_by d _ _ => (d, 3, 0)
+/-- A constructor's arguments, bound to the fields. -/
+def fieldArgs (ds : Decls) : Nat → List Field → List Expr → M (List Val)
+  | d, fs, args => bindArgs ds d (fs.map (·.name)) (fs.map (·.type)) (fs.map (·.default)) true args
+  termination_by d _ _ => (d, 3, 0)
 /-- Call a function value on argument expressions: the callee is evaluated first, then
     the arguments left to right (docs/GALA.MD, "Evaluation Order"). -/
 def callValue (ds : Decls) : Nat → Val → List Expr → M Val
-  | d, .fn f, args => do callFunc ds d f (← evalArgs ds d (f.params.map (·.type)) args)
+  -- A function value (a top-level function's included) is a Go func value: it takes its
+  -- arguments by position, all of them, as GALA type-checks it.
+  | d, .fn f, args => do
+    if args.any isNamed then unsup "named-arg" "a named argument to a function value"
+    callFunc ds d f (← bindArgs ds d (f.params.map (·.name)) (f.params.map (·.type)) [] false args)
   | d, .closure ps body env, args => do
-    let vs ← evalArgs ds d (ps.map (·.type)) args
-    if vs.length != ps.length then stuck s!"a lambda takes {ps.length} arguments"
+    if args.any isNamed then unsup "named-arg" "a named argument to a function value"
+    let vs ← bindArgs ds d (ps.map (·.name)) (ps.map (·.type)) [] false args
     -- The body sees the captured locals and its parameters, never the caller's. A block
     -- body's trailing value is the result: in a void lambda, GALA's types never use it.
     runIn ds d ((ps.zip vs).foldl (fun ρ (p, v) => bind ρ p.name ⟨v, false⟩) (capturedEnv env)) body
   -- A struct called as a function uses its `Apply` method, outside the subset.
   | _, v, _ => outsideS1 ds s!"call of a value that is not a function: {repr v}"
-  termination_by d _ _ => (d, 3, 0)
+  termination_by d _ _ => (d, 4, 0)
 /-- Run a block's statements in order; its value is the last one's. -/
 def evalBlock (ds : Decls) : Nat → List Expr → M Val
   | _, [] => pure .unit
@@ -681,43 +756,74 @@ partial def patNames : Pat → List String
   | .tuple ps | .extract _ ps => ps.flatMap patNames
   | _ => []
 
+/-- The default values a call of `x` with arguments `as` leaves out, each with the names
+    in its scope: a function's earlier parameters, or none for a field's default. -/
+def omittedDefaults (ds : Decls) (x : String) (as : List Expr) : List (List String × Expr) :=
+  let given (names : List String) : List Nat :=
+    (List.range (as.filter (!isNamed ·)).length) ++
+      as.filterMap fun | .named n _ => names.idxOf? n | _ => none
+  let omitted (names : List String) (dflts : List (Option Expr)) (scope : Nat → List String) :=
+    (dflts.zipIdx).filterMap fun (e, j) =>
+      if (given names).contains j then none else e.map (scope j, ·)
+  match ds.funcs.lookup x with
+  | some f =>
+    let ps := f.params.map (·.name)
+    omitted ps f.defaults (ps.take ·)
+  | none =>
+    let fields : Option (List Field) := match ds.structs.lookup x with
+      | some fs => some fs
+      | none => (ds.variant? x).map (·.2.fields)
+    match fields with
+    | some fs => omitted (fs.map (·.name)) (fs.map (·.default)) fun _ => []
+    | none => []
+
 /-- The free names an expression mentions, for the initialization order of package-level
     variables: names bound by an enclosing declaration, parameter or pattern in `bound`
     are left out, as Go's order follows references only. A pattern name counts as a
     mention too, since it may be a stable identifier. -/
-partial def mentions (bound : List String) : Expr → List String
+partial def mentions (ds : Decls) (bound : List String) : Expr → List String
   | .lit _ | .unsupported _ | .ret none => []
   | .name x => if bound.contains x then [] else [x]
-  | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) => mentions bound e
-  | .binary _ l r => mentions bound l ++ mentions bound r
-  | .call c as => mentions bound c ++ as.flatMap (mentions bound)
-  | .tuple es | .interp es => es.flatMap (mentions bound)
-  | .lambda ps _ b => mentions (ps.map (·.name) ++ bound) b
+  | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) => mentions ds bound e
+  | .binary _ l r => mentions ds bound l ++ mentions ds bound r
+  | .call c as => mentions ds bound c ++ as.flatMap (mentions ds bound) ++
+    -- The defaults a call leaves out are evaluated there (each in its callee's scope).
+    match c with
+    | .name x => if bound.contains x then [] else
+      (omittedDefaults ds x as).flatMap fun (scope, e) => mentions ds scope e
+    | _ => []
+  | .tuple es | .interp es => es.flatMap (mentions ds bound)
+  | .lambda ps _ b => mentions ds (ps.map (·.name) ++ bound) b
+  | .named _ e => mentions ds bound e
   | .block es =>
     (es.foldl (init := (bound, [])) fun (b, acc) e =>
       let b' := match e with | .decl _ ns _ _ _ => ns ++ b | _ => b
-      (b', acc ++ mentions b e)).2
-  | .ifExpr c a b => mentions bound c ++ mentions bound a ++ mentions bound b
-  | .ifStmt c a b => mentions bound c ++ mentions bound a ++ (b.map (mentions bound)).getD []
-  | .mtch s cs => mentions bound s ++ cs.flatMap fun (p, g, b) =>
+      (b', acc ++ mentions ds b e)).2
+  | .ifExpr c a b => mentions ds bound c ++ mentions ds bound a ++ mentions ds bound b
+  | .ifStmt c a b => mentions ds bound c ++ mentions ds bound a ++ (b.map (mentions ds bound)).getD []
+  | .mtch s cs => mentions ds bound s ++ cs.flatMap fun (p, g, b) =>
     let ns := patNames p
-    ns.filter (!bound.contains ·) ++ (g.map (mentions (ns ++ bound))).getD []
-      ++ mentions (ns ++ bound) b
-  | .assign _ ts vs => ts.flatMap (mentions bound) ++ vs.flatMap (mentions bound)
-  | .decl _ _ _ _ vs => vs.flatMap (mentions bound)
+    ns.filter (!bound.contains ·) ++ (g.map (mentions ds (ns ++ bound))).getD []
+      ++ mentions ds (ns ++ bound) b
+  | .assign _ ts vs => ts.flatMap (mentions ds bound) ++ vs.flatMap (mentions ds bound)
+  | .decl _ _ _ _ vs => vs.flatMap (mentions ds bound)
 
 /-- Everything a list of names reaches: the names, and through every function among them,
     the free names of its body, transitively. -/
 def reach (ds : Decls) (start : List String) : List String :=
   go (ds.funcs.length + 1) start []
 where
+  /-- The names a function's body mentions. The defaults a call leaves out are
+      mentions of the call (`mentions`). -/
+  expand (x : String) : Option (List String) :=
+    (ds.funcs.lookup x).map fun f => mentions ds (f.params.map (·.name)) f.body
   go : Nat → List String → List String → List String
     | 0, _, seen => seen
     | _, [], seen => seen
     | n + 1, x :: todo, seen =>
       if seen.contains x then go (n + 1) todo seen
-      else match ds.funcs.lookup x with
-        | some f => go n (mentions (f.params.map (·.name)) f.body ++ todo) (x :: seen)
+      else match expand x with
+        | some ms => go n (ms ++ todo) (x :: seen)
         | none => go (n + 1) todo (x :: seen)
   termination_by n todo => (n, todo.length)
 
@@ -734,7 +840,7 @@ def initGlobals (ds : Decls) (d : Nat) (gs : List GlobalDecl) : M Unit := do
   let all := gs.flatMap (·.names)
   -- Each declaration with its position and the package-level variables it depends on.
   let mut pending := (List.range gs.length).zip (gs.zip (gs.map fun g =>
-    (reach ds (g.values.flatMap (mentions []))).filter (all.contains ·)))
+    (reach ds (g.values.flatMap (mentions ds []))).filter (all.contains ·)))
   let mut done : List String := []
   for _ in gs do
     match pending.find? (fun (_, _, deps) => deps.all done.contains) with
