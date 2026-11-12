@@ -34,12 +34,16 @@ private def noDecls : Decls := { funcs := [], structs := [], sealeds := [], unsu
 #guard (Print.print noDecls [.str "a", .int 1, .int 2, .str "b", .str "c"]).toOption == some "a1 2bc"
 #guard (Print.println noDecls [.tuple [.int 1, .str "x"], .sealed "S" "C" [.int 2]]).toOption == some "(1, x) C(2)\n"
 
+-- An interpolated string's parts print as `Println`'s operands do, with no separator.
+#guard (Print.interp noDecls [.str "n=", .int 7, .str "%d ", .tuple [.int 1, .bool true]]).toOption
+  == some "n=7%d (1, true)"
+
 -- The decoder rejects an unknown version and malformed documents.
 private def decodes (s : String) : Bool := (Json.parse s).toBool
-#guard decodes "{\"core\": 1, \"files\": []}"
-#guard !decodes "{\"core\": 2, \"files\": []}"
+#guard decodes "{\"core\": 2, \"files\": []}"
+#guard !decodes "{\"core\": 1, \"files\": []}"
 #guard !decodes "{\"files\": []}"
-#guard !decodes "{\"core\": 1, \"files\": [{\"kind\": \"nope\"}]}"
+#guard !decodes "{\"core\": 2, \"files\": [{\"kind\": \"nope\"}]}"
 #guard !decodes "not json"
 
 -- The command line.

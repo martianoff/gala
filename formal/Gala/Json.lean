@@ -1,8 +1,8 @@
 /-
-  # Core JSON v1 decoder
+  # Core JSON decoder
 
   Reads a Core JSON document (`internal/formal/coreexport/SCHEMA.md`) into the syntax of
-  `Gala/Syntax.lean`. It rejects a document whose `core` version is not 1, and any node
+  `Gala/Syntax.lean`. It rejects a document whose `core` version is not `supportedCore`, and any node
   whose kind, fields or field types do not follow the schema: decoding fails with a
   message, and `galaspec` reports the input as malformed.
 
@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 1
+def supportedCore : Nat := 2
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -178,12 +178,24 @@ partial def decodeExpr (j : Json) : D Expr := do
     return .assign (← str j "op") (← (← arr j "targets").mapM decodeExpr)
       (← (← arr j "values").mapM decodeExpr)
   | "incdec" => return .incdec (← str j "op") (← decodeExpr (← field j "target"))
+  | "interp" => return .interp (← (← arr j "parts").mapM decodePart)
   | "val" => decodeDecl .val j
   | "var" => decodeDecl .var j
   -- S1 models neither local functions nor local types.
   | "func" => return .unsupported "local-func"
   | "struct" => return .unsupported "local-struct"
   | k => throw s!"expected an expression or statement, got kind `{k}`"
+
+/-- A part of an `interp`: a literal run, which is a string and prints as itself, or an
+    embedded expression (never a declaration or statement). -/
+partial def decodePart (j : Json) : D Expr := do
+  if (← unsupportedOf j).isNone then
+    match ← kindOf j with
+    | "interp-text" => return .lit (.str (← str j "value"))
+    | "val" | "var" | "func" | "struct" | "if" | "return" | "assign" | "incdec" =>
+      throw "an interpolated string's part is a statement"
+    | _ => pure ()
+  decodeExpr j
 
 /-- A `val` or `var` in a block. -/
 partial def decodeDecl (m : Mut) (j : Json) : D Expr := do

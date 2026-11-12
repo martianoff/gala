@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
-	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/interpolation"
@@ -109,19 +108,10 @@ func interpContentOrigin(tok litTok) (int, int) {
 // rather than silently mispositioned: each newline advances the line and resets
 // the column to the content's own left margin of 0.
 func interpPartOrigin(content string, offset, baseLine, baseCol int) (int, int) {
-	if baseLine <= 0 || offset < 0 || offset > len(content) {
+	if baseLine <= 0 {
 		return baseLine, baseCol
 	}
-	prefix := content[:offset]
-	if nl := strings.LastIndexByte(prefix, '\n'); nl >= 0 {
-		return baseLine + strings.Count(prefix, "\n"), utf8.RuneCountInString(prefix[nl+1:])
-	}
-	// Columns are counted in runes because that is what the diagnostic
-	// renderer indexes by, while Offset is a byte index into the content.
-	// RuneCountInString rather than len([]rune(...)) so counting does not
-	// allocate a slice it immediately discards — this runs per embedded
-	// expression, on every interpolated string compiled.
-	return baseLine, baseCol + utf8.RuneCountInString(prefix)
+	return interpolation.Position(content, offset, baseLine, baseCol)
 }
 
 // buildSprintfCall generates a fmt.Sprintf call from interpolation parts.

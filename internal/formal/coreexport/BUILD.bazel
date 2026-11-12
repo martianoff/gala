@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "coverage.go",
         "export.go",
+        "interp.go",
         "pattern.go",
         "schema.go",
     ],
@@ -14,6 +15,7 @@ go_library(
     visibility = ["//internal/formal:__subpackages__"],
     deps = [
         "//galaerr",
+        "//internal/interpolation",
         "//internal/parser",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
     ],

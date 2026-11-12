@@ -23,7 +23,7 @@ func exportJSON(srcs ...coreexport.Source) ([]byte, error) {
 	return coreexport.Marshal(p)
 }
 
-// checkDocument checks the properties every export has: it is version 1;
+// checkDocument checks the properties every export has: it is the current version;
 // exporting again gives the same bytes; every kind and unsupported name is in
 // the schema; every position points into its file, its line and column
 // agree with its offset, and it lies within its parent's; and a leaf's span

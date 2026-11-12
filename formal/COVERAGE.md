@@ -13,10 +13,10 @@ The tiers mean exactly this:
 - **Proved:** a kernel-checked theorem, with no `sorry` and only Lean's standard axioms,
   covers it.
 
-## The reference interpreter: subset S1
+## The reference interpreter: subset S1 and part of S2
 
 `galaspec` (`Gala/Syntax.lean`, `Json.lean`, `Scope.lean`, `Eval.lean`, `Print.lean`,
-`Cli.lean`) models subset S1 of the design.
+`Cli.lean`) models subset S1 of the design, and the parts of S2 listed after it.
 
 | Construct | Modelled | Tested against the spec | Proved |
 |---|---|---|---|
@@ -34,6 +34,7 @@ The tiers mean exactly this:
 | `match`: wildcard, binding, literal, tuple, nested variant and struct extractor patterns, stable identifiers, guards; arms in order, subject evaluated once, binders scoped to their arm, first failing sub-pattern stops the rest, no arm ↦ `panic match` | yes | no | no |
 | `Println`/`Print` formatting of every S1 value | yes | no | no |
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | no |
+| S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | no |
 | Determinism of every run (T1) | — | — | yes |
 
 Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
@@ -75,12 +76,15 @@ A run ends `unsupported:<kind>` when it reaches:
 
 `lake exe galaspec-tests` runs the fixtures in [`tests/`](tests):
 
-- 11 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+- 12 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+  interpolated strings,
   package-level initialization and its order, scoping, three panic classes, fuel), and a
   document with
   an unknown `core` version, which is malformed.
   Each `.out` is what the program prints when built and run with the `gala` CLI; for
-  `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer.
+  `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer; so it is for the
+  last line of `interp`, which the transpiler prints wrongly ([#1042](https://github.com/martianoff/gala/issues/1042),
+  [#1043](https://github.com/martianoff/gala/issues/1043)).
 - 14 S1 examples from `examples/`: 8 run to the end and print the example's `.out`, 2 end
   in fuel after a prefix of it, 4 are unsupported (`println`, `Some`, `Equal`).
 
@@ -107,9 +111,9 @@ not proved: the lemmas above are the name-resolution part of it.
 
 ## What is not covered
 
-Everything outside S1: lambdas, default and named arguments, `Option`/`Either`/`Try`,
-string interpolation, generics, methods (and so `Copy`/`Equal` calls), collections, loops,
-Go interop, and the rest. The section below, generated from a differential run, gives
+Everything outside S1: the rest of S2 (lambdas, default and named arguments,
+`Option`/`Either`/`Try`, format strings `f"..."`), generics, methods (and so `Copy`/`Equal`
+calls), collections, loops, Go interop, and the rest. The section below, generated from a differential run, gives
 every example's verdict.
 
 <!-- difftest:begin -->
@@ -124,12 +128,12 @@ say the programs below behave as the spec says, not that the transpiler is corre
 
 | Verdict | Examples | Generated programs |
 |---|---|---|
-| AGREE | 11 | 1 |
+| AGREE | 16 | 1 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 440 | 34 |
+| UNSUPPORTED | 436 | 34 |
 | INCONCLUSIVE | 0 | 0 |
 
-Examples that run wholly inside the subset and agree with the spec: **11** (ratchet baseline 11).
+Examples that run wholly inside the subset and agree with the spec: **16** (ratchet baseline 16).
 
 ### Constructs
 
@@ -141,39 +145,41 @@ nothing about it.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved |
 |---|---|---|---|
-| `file` | yes | yes: 12 agree | no |
-| `val` | yes | no: 2 agree | no |
-| `var` | yes | no: 2 agree | no |
-| `func` | yes | yes: 12 agree | no |
-| `param` | yes | yes: 11 agree | no |
+| `file` | yes | yes: 17 agree | no |
+| `val` | yes | yes: 4 agree | no |
+| `var` | yes | yes: 3 agree | no |
+| `func` | yes | yes: 17 agree | no |
+| `param` | yes | yes: 15 agree | no |
 | `struct` | yes | no: 1 agree | no |
 | `field` | yes | no: 2 agree | no |
 | `sealed` | yes | yes: 4 agree | no |
 | `variant` | yes | yes: 4 agree | no |
-| `type-name` | yes | yes: 11 agree | no |
-| `block` | yes | yes: 12 agree | no |
-| `if` | yes | yes: 3 agree | no |
-| `return` | yes | no: 2 agree | no |
-| `assign` | yes | no: 2 agree | no |
+| `type-name` | yes | yes: 15 agree | no |
+| `block` | yes | yes: 17 agree | no |
+| `if` | yes | yes: 4 agree | no |
+| `return` | yes | yes: 3 agree | no |
+| `assign` | yes | yes: 3 agree | no |
 | `incdec` | not seen | no | no |
-| `int` | yes | yes: 10 agree | no |
-| `bool` | yes | no: 2 agree | no |
-| `string` | yes | yes: 7 agree | no |
-| `name` | yes | yes: 12 agree | no |
-| `unary` | yes | no: 2 agree | no |
-| `binary` | yes | yes: 10 agree | no |
-| `call` | yes | yes: 12 agree | no |
+| `int` | yes | yes: 15 agree | no |
+| `bool` | yes | yes: 4 agree | no |
+| `string` | yes | yes: 12 agree | no |
+| `name` | yes | yes: 17 agree | no |
+| `unary` | yes | yes: 3 agree | no |
+| `binary` | yes | yes: 15 agree | no |
+| `call` | yes | yes: 17 agree | no |
 | `select` | yes | no: 2 agree | no |
 | `paren` | yes | no: 1 agree | no |
 | `tuple` | not seen | no | no |
-| `if-expr` | yes | yes: 5 agree | no |
-| `match` | yes | yes: 7 agree | no |
-| `case` | yes | yes: 7 agree | no |
-| `pat-wild` | yes | yes: 3 agree | no |
-| `pat-name` | yes | yes: 4 agree | no |
-| `pat-lit` | yes | yes: 3 agree | no |
+| `if-expr` | yes | yes: 8 agree | no |
+| `match` | yes | yes: 11 agree | no |
+| `case` | yes | yes: 11 agree | no |
+| `pat-wild` | yes | yes: 7 agree | no |
+| `pat-name` | yes | yes: 5 agree | no |
+| `pat-lit` | yes | yes: 7 agree | no |
 | `pat-tuple` | not seen | no | no |
 | `pat-extract` | yes | no: 2 agree | no |
+| `interp` | yes | yes: 5 agree | no |
+| `interp-text` | yes | yes: 5 agree | no |
 
 ### Outside the subset
 
@@ -181,26 +187,26 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 
 | Construct | Programs |
 |---|---|
-| `method-call` | 126 |
-| `import` | 104 |
-| `index` | 65 |
-| `generic-type` | 37 |
-| `interpolated-string` | 30 |
+| `method-call` | 133 |
+| `import` | 107 |
+| `index` | 66 |
+| `generic-type` | 40 |
+| `named-arg` | 15 |
 | `lambda` | 14 |
-| `named-arg` | 11 |
-| `generic-decl` | 10 |
+| `generic-decl` | 12 |
 | `address-of` | 8 |
-| `param-default` | 7 |
+| `param-default` | 8 |
+| `unresolved-name` | 8 |
 | `float-literal` | 6 |
 | `func-type` | 6 |
-| `unresolved-name` | 6 |
 | `composite-literal` | 5 |
 | `local-struct` | 4 |
 | `stuck` | 4 |
 | `slice-type` | 3 |
 | `expression-pattern` | 2 |
+| `for` | 2 |
+| `func-value` | 2 |
 | `method` | 2 |
-| `type-Value` | 2 |
 
 ### Known disagreements
 

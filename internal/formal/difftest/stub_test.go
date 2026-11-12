@@ -104,7 +104,7 @@ func TestHarnessWithStub(t *testing.T) {
 func TestSpecRun(t *testing.T) {
 	dir := t.TempDir()
 	doc := filepath.Join(dir, "doc.json")
-	require.NoError(t, os.WriteFile(doc, []byte(`{"core": 2, "files": []}`), 0o644))
+	require.NoError(t, os.WriteFile(doc, []byte(`{"core": 99, "files": []}`), 0o644))
 
 	run, err := Spec{Bin: stubSpec(t)}.Run(doc)
 	require.NoError(t, err)

@@ -1,5 +1,5 @@
 {
-  "core": 1,
+  "core": 2,
   "files": [
     {
       "kind": "file",
@@ -343,13 +343,26 @@
                 },
                 "args": [
                   {
-                    "unsupported": "interpolated-string",
+                    "kind": "interp",
                     "pos": {
                       "line": 26,
                       "col": 13,
                       "off": 421,
                       "end": 426
-                    }
+                    },
+                    "text": "s\"$f\"",
+                    "parts": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 26,
+                          "col": 16,
+                          "off": 424,
+                          "end": 425
+                        },
+                        "name": "f"
+                      }
+                    ]
                   },
                   {
                     "unsupported": "format-string",

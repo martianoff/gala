@@ -143,6 +143,14 @@ end
 def println (ds : Decls) (args : List Val) : P String := do
   pure (" ".intercalate (← fmtVs ds true args) ++ "\n")
 
+/-- The value of an interpolated string `s"..."` whose parts evaluated to `vs`
+    (docs/GALA.MD, "String Interpolation"). The transpiler writes `fmt.Sprintf` with a
+    verb per embedded expression, chosen from its type: `%d` for an `int`, `%s` for a
+    `string`, `%t` for a `bool` and `%v` for anything else. On an S1 value each prints
+    what `%v` prints, as `Println` does; a literal run is a string and prints itself. -/
+def interp (ds : Decls) (vs : List Val) : P String := do
+  pure (String.join (← fmtVs ds true vs))
+
 /-- The text `Print(args)` prints: a space between two operands when neither is a
     string. -/
 def print (ds : Decls) (args : List Val) : P String := do

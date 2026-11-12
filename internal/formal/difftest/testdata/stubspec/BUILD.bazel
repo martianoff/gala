@@ -6,5 +6,6 @@ go_binary(
     name = "stubspec",
     testonly = True,
     srcs = ["main.go"],
+    deps = ["//internal/formal/coreexport"],
     visibility = ["//internal/formal/difftest:__pkg__"],
 )

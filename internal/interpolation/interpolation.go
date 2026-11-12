@@ -16,7 +16,10 @@
 // interpolation embeds.
 package interpolation
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Part is one piece of an interpolated string: either literal text or an
 // embedded expression (with its optional explicit format spec).
@@ -41,6 +44,11 @@ type Part struct {
 	// further into an expression that contains an escaped quote drift left by
 	// one byte per escape. Literal parts carry the offset of their first byte.
 	Offset int
+	// Start and End delimit the part's source within the content: a literal
+	// run as written (`$$` included), or an embedded expression from its `$`
+	// to just past its name or closing `}`. A format spec after it is not
+	// included: it starts at End.
+	Start, End int
 }
 
 // Split parses the CONTENT of an interpolated/format string — i.e. the text
@@ -97,7 +105,7 @@ func Split(content string) []Part {
 		// ${expr} or ${expr}%spec
 		if next == '{' {
 			if literal.Len() > 0 {
-				parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart})
+				parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart, Start: litStart, End: i})
 				literal.Reset()
 			}
 
@@ -107,14 +115,15 @@ func Split(content string) []Part {
 			// source itself begins.
 			exprStart := i + 2
 			exprText := unescapeExpr(content[exprStart:j])
-			j++ // skip closing }
+			j = min(j+1, len(content)) // skip closing }
+			end := j
 
 			fmtSpec := ""
 			if j < len(content) && content[j] == '%' {
 				fmtSpec, j = extractFormatSpec(content, j)
 			}
 
-			parts = append(parts, Part{IsLiteral: false, Text: exprText, FormatSpec: fmtSpec, Offset: exprStart})
+			parts = append(parts, Part{IsLiteral: false, Text: exprText, FormatSpec: fmtSpec, Offset: exprStart, Start: i, End: end})
 			i = j
 			continue
 		}
@@ -122,7 +131,7 @@ func Split(content string) []Part {
 		// $identifier
 		if isIdentStart(next) {
 			if literal.Len() > 0 {
-				parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart})
+				parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart, Start: litStart, End: i})
 				literal.Reset()
 			}
 
@@ -134,13 +143,14 @@ func Split(content string) []Part {
 			}
 
 			identName := content[identStart:j]
+			end := j
 
 			fmtSpec := ""
 			if j < len(content) && content[j] == '%' {
 				fmtSpec, j = extractFormatSpec(content, j)
 			}
 
-			parts = append(parts, Part{IsLiteral: false, Text: identName, FormatSpec: fmtSpec, Offset: identStart})
+			parts = append(parts, Part{IsLiteral: false, Text: identName, FormatSpec: fmtSpec, Offset: identStart, Start: i, End: end})
 			i = j
 			continue
 		}
@@ -151,10 +161,24 @@ func Split(content string) []Part {
 	}
 
 	if literal.Len() > 0 {
-		parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart})
+		parts = append(parts, Part{IsLiteral: true, Text: literal.String(), Offset: litStart, Start: litStart, End: i})
 	}
 
 	return parts
+}
+
+// Position is the line and column of content[offset], given that content
+// starts at line/col of its file. Columns count runes (what diagnostics index
+// by) and restart at 0 after a newline.
+func Position(content string, offset, line, col int) (int, int) {
+	if offset < 0 || offset > len(content) {
+		return line, col
+	}
+	prefix := content[:offset]
+	if nl := strings.LastIndexByte(prefix, '\n'); nl >= 0 {
+		return line + strings.Count(prefix, "\n"), utf8.RuneCountInString(prefix[nl+1:])
+	}
+	return line, col + utf8.RuneCountInString(prefix)
 }
 
 // EndOfEmbeddedExpr locates the `}` that closes the `${` beginning at

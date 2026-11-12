@@ -196,6 +196,7 @@ The table is honest about what the guarantees rest on.
 | Lean kernel | Small, widely used | none needed |
 | The spec's definitions | They *are* the definition of GALA | Reviewable size; every definition cites its `docs/GALA.MD` section; the 400+ examples are a conformance suite |
 | galop parser | Shared by both sides | Already fuzzed against the ANTLR grammar |
+| Interpolated-string splitter (`internal/interpolation`) | Shared by both sides: it splits `s"..."` into text and embedded expressions | Small and lexical; the expressions it finds are parsed and checked like any other |
 | Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; round-trip test (export → print → parse → export) |
 | Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
 | Go toolchain and runtime | We run it, not model it | Out of scope |

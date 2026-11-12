@@ -1,14 +1,16 @@
-# Core JSON, version 1
+# Core JSON, version 2
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
-this package writes it from galop's native parse tree. It covers subset S1:
+this package writes it from galop's native parse tree. It covers subset S1 and
+the parts of S2 listed here:
 
 - int, bool and string literals and their operators;
 - `val`, `var`, `if` and blocks;
 - functions and recursion, structs and sealed types;
 - `match` with nested, tuple, literal and wildcard patterns, and guards;
-- `Println` and `Print`.
+- `Println` and `Print`;
+- interpolated strings, `s"..."` (S2).
 
 The Go types in [schema.go](schema.go) are the same schema. `schema_test.go` checks
 that every kind and field there is documented here, and that the two lists of
@@ -41,7 +43,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 1,
+  "core": 2,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -316,8 +318,8 @@ An integer literal.
 
 ### `string`
 
-A string literal, `"..."` or `` `...` ``. Interpolated (`s"..."`) and format (`f"..."`)
-strings are unsupported.
+A string literal, `"..."` or `` `...` ``. An interpolated string `s"..."` is an
+[`interp`](#interp); a format string `f"..."` is unsupported.
 
 - `text` (string): as written, quotes included.
 - `value` (string): its contents, with escapes decoded as Go decodes them (the
@@ -505,6 +507,35 @@ The pattern `(p1, p2, ...)`, two or more elements.
   "args": [ { "kind": "pat-name", "pos": "…", "name": "v" } ] }
 ```
 
+### `interp`
+
+An interpolated string, `s"..."` (S2). The exporter splits its text with the lexical
+rules of the `s"..."` token (`internal/interpolation`, which the transpiler uses too):
+`$name` and `${expr}` embed an expression, `$$` is a `$`, and everything else is literal
+text. Each embedded expression is parsed on its own, at its place in the file, and
+exported like any other expression. The format verb the transpiler picks for each part
+is not exported: the spec decides how a value prints.
+
+- `text` (string): as written, `s` and quotes included.
+- `parts` (list): in source order, each an [`interp-text`](#interp-text) or an expression.
+
+```json
+{ "kind": "interp", "pos": "…", "text": "s\"n=$n\"", "parts": [
+  { "kind": "interp-text", "pos": "…", "value": "n=" },
+  { "kind": "name", "pos": "…", "name": "n" } ] }
+```
+
+### `interp-text`
+
+A literal run of an `interp`, never empty.
+
+- `value` (string): the run's text with `$$` read as `$` and escapes decoded as in a
+  string literal (the transpiler writes the run into a Go string literal).
+
+```json
+{ "kind": "interp-text", "pos": "…", "value": "price: $" }
+```
+
 ## Unsupported constructs
 
 Every name an `unsupported` node can carry.
@@ -541,8 +572,9 @@ Every name an `unsupported` node can carry.
 | `float-literal` | a floating-point literal |
 | `char-literal` | a rune literal, `'c'` |
 | `nil` | `nil` |
-| `interpolated-string` | `s"..."` |
+| `interpolated-string` | an `s"..."` string one of whose embedded expressions does not parse |
 | `format-string` | `f"..."` |
+| `interpolated-escape` | an embedded expression written with a backslash, such as an escaped quote, `s"${f(\"a\")}"` |
 | `string-escape` | a string literal whose escapes Go does not accept |
 | `generic-type` | a type with type arguments, `Option[int]` |
 | `qualified-type` | a type from another package, `pkg.T` |

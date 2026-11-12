@@ -1,12 +1,13 @@
 /-
   # Surface syntax of GALA subset S1
 
-  The abstract syntax galaspec reads. It mirrors Core JSON v1
+  The abstract syntax galaspec reads. It mirrors Core JSON
   (`internal/formal/coreexport/SCHEMA.md`) one kind to one constructor, with three
   simplifications:
 
   * source positions are dropped: the semantics never depends on them;
-  * literals are decoded: an `int` node carries its value, a `string` node its contents;
+  * literals are decoded: an `int` node carries its value, a `string` node its contents,
+    and an `interp-text` run of an interpolated string is a string literal too;
   * statements and expressions share one type, `Expr`, as they do in the semantics: a
     statement is an expression whose value is unit. A `block`'s statements, a `case`'s
     body and a function's body are all `Expr`.
@@ -100,6 +101,9 @@ inductive Expr
       initializers. -/
   | decl (m : Mut) (names : List String) (destructure : Bool) (type : Option Ty)
       (values : List Expr)
+  /-- An interpolated string `s"..."`: its parts in source order. A literal run is a
+      string literal (`lit (.str _)`), an embedded expression is itself. -/
+  | interp (parts : List Expr)
   /-- A construct outside S1. -/
   | unsupported (kind : String)
   deriving Repr, Inhabited

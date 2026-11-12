@@ -4373,6 +4373,9 @@ Println(f"${count * 100}%010d")             // 0000000700
 
 If no `%spec` is given after a variable in an `f"..."` string, the format verb is auto-inferred (same as `s"..."`).
 
+Format specs exist only in `f"..."`. In an `s"..."` string a `%` is literal text, even right
+after an embedded expression: with `count = 7`, `s"$count%d"` is `7%d`.
+
 #### Nested Strings in `${...}`
 
 String literals can be used freely inside `${...}` expressions — the lexer correctly tracks brace nesting and embedded quotes:

@@ -11,7 +11,8 @@
     which says nothing about the program.
   * **Evaluation order** (docs/GALA.MD, "Evaluation Order"; docs/FORMAL_SEMANTICS.MD,
     "Decisions the spec forces"): strictly left to right. Operands, call arguments,
-    tuple elements and constructor arguments are evaluated in source order, each one
+    tuple elements, constructor arguments and the parts of an interpolated string `s"..."`
+    are evaluated in source order, each one
     completely before the next. `&&` and `||` evaluate their right operand only when it
     decides the result. A compound assignment `x op= e` reads `x`, then evaluates `e`.
   * **`match`** (docs/GALA.MD, "Match Expression"), with Scala's semantics: the subject is
@@ -357,12 +358,17 @@ private def pushAll (bs : List (String × Val)) (mutable : Bool) : M Unit :=
 private def popTo (depth : Nat) : M Unit :=
   modify fun s => { s with locals := exitScope s.locals depth }
 
-private def emit (r : Print.P String) (ds : Decls) : M Unit := do
+/-- The text of a value printed, or why it cannot be. -/
+private def printed (r : Print.P String) (ds : Decls) : M String := do
   match r with
-  | .ok text => modify fun s => { s with out := s.out ++ text }
+  | .ok text => pure text
   | .error k => match ds.unsupported.find? (· == "method") with
     | some k' => unsup k' "printing"
     | none => unsup k
+
+private def emit (r : Print.P String) (ds : Decls) : M Unit := do
+  let text ← printed r ds
+  modify fun s => { s with out := s.out ++ text }
 
 /-- A program's own `String` method changes how its values print, so with methods
     outside S1 only basic values are printed. -/
@@ -413,6 +419,10 @@ def eval (ds : Decls) : Nat → Expr → M Val
       let b ← eval ds d r
       binop op a b
     | .tuple es => do pure (.tuple (← evalList ds d es))
+    | .interp parts => do
+      let vs ← evalList ds d parts
+      printable ds vs
+      pure (.str (← printed (Print.interp ds vs) ds))
     | .select t f => do getField ds (← eval ds d t) f
     | .call (.name x) args => do
       let s ← get
@@ -563,7 +573,7 @@ partial def mentions (bound : List String) : Expr → List String
   | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) => mentions bound e
   | .binary _ l r => mentions bound l ++ mentions bound r
   | .call c as => mentions bound c ++ as.flatMap (mentions bound)
-  | .tuple es => es.flatMap (mentions bound)
+  | .tuple es | .interp es => es.flatMap (mentions bound)
   | .block es =>
     (es.foldl (init := (bound, [])) fun (b, acc) e =>
       let b' := match e with | .decl _ ns _ _ _ => ns ++ b | _ => b
