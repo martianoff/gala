@@ -137,7 +137,7 @@ say the programs below behave as the spec says, not that the transpiler is corre
 |---|---|---|
 | AGREE | 20 | 1 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 434 | 34 |
+| UNSUPPORTED | 436 | 34 |
 | INCONCLUSIVE | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **20** (ratchet baseline 20).
@@ -196,9 +196,9 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 
 | Construct | Programs |
 |---|---|
-| `import` | 123 |
+| `import` | 124 |
 | `method-call` | 113 |
-| `index` | 68 |
+| `index` | 69 |
 | `generic-type` | 52 |
 | `named-arg` | 15 |
 | `generic-decl` | 14 |
