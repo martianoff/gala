@@ -56,6 +56,8 @@ exports_files(
 # gazelle:exclude validation
 # gazelle:exclude yaml
 # gazelle:exclude tools/toolchain
+# formal/ is the Lean spec; its BUILD file is hand-written (formal/README.md).
+# gazelle:exclude formal
 # The internal Go tooling imports the excluded stdlib go_libraries; since those
 # packages aren't gazelle-indexed, map each import path to its label so deps
 # still resolve.

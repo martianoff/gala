@@ -111,6 +111,15 @@ if [[ -z "$bazel_galop" || "$bazel_galop" != "$nix_galop" ]]; then
   fail "galop versions differ: MODULE.bazel galop.toolchain '$bazel_galop', nix/gala.nix galopVersion '$nix_galop'"
 fi
 
+# --- 6. one Lean version ----------------------------------------------------
+# rules_lean (Bazel, --config=formal) and elan/Lake build formal/; they must
+# use the same Lean (formal/README.md).
+bazel_lean="$(sed -nE 's/^lean\.toolchain\(version = "([^"]+)"\)/\1/p' MODULE.bazel)"
+lake_lean="$(sed -nE 's|^leanprover/lean4:v([^[:space:]]+)|\1|p' formal/lean-toolchain)"
+if [[ -z "$bazel_lean" || "$bazel_lean" != "$lake_lean" ]]; then
+  fail "Lean versions differ: MODULE.bazel lean.toolchain '$bazel_lean', formal/lean-toolchain '$lake_lean'"
+fi
+
 if (( failed )); then
   echo "Repo policy check FAILED." >&2
   exit 1

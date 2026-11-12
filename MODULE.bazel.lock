@@ -447,6 +447,8 @@
     "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_kotlin/1.9.5/MODULE.bazel": "not found",
     "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_kotlin/1.9.6/MODULE.bazel": "not found",
     "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_kotlin/2.4.0/MODULE.bazel": "not found",
+    "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_lean/0.1.1/MODULE.bazel": "93634e0019a53ca3eb6159f5f89b2c9fbe75b04840cd9449e9773ef3304820c4",
+    "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_lean/0.1.1/source.json": "983c2b934cc560778c456e172b03b98bd6aa91d2b319f77b10951cfd1ab81242",
     "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_license/0.0.3/MODULE.bazel": "not found",
     "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_license/0.0.7/MODULE.bazel": "not found",
     "https://raw.githubusercontent.com/martianoff/rules-gala/main/modules/rules_license/1.0.0/MODULE.bazel": "not found",

@@ -1,0 +1,50 @@
+# The Lean spec, built with rules_lean under --config=formal; see README.md,
+# "Building with Bazel". Hand-written (gazelle skips formal/). Load the Lean
+# rules from :lean.bzl, which keeps every Lean target behind the config.
+
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load(":lean.bzl", "lean_library", "lean_proof_test")
+
+# Set by --config=formal in //.bazelrc.
+bool_flag(
+    name = "lean",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "lean_enabled",
+    flag_values = {":lean": "True"},
+)
+
+# Gala.lean and every module under Gala/, in dependency order: a module may
+# import only the modules listed before it. This file is the module root, so
+# module names are Gala.X, as with Lake.
+GALA_SRCS = [
+    "Gala/MatchLowering.lean",
+    "Gala.lean",
+]
+
+# A module Lake builds but Bazel doesn't would go unchecked here.
+[
+    fail("formal/{} is not in GALA_SRCS in formal/BUILD.bazel; add it after the modules it imports".format(f))
+    for f in glob(["Gala/**/*.lean"])
+    if f not in GALA_SRCS
+]
+
+lean_library(
+    name = "gala",
+    srcs = GALA_SRCS,
+    visibility = ["//visibility:public"],
+)
+
+# Fails on sorry and on axioms other than Lean's standard three, in every
+# module of :gala, like scripts/ProofCheck.lean under Lake.
+lean_proof_test(
+    name = "proofs",
+    allowed_axioms = [
+        "propext",
+        "Quot.sound",
+        "Classical.choice",
+    ],
+    deps = [":gala"],
+)
