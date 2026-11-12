@@ -343,7 +343,7 @@ jobs:
   # The same modules built with Bazel through rules_lean, under the opt-in
   # --config=formal (formal/BUILD.bazel). Lake above stays the primary build.
   bazel:
-    name: Lean proofs (Bazel)
+    name: Lean proofs and galaspec (Bazel)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

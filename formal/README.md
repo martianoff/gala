@@ -55,7 +55,7 @@ Each definition's doc comment says what it models, and each file's header names 
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
 | `BUILD.bazel` | The Bazel build of the same modules, with rules_lean. Hand-written; gazelle skips `formal/`. |
 | `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
-| `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS`. Lake and the Lake proof check find modules by directory, not through it. |
+| `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS` in `BUILD.bazel`. Lake and the Lake proof check find modules by directory, not through it. |
 | `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it. |
 | `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
 | `galaspec_tests.sh` | Runs the galaspec fixture tests under Bazel, from `formal/` in the runfiles. |
@@ -134,7 +134,7 @@ a dev dependency in `MODULE.bazel`. Its Lean targets are **opt-in**: they build 
 `--config=formal`. From the repository root:
 
 ```shell
-bazel test --config=formal //formal/...   # build every module and check the proofs
+bazel test --config=formal //formal/...   # build every module, check the proofs, test galaspec
 ```
 
 No elan is needed: rules_lean downloads the Lean release that `MODULE.bazel` pins (the
@@ -149,14 +149,15 @@ not fail on them, so the Lake job is the one that catches a new warning.
 
 | Target | What it is |
 |---|---|
-| `//formal:gala` | `lean_library` of `Gala.lean` and every module under `Gala/` except `Main`. Module names are `Gala.X`, as with Lake. |
+| `//formal:gala` | `lean_library` of what `import Gala` covers: every module under `Gala/` except `Main`, built on `:galaspec_lib` (the interpreter modules that `galaspec` and its tests link). Module names are `Gala.X`, as with Lake. |
 | `//formal:proofs` | `lean_proof_test` over every module under `Gala/`: fails on `sorry` and on axioms other than `propext`, `Quot.sound` and `Classical.choice`, like `scripts/ProofCheck.lean`. The check that every theorem COVERAGE.md calls proved exists runs only under Lake. |
 | `//formal:galaspec` | `lean_binary` of `Gala.Main`: the same `galaspec` as `lake exe galaspec`, for the differential harness (`bazel run --config=formal //formal:galaspec -- run "$PWD/prog.json"`; `bazel run` starts it in its runfiles, so pass an absolute path). |
 | `//formal:galaspec_tests` | Runs the fixtures in `tests/`, like `lake exe galaspec-tests`. |
 
-**Adding a module:** add the file under `Gala/` and to `GALA_SRCS` in `BUILD.bazel`,
-after the modules it imports and before `Gala.lean` (rules_lean compiles `srcs` in
-order). Loading `//formal` fails if a module under `Gala/` is missing from the list.
+**Adding a module:** add the file under `Gala/` and to `BUILD.bazel`: to `GALASPEC_SRCS`
+if galaspec needs it, otherwise to `GALA_SRCS` before `Gala.lean`; in both, after the
+modules it imports (rules_lean compiles `srcs` in order). Loading `//formal` fails if a
+module under `Gala/` is in neither list.
 **Changing the Lean version:** change `lean-toolchain` and `lean.toolchain(version = …)`
 in `MODULE.bazel` together (`tools/check_repo_policy.sh` fails if they differ); rules_lean
 must know the version.

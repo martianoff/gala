@@ -17,47 +17,60 @@ config_setting(
     flag_values = {":lean": "True"},
 )
 
-# Gala.lean and every module under Gala/ except Main, in dependency order: a
-# module may import only the modules listed before it. Gala.lean imports them
-# all, so it stays last. This file is the module root, so module names are
-# Gala.X, as with Lake.
-GALA_SRCS = [
-    "Gala/MatchLowering.lean",
+# The modules under Gala/, in dependency order: a module may import only the
+# modules listed before it (in its own list or in a library it depends on).
+# This file is the module root, so module names are Gala.X, as with Lake.
+
+# The interpreter: what galaspec and its tests link.
+GALASPEC_SRCS = [
     "Gala/Syntax.lean",
     "Gala/Json.lean",
     "Gala/Scope.lean",
     "Gala/Print.lean",
     "Gala/Eval.lean",
     "Gala/Cli.lean",
+]
+
+# galaspec's `main`, apart so that the test binary has only its own `main`.
+GALASPEC_MAIN = "Gala/Main.lean"
+
+# Models and theorems, and Gala.lean, which imports every module and stays last.
+GALA_SRCS = [
+    "Gala/MatchLowering.lean",
     "Gala/Theorems.lean",
     "Gala.lean",
 ]
 
-# galaspec's `main`, kept out of :gala so the test binary can link :gala too.
-GALASPEC_MAIN = "Gala/Main.lean"
-
 # A module Lake builds but Bazel doesn't would go unchecked here.
 [
-    fail(("formal/{} is not in GALA_SRCS in formal/BUILD.bazel; add it after the " +
-          "modules it imports and before Gala.lean").format(f))
+    fail(("formal/{} is not in formal/BUILD.bazel; add it to GALASPEC_SRCS (interpreter) " +
+          "or GALA_SRCS (models and theorems, before Gala.lean), after the modules it " +
+          "imports").format(f))
     for f in glob(["Gala/**/*.lean"])
-    if f not in GALA_SRCS + [GALASPEC_MAIN]
+    if f not in GALASPEC_SRCS + [GALASPEC_MAIN] + GALA_SRCS
 ]
 
 lean_library(
-    name = "gala",
-    srcs = GALA_SRCS,
-    visibility = ["//visibility:public"],
+    name = "galaspec_lib",
+    srcs = GALASPEC_SRCS,
 )
 
 lean_library(
     name = "galaspec_main",
     srcs = [GALASPEC_MAIN],
-    deps = [":gala"],
+    deps = [":galaspec_lib"],
+)
+
+# The `Gala` library as Lake's `import Gala` sees it (every module but Main).
+lean_library(
+    name = "gala",
+    srcs = GALA_SRCS,
+    visibility = ["//visibility:public"],
+    deps = [":galaspec_lib"],
 )
 
 # Fails on sorry and on axioms other than Lean's standard three, in every
-# module under Gala/, like scripts/ProofCheck.lean under Lake.
+# module under Gala/ (Main included), like scripts/ProofCheck.lean under Lake.
 lean_proof_test(
     name = "proofs",
     allowed_axioms = [
@@ -67,6 +80,7 @@ lean_proof_test(
     ],
     deps = [
         ":gala",
+        ":galaspec_lib",
         ":galaspec_main",
     ],
 )
@@ -83,7 +97,7 @@ lean_library(
     name = "galaspec_tests_main",
     srcs = ["tests/GalaTests.lean"],
     strip_prefix = "tests",
-    deps = [":gala"],
+    deps = [":galaspec_lib"],
 )
 
 lean_binary(
@@ -92,8 +106,10 @@ lean_binary(
 )
 
 # `lake exe galaspec-tests`: runs the Core JSON fixtures in tests/. The binary
-# reads them from ./tests, so the wrapper runs it from formal/ in the runfiles.
-# It depends on a Lean target, so it is skipped without --config=formal too.
+# reads them from ./tests, so the wrapper runs it from formal/ in the runfiles
+# tree (which needs --enable_runfiles, set in //.bazelrc; tests/GalaTests.lean
+# takes no fixture directory). It depends on a Lean target, so it is skipped
+# without --config=formal too.
 sh_test(
     name = "galaspec_tests",
     srcs = ["galaspec_tests.sh"],
