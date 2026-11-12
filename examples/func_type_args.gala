@@ -21,7 +21,7 @@ func main() {
     val ops = collection_immutable.EmptyHashMap[string, func(int, int) int]()
         .Put("add", (a, b) => a + b)
         .Put("mul", (a, b) => a * b)
-    Println(ops.Get("add").Get()(3, 4), ops.Get("mul").Get()(3, 4))
+    Println(ops.Get("add").Map((f) => f(3, 4)).GetOrElse(0), ops.Get("mul").Map((f) => f(3, 4)).GetOrElse(0))
 
     // A function type with several results, and one nested in Option.
     val parse = None[func(string) (int, error)]()
