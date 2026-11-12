@@ -1,0 +1,83 @@
+package main
+
+import "errors"
+import "os"
+import . "martianoff/gala/collection_immutable"
+
+// Inside Try(...), a thunk whose result is an if or match expression with an
+// error-only call in every branch fails on a non-nil error, as Try(() => f())
+// does. A branch that yields a plain error value keeps every error a value.
+// A generic method returning its type parameter yields a value even when that
+// parameter is `error`.
+
+func fail() error = errors.New("boom")
+
+func succeed() error = nil
+
+func check(n int) error = if (n < 0) errors.New(s"negative: $n") else nil
+
+type Conn struct {
+    Name string
+}
+
+func (c Conn) Close() error = errors.New(s"close ${c.Name}")
+
+func describe(t Try[Void]) string = t match {
+    case Success(_) => "Success"
+    case Failure(err) => s"Failure($err)"
+}
+
+func describeValue(t Try[error]) string = t match {
+    case Success(err) => s"Success($err)"
+    case Failure(err) => s"Failure($err)"
+}
+
+func pick(n int) Try[Void] = Try(() => n match {
+    case 0 => succeed()
+    case 1 => fail()
+    case _ => Conn(s"c$n").Close()
+})
+
+func main() {
+    // An if expression, every branch an error-only call.
+    val yes = Conn("x").Name == "x"
+    Println(describe(Try(() => if (yes) fail() else succeed())))
+    Println(describe(Try(() => if (!yes) fail() else succeed())))
+    Println(describe(Try(if (yes) check(-1) else succeed())))
+    // A match expression, GALA functions, methods and a Go call in its branches.
+    Println(describe(pick(0)))
+    Println(describe(pick(1)))
+    Println(describe(pick(2)))
+    // A Go call's message differs by platform; only the outcome is printed.
+    Println(Try(() => Conn("y").Name match {
+        case "y" => os.Remove("")
+        case _ => succeed()
+    }).IsFailure())
+    // Nested: an if inside a match arm.
+    Println(describe(Try(() => 3 match {
+        case 3 => if (yes) check(-3) else fail()
+        case _ => succeed()
+    })))
+    // The if expression at the end of a block thunk.
+    Println(describe(Try(() => {
+        val n = -5
+        if (n < 0) check(n) else succeed()
+    })))
+    // A branch yielding a plain error value keeps the error a value. Each Try
+    // is inferred, with no expected type to fix its result.
+    val plain = errors.New("plain")
+    val mixed = Try(() => if (yes) plain else fail())
+    Println(describeValue(mixed))
+    val mixedCall = Try(() => if (!yes) plain else fail())
+    Println(describeValue(mixedCall))
+    // A generic method whose result is its type parameter, bound to `error`,
+    // yields its value.
+    val failed = Failure[int](errors.New("failed"))
+    val folded = Try(failed.Fold((e) => e, (v) => errors.New(s"got $v")))
+    Println(describeValue(folded))
+    val foldedThunk = Try(() => Success(2).Fold((e) => e, (v) => errors.New(s"got $v")))
+    Println(describeValue(foldedThunk))
+    val errs = ListOf(errors.New("first"))
+    val foldedLeft = Try(errs.FoldLeft(fail(), (acc, e) => e))
+    Println(describeValue(foldedLeft))
+}

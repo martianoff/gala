@@ -5047,6 +5047,29 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A Try thunk whose if or match yields an error-only call in every branch
+# fails on the error; a generic method returning its type parameter bound to
+# `error` yields a value.
+gala_exec_test(
+    name = "try_error_branch_thunk",
+    src = "try_error_branch_thunk.gala",
+    expected = "try_error_branch_thunk.out",
+    deps = ["//collection_immutable"],
+)
+
+# A panic in a Future combinator's function fails the Future; a panic in a
+# callback is reported to the ExecutionContext.
+gala_exec_test(
+    name = "future_combinator_panics",
+    src = "future_combinator_panics.gala",
+    expected = "future_combinator_panics.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+        "//go_builtins",
+    ],
+)
+
 # Operands, call arguments (receiver first), interpolation parts and literal
 # elements are evaluated left to right.
 gala_exec_test(

@@ -1223,8 +1223,14 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 		Args:     append([]ast.Expr{receiver}, mArgs...),
 		Ellipsis: ellipsisPos(hasSpread),
 	}
-	if methodMeta != nil && methodMeta.GoResults != nil {
-		t.recordGenericGoResultCall(call, recvType, lookupBaseName, methodMeta)
+	if methodMeta != nil {
+		if t.genericMethodCalls == nil {
+			t.genericMethodCalls = make(map[*ast.CallExpr]*transpiler.MethodMetadata)
+		}
+		t.genericMethodCalls[call] = methodMeta
+		if methodMeta.GoResults != nil {
+			t.recordGenericGoResultCall(call, recvType, lookupBaseName, methodMeta)
+		}
 	}
 	return call
 }

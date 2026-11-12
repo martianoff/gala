@@ -390,10 +390,9 @@ func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSr
 	if isVoidExpected {
 		for _, stmt := range b.List {
 			if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
-				if funcName := t.goCallReturnsErrorOnly(exprStmt.X); funcName != "" {
-					line, col := l.at().start()
-					return nil, nil, galaerr.NewSemanticErrorAt(line, col,
-						fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+				line, col := l.at().start()
+				if err := t.checkDiscardedError(exprStmt.X, line, col); err != nil {
+					return nil, nil, err
 				}
 			}
 		}
@@ -528,15 +527,14 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 		if err != nil {
 			return nil, nil, err
 		}
-		// Silently dropping an error-only Go return is a bug, not a discard.
+		// Silently dropping an error-only return is a bug, not a discard.
 		if len(body.List) != 1 {
 			return body, nil, nil
 		}
 		if es, ok := body.List[0].(*ast.ExprStmt); ok {
-			if funcName := t.goCallReturnsErrorOnly(es.X); funcName != "" {
-				line, col := l.at().start()
-				return nil, nil, galaerr.NewSemanticErrorAt(line, col,
-					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+			line, col := l.at().start()
+			if err := t.checkDiscardedError(es.X, line, col); err != nil {
+				return nil, nil, err
 			}
 		}
 		return body, nil, nil
@@ -589,20 +587,33 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 	return body, retType, nil
 }
 
-// goCallReturnsErrorOnly checks if expr is a call to a Go function whose sole return
-// type is `error`. Returns the function name for the error message, or "" otherwise.
-// This only catches error-only returns (e.g., Close(), ListenAndServe()), NOT multi-return
-// functions like fmt.Println() which return (int, error) — those are one GALA value
-// (see go_results.go), and a discarded one is dropped back to the plain call.
-func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
-	if t.goTypeInfo == nil {
-		return ""
+// checkDiscardedError rejects expr, a statement of a lambda that returns
+// nothing, when it is a call returning only an `error`, Go or GALA: dropping
+// that error silently is a bug, not a discard (GALA-E0101). A call returning
+// (T, error) is one GALA value (see go_results.go), and a discarded one is
+// dropped back to the plain call; a generic method returning its type
+// parameter yields a value even when that is `error` (see isErrorCall).
+func (t *galaASTTransformer) checkDiscardedError(expr ast.Expr, line, col int) error {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || !(t.goTypeInfo != nil && t.isGoErrorOnlyCall(call) || t.isErrorCall(call)) {
+		return nil
 	}
-	callExpr, ok := expr.(*ast.CallExpr)
-	if !ok || !t.isGoErrorOnlyCall(callExpr) {
-		return ""
+	name := t.calleeName(call)
+	return galaerr.NewCodedSemanticError(galaerr.CodeDiscardedErrorReturn, line, col,
+		fmt.Sprintf("cannot discard error return from %s in void lambda", name),
+		fmt.Sprintf("use FromError(%s) to handle the error", name))
+}
+
+// calleeName is the name a diagnostic gives the callee of call: `f`,
+// `pkg.F`, `conn.Close`, also for a generic method lowered to a free function.
+func (t *galaASTTransformer) calleeName(call *ast.CallExpr) string {
+	if m := t.genericMethodCalls[call]; m != nil && len(call.Args) > 0 {
+		if recv, ok := call.Args[0].(*ast.Ident); ok {
+			return recv.Name + "." + m.Name
+		}
+		return m.Name
 	}
-	fun, _ := splitCallFunTypeArgs(callExpr.Fun)
+	fun, _ := splitCallFunTypeArgs(call.Fun)
 	switch f := fun.(type) {
 	case *ast.Ident:
 		return f.Name
@@ -1637,10 +1648,8 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		if _, isCall := body.(*ast.CallExpr); isCall {
 			// Same contract as the explicit void lambda: silently dropping an
 			// error-only return is a bug, not a discard.
-			if funcName := t.goCallReturnsErrorOnly(body); funcName != "" {
-				return nil, false, galaerr.NewSemanticErrorAt(
-					line, col,
-					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+			if err := t.checkDiscardedError(body, line, col); err != nil {
+				return nil, false, err
 			}
 			bodyStmt = &ast.ExprStmt{X: body}
 		}

@@ -11,6 +11,8 @@ package go_interop
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -657,11 +659,23 @@ type ExecutionContext interface {
 	Execute(task func())
 	// ExecuteWithRecover runs a task with panic recovery.
 	ExecuteWithRecover(task func(), onPanic func(any))
-	// ReportFailure reports an error that couldn't be handled.
+	// ReportFailure reports an error that couldn't be handled, such as a
+	// panic in a Future callback.
 	ReportFailure(err error)
 	// Shutdown gracefully shuts down the execution context.
 	// For unbounded contexts, this is a no-op.
 	Shutdown()
+}
+
+// reportFailure is the ReportFailure of the built-in execution contexts: it
+// writes err to stderr, with the stack of the panic err records (see
+// std.PanicStack), so that a failure nothing handles is not lost.
+func reportFailure(err error) {
+	msg := fmt.Sprintf("unhandled failure in an ExecutionContext task: %v\n", err)
+	if stack := std.PanicStack(err); stack.IsDefined() {
+		msg += stack.Get() + "\n"
+	}
+	fmt.Fprint(os.Stderr, msg)
 }
 
 // globalEC is the default execution context used when none is specified.
@@ -701,9 +715,9 @@ func (e *UnboundedExecutionContext) ExecuteWithRecover(task func(), onPanic func
 	}()
 }
 
-// ReportFailure logs the error (default implementation does nothing).
+// ReportFailure writes err to stderr (see reportFailure).
 func (e *UnboundedExecutionContext) ReportFailure(err error) {
-	// Default: silently ignore unhandled errors
+	reportFailure(err)
 }
 
 // Shutdown is a no-op for unbounded execution context.
@@ -791,9 +805,9 @@ func (e *FixedPoolExecutionContext) ExecuteWithRecover(task func(), onPanic func
 	}
 }
 
-// ReportFailure logs the error (default implementation does nothing).
+// ReportFailure writes err to stderr (see reportFailure).
 func (e *FixedPoolExecutionContext) ReportFailure(err error) {
-	// Default: silently ignore unhandled errors
+	reportFailure(err)
 }
 
 // Shutdown gracefully shuts down the worker pool.
@@ -885,9 +899,9 @@ func (e *SingleThreadExecutionContext) ExecuteWithRecover(task func(), onPanic f
 	}
 }
 
-// ReportFailure logs the error (default implementation does nothing).
+// ReportFailure writes err to stderr (see reportFailure).
 func (e *SingleThreadExecutionContext) ReportFailure(err error) {
-	// Default: silently ignore unhandled errors
+	reportFailure(err)
 }
 
 // Shutdown gracefully shuts down the single-thread executor.

@@ -113,7 +113,8 @@ A declaration whose only name is `_` binds nothing, so `val _ = expr` and
 [GALA-E0060](/docs/errors/gala-e0060/). Write the
 expression as a statement; if the value matters, bind it to a name and use it.
 Inside a lambda with no result, a call that returns only an `error` cannot be a
-bare statement, so wrap it: `FromError(file.Close())`.
+bare statement, so wrap it: `FromError(file.Close())`
+([GALA-E0101](/docs/errors/gala-e0101/)).
 
 <!-- doc-check: error GALA-E0060 -->
 ```gala

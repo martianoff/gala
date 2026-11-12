@@ -113,6 +113,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0098` | Field default reads a field | [GALA-E0098.md](GALA-E0098.md) |
 | `GALA-E0099` | Pointer used where the value is expected | [GALA-E0099.md](GALA-E0099.md) |
 | `GALA-E0100` | Type does not implement the interface it is used as | [GALA-E0100.md](GALA-E0100.md) |
+| `GALA-E0101` | Error return discarded in a void lambda | [GALA-E0101.md](GALA-E0101.md) |
 
 ### Retired codes
 

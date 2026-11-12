@@ -302,13 +302,16 @@ func (f Future[T]) ExecutionContext() go_interop.ExecutionContext = f.state.ec
 
 // OnComplete registers a callback to be executed when the Future completes.
 // The callback is executed asynchronously using this Future's ExecutionContext.
+// A panic in the callback is reported to that ExecutionContext's ReportFailure
+// rather than crashing the process.
 func (f Future[T]) OnComplete(callback func(Try[T])) {
-    f.state.ec.Execute(() => {
+    val ec = f.state.ec
+    ec.Execute(() => {
         go_interop.WaitSignal(f.state.done)
         f.state.mu.RLock()
         val r = f.state.result
         f.state.mu.RUnlock()
-        callback(r)
+        runCallback(ec, r, callback)
     })
 }
 
@@ -332,6 +335,29 @@ func (f Future[T]) OnFailure(callback func(error)) {
             case Failure(e) => callback(e)
         }
     })
+}
+
+// applyGuarded applies f to a as the Try combinators do: a panic in f becomes
+// a Failure holding the panic's error and stack (see Try.Map).
+func applyGuarded[A any, R any](a A, f func(A) R) Try[R] = Success(a).Map(f)
+
+// runCallback runs callback(a) on an ExecutionContext worker. As with
+// Try.ForEach, a panic in the callback is not turned into a result; it is
+// reported to ec, since re-raising it on the worker would crash the process.
+func runCallback[A any](ec go_interop.ExecutionContext, a A, callback func(A)) {
+    applyGuarded(a, (x A) => {
+        callback(x)
+        Void()
+    }).OnFailure((err error) => { ec.ReportFailure(err) })
+}
+
+// completeWith completes p with the result of next, the Future a combinator's
+// function returned, or with next's error when the function panicked.
+func (p Promise[T]) completeWith(next Try[Future[T]]) {
+    next match {
+        case Success(stage) => stage.OnComplete((r Try[T]) => { p.Complete(r) })
+        case Failure(err) => p.Failure(err)
+    }
 }
 
 // derive builds a new Future stage that inherits this Future's ExecutionContext
@@ -359,16 +385,10 @@ func (f Future[T]) Map[U any](fn func(T) U) Future[U] =
 
 // FlatMap transforms the successful value of this Future using a function
 // that returns another Future. This allows chaining asynchronous operations.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext. If fn panics,
+// the resulting Future fails with the panic.
 func (f Future[T]) FlatMap[U any](fn func(T) Future[U]) Future[U] =
-    f.derive[U]((p, r) => {
-        r match {
-            case Success(v) => fn(v).OnComplete((innerResult Try[U]) => {
-                p.Complete(innerResult)
-            })
-            case Failure(e) => p.Failure(e)
-        }
-    })
+    f.derive[U]((p, r) => { p.completeWith(r.Map[Future[U]](fn)) })
 
 // Filter returns a new Future that contains the value only if it satisfies
 // the predicate. If the predicate returns false, the Future fails with
@@ -386,38 +406,30 @@ func (f Future[T]) Recover(pf func(error) T) Future[T] =
 
 // RecoverWith handles failures by applying a recovery function
 // that returns another Future.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext. If pf panics,
+// the resulting Future fails with the panic.
 func (f Future[T]) RecoverWith(pf func(error) Future[T]) Future[T] =
     f.derive[T]((p, r) => {
         r match {
             case Success(v) => p.Success(v)
-            case Failure(e) => pf(e).OnComplete((recovered Try[T]) => {
-                p.Complete(recovered)
-            })
+            case Failure(e) => p.completeWith(applyGuarded(e, pf))
         }
     })
 
 // Transform applies success or failure function based on the result.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext. If the function
+// applied panics, the resulting Future fails with the panic.
 func (f Future[T]) Transform[U any](s func(T) Try[U], fn func(error) Try[U]) Future[U] =
-    f.derive[U]((p, r) => {
-        r match {
-            case Success(v) => p.Complete(s(v))
-            case Failure(e) => p.Complete(fn(e))
-        }
-    })
+    f.derive[U]((p, r) => { p.Complete(r.Transform[U](s, fn)) })
 
 // TransformWith applies success or failure function that returns a Future.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext. If the function
+// applied panics, the resulting Future fails with the panic.
 func (f Future[T]) TransformWith[U any](s func(T) Future[U], fn func(error) Future[U]) Future[U] =
     f.derive[U]((p, r) => {
         r match {
-            case Success(v) => s(v).OnComplete((res Try[U]) => {
-                p.Complete(res)
-            })
-            case Failure(e) => fn(e).OnComplete((res Try[U]) => {
-                p.Complete(res)
-            })
+            case Success(v) => p.completeWith(applyGuarded(v, s))
+            case Failure(e) => p.completeWith(applyGuarded(e, fn))
         }
     })
 
@@ -522,10 +534,12 @@ func (f Future[T]) Fallback(that Future[T]) Future[T] {
 
 // AndThen registers a callback and returns a new Future that completes
 // with the same result after the callback executes.
-// The resulting Future inherits this Future's ExecutionContext.
+// The resulting Future inherits this Future's ExecutionContext. A panic in the
+// callback is reported to the ExecutionContext's ReportFailure, and the
+// resulting Future still completes with this Future's result.
 func (f Future[T]) AndThen(callback func(Try[T])) Future[T] =
     f.derive[T]((p, r) => {
-        callback(r)
+        runCallback(f.state.ec, r, callback)
         p.Complete(r)
     })
 
@@ -633,8 +647,12 @@ func Race[T any](futures Array[Future[T]]) Future[T] {
 
 // Traverse applies a function that returns a Future to each element
 // and sequences the results.
+// If fn panics on an item, that item's Future fails with the panic.
 func Traverse[T any, U any](items Array[T], fn func(T) Future[U]) Future[Array[U]] {
-    val futures = items.Map[Future[U]]((item T) => fn(item))
+    val futures = items.Map[Future[U]]((item T) => applyGuarded(item, fn) match {
+        case Success(stage) => stage
+        case Failure(err) => FutureFailed[U](err)
+    })
     return Sequence[U](futures)
 }
 

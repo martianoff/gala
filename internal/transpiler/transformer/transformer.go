@@ -106,6 +106,7 @@ type galaASTTransformer struct {
 	mismatchProbes         int                                           // depth of the probe lowerings that count operandMismatches (see lowerLambdaOverWeakConst)
 	goResults              map[*ast.CallExpr]*goResult                   // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
 	genericGoResultCalls   map[*ast.CallExpr]*transpiler.GoFuncSignature // calls of a generic method lowered to a free function that declares a Go result list, with that function's signature (see declaredGoResultsSignature)
+	genericMethodCalls     map[*ast.CallExpr]*transpiler.MethodMetadata  // calls of a generic method lowered to a free function, with the method (see galaCalleeResult)
 	goIdentSignatures      map[string]*transpiler.GoFuncSignature        // lookupGoIdentSignature's answer per bare name (nil: no Go function)
 	tryThunkLambda         lambdaSrc                                     // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
 	needsEmbedImport       bool                                          // true when embed val declarations require import "embed"
@@ -367,6 +368,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.resetExprTypeCache()
 	t.goResults = nil
 	t.genericGoResultCalls = nil
+	t.genericMethodCalls = nil
 	t.goIdentSignatures = nil
 	t.loopControlSites = nil
 	t.branchingCalls = nil

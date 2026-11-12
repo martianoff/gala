@@ -1306,7 +1306,7 @@ decide — compose with `.Map`/`.FlatMap`/`bind`, don't `.Get()`-and-panic.
 
 Rationale: `val _ = ...` adds noise without expressing any intent the bare expression doesn't already express. If the result genuinely matters, bind it to a real name and use it (e.g. assert `.IsSuccess()` in tests). If it doesn't, the call/match should stand alone.
 
-**Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare `error`-returning calls — error: "cannot discard error return from X — use FromError(X) to handle the error". Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
+**Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare calls returning only an `error`, Go or GALA — error GALA-E0101: "cannot discard error return from X in void lambda" (hint: "use FromError(X) to handle the error"). Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
 
 **If bare-statement form does not transpile elsewhere** — that is a **transpiler bug**, not a license to keep `val _ =`. Open a repro test against the transpiler and fix the bug. Never work around a transpiler bug: report it with a minimal reproduction.
 

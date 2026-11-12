@@ -1,0 +1,25 @@
+Failure(runtime error: integer divide by zero)
+Failure(filter)
+Failure(recover)
+Failure(flatMap)
+Success(10)
+Failure(recoverWith)
+Success(7)
+Failure(transform success)
+Failure(transform failure)
+Success(v1)
+Failure(transformWith success)
+Failure(transformWith failure)
+Success(handled original)
+Failure(runtime error: integer divide by zero)
+Failure(runtime error: integer divide by zero)
+Failure(traverse)
+Failure(runtime error: integer divide by zero)
+true
+true
+reported: andThen
+Success(1)
+reported: onSuccess
+reported: onFailure
+reported: onComplete
+Success(2)
