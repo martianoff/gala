@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -3073,7 +3072,7 @@ func checkPositionalAfterNamed(args argsSrc) error {
 			// The argument is quoted when it is short and on one line; the
 			// span underlines it either way.
 			quoted := "a positional argument"
-			if text := arg.at().sourceText(); utf8.RuneCountInString(text) <= 40 && !strings.ContainsAny(text, "\n\r") {
+			if text := arg.at().sourceText(); quotable(text) {
 				quoted = "positional argument `" + text + "`"
 			}
 			r := arg.at().rng()
@@ -3088,9 +3087,8 @@ func checkPositionalAfterNamed(args argsSrc) error {
 // bindPositionalStructArgs binds the positional arguments of a construction
 // that also names some fields to the struct's leading fields, the rule a
 // function call follows for its parameters, and returns them merged with the
-// named ones. A positional argument after a named one, a spread one and a field
-// given both ways are errors; arguments beyond the fields are left for the
-// caller to report.
+// named ones. A spread argument and a field given both ways are errors;
+// arguments beyond the fields are left for the caller to report.
 func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, list argsSrc) (map[string]ast.Expr, error) {
 	if len(args) == 0 {
 		return namedArgs, nil

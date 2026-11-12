@@ -132,15 +132,16 @@ func (c callSrc) calleeText() string {
 	if to.Start < from.Start {
 		return ""
 	}
-	text := tree.Src[from.Start:to.Start]
-	// At most 60 code points.
-	if utf8.RuneCountInString(text) > 60 {
-		return ""
+	if text := tree.Src[from.Start:to.Start]; quotable(text) {
+		return text
 	}
-	if text == "" || strings.ContainsAny(text, "\n\r") {
-		return ""
-	}
-	return text
+	return ""
+}
+
+// quotable reports whether a diagnostic quotes source text as written: when
+// it is non-empty, on one line and at most 60 code points.
+func quotable(text string) bool {
+	return text != "" && utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r")
 }
 
 // at is where p is written.
