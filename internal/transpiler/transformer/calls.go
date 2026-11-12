@@ -687,6 +687,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	}
 	var funcRefs []funcRefArg
 	preTransformed := make(map[int]ast.Expr)
+	// The type parameters only an untyped constant argument binds, to its
+	// default type: a lambda argument may need another (see
+	// lowerLambdaOverWeakConst).
+	weakConst := make(map[string]transpiler.Type)
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
 		for i, arg := range slots {
 			pi := methodParamIndex(methodMeta, i)
@@ -794,6 +798,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {
 					typeSubst[tp] = inferred
+					if t.isUntypedConstArg(expr) {
+						weakConst[tp] = inferred
+					}
 				}
 			}
 		}
@@ -861,15 +868,31 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			mArgs = append(mArgs, expr)
 			continue
 		}
-		genMethodCtx := t.buildMethodCallContext(methodMeta, anyView(), false)
-		if typeMeta != nil {
-			genMethodCtx.recvTypeParams = typeMeta.TypeParams
+		methodCtx := func() callContext {
+			ctx := t.buildMethodCallContext(methodMeta, anyView(), false)
+			if typeMeta != nil {
+				ctx.recvTypeParams = typeMeta.TypeParams
+			}
+			return ctx
 		}
+		genMethodCtx := methodCtx()
 		if cerr := t.checkSendableArg(genMethodCtx, i, v); cerr != nil {
 			return true, nil, cerr
 		}
-		expectedType := t.expectedArgType(genMethodCtx, i, v.spread)
-		expr, aerr := t.lowerArg(v, slot{typ: expectedType, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
+		lowerIn := func(ctx callContext) (ast.Expr, error) {
+			expectedType := t.expectedArgType(ctx, i, v.spread)
+			return t.lowerArg(v, slot{typ: expectedType, open: len(ctx.typeSubst) > len(typeSubst)}, false)
+		}
+		var expr ast.Expr
+		var aerr error
+		if pi := methodParamIndex(methodMeta, i); v.lambda.ok() && len(weakConst) > 0 && typeMeta != nil && pi >= 0 {
+			// A probe changes typeSubst between lowerings, so each one
+			// reads the context afresh.
+			paramType := t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
+			expr, aerr = t.lowerLambdaOverWeakConst(paramType, weakConst, typeSubst, func() (ast.Expr, error) { return lowerIn(methodCtx()) })
+		} else {
+			expr, aerr = lowerIn(genMethodCtx)
+		}
 		if aerr != nil {
 			return true, nil, aerr
 		}
@@ -1299,6 +1322,9 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	typeMeta := t.getTypeMeta(lookupBaseName)
 	if typeMeta != nil {
 		methodMeta = typeMeta.Methods[method]
+		if methodMeta == nil {
+			methodMeta = t.synthesizedEqualMeta(typeMeta, method)
+		}
 	}
 	if methodMeta == nil {
 		// The receiver's type is known but declares no such method. When that
@@ -2416,7 +2442,8 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 			// None or only some written (`Using[Res](r, (x) => …)`): Go infers
 			// the rest from the arguments, and so does this, so no lambda is
 			// lowered against a bare type-parameter name.
-			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, args, explicit)
+			fromSlot := t.resultSlotTypeArgs(ctx.funcMeta.ReturnType, ctx.funcMeta.TypeParams, slotType)
+			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, args, explicit, fromSlot)
 		}
 	}
 
@@ -2444,7 +2471,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 							ParamTypes: applyMeta.ParamTypes,
 							ParamNames: applyMeta.ParamNames,
 							Variadic:   applyMeta.Variadic,
-						}, args, ctx.applyTypeSubst)
+						}, args, ctx.applyTypeSubst, nil)
 					}
 				}
 			}
@@ -3536,9 +3563,55 @@ func (t *galaASTTransformer) resultSlotTypeArgs(result transpiler.Type, typePara
 		return nil
 	}
 	args := make(map[string]transpiler.Type, len(typeParams))
-	t.unifyForInference(result, t.followAliasChain(slotType), typeParams, args)
+	slotType = t.followAliasChain(slotType)
+	if !t.unifyForInference(result, slotType, typeParams, args) || len(args) == 0 {
+		t.unifyThroughInterface(result, slotType, typeParams, args)
+	}
 	maps.DeleteFunc(args, func(_ string, p transpiler.Type) bool { return !t.slotTypeArgUsable(p) })
 	return args
+}
+
+// unifyThroughInterface binds typeParams, into args, from a slot of a generic
+// GALA interface type that a value of type result fills: `Array[T]` in an
+// `Iterable[int]` slot. Each method the interface declares is unified with the
+// same-named method of result's type, both instantiated (`Head() T` with
+// `Head() int` binds T to int), so the binding is the one Go's
+// implementation check would need.
+func (t *galaASTTransformer) unifyThroughInterface(result, slotType transpiler.Type, typeParams []string, args map[string]transpiler.Type) {
+	slotGen, ok := slotType.(transpiler.GenericType)
+	if !ok || !typeMentionsTypeParam(result, typeParams) {
+		return
+	}
+	iface := t.getTypeMeta(slotGen.Base.String())
+	impl := t.getTypeMeta(result.BaseName())
+	if iface == nil || !iface.IsInterface || impl == nil || impl.IsInterface || len(iface.TypeParams) != len(slotGen.Params) {
+		return
+	}
+	var implArgs []transpiler.Type
+	if g, ok := result.(transpiler.GenericType); ok {
+		implArgs = g.Params
+	}
+	if len(impl.TypeParams) != len(implArgs) {
+		return
+	}
+	signature := func(m *transpiler.MethodMetadata, params []string, typeArgs []transpiler.Type) transpiler.Type {
+		ft := transpiler.FuncType{Params: m.ParamTypes}
+		if transpiler.HasResult(m.ReturnType) {
+			ft.Results = []transpiler.Type{m.ReturnType}
+		}
+		return t.substituteConcreteTypes(ft, params, typeArgs)
+	}
+	for _, name := range slices.Sorted(maps.Keys(iface.Methods)) {
+		if len(args) == len(typeParams) {
+			return
+		}
+		want := iface.Methods[name]
+		have := impl.Methods[name]
+		if have == nil || len(have.TypeParams) > 0 || len(have.ParamTypes) != len(want.ParamTypes) {
+			continue
+		}
+		t.unifyForInference(signature(have, impl.TypeParams, implArgs), signature(want, iface.TypeParams, slotGen.Params), typeParams, args)
+	}
 }
 
 // slotTypeArgUsable reports whether p, a type argument an expected type
@@ -5059,8 +5132,23 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // placeholders reports that some type parameter was filled with `any`.
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
-func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, args argsSrc, preset typeSubstMap) (subst typeSubstMap, placeholders bool) {
-	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(args, funcMeta.ParamNames))
+// fromSlot holds the type arguments the slot the call fills gives (see
+// resultSlotTypeArgs): one replaces a binding only untyped constants make,
+// so `HashMapOf(("a", 1))` in a `HashMap[string, float64]` slot lowers its
+// tuple as a `Tuple[string, float64]`, as `ArrayOf(1)` in an `Array[int64]`
+// one is an `ArrayOf[int64]`.
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, args argsSrc, preset, fromSlot typeSubstMap) (subst typeSubstMap, placeholders bool) {
+	var typed map[string]transpiler.Type
+	if len(fromSlot) > 0 {
+		typed = make(map[string]transpiler.Type)
+	}
+	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(args, funcMeta.ParamNames), typed)
+	for tp, typ := range fromSlot {
+		_, bound := inferred[tp]
+		if _, byTyped := typed[tp]; bound && !byTyped {
+			inferred[tp] = typ
+		}
+	}
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
@@ -5127,8 +5215,10 @@ func (t *galaASTTransformer) callArgs(list argsSrc, paramNames []string) []callA
 // are not lambdas (explicit, or placeholder ones such as `_ * 2` in a
 // function-typed slot), unifying each against the type of the slot it fills, so the
 // lambdas can then be lowered against concrete types. Only type parameters an
-// argument determines appear in the result.
-func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, variadic bool, args []callArg) map[string]transpiler.Type {
+// argument determines appear in the result. typed, when not nil, receives the
+// bindings the arguments make without their untyped constants (see
+// typedPartType).
+func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, variadic bool, args []callArg, typed map[string]transpiler.Type) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
 	for _, a := range args {
 		pi := paramIndex(a.slot, paramTypes, variadic)
@@ -5148,6 +5238,9 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 			continue
 		}
 		t.unifyForInference(paramType, argType, typeParams, inferredMap)
+		if typed != nil {
+			t.unifyForInference(paramType, t.typedPartType(expr, argType), typeParams, typed)
+		}
 	}
 	return inferredMap
 }
@@ -5188,7 +5281,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	}
 	// A partial explicit list binds its leading type parameters; the
 	// arguments determine the rest.
-	inferred := t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, false, args)
+	inferred := t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, false, args, nil)
 	if inferred == nil {
 		return explicit
 	}

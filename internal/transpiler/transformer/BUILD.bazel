@@ -20,6 +20,7 @@ go_library(
         "codec_value.go",
         "comparable.go",
         "concurrency_check.go",
+        "const_operand.go",
         "constructors.go",
         "declarations.go",
         "declarations_native.go",

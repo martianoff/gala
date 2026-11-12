@@ -649,10 +649,12 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	// type variable for another.
 	foreign := append(append([]string{}, freshParamNames...), structTypeParams...)
 
-	// Try to infer type params from each argument
-	for i, arg := range args {
+	// Try to infer type params from each argument, untyped constants last
+	// (constantsLast): `FoldLeft(0, f)` takes U from f when f fixes it.
+	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+		arg := args[i]
 		if i >= len(substitutedParamTypes) {
-			break
+			continue
 		}
 		paramType := substitutedParamTypes[i]
 
@@ -740,7 +742,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		return fun, nil
 	}
-	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, funcMeta.ParamTypes)
+	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, filledParamTypes(funcMeta, len(args), hasSpread))
 	if len(phantom) == 0 && !slices.ContainsFunc(args, t.isUntypedConstArg) {
 		// Every type param is determined by an argument — leave it to Go.
 		return fun, nil
@@ -787,10 +789,23 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	return instantiated, nil
 }
 
-// instantiateNullaryGenericCall gives a call to a generic GALA function that
-// takes no parameters, such as `magic[T any]() Option[T]`, its type arguments
-// from the slot the call fills (see injectFuncPhantomTypeArgs): Go infers type
-// arguments from call arguments only. line/col locate its `(`.
+// filledParamTypes is the types of the parameters of funcMeta that a call with
+// nargs arguments fills: a variadic parameter no argument reaches binds no
+// type parameter, so `ArrayOf()` takes its `T` from the slot, as a call of a
+// function with no parameters does.
+func filledParamTypes(funcMeta *transpiler.FunctionMetadata, nargs int, hasSpread bool) []transpiler.Type {
+	params := funcMeta.ParamTypes
+	if funcMeta.Variadic && !hasSpread && nargs < len(params) {
+		return params[:len(params)-1]
+	}
+	return params
+}
+
+// instantiateNullaryGenericCall gives a call with no arguments to a generic
+// GALA function that needs none, such as `magic[T any]() Option[T]` or the
+// variadic `ArrayOf[T any](elements ...T)`, its type arguments from the slot
+// the call fills (see injectFuncPhantomTypeArgs): Go infers type arguments
+// from call arguments only. line/col locate its `(`.
 func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, col int) (ast.Expr, error) {
 	switch fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
@@ -801,7 +816,7 @@ func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, c
 		return fun, nil
 	}
 	meta := t.getFunction(name)
-	if meta == nil || len(meta.TypeParams) == 0 || len(meta.ParamTypes) > 0 {
+	if meta == nil || len(meta.TypeParams) == 0 || len(filledParamTypes(meta, 0, false)) > 0 {
 		return fun, nil
 	}
 	pending := t.expectedArgTypes.peek()
@@ -914,12 +929,30 @@ func (t *galaASTTransformer) constSlotTypeArgs(fMeta *transpiler.FunctionMetadat
 	return out
 }
 
+// constantsLast is the indices of args, those of the untyped constants
+// (isConst) after the others. Go binds a type parameter from an untyped
+// constant argument only when no typed argument binds it, so inference that
+// unifies the arguments in this order binds what Go does.
+func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) []int {
+	order := make([]int, 0, len(args))
+	var consts []int
+	for i, arg := range args {
+		if arg != nil && isConst(arg) {
+			consts = append(consts, i)
+		} else {
+			order = append(order, i)
+		}
+	}
+	return append(order, consts...)
+}
+
 // argTypeArgs binds fMeta's type parameters from the lowered arguments of a
 // call, unifying each parameter type with its argument's type; only those an
 // argument determines appear in the result. A nil argument binds nothing.
 func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
-	for i, arg := range args {
+	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+		arg := args[i]
 		if arg == nil {
 			continue
 		}

@@ -150,9 +150,9 @@ func (t *galaASTTransformer) lowerOperatorsNative(n native.GalaNodeRef) (ast.Exp
 		return nil, semanticErrorAtStart(srcNode{node: n}, fmt.Sprintf("internal error: node of kind %d is no operator level", level))
 	}
 	var (
-		result ast.Expr
-		prev   native.GalaNodeRef
-		op     string
+		result      ast.Expr
+		prev, first native.GalaNodeRef
+		op          string
 	)
 	for i := range n.ChildCount() {
 		c := n.Child(i)
@@ -169,11 +169,16 @@ func (t *galaASTTransformer) lowerOperatorsNative(n native.GalaNodeRef) (ast.Exp
 			return nil, err
 		}
 		if !prev.Ok() {
-			result, prev = right, operand
+			result, prev, first = right, operand, operand
 			continue
 		}
 		t.nativeShape(n, "operator")
-		if result, err = t.binaryOperation(op, t.getBinaryToken(op), srcNode{node: n}, result, right); err != nil {
+		tok := t.getBinaryToken(op)
+		if result, err = t.binaryOperation(op, tok, srcNode{node: n}, result, right); err != nil {
+			return nil, err
+		}
+		// The left operand is the chain so far, from first to prev.
+		if err = t.checkConstOperand(tok, srcNode{node: first}, srcNode{node: prev}, srcNode{node: operand}, result); err != nil {
 			return nil, err
 		}
 		if level == native.GalaKIND_equalityExpr {

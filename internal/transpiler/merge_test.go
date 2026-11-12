@@ -149,6 +149,36 @@ func TestMergeLeavesPackageValsAlone(t *testing.T) {
 	}
 }
 
+// TestMergeKeepsImportedBareAliasesOut: an imported package's aliases reach
+// the importer only under their qualified names, so its `Seq` alias never
+// stands for the importer's own `Seq`. A sibling file of the same package
+// shares its bare ones.
+func TestMergeKeepsImportedBareAliasesOut(t *testing.T) {
+	alias := GenericType{Base: NamedType{Package: "collection_immutable", Name: "Array"}, Params: []Type{BasicType{Name: "int"}}}
+	r := &RichAST{PackageName: "main"}
+	r.Merge(&RichAST{
+		PackageName: "lib",
+		TypeAliases: map[string]Type{"Seq": alias, "lib.Seq": alias},
+	})
+	if _, ok := r.TypeAliases["Seq"]; ok {
+		t.Fatalf("Merge carried the import's bare alias key: %v", r.TypeAliases)
+	}
+	if _, ok := r.TypeAliases["lib.Seq"]; !ok {
+		t.Fatalf("Merge dropped the import's qualified alias key: %v", r.TypeAliases)
+	}
+	r.Merge(&RichAST{PackageName: "main", TypeAliases: map[string]Type{"Millis": BasicType{Name: "int64"}}})
+	if _, ok := r.TypeAliases["Millis"]; !ok {
+		t.Fatalf("Merge dropped a sibling's bare alias key: %v", r.TypeAliases)
+	}
+
+	// A package of the importer's name at another path is foreign too.
+	u := &RichAST{PackageName: "util", OwnImportPath: "a/util"}
+	u.Merge(&RichAST{PackageName: "util", OwnImportPath: "b/util", TypeAliases: map[string]Type{"Seq": alias}})
+	if _, ok := u.TypeAliases["Seq"]; ok {
+		t.Fatalf("Merge carried a same-named import's bare alias key: %v", u.TypeAliases)
+	}
+}
+
 // TestAddImportedValsKeyedByPath: two imported packages sharing a name keep
 // their bindings apart, and a package already recorded is not overwritten.
 func TestAddImportedValsKeyedByPath(t *testing.T) {

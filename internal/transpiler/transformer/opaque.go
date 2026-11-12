@@ -661,6 +661,35 @@ func (t *galaASTTransformer) synthesizedMethodResultType(typeMeta *transpiler.Ty
 	return transpiler.NilType{}
 }
 
+// synthesizedEqualMeta is the signature of the Equal method the transformer
+// generates on typeMeta's type, `Equal(other Self[T…]) bool`, when method is
+// that method; nil otherwise. A call of it then passes the receiver's type to
+// its argument as any declared method's parameter type, so
+// `Some(1).Equal(None())` types the `None()`.
+func (t *galaASTTransformer) synthesizedEqualMeta(typeMeta *transpiler.TypeMetadata, method string) *transpiler.MethodMetadata {
+	if method != "Equal" || t.synthesizedMethodResultType(typeMeta, method).IsNil() {
+		return nil
+	}
+	self := transpiler.Type(transpiler.NamedType{Package: typeMeta.Package, Name: typeMeta.Name})
+	if t.isLocalPackage(typeMeta.Package) {
+		self = transpiler.BasicType{Name: typeMeta.Name}
+	}
+	if len(typeMeta.TypeParams) > 0 {
+		params := make([]transpiler.Type, len(typeMeta.TypeParams))
+		for i, tp := range typeMeta.TypeParams {
+			params[i] = transpiler.BasicType{Name: tp}
+		}
+		self = transpiler.GenericType{Base: self, Params: params}
+	}
+	return &transpiler.MethodMetadata{
+		Name:       method,
+		Package:    typeMeta.Package,
+		ParamNames: []string{"other"},
+		ParamTypes: []transpiler.Type{self},
+		ReturnType: transpiler.BasicType{Name: "bool"},
+	}
+}
+
 // checkOpaqueMismatch rejects a value that would need an implicit conversion
 // to fill a slot of type expected (GALA-E0064): an opaque type where its
 // underlying type or another opaque type is expected, or the underlying type

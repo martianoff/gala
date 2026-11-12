@@ -1366,6 +1366,19 @@ func main() {
 			},
 		},
 		{
+			name: "untyped constant operand that does not fit the other operand's type",
+			code: galaerr.CodeConstantMisfit, // GALA-E0091
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val x = 3
+    Println(x * 1.5)
+}
+`)
+			},
+		},
+		{
 			name: "sealed type method of another signature than the generated one",
 			code: galaerr.CodeSealedMethodSignature, // GALA-E0093
 			render: func(t *testing.T) string {

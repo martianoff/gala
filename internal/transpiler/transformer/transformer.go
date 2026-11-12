@@ -95,6 +95,8 @@ type galaASTTransformer struct {
 	traceTypeResolution    bool                                          // when true, type resolution events are recorded
 	typeTraces             []TypeTraceEntry                              // recorded type resolution events (only when tracing is enabled)
 	exprTypeCache          map[ast.Expr]transpiler.Type                  // cache for getExprTypeNameManual results
+	operandMismatches      int                                           // binary operations lowered inside a probe whose typed numeric operands differ in type (see countOperandMismatch)
+	mismatchProbes         int                                           // depth of the probe lowerings that count operandMismatches (see lowerLambdaOverWeakConst)
 	goResults              map[*ast.CallExpr]*goResult                   // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
 	genericGoResultCalls   map[*ast.CallExpr]*transpiler.GoFuncSignature // calls of a generic method lowered to a free function that declares a Go result list, with that function's signature (see declaredGoResultsSignature)
 	goIdentSignatures      map[string]*transpiler.GoFuncSignature        // lookupGoIdentSignature's answer per bare name (nil: no Go function)

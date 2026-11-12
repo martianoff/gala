@@ -617,6 +617,86 @@ func main() {
 			expectContains: "type `<-chan struct{}` holds an anonymous Go struct type",
 		},
 		{
+			// A fractional constant times an int used to reach go build
+			// ("1.5 (untyped float constant) truncated to int").
+			name: "GALA-E0091 fractional constant operand of an int",
+			input: `package main
+
+func main() {
+    val x = 3
+    Println(x * 1.5)
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "error_codes_test.gala:5:16 the constant 1.5 cannot be an int, the type of the other operand of *: it is not a whole number",
+		},
+		{
+			// The constant on the left, compared with a val field.
+			name: "GALA-E0091 constant on the left of a comparison",
+			input: `package main
+
+struct Box(n int64)
+
+func main() {
+    val b = Box(2)
+    Println(2.5 < b.n)
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "the constant 2.5 cannot be an int64, the type of the other operand of <: it is not a whole number",
+		},
+		{
+			// A constant out of the range of a byte operand.
+			name: "GALA-E0091 constant overflowing a byte operand",
+			input: `package main
+
+func main() {
+    val b byte = 7
+    Println(b + 300)
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "the constant 300 cannot be a byte, the type of the other operand of +: it is out of the range of byte",
+		},
+		{
+			// In a chain the left operand is the constant expression so far.
+			name: "GALA-E0091 constant chain on the left of an int",
+			input: `package main
+
+func main() {
+    val x = 3
+    Println(1.5 + 1 + x)
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "error_codes_test.gala:5:12 the constant 1.5 + 1 cannot be an int, the type of the other operand of +: it is not a whole number",
+		},
+		{
+			// A number for a string parameter.
+			name: "GALA-E0091 number for a string parameter",
+			input: `package main
+
+func greet(name string) string = "hi " + name
+
+func main() = Println(greet(3))`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "error_codes_test.gala:5:28 the constant 3 cannot be a string, the type expected here: it is a number",
+		},
+		{
+			// The argument of a generated Equal takes the receiver's type, so
+			// the field of the case constructor it calls is a string.
+			name: "GALA-E0091 number for a string field through Equal",
+			input: `package main
+
+sealed type G[T any] {
+    case GA()
+    case GB(V T)
+}
+
+func main() {
+    val b G[string] = GB("x")
+    Println(b.Equal(GB(3)))
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "the constant 3 cannot be a string, the type expected here: it is a number",
+		},
+		{
 			// GALA-E0040 is the one code in this table raised during PARSING
 			// rather than analysis, so it also pins that a coded parse-phase
 			// diagnostic survives the pipeline with its code intact.
@@ -1526,6 +1606,72 @@ func main() = Println("ok")`,
 				"expected error message to describe the offense")
 		})
 	}
+}
+
+// TestConstOperandsAccepted is the positive companion to GALA-E0091: a
+// constant operand the other operand's type holds is left alone, whole-valued
+// float constants included, as Go converts them.
+func TestConstOperandsAccepted(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	input := `package main
+
+import "time"
+
+func main() {
+    val x = 3
+    val f = 2.5
+    val b byte = 7
+    val d = time.Second
+    val g float64 = 3
+    val r rune = 'a'
+    val c byte = 'a'
+    val n int64 = 2.0
+    val s string = "x" + "y"
+    Println(x * 2.0, x + 'a', 1.5 * 2 + x, f * 1.5, b + 200, d * 2, x < 1e3, x * (3 / 2), s + "z")
+    Println(g, r, c, n, time.Duration(1.5e9), Some[any](3))
+}`
+	_, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+}
+
+// TestIfExpressionBranchTypeMismatch: an if-expression with no expected type
+// whose branches are instances of one generic type that do not unify is
+// rejected, as a match with such arms is, instead of returning one branch's
+// value from a closure typed by the other's.
+func TestIfExpressionBranchTypeMismatch(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	_, err := trans.Transpile(`package main
+
+func main() {
+    val c = true
+    val o = if (c) Some(1) else Some(2.5)
+    Println(o)
+}`, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "type mismatch in if-expression: the then-branch returns 'std.Option[int]' but the else-branch returns 'std.Option[float64]'")
+
+	// With an expected type both branches take it, and with matching
+	// branches there is nothing to reject.
+	out, err := trans.Transpile(`package main
+
+func main() {
+    val c = true
+    val o Option[float64] = if (c) Some(1) else Some(2.5)
+    val p = if (c) Some(1) else None()
+    Println(o, p)
+}`, "")
+	require.NoError(t, err)
+	assert.Contains(t, out, "std.Some[float64]{}.Apply(1)")
 }
 
 // TestBoolGuardsAccepted is the positive companion to GALA-E0089: a guard of
