@@ -18,53 +18,36 @@ import (
 
 // nativeSyntaxErrors is the diagnostics of a recovering parse of ts: its
 // lexical errors and the parse's errors, in the order ANTLR's lexer and parser
-// report them (see lexicalFirst), through nativeErrorReporter. tree is the
-// parse's tree, nil when it has none. upTo, when not negative, is the index
-// of the first token the parse never read: a lexical error after its start is
-// left out, as ANTLR's lexer never reaches it (an expression's parse stops
-// after the expression).
-func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError, upTo int) []error {
+// report them, through nativeErrorReporter. tree is the parse's tree, nil when
+// it has none.
+//
+// ANTLR's lexer runs as its parser reads tokens: it reports lexical error i
+// when the parser first reads token ts.ErrorAt[i]. Each parse error says how
+// far the parser had read when it was reported (Read), so the lexical errors
+// up to there come before it. After the last parse error, those the parse
+// read up to come (tree.Read); the rest ANTLR's lexer never reaches, as when
+// an expression's parse stops before them.
+func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError) []error {
 	if len(parseErrs) == 0 && len(ts.Errors) == 0 {
 		return nil
 	}
 	r := nativeErrorReporter{tree: tree, reportedGoType: -1}
-	lexErrs := ts.Errors
-	if upTo >= 0 && upTo < len(ts.Tokens) {
-		end := ts.Tokens[upTo]
-		for k, l := range lexErrs {
-			if !before(l.Line, l.Column, end) {
-				lexErrs = lexErrs[:k]
-				break
-			}
+	lex := 0
+	lexicalUpTo := func(read int) {
+		for ; lex < len(ts.Errors) && int(ts.ErrorAt[lex]) <= read; lex++ {
+			r.lexical(ts.Errors[lex])
 		}
 	}
 	for _, e := range parseErrs {
-		for len(lexErrs) > 0 && lexicalFirst(lexErrs[0], e, ts) {
-			r.lexical(lexErrs[0])
-			lexErrs = lexErrs[1:]
-		}
+		lexicalUpTo(e.Read)
 		r.syntax(e)
 	}
-	for _, l := range lexErrs {
-		r.lexical(l)
+	if tree == nil {
+		lexicalUpTo(len(ts.Tokens))
+	} else {
+		lexicalUpTo(tree.Read)
 	}
 	return r.errs
-}
-
-// lexicalFirst reports whether ANTLR reports lexical error l before the
-// parse error e. ANTLR's lexer runs as the parser asks for tokens, and reports
-// an error when it lexes the token after it; the parser has read the token it
-// reports an error at. So a lexical error before e's token comes first.
-func lexicalFirst(l native.GalaSyntaxError, e native.GalaParseError, ts *native.GalaTokens) bool {
-	if e.Token < 0 || e.Token >= len(ts.Tokens) {
-		return true
-	}
-	return before(l.Line, l.Column, ts.Tokens[e.Token])
-}
-
-// before reports whether line:col comes before tok's start.
-func before(line, col int, tok native.GalaToken) bool {
-	return line < int(tok.Line) || line == int(tok.Line) && col < int(tok.Column)
 }
 
 // nativeErrorReporter is GalaErrorListener for galop's recovering parse: it

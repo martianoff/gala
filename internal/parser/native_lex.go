@@ -139,13 +139,7 @@ func (g *nativeParsers) expressionNative(input string, line, col int) (expr nati
 	}()
 	ts := lexNative(input, line, col)
 	expr, parseErrs := g.expression(ts)
-	// The parse stops after the expression: ANTLR's lexer never lexes past
-	// the token after it.
-	upTo := len(ts.Tokens)
-	if expr.Ok() {
-		upTo = expr.Tree().Next
-	}
-	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs, upTo), true
+	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs), true
 }
 
 // expressionCheckedNative is expressionNative of input as exactly one

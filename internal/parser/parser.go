@@ -230,7 +230,7 @@ func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.Semanti
 	}()
 	ts := lexNative(input, 0, 0)
 	root, parseErrs := p.parsers().sourceFile(ts)
-	errs := withCharErr(charErr, nativeSyntaxErrors(root.Tree(), ts, parseErrs, -1))
+	errs := withCharErr(charErr, nativeSyntaxErrors(root.Tree(), ts, parseErrs))
 	var handle *Native
 	if root.Ok() {
 		handle = nativeHandle(root.Tree())
