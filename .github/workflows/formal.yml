@@ -362,5 +362,5 @@ jobs:
           # download Lean again.
           repository-cache: formal/lean-toolchain
 
-      - name: Build and check proofs
+      - name: Build, check the proofs and run the galaspec tests
         run: bazel test --config=formal //formal/... --test_output=errors --verbose_failures

@@ -284,10 +284,10 @@ flowchart LR
 - **Bazel builds Lean too, opt-in.** [rules_lean](https://github.com/martianoff/rules_lean),
   a separate Bazel module with Windows support, is a dev dependency of the `gala` module
   (so modules that depend on gala never see it). `formal/BUILD.bazel` builds the same
-  modules and runs a `lean_proof_test`; `formal.yml` runs
-  `bazel test --config=formal //formal/...` in a job next to the Lake one. Lake stays the
-  primary path until the maintainer decides otherwise. A `galaspec` `lean_binary` will let
-  `difftest` depend on it directly.
+  modules, runs a `lean_proof_test` and the galaspec fixture tests, and links
+  `//formal:galaspec` (a `lean_binary`), so `difftest` can depend on it directly.
+  `formal.yml` runs `bazel test --config=formal //formal/...` in a job next to the Lake
+  one. Lake stays the primary path until the maintainer decides otherwise.
   - **Why opt-in:** a Lean toolchain is about 620 MB to download and 3.3 GB unpacked, and
     every Bazel output base gets its own copy. So:
     - Lean targets sit behind `--config=formal`: without it they are incompatible with

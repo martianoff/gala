@@ -3,7 +3,8 @@
 # rules from :lean.bzl, which keeps every Lean target behind the config.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load(":lean.bzl", "lean_library", "lean_proof_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":lean.bzl", "lean_binary", "lean_library", "lean_proof_test")
 
 # Set by --config=formal in //.bazelrc.
 bool_flag(
@@ -16,21 +17,31 @@ config_setting(
     flag_values = {":lean": "True"},
 )
 
-# Gala.lean and every module under Gala/, in dependency order: a module may
-# import only the modules listed before it. Gala.lean imports them all, so it
-# stays last. This file is the module root, so
-# module names are Gala.X, as with Lake.
+# Gala.lean and every module under Gala/ except Main, in dependency order: a
+# module may import only the modules listed before it. Gala.lean imports them
+# all, so it stays last. This file is the module root, so module names are
+# Gala.X, as with Lake.
 GALA_SRCS = [
     "Gala/MatchLowering.lean",
+    "Gala/Syntax.lean",
+    "Gala/Json.lean",
+    "Gala/Scope.lean",
+    "Gala/Print.lean",
+    "Gala/Eval.lean",
+    "Gala/Cli.lean",
+    "Gala/Theorems.lean",
     "Gala.lean",
 ]
+
+# galaspec's `main`, kept out of :gala so the test binary can link :gala too.
+GALASPEC_MAIN = "Gala/Main.lean"
 
 # A module Lake builds but Bazel doesn't would go unchecked here.
 [
     fail(("formal/{} is not in GALA_SRCS in formal/BUILD.bazel; add it after the " +
           "modules it imports and before Gala.lean").format(f))
     for f in glob(["Gala/**/*.lean"])
-    if f not in GALA_SRCS
+    if f not in GALA_SRCS + [GALASPEC_MAIN]
 ]
 
 lean_library(
@@ -39,8 +50,14 @@ lean_library(
     visibility = ["//visibility:public"],
 )
 
+lean_library(
+    name = "galaspec_main",
+    srcs = [GALASPEC_MAIN],
+    deps = [":gala"],
+)
+
 # Fails on sorry and on axioms other than Lean's standard three, in every
-# module of :gala, like scripts/ProofCheck.lean under Lake.
+# module under Gala/, like scripts/ProofCheck.lean under Lake.
 lean_proof_test(
     name = "proofs",
     allowed_axioms = [
@@ -48,5 +65,42 @@ lean_proof_test(
         "Quot.sound",
         "Classical.choice",
     ],
+    deps = [
+        ":gala",
+        ":galaspec_main",
+    ],
+)
+
+# The reference interpreter (`galaspec run prog.json`), for the differential
+# harness. A development and CI tool only; it never ships.
+lean_binary(
+    name = "galaspec",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [":galaspec_main"],
+)
+
+lean_library(
+    name = "galaspec_tests_main",
+    srcs = ["tests/GalaTests.lean"],
+    strip_prefix = "tests",
     deps = [":gala"],
+)
+
+lean_binary(
+    name = "galaspec_tests_bin",
+    deps = [":galaspec_tests_main"],
+)
+
+# `lake exe galaspec-tests`: runs the Core JSON fixtures in tests/. The binary
+# reads them from ./tests, so the wrapper runs it from formal/ in the runfiles.
+# It depends on a Lean target, so it is skipped without --config=formal too.
+sh_test(
+    name = "galaspec_tests",
+    srcs = ["galaspec_tests.sh"],
+    args = ["$(rootpath :galaspec_tests_bin)"],
+    data = [":galaspec_tests_bin"] + glob([
+        "tests/*.json",
+        "tests/*.out",
+        "tests/*.outcome",
+    ]),
 )
