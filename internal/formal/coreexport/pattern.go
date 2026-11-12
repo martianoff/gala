@@ -102,6 +102,9 @@ func (e *exporter) patPrimary(p native.PrimaryExprNode) Node {
 			return of(e, &PatName{Name: name}, pr.GalaNodeRef)
 		}
 		return of(e, &PatWild{}, pr.GalaNodeRef)
+	case pr.Literal().Ok() && pr.Literal().INTERPOLATED_STRING().Ok():
+		// Not a literal: its value is computed.
+		return e.unsupported(UnsupportedExprPattern, p.GalaNodeRef)
 	case pr.Literal().Ok():
 		value := e.literal(pr.Literal())
 		if _, bad := value.(*Unsupported); bad {

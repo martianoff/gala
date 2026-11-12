@@ -1,0 +1,659 @@
+{
+  "core": 2,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 339
+      },
+      "path": "interpolation.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 29
+          },
+          "name": "P",
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 3,
+                "col": 10,
+                "off": 23,
+                "end": 28
+              },
+              "name": "X",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 12,
+                  "off": 25,
+                  "end": 28
+                },
+                "name": "int"
+              },
+              "mutable": false
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 5,
+            "col": 1,
+            "off": 31,
+            "end": 339
+          },
+          "name": "main",
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 5,
+              "col": 13,
+              "off": 43,
+              "end": 339
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 49,
+                  "end": 58
+                },
+                "names": [
+                  "n"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 6,
+                      "col": 13,
+                      "off": 57,
+                      "end": 58
+                    },
+                    "text": "7",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 7,
+                  "col": 5,
+                  "off": 63,
+                  "end": 113
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 7,
+                    "col": 5,
+                    "off": 63,
+                    "end": 70
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 7,
+                      "col": 13,
+                      "off": 71,
+                      "end": 112
+                    },
+                    "text": "s\"n=$n, next ${n + 1}, $$5, tab\\t${P(n)}\"",
+                    "parts": [
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 7,
+                          "col": 15,
+                          "off": 73,
+                          "end": 75
+                        },
+                        "value": "n="
+                      },
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 7,
+                          "col": 18,
+                          "off": 76,
+                          "end": 77
+                        },
+                        "name": "n"
+                      },
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 7,
+                          "col": 19,
+                          "off": 77,
+                          "end": 84
+                        },
+                        "value": ", next "
+                      },
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 7,
+                          "col": 28,
+                          "off": 86,
+                          "end": 91
+                        },
+                        "op": "+",
+                        "left": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 7,
+                            "col": 28,
+                            "off": 86,
+                            "end": 87
+                          },
+                          "name": "n"
+                        },
+                        "right": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 7,
+                            "col": 32,
+                            "off": 90,
+                            "end": 91
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      },
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 7,
+                          "col": 34,
+                          "off": 92,
+                          "end": 104
+                        },
+                        "value": ", $5, tab\t"
+                      },
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 7,
+                          "col": 48,
+                          "off": 106,
+                          "end": 110
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 7,
+                            "col": 48,
+                            "off": 106,
+                            "end": 107
+                          },
+                          "name": "P"
+                        },
+                        "args": [
+                          {
+                            "kind": "name",
+                            "pos": {
+                              "line": 7,
+                              "col": 50,
+                              "off": 108,
+                              "end": 109
+                            },
+                            "name": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 118,
+                  "end": 165
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 8,
+                    "col": 5,
+                    "off": 118,
+                    "end": 125
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 8,
+                      "col": 13,
+                      "off": 126,
+                      "end": 130
+                    },
+                    "text": "\"é\"",
+                    "value": "é",
+                    "raw": false
+                  },
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 8,
+                      "col": 18,
+                      "off": 132,
+                      "end": 149
+                    },
+                    "text": "s\"é${s\"in$n\"}é\"",
+                    "parts": [
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 8,
+                          "col": 20,
+                          "off": 134,
+                          "end": 136
+                        },
+                        "value": "é"
+                      },
+                      {
+                        "kind": "interp",
+                        "pos": {
+                          "line": 8,
+                          "col": 23,
+                          "off": 138,
+                          "end": 145
+                        },
+                        "text": "s\"in$n\"",
+                        "parts": [
+                          {
+                            "kind": "interp-text",
+                            "pos": {
+                              "line": 8,
+                              "col": 25,
+                              "off": 140,
+                              "end": 142
+                            },
+                            "value": "in"
+                          },
+                          {
+                            "kind": "name",
+                            "pos": {
+                              "line": 8,
+                              "col": 28,
+                              "off": 143,
+                              "end": 144
+                            },
+                            "name": "n"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 8,
+                          "col": 31,
+                          "off": 146,
+                          "end": 148
+                        },
+                        "value": "é"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 8,
+                      "col": 35,
+                      "off": 151,
+                      "end": 154
+                    },
+                    "text": "s\"\"",
+                    "parts": []
+                  },
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 8,
+                      "col": 40,
+                      "off": 156,
+                      "end": 164
+                    },
+                    "text": "s\"plain\"",
+                    "parts": [
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 8,
+                          "col": 42,
+                          "off": 158,
+                          "end": 163
+                        },
+                        "value": "plain"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 170,
+                  "end": 191
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 9,
+                    "col": 5,
+                    "off": 170,
+                    "end": 177
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 9,
+                      "col": 13,
+                      "off": 178,
+                      "end": 190
+                    },
+                    "text": "s\"${f(\"a\")}\"",
+                    "parts": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 9,
+                          "col": 17,
+                          "off": 182,
+                          "end": 188
+                        },
+                        "callee": {
+                          "kind": "name",
+                          "pos": {
+                            "line": 9,
+                            "col": 17,
+                            "off": 182,
+                            "end": 183
+                          },
+                          "name": "f"
+                        },
+                        "args": [
+                          {
+                            "kind": "string",
+                            "pos": {
+                              "line": 9,
+                              "col": 19,
+                              "off": 184,
+                              "end": 187
+                            },
+                            "text": "\"a\"",
+                            "value": "a",
+                            "raw": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 10,
+                  "col": 5,
+                  "off": 196,
+                  "end": 263
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 10,
+                    "col": 5,
+                    "off": 196,
+                    "end": 203
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 10,
+                      "col": 13,
+                      "off": 204,
+                      "end": 211
+                    },
+                    "text": "s\"$n%d\"",
+                    "parts": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 10,
+                          "col": 16,
+                          "off": 207,
+                          "end": 208
+                        },
+                        "name": "n"
+                      },
+                      {
+                        "kind": "interp-text",
+                        "pos": {
+                          "line": 10,
+                          "col": 17,
+                          "off": 208,
+                          "end": 210
+                        },
+                        "value": "%d"
+                      }
+                    ]
+                  },
+                  {
+                    "unsupported": "interpolated-escape",
+                    "pos": {
+                      "line": 10,
+                      "col": 22,
+                      "off": 213,
+                      "end": 227
+                    }
+                  },
+                  {
+                    "unsupported": "string-escape",
+                    "pos": {
+                      "line": 10,
+                      "col": 38,
+                      "off": 229,
+                      "end": 236
+                    }
+                  },
+                  {
+                    "unsupported": "interpolated-string",
+                    "pos": {
+                      "line": 10,
+                      "col": 47,
+                      "off": 238,
+                      "end": 247
+                    }
+                  },
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 10,
+                      "col": 58,
+                      "off": 249,
+                      "end": 262
+                    },
+                    "text": "s\"${s\"a\\tb\"}\"",
+                    "parts": [
+                      {
+                        "kind": "interp",
+                        "pos": {
+                          "line": 10,
+                          "col": 62,
+                          "off": 253,
+                          "end": 260
+                        },
+                        "text": "s\"a\\tb\"",
+                        "parts": [
+                          {
+                            "kind": "interp-text",
+                            "pos": {
+                              "line": 10,
+                              "col": 64,
+                              "off": 255,
+                              "end": 259
+                            },
+                            "value": "a\tb"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 11,
+                  "col": 5,
+                  "off": 268,
+                  "end": 337
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 11,
+                    "col": 5,
+                    "off": 268,
+                    "end": 275
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "match",
+                    "pos": {
+                      "line": 11,
+                      "col": 13,
+                      "off": 276,
+                      "end": 336
+                    },
+                    "subject": {
+                      "kind": "string",
+                      "pos": {
+                        "line": 11,
+                        "col": 13,
+                        "off": 276,
+                        "end": 279
+                      },
+                      "text": "\"x\"",
+                      "value": "x",
+                      "raw": false
+                    },
+                    "cases": [
+                      {
+                        "kind": "case",
+                        "pos": {
+                          "line": 12,
+                          "col": 9,
+                          "off": 296,
+                          "end": 310
+                        },
+                        "pattern": {
+                          "unsupported": "expression-pattern",
+                          "pos": {
+                            "line": 12,
+                            "col": 14,
+                            "off": 301,
+                            "end": 305
+                          }
+                        },
+                        "guard": null,
+                        "body": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 12,
+                            "col": 22,
+                            "off": 309,
+                            "end": 310
+                          },
+                          "text": "1",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      },
+                      {
+                        "kind": "case",
+                        "pos": {
+                          "line": 13,
+                          "col": 9,
+                          "off": 319,
+                          "end": 330
+                        },
+                        "pattern": {
+                          "kind": "pat-wild",
+                          "pos": {
+                            "line": 13,
+                            "col": 14,
+                            "off": 324,
+                            "end": 325
+                          }
+                        },
+                        "guard": null,
+                        "body": {
+                          "kind": "int",
+                          "pos": {
+                            "line": 13,
+                            "col": 19,
+                            "off": 329,
+                            "end": 330
+                          },
+                          "text": "2",
+                          "hint": {
+                            "type": "int"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

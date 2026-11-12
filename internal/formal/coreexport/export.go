@@ -69,7 +69,7 @@ func ExportTree(path string, tree *native.GalaTree, opts Options) *File {
 }
 
 func exportTree(path string, tree *native.GalaTree, opts Options, bom int) *File {
-	e := &exporter{tree: tree, opts: opts, bom: bom}
+	e := &exporter{tree: tree, opts: opts, bom: bom, base: bom}
 	return e.file(path, native.SourceFileNode{GalaNodeRef: tree.Root()})
 }
 
@@ -91,6 +91,9 @@ type exporter struct {
 	opts Options
 	// bom is the length of the byte order mark the parser dropped, 0 for none.
 	bom int
+	// base is the file offset of the tree's text: bom for a file's tree, and
+	// where the expression starts for one embedded in an interpolated string.
+	base int
 }
 
 // metaNode is a supported node, whose Meta the exporter fills in.
@@ -123,7 +126,13 @@ func (e *exporter) span(first, last int) Pos {
 	if last >= first {
 		end = e.tree.Token(last).End
 	}
-	pos := Pos{Line: int(s.Line), Col: int(s.Column) + 1, Off: int(s.Start) + e.bom, End: int(end) + e.bom}
+	return e.pos(int(s.Line), int(s.Column), int(s.Start), int(end))
+}
+
+// pos is the position of the tree's text off..end, which starts at line
+// (from 1) and col (from 0, in code points).
+func (e *exporter) pos(line, col, off, end int) Pos {
+	pos := Pos{Line: line, Col: col + 1, Off: off + e.base, End: end + e.base}
 	if e.bom > 0 && pos.Line == 1 {
 		pos.Col++ // the mark is a code point of line 1
 	}
@@ -613,7 +622,7 @@ func (e *exporter) literal(l native.LiteralNode) Node {
 	case l.CHAR_LIT().Ok():
 		return e.unsupported(UnsupportedCharLiteral, l.GalaNodeRef)
 	case l.INTERPOLATED_STRING().Ok():
-		return e.unsupported(UnsupportedInterpolated, l.GalaNodeRef)
+		return e.interpolated(l)
 	case l.FORMAT_STRING().Ok():
 		return e.unsupported(UnsupportedFormatString, l.GalaNodeRef)
 	}

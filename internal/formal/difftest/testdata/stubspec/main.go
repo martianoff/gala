@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"martianoff/gala/internal/formal/coreexport"
 )
 
 // Exit statuses and outcomes, as galaspec has them.
@@ -87,7 +89,7 @@ func run(args []string) (status int, outcome string) {
 		return exitMalformed, "malformed"
 	}
 	var doc node
-	if json.Unmarshal(data, &doc) != nil || doc["core"] != float64(1) {
+	if json.Unmarshal(data, &doc) != nil || doc["core"] != float64(coreexport.Version) {
 		return exitMalformed, "malformed"
 	}
 	defer func() {

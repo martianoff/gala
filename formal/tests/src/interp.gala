@@ -1,0 +1,31 @@
+package main
+
+struct P(X int, Y string)
+
+sealed type Shape {
+    case Circle(R int)
+    case Empty()
+}
+
+var trace = ""
+
+func t(s string, v int) int {
+    trace = trace + s
+    v
+}
+
+func main() {
+    val n = 7
+    val p = P(1, "a")
+    Println(s"n=$n, p=$p, sum=${n + 1}!")
+    Println(s"100% $n, $$5, tab\there")
+    Println(s"$p and ${(n, "x")} $n.X ${Circle(2)} ${Empty()}")
+    Println(s"${if (n > 1) "big" else "small"} ${n > 1}")
+    Println(s"${t("a", 1)}${t("b", 2)}${t("c", 3)} $trace")
+    Println(s"nested ${s"in${n}ner"} end")
+    Println(s"")
+    Println(s"plain")
+    // Literal text in s"...": the transpiler prints 7one, 7 and %!d(MISSING)
+    // (issues #1042 and #1043); this fixture's .out is the spec's answer.
+    Println(s"$n%done ${n}%x a $n \x25d")
+}

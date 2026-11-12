@@ -130,6 +130,22 @@ func main() {
     }
 }
 `},
+		{"interpolation", `package main
+
+struct P(X int)
+
+func main() {
+    val n = 7
+    Println(s"n=$n, next ${n + 1}, $$5, tab\t${P(n)}")
+    Println("é", s"é${s"in$n"}é", s"", s"plain")
+    Println(s"${f("a")}")
+    Println(s"$n%d", s"${f(\"a\")}", s"\q$n", s"${n +}", s"${s"a\tb"}")
+    Println("x" match {
+        case s"x" => 1
+        case _ => 2
+    })
+}
+`},
 		{"unsupported", `package main
 
 import "fmt"

@@ -12,9 +12,10 @@ GALA release.
 
 ## What is modelled
 
-- **`galaspec`, the reference interpreter for subset S1**: the executable semantics of
-  int/bool/string operators, `val`/`var`, blocks, `if`, functions and recursion, structs,
-  sealed types, `match` and `Println`/`Print`. It reads a program as Core JSON (written
+- **`galaspec`, the reference interpreter for subset S1 and part of S2**: the executable
+  semantics of int/bool/string operators, `val`/`var`, blocks, `if`, functions and
+  recursion, structs, sealed types, `match`, `Println`/`Print` and, from S2, interpolated
+  strings `s"..."`. It reads a program as Core JSON (written
   by `internal/formal/coreexport`) and prints what the program prints, plus how it ends.
 
   ```mermaid
@@ -111,7 +112,7 @@ line `galaspec: outcome=<outcome>`. The exit code says the same:
 | 1 | `panic:CLASS` | It panicked. CLASS is `match` (no arm matched), `divide` (integer division by zero), `index` or `other` (a negative shift count). |
 | 2 | `fuel` | It used up its steps (10^6 unless `--fuel N`). Inconclusive, never agreement. |
 | 3 | `unsupported:KIND` | Execution reached a construct outside S1. KIND is the exporter's `unsupported` name, or one listed in [COVERAGE.md](COVERAGE.md#where-galaspec-stops). |
-| 4 | `malformed` | The input is not a Core JSON v1 document, or the command line is wrong. |
+| 4 | `malformed` | The input is not a Core JSON document of the version galaspec reads, or the command line is wrong. |
 
 The line before the outcome line, when there is one, says more: the panic message, or
 what was unsupported.

@@ -76,6 +76,8 @@ def exitScope (ρ : Env) (depth : Nat) : Env := ρ.drop (ρ.length - depth)
 structure Decls where
   funcs : List (String × Func)
   structs : List (String × List Field)
+  /-- The structs declared in the shorthand form `struct Name(...)`. -/
+  shorthands : List String
   /-- Each sealed type with its cases, in declaration order. -/
   sealeds : List (String × List Variant)
   /-- The kinds of the top-level declarations outside S1, in source order. -/

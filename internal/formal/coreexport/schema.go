@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 1
+const Version = 2
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -313,6 +313,24 @@ type PatExtract struct {
 	Args   []Node `json:"args"`
 }
 
+// --- Interpolated strings ---
+
+// Interp is an interpolated string `s"..."`: Text as written, prefix and
+// quotes included, and its Parts in source order, each an InterpText or an
+// expression.
+type Interp struct {
+	Meta
+	Text  string `json:"text"`
+	Parts []Node `json:"parts"`
+}
+
+// InterpText is a literal run of an interpolated string: Value is its text
+// with `$$` read as `$` and escapes decoded as in a string literal.
+type InterpText struct {
+	Meta
+	Value string `json:"value"`
+}
+
 func (*File) Kind() string        { return "file" }
 func (*Val) Kind() string         { return "val" }
 func (*Var) Kind() string         { return "var" }
@@ -346,6 +364,8 @@ func (*PatName) Kind() string     { return "pat-name" }
 func (*PatLit) Kind() string      { return "pat-lit" }
 func (*PatTuple) Kind() string    { return "pat-tuple" }
 func (*PatExtract) Kind() string  { return "pat-extract" }
+func (*Interp) Kind() string      { return "interp" }
+func (*InterpText) Kind() string  { return "interp-text" }
 func (*Unsupported) Kind() string { return "" }
 
 // nodeTypes is every supported node type, one value each.
@@ -355,6 +375,7 @@ var nodeTypes = []Node{
 	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
 	&PatWild{}, &PatName{}, &PatLit{}, &PatTuple{}, &PatExtract{},
+	&Interp{}, &InterpText{},
 }
 
 // Kinds is the "kind" of every supported node type, in schema order.
@@ -401,6 +422,7 @@ const (
 	UnsupportedNil              = "nil"
 	UnsupportedInterpolated     = "interpolated-string"
 	UnsupportedFormatString     = "format-string"
+	UnsupportedInterpEscape     = "interpolated-escape"
 	UnsupportedStringEscape     = "string-escape"
 	UnsupportedGenericType      = "generic-type"
 	UnsupportedQualifiedType    = "qualified-type"
@@ -428,7 +450,8 @@ var unsupportedKinds = []string{
 	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedLambda, UnsupportedPartialFunction,
 	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedArg, UnsupportedSpreadArg,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
-	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedStringEscape, UnsupportedGenericType,
+	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,
+	UnsupportedStringEscape, UnsupportedGenericType,
 	UnsupportedQualifiedType, UnsupportedSliceType, UnsupportedPointerType, UnsupportedMapType,
 	UnsupportedFuncType, UnsupportedOtherType, UnsupportedDeref, UnsupportedAddressOf, UnsupportedReceive,
 	UnsupportedTypedPattern, UnsupportedRestPattern, UnsupportedSelectPattern,
