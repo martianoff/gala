@@ -113,7 +113,7 @@ func run(body Sendable[func() int]) int = body()
 struct Bag(items Array[int])
 
 func main() {
-    val bag = Bag(ArrayOf(1, 2, 3))
+    val bag = Bag(*ArrayOf(1, 2, 3))
     Println(run(() => bag.items.Size()))
 }`,
 			expectContains: "not safe to share",
@@ -132,7 +132,7 @@ type Buf[T any] collection_mutable.Array[T]
 func run(body Sendable[func() int]) int = body()
 
 func main() {
-    val buf Buf[int] = collection_mutable.ArrayOf(1, 2)
+    val buf Buf[int] = *collection_mutable.ArrayOf(1, 2)
     Println(run(() => buf.Size()))
 }`,
 			expectContains: "not safe to share",
@@ -521,7 +521,7 @@ struct Bag(data cm.Array[int])
 func run(body Sendable[func() int]) int = body()
 
 func main() {
-    val bag = Bag(cm.ArrayOf(1, 2, 3))
+    val bag = Bag(*cm.ArrayOf(1, 2, 3))
     Println(run(() => bag.data.Size()))
 }`,
 			expectContains: "not safe to share",
@@ -555,7 +555,7 @@ struct Box[T any](v T)
 func run(body Sendable[func() int]) int = body()
 
 func main() {
-    val boxed = Box[cm.Array[int]](cm.ArrayOf(1, 2, 3))
+    val boxed = Box[cm.Array[int]](*cm.ArrayOf(1, 2, 3))
     Println(run(() => boxed.v.Size()))
 }`,
 			expectContains: "not safe to share",
@@ -819,7 +819,7 @@ sealed type Event {
 func run(body Sendable[func() int]) int = body()
 
 func main() {
-    val e = Batch(cm.ArrayOf(1, 2, 3))
+    val e = Batch(*cm.ArrayOf(1, 2, 3))
     Println(run(() => e match {
         case _ => 1
     }))

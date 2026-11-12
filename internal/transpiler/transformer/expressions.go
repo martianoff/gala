@@ -210,6 +210,10 @@ func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, e
 	// a void call) it runs like the void case below; any other untyped value
 	// has no type the closure could return.
 	if transpiler.IsUnusable(t.branchingResultType(retType, s)) {
+		// Both branches have a type, and they differ: `if (c) 1 else 2.5`.
+		if !transpiler.IsUnusableOrAny(unified[0]) && !transpiler.IsUnusableOrAny(unified[1]) {
+			return nil, t.ifBranchMismatchError(e.at(), unified[0], unified[1])
+		}
 		for i, b := range lowered {
 			if !b.noValue && !branchTypes[i].IsVoid() {
 				return nil, unknownBranchTypeError(line, col)
@@ -333,9 +337,20 @@ func (t *galaASTTransformer) checkIfBranchTypes(at srcNode, s slot, thenT, elseT
 	if _, ok := t.unifyWithSealedWidening(thenT, elseT); ok {
 		return nil
 	}
-	return t.semanticErrorAtNode(at, fmt.Sprintf(
+	return t.ifBranchMismatchError(at, thenT, elseT)
+}
+
+// ifBranchMismatchError reports an if-expression at at whose then-branch has
+// type thenT and else-branch elseT, which do not unify. Two numeric types
+// never do: GALA, like Go, converts between them only when told to.
+func (t *galaASTTransformer) ifBranchMismatchError(at srcNode, thenT, elseT transpiler.Type) error {
+	err := t.semanticErrorAtNode(at, fmt.Sprintf(
 		"type mismatch in if-expression: the then-branch returns '%s' but the else-branch returns '%s'. Both branches must return the same type",
 		thenT, elseT))
+	if t.isNumericSlotType(thenT) && t.isNumericSlotType(elseT) {
+		err.Hint = fmt.Sprintf("numeric types do not convert implicitly: convert a branch, as in `%s(...)`, or declare the type the value fills", displayType(elseT))
+	}
+	return err
 }
 
 // loweredIfBranch is a lowered branch of an if-expression (see
@@ -789,6 +804,10 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		}
 		// A nil, or a pointer that may be nil, never fills a Ptr.
 		if err := t.checkPtrSlot(expr, s.typ, e.at()); err != nil {
+			return nil, err
+		}
+		// Nor does a pointer fill a slot of the type it points to.
+		if err := t.checkPointerForValue(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
 		if err := t.checkConstSlot(expr, s.typ, e.at()); err != nil {

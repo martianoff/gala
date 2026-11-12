@@ -341,6 +341,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     var b = Box[int](Item = 1, N = 1)
     val p = &b
     val c = p.Copy(N = 2)
+    Println(c)
 }`,
 			wants: []string{"Box[int]{Item: std.Copy(p.Item)"},
 		},
@@ -351,6 +352,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
 			body: `func main() {
     val b = Box[string](Item = "x", N = 1)
     val n = b.Copy().N
+    Println(n)
 }`,
 			wants: []string{"b.Copy().N.Get()"},
 		},
@@ -362,6 +364,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     var b = Box[int](Item = 1, N = 1)
     val p = &b
     val n = p.N
+    Println(n)
 }`,
 			wants: []string{"p.N.Get()"},
 		},
@@ -468,6 +471,7 @@ struct Cell[T any](Value T, Map func(T) T)
     var c = Cell[int](Value = 1, Map = (v) => v)
     val p = &c
     val d = p.Copy(Map = (v) => v * 2)
+    Println(d)
 }`,
 			wants: []string{"Map: std.NewImmutable(func(v int) int {"},
 		},

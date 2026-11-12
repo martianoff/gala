@@ -75,6 +75,7 @@ func main() {
     val banner = Banner(Title = "hi", Content = "there")
     val box = Container[int](Value = 42)
     val pair = Pair[string, int](First = "answer", Second = 42)
+    Println(banner, box, pair)
 }
 `
 

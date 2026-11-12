@@ -2127,6 +2127,9 @@ func TestT10TypeVarSubstitutionDepthCap(t *testing.T) {
 		b.WriteString("    val w")
 		b.WriteString(itoa(i))
 		b.WriteString(" = w.M((x int) => x + 1)\n")
+		b.WriteString("    Println(w")
+		b.WriteString(itoa(i))
+		b.WriteString(")\n")
 	}
 	b.WriteString("}\n")
 

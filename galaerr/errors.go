@@ -910,6 +910,14 @@ const (
 	// identifier is emitted as `_gala_<name>`, fmt may be imported as
 	// `_gala_fmt`). A user name with the prefix could meet one of them.
 	CodeReservedNamePrefix ErrorCode = "GALA-E0097"
+
+	// E0099: a pointer to a type fills a slot of that type itself — an
+	// argument, a val/var declaration or assignment, a return or a
+	// constructor field — as in a `Ptr[Array[int]]` from
+	// `collection_mutable.ArrayOf(1, 2)` passed where an `Array[int]` is
+	// expected. GALA, like Go, never dereferences implicitly; the slot is
+	// declared as the Ptr, or the value is dereferenced.
+	CodePointerForValue ErrorCode = "GALA-E0099"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

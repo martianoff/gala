@@ -137,6 +137,12 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 		if i == len(suffixes)-1 {
 			release()
 		}
+		// A member that is called is checked as a method (unknown_method.go).
+		if s.ident() != "" && (i == len(suffixes)-1 || suffixes[i+1].opener() != "(") {
+			if err := t.checkUnknownField(result, memberSrc{s}); err != nil {
+				return nil, err
+			}
+		}
 		if result, err = t.lowerSuffix(result, p, s); err != nil {
 			return nil, err
 		}

@@ -49,6 +49,7 @@ func main() {
     val name = "x"
     val err = errors.New("boom")
     val s = consume((name, err))
+    Println(s)
 }`,
 			expected: []string{
 				"std.Tuple[string, error]",
@@ -98,6 +99,7 @@ func main() {
     val name = "x"
     val err = errors.New("boom")
     val pair = (name, err)
+    Println(pair)
 }`,
 			expected: []string{
 				"std.Tuple[string, error]",

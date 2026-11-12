@@ -623,7 +623,7 @@ func TestCycleLoweredMethodCrossPackage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/cyclerecv/box\"\n\nfunc main() {\n    val b = box.NewBox(1)\n    "+tt.body+"\n}\n")
+			out, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/cyclerecv/box\"\n\nfunc main() {\n    val b = box.NewBox(1)\n    Println(b)\n    "+tt.body+"\n}\n")
 			require.NoError(t, err)
 			assert.Contains(t, out, tt.want)
 		})

@@ -590,6 +590,7 @@ func main() {
         case Some(v) => v
         case None() => "empty"
     }
+    Println(result)
 }`,
 			wantErr: false,
 		},

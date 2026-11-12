@@ -290,6 +290,7 @@ func TestCharAndRawStringLiterals(t *testing.T) {
 
 func main() {
     val c = 'a'
+    Println(c)
 }`,
 			expectError: false,
 			contains:    "'a'",
@@ -300,19 +301,20 @@ func main() {
 
 func main() {
     val c = '\n'
+    Println(c)
 }`,
 			expectError: false,
 			contains:    `'\n'`,
 		},
 		{
 			name: "raw string literal",
-			input: "package main\n\nfunc main() {\n    val s = `hello raw`\n}",
+			input: "package main\n\nfunc main() {\n    val s = `hello raw`\n    Println(s)\n}",
 			expectError: false,
 			contains:    "`hello raw`",
 		},
 		{
 			name: "multi-line raw string",
-			input: "package main\n\nfunc main() {\n    val s = `line one\nline two`\n}",
+			input: "package main\n\nfunc main() {\n    val s = `line one\nline two`\n    Println(s)\n}",
 			expectError: false,
 			contains:    "`line one\nline two`",
 		},

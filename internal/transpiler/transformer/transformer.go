@@ -47,6 +47,9 @@ type galaASTTransformer struct {
 	// ptrStars holds the `*T` expressions emitted for a non-null `Ptr[T]`, so a
 	// type read back from generated Go keeps the marker (see ptr.go).
 	ptrStars map[*ast.StarExpr]bool
+	// localBindings holds the Go name of each local val or var a declaration
+	// emits, with where its GALA name is written (see unused_bindings.go).
+	localBindings map[*ast.Ident]localBinding
 	// typeParamConstraints is the declared constraint of each active type
 	// parameter that has one: "any", "comparable" or an interface name.
 	typeParamConstraints map[string]string
@@ -393,6 +396,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.ptrStars = nil
+	t.localBindings = nil
 	t.patternDefineTypes = nil
 	t.patternReads = nil
 	t.genericMethods = make(map[string]map[string]bool)
@@ -794,6 +798,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 		fmt.Fprintf(w, "=== End Unresolved (%d) ===\n", len(unresolved))
 		w.Flush()
+	}
+
+	// A local val or var nothing reads is GALA's error, not Go's.
+	if err := t.checkUnusedBindings(file); err != nil {
+		return nil, nil, err
 	}
 
 	// Remove unused imports from the generated AST. PruneUnused rewrites the

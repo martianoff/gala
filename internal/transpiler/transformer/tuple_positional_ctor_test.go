@@ -39,6 +39,7 @@ func TestTuplePositionalConstructor(t *testing.T) {
 
 func main() {
     val pair = Tuple(true, "1")
+    Println(pair)
 }`,
 			expected: []string{
 				"std.Tuple[bool, string]{",
@@ -57,6 +58,7 @@ func main() {
 
 func main() {
     val triple = Tuple(1, "x", 3.5)
+    Println(triple)
 }`,
 			expected: []string{
 				"std.Tuple3[int, string, float64]{",
@@ -76,6 +78,7 @@ func main() {
 
 func main() {
     val q = Tuple(1, 2, 3, 4)
+    Println(q)
 }`,
 			expected: []string{
 				"std.Tuple4[int, int, int, int]{",

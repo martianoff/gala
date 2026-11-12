@@ -102,6 +102,44 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 		hint)
 }
 
+// checkPointerForValue rejects a pointer to a GALA type filling a slot of
+// that type itself (GALA-E0099): `collection_mutable.ArrayOf(1, 2)`, a
+// `Ptr[Array[int]]`, where an `Array[int]` is expected. Only a slot whose
+// type is a GALA type is probed.
+func (t *galaASTTransformer) checkPointerForValue(expr ast.Expr, expected transpiler.Type, at srcNode) error {
+	if transpiler.IsUnusable(expected) || !at.ok() {
+		return nil
+	}
+	meta := t.valueTypeMeta(t.followAliasChain(expected))
+	if meta == nil || isNilIdent(expr) {
+		return nil
+	}
+	ptr, ok := t.probeExprType(expr).(transpiler.PointerType)
+	if !ok || t.valueTypeMeta(ptr.Elem) != meta {
+		return nil
+	}
+	return pointerForValueError(at.rng(), at.sourceText(), ptr, expected)
+}
+
+// pointerForValueError is GALA-E0099 over r for the value spelled text, of
+// type ptr, filling a slot of the type expected that ptr points to.
+func pointerForValueError(r srcRange, text string, ptr transpiler.PointerType, expected transpiler.Type) error {
+	ptrType := transpiler.PointerType{Elem: expected, NonNull: true}
+	return spanErrorAt(galaerr.CodePointerForValue, r, r,
+		fmt.Sprintf("cannot use %s (%s) as %s: it is a pointer to the value, not the value", text, displayType(ptr), displayType(expected)),
+		fmt.Sprintf("declare the parameter, field or variable as %s, as mutable collections are passed, or dereference the pointer: `*%s`", displayType(ptrType), text))
+}
+
+// valueTypeMeta is the metadata of typ when typ is a GALA struct or sealed
+// type used by value, nil otherwise.
+func (t *galaASTTransformer) valueTypeMeta(typ transpiler.Type) *transpiler.TypeMetadata {
+	_, meta, _, ok := t.receiverTypeInfo(typ)
+	if !ok || meta == nil || meta.IsInterface || !declaredInGala(meta) {
+		return nil
+	}
+	return meta
+}
+
 // ptrReceiverMethodNames returns the names of the methods of types declared
 // on a `Ptr` receiver. Only a method of one of these names can need a
 // non-null receiver, so the receiver checks skip every other one.

@@ -110,6 +110,9 @@ func testOptionChaining() {
     val name = result.GetOrElse(Person(name = "Unknown", age = 0, email = ""))
     // [EXPECT] name type hint: Person
     // [EXPECT] Type "name." → suggests: name, age, email (fields) + FullInfo(), IsAdult()
+    Println(upper)
+    Println(isDefined)
+    Println(name)
 }
 
 // ============================================================
@@ -129,6 +132,7 @@ func testEither() {
 
     val mapped = result.Map((x float64) => x * 2.0)
     // [EXPECT] mapped type hint: Either (from Map return type)
+    Println(mapped)
 }
 
 // ============================================================
@@ -146,6 +150,7 @@ func testTry() {
     val opt = result.ToOption()
     // [EXPECT] opt type hint: Option (from ToOption return type)
     // [EXPECT] Type "opt." → suggests Option methods
+    Println(opt)
 }
 
 // ============================================================
@@ -478,9 +483,9 @@ func testTupleDestructuring() {
     // [EXPECT] pair: Tuple[int, int]
 
     // Tuple access
-    val first = pair.First
-    val second = pair.Second
-    // [EXPECT] Type "pair." → suggests: First, Second (fields)
+    val first = pair.V1
+    val second = pair.V2
+    // [EXPECT] Type "pair." → suggests: V1, V2 (fields)
 
     // Tuple from function
     val swapped = swap(1, 2)

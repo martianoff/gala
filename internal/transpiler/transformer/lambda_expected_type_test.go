@@ -381,24 +381,28 @@ struct Tag[T any](N int)
 	}{
 		{
 			name:     "named, sealed-variant and generic-struct fields",
-			body:     `val h = Holder(Md = ByInt[int]((x) => x), In = Inner(X = 7))`,
+			body:     `val h = Holder(Md = ByInt[int]((x) => x), In = Inner(X = 7))
+    Println(h)`,
 			contains: []string{"Holder[int]{"},
 		},
 		{
 			name:     "positional",
-			body:     `val h = Holder(ByInt[int]((x) => x), Inner(7))`,
+			body:     `val h = Holder(ByInt[int]((x) => x), Inner(7))
+    Println(h)`,
 			contains: []string{"Holder[int]{"},
 		},
 		{
 			name: "nested generic struct value",
 			body: `val h = Holder(Md = ByInt[int]((x) => x), In = Inner(X = 7))
     val o = Outer(H = h)
-    val o2 = Outer(h)`,
+    val o2 = Outer(h)
+    Println(o, o2)`,
 			contains: []string{"Outer[int]{"},
 		},
 		{
 			name:     "type argument from the slot type",
-			body:     `val g Tag[string] = Tag(N = 1)`,
+			body:     `val g Tag[string] = Tag(N = 1)
+    Println(g)`,
 			contains: []string{"Tag[string]{"},
 		},
 	}

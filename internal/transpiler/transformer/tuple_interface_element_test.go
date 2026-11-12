@@ -54,7 +54,8 @@ func choose(n int) Tuple[Shape, int] = n match {
 	}{
 		{
 			name:     "val annotation",
-			body:     `val t Tuple[Shape, int] = (Square(1.0), 2)`,
+			body:     `val t Tuple[Shape, int] = (Square(1.0), 2)
+    Println(t)`,
 			contains: []string{"std.Tuple[Shape, int]{V1: std.NewImmutable[Shape](Square{"},
 		},
 		{
@@ -74,17 +75,20 @@ func choose(n int) Tuple[Shape, int] = n match {
 		},
 		{
 			name:     "empty interface and any, Tuple3",
-			body:     `val m Tuple3[Marker, any, error] = (Square(2.0), Square(1.0), NotFound("x"))`,
+			body:     `val m Tuple3[Marker, any, error] = (Square(2.0), Square(1.0), NotFound("x"))
+    Println(m)`,
 			contains: []string{"std.Tuple3[Marker, any, error]{V1: std.NewImmutable[Marker](Square{", "V2: std.NewImmutable[any](Square{", "V3: std.NewImmutable[error](NotFound{"},
 		},
 		{
 			name:     "nested tuple",
-			body:     `val n Tuple[Tuple[Shape, int], string] = ((Square(5.0), 1), "n")`,
+			body:     `val n Tuple[Tuple[Shape, int], string] = ((Square(5.0), 1), "n")
+    Println(n)`,
 			contains: []string{"std.Tuple[std.Tuple[Shape, int], string]{V1: std.NewImmutable(std.Tuple[Shape, int]{V1: std.NewImmutable[Shape](Square{"},
 		},
 		{
 			name:     "inside a generic constructor argument",
-			body:     `val o Option[Tuple[Shape, int]] = Some((Square(4.0), 3))`,
+			body:     `val o Option[Tuple[Shape, int]] = Some((Square(4.0), 3))
+    Println(o)`,
 			contains: []string{"Apply(std.Tuple[Shape, int]{V1: std.NewImmutable[Shape](Square{"},
 		},
 		{
@@ -99,18 +103,21 @@ func choose(n int) Tuple[Shape, int] = n match {
 		},
 		{
 			name:     "Go named function type slot",
-			body:     `val w Tuple[fs.WalkDirFunc, int] = ((p string, d fs.DirEntry, err error) => err, 0)`,
+			body:     `val w Tuple[fs.WalkDirFunc, int] = ((p string, d fs.DirEntry, err error) => err, 0)
+    Println(w)`,
 			contains: []string{"std.Tuple[fs.WalkDirFunc, int]{V1: std.NewImmutable[fs.WalkDirFunc](func("},
 		},
 		{
 			name:     "untyped constant into a numeric slot",
-			body:     `val c Tuple[int64, Shape] = (1, Square(1.0))`,
+			body:     `val c Tuple[int64, Shape] = (1, Square(1.0))
+    Println(c)`,
 			contains: []string{"std.Tuple[int64, Shape]{V1: std.NewImmutable[int64](1), V2: std.NewImmutable[Shape](Square{"},
 		},
 		{
 			// A slot of the element's own concrete type keeps the inferred form.
 			name:     "concrete slot keeps the inferred form",
-			body:     `val q Tuple[Square, int] = (Square(1.0), 2)`,
+			body:     `val q Tuple[Square, int] = (Square(1.0), 2)
+    Println(q)`,
 			contains: []string{"std.Tuple[Square, int]{V1: std.NewImmutable(Square{"},
 		},
 	}

@@ -108,9 +108,11 @@ func (b Box[T]) MyMap[U any](f func(T) U) Box[U] = Box(f(b.Value))
 func main() {
     val b = Box(1)
     val b2 = b.MyMap[string]((i int) => "res")
+    Println(b2)
 }`,
 			expected: `package main
 
+import "fmt"
 import "martianoff/gala/std"
 
 type Box[T any] struct {
@@ -148,6 +150,7 @@ func main() {
 	var b2 = Box_MyMap[string, int](b, func(i int) string {
 		return "res"
 	})
+	fmt.Println(b2)
 }
 `,
 		},

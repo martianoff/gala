@@ -185,7 +185,7 @@ func g(n int) int = n * 2
 
 func f(n int) {
     n match {
-        case 1 => { val a = 3 }
+        case 1 => { var a = 3; a = a + 1 }
         case _ => g(n)
     }
 }
