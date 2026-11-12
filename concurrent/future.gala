@@ -273,7 +273,7 @@ func (f Future[T]) Cancel() {
 // result wins the single-assignment race.
 func (f Future[T]) WithTimeout(timeout Duration) Future[T] {
     val p = NewPromise[T](f.state.ec)
-    f.OnComplete((r Try[T]) => {
+    f.whenComplete((r Try[T]) => {
         p.Complete(r)
     })
     f.state.ec.Execute(() => {
@@ -305,13 +305,19 @@ func (f Future[T]) ExecutionContext() go_interop.ExecutionContext = f.state.ec
 // A panic in the callback is reported to that ExecutionContext's ReportFailure
 // rather than crashing the process.
 func (f Future[T]) OnComplete(callback func(Try[T])) {
-    val ec = f.state.ec
-    ec.Execute(() => {
+    f.whenComplete((r Try[T]) => { runCallback(f.state.ec, r, callback) })
+}
+
+// whenComplete runs callback with this Future's result on its
+// ExecutionContext once it completes. It is OnComplete for the callbacks the
+// combinators register themselves, which guard the user's functions they call.
+func (f Future[T]) whenComplete(callback func(Try[T])) {
+    f.state.ec.Execute(() => {
         go_interop.WaitSignal(f.state.done)
         f.state.mu.RLock()
         val r = f.state.result
         f.state.mu.RUnlock()
-        runCallback(ec, r, callback)
+        callback(r)
     })
 }
 
@@ -355,7 +361,7 @@ func runCallback[A any](ec go_interop.ExecutionContext, a A, callback func(A)) {
 // function returned, or with next's error when the function panicked.
 func (p Promise[T]) completeWith(next Try[Future[T]]) {
     next match {
-        case Success(stage) => stage.OnComplete((r Try[T]) => { p.Complete(r) })
+        case Success(stage) => stage.whenComplete((r Try[T]) => { p.Complete(r) })
         case Failure(err) => p.Failure(err)
     }
 }
@@ -368,7 +374,7 @@ func (p Promise[T]) completeWith(next Try[Future[T]]) {
 // promise-creation + OnComplete + cancellation-guard scaffold lives in one place.
 func (f Future[T]) derive[U any](handle func(Promise[U], Try[T])) Future[U] {
     val p = newPromiseWith[U](f.state.ec, Some(f.state.cancel))
-    f.OnComplete((r Try[T]) => {
+    f.whenComplete((r Try[T]) => {
         if !checkCancelled(p, f.state.cancel) {
             handle(p, r)
         }
@@ -573,7 +579,7 @@ func Sequence[T any](futures Array[Future[T]]) Future[Array[T]] {
     futures.ZipWithIndex().ForEach((pair Tuple[Future[T], int]) => {
         val fut = pair.V1
         val idx = pair.V2
-        fut.OnComplete((r Try[T]) => {
+        fut.whenComplete((r Try[T]) => {
             mu.Lock()
 
             if !failed {
@@ -610,7 +616,7 @@ func FirstCompletedOf[T any](futures Array[Future[T]]) Future[T] {
     val p = NewPromise[T]()
 
     futures.ForEach((fut Future[T]) => {
-        fut.OnComplete((r Try[T]) => {
+        fut.whenComplete((r Try[T]) => {
             p.Complete(r)
         })
     })
@@ -632,7 +638,7 @@ func Race[T any](futures Array[Future[T]]) Future[T] {
     val p = NewPromise[T]()
 
     futures.ForEach((fut Future[T]) => {
-        fut.OnComplete((r Try[T]) => {
+        fut.whenComplete((r Try[T]) => {
             val won = p.Complete(r)
             if won {
                 futures.ForEach((other Future[T]) => {
@@ -649,10 +655,8 @@ func Race[T any](futures Array[Future[T]]) Future[T] {
 // and sequences the results.
 // If fn panics on an item, that item's Future fails with the panic.
 func Traverse[T any, U any](items Array[T], fn func(T) Future[U]) Future[Array[U]] {
-    val futures = items.Map[Future[U]]((item T) => applyGuarded(item, fn) match {
-        case Success(stage) => stage
-        case Failure(err) => FutureFailed[U](err)
-    })
+    val futures = items.Map[Future[U]]((item T) =>
+        applyGuarded(item, fn).Fold((err) => FutureFailed[U](err), (stage) => stage))
     return Sequence[U](futures)
 }
 

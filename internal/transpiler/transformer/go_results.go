@@ -472,11 +472,18 @@ func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, 
 // match whose every branch is one (see errorBranches).
 func (t *galaASTTransformer) isErrorOnlyCall(expr ast.Expr) bool {
 	raw := t.rawGoCall(expr)
-	if t.isGoErrorOnlyCall(raw) || t.isErrorCall(raw) {
+	if t.isErrorReturningCall(raw) {
 		return true
 	}
 	lit, _ := t.errorBranches(raw)
 	return lit != nil
+}
+
+// isErrorReturningCall reports whether expr is one call returning only an
+// `error`: a Go call (isGoErrorOnlyCall) or a GALA one (isErrorCall).
+func (t *galaASTTransformer) isErrorReturningCall(expr ast.Expr) bool {
+	_, ok := expr.(*ast.CallExpr)
+	return ok && (t.isGoErrorOnlyCall(expr) || t.isErrorCall(expr))
 }
 
 // errorBranches returns the func literal of expr, an IIFE returning `error`

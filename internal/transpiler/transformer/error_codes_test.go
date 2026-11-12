@@ -709,7 +709,7 @@ func main() {
     Some(-1).ForEach((n) => save(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "error_codes_test.gala:8:22 cannot discard error return from save in void lambda (hint: use FromError(save) to handle the error)",
+			expectContains: "error_codes_test.gala:8:22 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 GALA method discarded in a void block lambda",
@@ -730,6 +730,25 @@ func main() {
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
 			expectContains: "cannot discard error return from conn.Close in void lambda",
+		},
+		{
+			name: "GALA-E0101 method of a val field named as written",
+			input: `package main
+
+import "errors"
+
+struct Conn(name string)
+
+func (c Conn) Close() error = errors.New(c.name)
+
+struct Holder(conn Conn)
+
+func main() {
+    val h = Holder(Conn("db"))
+    Some(1).ForEach((n) => h.conn.Close())
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from h.conn.Close in void lambda (hint: use FromError(h.conn.Close(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 generic GALA method returning error",

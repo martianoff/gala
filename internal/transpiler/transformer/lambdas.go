@@ -594,39 +594,57 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 // dropped back to the plain call; a generic method returning its type
 // parameter yields a value even when that is `error` (see isErrorCall).
 func (t *galaASTTransformer) checkDiscardedError(expr ast.Expr, line, col int) error {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok || !(t.goTypeInfo != nil && t.isGoErrorOnlyCall(call) || t.isErrorCall(call)) {
+	if !t.isErrorReturningCall(expr) {
 		return nil
 	}
-	name := t.calleeName(call)
+	name := t.calleeName(expr.(*ast.CallExpr))
 	return galaerr.NewCodedSemanticError(galaerr.CodeDiscardedErrorReturn, line, col,
 		fmt.Sprintf("cannot discard error return from %s in void lambda", name),
-		fmt.Sprintf("use FromError(%s) to handle the error", name))
+		fmt.Sprintf("use FromError(%s(...)) to handle the error", name))
 }
 
-// calleeName is the name a diagnostic gives the callee of call: `f`,
-// `pkg.F`, `conn.Close`, also for a generic method lowered to a free function.
+// calleeName is the name a diagnostic gives the callee of call, as the
+// source spells it: `f`, `pkg.F`, `conn.Close`, `h.conn.Close`, also for a
+// generic method lowered to a free function.
 func (t *galaASTTransformer) calleeName(call *ast.CallExpr) string {
 	if m := t.genericMethodCalls[call]; m != nil && len(call.Args) > 0 {
-		if recv, ok := call.Args[0].(*ast.Ident); ok {
-			return recv.Name + "." + m.Name
+		if recv, ok := t.sourcePath(call.Args[0]); ok {
+			return recv + "." + m.Name
 		}
 		return m.Name
 	}
 	fun, _ := splitCallFunTypeArgs(call.Fun)
-	switch f := fun.(type) {
-	case *ast.Ident:
-		return f.Name
-	case *ast.SelectorExpr:
-		switch x := f.X.(type) {
-		case *ast.Ident:
-			return x.Name + "." + f.Sel.Name
-		case *ast.SelectorExpr:
-			return x.Sel.Name + "." + f.Sel.Name
-		}
-		return f.Sel.Name
+	if name, ok := t.sourcePath(fun); ok {
+		return name
 	}
-	return "call"
+	if sel, ok := fun.(*ast.SelectorExpr); ok {
+		return sel.Sel.Name
+	}
+	return "the function"
+}
+
+// sourcePath spells expr, a name or a chain of selectors on one, as the GALA
+// source does: a val field's Immutable unwrap (`x.Get()`) and an implicit
+// address-of are left out. ok is false for any other expression.
+func (t *galaASTTransformer) sourcePath(expr ast.Expr) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name, true
+	case *ast.SelectorExpr:
+		x, ok := t.sourcePath(e.X)
+		return x + "." + e.Sel.Name, ok
+	case *ast.UnaryExpr:
+		if e.Op == token.AND {
+			return t.sourcePath(e.X)
+		}
+	case *ast.ParenExpr:
+		return t.sourcePath(e.X)
+	case *ast.CallExpr:
+		if t.isImmutableUnwrapCall(e) {
+			return t.sourcePath(immutableGetReceiver(e).X)
+		}
+	}
+	return "", false
 }
 
 // tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function

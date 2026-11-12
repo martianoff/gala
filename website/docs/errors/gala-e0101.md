@@ -38,9 +38,9 @@ error[GALA-E0101]: cannot discard error return from save in void lambda
   --> main.gala:8:22
   |
 8 |     Some(-1).ForEach((n) => save(n))
-  |                      ^ use FromError(save) to handle the error
+  |                      ^ use FromError(save(...)) to handle the error
   |
-  = hint: use FromError(save) to handle the error
+  = hint: use FromError(save(...)) to handle the error
 ```
 
 **Fix.** Turn the error into a `Try[Void]` with `FromError` and handle it:
