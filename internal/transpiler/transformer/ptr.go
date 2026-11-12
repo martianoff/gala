@@ -107,15 +107,12 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 // `Ptr[Array[int]]`, where an `Array[int]` is expected. Only a slot whose
 // type is a GALA type is probed.
 func (t *galaASTTransformer) checkPointerForValue(expr ast.Expr, expected transpiler.Type, at srcNode) error {
-	if transpiler.IsUnusable(expected) || !at.ok() {
-		return nil
-	}
-	meta := t.valueTypeMeta(t.followAliasChain(expected))
-	if meta == nil || isNilIdent(expr) {
+	if !at.ok() || isNilIdent(expr) || t.slotValueTypeMeta(expected) == nil {
 		return nil
 	}
 	ptr, ok := t.probeExprType(expr).(transpiler.PointerType)
-	if !ok || t.valueTypeMeta(ptr.Elem) != meta {
+	meta := t.pointeeOfSlot(ptr, expected)
+	if !ok || meta == nil {
 		return nil
 	}
 	text := at.sourceText()
@@ -145,6 +142,25 @@ func pointerForValueError(r srcRange, text string, ptr transpiler.PointerType, e
 // mutableCollectionsPackage is the package of GALA's mutable collections,
 // whose constructors return a Ptr: they are shared through it.
 const mutableCollectionsPackage = "collection_mutable"
+
+// slotValueTypeMeta is valueTypeMeta of the type a slot of type expected
+// holds, followed through aliases; nil for a slot with no type.
+func (t *galaASTTransformer) slotValueTypeMeta(expected transpiler.Type) *transpiler.TypeMetadata {
+	if transpiler.IsUnusable(expected) {
+		return nil
+	}
+	return t.valueTypeMeta(t.followAliasChain(expected))
+}
+
+// pointeeOfSlot is the metadata of the GALA type a slot of type expected
+// holds when ptr points to that type, nil otherwise.
+func (t *galaASTTransformer) pointeeOfSlot(ptr transpiler.PointerType, expected transpiler.Type) *transpiler.TypeMetadata {
+	meta := t.slotValueTypeMeta(expected)
+	if meta == nil || ptr.Elem == nil || t.valueTypeMeta(ptr.Elem) != meta {
+		return nil
+	}
+	return meta
+}
 
 // valueTypeMeta is the metadata of typ when typ is a GALA struct or sealed
 // type used by value, nil otherwise.

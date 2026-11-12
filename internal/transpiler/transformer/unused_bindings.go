@@ -90,50 +90,73 @@ func (t *galaASTTransformer) checkUnusedBindings(file *ast.File) error {
 	b := slices.MinFunc(unused, func(a, b localBinding) int {
 		return cmp.Or(cmp.Compare(a.line, b.line), cmp.Compare(a.col, b.col))
 	})
+	hint := "use it, or remove the declaration; to run its initializer only for its effect, write the expression as a statement on its own"
+	if b.oneOfSeveral {
+		hint = "use it, or write `_` in its place"
+	}
 	err := galaerr.NewSemanticErrorInFile(t.filePath, b.line, b.col,
 		fmt.Sprintf("unused %s '%s'%s", b.keyword, b.name, unusedBindingSuffix))
-	err.Hint = "use it, or remove the declaration; to run its initializer only for its effect, write the expression as a statement on its own"
-	if b.oneOfSeveral {
-		err.Hint = "use it, or write `_` in its place"
-	}
+	err.Hint = hint
 	return err.WithSpan(b.col + len([]rune(b.name)))
 }
 
 // appendUnread appends to unused the tracked bindings the statements of list
 // declare that nothing after their declaration reads. The list is walked
-// once, from its end, gathering the names read after each statement.
+// once, from its end, gathering the names read after each statement; a list
+// that declares none is not walked.
 func (t *galaASTTransformer) appendUnread(unused []localBinding, list []ast.Stmt) []localBinding {
-	var read map[string]bool
-	for i := len(list) - 1; i >= 0; i-- {
-		if decl, ok := list[i].(*ast.DeclStmt); ok {
-			if gen, ok := decl.Decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
-				// A spec's names are in scope from the next spec on.
-				for j := len(gen.Specs) - 1; j >= 0; j-- {
-					vs, ok := gen.Specs[j].(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					for _, ident := range vs.Names {
-						if b, tracked := t.localBindings[ident]; tracked && !read[ident.Name] {
-							unused = append(unused, b)
-						}
-					}
-					read = gatherReads(read, gen.Specs[j])
-				}
-				continue
-			}
+	first := slices.IndexFunc(list, func(s ast.Stmt) bool { return len(t.trackedSpecs(s)) > 0 })
+	if first < 0 {
+		return unused
+	}
+	read := make(map[string]bool)
+	for i := len(list) - 1; i >= first; i-- {
+		specs := t.trackedSpecs(list[i])
+		if specs == nil {
+			gatherReads(read, list[i])
+			continue
 		}
-		read = gatherReads(read, list[i])
+		// A spec's names are in scope from the next spec on.
+		for j := len(specs) - 1; j >= 0; j-- {
+			for _, ident := range specs[j].Names {
+				if b, tracked := t.localBindings[ident]; tracked && !read[ident.Name] {
+					unused = append(unused, b)
+				}
+			}
+			gatherReads(read, specs[j])
+		}
 	}
 	return unused
 }
 
+// trackedSpecs is the specs of stmt when it is a var declaration that
+// declares a tracked binding, nil otherwise.
+func (t *galaASTTransformer) trackedSpecs(stmt ast.Stmt) []*ast.ValueSpec {
+	decl, ok := stmt.(*ast.DeclStmt)
+	if !ok {
+		return nil
+	}
+	gen, ok := decl.Decl.(*ast.GenDecl)
+	if !ok || gen.Tok != token.VAR {
+		return nil
+	}
+	var specs []*ast.ValueSpec
+	tracked := false
+	for _, spec := range gen.Specs {
+		if vs, ok := spec.(*ast.ValueSpec); ok {
+			specs = append(specs, vs)
+			tracked = tracked || slices.ContainsFunc(vs.Names, func(id *ast.Ident) bool { _, ok := t.localBindings[id]; return ok })
+		}
+	}
+	if !tracked {
+		return nil
+	}
+	return specs
+}
+
 // gatherReads adds to read the name of every identifier n mentions, except
 // the whole target of a plain assignment, which Go does not count as a use.
-func gatherReads(read map[string]bool, n ast.Node) map[string]bool {
-	if read == nil {
-		read = make(map[string]bool)
-	}
+func gatherReads(read map[string]bool, n ast.Node) {
 	ast.Inspect(n, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.AssignStmt:
@@ -154,5 +177,4 @@ func gatherReads(read map[string]bool, n ast.Node) map[string]bool {
 		}
 		return true
 	})
-	return read
 }
