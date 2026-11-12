@@ -128,17 +128,13 @@ var ErrConvertExpression = errors.New("parser: galop's converter failed on the e
 // recovering parser, not anchored at end of input: its tree, error-recovered
 // when there are errors, and the errors, as ANTLR's lexer and parser report
 // them (nativeSyntaxErrors). Every token of the tree carries its position in
-// that file. ok is false when galop's lexer or parser panicked (recovered and
-// reported through noteGalopPanic).
-func (g *nativeParsers) expressionNative(input string, line, col int) (expr native.ExpressionNode, errs []error, ok bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic("parser", input, r)
-			expr, errs, ok = native.ExpressionNode{}, nil, false
-		}
-	}()
-	ts := lexNative(input, line, col)
-	expr, parseErrs := g.expression(ts)
+// that file. ok is false when galop's lexer or parser panicked (see
+// galopParse).
+func (g *nativeParsers) expressionNative(input string, line, col int) (native.ExpressionNode, []error, bool) {
+	ts, expr, parseErrs, ok := galopParse(input, line, col, g.expression)
+	if !ok {
+		return native.ExpressionNode{}, nil, false
+	}
 	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs), true
 }
 

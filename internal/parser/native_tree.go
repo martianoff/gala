@@ -127,6 +127,9 @@ func trimSpare(tree *native.GalaTree) {
 	tree.Tokens = trimmed(tree.Tokens)
 	tree.Hidden = trimmed(tree.Hidden)
 	tree.TokenLabels = trimmed(tree.TokenLabels)
+	tree.ErrorKids = trimmed(tree.ErrorKids)
+	tree.Conjured = trimmed(tree.Conjured)
+	tree.ConjuredText = trimmed(tree.ConjuredText)
 }
 
 // trimmed is s cut to its length, or s when less than an eighth of it is

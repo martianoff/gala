@@ -197,7 +197,7 @@ func TestRecoveryParity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ts := lexNative(string(data), 0, 0)
+		ts := lexNative(galaerr.StripBOM(string(data)), 0, 0)
 		src, toks := ts.Src, ts.Tokens[:len(ts.Tokens)-1] // without EOF
 		if len(toks) == 0 {
 			continue

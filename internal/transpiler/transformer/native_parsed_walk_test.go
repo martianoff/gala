@@ -140,7 +140,7 @@ func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string
 
 // TestNativeParsedWalkFallback holds a walk whose defaults and interpolations
 // all fall back to ANTLR's parser and galop's converter (RefuseNativeParse),
-// as when the engine's parser does not settle them, to its golden on
+// as after a galop panic on them, to its golden on
 // parsedShapes and on each of parsedCases: the Go, or the diagnostic, that
 // ANTLR's walk gave them, with no tree made by the engine's parser.
 func TestNativeParsedWalkFallback(t *testing.T) {

@@ -220,16 +220,12 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 // native lexer and recovering parser. The parse's errors are charErr, then
 // the lexical and syntax errors (nativeSyntaxErrors), then a missing blank
 // line (checkEmptyLinesNative), as parseFileANTLR reports ANTLR's. It returns
-// nil on a panic, recovered and reported through noteGalopPanic.
-func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.SemanticError) (parsed *Parsed) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic("parser", input, r)
-			parsed = nil
-		}
-	}()
-	ts := lexNative(input, 0, 0)
-	root, parseErrs := p.parsers().sourceFile(ts)
+// nil when galop's lexer or parser panics (see galopParse).
+func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.SemanticError) *Parsed {
+	ts, root, parseErrs, ok := galopParse(input, 0, 0, p.parsers().sourceFile)
+	if !ok {
+		return nil
+	}
 	errs := withCharErr(charErr, nativeSyntaxErrors(root.Tree(), ts, parseErrs))
 	var handle *Native
 	if root.Ok() {
@@ -239,6 +235,24 @@ func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.Semanti
 		}
 	}
 	return newParsed(nil, nativeDocComments(ts), errs, handle)
+}
+
+// galopParse lexes input with galop's native lexer at line/col (lexNative)
+// and parses the tokens with parse, one of galop's recovering parsers. ok is
+// false when either panicked, recovered and reported through noteGalopPanic,
+// for the caller to have ANTLR's parser parse input instead. Only galop's
+// lexer and parser run under the recover: a panic in what GALA does with
+// their result is GALA's bug, and is not hidden behind ANTLR's parser.
+func galopParse[N any](input string, line, col int, parse func(*native.GalaTokens) (N, []native.GalaParseError)) (ts *native.GalaTokens, root N, errs []native.GalaParseError, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic("parser", input, r)
+			ok = false
+		}
+	}()
+	ts = lexNative(input, line, col)
+	root, errs = parse(ts)
+	return ts, root, errs, true
 }
 
 // newParsed is a parse with ANTLR's tree, if any, doc comments, errors and
@@ -340,8 +354,8 @@ func antlrExpressionAt(input string, line, col int) (grammar.IExpressionContext,
 // from, or the first syntax error. It is how ParseExpressionConvertedAt
 // parses expression text the transpiler holds apart from its file (the
 // embedded expressions of an interpolated string, and declared default
-// values) when galop's native parser does not settle it, before converting
-// the tree.
+// values) with ANTLR's engine, or after galop's parser panicked on it, before
+// converting the tree.
 //
 // Three things make that safe:
 //

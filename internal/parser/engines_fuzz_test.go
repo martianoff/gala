@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"martianoff/gala/galaerr"
 )
 
 // FuzzParserEngines holds galop's lexer and parser to ANTLR's on arbitrary
@@ -22,8 +20,7 @@ import (
 //   - galop's native lexer gives ANTLR's tokens, hidden ones included, its
 //     lexical errors and its doc comments, a BOM and invalid UTF-8 included;
 //     at the start of the input and at an offset, as an expression's default
-//     or interpolation is lexed; where it lexes without errors, the token
-//     stream ANTLR's parser reads after a syntax error is ANTLR's lexer's;
+//     or interpolation is lexed;
 //   - VisitNativeTokens visits the default-channel tokens VisitTokens visits;
 //   - the two engines agree on the parse of a source file (compareEngines:
 //     the same errors and doc comments, the same native tree, clean or
@@ -68,9 +65,9 @@ func checkEnginesAgree(t *testing.T, src string, line, col int) {
 	}
 	// The lexers at an offset. With line <= 0 both start at 1:0, whatever
 	// col (lexNative, seedLexer), as compareLexers lexed. Both read the text
-	// without a leading BOM, as ParseFile drops it.
+	// as an expression's is read, a leading BOM included.
 	if line > 0 {
-		if d := firstTokenDiff(antlrTokens(t, galaerr.StripBOM(src), line, col), nativeTokens(galaerr.StripBOM(src), line, col)); d != "" {
+		if d := firstTokenDiff(antlrTokens(t, src, line, col), nativeTokens(src, line, col)); d != "" {
 			t.Errorf("the lexers disagree at %d:%d: %s", line, col, d)
 		}
 	}
@@ -122,8 +119,8 @@ func engineSeeds(tb testing.TB) []string {
 		"main\n\nval x = 1\n",
 		"packe main\n\nval x = 1\n",
 		"packag\n\nval x = 1\n",
-		// A syntax error after clean lexing, where ANTLR's parser reads
-		// galop's tokens; an illegal character, a lexical error.
+		// A syntax error after clean lexing, in an interpolation; an
+		// illegal character, a lexical error.
 		"package main\n\nfunc main() {\n    Println(s\"v=${1 +}\")\n}\n",
 		"package main\n\nval s = \"a\uFEFFb\"\n",
 		"package main\n\nval x = 'ab\n",
