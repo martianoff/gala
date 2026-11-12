@@ -156,8 +156,13 @@ func main() = Println(fail())`,
 		},
 		{
 			name: "Go interface",
-			body: `func main() = Println(show(Wide(1)))`,
-			contains: "Wide does not implement fmt.Stringer: it has no method String",
+			// A block-form struct gets no generated String.
+			body: `type Plain struct {
+    ID int
+}
+
+func main() = Println(show(Plain(ID = 1)))`,
+			contains: "Plain does not implement fmt.Stringer: it has no method String",
 		},
 		{
 			name: "Go interface, wrong result",
@@ -257,6 +262,9 @@ func (c Coord) Sum() int = c.X + c.Y
 
 func sum(s Summer) int = s.Sum()
 
+// A shorthand struct implements fmt.Stringer through its generated String.
+struct Tag(n int)
+
 func size(s Seq[int]) int = s.Size()
 func inc(i Incer) {}
 func area(s Shape) float64 = s.Area()
@@ -276,7 +284,7 @@ func main() {
     var t Shape = Circle(1.0)
     t = s
     Println(size(Box[int](1)), area(Circle(1.0)), eq(Point(1, 2)), show(Point(1, 2)), fail(), asShape().Name(), t.Name())
-    Println(area(Holder(Square(1.0)).s), size(Pair[int](2)), sum(Point(1, 2)),ArrayOf[Shape](Circle(1.0), Square(1.0)), sizeOf(Box[string](0)))
+    Println(area(Holder(Square(1.0)).s), size(Pair[int](2)), sum(Point(1, 2)), show(Tag(1)), ArrayOf[Shape](Circle(1.0), Square(1.0)), sizeOf(Box[string](0)))
 }
 `
 	_, err := newInterfaceImplTranspiler().Transpile(input, "")
