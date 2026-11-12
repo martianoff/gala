@@ -89,9 +89,7 @@ A run ends `unsupported:<kind>` when it reaches:
   document with
   an unknown `core` version, which is malformed.
   Each `.out` is what the program prints when built and run with the `gala` CLI; for
-  `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer; so it is for the
-  last line of `interp`, which the transpiler prints wrongly ([#1042](https://github.com/martianoff/gala/issues/1042),
-  [#1043](https://github.com/martianoff/gala/issues/1043)).
+  `panic_match`, which GALA rejects as not exhaustive, it is the spec's own answer.
 - 14 S1 examples from `examples/`: 8 run to the end and print the example's `.out`, 2 end
   in fuel after a prefix of it, 4 are unsupported (`println`, `Some`, `Equal`).
 
@@ -138,12 +136,12 @@ say the programs below behave as the spec says, not that the transpiler is corre
 
 | Verdict | Examples | Generated programs |
 |---|---|---|
-| AGREE | 27 | 1 |
+| AGREE | 28 | 1 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 429 | 34 |
+| UNSUPPORTED | 430 | 34 |
 | INCONCLUSIVE | 0 | 0 |
 
-Examples that run wholly inside the subset and agree with the spec: **27** (ratchet baseline 27).
+Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
 
 ### Constructs
 
@@ -155,29 +153,29 @@ nothing about it.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved |
 |---|---|---|---|
-| `file` | yes | yes: 28 agree | no |
-| `val` | yes | yes: 10 agree | no |
+| `file` | yes | yes: 29 agree | no |
+| `val` | yes | yes: 11 agree | no |
 | `var` | yes | yes: 4 agree | no |
-| `func` | yes | yes: 28 agree | no |
+| `func` | yes | yes: 29 agree | no |
 | `param` | yes | yes: 26 agree | no |
-| `struct` | yes | no: 2 agree | no |
-| `field` | yes | yes: 6 agree | no |
+| `struct` | yes | yes: 3 agree | no |
+| `field` | yes | yes: 7 agree | no |
 | `sealed` | yes | yes: 7 agree | no |
 | `variant` | yes | yes: 7 agree | no |
-| `type-name` | yes | yes: 26 agree | no |
-| `block` | yes | yes: 28 agree | no |
+| `type-name` | yes | yes: 27 agree | no |
+| `block` | yes | yes: 29 agree | no |
 | `if` | yes | yes: 6 agree | no |
 | `return` | yes | yes: 5 agree | no |
 | `assign` | yes | yes: 4 agree | no |
 | `incdec` | not seen | no | no |
-| `int` | yes | yes: 25 agree | no |
+| `int` | yes | yes: 26 agree | no |
 | `bool` | yes | yes: 8 agree | no |
 | `string` | yes | yes: 21 agree | no |
-| `name` | yes | yes: 28 agree | no |
+| `name` | yes | yes: 29 agree | no |
 | `unary` | yes | yes: 5 agree | no |
 | `binary` | yes | yes: 22 agree | no |
-| `call` | yes | yes: 28 agree | no |
-| `select` | yes | yes: 3 agree | no |
+| `call` | yes | yes: 29 agree | no |
+| `select` | yes | yes: 4 agree | no |
 | `paren` | yes | no: 1 agree | no |
 | `tuple` | not seen | no | no |
 | `if-expr` | yes | yes: 10 agree | no |
@@ -191,8 +189,8 @@ nothing about it.
 | `named-arg` | yes | yes: 5 agree | no |
 | `lambda` | yes | yes: 5 agree | no |
 | `type-func` | yes | yes: 3 agree | no |
-| `interp` | yes | yes: 12 agree | no |
-| `interp-text` | yes | yes: 12 agree | no |
+| `interp` | yes | yes: 13 agree | no |
+| `interp-text` | yes | yes: 13 agree | no |
 
 ### Outside the subset
 
@@ -216,10 +214,10 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 | `char-literal` | 2 |
 | `expression-pattern` | 2 |
 | `for` | 2 |
+| `format-string` | 2 |
 | `method` | 2 |
 | `type-Value` | 2 |
 | `type-any` | 2 |
-| `typed-pattern` | 2 |
 
 ### Known disagreements
 
