@@ -423,16 +423,7 @@ func (a Ptr[Array[T]]) Partition(p func(T) bool) Tuple[Ptr[Array[T]], Ptr[Array[
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
-func (a Ptr[Array[T]]) TakeWhile(p func(T) bool) Ptr[Array[T]] {
-    var result = EmptyArray[T]()
-    for i := 0; i < a.elements.Size(); i++ {
-        if !p(a.elements[i]) {
-            return result
-        }
-        result.Append(a.elements[i])
-    }
-    return result
-}
+func (a Ptr[Array[T]]) TakeWhile(p func(T) bool) Ptr[Array[T]] = a.Take(a.prefixLength(p))
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
 func (a Ptr[Array[T]]) DropWhile(p func(T) bool) Ptr[Array[T]] = a.Drop(a.prefixLength(p))

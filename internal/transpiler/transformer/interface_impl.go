@@ -19,7 +19,7 @@ import (
 // type implements the interface under Go's rules: each method the interface
 // declares is in the type's method set with an identical signature. Go has no
 // covariant results, so `Tail() Array[int]` does not implement
-// `Tail() Iterable[int]`. GALA-E0100 reports the first method that fails,
+// `Tail() List[int]` of `Iterable[int, List[int]]`. GALA-E0100 reports the first method that fails,
 // rather than leaving `go build` to report it against the generated code.
 //
 // The check judges only what it can read exactly. A value or slot type it

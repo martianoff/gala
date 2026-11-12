@@ -267,6 +267,9 @@ func TestMutableArrayOpsDifferential(t *testing.T) {
 			below := func(x int) bool { return x < n/8 }
 			p.EqInts("TakeWhile", a.TakeWhile(below).ToGoSlice(), RefTakeWhile(ref, below))
 			p.EqInts("DropWhile", a.DropWhile(below).ToGoSlice(), RefDropWhile(ref, below))
+			span := a.Span(below)
+			p.EqInts("Span.1", span.V1.Get().ToGoSlice(), RefTakeWhile(ref, below))
+			p.EqInts("Span.2", span.V2.Get().ToGoSlice(), RefDropWhile(ref, below))
 			part := a.Partition(isEven)
 			p.EqInts("Partition.1", part.V1.Get().ToGoSlice(), RefFilter(ref, isEven))
 			p.EqInts("Partition.2", part.V2.Get().ToGoSlice(), RefFilter(ref, odd))
@@ -356,6 +359,9 @@ func TestMutableListOpsDifferential(t *testing.T) {
 			below := func(x int) bool { return x < n/8 }
 			p.EqInts("TakeWhile", l.TakeWhile(below).ToGoSlice(), RefTakeWhile(ref, below))
 			p.EqInts("DropWhile", l.DropWhile(below).ToGoSlice(), RefDropWhile(ref, below))
+			span := l.Span(below)
+			p.EqInts("Span.1", span.V1.Get().ToGoSlice(), RefTakeWhile(ref, below))
+			p.EqInts("Span.2", span.V2.Get().ToGoSlice(), RefDropWhile(ref, below))
 			part := l.Partition(isEven)
 			p.EqInts("Partition.1", part.V1.Get().ToGoSlice(), RefFilter(ref, isEven))
 			p.EqInts("Partition.2", part.V2.Get().ToGoSlice(), RefFilter(ref, odd))
