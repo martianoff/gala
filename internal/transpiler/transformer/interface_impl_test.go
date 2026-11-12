@@ -151,7 +151,7 @@ func main() = rank(Mute(1))`,
     val it Iterable[int, List[int]] = ArrayOf(1, 2)
     Println(it.Size())
 }`,
-			contains: "collection_immutable.Array[int] does not implement Iterable[int, List[int]]: method Tail returns collection_immutable.Array[int], not List[int]",
+			contains: "collection_immutable.Array[int] does not implement Iterable[int, collection_immutable.List[int]]: method Tail returns collection_immutable.Array[int], not collection_immutable.List[int]",
 		},
 		{
 			name: "error",
