@@ -28,9 +28,17 @@ func BenchmarkBrokenKeystroke(b *testing.B) {
 		b.Fatal(err)
 	}
 	src := strings.ReplaceAll(string(data), "\r\n", "\n")
-	mid := strings.Index(src[len(src)/2:], "\nfunc ") + len(src)/2
-	call := mid + strings.Index(src[mid:], "builder.Add(") + len("builder.Add(")
-	end := call + strings.Index(src[call:], ")\n")
+	// The same edits as the parser's BenchmarkParseBrokenFile.
+	find := func(from int, sub string) int {
+		i := strings.Index(src[from:], sub)
+		if i < 0 {
+			b.Fatalf("array.gala has no %q after offset %d", sub, from)
+		}
+		return from + i
+	}
+	mid := find(len(src)/2, "\nfunc ")
+	call := find(mid, "builder.Add(") + len("builder.Add(")
+	end := find(call, ")\n")
 	for name, text := range map[string]string{
 		"unfinished declaration": src[:mid] + "\nfunc broken(a int = a +\n" + src[mid:],
 		"unclosed call":          src[:end] + src[end+1:],

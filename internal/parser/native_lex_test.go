@@ -452,7 +452,7 @@ func TestExpressionCheckedNativeMatchesANTLR(t *testing.T) {
 			switch {
 			case !ok:
 				t.Errorf("%q at %d:%d: galop panicked", s.src, s.line, s.col)
-			case fmt.Sprint(err) != fmt.Sprint(wantErr):
+			case errorFields(err) != errorFields(wantErr):
 				t.Errorf("%q at %d:%d: ANTLR error %v, native error %v", s.src, s.line, s.col, wantErr, err)
 			case err != nil:
 				rejected++
@@ -489,7 +489,7 @@ func TestParseExpressionCheckedAtConvertsANTLR(t *testing.T) {
 			switch {
 			case err == nil && !engineParsed:
 				t.Errorf("%q at %d:%d: ANTLR's engine's tree reported as the fallback's", s.src, s.line, s.col)
-			case fmt.Sprint(err) != fmt.Sprint(wantErr):
+			case errorFields(err) != errorFields(wantErr):
 				t.Errorf("%q at %d:%d: ANTLR error %v, converted error %v", s.src, s.line, s.col, wantErr, err)
 			case err == nil:
 				if w, g := treeText(want), got.ToStringTree(); w != g {

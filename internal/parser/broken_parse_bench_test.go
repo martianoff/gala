@@ -11,11 +11,20 @@ import (
 // brokenBenchTexts are collection_immutable's array.gala, about 1,200 lines,
 // broken two ways in its middle: an unfinished declaration, and a call left
 // unclosed as when one is being typed.
-func brokenBenchTexts(src string) map[string]string {
+// It fails b when array.gala no longer has the code it breaks. The language
+// server's BenchmarkBrokenKeystroke makes the same edits.
+func brokenBenchTexts(b *testing.B, src string) map[string]string {
 	src = strings.ReplaceAll(src, "\r\n", "\n")
-	mid := strings.Index(src[len(src)/2:], "\nfunc ") + len(src)/2
-	call := mid + strings.Index(src[mid:], "builder.Add(") + len("builder.Add(")
-	end := call + strings.Index(src[call:], ")\n")
+	find := func(from int, sub string) int {
+		i := strings.Index(src[from:], sub)
+		if i < 0 {
+			b.Fatalf("array.gala has no %q after offset %d", sub, from)
+		}
+		return from + i
+	}
+	mid := find(len(src)/2, "\nfunc ")
+	call := find(mid, "builder.Add(") + len("builder.Add(")
+	end := find(call, ")\n")
 	return map[string]string{
 		"unfinished declaration": src[:mid] + "\nfunc broken(a int = a +\n" + src[mid:],
 		"unclosed call":          src[:end] + src[end+1:],
@@ -34,7 +43,7 @@ func BenchmarkParseBrokenFile(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for name, text := range brokenBenchTexts(string(data)) {
+	for name, text := range brokenBenchTexts(b, string(data)) {
 		b.Run(name, func(b *testing.B) {
 			withEngine(EngineGalop, func() {
 				if len(NewAntlrGalaParser().ParseFile(text).Errors) == 0 {

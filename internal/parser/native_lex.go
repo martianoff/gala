@@ -167,8 +167,9 @@ func (g *nativeParsers) expressionCheckedNative(input string, line, col int, wha
 // (expressionCheckedNative); only a galop panic has ANTLR's parser parse it
 // instead (ParseExpressionConvertedAt). With ANTLR's engine, ANTLR's parser
 // parses it once and its tree is converted. A syntax error names what input
-// is parsed as. engineParsed is whether the tree is the engine's own parse
-// rather than the fallback's: always so with ANTLR's engine.
+// is parsed as. engineParsed is whether there is a tree and it is the
+// engine's own parse rather than the fallback's: always so with ANTLR's
+// engine when it parses.
 func ParseExpressionCheckedAt(input string, line, col int, what string) (expr native.ExpressionNode, engineParsed bool, err error) {
 	return galopParsers.expressionCheckedAt(input, line, col, what)
 }
