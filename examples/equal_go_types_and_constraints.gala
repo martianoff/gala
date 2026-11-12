@@ -1,0 +1,59 @@
+package main
+
+import (
+    "time"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/examples/go_equal_bridge"
+)
+
+// `==` means the same in generic and concrete code. A Go type with an
+// `Equal(T) bool` method compares with it, as a GALA struct does; a type
+// parameter whose constraint embeds comparable compares as one constrained by
+// comparable does.
+
+struct P(name string, xs Array[int])
+
+func (p P) Name() string = p.name
+
+struct Event(at time.Time)
+
+func eq[T comparable](a T, b T) bool = a == b
+
+func eqKey[T Key](a T, b T) bool = a == b
+
+func neKey[T Key](a T, b T) bool = a != b
+
+func eqNamed[T Named](a T, b T) bool = a == b
+
+func countKey[T Key](xs Array[T], x T) int = xs.Count((e) => e == x)
+
+func main() {
+    // A constraint that embeds comparable: GALA values compare by value.
+    val a = P("p", ArrayOf(1, 2))
+    val b = P("p", ArrayOf(1, 2))
+    Println(a == b, eq(a, b), eqKey(a, b), neKey(a, b), eqNamed(a, b), eqKey(a, P("p", ArrayOf(1))))
+    Println(countKey(ArrayOf(a, b, P("q", ArrayOf[int]())), a), eqKey(1, 1), eqKey("x", "y"))
+
+    // time.Time: the same instant in two locations is equal, everywhere.
+    val Noon = time.Date(2026, time.November, 11, 12, 0, 0, 0, time.UTC)
+    val east = Noon.In(time.FixedZone("UTC+3", 3 * 60 * 60))
+    Println(Noon == east, Noon != east, eq(Noon, east), eqKey(Noon, east))
+    Println(Noon == Noon.Add(time.Second), eq(Noon, Noon.Add(time.Second)))
+    Println(ArrayOf(Noon, east).Count((t) => t == Noon), Event(Noon) == Event(east))
+    val at = east match {
+        case Noon => "noon"
+        case _ => "another time"
+    }
+    Println(at)
+
+    // A Go type of our own whose Equal ignores Label.
+    val v1 = Version(Major = 1, Minor = 2, Label = "first")
+    val v2 = Version(Major = 1, Minor = 2, Label = "second")
+    val v3 = Version(Major = 1, Minor = 3, Label = "first")
+    Println(v1 == v2, v1 != v2, eq(v1, v2), eqKey(v1, v2), v1 == v3, eq(v1, v3))
+
+    // Equal on the pointer only: a Loose value has no Equal, so == is Go's.
+    val l1 = Loose(N = 1, Label = "x")
+    val l2 = Loose(N = 1, Label = "y")
+    Println(l1 == l2, eq(l1, l2), l1 == Loose(N = 1, Label = "x"))
+}

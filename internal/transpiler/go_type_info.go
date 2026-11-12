@@ -94,6 +94,15 @@ type GoTypeData struct {
 	// it is, or holds by value, a slice, map or function. It is false when the
 	// type is comparable or that is not known, as for a generic type.
 	Incomparable bool
+	// EmbedsComparable is true for an interface that embeds comparable,
+	// directly or through another interface it embeds. A type parameter it
+	// constrains is comparable, and == on it compares as on one constrained
+	// by comparable.
+	EmbedsComparable bool
+	// SelfEqual is true when the value method set of this (non-generic,
+	// non-interface) type has `Equal(T) bool` with T the type itself, as
+	// time.Time's does: == on it calls that Equal.
+	SelfEqual bool
 }
 
 // NewGoTypeInfo creates an empty GoTypeInfo.

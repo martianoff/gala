@@ -160,6 +160,25 @@ func main() { Println(describe(Post(ListOf("intro")))) }`, want: []string{".Equa
 func differ[T comparable](a T, b T) bool = a != b
 
 func main() { Println(same(ListOf(1), ListOf(1)), differ(1, 2)) }`, want: []string{"return std.EqualComparable(a, b)", "return !std.EqualComparable(a, b)"}},
+		{name: "Go type with an Equal of its own", src: `import "time"
+
+func same(a time.Time, b time.Time) bool = a == b
+
+func differ(a time.Time, b time.Time) bool = a != b
+
+func main() { Println(same(time.Unix(0, 0), time.Unix(0, 0)), differ(time.Unix(0, 0), time.Unix(1, 0))) }`, want: []string{"return a.Equal(b)", "return !a.Equal(b)"}},
+		{name: "struct field of a Go type with an Equal", src: `import "time"
+
+struct Ev(at time.Time)
+
+func (e Ev) Equal(o Ev) bool = e.at == o.at
+
+func main() { Println(Ev(time.Unix(0, 0)) == Ev(time.Unix(0, 0))) }`, want: []string{"e.at.Get().Equal(o.at.Get())"}},
+		{name: "Go slice type with an Equal of its own", src: `import "net"
+
+func same(a net.IP, b net.IP) bool = a == b
+
+func main() { Println(same(net.IPv4(1, 2, 3, 4), net.IPv4(1, 2, 3, 4))) }`, want: []string{"return a.Equal(b)"}},
 		{name: "a field compared inside another type's Equal", src: `struct W(xs List[int])
 
 func (w W) Equal(o W) bool = w.xs == o.xs
@@ -244,11 +263,16 @@ func main() { Println(same(1, ArrayOf(1))) }`, want: "return a == b"},
 		{name: "comparisons with nil", src: `func f(g func(int) int, m map[string]int, s []int) bool = g == nil || m != nil || nil == s
 
 func main() { Println(f(nil, nil, nil)) }`, want: "return g == nil || m != nil || nil == s"},
-		{name: "Go comparable struct", src: `import "time"
+		{name: "Go comparable struct with no Equal", src: `import "image"
 
-func same(a time.Time, b time.Time) bool = a == b
+func same(a image.Point, b image.Point) bool = a == b
 
-func main() { Println(same(time.Unix(0, 0), time.Unix(0, 0))) }`, want: "return a == b"},
+func main() { Println(same(image.Pt(0, 0), image.Pt(0, 0))) }`, want: "return a == b"},
+		{name: "pointer to a Go type with an Equal", src: `import "time"
+
+func same(a *time.Time, b *time.Time) bool = a == b
+
+func main() { Println(same(nil, nil)) }`, want: "return a == b"},
 		{name: "mutable collections by pointer", src: `import "martianoff/gala/collection_mutable"
 
 func same(a *collection_mutable.Array[int], b *collection_mutable.Array[int]) bool = a == b

@@ -4022,6 +4022,18 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# `==` on a Go type with an Equal method, and on a type parameter whose
+# constraint embeds comparable, compares as it does in generic code.
+gala_exec_test(
+    name = "equal_go_types_and_constraints",
+    src = "equal_go_types_and_constraints.gala",
+    expected = "equal_go_types_and_constraints.out",
+    deps = [
+        "//collection_immutable",
+        "//examples/go_equal_bridge",
+    ],
+)
+
 # Sealed-case widening at function-call argument sites (cross-package
 # dot-import; the gala_team Status shape).  Both positional and
 # named-arg construction must widen to the parent sealed type, the
