@@ -250,9 +250,13 @@ jobs:
 
       - name: Differential run
         if: steps.spec.outputs.defined == 'true'
+        # The fuel is enough for examples/tco_deep_sum's million nested calls.
+        # --nocache_test_results: galaspec is not a Bazel input, so a cached
+        # result could predate a change to the spec.
         run: |
           bazel test //internal/formal/difftest/differential:differential_test \
             --test_env=GALA_SPEC_BIN \
+            --test_env=GALA_SPEC_FUEL=100000000 \
             --nocache_test_results \
             --nozip_undeclared_test_outputs \
             --test_output=errors --verbose_failures \

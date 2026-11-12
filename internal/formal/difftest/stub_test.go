@@ -56,6 +56,14 @@ func TestHarnessWithStub(t *testing.T) {
 			triage: TriageOracle,
 		},
 		{
+			// The .out of an example holds stdout and stderr together, so it
+			// says nothing about the stdout of a program that wrote to stderr.
+			name:   "no oracle for a program that writes to stderr",
+			body:   "    println(\"x\")\n",
+			oracle: &Run{Stdout: "x\n", Outcome: Outcome{Kind: KindOK}},
+			want:   Comparison{Verdict: Agree},
+		},
+		{
 			name: "unsupported by the exporter",
 			body: "    val f = (x int) => x\n    Println(f(1))\n",
 			want: Comparison{Verdict: Unsupported, Reason: "outside the spec's subset: lambda"},

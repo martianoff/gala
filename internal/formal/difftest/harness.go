@@ -62,12 +62,18 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
 	rec := Record{ID: p.ID, Source: p.Source, Constructs: constructs, Spec: spec.Outcome}
-	var real Run
+	var (
+		real   Run
+		stderr string
+	)
 	if NeedsReal(spec.Outcome) {
-		real = realRun(tb, p)
+		real, stderr = realRun(tb, p)
 	}
 	rec.Comparison = Compare(spec, real)
-	if p.Oracle != nil {
+	// An example's .out holds stdout and stderr together (the example test
+	// compares combined output), so it is no oracle for the stdout of a
+	// program that also wrote to stderr: its builtin println, say.
+	if p.Oracle != nil && (stderr == "" || real.Outcome.Kind != KindOK) {
 		rec.Triage = ThreeWay(spec, real, *p.Oracle)
 		if rec.Verdict == Disagree && rec.Triage != TriageNone {
 			rec.Reason += " [triage: " + string(rec.Triage) + "]"
@@ -76,35 +82,39 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 	return rec
 }
 
-// realRun transpiles, builds and runs p with the real toolchain. A program
-// the transpiler or the Go compiler rejects is a KindRejected outcome.
-func realRun(tb testing.TB, p Program) Run {
+// realRun transpiles, builds and runs p with the real toolchain, and returns
+// the run and what it wrote to stderr. A program the transpiler or the Go
+// compiler rejects is a KindRejected outcome.
+func realRun(tb testing.TB, p Program) (Run, string) {
 	tb.Helper()
+	rejected := func(detail string) (Run, string) {
+		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, ""
+	}
 	if p.Lib != "" {
 		progrun.WriteLibrary(tb, p.LibPath, p.Lib)
 	}
 	res := progrun.Transpile(tb, p.Text, p.Path)
 	switch {
 	case res.Panic != nil:
-		return Run{Outcome: Outcome{Kind: KindRejected, Detail: "the transpiler panicked"}}
+		return rejected("the transpiler panicked")
 	case res.Err != nil:
-		return Run{Outcome: Outcome{Kind: KindRejected, Detail: "the transpiler rejected it: " + firstLine(res.Err.Error())}}
+		return rejected("the transpiler rejected it: " + firstLine(res.Err.Error()))
 	}
 	// Type-checking loads every GALA package the program imports into the
 	// importer, which progrun.Run then writes out as Go.
 	imp := progrun.OracleImporter(tb)
 	if tc := imp.TypeCheck("main.go", res.Go); tc.Skipped != "" || len(tc.Errors) > 0 {
-		return Run{Outcome: Outcome{Kind: KindRejected, Detail: "go type-check: " + firstLine(tc.Skipped+strings.Join(tc.Errors, "\n"))}}
+		return rejected("go type-check: " + firstLine(tc.Skipped+strings.Join(tc.Errors, "\n")))
 	}
 	out, err := progrun.Run(tb, imp, res.Go)
 	if err != nil {
 		var build *progrun.Error
 		if errors.As(err, &build) {
-			return Run{Outcome: Outcome{Kind: KindRejected, Detail: build.Step + ": " + firstLine(build.Out)}}
+			return rejected(build.Step + ": " + firstLine(build.Out))
 		}
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	return Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}
+	return Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}, out.Stderr
 }
 
 // firstLine is the first line of a diagnostic, past the "# package" header
