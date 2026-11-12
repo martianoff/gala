@@ -138,7 +138,7 @@ say the programs below behave as the spec says, not that the transpiler is corre
 |---|---|---|
 | AGREE | 28 | 1 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 430 | 34 |
+| UNSUPPORTED | 431 | 34 |
 | INCONCLUSIVE | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -203,8 +203,8 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 | `index` | 72 |
 | `generic-type` | 53 |
 | `generic-decl` | 15 |
+| `address-of` | 9 |
 | `unresolved-name` | 9 |
-| `address-of` | 8 |
 | `float-literal` | 8 |
 | `composite-literal` | 7 |
 | `local-struct` | 4 |
