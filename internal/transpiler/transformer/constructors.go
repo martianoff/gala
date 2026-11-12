@@ -637,7 +637,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 
 	// Transform the elements
 	var elts []ast.Expr
-	given := make(map[string]ast.Expr) // the fields a keyed literal names, to the values it gives them
+	given := make(map[string]bool) // the fields a keyed literal names
 	keyed := false
 	for _, el := range c.elems() {
 		if el.key.ok() {
@@ -653,7 +653,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 			keyed = true
 			// Wrap value with NewImmutable() if the field is immutable (val, not var)
 			if keyIdent, ok := key.(*ast.Ident); ok {
-				given[keyIdent.Name] = value
+				given[keyIdent.Name] = true
 				if idx, found := fieldIndex[keyIdent.Name]; found {
 					if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
 						// Reject nil assignment to immutable (val) fields — use Option[T] instead
@@ -688,22 +688,16 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 		}
 		// The fields a keyed literal leaves out take their declared defaults,
 		// or their types' default values (see fillOmittedStructFields).
-		// A default that reads a field the literal gives reads that value
-		// once: the literal keeps a call frame of its own (see
-		// call_order.go).
 		if len(fields) > 0 && !meta.IsSealed && (len(elts) == 0 || keyed) {
-			frame := &callFrame{}
-			t.callFrames = append(t.callFrames, frame)
-			omitted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields,
-				func(_ int, name string) bool { return given[name] != nil },
-				func(i int) ast.Expr { return given[fields[i]] },
-				typeArgSubst, line, col, false, nil)
-			t.callFrames = t.callFrames[:len(t.callFrames)-1]
+			omitted, err := inOwnCallFrame(t, func() ([]ast.Expr, error) {
+				return t.fillOmittedStructFields(typeName, resolvedTypeName, fields,
+					func(_ int, name string) bool { return given[name] },
+					typeArgSubst, line, col, false, nil)
+			})
 			if err != nil {
 				return nil, err
 			}
 			elts = append(elts, omitted...)
-			return t.sequenceCall(&ast.CompositeLit{Type: typeExpr, Elts: elts}, nil, frame, line, col)
 		}
 	}
 

@@ -123,12 +123,6 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 			params = append(params, p)
 		}
 	}
-	// A default that reads another field is evaluated once that field is
-	// known, which the options form, its defaults set ahead of the options,
-	// cannot express: such a case has no Go constructor.
-	if applyMeta != nil && t.defaultsReadParams(applyMeta.DefaultExprs, applyMeta.ParamNames) {
-		return nil, nil
-	}
 	doc := fmt.Sprintf("%s returns the %s case of %s", ctorName, vi.name, parent)
 	var tail string
 	if comp := t.getTypeMeta(vi.name); comp != nil && comp.Doc != "" {
@@ -163,11 +157,6 @@ func (t *galaASTTransformer) structGoConstructor(name string, fieldNames []strin
 	if meta == nil || !structCtorEligible(meta, fieldNames) {
 		return nil, "", nil
 	}
-	// See sealedCaseConstructor: a default that reads another field has no
-	// options form.
-	if t.fieldDefaultsReadFields(meta, fieldNames) {
-		return nil, "", nil
-	}
 	structType := t.buildGenericTypeExpr(name, tParams)
 	fieldTypes, immutFlags := t.structFieldTypes[name], t.structImmutFields[name]
 	// A default naming the struct's type parameters means the constructor's.
@@ -186,7 +175,7 @@ func (t *galaASTTransformer) structGoConstructor(name string, fieldNames []strin
 		parent: name,
 		params: params,
 		defaultOf: func(i int) (ast.Expr, error) {
-			return t.declaredFieldDefault(meta, fieldNames[i], fieldTypes[fieldNames[i]], selfArgs, nil, nil, line, col)
+			return t.declaredFieldDefault(meta, fieldNames[i], fieldTypes[fieldNames[i]], selfArgs, line, col)
 		},
 		build: func(args []ast.Expr) ast.Expr {
 			elts := make([]ast.Expr, len(args))

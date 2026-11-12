@@ -324,8 +324,11 @@ func main() {
 }
 ```
 
-Struct field and sealed case field defaults follow the same rule: a field's
-default may read the fields before it, as in `struct Rect(W int, H int = W)`.
+Field defaults are stricter. The default of a struct field or a sealed case
+field may not read any field of its own struct or case, before or after it
+([GALA-E0098](/docs/errors/gala-e0098/)), as in Scala: `struct Rect(W int, H int = W)`
+is an error. Compute such a field in a constructor function instead. A field
+default may still read package-level names and constants.
 
 Expression functions also support defaults:
 
@@ -505,7 +508,7 @@ A named argument that names no field is [GALA-E0045](/docs/errors/gala-e0045/), 
 
 Outside its own package, a struct is constructible by call syntax only when every field the call sets is exported. For the shorthand form that is every field, since an omitted one takes its default in the same literal, so `lib.Box(1)` for `struct Box(N int, seen bool = false)` is [GALA-E0043](/docs/errors/gala-e0043/). Call a constructor function the package exports, or start from the zero value `lib.Box{}`.
 
-For Go callers, which build a struct as a composite literal and so skip its defaults, an exported shorthand struct whose fields are all exported gets a constructor `New<T>(...)`: each field without a default is a parameter, and each field with one is an option, `With<T><Field>(v)`, applied over its default. `struct Cfg(Name string, Tries int = 3)` gives Go `NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package already declares, nor when a field's default reads another field. See the [Go interop guide](/docs/go-interop/#shorthand-structs-have-go-constructors).
+For Go callers, which build a struct as a composite literal and so skip its defaults, an exported shorthand struct whose fields are all exported gets a constructor `New<T>(...)`: each field without a default is a parameter, and each field with one is an option, `With<T><Field>(v)`, applied over its default. `struct Cfg(Name string, Tries int = 3)` gives Go `NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package already declares. See the [Go interop guide](/docs/go-interop/#shorthand-structs-have-go-constructors).
 
 ### Automatic Copy and Equal Methods
 

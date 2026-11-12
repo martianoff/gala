@@ -661,6 +661,10 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		if err := transformer.CheckReservedPrefixNative(root); err != nil {
 			return nil, err
 		}
+		// GALA-E0098: a field default reads no field.
+		if err := checkFieldDefaultsNative(root); err != nil {
+			return nil, err
+		}
 	}
 
 	clause := packageClauseNative(root, docs)

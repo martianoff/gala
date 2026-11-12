@@ -14,7 +14,7 @@ var undefinedInputs = []struct {
 
 import "martianoff/gala/collection_immutable"
 
-struct Point(x int = origin, y int = x)
+struct Point(x int = origin, y int = 0)
 
 val (left, right) = (1, two)
 

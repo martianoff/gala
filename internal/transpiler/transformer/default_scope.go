@@ -211,30 +211,6 @@ func (t *galaASTTransformer) packageNameAlias(name string, src defaultSource) (a
 	return ast.NewIdent(alias), nil
 }
 
-// defaultsReadParams reports whether one of defaults reads a parameter of
-// names. A default that does not parse reads none; lowering it reports it.
-func (t *galaASTTransformer) defaultsReadParams(defaults map[int]transpiler.DefaultExpr, names []string) bool {
-	for _, d := range defaults {
-		def, err := t.parseExprAt(d.Text, d.Pos.Line, d.Pos.Column, "default value")
-		if err == nil && spellsAny(def, names) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// fieldDefaultsReadFields reports whether a field default of the struct meta
-// describes reads one of its fields.
-func (t *galaASTTransformer) fieldDefaultsReadFields(meta *transpiler.TypeMetadata, fields []string) bool {
-	defaults := map[int]transpiler.DefaultExpr{}
-	for i, f := range fields {
-		if d, ok := meta.FieldDefaults[f]; ok {
-			defaults[i] = d
-		}
-	}
-	return t.defaultsReadParams(defaults, fields)
-}
-
 // substituteFree replaces each free identifier of expr — a reference, not a
 // member or a name a function literal of expr binds — by what with returns
 // for its name, when that is not nil, in one pass: a replacement is not

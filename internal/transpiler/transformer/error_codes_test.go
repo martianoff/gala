@@ -609,6 +609,78 @@ func main() = Println(_gala_Id(1))`,
 			expectContains: "identifier _gala_Id starts with _gala_",
 		},
 		{
+			name: "GALA-E0098 struct field default reads an earlier field",
+			input: `package main
+
+struct Rect(W int, H int = W)
+
+func main() = Println(Rect(2).H)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "error_codes_test.gala:3:27 the default value of field H reads field W of Rect (hint: a field default may not read a field of its type; give H a default that reads no field, or compute it in a constructor function instead)",
+		},
+		{
+			name: "GALA-E0098 struct field default reads a field inside an expression",
+			input: `package main
+
+struct Rect(W int, H int = (W * 2) + 1)
+
+func main() = Println(Rect(2).H)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field H reads field W of Rect",
+		},
+		{
+			name: "GALA-E0098 struct field default reads a later field",
+			input: `package main
+
+struct Rect(H int = W, W int = 1)
+
+func main() = Println(Rect().H)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field H reads field W of Rect",
+		},
+		{
+			name: "GALA-E0098 struct field default reads itself",
+			input: `package main
+
+struct Counter(N int = N + 1)
+
+func main() = Println(Counter().N)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field N of Counter reads N itself",
+		},
+		{
+			name: "GALA-E0098 field default reads a field in an interpolated string",
+			input: `package main
+
+struct Label(Name string, Text string = s"hi $Name")
+
+func main() = Println(Label("a").Text)`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field Text reads field Name of Label",
+		},
+		{
+			name: "GALA-E0098 field default reads a field in a lambda body",
+			input: `package main
+
+struct Scaler(K int, F func(int) int = (x int) => x * K)
+
+func main() = Println(Scaler(2).F(3))`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "the default value of field F reads field K of Scaler",
+		},
+		{
+			name: "GALA-E0098 sealed case field default reads a field",
+			input: `package main
+
+sealed type Shape {
+    case Box(W int, H int = W)
+}
+
+func main() = Println(Box(2))`,
+			expectCode:     galaerr.CodeFieldDefaultReadsField,
+			expectContains: "error_codes_test.gala:4:28 the default value of field H reads field W of Box",
+		},
+		{
 			// A type argument: Some(x) is std.Some[T], and T here is the
 			// receive-only signal channel ctx.Done() returns.
 			name: "GALA-E0090 anonymous struct type as a type argument",

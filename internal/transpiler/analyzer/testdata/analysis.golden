@@ -981,5 +981,5 @@ undefined: binders: main.gala	90a0015682a698ae	9270e21219a3433d
 undefined: method signature allowance: a.gala	dc45b72813b797a9	6a3e4a018b2139a6
 undefined: method signature allowance: b.gala	dc45b72813b797a9	cdc276e56970b633
 undefined: types: main.gala	d75eaefed1cb4072	120dbe92b481f107
-undefined: values: main.gala	ff3b21a1ba3d0e9c	6ba77793f913f4f1
+undefined: values: main.gala	a0b47bceb45dd4e5	6ba77793f913f4f1
 val inference 0: main.gala	1a22aa340b9ac991	dc5b2c2738267851

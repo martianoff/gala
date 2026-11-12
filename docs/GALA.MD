@@ -453,8 +453,11 @@ func main() {
 }
 ```
 
-Struct field and sealed case field defaults follow the same rule: a field's
-default may read the fields before it, as in `struct Rect(W int, H int = W)`.
+Field defaults are stricter. The default of a struct field or a sealed case
+field may not read any field of its own struct or case, before or after it
+([GALA-E0098](errors/GALA-E0098.md)), as in Scala: `struct Rect(W int, H int = W)`
+is an error. Compute such a field in a constructor function instead. A field
+default may still read package-level names and constants.
 
 Expression functions also support defaults:
 
@@ -801,6 +804,9 @@ rule [default parameter values](#default-parameter-values) follow:
 struct Entry(Msg string, At time.Time = time.Now())
 ```
 
+A field default may not read a field of the struct, its own or another
+([GALA-E0098](errors/GALA-E0098.md)); it may read package-level names.
+
 Omitting a field that declares **no** default is an error
 ([GALA-E0045](errors/GALA-E0045.md)), so a constructor call cannot quietly leave
 a zero where a value belongs:
@@ -826,7 +832,7 @@ constructor `New<T>(...)`: each field without a default is a parameter, and
 each field with one is an option, `With<T><Field>(v)`, applied over its
 default. `struct Cfg(Name string, Tries int = 3)` gives Go
 `NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package
-already declares, nor when a field's default reads another field. See the
+already declares. See the
 [Go interop guide](GO_INTEROP.MD#shorthand-structs-have-go-constructors).
 
 ##### What stays partial, and why
@@ -1498,7 +1504,9 @@ func main() {
 ```
 
 Fields with defaults come after the fields without
-([`GALA-E0013`](errors/GALA-E0013.md)). A default case's defaults also make
+([`GALA-E0013`](errors/GALA-E0013.md)), and, like a struct field's, a case
+field's default may not read a field of its case
+([GALA-E0098](errors/GALA-E0098.md)). A default case's defaults also make
 the type's [default value](#default-values): what an uninitialized `var` or an
 omitted field holds.
 

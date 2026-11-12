@@ -14,8 +14,8 @@ last_modified_at: 2026-11-11
 **When it fires.** A parameter's default value reads its own parameter or one
 declared after it. A default is evaluated in the callee's scope, left to
 right, with only the parameters before it bound, so a later parameter has no
-value yet. The same holds for the field defaults of a struct or a sealed case.
-The error is reported where a call leaves the argument out and the default is
+value yet. A field default of a struct or a sealed case may read no field at
+all (GALA-E0098). The error is reported where a call leaves the argument out and the default is
 evaluated.
 
 **Minimal repro.**
