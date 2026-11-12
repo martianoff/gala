@@ -1,7 +1,7 @@
 package main
 
 // In s"...", a `%` is literal text: format specs exist only in f"...".
-// An escape that stands for `%` (`\x25`, `\045`, `%`) is a literal
+// An escape that stands for `%` (`\x25`, `\045`, `\u0025`) is a literal
 // `%` in both.
 
 func main() {
@@ -17,7 +17,7 @@ func main() {
 
     // An escape for % is a literal %, not a format verb.
     Println(s"a $n \x25d")
-    Println(s"a $n \045d %s")
+    Println(s"a $n \045d \u0025s")
     Println(s"no exprs \x25d")
     Println(f"$n%03d \x25d")
 

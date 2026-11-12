@@ -233,6 +233,10 @@ func firstInvalidEscapeInterp(text string) (badEscape, bool) {
 				return explainEscape(text, i, escapeInString), true
 			}
 			i += length
+		case text[i] == '$' && i+1 < len(text) && text[i+1] == '$':
+			// `$$` is a literal `$`, as interpolation.Split reads it: a
+			// `{` after it starts literal text, not an expression.
+			i += 2
 		case text[i] == '$' && i+1 < len(text) && text[i+1] == '{':
 			i = interpolation.EndOfEmbeddedExpr(text, i) + 1
 		default:

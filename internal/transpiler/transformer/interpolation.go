@@ -138,7 +138,7 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 
 	// Build the format string, decoded, and the argument list. A literal
 	// run's escapes are decoded before its `%`s are doubled, so an escape
-	// that stands for `%` (`\x25`, `\045`, `%`) is text, not a verb.
+	// that stands for `%` (`\x25`, `\045`, `\u0025`) is text, not a verb.
 	var formatBuf strings.Builder
 	var args []ast.Expr
 
