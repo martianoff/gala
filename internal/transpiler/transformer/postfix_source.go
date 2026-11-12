@@ -199,7 +199,11 @@ func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes [
 		switch s.opener() {
 		case "(":
 			t.suffixShape(s, "call")
-			return t.applyGoCallSuffix(base, callSrc{post: p, suffix: s, args: s.args()})
+			args := s.args()
+			if err := checkPositionalAfterNamed(args); err != nil {
+				return nil, err
+			}
+			return t.applyGoCallSuffix(base, callSrc{post: p, suffix: s, args: args})
 		case "[":
 			t.suffixShape(s, "index")
 			return t.resolveIndexAccess(base, indexSrc{s})

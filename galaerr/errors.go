@@ -960,6 +960,11 @@ const (
 	// The lambda would be lowered against `any`; the call writes the type
 	// arguments instead.
 	CodeConstraintInference ErrorCode = "GALA-E0104"
+
+	// E0105: a positional argument written after a named one, in any call:
+	// a function or method call, a struct or sealed-case construction, a
+	// Copy. Once an argument is named, every later argument is named too.
+	CodePositionalAfterNamed ErrorCode = "GALA-E0105"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

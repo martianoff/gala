@@ -1593,6 +1593,20 @@ func main() {
 			},
 		},
 		{
+			name: "positional argument after a named one",
+			code: galaerr.CodePositionalAfterNamed, // GALA-E0105
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func divide(dividend int, divisor int) int = dividend / divisor
+
+func main() {
+    Println(divide(dividend = 20, 4))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

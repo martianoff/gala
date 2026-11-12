@@ -246,9 +246,23 @@ func divide(dividend int, divisor int) int = dividend / divisor
 
 divide(divisor = 4, dividend = 20)  // 5 — reordered to divide(20, 4)
 divide(20, 4)                        // 5 — positional works too
+divide(20, divisor = 4)              // 5 — positional first, then named
 ```
 
 Named arguments work with struct construction, `Copy()` method overrides, and regular function calls.
+
+Positional arguments come first. Once an argument is named, every argument
+after it is named too, in every call form: function and method calls, struct
+and sealed case constructors, and `Copy()`. A positional argument after a named
+one is [GALA-E0105](/docs/errors/gala-e0105/):
+
+<!-- doc-check: error GALA-E0105 -->
+```gala
+func divide(dividend int, divisor int) int = dividend / divisor
+
+val q = divide(dividend = 20, 4)
+// error[GALA-E0105]: positional argument `4` follows named argument `dividend`
+```
 
 Named arguments are evaluated in the order they are written, then passed in
 parameter order. This holds for function and method calls, struct and sealed

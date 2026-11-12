@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -3054,22 +3055,31 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 }
 
-// checkPositionalBeforeNamed reports a positional argument written after a
-// named one in a construction of qualifiedName: positional arguments fill the
-// leading fields, so one after a named argument has no field to take.
-func checkPositionalBeforeNamed(qualifiedName string, args argsSrc) error {
-	named := false
+// checkPositionalAfterNamed reports the first positional argument written
+// after a named one in args, the arguments of any call (GALA-E0105): once an
+// argument is named, every later one is named too. Positional arguments fill
+// the leading parameters or fields, so one after a named argument has no
+// position to take.
+func checkPositionalAfterNamed(args argsSrc) error {
+	var firstNamed string
 	for _, arg := range args.list {
-		if arg.named() {
-			named = true
+		if name, _ := arg.name(); name != "" {
+			if firstNamed == "" {
+				firstNamed = name
+			}
 			continue
 		}
-		if named {
-			line, col := arg.at().start()
-			return galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField,
-				line, col,
-				fmt.Sprintf("a positional argument follows a named one in construction of %q", qualifiedName),
-				"put the positional arguments first, or name this one too")
+		if firstNamed != "" {
+			// The argument is quoted when it is short and on one line; the
+			// span underlines it either way.
+			quoted := "a positional argument"
+			if text := arg.at().sourceText(); utf8.RuneCountInString(text) <= 40 && !strings.ContainsAny(text, "\n\r") {
+				quoted = "positional argument `" + text + "`"
+			}
+			r := arg.at().rng()
+			return spanErrorAt(galaerr.CodePositionalAfterNamed, r, r,
+				fmt.Sprintf("%s follows named argument `%s`", quoted, firstNamed),
+				"name it, or move it before the named arguments")
 		}
 	}
 	return nil
@@ -3085,11 +3095,8 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 	if len(args) == 0 {
 		return namedArgs, nil
 	}
-	if err := checkPositionalBeforeNamed(qualifiedName, list); err != nil {
-		return nil, err
-	}
-	// The positional arguments come first (checked just now), so argument i of
-	// the list is args[i].
+	// The positional arguments come first (checkPositionalAfterNamed, run on
+	// every call), so argument i of the list is args[i].
 	bound := maps.Clone(namedArgs)
 	for i, arg := range args[:min(len(args), len(fields))] {
 		if a := list.list[i]; a.spread() {

@@ -152,6 +152,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0102](/docs/errors/gala-e0102/) | Unused local val or var | Declarations |
 | [GALA-E0103](/docs/errors/gala-e0103/) | Function type used as a value | Types |
 | [GALA-E0104](/docs/errors/gala-e0104/) | Type parameter only a constraint determines cannot be inferred | Types |
+| [GALA-E0105](/docs/errors/gala-e0105/) | Positional argument after a named argument | Functions |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
