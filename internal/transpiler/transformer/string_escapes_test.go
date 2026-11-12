@@ -126,6 +126,13 @@ func TestInvalidStringEscapeRejected(t *testing.T) {
 			wantCol: 22,
 		},
 		{
+			// `$$` is a literal `$`, so the braces after it are text.
+			name:    "invalid escape in braces after an escaped dollar",
+			body:    `    val s = s"$${\d} ${1}"`,
+			wantMsg: `invalid escape sequence "\d" in interpolated string literal (s"...")`,
+			wantCol: 17,
+		},
+		{
 			name:    "invalid escape in a format string literal",
 			body:    `    val s = f"pattern \d ok"`,
 			wantMsg: `invalid escape sequence "\d" in format string literal (f"...")`,
