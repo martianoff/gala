@@ -507,16 +507,18 @@ func hashAddress(a uint64) uint32 {
 }
 
 // FormatStruct formats a struct as GALA prints it, `Name(field, field, …)`.
-// The String method generated on every shorthand struct calls it. Each field
-// prints as fmt's %v prints it, so a nested struct, sealed value, collection,
-// Option or tuple prints in its own format; a field held in an Immutable
-// prints the value it holds, and a function field prints as <fn>.
+// The String method generated on every shorthand struct and every sealed
+// type (Option, Either and Try among them) calls it. Each field prints as
+// fmt's %v prints it, so a nested struct, sealed value, collection, Option or
+// tuple prints in its own format; a field held in an Immutable prints the
+// value it holds, and a function field prints as <fn>.
 //
-// A pointer field prints the value it points to, but for a pointer to a
-// struct with no String method of its own, which prints its address as %v
-// does. A pointer field this goroutine is already printing, reached again
-// through a cycle, prints as <cycle>, so a value that refers to itself through
-// a pointer field prints instead of recursing without end.
+// A pointer field prints the value it points to; a pointer to a struct with
+// no String method of its own, such as a Go struct, prints as %v prints a
+// pointer operand, `&{field field}`. A pointer field this goroutine is
+// already printing, reached again through a cycle, prints as <cycle>, so a
+// value that refers to itself through a pointer field prints instead of
+// recursing without end.
 func FormatStruct(name string, fields ...any) string {
 	var b strings.Builder
 	b.WriteString(name)
@@ -538,30 +540,62 @@ func formatField(b *strings.Builder, f any) {
 	case v.Kind() == reflect.Func:
 		b.WriteString("<fn>")
 	case v.Kind() == reflect.Pointer && !v.IsNil():
+		// Printing what the pointer points to can lead back here — a value
+		// that prints itself (a GALA struct, a mutable collection) by its
+		// method, a Go struct by the fields %v prints: the cycle guard.
+		key := printingKey{goroutineID(), v.Pointer(), v.Type()}
+		if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
+			b.WriteString("<cycle>")
+			return
+		}
+		defer printing.Delete(key)
 		switch f.(type) {
 		case fmt.Stringer, fmt.Formatter, error:
-			// A pointer to a value that prints itself (a GALA struct, a
-			// mutable collection) prints by its method, which can lead
-			// back here: the cycle guard.
-			key := printingKey{goroutineID(), v.Pointer(), v.Type()}
-			if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
-				b.WriteString("<cycle>")
-				return
-			}
-			defer printing.Delete(key)
 			fmt.Fprint(b, f)
 		default:
 			if v.Elem().Kind() == reflect.Struct {
-				// A Go struct: its address, as %v prints a nested pointer,
-				// rather than reading its fields (a lock, a file) here.
-				fmt.Fprintf(b, "%p", f)
+				// A Go struct: `&{field field}`, as %v prints a pointer
+				// operand.
+				fmt.Fprint(b, f)
 				return
 			}
 			fmt.Fprint(b, v.Elem().Interface())
 		}
 	default:
+		if s, ok := pointerString(v); ok {
+			b.WriteString(s)
+			return
+		}
 		fmt.Fprint(b, f)
 	}
+}
+
+// stringerType is fmt.Stringer's type.
+var stringerType = reflect.TypeFor[fmt.Stringer]()
+
+// pointerString is the text of v, a value whose type declares String on a
+// pointer receiver only, as that String gives it for a copy of v (see
+// PtrString); ok is false for any other value, which fmt prints itself.
+func pointerString(v reflect.Value) (string, bool) {
+	if !v.IsValid() || v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface || v.Type().Name() == "" ||
+		v.Type().Implements(stringerType) || !reflect.PointerTo(v.Type()).Implements(stringerType) {
+		return "", false
+	}
+	p := reflect.New(v.Type())
+	p.Elem().Set(v)
+	return p.Interface().(fmt.Stringer).String(), true
+}
+
+// PtrString is the text of v, whose type declares `String() string` on a
+// pointer receiver: GALA prints such a value by calling that String on a
+// copy of it, as fmt would on the value's address. Println, Print and
+// interpolation call it for such a value; FormatStruct does the same for a
+// field.
+func PtrString[T any, P interface {
+	*T
+	String() string
+}](v T) string {
+	return P(&v).String()
 }
 
 // printingKey names a pointer one goroutine is printing. The type tells a

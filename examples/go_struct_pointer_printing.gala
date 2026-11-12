@@ -1,0 +1,48 @@
+package main
+
+import (
+    "errors"
+    "strings"
+)
+
+// A pointer to a Go struct prints what it points to, as `&{field field}`,
+// wherever GALA prints it: a struct field, a sealed case, and the payload of
+// Option, Either and Try.
+
+// The block form mirrors a Go struct: it has no String of its own.
+type Raw struct {
+    A int
+    B string
+}
+
+struct Wrap(R *Raw, Reader *strings.Reader)
+
+sealed type Source {
+    case FromRaw(R *Raw)
+    case Nothing()
+}
+
+// A Go struct that points back to the GALA value holding it.
+type Link struct {
+    Back *Holder
+}
+
+struct Holder(Name string, var L *Link)
+
+func main() {
+    val raw = &Raw(A = 1, B = "b")
+    val reader = strings.NewReader("ab")
+
+    Println(Wrap(raw, reader))
+    Println(FromRaw(raw))
+    Println(Some(raw))
+    Println(Left[*Raw, int](raw))
+    Println(Success(raw))
+    Println(s"interpolated: ${Some(raw)}")
+
+    var holder = Holder("h", nil)
+    holder.L = &Link(Back = &holder)
+    Println(holder)
+
+    Println(Failure[*Raw](errors.New("boom")))
+}

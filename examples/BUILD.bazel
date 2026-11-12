@@ -2139,6 +2139,20 @@ gala_exec_test(
     ],
 )
 
+# A pointer to a Go struct prints as &{...} in every GALA format
+gala_exec_test(
+    name = "go_struct_pointer_printing",
+    src = "go_struct_pointer_printing.gala",
+    expected = "go_struct_pointer_printing.out",
+)
+
+# A String on a pointer receiver prints the value, addressable or not
+gala_exec_test(
+    name = "pointer_string_printing",
+    src = "pointer_string_printing.gala",
+    expected = "pointer_string_printing.out",
+)
+
 # Sealed cases print like shorthand structs: pointer fields print their
 # target, and a cycle through a pointer prints <cycle>
 gala_exec_test(

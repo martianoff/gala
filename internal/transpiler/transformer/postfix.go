@@ -35,8 +35,16 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Ex
 		}
 	}
 	call, err := t.applyCallSuffix(base, c)
-	if err != nil || isPrint {
+	if err != nil {
 		return call, err
+	}
+	if isPrint {
+		if ce, ok := call.(*ast.CallExpr); ok {
+			for i, arg := range ce.Args {
+				ce.Args[i], _ = t.printedValue(arg, t.getExprTypeNameManual(arg))
+			}
+		}
+		return call, nil
 	}
 	// A conversion to a basic type (`string(data)`) of a converted Go call.
 	if id, ok := base.(*ast.Ident); ok && transpiler.IsPrimitiveType(id.Name) && !t.isVal(id.Name) && !t.isVar(id.Name) {

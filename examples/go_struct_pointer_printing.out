@@ -1,0 +1,8 @@
+Wrap(&{1 b}, &{ab 0 -1})
+FromRaw(&{1 b})
+Some(&{1 b})
+Left(&{1 b})
+Success(&{1 b})
+interpolated: Some(&{1 b})
+Holder(h, &{Holder(h, <cycle>)})
+Failure(boom)

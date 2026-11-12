@@ -175,6 +175,9 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 			}
 		}
 
+		if printed, ok := t.printedValue(goExpr, typ); ok {
+			goExpr, typ = printed, transpiler.BasicType{Name: "string"}
+		}
 		if isFormatString && p.FormatSpec != "" {
 			verb = p.FormatSpec
 		} else {
