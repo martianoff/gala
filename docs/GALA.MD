@@ -4409,8 +4409,8 @@ func main() {
 ```
 
 - A shorthand struct prints as `Name(field, …)`, as a sealed value and a Scala case class do. Each field prints in its own format: a nested struct or sealed value recursively, a collection by its elements, an `Option`, `Either` or `Try` as `Some(…)`, `Right(…)`, `Success(…)`, a tuple as `(a, b)`. Strings print without quotes, and a function field prints as `<fn>`.
-- The transpiler generates the `String() string` method that does this on every shorthand struct, so Go code that prints one with `fmt` sees the same text. A struct that declares its own `String` method, in GALA or in a hand-written `.go` file of its package, prints with that one instead, and a struct with a field named `String` keeps Go's format.
-- A pointer field (`Ptr[T]`, `OptionPtr[T]`) prints the value it points to. A pointer reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`.
+- The transpiler generates the `String() string` method that does this on every shorthand struct, so Go code that prints one with `fmt` sees the same text, and every verb that uses `String` does: `%+v` and `%s` print `Pt(1, 2.5)` too, while `%#v` still prints the Go struct. A struct that declares its own `String` method, in GALA or in a hand-written `.go` file of its package, prints with that one instead, and a struct with a field named `String` keeps Go's format.
+- A pointer field (`Ptr[T]`, `OptionPtr[T]`, `*T`) prints the value it points to; a pointer to a Go struct prints its address, as `%v` does. A pointer field reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`. A cycle that passes only through collections or `Option`s, with no pointer field of a struct on it, is not detected and recurses until the stack overflows.
 - A block-form struct (`type T struct { … }`) and a struct declared in Go print with Go's `%v`, `{field field}`: the block form is how GALA mirrors a Go struct. Declare a `String() string` method to print one otherwise.
 
 ### Rune Literals

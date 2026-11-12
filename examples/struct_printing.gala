@@ -1,6 +1,7 @@
 package main
 
 import (
+    "errors"
     "fmt"
 
     . "martianoff/gala/collection_immutable"
@@ -27,6 +28,9 @@ sealed type Shape {
 struct Mixed(S Shape, O Option[Pt], N Option[int], E Either[string, int], T Tuple[int, string], R Try[int])
 
 struct Held(Op func(int) int, var Count int, var At Pt)
+
+// An error field prints its message.
+struct Failed(Step string, Err error)
 
 // A struct that declares String prints with it.
 struct Money(Cents int)
@@ -71,6 +75,7 @@ func main() {
     Println((pt, "pair"))
 
     Println(Held((x) => x + 1, 3, pt))
+    Println(Failed("load", errors.New("boom")))
 
     Println(Money(1234))
     Println(Box(Money(5), "price"))

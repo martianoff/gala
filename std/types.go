@@ -512,10 +512,11 @@ func hashAddress(a uint64) uint32 {
 // Option or tuple prints in its own format; a field held in an Immutable
 // prints the value it holds, and a function field prints as <fn>.
 //
-// A pointer field prints the value it points to. A pointer this goroutine is
-// already printing, reached again through a cycle of pointers, prints as
-// <cycle>, so a value that refers to itself prints instead of recursing
-// without end.
+// A pointer field prints the value it points to, but for a pointer to a
+// struct with no String method of its own, which prints its address as %v
+// does. A pointer field this goroutine is already printing, reached again
+// through a cycle, prints as <cycle>, so a value that refers to itself through
+// a pointer field prints instead of recursing without end.
 func FormatStruct(name string, fields ...any) string {
 	var b strings.Builder
 	b.WriteString(name)
@@ -537,18 +538,25 @@ func formatField(b *strings.Builder, f any) {
 	case v.Kind() == reflect.Func:
 		b.WriteString("<fn>")
 	case v.Kind() == reflect.Pointer && !v.IsNil():
-		key := printingKey{goroutineID(), v.Pointer(), v.Type()}
-		if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
-			b.WriteString("<cycle>")
-			return
-		}
-		defer printing.Delete(key)
-		// A pointer with a String or Format method of its own (a mutable
-		// collection's) prints by it; any other prints its target.
 		switch f.(type) {
-		case fmt.Stringer, fmt.Formatter:
+		case fmt.Stringer, fmt.Formatter, error:
+			// A pointer to a value that prints itself (a GALA struct, a
+			// mutable collection) prints by its method, which can lead
+			// back here: the cycle guard.
+			key := printingKey{goroutineID(), v.Pointer(), v.Type()}
+			if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
+				b.WriteString("<cycle>")
+				return
+			}
+			defer printing.Delete(key)
 			fmt.Fprint(b, f)
 		default:
+			if v.Elem().Kind() == reflect.Struct {
+				// A Go struct: its address, as %v prints a nested pointer,
+				// rather than reading its fields (a lock, a file) here.
+				fmt.Fprintf(b, "%p", f)
+				return
+			}
 			fmt.Fprint(b, v.Elem().Interface())
 		}
 	default:
