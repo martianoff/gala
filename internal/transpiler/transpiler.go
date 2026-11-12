@@ -632,16 +632,18 @@ type SealedVariant struct {
 // StructGeneratedMethods and SealedGeneratedMethods are the methods the
 // transformer generates on every struct and every sealed type that does not
 // declare them itself (a struct's Unapply only when all its fields are
-// exported).
+// exported, its String only when it is a shorthand struct with no field named
+// String).
 var (
-	StructGeneratedMethods = []string{"Copy", "Equal", "Unapply"}
+	StructGeneratedMethods = []string{"Copy", "Equal", "Unapply", "String"}
 	SealedGeneratedMethods = []string{"Copy", "Equal", "String"}
 )
 
 // GeneratedMethodNames returns the names of the methods the transformer
 // generates on the struct or sealed type m, other than the Go case predicates
 // (see SealedGoPredicateNames): StructGeneratedMethods (Unapply only when
-// every field is exported) or SealedGeneratedMethods, the predicates
+// every field is exported, String only on a shorthand struct with no field
+// named String) or SealedGeneratedMethods, the predicates
 // is<Case> of a sealed type, and the instance marker Is<Type> of a generic
 // type.
 func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
@@ -656,6 +658,9 @@ func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
 	} else {
 		for _, n := range StructGeneratedMethods {
 			names[n] = true
+		}
+		if _, field := m.Fields["String"]; field || !m.IsShorthand {
+			delete(names, "String")
 		}
 		for _, f := range m.FieldNames {
 			if !token.IsExported(f) {

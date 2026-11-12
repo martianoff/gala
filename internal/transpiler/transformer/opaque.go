@@ -653,6 +653,8 @@ func (t *galaASTTransformer) synthesizedMethodResultType(typeMeta *transpiler.Ty
 	switch {
 	case method == "Equal" && (typeMeta.IsSealed || typeMeta.IsShorthand || len(typeMeta.FieldNames) > 0):
 		return transpiler.BasicType{Name: "bool"}
+	case method == "String" && transpiler.GeneratedMethodNames(typeMeta)["String"]:
+		return transpiler.BasicType{Name: "string"}
 	case method == "Hash" && t.isSynthesizedOpaqueMethod(typeMeta, method):
 		return transpiler.BasicType{Name: "uint32"}
 	case method == "Compare" && t.isSynthesizedOpaqueMethod(typeMeta, method):

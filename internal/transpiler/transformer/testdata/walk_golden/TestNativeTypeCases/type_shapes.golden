@@ -20,6 +20,9 @@ func (s Box[T]) Copy() Box[T] {
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.v, other.v)
 }
+func (s Box[T]) String() string {
+	return std.FormatStruct("Box", s.v)
+}
 
 type BoxInstance interface {
 	IsBox() bool
@@ -77,6 +80,9 @@ func (s Pair[A, B]) Copy() Pair[A, B] {
 }
 func (s Pair[A, B]) Equal(other Pair[A, B]) bool {
 	return std.Equal(s.first, other.first) && std.Equal(s.second, other.second)
+}
+func (s Pair[A, B]) String() string {
+	return std.FormatStruct("Pair", s.first, s.second)
 }
 
 type PairInstance interface {

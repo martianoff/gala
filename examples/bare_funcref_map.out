@@ -1,5 +1,5 @@
-Array({1}, {2}, {3})
-Array({1}, {2}, {3})
+Array(IntBox(1), IntBox(2), IntBox(3))
+Array(IntBox(1), IntBox(2), IntBox(3))
 Array(1, 2, 3)
 Array()
 Array(1, 2, 3)

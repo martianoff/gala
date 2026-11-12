@@ -21,6 +21,9 @@ func (s Box[T]) Copy() Box[T] {
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.v, other.v) && std.Equal(s.tag, other.tag)
 }
+func (s Box[T]) String() string {
+	return std.FormatStruct("Box", s.v, s.tag)
+}
 
 type BoxInstance interface {
 	IsBox() bool
@@ -40,6 +43,9 @@ func (s Bag) Copy() Bag {
 }
 func (s Bag) Equal(other Bag) bool {
 	return std.Equal(s.items, other.items)
+}
+func (s Bag) String() string {
+	return std.FormatStruct("Bag", s.items)
 }
 
 //line $DIR/main.gala:14

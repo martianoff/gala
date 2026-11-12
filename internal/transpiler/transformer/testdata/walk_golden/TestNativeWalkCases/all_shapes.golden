@@ -54,6 +54,9 @@ func (s Point) Copy() Point {
 func (s Point) Equal(other Point) bool {
 	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y) && std.Equal(s.z, other.z)
 }
+func (s Point) String() string {
+	return std.FormatStruct("Point", s.x, s.y, s.z)
+}
 
 //line $DIR/main.gala:32
 
@@ -68,6 +71,9 @@ func (s Pair[A, B]) Copy() Pair[A, B] {
 }
 func (s Pair[A, B]) Equal(other Pair[A, B]) bool {
 	return std.Equal(s.first, other.first) && std.Equal(s.second, other.second)
+}
+func (s Pair[A, B]) String() string {
+	return std.FormatStruct("Pair", s.first, s.second)
 }
 
 type PairInstance interface {

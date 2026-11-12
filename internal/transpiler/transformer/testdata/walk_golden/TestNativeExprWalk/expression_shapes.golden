@@ -21,6 +21,9 @@ func (s P) Copy() P {
 func (s P) Equal(other P) bool {
 	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
 }
+func (s P) String() string {
+	return std.FormatStruct("P", s.x, s.y)
+}
 
 //line $DIR/main.gala:10
 type Celsius = float64

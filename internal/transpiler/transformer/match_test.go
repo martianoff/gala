@@ -634,6 +634,9 @@ func (s Cell[T]) Copy() Cell[T] {
 func (s Cell[T]) Equal(other Cell[T]) bool {
 	return std.Equal(s.Value, other.Value)
 }
+func (s Cell[T]) String() string {
+	return std.FormatStruct("Cell", s.Value)
+}
 
 type CellInstance interface {
 	IsCell() bool
@@ -670,6 +673,9 @@ func (s Holder) Copy() Holder {
 }
 func (s Holder) Equal(other Holder) bool {
 	return std.Equal(s.Cell, other.Cell)
+}
+func (s Holder) String() string {
+	return std.FormatStruct("Holder", s.Cell)
 }
 func (s Holder) Unapply(v any) (std.Immutable[Cell[int]], bool) {
 	if p, ok := v.(Holder); ok {

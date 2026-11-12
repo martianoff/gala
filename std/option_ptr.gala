@@ -72,5 +72,6 @@ func (o OptionPtr[T]) ToOption() Option[Ptr[T]] = if (o.p == nil) None[Ptr[T]]()
 // checked for exhaustiveness.
 func (o OptionPtr[T]) MatchView() Option[Ptr[T]] = o.ToOption()
 
-// String returns "SomePtr(<value>)" or "EmptyOptionPtr".
-func (o OptionPtr[T]) String() string = if (o.p == nil) "EmptyOptionPtr" else s"SomePtr(${*o.p})"
+// String returns "SomePtr(<value>)" or "EmptyOptionPtr". A pointer reached
+// again through a cycle of pointers prints as <cycle> (see FormatStruct).
+func (o OptionPtr[T]) String() string = if (o.p == nil) "EmptyOptionPtr" else FormatStruct("SomePtr", o.p)

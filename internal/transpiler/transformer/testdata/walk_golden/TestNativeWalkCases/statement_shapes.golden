@@ -41,6 +41,9 @@ func (s Cell) Copy() Cell {
 func (s Cell) Equal(other Cell) bool {
 	return std.Equal(s.n, other.n) && std.Equal(s.label, other.label)
 }
+func (s Cell) String() string {
+	return std.FormatStruct("Cell", s.n, s.label)
+}
 
 //line $DIR/main.gala:17
 func look(x int) std.Option[int] {

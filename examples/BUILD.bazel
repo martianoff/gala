@@ -2127,6 +2127,18 @@ gala_exec_test(
     ],
 )
 
+# Shorthand structs print as Name(field, ...), recursively, with <cycle> for
+# a value that refers to itself
+gala_exec_test(
+    name = "struct_printing",
+    src = "struct_printing.gala",
+    expected = "struct_printing.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 # Sorted API on collections
 gala_exec_test(
     name = "sorted",

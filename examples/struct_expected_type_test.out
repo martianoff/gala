@@ -9,7 +9,7 @@ tag n=3
 alias
 pair 5
 field
-{}
+Marker()
 1
 tag annotated
 tag argument
@@ -27,7 +27,7 @@ Right(2)
 tag empty
 tag call 1
 tag empty
-{} tag sibling tag empty
-{} tag other tag other
+Marker() tag sibling tag empty
+Marker() tag other tag other
 tag retag
 tag arg tag renamed
