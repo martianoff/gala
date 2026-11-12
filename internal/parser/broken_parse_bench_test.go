@@ -2,9 +2,10 @@ package parser
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
 )
 
 // brokenBenchTexts are collection_immutable's array.gala, about 1,200 lines,
@@ -25,20 +26,15 @@ func brokenBenchTexts(src string) map[string]string {
 // engine and takes its error-recovered tree, as the language server and
 // `gala build` do (see brokenBenchTexts).
 func BenchmarkParseBrokenFile(b *testing.B) {
-	var src string
-	for _, path := range gatherSources(b) {
-		if strings.HasSuffix(filepath.ToSlash(path), "collection_immutable/array.gala") {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				b.Fatal(err)
-			}
-			src = string(data)
-		}
+	path, err := bazel.Runfile("collection_immutable/array.gala")
+	if err != nil {
+		b.Skipf("collection_immutable/array.gala is not staged: %v", err)
 	}
-	if src == "" {
-		b.Skip("collection_immutable/array.gala is not staged")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		b.Fatal(err)
 	}
-	for name, text := range brokenBenchTexts(src) {
+	for name, text := range brokenBenchTexts(string(data)) {
 		b.Run(name, func(b *testing.B) {
 			withEngine(EngineGalop, func() {
 				if len(NewAntlrGalaParser().ParseFile(text).Errors) == 0 {

@@ -253,18 +253,15 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 }
 
 // parseExprAt parses text as one expression whose first character sits at
-// line/col of the file (see parser.ParseExpressionAt) into a native tree of
-// its own, made by the engine's parser, as the file's is
-// (parser.ParseExpressionCheckedAt): galop's native parser with galop's engine,
-// ANTLR's parser and galop's converter with ANTLR's, so `--parser antlr` runs
-// no galop parser here either. The lowering reads only the nodes it is given,
-// so it lowers this tree as it lowers the file's. When that parse does not
-// settle the text, ANTLR's parser parses it alone and its tree is converted
-// (parser.ParseExpressionConvertedAt): for a syntax error, to report it with
-// ANTLR's message. Where ANTLR's parser accepts it, galop's parser panicked
-// (reported on standard error) or disagrees with ANTLR's (a galop bug, which
-// TestParseExpressionNativeAtMatchesANTLR guards against), and the converted
-// tree is lowered, as a whole-file parse falls back to ANTLR's parser.
+// line/col of the file into a native tree of its own, made by the engine's
+// parser, as the file's is (parser.ParseExpressionCheckedAt): galop's
+// recovering parser with galop's engine, which reports a syntax error as
+// ANTLR's parser does, and ANTLR's parser and galop's converter with ANTLR's,
+// so `--parser antlr` runs no galop parser here either. The lowering reads
+// only the nodes it is given, so it lowers this tree as it lowers the file's.
+// Only when galop's parser panics (reported on standard error) does ANTLR's
+// parser parse the text instead and its tree is converted, as a whole-file
+// parse falls back to ANTLR's parser.
 //
 // Each text is parsed once per position per file (parsedExprs): a default is
 // lowered at every use site, and an interpolation in it with it, but the tree

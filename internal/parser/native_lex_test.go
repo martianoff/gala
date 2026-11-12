@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"math/rand"
@@ -188,7 +187,7 @@ type lexComparison struct {
 func compareLexers(tb testing.TB, src string) (seen lexComparison, diffs []string) {
 	tb.Helper()
 	want, stream := antlrLex(tb, galaerr.StripBOM(src), 0, 0)
-	ts := lexNative(src, 0, 0)
+	ts := lexNative(galaerr.StripBOM(src), 0, 0)
 	seen.tokens = printNative(ts)
 	if d := firstTokenDiff(want, seen.tokens); d != "" {
 		diffs = append(diffs, "the lexers disagree: "+d)
@@ -439,21 +438,21 @@ func nativeTerminals(b *strings.Builder, n native.GalaNodeRef) {
 	}
 }
 
-// TestParseExpressionNativeAtMatchesANTLR: over the corpus's expressions,
-// ParseExpressionNativeAt accepts exactly what ANTLR's parser accepts
+// TestExpressionCheckedNativeMatchesANTLR: over the corpus's expressions,
+// galop's recovering parse accepts exactly what ANTLR's parser accepts
 // (antlrExpressionAtChecked), with the same tree and token positions, and
-// fails with ErrNativeExpression on the rest.
-func TestParseExpressionNativeAtMatchesANTLR(t *testing.T) {
+// fails with ANTLR's error on the rest.
+func TestExpressionCheckedNativeMatchesANTLR(t *testing.T) {
 	accepted, rejected := 0, 0
 	samples := corpusExpressions(t)
 	withEngine(EngineANTLR, func() {
 		for _, s := range samples {
 			want, _, wantErr := antlrExpressionAtChecked(s.src, s.line, s.col, "test expression")
-			got, err := ParseExpressionNativeAt(s.src, s.line, s.col)
+			got, err, ok := galopParsers.expressionCheckedNative(s.src, s.line, s.col, "test expression")
 			switch {
-			case err != nil && !errors.Is(err, ErrNativeExpression):
-				t.Errorf("%q at %d:%d: error %v does not wrap ErrNativeExpression", s.src, s.line, s.col, err)
-			case (err == nil) != (wantErr == nil):
+			case !ok:
+				t.Errorf("%q at %d:%d: galop panicked", s.src, s.line, s.col)
+			case fmt.Sprint(err) != fmt.Sprint(wantErr):
 				t.Errorf("%q at %d:%d: ANTLR error %v, native error %v", s.src, s.line, s.col, wantErr, err)
 			case err != nil:
 				rejected++
@@ -507,12 +506,12 @@ func TestParseExpressionCheckedAtConvertsANTLR(t *testing.T) {
 	})
 }
 
-// TestParseExpressionNativeAtLeftovers: an expression followed by more tokens
-// is not one expression.
-func TestParseExpressionNativeAtLeftovers(t *testing.T) {
+// TestExpressionCheckedNativeLeftovers: an expression followed by more
+// tokens is not one expression.
+func TestExpressionCheckedNativeLeftovers(t *testing.T) {
 	for _, src := range []string{"a b", "x +", "f(1))", "", "a\n(b)", "1 @"} {
-		if _, err := ParseExpressionNativeAt(src, 2, 3); !errors.Is(err, ErrNativeExpression) {
-			t.Errorf("%q: error %v, want ErrNativeExpression", src, err)
+		if _, err, ok := galopParsers.expressionCheckedNative(src, 2, 3, "test expression"); !ok || err == nil {
+			t.Errorf("%q: error %v (galop panicked: %v), want a syntax error", src, err, !ok)
 		}
 	}
 }

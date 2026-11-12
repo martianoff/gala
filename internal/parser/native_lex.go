@@ -51,19 +51,12 @@ func byteAt(src string, i int) int {
 
 // lexNative lexes src with galop's native lexer from line and column col (as
 // ANTLR counts them; line <= 0 starts at 1:0, as seedLexer does) and applies
-// the line-break rule. A leading UTF-8 BOM is dropped first, as ParseFile and
-// VisitTokens drop it, so the tokens index the source without it (ts.Src).
-// Invalid UTF-8 is read as ANTLR's input stream reads it: each byte that is
-// not part of a valid encoding is U+FFFD, so token text, doc comments and
-// columns are ANTLR's. ts.Src is then that decoded text.
+// the line-break rule. A leading UTF-8 BOM is the caller's to drop, as
+// ParseFile and VisitNativeTokens drop it; an expression's text keeps it, as
+// ANTLR's lexer reads it. Invalid UTF-8 is read as ANTLR's input stream reads
+// it (antlrText), so token text, doc comments and columns are ANTLR's. ts.Src
+// is then that decoded text.
 func lexNative(src string, line, col int) *native.GalaTokens {
-	return lexNativeKeepingBOM(galaerr.StripBOM(src), line, col)
-}
-
-// lexNativeKeepingBOM is lexNative without dropping a leading BOM, which the
-// lexer then reports as ANTLR's does: as an expression's text is lexed, by
-// either engine.
-func lexNativeKeepingBOM(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
@@ -112,8 +105,9 @@ func VisitNativeTokens(input string, visit func(text string)) {
 	}
 }
 
-// lexNativeRecovered is lexNative of input at its start, or nil when galop's
-// lexer panics on it (reported through noteGalopPanic).
+// lexNativeRecovered is lexNative of input at its start, a leading BOM
+// dropped as VisitTokens drops it, or nil when galop's lexer panics on it
+// (reported through noteGalopPanic).
 func lexNativeRecovered(input string) (ts *native.GalaTokens) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -121,56 +115,50 @@ func lexNativeRecovered(input string) (ts *native.GalaTokens) {
 			ts = nil
 		}
 	}()
-	return lexNative(input, 0, 0)
+	return lexNative(galaerr.StripBOM(input), 0, 0)
 }
-
-// ErrNativeExpression is what ParseExpressionNativeAt returns when galop's
-// native lexer and parser do not settle the input: a lexical or syntax error,
-// a token left over after the expression, or a panic.
-var ErrNativeExpression = errors.New("parser: galop's native parser does not settle the expression")
 
 // ErrConvertExpression is the error of a failed conversion of an expression
 // ANTLR's parser accepted to galop's native tree: a bug in galop's converter.
 var ErrConvertExpression = errors.New("parser: galop's converter failed on the expression")
 
-// ParseExpressionNativeAt parses src as exactly one GALA expression whose
-// first character sits at line/col of an enclosing file (line 1-based, col
-// 0-based, as ANTLR reports them; line <= 0 parses at 1:0), with galop's
-// native lexer and parser. Every token of the tree carries its position in
-// that file. Any failure, a panic included (recovered and reported through
-// noteGalopPanic), is an error wrapping ErrNativeExpression.
-func ParseExpressionNativeAt(src string, line, col int) (native.ExpressionNode, error) {
-	return galopParsers.expressionNativeAt(src, line, col)
-}
-
-// expressionNativeAt is ParseExpressionNativeAt with g's parser.
-func (g *nativeParsers) expressionNativeAt(src string, line, col int) (native.ExpressionNode, error) {
-	expr, err, ok := g.expressionCheckedNative(src, line, col, "expression")
-	if !ok {
-		return native.ExpressionNode{}, fmt.Errorf("%w: panic", ErrNativeExpression)
-	}
-	if err != nil {
-		return native.ExpressionNode{}, fmt.Errorf("%w: %v", ErrNativeExpression, err)
-	}
-	return expr, nil
-}
-
-// expressionCheckedNative parses input as exactly one GALA expression at
-// line/col (see ParseExpressionNativeAt) with galop's native lexer and
-// recovering parser. A syntax error is the first error ANTLR's parser
-// reports, with its hint (nativeSyntaxErrors), and a token left over after
-// the expression is an error naming what input is parsed as, as
-// antlrExpressionAtChecked reports them. ok is false when galop's lexer or
-// parser panicked (recovered and reported through noteGalopPanic).
-func (g *nativeParsers) expressionCheckedNative(input string, line, col int, what string) (expr native.ExpressionNode, err error, ok bool) {
+// expressionNative parses input as an expression whose first character sits
+// at line/col of an enclosing file (line 1-based, col 0-based, as ANTLR
+// reports them; line <= 0 parses at 1:0), with galop's native lexer and
+// recovering parser, not anchored at end of input: its tree, error-recovered
+// when there are errors, and the errors, as ANTLR's lexer and parser report
+// them (nativeSyntaxErrors). Every token of the tree carries its position in
+// that file. ok is false when galop's lexer or parser panicked (recovered and
+// reported through noteGalopPanic).
+func (g *nativeParsers) expressionNative(input string, line, col int) (expr native.ExpressionNode, errs []error, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			noteGalopPanic("parser", input, r)
-			expr, err, ok = native.ExpressionNode{}, nil, false
+			expr, errs, ok = native.ExpressionNode{}, nil, false
 		}
 	}()
-	expr, errs := g.expressionRecovered(input, line, col)
-	if len(errs) > 0 {
+	ts := lexNative(input, line, col)
+	expr, parseErrs := g.expression(ts)
+	// The parse stops after the expression: ANTLR's lexer never lexes past
+	// the token after it.
+	upTo := len(ts.Tokens)
+	if expr.Ok() {
+		upTo = expr.Tree().Next
+	}
+	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs, upTo), true
+}
+
+// expressionCheckedNative is expressionNative of input as exactly one
+// expression: a syntax error is the first error ANTLR's parser reports, with
+// its hint, and a token left over after the expression is an error naming
+// what input is parsed as, as antlrExpressionAtChecked reports them. ok is
+// false when galop panicked.
+func (g *nativeParsers) expressionCheckedNative(input string, line, col int, what string) (native.ExpressionNode, error, bool) {
+	expr, errs, ok := g.expressionNative(input, line, col)
+	switch {
+	case !ok:
+		return native.ExpressionNode{}, nil, false
+	case len(errs) > 0:
 		return native.ExpressionNode{}, errs[0], true
 	}
 	tree := expr.Tree()
@@ -181,28 +169,11 @@ func (g *nativeParsers) expressionCheckedNative(input string, line, col int, wha
 	return expr, nil, true
 }
 
-// expressionRecovered parses input as an expression at line/col with galop's
-// native lexer and recovering parser, not anchored at end of input: its tree,
-// error-recovered when there are errors, and the errors, as ANTLR's lexer and
-// parser report them (nativeSyntaxErrors). A panic is the caller's to
-// recover.
-func (g *nativeParsers) expressionRecovered(input string, line, col int) (native.ExpressionNode, []error) {
-	ts := lexNativeKeepingBOM(input, line, col)
-	expr, parseErrs := g.expression(ts)
-	// The parse stops after the expression: ANTLR's lexer never lexes past
-	// the token after it.
-	upTo := len(ts.Tokens)
-	if expr.Ok() {
-		upTo = expr.Tree().Next
-	}
-	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs, upTo)
-}
-
 // ParseExpressionCheckedAt is input's native tree as exactly one GALA
 // expression whose first character sits at line/col of an enclosing file (see
-// ParseExpressionNativeAt), made by the engine's parser as a file's native
-// tree is. With galop's engine, galop's native lexer and recovering parser
-// parse input, and report a syntax error as ANTLR's parser does
+// expressionNative), made by the engine's parser as a file's native tree is.
+// With galop's engine, galop's native lexer and recovering parser parse
+// input, and report a syntax error as ANTLR's parser does
 // (expressionCheckedNative); only a galop panic has ANTLR's parser parse it
 // instead (ParseExpressionConvertedAt). With ANTLR's engine, ANTLR's parser
 // parses it once and its tree is converted. A syntax error names what input
@@ -243,14 +214,14 @@ func (g *nativeParsers) expressionConvertedAt(input string, line, col int, what 
 	if err != nil {
 		return native.ExpressionNode{}, err
 	}
-	return g.convertExpression(ctx, stream, antlrText(input))
+	return g.convertExpression(ctx, stream, input)
 }
 
 // ParseExpressionTree is src's native tree as an expression, and the syntax
 // errors: src parsed as an expression, not anchored at end of input,
 // so `x +` gives the tree of `x`, with no error. With galop's engine, galop's
-// native lexer and recovering parser parse src (expressionRecovered), its
-// tree error-recovered when there are errors; only a galop panic has ANTLR's
+// native lexer and recovering parser parse src (expressionNative), its tree
+// error-recovered when there are errors; only a galop panic has ANTLR's
 // parser parse it instead. With ANTLR's engine, ANTLR's parser parses it, its
 // tree error-recovered when there are errors, and galop's converter converts
 // it. No tree is the zero node, with the reason among the errors: the
@@ -267,7 +238,7 @@ func (g *nativeParsers) expressionTree(src string) (native.ExpressionNode, []err
 		return native.ExpressionNode{}, []error{err}
 	}
 	if engine == EngineGalop {
-		if expr, errs, ok := g.expressionTreeNative(src); ok {
+		if expr, errs, ok := g.expressionNative(src, 0, 0); ok {
 			return expr, errs
 		}
 	}
@@ -275,29 +246,16 @@ func (g *nativeParsers) expressionTree(src string) (native.ExpressionNode, []err
 	if ctx == nil {
 		return native.ExpressionNode{}, errs
 	}
-	expr, err := g.convertExpression(ctx, stream, antlrText(src))
+	expr, err := g.convertExpression(ctx, stream, src)
 	if err != nil {
 		return native.ExpressionNode{}, append(errs, err)
 	}
 	return expr, errs
 }
 
-// expressionTreeNative is expressionRecovered of src at its start; ok is
-// false when galop's lexer or parser panicked (recovered and reported through
-// noteGalopPanic).
-func (g *nativeParsers) expressionTreeNative(src string) (expr native.ExpressionNode, errs []error, ok bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic("parser", src, r)
-			expr, errs, ok = native.ExpressionNode{}, nil, false
-		}
-	}()
-	expr, errs = g.expressionRecovered(src, 0, 0)
-	return expr, errs, true
-}
-
 // convertExpression converts ctx, an expression ANTLR's parser read from
-// stream over src, to galop's native tree with g's converter. A panic in the
+// stream over src, to galop's native tree with g's converter, reading src as
+// ANTLR does (antlrText). A panic in the
 // converter is recovered and reported through noteGalopPanic.
 func (g *nativeParsers) convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStream, src string) (expr native.ExpressionNode, err error) {
 	defer func() {
@@ -306,7 +264,7 @@ func (g *nativeParsers) convertExpression(ctx antlr.ParserRuleContext, stream *a
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
 		}
 	}()
-	tree := g.toNative(ctx, stream, src)
+	tree := g.toNative(ctx, stream, antlrText(src))
 	if tree == nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: the converter gave no tree", ErrConvertExpression)
 	}

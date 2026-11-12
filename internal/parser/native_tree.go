@@ -149,7 +149,8 @@ func (t *Native) convert() {
 		t.root, t.stream, t.src, t.toNative = nil, nil, "", nil
 		t.converted.Store(true)
 	}()
-	if t.tree = t.toNative(t.root, t.stream, t.src); t.tree == nil {
+	// The converter is given the text as ANTLR read it (antlrText).
+	if t.tree = t.toNative(t.root, t.stream, antlrText(t.src)); t.tree == nil {
 		t.err = errNoNative
 	}
 }

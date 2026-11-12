@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -20,11 +21,11 @@ import (
 // their inputs holds galop's recovery and hints to ANTLR's too.
 func parseAgreeing(t *testing.T, input string) *Parsed {
 	t.Helper()
-	_, diffs := compareEngines(input, false)
+	_, got, diffs := compareEngines(input, false)
 	for _, d := range diffs {
 		t.Errorf("%q: %s", input, d)
 	}
-	return parseWithGalop(input)
+	return got.parsed
 }
 
 // mutation is a way TestRecoveryParity breaks a source file: it returns src
@@ -48,12 +49,28 @@ var mutationTokens = []string{
 // that may never close.
 var strayCharacters = []string{"$", "#", "\\", "\"", "'", "`", "/*", "@", "?", "~"}
 
+// pickIndex is one of the indexes i in [0, n) where at(i) holds, drawn by r,
+// or false when there is none.
+func pickIndex(r *rand.Rand, n int, at func(i int) bool) (int, bool) {
+	var found []int
+	for i := range n {
+		if at(i) {
+			found = append(found, i)
+		}
+	}
+	if len(found) == 0 {
+		return 0, false
+	}
+	return found[r.Intn(len(found))], true
+}
+
 // mutations are the ways TestRecoveryParity breaks a file: token edits,
-// which keep the rest of the file lexing as before, byte drops, which can
-// break a literal or comment open (lexical errors), and three that aim at
-// the coded hints: a type argument made a Go slice type (GALA-E0040), a
-// lambda's parameter unparenthesized (GALA-E0042), and a tag after a struct
-// field (GALA-E0085).
+// which keep the rest of the file lexing as before, byte drops and stray
+// characters, which can break a literal or comment open (lexical errors), a
+// cut multi-byte character (invalid UTF-8), and three that aim at the coded
+// hints: a type argument made a Go slice type (GALA-E0040), a lambda's
+// parameter unparenthesized (GALA-E0042), and a tag after a struct field
+// (GALA-E0085).
 var mutations = []mutation{
 	{"delete a token", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		t := toks[r.Intn(len(toks))]
@@ -61,7 +78,7 @@ var mutations = []mutation{
 	}},
 	{"duplicate a token", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		t := toks[r.Intn(len(toks))]
-		return src[:t.End] + " " + src[t.Start:t.End] + src[t.End:]
+		return src[:t.End] + " " + t.Text(src) + src[t.End:]
 	}},
 	{"swap two tokens", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		if len(toks) < 2 {
@@ -69,7 +86,7 @@ var mutations = []mutation{
 		}
 		i := r.Intn(len(toks) - 1)
 		a, b := toks[i], toks[i+1]
-		return src[:a.Start] + src[b.Start:b.End] + src[a.End:b.Start] + src[a.Start:a.End] + src[b.End:]
+		return src[:a.Start] + b.Text(src) + src[a.End:b.Start] + a.Text(src) + src[b.End:]
 	}},
 	{"insert a token", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		t := toks[r.Intn(len(toks))]
@@ -79,82 +96,63 @@ var mutations = []mutation{
 		return breakSource(r, src)
 	}},
 	{"stray character", func(r *rand.Rand, src string, toks []native.GalaToken) string {
-		// A character no token starts with, or one that opens a literal or
-		// comment: lexical errors among the syntax errors.
 		t := toks[r.Intn(len(toks))]
 		at := int(t.Start) + r.Intn(int(t.End-t.Start)+1)
 		return src[:at] + strayCharacters[r.Intn(len(strayCharacters))] + src[at:]
 	}},
+	{"stray character, then a token edit", func(r *rand.Rand, src string, toks []native.GalaToken) string {
+		// Two edits on one line: the lexical error just after a syntax error,
+		// where the order ANTLR reports them in depends on how far its parser
+		// has read.
+		t := toks[r.Intn(len(toks))]
+		return src[:t.Start] + mutationTokens[r.Intn(len(mutationTokens))] + " " + t.Text(src) +
+			strayCharacters[r.Intn(len(strayCharacters))] + src[t.End:]
+	}},
 	{"cut a multi-byte character, then a token edit", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		// Invalid UTF-8, which ANTLR reads as U+FFFD, with a syntax error
 		// after it: the recovered tree's offsets index the decoded text.
-		var at []int
-		for i := 0; i < len(src); i++ {
-			if src[i] >= 0xC0 {
-				at = append(at, i)
-			}
-		}
-		if len(at) == 0 {
+		i, ok := pickIndex(r, len(src), func(i int) bool { return src[i] >= 0xC0 })
+		if !ok {
 			return ""
 		}
-		i := at[r.Intn(len(at))]
 		t := toks[len(toks)-1-r.Intn(min(len(toks), 20))]
 		if int(t.Start) <= i+1 {
 			return src[:i] + src[i+1:]
 		}
 		return src[:i] + src[i+1:t.Start] + "( " + src[t.Start:]
 	}},
-	{"stray character, then a token edit", func(r *rand.Rand, src string, toks []native.GalaToken) string {
-		// Two edits on one line: the lexical error just after a syntax error,
-		// where the order ANTLR reports them in depends on how far its parser
-		// has read.
-		i := r.Intn(len(toks))
-		t := toks[i]
-		return src[:t.Start] + mutationTokens[r.Intn(len(mutationTokens))] + " " + src[t.Start:t.End] +
-			strayCharacters[r.Intn(len(strayCharacters))] + src[t.End:]
-	}},
 	{"Go slice type argument", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		// A '[' followed by an identifier: a type argument list.
-		var at []int
-		for i := 0; i+1 < len(toks); i++ {
-			if src[toks[i].Start:toks[i].End] == "[" && toks[i+1].Type == native.GalaIDENTIFIER {
-				at = append(at, i+1)
-			}
-		}
-		if len(at) == 0 {
+		i, ok := pickIndex(r, len(toks)-1, func(i int) bool {
+			return toks[i].Text(src) == "[" && toks[i+1].Type == native.GalaIDENTIFIER
+		})
+		if !ok {
 			return ""
 		}
-		t := toks[at[r.Intn(len(at))]]
+		t := toks[i+1]
 		return src[:t.Start] + "[]byte" + src[t.End:]
 	}},
 	{"bare lambda parameter", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		// `(x) =>`: drop the parentheses.
-		var at []int
-		for i := 0; i+3 < len(toks); i++ {
-			if src[toks[i].Start:toks[i].End] == "(" && toks[i+1].Type == native.GalaIDENTIFIER &&
-				src[toks[i+2].Start:toks[i+2].End] == ")" && src[toks[i+3].Start:toks[i+3].End] == "=>" {
-				at = append(at, i)
-			}
-		}
-		if len(at) == 0 {
+		i, ok := pickIndex(r, len(toks)-3, func(i int) bool {
+			return toks[i].Text(src) == "(" && toks[i+1].Type == native.GalaIDENTIFIER &&
+				toks[i+2].Text(src) == ")" && toks[i+3].Text(src) == "=>"
+		})
+		if !ok {
 			return ""
 		}
-		i := at[r.Intn(len(at))]
-		return src[:toks[i].Start] + src[toks[i+1].Start:toks[i+1].End] + src[toks[i+2].End:]
+		return src[:toks[i].Start] + toks[i+1].Text(src) + src[toks[i+2].End:]
 	}},
 	{"struct tag", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		// After an identifier ending a line inside a struct-like declaration:
 		// a field's type.
-		var at []int
-		for i := 0; i+1 < len(toks); i++ {
-			if toks[i].Type == native.GalaIDENTIFIER && toks[i+1].Line > toks[i].Line {
-				at = append(at, i)
-			}
-		}
-		if len(at) == 0 {
+		i, ok := pickIndex(r, len(toks)-1, func(i int) bool {
+			return toks[i].Type == native.GalaIDENTIFIER && toks[i+1].Line > toks[i].Line
+		})
+		if !ok {
 			return ""
 		}
-		t := toks[at[r.Intn(len(at))]]
+		t := toks[i]
 		return src[:t.End] + ` "json:\"f\""` + src[t.End:]
 	}},
 }
@@ -167,32 +165,11 @@ var mutations = []mutation{
 // comments, and the same error-recovered native tree. Any difference is a
 // bug. It logs the match rate and how often each coded hint fired.
 func TestRecoveryParity(t *testing.T) {
-	type input struct{ what, src string }
-	var inputs []input
-	for k, src := range brokenInputs {
-		inputs = append(inputs, input{fmt.Sprintf("broken input %d", k), src})
-	}
-	paths := gatherSources(t)
-	for n, src := range sourceTexts(t) {
-		ts := lexNative(src, 0, 0)
-		src, toks := ts.Src, ts.Tokens
-		toks = toks[:len(toks)-1] // without EOF
-		if len(toks) == 0 {
-			continue
-		}
-		h := fnv.New64a()
-		h.Write([]byte(src))
-		r := rand.New(rand.NewSource(int64(h.Sum64())))
-		for _, m := range mutations {
-			if mutant := m.run(r, src, toks); mutant != "" && mutant != src {
-				inputs = append(inputs, input{fmt.Sprintf("%s (%s)", paths[n], m.name), mutant})
-			}
-		}
-	}
-	broken, lexical, mismatched := 0, 0, 0
+	inputs, broken, lexical, mismatched := 0, 0, 0, 0
 	codes := map[galaerr.ErrorCode]int{}
-	for _, in := range inputs {
-		want, diffs := compareEngines(in.src, false)
+	compare := func(what, src string) {
+		inputs++
+		want, _, diffs := compareEngines(src, false)
 		if strings.Contains(want.out, "token recognition error") {
 			lexical++
 		}
@@ -208,7 +185,29 @@ func TestRecoveryParity(t *testing.T) {
 		if len(diffs) > 0 {
 			mismatched++
 			for _, d := range diffs {
-				t.Errorf("%s: %s", in.what, d)
+				t.Errorf("%s: %s", what, d)
+			}
+		}
+	}
+	for k, src := range brokenInputs {
+		compare(fmt.Sprintf("broken input %d", k), src)
+	}
+	for _, path := range gatherSources(t) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts := lexNative(string(data), 0, 0)
+		src, toks := ts.Src, ts.Tokens[:len(ts.Tokens)-1] // without EOF
+		if len(toks) == 0 {
+			continue
+		}
+		h := fnv.New64a()
+		h.Write(data)
+		r := rand.New(rand.NewSource(int64(h.Sum64())))
+		for _, m := range mutations {
+			if mutant := m.run(r, src, toks); mutant != "" && mutant != src {
+				compare(fmt.Sprintf("%s (%s)", path, m.name), mutant)
 			}
 		}
 	}
@@ -218,14 +217,14 @@ func TestRecoveryParity(t *testing.T) {
 	}
 	sort.Strings(hints)
 	t.Logf("%d inputs, %d with errors, %d of them lexical; %d match (%.2f%%), %d differ; coded errors: %s",
-		len(inputs), broken, lexical, len(inputs)-mismatched, 100*float64(len(inputs)-mismatched)/float64(len(inputs)),
+		inputs, broken, lexical, inputs-mismatched, 100*float64(inputs-mismatched)/float64(inputs),
 		mismatched, strings.Join(hints, ", "))
 	for _, c := range []galaerr.ErrorCode{galaerr.CodeGoTypeInExpression, galaerr.CodeBareLambdaParam, galaerr.CodeStructTag} {
 		if codes[c] == 0 {
 			t.Errorf("no mutant gave %s: its hint was not compared", c)
 		}
 	}
-	if broken < len(inputs)/2 {
-		t.Errorf("only %d of %d inputs have errors: the mutations break too little", broken, len(inputs))
+	if broken < inputs/2 {
+		t.Errorf("only %d of %d inputs have errors: the mutations break too little", broken, inputs)
 	}
 }

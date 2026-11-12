@@ -13,7 +13,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
@@ -89,15 +88,7 @@ func renderText(text string, tree antlr.Tree, docs Docs, errs []error) string {
 // included (the code, the hint, the span), as the CLI, `gala build --json`
 // and the language server render them.
 func errorFields(err error) string {
-	var sem *galaerr.SemanticError
-	var syn *galaerr.SyntaxError
-	switch {
-	case errors.As(err, &sem):
-		return fmt.Sprintf("%T %+v", sem, *sem)
-	case errors.As(err, &syn):
-		return fmt.Sprintf("%T %+v", syn, *syn)
-	}
-	return fmt.Sprintf("%T", err)
+	return fmt.Sprintf("%#v", err)
 }
 
 // fileParse is a parse of a source file with one engine, and its rendering.
@@ -255,7 +246,7 @@ func breakSource(r *rand.Rand, src string) string {
 var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
 
 // compareEngines parses input with ANTLR's engine and with galop's, and
-// returns ANTLR's parse and every way the two differ. galop's engine must
+// returns both parses and every way the two differ. galop's engine must
 // parse with galop's parser alone, with no ANTLR tree. The doc comments and
 // the errors must be the same, each error in full: its type, position,
 // message, code, hint and span (renderText). A parse without errors must
@@ -264,8 +255,8 @@ var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
 // error-recovered native tree (galop's recovering parse, ANTLR's recovered
 // tree converted). When check is set, galop's engine's native tree, clean or
 // error-recovered, is also checked against ANTLR's tree (checkNative).
-func compareEngines(input string, check bool) (want fileParse, diffs []string) {
-	want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
+func compareEngines(input string, check bool) (want, got fileParse, diffs []string) {
+	want, got = parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
 	if got.parsed.Tree != nil {
 		diffs = append(diffs, "galop's engine parsed with ANTLR's parser")
 	}
@@ -291,7 +282,7 @@ func compareEngines(input string, check bool) (want fileParse, diffs []string) {
 			diffs = append(diffs, "native tree: "+msg)
 		}
 	}
-	return want, diffs
+	return want, got, diffs
 }
 
 // TestEnginesAgree parses every GALA source of the repository, and two broken
@@ -311,7 +302,7 @@ func TestEnginesAgree(t *testing.T) {
 	// compareFile parses input with both engines and reports every
 	// difference (see compareEngines). It returns ANTLR's rendering.
 	compareFile := func(what, input string, check bool) string {
-		want, diffs := compareEngines(input, check)
+		want, _, diffs := compareEngines(input, check)
 		for _, d := range diffs {
 			t.Errorf("%s: %s", what, d)
 		}

@@ -67,17 +67,17 @@ func checkEnginesAgree(t *testing.T, src string, line, col int) {
 		t.Error(d)
 	}
 	// The lexers at an offset. With line <= 0 both start at 1:0, whatever
-	// col (lexNative, seedLexer), as compareLexers lexed. lexNative drops a
-	// leading BOM, as ParseFile does before ANTLR's lexer reads the text.
+	// col (lexNative, seedLexer), as compareLexers lexed. Both read the text
+	// without a leading BOM, as ParseFile drops it.
 	if line > 0 {
-		if d := firstTokenDiff(antlrTokens(t, galaerr.StripBOM(src), line, col), nativeTokens(src, line, col)); d != "" {
+		if d := firstTokenDiff(antlrTokens(t, galaerr.StripBOM(src), line, col), nativeTokens(galaerr.StripBOM(src), line, col)); d != "" {
 			t.Errorf("the lexers disagree at %d:%d: %s", line, col, d)
 		}
 	}
 	// The parsers: a source file, an expression, an expression at an offset.
 	// The last is parsed at 0:0 too: it is the checked parse (exactly one
 	// expression, errors naming what is parsed), not ParseExpressionTree's.
-	_, diffs = compareEngines(src, true)
+	_, _, diffs = compareEngines(src, true)
 	for _, d := range diffs {
 		t.Errorf("source file: %s", d)
 	}

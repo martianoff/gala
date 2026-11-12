@@ -154,7 +154,7 @@ func TestRestoreScopedStateCoversEveryScopedField(t *testing.T) {
 
 // someLambda is a lambda expression node, for a non-zero lambdaSrc.
 func someLambda() native.LambdaExpressionNode {
-	expr, err := galaparser.ParseExpressionNativeAt("() => 1", 1, 0)
+	expr, _, err := galaparser.ParseExpressionCheckedAt("() => 1", 1, 0, "expression")
 	if err != nil {
 		panic(err)
 	}

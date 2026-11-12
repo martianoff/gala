@@ -247,9 +247,9 @@ func Qualified(s string = Thing match {
 // tree numbers its nodes from 0 like the file's, so the cache must key a node
 // with its tree: the answer for one tree's node is not another's.
 func TestEscapeCacheKeysNodesByTree(t *testing.T) {
-	ret, err := galaparser.ParseExpressionNativeAt("if (true) { return 1 } else 2", 1, 0)
+	ret, _, err := galaparser.ParseExpressionCheckedAt("if (true) { return 1 } else 2", 1, 0, "expression")
 	require.NoError(t, err)
-	plain, err := galaparser.ParseExpressionNativeAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0)
+	plain, _, err := galaparser.ParseExpressionCheckedAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0, "expression")
 	require.NoError(t, err)
 	tree := plain.Tree()
 	require.Less(t, ret.Index(), len(tree.Nodes), "the plain tree must have a node at the returning root's index")

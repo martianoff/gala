@@ -228,18 +228,9 @@ func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.Semanti
 			parsed = nil
 		}
 	}()
-	var ts *native.GalaTokens
-	if charErr == nil {
-		// input has no BOM and is valid UTF-8 (checkSourceChars), so it is
-		// lexed as it is (see lexNative).
-		ts = native.GalaLex(input)
-		RetypeNewlines(ts)
-	} else {
-		ts = lexNative(input, 0, 0)
-	}
+	ts := lexNative(input, 0, 0)
 	root, parseErrs := p.parsers().sourceFile(ts)
 	errs := withCharErr(charErr, nativeSyntaxErrors(root.Tree(), ts, parseErrs, -1))
-	parsed = &Parsed{Docs: nativeDocComments(ts)}
 	var handle *Native
 	if root.Ok() {
 		handle = nativeHandle(root.Tree())
@@ -247,7 +238,15 @@ func (p *AntlrGalaParser) parseNativeFile(input string, charErr *galaerr.Semanti
 			errs = append(errs, err)
 		}
 	}
-	if parsed.Errors = errs; len(errs) == 0 {
+	return newParsed(nil, nativeDocComments(ts), errs, handle)
+}
+
+// newParsed is a parse with ANTLR's tree, if any, doc comments, errors and
+// native-tree handle: the clean native tree when there are no errors, else
+// the error-recovered one.
+func newParsed(tree antlr.Tree, docs Docs, errs []error, handle *Native) *Parsed {
+	parsed := &Parsed{Tree: tree, Docs: docs, Errors: errs}
+	if len(errs) == 0 {
 		parsed.Native = handle
 	} else {
 		parsed.recovered = handle
@@ -283,15 +282,7 @@ func (p *AntlrGalaParser) parseFileANTLR(input string, charErr *galaerr.Semantic
 	if err := p.checkEmptyLines(result.input, result.tree); err != nil {
 		errs = append(errs, err)
 	}
-
-	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
-	handle := newNative(result.tree, result.stream, antlrText(input), p.parsers().toNative)
-	if len(errs) == 0 {
-		parsed.Native = handle
-	} else {
-		parsed.recovered = handle
-	}
-	return parsed
+	return newParsed(result.tree, docs, errs, newNative(result.tree, result.stream, input, p.parsers().toNative))
 }
 
 // seedLexer makes lexer start at line and column col, as ANTLR counts them,
@@ -791,57 +782,49 @@ func goTypeInExpressionError(lit *grammar.CompositeLiteralContext) error {
 	if offender == nil {
 		return nil
 	}
-
-	start := offender.GetStart()
-	stop := offender.GetStop()
+	start, stop := offender.GetStart(), offender.GetStop()
 	if start == nil {
 		return nil
 	}
+	var args []string
+	for _, a := range offender.AllType_() {
+		args = append(args, a.GetText())
+	}
+	return goTypeDiagnostic(start.GetLine(), start.GetColumn(), offender.GetText(), args,
+		stop != nil && stop.GetLine() == start.GetLine())
+}
 
-	text := offender.GetText()
+// goTypeDiagnostic is GALA-E0040 for the Go slice or map type text at
+// line:col, whose type arguments' texts are args; oneLine is whether the
+// type sits on one line.
+func goTypeDiagnostic(line, col int, text string, args []string, oneLine bool) error {
 	kind := "slice"
 	if strings.HasPrefix(text, "map[") {
 		kind = "map"
 	}
-
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeGoTypeInExpression,
-		start.GetLine(),
-		start.GetColumn(),
+		line,
+		col,
 		fmt.Sprintf("Go %s type %s is not allowed in an expression", kind, text),
 		// The suggestion leads and is separated by "; " so the renderer's
 		// terse caret annotation — which cuts the hint at its first clause —
 		// shows the replacement rather than a truncated rule.
-		galaTypeSuggestion(offender, text)+goTypeInExpressionRule,
+		typeSuggestion(text, args)+"; Go slice and map types are an interop surface, allowed only where a type is expected: a function signature, a struct field, a val/var annotation, or a type alias",
 	)
-
 	// Span the offending type exactly, so the caret covers `[]byte` rather
 	// than the single token the renderer would otherwise scan out. Only when
 	// the type sits on one line; a multi-line type leaves the span unset and
 	// falls back to that scan.
-	if stop != nil && stop.GetLine() == start.GetLine() {
-		err = err.WithSpan(start.GetColumn() + len([]rune(text)))
+	if oneLine {
+		err = err.WithSpan(col + len([]rune(text)))
 	}
 	return err
 }
 
-// galaTypeSuggestion spells the offending Go type the GALA way, so the message
-// leaves the reader with the replacement and not just the prohibition.
-func galaTypeSuggestion(offender grammar.ITypeContext, text string) string {
-	args := offender.AllType_()
-	texts := make([]string, len(args))
-	for i, a := range args {
-		texts[i] = a.GetText()
-	}
-	return typeSuggestion(text, texts)
-}
-
-// goTypeInExpressionRule is the rest of GALA-E0040's hint, after the
-// suggestion.
-const goTypeInExpressionRule = "; Go slice and map types are an interop surface, allowed only where a type is expected: a function signature, a struct field, a val/var annotation, or a type alias"
-
-// typeSuggestion is galaTypeSuggestion given the offending type's text and
-// the texts of its type arguments.
+// typeSuggestion spells the offending Go type the GALA way, given its text
+// and its type arguments' texts, so the message leaves the reader with the
+// replacement and not just the prohibition.
 func typeSuggestion(text string, args []string) string {
 	switch {
 	case strings.HasPrefix(text, "map[") && len(args) >= 2:

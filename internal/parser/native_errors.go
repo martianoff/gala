@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -158,33 +157,13 @@ func nativeGoTypeInExpressionError(lit native.CompositeLiteralNode, kids int) er
 	if !offender.Ok() {
 		return nil
 	}
-	text := offender.GetText()
-	kind := "slice"
-	if strings.HasPrefix(text, "map[") {
-		kind = "map"
+	var args []string
+	for _, a := range offender.AllType_() {
+		args = append(args, a.GetText())
 	}
-	start := offender.Start()
-	err := galaerr.NewCodedSemanticError(
-		galaerr.CodeGoTypeInExpression,
-		int(start.Line),
-		int(start.Column),
-		fmt.Sprintf("Go %s type %s is not allowed in an expression", kind, text),
-		nativeGalaTypeSuggestion(offender, text)+goTypeInExpressionRule,
-	)
-	if stop := offender.StopIndex(); stop >= offender.StartIndex() && offender.Tree().Token(stop).Line == start.Line {
-		err = err.WithSpan(int(start.Column) + len([]rune(text)))
-	}
-	return err
-}
-
-// nativeGalaTypeSuggestion is galaTypeSuggestion on the native tree.
-func nativeGalaTypeSuggestion(offender native.TypeNode, text string) string {
-	args := offender.AllType_()
-	texts := make([]string, len(args))
-	for i, a := range args {
-		texts[i] = a.GetText()
-	}
-	return typeSuggestion(text, texts)
+	start, stop := offender.Start(), offender.StopIndex()
+	return goTypeDiagnostic(int(start.Line), int(start.Column), offender.GetText(), args,
+		stop >= offender.StartIndex() && offender.Tree().Token(stop).Line == start.Line)
 }
 
 // findNativeGoSliceOrMapType is findGoSliceOrMapType on the native tree: the
