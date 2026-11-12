@@ -148,6 +148,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0098](/docs/errors/gala-e0098/) | Field default reads a field | Declarations |
 | [GALA-E0099](/docs/errors/gala-e0099/) | Pointer used where the value is expected | Types |
 | [GALA-E0100](/docs/errors/gala-e0100/) | Type does not implement the interface it is used as | Types |
+| [GALA-E0101](/docs/errors/gala-e0101/) | Error return discarded in a void lambda | Functions |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 

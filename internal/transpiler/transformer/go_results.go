@@ -165,6 +165,10 @@ func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
 // galaCalleeResult returns the declared result type of the GALA function or
 // method call names, and whether it names one.
 func (t *galaASTTransformer) galaCalleeResult(call *ast.CallExpr) (transpiler.Type, bool) {
+	// A method with type parameters of its own, lowered to a free function.
+	if m := t.genericMethodCalls[call]; m != nil {
+		return m.ReturnType, true
+	}
 	fun, _ := splitCallFunTypeArgs(call.Fun)
 	switch f := fun.(type) {
 	case *ast.Ident:
@@ -446,6 +450,16 @@ func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, 
 	if block, retType := t.tryWrapGoMultiReturnWithErrorPanic(raw); block != nil {
 		return block, retType, true
 	}
+	if lit, returns := t.errorBranches(raw); lit != nil {
+		// Each branch's call runs as a thunk of its own would run it, and the
+		// IIFE yields Void.
+		for _, ret := range returns {
+			ret.Results[0] = t.tryThunkIIFE(ret.Results[0])
+		}
+		void := t.stdIdent("Void")
+		lit.Type.Results = &ast.FieldList{List: []*ast.Field{{Type: void}}}
+		return &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{raw}}}}, void, true
+	}
 	if !t.isErrorOnlyCall(raw) {
 		return nil, nil, false
 	}
@@ -454,10 +468,59 @@ func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, 
 }
 
 // isErrorOnlyCall reports whether expr is a call returning only an `error`,
-// Go or GALA, whose error a Try thunk turns into the Failure.
+// Go or GALA, whose error a Try thunk turns into the Failure — or an if or
+// match whose every branch is one (see errorBranches).
 func (t *galaASTTransformer) isErrorOnlyCall(expr ast.Expr) bool {
 	raw := t.rawGoCall(expr)
-	return t.isGoErrorOnlyCall(raw) || t.isErrorCall(raw)
+	if t.isErrorReturningCall(raw) {
+		return true
+	}
+	lit, _ := t.errorBranches(raw)
+	return lit != nil
+}
+
+// isErrorReturningCall reports whether expr is one call returning only an
+// `error`: a Go call (isGoErrorOnlyCall) or a GALA one (isErrorCall).
+func (t *galaASTTransformer) isErrorReturningCall(expr ast.Expr) bool {
+	_, ok := expr.(*ast.CallExpr)
+	return ok && (t.isGoErrorOnlyCall(expr) || t.isErrorCall(expr))
+}
+
+// errorBranches returns the func literal of expr, an IIFE returning `error`
+// (an if or match expression lowered to one), and its returns, when every
+// return yields an error-only call (isErrorOnlyCall, so a nested if or match
+// counts too). Inside Try(...) its error is then the Failure, as a single
+// call's is. lit is nil otherwise: a branch yielding a plain error value
+// keeps every branch's error a value, so the IIFE keeps one result type.
+func (t *galaASTTransformer) errorBranches(expr ast.Expr) (lit *ast.FuncLit, returns []*ast.ReturnStmt) {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return nil, nil
+	}
+	lit, ok = call.Fun.(*ast.FuncLit)
+	if !ok || lit.Type.Results == nil || len(lit.Type.Results.List) != 1 || len(lit.Type.Results.List[0].Names) > 1 {
+		return nil, nil
+	}
+	if id, ok := lit.Type.Results.List[0].Type.(*ast.Ident); !ok || id.Name != "error" {
+		return nil, nil
+	}
+	errorOnly := true
+	ast.Inspect(lit.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false // a nested function's returns are its own
+		case *ast.ReturnStmt:
+			if len(n.Results) != 1 || !t.isErrorOnlyCall(n.Results[0]) {
+				errorOnly = false
+			}
+			returns = append(returns, n)
+		}
+		return errorOnly
+	})
+	if !errorOnly || len(returns) == 0 {
+		return nil, nil
+	}
+	return lit, returns
 }
 
 // errorThunk is the body of a Try thunk running call, which returns only an
@@ -507,8 +570,7 @@ func (t *galaASTTransformer) isErrorCall(expr ast.Expr) bool {
 	if result, ok := t.galaCalleeResult(call); ok {
 		return isErrorType(result)
 	}
-	// A function value, or a method with type parameters of its own, lowered
-	// to a free function.
+	// A function value.
 	return true
 }
 

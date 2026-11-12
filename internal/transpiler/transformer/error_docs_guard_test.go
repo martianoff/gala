@@ -1497,6 +1497,22 @@ func main() {
 			},
 		},
 		{
+			name: "error return discarded in a void lambda",
+			code: galaerr.CodeDiscardedErrorReturn, // GALA-E0101
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New(s"negative: $n") else nil
+
+func main() {
+    Some(-1).ForEach((n) => save(n))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

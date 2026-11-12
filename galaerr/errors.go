@@ -933,6 +933,11 @@ const (
 	// is not in a value's method set. Such code used to reach `go build`,
 	// which reported "does not implement" against the generated code.
 	CodeInterfaceNotImplemented ErrorCode = "GALA-E0100"
+
+	// E0101: a lambda that returns nothing ends a statement with a call
+	// returning only an `error`, Go or GALA, so the error would be dropped
+	// silently. FromError(call) turns it into a Try[Void] to handle.
+	CodeDiscardedErrorReturn ErrorCode = "GALA-E0101"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

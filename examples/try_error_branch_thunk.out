@@ -1,0 +1,14 @@
+Failure(boom)
+Success
+Failure(negative: -1)
+Success
+Failure(boom)
+Failure(close c2)
+true
+Failure(negative: -3)
+Failure(negative: -5)
+Success(plain)
+Success(boom)
+Success(failed)
+Success(got 2)
+Success(first)

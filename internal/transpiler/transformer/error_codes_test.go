@@ -698,6 +698,89 @@ func main() = Println(Box(2))`,
 			expectContains: "error_codes_test.gala:4:28 the default value of field H reads field W of Box",
 		},
 		{
+			name: "GALA-E0101 GALA function discarded in a void expression lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => save(n))
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:8:21 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
+		},
+		{
+			name: "GALA-E0101 GALA method discarded in a void block lambda",
+			input: `package main
+
+import "errors"
+
+struct Conn(name string)
+
+func (c Conn) Close() error = errors.New(c.name)
+
+func main() {
+    val conn = Conn("db")
+    Some(1).ForEach((n) => {
+        Println(n)
+        conn.Close()
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from conn.Close in void lambda",
+		},
+		{
+			name: "GALA-E0101 method of a val field named as written",
+			input: `package main
+
+import "errors"
+
+struct Conn(name string)
+
+func (c Conn) Close() error = errors.New(c.name)
+
+struct Holder(conn Conn)
+
+func main() {
+    val h = Holder(Conn("db"))
+    Some(1).ForEach((n) => h.conn.Close())
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from h.conn.Close in void lambda (hint: use FromError(h.conn.Close(...)) to handle the error)",
+		},
+		{
+			name: "GALA-E0101 generic GALA method returning error",
+			input: `package main
+
+import "errors"
+
+struct Conn(name string)
+
+func (c Conn) Send[T any](msg T) error = errors.New(c.name)
+
+func main() {
+    val conn = Conn("db")
+    Some(1).ForEach((n) => conn.Send(n))
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from conn.Send in void lambda",
+		},
+		{
+			name: "GALA-E0101 function value returning error",
+			input: `package main
+
+import "errors"
+
+func main() {
+    val check = (n int) => if (n < 0) errors.New("negative") else nil
+    Some(-1).ForEach((n) => check(n))
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from check in void lambda",
+		},
+		{
 			// A type argument: Some(x) is std.Some[T], and T here is the
 			// receive-only signal channel ctx.Done() returns.
 			name: "GALA-E0090 anonymous struct type as a type argument",

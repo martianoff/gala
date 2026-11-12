@@ -21,6 +21,28 @@ func recoverTry(error) Try[int] { return keepTry(0) }
 
 func isPositive(x int) bool { return x > 0 }
 
+func failErr() error { return NoSuchElementError{} }
+
+func nilErr() error { return nil }
+
+// errorBranchThunk is the Go that Try(() => if (c) fail() else succeed())
+// lowers to, with fail and succeed GALA functions returning `error`: each
+// branch panics on its call's error, and the thunk yields Void.
+func errorBranchThunk(c bool) Try[Void] {
+	return Try[Void]{}.Apply(func() Void {
+		if c {
+			if _err := failErr(); _err != nil {
+				panic(_err)
+			}
+			return Void{}
+		}
+		if _err := nilErr(); _err != nil {
+			panic(_err)
+		}
+		return Void{}
+	})
+}
+
 // unguardedMap is the code Try.Map compiled to before it captured panics,
 // the baseline BenchmarkTryMap compares against.
 func unguardedMap[T, U any](t Try[T], f func(T) U) Try[U] {
@@ -45,6 +67,7 @@ func TestTryCombinators_NoAllocationWithoutPanic(t *testing.T) {
 		{"RecoverWith on Failure", func() { tryFailure.RecoverWith(recoverTry) }},
 		{"Transform on Success", func() { Try_Transform(trySuccess, keepTry, recoverTry) }},
 		{"Transform on Failure", func() { Try_Transform(tryFailure, keepTry, recoverTry) }},
+		{"error-only branches, nil error", func() { errorBranchThunk(false) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -60,6 +60,7 @@ gala_test(
     deps = [
         ":concurrent",
         "//collection_immutable",
+        "//go_builtins",
         "//go_interop",
         "//time_utils",
     ],
