@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "splicecoverage_lib",
+    testonly = True,
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/internal/formal/difftest/splicecoverage",
+    visibility = ["//visibility:private"],
+    deps = ["//internal/formal/difftest"],
+)
+
+# Writes a differential run's coverage section into formal/COVERAGE.md.
+go_binary(
+    name = "splicecoverage",
+    testonly = True,
+    embed = [":splicecoverage_lib"],
+    visibility = ["//visibility:public"],
+)

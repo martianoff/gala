@@ -1,17 +1,8 @@
-package fuzz_test
-
-import (
-	"fmt"
-	"hash/fnv"
-	"strings"
-
-	"martianoff/gala/galaerr"
-)
-
-// programs_gen_test.go generates the programs FuzzPrograms runs, together
-// with the output each must print: the generator models every value it
-// builds and evaluates every pattern it writes, so the expected output is
-// known without running any GALA.
+// Package proggen generates the programs FuzzPrograms runs (and the formal
+// semantics' differential harness, internal/formal/difftest, compares with
+// the spec), together with the output each must print: the generator models
+// every value it builds and evaluates every pattern it writes, so the
+// expected output is known without running any GALA.
 //
 // A program declares a small domain — a sealed type, a generic sealed type, a
 // struct, a generic struct, a package-level value, a function, a method and a
@@ -22,7 +13,16 @@ import (
 // values against generated patterns in several positions — a val, a
 // function, a lambda, an if-expression branch, a partial function, a function
 // taking `any`, a partial function applied in an argument — and calls into
-// the domain. programs_shapes_gen_test.go adds the other statement shapes.
+// the domain. shapes.go adds the other statement shapes.
+package proggen
+
+import (
+	"fmt"
+	"hash/fnv"
+	"strings"
+
+	"martianoff/gala/galaerr"
+)
 
 // importStyle is how main reaches a package.
 type importStyle int
@@ -77,23 +77,23 @@ func sum(v value) int { return v.fields[0].n + v.fields[1].n }
 // limit is the domain's package-level Limit.
 const limit = 3
 
-// program is a generated program: its files and what it must do.
-type program struct {
-	main string
-	// lib is the library package's source and import path; "" when the
-	// domain is declared in main.
-	lib, libPath string
-	// rejection is the diagnostic the program must be rejected with; nil
-	// when it is valid and must print want.
-	rejection *rejection
-	want      string
+// Program is a generated program: its files and what it must do.
+type Program struct {
+	Main string
+	// Lib is the library package's source and LibPath its import path; ""
+	// when the domain is declared in main.
+	Lib, LibPath string
+	// Rejection is the diagnostic the program must be rejected with; nil
+	// when it is valid and must print Want.
+	Rejection *Rejection
+	Want      string
 }
 
-// rejection is a diagnostic a program must be rejected with: one with code,
-// one whose message holds text, or both.
-type rejection struct {
-	code galaerr.ErrorCode
-	text string
+// Rejection is a diagnostic a program must be rejected with: one with Code,
+// one whose message holds Text, or both.
+type Rejection struct {
+	Code galaerr.ErrorCode
+	Text string
 }
 
 // progGen generates a program from fuzz bytes; once they run out every
@@ -115,7 +115,7 @@ type progGen struct {
 	out        []string // the lines main must print
 	// rejection: a statement the transpiler must reject was emitted (see
 	// reject).
-	rejection *rejection
+	rejection *Rejection
 	// pkgVals are package-level vals the domain declares besides Limit.
 	pkgVals []string
 	// shadows are the domain's functions named like std types, by name.
@@ -187,7 +187,7 @@ func stdImport(s importStyle) (line, qual string) {
 	return "", ""
 }
 
-func generateProgram(data []byte) program {
+func Generate(data []byte) Program {
 	g := &progGen{data: data, shadows: map[string]string{}, helpers: map[string]bool{}}
 	style := importStyle(g.pick(int(importStyles)))
 	// std: implicit (the samePackage slot), qualified or dot-imported; an
@@ -226,21 +226,21 @@ func generateProgram(data []byte) program {
 
 	// The domain is written after the statements, which may add to it.
 	dom := domain(sp) + g.domainExtras()
-	var p program
+	var p Program
 	libImport := ""
 	if style != samePackage {
 		lib := "package lib\n\n" + stdLine + "\n" + dom
 		h := fnv.New64a()
 		h.Write([]byte(lib))
-		p.lib = lib
-		p.libPath = fmt.Sprintf("martianoff/gala/fuzzgen/p%016x/lib", h.Sum64())
+		p.Lib = lib
+		p.LibPath = fmt.Sprintf("martianoff/gala/fuzzgen/p%016x/lib", h.Sum64())
 		switch style {
 		case qualified:
-			libImport = fmt.Sprintf("import %q\n", p.libPath)
+			libImport = fmt.Sprintf("import %q\n", p.LibPath)
 		case aliased:
-			libImport = fmt.Sprintf("import l %q\n", p.libPath)
+			libImport = fmt.Sprintf("import l %q\n", p.LibPath)
 		case dotImported:
-			libImport = fmt.Sprintf("import . %q\n", p.libPath)
+			libImport = fmt.Sprintf("import . %q\n", p.LibPath)
 		}
 	}
 
@@ -264,10 +264,10 @@ func generateProgram(data []byte) program {
 		b.WriteString("    " + strings.ReplaceAll(s, "\n", "\n    ") + "\n")
 	}
 	b.WriteString("}\n")
-	p.main = b.String()
-	p.rejection = g.rejection
+	p.Main = b.String()
+	p.Rejection = g.rejection
 	if len(g.out) > 0 {
-		p.want = strings.Join(g.out, "\n") + "\n"
+		p.Want = strings.Join(g.out, "\n") + "\n"
 	}
 	return p
 }
@@ -783,7 +783,7 @@ func (g *progGen) match() {
 			if g.canReject() && g.pick(12) == 0 {
 				// A guard that is an int, not a bool.
 				guard = " if " + p.binders[guardIdx].use
-				g.reject(rejection{code: galaerr.CodeNonBoolGuard})
+				g.reject(Rejection{Code: galaerr.CodeNonBoolGuard})
 			}
 		}
 		if p.irrefutable && !guarded && !partial {
@@ -846,7 +846,7 @@ func (g *progGen) match() {
 			}
 		}
 		if missing {
-			g.reject(rejection{code: galaerr.CodeNonExhaustiveMatch})
+			g.reject(Rejection{Code: galaerr.CodeNonExhaustiveMatch})
 		} else {
 			arms = append(arms, arm{src: "case _ => -1", eval: func(value) (bool, int) { return true, -1 }})
 		}

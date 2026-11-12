@@ -1,0 +1,25 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+# The differential run against galaspec. It needs GALA_SPEC_BIN, so it is
+# manual: plain `bazel test //...` stays Lean-free, and the formal CI job
+# runs it (.github/workflows/formal.yml).
+go_test(
+    name = "differential_test",
+    # Builds and runs every example inside the spec's subset with Go, one at a
+    # time; "enormous" matches the CI job's budget.
+    size = "enormous",
+    srcs = ["differential_test.go"],
+    data = [
+        "//examples:all_gala_sources",
+        "//examples:expected_outputs",
+        "//internal/formal/difftest:baseline.json",
+        "//internal/formal/difftest:known_disagreements.json",
+        "//internal/formal/difftest:proved_constructs.json",
+        "//internal/formal/difftest:stdlib_sources",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//internal/formal/difftest",
+        "@rules_go//go/tools/bazel",
+    ],
+)

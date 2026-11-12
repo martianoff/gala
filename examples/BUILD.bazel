@@ -18,6 +18,14 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# What each single-file example must print; the formal semantics'
+# differential harness compares them with the spec.
+filegroup(
+    name = "expected_outputs",
+    srcs = glob(["*.out"]),
+    visibility = ["//visibility:public"],
+)
+
 # The Go bridge files that go-interop examples import.
 filegroup(
     name = "all_go_bridge_sources",

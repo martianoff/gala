@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+# FuzzPrograms' generator: whole programs with the output each must print.
+go_library(
+    name = "proggen",
+    testonly = True,
+    srcs = [
+        "programs.go",
+        "shapes.go",
+    ],
+    importpath = "martianoff/gala/internal/transpiler/fuzz/proggen",
+    visibility = [
+        "//internal/formal:__subpackages__",
+        "//internal/transpiler/fuzz:__subpackages__",
+    ],
+    deps = ["//galaerr"],
+)

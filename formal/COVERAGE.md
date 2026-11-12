@@ -41,3 +41,10 @@ what a correct lowering must do; they do not say the transpiler does it.
 Everything else in GALA. There is no reference interpreter yet, no Core JSON exporter and
 no differential testing, so no program has been tested against the spec, and no example
 has a verdict.
+
+<!-- difftest:begin -->
+## Differential testing
+
+No differential run yet. The harness (`internal/formal/difftest`) generates this section
+from a run against galaspec; the first such run fills it in.
+<!-- difftest:end -->

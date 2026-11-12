@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+
+	"martianoff/gala/internal/transpiler/fuzz/progrun"
 )
 
 // FuzzValueBlocks generates whole programs from the fuzz input and checks
@@ -51,7 +53,7 @@ func checkTypeChecks(t *testing.T, src string) {
 // requireTypeChecks asserts that code, the Go generated for src, type-checks.
 func requireTypeChecks(t *testing.T, src, code string) {
 	t.Helper()
-	tc := oracleImporter(t).TypeCheck("generated.go", code)
+	tc := progrun.OracleImporter(t).TypeCheck("generated.go", code)
 	if tc.Skipped != "" {
 		t.Fatalf("generated Go could not be type-checked: %s\ninput:\n%s", tc.Skipped, src)
 	}

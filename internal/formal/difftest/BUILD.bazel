@@ -1,0 +1,76 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# The formal semantics' differential harness (docs/FORMAL_SEMANTICS.MD). The
+# run against galaspec is //internal/formal/difftest/differential, a manual
+# target; the tests here check the harness itself, with a stub galaspec, and
+# need no Lean.
+go_library(
+    name = "difftest",
+    testonly = True,
+    srcs = [
+        "coverage.go",
+        "harness.go",
+        "known.go",
+        "outcome.go",
+        "sources.go",
+        "spec.go",
+        "verdict.go",
+    ],
+    importpath = "martianoff/gala/internal/formal/difftest",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [
+        "//internal/formal/coreexport",
+        "//internal/formal/coreexport/analyzerhints",
+        "//internal/transpiler/fuzz/proggen",
+        "//internal/transpiler/fuzz/progrun",
+        "@rules_go//go/tools/bazel",
+    ],
+)
+
+exports_files(
+    [
+        "baseline.json",
+        "known_disagreements.json",
+        "proved_constructs.json",
+    ],
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
+# The standard library sources the programs under test import, transpiled
+# from source (see progrun).
+filegroup(
+    name = "stdlib_sources",
+    testonly = True,
+    srcs = [
+        "//collection_immutable:gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//std:embedded_fs.go",
+        "//std:gala_sources",
+        "//std:interfaces.go",
+        "//std:types.go",
+    ],
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
+go_test(
+    name = "difftest_test",
+    # TestHarnessWithStub builds and runs a few programs with Go: about 30s
+    # on a cold Go build cache.
+    size = "medium",
+    srcs = [
+        "difftest_test.go",
+        "stub_test.go",
+    ],
+    data = [
+        ":stdlib_sources",
+        "//internal/formal/difftest/testdata/stubspec",
+    ],
+    embed = [":difftest"],
+    env = {"STUB_SPEC": "$(rlocationpath //internal/formal/difftest/testdata/stubspec)"},
+    deps = [
+        "//internal/formal/coreexport",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/runfiles",
+    ],
+)

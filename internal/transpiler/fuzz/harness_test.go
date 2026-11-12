@@ -22,33 +22,19 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 	"unicode/utf8"
-
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
-	"martianoff/gala/internal/transpiler/gooracle"
-	"martianoff/gala/internal/transpiler/transformer"
+	"martianoff/gala/internal/transpiler/fuzz/progrun"
 )
-
-// transpileTimeout bounds a single transpile. Inputs are small; anything that
-// takes this long is treated as a hang. It is generous because the seed pass
-// also runs on slow shared CI machines.
-const transpileTimeout = 60 * time.Second
 
 // sourceFile is the file name every fuzz input is transpiled as. A non-empty
 // name matters: it switches on the source-map line markers and their rewrite
@@ -60,110 +46,6 @@ const sourceFile = "fuzz.gala"
 // giving each a code and a docs/errors page is its own piece of work; set
 // GALA_FUZZ_REQUIRE_CODES=1 to have fuzzing hunt for them.
 var requireCodes = os.Getenv("GALA_FUZZ_REQUIRE_CODES") == "1"
-
-var (
-	rootOnce sync.Once
-	rootDir  string
-)
-
-// repoRoot returns the directory that holds std/ (and examples/): the Bazel
-// runfiles root under `bazel test`, the module root under `go test`.
-func repoRoot(tb testing.TB) string {
-	tb.Helper()
-	rootOnce.Do(func() {
-		if p, err := bazel.Runfile("std/option.gala"); err == nil {
-			rootDir = filepath.Dir(filepath.Dir(p))
-			return
-		}
-		dir, err := os.Getwd()
-		if err != nil {
-			return
-		}
-		for {
-			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				rootDir = dir
-				return
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				return
-			}
-			dir = parent
-		}
-	})
-	if rootDir == "" {
-		tb.Fatal("cannot locate the repository root (std/ is not staged)")
-	}
-	return rootDir
-}
-
-// newTranspiler builds a fresh pipeline for every input so that no state can
-// leak from one input into the next — the analyzer's package cache is global
-// and warm after the first call, so this costs little. It resolves packages
-// in the repository and in generatedRoot, where generated libraries live.
-func newTranspiler(tb testing.TB) *transpiler.GalaToGoTranspiler {
-	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, []string{repoRoot(tb), generatedRoot(tb)})
-	return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-}
-
-var (
-	generatedOnce sync.Once
-	generatedDir  string
-	generatedErr  error
-)
-
-// generatedRoot is the directory generated library packages are written
-// under, as <root>/<import path>; one per process.
-func generatedRoot(tb testing.TB) string {
-	tb.Helper()
-	generatedOnce.Do(func() {
-		generatedDir, generatedErr = os.MkdirTemp("", "gala-fuzz-generated-")
-	})
-	if generatedErr != nil {
-		tb.Fatal(generatedErr)
-	}
-	return generatedDir
-}
-
-var (
-	importerOnce sync.Once
-	oracleImp    *gooracle.Importer
-)
-
-// oracleImporter returns the importer that type-checks generated Go: the Go
-// standard library from the SDK, GALA packages — the repository's and the
-// generated ones — transpiled from source. Without a Go SDK the check is
-// skipped, except under Bazel, which always provides one: there a missing SDK
-// is a broken setup that would otherwise pass without checking anything.
-func oracleImporter(tb testing.TB) *gooracle.Importer {
-	tb.Helper()
-	importerOnce.Do(func() {
-		if !analyzer.GoImporterAvailable() {
-			return
-		}
-		oracleImp = gooracle.NewImporter(gooracle.ImporterConfig{
-			Go:         importer.ForCompiler(token.NewFileSet(), "source", nil),
-			ModulePath: "martianoff/gala",
-			Root:       repoRoot(tb),
-			ExtraRoots: []string{generatedRoot(tb)},
-			Transpile:  newTranspiler(tb).Transpile,
-		})
-	})
-	if oracleImp == nil {
-		requireUnderBazel(tb, "no Go SDK: generated Go cannot be type-checked")
-	}
-	return oracleImp
-}
-
-// requireUnderBazel skips the test with reason, or fails it under Bazel.
-func requireUnderBazel(tb testing.TB, reason string) {
-	tb.Helper()
-	if os.Getenv("TEST_SRCDIR") != "" {
-		tb.Fatal(reason)
-	}
-	tb.Skip(reason)
-}
 
 // warmUp loads the standard library into the analyzer's process-wide cache
 // before any input runs. Every fuzz target calls it ahead of f.Fuzz: the Go
@@ -188,38 +70,12 @@ func warmUp(tb testing.TB) {
 	}
 }
 
-// outcome is the result of one bounded transpile.
-type outcome struct {
-	Go    string
-	Err   error
-	Panic any
-	Stack string
-}
+type outcome = progrun.Outcome
 
-// transpile runs the full pipeline on src, converting a panic into a reported
-// value and a run past transpileTimeout into a test failure.
+// transpile runs the full pipeline on src as sourceFile (see progrun.Transpile).
 func transpile(tb testing.TB, src string) outcome {
 	tb.Helper()
-	tr := newTranspiler(tb)
-	done := make(chan outcome, 1)
-	go func() {
-		var res outcome
-		defer func() {
-			if r := recover(); r != nil {
-				res.Panic = r
-				res.Stack = string(debug.Stack())
-			}
-			done <- res
-		}()
-		res.Go, res.Err = tr.Transpile(src, sourceFile)
-	}()
-	select {
-	case res := <-done:
-		return res
-	case <-time.After(transpileTimeout):
-		tb.Fatalf("transpile did not finish within %s (hang) on input:\n%q", transpileTimeout, src)
-		return outcome{}
-	}
+	return progrun.Transpile(tb, src, sourceFile)
 }
 
 // checkOutcome asserts the properties every target shares (see the package
@@ -341,7 +197,7 @@ const maxSeedExamples = 60
 // single-file examples.
 func exampleSeeds(tb testing.TB) []string {
 	tb.Helper()
-	dir := filepath.Join(repoRoot(tb), "examples")
+	dir := filepath.Join(progrun.RepoRoot(tb), "examples")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		tb.Fatalf("cannot read %s: %v", dir, err)

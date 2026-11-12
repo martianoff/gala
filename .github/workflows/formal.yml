@@ -1,18 +1,38 @@
 name: Formal
 
-# Builds the Lean semantics in formal/ and checks its proofs. See formal/README.md and
-# docs/FORMAL_SEMANTICS.MD. Lean is built with Lake here, never with Bazel, so the
-# Bazel workflows stay Lean-free.
+# Builds the Lean semantics in formal/ and checks its proofs, then compares galaspec,
+# the Lean reference interpreter, with the transpiler (internal/formal/difftest). See
+# formal/README.md and docs/FORMAL_SEMANTICS.MD. Lean is built with Lake here, never
+# with Bazel, so the Bazel workflows stay Lean-free.
+#
+# It runs for every change that can move a differential verdict: the spec, the
+# harness and exporter, the transpiler, the standard library and the examples.
 on:
   pull_request:
     branches: [master]
     paths:
       - 'formal/**'
+      - 'internal/formal/**'
+      - 'internal/transpiler/**'
+      - 'std/**'
+      - 'collection_immutable/**'
+      - 'go_builtins/**'
+      - 'go_interop/**'
+      - 'galaerr/**'
+      - 'examples/**'
       - '.github/workflows/formal.yml'
   push:
     branches: [master]
     paths:
       - 'formal/**'
+      - 'internal/formal/**'
+      - 'internal/transpiler/**'
+      - 'std/**'
+      - 'collection_immutable/**'
+      - 'go_builtins/**'
+      - 'go_interop/**'
+      - 'galaerr/**'
+      - 'examples/**'
       - '.github/workflows/formal.yml'
 
 permissions:
@@ -82,3 +102,149 @@ jobs:
       - name: Check proofs
         # lake build only warns on sorry; this fails on sorry and non-standard axioms.
         run: lake env lean --run scripts/ProofCheck.lean
+
+  # The differential run (docs/FORMAL_SEMANTICS.MD, "Differential harness"): every
+  # example with a .out file and a sample of FuzzPrograms' programs, run through
+  # galaspec and through the transpiler and Go. A DISAGREE not listed in
+  # internal/formal/difftest/known_disagreements.json fails it, and so does a fall in
+  # the number of agreeing examples. Its coverage section and summary go to the job
+  # summary.
+  difftest:
+    name: Differential run
+    # After the proofs job, so it restores the Lake build that job cached rather than
+    # building Lean a second time in parallel.
+    needs: formal
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      # Reads the issues known_disagreements.json lists, to check they are open.
+      issues: read
+    env:
+      ELAN_VERSION: v4.2.4
+      ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
+      OUTPUTS: bazel-testlogs/internal/formal/difftest/differential/differential_test/test.outputs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Known disagreements are open issues
+        # A known disagreement stays listed only while its issue is open; the PR
+        # that fixes it removes the entry (the harness fails on a listed program
+        # that agrees). An issue closed without a fix must take its entry with it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=0
+          for n in $(jq -r '.[].issue' internal/formal/difftest/known_disagreements.json); do
+            state="$(gh api "repos/${{ github.repository }}/issues/$n" --jq .state)"
+            if [ "$state" != open ]; then
+              echo "::error::#$n is $state: remove its entry from internal/formal/difftest/known_disagreements.json"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Is galaspec defined?
+        # galaspec is a Lake executable in formal/lakefile.toml. Until it exists the
+        # harness is checked only against its stub (//internal/formal/difftest:difftest_test,
+        # part of bazel test //...), and this job says so in its summary. The check goes
+        # once galaspec is on master.
+        id: spec
+        run: |
+          if grep -Eq '^name = "galaspec"' formal/lakefile.toml; then
+            echo "defined=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "defined=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Differential run: not run"
+              echo
+              echo "formal/lakefile.toml defines no galaspec executable yet, so no program was compared with the spec."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Cache elan and the Lean toolchain
+        if: steps.spec.outputs.defined == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ env.ELAN_VERSION }}-${{ hashFiles('formal/lean-toolchain') }}
+
+      - name: Cache Lake build
+        if: steps.spec.outputs.defined == 'true'
+        uses: actions/cache@v4
+        with:
+          path: formal/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
+
+      - name: Install elan
+        if: steps.spec.outputs.defined == 'true'
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            tmp="$(mktemp -d)"
+            curl -sSfL -o "$tmp/elan.tar.gz" \
+              "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz"
+            echo "$ELAN_SHA256  $tmp/elan.tar.gz" | sha256sum -c -
+            tar -xzf "$tmp/elan.tar.gz" -C "$tmp"
+            "$tmp/elan-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Build galaspec
+        if: steps.spec.outputs.defined == 'true'
+        working-directory: formal
+        run: |
+          lake build galaspec
+          echo "GALA_SPEC_BIN=$PWD/.lake/build/bin/galaspec" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        if: steps.spec.outputs.defined == 'true'
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Export GOROOT
+        if: steps.spec.outputs.defined == 'true'
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
+      - name: Setup Bazel
+        if: steps.spec.outputs.defined == 'true'
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-difftest-go${{ steps.setup-go.outputs.go-version }}
+          repository-cache: true
+
+      - name: Differential run
+        if: steps.spec.outputs.defined == 'true'
+        run: |
+          bazel test //internal/formal/difftest/differential:differential_test \
+            --test_env=GALA_SPEC_BIN \
+            --nocache_test_results \
+            --nozip_undeclared_test_outputs \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+
+      - name: Publish the coverage summary
+        if: always() && steps.spec.outputs.defined == 'true'
+        run: |
+          if [ ! -f "$OUTPUTS/summary.md" ]; then
+            echo "## Differential run: no report (the run failed before writing one)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat "$OUTPUTS/summary.md" "$OUTPUTS/coverage_section.md" >> "$GITHUB_STEP_SUMMARY"
+          # formal/COVERAGE.md carries the section; say when the committed one is stale.
+          bazel run //internal/formal/difftest/splicecoverage \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH -- "$PWD/$OUTPUTS/coverage_section.md"
+          if ! git diff --quiet -- formal/COVERAGE.md; then
+            {
+              echo
+              echo "formal/COVERAGE.md is out of date with this run: run the differential test and"
+              echo "\`bazel run //internal/formal/difftest/splicecoverage -- <its coverage_section.md>\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
