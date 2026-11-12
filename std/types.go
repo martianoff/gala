@@ -540,27 +540,30 @@ func formatField(b *strings.Builder, f any) {
 	case v.Kind() == reflect.Func:
 		b.WriteString("<fn>")
 	case v.Kind() == reflect.Pointer && !v.IsNil():
-		// Printing what the pointer points to can lead back here — a value
-		// that prints itself (a GALA struct, a mutable collection) by its
-		// method, a Go struct by the fields %v prints: the cycle guard.
+		_, printsItself := f.(fmt.Stringer)
+		if !printsItself {
+			_, printsItself = f.(fmt.Formatter)
+		}
+		if !printsItself {
+			_, printsItself = f.(error)
+		}
+		if !printsItself && v.Elem().Kind() != reflect.Struct {
+			// A pointer to a plain value prints that value, which cannot
+			// lead back here.
+			fmt.Fprint(b, v.Elem().Interface())
+			return
+		}
+		// A value that prints itself (a GALA struct, a mutable collection)
+		// by its method, or a Go struct by the fields %v prints, which is
+		// `&{field field}` for a pointer operand: either can lead back
+		// here, so the cycle guard.
 		key := printingKey{goroutineID(), v.Pointer(), v.Type()}
 		if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
 			b.WriteString("<cycle>")
 			return
 		}
 		defer printing.Delete(key)
-		switch f.(type) {
-		case fmt.Stringer, fmt.Formatter, error:
-			fmt.Fprint(b, f)
-		default:
-			if v.Elem().Kind() == reflect.Struct {
-				// A Go struct: `&{field field}`, as %v prints a pointer
-				// operand.
-				fmt.Fprint(b, f)
-				return
-			}
-			fmt.Fprint(b, v.Elem().Interface())
-		}
+		fmt.Fprint(b, f)
 	default:
 		if s, ok := pointerString(v); ok {
 			b.WriteString(s)
@@ -570,32 +573,66 @@ func formatField(b *strings.Builder, f any) {
 	}
 }
 
-// stringerType is fmt.Stringer's type.
-var stringerType = reflect.TypeFor[fmt.Stringer]()
+var (
+	stringerType  = reflect.TypeFor[fmt.Stringer]()
+	formatterType = reflect.TypeFor[fmt.Formatter]()
+	errorType     = reflect.TypeFor[error]()
+)
+
+// pointerStringTypes caches, per reflect.Type, whether a value of the type
+// prints by a String declared on a pointer receiver only (see pointerString).
+var pointerStringTypes sync.Map // reflect.Type -> bool
+
+// printsByPointerString reports whether a value of type t prints by a String
+// declared on *t: t has no String, Error or Format of its own, which fmt
+// would use first, and *t has String.
+func printsByPointerString(t reflect.Type) bool {
+	if known, ok := pointerStringTypes.Load(t); ok {
+		return known.(bool)
+	}
+	ok := t.Name() != "" && t.Kind() != reflect.Pointer && t.Kind() != reflect.Interface &&
+		!t.Implements(stringerType) && !t.Implements(formatterType) && !t.Implements(errorType) &&
+		reflect.PointerTo(t).Implements(stringerType)
+	pointerStringTypes.Store(t, ok)
+	return ok
+}
 
 // pointerString is the text of v, a value whose type declares String on a
 // pointer receiver only, as that String gives it for a copy of v (see
-// PtrString); ok is false for any other value, which fmt prints itself.
-func pointerString(v reflect.Value) (string, bool) {
-	if !v.IsValid() || v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface || v.Type().Name() == "" ||
-		v.Type().Implements(stringerType) || !reflect.PointerTo(v.Type()).Implements(stringerType) {
+// PtrString); ok is false for any other value, which fmt prints itself, and
+// for one whose String panics on the copy (a Go type that refuses to be
+// copied, such as strings.Builder), which fmt then prints as it would have.
+func pointerString(v reflect.Value) (s string, ok bool) {
+	if !v.IsValid() || !printsByPointerString(v.Type()) {
 		return "", false
 	}
+	defer func() {
+		if recover() != nil {
+			s, ok = "", false
+		}
+	}()
 	p := reflect.New(v.Type())
 	p.Elem().Set(v)
 	return p.Interface().(fmt.Stringer).String(), true
 }
 
+// shown is the text a value prints as, from PtrString. It prints as that
+// text with fmt's %v and %s, and is not a string, so Print still puts a
+// space between it and another operand that is not one.
+type shown struct{ text string }
+
+func (s shown) String() string { return s.text }
+
 // PtrString is the text of v, whose type declares `String() string` on a
 // pointer receiver: GALA prints such a value by calling that String on a
 // copy of it, as fmt would on the value's address. Println, Print and
-// interpolation call it for such a value; FormatStruct does the same for a
-// field.
+// interpolation call it for a value of a GALA type with such a String;
+// FormatStruct does the same for a field.
 func PtrString[T any, P interface {
 	*T
 	String() string
-}](v T) string {
-	return P(&v).String()
+}](v T) shown {
+	return shown{P(&v).String()}
 }
 
 // printingKey names a pointer one goroutine is printing. The type tells a
