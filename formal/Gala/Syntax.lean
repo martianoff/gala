@@ -20,9 +20,12 @@
 -/
 namespace Gala.Spec
 
-/-- A type as written: a plain name (`int`, `Point`), or an unsupported form of type. -/
+/-- A type as written: a plain name (`int`, `Point`), a function type, or an unsupported
+    form of type. -/
 inductive Ty
   | name (n : String)
+  /-- `func(T1, T2) R`; the result is `none` for a function without one. -/
+  | func (params : List Ty) (result : Option Ty)
   | unsupported (kind : String)
   deriving Repr, BEq, Inhabited
 
@@ -61,6 +64,12 @@ inductive Pat
   | extract (callee : String) (args : List Pat)
   /-- A pattern outside S1. -/
   | unsupported (kind : String)
+  deriving Repr, Inhabited
+
+/-- A function or lambda parameter; a lambda's may leave its type out. -/
+structure Param where
+  name : String
+  type : Option Ty
   deriving Repr, Inhabited
 
 /-- How a declaration binds: `val` (immutable) or `var` (mutable). -/
@@ -104,14 +113,10 @@ inductive Expr
   /-- An interpolated string `s"..."`: its parts in source order. A literal run is a
       string literal (`lit (.str _)`), an embedded expression is itself. -/
   | interp (parts : List Expr)
+  /-- A lambda `(params) [result] => body`; the body is a `block` or an expression. -/
+  | lambda (params : List Param) (result : Option Ty) (body : Expr)
   /-- A construct outside S1. -/
   | unsupported (kind : String)
-  deriving Repr, Inhabited
-
-/-- A function parameter. -/
-structure Param where
-  name : String
-  type : Option Ty
   deriving Repr, Inhabited
 
 /-- A function declaration. -/

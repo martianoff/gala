@@ -65,8 +65,8 @@ func TestHarnessWithStub(t *testing.T) {
 		},
 		{
 			name: "unsupported by the exporter",
-			body: "    val f = (x int) => x\n    Println(f(1))\n",
-			want: Comparison{Verdict: Unsupported, Reason: "outside the spec's subset: lambda"},
+			body: "    for i := 0; i < 1; i++ {\n        Println(i)\n    }\n",
+			want: Comparison{Verdict: Unsupported, Reason: "outside the spec's subset: for"},
 		},
 		{
 			name: "unsupported by the spec",

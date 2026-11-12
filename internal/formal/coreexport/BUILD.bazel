@@ -8,6 +8,7 @@ go_library(
         "coverage.go",
         "export.go",
         "interp.go",
+        "lambda.go",
         "pattern.go",
         "schema.go",
     ],

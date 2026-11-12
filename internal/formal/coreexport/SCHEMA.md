@@ -1,4 +1,4 @@
-# Core JSON, version 2
+# Core JSON, version 3
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -10,7 +10,8 @@ the parts of S2 listed here:
 - functions and recursion, structs and sealed types;
 - `match` with nested, tuple, literal and wildcard patterns, and guards;
 - `Println` and `Print`;
-- interpolated strings, `s"..."` (S2).
+- interpolated strings, `s"..."` (S2);
+- lambdas, function types and functions as values (S2).
 
 The Go types in [schema.go](schema.go) are the same schema. `schema_test.go` checks
 that every kind and field there is documented here, and that the two lists of
@@ -43,7 +44,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 2,
+  "core": 3,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -74,7 +75,7 @@ Optional child nodes are `null` when absent. Lists are never `null`; an empty li
 A construct outside the subset is exported in place of the node it would be, as
 
 ```json
-{ "unsupported": "lambda", "pos": { "line": 3, "col": 13, "off": 40, "end": 55 } }
+{ "unsupported": "for", "pos": { "line": 3, "col": 5, "off": 32, "end": 70 } }
 ```
 
 It has `unsupported` instead of `kind`, and a `pos`. It never makes the export fail. A
@@ -160,8 +161,8 @@ receiver) and a generic function are unsupported.
 
 ### `param`
 
-A function parameter. Defaults, variadic parameters and `val`/`var` modifiers are
-unsupported.
+A function or lambda parameter. Defaults, variadic parameters and `val`/`var` modifiers
+are unsupported.
 
 - `name` (string).
 - `type` (type or null): null when left out.
@@ -227,7 +228,7 @@ One `case` of a sealed type. `case Empty` and `case Empty()` are the same varian
 ### `type-name`
 
 A type written as a plain name: `int`, `string`, `Point`. Generic, qualified, slice,
-pointer, map and function types are unsupported.
+pointer and map types are unsupported; a function type is a [`type-func`](#type-func).
 
 - `name` (string).
 
@@ -370,8 +371,8 @@ one level nests to the left: `a - b - c` is `(a - b) - c`.
 ### `call`
 
 `callee(args)`. Struct and variant construction (`Point(1, 2)`) and printing
-(`Println(x)`) are calls too: the exporter does not tell them apart. Named arguments,
-spread arguments and lambda arguments are unsupported.
+(`Println(x)`) are calls too: the exporter does not tell them apart. Named arguments and
+spread arguments are unsupported; a lambda argument is a [`lambda`](#lambda).
 
 - `callee` (expression).
 - `args` (list of expressions), in source order.
@@ -507,6 +508,34 @@ The pattern `(p1, p2, ...)`, two or more elements.
   "args": [ { "kind": "pat-name", "pos": "…", "name": "v" } ] }
 ```
 
+### `lambda`
+
+A lambda, `(x int) => x * x` or `(n int) int => { ... }` (S2), wherever it is written: as
+a value, a call argument or a function's result.
+
+- `params` (list of `param`): a parameter's `type` is null when it is left out, to be
+  inferred from the context.
+- `result` (type or null): the declared result type.
+- `body` (`block` or expression).
+
+```json
+{ "kind": "lambda", "pos": "…", "params": [ { "kind": "param", "pos": "…", "name": "x", "type": null } ],
+  "result": null, "body": { "kind": "name", "pos": "…", "name": "x" } }
+```
+
+### `type-func`
+
+A function type, `func(int, string) bool` (S2). A parameter written with a name,
+`func(x int) bool`, is exported as its type alone.
+
+- `params` (list of types), in order.
+- `result` (type or null): null for a function without a result.
+
+```json
+{ "kind": "type-func", "pos": "…", "params": [ { "kind": "type-name", "pos": "…", "name": "int" } ],
+  "result": { "kind": "type-name", "pos": "…", "name": "bool" } }
+```
+
 ### `interp`
 
 An interpolated string, `s"..."` (S2). The exporter splits its text with the lexical
@@ -560,8 +589,8 @@ Every name an `unsupported` node can carry.
 | `for` | a `for` loop |
 | `if-init` | an `if` statement with an init statement, `if x := f(); x > 0` |
 | `short-var-decl` | `a := e` |
-| `lambda` | a lambda, `(x) => ...` |
 | `partial-function` | a partial function literal, `{ case ... }` |
+| `placeholder-lambda` | a placeholder lambda, `_ * 2`, which the transpiler rewrites from the expected type |
 | `composite-literal` | a Go composite literal, `T{...}` |
 | `index` | indexing or explicit type arguments, `x[i]` |
 | `named-arg` | a named argument, `f(x = 1)` |
@@ -581,7 +610,7 @@ Every name an `unsupported` node can carry.
 | `slice-type` | `[]T` |
 | `pointer-type` | `*T` |
 | `map-type` | `map[K]V` |
-| `func-type` | `func(...) T` |
+| `func-type` | a function type written as an expression, `EmptyArray[func() int]()` |
 | `other-type` | a form of type the grammar gained after this exporter was written |
 | `deref` | `*p` |
 | `address-of` | `&x` |

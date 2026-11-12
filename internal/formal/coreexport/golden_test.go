@@ -146,6 +146,21 @@ func main() {
     })
 }
 `},
+		{"lambdas", `package main
+
+func apply(x int, f func(int) int) int = f(x)
+
+func adder(n int) func(x int) func() int = (x int) => () => n + x
+
+func main() {
+    val sq = (x int) => x * x
+    val add = (a int, b int) int => {
+        a + b
+    }
+    Println(apply(3, (y) => y + 1), sq(2), add(1, 2), adder(1)(2)())
+    Println(apply(1, (var z int) => z), apply(1, _ * 2))
+}
+`},
 		{"unsupported", `package main
 
 import "fmt"

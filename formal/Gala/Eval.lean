@@ -67,6 +67,9 @@ structure St where
   globals : Env
   out : String
   steps : Nat
+  /-- The cells of the local `var`s, by `Val.ref` index. A cell outlives its scope, so a
+      closure that captured it shares it (S2). -/
+  heap : Array Val := #[]
 
 /-- Evaluation: state that survives a `Stop`, so output printed before a panic stays. -/
 abbrev M := ExceptT Stop (StateM St)
@@ -104,6 +107,28 @@ def tick : M Unit := do
   | 0 => throw .fuel
   | n + 1 => set { s with steps := n }
 
+/-- The value a binding holds: a local `var`'s is in its cell. -/
+def deref : Val → M Val
+  | .ref n => do
+    match (← get).heap[n]? with
+    | some v => pure v
+    | none => stuck "a reference to no cell"
+  | v => pure v
+
+/-- A new cell holding `v`. -/
+def alloc (v : Val) : M Val :=
+  modifyGet fun s => (.ref s.heap.size, { s with heap := s.heap.push v })
+
+/-- Store `v` in cell `n`. -/
+def store (n : Nat) (v : Val) : M Unit := do
+  unless n < (← get).heap.size do stuck "a reference to no cell"
+  modify fun s => { s with heap := s.heap.set! n v }
+
+/-- Is a value a function: a lambda's closure or a top-level function? -/
+def isFn : Val → Bool
+  | .closure .. | .fn _ => true
+  | _ => false
+
 /-- Structural equality: `==` on S1 values. Structs, tuples and sealed values compare
     by value (docs/GALA.MD, "Equality"); a sealed value by its case and that case's
     fields only. -/
@@ -122,6 +147,7 @@ where
     | a :: as, b :: bs => valEq a b && valEqs as bs
     | _, _ => false
 
+mutual
 /-- The S1 type a type annotation names: `int` (and `int64`, the same type on a 64-bit
     target), `bool`, `string`, a struct or a sealed type of the program. -/
 def checkTy (ds : Decls) : Ty → M String
@@ -130,6 +156,15 @@ def checkTy (ds : Decls) : Ty → M String
     if n ∈ ["int", "int64", "bool", "string"] || (ds.structs.lookup n).isSome
         || (ds.sealeds.lookup n).isSome then pure n
     else unsup s!"type-{n}"
+  -- A function type (S2): its parts must be types of the subset. Its zero value is
+  -- `nil`, which the subset does not model.
+  | .func ps none => do checkTys ds ps; pure "func"
+  | .func ps (some r) => do checkTys ds ps; discard (checkTy ds r); pure "func"
+/-- Check each type of a list. -/
+def checkTys (ds : Decls) : List Ty → M Unit
+  | [] => pure ()
+  | t :: ts => do discard (checkTy ds t); checkTys ds ts
+end
 
 /-- The S1 type of a field or parameter, which must state one. -/
 def checkOptTy (ds : Decls) (what : String) : Option Ty → M String
@@ -143,6 +178,7 @@ def zero (ds : Decls) : Nat → String → M Val
   | 0, _ => stuck "type nests too deep"
   | _ + 1, "int" | _ + 1, "int64" => pure (.int 0)
   | _ + 1, "bool" => pure (.bool false)
+  | _ + 1, "func" => unsup "nil"
   | _ + 1, "string" => pure (.str "")
   | n + 1, t =>
     let zeroFields (fs : List Field) : M (List Val) :=
@@ -267,7 +303,7 @@ def readPlace (ds : Decls) : Expr → M Val
   | .name x => do
     let s ← get
     match lookupVar s.locals s.globals x with
-    | some b => pure b.val
+    | some b => deref b.val
     | none => stuck s!"assignment to {x}, which is not a variable"
   | .select t f => do getField ds (← readPlace ds t) f
   | .paren e => readPlace ds e
@@ -277,6 +313,8 @@ def readPlace (ds : Decls) : Expr → M Val
 def assignTo (ds : Decls) : Expr → Val → M Unit
   | .name x, v => do
     let s ← get
+    -- A local `var` is assigned in its cell, which closures that captured it share.
+    if let some ⟨.ref n, _⟩ := lookup s.locals x then store n v else
     match update s.locals x v with
     | some l => set { s with locals := l }
     | none => match update s.globals x v with
@@ -313,7 +351,7 @@ def matchPat (ds : Decls) (locals globals : Env) : Pat → Val → M (Option (Li
       else match v with
         | .sealed _ c' _ => pure (if c' == c.name then some [] else none)
         | _ => pure none
-    | .stable b => pure (if valEq b.val v then some [] else none)
+    | .stable b => do pure (if valEq (← deref b.val) v then some [] else none)
     | .binder => pure (some [(x, v)])
   | .tuple ps, v =>
     match v with
@@ -352,8 +390,38 @@ private def asBool : Val → M Bool
   | .bool b => pure b
   | v => stuck s!"condition is not a bool: {repr v}"
 
-private def pushAll (bs : List (String × Val)) (mutable : Bool) : M Unit :=
-  modify fun s => { s with locals := bs.foldl (fun ρ (x, v) => bind ρ x ⟨v, mutable⟩) s.locals }
+/-- Bind names in the current scope. A `var` gets a cell of its own (S2: closures share it). -/
+private def pushAll (bs : List (String × Val)) (mutable : Bool) : M Unit := do
+  for (x, v) in bs do
+    let b ← if mutable then do pure ⟨← alloc v, true⟩ else pure ⟨v, false⟩
+    modify fun s => { s with locals := bind s.locals x b }
+
+/-- The locals a lambda closes over, as it captures them: a `var` by its cell. -/
+def captured (ρ : Env) : List (String × Val) := ρ.map fun (k, b) => (k, b.val)
+
+/-- A closure's captured locals as a scope again: a cell is a `var`. -/
+def capturedEnv (env : List (String × Val)) : Env :=
+  env.map fun (k, v) => (k, ⟨v, match v with | .ref _ => true | _ => false⟩)
+
+/-- A by-name argument (docs/GALA.MD, "By-Name Arguments"): a plain expression passed to a
+    parameter of type `func() T` is lifted into `() => expr`. The subset passes lambdas and
+    names of function values only; anything else is outside it. A parameter whose type is
+    left out (a lambda's, inferred) may be such a parameter too, so only a lambda, a name
+    or a literal is passed to it. -/
+private def byNameOk (ds : Decls) (paramTy : Option Ty) (arg : Expr) : M Bool := do
+  let s ← get
+  let fnName : Expr → M Bool
+    | .name x => match resolve ds s.locals s.globals x with
+      | .func _ => pure true
+      | .var b => do pure (isFn (← deref b.val))
+      | _ => pure false
+    | _ => pure false
+  match paramTy, arg with
+  | some (.func [] _), .lambda .. => pure true
+  | some (.func [] _), a => fnName a
+  | none, .lambda .. | none, .name _ | none, .lit _ => pure true
+  | none, _ => pure false
+  | some _, _ => pure true
 
 private def popTo (depth : Nat) : M Unit :=
   modify fun s => { s with locals := exitScope s.locals depth }
@@ -401,11 +469,15 @@ def eval (ds : Decls) : Nat → Expr → M Val
     | .name x =>
       let s ← get
       match resolve ds s.locals s.globals x with
-      | .var b => pure b.val
+      | .var b => deref b.val
       | .variant ty c =>
         if c.fields.isEmpty then pure (.sealed ty c.name []) else unsup "func-value" x
+      | .func f => pure (.fn f)
       | .unbound => unresolved ds x
       | _ => unsup "func-value" x
+    | .lambda ps _ body => do
+      -- A lambda closes over the locals in scope: a `var` by its cell (by reference).
+      pure (.closure ps body (captured (← get).locals))
     | .unary "-" (.lit (.int n)) => intLit (-n)
     | .unary op x => do unop op (← eval ds d x)
     | .binary "&&" l r => do
@@ -427,20 +499,34 @@ def eval (ds : Decls) : Nat → Expr → M Val
     | .call (.name x) args => do
       let s ← get
       match resolve ds s.locals s.globals x with
-      | .func f => do callFunc ds d f (← evalList ds d args)
-      | .struct_ n fs => do pure (.struct_ n (← construct ds n fs (← evalList ds d args)))
+      | .func f => do callFunc ds d f (← evalArgs ds d (f.params.map (·.type)) args)
+      | .struct_ n fs => do pure (.struct_ n (← construct ds n fs (← evalArgs ds d (fs.map (·.type)) args)))
       | .variant ty c => do
-        pure (.sealed ty c.name (← construct ds c.name c.fields (← evalList ds d args)))
+        pure (.sealed ty c.name (← construct ds c.name c.fields (← evalArgs ds d (c.fields.map (·.type)) args)))
       | .print nl => do
         let vs ← evalList ds d args
         printable ds vs
         emit (if nl then Print.println ds vs else Print.print ds vs) ds
         pure .unit
       | .unbound => unresolved ds x
-      | .var _ => unsup "func-value" x
-    | .call (.select _ m) _ => unsup "method-call" m
+      | .var b => do callValue ds d (← deref b.val) args
+    | .call (.select t m) args => do
+      -- A field of function type called (`p.F(x)`); a method or package member is
+      -- outside the subset.
+      let s ← get
+      let isVar := match t with
+        | .name x => (lookupVar s.locals s.globals x).isSome
+        | _ => true
+      if !isVar then unsup "method-call" m
+      let tv ← eval ds d t
+      let hasField := match tv with
+        | .struct_ ty _ => ((ds.structs.lookup ty).getD []).any (·.name == m)
+        | .sealed ty c _ => (ds.caseFields ty c).any (·.name == m)
+        | _ => false
+      if !hasField then unsup "method-call" m
+      callValue ds d (← getField ds tv m) args
     | .call (.unsupported k) _ => unsup k
-    | .call _ _ => stuck "call of an expression"
+    | .call callee args => do callValue ds d (← eval ds d callee) args
     | .ifExpr c a b | .ifStmt c a (some b) => do
       if ← asBool (← eval ds d c) then eval ds d a else eval ds d b
     | .ifStmt c a none => do
@@ -475,12 +561,34 @@ def eval (ds : Decls) : Nat → Expr → M Val
       let cur ← readPlace ds t
       assignTo ds t (← binop (if op == "++" then "+" else "-") cur (.int 1))
       pure .unit
+  termination_by d _ => (d, 0, 0)
 /-- Evaluate expressions left to right. -/
 def evalList (ds : Decls) : Nat → List Expr → M (List Val)
   | _, [] => pure []
   | d, e :: es => do
     let v ← eval ds d e
     pure (v :: (← evalList ds d es))
+  termination_by d es => (d, 1, es.length)
+/-- Evaluate a call's arguments left to right, for parameters of the given types. -/
+def evalArgs (ds : Decls) : Nat → List (Option Ty) → List Expr → M (List Val)
+  | d, tys, args => do
+    for (t, a) in tys.zip args do
+      unless ← byNameOk ds t a do unsup "by-name-arg" "a plain expression passed as a func() T"
+    evalList ds d args
+  termination_by d _ _ => (d, 2, 0)
+/-- Call a function value on argument expressions: the callee is evaluated first, then
+    the arguments left to right (docs/GALA.MD, "Evaluation Order"). -/
+def callValue (ds : Decls) : Nat → Val → List Expr → M Val
+  | d, .fn f, args => do callFunc ds d f (← evalArgs ds d (f.params.map (·.type)) args)
+  | d, .closure ps body env, args => do
+    let vs ← evalArgs ds d (ps.map (·.type)) args
+    if vs.length != ps.length then stuck s!"a lambda takes {ps.length} arguments"
+    -- The body sees the captured locals and its parameters, never the caller's. A block
+    -- body's trailing value is the result: in a void lambda, GALA's types never use it.
+    runIn ds d ((ps.zip vs).foldl (fun ρ (p, v) => bind ρ p.name ⟨v, false⟩) (capturedEnv env)) body
+  -- A struct called as a function uses its `Apply` method, outside the subset.
+  | _, v, _ => outsideS1 ds s!"call of a value that is not a function: {repr v}"
+  termination_by d _ _ => (d, 3, 0)
 /-- Run a block's statements in order; its value is the last one's. -/
 def evalBlock (ds : Decls) : Nat → List Expr → M Val
   | _, [] => pure .unit
@@ -488,6 +596,7 @@ def evalBlock (ds : Decls) : Nat → List Expr → M Val
   | d, e :: es => do
     discard (eval ds d e)
     evalBlock ds d es
+  termination_by d es => (d, 1, es.length)
 /-- Try the arms of a `match` on the value `v`, in order. -/
 def evalCases (ds : Decls) : Nat → Val → List (Pat × Option Expr × Expr) → M Val
   | _, _, [] => throw (.panic .match_ "no match arm matched")
@@ -508,6 +617,7 @@ def evalCases (ds : Decls) : Nat → Val → List (Pat × Option Expr × Expr) �
       else
         popTo depth
         evalCases ds d v rest
+  termination_by d _ cs => (d, 1, cs.length)
 /-- The bindings a `val`/`var` declaration makes, in order. -/
 def declare (ds : Decls) : Nat → List String → Bool → Option Ty → List Expr →
     M (List (String × Val))
@@ -533,6 +643,7 @@ def declare (ds : Decls) : Nat → List String → Bool → Option Ty → List E
       let vs ← evalList ds d values
       if vs.length == names.length then pure (names.zip vs)
       else stuck "declaration count mismatch"
+  termination_by d _ _ _ _ => (d, 2, 0)
 /-- Call a function on evaluated arguments: a fresh scope with only its parameters; a
     `return` ends the call with its value. -/
 def callFunc (ds : Decls) : Nat → Func → List Val → M Val
@@ -540,18 +651,25 @@ def callFunc (ds : Decls) : Nat → Func → List Val → M Val
     if args.length != f.params.length then stuck s!"{f.name} takes {f.params.length} arguments"
     for p in f.params do discard (checkOptTy ds s!"parameter {p.name}" p.type)
     if let some t := f.result then discard (checkTy ds t)
-    let saved := (← get).locals
-    let frame := (f.params.zip args).foldl (fun ρ (p, v) => bind ρ p.name ⟨v, false⟩) []
-    modify fun s => { s with locals := frame }
-    let r ← tryCatch (eval ds d f.body) fun
-      | .ret v => pure v
-      | e => throw e
-    modify fun s => { s with locals := saved }
+    let r ← runIn ds d ((f.params.zip args).foldl (fun ρ (p, v) => bind ρ p.name ⟨v, false⟩) []) f.body
     match f.result with
     | none => pure .unit
     | some _ => match r with
       | .unit => stuck s!"{f.name} ended without a value"
       | v => pure v
+  termination_by d _ _ => (d, 2, 0)
+/-- Run a function's body in its own scope `frame`: a `return` ends it with its value, and
+    the caller's locals are back afterwards. -/
+def runIn (ds : Decls) : Nat → Env → Expr → M Val
+  | d, frame, body => do
+    let saved := (← get).locals
+    modify fun s => { s with locals := frame }
+    let r ← tryCatch (eval ds d body) fun
+      | .ret v => pure v
+      | e => throw e
+    modify fun s => { s with locals := saved }
+    pure r
+  termination_by d _ _ => (d, 1, 0)
 end
 
 /-! ## Programs -/
@@ -574,6 +692,7 @@ partial def mentions (bound : List String) : Expr → List String
   | .binary _ l r => mentions bound l ++ mentions bound r
   | .call c as => mentions bound c ++ as.flatMap (mentions bound)
   | .tuple es | .interp es => es.flatMap (mentions bound)
+  | .lambda ps _ b => mentions (ps.map (·.name) ++ bound) b
   | .block es =>
     (es.foldl (init := (bound, [])) fun (b, acc) e =>
       let b' := match e with | .decl _ ns _ _ _ => ns ++ b | _ => b
