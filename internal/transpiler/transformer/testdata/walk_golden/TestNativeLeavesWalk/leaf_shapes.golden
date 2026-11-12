@@ -171,6 +171,9 @@ func (s Rules) Copy() Rules {
 func (s Rules) Equal(other Rules) bool {
 	return std.Equal(s.pick, other.pick)
 }
+func (s Rules) String() string {
+	return std.FormatStruct("Rules", s.pick)
+}
 
 //line $DIR/main.gala:23
 func area(s Shape, f func(Shape) std.Option[int]) int {

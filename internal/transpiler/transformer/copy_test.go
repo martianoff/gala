@@ -46,6 +46,9 @@ func (s Person) Copy() Person {
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
 }
+func (s Person) String() string {
+	return std.FormatStruct("Person", s.name, s.age)
+}
 
 var p = std.NewImmutable(Person{name: std.NewImmutable("Alice"), age: std.NewImmutable(30)})
 var p2 = std.NewImmutable(Person{name: std.Copy(p.Get().name), age: std.NewImmutable(31)})
@@ -72,6 +75,9 @@ func (s Person) Copy() Person {
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
+}
+func (s Person) String() string {
+	return std.FormatStruct("Person", s.name, s.age)
 }
 
 var p = std.NewImmutable(Person{name: std.NewImmutable("Alice"), age: std.NewImmutable(30)})
@@ -100,6 +106,9 @@ func (s Person) Copy() Person {
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name)
+}
+func (s Person) String() string {
+	return std.FormatStruct("Person", s.name)
 }
 
 var p = std.NewImmutable(Person{name: std.NewImmutable("Alice")})
@@ -136,6 +145,9 @@ func (s Inner) Copy() Inner {
 func (s Inner) Equal(other Inner) bool {
 	return std.Equal(s.Selected, other.Selected)
 }
+func (s Inner) String() string {
+	return std.FormatStruct("Inner", s.Selected)
+}
 func (s Inner) Unapply(v any) (std.Immutable[int], bool) {
 	if p, ok := v.(Inner); ok {
 		return p.Selected, true
@@ -161,6 +173,9 @@ func (s Outer) Copy() Outer {
 }
 func (s Outer) Equal(other Outer) bool {
 	return std.Equal(s.Tab, other.Tab)
+}
+func (s Outer) String() string {
+	return std.FormatStruct("Outer", s.Tab)
 }
 func (s Outer) Unapply(v any) (std.Immutable[Inner], bool) {
 	if p, ok := v.(Outer); ok {

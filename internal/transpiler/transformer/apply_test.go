@@ -93,6 +93,9 @@ func (s Append) Copy() Append {
 func (s Append) Equal(other Append) bool {
 	return std.Equal(s.Name, other.Name)
 }
+func (s Append) String() string {
+	return std.FormatStruct("Append", s.Name)
+}
 func (s Append) Unapply(v any) (std.Immutable[string], bool) {
 	if p, ok := v.(Append); ok {
 		return p.Name, true

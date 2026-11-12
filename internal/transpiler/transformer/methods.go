@@ -413,6 +413,49 @@ func (t *galaASTTransformer) initGenericMethods() {
 	t.typeMetas = make(map[string]*transpiler.TypeMetadata)
 }
 
+// generatesStructString reports whether shorthand struct name gets a
+// generated String method: when transpiler.GeneratedMethodNames lists it (the
+// struct has no field named String, which Go cannot hold beside a method of
+// the name) and the source does not declare a String itself, in GALA or in a
+// hand-written .go file of its package (of any signature: it replaces the
+// generated one).
+func (t *galaASTTransformer) generatesStructString(name string) bool {
+	meta := t.getTypeMeta(name)
+	return meta != nil && transpiler.GeneratedMethodNames(meta)["String"] && !t.declaresMethods(name, "String")["String"]
+}
+
+// generateStructStringMethod generates the String method of a shorthand
+// struct, so it prints as GALA writes it, as a sealed value does:
+//
+//	func (s Pt) String() string {
+//		return std.FormatStruct("Pt", s.X, s.Y)
+//	}
+//
+// One call into std keeps the method small (see std.FormatStruct); a struct
+// with no fields returns its text, "Pt()".
+func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames []string, tParams *ast.FieldList) *ast.FuncDecl {
+	var result ast.Expr = stringLit(name + "()")
+	if len(fieldNames) > 0 {
+		args := []ast.Expr{stringLit(name)}
+		for _, f := range fieldNames {
+			args = append(args, &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(f)})
+		}
+		result = &ast.CallExpr{Fun: t.stdIdent("FormatStruct"), Args: args}
+	}
+	return &ast.FuncDecl{
+		Recv: &ast.FieldList{List: []*ast.Field{{
+			Names: []*ast.Ident{ast.NewIdent("s")},
+			Type:  t.buildGenericTypeExpr(name, tParams),
+		}}},
+		Name: ast.NewIdent("String"),
+		Type: &ast.FuncType{
+			Params:  &ast.FieldList{},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("string")}}},
+		},
+		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{result}}}},
+	}
+}
+
 func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var elts []ast.Expr
 	for _, field := range fields.List {

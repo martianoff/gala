@@ -112,6 +112,9 @@ func (s Person) Copy() Person {
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
 }
+func (s Person) String() string {
+	return std.FormatStruct("Person", s.name, s.age)
+}
 
 var p = std.NewImmutable(Person{name: std.NewImmutable("Alice"), age: std.NewImmutable(30)})
 `,

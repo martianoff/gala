@@ -4,4 +4,4 @@ Array(Alice, Bob)
 55
 Alice
 Bob
-Array({{Alice} {30}})
+Array(Person(Alice, 30))

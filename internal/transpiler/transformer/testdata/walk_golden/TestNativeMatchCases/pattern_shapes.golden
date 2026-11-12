@@ -240,6 +240,9 @@ func (s Person) Copy() Person {
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
 }
+func (s Person) String() string {
+	return std.FormatStruct("Person", s.name, s.age)
+}
 
 //line $DIR/main.gala:24
 type Box[T any] struct {
@@ -252,6 +255,9 @@ func (s Box[T]) Copy() Box[T] {
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.v, other.v) && std.Equal(s.tag, other.tag)
+}
+func (s Box[T]) String() string {
+	return std.FormatStruct("Box", s.v, s.tag)
 }
 
 type BoxInstance interface {
@@ -283,6 +289,9 @@ func (s MaybeInt) Copy() MaybeInt {
 func (s MaybeInt) Equal(other MaybeInt) bool {
 	return std.Equal(s.raw, other.raw)
 }
+func (s MaybeInt) String() string {
+	return std.FormatStruct("MaybeInt", s.raw)
+}
 
 //line $DIR/main.gala:30
 func (m MaybeInt) MatchView() std.Option[int] {
@@ -299,6 +308,9 @@ func (s Even) Copy() Even {
 func (s Even) Equal(other Even) bool {
 	return true
 }
+func (s Even) String() string {
+	return "Even()"
+}
 
 //line $DIR/main.gala:34
 func (e Even) Unapply(n int) bool {
@@ -314,6 +326,9 @@ func (s Half) Copy() Half {
 }
 func (s Half) Equal(other Half) bool {
 	return true
+}
+func (s Half) String() string {
+	return "Half()"
 }
 
 //line $DIR/main.gala:38

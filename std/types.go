@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // ImmutableUnwrapper is implemented by Immutable[T] to allow interface-based unwrapping.
@@ -503,4 +504,82 @@ func hashAddress(a uint64) uint32 {
 	a *= 0xc4ceb3fe1a85ec53
 	a ^= a >> 33
 	return uint32(a)
+}
+
+// FormatStruct formats a struct as GALA prints it, `Name(field, field, …)`.
+// The String method generated on every shorthand struct calls it. Each field
+// prints as fmt's %v prints it, so a nested struct, sealed value, collection,
+// Option or tuple prints in its own format; a field held in an Immutable
+// prints the value it holds, and a function field prints as <fn>.
+//
+// A pointer field prints the value it points to. A pointer this goroutine is
+// already printing, reached again through a cycle of pointers, prints as
+// <cycle>, so a value that refers to itself prints instead of recursing
+// without end.
+func FormatStruct(name string, fields ...any) string {
+	var b strings.Builder
+	b.WriteString(name)
+	b.WriteByte('(')
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		formatField(&b, unwrapImmutable(f))
+	}
+	b.WriteByte(')')
+	return b.String()
+}
+
+// formatField writes f to b as FormatStruct prints a field (see there).
+func formatField(b *strings.Builder, f any) {
+	v := reflect.ValueOf(f)
+	switch {
+	case v.Kind() == reflect.Func:
+		b.WriteString("<fn>")
+	case v.Kind() == reflect.Pointer && !v.IsNil():
+		key := printingKey{goroutineID(), v.Pointer(), v.Type()}
+		if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
+			b.WriteString("<cycle>")
+			return
+		}
+		defer printing.Delete(key)
+		// A pointer with a String or Format method of its own (a mutable
+		// collection's) prints by it; any other prints its target.
+		switch f.(type) {
+		case fmt.Stringer, fmt.Formatter:
+			fmt.Fprint(b, f)
+		default:
+			fmt.Fprint(b, v.Elem().Interface())
+		}
+	default:
+		fmt.Fprint(b, f)
+	}
+}
+
+// printingKey names a pointer one goroutine is printing. The type tells a
+// struct from its first field, which share an address.
+type printingKey struct {
+	goroutine uint64
+	addr      uintptr
+	typ       reflect.Type
+}
+
+// printing holds the pointers each goroutine is printing (see FormatStruct).
+var printing sync.Map // printingKey -> struct{}
+
+// goroutineID is the id of the calling goroutine, read from the first line of
+// its stack trace, "goroutine 7 [running]:". A cycle of pointers is printed
+// by one goroutine, so FormatStruct keys the pointers it is printing by it:
+// two goroutines printing the same value do not see each other's.
+func goroutineID() uint64 {
+	var buf [32]byte
+	n := runtime.Stack(buf[:], false)
+	var id uint64
+	for _, c := range buf[len("goroutine "):n] {
+		if c < '0' || c > '9' {
+			break
+		}
+		id = id*10 + uint64(c-'0')
+	}
+	return id
 }

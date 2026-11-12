@@ -15,6 +15,9 @@ func (s P) Copy() P {
 func (s P) Equal(other P) bool {
 	return std.Equal(s.x, other.x)
 }
+func (s P) String() string {
+	return std.FormatStruct("P", s.x)
+}
 
 //line $DIR/main.gala:5
 func (p *P) Get(q *P) int {

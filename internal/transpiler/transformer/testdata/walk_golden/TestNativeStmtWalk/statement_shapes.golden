@@ -18,6 +18,9 @@ func (s P) Copy() P {
 func (s P) Equal(other P) bool {
 	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
 }
+func (s P) String() string {
+	return std.FormatStruct("P", s.x, s.y)
+}
 
 //line $DIR/main.gala:7
 type Res struct {
@@ -29,6 +32,9 @@ func (s Res) Copy() Res {
 }
 func (s Res) Equal(other Res) bool {
 	return std.Equal(s.name, other.name)
+}
+func (s Res) String() string {
+	return std.FormatStruct("Res", s.name)
 }
 
 //line $DIR/main.gala:9

@@ -134,6 +134,9 @@ func (s Cfg) Copy() Cfg {
 func (s Cfg) Equal(other Cfg) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.size, other.size) && std.Equal(s.tags, other.tags)
 }
+func (s Cfg) String() string {
+	return std.FormatStruct("Cfg", s.name, s.size, s.tags)
+}
 
 //line $DIR/main.gala:25
 type Box struct {

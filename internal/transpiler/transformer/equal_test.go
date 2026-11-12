@@ -43,6 +43,9 @@ func (s Point) Copy() Point {
 func (s Point) Equal(other Point) bool {
 	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
 }
+func (s Point) String() string {
+	return std.FormatStruct("Point", s.x, s.y)
+}
 `,
 		},
 		{
@@ -60,6 +63,9 @@ func (s Empty) Copy() Empty {
 }
 func (s Empty) Equal(other Empty) bool {
 	return true
+}
+func (s Empty) String() string {
+	return "Empty()"
 }
 func (s Empty) Unapply(v any) bool {
 	if _, ok := v.(Empty); ok {

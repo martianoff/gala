@@ -1,6 +1,6 @@
-Some({John 24})
+Some(Person(John, 24))
 None()
-Some({Doe 0})
+Some(Person(Doe, 0))
 Some(20)
 None()
 Some(30)

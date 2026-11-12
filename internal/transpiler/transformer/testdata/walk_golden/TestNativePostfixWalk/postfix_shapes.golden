@@ -21,6 +21,9 @@ func (s P) Copy() P {
 func (s P) Equal(other P) bool {
 	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
 }
+func (s P) String() string {
+	return std.FormatStruct("P", s.x, s.y)
+}
 
 //line $DIR/main.gala:10
 type Pair struct {
@@ -33,6 +36,9 @@ func (s Pair) Copy() Pair {
 }
 func (s Pair) Equal(other Pair) bool {
 	return std.Equal(s.a, other.a) && std.Equal(s.b, other.b)
+}
+func (s Pair) String() string {
+	return std.FormatStruct("Pair", s.a, s.b)
 }
 
 //line $DIR/main.gala:12
@@ -81,6 +87,9 @@ func (s Box[T]) Copy() Box[T] {
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.v, other.v)
+}
+func (s Box[T]) String() string {
+	return std.FormatStruct("Box", s.v)
 }
 
 type BoxInstance interface {

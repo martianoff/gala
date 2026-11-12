@@ -27,6 +27,9 @@ func (s Radix) Copy() Radix {
 func (s Radix) Equal(other Radix) bool {
 	return std.Equal(s.base, other.base)
 }
+func (s Radix) String() string {
+	return std.FormatStruct("Radix", s.base)
+}
 
 //line $DIR/main.gala:15
 var greeting = std.NewImmutable("ü" + "ä")

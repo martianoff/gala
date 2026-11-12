@@ -1,0 +1,89 @@
+package main
+
+import (
+    "fmt"
+
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/collection_mutable"
+)
+
+// A shorthand struct prints as GALA writes it: Name(field, ...).
+
+struct Pt(X int, Y float64)
+
+struct Line(From Pt, To Pt)
+
+struct Empty()
+
+struct Box[T any](Value T, Tag string)
+
+struct Bag(Items Array[int], Names List[string], Ages HashMap[string, int], Seen Ptr[collection_mutable.Array[int]])
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(Side int)
+}
+
+struct Mixed(S Shape, O Option[Pt], N Option[int], E Either[string, int], T Tuple[int, string], R Try[int])
+
+struct Held(Op func(int) int, var Count int, var At Pt)
+
+// A struct that declares String prints with it.
+struct Money(Cents int)
+
+func (m Money) String() string = f"$$${m.Cents / 100}.${m.Cents % 100}%02d"
+
+// A field named String keeps Go's format: the struct cannot also hold a
+// String method.
+struct Label(String string)
+
+// The block form mirrors a Go struct and prints with Go's %v.
+type Raw struct {
+    A int
+    B string
+}
+
+// A value that refers to itself through a var field prints <cycle> where
+// the cycle closes.
+struct Node(Value int, var Next OptionPtr[Node])
+
+struct Cell(Value int, var Self *Cell)
+
+func main() {
+    val pt = Pt(1, 2.5)
+    Println(pt)
+    Print(pt, "\n")
+    Println(s"interpolated: $pt")
+    Println(f"formatted: $pt%v")
+    // Go code printing the struct sees the same text: String is a Go method.
+    Println(fmt.Sprint(pt))
+    Println(Line(pt, Pt(3, 4)))
+    Println(Empty())
+    Println(Box(pt, "boxed"))
+    Println(Box(ArrayOf(1, 2), "array"))
+
+    Println(Bag(ArrayOf(1, 2, 3), ListOf("a", "b"), HashMapOf(("x", 1)), collection_mutable.ArrayOf(7, 8)))
+
+    Println(Mixed(Circle(1.5), Some(pt), None(), Left("no"), (1, "one"), Success(4)))
+    Println(Square(2))
+    Println(ArrayOf(pt, Pt(0, 0)))
+    Println(Some(pt))
+    Println((pt, "pair"))
+
+    Println(Held((x) => x + 1, 3, pt))
+
+    Println(Money(1234))
+    Println(Box(Money(5), "price"))
+    Println(Label("go format"))
+    Println(Raw(A = 1, B = "b"))
+
+    var node = Node(1, EmptyOptionPtr())
+    node.Next = SomePtr(&node)
+    Println(node)
+    Println(node.Next)
+
+    var cell = Cell(2, nil)
+    cell.Self = &cell
+    Println(cell)
+    Println(&cell)
+}

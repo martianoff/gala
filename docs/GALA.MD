@@ -900,7 +900,7 @@ val b = Bag(Items = go_interop.SliceOf("a"), Score = (n) => n * 2)
 ```
 
 ### Automatic Copy and Equal Methods
-Every GALA struct automatically provides `Copy()` and `Equal(other)` methods.
+Every GALA struct automatically provides `Copy()` and `Equal(other)` methods. A shorthand struct also gets a `String()` method, which prints it as `Name(field, …)` ([How Values Print](#how-values-print)).
 
 #### Copy Method with Overrides
 The `Copy()` method allows creating a copy of a struct with optional field overrides. This is similar to Scala's `copy` method.
@@ -4388,6 +4388,31 @@ Println(s"Result: $x")
 Print("no newline")
 ```
 
+#### How Values Print
+
+`Println`, `Print`, and the `%v` of `s"..."` and `f"..."` print a value the way GALA writes it:
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Pt(X int, Y float64)
+struct Route(Name string, Stops Array[Pt], Next Option[Pt])
+
+func main() {
+    val pt = Pt(1, 2.5)
+    Println(pt)                                             // Pt(1, 2.5)
+    Println(s"at $pt")                                      // at Pt(1, 2.5)
+    Println(Route("r", ArrayOf(pt, Pt(3, 4)), Some(pt)))    // Route(r, Array(Pt(1, 2.5), Pt(3, 4)), Some(Pt(1, 2.5)))
+}
+```
+
+- A shorthand struct prints as `Name(field, …)`, as a sealed value and a Scala case class do. Each field prints in its own format: a nested struct or sealed value recursively, a collection by its elements, an `Option`, `Either` or `Try` as `Some(…)`, `Right(…)`, `Success(…)`, a tuple as `(a, b)`. Strings print without quotes, and a function field prints as `<fn>`.
+- The transpiler generates the `String() string` method that does this on every shorthand struct, so Go code that prints one with `fmt` sees the same text. A struct that declares its own `String` method, in GALA or in a hand-written `.go` file of its package, prints with that one instead, and a struct with a field named `String` keeps Go's format.
+- A pointer field (`Ptr[T]`, `OptionPtr[T]`) prints the value it points to. A pointer reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`.
+- A block-form struct (`type T struct { … }`) and a struct declared in Go print with Go's `%v`, `{field field}`: the block form is how GALA mirrors a Go struct. Declare a `String() string` method to print one otherwise.
+
 ### Rune Literals
 GALA supports Go-style character literals using single quotes:
 
@@ -4624,7 +4649,7 @@ colors.Hits = colors.Hits + 1        // OK: a var
 
 ### Go Encoders and `fmt`
 
-Go's reflection-based encoders and `fmt` see an immutable value as the value it holds, not as the `std.Immutable[T]` wrapper. `encoding/json` encodes and decodes it as a `T`, YAML libraries that use the `MarshalYAML`/`UnmarshalYAML` convention (`gopkg.in/yaml.v2` and `v3`) do the same, and `%v` prints the value. `json.Marshal` of `struct LineItem(SKU string, Qty int)` gives `{"SKU":"A-1","Qty":3}`, and `json.Unmarshal` fills the fields back in. The keys are the field names: GALA has no struct tags ([GALA-E0085](errors/GALA-E0085.md)), so other keys come from [`Codec[T]`](#json). Like any `json.Unmarshaler`, the field does not see a `json.Decoder`'s `DisallowUnknownFields` or `UseNumber`. As for any Go struct, encoders and `fmt` only look inside exported fields: a field whose name starts with a lower-case letter is skipped by encoders and printed by `%v` as its wrapper.
+Go's reflection-based encoders and `fmt` see an immutable value as the value it holds, not as the `std.Immutable[T]` wrapper. `encoding/json` encodes and decodes it as a `T`, YAML libraries that use the `MarshalYAML`/`UnmarshalYAML` convention (`gopkg.in/yaml.v2` and `v3`) do the same, and `%v` prints the value. `json.Marshal` of `struct LineItem(SKU string, Qty int)` gives `{"SKU":"A-1","Qty":3}`, and `json.Unmarshal` fills the fields back in. The keys are the field names: GALA has no struct tags ([GALA-E0085](errors/GALA-E0085.md)), so other keys come from [`Codec[T]`](#json). Like any `json.Unmarshaler`, the field does not see a `json.Decoder`'s `DisallowUnknownFields` or `UseNumber`. As for any Go struct, encoders and `fmt` only look inside exported fields: a field whose name starts with a lower-case letter is skipped by encoders, and in a block-form struct printed by `%v` as its wrapper. A shorthand struct prints every field by its value ([How Values Print](#how-values-print)).
 
 ### Struct Fields Declared `Immutable[T]`
 

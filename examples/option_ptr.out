@@ -10,5 +10,5 @@ second after head: 3
 or else: 1
 orElse: 2
 from Go: EmptyOptionPtr
-from Go found: SomePtr({7 EmptyOptionPtr})
+from Go found: SomePtr(Node(7, EmptyOptionPtr))
 empty: EmptyOptionPtr

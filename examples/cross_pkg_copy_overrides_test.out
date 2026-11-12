@@ -1,5 +1,5 @@
-{2 2} {9 3} {1 4}
-{7 2} {0 5} {0 1}
-{1 b} {false 2.5}
+Point(2, 2) Point(9, 3) Point(1, 4)
+Point(7, 2) Point(0, 5) Point(0, 1)
+Pair(1, b) Pair(false, 2.5)
 circle 1 circle 10 square 4 circle 10
 bob 100 alice
