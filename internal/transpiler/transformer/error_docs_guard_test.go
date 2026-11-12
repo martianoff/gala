@@ -1398,7 +1398,7 @@ func main() {
 		},
 		{
 			name: "sealed type method of another signature than the generated one",
-			code: galaerr.CodeSealedMethodSignature, // GALA-E0093
+			code: galaerr.CodeGeneratedMethodSignature, // GALA-E0093
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
 
@@ -1411,6 +1411,22 @@ func (e Expr) String() int = 1
 
 func main() {
     Println(Num(1))
+}
+`)
+			},
+		},
+		{
+			name: "struct String of another signature than the generated one",
+			code: galaerr.CodeGeneratedMethodSignature, // GALA-E0093
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Pt(X int, Y int)
+
+func (p Pt) String(sep string) string = s"${p.X}${sep}${p.Y}"
+
+func main() {
+    Println(Pt(1, 2).String(","))
 }
 `)
 			},
@@ -1524,6 +1540,32 @@ func save(n int) error = if (n < 0) errors.New(s"negative: $n") else nil
 
 func main() {
     Some(-1).ForEach((n) => save(n))
+}
+`)
+			},
+		},
+		{
+			name: "local val that nothing reads",
+			code: galaerr.CodeUnusedBinding, // GALA-E0102
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val total = 2 + 3
+    Println("done")
+}
+`)
+			},
+		},
+		{
+			name: "function type written where a value is expected",
+			code: galaerr.CodeFuncTypeAsValue, // GALA-E0103
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val f = func(int) string
+    Println(f)
 }
 `)
 			},

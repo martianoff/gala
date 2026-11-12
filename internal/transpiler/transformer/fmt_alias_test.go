@@ -7,7 +7,7 @@ import (
 )
 
 // TestFmtShadowedByBinding pins the code GALA lowers to Go's fmt (Println,
-// Print, s"..." interpolation, a sealed type's String) where the name fmt is
+// Print, s"..." interpolation) where the name fmt is
 // taken — by a binding, a type parameter or a function — or fmt is imported
 // under another name: it calls fmt under a name that reaches the package.
 func TestFmtShadowedByBinding(t *testing.T) {
@@ -40,7 +40,7 @@ sealed type Shape {
     case Circle(R int)
 }
 func main() { Println(Circle(2), fmt) }`,
-			contains: []string{`_gala_fmt.Sprintf("Circle(%v)"`},
+			contains: []string{"_gala_fmt.Println(Circle{}.Apply(2), fmt.Get())", `std.FormatStruct("Circle", s.R.Get())`},
 		},
 		{
 			name: "a function named fmt",

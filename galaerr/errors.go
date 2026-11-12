@@ -892,13 +892,15 @@ const (
 	// set on a value that cannot hold it.
 	CodeSealedCopyField ErrorCode = "GALA-E0092"
 
-	// E0093: a sealed type declares a method the transpiler would otherwise
-	// generate for it — String, or the case predicate is<Case> — with
-	// another signature than the generated one, `String() string` or
-	// `is<Case>() bool`. A method of that signature replaces the generated
-	// one; one of another signature would leave the type without it, and
-	// used to fail in `go build` ("method already declared").
-	CodeSealedMethodSignature ErrorCode = "GALA-E0093"
+	// E0093: a sealed type or a shorthand struct declares a method the
+	// transpiler would otherwise generate for it — String, or a sealed
+	// type's case predicate is<Case> — with another signature than the
+	// generated one, `String() string` or `is<Case>() bool`. A method of that
+	// signature replaces the generated one; one of another signature would
+	// leave the type without it: on a sealed type it used to fail in `go
+	// build` ("method already declared"), on a struct it silently turned off
+	// the generated String, so the struct printed in Go's format.
+	CodeGeneratedMethodSignature ErrorCode = "GALA-E0093"
 
 	// E0094: a parameter's default value reads its own parameter or a later
 	// one. A default is evaluated in the callee's scope with only the earlier
@@ -938,6 +940,18 @@ const (
 	// returning only an `error`, Go or GALA, so the error would be dropped
 	// silently. FromError(call) turns it into a Try[Void] to handle.
 	CodeDiscardedErrorReturn ErrorCode = "GALA-E0101"
+
+	// E0102: a local val or var that nothing reads. Go rejects a local it
+	// declares and never uses; GALA reports it against the declaration
+	// rather than leaving it to `go build`. A component of a destructuring
+	// that is not needed is written `_`.
+	CodeUnusedBinding ErrorCode = "GALA-E0102"
+
+	// E0103: a function type, `func(int) string`, written where a value is
+	// expected. A function type is only a type: it is written where a type
+	// is expected, such as an explicit type argument
+	// (`EmptyArray[func() int]()`); a function value is a lambda.
+	CodeFuncTypeAsValue ErrorCode = "GALA-E0103"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

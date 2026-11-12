@@ -205,9 +205,9 @@ func (s Tree) Equal(other Tree) bool {
 func (s Tree) String() string {
 	switch s._variant {
 	case _Tree_Leaf:
-		return fmt.Sprintf("Leaf(%v)", s.v.Get())
+		return std.FormatStruct("Leaf", s.v.Get())
 	case _Tree_Node:
-		return fmt.Sprintf("Node(%v, %v)", *s.l, *s.r)
+		return std.FormatStruct("Node", *s.l, *s.r)
 	default:
 		return "Tree(<unknown>)"
 	}

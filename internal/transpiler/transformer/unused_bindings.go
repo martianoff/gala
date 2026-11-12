@@ -2,12 +2,10 @@ package transformer
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"slices"
-	"strings"
 
 	"martianoff/gala/galaerr"
 )
@@ -34,21 +32,6 @@ type localBinding struct {
 	keyword, name string
 	line, col     int
 	oneOfSeveral  bool
-}
-
-// unusedBindingSuffix ends the message of every unused-binding diagnostic.
-const unusedBindingSuffix = ": it is declared but never used"
-
-// IsUnusedBinding reports whether err is the diagnostic of a local val or var
-// nothing reads (see checkUnusedBindings). It is the last check of a file, so
-// a file failing only with it lowers cleanly otherwise; a code fragment, whose
-// reads are elided, can be told apart from a broken one with it.
-func IsUnusedBinding(err error) bool {
-	var se *galaerr.SemanticError
-	if !errors.As(err, &se) || se.Code != "" || !strings.HasSuffix(se.Msg, unusedBindingSuffix) {
-		return false
-	}
-	return strings.HasPrefix(se.Msg, "unused val '") || strings.HasPrefix(se.Msg, "unused var '")
 }
 
 // declaredName is the Go name the declaration d, of keyword `val` or `var`,
@@ -95,7 +78,8 @@ func (t *galaASTTransformer) checkUnusedBindings(file *ast.File) error {
 		hint = "use it, or write `_` in its place"
 	}
 	err := galaerr.NewSemanticErrorInFile(t.filePath, b.line, b.col,
-		fmt.Sprintf("unused %s '%s'%s", b.keyword, b.name, unusedBindingSuffix))
+		fmt.Sprintf("unused %s '%s': it is declared but never used", b.keyword, b.name))
+	err.Code = galaerr.CodeUnusedBinding
 	err.Hint = hint
 	return err.WithSpan(b.col + len([]rune(b.name)))
 }

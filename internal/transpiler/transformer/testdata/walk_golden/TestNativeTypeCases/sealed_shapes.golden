@@ -118,9 +118,9 @@ func (s Shape) Equal(other Shape) bool {
 func (s Shape) String() string {
 	switch s._variant {
 	case _Shape_Circle:
-		return fmt.Sprintf("Circle(%v)", s.radius.Get())
+		return std.FormatStruct("Circle", s.radius.Get())
 	case _Shape_Rect:
-		return fmt.Sprintf("Rect(%v, %v, %v)", s.w.Get(), s.h.Get(), s.label.Get())
+		return std.FormatStruct("Rect", s.w.Get(), s.h.Get(), s.label.Get())
 	case _Shape_Empty:
 		return "Empty()"
 	case _Shape_Unit:
@@ -224,9 +224,9 @@ func (s Tree[T]) Equal(other Tree[T]) bool {
 func (s Tree[T]) String() string {
 	switch s._variant {
 	case _Tree_Leaf:
-		return fmt.Sprintf("Leaf(%v)", s.value.Get())
+		return std.FormatStruct("Leaf", s.value.Get())
 	case _Tree_Node:
-		return fmt.Sprintf("Node(%v, %v)", *s.left, *s.right)
+		return std.FormatStruct("Node", *s.left, *s.right)
 	default:
 		return "Tree(<unknown>)"
 	}
@@ -319,7 +319,7 @@ func (s Level) String() string {
 	case _Level_Low:
 		return "Low()"
 	case _Level_High:
-		return fmt.Sprintf("High(%v)", s.by.Get())
+		return std.FormatStruct("High", s.by.Get())
 	default:
 		return "Level(<unknown>)"
 	}

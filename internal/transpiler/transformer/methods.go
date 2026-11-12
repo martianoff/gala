@@ -417,11 +417,16 @@ func (t *galaASTTransformer) initGenericMethods() {
 // generated String method: when transpiler.GeneratedMethodNames lists it (the
 // struct has no field named String, which Go cannot hold beside a method of
 // the name) and the source does not declare a String itself, in GALA or in a
-// hand-written .go file of its package (of any signature: it replaces the
-// generated one).
-func (t *galaASTTransformer) generatesStructString(name string) bool {
+// hand-written .go file of its package. A declared String replaces the
+// generated one, so it must be `String() string` (GALA-E0093, see
+// userGeneratedMethod).
+func (t *galaASTTransformer) generatesStructString(name string) (bool, error) {
 	meta := t.getTypeMeta(name)
-	return meta != nil && transpiler.GeneratedMethodNames(meta)["String"] && !t.declaresMethods(name, "String")["String"]
+	if meta == nil || !transpiler.GeneratedMethodNames(meta)["String"] {
+		return false, nil
+	}
+	declared, err := t.userGeneratedMethod(name, "struct", "String", "string")
+	return !declared, err
 }
 
 // generateStructStringMethod generates the String method of a shorthand
@@ -434,14 +439,26 @@ func (t *galaASTTransformer) generatesStructString(name string) bool {
 // One call into std keeps the method small (see std.FormatStruct); a struct
 // with no fields returns its text, "Pt()".
 func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames []string, tParams *ast.FieldList) *ast.FuncDecl {
-	var result ast.Expr = stringLit(name + "()")
-	if len(fieldNames) > 0 {
-		args := []ast.Expr{stringLit(name)}
-		for _, f := range fieldNames {
-			args = append(args, &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(f)})
-		}
-		result = &ast.CallExpr{Fun: t.stdIdent("FormatStruct"), Args: args}
+	fields := make([]ast.Expr, len(fieldNames))
+	for i, f := range fieldNames {
+		fields[i] = &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(f)}
 	}
+	return t.stringMethodDecl(name, tParams, &ast.ReturnStmt{Results: []ast.Expr{t.formatStructExpr(name, fields)}})
+}
+
+// formatStructExpr is the text a struct or sealed case called name prints
+// as, from its field values fields: `std.FormatStruct("Pt", s.X, s.Y)`, or
+// the literal "Pt()" for no fields.
+func (t *galaASTTransformer) formatStructExpr(name string, fields []ast.Expr) ast.Expr {
+	if len(fields) == 0 {
+		return stringLit(name + "()")
+	}
+	return &ast.CallExpr{Fun: t.stdIdent("FormatStruct"), Args: append([]ast.Expr{stringLit(name)}, fields...)}
+}
+
+// stringMethodDecl is the generated `func (s T) String() string` of type
+// name, with type parameters tParams, whose body is body.
+func (t *galaASTTransformer) stringMethodDecl(name string, tParams *ast.FieldList, body ast.Stmt) *ast.FuncDecl {
 	return &ast.FuncDecl{
 		Recv: &ast.FieldList{List: []*ast.Field{{
 			Names: []*ast.Ident{ast.NewIdent("s")},
@@ -452,7 +469,7 @@ func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames 
 			Params:  &ast.FieldList{},
 			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("string")}}},
 		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{result}}}},
+		Body: &ast.BlockStmt{List: []ast.Stmt{body}},
 	}
 }
 

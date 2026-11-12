@@ -501,7 +501,7 @@ sealed type Expr {
 func (e Expr) String() int = 1
 
 func main() = Println(Num(1))`,
-			expectCode:     galaerr.CodeSealedMethodSignature,
+			expectCode:     galaerr.CodeGeneratedMethodSignature,
 			expectContains: "error_codes_test.gala:8:14 method Expr.String must have the signature `String() string`: it replaces the String method generated for sealed type Expr",
 		},
 		{
@@ -516,8 +516,22 @@ sealed type Light {
 func (l Light) isRed(strict bool) bool = strict
 
 func main() = Println(Red())`,
-			expectCode:     galaerr.CodeSealedMethodSignature,
+			expectCode:     galaerr.CodeGeneratedMethodSignature,
 			expectContains: "method Light.isRed must have the signature `isRed() bool`",
+		},
+		{
+			// A struct's String replaces its generated one too, which used
+			// to be dropped silently for a String of any signature.
+			name: "GALA-E0093 struct String of another signature",
+			input: `package main
+
+struct Pt(X int, Y int)
+
+func (p Pt) String(sep string) string = s"${p.X}${sep}${p.Y}"
+
+func main() = Println(Pt(1, 2).String(","))`,
+			expectCode:     galaerr.CodeGeneratedMethodSignature,
+			expectContains: "error_codes_test.gala:5:12 method Pt.String must have the signature `String() string`: it replaces the String method generated for struct Pt",
 		},
 		{
 			name: "GALA-E0097 local with the reserved prefix",

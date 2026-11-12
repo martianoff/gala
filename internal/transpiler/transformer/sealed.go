@@ -126,9 +126,8 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 		t.structFieldTypes[name] = make(map[string]transpiler.Type)
 	}
 
-	addedFields := make(map[string]bool)    // track struct field names already added to parent struct
+	addedFields := make(map[string]bool)     // track struct field names already added to parent struct
 	recursiveFields := make(map[string]bool) // track which struct field names are self-referential
-	funcFields := make(map[string]bool)      // track which struct field names hold func-typed values
 	for _, vi := range variants {
 		for _, f := range vi.fields {
 			if addedFields[f.structFieldName] {
@@ -139,12 +138,6 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 			typ, err := t.lowerType(f.typ)
 			if err != nil {
 				return nil, err
-			}
-			if _, isFunc := typ.(*ast.FuncType); isFunc {
-				// Func-valued fields can't be formatted with %v (go vet rejects
-				// fmt.Sprintf("%v", funcValue)). The String() method must substitute
-				// a placeholder string for them instead.
-				funcFields[f.structFieldName] = true
 			}
 			fType := t.astTypeToTranspilerType(typ)
 
@@ -229,10 +222,10 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 
 	// 4. Generate isXxx() methods on parent, and IsXxx() for Go callers. A
 	// method the source declares itself is not generated (see
-	// userSealedMethod), here and for String below.
+	// userGeneratedMethod), here and for String below.
 	for _, vi := range variants {
 		isName := "is" + vi.name
-		declared, err := t.userSealedMethod(name, isName, "bool")
+		declared, err := t.userGeneratedMethod(name, "sealed type", isName, "bool")
 		if err != nil {
 			return nil, err
 		}
@@ -258,12 +251,12 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 	}
 
 	// 6. Generate String() method on parent
-	hasString, err := t.userSealedMethod(name, "String", "string")
+	hasString, err := t.userGeneratedMethod(name, "sealed type", "String", "string")
 	if err != nil {
 		return nil, err
 	}
 	if !hasString {
-		decls = append(decls, t.generateSealedStringMethod(name, variants, tParams, recursiveFields, funcFields))
+		decls = append(decls, t.generateSealedStringMethod(name, variants, tParams, recursiveFields))
 	}
 
 	// 7. For generic sealed types, generate InstanceMarker
@@ -298,12 +291,13 @@ func sealedTagConst(parent, variant string) string {
 	return "_" + parent + "_" + variant
 }
 
-// userSealedMethod reports whether the source declares the method name, one
-// the transformer would generate, on sealed type typeName itself — in GALA,
-// or in a hand-written .go file of its package — so the generated one is left
-// out. The declared method must take no parameters and return result alone,
-// as the generated one does; one of another signature is GALA-E0093.
-func (t *galaASTTransformer) userSealedMethod(typeName, name, result string) (bool, error) {
+// userGeneratedMethod reports whether the source declares the method name,
+// one the transformer would generate, on typeName itself (a sealed type or a
+// struct, as kind says) — in GALA, or in a hand-written .go file of its
+// package — so the generated one is left out. The declared method must take
+// no parameters and return result alone, as the generated one does; one of
+// another signature is GALA-E0093.
+func (t *galaASTTransformer) userGeneratedMethod(typeName, kind, name, result string) (bool, error) {
 	meta := t.getTypeMeta(typeName)
 	if meta == nil {
 		return false, nil
@@ -320,8 +314,8 @@ func (t *galaASTTransformer) userSealedMethod(typeName, name, result string) (bo
 		return false, nil // not declared: generate it
 	}
 	if !fits {
-		return true, galaerr.NewCodedSemanticError(galaerr.CodeSealedMethodSignature, pos.Line, pos.Column,
-			fmt.Sprintf("method %s.%s must have the signature `%s() %s`: it replaces the %s method generated for sealed type %s", typeName, name, name, result, name, typeName),
+		return true, galaerr.NewCodedSemanticError(galaerr.CodeGeneratedMethodSignature, pos.Line, pos.Column,
+			fmt.Sprintf("method %s.%s must have the signature `%s() %s`: it replaces the %s method generated for %s %s", typeName, name, name, result, name, kind, typeName),
 			fmt.Sprintf("give it the signature %s() %s, or rename it", name, result))
 	}
 	return true, nil
@@ -497,9 +491,9 @@ func sealedFieldAccessExpr(paramName string, fieldName string, isRecursive bool)
 //
 // Return-type contract (intentional asymmetry):
 //
-//	 0-field variant  -> bool             (guard extractor — nothing to bind)
-//	 1-field variant  -> Option[T]        (extracts a single field)
-//	 2+-field variant -> Option[TupleN]   (extracts into a tuple)
+//	0-field variant  -> bool             (guard extractor — nothing to bind)
+//	1-field variant  -> Option[T]        (extracts a single field)
+//	2+-field variant -> Option[TupleN]   (extracts into a tuple)
 //
 // The 0-field case returns `bool` rather than `Option[Unit]` because there is
 // no payload to wrap and unwrap — matching it is purely a tag test, and the
@@ -831,111 +825,41 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName, name, doc string
 	}
 }
 
-// generateSealedStringMethod generates a String() method on the parent sealed type.
-// Each variant case returns "VariantName(field1, field2, ...)" or "VariantName()" for 0-field variants.
+// generateSealedStringMethod generates the String method of a sealed type: a
+// case prints as GALA writes it, `Circle(1.5)`, or `Empty()` for a case with
+// no fields. Its fields print by std.FormatStruct, as the fields of a
+// shorthand struct do (see generateStructStringMethod): a function field
+// prints as <fn>, a pointer field prints its target, and a pointer reached
+// again through a cycle prints as <cycle>.
 //
-// Func-typed fields are rendered with a literal "<fn>" placeholder rather than %v,
-// because fmt.Sprintf("%v", funcValue) is flagged by go vet as "is a func value, not called".
-func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool, funcFields map[string]bool) *ast.FuncDecl {
-	parentType := t.buildGenericTypeExpr(parentName, tParams)
-
+//	func (s Shape) String() string {
+//		switch s._variant {
+//		case _Shape_Circle:
+//			return std.FormatStruct("Circle", s.r.Get())
+//		...
+//		default:
+//			return "Shape(<unknown>)"
+//		}
+//	}
+func (t *galaASTTransformer) generateSealedStringMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList, recursiveFields map[string]bool) *ast.FuncDecl {
 	var cases []ast.Stmt
-
 	for _, vi := range variants {
-		var retExpr ast.Expr
-
-		if len(vi.fields) == 0 {
-			// Return "VariantName()"
-			retExpr = &ast.BasicLit{
-				Kind:  token.STRING,
-				Value: fmt.Sprintf(`"%s()"`, vi.name),
-			}
-		} else {
-			// Return fmt.Sprintf("VariantName(%v, %v)", s.Field1.Get(), s.Field2.Get())
-			// For recursive fields: *s.Field instead of s.Field.Get()
-			// For func-typed fields: emit a literal "<fn>" in the format string (no arg),
-			// because go vet rejects %v-formatting a function value.
-			var formatParts []string
-			var args []ast.Expr
-			for _, f := range vi.fields {
-				if funcFields[f.structFieldName] {
-					// Literal placeholder — no format verb, no argument.
-					formatParts = append(formatParts, "<fn>")
-					continue
-				}
-				formatParts = append(formatParts, "%v")
-				args = append(args, sealedFieldAccessExpr("s", f.structFieldName, recursiveFields[f.structFieldName]))
-			}
-			formatStr := fmt.Sprintf(`"%s(%s)"`, vi.name, strings.Join(formatParts, ", "))
-			if len(args) == 0 {
-				// All fields are func-typed: no format verbs remain, use a plain string literal.
-				retExpr = &ast.BasicLit{Kind: token.STRING, Value: formatStr}
-			} else {
-				allArgs := append([]ast.Expr{
-					&ast.BasicLit{Kind: token.STRING, Value: formatStr},
-				}, args...)
-
-				retExpr = &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   t.fmtPackage(),
-						Sel: ast.NewIdent("Sprintf"),
-					},
-					Args: allArgs,
-				}
-			}
+		fields := make([]ast.Expr, len(vi.fields))
+		for i, f := range vi.fields {
+			fields[i] = sealedFieldAccessExpr("s", f.structFieldName, recursiveFields[f.structFieldName])
 		}
-
 		cases = append(cases, &ast.CaseClause{
 			List: []ast.Expr{ast.NewIdent(vi.tagConst)},
-			Body: []ast.Stmt{
-				&ast.ReturnStmt{Results: []ast.Expr{retExpr}},
-			},
+			Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{t.formatStructExpr(vi.name, fields)}}},
 		})
 	}
-
-	// Default case
 	cases = append(cases, &ast.CaseClause{
-		List: nil, // nil = default
-		Body: []ast.Stmt{
-			&ast.ReturnStmt{
-				Results: []ast.Expr{
-					&ast.BasicLit{
-						Kind:  token.STRING,
-						Value: fmt.Sprintf(`"%s(<unknown>)"`, parentName),
-					},
-				},
-			},
-		},
+		Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{stringLit(parentName + "(<unknown>)")}}},
 	})
-
-	return &ast.FuncDecl{
-		Recv: &ast.FieldList{
-			List: []*ast.Field{
-				{
-					Names: []*ast.Ident{ast.NewIdent("s")},
-					Type:  parentType,
-				},
-			},
-		},
-		Name: ast.NewIdent("String"),
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{},
-			Results: &ast.FieldList{
-				List: []*ast.Field{{Type: ast.NewIdent("string")}},
-			},
-		},
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.SwitchStmt{
-					Tag: &ast.SelectorExpr{
-						X:   ast.NewIdent("s"),
-						Sel: ast.NewIdent("_variant"),
-					},
-					Body: &ast.BlockStmt{List: cases},
-				},
-			},
-		},
-	}
+	return t.stringMethodDecl(parentName, tParams, &ast.SwitchStmt{
+		Tag:  &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent("_variant")},
+		Body: &ast.BlockStmt{List: cases},
+	})
 }
 
 // generateSealedEqualMethod generates Equal on the parent sealed type: two

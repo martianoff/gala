@@ -1417,7 +1417,11 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 		decls = append(decls, equalMethod)
 	}
 
-	if t.generatesStructString(name) {
+	genString, err := t.generatesStructString(name)
+	if err != nil {
+		return nil, err
+	}
+	if genString {
 		decls = append(decls, t.generateStructStringMethod(name, fieldNames, tParams))
 	}
 
