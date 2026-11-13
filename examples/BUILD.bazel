@@ -2166,6 +2166,18 @@ gala_exec_test(
     expected = "pointer_string_printing.out",
 )
 
+# A String on a pointer receiver runs on an addressable value itself, not a
+# copy: it sees writes through other pointers and copies no lock
+gala_exec_test(
+    name = "pointer_string_original_value",
+    src = "pointer_string_original_value.gala",
+    expected = "pointer_string_original_value.out",
+    deps = [
+        "//go_interop",
+        "//stream",
+    ],
+)
+
 # Sealed cases print like shorthand structs: pointer fields print their
 # target, and a cycle through a pointer prints <cycle>
 gala_exec_test(

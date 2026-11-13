@@ -1,0 +1,86 @@
+package main
+
+import (
+    "sync"
+
+    "martianoff/gala/go_interop"
+    "martianoff/gala/stream"
+)
+
+// A String declared on a pointer receiver runs on the printed value itself
+// when that value is addressable (a var, a field of one, `*p`): it sees
+// what other pointers wrote, what it writes stays, and a lock the value holds
+// is not copied. A val and a call's result are printed through a copy, as a
+// pointer-receiver method gets a copy of them.
+
+struct Counter(var N int, var Shown int)
+
+func (c *Counter) Inc() {
+    c.N = c.N + 1
+}
+
+// String counts how often this value was printed.
+func (c *Counter) String() string {
+    c.Shown = c.Shown + 1
+    s"count ${c.N}, shown ${c.Shown}"
+}
+
+struct Holder(var C Counter)
+
+func fresh() Counter = Counter(5, 0)
+
+// Guarded is changed by one goroutine while another prints it. String takes
+// the lock of the value printed, not of a copy made without it.
+struct Guarded(var mu sync.Mutex, var n int)
+
+func (g *Guarded) Add() {
+    g.mu.Lock()
+    g.n = g.n + 1
+    g.mu.Unlock()
+}
+
+func (g *Guarded) String() string {
+    g.mu.Lock()
+    val n = g.n
+    g.mu.Unlock()
+    s"guarded $n"
+}
+
+func main() {
+    var c = Counter(0, 0)
+    c.Inc()
+    Println(c)
+    Println(c)
+    Print(c, "\n")
+    Println(s"interpolated: $c")
+    Println(f"formatted: $c%s")
+    Println(c.Shown)
+
+    val p = &c
+    c.Inc()
+    Println(*p)
+
+    var h = Holder(Counter(1, 0))
+    h.C.Inc()
+    Println(h.C)
+    Println(h.C)
+
+    Println(fresh())
+    Println(fresh())
+
+    val v = Counter(7, 0)
+    Println(v)
+    Println(v)
+
+    var g = Guarded(sync.Mutex{}, 0)
+    var done sync.WaitGroup
+    done.Add(1)
+    go_interop.Spawn(() => {
+        stream.Range(0, 1000).ForEach((_) => g.Add())
+        done.Done()
+    })
+    // Printed while the other goroutine adds.
+    Println(stream.Range(0, 1000).Filter((_) => s"$g".Size() > 0).Count())
+    done.Wait()
+    Println(g)
+}
