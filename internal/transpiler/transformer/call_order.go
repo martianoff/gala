@@ -246,6 +246,14 @@ func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, a
 		stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(name)}, Tok: token.DEFINE, Rhs: []ast.Expr{value}})
 		replace[value] = ast.NewIdent(name)
 	}
+	// The method value or func field of a call through a pointer p whose
+	// target Go reads when it makes the call (operandPointerReceiver).
+	var throughP, method ast.Expr
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && t.marked(sel.X, operandPointerReceiver) {
+			throughP, method = sel.X, call.Fun
+		}
+	}
 	for _, op := range ops {
 		if _, placed := at[op.expr]; !placed {
 			continue
@@ -253,6 +261,10 @@ func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, a
 		switch {
 		case op.temp != "":
 			bind(op.temp, op.expr)
+		case op.expr == throughP:
+			// Read what the call reads through p here, ahead of the
+			// operands after it, not only p.
+			bind(t.nextTempVar(), method)
 		case op.pinned && !t.makesEffectfulCall(op.expr), t.inert(op.expr):
 		default:
 			bind(t.nextTempVar(), op.expr)
@@ -389,7 +401,11 @@ func (t *galaASTTransformer) inert(e ast.Expr) bool {
 		return false
 	}
 	reads := false
-	ast.Inspect(e, func(n ast.Node) bool {
+	var walk func(ast.Node) bool
+	walk = func(n ast.Node) bool {
+		if reads {
+			return false
+		}
 		switch n := n.(type) {
 		case *ast.FuncLit:
 			return false
@@ -400,12 +416,10 @@ func (t *galaASTTransformer) inert(e ast.Expr) bool {
 					return false
 				}
 			}
-			ast.Inspect(n.X, func(m ast.Node) bool {
-				if id, ok := m.(*ast.Ident); ok && t.changeableInScope(id.Name) {
-					reads = true
-				}
-				return !reads
-			})
+			// A field read through a pointer reads its target, which any
+			// call may change (operandThroughPointer).
+			reads = t.marked(n, operandThroughPointer)
+			ast.Inspect(n.X, walk) // not the field name
 			return false
 		case *ast.StarExpr:
 			reads = true
@@ -415,6 +429,7 @@ func (t *galaASTTransformer) inert(e ast.Expr) bool {
 			}
 		}
 		return !reads
-	})
+	}
+	ast.Inspect(e, walk)
 	return !reads
 }

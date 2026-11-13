@@ -88,9 +88,14 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 		}
 	}
 
-	// Whether base is a pointer: by its type, or a pointer receiver, whose
-	// scope type is the type it points to.
-	_, throughPointer := xType.(transpiler.PointerType)
+	// Whether base is a pointer: by its type, an alias of a pointer
+	// included, or a pointer receiver, whose scope type is the type it
+	// points to.
+	baseValueType := xType // the type base points to, or base's own
+	ptr, throughPointer := t.followAliasChain(xType).(transpiler.PointerType)
+	if throughPointer {
+		baseValueType = ptr.Elem
+	}
 	if id, ok := base.(*ast.Ident); ok && t.fixedBindingOf(id.Name) == fixedPointerReceiver {
 		throughPointer = true
 	}
@@ -126,7 +131,7 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 
 	selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}
 	if selectsThroughImmutable {
-		t.markMember(selExpr, xType, throughPointer, m.called)
+		t.markMember(selExpr, baseValueType, throughPointer, m.called)
 	}
 
 	if t.isImmutableField(xType, selExpr, selName) {

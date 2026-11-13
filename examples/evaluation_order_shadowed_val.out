@@ -1,0 +1,4 @@
+local val: 10
+lambda parameter of a package val: 21
+function parameter: 32
+range variable: 43

@@ -1,0 +1,34 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// A package-level val's `.Get()` changes nothing, so it does not count as a
+// call that could change an earlier operand. A local binding that shares the
+// val's name is a different value, and a `Get` method on it may change
+// anything: the operand to its left is still read first. Each line prints the
+// value the left-to-right order gives.
+
+var hits = 0
+
+struct Tally(n int)
+
+func (t Tally) Get() int {
+    hits = hits + 1
+    hits * 10
+}
+
+val tally = 7
+
+val viaParam = (tally Tally) => hits + tally.Get()
+
+func viaFuncParam(tally Tally) int = hits + tally.Get()
+
+func main() {
+    val tally = Tally(0)
+    Println(s"local val: ${hits + tally.Get()}")
+    Println(s"lambda parameter of a package val: ${viaParam(Tally(0))}")
+    Println(s"function parameter: ${viaFuncParam(Tally(0))}")
+    for _, tally := range SliceOf(Tally(0)) {
+        Println(s"range variable: ${hits + tally.Get()}")
+    }
+}
