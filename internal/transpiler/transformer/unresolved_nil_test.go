@@ -190,3 +190,59 @@ struct Node(Value int)
 		})
 	}
 }
+
+// TestUnresolvedInventoryTypesDefaultNil pins that a defaulted `nil` argument
+// takes its parameter's declared type, also when the call leaves the callee's
+// type parameters to be inferred from its other arguments (#1038):
+// `FutureOf(1)` as `FutureOf[int](1)`.
+func TestUnresolvedInventoryTypesDefaultNil(t *testing.T) {
+	t.Setenv("GALA_WARN_TYPES", "1")
+
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"FutureOf with its type argument inferred", `package main
+
+import . "martianoff/gala/concurrent"
+
+func main() {
+    Println(FutureOf(1).Await())
+}
+`},
+		{"FutureOf with its type argument written", `package main
+
+import . "martianoff/gala/concurrent"
+
+func main() {
+    Println(FutureOf[int](1).Await())
+}
+`},
+		{"parameter type naming an inferred type parameter", `package main
+
+func apply[T any](x T, f func(T) T = nil) T = if (f == nil) x else f(x)
+
+func main() {
+    Println(apply(1))
+}
+`},
+		{"non-generic callee", `package main
+
+func describe(n int, p *int = nil) string = if (p == nil) s"$n" else s"$n set"
+
+func main() {
+    Println(describe(1))
+}
+`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans, tr := newTranspilerWithTransformer()
+			_, err := trans.Transpile(tt.src, "main.gala")
+			require.NoError(t, err)
+			for _, u := range transformer.UnresolvedTypes(tr) {
+				assert.NotEqual(t, "nil", u.Expr, "nil reported as unresolved at line %d", u.Line)
+			}
+		})
+	}
+}

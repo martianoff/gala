@@ -1,0 +1,15 @@
+package main
+
+import . "martianoff/gala/concurrent"
+
+// FutureOf's type argument is inferred from the value, and its defaulted
+// ExecutionContext argument takes the parameter's type.
+func main() {
+    Println(FutureOf(1).Await())
+    Println(FutureOf("one").Map((s) => s + "!").Await())
+    Println(FutureOf(2).FlatMap((x) => FutureOf(x * 21)).Await().GetOrElse(0))
+
+    val pool = NewFixedPoolEC(2)
+    Println(FutureOf(3, pool).Map((x) => x + 1).Await().GetOrElse(0))
+    pool.Shutdown()
+}

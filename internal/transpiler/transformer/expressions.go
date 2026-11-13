@@ -843,13 +843,20 @@ func (t *galaASTTransformer) lowerResultAgainst(e exprSrc, s slot, strict bool) 
 	if err != nil {
 		return nil, err
 	}
-	// The type is cached on the expression node, which is fresh for each
-	// `nil` written. A slot type nil cannot have gives it nothing, so the
-	// mismatch stays visible.
-	if isNilIdent(expr) && !s.open && t.holdsNil(s.typ) {
-		t.exprTypeCache[expr] = s.typ
+	if !s.open {
+		t.typeNilAs(expr, s.typ)
 	}
 	return expr, nil
+}
+
+// typeNilAs gives expr, when it is a bare `nil`, the type typ of the slot it
+// fills. The type is cached on the expression node, which is fresh for each
+// `nil` written. A type nil cannot have gives it nothing, so the mismatch
+// stays visible.
+func (t *galaASTTransformer) typeNilAs(expr ast.Expr, typ transpiler.Type) {
+	if isNilIdent(expr) && t.holdsNil(typ) {
+		t.exprTypeCache[expr] = typ
+	}
 }
 
 // holdsNil reports whether typ is a type `nil` can have: a pointer, slice,
