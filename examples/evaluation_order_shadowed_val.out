@@ -5,3 +5,4 @@ range variable: 43
 local val in a package-level lambda: 54
 range variable named like a var: 0
 var read after a range variable of its name: 65
+range variable as a pointer-method receiver: 71 100

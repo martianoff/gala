@@ -37,6 +37,26 @@ func afterRange() int {
     hits + Tally(0).Get()
 }
 
+struct Cell(var n int)
+
+func (c *Cell) Add(k int) int {
+    c.n = c.n + k
+    c.n
+}
+
+var origin = Cell(100)
+var cell = &origin
+
+// A range variable named like a package var is the receiver of a
+// pointer-receiver method: the method takes the range variable itself.
+func rangeReceiver() int {
+    var total = 0
+    for _, cell := range SliceOf(Cell(1)) {
+        total = cell.Add(Tally(0).Get())
+    }
+    total
+}
+
 func main() {
     val tally = Tally(0)
     Println(s"local val: ${hits + tally.Get()}")
@@ -47,4 +67,5 @@ func main() {
     }
     Println(s"local val in a package-level lambda: ${viaLambdaBody(0)}")
     Println(s"var read after a range variable of its name: ${afterRange()}")
+    Println(s"range variable as a pointer-method receiver: ${rangeReceiver()} ${origin.n}")
 }

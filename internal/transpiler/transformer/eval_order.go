@@ -156,7 +156,9 @@ func declBoundNames(decl ast.Decl) map[string]bool {
 				}
 			}
 		}
-		add(boundNames(&ast.FuncLit{Type: d.Type, Body: d.Body}))
+		if d.Body != nil {
+			add(boundNames(&ast.FuncLit{Type: d.Type, Body: d.Body}))
+		}
 	case *ast.GenDecl:
 		for _, spec := range d.Specs {
 			if vs, ok := spec.(*ast.ValueSpec); ok {
@@ -299,10 +301,10 @@ func (o *operandOrder) visit(n ast.Node) bool {
 		for i := range n.Args {
 			slots = append(slots, &n.Args[i])
 		}
-		// What the receiver reads, before sequence may copy it.
-		var recvVars, recvPointers bool
+		// The receiver as written: sequence may replace it with a copy.
+		var recv ast.Expr
 		if receiver != nil {
-			recvVars, recvPointers = o.receiverReads(*receiver)
+			recv = *receiver
 		}
 		argCall, argExact := o.sequence(slots, func(slot *ast.Expr) bool {
 			return slot != receiver || o.receiverCopyable(n.Fun)
@@ -312,8 +314,10 @@ func (o *operandOrder) visit(n ast.Node) bool {
 		// arguments: a call among them could change it first. The method
 		// value is read in order instead. Reads through a pointer are
 		// ordered against the exact calls only, as in sequence.
-		if argCall && (recvVars || recvPointers && argExact) {
-			n.Fun = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{n.Fun}}
+		if recv != nil && argCall {
+			if vars, pointers := o.receiverReads(recv); vars || pointers && argExact {
+				n.Fun = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{n.Fun}}
+			}
 		}
 	case *ast.CompositeLit:
 		_, isMap := n.Type.(*ast.MapType)
@@ -501,7 +505,20 @@ func (o *operandOrder) varType(name string) transpiler.Type {
 	if o.locals[name] {
 		return o.t.mutableVars[name]
 	}
+	// A binding locals leaves out (a range variable, say) may be what the
+	// name reads here, not the package var: its type is not known.
+	if o.boundNames()[name] {
+		return nil
+	}
 	return o.pkgVars[name]
+}
+
+// boundNames is declBoundNames of the declaration, computed once.
+func (o *operandOrder) boundNames() map[string]bool {
+	if o.bound == nil {
+		o.bound = declBoundNames(o.decl)
+	}
+	return o.bound
 }
 
 // isPackageValGet reports whether call reads a package-level val of this
@@ -517,10 +534,7 @@ func (o *operandOrder) isPackageValGet(call *ast.CallExpr) bool {
 	}
 	// A local binding of the name, val or var, is not the package's val: its
 	// Get may be any method.
-	if o.bound == nil {
-		o.bound = declBoundNames(o.decl)
-	}
-	if _, local := o.t.mutableVars[id.Name]; local || o.bound[id.Name] {
+	if _, local := o.t.mutableVars[id.Name]; local || o.boundNames()[id.Name] {
 		return false
 	}
 	meta := o.t.richAST.PackageVals[id.Name]
