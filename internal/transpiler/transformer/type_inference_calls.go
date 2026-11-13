@@ -13,6 +13,11 @@ import (
 // Extracted from getExprTypeNameManualUncached for readability.
 func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpiler.Type {
 	xType := t.getExprTypeNameManual(e.X)
+	// A field read through an alias of a pointer (`type Ref *T`) is a field
+	// of T.
+	if ptr, ok := t.followAliasChain(xType).(transpiler.PointerType); ok {
+		xType = ptr
+	}
 	xTypeName := xType.String()
 	// Extract base type name (strip generic parameters + pointer prefix)
 	baseTypeName := stripTypeNameDecorations(xTypeName)

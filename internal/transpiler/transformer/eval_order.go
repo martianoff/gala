@@ -73,14 +73,23 @@ func (t *galaASTTransformer) marked(n ast.Node, mark operandMark) bool {
 	return t.operandMarks[n]&mark != 0
 }
 
-// markMember marks sel, the member access `base.name` lowered from the
-// source, for orderOperands. xType is the type of base, throughPointer
-// whether base is a pointer, and called whether sel is called.
-func (t *galaASTTransformer) markMember(sel *ast.SelectorExpr, xType transpiler.Type, throughPointer, called bool) {
-	if p, ok := xType.(transpiler.PointerType); ok {
-		xType = p.Elem
+// readsThroughPointer reports whether a node of the file reads through a
+// pointer (operandThroughPointer, operandPointerReceiver).
+func (t *galaASTTransformer) readsThroughPointer() bool {
+	for _, mark := range t.operandMarks {
+		if mark&(operandThroughPointer|operandPointerReceiver) != 0 {
+			return true
+		}
 	}
-	pointerMethod := called && t.hasPointerReceiverMethod(xType, sel.Sel.Name)
+	return false
+}
+
+// markMember marks sel, the member access `base.name` lowered from the
+// source, for orderOperands. valueType is the type of base, or of what it
+// points to, throughPointer whether base is a pointer, and called whether sel
+// is called.
+func (t *galaASTTransformer) markMember(sel *ast.SelectorExpr, valueType transpiler.Type, throughPointer, called bool) {
+	pointerMethod := called && t.hasPointerReceiverMethod(valueType, sel.Sel.Name)
 	switch {
 	case !called && throughPointer:
 		t.markOperand(sel, operandThroughPointer)
@@ -126,7 +135,9 @@ type operandOrder struct {
 // variable a later operand's call could change (see above).
 func (t *galaASTTransformer) orderOperands(file *ast.File) {
 	pkgVars := t.packageVarTypes()
-	if len(pkgVars) == 0 && len(t.mutableVars) == 0 && len(t.operandMarks) == 0 {
+	// With no variable to change, only a read through a pointer can need a
+	// wrap; the other marks only refine those two.
+	if len(pkgVars) == 0 && len(t.mutableVars) == 0 && !t.readsThroughPointer() {
 		return
 	}
 	for _, decl := range file.Decls {
@@ -189,6 +200,21 @@ func capturedNames(decl ast.Decl, addressed func(*ast.SelectorExpr) bool) (captu
 		switch n := n.(type) {
 		case *ast.FuncLit:
 			mentions(n.Body)
+			// A package-level initializer's literal declares its parameters
+			// too; in a function, they are visited as Fields below.
+			if !isFunc {
+				for _, f := range n.Type.Params.List {
+					declare(f.Names...)
+				}
+			}
+		case *ast.RangeStmt:
+			if n.Tok == token.DEFINE {
+				for _, e := range []ast.Expr{n.Key, n.Value} {
+					if id, ok := e.(*ast.Ident); ok {
+						declare(id)
+					}
+				}
+			}
 		case *ast.UnaryExpr:
 			if n.Op == token.AND {
 				mentions(n.X)
@@ -238,8 +264,6 @@ func (o *operandOrder) visit(n ast.Node) bool {
 	case *ast.CallExpr:
 		slots := make([]*ast.Expr, 0, len(n.Args)+1)
 		var receiver *ast.Expr
-		sel, isSel := ast.Unparen(n.Fun).(*ast.SelectorExpr)
-		readsAtCall := isSel && o.t.marked(sel.X, operandPointerReceiver)
 		switch fun := ast.Unparen(n.Fun).(type) {
 		case *ast.SelectorExpr:
 			if !o.isPackageQualifier(fun.X) {
@@ -252,13 +276,10 @@ func (o *operandOrder) visit(n ast.Node) bool {
 		for i := range n.Args {
 			slots = append(slots, &n.Args[i])
 		}
-		o.sequence(slots, func(slot *ast.Expr) bool {
+		argCall, argExact := o.sequence(slots, func(slot *ast.Expr) bool {
 			return slot != receiver || o.receiverCopyable(n.Fun)
 		})
-		// Go reads a method's receiver out of *p, or a func field out of p,
-		// when it makes the call, after the arguments: a call among them
-		// could change it first. The method value is read in order.
-		if readsAtCall && slices.ContainsFunc(n.Args, func(arg ast.Expr) bool { return o.makesCall(arg, true) }) {
+		if receiver != nil && o.readAtCall(*receiver, argCall, argExact) {
 			n.Fun = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{n.Fun}}
 		}
 	case *ast.CompositeLit:
@@ -280,22 +301,47 @@ func (o *operandOrder) visit(n ast.Node) bool {
 	return true
 }
 
+// readAtCall reports whether the method value or func field `recv.m` of a call
+// must be read ahead of its arguments, of which argCall says whether one makes
+// a call and argExact an exact one (makesCall). Go reads the value a method takes,
+// `*p` for a value method called through p, or a func field, when it makes the
+// call, after the arguments, so a call among them could change it first.
+// A variable receiver is sequence's: it copies the variable ahead when it
+// can, and keeps its rule for the rest. A pointer-receiver method on a value
+// takes the variable itself. Any other receiver that reads storage a call
+// could change, a field path or a read through a pointer, has its method
+// value read in order instead.
+func (o *operandOrder) readAtCall(recv ast.Expr, argCall, argExact bool) bool {
+	if !argCall || o.t.marked(recv, operandAddressed) {
+		return false
+	}
+	vars, pointers := o.readsChangeable(recv)
+	if _, isVar := recv.(*ast.Ident); isVar {
+		vars = false // a variable receiver is sequence's to copy, or not
+	}
+	pointers = pointers || o.t.marked(recv, operandPointerReceiver)
+	// Reads through a pointer are ordered against the exact calls only, as
+	// in sequence.
+	return vars || pointers && argExact
+}
+
 // sequence wraps in std.EvalOperand each operand of slots, in evaluation order,
 // that reads a changeable variable outside any call while a later operand
-// makes a call. copyable, when set, vetoes the wrap for a slot.
-func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool) {
+// makes a call. copyable, when set, vetoes the wrap for a slot. It returns
+// whether an operand after the first makes a call, and an exact one
+// (makesCall), as found before any wrap.
+func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool) (laterCall0, laterExact0 bool) {
 	if len(slots) < 2 {
-		return
+		return false, false
 	}
 	// laterCall[i] / laterExact[i]: an operand after i makes a call, by
 	// makesCall's rule for variable reads / for reads through a pointer.
 	laterCall := make([]bool, len(slots))
 	laterExact := make([]bool, len(slots))
 	for i := len(slots) - 2; i >= 0; i-- {
-		next := *slots[i+1]
-		call := o.makesCall(next, false)
+		call, exact := o.makesCall(*slots[i+1])
 		laterCall[i] = laterCall[i+1] || call
-		laterExact[i] = laterExact[i+1] || call && o.makesCall(next, true)
+		laterExact[i] = laterExact[i+1] || exact
 	}
 	for i, slot := range slots {
 		if !laterCall[i] || (copyable != nil && !copyable(slot)) {
@@ -306,6 +352,7 @@ func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool
 		}
 		*slot = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{*slot}}
 	}
+	return laterCall[0], laterExact[0]
 }
 
 // readsChangeable reports whether evaluating e reads a variable that a call
@@ -368,15 +415,21 @@ func (o *operandOrder) readsChangeable(e ast.Expr) (vars, pointers bool) {
 
 // makesCall reports whether evaluating e makes a call that could change a
 // variable (see makesCallExcept); a package-level val's `.Get()` cannot.
-// With exact, the calls known to change nothing are left out too: reading a
-// val field out of its std.Immutable box, `x.f.Get()`, and std.SomePtr,
-// which only wraps its pointer. Reads through a pointer are ordered against
-// the exact calls only; variable reads keep the rule they had before
-// pointers were tracked, so their generated Go does not change.
-func (o *operandOrder) makesCall(e ast.Expr, exact bool) bool {
-	return o.t.makesCallExcept(e, o.changeable, func(call *ast.CallExpr) bool {
-		return o.isPackageValGet(call) || exact && (o.t.marked(call, operandBoxGet) || o.t.isStdHelperCall(call, "SomePtr"))
+// exact is the same with the calls known to change nothing left out too:
+// reading a val field out of its std.Immutable box, `x.f.Get()`, and
+// std.SomePtr, which only wraps its pointer. Reads through a pointer are
+// ordered against the exact calls only; variable reads keep the rule they had
+// before pointers were tracked, so their generated Go does not change. One
+// walk answers both.
+func (o *operandOrder) makesCall(e ast.Expr) (call, exact bool) {
+	exact = o.t.makesCallExcept(e, o.changeable, func(c *ast.CallExpr) bool {
+		if o.isPackageValGet(c) {
+			return true
+		}
+		call = true
+		return o.t.marked(c, operandBoxGet) || o.t.isStdHelperCall(c, "SomePtr")
 	})
+	return call || exact, exact
 }
 
 // makesCallExcept reports whether evaluating e calls a function, or receives
@@ -435,7 +488,9 @@ func (o *operandOrder) isPackageValGet(call *ast.CallExpr) bool {
 	if !ok {
 		return false
 	}
-	if _, local := o.t.mutableVars[id.Name]; local {
+	// A local binding of the name, val or var, is not the package's val: its
+	// Get may be any method.
+	if _, local := o.t.mutableVars[id.Name]; local || o.locals[id.Name] {
 		return false
 	}
 	meta := o.t.richAST.PackageVals[id.Name]
