@@ -978,6 +978,13 @@ const (
 	// calls the value's Equal, which would call the function again without
 	// end.
 	CodeEqualReentry ErrorCode = "GALA-E0108"
+
+	// E0109: a type pattern tests for an interface that a type has every
+	// method of only because some of those methods are generated as free
+	// functions (a generic type's method that names another generic type).
+	// Go's type test would never match such a value, so the pattern is
+	// rejected rather than silently falling through.
+	CodeInterfaceViaLoweredMethod ErrorCode = "GALA-E0109"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

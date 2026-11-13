@@ -336,6 +336,25 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 
 Every type also gets `Copy()`, `Equal(other)` and, for sealed types, `String()`.
 
+### Methods of generic types that Go sees as functions
+
+Go compiles every method of a generic type once for each type argument, whether or not anything calls it. A method whose signature names *another* generic type would make every `Array[T]` compile a `List[T]`, an `Option[Array[T]]` and their methods too. GALA therefore generates such a method as a free function, which Go compiles only where it is called. GALA code calls it as a method, `arr.ToList()`. Go code calls the function:
+
+```go
+list := collection_immutable.Array_ToList(arr)      // arr.ToList() in GALA
+keys := collection_immutable.HashMap_Keys(m)        // m.Keys()
+tail := collection_immutable.Array_TailOption(arr)  // arr.TailOption()
+```
+
+A method stays a Go method when any of these holds:
+
+- it names no other generic type (`Size()`, `Filter(p)`, `Append(x)` on `Array[T]`);
+- an interface that the type's package sees has a method of that name. For the std collections this covers `Iterable`, `Seq`, `Traversable`, `Hashable` and `Ordered`: `HeadOption()`, `Partition(p)` and `SplitAt(n)` stay methods;
+- GALA or Go looks it up by name: `String`, `GoString`, `Format`, `Error`, `Unwrap`, `Is`, `As`, `Equal`, `Copy`, `Hash`, `Compare`, `Get`, `Apply`, `Unapply`, `MatchView`, `IsZero` and the `Marshal`/`Unmarshal` JSON, text, YAML and binary methods;
+- it declares a Go result list, as in `Load() (List[T], error)`.
+
+Because a function is not in a type's method set, the type does not implement an interface, declared somewhere its package cannot see, that needs the method. GALA reports both uses of such an interface: a value used as one is [GALA-E0100](/docs/errors/gala-e0100/), and a type pattern testing for one is [GALA-E0109](/docs/errors/gala-e0109/).
+
 **`==` in Go is Go's.** In GALA, `a == b` on a struct, sealed type, tuple or collection calls `a.Equal(b)` ([Equality](/docs/language-reference/#equality--and-)). Go code that compares GALA values with `==` gets Go's operator: two `List`s built separately with the same elements are not `==` in Go, and a GALA struct holding a collection or a `val` field compares the internal fields. Call `a.Equal(b)` from Go for GALA's meaning.
 
 ### Sealed types have Go constructors
