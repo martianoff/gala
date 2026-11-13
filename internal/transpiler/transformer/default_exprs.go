@@ -657,7 +657,10 @@ func (src defaultSource) unboundTypeParams() []string {
 // A bare `nil` is returned as is, typed as the declared type: it is already
 // a value of it (the absent function, pointer, ...), and must not be lifted
 // into a thunk `func() T { return nil }` by the by-name sugar that an
-// explicit argument to a zero-argument function parameter gets.
+// explicit argument to a zero-argument function parameter gets. The type is
+// known here even where the callee's type parameters are inferred from the
+// other arguments, so whatever asks for the default's type afterwards finds
+// it.
 func (t *galaASTTransformer) transformWithDeclaredType(e exprSrc, declared transpiler.Type, typeParams []string) (ast.Expr, error) {
 	if declared != nil {
 		if inner, isSendable := transpiler.UnwrapSendable(declared); isSendable {
@@ -668,10 +671,6 @@ func (t *galaASTTransformer) transformWithDeclaredType(e exprSrc, declared trans
 		return t.lowerExpr(e)
 	}
 	if e.isNil() {
-		// It has the declared type, which is known here even where the
-		// callee's type parameters are inferred from the other arguments:
-		// whatever asks for the default's type afterwards (inferring those
-		// type parameters, the unresolved-type inventory) finds it.
 		nilIdent := ast.NewIdent("nil")
 		t.typeNilAs(nilIdent, declared)
 		return nilIdent, nil
