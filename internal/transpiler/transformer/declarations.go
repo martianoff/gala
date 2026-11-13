@@ -297,7 +297,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 			case declType == nil && id.text == "_":
 				tempNames[i] = "_"
 			case anchor != "":
-				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
+				tempNames[i] = t.generatedName(fmt.Sprintf("__val_%s_%d", anchor, i))
 			default:
 				tempNames[i] = t.nextTempVar()
 			}
@@ -569,9 +569,9 @@ func (t *galaASTTransformer) tupleTempName(topLevel bool, names []declName) stri
 		return "_"
 	}
 	if anchor := packageTempAnchor(topLevel, names); anchor != "" {
-		return "__tuple_" + anchor
+		return t.generatedName("__tuple_" + anchor)
 	}
-	return fmt.Sprintf("__tuple_%d", t.nextTupleID())
+	return t.freshTempName("__tuple_", &t.tempVarCount)
 }
 
 // checkBlankDeclaration rejects `val _ = expr` and `var _ = expr`, typed or

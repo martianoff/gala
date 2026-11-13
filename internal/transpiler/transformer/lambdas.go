@@ -698,17 +698,20 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 
 	// Build LHS variable names: _v0, _v1, ... _vN, _err
 	var lhsExprs []ast.Expr
-	for i := 0; i < valueCount; i++ {
-		lhsExprs = append(lhsExprs, ast.NewIdent(fmt.Sprintf("_v%d", i)))
+	valueNames := make([]string, valueCount)
+	for i := range valueNames {
+		valueNames[i] = t.generatedName(fmt.Sprintf("_v%d", i))
+		lhsExprs = append(lhsExprs, ast.NewIdent(valueNames[i]))
 	}
-	lhsExprs = append(lhsExprs, ast.NewIdent("_err"))
+	errName := t.generatedName("_err")
+	lhsExprs = append(lhsExprs, ast.NewIdent(errName))
 
 	// Build the return expression and type
 	var returnExpr ast.Expr
 	var returnTypeExpr ast.Expr
 	if valueCount == 1 {
 		// (T, error) -> return _v0, type is T
-		returnExpr = ast.NewIdent("_v0")
+		returnExpr = ast.NewIdent(valueNames[0])
 		returnTypeExpr = t.typeToExpr(returns[0])
 	} else {
 		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
@@ -739,7 +742,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 				Key: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
 				Value: &ast.CallExpr{
 					Fun:  t.stdIdent("NewImmutable"),
-					Args: []ast.Expr{ast.NewIdent(fmt.Sprintf("_v%d", i))},
+					Args: []ast.Expr{ast.NewIdent(valueNames[i])},
 				},
 			})
 		}
@@ -763,7 +766,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 			// if _err != nil { panic(_err) }
 			&ast.IfStmt{
 				Cond: &ast.BinaryExpr{
-					X:  ast.NewIdent("_err"),
+					X:  ast.NewIdent(errName),
 					Op: token.NEQ,
 					Y:  ast.NewIdent("nil"),
 				},
@@ -771,7 +774,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 					List: []ast.Stmt{
 						&ast.ExprStmt{X: &ast.CallExpr{
 							Fun:  ast.NewIdent("panic"),
-							Args: []ast.Expr{ast.NewIdent("_err")},
+							Args: []ast.Expr{ast.NewIdent(errName)},
 						}},
 					},
 				},
@@ -1133,7 +1136,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 		paramType = transpiler.BasicType{Name: "any"}
 	}
 
-	paramName := "_pf_arg"
+	paramName := t.generatedName("_pf_arg")
 	t.pushScope()
 	defer t.popScope()
 	t.addVar(paramName, paramType)
@@ -1147,7 +1150,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 		return nil, err
 	}
 	if viewed {
-		casesParam = "_pf_view"
+		casesParam = t.generatedName("_pf_view")
 		t.addVar(casesParam, casesType)
 		clauses = append(clauses, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(casesParam)}, Tok: token.DEFINE, Rhs: []ast.Expr{viewExpr},

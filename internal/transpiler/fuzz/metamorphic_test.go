@@ -15,9 +15,10 @@ import (
 // FuzzAlphaRenaming checks that renaming local binders does not change what
 // a program does. It generates a program (metamorphic_gen_test.go), renames
 // every val, parameter, lambda parameter and pattern variable to a hostile
-// name — obj, _tmp_1, std, panic, string, len, fmt, __p0, or the name of
-// another binder in scope, shadowing it where that keeps every reference
-// resolving as before — and checks that the program builds and prints
+// name — obj, _tmp_1, __tuple_1, _err, std, panic, string, len, fmt, __p0,
+// or the name of another binder in scope, shadowing it where that keeps
+// every reference resolving as before — and its top-level functions to the
+// names of Go builtins (panic, new, len, …), and checks that it builds and prints
 // exactly the output the generator computed. When it does not, the same
 // program with plain names is run too, so the report says whether the
 // renaming is to blame.

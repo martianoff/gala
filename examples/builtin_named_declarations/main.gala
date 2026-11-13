@@ -1,0 +1,93 @@
+package main
+
+import "errors"
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/concurrent"
+
+// Top-level declarations named like Go's builtins (panic, len, new, max,
+// string, std, …) and bindings named like the names generated code uses for
+// itself (__tuple_x, _zip, _pf_arg, _goResult, …). Each must keep its own
+// meaning, and so must the generated code around it: a match still panics
+// with Go's panic, a struct's generated Unapply still calls Go's new.
+
+sealed type Shape {
+    case Circle(R int)
+    case Rect(W int, H int)
+}
+
+struct Pair(A int, B int)
+
+// Named like Go builtins: a function, a val and a var of the package.
+func panic(x int) int = x + 100
+
+func len(x int) int = x * 10
+
+func new(n int = max) int = n + 1
+
+val string = "shadow"
+
+val std = 7
+
+var max = 3
+
+// A destructured package-level val names its temporary after its first name.
+val (cap, copy) = (2, 5)
+
+val __tuple_cap = 40
+
+func area(s Shape) int = s match {
+    case Circle(r) => r * 3
+    case Rect(w, h) => w * h
+}
+
+func describe(s Shape) string = s match {
+    case Circle(r) => s"circle $r $string"
+    case Rect(w, h) => s"rect $w x $h"
+}
+
+func sumOf(p Pair) int = p match {
+    case Pair(a, b) => a + b
+    case _ => 0
+}
+
+func square(n int) Future[int] = Future[int](n * n)
+
+// The continuation of a bind group runs inside a generated function whose
+// parameter is _zip; the parameter here must stay the caller's.
+func zipped(_zip int) Future[int] {
+    bind a = square(2)
+    also b = square(3)
+    Future[int](a + b + _zip)
+}
+
+// The body of a function with Go results is held in _goResult.
+func halve(_goResult int) (int, error) =
+    if (_goResult % 2 == 0) Success(_goResult / 2) else Failure(errors.New(s"$_goResult is odd"))
+
+func main() {
+    Println(panic(1) + len(2) + max)
+    max = max + 1
+    Println(new())
+    Println(new(n = 10))
+    Println(string)
+    Println(std + cap + copy + __tuple_cap)
+    Println(area(Circle(2)))
+    Println(describe(Rect(2, 3)))
+    Println(sumOf(Pair(3, 4)))
+    Println(ArrayOf(1, 2, 3).Map(len).String())
+    Println(zipped(1000).Get())
+    Println(halve(8).GetOrElse(-1))
+    Println(halve(3).IsFailure())
+
+    // A partial function's parameter is _pf_arg.
+    val _pf_arg = 100
+    Println(ArrayOf(1, 2, 3).Collect({ case x if x > 1 => x + _pf_arg }).String())
+
+    // A local tuple's temporary is __tuple_N.
+    val __tuple_1 = 1
+    val __tuple_2 = 2
+    val __tuple_3 = 3
+    val (a, b) = (10, 20)
+    Println(a + b + __tuple_1 + __tuple_2 + __tuple_3)
+    Println(fromOtherFile())
+}

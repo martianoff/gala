@@ -1662,7 +1662,7 @@ struct Job(select bool)     // GALA-E0055
 
 Pick another name, such as `defaultPort` or `selected`. GALA does not rename the identifier for you: a renamed struct field or exported function would be visible to Go code, JSON field names and reflection under a name you never wrote. A bare `break` or `continue` statement in a `for` loop is loop control and is not affected; a bare `defer`, `go`, `goto`, `fallthrough`, `select` or `chan` statement is [GALA-E0036](/docs/errors/gala-e0036/).
 
-Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max` and so on — are not keywords. A local binding may take one; in a value position the name then means the binding, and in a type position the type.
+Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max` and so on — are not keywords. A local binding may take one, and so may a top-level function, val or var; in a value position the name then means the binding, and in a type position the type.
 
 ### Names Starting with `_gala_` Are Reserved
 

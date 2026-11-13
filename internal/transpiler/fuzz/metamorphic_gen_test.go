@@ -30,9 +30,11 @@ import (
 // stack the scan below keeps while it walks the tree.
 //
 // Hostile names are the names generated Go uses for itself (obj, _tmp_N,
-// __p0), Go's predeclared and package names (std, panic, string, len, fmt)
-// and the names of other binders in scope: shadowing. A name is only given
-// where it keeps every reference resolving to the same binder (see mScan).
+// __p0, __tuple_N, _subj, _err, _v0), Go's predeclared and package names
+// (std, panic, string, len, fmt) and the names of other binders in scope:
+// shadowing. A name is only given where it keeps every reference resolving
+// to the same binder (see mScan). The top-level functions take the names of
+// builtins generated Go calls (topHostileNames).
 //
 // For the evaluation-order property, operands, positional and named
 // arguments, constructor arguments, match subjects, guards, extractors and
@@ -1430,9 +1432,22 @@ var hostileNames = []struct {
 	{"panic", 0},
 	{"string", 0},
 	{"__p0", 0},
+	{"__tuple_1", 0},
+	{"__tuple_2", 0},
+	{"__tuple_3", 0},
+	{"_subj", 0},
+	{"_err", 0},
+	{"_v0", 0},
 	{"len", 0},
 	{"fmt", 0},
 }
+
+// topHostileNames are the names a generated top-level function is renamed
+// to: Go builtins that generated code calls (panic in a match's unreachable
+// default, new in a struct's Unapply, …). In Go a top-level declaration
+// hides a builtin in every file of its package. A name a function takes is
+// left out of the binders' names, so every call still reaches the function.
+var topHostileNames = []string{"panic", "new", "len", "max", "print"}
 
 // nameHostile names every binder, in declaration order, with a hostile name
 // or the name of a binder visible where it is declared, chosen at random
@@ -1443,9 +1458,19 @@ func (g *metaGen) nameHostile(c *mScan) {
 	h := fnv.New64a()
 	h.Write(g.data)
 	rng := rand.New(rand.NewSource(int64(h.Sum64())))
+	// Most functions take a builtin's name; a few keep their plain one.
+	funcNames := slices.Clone(topHostileNames)
+	rng.Shuffle(len(funcNames), func(i, j int) { funcNames[i], funcNames[j] = funcNames[j], funcNames[i] })
+	taken := map[string]bool{}
+	for i, f := range g.funcs {
+		if i < len(funcNames) && rng.Intn(5) > 0 {
+			f.name = funcNames[i]
+			taken[f.name] = true
+		}
+	}
 	var pool []string
 	for _, n := range hostileNames {
-		if n.issue != 0 && g.avoid(n.issue) {
+		if n.issue != 0 && g.avoid(n.issue) || taken[n.name] {
 			continue
 		}
 		pool = append(pool, n.name)

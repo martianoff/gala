@@ -175,26 +175,30 @@ func (t *galaASTTransformer) packageNameAlias(name string, src defaultSource) (a
 	for root != nil && root.parent != nil {
 		root = root.parent
 	}
+	// The reference to the package-level name, which keeps reaching it if
+	// renameShadowingTopLevel renames it.
+	ref := ast.NewIdent(name)
+	t.markTopLevelRef(ref)
 	var value ast.Expr
 	deref := false
 	switch {
 	case t.isTopLevelBinding(name) && root != nil && root.vals[name]:
 		// A val never changes: the alias holds its value.
-		value = ast.NewIdent(name)
+		value = ref
 		root.vals[alias], root.valTypes[alias] = true, root.valTypes[name]
 		if root.boxedVals[name] {
 			root.boxedVals[alias] = true // non-nil: it holds name
 		}
 	case t.isTopLevelBinding(name) && root != nil:
 		// A var does: the alias points at it.
-		value, deref = &ast.UnaryExpr{Op: token.AND, X: ast.NewIdent(name)}, true
+		value, deref = &ast.UnaryExpr{Op: token.AND, X: ref}, true
 		root.vals[alias], root.valTypes[alias] = false, transpiler.PointerType{Elem: root.valTypes[name]}
 	default:
 		fm, ok := t.unshadowedFunctionByName(name)
 		if !ok || len(fm.TypeParams) > 0 {
 			return nil, fmt.Errorf("the default value of a parameter reads %s, which a local of this call site shadows; rename the local", name)
 		}
-		value = ast.NewIdent(name)
+		value = ref
 	}
 	if !t.defaultRefNames[alias] {
 		if t.defaultRefNames == nil {

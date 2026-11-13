@@ -1964,6 +1964,19 @@ gala_exec_test(
     expected = "generated_decl_collisions.out",
 )
 
+gala_exec_test(
+    name = "builtin_named_declarations",
+    srcs = [
+        "builtin_named_declarations/main.gala",
+        "builtin_named_declarations/other.gala",
+    ],
+    expected = "builtin_named_declarations/builtin_named_declarations.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
 # Documentation verification tests (GALA.MD)
 gala_exec_test(
     name = "doc_verify_gala_md_basics",
