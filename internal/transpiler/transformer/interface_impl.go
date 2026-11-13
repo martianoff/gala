@@ -253,9 +253,14 @@ func (t *galaASTTransformer) implMismatch(impl implType, want ifaceMethod) (why,
 		}
 		return "it has no method " + want.name, signatureHint
 	}
+	// A method lowered to a function without type parameters of its own
+	// (it names another generic type) is not in the type's Go method set.
+	if m.IsGeneric && len(m.TypeParams) == 0 {
+		return loweredMethodReason(want.name), loweredMethodHint
+	}
 	// A method with type parameters of its own is lowered to a function; Go
 	// reports it as missing, but its spelling there is the transformer's.
-	if len(m.TypeParams) > 0 || m.IsGeneric {
+	if len(m.TypeParams) > 0 {
 		return "", ""
 	}
 	if m.PointerReceiver && !impl.pointer {

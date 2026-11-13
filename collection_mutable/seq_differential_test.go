@@ -226,7 +226,7 @@ func TestMutableArrayOpsDifferential(t *testing.T) {
 			for name, got := range map[string]*Array[int]{
 				"ArrayOf":       ArrayOf(ref...),
 				"ArrayTabulate": ArrayTabulate(n, func(i int) int { return ref[i] }),
-				"ListToArray":   ListFromSlice(ref).ToArray(),
+				"ListToArray":   List_ToArray(ListFromSlice(ref)),
 			} {
 				p.EqInts(name, got.ToGoSlice(), ref)
 			}
@@ -329,7 +329,7 @@ func TestMutableListOpsDifferential(t *testing.T) {
 			l := ListFromSlice(ref)
 			var log VisitLog
 			p.EqInts("ListOf", ListOf(ref...).ToGoSlice(), ref)
-			p.EqInts("ArrayToList", ArrayFromSlice(ref).ToList().ToGoSlice(), ref)
+			p.EqInts("ArrayToList", Array_ToList(ArrayFromSlice(ref)).ToGoSlice(), ref)
 
 			p.EqInts("Map", List_Map(l, func(x int) int { log.Record(x); return x*3 + 1 }).ToGoSlice(),
 				RefMap(ref, func(x int) int { return x*3 + 1 }))

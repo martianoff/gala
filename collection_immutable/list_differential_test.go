@@ -17,7 +17,7 @@ func listPaths(p *Prop, ref []int) map[string]List[int] {
 	paths := map[string]List[int]{
 		"ListFromSlice": ListFromSlice(ref),
 		"ListOf":        ListOf(ref...),
-		"ArrayToList":   ArrayFromSlice(ref).ToList(),
+		"ArrayToList":   Array_ToList(ArrayFromSlice(ref)),
 		"Map":           List_Map(ListFromSlice(ref), func(x int) int { return x }),
 	}
 	prepended := EmptyList[int]()
@@ -57,7 +57,7 @@ func checkList(p *Prop, what string, l List[int], ref []int) {
 			p.Fatalf("%s: Get(%d) = %d, want %d", what, i, got, ref[i])
 		}
 	}
-	if l.GetOption(-1).IsDefined() || l.GetOption(n).IsDefined() {
+	if List_GetOption(l, -1).IsDefined() || List_GetOption(l, n).IsDefined() {
 		p.Fatalf("%s: GetOption out of range is defined", what)
 	}
 	if n > 0 && (l.Head() != ref[0] || l.Last() != ref[n-1]) {

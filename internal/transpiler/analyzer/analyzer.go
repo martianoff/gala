@@ -1292,6 +1292,10 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		return nil, err
 	}
 
+	// 2d. Methods of the package's generic types that would instantiate
+	// other generic types are functions (#872).
+	markFanOutMethods(richAST, pkgName)
+
 	// 3. Discover companion objects - types with Unapply methods that can be
 	// used for pattern matching.
 	a.discoverCompanionObjects(richAST)

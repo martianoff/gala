@@ -94,10 +94,10 @@ jobs:
       # together: older gala_tui releases contain code that newer GALA checks
       # correctly reject (0.15.2 still has a `val _ =`, GALA-E0060).
       GALA_TUI_REF: c46554dd1e24a2074c4b99dd2294f30cbe955489
-      # gala_team master after its test driver takes the JSON decoder as a
-      # std FieldDecoder rather than a raw *JsonDecoderImpl, whose methods now
-      # have Ptr receivers (martianoff/gala-team#146).
-      GALA_TEAM_REF: "44e03ea2c32ca47fbbadb9bc780ec7a1720758dc"
+      # gala_team master after app/headless depends on gala's concurrent
+      # package directly: it calls Future.Await, which GALA generates as the
+      # free function concurrent.Future_Await (martianoff/gala-team#150).
+      GALA_TEAM_REF: "9fc06f7f704b40e2375494fb003683a6137655ed"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 

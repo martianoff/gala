@@ -320,9 +320,11 @@ func (a *galaAnalyzer) nativeParamsOf(params native.ParametersNode, pkgName stri
 // list (what Go returns), and pointers (`*MyList[T]`, `Ptr[MyList[T]]`) are
 // looked through on both sides.
 //
-// This is the only place the decision is made: the result, recorded as
-// MethodMetadata.IsGeneric, is what the transformer reads both to lower the
-// declaration in its own package and to call it from any package (#814).
+// The analyzer is the only place the decision is made (here, and in
+// markFanOutMethods for a method that names another generic type): the
+// result, recorded as MethodMetadata.IsGeneric, is what the transformer reads
+// both to lower the declaration in its own package and to call it from any
+// package (#814).
 func (a *galaAnalyzer) nativeCausesInstantiationCycle(recvType native.TypeNode, sig native.SignatureNode) bool {
 	retType := sig.Type_()
 	if list := sig.GoResults(); list.Ok() {

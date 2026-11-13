@@ -1641,6 +1641,27 @@ func main() {
 			},
 		},
 		{
+			name: "a type pattern for an interface a type has only through free functions",
+			code: galaerr.CodeInterfaceViaLoweredMethod, // GALA-E0109
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+type HasKeys interface {
+    Keys() HashSet[string]
+}
+
+func probe(x any) string = x match {
+    case h: HasKeys => "keys"
+    case _ => "none"
+}
+
+func main() = Println(probe(HashMapOf(("a", 1))))
+`)
+			},
+		},
+		{
 			name:   "builtin-named function the package's hand-written Go refers to",
 			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
 			render: renderBuiltinNameFromGoRepro,

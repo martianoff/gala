@@ -121,6 +121,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0106` | Type named like a Go predeclared type | [GALA-E0106.md](GALA-E0106.md) |
 | `GALA-E0107` | Declaration named like a Go builtin that hand-written Go refers to | [GALA-E0107.md](GALA-E0107.md) |
 | `GALA-E0108` | A type's own Equal passes its type to a comparable type parameter | [GALA-E0108.md](GALA-E0108.md) |
+| `GALA-E0109` | A type pattern tests for an interface a type has only through free functions | [GALA-E0109.md](GALA-E0109.md) |
 
 ### Retired codes
 

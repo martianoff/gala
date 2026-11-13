@@ -2183,6 +2183,15 @@ gala_exec_test(
     ],
 )
 
+# A method of a generic type whose signature names another generic type is a
+# function in Go, called and named as a method value as any method is
+gala_exec_test(
+    name = "fanout_methods",
+    src = "fanout_methods.gala",
+    expected = "fanout_methods.out",
+    deps = ["//collection_immutable"],
+)
+
 # A pointer to a Go struct prints as &{...} in every GALA format
 gala_exec_test(
     name = "go_struct_pointer_printing",

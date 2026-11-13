@@ -21,7 +21,7 @@ func TestCollectionHashAllocatesNothing(t *testing.T) {
 		"Array[int]":             ints.Hash,
 		"Array[string]":          strs.Hash,
 		"prefixed Array[string]": strs.Prepend("x").Hash,
-		"List[int]":              ints.ToList().Hash,
+		"List[int]":              Array_ToList(ints).Hash,
 		"HashSet[int]":           set.Hash,
 		"one-element HashSet":    HashSetOf("x").Hash,
 		"HashSet shrunk to one":  HashSetOf(1, 2, 3).Remove(1).Remove(3).Hash,
