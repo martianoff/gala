@@ -29,6 +29,7 @@ func larger(a, b int) int { return max(a, b) }
 
 `main.gala`:
 
+<!-- doc-check: fragment -->
 ```gala
 package main
 

@@ -8,13 +8,19 @@ import (
 // An element whose type declares String on a pointer receiver prints with
 // that String wherever GALA prints it: inside an immutable or mutable
 // collection, a tuple, a map entry, MkString, and a value of a type
-// parameter or of type any.
+// parameter or of an interface type.
 
 struct Pt(X int, Y int)
 
 func (p *Pt) String() string = s"<${p.X},${p.Y}>"
 
 func (p Pt) Hash() uint32 = uint32(p.X * 31 + p.Y)
+
+// Hashed is an interface Pt satisfies: a value of it is printed by its
+// dynamic type.
+type Hashed interface {
+    Hash() uint32
+}
 
 func show[T any](v T) string = s"shown $v"
 
@@ -42,8 +48,8 @@ func main() {
     Println(im.ArrayOf(p, q).MkString(" | "))
     Println(show(p))
     printAll(p)
-    val boxed any = p
+    val boxed Hashed = p
     Println(boxed)
-    Println(s"any: $boxed")
+    Println(s"interface: $boxed")
     Println(Some(im.ArrayOf(p)))
 }
