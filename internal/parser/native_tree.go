@@ -20,7 +20,7 @@ var errNoNative = errors.New("parser: no native tree for this parse")
 
 // Native is a parse's tree in galop's native form (internal/parser/native).
 // galop's native parser builds it directly (nativeHandle); a tree of ANTLR's
-// parser, with ANTLR's engine or for a file with errors, is converted the
+// parser, with ANTLR's engine or after a galop panic, is converted the
 // first time it is asked for (newNative). A Native belongs to one parse and
 // converts at most once. A nil *Native is valid and has no tree: Tree reports
 // errNoNative.
@@ -127,6 +127,9 @@ func trimSpare(tree *native.GalaTree) {
 	tree.Tokens = trimmed(tree.Tokens)
 	tree.Hidden = trimmed(tree.Hidden)
 	tree.TokenLabels = trimmed(tree.TokenLabels)
+	tree.ErrorKids = trimmed(tree.ErrorKids)
+	tree.Conjured = trimmed(tree.Conjured)
+	tree.ConjuredText = trimmed(tree.ConjuredText)
 }
 
 // trimmed is s cut to its length, or s when less than an eighth of it is
@@ -149,7 +152,8 @@ func (t *Native) convert() {
 		t.root, t.stream, t.src, t.toNative = nil, nil, "", nil
 		t.converted.Store(true)
 	}()
-	if t.tree = t.toNative(t.root, t.stream, t.src); t.tree == nil {
+	// The converter is given the text as ANTLR read it (antlrText).
+	if t.tree = t.toNative(t.root, t.stream, antlrText(t.src)); t.tree == nil {
 		t.err = errNoNative
 	}
 }

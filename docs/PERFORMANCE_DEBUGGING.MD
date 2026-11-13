@@ -100,9 +100,9 @@ overkill until phase timing tells you which phase is the suspect.
 
 ### `GALA_PARSER=antlr` / `--parser=antlr`
 
-GALA parses with galop's native parser, which builds no ANTLR tree, and
-hands input with a syntax error to ANTLR's (see
-[DESIGN.MD](DESIGN.MD#implementation-notes)). `GALA_PARSER=antlr`, or the
+GALA parses with galop's native parser, which builds no ANTLR tree and
+recovers from syntax errors as ANTLR's does, with the same errors and
+error-recovered tree (see [DESIGN.MD](DESIGN.MD#implementation-notes)). `GALA_PARSER=antlr`, or the
 `--parser=antlr` flag of any `gala` command, parses with ANTLR's parser
 alone and converts its tree to galop's native tree, which is what the
 transpiler reads. Both give the same native tree, so the output must not
