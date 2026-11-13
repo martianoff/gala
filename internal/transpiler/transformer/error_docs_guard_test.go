@@ -1625,6 +1625,11 @@ func main() {
 			},
 		},
 		{
+			name:   "builtin-named function the package's hand-written Go refers to",
+			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
+			render: renderBuiltinNameFromGoRepro,
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {
@@ -1874,6 +1879,43 @@ func main() {
 	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
 	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
 	return rendered
+}
+
+// builtinNameFromGoMain and builtinNameFromGoBridge are GALA-E0107's repro:
+// a package whose hand-written Go calls max, next to a GALA function max.
+const (
+	builtinNameFromGoMain = `package main
+
+func max(a int, b int) int = if (a > b) a else b
+
+func main() {
+    Println(larger(1, 2))
+}
+`
+	builtinNameFromGoBridge = `package main
+
+func larger(a, b int) int { return max(a, b) }
+`
+)
+
+// renderBuiltinNameFromGoRepro drives GALA-E0107. The hand-written Go has to
+// sit on disk beside the GALA file for the analyzer to read it.
+func renderBuiltinNameFromGoRepro(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(builtinNameFromGoBridge), 0o600))
+	mainPath := filepath.Join(dir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(builtinNameFromGoMain), 0o600))
+
+	_, err := newDocGuardTranspiler().Transpile(builtinNameFromGoMain, mainPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   mainPath,
+		FallbackSource: builtinNameFromGoMain,
+		Color:          false,
+	})
+	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
+	return strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
 }
 
 // renderUnexportedPredicateRepro drives GALA-E0083: main calls the private

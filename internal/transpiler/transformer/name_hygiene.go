@@ -100,15 +100,15 @@ func (t *galaASTTransformer) markTopLevelRef(id *ast.Ident) {
 
 // isTopLevelShadower reports whether name shadowsGeneratedName and is a
 // function, val or var declared at the top level of the package, in this
-// file or another. In Go such a declaration hides the predeclared identifier
-// in every file of the package, so it is emitted under its localGoName, and
-// so is every reference to it (renameShadowingTopLevel). The name is
+// file or another, embed vals included. In Go such a declaration
+// hides the predeclared identifier in every file of the package, so it is
+// emitted under its localGoName, and so is every reference to it (renameShadowingTopLevel). The name is
 // unexported, so no other package refers to it.
 func (t *galaASTTransformer) isTopLevelShadower(name string) bool {
 	if !shadowsGeneratedName(name) {
 		return false
 	}
-	if t.richAST != nil && t.richAST.PackageVals[name] != nil {
+	if t.richAST != nil && (t.richAST.PackageVals[name] != nil || t.richAST.PackageEmbedVals[name] != "") {
 		return true
 	}
 	fm := t.functions[ownFunctionKey(t.packageName, name)]
@@ -325,7 +325,7 @@ func (t *galaASTTransformer) userSpells(name string) bool {
 	}
 	key := ownFunctionKey(t.packageName, name)
 	return t.functions[key] != nil || t.typeMetas[key] != nil ||
-		t.richAST != nil && t.richAST.PackageVals[name] != nil
+		t.richAST != nil && (t.richAST.PackageVals[name] != nil || t.richAST.PackageEmbedVals[name] != "")
 }
 
 // generatedName is the Go name of name, a fixed name generated code binds or

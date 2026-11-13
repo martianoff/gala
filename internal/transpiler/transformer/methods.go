@@ -447,32 +447,45 @@ func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames 
 }
 
 // printedValue is expr, a value Println, Print or an interpolation prints,
-// as it is passed to fmt: a value of a GALA type whose String is declared on
-// a pointer receiver only becomes the text that String gives it, which fmt,
-// given the value, would not call. String runs where any pointer-receiver
-// method would: on the value itself when printedInPlace, `std.StringAt(&expr)`,
-// so it sees what other pointers write and copies no lock the value holds;
-// otherwise (a val, a call's result) on a copy, `std.PtrString(expr)`. typ is
-// expr's type; ok reports the rewrite.
-func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type) (ast.Expr, bool) {
-	if typ == nil || transpiler.IsUnusableOrAny(typ) {
-		return expr, false
+// as it is passed to fmt, and the type it then has; typ is expr's type. A
+// value whose String is declared on a pointer receiver only, which fmt, given
+// the value, would not call, prints by that String:
+//
+//   - one of a GALA type with such a String becomes the text that String
+//     gives it, of type string. String runs where any pointer-receiver method
+//     would: on the value itself when printedInPlace, `std.StringAt(&expr)`,
+//     so it sees what other pointers write and copies no lock the value
+//     holds; otherwise (a val, a call's result) on a copy,
+//     `std.PtrString(expr)`; and
+//   - one whose type is known only at run time — a type parameter, `any` or
+//     another interface, as an element a collection or a tuple prints is —
+//     becomes `std.Printed(expr)`, which makes the same choice at run time
+//     and otherwise is the value itself, so typ is unchanged.
+//
+// Every other value is expr itself.
+func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type) (ast.Expr, transpiler.Type) {
+	if transpiler.IsUnusable(typ) {
+		return expr, typ
+	}
+	// An error prints by its Error, which every value it holds has.
+	if t.holdsAnyType(typ) && !isBasicNamed(typ, "error") {
+		return &ast.CallExpr{Fun: t.stdIdent("Printed"), Args: []ast.Expr{expr}}, typ
 	}
 	if _, isPtr := typ.(transpiler.PointerType); isPtr {
-		return expr, false
+		return expr, typ
 	}
 	meta := t.getTypeMeta(typ.BaseName())
 	if meta == nil {
-		return expr, false
+		return expr, typ
 	}
 	m := meta.Methods["String"]
 	if m == nil || !m.PointerReceiver || m.GoDeclared || len(m.ParamTypes) != 0 || !isBasicNamed(m.ReturnType, "string") {
-		return expr, false
+		return expr, typ
 	}
 	if t.printedInPlace(expr) {
-		return &ast.CallExpr{Fun: t.stdIdent("StringAt"), Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: expr}}}, true
+		return &ast.CallExpr{Fun: t.stdIdent("StringAt"), Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: expr}}}, transpiler.BasicType{Name: "string"}
 	}
-	return &ast.CallExpr{Fun: t.stdIdent("PtrString"), Args: []ast.Expr{expr}}, true
+	return &ast.CallExpr{Fun: t.stdIdent("PtrString"), Args: []ast.Expr{expr}}, transpiler.BasicType{Name: "string"}
 }
 
 // printedInPlace reports whether expr, a generated Go expression of a value

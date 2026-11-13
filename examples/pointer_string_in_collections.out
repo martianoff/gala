@@ -1,0 +1,20 @@
+Array(<1,2>, <3,4>)
+List(<1,2>, <3,4>)
+HashSet(<1,2>)
+HashMap(a -> <1,2>)
+HashMap(<1,2> -> 1)
+TreeMap(1 -> <1,2>)
+Array(<1,2>, <3,4>)
+List(<1,2>)
+HashSet(<1,2>)
+HashMap(a -> <1,2>)
+TreeMap(1 -> <1,2>)
+(<1,2>, <3,4>)
+(1, <1,2>, x)
+<1,2> | <3,4>
+shown <1,2>
+<1,2>
+<1,2>
+<1,2>
+interface: <1,2>
+Some(Array(<1,2>))

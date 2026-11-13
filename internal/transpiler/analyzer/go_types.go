@@ -511,6 +511,9 @@ type goFilesResult struct {
 	info     *transpiler.GoTypeInfo
 	ownTypes map[string]bool
 	imports  []string // the import paths of the files that took part
+	// builtinRefs are the Go predeclared identifiers (`len`, `print`, …)
+	// the files refer to.
+	builtinRefs map[string]bool
 }
 
 // AnalyzeGoFiles parses and type-checks local .go files and extracts type info.
@@ -542,6 +545,13 @@ func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) (*transpiler.GoTypeInfo, map[string]bool, []string) {
 	r := analyzeGoFilesMemo(dirPath, importPath, pkgName)
 	return r.info, r.ownTypes, r.imports
+}
+
+// OwnGoBuiltinRefs is the set of Go predeclared identifiers (`len`, `print`,
+// `string`, …) that the hand-written .go files of the package named pkgName
+// in dirPath refer to (see AnalyzeOwnGoFiles); nil when there are none.
+func OwnGoBuiltinRefs(dirPath, importPath, pkgName string) map[string]bool {
+	return analyzeGoFilesMemo(dirPath, importPath, pkgName).builtinRefs
 }
 
 func analyzeGoFilesMemo(dirPath, importPath, pkgName string) goFilesResult {
@@ -625,6 +635,14 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	}
 
 	pkg, _ := conf.Check(importPath, fset, files, typesInfo)
+	for id, obj := range typesInfo.Uses {
+		if obj != nil && types.Universe.Lookup(id.Name) == obj {
+			if result.builtinRefs == nil {
+				result.builtinRefs = make(map[string]bool)
+			}
+			result.builtinRefs[id.Name] = true
+		}
+	}
 	if pkg == nil {
 		// Even if type-checking fails, try to extract what we can from AST
 		extractFromAST(files, info)

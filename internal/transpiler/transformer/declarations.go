@@ -8,6 +8,7 @@ import (
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
+	"slices"
 	"strings"
 )
 
@@ -93,8 +94,10 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 
 	switch typeName {
 	case transpiler.TypeEmbeddedFS, "std.EmbeddedFS":
-		// Generate: var _embed_<name> embed.FS
-		embedGoVar := "_embed_" + varName
+		// Generate: var _embed_<name> embed.FS, under a name no binding of
+		// the source has.
+		embedGoVar := t.generatedName("_embed_" + varName)
+		t.setEmbedGoVar(varName, embedGoVar)
 		embedVarDecl := &ast.GenDecl{
 			Tok: token.VAR,
 			Specs: []ast.Spec{
@@ -128,7 +131,7 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 		decls = append(decls, wrapperDecl)
 
 		// Register as var (no Immutable wrapping — EmbeddedFS is inherently immutable)
-		t.addVar(varName, transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS})
+		t.addVar(varName, embedValType(typeName))
 
 	default:
 		// string or other simple type — generate: var <name> <type>
@@ -143,12 +146,41 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 			},
 		}
 		decls = append(decls, varDecl)
+		// renameShadowingTopLevel renames a var named like a Go builtin.
+		t.setEmbedGoVar(varName, localGoName(varName))
 
 		// Register as var (no Immutable wrapping — //go:embed populates this directly)
-		t.addVar(varName, transpiler.BasicType{Name: typeName})
+		t.addVar(varName, embedValType(typeName))
 	}
 
 	return decls, nil
+}
+
+// embedValType is the type of an `embed val` whose directive resolves its
+// type to typeName: EmbeddedFS, or a basic type such as string.
+func embedValType(typeName string) transpiler.Type {
+	if typeName == transpiler.TypeEmbeddedFS || typeName == "std.EmbeddedFS" {
+		return transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS}
+	}
+	return transpiler.BasicType{Name: typeName}
+}
+
+// setEmbedGoVar records goVar as the Go var the `//go:embed` directive of
+// `embed val varName` goes on (see transpiler.EmbedDirective.GoVar): the
+// lowering names it, as it names every generated or renamed declaration. The
+// directives are copied first, so a copy of the RichAST sharing them is not
+// changed.
+func (t *galaASTTransformer) setEmbedGoVar(varName, goVar string) {
+	if t.richAST == nil {
+		return
+	}
+	dirs := slices.Clone(t.richAST.EmbedDirectives)
+	for i := range dirs {
+		if dirs[i].VarName == varName {
+			dirs[i].GoVar = goVar
+		}
+	}
+	t.richAST.EmbedDirectives = dirs
 }
 
 // declName is a name a declaration binds, and where it is written.

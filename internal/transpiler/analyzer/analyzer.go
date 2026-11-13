@@ -1028,6 +1028,13 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 				a.loadGalaMetadata(path, richAST)
 			}
 		}
+		// GALA-E0107: hand-written Go cannot reach a declaration named like
+		// a Go builtin, which the transpiler renames.
+		if isTopLevel {
+			if err := checkBuiltinNamesReachedFromGo(root, OwnGoBuiltinRefs(dirPath, richAST.OwnImportPath, pkgName)); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	logPhase("analyze-local-go-files", phaseStart)
@@ -1037,7 +1044,9 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
 	siblingImports := make([][]fileImport, len(siblings))
+	richAST.PackageEmbedVals = embedValsNative(root, nil)
 	for i, sib := range siblings {
+		richAST.PackageEmbedVals = embedValsNative(sib.nf.root.GalaNodeRef, richAST.PackageEmbedVals)
 		siblingImports[i] = scanFileImportsNative(sib.nf.root.GalaNodeRef)
 		a.loadGalaImports(siblingImports[i], richAST, mergeVisited)
 	}

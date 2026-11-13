@@ -602,11 +602,7 @@ func formatField(b *strings.Builder, f any) {
 		defer printing.Delete(key)
 		fmt.Fprint(b, f)
 	default:
-		if s, ok := pointerString(v); ok {
-			b.WriteString(s)
-			return
-		}
-		fmt.Fprint(b, f)
+		fmt.Fprint(b, printed(v, f))
 	}
 }
 
@@ -653,7 +649,32 @@ func pointerString(v reflect.Value) (s string, ok bool) {
 	return p.Interface().(fmt.Stringer).String(), true
 }
 
-// shown is the text a value prints as, from PtrString. It prints as that
+// Printed is v as GALA prints a value whose type is known only at run time:
+// one of a type parameter, of `any` or of another interface type, such as an
+// element a collection, a tuple or a generic function prints. A value whose
+// type declares String on a pointer receiver only prints as that String gives
+// it (see PtrString); any other value is v itself, which fmt prints as it
+// would have. Println, Print and interpolation pass such a value through it,
+// and FormatStruct prints every field by the same rule.
+func Printed(v any) any {
+	switch v.(type) {
+	case nil, string, bool, int, int64, int32, uint8, uint32, uint64, float64, fmt.Stringer, error:
+		// The common elements, and a value that prints itself, need no
+		// reflection.
+		return v
+	}
+	return printed(reflect.ValueOf(v), v)
+}
+
+// printed is Printed(f), for f's reflect.Value v.
+func printed(v reflect.Value, f any) any {
+	if s, ok := pointerString(v); ok {
+		return shown{s}
+	}
+	return f
+}
+
+// shown is the text a value prints as, from PtrString or Printed. It prints as that
 // text with fmt's %v and %s, and is not a string, so Print still puts a
 // space between it and another operand that is not one.
 type shown struct{ text string }
