@@ -162,7 +162,7 @@ func TestUnresolvedTypeInventory(t *testing.T) {
 		sort.Strings(sites)
 		var b strings.Builder
 		for i, s := range sites {
-			if i == 40 {
+			if i == 400 {
 				fmt.Fprintf(&b, "  ... and %d more\n", len(sites)-i)
 				break
 			}
