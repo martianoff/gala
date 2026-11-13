@@ -120,13 +120,14 @@ func EvalOperand[T any](v T) T { return v }
 // leaves the reflective rest to a plain function compiled once (copyAny,
 // equalAny).
 func Copy[T any](v T) T {
-	if copiesAsIs(v) {
+	boxed := any(v)
+	if copiesAsIs(boxed) {
 		return v
 	}
-	if c, ok := any(v).(Copyable[T]); ok {
+	if c, ok := boxed.(Copyable[T]); ok {
 		return c.Copy()
 	}
-	if r, ok := copyAny(v, reflect.TypeOf((*T)(nil)).Elem()); ok {
+	if r, ok := copyAny(boxed, reflect.TypeFor[T]()); ok {
 		return r.(T)
 	}
 	return v
@@ -143,9 +144,10 @@ func copiesAsIs(v any) bool {
 	return !val.IsValid() || val.Kind() == reflect.Ptr && (val.IsNil() || copiesPointee(val.Type()))
 }
 
-// copyAny is Copy's reflective part, for a v of a type t (Copy's type
-// argument) that is not Copyable[t]. It returns v's copy, reporting ok, or
-// reports !ok when v is copied as it is.
+// copyAny is Copy's reflective part, for a v that is not Copyable[T], where t
+// is Copy's type argument T: v's own type, or an interface v implements. It
+// returns v's copy, which v.(T) accepts, reporting ok, or reports !ok when v
+// is copied as it is.
 func copyAny(v any, t reflect.Type) (any, bool) {
 	val := reflect.ValueOf(v)
 
@@ -202,13 +204,14 @@ func copiesPointee(ptr reflect.Type) bool {
 
 func Equal[T any](v1, v2 T) bool {
 	v1, v2 = unwrapPanic(v1), unwrapPanic(v2)
-	if eq, ok := equalPrimitive(v1, v2); ok {
+	a1, a2 := any(v1), any(v2)
+	if eq, ok := equalPrimitive(a1, a2); ok {
 		return eq
 	}
-	if e, ok := any(v1).(Equatable[T]); ok {
+	if e, ok := a1.(Equatable[T]); ok {
 		return e.Equal(v2)
 	}
-	return equalAny(v1, v2)
+	return equalAny(a1, a2)
 }
 
 // equalAny is Equal's reflective part (see Copy), for values whose type is
@@ -218,14 +221,9 @@ func equalAny(v1, v2 any) bool {
 	val2 := reflect.ValueOf(v2)
 
 	// Fallback to check Equal method via reflection if T is any or interface mismatch
-	if val1.IsValid() {
-		equalMeth := val1.MethodByName("Equal")
-		if equalMeth.IsValid() && equalMeth.Type().NumIn() == 1 && equalMeth.Type().NumOut() == 1 && equalMeth.Type().Out(0).Kind() == reflect.Bool {
-			argType := equalMeth.Type().In(0)
-			if val2.Type().AssignableTo(argType) {
-				res := equalMeth.Call([]reflect.Value{val2})[0].Bool()
-				return res
-			}
+	if val1.IsValid() && val2.IsValid() {
+		if m, ok := equalMethodTaking(val1, val2.Type()); ok {
+			return m.Call([]reflect.Value{val2})[0].Bool()
 		}
 	}
 
