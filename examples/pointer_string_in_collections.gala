@@ -1,0 +1,49 @@
+package main
+
+import (
+    im "martianoff/gala/collection_immutable"
+    mu "martianoff/gala/collection_mutable"
+)
+
+// An element whose type declares String on a pointer receiver prints with
+// that String wherever GALA prints it: inside an immutable or mutable
+// collection, a tuple, a map entry, MkString, and a value of a type
+// parameter or of type any.
+
+struct Pt(X int, Y int)
+
+func (p *Pt) String() string = s"<${p.X},${p.Y}>"
+
+func (p Pt) Hash() uint32 = uint32(p.X * 31 + p.Y)
+
+func show[T any](v T) string = s"shown $v"
+
+func printAll[T any](v T) {
+    Println(v)
+    Print(v, "\n")
+}
+
+func main() {
+    val p = Pt(1, 2)
+    val q = Pt(3, 4)
+    Println(im.ArrayOf(p, q))
+    Println(im.ListOf(p, q))
+    Println(im.HashSetOf(p))
+    Println(im.HashMapOf(("a", p)))
+    Println(im.HashMapOf((p, 1)))
+    Println(im.TreeMapOf((1, p)))
+    Println(mu.ArrayOf(p, q))
+    Println(mu.ListOf(p))
+    Println(mu.HashSetOf(p))
+    Println(mu.HashMapOf(("a", p)))
+    Println(mu.TreeMapOf((1, p)))
+    Println((p, q))
+    Println((1, p, "x"))
+    Println(im.ArrayOf(p, q).MkString(" | "))
+    Println(show(p))
+    printAll(p)
+    val boxed any = p
+    Println(boxed)
+    Println(s"any: $boxed")
+    Println(Some(im.ArrayOf(p)))
+}

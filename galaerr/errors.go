@@ -966,6 +966,12 @@ const (
 	// Copy. Once an argument is named, every later argument is named too.
 	CodePositionalAfterNamed ErrorCode = "GALA-E0105"
 
+	// E0107: a top-level function, val or var of a package with hand-written
+	// .go files is named like a Go predeclared identifier those files refer
+	// to. The transpiler renames the declaration, so the Go reaches Go's
+	// builtin, not it.
+	CodeBuiltinNameReachedFromGo ErrorCode = "GALA-E0107"
+
 	// E0108: a type's own Equal calls a generic function or method with
 	// that type, or a type holding it by value, as the type argument of a
 	// type parameter constrained by comparable. == on that type parameter

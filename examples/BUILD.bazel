@@ -2200,6 +2200,18 @@ gala_exec_test(
     ],
 )
 
+# An element with a pointer-receiver String prints with it in collections,
+# tuples, generic functions and values of type any
+gala_exec_test(
+    name = "pointer_string_in_collections",
+    src = "pointer_string_in_collections.gala",
+    expected = "pointer_string_in_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 # Sealed cases print like shorthand structs: pointer fields print their
 # target, and a cycle through a pointer prints <cycle>
 gala_exec_test(

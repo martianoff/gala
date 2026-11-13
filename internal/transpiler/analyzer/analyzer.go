@@ -1028,6 +1028,13 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 				a.loadGalaMetadata(path, richAST)
 			}
 		}
+		// GALA-E0107: hand-written Go cannot reach a declaration named like
+		// a Go builtin, which the transpiler renames.
+		if isTopLevel {
+			if err := checkBuiltinNamesReachedFromGo(root, OwnGoBuiltinRefs(dirPath, richAST.OwnImportPath, pkgName)); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	logPhase("analyze-local-go-files", phaseStart)

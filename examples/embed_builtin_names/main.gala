@@ -1,0 +1,28 @@
+package main
+
+// An embed val may be named like a Go builtin or like std's qualifier, and
+// a declaration of the source may be named like the var that holds an
+// EmbeddedFS's files: each keeps meaning what the source says, and the
+// generated code that uses Go's len and std still reaches them.
+
+embed val len = "data/greeting.txt"
+embed val std = "data/greeting.txt"
+embed val copy EmbeddedFS = "data/*"
+embed val files EmbeddedFS = "data/*"
+
+val _embed_files = "a val named like a generated one"
+
+func shown(read Try[string]) string = read match {
+    case Success(content) => content
+    case Failure(err) => s"Error: $err"
+}
+
+func main() {
+    Println(len)
+    Println(std)
+    Println(shown(copy.ReadString("data/greeting.txt")))
+    Println(shown(files.ReadString("data/greeting.txt")))
+    Println(_embed_files)
+    Println(len.ByteSize())
+    Println(Some(len.Size()))
+}
