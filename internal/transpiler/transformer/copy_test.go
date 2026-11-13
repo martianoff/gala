@@ -41,10 +41,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
+	return s.name.Get() == other.name.Get() && s.age.Get() == other.age.Get()
 }
 func (s Person) String() string {
 	return std.FormatStruct("Person", s.name, s.age)
@@ -71,10 +71,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
+	return s.name.Get() == other.name.Get() && s.age.Get() == other.age.Get()
 }
 func (s Person) String() string {
 	return std.FormatStruct("Person", s.name, s.age)
@@ -102,10 +102,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name)}
+	return Person{name: s.name}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.name, other.name)
+	return s.name.Get() == other.name.Get()
 }
 func (s Person) String() string {
 	return std.FormatStruct("Person", s.name)
@@ -140,10 +140,10 @@ type Inner struct {
 }
 
 func (s Inner) Copy() Inner {
-	return Inner{Selected: std.Copy(s.Selected)}
+	return Inner{Selected: s.Selected}
 }
 func (s Inner) Equal(other Inner) bool {
-	return std.Equal(s.Selected, other.Selected)
+	return s.Selected.Get() == other.Selected.Get()
 }
 func (s Inner) String() string {
 	return std.FormatStruct("Inner", s.Selected)
@@ -169,10 +169,10 @@ type Outer struct {
 }
 
 func (s Outer) Copy() Outer {
-	return Outer{Tab: std.Copy(s.Tab)}
+	return Outer{Tab: s.Tab.Copy()}
 }
 func (s Outer) Equal(other Outer) bool {
-	return std.Equal(s.Tab, other.Tab)
+	return s.Tab.Equal(other.Tab)
 }
 func (s Outer) String() string {
 	return std.FormatStruct("Outer", s.Tab)

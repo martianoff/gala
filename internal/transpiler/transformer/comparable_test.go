@@ -17,8 +17,9 @@ const equalityHeader = "package main\n\nimport . \"martianoff/gala/collection_im
 var equalCall = regexp.MustCompile(`\.Equal\(`)
 
 // synthesizedEqual matches the lines of a synthesized Equal method, which
-// call std.Equal on each field, and std.Equal calls written in the source.
-var synthesizedEqual = regexp.MustCompile(`std\.Equal\(|^func \(`)
+// call std.Equal or the field's own Equal on each field, and std.Equal calls
+// written in the source.
+var synthesizedEqual = regexp.MustCompile(`std\.Equal\(|^func \(|\bs\.\w+\.Equal\(other\.\w+\)`)
 
 // TestEqualityLowersToEqual: `==` and `!=` compare values by their Equal
 // method, which every GALA struct, sealed type and tuple has and the

@@ -58,7 +58,7 @@ func (s Shape) IsEmpty() bool {
 	return s._variant == _Shape_Empty
 }
 func (s Shape) Copy() Shape {
-	return Shape{r: std.Copy(s.r), _variant: std.Copy(s._variant)}
+	return Shape{r: s.r, _variant: s._variant}
 }
 func (s Shape) Equal(other Shape) bool {
 	if s._variant != other._variant {
@@ -66,7 +66,7 @@ func (s Shape) Equal(other Shape) bool {
 	}
 	switch s._variant {
 	case _Shape_Circle:
-		return std.Equal(s.r, other.r)
+		return s.r.Get() == other.r.Get()
 	}
 	return true
 }
@@ -129,10 +129,10 @@ type Cfg struct {
 }
 
 func (s Cfg) Copy() Cfg {
-	return Cfg{name: std.Copy(s.name), size: std.Copy(s.size), tags: std.Copy(s.tags)}
+	return Cfg{name: s.name, size: s.size, tags: s.tags.Copy()}
 }
 func (s Cfg) Equal(other Cfg) bool {
-	return std.Equal(s.name, other.name) && std.Equal(s.size, other.size) && std.Equal(s.tags, other.tags)
+	return s.name.Get() == other.name.Get() && s.size.Get() == other.size.Get() && s.tags.Equal(other.tags)
 }
 func (s Cfg) String() string {
 	return std.FormatStruct("Cfg", s.name, s.size, s.tags)
@@ -144,10 +144,10 @@ type Box struct {
 }
 
 func (s Box) Copy() Box {
-	return Box{n: std.Copy(s.n)}
+	return Box{n: s.n}
 }
 func (s Box) Equal(other Box) bool {
-	return std.Equal(s.n, other.n)
+	return s.n.Get() == other.n.Get()
 }
 
 //line $DIR/main.gala:29

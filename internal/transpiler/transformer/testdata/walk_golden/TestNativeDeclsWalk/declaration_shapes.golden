@@ -22,10 +22,10 @@ type Radix struct {
 }
 
 func (s Radix) Copy() Radix {
-	return Radix{base: std.Copy(s.base)}
+	return Radix{base: s.base}
 }
 func (s Radix) Equal(other Radix) bool {
-	return std.Equal(s.base, other.base)
+	return s.base.Get() == other.base.Get()
 }
 func (s Radix) String() string {
 	return std.FormatStruct("Radix", s.base)

@@ -564,15 +564,10 @@ func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldLi
 		for _, fieldName := range field.Names {
 			elts = append(elts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fieldName.Name),
-				Value: &ast.CallExpr{
-					Fun: t.stdIdent("Copy"),
-					Args: []ast.Expr{
-						&ast.SelectorExpr{
-							X:   ast.NewIdent("s"),
-							Sel: ast.NewIdent(fieldName.Name),
-						},
-					},
-				},
+				Value: t.fieldCopyExpr(field.Type, &ast.SelectorExpr{
+					X:   ast.NewIdent("s"),
+					Sel: ast.NewIdent(fieldName.Name),
+				}),
 			})
 		}
 	}
@@ -625,19 +620,9 @@ func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldL
 	var condition ast.Expr
 	for _, field := range fields.List {
 		for _, fieldName := range field.Names {
-			expr := &ast.CallExpr{
-				Fun: t.stdIdent("Equal"),
-				Args: []ast.Expr{
-					&ast.SelectorExpr{
-						X:   ast.NewIdent("s"),
-						Sel: ast.NewIdent(fieldName.Name),
-					},
-					&ast.SelectorExpr{
-						X:   ast.NewIdent("other"),
-						Sel: ast.NewIdent(fieldName.Name),
-					},
-				},
-			}
+			expr := t.fieldEqualExpr(field.Type,
+				&ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(fieldName.Name)},
+				&ast.SelectorExpr{X: ast.NewIdent("other"), Sel: ast.NewIdent(fieldName.Name)})
 
 			if condition == nil {
 				condition = expr

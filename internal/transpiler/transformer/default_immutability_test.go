@@ -39,10 +39,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{Name: std.Copy(s.Name)}
+	return Person{Name: s.Name}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.Name, other.Name)
+	return s.Name.Get() == other.Name.Get()
 }
 func (s Person) Unapply(v any) (std.Immutable[string], bool) {
 	if p, ok := v.(Person); ok {
@@ -71,10 +71,10 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{Value: std.Copy(s.Value)}
+	return Box[T]{Value: s.Value.Copy()}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
-	return std.Equal(s.Value, other.Value)
+	return s.Value.Equal(other.Value)
 }
 
 type BoxInstance interface {
@@ -104,17 +104,15 @@ type Counter struct {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 type Counter struct {
 	Count int
 }
 
 func (s Counter) Copy() Counter {
-	return Counter{Count: std.Copy(s.Count)}
+	return Counter{Count: s.Count}
 }
 func (s Counter) Equal(other Counter) bool {
-	return std.Equal(s.Count, other.Count)
+	return s.Count == other.Count
 }
 func (s Counter) Unapply(v any) (int, bool) {
 	if p, ok := v.(Counter); ok {

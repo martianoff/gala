@@ -39,6 +39,7 @@ go_library(
         "expressions_source.go",
         "exprlist_source.go",
         "extractor_call.go",
+        "field_copy_equal.go",
         "generated_codec_names.go",
         "go_constructors.go",
         "go_results.go",

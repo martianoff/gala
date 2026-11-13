@@ -67,10 +67,10 @@ type Config struct {
 }
 
 func (s Config) Copy() Config {
-	return Config{ID: std.Copy(s.ID)}
+	return Config{ID: s.ID}
 }
 func (s Config) Equal(other Config) bool {
-	return std.Equal(s.ID, other.ID)
+	return s.ID.Get() == other.ID.Get()
 }
 func (s Config) Unapply(v any) (std.Immutable[string], bool) {
 	if p, ok := v.(Config); ok {
@@ -109,10 +109,10 @@ type Node struct {
 }
 
 func (s Node) Copy() Node {
-	return Node{value: std.Copy(s.value), isEmpty: std.Copy(s.isEmpty)}
+	return Node{value: s.value, isEmpty: s.isEmpty}
 }
 func (s Node) Equal(other Node) bool {
-	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
+	return s.value.Get() == other.value.Get() && s.isEmpty.Get() == other.isEmpty.Get()
 }
 func test(n Node) bool {
 	var local = n
@@ -143,10 +143,10 @@ type Container[T any] struct {
 }
 
 func (s Container[T]) Copy() Container[T] {
-	return Container[T]{value: std.Copy(s.value), isEmpty: std.Copy(s.isEmpty)}
+	return Container[T]{value: s.value.Copy(), isEmpty: s.isEmpty}
 }
 func (s Container[T]) Equal(other Container[T]) bool {
-	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
+	return s.value.Equal(other.value) && s.isEmpty.Get() == other.isEmpty.Get()
 }
 
 type ContainerInstance interface {
@@ -188,10 +188,10 @@ type Node struct {
 }
 
 func (s Node) Copy() Node {
-	return Node{value: std.Copy(s.value), next: std.Copy(s.next), isEmpty: std.Copy(s.isEmpty)}
+	return Node{value: s.value, next: s.next.Copy(), isEmpty: s.isEmpty}
 }
 func (s Node) Equal(other Node) bool {
-	return std.Equal(s.value, other.value) && std.Equal(s.next, other.next) && std.Equal(s.isEmpty, other.isEmpty)
+	return s.value.Get() == other.value.Get() && s.next.Equal(other.next) && s.isEmpty.Get() == other.isEmpty.Get()
 }
 func test(n Node) bool {
 	var current = n

@@ -894,7 +894,13 @@ func (t *galaASTTransformer) generateSealedEqualMethod(parentName string, varian
 		for i, f := range vi.fields {
 			x, y := field("s", f.structFieldName), field("other", f.structFieldName)
 			if !f.isRecursive {
-				eqs[i] = t.stdCallExpr("Equal", x, y, false)
+				// The field is an Immutable of its declared type (see
+				// lowerSealedDecl).
+				if typ, err := t.lowerType(f.typ); err == nil {
+					eqs[i] = t.fieldEqualExpr(&ast.IndexExpr{X: t.stdHelperIdent("Immutable"), Index: typ}, x, y)
+				} else {
+					eqs[i] = t.stdCallExpr("Equal", x, y, false)
+				}
 			} else {
 				// x == y || x != nil && y != nil && x.Equal(*y)
 				eqs[i] = &ast.ParenExpr{X: &ast.BinaryExpr{
