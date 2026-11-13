@@ -8,11 +8,11 @@ import (
 	"martianoff/gala/galaerr"
 )
 
-// TestPredeclaredTypeName pins GALA-E0106: a type may not take the name of a
-// Go predeclared type, in any declaration form. GALA resolves such a name to
-// Go's type, so the program failed later and elsewhere (`error does not
-// implement error`, a Go build error). Values, fields and functions may still
-// take those names (#1051); a type only shadows when its name differs.
+// TestPredeclaredTypeName pins GALA-E0106: a type, or a type parameter, may
+// not take the name of a Go predeclared type, in any declaration form. GALA
+// reads such a name as Go's type in a type position, so the program failed
+// later and elsewhere (`error does not implement error`, a Go build error).
+// Values, fields and functions may still take those names (#1051).
 func TestPredeclaredTypeName(t *testing.T) {
 	rejected := []struct {
 		name, src, want string
@@ -25,6 +25,10 @@ func TestPredeclaredTypeName(t *testing.T) {
 		{"interface", "type comparable interface {\n    Less() bool\n}\n\nfunc main() = Println(1)", "type comparable is named like"},
 		{"opaque type", "opaque type rune int32\n\nfunc main() = Println(1)", "type rune is named like"},
 		{"local type", "func main() {\n    type float64 struct {\n        X int\n    }\n    Println(1)\n}", "main.gala:4:9 type float64 is named like"},
+		{"generic struct", "struct uint8[T any](V T)\n\nfunc main() = Println(1)", "type uint8 is named like"},
+		{"type parameter of a function", "func show[int any](x int) int = x\n\nfunc main() = Println(show(1))", "main.gala:3:10 type int is named like"},
+		{"type parameter of a struct", "struct Box[string any](V string)\n\nfunc main() = Println(1)", "type string is named like"},
+		{"type parameter of a method", "struct Box(V int)\n\nfunc (b Box) Map[error any](f func(int) error) error = f(b.V)\n\nfunc main() = Println(1)", "type error is named like"},
 	}
 	for _, tc := range rejected {
 		t.Run("rejects "+tc.name, func(t *testing.T) {

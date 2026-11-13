@@ -5,8 +5,8 @@ types: `bool`, `byte`, `rune`, `string`, `error`, `any`, `comparable`, `int`,
 `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`,
 `uint64`, `uintptr`, `float32`, `float64`, `complex64` or `complex128`. The
 rule covers every kind of type declaration: a shorthand or block struct, an
-interface, an alias, an opaque type, a sealed type and each of its cases, at
-the top level or in a body.
+interface, an alias, an opaque type, a sealed type and each of its cases, and a
+type parameter, at the top level or in a body.
 
 **Minimal repro.**
 
@@ -48,8 +48,8 @@ func main() {
 }
 ```
 
-**Rationale.** GALA resolves a predeclared type name to Go's type wherever it
-is written, so a declaration with that name could not be referred to. In the
+**Rationale.** GALA reads a predeclared type name as Go's type in every type
+position, so a type declared with that name could not be written as a type. In the
 repro, the result type `error` is Go's `error` interface, not the struct, and
 the program used to fail on an unrelated-looking message (`error does not
 implement error`). A value, a field or a function may still take such a name:

@@ -1691,7 +1691,7 @@ val _gala_total = 3         // GALA-E0097: the _gala_ prefix is reserved
 
 ### A Type May Not Take the Name of a Go Predeclared Type
 
-A type may not be named like one of Go's predeclared types: `bool`, `byte`, `rune`, `string`, `error`, `any`, `comparable`, `int`, `int8` to `int64`, `uint`, `uint8` to `uint64`, `uintptr`, `float32`, `float64`, `complex64` and `complex128`. GALA reads such a name as Go's type wherever it is written, so the declaration could never be used. The rule covers a struct (shorthand or block), an interface, an alias, an opaque type, a sealed type and each of its cases, at the top level or in a body: such a declaration is a transpile error ([GALA-E0106](/docs/errors/gala-e0106/)). A value, a field or a function may still take the name, as above.
+A type may not be named like one of Go's predeclared types: `bool`, `byte`, `rune`, `string`, `error`, `any`, `comparable`, `int`, `int8` to `int64`, `uint`, `uint8` to `uint64`, `uintptr`, `float32`, `float64`, `complex64` and `complex128`. GALA reads such a name as Go's type in every type position, so the declared type could not be written as a type. The rule covers a struct (shorthand or block), an interface, an alias, an opaque type, a sealed type and each of its cases, and a type parameter, at the top level or in a body: such a declaration is a transpile error ([GALA-E0106](/docs/errors/gala-e0106/)). A value, a field or a function may still take the name, as above.
 
 <!-- doc-check: error GALA-E0106 -->
 ```gala
