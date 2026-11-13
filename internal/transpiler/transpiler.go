@@ -130,6 +130,10 @@ type RichAST struct {
 	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
+	// PackageEmbedVals holds the `embed val` declarations of every file of
+	// the package, this one and its siblings, by name, each with its
+	// EmbedDirective.TypeName; EmbedDirectives has this file's only.
+	PackageEmbedVals map[string]string
 	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
 	ImportedVals     map[string]map[string]*PackageValMetadata // import path -> exported package-level val/var name -> metadata (see AddImportedVals)
 	// PackageKeys holds, by import path, the key each imported package is

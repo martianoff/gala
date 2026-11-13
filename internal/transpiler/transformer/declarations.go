@@ -131,7 +131,7 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 		decls = append(decls, wrapperDecl)
 
 		// Register as var (no Immutable wrapping — EmbeddedFS is inherently immutable)
-		t.addVar(varName, transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS})
+		t.addVar(varName, embedValType(typeName))
 
 	default:
 		// string or other simple type — generate: var <name> <type>
@@ -150,10 +150,19 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 		t.setEmbedGoVar(varName, localGoName(varName))
 
 		// Register as var (no Immutable wrapping — //go:embed populates this directly)
-		t.addVar(varName, transpiler.BasicType{Name: typeName})
+		t.addVar(varName, embedValType(typeName))
 	}
 
 	return decls, nil
+}
+
+// embedValType is the type of an `embed val` whose directive resolves its
+// type to typeName: EmbeddedFS, or a basic type such as string.
+func embedValType(typeName string) transpiler.Type {
+	if typeName == transpiler.TypeEmbeddedFS || typeName == "std.EmbeddedFS" {
+		return transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS}
+	}
+	return transpiler.BasicType{Name: typeName}
 }
 
 // setEmbedGoVar records goVar as the Go var the `//go:embed` directive of

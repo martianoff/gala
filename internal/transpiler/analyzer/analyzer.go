@@ -1044,7 +1044,9 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
 	siblingImports := make([][]fileImport, len(siblings))
+	richAST.PackageEmbedVals = embedValsNative(root, nil)
 	for i, sib := range siblings {
+		richAST.PackageEmbedVals = embedValsNative(sib.nf.root.GalaNodeRef, richAST.PackageEmbedVals)
 		siblingImports[i] = scanFileImportsNative(sib.nf.root.GalaNodeRef)
 		a.loadGalaImports(siblingImports[i], richAST, mergeVisited)
 	}

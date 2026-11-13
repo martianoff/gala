@@ -657,6 +657,12 @@ func pointerString(v reflect.Value) (s string, ok bool) {
 // would have. Println, Print and interpolation pass such a value through it,
 // and FormatStruct prints every field by the same rule.
 func Printed(v any) any {
+	switch v.(type) {
+	case nil, string, bool, int, int64, int32, uint8, uint32, uint64, float64, fmt.Stringer, error:
+		// The common elements, and a value that prints itself, need no
+		// reflection.
+		return v
+	}
 	return printed(reflect.ValueOf(v), v)
 }
 

@@ -2,7 +2,10 @@ load("@rules_gala//gala:defs.bzl", "gala_exec_test")
 
 gala_exec_test(
     name = "embed_builtin_names",
-    src = "main.gala",
+    srcs = [
+        "main.gala",
+        "other.gala",
+    ],
     embedsrcs = glob(["data/**"]),
     expected = "main.out",
 )

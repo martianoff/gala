@@ -508,6 +508,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			t.registerPackageVal(name, meta)
 		}
 	}
+	// So are the embed vals, which no PackageVals entry lists.
+	for name, typeName := range richAST.PackageEmbedVals {
+		t.addVar(name, embedValType(typeName))
+	}
 
 	fset = token.NewFileSet()
 	src, err := newWalkSource(richAST)

@@ -25,4 +25,5 @@ func main() {
     Println(_embed_files)
     Println(len.ByteSize())
     Println(Some(len.Size()))
+    Println(fromSibling())
 }
