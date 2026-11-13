@@ -1607,6 +1607,22 @@ func main() {
 			},
 		},
 		{
+			name: "type named like a Go predeclared type",
+			code: galaerr.CodePredeclaredTypeName, // GALA-E0106
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct error(Code int, Msg string)
+
+func lookup(code int) error = error(code, "not found")
+
+func main() {
+    Println(lookup(404).Msg)
+}
+`)
+			},
+		},
+		{
 			name: "a type's own Equal passes its type to a comparable type parameter",
 			code: galaerr.CodeEqualReentry, // GALA-E0108
 			render: func(t *testing.T) string {

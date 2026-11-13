@@ -297,6 +297,7 @@ go_test(
         "pointer_receiver_test.go",
         "pointer_receiver_val_test.go",
         "positional_after_named_test.go",
+        "predeclared_type_name_test.go",
         "private_field_ctor_test.go",
         "qualified_import_scope_test.go",
         "qualified_namedarg_shadow_test.go",

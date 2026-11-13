@@ -118,6 +118,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0103` | Function type used as a value | [GALA-E0103.md](GALA-E0103.md) |
 | `GALA-E0104` | Type parameter only a constraint determines cannot be inferred | [GALA-E0104.md](GALA-E0104.md) |
 | `GALA-E0105` | Positional argument after a named argument | [GALA-E0105.md](GALA-E0105.md) |
+| `GALA-E0106` | Type named like a Go predeclared type | [GALA-E0106.md](GALA-E0106.md) |
 | `GALA-E0107` | Declaration named like a Go builtin that hand-written Go refers to | [GALA-E0107.md](GALA-E0107.md) |
 | `GALA-E0108` | A type's own Equal passes its type to a comparable type parameter | [GALA-E0108.md](GALA-E0108.md) |
 
