@@ -1,0 +1,26 @@
+package main
+
+import (
+    "time"
+    . "martianoff/gala/collection_immutable"
+)
+
+// `==` on time.Time calls its Equal, in concrete code as in generic code: the
+// same instant in two locations is equal everywhere.
+
+struct Event(at time.Time)
+
+func eq[T comparable](a T, b T) bool = a == b
+
+func main() {
+    val Noon = time.Date(2026, time.November, 11, 12, 0, 0, 0, time.UTC)
+    val east = Noon.In(time.FixedZone("UTC+3", 3 * 60 * 60))
+    Println(Noon == east, Noon != east, eq(Noon, east))
+    Println(Noon == Noon.Add(time.Second), eq(Noon, Noon.Add(time.Second)))
+    Println(ArrayOf(Noon, east).Count((t) => t == Noon), Event(Noon) == Event(east))
+    val at = east match {
+        case Noon => "noon"
+        case _ => "another time"
+    }
+    Println(at)
+}

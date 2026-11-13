@@ -4022,12 +4022,22 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
-# `==` on a Go type with an Equal method, and on a type parameter whose
-# constraint embeds comparable, compares as it does in generic code.
+# `==` on time.Time calls its Equal, in concrete code as in generic code.
 gala_exec_test(
-    name = "equal_go_types_and_constraints",
-    src = "equal_go_types_and_constraints.gala",
-    expected = "equal_go_types_and_constraints.out",
+    name = "equal_go_time",
+    src = "equal_go_time.gala",
+    expected = "equal_go_time.out",
+    deps = ["//collection_immutable"],
+)
+
+# `==` on a Go type with an Equal(T) bool, and on a type parameter whose
+# constraint is a Go interface embedding comparable, compares as it does in
+# generic code. In a directory of its own: the single-file example corpus
+# that the transformer guards transpile cannot resolve its Go bridge package.
+gala_exec_test(
+    name = "equal_go_bridge_types",
+    src = "equal_go_bridge_types/main.gala",
+    expected = "equal_go_bridge_types/equal_go_bridge_types.out",
     deps = [
         "//collection_immutable",
         "//examples/go_equal_bridge",
