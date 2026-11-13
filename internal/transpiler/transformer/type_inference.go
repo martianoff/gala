@@ -1606,6 +1606,38 @@ func (t *galaASTTransformer) substituteGoTypeParamsIn(types []transpiler.Type, s
 	return out
 }
 
+// goTypeDataThroughAliases returns the Go type info record of typ (as
+// goTypeLookupName keys it, or, for a bare name, as the hand-written Go of a
+// dot-imported GALA package declares it), following Go type aliases to the
+// type they name: the record of `type ExecutionContext =
+// go_interop.ExecutionContext` is the alias's own, of kind "alias", while
+// what the type is — an interface, a struct — is its target's. nil when Go
+// type info does not describe typ.
+func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) *transpiler.GoTypeData {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	key := t.goTypeLookupName(typ)
+	td := t.goTypeInfo.GetTypeData(key)
+	if b, bare := typ.(transpiler.BasicType); td == nil && bare {
+		key = t.dotImportedGoTypeKey(b.Name)
+		td = t.goTypeInfo.GetTypeData(key)
+	}
+	// The hop bound stops an alias chain that refers back to itself.
+	for hop := 0; hop < 16 && td != nil && td.Kind == "alias"; hop++ {
+		target, ok := t.goTypeInfo.TypeAliases[key]
+		if !ok || target == nil {
+			break
+		}
+		next := t.goTypeInfo.GetTypeData(t.goTypeLookupName(target))
+		if next == nil {
+			break
+		}
+		key, td = t.goTypeLookupName(target), next
+	}
+	return td
+}
+
 // goTypeLookupName returns the name Go type info records typ under, one
 // pointer level stripped: the key by the import path the type carries when one
 // is recorded (see GoTypeInfo.AddImportPathKeys), else, for a type written

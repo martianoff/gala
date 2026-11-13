@@ -94,3 +94,55 @@ struct Framed(Label string, S Shape = Square(1.0))
 		})
 	}
 }
+
+// TestGoAliasInterfaceValFieldSpellsSlotType covers an immutable field whose
+// type is a Go alias of an interface, declared in a hand-written .go file of a
+// mixed GALA+Go package: concurrent's `type ExecutionContext =
+// go_interop.ExecutionContext`. The alias is an interface as its target is, so
+// the wrapper spells the field's type, under a dot import and a named one
+// alike (#1030).
+func TestGoAliasInterfaceValFieldSpellsSlotType(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			name: "dot import",
+			src: `package main
+
+import . "martianoff/gala/concurrent"
+
+struct Holder(inner ExecutionContext)
+
+func main() {
+    val h = Holder(NewSingleThreadEC())
+    h.Copy(inner = NewFixedPoolEC(2)).inner.Shutdown()
+}
+`,
+			want: "std.NewImmutable[ExecutionContext](NewSingleThreadEC())",
+		},
+		{
+			name: "named import",
+			src: `package main
+
+import "martianoff/gala/concurrent"
+
+struct Holder(inner concurrent.ExecutionContext)
+
+func main() {
+    val h = Holder(concurrent.NewSingleThreadEC())
+    h.inner.Shutdown()
+}
+`,
+			want: "std.NewImmutable[concurrent.ExecutionContext](concurrent.NewSingleThreadEC())",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.src, "main.gala")
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want)
+		})
+	}
+}

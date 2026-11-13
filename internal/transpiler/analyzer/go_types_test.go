@@ -96,6 +96,30 @@ func TestAnalyzeGoFiles_RecoversUnresolvedSignatureTypesFromSource(t *testing.T)
 	assert.Equal(t, "string", sig.Params[0].Type.String())
 }
 
+// A Go type alias of a type the checker cannot load records its target as
+// written, as concurrent's `type ExecutionContext =
+// go_interop.ExecutionContext` must: go_interop is a package of the GALA
+// module, which the checker does not load (#1030).
+func TestAnalyzeGoFiles_RecoversUnresolvedAliasTargetFromSource(t *testing.T) {
+	skipIfNoGoSDK(t)
+	dir := t.TempDir()
+	src := "package sample\n\n" +
+		"import \"example.test/nonexistent/exec\"\n\n" +
+		"type Context = exec.Context\n" +
+		"type Name = string\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644))
+
+	info := analyzer.AnalyzeGoFiles(dir, "example.test/sample")
+	require.NotNil(t, info)
+
+	assert.Equal(t, transpiler.NamedType{Package: "exec", Name: "Context", ImportPath: "example.test/nonexistent/exec"},
+		info.TypeAliases["sample.Context"], "the unresolvable alias target must be recovered as written")
+	assert.Equal(t, info.TypeAliases["sample.Context"], info.TypeAliases["example.test/sample.Context"],
+		"the key by import path records the same target")
+	// An alias go/types DID resolve is left as it was.
+	assert.Equal(t, "string", info.TypeAliases["sample.Name"].String())
+}
+
 func TestAnalyzeGoPackage_FmtPackage(t *testing.T) {
 	skipIfNoGoSDK(t)
 

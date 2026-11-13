@@ -274,10 +274,8 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 		return b.Name == "error"
 	}
 	// A Go type is what its Go declaration says.
-	if t.goTypeInfo != nil {
-		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
-			return td.Kind == "interface"
-		}
+	if td := t.goTypeDataThroughAliases(typ); td != nil {
+		return td.Kind == "interface"
 	}
 	// Unlike interfaceMethodNames, a GALA interface with no methods counts:
 	// it holds any value.
@@ -290,6 +288,12 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 // one reached through another GALA package, such as the `io.Reader` field of
 // a struct that package declares, when this file does not import `io`.
 func (t *galaASTTransformer) isGoTypeWithoutInfo(typ transpiler.Type) bool {
+	// A Go alias whose target this file's Go type information does not
+	// describe (`type ExecutionContext = go_interop.ExecutionContext` in a
+	// mixed GALA+Go package, when this file does not import go_interop).
+	if td := t.goTypeDataThroughAliases(typ); td != nil && td.Kind == "alias" {
+		return true
+	}
 	nt, ok := t.followAliasChain(typ).(transpiler.NamedType)
 	if !ok || !t.isGoTyped(nt) || t.isOwnPackageType(nt) {
 		return false
@@ -309,13 +313,11 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 	}
 	// A Go type (of a Go package, or of this package's .go files) is what its
 	// Go declaration says, whatever metadata was synthesized for it.
-	if t.goTypeInfo != nil {
-		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
-			if td.Kind != "interface" {
-				return nil, false
-			}
-			return slices.Collect(maps.Keys(td.Methods)), true
+	if td := t.goTypeDataThroughAliases(typ); td != nil {
+		if td.Kind != "interface" {
+			return nil, false
 		}
+		return slices.Collect(maps.Keys(td.Methods)), true
 	}
 	if meta := t.getTypeMeta(typ.BaseName()); meta != nil {
 		if !meta.IsInterface || len(meta.Methods) == 0 {

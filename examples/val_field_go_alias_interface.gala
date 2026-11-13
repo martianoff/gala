@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/concurrent"
+
+// ExecutionContext is declared in a .go file of the concurrent package as an
+// alias of go_interop.ExecutionContext, an interface. A val field of that type
+// holds any implementation of it.
+struct Runner(name string, ec ExecutionContext)
+
+func (r Runner) run(x int) int = FutureOf(x, r.ec).Map((v) => v * 10).Await().GetOrElse(-1)
+
+func main() {
+    val single = Runner("single", NewSingleThreadEC())
+    Println(s"${single.name}: ${single.run(1)}")
+
+    val pool = single.Copy(name = "pool", ec = NewFixedPoolEC(2))
+    Println(s"${pool.name}: ${pool.run(2)}")
+
+    val unbounded = Runner("unbounded", GlobalEC())
+    Println(s"${unbounded.name}: ${unbounded.run(3)}")
+
+    single.ec.Shutdown()
+    pool.ec.Shutdown()
+    Println("done")
+}
