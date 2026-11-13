@@ -966,6 +966,12 @@ const (
 	// Copy. Once an argument is named, every later argument is named too.
 	CodePositionalAfterNamed ErrorCode = "GALA-E0105"
 
+	// E0106: a type declared with the name of a Go predeclared type (`error`,
+	// `string`, `int`, `any`, …): a struct, a sealed type or one of its
+	// cases, an opaque type, an interface or an alias. GALA resolves such a
+	// name to the predeclared type wherever it is written, so the
+	// declaration could never be referred to.
+	CodePredeclaredTypeName ErrorCode = "GALA-E0106"
 	// E0107: a top-level function, val or var of a package with hand-written
 	// .go files is named like a Go predeclared identifier those files refer
 	// to. The transpiler renames the declaration, so the Go reaches Go's

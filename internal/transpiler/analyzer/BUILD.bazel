@@ -23,6 +23,7 @@ go_library(
         "opaque.go",
         "package_siblings.go",
         "path_cache.go",
+        "predeclared_type_names.go",
         "qualifiers.go",
         "receiver_type_params.go",
         "siblings_native.go",

@@ -661,6 +661,10 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		if err := transformer.CheckReservedPrefixNative(root); err != nil {
 			return nil, err
 		}
+		// GALA-E0106: a type named like a Go predeclared type.
+		if err := checkPredeclaredTypeNamesNative(root); err != nil {
+			return nil, err
+		}
 	}
 
 	clause := packageClauseNative(root, docs)
