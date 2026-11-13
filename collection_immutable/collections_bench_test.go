@@ -163,6 +163,16 @@ func BenchmarkArrayForEach(b *testing.B) {
 	}
 }
 
+func BenchmarkArrayPartition(b *testing.B) {
+	a := buildArray()
+	even := func(x int) bool { return x%2 == 0 }
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkInt = a.Partition(even).V1.Get().Size()
+	}
+}
+
 // halfDistinct holds benchSize ints, each value twice.
 func halfDistinct() []int {
 	xs := make([]int, benchSize)

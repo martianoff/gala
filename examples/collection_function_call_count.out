@@ -1,0 +1,16 @@
+immutable Array.Partition calls 1,2,3,4,5,6 -> Array(2, 4, 6) Array(1, 3, 5)
+immutable Array.Span calls 1,2,3,4 -> Array(1, 2, 3) Array(4, 5, 6)
+immutable Array.SortBy calls 1,2,3,4,5,6 -> Array(6, 5, 4, 3, 2, 1)
+mutable Array.Partition calls 1,2,3,4,5,6 -> Array(2, 4, 6) Array(1, 3, 5)
+mutable Array.Span calls 1,2,3,4 -> Array(1, 2, 3) Array(4, 5, 6)
+immutable List.Partition calls 1,2,3,4,5,6 -> List(2, 4, 6) List(1, 3, 5)
+mutable List.Partition calls 1,2,3,4,5,6 -> List(2, 4, 6) List(1, 3, 5)
+immutable TreeSet.Partition calls 1,2,3,4,5,6 -> TreeSet(2, 4, 6) TreeSet(1, 3, 5)
+mutable TreeSet.Partition calls 1,2,3,4,5,6 -> TreeSet(2, 4, 6) TreeSet(1, 3, 5)
+immutable HashSet.Partition calls 1,2,3,4,5,6 -> 3 3
+mutable HashSet.Partition calls 1,2,3,4,5,6 -> 3 3
+impure predicate: 6 + 0 = 6
+Stream.FlatMap calls 1,2,3,4 -> Array(1, 10, 2, 20, 3, 30, 4, 40)
+Stream.FlatMap with empty results calls 1,2,3,4 -> Array(2, 4)
+Stream.FlatMap over an infinite stream calls 1,2,3,4,5,6,7,8,9 -> Array(3, 6)
+stream.Suspend calls 0 -> Array(1, 2)

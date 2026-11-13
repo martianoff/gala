@@ -834,9 +834,17 @@ func (a Array[T]) FilterNot(p func(T) bool) Array[T] = a.Filter((elem T) => !p(e
 
 // Partition splits the array into two arrays based on a predicate.
 func (a Array[T]) Partition(p func(T) bool) Tuple[Array[T], Array[T]] {
-    val left = a.Filter(p)
-    val right = a.FilterNot(p)
-    return (left, right)
+    var left = newArrayBuilder[T]()
+    var right = newArrayBuilder[T]()
+    for i := 0; i < a.length; i++ {
+        val elem = a.Get(i)
+        if p(elem) {
+            left.Add(elem)
+        } else {
+            right.Add(elem)
+        }
+    }
+    (left.Result(), right.Result())
 }
 
 // FoldLeft applies a binary operator from left to right.

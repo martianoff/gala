@@ -818,9 +818,16 @@ func (s Ptr[TreeSet[T]]) Collect[U any](pf func(T) Option[U]) Ptr[Array[U]] {
 
 // Partition splits the set into two sets based on a predicate.
 func (s Ptr[TreeSet[T]]) Partition(p func(T) bool) Tuple[Ptr[TreeSet[T]], Ptr[TreeSet[T]]] {
-    val left = s.Filter(p)
-    val right = s.FilterNot(p)
-    return (left, right)
+    val left = EmptyTreeSet[T]()
+    val right = EmptyTreeSet[T]()
+    s.ForEach((elem T) => {
+        if p(elem) {
+            left.Add(elem)
+        } else {
+            right.Add(elem)
+        }
+    })
+    (left, right)
 }
 
 // Map applies a function to each element and returns a new set.

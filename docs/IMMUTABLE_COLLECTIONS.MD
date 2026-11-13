@@ -8,6 +8,7 @@ This document describes the immutable collection data structures available in GA
 
 1. [Overview](#overview)
    - [Generic code over sequences: `Iterable[T, C]`](#generic-code-over-sequences-iterablet-c)
+   - [Functions you pass in run once per element](#functions-you-pass-in-run-once-per-element)
 2. [Performance Characteristics](#performance-characteristics)
 3. [List[T]](#listt)
    - [Construction](#construction)
@@ -84,6 +85,18 @@ func main() {
 `C` is inferred from the argument and `T` from `C`'s methods, so no type arguments are written, and the result is the concrete collection with all of its own methods. The other methods are `ForEach`, `Size`, `IsEmpty`, `NonEmpty`, `Head`, `Last`, `HeadOption`, `LastOption`, `Find`, `Exists`, `ForAll`, `Count`, `Reduce`, `String` and `MkString`. Methods with type parameters of their own (`Map`, `FlatMap`, `FoldLeft`, ...) and `Concat` are on the concrete collections only.
 
 `HashSet`, `TreeSet`, `HashMap` and `TreeMap` do not implement `Iterable`: sets have no positional methods (`Tail`, `Take`, `SplitAt`, ...), and maps traverse key-value pairs. `stream.Stream` does not either: it is lazy and possibly infinite, so `Head` and `Reduce` return an `Option` and `Count` takes no predicate.
+
+### Functions you pass in run once per element
+
+A method that takes a function (a predicate, a mapper, a key or value function, a folder) calls it **exactly once per element, in element order**, as Scala's collections do. `Partition` tests each element once and puts it on exactly one side. `SortBy` computes each key once, not on every comparison. `GroupBy` and `GroupMap` compute each key and value once. So a function with side effects (counting, logging) runs as often as there are elements, and a function that is not pure still gives a consistent split.
+
+The exceptions follow from what the method does:
+
+- **Short-circuiting methods stop early.** `Find`, `FindLast`, `Exists`, `ForAll`, `TakeWhile`, `DropWhile` and `Span` stop at the first element that decides the result, so they call the function on the elements up to and including that one.
+- **`FindLast` and `FoldRight` go from the last element to the first.**
+- **Combining functions run per combination.** `Reduce` calls its function n - 1 times; `SortWith` calls its comparator once per comparison; `GroupMapReduce` calls `reduce` once for each element after the first in its group.
+- **`HashSet` and `HashMap` have no defined order**, so their methods call the function once per element in an unspecified order. `TreeSet` and `TreeMap` go in key order.
+- **`stream.Stream` is lazy** (see [Stream](STREAM.MD#laziness)): a function runs when its element is reached, once per element on each traversal. A stream does not cache its elements, so traversing it again runs the function again, and so does traversing both streams that `Partition` or `Span` return.
 
 ## Performance Characteristics
 

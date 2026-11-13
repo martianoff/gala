@@ -415,11 +415,20 @@ func (a Ptr[Array[T]]) Filter(p func(T) bool) Ptr[Array[T]] {
 // FilterNot returns a new Array with elements that do not satisfy the predicate.
 func (a Ptr[Array[T]]) FilterNot(p func(T) bool) Ptr[Array[T]] = a.Filter((elem T) => !p(elem))
 
-// Partition splits the array into two based on a predicate.
+// Partition splits the array into the elements that satisfy p and those that don't,
+// both in their original order. p runs once per element, in order.
 func (a Ptr[Array[T]]) Partition(p func(T) bool) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {
-    val left = a.Filter(p)
-    val right = a.FilterNot(p)
-    return (left, right)
+    val left = EmptyArray[T]()
+    val right = EmptyArray[T]()
+    for i := 0; i < a.elements.Size(); i++ {
+        val elem = a.elements[i]
+        if p(elem) {
+            left.Append(elem)
+        } else {
+            right.Append(elem)
+        }
+    }
+    (left, right)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
