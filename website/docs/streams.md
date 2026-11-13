@@ -24,6 +24,8 @@ import . "martianoff/gala/stream"
 ### Laziness
 All transformation operations (`Map`, `Filter`, `Take`, etc.) are **lazy** - they don't compute elements until forced by a terminal operation.
 
+A function you pass in runs once per element on each traversal, in element order, when that element is reached. A stream does not cache its elements: traversing the same stream again runs the functions again, and so does traversing both streams that `Partition` or `Span` return.
+
 ### Terminal vs Transformation Operations
 - **Transformation operations** return new streams without forcing evaluation
 - **Terminal operations** (`ToArray`, `ForEach`, `Fold`, etc.) force evaluation
@@ -114,7 +116,7 @@ val countdown = Unfold[int, int](
 
 ### Suspend (Fully Lazy)
 
-`Suspend` creates a stream where even the existence of elements is deferred:
+`Suspend` creates a stream where even the existence of elements is deferred. The thunk runs at most once, the first time the stream is used:
 
 <!-- doc-check: fragment -->
 ```gala

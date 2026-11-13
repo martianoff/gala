@@ -3,6 +3,7 @@ package stream
 import (
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
+    "martianoff/gala/lazy"
 )
 
 // Stream is a lazy, potentially infinite sequence.
@@ -170,18 +171,36 @@ func (s Stream[T]) Map[U any](f func(T) U) Stream[U] {
 }
 
 // FlatMap applies a function returning a stream to each element and flattens (lazy).
-func (s Stream[T]) FlatMap[U any](f func(T) Stream[U]) Stream[U] {
-    return s.Head() match {
-        case Some(h) => f(h).Concat(Suspend[U](() => s.Tail().FlatMap[U](f)))
+// f runs once per element of s, when the result is traversed that far.
+func (s Stream[T]) FlatMap[U any](f func(T) Stream[U]) Stream[U] = Suspend(() => flatMapFrom(empty[U](), s, f))
+
+// flatMapFrom yields the rest of inner, then the flattened f(x) for each x of s.
+// A run of empty f(x) results is skipped in a loop rather than by recursion, so
+// it does not grow the stack.
+func flatMapFrom[T any, U any](inner Stream[U], s Stream[T], f func(T) Stream[U]) Stream[U] {
+    var current = inner
+    var rest = s
+    var head = current.Head()
+    for head.IsEmpty() && rest.NonEmpty() {
+        current = f(rest.Head().Get())
+        rest = rest.Tail()
+        head = current.Head()
+    }
+    val next = current
+    val remaining = rest
+    head match {
+        case Some(u) => cons[U](u, () => flatMapFrom(next.Tail(), remaining, f))
         case None() => empty[U]()
     }
 }
 
 // Suspend creates a stream that is entirely lazy - even existence of elements is deferred.
+// thunk runs at most once, the first time the stream's head or tail is needed.
 func Suspend[T any](thunk func() Stream[T]) Stream[T] {
-    return lazyStream[T](
-        () => thunk().Head(),
-        () => thunk().Tail(),
+    val forced = lazy.New(thunk)
+    lazyStream[T](
+        () => forced.Get().Head(),
+        () => forced.Get().Tail(),
     )
 }
 

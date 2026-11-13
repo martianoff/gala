@@ -226,6 +226,19 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A function passed to a collection method (Partition, Span, SortBy,
+# Stream.FlatMap, ...) runs exactly once per element, in element order.
+gala_exec_test(
+    name = "collection_function_call_count",
+    src = "collection_function_call_count.gala",
+    expected = "collection_function_call_count.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+        "//stream",
+    ],
+)
+
 # The expected type reaches an untyped constant or an empty constructor: a
 # FoldLeft accumulator, a tuple inside a call, an empty ArrayOf(), a generic
 # constructor in an interface slot, the argument of a generated Equal.

@@ -29,6 +29,10 @@ import . "martianoff/gala/collection_mutable"
 
 The mutable `Array` and `List` declare their methods on the pointer, and their sub-collection methods return a new pointer (`Tail() Ptr[Array[T]]`). So the pointer implements `std.Iterable` with itself as the self type: `Ptr[Array[T]]` is an `Iterable[T, Ptr[Array[T]]]` and `Ptr[List[T]]` an `Iterable[T, Ptr[List[T]]]`. `ArrayOf`, `ListOf` and the other constructors return the pointer, so their results can be passed straight to generic code over `Iterable` (see [Immutable Collections](/docs/immutable-collections/#generic-code-over-sequences-iterablet-c)). The sets and maps do not implement `Iterable`.
 
+### Functions you pass in run once per element
+
+As in the immutable collections, a method that takes a function (a predicate, a mapper, a key or value function, a folder) calls it **exactly once per element, in element order**: `Partition` tests each element once and puts it on exactly one side, and `SortBy` and `GroupBy` compute each key once. The same exceptions apply (see [Immutable Collections](/docs/immutable-collections/#functions-you-pass-in-run-once-per-element)): short-circuiting methods (`Find`, `FindLast`, `Exists`, `ForAll`, `TakeWhile`, `DropWhile`, `Span`) stop at the deciding element, `FindLast` and `FoldRight` go from the last element to the first, `Reduce` and `SortWith` call their function once per combination or comparison, and `HashSet` and `HashMap` visit their elements in an unspecified order. `UpdateAll` and `FilterInPlace` also call their function once per entry.
+
 ## Performance Characteristics
 
 ### Sequences

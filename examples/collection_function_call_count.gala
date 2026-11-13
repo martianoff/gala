@@ -1,0 +1,100 @@
+package main
+
+import (
+    "martianoff/gala/collection_immutable"
+    "martianoff/gala/collection_mutable"
+    "martianoff/gala/stream"
+)
+
+// A function passed to a collection method runs exactly once per element, in
+// element order. Each check logs the elements the function was called with.
+
+func check(name string, run func(Ptr[collection_mutable.Array[int]]) string) {
+    val log = collection_mutable.EmptyArray[int]()
+    val result = run(log)
+    Println(s"$name calls ${log.MkString(",")} -> $result")
+}
+
+// checkUnordered sorts the log, for hash collections whose order is unspecified.
+func checkUnordered(name string, run func(Ptr[collection_mutable.Array[int]]) string) {
+    val log = collection_mutable.EmptyArray[int]()
+    val result = run(log)
+    Println(s"$name calls ${log.Sorted().MkString(",")} -> $result")
+}
+
+func main() {
+    val ia = collection_immutable.ArrayOf(1, 2, 3, 4, 5, 6)
+    check("immutable Array.Partition", (log) => {
+        val (evens, odds) = ia.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"$evens $odds"
+    })
+    check("immutable Array.Span", (log) => {
+        val (prefix, rest) = ia.Span((x) => { log.Append(x); x < 4 })
+        s"$prefix $rest"
+    })
+    check("immutable Array.SortBy", (log) => ia.SortBy((x) => { log.Append(x); -x }).String())
+
+    val ma = collection_mutable.ArrayOf(1, 2, 3, 4, 5, 6)
+    check("mutable Array.Partition", (log) => {
+        val (evens, odds) = ma.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"$evens $odds"
+    })
+    check("mutable Array.Span", (log) => {
+        val (prefix, rest) = ma.Span((x) => { log.Append(x); x < 4 })
+        s"$prefix $rest"
+    })
+
+    val il = collection_immutable.ListOf(1, 2, 3, 4, 5, 6)
+    check("immutable List.Partition", (log) => {
+        val (evens, odds) = il.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"$evens $odds"
+    })
+
+    val ml = collection_mutable.ListOf(1, 2, 3, 4, 5, 6)
+    check("mutable List.Partition", (log) => {
+        val (evens, odds) = ml.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"$evens $odds"
+    })
+
+    val its = collection_immutable.TreeSetOf(1, 2, 3, 4, 5, 6)
+    check("immutable TreeSet.Partition", (log) => {
+        val (evens, odds) = its.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"$evens $odds"
+    })
+
+    val mts = collection_mutable.TreeSetOf(1, 2, 3, 4, 5, 6)
+    check("mutable TreeSet.Partition", (log) => {
+        val (evens, odds) = mts.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"$evens $odds"
+    })
+
+    val ihs = collection_immutable.HashSetOf(1, 2, 3, 4, 5, 6)
+    checkUnordered("immutable HashSet.Partition", (log) => {
+        val (evens, odds) = ihs.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"${evens.Size()} ${odds.Size()}"
+    })
+
+    val mhs = collection_mutable.HashSetOf(1, 2, 3, 4, 5, 6)
+    checkUnordered("mutable HashSet.Partition", (log) => {
+        val (evens, odds) = mhs.Partition((x) => { log.Append(x); x % 2 == 0 })
+        s"${evens.Size()} ${odds.Size()}"
+    })
+
+    // An impure predicate, true only on its first call for an element, still
+    // puts each element on exactly one side.
+    val seen = collection_mutable.EmptyHashSet[int]()
+    val (once, again) = ma.Partition(seen.Add)
+    Println(s"impure predicate: ${once.Size()} + ${again.Size()} = ${ma.Size()}")
+
+    val st = stream.Of(1, 2, 3, 4)
+    check("Stream.FlatMap", (log) => st.FlatMap((x) => { log.Append(x); stream.Of(x, x * 10) }).ToArray().String())
+    check("Stream.FlatMap with empty results", (log) => st.FlatMap((x) => {
+        log.Append(x)
+        if (x % 2 == 0) stream.Of(x) else stream.Empty[int]()
+    }).ToArray().String())
+    check("Stream.FlatMap over an infinite stream", (log) => stream.From(1).FlatMap((x) => {
+        log.Append(x)
+        if (x % 3 == 0) stream.Of(x) else stream.Empty[int]()
+    }).Take(2).ToArray().String())
+    check("stream.Suspend", (log) => stream.Suspend(() => { log.Append(0); stream.Of(1, 2) }).ToArray().String())
+}

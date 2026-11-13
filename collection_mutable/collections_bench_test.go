@@ -80,6 +80,16 @@ func BenchmarkArrayDistinct(b *testing.B) {
 	}
 }
 
+func BenchmarkArrayPartition(b *testing.B) {
+	a := fillArray()
+	even := func(x int) bool { return x%2 == 0 }
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkInt = a.Partition(even).V1.Get().Size()
+	}
+}
+
 func BenchmarkArrayGetSet(b *testing.B) {
 	a := fillArray()
 	keys := benchKeys()
