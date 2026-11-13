@@ -972,6 +972,7 @@ const (
 	// reads such a name as Go's type in every type position, so the declared
 	// type could not be written as a type.
 	CodePredeclaredTypeName ErrorCode = "GALA-E0106"
+
 	// E0107: a top-level function, val or var of a package with hand-written
 	// .go files is named like a Go predeclared identifier those files refer
 	// to. The transpiler renames the declaration, so the Go reaches Go's

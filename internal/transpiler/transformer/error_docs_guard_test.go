@@ -1618,6 +1618,11 @@ func lookup(code int) error = error(code, "not found")
 
 func main() {
     Println(lookup(404).Msg)
+}
+`)
+			},
+		},
+		{
 			name: "a type's own Equal passes its type to a comparable type parameter",
 			code: galaerr.CodeEqualReentry, // GALA-E0108
 			render: func(t *testing.T) string {
