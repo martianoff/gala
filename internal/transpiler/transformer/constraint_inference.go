@@ -48,6 +48,49 @@ func (t *galaASTTransformer) inferFromConstraints(typeParams []string, constrain
 	}
 }
 
+// inferMethodFromConstraints adds to bound the type parameters of the generic
+// method m that the constraints of its bound ones determine, as
+// inferFromConstraints does for a function. typeParams names m's type
+// parameters, position by position, as bound does; bound may hold other
+// names, and only typeParams are added. The constraints are read with the
+// receiver's type parameters, recvParams, bound to its type arguments,
+// recvArgs. m's own parameters are renamed to fresh names first, so a
+// receiver type argument that names a type parameter of the caller spelled
+// like one of m's (`T` in `Wrap[T]` inside a `func g[T any]`) stays apart
+// from it (see resolveMethodCallTypeWithParams).
+func (t *galaASTTransformer) inferMethodFromConstraints(m *transpiler.MethodMetadata, typeParams []string, recvParams []string, recvArgs []transpiler.Type, bound map[string]transpiler.Type) {
+	// Only a constraint that names another of the method's type parameters
+	// can bind it (see inferFromConstraints).
+	if len(typeParams) != len(m.TypeParams) || !slices.ContainsFunc(m.TypeParams, func(tp string) bool {
+		c := m.TypeParamConstraints[tp]
+		return transpiler.IsInterfaceConstraint(c) && typeMentionsTypeParam(c, m.TypeParams)
+	}) {
+		return
+	}
+	fresh := make([]string, len(m.TypeParams))
+	rename := make(map[string]transpiler.Type, len(m.TypeParams))
+	for i, tp := range m.TypeParams {
+		fresh[i] = freshMethodTypeParamName(i)
+		rename[tp] = transpiler.NamedType{Name: fresh[i]}
+	}
+	constraints := make(map[string]transpiler.Type, len(m.TypeParams))
+	own := make(map[string]transpiler.Type, len(m.TypeParams))
+	for i, tp := range m.TypeParams {
+		if c := m.TypeParamConstraints[tp]; c != nil {
+			constraints[fresh[i]] = t.substituteConcreteTypes(t.substituteInType(c, rename), recvParams, recvArgs)
+		}
+		if typ, ok := bound[typeParams[i]]; ok {
+			own[fresh[i]] = typ
+		}
+	}
+	t.inferFromConstraints(fresh, constraints, own)
+	for i, name := range fresh {
+		if _, ok := bound[typeParams[i]]; !ok && own[name] != nil {
+			bound[typeParams[i]] = own[name]
+		}
+	}
+}
+
 // inferFromConstraint binds, in bound, the type parameters of typeParams
 // that unifying the methods the constraint c requires with those of arg, the
 // type argument c constrains, determines. It reports whether it bound any.
@@ -116,12 +159,7 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(c callSrc, callCtx function
 	}) {
 		return nil
 	}
-	bound := make(typeSubstMap, len(callCtx.inferredTypeSubst))
-	for tp, typ := range callCtx.inferredTypeSubst {
-		if !callCtx.placeholderTypeParams[tp] {
-			bound[tp] = typ
-		}
-	}
+	bound := boundTypeArgs(callCtx)
 	for _, tp := range fm.TypeParams {
 		constraint, typeArg := fm.TypeParamConstraints[tp], bound[tp]
 		if typeArg == nil || !transpiler.IsInterfaceConstraint(constraint) {
@@ -146,6 +184,19 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(c callSrc, callCtx function
 			hint)
 	}
 	return nil
+}
+
+// boundTypeArgs is the type arguments of callCtx's call that are known: those
+// its lambdas were lowered against (inferFuncTypeSubstFromArgs), placeholders
+// left out.
+func boundTypeArgs(callCtx functionCallContext) typeSubstMap {
+	bound := make(typeSubstMap, len(callCtx.inferredTypeSubst))
+	for tp, typ := range callCtx.inferredTypeSubst {
+		if !callCtx.placeholderTypeParams[tp] {
+			bound[tp] = typ
+		}
+	}
+	return bound
 }
 
 // constraintMismatch says why typeArg lacks one of required, the methods of

@@ -858,7 +858,12 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()
-		t.constrainReceiverTypeParams(recvTypeParams, t.getTypeMeta(receiverBaseName))
+		recvMeta := t.getTypeMeta(receiverBaseName)
+		if named := nameWildcardReceiverTypeArgs(recv.typ, recvTypeExpr, recvMeta); named != nil {
+			defer t.bindTypeParams(named...)()
+			recvTypeParams = named
+		}
+		t.constrainReceiverTypeParams(recvTypeParams, recvMeta)
 
 		// The receiver is in scope with its declared type: a pointer
 		// receiver as a `*T` or a `Ptr[T]`, so its nullability is checked

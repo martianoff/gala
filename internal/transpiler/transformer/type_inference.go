@@ -677,6 +677,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyForInference(paramType, argType, freshParamNames, inferredMap)
 	}
+	t.inferMethodFromConstraints(methodMeta, freshParamNames, structTypeParams, structTypeArgs, inferredMap)
 
 	// Build result in order of type params
 	if len(inferredMap) == 0 {

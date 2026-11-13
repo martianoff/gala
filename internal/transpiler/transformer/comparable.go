@@ -150,10 +150,15 @@ type typeEq struct {
 // comparer walks a type for how == compares it. visiting holds the
 // declarations being walked, so a type that holds itself through another is
 // read once. exhaustive walks every field, as finding the owner needs.
+// equalCalls looks for the owner only where == reaches it through Equal
+// methods (see checkEqualReentry): a type that declares its own Equal is
+// taken to compare its type arguments, not its fields, which its Equal
+// compares as it chooses.
 type comparer struct {
 	t          *galaASTTransformer
 	visiting   map[string]bool
 	exhaustive bool
+	equalCalls bool
 }
 
 // equalityOf is how == compares two values of typ, the type of an expression.
@@ -392,6 +397,14 @@ func (c *comparer) declaration(typ transpiler.Type, meta *transpiler.TypeMetadat
 	}
 	declaresEqual, _ := c.t.equalMethodOf(meta)
 	res := typeEq{native: !declaresEqual, holdsOwner: c.t.isEqualOwner(meta)}
+	if c.equalCalls && declaresEqual && !res.holdsOwner {
+		for _, a := range args {
+			if c.walk(a, env, declared).holdsOwner {
+				return typeEq{holdsOwner: true}
+			}
+		}
+		return typeEq{}
+	}
 	if meta.IsOpaque {
 		r := c.walk(meta.Underlying, fieldEnv, true)
 		r.native = r.native && res.native
