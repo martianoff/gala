@@ -21,3 +21,23 @@ func WrapRef(label string, n int) *Wrapper {
 }
 
 func Points(n int) Array[shape.Point] = ArrayTabulate(n, (i) => shape.Point(X = i, Y = i * 10))
+
+// A holder whose point is a var field, read without an Immutable unwrap.
+struct Holder(Tag string, var At shape.Point)
+
+func Hold(tag string, n int) Holder = Holder(Tag = tag, At = shape.Point(X = n, Y = n + 1))
+
+// A generic extractor: the payload of a present Option.
+struct Present[T any]()
+
+func (p Present[T]) Unapply(o Option[T]) Option[T] = o
+
+// A point that may be missing, or missing altogether.
+func MaybePoint(n int) Option[Option[shape.Point]] =
+    if (n > 0) Some(Some(shape.Point(X = n, Y = 0))) else if (n == 0) Some(None()) else None()
+
+// A type matched through its sealed view, an Option of a point.
+struct Spot(N int)
+
+func (s Spot) MatchView() Option[shape.Point] =
+    if (s.N > 0) Some(shape.Point(X = s.N, Y = s.N * 2)) else None()

@@ -239,9 +239,19 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	for i, r := range rhsExprs {
 		unwrappedRhs[i] = t.unwrapImmutable(r)
 	}
-	// `a, err = goCall()` takes the call's results one by one.
+	// `a, err = goCall()` takes the call's results one by one, each filling
+	// its target as a value of its own would.
 	if len(unwrappedRhs) == 1 && len(lhsExprs) > 1 {
 		unwrappedRhs[0] = t.rawGoCall(unwrappedRhs[0])
+		if results := t.resolveGoCallReturnTypes(unwrappedRhs[0]); len(results) == len(lhsExprs) {
+			at := d.rhs.exprs()[0].at()
+			for i, result := range results {
+				valType := func() transpiler.Type { return result }
+				if err := t.checkInterfaceSlotType(valType, t.getExprTypeName(lhsExprs[i]), at); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	op := d.op

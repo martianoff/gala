@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -102,6 +103,45 @@ func laterParamError(def exprSrc, later []string, lowered ast.Expr) error {
 	return galaerr.NewCodedSemanticError(galaerr.CodeDefaultReadsLaterParam, line, col,
 		fmt.Sprintf("the default value of parameter %s reads parameter %s, which is not bound until after it", later[0], name),
 		fmt.Sprintf("a default may read only the parameters before its own; declare %s before %s, or pass %s explicitly", name, later[0], later[0]))
+}
+
+// declaredDefaultsReadLaterParams reports GALA-E0094 at the declaration of
+// params, for a default that reads its own parameter or a later one, so a
+// default no call leaves out is checked too. It judges the source alone: a
+// default that binds names of its own (a lambda, a match, a block) may bind
+// the parameter's name, and is left to the check at a call that lowers it
+// (transformDefaultExpr). What it reports, that check reports in the same
+// words at the same place.
+func declaredDefaultsReadLaterParams(params []paramDecl) error {
+	names := make([]string, len(params))
+	for i, p := range params {
+		names[i] = p.name
+	}
+	for i, p := range params {
+		if !p.hasDefault || !p.def.node.Ok() || bindsNames(p.def) {
+			continue
+		}
+		_, later := defaultParams(names, nil, i, nil)
+		if err := laterParamError(p.def, later, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bindsNames reports whether e holds a construct that binds names: a lambda,
+// a partial function, a match case, a block or a bind declaration.
+func bindsNames(e exprSrc) bool {
+	binds := false
+	e.node.Walk(func(n native.GalaNodeRef) bool {
+		switch n.Kind() {
+		case native.GalaKIND_lambdaExpression, native.GalaKIND_partialFunctionLiteral,
+			native.GalaKIND_caseClause, native.GalaKIND_block, native.GalaKIND_bindDeclaration:
+			binds = true
+		}
+		return !binds
+	})
+	return binds
 }
 
 // bindDefaultNames rewrites expr, the lowered default src, for its use site,

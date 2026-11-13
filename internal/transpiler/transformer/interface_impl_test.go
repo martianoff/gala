@@ -135,6 +135,18 @@ func main() = Println(asSpeaker())`,
 			contains: "Mute does not implement Speaker: it has no method Speak",
 		},
 		{
+			name: "multiple assignment from one call's results",
+			body: `func pair() (Mute, int) = (Mute(1), 2)
+
+func main() {
+    var s Speaker = nil
+    var n = 0
+    s, n = pair()
+    Println(s, n)
+}`,
+			contains: "Mute does not implement Speaker: it has no method Speak",
+		},
+		{
 			name: "missing method named like one generated on other kinds of type",
 			body: `type Ranked interface {
     Compare(other Mute) int
@@ -287,6 +299,7 @@ func eq(e Equaler) bool = e.Equal(Point(1, 2))
 func show(s fmt.Stringer) string = s.String()
 func fail() error = Fault("bad")
 func asShape() Shape = Circle(1.0)
+func shapeAndArea() (Figure, float64) = (Square(3.0), 9.0)
 func sizeOf[T any](b Box[T]) int {
     val s Seq[T] = b
     s.Size()
@@ -304,6 +317,9 @@ func main() {
     val s Shape = Square(2.0)
     var t Shape = Circle(1.0)
     t = s
+    var a = 0.0
+    t, a = shapeAndArea()
+    Println(a)
     Println(size(Box[int](1)), area(Circle(1.0)), eq(Point(1, 2)), show(Point(1, 2)), fail(), asShape().Name(), t.Name())
     Println(area(Holder(Square(1.0)).s), size(Pair[int](2)), sum(Point(1, 2)), show(Tag(1)), ArrayOf[Shape](Circle(1.0), Square(1.0)), sizeOf(Box[string](0)))
 }

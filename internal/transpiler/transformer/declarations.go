@@ -2003,6 +2003,9 @@ func (t *galaASTTransformer) lowerTypeParams(params []typeParam) (*ast.FieldList
 func (t *galaASTTransformer) lowerSignature(sig sigSrc, typeParams *ast.FieldList) (*ast.FuncType, []loweredParam, error) {
 	t.noteNativeShape(srcNode{node: sig.node.GalaNodeRef}, "sig")
 	params := sig.params()
+	if err := declaredDefaultsReadLaterParams(params); err != nil {
+		return nil, nil, err
+	}
 	fieldList := &ast.FieldList{}
 	lowered := make([]loweredParam, 0, len(params))
 	for _, p := range params {

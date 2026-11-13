@@ -52,7 +52,16 @@ type implType struct {
 // a slot of type slotType, when slotType is an interface its concrete type
 // does not implement (GALA-E0100).
 func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpiler.Type, at srcNode) error {
-	if !at.ok() || transpiler.IsUnusableOrAny(slotType) || isNilIdent(expr) {
+	if isNilIdent(expr) {
+		return nil
+	}
+	return t.checkInterfaceSlotType(func() transpiler.Type { return t.probeExprType(expr) }, slotType, at)
+}
+
+// checkInterfaceSlotType is checkInterfaceSlot for a value of the type
+// valType returns, read only when slotType is an interface with methods.
+func (t *galaASTTransformer) checkInterfaceSlotType(valTypeOf func() transpiler.Type, slotType transpiler.Type, at srcNode) error {
+	if !at.ok() || transpiler.IsUnusableOrAny(slotType) {
 		return nil
 	}
 	slotType = t.followAliasChain(slotType)
@@ -60,7 +69,7 @@ func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpil
 	if !ok {
 		return nil
 	}
-	valType := t.probeExprType(expr)
+	valType := valTypeOf()
 	impl, ok := t.implTypeOf(valType)
 	if !ok {
 		return nil
