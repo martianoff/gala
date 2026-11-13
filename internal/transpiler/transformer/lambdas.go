@@ -388,13 +388,9 @@ func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSr
 	}
 	// Reject block lambdas in void context that discard error returns.
 	if isVoidExpected {
-		for _, stmt := range b.List {
-			if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
-				line, col := l.at().start()
-				if err := t.checkDiscardedError(exprStmt.X, line, col); err != nil {
-					return nil, nil, err
-				}
-			}
+		line, col := l.at().start()
+		if err := t.checkDiscardedErrors(b, line, col); err != nil {
+			return nil, nil, err
 		}
 	}
 	// When void is expected, strip any trailing "return nil" (legacy pattern).
@@ -528,14 +524,9 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 			return nil, nil, err
 		}
 		// Silently dropping an error-only return is a bug, not a discard.
-		if len(body.List) != 1 {
-			return body, nil, nil
-		}
-		if es, ok := body.List[0].(*ast.ExprStmt); ok {
-			line, col := l.at().start()
-			if err := t.checkDiscardedError(es.X, line, col); err != nil {
-				return nil, nil, err
-			}
+		line, col := l.at().start()
+		if err := t.checkDiscardedErrors(body, line, col); err != nil {
+			return nil, nil, err
 		}
 		return body, nil, nil
 	}
@@ -601,6 +592,35 @@ func (t *galaASTTransformer) checkDiscardedError(expr ast.Expr, line, col int) e
 	return galaerr.NewCodedSemanticError(galaerr.CodeDiscardedErrorReturn, line, col,
 		fmt.Sprintf("cannot discard error return from %s in void lambda", name),
 		fmt.Sprintf("use FromError(%s(...)) to handle the error", name))
+}
+
+// checkDiscardedErrors applies checkDiscardedError to every statement of
+// body, the lowered body of a lambda that returns nothing, also to one nested
+// in an if, a switch case, a loop or a block, and in a result-less func
+// literal called as a statement (an if or match run for its effects). Any
+// other func literal is a lambda of its own, checked where it is lowered.
+func (t *galaASTTransformer) checkDiscardedErrors(body *ast.BlockStmt, line, col int) error {
+	var err error
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		if err != nil {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ExprStmt:
+			if isVoidIIFE(n.X) {
+				ast.Inspect(n.X.(*ast.CallExpr).Fun.(*ast.FuncLit).Body, visit)
+			} else {
+				err = t.checkDiscardedError(n.X, line, col)
+			}
+			return false
+		}
+		return true
+	}
+	ast.Inspect(body, visit)
+	return err
 }
 
 // calleeName is the name a diagnostic gives the callee of call, as the

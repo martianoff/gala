@@ -15,8 +15,8 @@ last_modified_at: 2026-11-11
 declared after it. A default is evaluated in the callee's scope, left to
 right, with only the parameters before it bound, so a later parameter has no
 value yet. A field default of a struct or a sealed case may read no field at
-all (GALA-E0098). The error is reported where a call leaves the argument out and the default is
-evaluated.
+all (GALA-E0098). The error is reported at the declaration, whether or not any
+call leaves the argument out.
 
 **Minimal repro.**
 

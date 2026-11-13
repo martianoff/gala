@@ -795,6 +795,110 @@ func main() {
 			expectContains: "cannot discard error return from check in void lambda",
 		},
 		{
+			name: "GALA-E0094 unused default reading a later parameter, at its declaration",
+			input: `package main
+
+func area(w int = h * 2, h int = 1) int = w * h
+
+func main() = Println("no call leaves w out")`,
+			expectCode:     galaerr.CodeDefaultReadsLaterParam,
+			expectContains: "error_codes_test.gala:3:18 the default value of parameter w reads parameter h, which is not bound until after it",
+		},
+		{
+			name: "GALA-E0094 unused method default reading its own parameter, at its declaration",
+			input: `package main
+
+struct Box(n int)
+
+func (b Box) Grow(by int = by + b.n) int = b.n + by
+
+func main() = Println(Box(1).Grow(2))`,
+			expectCode:     galaerr.CodeDefaultReadsLaterParam,
+			expectContains: "error_codes_test.gala:5:27 the default value of parameter by reads by itself",
+		},
+		{
+			name: "GALA-E0094 default reading a later parameter, called before its declaration",
+			input: `package main
+
+func main() = Println(area())
+
+func area(w int = h, h int = 1) int = w * h`,
+			expectCode:     galaerr.CodeDefaultReadsLaterParam,
+			expectContains: "error_codes_test.gala:5:18 the default value of parameter w reads parameter h, which is not bound until after it",
+		},
+		{
+			name: "GALA-E0101 error-only call in an if inside a void block lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => {
+        if (n < 0) {
+            Println("saving")
+            save(n)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:8:21 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 error-only call in an if-expression body of a void lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => if (n < 0) save(n) else Println(n))
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 error-only call in a match arm of a void lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => {
+        n match {
+            case 0 => Println("zero")
+            case _ => save(n)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 error-only call in a match arm block of a void expression lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => n match {
+        case 0 => Println("zero")
+        case _ => {
+            Println("saving")
+            save(n)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from save in void lambda",
+		},
+		{
 			// No field is in scope, so W is the package val: a mistake.
 			name: "GALA-E0098 struct field default reads a package val named like a field",
 			input: `package main
@@ -2027,6 +2131,49 @@ func main() {
     val s string = "x" + "y"
     Println(x * 2.0, x + 'a', 1.5 * 2 + x, f * 1.5, b + 200, d * 2, x < 1e3, x * (3 / 2), s + "z")
     Println(g, r, c, n, time.Duration(1.5e9), Some[any](3))
+}`
+	_, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+}
+
+// TestDeclaredDefaultsAccepted is the positive companion to GALA-E0094 at a
+// declaration: a default reading an earlier parameter, or a name its own
+// lambda or match binds that a later parameter shares, is accepted, and so is
+// a void lambda that handles the error of a call nested in an if or a match
+// (GALA-E0101).
+func TestDeclaredDefaultsAccepted(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	input := `package main
+
+import "errors"
+
+func scale(a int, b int = a * 2) int = a + b
+
+func pick(f func(int) int = (n) => n + 1, n int = 3) int = f(n)
+
+func label(o Option[int] = Some(1), v int = 0) string = o match {
+    case Some(v) => s"some $v"
+    case _       => "none"
+}
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Println(scale(1), pick(), label())
+    Some(-1).ForEach((n) => {
+        if (n < 0) {
+            Println(FromError(save(n)).IsFailure())
+        }
+        n match {
+            case 0 => Println("zero")
+            case _ => Println(FromError(save(n)).IsSuccess())
+        }
+    })
 }`
 	_, err := trans.Transpile(input, "")
 	require.NoError(t, err)

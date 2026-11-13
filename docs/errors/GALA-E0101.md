@@ -1,7 +1,8 @@
 # GALA-E0101 — Error return discarded in a void lambda
 
 **When it fires.** A lambda that returns nothing, such as the callback of
-`ForEach`, has a statement that calls a function returning only an `error`.
+`ForEach`, has a statement that calls a function returning only an `error`,
+at any depth: in an `if`, a `match` arm or a block of the lambda too.
 The callee can be a Go function, a GALA function or method, or a function
 value. The lambda has no result to pass the error on in, so it would be
 dropped without anyone seeing it.

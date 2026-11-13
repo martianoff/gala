@@ -38,6 +38,33 @@ func second(n int) string = geo.Points(n) match {
     case _           => "other"
 }
 
+// A nested sub-pattern of a var field, read without an Immutable unwrap.
+func varField(w Option[geo.Holder]) string = w match {
+    case Some(geo.Holder("h", at)) => s"held ${at.X},${at.Y}"
+    case _                         => "other"
+}
+
+// An extractor held in a variable, after a sibling that can fail.
+func viaVariable(tag int, n int) string {
+    val ext = geo.AsPoint()
+    (tag, n) match {
+        case (0, ext(p)) => s"variable ${p.X},${p.Y}"
+        case _           => "other"
+    }
+}
+
+// A generic extractor in a nested sub-pattern.
+func generic(n int) string = geo.MaybePoint(n) match {
+    case Some(geo.Present(p)) => s"present ${p.X},${p.Y}"
+    case _                    => "other"
+}
+
+// A nested sub-pattern matched through a sealed view.
+func viewed(s Option[geo.Spot]) string = s match {
+    case Some(Some(p)) => s"viewed ${p.X},${p.Y}"
+    case _             => "other"
+}
+
 func main() {
     Println(afterSibling(0, 3))
     Println(afterSibling(1, 3))
@@ -55,4 +82,16 @@ func main() {
     Println(second(2))
     Println(second(3))
     Println(second(1))
+    Println(varField(Some(geo.Hold("h", 6))))
+    Println(varField(Some(geo.Hold("x", 6))))
+    Println(varField(None()))
+    Println(viaVariable(0, 7))
+    Println(viaVariable(1, 7))
+    Println(viaVariable(0, -7))
+    Println(generic(8))
+    Println(generic(0))
+    Println(generic(-8))
+    Println(viewed(Some(geo.Spot(9))))
+    Println(viewed(Some(geo.Spot(0))))
+    Println(viewed(None()))
 }
