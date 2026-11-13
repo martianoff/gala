@@ -44,6 +44,28 @@ func swap(b *Box) int {
 
 func fieldViaParam(p *Counter) int = p.n + incVia(p)
 
+func (c Counter) Two(a int, b int) int = c.n * 100 + a * 10 + b
+
+func pair(a int, b int) int = a * 100 + b
+
+struct Outer(var inner Box)
+
+func swapInner(o *Outer) int {
+    o.inner.fn = (x) => x * 10
+    1
+}
+
+type CounterRef *Counter
+
+func viaAlias(p CounterRef) int = p.n + p.Inc()
+
+var calls = 0
+
+func tick() int {
+    calls = calls + 1
+    0
+}
+
 func main() {
     var x = 1
     Println(s"address taken: ${x + bump(&x)}")
@@ -89,4 +111,33 @@ func main() {
     var b = Box((x) => x + 1)
     val bp = &b
     Println(s"func field through a pointer: ${bp.fn(swap(bp))}")
+
+    // The same when the receiver is a field path, or the pointer's type is
+    // an alias.
+    var h2 = Holder(Counter(1))
+    Println(s"value method on a field: ${h2.c.Plus(h2.c.Inc())}")
+    var o = Outer(Box((x) => x + 1))
+    val op = &o
+    Println(s"func field below a pointer: ${op.inner.fn(swapInner(op))}")
+    var e = Counter(1)
+    Println(s"pointer alias: ${viaAlias(&e)}")
+
+    // Named arguments written out of parameter order are evaluated as
+    // written, also when one reads through a pointer.
+    var f = Counter(1)
+    val fp = &f
+    Println(s"named arguments through a pointer: ${pair(b = fp.n, a = incVia(fp))}")
+    var g = Counter(1)
+    val gp = &g
+    Println(s"named arguments, value method through a pointer: ${gp.Two(b = gp.Inc(), a = tick())}")
+
+    // The same through a pointer held in a var.
+    var k = Counter(1)
+    var kp = &k
+    val reread = () => kp.n
+    Println(s"value method through a var pointer: ${kp.Plus(kp.Inc())} ${reread()}")
+    var b2 = Box((x) => x + 1)
+    var bp2 = &b2
+    val rebind = () => bp2
+    Println(s"func field through a var pointer: ${bp2.fn(swap(bp2))} ${rebind().fn(1)}")
 }
