@@ -46,6 +46,11 @@ go_library(
 
 go_test(
     name = "parser_test",
+    # The differential tests (TestEnginesAgree, TestRecoveryParity) parse
+    # every GALA source of the repository and thousands of broken variants
+    # with both engines: about a minute on a 32-thread machine, several on
+    # CI's 4-core runners, past the 300 s a medium test gets.
+    size = "large",
     srcs = [
         "bare_lambda_param_test.go",
         "bom_test.go",

@@ -6,8 +6,10 @@ import (
 	"hash/fnv"
 	"math/rand"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -163,13 +165,22 @@ var mutations = []mutation{
 // engine and with ANTLR's, and holds the two to compareEngines: the same
 // errors, in order, with the same codes, hints and spans, the same doc
 // comments, and the same error-recovered native tree. Any difference is a
-// bug. It logs the match rate and how often each coded hint fired.
+// bug. It logs the match rate and how often each coded hint fired. The
+// sources are mutated and compared on every CPU at once; each source's
+// mutants are drawn from a random stream of its own, so they do not depend
+// on that order.
 func TestRecoveryParity(t *testing.T) {
+	var mu sync.Mutex // guards the counts below
 	inputs, broken, lexical, mismatched := 0, 0, 0, 0
 	codes := map[galaerr.ErrorCode]int{}
 	compare := func(what, src string) {
-		inputs++
 		want, _, diffs := compareEngines(src, false)
+		for _, d := range diffs {
+			t.Errorf("%s: %s", what, d)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		inputs++
 		if strings.Contains(want.out, "token recognition error") {
 			lexical++
 		}
@@ -184,23 +195,18 @@ func TestRecoveryParity(t *testing.T) {
 		}
 		if len(diffs) > 0 {
 			mismatched++
-			for _, d := range diffs {
-				t.Errorf("%s: %s", what, d)
-			}
 		}
 	}
-	for k, src := range brokenInputs {
-		compare(fmt.Sprintf("broken input %d", k), src)
-	}
-	for _, path := range gatherSources(t) {
+	// mutate compares the mutants of the source at path.
+	mutate := func(path string) error {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 		ts := lexNative(galaerr.StripBOM(string(data)), 0, 0)
 		src, toks := ts.Src, ts.Tokens[:len(ts.Tokens)-1] // without EOF
 		if len(toks) == 0 {
-			continue
+			return nil
 		}
 		h := fnv.New64a()
 		h.Write(data)
@@ -210,7 +216,27 @@ func TestRecoveryParity(t *testing.T) {
 				compare(fmt.Sprintf("%s (%s)", path, m.name), mutant)
 			}
 		}
+		return nil
 	}
+	for k, src := range brokenInputs {
+		compare(fmt.Sprintf("broken input %d", k), src)
+	}
+	paths := make(chan string)
+	var wg sync.WaitGroup
+	for range runtime.GOMAXPROCS(0) {
+		wg.Go(func() {
+			for path := range paths {
+				if err := mutate(path); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	for _, path := range gatherSources(t) {
+		paths <- path
+	}
+	close(paths)
+	wg.Wait()
 	var hints []string
 	for c, n := range codes {
 		hints = append(hints, fmt.Sprintf("%s %d", c, n))

@@ -199,6 +199,11 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	if err != nil {
 		return &Parsed{Errors: []error{err}}
 	}
+	return p.parseFileWith(input, engine)
+}
+
+// parseFileWith is ParseFile with engine, whatever the chosen one.
+func (p *AntlrGalaParser) parseFileWith(input string, engine Engine) *Parsed {
 	// Drop a leading UTF-8 BOM once, up front: the lexer has no rule for
 	// U+FEFF and would otherwise reject the file outright. Go, which GALA
 	// transpiles to, ignores a leading BOM the same way.

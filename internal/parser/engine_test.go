@@ -104,22 +104,21 @@ type fileParse struct {
 }
 
 // parseFileAs parses src with engine e. A parse's native tree is converted
-// (with ANTLR's engine, or for a parse with errors) and printed.
+// (with ANTLR's engine, or for a parse with errors) and printed. It leaves
+// the chosen engine alone, so several goroutines can call it at once.
 func parseFileAs(e Engine, src string) fileParse {
 	var f fileParse
-	withEngine(e, func() {
-		f.parsed = NewAntlrGalaParser().ParseFile(src)
-		f.text = treeText(f.parsed.Tree)
-		f.out = renderText(f.text, f.parsed.Tree, f.parsed.Docs, f.parsed.Errors)
-		tree, err := f.parsed.RecoveredNative().Tree()
-		switch {
-		case err != nil:
-		case len(f.parsed.Errors) == 0:
-			f.native = dumpNative(tree)
-		default:
-			f.recovered = dumpNative(tree)
-		}
-	})
+	f.parsed = NewAntlrGalaParser().parseFileWith(src, e)
+	f.text = treeText(f.parsed.Tree)
+	f.out = renderText(f.text, f.parsed.Tree, f.parsed.Docs, f.parsed.Errors)
+	tree, err := f.parsed.RecoveredNative().Tree()
+	switch {
+	case err != nil:
+	case len(f.parsed.Errors) == 0:
+		f.native = dumpNative(tree)
+	default:
+		f.recovered = dumpNative(tree)
+	}
 	return f
 }
 
