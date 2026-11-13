@@ -32,7 +32,10 @@ func FuzzAlphaRenaming(f *testing.F) {
 // FuzzEvaluationOrder checks that GALA evaluates left to right. Its
 // programs call tracing functions from operands, positional and named
 // arguments, constructor arguments, default arguments, match subjects,
-// guards and extractors in sub-patterns, and must print the trace the
+// guards and extractors in sub-patterns, read local vars that later
+// operands change through a pointer (an address taken, a pointer-receiver
+// method, a val holding a pointer, a function reading through its pointer
+// parameter), some of them named like Go builtins, and must print the trace the
 // generator computed from source order: left to right, an extractor only
 // after the sibling sub-patterns before it matched, a match subject once,
 // one if branch.

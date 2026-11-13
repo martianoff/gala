@@ -20,7 +20,7 @@ func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr
 		}
 		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}, nil
 	case "*":
-		return &ast.StarExpr{X: expr}, nil
+		return t.markDeref(&ast.StarExpr{X: expr}), nil
 	case "!":
 		expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
 	}

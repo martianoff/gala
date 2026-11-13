@@ -50,7 +50,7 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 		return recv, nil
 	}
 	if !m.PointerReceiver {
-		return derefPointer(recv, recvType), nil
+		return t.derefPointer(recv, recvType), nil
 	}
 	if _, _, _, isValue := t.receiverTypeInfo(recvType); !isValue {
 		return recv, nil
@@ -63,14 +63,14 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 
 // derefPointer is `*expr` when typ is a pointer (`x` for `&x`), and expr
 // otherwise.
-func derefPointer(expr ast.Expr, typ transpiler.Type) ast.Expr {
+func (t *galaASTTransformer) derefPointer(expr ast.Expr, typ transpiler.Type) ast.Expr {
 	if _, isPtr := typ.(transpiler.PointerType); !isPtr {
 		return expr
 	}
 	if addr, ok := expr.(*ast.UnaryExpr); ok && addr.Op == token.AND {
 		return addr.X
 	}
-	return &ast.StarExpr{X: expr}
+	return t.markDeref(&ast.StarExpr{X: expr})
 }
 
 // loweredReceiverType is the type of the receiver argument

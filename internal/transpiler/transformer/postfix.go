@@ -88,6 +88,13 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 		}
 	}
 
+	// Whether base is a pointer: by its type, or a pointer receiver, whose
+	// scope type is the type it points to.
+	_, throughPointer := xType.(transpiler.PointerType)
+	if id, ok := base.(*ast.Ident); ok && t.fixedBindingOf(id.Name) == fixedPointerReceiver {
+		throughPointer = true
+	}
+
 	// A pointer-receiver method needs an addressable receiver; a val's Get()
 	// is a copy, so it gets an addressable copy instead. A method on a Ptr
 	// receiver needs one that is never nil.
@@ -111,11 +118,16 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 	}
 
 	selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}
+	if selectsThroughImmutable {
+		t.markMember(selExpr, xType, throughPointer, m.called)
+	}
 
 	if t.isImmutableField(xType, selExpr, selName) {
-		return &ast.CallExpr{
+		get := &ast.CallExpr{
 			Fun: &ast.SelectorExpr{X: selExpr, Sel: ast.NewIdent("Get")},
-		}, nil
+		}
+		t.markOperand(get, operandBoxGet)
+		return get, nil
 	}
 
 	return selExpr, nil

@@ -90,7 +90,8 @@ type galaASTTransformer struct {
 	callFrames             []*callFrame                                  // one per call being lowered, innermost last; see call_order.go
 	defaultRefDecls        []ast.Decl                                    // package-level aliases through which a default reads a package-level name a local shadows at its use site; see default_scope.go
 	defaultRefNames        map[string]bool                               // names of defaultRefDecls
-	mutableVars            map[string]transpiler.Type                    // every local `var` and `var` parameter of the file by name, with its type (nil when two disagree); see eval_order.go
+	mutableVars            map[string]transpiler.Type                    // every local `var` and `var` parameter of the file by Go name, with its type (nil when two disagree); see eval_order.go
+	operandMarks           map[ast.Node]operandMark                      // how lowered selectors, derefs and Get calls reach storage, for orderOperands; see eval_order.go
 	returnSlot             returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
@@ -374,6 +375,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.loopControlSites = nil
 	t.branchingCalls = nil
 	t.mutableVars = nil
+	t.operandMarks = nil
 	t.defaultRefDecls, t.defaultRefNames = nil, nil
 	t.userReturns = nil
 	t.voidCalls = nil

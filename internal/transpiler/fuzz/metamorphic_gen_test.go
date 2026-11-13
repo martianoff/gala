@@ -1,6 +1,7 @@
 package fuzz_test
 
 import (
+	"cmp"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -43,7 +44,9 @@ import (
 // their initial and argument. The model evaluates left to right, an
 // extractor runs only after the sibling sub-patterns before it matched, a
 // match subject runs once and only one if branch runs, so the trace the
-// program must print is known.
+// program must print is known. main also declares local vars, int or Cell,
+// and vals holding a Cell var's address; operands read them and change them
+// through a pointer (metaCells), and the model keeps their values in mState.
 
 // mType is the type of a generated expression or binder.
 type mType int
@@ -54,6 +57,9 @@ const (
 	mOpt         // Option[int]
 	mPair        // Tuple[int, int]
 	mFn          // func(int) int: a lambda bound to a val
+	mVarInt      // an int `var` of main
+	mVarCell     // a Cell `var` of main
+	mCellPtr     // a val holding the address of a Cell var
 )
 
 // metaDomain is declared in every program. Its own names are fixed: renaming
@@ -113,6 +119,37 @@ func bump(n int) int {
 }
 `
 
+// metaCells is declared when a program declares a local var: functions and
+// methods that change one through a pointer, some of them after reading it.
+const metaCells = `
+struct Cell(var n int)
+
+func (c *Cell) Inc(k int) int {
+    c.n = c.n + k
+    c.n
+}
+
+func (c *Cell) Sum(k int) int = c.n + c.Inc(k)
+
+func (c Cell) Peek(k int) int = c.n * 10 + k
+
+func bumpP(p *int, k int) int {
+    *p = *p + k
+    *p
+}
+
+func incP(c *Cell, k int) int = c.Inc(k)
+
+func sumP(p *int, k int) int = *p + bumpP(p, k)
+
+func sumC(c *Cell, k int) int = c.n + incP(c, k)
+`
+
+// varNames are names a local var may take even with plain names: Go's
+// predeclared identifiers and std's qualifier, which the transpiler renames
+// in the Go it emits.
+var varNames = []string{"len", "string", "max", "std", "panic"}
+
 // mVal is the model's value of an expression.
 type mVal struct {
 	n      int // an int, or a bool as 0 and 1
@@ -132,6 +169,8 @@ func mBool(b bool) mVal {
 type mState struct {
 	out     strings.Builder
 	counter int
+	// vars holds the value of each int var and the n of each Cell var.
+	vars map[*mBinder]int
 }
 
 func (s *mState) trace(tok string) { s.out.WriteString(tok + " ") }
@@ -157,6 +196,10 @@ type mBinder struct {
 	region int
 	uses   int
 	name   string
+	// plain is the name of a var under plain names, when not v<id>.
+	plain string
+	// target is the Cell var an mCellPtr val points to.
+	target *mBinder
 	// visible: the binders in scope where it is declared (set by the scan),
 	// whose names it may take to shadow them.
 	visible []*mBinder
@@ -660,7 +703,117 @@ func (e eBump) eval(s *mState, _ mEnv) mVal {
 func (e eBump) render() string { return fmt.Sprintf("bump(%d)", e.n) }
 func (e eBump) scan(*mScan)    {}
 
+// cell is the var whose value b reads: b itself, or the Cell an mCellPtr
+// points to.
+func (b *mBinder) cell() *mBinder {
+	if b.target != nil {
+		return b.target
+	}
+	return b
+}
+
+// eVar reads a var: an int var `v`, a Cell var's `c.n`, or `p.n` through a
+// pointer to one.
+type eVar struct{ b *mBinder }
+
+func (e eVar) eval(s *mState, _ mEnv) mVal { return mVal{n: s.vars[e.b.cell()]} }
+func (e eVar) render() string {
+	if e.b.typ == mVarInt {
+		return e.b.name
+	}
+	return e.b.name + ".n"
+}
+func (e eVar) scan(c *mScan) { c.ref(e.b) }
+
+// eMut changes a var through a pointer and is its new value, or, when sum
+// is set, the callee reads the old value first and is old + new. method
+// calls Cell's pointer-receiver method instead of a function taking a
+// pointer.
+type eMut struct {
+	b           *mBinder
+	k           int
+	sum, method bool
+}
+
+func (e eMut) eval(s *mState, _ mEnv) mVal {
+	cell := e.b.cell()
+	old := s.vars[cell]
+	s.vars[cell] += e.k
+	if e.sum {
+		return mVal{n: old + s.vars[cell]}
+	}
+	return mVal{n: s.vars[cell]}
+}
+
+func (e eMut) render() string {
+	addr := e.b.name // a pointer already
+	if e.b.typ != mCellPtr {
+		addr = "&" + e.b.name
+	}
+	switch {
+	case e.b.typ == mVarInt && e.sum:
+		return fmt.Sprintf("sumP(%s, %d)", addr, e.k)
+	case e.b.typ == mVarInt:
+		return fmt.Sprintf("bumpP(%s, %d)", addr, e.k)
+	case e.method && e.sum:
+		return fmt.Sprintf("%s.Sum(%d)", e.b.name, e.k)
+	case e.method:
+		return fmt.Sprintf("%s.Inc(%d)", e.b.name, e.k)
+	case e.sum:
+		return fmt.Sprintf("sumC(%s, %d)", addr, e.k)
+	}
+	return fmt.Sprintf("incP(%s, %d)", addr, e.k)
+}
+func (e eMut) scan(c *mScan) { c.ref(e.b) }
+
+// ePeek calls Cell's value-receiver method, `c.Peek(arg)` or `p.Peek(arg)`:
+// the receiver is read before the argument, which may change it.
+type ePeek struct {
+	b   *mBinder
+	arg mExpr
+}
+
+func (e ePeek) eval(s *mState, env mEnv) mVal {
+	n := s.vars[e.b.cell()]
+	return mVal{n: n*10 + e.arg.eval(s, env).n}
+}
+func (e ePeek) render() string { return e.b.name + ".Peek(" + e.arg.render() + ")" }
+func (e ePeek) scan(c *mScan)  { c.ref(e.b); e.arg.scan(c) }
+
 // ---- statements
+
+// sVar is `var b = init`, or `var b = Cell(init)` for a Cell var.
+type sVar struct {
+	b    *mBinder
+	init mExpr
+}
+
+func (v *sVar) exec(s *mState, env mEnv) mEnv {
+	s.vars[v.b] = v.init.eval(s, env).n
+	return env
+}
+func (v *sVar) render() string {
+	if v.b.typ == mVarCell {
+		return "var " + v.b.name + " = Cell(" + v.init.render() + ")"
+	}
+	return "var " + v.b.name + " = " + v.init.render()
+}
+func (v *sVar) scan(c *mScan) {
+	from := len(c.refs)
+	v.init.scan(c)
+	c.declareVal(v.b, from)
+}
+
+// sPtr is `val p = &c`, c a Cell var.
+type sPtr struct{ p *mBinder }
+
+func (v *sPtr) exec(_ *mState, env mEnv) mEnv { return env }
+func (v *sPtr) render() string                { return "val " + v.p.name + " = &" + v.p.target.name }
+func (v *sPtr) scan(c *mScan) {
+	from := len(c.refs)
+	c.ref(v.p.target)
+	c.declareVal(v.p, from)
+}
 
 // sVal is `val b = init`.
 type sVal struct {
@@ -889,6 +1042,9 @@ type metaGen struct {
 	funcs   []*mFunc
 	traces  int
 	counter bool
+	// vars: the local vars of main and pointers to them, in scope while
+	// main's statements are generated.
+	vars    []*mBinder
 	steered map[int]bool
 }
 
@@ -996,6 +1152,9 @@ func (g *metaGen) intExpr0(d int, flat bool) mExpr {
 			return g.call(d, flat)
 		}
 	case 4:
+		if len(g.vars) > 0 && g.pick(2) == 0 {
+			return g.varExpr(d)
+		}
 		g.counter = true
 		if g.pick(2) == 0 {
 			return eCounter{}
@@ -1016,6 +1175,49 @@ func (g *metaGen) intExpr0(d int, flat bool) mExpr {
 		return g.optMap(d)
 	}
 	return g.atom()
+}
+
+// varExpr reads one of main's vars, or changes it through a pointer. d is
+// the nesting depth left for a Peek argument.
+func (g *metaGen) varExpr(d int) mExpr {
+	b := g.vars[g.pick(len(g.vars))]
+	b.uses++
+	switch g.pick(3) {
+	case 0:
+		return eVar{b}
+	case 1:
+		if b.typ != mVarInt {
+			return ePeek{b, g.intExpr(d-1, true)}
+		}
+	}
+	return eMut{b: b, k: 1 + g.pick(4), sum: g.pick(2) == 0, method: g.pick(2) == 0}
+}
+
+// newVar declares a var of main, int or Cell, or a val holding the address
+// of a Cell var. Some vars take one of varNames.
+func (g *metaGen) newVar(region int, taken *int) mStmt {
+	var cells []*mBinder
+	for _, v := range g.vars {
+		if v.typ == mVarCell {
+			cells = append(cells, v)
+		}
+	}
+	if len(cells) > 0 && g.pick(3) == 0 {
+		p := g.binder(mCellPtr, region)
+		p.target = cells[g.pick(len(cells))]
+		p.target.uses++
+		g.vars = append(g.vars, p)
+		return &sPtr{p}
+	}
+	t := []mType{mVarInt, mVarCell}[g.pick(2)]
+	init := g.intExpr(2, false)
+	b := g.binder(t, region)
+	if *taken < len(varNames) && g.pick(2) == 0 {
+		b.plain = varNames[*taken]
+		*taken++
+	}
+	g.vars = append(g.vars, b)
+	return &sVar{b, init}
 }
 
 func (g *metaGen) atom() mExpr {
@@ -1327,8 +1529,11 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 		vals = append(vals, bs...)
 		g.visible = append(g.visible, bs...)
 	}
+	varNamesTaken := 0
 	for range 2 + g.pick(4) {
-		switch g.pick(8) {
+		switch g.pick(10) {
+		case 8, 9:
+			stmts = append(stmts, g.newVar(mainRegion, &varNamesTaken))
 		case 0, 1:
 			t := []mType{mInt, mInt, mShape, mOpt}[g.pick(4)]
 			init := g.expr(t, 3, false)
@@ -1362,9 +1567,15 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 			stmts = append(stmts, &sPrint{[]mExpr{g.read(b, mInt)}})
 		}
 	}
+	for _, b := range g.vars {
+		if b.uses == 0 {
+			b.uses++
+			stmts = append(stmts, &sPrint{[]mExpr{eVar{b}}})
+		}
+	}
 
 	// The model.
-	st := &mState{}
+	st := &mState{vars: map[*mBinder]int{}}
 	env := mEnv{}
 	for _, s := range stmts {
 		env = s.exec(st, env)
@@ -1393,6 +1604,9 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 		if g.counter {
 			b.WriteString(metaCounter)
 		}
+		if len(g.vars) > 0 {
+			b.WriteString(metaCells)
+		}
 		for _, f := range g.funcs {
 			b.WriteString("\n" + f.render() + "\n")
 		}
@@ -1404,7 +1618,7 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 		return b.String()
 	}
 	for _, b := range g.binders {
-		b.name = fmt.Sprintf("v%d", b.id)
+		b.name = cmp.Or(b.plain, fmt.Sprintf("v%d", b.id))
 	}
 	p := metaProgram{want: st.out.String()}
 	p.plain = render()
