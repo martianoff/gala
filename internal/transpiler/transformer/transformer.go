@@ -1290,15 +1290,18 @@ func (t *galaASTTransformer) dotImportedFunction(name string) *ImportEntry {
 // resolves to no package. A name a GALA type answers to (the package's own,
 // std's, a dot import's) is that type instead.
 func (t *galaASTTransformer) dotImportedGoTypeKey(name string) string {
-	if t.goTypeInfo == nil || name == "" || strings.Contains(name, ".") || t.isActiveTypeParam(name) ||
-		t.resolveTypeMetaName(name) != "" {
+	if t.goTypeInfo == nil || name == "" || strings.Contains(name, ".") || t.isActiveTypeParam(name) {
 		return ""
 	}
+	// Keyed by import path only: a Go package sharing the GALA package's name
+	// (io/fs beside GALA's fs) files its types under the same `pkg.Name`.
 	for _, entry := range t.galaDotImports {
 		if key := entry.Path + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
-			return key
-		}
-		if key := entry.PkgName + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
+			// A GALA type of the name wins. Asked only on a hit, which is
+			// rare, so a miss stays a few map lookups.
+			if t.resolveTypeMetaName(name) != "" {
+				return ""
+			}
 			return key
 		}
 	}
