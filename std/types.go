@@ -625,14 +625,23 @@ func (s shown) String() string { return s.text }
 
 // PtrString is the text of v, whose type declares `String() string` on a
 // pointer receiver: GALA prints such a value by calling that String on a
-// copy of it, as fmt would on the value's address. Println, Print and
-// interpolation call it for a value of a GALA type with such a String;
+// copy of it. Println, Print and interpolation call it for a value of a GALA
+// type with such a String that a pointer-receiver method would get a copy of
+// too (a val, a call's result); an addressable one is printed by StringAt.
 // FormatStruct does the same for a field.
 func PtrString[T any, P interface {
 	*T
 	String() string
 }](v T) shown {
 	return shown{P(&v).String()}
+}
+
+// StringAt is the text p's String gives, as PtrString's is for a copy.
+// Println, Print and interpolation call it with the address of an
+// addressable value whose String is declared on a pointer receiver only, so
+// String runs on the value itself.
+func StringAt[P interface{ String() string }](p P) shown {
+	return shown{p.String()}
 }
 
 // printingKey names a pointer one goroutine is printing. The type tells a

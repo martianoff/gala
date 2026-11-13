@@ -448,9 +448,12 @@ func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames 
 
 // printedValue is expr, a value Println, Print or an interpolation prints,
 // as it is passed to fmt: a value of a GALA type whose String is declared on
-// a pointer receiver only becomes `std.PtrString(expr)`, the text that String
-// gives it, which fmt, given the value, would not call. typ is expr's type;
-// ok reports the rewrite.
+// a pointer receiver only becomes the text that String gives it, which fmt,
+// given the value, would not call. String runs where any pointer-receiver
+// method would: on the value itself when printedInPlace, `std.StringAt(&expr)`,
+// so it sees what other pointers write and copies no lock the value holds;
+// otherwise (a val, a call's result) on a copy, `std.PtrString(expr)`. typ is
+// expr's type; ok reports the rewrite.
 func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type) (ast.Expr, bool) {
 	if typ == nil || transpiler.IsUnusableOrAny(typ) {
 		return expr, false
@@ -466,7 +469,53 @@ func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type) (a
 	if m == nil || !m.PointerReceiver || m.GoDeclared || len(m.ParamTypes) != 0 || !isBasicNamed(m.ReturnType, "string") {
 		return expr, false
 	}
+	if t.printedInPlace(expr) {
+		return &ast.CallExpr{Fun: t.stdIdent("StringAt"), Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: expr}}}, true
+	}
 	return &ast.CallExpr{Fun: t.stdIdent("PtrString"), Args: []ast.Expr{expr}}, true
+}
+
+// printedInPlace reports whether expr, a generated Go expression of a value
+// type, is printed through its own address, `&expr`: a pointer-receiver
+// method call would run on it in place (isAddressable), and `&` of it
+// compiles. That is `*p` or a path from a variable (a var, a parameter, a
+// pattern binding) whose every index is into a slice or an array; not a
+// call's result, such as an Immutable's Get, nor a path from a local val that
+// sealPlainValPath would re-box as one. isAddressable takes an index into a
+// value of unresolved type for addressable, which `&` of a map element is not.
+func (t *galaASTTransformer) printedInPlace(expr ast.Expr) bool {
+	if _, ok := expr.(*ast.StarExpr); ok {
+		return true
+	}
+	if !t.variablePath(expr) {
+		return false
+	}
+	if root, judged := t.plainValPathRoot(expr); root != nil && !judged {
+		return false
+	}
+	return t.isAddressable(expr)
+}
+
+// variablePath reports whether path is an identifier, or fields and elements
+// reached from one, indexing only slices and arrays.
+func (t *galaASTTransformer) variablePath(path ast.Expr) bool {
+	for {
+		switch e := path.(type) {
+		case *ast.Ident:
+			return true
+		case *ast.ParenExpr:
+			path = e.X
+		case *ast.SelectorExpr:
+			path = e.X
+		case *ast.IndexExpr:
+			if _, isArray := t.getExprTypeName(e.X).(transpiler.ArrayType); !isArray {
+				return false
+			}
+			path = e.X
+		default:
+			return false
+		}
+	}
 }
 
 // formatStructExpr is the text a struct or sealed case called name prints

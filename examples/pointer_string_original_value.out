@@ -1,0 +1,15 @@
+count 1, shown 1
+count 1, shown 2
+count 1, shown 3
+interpolated: count 1, shown 4
+formatted: count 1, shown 5
+5
+count 2, shown 6
+count 2, shown 1
+count 2, shown 2
+count 5, shown 1
+count 5, shown 1
+count 7, shown 1
+count 7, shown 1
+1000
+guarded 1000
