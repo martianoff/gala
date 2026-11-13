@@ -953,7 +953,7 @@ const (
 	// (`EmptyArray[func() int]()`); a function value is a lambda.
 	CodeFuncTypeAsValue ErrorCode = "GALA-E0103"
 
-	// E0104: a call of a generic function leaves a type parameter that a
+	// E0104: a call of a generic function or method leaves a type parameter that a
 	// lambda argument needs unbound, because it appears only in the
 	// constraint of another type parameter (`T` in `[T any, C Seq[T, C]]`)
 	// and the methods of that parameter's type argument do not determine it.

@@ -39,7 +39,10 @@ type galaASTTransformer struct {
 	activeTypeParams    map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
 	// equalOwner is the type whose Equal method is being transformed, nil
 	// outside one: there `==` on that type is Go's (see equalityOf).
-	equalOwner       *transpiler.TypeMetadata
+	equalOwner *transpiler.TypeMetadata
+	// reentry records, per declaration of the file, the calls an Equal can
+	// reach a recursion through (see checkIndirectEqualReentry).
+	reentry          *equalReentryGraph
 	typeParamNames   map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
 	structFields     map[string][]string
 	structFieldTypes map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
@@ -382,6 +385,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.hoisted = nil
 	t.escapeCache = nil
 	t.userLoops = nil
+	t.reentry = nil
 	if collectLSPMetadata {
 		t.lspVarTypes = make(map[string]transpiler.Type)
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
@@ -523,6 +527,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName
+	t.reentry = newEqualReentryGraph(pkgName, richAST.Types)
 	file = &ast.File{
 		// This file's own package doc, from the per-file table: the merged
 		// RichAST.PackageDoc can come from a sibling file of the package.
@@ -608,6 +613,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			}
 			file.Decls = append(file.Decls, lowered...)
 		}
+	}
+
+	// Every function an Equal of the file can call is lowered by now.
+	if err := t.checkIndirectEqualReentry(); err != nil {
+		return nil, nil, err
 	}
 
 	file.Decls = append(file.Decls, t.interfaceLiteralDecls...)

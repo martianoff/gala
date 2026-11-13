@@ -205,7 +205,7 @@ func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
 
 // nameWildcardReceiverTypeArgs gives each type argument written `_` in src,
 // a receiver type (`Holder[_, C]`), a name of its own under the reserved
-// prefix in recvType, its lowering (`Holder[_gala_T, C]`, T being meta's
+// prefix in recvType, its lowering (`Holder[_gala_wild_T, C]`, T being meta's
 // parameter at that position), which no source name has. Another
 // parameter's constraint can name the parameter `_` stands for
 // (`C Seq[T, C]`): the receiver's constraints, and those of the function a
@@ -232,7 +232,7 @@ func nameWildcardReceiverTypeArgs(src typeSrc, recvType ast.Expr, meta *transpil
 		// `_` is lowered as Go's wildcard type, `any`.
 		id := arg.(*ast.Ident)
 		if written[i] == "_" {
-			id.Name = localNamePrefix + meta.TypeParams[i]
+			id.Name = transpiler.WildcardTypeParamPrefix + meta.TypeParams[i]
 		}
 		params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(id.Name)}})
 	}

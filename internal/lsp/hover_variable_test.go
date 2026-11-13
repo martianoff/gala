@@ -171,3 +171,43 @@ val label = "kv-1"
 	assertHover(t, hoverAt(t, h, uri, src, `val label = "kv-1"`, "label"),
 		[]string{"val label", "names this node in logs"}, nil)
 }
+
+// A receiver that writes `_` for a type parameter (`Holder[_, C]`) is lowered
+// with a name the transpiler reserves for it. Hover shows `_`, as the source
+// does, never that name.
+const wildcardReceiverSrc = `package main
+
+type Seq[T any, C any] interface {
+    Rest() C
+    First() T
+}
+
+struct Holder[T any, C Seq[T, C]](inner C)
+
+func (h Holder[_, C]) Peek() int {
+    val first = h.inner.First()
+    val rest = h.inner.Rest()
+    Println(first, rest, h)
+    1
+}
+`
+
+func TestHoverWildcardReceiverTypeParam(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, wildcardReceiverSrc)
+	settle(t, h, uri, wildcardReceiverSrc, ") Peek()", "Peek")
+
+	for _, tt := range []struct {
+		name          string
+		anchor, word  string
+		want, notWant []string
+	}{
+		{name: "a value of the parameter", anchor: "val first =", word: "first", want: []string{"first _"}, notWant: []string{"_gala_"}},
+		{name: "a value of another parameter", anchor: "val rest =", word: "rest", want: []string{"rest C"}, notWant: []string{"_gala_"}},
+		{name: "the receiver", anchor: "Println(first, rest, h)", word: "h", want: []string{"Holder[_, C]"}, notWant: []string{"_gala_"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assertHover(t, hoverAt(t, h, uri, wildcardReceiverSrc, tt.anchor, tt.word), tt.want, tt.notWant)
+		})
+	}
+}
