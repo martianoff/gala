@@ -25,7 +25,7 @@ func arrayPaths(p *Prop, ref []int) map[string]Array[int] {
 		"Filter": Array_Map(
 			ArrayTabulate(2*n, func(i int) int { return i }).Filter(func(i int) bool { return i%2 == 0 }),
 			func(i int) int { return ref[i/2] }),
-		"ListToArray": ListFromSlice(ref).ToArray(),
+		"ListToArray": List_ToArray(ListFromSlice(ref)),
 	}
 	appended := EmptyArray[int]()
 	for _, x := range ref {
@@ -81,7 +81,7 @@ func checkArray(p *Prop, what string, a Array[int], ref []int) {
 	var visited []int
 	a.ForEach(func(x int) { visited = append(visited, x) })
 	p.EqInts(what+" ForEach", visited, ref)
-	if a.GetOption(-1).IsDefined() || a.GetOption(n).IsDefined() {
+	if Array_GetOption(a, -1).IsDefined() || Array_GetOption(a, n).IsDefined() {
 		p.Fatalf("%s: GetOption out of range is defined", what)
 	}
 	if n > 0 {
@@ -263,7 +263,7 @@ func TestArrayOpsDifferential(t *testing.T) {
 					if got := a.Reduce(func(x, y int) int { return x + y }); got != sum {
 						p.Fatalf("%s: %d, want %d", w("Reduce"), got, sum)
 					}
-				} else if a.ReduceOption(func(x, y int) int { return x + y }).IsDefined() {
+				} else if Array_ReduceOption(a, func(x, y int) int { return x + y }).IsDefined() {
 					p.Fatalf("%s: ReduceOption defined on empty", name)
 				}
 
@@ -360,7 +360,7 @@ func TestArrayOpsDifferential(t *testing.T) {
 					if f := a.Find(eq); f.IsDefined() != (RefIndexOf(ref, probe) >= 0) {
 						p.Fatalf("%s: Find(%d) defined = %v", name, probe, f.IsDefined())
 					}
-					if f := a.FindLast(eq); f.IsDefined() != (RefIndexOf(ref, probe) >= 0) {
+					if f := Array_FindLast(a, eq); f.IsDefined() != (RefIndexOf(ref, probe) >= 0) {
 						p.Fatalf("%s: FindLast(%d) defined = %v", name, probe, f.IsDefined())
 					}
 				}

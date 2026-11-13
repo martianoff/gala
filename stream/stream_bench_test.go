@@ -19,7 +19,7 @@ func BenchmarkStreamMapFilterTake(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		s := Stream_Map(From(0), func(x int) int { return x * 3 }).Filter(func(x int) bool { return x%2 == 0 }).Take(500)
-		sinkInt = s.ToList().Size()
+		sinkInt = Stream_ToList(s).Size()
 	}
 }
 

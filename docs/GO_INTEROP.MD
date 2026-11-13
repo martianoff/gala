@@ -316,6 +316,7 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 | `sealed type Discount { case Percent(Pct int64) ... }` | one struct `Discount` (unexported tag), an empty struct per case (`Percent{}.Unapply(d)` returns `std.Option[int64]`), [generated constructors](#sealed-types-have-go-constructors) (`NewDiscountPercent(...)` builds a case) and [case predicates](#testing-a-sealed-values-case-from-go) (`d.IsPercent()`) |
 | `Option[T]`, `Try[T]`, `Either[L, R]` | `std.Option[T]` etc.: `IsDefined()`, `IsSuccess()`, `Get()`, `GetError()`, `GetOrElse(x)` |
 | a generic method, e.g. `Option.Map[U]` | a free function `std.Option_Map(o, f)` (Go methods cannot have type parameters) |
+| a method of a generic type whose signature names another generic type, e.g. `Array.ToList()`, `HashMap.Keys()` | a free function `collection_immutable.Array_ToList(arr)`, unless an interface the declaring package sees has a method of that name (`Iterable`, `Seq`, ...). Go compiles every method of a generic type for each type argument, so a method that brings in another generic type is a function, compiled only where it is called |
 | `Array[T]`, `List[T]`, `HashMap[K, V]` | `collection_immutable.Array[T]` etc.: `ArrayOf`, `ArrayFromSlice`, `.Size()`, `.ToGoSlice()` |
 | package-level `var X` / `val X` | a Go variable / a `std.Immutable` variable (read with `X.Get()`) |
 | PascalCase / camelCase names | exported / unexported, exactly as in Go. GALA never renames an identifier |
@@ -1027,7 +1028,7 @@ A checklist of what differs from writing Go. The first ones are covered in the p
 - **Encoders see the value.** `encoding/json`, YAML libraries (`gopkg.in/yaml.v2`, `v3`) and `fmt` encode, decode and print an exported immutable field as the value it holds, keyed by the field's name. GALA has no struct tags ([GALA-E0085](errors/GALA-E0085.md)); for other keys, use `Codec[T]` from `json` or `yaml`. A `json.Decoder`'s `DisallowUnknownFields` and `UseNumber` do not reach inside the field.
 - **Build sealed values with the generated constructors** (`NewT()`, `NewT<Case>(...)`), [not a composite literal](#sealed-types-have-go-constructors). `T{}` skips field defaults, and for a type without a default case it is none of its cases.
 - **Sealed cases are told apart with `Unapply`**, because the variant tag is unexported: `(pricing.Percent{}).Unapply(d).IsDefined()`. A GALA helper such as `Describe` above is friendlier.
-- **Generic methods are free functions.** `opt.Map(f)` in GALA is `std.Option_Map(opt, f)` in Go, and `arr.FoldLeft(z, f)` is `collection_immutable.Array_FoldLeft(arr, z, f)`.
+- **Generic methods are free functions.** `opt.Map(f)` in GALA is `std.Option_Map(opt, f)` in Go, and `arr.FoldLeft(z, f)` is `collection_immutable.Array_FoldLeft(arr, z, f)`. So is a method whose signature names another generic type and that no interface needs: `arr.ToList()` is `collection_immutable.Array_ToList(arr)`.
 - **Default and named arguments are GALA-only.** Go passes every parameter, in order.
 - **Lowercase means unexported**, for Go too. A camelCase GALA function is invisible to Go in other packages, and visible to `.go` files in its own package.
 

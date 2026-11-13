@@ -115,6 +115,13 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 		if base, err = t.addressableReceiver(base, xType, selName, line, col); err != nil {
 			return nil, err
 		}
+		// A method the generated Go declares as a function, named without
+		// being called: a closure over the receiver.
+		if !m.called {
+			if value, ok := t.loweredMethodValue(base, xType, selName); ok {
+				return value, nil
+			}
+		}
 	}
 
 	selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}

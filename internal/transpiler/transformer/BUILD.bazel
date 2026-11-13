@@ -53,6 +53,7 @@ go_library(
         "line_directives.go",
         "local_types.go",
         "loop_control.go",
+        "lowered_method_value.go",
         "match.go",
         "match_arm_scope.go",
         "match_source.go",

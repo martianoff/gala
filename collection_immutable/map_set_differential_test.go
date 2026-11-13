@@ -124,11 +124,11 @@ func runHashMapWorkload[K comparable](t *testing.T, kind KeyKind[K]) {
 			if sum != wantSum {
 				p.Fatalf("FoldLeftKV = %d, want %d", sum, wantSum)
 			}
-			if m.Keys().Size() != len(ref) || m.Values().Length() != len(ref) || m.ToList().Length() != len(ref) {
+			if HashMap_Keys(m).Size() != len(ref) || HashMap_Values(m).Length() != len(ref) || HashMap_ToList(m).Length() != len(ref) {
 				p.Fatalf("Keys/Values/ToList sizes %d/%d/%d, want %d",
-					m.Keys().Size(), m.Values().Length(), m.ToList().Length(), len(ref))
+					HashMap_Keys(m).Size(), HashMap_Values(m).Length(), HashMap_ToList(m).Length(), len(ref))
 			}
-			gotValues := m.Values().ToGoSlice()
+			gotValues := HashMap_Values(m).ToGoSlice()
 			wantValues := slices.Collect(maps.Values(ref))
 			slices.Sort(gotValues)
 			slices.Sort(wantValues)
@@ -348,7 +348,7 @@ func checkTreeMap[K cmp.Ordered](p *Prop, what string, m TreeMap[K, int], ref ma
 		}
 	})
 	EqSlices(p, what+" ForEachKV key order", gotKeys, keys)
-	entries := m.ToList().ToGoSlice()
+	entries := TreeMap_ToList(m).ToGoSlice()
 	if len(entries) != len(keys) {
 		p.Fatalf("%s: ToList has %d entries, want %d", what, len(entries), len(keys))
 	}
@@ -366,7 +366,7 @@ func checkTreeMap[K cmp.Ordered](p *Prop, what string, m TreeMap[K, int], ref ma
 		if m.MinKey() != keys[0] || m.MaxKey() != keys[len(keys)-1] {
 			p.Fatalf("%s: MinKey/MaxKey %v/%v, want %v/%v", what, m.MinKey(), m.MaxKey(), keys[0], keys[len(keys)-1])
 		}
-	} else if m.MinKeyOption().IsDefined() || m.MaxKeyOption().IsDefined() {
+	} else if TreeMap_MinKeyOption(m).IsDefined() || TreeMap_MaxKeyOption(m).IsDefined() {
 		p.Fatalf("%s: Min/MaxKeyOption defined on empty map", what)
 	}
 }
@@ -422,7 +422,7 @@ func runTreeMapWorkload[K cmp.Ordered](t *testing.T, kind KeyKind[K]) {
 			wantEven := maps.Clone(ref)
 			maps.DeleteFunc(wantEven, func(_ K, v int) bool { return v%2 != 0 })
 			checkTreeMap(p, "Filter", m.Filter(even), wantEven)
-			EqSlices(p, "Keys order", m.Keys().ToGoSlice(), SortedKeys(ref))
+			EqSlices(p, "Keys order", TreeMap_Keys(m).ToGoSlice(), SortedKeys(ref))
 		})
 	}
 }

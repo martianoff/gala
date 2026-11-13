@@ -1,0 +1,52 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A method of a generic type whose signature names another generic type
+// (`Array[T].ToList() List[T]`) is a function in the generated Go, so Go
+// compiles it only where it is called. In GALA it is called, and named as a
+// method value, as any method is.
+
+struct Shelf[T any](Items Array[T])
+
+// First names Option[T], another generic type: a function in Go.
+func (s Shelf[T]) First() Option[T] = s.Items.HeadOption()
+
+// Size names no other generic type, and Sized needs it: a method in Go.
+func (s Shelf[T]) Size() int = s.Items.Size()
+
+type Sized interface {
+    Size() int
+}
+
+func describe(s Sized) string = s"${s.Size()} items"
+
+func main() {
+    val xs = ArrayOf(3, 1, 2)
+    Println(xs.ToList())
+    Println(xs.TailOption())
+    Println(xs.GetOption(1))
+    Println(xs.GetOption(7))
+    Println(xs.ReduceOption((a, b) => a + b))
+    Println(xs.FindLast((x) => x > 1))
+
+    // Method values: a closure over the receiver, evaluated once.
+    val toList = xs.ToList
+    Println(toList())
+    Println(ArrayOf(0, 2, 5).Map(xs.GetOption))
+
+    val ages = HashMapOf(("ann", 31), ("bob", 27))
+    Println(ages.Keys().Sorted())
+    Println(ages.Values().Sorted())
+
+    val tree = TreeMapOf((2, "two"), (1, "one"))
+    Println(tree.Keys())
+    Println(tree.MinKeyOption())
+
+    val shelf = Shelf(ArrayOf("a", "b"))
+    Println(shelf.First())
+    val first = shelf.First
+    Println(first())
+    Println(describe(shelf))
+    Println(Shelf(EmptyArray[int]()).First())
+}
