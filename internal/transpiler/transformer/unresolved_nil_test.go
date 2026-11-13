@@ -234,6 +234,28 @@ func main() {
     Println(describe(1))
 }
 `},
+		// The nil interface value, of type any (#1083).
+		{"any parameter", `package main
+
+func show(x any = nil) string = s"got $x"
+
+func tag[T any](v T, note any = nil) T = v
+
+func main() {
+    Println(show())
+    Println(tag(1))
+}
+`},
+		// The type argument comes from the slot the call fills (#1083).
+		{"type parameter only the nil parameter mentions", `package main
+
+func label[T any](p *T = nil) Option[T] = None[T]()
+
+func main() {
+    val o Option[int] = label()
+    Println(o)
+}
+`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

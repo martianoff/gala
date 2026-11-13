@@ -2230,6 +2230,14 @@ gala_exec_test(
     ],
 )
 
+# A nil default whose type names a type parameter takes the type argument
+# the call's slot or type arguments bind
+gala_exec_test(
+    name = "nil_default_typed",
+    src = "nil_default_typed.gala",
+    expected = "nil_default_typed.out",
+)
+
 # Sealed cases print like shorthand structs: pointer fields print their
 # target, and a cycle through a pointer prints <cycle>
 gala_exec_test(

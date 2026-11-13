@@ -58,7 +58,7 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 	}
 	// Try Go type info for struct field access and method calls on Go types
 	if !xType.IsNil() {
-		if fType := t.getGoFieldType(t.goTypeLookupName(xType), e.Sel.Name); !fType.IsNil() {
+		if fType := t.getGoFieldType(xType, e.Sel.Name); !fType.IsNil() {
 			return fType
 		}
 		// A Go method value (`file.Close`): its Go signature, as for a Go
