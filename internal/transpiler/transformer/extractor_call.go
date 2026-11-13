@@ -132,40 +132,58 @@ func (t *galaASTTransformer) unapplyHelper(
 // typ is of a package this file can name without a new import: its own, std,
 // or one this file (or, for a GALA package, a sibling file) imports.
 func (t *galaASTTransformer) namesOnlyImportedPackages(typ transpiler.Type) bool {
-	switch v := typ.(type) {
-	case transpiler.NamedType:
+	return everyNamedType(typ, func(v transpiler.NamedType) bool {
 		if v.Package == "" || v.Package == t.packageName || v.Package == registry.StdPackageName || t.importManager.IsDotImported(v.Package) {
 			return true
 		}
 		// An implicit entry counts only when a sibling imports its package.
 		entry, ok := t.importManager.Qualifier(v.Package)
 		return ok && (!entry.Implicit() || t.richAST != nil && t.richAST.PackageImportPaths[entry.Path])
+	})
+}
+
+// namesUnimportedGalaPackage reports whether typ names a type of a GALA
+// package this file reaches only through another package, one whose import
+// entry is implicit (see namesOnlyImportedPackages): an import of it is one
+// Bazel's strict dependencies reject.
+func (t *galaASTTransformer) namesUnimportedGalaPackage(typ transpiler.Type) bool {
+	return !everyNamedType(typ, func(v transpiler.NamedType) bool {
+		entry, ok := t.importManager.Qualifier(v.Package)
+		return !ok || !entry.Implicit() || t.namesOnlyImportedPackages(v)
+	})
+}
+
+// everyNamedType reports whether ok holds for every named type in typ.
+func everyNamedType(typ transpiler.Type, ok func(transpiler.NamedType) bool) bool {
+	switch v := typ.(type) {
+	case transpiler.NamedType:
+		return ok(v)
 	case transpiler.GenericType:
-		if !t.namesOnlyImportedPackages(v.Base) {
+		if !everyNamedType(v.Base, ok) {
 			return false
 		}
 		for _, p := range v.Params {
-			if !t.namesOnlyImportedPackages(p) {
+			if !everyNamedType(p, ok) {
 				return false
 			}
 		}
 	case transpiler.ArrayType:
-		return t.namesOnlyImportedPackages(v.Elem)
+		return everyNamedType(v.Elem, ok)
 	case transpiler.ChanType:
-		return t.namesOnlyImportedPackages(v.Elem)
+		return everyNamedType(v.Elem, ok)
 	case transpiler.StructType, transpiler.InterfaceType:
 		for _, f := range transpiler.MemberTypes(v) {
-			if !t.namesOnlyImportedPackages(f) {
+			if !everyNamedType(f, ok) {
 				return false
 			}
 		}
 	case transpiler.PointerType:
-		return t.namesOnlyImportedPackages(v.Elem)
+		return everyNamedType(v.Elem, ok)
 	case transpiler.MapType:
-		return t.namesOnlyImportedPackages(v.Key) && t.namesOnlyImportedPackages(v.Elem)
+		return everyNamedType(v.Key, ok) && everyNamedType(v.Elem, ok)
 	case transpiler.FuncType:
 		for _, p := range append(slices.Clone(v.Params), v.Results...) {
-			if !t.namesOnlyImportedPackages(p) {
+			if !everyNamedType(p, ok) {
 				return false
 			}
 		}

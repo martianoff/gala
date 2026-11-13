@@ -113,16 +113,15 @@ func laterParamError(def exprSrc, later []string, lowered ast.Expr) error {
 // (transformDefaultExpr). What it reports, that check reports in the same
 // words at the same place.
 func declaredDefaultsReadLaterParams(params []paramDecl) error {
+	names := make([]string, len(params))
+	for i, p := range params {
+		names[i] = p.name
+	}
 	for i, p := range params {
 		if !p.hasDefault || !p.def.node.Ok() || bindsNames(p.def) {
 			continue
 		}
-		var later []string
-		for _, q := range params[i:] {
-			if q.name != "" && q.name != "_" {
-				later = append(later, q.name)
-			}
-		}
+		_, later := defaultParams(names, nil, i, nil)
 		if err := laterParamError(p.def, later, nil); err != nil {
 			return err
 		}

@@ -601,8 +601,7 @@ func (t *galaASTTransformer) checkDiscardedError(expr ast.Expr, line, col int) e
 // other func literal is a lambda of its own, checked where it is lowered.
 func (t *galaASTTransformer) checkDiscardedErrors(body *ast.BlockStmt, line, col int) error {
 	var err error
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
+	ast.Inspect(body, func(n ast.Node) bool {
 		if err != nil {
 			return false
 		}
@@ -611,16 +610,25 @@ func (t *galaASTTransformer) checkDiscardedErrors(body *ast.BlockStmt, line, col
 			return false
 		case *ast.ExprStmt:
 			if isVoidIIFE(n.X) {
-				ast.Inspect(n.X.(*ast.CallExpr).Fun.(*ast.FuncLit).Body, visit)
+				err = t.checkDiscardedErrors(n.X.(*ast.CallExpr).Fun.(*ast.FuncLit).Body, line, col)
 			} else {
-				err = t.checkDiscardedError(n.X, line, col)
+				err = t.checkDiscardedError(t.firstErrorCall(n.X), line, col)
 			}
 			return false
 		}
 		return true
-	}
-	ast.Inspect(body, visit)
+	})
 	return err
+}
+
+// firstErrorCall is the error-only call expr's error comes from when expr is
+// an if or match whose every branch yields one (see errorBranches): the
+// first branch's. expr itself otherwise.
+func (t *galaASTTransformer) firstErrorCall(expr ast.Expr) ast.Expr {
+	if lit, returns := t.errorBranches(expr); lit != nil && len(returns) > 0 {
+		return t.firstErrorCall(t.rawGoCall(returns[0].Results[0]))
+	}
+	return expr
 }
 
 // calleeName is the name a diagnostic gives the callee of call, as the

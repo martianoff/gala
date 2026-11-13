@@ -299,7 +299,7 @@ func eq(e Equaler) bool = e.Equal(Point(1, 2))
 func show(s fmt.Stringer) string = s.String()
 func fail() error = Fault("bad")
 func asShape() Shape = Circle(1.0)
-func shapeAndArea() (Square, float64) = (Square(3.0), 9.0)
+func shapeAndArea() (Figure, float64) = (Square(3.0), 9.0)
 func sizeOf[T any](b Box[T]) int {
     val s Seq[T] = b
     s.Size()

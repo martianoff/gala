@@ -16,7 +16,9 @@ declared after it. A default is evaluated in the callee's scope, left to
 right, with only the parameters before it bound, so a later parameter has no
 value yet. A field default of a struct or a sealed case may read no field at
 all (GALA-E0098). The error is reported at the declaration, whether or not any
-call leaves the argument out.
+call leaves the argument out. A default that binds names of its own (a lambda, a
+match, a block), or reads the parameter only inside an interpolated string, is
+checked at a call that leaves the argument out, where it is evaluated.
 
 **Minimal repro.**
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"maps"
 	"slices"
+	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -130,11 +130,11 @@ func (t *galaASTTransformer) patternDefine(lhs []string, types []patternType, rh
 //   - a sequence element's `xs.Get(i)` is the zero value of the element, typed
 //     from the method value `xs.Get`. The sequence pattern reads xs, a plain
 //     read, before the guard already (its size check);
-//   - any other call of a method with at most one argument on a plain read,
+//   - any other call of a method with at most one argument on a name,
 //     `ext.Unapply(x)` or `v.MatchView()`, is the zero value of its result,
 //     typed from the method value (see methodValue), which is not called;
 //   - a call `h(x)` of a generated Unapply helper (see unapplyHelper) with a
-//     plain read x is the zero value of its result, typed from h and x
+//     name x is the zero value of its result, typed from h and x
 //     without calling h.
 //
 // Pattern lowering writes `.F.Get()` only for an Immutable field, whose Get
@@ -152,9 +152,13 @@ func (t *galaASTTransformer) sameTypeValue(rhs ast.Expr, known map[string]patter
 	case *ast.CallExpr:
 		switch fun := e.Fun.(type) {
 		case *ast.Ident:
-			generated := slices.Contains(slices.Collect(maps.Values(t.unapplyHelpers)), fun.Name)
-			if generated && len(e.Args) == 1 && isPlainRead(e.Args[0]) {
-				return t.helperCall(zeroApplyHelper, ast.NewIdent(fun.Name), e.Args[0])
+			if len(e.Args) != 1 || !t.isUnapplyHelper(fun.Name) {
+				return nil
+			}
+			// The argument is only read, so it must be a name: a field read
+			// may go through a pointer the guard has not checked.
+			if arg, ok := e.Args[0].(*ast.Ident); ok {
+				return t.helperCall(zeroApplyHelper, ast.NewIdent(fun.Name), t.localRef(arg.Name))
 			}
 		case *ast.SelectorExpr:
 			switch {
@@ -195,6 +199,18 @@ func (t *galaASTTransformer) sameTypeValue(rhs ast.Expr, known map[string]patter
 	return nil
 }
 
+// isUnapplyHelper reports whether name is an Unapply helper this file
+// declares (see unapplyHelper), not one of the pattern helpers filed beside
+// them under their `_gala_` base names (see patternHelper).
+func (t *galaASTTransformer) isUnapplyHelper(name string) bool {
+	for key, helper := range t.unapplyHelpers {
+		if helper == name && !strings.HasPrefix(key, "_gala_") {
+			return true
+		}
+	}
+	return false
+}
+
 // knownFieldBase is the receiver a placeholder reads field.Sel of: field's
 // base, a name declared before the guard whose pointerness is known, through
 // a nil-safe dereference when it is a pointer. nil otherwise.
@@ -215,49 +231,40 @@ func (t *galaASTTransformer) knownFieldBase(field *ast.SelectorExpr, known map[s
 	return recv
 }
 
-// methodValue is the method value `recv.M` of fun, `recv.M` with recv a plain
-// read, made safe to evaluate where recv may be a nil pointer: on a pointer
-// to a type whose M has a value receiver, recv is read through a nil-safe
-// dereference. nil when recv's type, or for a pointer the kind of M's
-// receiver, is unknown.
+// methodValue is the method value `recv.M` of fun, recv a name, made safe to
+// evaluate before the guard, where the name may still hold a zero value: recv
+// is a value of a GALA type, or a pointer to one, read through a nil-safe
+// dereference when M has a value receiver. nil for any other receiver, such
+// as an interface value, which may be nil, or one of an unknown type.
 func (t *galaASTTransformer) methodValue(fun *ast.SelectorExpr, known map[string]patternType) ast.Expr {
-	recv := fun.X
-	if !isPlainRead(recv) {
+	id, ok := fun.X.(*ast.Ident)
+	if !ok {
 		return nil
 	}
+	name := fun.Sel.Name
+	var recv ast.Expr = t.localRef(id.Name)
 	var typ transpiler.Type
-	if id, ok := recv.(*ast.Ident); ok && known[id.Name] != nil {
-		p := known[id.Name]
-		pointer, sure := pointerness(p)
-		if !sure {
-			return nil
-		}
-		if !pointer {
-			return &ast.SelectorExpr{X: t.localRef(id.Name), Sel: ast.NewIdent(fun.Sel.Name)}
-		}
-		if !p.knowsType() {
-			return nil
-		}
+	if p := known[id.Name]; p == nil {
+		typ = t.getExprTypeName(id)
+	} else if p.knowsType() {
 		typ = p.typ
-		recv = t.localRef(id.Name)
-	} else {
-		typ = t.getExprTypeName(recv)
 	}
 	if typ == nil || transpiler.IsUnusable(typ) {
 		return nil
 	}
 	ptr, isPointer := typ.(transpiler.PointerType)
-	if !isPointer {
-		return &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(fun.Sel.Name)}
+	elem := typ
+	if isPointer {
+		elem = ptr.Elem
 	}
-	meta := t.getTypeMeta(ptr.Elem.BaseName())
-	if meta == nil || meta.Methods[fun.Sel.Name] == nil {
+	_, meta, _, ok := t.receiverTypeInfo(t.methodReceiverType(elem, name))
+	if !ok || meta == nil || meta.IsInterface || meta.Methods[name] == nil {
 		return nil
 	}
-	if !meta.Methods[fun.Sel.Name].PtrReceiver {
+	if isPointer && !meta.Methods[name].PtrReceiver {
 		recv = t.helperCall(derefHelper, recv)
 	}
-	return &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(fun.Sel.Name)}
+	return &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(name)}
 }
 
 // isPlainRead reports whether e only reads: a name, a field of a plain read,
@@ -501,8 +508,8 @@ func (t *galaASTTransformer) hoistPatternDecls(stmts []ast.Stmt, subject string,
 					decl := seqVarDecl(ident.Name, nil, like)
 					t.patternDefineTypes[decl.(*ast.DeclStmt).Decl.(*ast.GenDecl).Specs[0]] = []patternType{p}
 					decls = append(decls, decl)
-				} else if !spelled && p != nil && p.knowsType() {
-					// Spelling the type would import a package this file
+				} else if !spelled && p != nil && p.knowsType() && t.namesUnimportedGalaPackage(p.typ) {
+					// Spelling the type would import a GALA package this file
 					// does not, which Bazel's strict dependencies reject.
 					return nil, nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, fmt.Sprintf(
 						"cannot declare a value this pattern binds: its type %s is from a package this file does not import (hint: import the package that declares it)",

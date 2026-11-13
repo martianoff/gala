@@ -860,6 +860,40 @@ func main() {
 			expectContains: "cannot discard error return from save in void lambda",
 		},
 		{
+			name: "GALA-E0101 if whose every branch is an error-only call, in a void block lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => {
+        Println(n)
+        if (n < 0) save(n) else save(0)
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 match whose every arm is an error-only call, as a void expression lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => n match {
+        case 0 => save(1)
+        case _ => save(n)
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "cannot discard error return from save in void lambda",
+		},
+		{
 			name: "GALA-E0101 error-only call in a match arm of a void lambda",
 			input: `package main
 
