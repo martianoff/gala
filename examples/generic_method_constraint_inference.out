@@ -1,0 +1,6 @@
+Nums(3, 4, 5, 6)
+Words(ccc dddd)
+ops: Words(bb ccc dddd)
+Nums(2, 3, 4, 5, 6)
+Nums(2, 3, 4, 5, 6) #7
+Words(bb ccc dddd) #w

@@ -1607,6 +1607,24 @@ func main() {
 			},
 		},
 		{
+			name: "a type's own Equal passes its type to a comparable type parameter",
+			code: galaerr.CodeEqualReentry, // GALA-E0108
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func same[T comparable](a T, b T) bool = a == b
+
+struct Point(x int, label string)
+
+func (p Point) Equal(o Point) bool = same(p.label, o.label) && same(p, o)
+
+func main() {
+    Println(Point(1, "a") == Point(2, "a"))
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

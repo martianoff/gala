@@ -994,7 +994,9 @@ A Go type compares with its `Equal` method when that method is in the value's ow
 | a Go type with no `Equal(T) bool` of its own (`time.Duration`, a plain Go struct) | with Go's `==` |
 | a value and `nil` | as Go does |
 
-**Inside a type's own `Equal`**, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`: lowering it would call the method being defined. On a type Go cannot compare it is [GALA-E0084](errors/GALA-E0084.md); compare the fields instead. `==` on a field of another type still compares with that type's `Equal`. A helper that `Equal` calls is not inside it, so `==` there calls `Equal` again.
+**Inside a type's own `Equal`**, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`: lowering it would call the method being defined. On a type Go cannot compare it is [GALA-E0084](errors/GALA-E0084.md); compare the fields instead. `==` on a field of another type still compares with that type's `Equal`.
+
+A generic function that `Equal` calls is not inside it: `==` on its `comparable` type parameter calls `Equal`, which would call the function again. So a type's own `Equal` may not pass its type, or a type that holds it by value, to a generic function or method as the type argument of a `comparable` type parameter (or of one whose constraint embeds `comparable`): `same(p, o)` in `Point`'s `Equal`, for `func same[T comparable](a T, b T) bool`, is [GALA-E0108](errors/GALA-E0108.md). Pass the fields instead (`same(p.x, o.x)`). The check covers the calls `Equal` makes itself; a helper that hands the value on to another generic function recurses the same way.
 
 ```gala
 package main

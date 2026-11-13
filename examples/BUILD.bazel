@@ -4022,6 +4022,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A generic method's own type parameters are inferred from constraints, and a
+# receiver may write `_` for a type parameter another constraint names.
+gala_exec_test(
+    name = "generic_method_constraint_inference",
+    src = "generic_method_constraint_inference.gala",
+    expected = "generic_method_constraint_inference.out",
+    deps = ["//collection_immutable"],
+)
+
 # `==` on time.Time calls its Equal, in concrete code as in generic code.
 gala_exec_test(
     name = "equal_go_time",

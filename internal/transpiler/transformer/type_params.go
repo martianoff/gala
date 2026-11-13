@@ -203,6 +203,42 @@ func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
 	return func() { t.activeTypeParams, t.typeParamConstraints = enclosing, constraints }
 }
 
+// nameWildcardReceiverTypeArgs gives each type argument written `_` in src,
+// a receiver type (`Holder[_, C]`), a name of its own under the reserved
+// prefix in recvType, its lowering (`Holder[_gala_T, C]`, T being meta's
+// parameter at that position), which no source name has. Another
+// parameter's constraint can name the parameter `_` stands for
+// (`C Seq[T, C]`): the receiver's constraints, and those of the function a
+// generic method lowers to, must then be able to name it too. It returns the
+// type parameters of the renamed receiver, in order, so that each lines up
+// with meta's parameter at its position; nil, renaming nothing, when src
+// writes no `_`.
+func nameWildcardReceiverTypeArgs(src typeSrc, recvType ast.Expr, meta *transpiler.TypeMetadata) []*ast.Field {
+	if star, ok := recvType.(*ast.StarExpr); ok {
+		recvType = star.X
+	}
+	_, args := splitCallFunTypeArgs(recvType)
+	written := receiverTypeArgTexts(src)
+	if meta == nil || len(args) != len(meta.TypeParams) || len(written) != len(args) || !slices.Contains(written, "_") {
+		return nil
+	}
+	params := make([]*ast.Field, 0, len(args))
+	for _, arg := range args {
+		if _, ok := arg.(*ast.Ident); !ok {
+			return nil
+		}
+	}
+	for i, arg := range args {
+		// `_` is lowered as Go's wildcard type, `any`.
+		id := arg.(*ast.Ident)
+		if written[i] == "_" {
+			id.Name = localNamePrefix + meta.TypeParams[i]
+		}
+		params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(id.Name)}})
+	}
+	return params
+}
+
 // receiverTypeParams is the type parameters a receiver type declares: the
 // type arguments of `Box[T]` or `*Pair[A, B]`, each a bare name.
 func receiverTypeParams(s typeSrc) []*ast.Field {
@@ -215,6 +251,19 @@ func receiverTypeParams(s typeSrc) []*ast.Field {
 
 // receiverTypeParamNamesOf is the names of receiverTypeParams of s.
 func receiverTypeParamNamesOf(s typeSrc) []string {
+	var names []string
+	for _, name := range receiverTypeArgTexts(s) {
+		// `_` is the wildcard type, not a parameter name.
+		if name != "_" && token.IsIdentifier(name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// receiverTypeArgTexts is the source text of each type argument of s, a
+// receiver type (`Box[T]`, `*Pair[_, B]`), in order.
+func receiverTypeArgTexts(s typeSrc) []string {
 	s, _ = s.pointerElem() // *Box[T], Ptr[Box[T]]
 	for s.ok() && !s.named() {
 		elems := s.elems()
@@ -227,14 +276,11 @@ func receiverTypeParamNamesOf(s typeSrc) []string {
 		return nil
 	}
 	args, _ := s.typeArgs()
-	var names []string
-	for _, arg := range args {
-		// `_` is the wildcard type, not a parameter name.
-		if name := arg.text(); name != "_" && token.IsIdentifier(name) {
-			names = append(names, name)
-		}
+	texts := make([]string, len(args))
+	for i, arg := range args {
+		texts[i] = arg.text()
 	}
-	return names
+	return texts
 }
 
 // fieldListOrNil returns the fields of a possibly-nil field list.

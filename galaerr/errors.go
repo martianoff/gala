@@ -965,6 +965,13 @@ const (
 	// a function or method call, a struct or sealed-case construction, a
 	// Copy. Once an argument is named, every later argument is named too.
 	CodePositionalAfterNamed ErrorCode = "GALA-E0105"
+
+	// E0108: a type's own Equal calls a generic function or method with
+	// that type, or a type holding it by value, as the type argument of a
+	// type parameter constrained by comparable. == on that type parameter
+	// calls the value's Equal, which would call the function again without
+	// end.
+	CodeEqualReentry ErrorCode = "GALA-E0108"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

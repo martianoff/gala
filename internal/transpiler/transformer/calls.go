@@ -834,6 +834,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			typeSubst[tp] = inferred
 		}
 	}
+	// A type parameter only a constraint mentions comes from the methods of
+	// the one it constrains (constraint_inference.go).
+	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 {
+		t.inferMethodFromConstraints(methodMeta, methodMeta.TypeParams, typeMeta.TypeParams, recvTypeArgTypes, typeSubst)
+	}
 	// Harvest type params from earlier lambdas to refine later ones.
 	// We transform args in declaration order. Each lambda is transformed with
 	// a *view* of typeSubst in which still-unresolved method type params are
@@ -1006,6 +1011,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 	if methodMeta != nil {
+		if err := t.checkEqualReentry(c, method, methodMeta.TypeParams, methodMeta.TypeParamConstraints, typeSubst); err != nil {
+			return true, nil, err
+		}
 		for _, tp := range methodMeta.TypeParams {
 			if _, ok := typeSubst[tp]; !ok {
 				t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
@@ -2800,6 +2808,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	}
 	if err := t.checkConstraintTypeArgs(c, callCtx); err != nil {
 		return nil, err
+	}
+	if fm := callCtx.funcMeta; fm != nil && t.equalOwner != nil {
+		if err := t.checkEqualReentry(c, fm.Name, fm.TypeParams, fm.TypeParamConstraints, boundTypeArgs(callCtx)); err != nil {
+			return nil, err
+		}
 	}
 
 	// --- Section 6.5: opaque-type conversion `UserID(x)` ---
