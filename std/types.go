@@ -54,10 +54,16 @@ var (
 // pointer-receiver MarshalJSON applies too. HTML escaping is left to the
 // calling encoder, which applies its own setting to the result.
 func (i Immutable[T]) MarshalJSON() ([]byte, error) {
+	return marshalJSONNoEscape(&i.value)
+}
+
+// marshalJSONNoEscape encodes ptr's value as JSON without HTML escaping. It
+// is not generic, so it is compiled once rather than with every Immutable.
+func marshalJSONNoEscape(ptr any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(&i.value); err != nil {
+	if err := enc.Encode(ptr); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -107,26 +113,41 @@ func unwrapImmutable(obj any) any {
 // happens before the calls to its right.
 func EvalOperand[T any](v T) T { return v }
 
+// Copy and Equal are generic so that a value of a concrete type reaches its
+// own Copy or Equal without reflection, and are called with hundreds of type
+// arguments in a large program. Go compiles a generic function once per type
+// argument shape, so each keeps only what needs T in its generic body and
+// leaves the reflective rest to a plain function compiled once (copyAny,
+// equalAny).
 func Copy[T any](v T) T {
-	val := reflect.ValueOf(v)
-
-	// Handle nil pointers early - return nil as-is. A pointer whose Copy is
-	// its pointee's value-receiver Copy is returned as-is too: that Copy
-	// copies the pointee, not the pointer, so calling it copied the whole
-	// pointee (for a linked structure, every node behind the pointer) only to
-	// discard the result or put the pointee where the pointer belongs.
-	if val.Kind() == reflect.Ptr && (val.IsNil() || copiesPointee(val.Type())) {
+	if copiesAsIs(v) {
 		return v
 	}
-
-	// Handle nil interfaces
-	if !val.IsValid() {
-		return v
-	}
-
 	if c, ok := any(v).(Copyable[T]); ok {
 		return c.Copy()
 	}
+	if r, ok := copyAny(v, reflect.TypeOf((*T)(nil)).Elem()); ok {
+		return r.(T)
+	}
+	return v
+}
+
+// copiesAsIs reports whether Copy returns v itself without looking for a Copy
+// method: v is a nil interface or a nil pointer, or a pointer whose Copy is
+// its pointee's value-receiver Copy. That Copy copies the pointee, not the
+// pointer, so calling it copied the whole pointee (for a linked structure,
+// every node behind the pointer) only to discard the result or put the
+// pointee where the pointer belongs.
+func copiesAsIs(v any) bool {
+	val := reflect.ValueOf(v)
+	return !val.IsValid() || val.Kind() == reflect.Ptr && (val.IsNil() || copiesPointee(val.Type()))
+}
+
+// copyAny is Copy's reflective part, for a v of a type t (Copy's type
+// argument) that is not Copyable[t]. It returns v's copy, reporting ok, or
+// reports !ok when v is copied as it is.
+func copyAny(v any, t reflect.Type) (any, bool) {
+	val := reflect.ValueOf(v)
 
 	// Fallback to check Copy method via reflection if T is any or interface
 	// mismatch. A Copy whose concrete result is not the value's own type is
@@ -135,15 +156,15 @@ func Copy[T any](v T) T {
 		mt := copyMeth.Type()
 		if mt.NumIn() == 0 && mt.NumOut() == 1 && (mt.Out(0) == val.Type() || mt.Out(0).Kind() == reflect.Interface) {
 			res := copyMeth.Call(nil)[0].Interface()
-			if r, ok := res.(T); ok {
-				return r
+			if holds(res, t) {
+				return res, true
 			}
 		}
 	}
 
 	// For non-struct types (primitives, slices, etc.), return as-is (shallow copy)
 	if val.Kind() != reflect.Struct {
-		return v
+		return nil, false
 	}
 
 	newStruct := reflect.New(val.Type()).Elem()
@@ -155,7 +176,19 @@ func Copy[T any](v T) T {
 			newField.Set(reflect.ValueOf(copiedField))
 		}
 	}
-	return newStruct.Interface().(T)
+	return newStruct.Interface(), true
+}
+
+// holds reports whether the type assertion v.(t) succeeds.
+func holds(v any, t reflect.Type) bool {
+	vt := reflect.TypeOf(v)
+	if vt == nil {
+		return false
+	}
+	if t.Kind() == reflect.Interface {
+		return vt.Implements(t)
+	}
+	return vt == t
 }
 
 // copiesPointee reports whether the pointer type ptr's Copy is its pointee's
@@ -175,7 +208,12 @@ func Equal[T any](v1, v2 T) bool {
 	if e, ok := any(v1).(Equatable[T]); ok {
 		return e.Equal(v2)
 	}
+	return equalAny(v1, v2)
+}
 
+// equalAny is Equal's reflective part (see Copy), for values whose type is
+// neither primitive nor Equatable[T] of Equal's type argument.
+func equalAny(v1, v2 any) bool {
 	val1 := reflect.ValueOf(v1)
 	val2 := reflect.ValueOf(v2)
 
@@ -219,15 +257,15 @@ func Equal[T any](v1, v2 T) bool {
 // path concludes for them (a NaN equals nothing, and values of different
 // types differ), without its reflection. A named type is left out: it may
 // declare an Equal of its own.
-func equalPrimitive[T any](v1, v2 T) (eq bool, ok bool) {
+func equalPrimitive(v1, v2 any) (eq bool, ok bool) {
 	// The predeclared primitive types; the collection packages' HashSet
 	// hashes the same ones but uintptr and the complex types (std.HashesByValue).
-	switch a := any(v1).(type) {
+	switch v1.(type) {
 	case bool, string,
 		int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64, complex64, complex128:
-		return a == any(v2), true
+		return v1 == v2, true
 	}
 	return false, false
 }
