@@ -11,10 +11,10 @@ type Handle struct {
 }
 
 func (s Handle) Copy() Handle {
-	return Handle{name: std.Copy(s.name)}
+	return Handle{name: s.name}
 }
 func (s Handle) Equal(other Handle) bool {
-	return std.Equal(s.name, other.name)
+	return s.name.Get() == other.name.Get()
 }
 
 //line $DIR/main.gala:7

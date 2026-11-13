@@ -44,10 +44,10 @@ type Append struct {
 }
 
 func (s Append) Copy() Append {
-	return Append{Name: std.Copy(s.Name)}
+	return Append{Name: s.Name}
 }
 func (s Append) Equal(other Append) bool {
-	return std.Equal(s.Name, other.Name)
+	return s.Name.Get() == other.Name.Get()
 }
 func (s Append) Unapply(v any) (std.Immutable[string], bool) {
 	if p, ok := v.(Append); ok {
@@ -88,10 +88,10 @@ type Append struct {
 }
 
 func (s Append) Copy() Append {
-	return Append{Name: std.Copy(s.Name)}
+	return Append{Name: s.Name}
 }
 func (s Append) Equal(other Append) bool {
-	return std.Equal(s.Name, other.Name)
+	return s.Name.Get() == other.Name.Get()
 }
 func (s Append) String() string {
 	return std.FormatStruct("Append", s.Name)

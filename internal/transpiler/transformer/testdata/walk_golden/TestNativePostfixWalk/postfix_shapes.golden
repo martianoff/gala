@@ -16,10 +16,10 @@ type P struct {
 }
 
 func (s P) Copy() P {
-	return P{x: std.Copy(s.x), y: std.Copy(s.y)}
+	return P{x: s.x, y: s.y}
 }
 func (s P) Equal(other P) bool {
-	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
+	return s.x.Get() == other.x.Get() && s.y == other.y
 }
 func (s P) String() string {
 	return std.FormatStruct("P", s.x, s.y)
@@ -32,10 +32,10 @@ type Pair struct {
 }
 
 func (s Pair) Copy() Pair {
-	return Pair{a: std.Copy(s.a), b: std.Copy(s.b)}
+	return Pair{a: s.a.Copy(), b: s.b.Copy()}
 }
 func (s Pair) Equal(other Pair) bool {
-	return std.Equal(s.a, other.a) && std.Equal(s.b, other.b)
+	return s.a.Equal(other.a) && s.b.Equal(other.b)
 }
 func (s Pair) String() string {
 	return std.FormatStruct("Pair", s.a, s.b)
@@ -83,10 +83,10 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{v: std.Copy(s.v)}
+	return Box[T]{v: s.v.Copy()}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
-	return std.Equal(s.v, other.v)
+	return s.v.Equal(other.v)
 }
 func (s Box[T]) String() string {
 	return std.FormatStruct("Box", s.v)

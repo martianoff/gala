@@ -101,7 +101,7 @@ func (s Shape) IsUnit() bool {
 	return s._variant == _Shape_Unit
 }
 func (s Shape) Copy() Shape {
-	return Shape{radius: std.Copy(s.radius), w: std.Copy(s.w), h: std.Copy(s.h), label: std.Copy(s.label), _variant: std.Copy(s._variant)}
+	return Shape{radius: s.radius, w: s.w, h: s.h, label: s.label.Copy(), _variant: s._variant}
 }
 func (s Shape) Equal(other Shape) bool {
 	if s._variant != other._variant {
@@ -109,9 +109,9 @@ func (s Shape) Equal(other Shape) bool {
 	}
 	switch s._variant {
 	case _Shape_Circle:
-		return std.Equal(s.radius, other.radius)
+		return s.radius.Get() == other.radius.Get()
 	case _Shape_Rect:
-		return std.Equal(s.w, other.w) && std.Equal(s.h, other.h) && std.Equal(s.label, other.label)
+		return s.w.Get() == other.w.Get() && s.h.Get() == other.h.Get() && s.label.Equal(other.label)
 	}
 	return true
 }
@@ -207,7 +207,7 @@ func (s Tree[T]) IsNode() bool {
 	return s._variant == _Tree_Node
 }
 func (s Tree[T]) Copy() Tree[T] {
-	return Tree[T]{value: std.Copy(s.value), left: std.Copy(s.left), right: std.Copy(s.right), _variant: std.Copy(s._variant)}
+	return Tree[T]{value: s.value.Copy(), left: std.Copy(s.left), right: std.Copy(s.right), _variant: s._variant}
 }
 func (s Tree[T]) Equal(other Tree[T]) bool {
 	if s._variant != other._variant {
@@ -215,7 +215,7 @@ func (s Tree[T]) Equal(other Tree[T]) bool {
 	}
 	switch s._variant {
 	case _Tree_Leaf:
-		return std.Equal(s.value, other.value)
+		return s.value.Equal(other.value)
 	case _Tree_Node:
 		return (s.left == other.left || s.left != nil && other.left != nil && s.left.Equal(*other.left)) && (s.right == other.right || s.right != nil && other.right != nil && s.right.Equal(*other.right))
 	}
@@ -302,7 +302,7 @@ func (s Level) IsHigh() bool {
 	return s._variant == _Level_High
 }
 func (s Level) Copy() Level {
-	return Level{by: std.Copy(s.by), _variant: std.Copy(s._variant)}
+	return Level{by: s.by, _variant: s._variant}
 }
 func (s Level) Equal(other Level) bool {
 	if s._variant != other._variant {
@@ -310,7 +310,7 @@ func (s Level) Equal(other Level) bool {
 	}
 	switch s._variant {
 	case _Level_High:
-		return std.Equal(s.by, other.by)
+		return s.by.Get() == other.by.Get()
 	}
 	return true
 }
