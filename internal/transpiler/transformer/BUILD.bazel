@@ -359,6 +359,7 @@ go_test(
         "unexported_method_cross_pkg_test.go",
         "unknown_method_test.go",
         "unresolved_corpus_test.go",
+        "unresolved_func_field_call_test.go",
         "unresolved_nil_test.go",
         "unresolved_types_test.go",
         "untyped_branching_value_test.go",

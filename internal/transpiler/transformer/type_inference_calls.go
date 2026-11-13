@@ -231,6 +231,17 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		if result := t.inferCallSelectorType(e, sel, typeArgs); result != nil && !result.IsNil() {
 			return result
 		}
+		// A call of a func-typed field, `b.fn(x)`: the field's result. (A
+		// method's result is inferCallSelectorType's to give.) Only on a
+		// receiver already typed: asking again for one that is not would
+		// only report it again.
+		if xType, typed := t.exprTypeCache[sel.X]; typed && len(typeArgs) == 0 {
+			if _, isMethod := t.methodValueType(xType, sel.Sel.Name); !isMethod {
+				if result, ok := t.funcValueCallResult(t.inferSelectorExprType(sel)); ok {
+					return result
+				}
+			}
+		}
 	}
 	if id, ok := fun.(*ast.Ident); ok {
 		if result := t.inferCallIdentType(e, id, typeArgs); result != nil && !result.IsNil() {
