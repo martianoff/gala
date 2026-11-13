@@ -34,7 +34,9 @@ func markFanOutMethods(richAST *transpiler.RichAST, pkgName string) {
 			continue
 		}
 		for name, method := range typeMeta.Methods {
-			if method.IsGeneric || len(method.TypeParams) > 0 || method.GoDeclared || method.OfTypeDecl || keptMethodNames[name] {
+			// A method declaring a Go result list stays a method: its
+			// method value is a Go method value (see loweredMethodValue).
+			if method.IsGeneric || len(method.TypeParams) > 0 || method.GoDeclared || method.OfTypeDecl || method.GoResults != nil || keptMethodNames[name] {
 				continue
 			}
 			if !fanOutSignature(richAST, typeMeta, method) {
@@ -69,7 +71,9 @@ var keptMethodNames = map[string]bool{
 func visibleInterfaceMethods(richAST *transpiler.RichAST) map[string]bool {
 	names := make(map[string]bool)
 	for _, typeMeta := range richAST.Types {
-		if !typeMeta.IsInterface {
+		// A test file's interface is left out: the package's library files,
+		// transpiled without the tests, decide without it too.
+		if !typeMeta.IsInterface || strings.HasSuffix(typeMeta.DefinedIn, "_test.gala") {
 			continue
 		}
 		for name := range typeMeta.Methods {

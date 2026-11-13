@@ -35,6 +35,8 @@ func TestMarkFanOutMethods(t *testing.T) {
 		"q.List":  {Name: "List", Package: "q", TypeParams: []string{"T"}, Methods: map[string]*transpiler.MethodMetadata{"Size": method("Size", nil)}},
 		"q.Marker": {Name: "Marker", Package: "q", TypeParams: []string{"T"}, Methods: map[string]*transpiler.MethodMetadata{}},
 		"q.Headed": {Name: "Headed", Package: "q", IsInterface: true, Methods: map[string]*transpiler.MethodMetadata{"Head": method("Head", nil)}},
+		// Only the package's tests see it, so the library decides without it.
+		"p.listed": {Name: "listed", Package: "p", IsInterface: true, DefinedIn: "p/box_test.gala", Methods: map[string]*transpiler.MethodMetadata{"ToList": method("ToList", nil)}},
 	}}
 
 	markFanOutMethods(richAST, "p")
