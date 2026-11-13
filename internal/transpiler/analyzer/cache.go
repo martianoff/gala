@@ -197,7 +197,13 @@ import (
 //
 // v41: a type parameter's constraint is a transpiler.Type, which may carry
 // type arguments (`C Iterable[T, C]`). A v40 payload records it as a name.
-const CacheVersion = "v41"
+//
+// v42: a Go interface records whether it embeds comparable
+// (GoTypeData.EmbedsComparable), so == on a type parameter it constrains
+// compares as on one constrained by comparable, and a Go type whether its
+// value method set has Equal(T) bool (GoTypeData.SelfEqual), which == then
+// calls. A v41 payload lacks both.
+const CacheVersion = "v42"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

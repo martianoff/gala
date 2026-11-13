@@ -961,7 +961,7 @@ val same = p1.Equal(p2) // true
 ```
 
 #### Equality: `==` and `!=`
-`a == b` means `a.Equal(b)`, and `a != b` means `!a.Equal(b)`, for every type with an `Equal(other T) bool` method: every struct, sealed type and tuple (their `Equal` is synthesized), `Option`, `Either` and `Try`, the immutable collections (`List`, `Array`, `HashSet`, `HashMap`, `TreeSet`, `TreeMap`), and any type that declares its own `Equal`. Values compare by value, as Scala's case classes do: two values built separately with the same contents are `==`.
+`==` is structural, and uses a type's `Equal` method when it has one, in generic and concrete code alike. `a == b` means `a.Equal(b)`, and `a != b` means `!a.Equal(b)`, for every type with an `Equal(other T) bool` method: every struct, sealed type and tuple (their `Equal` is synthesized), `Option`, `Either` and `Try`, the immutable collections (`List`, `Array`, `HashSet`, `HashMap`, `TreeSet`, `TreeMap`), any type that declares its own `Equal`, and a Go type such as `time.Time` whose `Equal` takes the type itself. Values compare by value, as Scala's case classes do: two values built separately with the same contents are `==`.
 
 ```gala
 package main
@@ -981,7 +981,9 @@ func main() {
 
 Where Go's `==` gives the same answer as `Equal`, the comparison stays Go's `==` and costs nothing extra: a type made of primitives only, through its fields, cases and type arguments, with no `Equal` of its own anywhere in it — `struct Point(x int, y int)`, `Option[int]`, `(int, string)`, a sealed type whose cases hold primitives. A float compares by IEEE rules either way, so a NaN equals nothing.
 
-On a type parameter constrained by `comparable`, `a == b` is true when Go's `==` is, or when the values' `Equal` method says so: a `List` passed as `T` compares by its elements, a struct or sealed type by value, a primitive and a pointer with Go's `==`. A Go type with an `Equal` method, such as `time.Time`, is compared by that method here.
+On a type parameter constrained by `comparable`, or by a Go interface that embeds `comparable` (`interface { comparable; Name() string }`), `a == b` is true when Go's `==` is, or when the values' `Equal` method says so: a `List` passed as `T` compares by its elements, a struct or sealed type by value, a primitive and a pointer with Go's `==`. A generic function gives the same answer as the comparison written out.
+
+A Go type compares with its `Equal` method when that method is in the value's own method set and its signature is exactly `Equal(T) bool`, `T` being the type itself. `time.Time` is one: its `Equal` compares instants, so two `time.Time`s of the same instant in different locations are `==`. An `Equal` declared on the pointer only (`func (x *T) Equal(o T) bool`), or one that takes `*T` or another type, is not used, and `==` on that type stays Go's, in generic code as well.
 
 `==` keeps Go's meaning where there is no `Equal`:
 
@@ -989,7 +991,7 @@ On a type parameter constrained by `comparable`, `a == b` is true when Go's `==`
 |----------|---------------|
 | pointers (`*T`, `Ptr[T]`), and so a mutable collection, which is used through one | identity. A struct *holding* a pointer compares with `Equal`, which compares what the pointer points to |
 | interfaces (`any`, a GALA interface) | as Go compares interface values |
-| a Go type (`time.Time`, any Go struct) | with Go's `==`, even when the Go type has an `Equal` method |
+| a Go type with no `Equal(T) bool` of its own (`time.Duration`, a plain Go struct) | with Go's `==` |
 | a value and `nil` | as Go does |
 
 **Inside a type's own `Equal`**, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`: lowering it would call the method being defined. On a type Go cannot compare it is [GALA-E0084](errors/GALA-E0084.md); compare the fields instead. `==` on a field of another type still compares with that type's `Equal`. A helper that `Equal` calls is not inside it, so `==` there calls `Equal` again.

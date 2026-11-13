@@ -601,3 +601,48 @@ func TestAnalyzeGoFiles_ResolvesCgoStdlibTypesWithoutACCompiler(t *testing.T) {
 	require.Len(t, client.Returns, 1)
 	assert.Equal(t, "*http.Client", client.Returns[0].String())
 }
+
+// An interface that embeds comparable, directly or through another interface,
+// is recorded as such: a type parameter it constrains compares as one
+// constrained by comparable does. An interface with methods only, or a union
+// of primitives, is not.
+func TestAnalyzeGoFiles_EmbedsComparable(t *testing.T) {
+	skipIfNoGoSDK(t)
+	dir := t.TempDir()
+	src := "package sample\n\n" +
+		"type Key interface{ comparable }\n" +
+		"type Named interface {\n\tKey\n\tName() string\n}\n" +
+		"type Plain interface{ Name() string }\n" +
+		"type Num interface{ ~int | ~string }\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644))
+	info := analyzer.AnalyzeGoFiles(dir, "")
+	require.NotNil(t, info)
+	for name, want := range map[string]bool{"Key": true, "Named": true, "Plain": false, "Num": false} {
+		data := info.Types["sample."+name]
+		require.NotNil(t, data, name)
+		assert.Equal(t, want, data.EmbedsComparable, name)
+	}
+}
+
+// A Go type records whether its value method set has Equal(T) bool with T the
+// type itself, which == calls: an alias of such a type does too; an Equal
+// taking *T, declared on the pointer, or returning something else does not.
+func TestAnalyzeGoFiles_SelfEqual(t *testing.T) {
+	skipIfNoGoSDK(t)
+	dir := t.TempDir()
+	src := "package sample\n\n" +
+		"type V struct{ n int }\n\nfunc (v V) Equal(o V) bool { return v.n == o.n }\n\n" +
+		"type A = V\n\n" +
+		"type P struct{ n int }\n\nfunc (p P) Equal(o *P) bool { return p.n == o.n }\n\n" +
+		"type R struct{ n int }\n\nfunc (r *R) Equal(o R) bool { return r.n == o.n }\n\n" +
+		"type I struct{ n int }\n\nfunc (i I) Equal(o I) int { return 0 }\n\n" +
+		"type W struct{ V }\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644))
+	info := analyzer.AnalyzeGoFiles(dir, "")
+	require.NotNil(t, info)
+	for name, want := range map[string]bool{"V": true, "A": true, "P": false, "R": false, "I": false, "W": false} {
+		data := info.Types["sample."+name]
+		require.NotNil(t, data, name)
+		assert.Equal(t, want, data.SelfEqual, name)
+	}
+}

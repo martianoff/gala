@@ -1280,6 +1280,48 @@ func isGenericGoType(typ types.Type) bool {
 	return false
 }
 
+// hasSelfEqual reports whether the value method set of typ has
+// `Equal(typ) bool`: the method std.EqualComparable finds (Equatable[T]), so
+// == compares with it in concrete code as in generic code. An Equal on the
+// pointer only, or one taking *typ or another type, does not count.
+func hasSelfEqual(typ types.Type) bool {
+	sel := types.NewMethodSet(typ).Lookup(nil, "Equal")
+	if sel == nil {
+		return false
+	}
+	sig, ok := sel.Type().(*types.Signature)
+	return ok && !sig.Variadic() && sig.Params().Len() == 1 && sig.Results().Len() == 1 &&
+		types.Identical(sig.Params().At(0).Type(), typ) &&
+		types.Identical(sig.Results().At(0).Type(), types.Typ[types.Bool])
+}
+
+// universeComparable is Go's predeclared comparable constraint.
+var universeComparable = types.Universe.Lookup("comparable").Type()
+
+// embedsComparable reports whether iface embeds comparable, directly or
+// through an interface it embeds. seen guards an embedding cycle, which the
+// type checker reports but may still hand over.
+func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bool {
+	for i := range iface.NumEmbeddeds() {
+		e := iface.EmbeddedType(i)
+		if types.Identical(e, universeComparable) {
+			return true
+		}
+		inner, ok := e.Underlying().(*types.Interface)
+		if !ok || seen[inner] {
+			continue
+		}
+		if seen == nil {
+			seen = map[*types.Interface]bool{}
+		}
+		seen[iface] = true
+		if embedsComparable(inner, seen) {
+			return true
+		}
+	}
+	return false
+}
+
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
 // and methods are recorded and, when own (the type belongs to the package being
 // compiled), the unexported ones that package declares as well.
@@ -1321,6 +1363,11 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	// A generic type's comparability depends on its type arguments.
 	if !isGenericGoType(typ) {
 		data.Incomparable = !types.Comparable(typ)
+	}
+	if iface, ok := typ.Underlying().(*types.Interface); ok {
+		data.EmbedsComparable = embedsComparable(iface, nil)
+	} else if !isGenericGoType(typ) {
+		data.SelfEqual = hasSelfEqual(typ)
 	}
 
 	// Extract struct fields. Preserve declaration order in FieldOrder so

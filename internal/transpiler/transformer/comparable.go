@@ -27,15 +27,19 @@ import (
 // hot ones, cost what they did. (A sealed value keeps the fields of its other
 // cases zero, so Go's == on it compares only its own case's, as Equal does.)
 //
-// A type parameter constrained by comparable may stand for a type with an
-// Equal, so `a == b` on it is `std.EqualComparable(a, b)`: Go's ==, else the
-// values' Equal. A GALA struct, sealed type or collection passed as the
-// parameter compares by value, as == on it does; a pointer by identity.
+// A type parameter constrained by comparable, or by a Go interface that
+// embeds it, may stand for a type with an Equal, so `a == b` on it is
+// `std.EqualComparable(a, b)`: Go's ==, else the values' Equal. A GALA
+// struct, sealed type or collection passed as the parameter compares by
+// value, as == on it does; a pointer by identity.
+//
+// A Go type whose value method set has `Equal(T) bool` (time.Time) compares
+// with it too (goEqualMethod), so == means what it means in generic code.
 //
 // Go's `==` is kept, with Go's meaning, for what has no Equal: pointers
-// (`*T`, Ptr), interfaces, channels, Go types, nil, and type parameters with
-// another constraint (a union of primitives, whose == is Equal's). A type
-// that is not known is left to Go as well.
+// (`*T`, Ptr), interfaces, channels, Go types without such an Equal, nil,
+// and type parameters with another constraint (a union of primitives, whose
+// == is Equal's). A type that is not known is left to Go as well.
 //
 // Inside a type's own Equal method, == on that type is Go's: lowering it to
 // Equal would call the method being defined. A type Go cannot compare is
@@ -166,6 +170,9 @@ func (t *galaASTTransformer) equalityOf(typ transpiler.Type) equality {
 		return equality{mode: eqGo}
 	}
 	meta, isDecl := t.equalDeclaration(typ)
+	if !isDecl && t.goEqualMethod(typ) {
+		return equality{mode: eqMethod}
+	}
 	declared, usable := false, false
 	if isDecl {
 		declared, usable = t.equalMethodOf(meta)
@@ -501,7 +508,44 @@ func (t *galaASTTransformer) isConcreteOperand(typ transpiler.Type) bool {
 // enclosing declaration constrained by comparable.
 func (t *galaASTTransformer) isComparableTypeParam(typ transpiler.Type) bool {
 	_, c, ok := t.constrainedTypeParam(typ)
-	return ok && transpiler.ConstraintIs(c, "comparable")
+	return ok && t.isComparableConstraint(c)
+}
+
+// isComparableConstraint reports whether the constraint c makes its type
+// parameter comparable as comparable does: c is comparable, or a Go
+// interface that embeds it (`interface{ comparable; Name() string }`).
+func (t *galaASTTransformer) isComparableConstraint(c transpiler.Type) bool {
+	if transpiler.ConstraintIs(c, "comparable") {
+		return true
+	}
+	if transpiler.ConstraintIs(c, "any") || t.goTypeInfo == nil {
+		return false
+	}
+	base := receiverBase(c)
+	key := t.goTypeLookupName(base)
+	if t.goTypeInfo.GetTypeData(key) == nil {
+		key, _ = t.resolveTypeName(base.BaseName(), func(n string) bool { return t.goTypeInfo.GetTypeData(n) != nil })
+	}
+	data := t.goTypeInfo.GetTypeData(key)
+	return data != nil && data.EmbedsComparable
+}
+
+// goEqualMethod reports whether typ is a Go type whose value method set has
+// `Equal(T) bool` taking the type itself, as time.Time's does
+// (GoTypeData.SelfEqual). == on it calls that Equal, as std.EqualComparable
+// does in generic code, which finds Equal through the value's method set: an
+// Equal declared on the pointer only, or one taking a pointer or another
+// type, is not used, and == on such a type stays Go's. A primitive, a
+// pointer and a GALA type are not Go types with an Equal here.
+func (t *galaASTTransformer) goEqualMethod(typ transpiler.Type) bool {
+	if b, ok := typ.(transpiler.BasicType); ok && isPrimitiveType(b.Name) {
+		return false
+	}
+	if target, isAlias := t.unaliased(typ); isAlias {
+		return t.goEqualMethod(target)
+	}
+	_, meta, goData, ok := t.receiverTypeInfo(typ)
+	return ok && goData != nil && (meta == nil || meta.DefinedIn == "") && goData.SelfEqual
 }
 
 // isLiteral reports whether expr is a literal, optionally negated: an operand
