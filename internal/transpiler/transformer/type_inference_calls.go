@@ -231,6 +231,15 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		if result := t.inferCallSelectorType(e, sel, typeArgs); result != nil && !result.IsNil() {
 			return result
 		}
+		// A call of a func-typed field of a GALA struct, `b.fn(x)`: the
+		// field's result. Only on a receiver already typed (the cache holds
+		// only successes): typing an untyped receiver again would query, and
+		// report, sub-expressions the method path never asked about.
+		if xType, typed := t.exprTypeCache[sel.X]; typed && len(typeArgs) == 0 && t.isStructField(xType, sel.Sel.Name) {
+			if result, ok := t.funcValueCallResult(t.inferSelectorExprType(sel)); ok {
+				return result
+			}
+		}
 	}
 	if id, ok := fun.(*ast.Ident); ok {
 		if result := t.inferCallIdentType(e, id, typeArgs); result != nil && !result.IsNil() {
@@ -251,6 +260,13 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		}
 	}
 	return transpiler.NilType{}
+}
+
+// isStructField reports whether name is a field of the GALA struct xType is,
+// or points to.
+func (t *galaASTTransformer) isStructField(xType transpiler.Type, name string) bool {
+	_, ok := t.structFieldTypes[t.resolveStructTypeName(stripTypeNameDecorations(xType.String()))][name]
+	return ok
 }
 
 // inferCallSelectorType handles type inference for call expressions with selector function (e.g., x.Method()).
