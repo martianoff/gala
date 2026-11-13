@@ -23,6 +23,20 @@ val viaParam = (tally Tally) => hits + tally.Get()
 
 func viaFuncParam(tally Tally) int = hits + tally.Get()
 
+val viaLambdaBody = (k int) int => {
+    val tally = Tally(k)
+    hits + tally.Get()
+}
+
+// A range variable named like the package var hides it only in its loop:
+// the read after the loop is still the var's.
+func afterRange() int {
+    for _, hits := range SliceOf(0) {
+        Println(s"range variable named like a var: ${hits}")
+    }
+    hits + Tally(0).Get()
+}
+
 func main() {
     val tally = Tally(0)
     Println(s"local val: ${hits + tally.Get()}")
@@ -31,4 +45,6 @@ func main() {
     for _, tally := range SliceOf(Tally(0)) {
         Println(s"range variable: ${hits + tally.Get()}")
     }
+    Println(s"local val in a package-level lambda: ${viaLambdaBody(0)}")
+    Println(s"var read after a range variable of its name: ${afterRange()}")
 }

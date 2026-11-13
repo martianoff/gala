@@ -130,4 +130,14 @@ func main() {
     var g = Counter(1)
     val gp = &g
     Println(s"named arguments, value method through a pointer: ${gp.Two(b = gp.Inc(), a = tick())}")
+
+    // The same through a pointer held in a var.
+    var k = Counter(1)
+    var kp = &k
+    val reread = () => kp.n
+    Println(s"value method through a var pointer: ${kp.Plus(kp.Inc())} ${reread()}")
+    var b2 = Box((x) => x + 1)
+    var bp2 = &b2
+    val rebind = () => bp2
+    Println(s"func field through a var pointer: ${bp2.fn(swap(bp2))} ${rebind().fn(1)}")
 }

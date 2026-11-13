@@ -129,6 +129,44 @@ type operandOrder struct {
 	pkgVars map[string]transpiler.Type
 	// captured and locals are what capturedNames finds in the declaration.
 	captured, locals map[string]bool
+	// decl is the declaration; bound is every name it binds below its top
+	// level (see declBoundNames), computed when first needed.
+	decl  ast.Decl
+	bound map[string]bool
+}
+
+// declBoundNames returns every name decl binds for itself, at any depth: the
+// parameters, results and locals of a function and of its literals, range
+// variables, and the same inside a package-level initializer, but not the
+// names a GenDecl declares at the top level. A name bound anywhere counts, so
+// it errs toward not taking a read of the name for a package-level binding.
+func declBoundNames(decl ast.Decl) map[string]bool {
+	bound := map[string]bool{}
+	add := func(names map[string]bool) {
+		for name := range names {
+			bound[name] = true
+		}
+	}
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		if d.Recv != nil {
+			for _, f := range d.Recv.List {
+				for _, name := range f.Names {
+					bound[name.Name] = true
+				}
+			}
+		}
+		add(boundNames(&ast.FuncLit{Type: d.Type, Body: d.Body}))
+	case *ast.GenDecl:
+		for _, spec := range d.Specs {
+			if vs, ok := spec.(*ast.ValueSpec); ok {
+				for _, v := range vs.Values {
+					add(boundNames(v))
+				}
+			}
+		}
+	}
+	return bound
 }
 
 // orderOperands wraps in std.EvalOperand each operand of file that reads a
@@ -141,7 +179,7 @@ func (t *galaASTTransformer) orderOperands(file *ast.File) {
 		return
 	}
 	for _, decl := range file.Decls {
-		o := &operandOrder{t: t, pkgVars: pkgVars}
+		o := &operandOrder{t: t, pkgVars: pkgVars, decl: decl}
 		o.captured, o.locals = capturedNames(decl, func(sel *ast.SelectorExpr) bool {
 			return t.marked(sel.X, operandAddressed)
 		})
@@ -200,21 +238,6 @@ func capturedNames(decl ast.Decl, addressed func(*ast.SelectorExpr) bool) (captu
 		switch n := n.(type) {
 		case *ast.FuncLit:
 			mentions(n.Body)
-			// A package-level initializer's literal declares its parameters
-			// too; in a function, they are visited as Fields below.
-			if !isFunc {
-				for _, f := range n.Type.Params.List {
-					declare(f.Names...)
-				}
-			}
-		case *ast.RangeStmt:
-			if n.Tok == token.DEFINE {
-				for _, e := range []ast.Expr{n.Key, n.Value} {
-					if id, ok := e.(*ast.Ident); ok {
-						declare(id)
-					}
-				}
-			}
 		case *ast.UnaryExpr:
 			if n.Op == token.AND {
 				mentions(n.X)
@@ -276,10 +299,20 @@ func (o *operandOrder) visit(n ast.Node) bool {
 		for i := range n.Args {
 			slots = append(slots, &n.Args[i])
 		}
+		// What the receiver reads, before sequence may copy it.
+		var recvVars, recvPointers bool
+		if receiver != nil {
+			recvVars, recvPointers = o.receiverReads(*receiver)
+		}
 		argCall, argExact := o.sequence(slots, func(slot *ast.Expr) bool {
 			return slot != receiver || o.receiverCopyable(n.Fun)
 		})
-		if receiver != nil && o.readAtCall(*receiver, argCall, argExact) {
+		// Go reads the value a method takes, `*p` for a value method called
+		// through p, or a func field, when it makes the call, after the
+		// arguments: a call among them could change it first. The method
+		// value is read in order instead. Reads through a pointer are
+		// ordered against the exact calls only, as in sequence.
+		if argCall && (recvVars || recvPointers && argExact) {
 			n.Fun = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{n.Fun}}
 		}
 	case *ast.CompositeLit:
@@ -301,28 +334,22 @@ func (o *operandOrder) visit(n ast.Node) bool {
 	return true
 }
 
-// readAtCall reports whether the method value or func field `recv.m` of a call
-// must be read ahead of its arguments, of which argCall says whether one makes
-// a call and argExact an exact one (makesCall). Go reads the value a method takes,
-// `*p` for a value method called through p, or a func field, when it makes the
-// call, after the arguments, so a call among them could change it first.
-// A variable receiver is sequence's: it copies the variable ahead when it
-// can, and keeps its rule for the rest. A pointer-receiver method on a value
-// takes the variable itself. Any other receiver that reads storage a call
-// could change, a field path or a read through a pointer, has its method
-// value read in order instead.
-func (o *operandOrder) readAtCall(recv ast.Expr, argCall, argExact bool) bool {
-	if !argCall || o.t.marked(recv, operandAddressed) {
-		return false
+// receiverReads reports what the call reads through its receiver recv when it
+// is made, rather than when recv is evaluated: a variable a call could change
+// (vars), or storage through a pointer (pointers), the target of a value
+// method or func field called through p included. A pointer-receiver method
+// on a value reads nothing then: it takes the variable itself. A variable
+// receiver's own value is sequence's to copy, or not, by its rule for
+// variables; only what is read through it counts here.
+func (o *operandOrder) receiverReads(recv ast.Expr) (vars, pointers bool) {
+	if o.t.marked(recv, operandAddressed) {
+		return false, false
 	}
-	vars, pointers := o.readsChangeable(recv)
+	vars, pointers = o.readsChangeable(recv)
 	if _, isVar := recv.(*ast.Ident); isVar {
-		vars = false // a variable receiver is sequence's to copy, or not
+		vars = false
 	}
-	pointers = pointers || o.t.marked(recv, operandPointerReceiver)
-	// Reads through a pointer are ordered against the exact calls only, as
-	// in sequence.
-	return vars || pointers && argExact
+	return vars, pointers || o.t.marked(recv, operandPointerReceiver)
 }
 
 // sequence wraps in std.EvalOperand each operand of slots, in evaluation order,
@@ -490,7 +517,10 @@ func (o *operandOrder) isPackageValGet(call *ast.CallExpr) bool {
 	}
 	// A local binding of the name, val or var, is not the package's val: its
 	// Get may be any method.
-	if _, local := o.t.mutableVars[id.Name]; local || o.locals[id.Name] {
+	if o.bound == nil {
+		o.bound = declBoundNames(o.decl)
+	}
+	if _, local := o.t.mutableVars[id.Name]; local || o.bound[id.Name] {
 		return false
 	}
 	meta := o.t.richAST.PackageVals[id.Name]
