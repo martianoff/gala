@@ -560,11 +560,12 @@ func (t *galaASTTransformer) stringMethodDecl(name string, tParams *ast.FieldLis
 
 func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var elts []ast.Expr
+	fieldCtx := newFieldTypeCtx(tParams)
 	for _, field := range fields.List {
 		for _, fieldName := range field.Names {
 			elts = append(elts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fieldName.Name),
-				Value: t.fieldCopyExpr(field.Type, &ast.SelectorExpr{
+				Value: t.fieldCopyExpr(fieldCtx, field.Type, &ast.SelectorExpr{
 					X:   ast.NewIdent("s"),
 					Sel: ast.NewIdent(fieldName.Name),
 				}),
@@ -618,9 +619,10 @@ func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldLi
 
 func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var condition ast.Expr
+	fieldCtx := newFieldTypeCtx(tParams)
 	for _, field := range fields.List {
 		for _, fieldName := range field.Names {
-			expr := t.fieldEqualExpr(field.Type,
+			expr := t.fieldEqualExpr(fieldCtx, field.Type,
 				&ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(fieldName.Name)},
 				&ast.SelectorExpr{X: ast.NewIdent("other"), Sel: ast.NewIdent(fieldName.Name)})
 

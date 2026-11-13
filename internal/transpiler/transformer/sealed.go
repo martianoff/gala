@@ -250,7 +250,7 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 	}
 
 	if !hasEqual {
-		decls = append(decls, t.generateSealedEqualMethod(name, variants, tParams))
+		decls = append(decls, t.generateSealedEqualMethod(name, variants, tParams, parentFields))
 	}
 
 	// 6. Generate String() method on parent
@@ -884,9 +884,19 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 //
 // A field of the type itself is held through a pointer and compared by the
 // Equal of its target, so a nested value compares the same way.
-func (t *galaASTTransformer) generateSealedEqualMethod(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
+//
+// parentFields are the shared struct's fields, whose Go types decide how each
+// case field is compared (fieldEqualExpr).
+func (t *galaASTTransformer) generateSealedEqualMethod(parentName string, variants []sealedVariantInfo, tParams, parentFields *ast.FieldList) *ast.FuncDecl {
 	field := func(recv, name string) ast.Expr {
 		return &ast.SelectorExpr{X: ast.NewIdent(recv), Sel: ast.NewIdent(name)}
+	}
+	fieldCtx := newFieldTypeCtx(tParams)
+	fieldTypes := map[string]ast.Expr{}
+	for _, f := range fieldListOrNil(parentFields) {
+		for _, n := range f.Names {
+			fieldTypes[n.Name] = f.Type
+		}
 	}
 	var cases []ast.Stmt
 	for _, vi := range variants {
@@ -894,13 +904,7 @@ func (t *galaASTTransformer) generateSealedEqualMethod(parentName string, varian
 		for i, f := range vi.fields {
 			x, y := field("s", f.structFieldName), field("other", f.structFieldName)
 			if !f.isRecursive {
-				// The field is an Immutable of its declared type (see
-				// lowerSealedDecl).
-				if typ, err := t.lowerType(f.typ); err == nil {
-					eqs[i] = t.fieldEqualExpr(&ast.IndexExpr{X: t.stdHelperIdent("Immutable"), Index: typ}, x, y)
-				} else {
-					eqs[i] = t.stdCallExpr("Equal", x, y, false)
-				}
+				eqs[i] = t.fieldEqualExpr(fieldCtx, fieldTypes[f.structFieldName], x, y)
 			} else {
 				// x == y || x != nil && y != nil && x.Equal(*y)
 				eqs[i] = &ast.ParenExpr{X: &ast.BinaryExpr{

@@ -17,9 +17,27 @@ const equalityHeader = "package main\n\nimport . \"martianoff/gala/collection_im
 var equalCall = regexp.MustCompile(`\.Equal\(`)
 
 // synthesizedEqual matches the lines of a synthesized Equal method, which
-// call std.Equal or the field's own Equal on each field, and std.Equal calls
-// written in the source.
-var synthesizedEqual = regexp.MustCompile(`std\.Equal\(|^func \(|\bs\.\w+\.Equal\(other\.\w+\)`)
+// call std.Equal on each field, and std.Equal calls written in the source.
+var synthesizedEqual = regexp.MustCompile(`std\.Equal\(|^func \(`)
+
+// fieldEqualCall matches a synthesized Equal's call of a field's own Equal,
+// `s.f.Equal(other.f)`, when both name the same field.
+var fieldEqualCall = regexp.MustCompile(`\bs\.(\w+)\.Equal\(other\.(\w+)\)`)
+
+// onlyFieldEqualCalls reports whether every Equal call on line is a
+// synthesized Equal's `s.f.Equal(other.f)` of one field.
+func onlyFieldEqualCalls(line string) bool {
+	matches := fieldEqualCall.FindAllStringSubmatch(line, -1)
+	if len(matches) == 0 || len(matches) != len(equalCall.FindAllString(line, -1)) {
+		return false
+	}
+	for _, m := range matches {
+		if m[1] != m[2] {
+			return false
+		}
+	}
+	return true
+}
 
 // TestEqualityLowersToEqual: `==` and `!=` compare values by their Equal
 // method, which every GALA struct, sealed type and tuple has and the
@@ -314,7 +332,7 @@ func main() { Println(describe(Pt(0, 0))) }`, want: "== Origin.Get()"},
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
 			for _, line := range strings.Split(out, "\n") {
-				if equalCall.MatchString(line) && !synthesizedEqual.MatchString(line) {
+				if equalCall.MatchString(line) && !synthesizedEqual.MatchString(line) && !onlyFieldEqualCalls(line) {
 					t.Errorf("unexpected Equal call: %s", line)
 				}
 			}
