@@ -210,7 +210,7 @@ func (t *galaASTTransformer) packageNameAlias(name string, src defaultSource) (a
 		}})
 	}
 	if deref {
-		return &ast.ParenExpr{X: &ast.StarExpr{X: ast.NewIdent(alias)}}, nil
+		return &ast.ParenExpr{X: t.markDeref(&ast.StarExpr{X: ast.NewIdent(alias)})}, nil
 	}
 	return ast.NewIdent(alias), nil
 }

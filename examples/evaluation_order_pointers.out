@@ -1,0 +1,16 @@
+address taken: 12
+pointer receiver: 3
+pointer argument: 5
+pointer val: 7
+pointer parameter: 12
+field through a pointer parameter: 9
+field of a pointer receiver: 11
+field receiver: 3
+pointer field: 13
+renamed var, closure: 11
+renamed var, address taken: 20
+lambda parameter: 3
+top-level lambda: 5
+call result: 7
+value method through a pointer: 405
+func field through a pointer: 2

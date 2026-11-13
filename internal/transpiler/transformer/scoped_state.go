@@ -158,6 +158,7 @@ var accumulatedStateFields = []string{
 	"loopControlSites",
 	"branchingCalls",
 	"mutableVars",
+	"operandMarks",
 	"defaultRefDecls",
 	"defaultRefNames",
 	"userReturns",

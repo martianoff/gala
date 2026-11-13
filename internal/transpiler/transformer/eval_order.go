@@ -24,13 +24,79 @@ import (
 // call, so Go evaluates it, and with it the read, before the calls to its
 // right. Every other operand list is left exactly as it was lowered.
 //
-// A variable a call can change is a package-level `var`, or a local `var` (or
-// `var` parameter) that a function literal of the same declaration mentions
-// or whose address it takes. A local no closure captures can only change by
-// assignment in its own function, never during a call, so reading it late is
-// the same as reading it early. Names are compared, not bindings: a val that
-// shares a captured var's name is read through EvalOperand too, which costs a
-// call Go inlines and changes no result.
+// Storage a call can change is a package-level `var`; a local `var` (or `var`
+// parameter) that a function literal of the same declaration mentions, whose
+// address it takes, or that is the receiver of a method call (a
+// pointer-receiver method takes its address, also of the variable a field
+// receiver is stored in); and whatever is reached through a pointer: `*p`,
+// and `p.f` where p is a pointer (operandMark). A local no closure or pointer
+// reaches can only change by assignment in its own function, never during a
+// call, so reading it late is the same as reading it early. Names are
+// compared, not bindings: a val that shares a captured var's name is read
+// through EvalOperand too, which costs a call Go inlines and changes no
+// result. The names are the Go names, after renameShadowingLocals gave a
+// local named like a Go builtin its own.
+
+// operandMark says how a node lowered from the source reaches storage: a set
+// of the flags below. The lowering marks nodes where the operand's type is
+// known (markMember, markDeref); orderOperands reads the marks on the
+// finished file. A method call is marked on its receiver node, not on its
+// selector, because the method-call lowering builds its own selector around
+// the receiver.
+type operandMark int
+
+const (
+	// operandThroughPointer is `*p`, or a field or method value `p.f` with
+	// p a pointer.
+	operandThroughPointer operandMark = 1 << iota
+	// operandAddressed is the receiver x of a method call `x.m(...)` that
+	// takes x's address: a pointer-receiver method on a value.
+	operandAddressed
+	// operandPointerReceiver is the receiver p of a call `p.m(...)` that Go
+	// reads *p for when it makes the call: a value-receiver method, or a
+	// func field, called through the pointer p.
+	operandPointerReceiver
+	// operandBoxGet is `x.f.Get()`, a val field read out of its
+	// std.Immutable box: a call that changes nothing.
+	operandBoxGet
+)
+
+func (t *galaASTTransformer) markOperand(n ast.Node, mark operandMark) {
+	if t.operandMarks == nil {
+		t.operandMarks = make(map[ast.Node]operandMark)
+	}
+	t.operandMarks[n] |= mark
+}
+
+// marked reports whether n carries mark.
+func (t *galaASTTransformer) marked(n ast.Node, mark operandMark) bool {
+	return t.operandMarks[n]&mark != 0
+}
+
+// markMember marks sel, the member access `base.name` lowered from the
+// source, for orderOperands. xType is the type of base, throughPointer
+// whether base is a pointer, and called whether sel is called.
+func (t *galaASTTransformer) markMember(sel *ast.SelectorExpr, xType transpiler.Type, throughPointer, called bool) {
+	if p, ok := xType.(transpiler.PointerType); ok {
+		xType = p.Elem
+	}
+	pointerMethod := called && t.hasPointerReceiverMethod(xType, sel.Sel.Name)
+	switch {
+	case !called && throughPointer:
+		t.markOperand(sel, operandThroughPointer)
+	case pointerMethod && !throughPointer:
+		t.markOperand(sel.X, operandAddressed)
+	case called && !pointerMethod && throughPointer:
+		t.markOperand(sel.X, operandPointerReceiver)
+	}
+	// A pointer-receiver method called through p gets p itself, not *p.
+}
+
+// markDeref marks star, a pointer dereference, for orderOperands.
+func (t *galaASTTransformer) markDeref(star *ast.StarExpr) *ast.StarExpr {
+	t.markOperand(star, operandThroughPointer)
+	return star
+}
 
 // recordMutableVar records the local `var` or `var` parameter name, of type
 // typ, for orderOperands. Two bindings of the name with different types leave
@@ -39,6 +105,7 @@ func (t *galaASTTransformer) recordMutableVar(name string, typ transpiler.Type) 
 	if t.mutableVars == nil {
 		t.mutableVars = make(map[string]transpiler.Type)
 	}
+	name = localGoName(name)
 	if prev, seen := t.mutableVars[name]; seen && (prev == nil || typ == nil || prev.String() != typ.String()) {
 		typ = nil
 	}
@@ -59,12 +126,14 @@ type operandOrder struct {
 // variable a later operand's call could change (see above).
 func (t *galaASTTransformer) orderOperands(file *ast.File) {
 	pkgVars := t.packageVarTypes()
-	if len(pkgVars) == 0 && len(t.mutableVars) == 0 {
+	if len(pkgVars) == 0 && len(t.mutableVars) == 0 && len(t.operandMarks) == 0 {
 		return
 	}
 	for _, decl := range file.Decls {
 		o := &operandOrder{t: t, pkgVars: pkgVars}
-		o.captured, o.locals = capturedNames(decl)
+		o.captured, o.locals = capturedNames(decl, func(sel *ast.SelectorExpr) bool {
+			return t.marked(sel.X, operandAddressed)
+		})
 		ast.Inspect(decl, o.visit)
 	}
 }
@@ -97,9 +166,10 @@ func (t *galaASTTransformer) packageVarTypes() map[string]transpiler.Type {
 
 // capturedNames returns the names decl's function literals mention, the
 // names whose address it takes, explicitly or as the receiver of a method
-// call (a pointer-receiver method takes it implicitly), and the names it
-// declares locally.
-func capturedNames(decl ast.Decl) (captured, locals map[string]bool) {
+// call (a pointer-receiver method takes it implicitly; addressed reports the
+// method calls on a field `x.f` that take the address of x), and the names
+// it declares locally.
+func capturedNames(decl ast.Decl, addressed func(*ast.SelectorExpr) bool) (captured, locals map[string]bool) {
 	captured, locals = map[string]bool{}, map[string]bool{}
 	mentions := func(n ast.Node) {
 		ast.Inspect(n, func(n ast.Node) bool {
@@ -124,10 +194,14 @@ func capturedNames(decl ast.Decl) (captured, locals map[string]bool) {
 				mentions(n.X)
 			}
 		case *ast.CallExpr:
-			if sel, ok := n.Fun.(*ast.SelectorExpr); ok {
-				if id, ok := sel.X.(*ast.Ident); ok {
-					captured[id.Name] = true
-				}
+			sel, ok := n.Fun.(*ast.SelectorExpr)
+			if !ok {
+				break
+			}
+			if id, ok := sel.X.(*ast.Ident); ok {
+				captured[id.Name] = true
+			} else if id, ok := pathRootIdent(sel.X); ok && addressed(sel) {
+				captured[id.Name] = true // `h.c.Inc()` takes &h.c
 			}
 		case *ast.Field:
 			// A parameter, result or receiver of the function or of one of
@@ -164,6 +238,8 @@ func (o *operandOrder) visit(n ast.Node) bool {
 	case *ast.CallExpr:
 		slots := make([]*ast.Expr, 0, len(n.Args)+1)
 		var receiver *ast.Expr
+		sel, isSel := ast.Unparen(n.Fun).(*ast.SelectorExpr)
+		readsAtCall := isSel && o.t.marked(sel.X, operandPointerReceiver)
 		switch fun := ast.Unparen(n.Fun).(type) {
 		case *ast.SelectorExpr:
 			if !o.isPackageQualifier(fun.X) {
@@ -179,6 +255,12 @@ func (o *operandOrder) visit(n ast.Node) bool {
 		o.sequence(slots, func(slot *ast.Expr) bool {
 			return slot != receiver || o.receiverCopyable(n.Fun)
 		})
+		// Go reads a method's receiver out of *p, or a func field out of p,
+		// when it makes the call, after the arguments: a call among them
+		// could change it first. The method value is read in order.
+		if readsAtCall && slices.ContainsFunc(n.Args, func(arg ast.Expr) bool { return o.makesCall(arg, true) }) {
+			n.Fun = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{n.Fun}}
+		}
 	case *ast.CompositeLit:
 		_, isMap := n.Type.(*ast.MapType)
 		var slots []*ast.Expr
@@ -205,13 +287,21 @@ func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool
 	if len(slots) < 2 {
 		return
 	}
-	// laterCall[i]: an operand after i makes a call.
+	// laterCall[i] / laterExact[i]: an operand after i makes a call, by
+	// makesCall's rule for variable reads / for reads through a pointer.
 	laterCall := make([]bool, len(slots))
+	laterExact := make([]bool, len(slots))
 	for i := len(slots) - 2; i >= 0; i-- {
-		laterCall[i] = laterCall[i+1] || o.makesCall(*slots[i+1])
+		next := *slots[i+1]
+		call := o.makesCall(next, false)
+		laterCall[i] = laterCall[i+1] || call
+		laterExact[i] = laterExact[i+1] || call && o.makesCall(next, true)
 	}
 	for i, slot := range slots {
-		if !laterCall[i] || !o.readsChangeable(*slot) || (copyable != nil && !copyable(slot)) {
+		if !laterCall[i] || (copyable != nil && !copyable(slot)) {
+			continue
+		}
+		if vars, pointers := o.readsChangeable(*slot); !vars && !(pointers && laterExact[i]) {
 			continue
 		}
 		*slot = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{*slot}}
@@ -219,14 +309,13 @@ func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool
 }
 
 // readsChangeable reports whether evaluating e reads a variable that a call
-// could change, other than inside a call of its own (Go evaluates that call,
-// and its operands, in order with the others) or a function literal (not
-// evaluated here).
-func (o *operandOrder) readsChangeable(e ast.Expr) bool {
-	found := false
+// could change (vars), or reads through a pointer (pointers), other than
+// inside a call of its own (Go evaluates that call, and its operands, in
+// order with the others) or a function literal (not evaluated here).
+func (o *operandOrder) readsChangeable(e ast.Expr) (vars, pointers bool) {
 	var walk func(ast.Node) bool
 	walk = func(n ast.Node) bool {
-		if found {
+		if vars && pointers {
 			return false
 		}
 		switch n := n.(type) {
@@ -242,11 +331,21 @@ func (o *operandOrder) readsChangeable(e ast.Expr) bool {
 		case *ast.UnaryExpr:
 			// An address does not change; a receive is ordered like a call.
 			return n.Op != token.AND && n.Op != token.ARROW
+		case *ast.StarExpr:
+			// A pointer's target: any call may change it.
+			pointers = pointers || o.t.marked(n, operandThroughPointer)
+			ast.Inspect(n.X, walk)
+			return false
+		case *ast.TypeAssertExpr:
+			ast.Inspect(n.X, walk) // not the type
+			return false
 		case *ast.SelectorExpr:
 			if id, ok := n.X.(*ast.Ident); ok && o.isPackageQualifier(id) {
-				found = o.isImportedVar(id.Name, n.Sel.Name)
+				vars = vars || o.isImportedVar(id.Name, n.Sel.Name)
 				return false
 			}
+			// A field read through a pointer reads its target.
+			pointers = pointers || o.t.marked(n, operandThroughPointer)
 			ast.Inspect(n.X, walk)
 			return false
 		case *ast.CompositeLit:
@@ -259,18 +358,25 @@ func (o *operandOrder) readsChangeable(e ast.Expr) bool {
 			}
 			return false
 		case *ast.Ident:
-			found = o.changeable(n.Name)
+			vars = vars || o.changeable(n.Name)
 		}
 		return true
 	}
 	ast.Inspect(e, walk)
-	return found
+	return vars, pointers
 }
 
 // makesCall reports whether evaluating e makes a call that could change a
 // variable (see makesCallExcept); a package-level val's `.Get()` cannot.
-func (o *operandOrder) makesCall(e ast.Expr) bool {
-	return o.t.makesCallExcept(e, o.changeable, o.isPackageValGet)
+// With exact, the calls known to change nothing are left out too: reading a
+// val field out of its std.Immutable box, `x.f.Get()`, and std.SomePtr,
+// which only wraps its pointer. Reads through a pointer are ordered against
+// the exact calls only; variable reads keep the rule they had before
+// pointers were tracked, so their generated Go does not change.
+func (o *operandOrder) makesCall(e ast.Expr, exact bool) bool {
+	return o.t.makesCallExcept(e, o.changeable, func(call *ast.CallExpr) bool {
+		return o.isPackageValGet(call) || exact && (o.t.marked(call, operandBoxGet) || o.t.isStdHelperCall(call, "SomePtr"))
+	})
 }
 
 // makesCallExcept reports whether evaluating e calls a function, or receives
@@ -321,8 +427,8 @@ func (o *operandOrder) varType(name string) transpiler.Type {
 // isPackageValGet reports whether call reads a package-level val of this
 // package, `name.Get()`: its box never changes.
 func (o *operandOrder) isPackageValGet(call *ast.CallExpr) bool {
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != transpiler.MethodGet || len(call.Args) != 0 || o.t.richAST == nil {
+	sel := immutableGetReceiver(call)
+	if sel == nil || o.t.richAST == nil {
 		return false
 	}
 	id, ok := sel.X.(*ast.Ident)

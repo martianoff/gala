@@ -1,0 +1,92 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// An operand is read before the operands to its right are evaluated, even
+// when a later call changes it through a pointer: a pointer parameter, a
+// pointer-receiver method, or a pointer held in a val or a field. Each line
+// prints the value the left-to-right order gives.
+
+struct Counter(var n int)
+
+func (c *Counter) Inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+func (c *Counter) Sum() int = c.n + c.Inc()
+
+struct Holder(var c Counter)
+
+struct Ref(p *Counter)
+
+func bump(p *int) int {
+    *p = *p + 10
+    *p
+}
+
+func incVia(p *Counter) int = p.Inc()
+
+func viaParam(p *int) int = *p + bump(p)
+
+val viaLambda = (p *Counter) => p.n + p.Inc()
+
+func self(p *Counter) *Counter = p
+
+func (c Counter) Plus(k int) int = c.n * 100 + k
+
+struct Box(var fn func(int) int)
+
+func swap(b *Box) int {
+    b.fn = (x) => x * 10
+    1
+}
+
+func fieldViaParam(p *Counter) int = p.n + incVia(p)
+
+func main() {
+    var x = 1
+    Println(s"address taken: ${x + bump(&x)}")
+
+    var c = Counter(1)
+    Println(s"pointer receiver: ${c.n + c.Inc()}")
+    Println(s"pointer argument: ${c.n + incVia(&c)}")
+
+    val p = &c
+    Println(s"pointer val: ${p.n + p.Inc()}")
+
+    var y = 1
+    Println(s"pointer parameter: ${viaParam(&y)}")
+    Println(s"field through a pointer parameter: ${fieldViaParam(&c)}")
+    Println(s"field of a pointer receiver: ${c.Sum()}")
+
+    var h = Holder(Counter(1))
+    Println(s"field receiver: ${h.c.n + h.c.Inc()}")
+
+    val r = Ref(&c)
+    Println(s"pointer field: ${r.p.n + c.Inc()}")
+
+    // Locals named like Go builtins are renamed in the generated Go.
+    var len = 5
+    val grow = () int => {
+        len = len + 1
+        len
+    }
+    Println(s"renamed var, closure: ${len + grow()}")
+
+    var string = 5
+    Println(s"renamed var, address taken: ${string + bump(&string)}")
+
+    var d = Counter(1)
+    ArrayOf(&d).ForEach((q) => Println(s"lambda parameter: ${q.n + q.Inc()}"))
+    Println(s"top-level lambda: ${viaLambda(&d)}")
+    Println(s"call result: ${self(&d).n + d.Inc()}")
+
+    // A value-receiver method or a func field called through a pointer
+    // reads its target before the arguments are evaluated.
+    val q = &d
+    Println(s"value method through a pointer: ${q.Plus(q.Inc())}")
+    var b = Box((x) => x + 1)
+    val bp = &b
+    Println(s"func field through a pointer: ${bp.fn(swap(bp))}")
+}

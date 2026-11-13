@@ -5161,6 +5161,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Left-to-right order holds when a later call changes an earlier operand
+# through a pointer, and for locals the generated Go renames.
+gala_exec_test(
+    name = "evaluation_order_pointers",
+    src = "evaluation_order_pointers.gala",
+    expected = "evaluation_order_pointers.out",
+    deps = ["//collection_immutable"],
+)
+
 # Named arguments are evaluated in the order they are written.
 gala_exec_test(
     name = "named_argument_order",
