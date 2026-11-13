@@ -120,14 +120,14 @@ func EvalOperand[T any](v T) T { return v }
 // leaves the reflective rest to a plain function compiled once (copyAny,
 // equalAny).
 func Copy[T any](v T) T {
-	boxed := any(v)
-	if copiesAsIs(boxed) {
+	// v is converted to any where it is used, as Equal does.
+	if copiesAsIs(any(v)) {
 		return v
 	}
-	if c, ok := boxed.(Copyable[T]); ok {
+	if c, ok := any(v).(Copyable[T]); ok {
 		return c.Copy()
 	}
-	if r, ok := copyAny(boxed, reflect.TypeFor[T]()); ok {
+	if r, ok := copyAny(any(v), reflect.TypeFor[T]()); ok {
 		return r.(T)
 	}
 	return v
@@ -204,14 +204,15 @@ func copiesPointee(ptr reflect.Type) bool {
 
 func Equal[T any](v1, v2 T) bool {
 	v1, v2 = unwrapPanic(v1), unwrapPanic(v2)
-	a1, a2 := any(v1), any(v2)
-	if eq, ok := equalPrimitive(a1, a2); ok {
+	// Each conversion to any is its own, so the boxes of the primitive path
+	// stay on the stack and only the reflective fallback's escape.
+	if eq, ok := equalPrimitive(any(v1), any(v2)); ok {
 		return eq
 	}
-	if e, ok := a1.(Equatable[T]); ok {
+	if e, ok := any(v1).(Equatable[T]); ok {
 		return e.Equal(v2)
 	}
-	return equalAny(a1, a2)
+	return equalAny(any(v1), any(v2))
 }
 
 // equalAny is Equal's reflective part (see Copy), for values whose type is
