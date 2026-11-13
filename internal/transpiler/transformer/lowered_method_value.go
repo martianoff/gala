@@ -21,11 +21,9 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 	if xType.IsNil() {
 		return nil, false
 	}
-	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(base, method)
-	if !t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
-		return nil, false
-	}
-	plain := recvType
+	// Most members named without a call are fields: settle them from the
+	// receiver type's metadata before resolving the call-site lookup key.
+	plain := t.methodReceiverType(xType, method)
 	if ptr, isPtr := plain.(transpiler.PointerType); isPtr {
 		plain = ptr.Elem
 	}
@@ -34,9 +32,10 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		return nil, false
 	}
 	mm, ok := meta.Methods[method]
-	if !ok || len(mm.TypeParams) > 0 || mm.GoResults != nil {
+	if !ok || !mm.IsGeneric || len(mm.TypeParams) > 0 || mm.GoResults != nil {
 		return nil, false
 	}
+	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(base, method)
 	var sig transpiler.Type = signatureType(mm.ParamTypes, mm.ReturnType, nil)
 	if len(meta.TypeParams) > 0 {
 		gen, isGeneric := plain.(transpiler.GenericType)
@@ -64,7 +63,7 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 	}
 	var results *ast.FieldList
 	if len(ft.Results) > 0 {
-		results = &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(ft.Results[0])}}}
+		results = t.resultFieldList(ft.Results)
 	}
 	call := t.emitGenericMethodFreeFunc(method, ast.NewIdent(recvName), recvType, lookupBaseName, nil, mm, args, mm.Variadic)
 	var body ast.Stmt = &ast.ExprStmt{X: call}
