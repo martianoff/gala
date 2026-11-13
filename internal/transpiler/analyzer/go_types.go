@@ -851,8 +851,17 @@ func repairGenDecl(d *ast.GenDecl, imports map[string]string, pkgName string, in
 	for _, spec := range d.Specs {
 		switch sp := spec.(type) {
 		case *ast.TypeSpec:
+			// An alias whose target go/types could not load (`type
+			// ExecutionContext = go_interop.ExecutionContext`, the target a
+			// package of the GALA module) names it as written.
+			key := pkgName + "." + sp.Name.Name
+			if cur, ok := info.TypeAliases[key]; ok && sp.Assign.IsValid() && sp.TypeParams == nil && transpiler.ContainsUnusable(cur) {
+				if rec := syntacticGoType(sp.Type, imports, pkgName, nil); !transpiler.ContainsUnusable(rec) {
+					info.TypeAliases[key] = rec
+				}
+			}
 			st, ok := sp.Type.(*ast.StructType)
-			td := info.Types[pkgName+"."+sp.Name.Name]
+			td := info.Types[key]
 			if !ok || td == nil || st.Fields == nil {
 				continue
 			}

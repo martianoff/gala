@@ -137,7 +137,9 @@ func (t *galaASTTransformer) isUnresolvedTypeParamName(name string) bool {
 	if name == "" || transpiler.IsPrimitiveType(name) || t.activeTypeParams[name] || t.returnSlot.typeParams[name] {
 		return false
 	}
-	return t.lookupTypeName(name).IsNil()
+	// A type the hand-written Go of a dot-imported GALA package declares has
+	// no GALA metadata, but it is a type all the same.
+	return t.lookupTypeName(name).IsNil() && t.dotImportedGoTypeKey(name) == ""
 }
 
 // tryFillReturnSlot fills a fillable, still empty slot with typ when typ is

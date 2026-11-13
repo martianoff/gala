@@ -203,7 +203,11 @@ import (
 // compares as on one constrained by comparable, and a Go type whether its
 // value method set has Equal(T) bool (GoTypeData.SelfEqual), which == then
 // calls. A v41 payload lacks both.
-const CacheVersion = "v42"
+//
+// v43: a Go type alias whose target go/types could not load (a package of
+// the GALA module, `type ExecutionContext = go_interop.ExecutionContext`)
+// records the target as written. A v42 payload records it as unresolved.
+const CacheVersion = "v43"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

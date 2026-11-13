@@ -7,7 +7,6 @@ import (
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/time_utils"
     . "martianoff/gala/go_builtins"
-    "martianoff/gala/go_interop"
 )
 
 func TestFutureOf(t T) T {
@@ -529,7 +528,7 @@ func TestNoCancellationCompletesNormally(t T) T {
 
 // reportingEC runs tasks on a single worker and completes reported with the
 // first failure reported to it.
-struct reportingEC(inner go_interop.ExecutionContext, reported Promise[string])
+struct reportingEC(inner ExecutionContext, reported Promise[string])
 
 func (e reportingEC) Execute(task func()) = e.inner.Execute(task)
 

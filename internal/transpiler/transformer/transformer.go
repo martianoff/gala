@@ -1283,6 +1283,31 @@ func (t *galaASTTransformer) dotImportedFunction(name string) *ImportEntry {
 	return nil
 }
 
+// dotImportedGoTypeKey returns the Go type info key of the type named name
+// that the hand-written .go files of a dot-imported GALA package declare
+// (`ExecutionContext` under `import . "martianoff/gala/concurrent"`), "" when
+// none does. Such a type has no GALA metadata, so a bare reference to it
+// resolves to no package. A name a GALA type answers to (the package's own,
+// std's, a dot import's) is that type instead.
+func (t *galaASTTransformer) dotImportedGoTypeKey(name string) string {
+	if t.goTypeInfo == nil || name == "" || strings.Contains(name, ".") || t.isActiveTypeParam(name) {
+		return ""
+	}
+	// Keyed by import path only: a Go package sharing the GALA package's name
+	// (io/fs beside GALA's fs) files its types under the same `pkg.Name`.
+	for _, entry := range t.galaDotImports {
+		if key := entry.Path + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
+			// A GALA type of the name wins. Asked only on a hit, which is
+			// rare, so a miss stays a few map lookups.
+			if t.resolveTypeMetaName(name) != "" {
+				return ""
+			}
+			return key
+		}
+	}
+	return ""
+}
+
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.
 // Returns empty string if not found. A bare name the package's own .go files
 // declare resolves to its `pkg.Name` key though typeMetas has no entry for it:
