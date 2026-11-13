@@ -59,8 +59,8 @@ func (o Opt) Apply(n int) int = n
 		{
 			name:      "a positional argument after a named one",
 			body:      `func main() { Println(Cfg(Tries = 1, "a")) }`,
-			wantCode:  galaerr.CodeMissingStructField,
-			wantError: `a positional argument follows a named one in construction of "Cfg"`,
+			wantCode:  galaerr.CodePositionalAfterNamed,
+			wantError: "positional argument `\"a\"` follows named argument `Tries`",
 		},
 		{
 			name: "a spread positional argument",
