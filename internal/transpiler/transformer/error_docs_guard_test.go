@@ -1623,6 +1623,39 @@ func main() {
 			},
 		},
 		{
+			name: "type named like a Go builtin function",
+			code: galaerr.CodePredeclaredTypeName, // GALA-E0106
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct len(Items int)
+
+func main() {
+    Println(len(3).Items)
+}
+`)
+			},
+		},
+		{
+			name: "printing a val whose String runs on a copy of a lock",
+			code: galaerr.CodeNoCopyReceiverCopied, // GALA-E0053
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "sync"
+
+struct Guarded(var mu sync.Mutex, var n int)
+
+func (g *Guarded) String() string = s"guarded ${g.n}"
+
+func main() {
+    val g = Guarded(sync.Mutex{}, 1)
+    Println(g)
+}
+`)
+			},
+		},
+		{
 			name: "a type's own Equal passes its type to a comparable type parameter",
 			code: galaerr.CodeEqualReentry, // GALA-E0108
 			render: func(t *testing.T) string {

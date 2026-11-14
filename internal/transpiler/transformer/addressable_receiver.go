@@ -91,12 +91,7 @@ func loweredReceiverType(recvType transpiler.Type, m *transpiler.MethodMetadata)
 // pointer-receiver method as `std.AddrOfCopy(recv)`, or reports GALA-E0053
 // when its type must not be copied.
 func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
-	if reason := t.noCopyReason(recvType, make(map[string]bool)); reason != "" {
-		typeName := receiverBase(recvType).String()
-		why := fmt.Sprintf("%s must not be copied", reason)
-		if reason != typeName {
-			why = fmt.Sprintf("%s contains %s, which must not be copied", typeName, reason)
-		}
+	if typeName, why := t.noCopyWhy(recvType); why != "" {
 		return nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeNoCopyReceiverCopied,
 			line, col,
@@ -108,6 +103,21 @@ func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Ty
 		Fun:  t.stdIdent(transpiler.FuncAddrOfCopy),
 		Args: []ast.Expr{recv},
 	}, nil
+}
+
+// noCopyWhy names typ's base type and says why a value of typ must not be
+// copied ("sync.Mutex must not be copied", "Guarded contains sync.Mutex,
+// which must not be copied"); why is "" when copying it is fine.
+func (t *galaASTTransformer) noCopyWhy(typ transpiler.Type) (typeName, why string) {
+	reason := t.noCopyReason(typ, make(map[string]bool))
+	if reason == "" {
+		return "", ""
+	}
+	typeName = receiverBase(typ).String()
+	if reason == typeName {
+		return typeName, fmt.Sprintf("%s must not be copied", reason)
+	}
+	return typeName, fmt.Sprintf("%s contains %s, which must not be copied", typeName, reason)
 }
 
 // receiverBase strips a generic instantiation to its base type.

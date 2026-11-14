@@ -571,7 +571,9 @@ const (
 	// `url.URL.String` but wrong for these types: a copied Mutex locks
 	// nothing and its Unlock is a fatal runtime error, and writes to a copied
 	// Builder or Buffer are lost. The value has to live in a `var` or behind a
-	// pointer.
+	// pointer. Printing such a value by a String declared on its pointer
+	// receiver is the same call, and so is printing a value whose generated
+	// String prints a field of such a type.
 	CodeNoCopyReceiverCopied ErrorCode = "GALA-E0053"
 
 	// E0054: a value was called as a function — a val, var or parameter, or a
@@ -970,7 +972,9 @@ const (
 	// `string`, `int`, `any`, …): a struct, a sealed type or one of its
 	// cases, an opaque type, an interface, an alias or a type parameter. GALA
 	// reads such a name as Go's type in every type position, so the declared
-	// type could not be written as a type.
+	// type could not be written as a type. The same holds for a type named
+	// like a Go builtin function (`len`, `make`, …) or `std`, which would hide
+	// the builtin or the package in the generated Go.
 	CodePredeclaredTypeName ErrorCode = "GALA-E0106"
 
 	// E0107: a top-level function, val or var of a package with hand-written

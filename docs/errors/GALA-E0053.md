@@ -17,6 +17,42 @@ result, a literal and a type assertion cannot be addressed. GALA calls a
 pointer method on such a receiver through a fresh copy, which is fine for
 `url.URL.String` but wrong for these types, so the call is rejected.
 
+Printing calls a method too. `Println`, `Print`, `s"..."` and `f"..."` print a
+value whose `String()` is declared on a pointer receiver by calling that
+`String`, and on a value that cannot be addressed they call it on a copy. So
+printing such a value is rejected the same way:
+
+```gala
+package main
+
+import "sync"
+
+struct Guarded(var mu sync.Mutex, var n int)
+
+func (g *Guarded) String() string = s"guarded ${g.n}"
+
+func main() {
+    val g = Guarded(sync.Mutex{}, 1)
+    Println(g)
+}
+```
+
+```
+error[GALA-E0053]: cannot print this Guarded: it cannot be addressed here, so its String would run on a copy, and Guarded contains sync.Mutex, which must not be copied
+  --> main.gala:11:13
+   |
+11 |     Println(g)
+   |             ^ declare it with `var`, or hold a pointer
+   |
+   = hint: declare it with `var`, or hold a pointer (`&T{...}`)
+```
+
+Declare it with `var g = ...` and `String` runs on `g` itself. Printing a
+struct or a sealed value whose generated `String` prints a field of such a
+type is rejected too: the generated `String` prints each field through a copy
+of it, even when the value printed is a `var` or a pointer. Hold the field as a pointer
+(`g *Guarded`), or declare the outer type's own `String`.
+
 A type must not be copied when it, or any field reached through struct fields
 (and, for a Go type, array elements; not through pointers, slices, maps or
 collections), is one of the following. For a generic struct, its type
