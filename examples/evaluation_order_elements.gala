@@ -1,6 +1,10 @@
 package main
 
-import . "martianoff/gala/go_interop"
+import (
+    "sort"
+
+    . "martianoff/gala/go_interop"
+)
 
 // An element of a Go slice or map is read before the operands to its right
 // are evaluated, even when a later call writes it through the shared
@@ -20,6 +24,10 @@ struct Grid(cells []int)
 
 func sumFirst(xs []int, v int) int = xs[0] + setFirst(xs, v)
 
+val shared = SliceOf(9)
+
+func viaNamed(s sort.IntSlice) int = s[0] + setFirst(s, 40)
+
 func main() {
     val xs = SliceOf(1, 2)
     Println(s"slice element: ${xs[0] + setFirst(xs, 10)}")
@@ -36,6 +44,10 @@ func main() {
     // An element passed as an argument ahead of the call that writes it.
     val zs = SliceOf(7)
     Println(s"argument: ${Tuple(zs[0], setFirst(zs, 70))}")
+
+    // A slice held in a package-level val, and a Go named slice type.
+    Println(s"package-level slice: ${shared[0] + setFirst(shared, 90)}")
+    Println(s"Go named slice type: ${viaNamed(sort.IntSlice(SliceOf(4, 8)))}")
 
     // A string's bytes are its own: nothing to order.
     val s = "hey"

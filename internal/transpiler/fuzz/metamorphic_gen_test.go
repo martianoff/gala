@@ -165,8 +165,9 @@ func addKey(m map[int]int, k int) int {
 func sumKey(m map[int]int, k int) int = m[0] + addKey(m, k)
 `
 
-// metaCellsImport is the import metaCells needs: its slice and map
-// functions take Go slices and maps, made with go_interop.
+// metaCellsImport is written with metaCells: main makes its slice and map
+// vals with go_interop. A program without one leaves the import unused,
+// which the transpiler drops.
 const metaCellsImport = "import . \"martianoff/gala/go_interop\"\n\n"
 
 // metaShadow is a statement of main when the program reads counter: a block
@@ -1268,9 +1269,16 @@ func (g *metaGen) newVar(region int, taken *int) mStmt {
 		g.vars = append(g.vars, p)
 		return &sPtr{p}
 	}
-	t := []mType{mVarInt, mVarCell, mSlice, mMap}[g.pick(4)]
+	t := []mType{mVarInt, mVarCell}[g.pick(2)]
 	init := g.intExpr(2, false)
 	b := g.binder(t, region)
+	// One int var in three holds a slice or a map instead. It is chosen by
+	// id, not by a pick: an int var and a slice or map take the same picks
+	// after it, so a seed's program keeps its shape, with the var's storage
+	// changed.
+	if t == mVarInt && b.id%3 == 0 {
+		b.typ = []mType{mSlice, mMap}[b.id/3%2]
+	}
 	if *taken < len(varNames) && g.pick(2) == 0 {
 		b.plain = varNames[*taken]
 		*taken++

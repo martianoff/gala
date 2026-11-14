@@ -35,7 +35,9 @@ func FuzzAlphaRenaming(f *testing.F) {
 // guards and extractors in sub-patterns, read local vars that later
 // operands change through a pointer (an address taken, a pointer-receiver
 // method, a val holding a pointer, a function reading through its pointer
-// parameter), some of them named like Go builtins, and must print the trace the
+// parameter) or an element of a Go slice or map that later operands write,
+// some of them named like Go builtins, read the package var counter where a
+// block elsewhere binds the name, and must print the trace the
 // generator computed from source order: left to right, an extractor only
 // after the sibling sub-patterns before it matched, a match subject once,
 // one if branch.

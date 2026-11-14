@@ -112,16 +112,35 @@ func (t *galaASTTransformer) markDeref(star *ast.StarExpr) *ast.StarExpr {
 	return star
 }
 
+// isPackageVar reports whether name is a package-level var of this package,
+// as packageVarTypes lists them (an embed val is bound like a var, but is
+// none).
+func (t *galaASTTransformer) isPackageVar(name string) bool {
+	if t.richAST == nil {
+		return false
+	}
+	meta := t.richAST.PackageVals[name]
+	return meta != nil && !meta.IsVal
+}
+
 // markIndex marks idx, an element read `x[i]` lowered from the source, for
 // orderOperands when x is a slice or a map: its elements are shared storage
 // any call may change, as through a pointer. A string or an array value
 // holds its own elements.
-func (t *galaASTTransformer) markIndex(idx *ast.IndexExpr) {
-	typ, typed := t.exprTypeCache[idx.X] // a type query would report one it cannot find
-	if !typed {
-		return
+//
+// written is the base as written, before its Immutable box, if any, was
+// unwrapped: the node the lowering already asked the type of, so asking
+// again reports nothing new.
+func (t *galaASTTransformer) markIndex(idx *ast.IndexExpr, written ast.Expr) {
+	typ := t.getExprTypeName(written)
+	if gen, boxed := typ.(transpiler.GenericType); boxed && t.isImmutableType(typ) && len(gen.Params) == 1 {
+		typ = gen.Params[0]
 	}
-	switch typ := t.followAliasChain(typ).(type) {
+	typ = t.followAliasChain(typ)
+	if u, named := t.goNamedUnderlying(typ); named {
+		typ = u // url.Values, http.Header, sort.IntSlice
+	}
+	switch typ := typ.(type) {
 	case transpiler.ArrayType:
 		if typ.Fixed {
 			return
@@ -520,7 +539,11 @@ func (t *galaASTTransformer) makesCallExcept(e ast.Expr, changeable func(string)
 
 // changeable reports whether name, read in this declaration, may be changed by
 // a call: a package-level var the declaration does not shadow, or a local var
-// a function literal or a method call captures.
+// a function literal or a method call captures. Names are compared, not
+// bindings: a read the lowering resolved to a package var is marked
+// (operandPackageVar) and counts wherever the name is bound locally too;
+// this rule covers the reads it did not lower, such as names the transformer
+// writes itself.
 func (o *operandOrder) changeable(name string) bool {
 	if _, ok := o.pkgVars[name]; ok && !o.locals[name] {
 		return true
@@ -529,8 +552,12 @@ func (o *operandOrder) changeable(name string) bool {
 	return local && o.locals[name] && o.captured[name]
 }
 
-// varType is the type of the changeable variable name, nil when unknown.
-func (o *operandOrder) varType(name string) transpiler.Type {
+// varType is the type of the changeable variable id reads, nil when unknown.
+func (o *operandOrder) varType(id *ast.Ident) transpiler.Type {
+	name := id.Name
+	if o.t.marked(id, operandPackageVar) {
+		return o.pkgVars[name] // whatever else the name binds here
+	}
 	if o.locals[name] {
 		return o.t.mutableVars[name]
 	}
@@ -597,11 +624,7 @@ func (o *operandOrder) receiverCopyable(fun ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	typ := o.varType(id.Name)
-	if o.t.marked(id, operandPackageVar) {
-		typ = o.pkgVars[id.Name] // whatever else the name binds here
-	}
-	return o.t.copyableReceiver(typ, sel.Sel.Name)
+	return o.t.copyableReceiver(o.varType(id), sel.Sel.Name)
 }
 
 // copyableReceiver reports whether a receiver of type typ can be copied ahead

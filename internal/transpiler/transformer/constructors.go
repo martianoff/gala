@@ -42,7 +42,7 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 			}, nil
 		}
 		t.markSourceRef(ident)
-		if s.parent == nil && t.isVar(name) {
+		if s.parent == nil && t.isPackageVar(name) {
 			t.markOperand(ident, operandPackageVar)
 		}
 		return ident, nil
