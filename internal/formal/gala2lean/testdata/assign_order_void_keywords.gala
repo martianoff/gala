@@ -9,7 +9,7 @@ func h() int {
     1
 }
 
-func fortyTwo() int { 42 }
+func fortyTwo() int = 42
 
 func warmUp() = fortyTwo()
 
