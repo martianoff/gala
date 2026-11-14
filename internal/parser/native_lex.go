@@ -118,16 +118,21 @@ func lexNative(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
-	src = galaerr.StripBOM(src)
-	if !utf8.ValidString(src) {
-		// A Go string-to-rune conversion turns each invalid byte into
-		// U+FFFD, as ANTLR's NewInputStream does. galop's native lexer
-		// keeps the raw byte in token text (martianoff/galop#45).
-		src = string([]rune(src))
-	}
+	src = asANTLRReads(galaerr.StripBOM(src))
 	ts := native.GalaLexAt(src, line, col)
 	RetypeNewlines(ts)
 	return ts
+}
+
+// asANTLRReads is src as ANTLR's input stream reads it: each byte that is not
+// part of a valid UTF-8 encoding is U+FFFD, as a Go string-to-rune conversion
+// makes it. galop's native lexer and converter keep the raw byte in token
+// text (martianoff/galop#45), so text they are given goes through this first.
+func asANTLRReads(src string) string {
+	if utf8.ValidString(src) {
+		return src
+	}
+	return string([]rune(src))
 }
 
 // VisitNativeTokens lexes input with galop's native lexer and calls visit
@@ -309,7 +314,9 @@ func (g *nativeParsers) convertExpression(ctx antlr.ParserRuleContext, stream *a
 			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
 		}
 	}()
-	tree := g.toNative(ctx, stream, src)
+	// ANTLR's tokens index the text its input stream decoded, which the
+	// native tree's token text is read from.
+	tree := g.toNative(ctx, stream, asANTLRReads(src))
 	if tree == nil {
 		return native.ExpressionNode{}, fmt.Errorf("%w: the converter gave no tree", ErrConvertExpression)
 	}
