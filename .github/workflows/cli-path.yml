@@ -270,7 +270,8 @@ jobs:
           # packages peak at 7-9 GB per compile.
           - name: galop
             repo: martianoff/galop
-            ref: 1de17cd9e3a55ada7271c443435587bde91db4b1
+            # main after its rules_gala 0.6.11 bump (martianoff/galop#51).
+            ref: 7800eeea0b216197ba6dd9d54684318c6539aea7
             commands: |
               build -o galop ./cmd/galop
               build -o galop-sample ./cmd/galop-sample
