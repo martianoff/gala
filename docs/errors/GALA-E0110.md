@@ -109,8 +109,10 @@ error[GALA-E0110]: cannot print this Holder: its field c, a Counter, prints by i
 ```
 
 The error is reported where `Println`, `Print` or interpolation prints the
-value, and follows fields into nested structs and sealed cases. Hold the field
-as a `Ptr`, so its `String` runs on the value it points to:
+value, and follows fields into nested structs and sealed cases. A value fmt
+prints by its own `Error` or `Format` never runs its generated `String`, so it
+is not checked. Hold the field as a `Ptr`, so its `String` runs on the value it
+points to:
 
 ```gala
 package main
