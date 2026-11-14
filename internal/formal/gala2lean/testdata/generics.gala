@@ -28,6 +28,8 @@ struct K(F func() int)
 
 struct Keyed[K comparable](Key K)
 
+// A zero Holder[int] prints `Holder(, None())`: Name is a string, whose zero
+// value prints empty, and Opt is None.
 struct Holder[T any](Name string, Opt Option[T])
 
 func wrap[T any](x T) Box[T] = Box(x)
