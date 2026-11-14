@@ -115,13 +115,15 @@ type Import struct {
 	Alias string `json:"alias"`
 }
 
-// Receiver is a method's receiver `(name Type)` or `(name *Type)`. Pointer
-// is true for the `*Type` form.
+// Receiver is a method's receiver `(name Type)`, `(name *Type)` or `(inout name
+// Type)`. Pointer is true for the `*Type` form, Inout for the `inout` form.
 type Receiver struct {
 	Meta
 	Name    string `json:"name"`
 	Type    Node   `json:"type"`
 	Pointer bool   `json:"pointer"`
+	// Inout is true for an `inout` receiver, `(inout name Type)`.
+	Inout bool `json:"inout,omitempty"`
 }
 
 // Param is a function parameter. Type is null when it is left out.

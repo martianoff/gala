@@ -1,0 +1,39 @@
+package main
+
+// Methods with `inout` receivers translate by state passing, as `*T`
+// receivers do: the method returns its result with the updated receiver.
+
+struct Counter(var N int)
+
+func (inout c Counter) Add(by int) int {
+    c.N = c.N + by
+    c.N
+}
+
+func (inout c Counter) AddTwice(by int) {
+    c.Add(by)
+    c.Add(by)
+}
+
+// Reads a field of its receiver, then lends the receiver on.
+func (inout c Counter) Double() int = c.Add(c.N)
+
+func (c Counter) Get() int = c.N
+
+type Pair struct {
+    var First Counter
+    var Second Counter
+}
+
+func main() {
+    var c = Counter(1)
+    val r = c.Add(2)
+    Println(r)
+    c.AddTwice(3)
+    Println(c.Get())
+    val d = c.Double()
+    Println(d, c.Get())
+    var p = Pair(First = Counter(10), Second = Counter(20))
+    p.First.Add(p.Second.Add(1))
+    Println(p.First.Get(), p.Second.Get())
+}

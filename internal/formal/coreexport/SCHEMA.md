@@ -180,13 +180,14 @@ A function declaration, at top level or in a block, or a method.
 
 ### `receiver`
 
-A method's receiver, `(c Counter)` or `(c *Counter)`. A receiver of any other type
+A method's receiver, `(c Counter)`, `(c *Counter)` or `(inout c Counter)`. A receiver of any other type
 (`Ptr[Counter]`, `Box[T]`) has that type exported as it is written; a receiver marked
 `val` or `var` is an unsupported `param-modifier`.
 
 - `name` (string).
 - `type` (type): the receiver's type, without the `*`.
 - `pointer` (bool): true for the `*Type` form.
+- `inout` (bool, omitted when false): true for an `inout` receiver, `(inout c Counter)`.
 
 ```json
 { "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter", "args": [] },

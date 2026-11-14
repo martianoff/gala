@@ -66,6 +66,8 @@ go_test(
         "testdata/assign_order_void_keywords.out",
         "testdata/defaults_byname.gala",
         "testdata/defaults_byname.out",
+        "testdata/inout_receivers.gala",
+        "testdata/inout_receivers.out",
         "testdata/methods.gala",
         "testdata/methods.out",
         "//formal:fixture_sources",
