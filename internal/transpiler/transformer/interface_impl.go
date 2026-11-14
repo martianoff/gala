@@ -97,6 +97,20 @@ func (t *galaASTTransformer) checkSlotFill(expr ast.Expr, typ transpiler.Type, a
 	return t.checkInterfaceSlot(expr, typ, at)
 }
 
+// checkAssignFill checks expr, a value of `a, b = x, y` filling a target of
+// type typ, as checkResultFill checks one result of a call. Unlike a bind
+// clause, which reads a pointer to its monad through it, an assignment
+// target never takes a pointer to the value it holds.
+func (t *galaASTTransformer) checkAssignFill(expr ast.Expr, typ transpiler.Type, at srcNode) error {
+	if err := t.checkPtrSlot(expr, typ, at); err != nil {
+		return err
+	}
+	if err := t.checkPointerForValue(expr, typ, at); err != nil {
+		return err
+	}
+	return t.checkInterfaceSlot(expr, typ, at)
+}
+
 // checkResultFill checks one result, of type valType, of the call written
 // at at whose results fill several targets (`a, b = f()`), against its
 // target's type typ as lowerAgainst checks a value: neither a pointer that

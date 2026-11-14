@@ -1002,21 +1002,23 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 // fields. Go infers each type argument from its field: such an element is
 // wrapped as it is, and every other element's wrapper names its type
 // argument from typeParams, so the tuple has the same type as its composite
-// literal would. ok is false for a tuple whose type can be spelled, or one
-// with an element that is already an Immutable, which the composite literal
-// stores as it is.
+// literal would. An element that is already an Immutable is passed as it is,
+// as the composite literal stores it. ok is false for a tuple whose type can
+// be spelled.
 func (t *galaASTTransformer) tupleOfImmutables(exprs, typeParams []ast.Expr, ownTypes []transpiler.Type) (ast.Expr, bool) {
 	unspellable := make([]bool, len(exprs))
-	if !slices.ContainsFunc(ownTypes, func(own transpiler.Type) bool { return own != nil && t.isImmutableType(own) }) {
-		for i, own := range ownTypes {
-			unspellable[i] = own != nil && t.namesUnimportedGalaPackage(own)
-		}
+	for i, own := range ownTypes {
+		unspellable[i] = own != nil && t.namesUnimportedGalaPackage(own)
 	}
 	if !slices.Contains(unspellable, true) {
 		return nil, false
 	}
 	args := make([]ast.Expr, len(exprs))
 	for i, expr := range exprs {
+		if own := ownTypes[i]; own != nil && t.isImmutableType(own) {
+			args[i] = expr
+			continue
+		}
 		newImmutable := t.stdIdent(transpiler.FuncNewImmutable)
 		if !unspellable[i] {
 			newImmutable = withTypeArgs(newImmutable, typeParams[i:i+1])
