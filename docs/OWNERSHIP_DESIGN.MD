@@ -970,7 +970,8 @@ gantt
 | 2 | `inout` syntax, lowering, the five checks and their codes, docs, IDE/LSP; interop (3.5): copy-in/copy-out wrappers, the allow-list and its CI escape check, E-inout-foreign-impl | 4–5 weeks | The generated Go for existing examples is byte-identical; new examples cover each code; gala-tui's `Custom` can be written with `inout` |
 | 3 | Inferred non-escaping function parameters; `StateT` closure translation; monadic std models | 2–3 weeks | galop's `builder` translates; coverage about 76% |
 | 4 | Sendable transfer | 1–2 weeks | The `ArrayOf` example above compiles; a use after the send is E0037 with a secondary span |
-| Adoption | `gala fix` codemod; galop migrated; gala-tui only with approval | 1 week, plus gala-tui | galop at about 90% translatable |
+| Adoption | `gala fix` codemod; galop and std private code (`json`) migrated; builder redesign (Q9). gala-tui is external and not migrated (Q11) | 1–2 weeks | galop at about 90% translatable |
+| Documentation (final) | **Replace this design document** with a user-facing `docs/OWNERSHIP.MD` that explains ownership (`inout`, inferred uniqueness, Sendable transfer, Go interop guarantees) as a language feature, and add it to the GALA documentation: `docs/GALA.MD`, the website mirror and its navigation, `docs/GO_INTEROP.MD`, error pages. Delete `docs/OWNERSHIP_DESIGN.MD` (keep the history in git) | 2–3 days | Every phase has shipped; users can learn the feature without reading a design doc |
 
 ## 7. Decisions
 
