@@ -27,7 +27,7 @@ The tiers mean exactly this:
 | `==`/`!=` on structs, sealed values and tuples, by value | yes | no | no |
 | `val`/`var` (several names, tuple destructuring, zero values), `=`, `+= -= *= /=`, `++`/`--`, assignment to `var` struct fields | yes | no | no |
 | Package-level `val`/`var`, initialized in Go's dependency order | yes | no | no |
-| Blocks and their scopes, shadowing | yes | no | lookup, update and scope exit only (see below) |
+| Blocks and their scopes, shadowing | yes | no | no |
 | `if` statement and expression, `return`, trailing-expression results | yes | no | no |
 | Top-level functions and recursion | yes | no | no |
 | Structs (block and shorthand), construction, field access | yes | no | no |
@@ -38,7 +38,6 @@ The tiers mean exactly this:
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | no |
 | S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | no |
 | S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | no |
-| Determinism of every run (T1) | — | — | yes |
 
 Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
 compile time, while galaspec wraps it at run time. Only programs Go rejects differ.
@@ -101,24 +100,25 @@ version check and the command line, run while the tests compile.
 
 The proof checks (`scripts/ProofCheck.lean` under Lake, `//formal:proofs` under Bazel)
 fail if a theorem listed here is missing; keep `requiredTheorems` there and
-`REQUIRED_THEOREMS` in `BUILD.bazel` in step with this table.
+`REQUIRED_THEOREMS` in `BUILD.bazel` in step with this table. Each one's statement is
+restated in `Gala/Statements.lean` and checked against its proof, so a weakened statement
+fails the build until that file changes too.
 
 | Theorem | Statement |
 |---|---|
-| `Gala.MatchLowering.compile_correct`, `program_correct` | The scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
-| `Gala.MatchLowering.leaky_not_correct` | A lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
-| `Gala.Spec.run_deterministic`, `eval_deterministic` | **T1.** A program and a fuel budget have one output and one outcome; an evaluation from a given state has one result and final state. The semantics is a total Lean function, so this holds by construction and the proof is one line; the theorem records it, it does not add a check. |
-| `Gala.Spec.lookup_rename`, `update_rename`, `exitScope_rename` | **T2, for name resolution only.** Under an injective renaming of an environment, a renamed name resolves to the same binding, an assignment updates the same binding, and leaving a scope keeps the same bindings. |
-| `Gala.Spec.lookup_bind_self`, `lookup_bind_other` | A binding shadows its own name and no other. |
-| `Gala.Spec.update_length`, `exitScope_push` | An assignment keeps the scope stack's shape, so leaving a block drops its own bindings and keeps its assignments to outer variables. |
-| `Gala.Spec.evalList_cons`, `evalList_nil` | **T3, for operand lists.** The arguments of every call (function, lambda, constructor, `Println`), the elements of a tuple and the parts of an interpolated string are evaluated first to last, each completely before the next. The statement is the definition's own equation: the theorem records it, as T1 does. |
-| `Gala.Spec.capturedEnv_captured`, `lookup_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in: every name resolves as it did there, a `var` to the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells, as evaluation builds them; that evaluation keeps this invariant is not proved. |
-| `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, for scoping.** A default value is evaluated in a scope holding only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That the order of evaluation is the decided one (arguments as written, then defaults in parameter order) is the definition of `bindArgs`, not a theorem. |
-| `Gala.Gala2Lean.Examples.Match.eval_total` | About gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it: its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
+| `Gala.MatchLowering.compile_correct`, `program_correct` | In the lowering model only (a small GALA core with flat constructor patterns, no guards or literals, integers only; not galaspec, and not the transpiler's output): the scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
+| `Gala.MatchLowering.leaky_not_correct` | In the same model, a lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
+| `Gala.Spec.capturedEnv_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in, a `var` by the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells; that evaluation keeps this invariant is not proved. |
+| `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, the scope only.** The frame a default value is evaluated in holds only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That `bindArgs` uses this frame, and evaluates arguments as written and then defaults in parameter order, is its definition, not a theorem. |
+| `Gala.Gala2Lean.Examples.Match.eval_total` | About one program: gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it, under gala2lean's prelude. Its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
 
 These are theorems about the *spec* (and a model of one lowering, and one program's
-translation under gala2lean's prelude), not about the transpiler. T2 for whole programs (renaming every binder leaves the outcome unchanged) is
-not proved: the lemmas above are the name-resolution part of it.
+translation under gala2lean's prelude), not about the transpiler.
+
+Not proved: T1, T2 and T3. [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems)
+gives the statements they need: fuel adequacy and monotonicity for T1, alpha-invariance
+with its side conditions for T2, and an observational statement about the order of
+effects for T3.
 
 ## gala2lean
 

@@ -44,7 +44,7 @@ flowchart LR
     S -->|encR| R[expected Go result]
     T --> E{equal?}
     R --> E
-    E -->|scoped lowering| P[proved for every program<br/>compile_correct]
+    E -->|scoped lowering| P[proved for every program of the model<br/>compile_correct]
     E -->|leaky lowering| C[counterexample<br/>leaky_not_correct]
 ```
 
@@ -61,7 +61,7 @@ Each definition's doc comment says what it models, and each file's header names 
 | `BUILD.bazel` | The Bazel build of the same modules, with rules_lean. Hand-written; gazelle skips `formal/`. |
 | `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
 | `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS` in `BUILD.bazel`. Lake and the Lake proof check find modules by directory, not through it. |
-| `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it. |
+| `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it, `Statements` the pinned statements of the required theorems. |
 | `Gala/Gala2Lean/` | gala2lean's prelude (`Prelude`), a translation it wrote (`Examples/`) and theorems about it (`Theorems`); see [gala2lean](#gala2lean-a-third-oracle). |
 | `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
 | `galaspec_tests.sh` | Runs the galaspec fixture tests under Bazel, from `formal/` in the runfiles. |
@@ -81,7 +81,10 @@ lake env lean --run scripts/ProofCheck.lean  # fail on sorry or non-standard axi
 The proof check is needed because Lean only *warns* when a proof uses `sorry`. The script
 imports every module of the library and fails if any declaration depends on `sorry` or on
 an axiom other than `propext`, `Quot.sound` and `Classical.choice`, private declarations
-included. It also fails if a theorem that COVERAGE.md calls proved is missing. Run
+included. It also fails if a theorem that COVERAGE.md calls proved is missing. Each such
+theorem's statement is also restated in `Gala/Statements.lean` and checked against its
+proof there, so weakening one fails `lake build` until that file changes too
+(`tools/check_repo_policy.sh` checks every one is restated). Run
 `lake build` first: the script checks the built modules, so it fails without a build and
 checks old code after a stale one.
 

@@ -1,10 +1,11 @@
 # Formal Semantics and Spec-Based Testing
 
-Status: **design proposal**. Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
+Status: **design proposal, partly built**. Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 
 This document describes how GALA gets an executable, machine-checked definition of what
-programs mean, and how the transpiler is tested against it. Only the first step exists: the
-`formal/` project with the match lowering model and its CI job.
+programs mean, and how the transpiler is tested against it. What exists today (the
+reference interpreter, the differential harness, gala2lean, and the theorems proved so
+far) is listed in [formal/COVERAGE.md](../formal/COVERAGE.md).
 
 ## Summary
 
@@ -13,9 +14,10 @@ programs mean, and how the transpiler is tested against it. Only the first step 
 - We **do not model Go**. Generated code is tested by running it: the real transpiler and
   the real Go toolchain run the program, and the reference interpreter must print the
   same output.
-- We **prove properties of the language**, not of the transpiler. Examples: names
-  resolve to their nearest binding, evaluation runs left to right, and an exhaustive match
-  on a constructed value never panics. Lean's kernel checks these proofs.
+- We **aim to prove properties of the language**, not of the transpiler, for example that
+  renaming bound variables does not change a program's meaning, and that effects happen
+  left to right (the theorems below). Lean's kernel checks the proofs. Most of them are
+  not proved yet; COVERAGE.md lists the ones that are.
 - **Coverage is partial and is published honestly.** The spec covers a stated subset of
   GALA. Every program outside that subset is counted and reported. It is never silently
   passed.
@@ -162,22 +164,25 @@ flowchart TD
 | **`FuzzPrograms` generator.** Its hand-written model of expected output is replaced by `galaspec`. During the switch, all three are compared. | Endless random programs, with an oracle we can review. | Yes |
 
 The two metamorphic generators are cheap and need no spec at all. They ship first. Their
-correctness argument is also a theorem we prove about the spec: *renaming bound variables
+correctness argument is also a theorem we plan to prove about the spec (T2): *renaming bound variables
 does not change a program's meaning*. That ties the test to the proof.
 
 ### 5. Theorems
 
-These are proved about the spec, in order of value:
+These are the theorems planned about the spec, in order of value. T1, T2, T3 and T5–T7
+are not proved yet. T4 is proved for the scope a default value sees, not for the order in
+which `bindArgs` evaluates. [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved)
+lists what is proved.
 
 | # | Statement (informal) | Guards against |
 |---|---|---|
-| T1 | Evaluation is deterministic. | spec bugs |
-| T2 | **Alpha-invariance:** renaming bound variables apart does not change the outcome. | #996, #997, #999, #1002 |
-| T3 | **Left-to-right:** the effects of operands, arguments (including named ones) and sub-patterns happen in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 |
+| T1 | **Fuel adequacy and monotonicity:** if a run with fuel `n` ends in anything but `fuel`, every run with more fuel ends the same way and prints the same output. (Plain determinism holds of any Lean function and says nothing.) | an `AGREE` or `INCONCLUSIVE` verdict that means something else |
+| T2 | **Alpha-invariance:** renaming bound variables apart does not change the outcome. The renaming must be injective, avoid `_`, avoid the names of declarations and sealed cases, keep a name capitalized exactly when it was (a capitalized pattern name in scope is a stable identifier), and rename named arguments at the call sites with their parameters. | #996, #997, #999, #1002 |
+| T3 | **Left-to-right**, stated on what a program does, not on the evaluator's definition: the output and effects of an operand list, a call (named arguments included), a compound assignment and a pattern are those of its parts, in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 |
 | T4 | **Default arguments** are evaluated in the callee's scope, with earlier parameters bound. | #999 |
-| T5 | **Exhaustiveness:** a well-typed exhaustive match on a value built by a constructor never ends in `panic match`. | match lowering |
+| T5 | **Exhaustiveness:** a well-typed exhaustive match on a value built by a constructor never ends in `panic match`. Needs a typing judgment, which the spec does not have. | match lowering |
 | T6 | **Equality:** `Equal` on sealed values is an equivalence that depends only on the active variant's fields. | #1004, #1005 |
-| T7 | **Type soundness** for the subset: well-typed programs do not get stuck (stretch goal). | typing bugs |
+| T7 | **Type soundness** for the subset: well-typed programs do not get stuck (stretch goal). Needs a typing judgment too. | typing bugs |
 
 A theorem counts as **proved** only if it type-checks with no `sorry`, and
 `#print axioms` lists only Lean's standard axioms (`propext`, `Quot.sound`,
@@ -217,7 +222,7 @@ flowchart LR
 
 For the riskiest lowerings, a small Lean model of only the Go that GALA emits for them can
 be proved correct against the spec. This is *not* a Go semantics. The existing prototype
-does this for sealed `match`. It proves that a scoped lowering preserves meaning, and that
+does this for sealed `match`. It proves, for a small model of `match` and of the Go it lowers to (not for the transpiler's output), that a scoped lowering preserves meaning, and that
 the current lowering does not. Candidates are `match`, default and named arguments, and
 sealed `Equal`/`Copy`. Each model is about 100–300 lines, and each is opt-in.
 

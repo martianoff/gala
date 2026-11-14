@@ -133,6 +133,15 @@ if [[ -z "$lake_theorems" || "$lake_theorems" != "$bazel_theorems" ]]; then
   diff <(echo "$lake_theorems") <(echo "$bazel_theorems") >&2 || true
 fi
 
+# Each required theorem's statement is restated in formal/Gala/Statements.lean and
+# checked against its proof there, so a weakened statement shows in review.
+while IFS= read -r thm; do
+  [[ -z "$thm" ]] && continue
+  if ! grep -qE "^  ${thm//./\\.}\$" formal/Gala/Statements.lean; then
+    fail "required theorem $thm has no pinned statement in formal/Gala/Statements.lean"
+  fi
+done <<< "$lake_theorems"
+
 # A plain `bazel build //...` must never download Lean (AGENTS.md rule 4).
 # formal/lean.bzl gates every Lean rule behind --config=formal, so the rules
 # are loaded from there and nowhere else.
