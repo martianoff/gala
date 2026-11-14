@@ -12,7 +12,7 @@ import (
 
 // exprShapes is a program with every expression shape the native walk
 // lowers. Each line marked `// native: <shapes>` holds an expression the
-// native walk must lower itself, not hand to ANTLR's tree, and the shapes
+// native walk must lower itself, and the shapes
 // it must have lowered on that line (nativeShape).
 const exprShapes = `package main
 

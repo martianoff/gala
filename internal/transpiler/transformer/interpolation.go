@@ -282,10 +282,14 @@ func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string
 	if e, ok := t.parsedExprs[key]; ok {
 		return e, nil
 	}
-	e, err := t.parseExprOnce(text, line, col, what, file)
+	n, err := parser.ParseExpressionCheckedAt(text, line, col, what)
 	if err != nil {
 		return exprSrc{}, err
 	}
+	if t.onParsedExpr != nil {
+		t.onParsedExpr(n.Tree(), what, file)
+	}
+	e := nativeExpr(n.GalaNodeRef)
 	if t.parsedExprs == nil {
 		t.parsedExprs = make(map[parsedExprKey]exprSrc)
 	}
@@ -298,18 +302,6 @@ func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string
 type parsedExprKey struct {
 	file, text, what string
 	line, col        int
-}
-
-// parseExprOnce is parseExprAt's parse of text, written in file.
-func (t *galaASTTransformer) parseExprOnce(text string, line, col int, what, file string) (exprSrc, error) {
-	n, err := parser.ParseExpressionCheckedAt(text, line, col, what)
-	if err != nil {
-		return exprSrc{}, err
-	}
-	if t.onParsedExpr != nil {
-		t.onParsedExpr(n.Tree(), what, file)
-	}
-	return nativeExpr(n.GalaNodeRef), nil
 }
 
 // formatVerbForType returns the Go printf format verb for a GALA type.

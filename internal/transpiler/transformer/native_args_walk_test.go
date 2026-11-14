@@ -104,8 +104,8 @@ func TestNativeArgsWalk(t *testing.T) {
 	t.Run("argument shapes", func(t *testing.T) {
 		n := run(t, "argument shapes", argShapes)
 		checkMarkedShapes(t, n, argShapes)
-		// The hoisted match is lowered on ANTLR's tree, but it is classified
-		// against its slot, and its arms checked for escapes, on the native one.
+		// The hoisted match is classified
+		// against its slot, and its arms checked for escapes, on the native tree.
 		for i, l := range strings.Split(argShapes, "\n") {
 			if strings.HasSuffix(l, "// hoisted") {
 				assert.Truef(t, n.shapes[i+1]["slot"], "the native walk classified no value on line %d (it lowered %v)", i+1, n.shapes[i+1])

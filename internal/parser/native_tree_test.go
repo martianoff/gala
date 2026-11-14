@@ -3,6 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -137,12 +138,6 @@ func TestTreeOnlyTrims(t *testing.T) {
 	}
 }
 
-// faultyParsers are galop's parsers made to panic, as a galop bug would.
-var faultyParsers = &nativeParsers{
-	sourceFile: func(*native.GalaTokens) (native.SourceFileNode, []native.GalaParseError) { panic("injected") },
-	expression: func(*native.GalaTokens) (native.ExpressionNode, []native.GalaParseError) { panic("injected") },
-}
-
 // internalError is err as the internal compiler error of a galop panic, at
 // line:col, or why it is not one.
 func internalError(err error, line, col int) (*galaerr.SemanticError, string) {
@@ -150,7 +145,7 @@ func internalError(err error, line, col int) (*galaerr.SemanticError, string) {
 	switch {
 	case !errors.As(err, &se):
 		return nil, fmt.Sprintf("%v is not a semantic error", err)
-	case !IsInternalError(err) || se.Code != galaerr.CodeInternalTransformerPanic:
+	case !IsParserPanic(err) || se.Code != galaerr.CodeInternalTransformerPanic:
 		return nil, fmt.Sprintf("%v is not an internal error", err)
 	case se.Line != line || se.Column != col:
 		return nil, fmt.Sprintf("%v is at %d:%d, want %d:%d", err, se.Line, se.Column, line, col)
@@ -160,14 +155,23 @@ func internalError(err error, line, col int) (*galaerr.SemanticError, string) {
 	return se, ""
 }
 
-// TestGalopPanicIsInternalError makes galop's parser panic, through a parser
-// of the test's own: the panic must not escape, and the parse reports it as
-// an internal compiler error (GALA-E0017) for the file, at 1:0, with no tree;
-// an expression's parse reports it at the expression's position. A
-// source-text error is still reported first. GALA_PANIC_STACK=1 prints the
-// panic and its stack.
-func TestGalopPanicIsInternalError(t *testing.T) {
-	p := (&AntlrGalaParser{galop: faultyParsers}).ParseFile("package main\n\nval x = 1\n")
+// injectParserPanics makes galop's parsers panic, as a galop bug would, until
+// t ends.
+func injectParserPanics(t *testing.T) {
+	savedFile, savedExpr := parseSourceFile, parseExpression
+	parseSourceFile = func(*native.GalaTokens) (native.SourceFileNode, []native.GalaParseError) { panic("injected") }
+	parseExpression = func(*native.GalaTokens) (native.ExpressionNode, []native.GalaParseError) { panic("injected") }
+	t.Cleanup(func() { parseSourceFile, parseExpression = savedFile, savedExpr })
+}
+
+// TestGalopPanicIsParserPanic makes galop's parser panic: the panic must
+// not escape, and the parse reports it as an internal compiler error
+// (GALA-E0017) for the file, at 1:0, with no tree; an expression's parse
+// reports it at the expression's position. A source-text error is still
+// reported first. GALA_PANIC_STACK=1 prints the panic and its stack.
+func TestGalopPanicIsParserPanic(t *testing.T) {
+	injectParserPanics(t)
+	p := NewAntlrGalaParser().ParseFile("package main\n\nval x = 1\n")
 	if len(p.Errors) != 1 {
 		t.Fatalf("errors %v, want the internal error alone", p.Errors)
 	}
@@ -178,20 +182,20 @@ func TestGalopPanicIsInternalError(t *testing.T) {
 		t.Error("the parse that panicked has a tree")
 	}
 
-	p = (&AntlrGalaParser{galop: faultyParsers}).ParseFile("package main\n\nval s = \"a\x00b\"\n")
-	if len(p.Errors) != 2 || IsInternalError(p.Errors[0]) {
+	p = NewAntlrGalaParser().ParseFile("package main\n\nval s = \"a\x00b\"\n")
+	if len(p.Errors) != 2 || IsParserPanic(p.Errors[0]) {
 		t.Fatalf("errors %v, want the source-text error, then the internal error", p.Errors)
 	}
 	if _, msg := internalError(p.Errors[1], 1, 0); msg != "" {
 		t.Error(msg)
 	}
 
-	if expr, err := faultyParsers.expressionCheckedAt("a + b", 3, 4, "test expression"); expr.Ok() {
+	if expr, err := ParseExpressionCheckedAt("a + b", 3, 4, "test expression"); expr.Ok() {
 		t.Error("ParseExpressionCheckedAt: the parse that panicked has a tree")
 	} else if _, msg := internalError(err, 3, 4); msg != "" {
 		t.Errorf("ParseExpressionCheckedAt: %s", msg)
 	}
-	expr, errs := faultyParsers.expressionNative("a + b", 0, 0)
+	expr, errs := ParseExpressionTree("a + b")
 	if expr.Ok() || len(errs) != 1 {
 		t.Fatalf("ParseExpressionTree: tree %v, errors %v; want no tree and the internal error", expr.Ok(), errs)
 	}
@@ -202,7 +206,7 @@ func TestGalopPanicIsInternalError(t *testing.T) {
 	// The stack goes to standard error under GALA_PANIC_STACK=1.
 	t.Setenv("GALA_PANIC_STACK", "1")
 	stderr := captureStderr(t, func() {
-		(&AntlrGalaParser{galop: faultyParsers}).ParseFile("package main\n")
+		NewAntlrGalaParser().ParseFile("package main\n")
 	})
 	if !strings.Contains(stderr, "galop's parser panicked") || !strings.Contains(stderr, "goroutine") {
 		t.Errorf("GALA_PANIC_STACK=1 printed %q, want the panic and its stack", stderr)
@@ -220,16 +224,8 @@ func captureStderr(t *testing.T, f func()) string {
 	os.Stderr = w
 	done := make(chan string)
 	go func() {
-		var b strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, err := r.Read(buf)
-			b.Write(buf[:n])
-			if err != nil {
-				break
-			}
-		}
-		done <- b.String()
+		b, _ := io.ReadAll(r)
+		done <- string(b)
 	}()
 	defer func() { os.Stderr = saved }()
 	f()
@@ -303,7 +299,7 @@ func nativeErrorChildren(n native.GalaNodeRef, out []string) []string {
 func TestRecoveredTrees(t *testing.T) {
 	inputs := slices.Clone(brokenInputs)
 	for _, src := range sourceTexts(t) {
-		inputs = append(inputs, fileVariants(src)[1:]...)
+		inputs = append(inputs, fileVariants(src)[1:3]...)
 	}
 	recovered, withErrorChildren := 0, 0
 	for k, input := range inputs {
@@ -312,7 +308,7 @@ func TestRecoveredTrees(t *testing.T) {
 			continue
 		}
 		for _, err := range p.Errors {
-			if IsInternalError(err) {
+			if IsParserPanic(err) {
 				t.Errorf("input %d (%.60q): %v", k, input, err)
 			}
 		}

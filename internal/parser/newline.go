@@ -128,7 +128,8 @@ type retype struct {
 }
 
 // tokenKinds holds the token types the parser driver checks, looked up by name
-// in the generated vocabulary: the generated constants are unexported.
+// in galop's vocabulary: a literal token's constant is named by its position
+// (GalaT__N), which moves whenever the grammar gains a token.
 type tokenKinds struct {
 	identifier, lparen, lbrace, rbrace, assign, arrow, caseKw, elseKw, funcKw, ifKw int
 	// str and rawStr are the interpreted ("...") and raw (`...`) string

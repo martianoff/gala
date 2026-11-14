@@ -17,9 +17,8 @@ type walkSource struct {
 	root native.SourceFileNode
 }
 
-// newWalkSource is the walk of richAST's file, converting its native tree if
-// the analysis has not. A file without a native tree, or whose conversion
-// failed, is an internal error: every clean parse has one.
+// newWalkSource is the walk of richAST's file, on its native tree. A file
+// without a native tree is an internal error: every clean parse has one.
 func newWalkSource(richAST *transpiler.RichAST) (walkSource, error) {
 	tree, err := richAST.Native.Tree()
 	if err != nil {

@@ -14,13 +14,6 @@ import (
 	"martianoff/gala/internal/parser/native"
 )
 
-// nativeTokens lexes src with galop's native lexer and RetypeNewlines from
-// line and column col (see lexNative), and prints every token, the hidden
-// ones included, and every lexical error (see printNative).
-func nativeTokens(src string, line, col int) []string {
-	return printNative(lexNative(src, line, col))
-}
-
 // printNative prints ts: each token, hidden ones in their place, then each
 // lexical error.
 func printNative(ts *native.GalaTokens) []string {
@@ -147,7 +140,7 @@ var emptyLineInputs = []string{
 func TestExpressionCheckedLeftovers(t *testing.T) {
 	for _, src := range []string{"a b", "x +", "f(1))", "", "a\n(b)", "1 @"} {
 		_, err := ParseExpressionCheckedAt(src, 2, 3, "test expression")
-		if err == nil || IsInternalError(err) {
+		if err == nil || IsParserPanic(err) {
 			t.Errorf("%q: error %v, want a syntax error", src, err)
 		}
 	}
@@ -209,7 +202,7 @@ func largestSource(b *testing.B) string {
 }
 
 // BenchmarkLexRetype lexes the largest staged source with galop's native
-// lexer and RetypeNewlines.
+// lexer and the line-break rule.
 func BenchmarkLexRetype(b *testing.B) {
 	src := largestSource(b)
 	b.SetBytes(int64(len(src)))

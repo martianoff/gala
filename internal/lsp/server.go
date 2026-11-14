@@ -83,7 +83,7 @@ type GalaHandler struct {
 	// signatureTrees is, by URI, the native tree signature help last parsed
 	// itself, of a text patchTextForSignature closed and no analysis parsed
 	// (see findCallAtCaret), so a request repeated on that text does not parse
-	// and convert it again.
+	// it again.
 	signatureTrees map[string]patchedTree
 	// parsedFiles is the parsed-file cache every document's analysis shares:
 	// the parses and native trees of the files on disk that the analyses
@@ -688,7 +688,7 @@ func (h *GalaHandler) analyzeAndCache(uri, doc, cleanText, caller string) {
 // transformer writes — a copy, or a per-URI generation — not resurrecting the
 // ordering that crashed the server.
 func (h *GalaHandler) transformAndPublish(uri, doc string, richAST *transpiler.RichAST, parsed *parser.Parsed, text string) (*transpiler.TransformResult, error) {
-	// The transform walks the native tree the analysis converted (see the
+	// The transform walks the native tree the analysis read (see the
 	// transformer's walkSource); the published AST does not keep it.
 	handle := parsed.CleanNative()
 	richAST.Native = handle

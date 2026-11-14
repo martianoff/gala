@@ -292,7 +292,7 @@ type pkgResultCacheEntry struct {
 // stat calls, the cached tree is dropped and the file is re-parsed.
 type parsedFileEntry struct {
 	// parsed is the file's parse: its doc comments and its native-tree
-	// handle, converted already (see parseFileEntry), which every read of
+	// handle, trimmed already (see parseFileEntry), which every read of
 	// the file takes (see siblings_native.go).
 	parsed *galaparser.Parsed
 	// nf is the native tree of parsed's handle, its declarations bucketed
@@ -305,8 +305,8 @@ type parsedFileEntry struct {
 	// is nil then), stamped with the file's path. Cached like a parse, so a
 	// broken sibling is not re-parsed by every file of its package.
 	syntaxErr error
-	// internalErr is the InternalError of a file that parses but whose
-	// parse did not convert to a native tree (parsed is nil then). Cached
+	// internalErr is the InternalError of a file that parses but has no
+	// native tree (parsed is nil then). Cached
 	// like a parse; every reader of the file fails with it.
 	internalErr error
 	mtime       time.Time
@@ -481,10 +481,10 @@ func (a *galaAnalyzer) SetPackageFiles(files []string) {
 }
 
 // ParsedFiles is a parsed-file cache that analyzers built one after another
-// share: each file's parse and its converted native tree, keyed by path and
+// share: each file's parse and its native tree, keyed by path and
 // dropped when the file's mtime or size changes, as an analyzer's own cache
 // is (see parseFileEntry). The language server builds an analyzer per
-// keystroke; sharing one ParsedFiles keeps it from parsing and converting
+// keystroke; sharing one ParsedFiles keeps it from parsing
 // every sibling and imported file again each time. The entries are read, not
 // written, after they are cached, so analyses running at once share them.
 type ParsedFiles struct {
@@ -599,7 +599,7 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 	return a.analyzeFile(docs, handle, nf, filePath)
 }
 
-// analyzeFile is analyze of the file whose handle converted to nf.
+// analyzeFile is analyze of the file whose native tree is nf.
 func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Native, nf nativeFile, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
@@ -4022,7 +4022,7 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // calls. It is nil for a file that cannot be read or has no package clause,
 // an entry with syntaxErr set for one that does not parse, syntaxErr being
 // its syntax error stamped with the file's path, and an entry with
-// internalErr set for one whose clean parse did not convert to a native tree.
+// internalErr set for one whose clean parse has no native tree.
 // The caller decides whether a syntax error is fatal (see Analyze's
 // siblingSyntaxErrs); an internal error always is.
 //
@@ -4126,7 +4126,7 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 }
 
 // parseFile is the parse of path (parseFileEntry), or its syntax error or
-// InternalError: no entry for a file that does not parse or convert, nor for
+// InternalError: no entry for a file that does not parse or has no native tree, nor for
 // one that cannot be read or has no package clause.
 func (a *galaAnalyzer) parseFile(path string) (*parsedFileEntry, error) {
 	entry := a.parseFileEntry(path)

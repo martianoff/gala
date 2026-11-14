@@ -428,7 +428,7 @@ func (w walk) walkLiteral(lit native.LiteralNode) {
 		// A part galop's lexer or parser panicked on has no tree and is not
 		// walked: the walk is incomplete, which its caller learns from Err.
 		for _, err := range errs {
-			if parser.IsInternalError(err) {
+			if parser.IsParserPanic(err) {
 				w.Fail(err)
 				return
 			}

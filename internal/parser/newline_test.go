@@ -43,7 +43,7 @@ func TestLineStartTokenStartsStatement(t *testing.T) {
 func lineStartInput(body string) string { return "package main\n\nfunc f() {\n" + body + "\n}\n" }
 
 // lineBreakInputs are the source files of the line-break tests here, which
-// TestRetypeNewlinesCases also lexes with galop's native lexer.
+// the parser golden (goldenFixedFiles) also lexes and parses.
 func lineBreakInputs() []string {
 	var inputs []string
 	for _, tt := range lineStartCases {

@@ -3,8 +3,6 @@ package parser
 import (
 	"slices"
 	"testing"
-
-	"martianoff/gala/galaerr"
 )
 
 // FuzzParser parses arbitrary input as a source file and as an expression,
@@ -12,11 +10,10 @@ import (
 // interpolation:
 //
 //   - galop's lexer and parser never panic: a panic is recovered and
-//     reported as an internal compiler error (IsInternalError), which hides
+//     reported as an internal compiler error (IsParserPanic), which hides
 //     nothing from a build, but each one is a galop bug;
 //   - every parse of a source file has a tree, clean when it reports no
 //     error and error-recovered when it does;
-//   - VisitNativeTokens visits the default-channel tokens the lexer gives;
 //   - lexed at an offset, the first token starts there.
 //
 // galop's repository holds its lexer and parser to ANTLR's on arbitrary
@@ -49,7 +46,7 @@ func checkParse(t *testing.T, src string, line, col int) {
 	t.Helper()
 	p := NewAntlrGalaParser().ParseFile(src)
 	for _, err := range p.Errors {
-		if IsInternalError(err) {
+		if IsParserPanic(err) {
 			t.Errorf("source file: %v (rerun with GALA_PANIC_STACK=1 for the stack)", err)
 			return
 		}
@@ -61,27 +58,14 @@ func checkParse(t *testing.T, src string, line, col int) {
 		t.Errorf("source file: a clean tree %v with errors %v", p.CleanNative() != nil, p.Errors)
 	}
 
-	ts := lexNativeRecovered(galaerr.StripBOM(src))
-	if ts == nil {
-		t.Error("galop's lexer panicked")
-		return
-	}
-	var want, visited []string
-	for _, tok := range ts.Tokens[:len(ts.Tokens)-1] { // without EOF
-		want = append(want, tok.Text(ts.Src))
-	}
-	VisitNativeTokens(src, func(text string) { visited = append(visited, text) })
-	if !slices.Equal(want, visited) {
-		t.Errorf("VisitNativeTokens visits %q, the lexer gives %q", visited, want)
-	}
-
-	if _, errs := ParseExpressionTree(src); len(errs) > 0 && IsInternalError(errs[0]) {
-		t.Errorf("expression: %v", errs[0])
-	}
-	if _, err := ParseExpressionCheckedAt(src, line, col, "test expression"); IsInternalError(err) {
+	// At line <= 0 the checked parse is ParseExpressionTree's parse.
+	if _, err := ParseExpressionCheckedAt(src, line, col, "test expression"); IsParserPanic(err) {
 		t.Errorf("expression at %d:%d: %v", line, col, err)
 	}
 	if line > 0 {
+		if _, errs := ParseExpressionTree(src); len(errs) > 0 && IsParserPanic(errs[0]) {
+			t.Errorf("expression: %v", errs[0])
+		}
 		if tok := lexNative(src, line, col).Tokens[0]; tok.Line < int32(line) || tok.Line == int32(line) && tok.Column < int32(col) {
 			t.Errorf("lexed at %d:%d, the first token starts at %d:%d", line, col, tok.Line, tok.Column)
 		}

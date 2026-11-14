@@ -10,7 +10,7 @@ import (
 )
 
 // TestInterpolationParserPanicIsReported: an interpolated expression galop's
-// parser panicked on (an internal compiler error, parser.IsInternalError) is
+// parser panicked on (an internal compiler error, parser.IsParserPanic) is
 // not walked, and the walk says so (Walker.Err), rather than leaving its
 // references out unnoticed.
 func TestInterpolationParserPanicIsReported(t *testing.T) {
@@ -34,7 +34,7 @@ func TestInterpolationParserPanicIsReported(t *testing.T) {
 	parseExpressionTree = func(string) (native.ExpressionNode, []error) {
 		return native.ExpressionNode{}, []error{panicked}
 	}
-	if err := walkIt(); !parser.IsInternalError(err) {
+	if err := walkIt(); !parser.IsParserPanic(err) {
 		t.Fatalf("Err = %v, want the parser's internal error", err)
 	}
 }

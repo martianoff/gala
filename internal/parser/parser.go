@@ -14,38 +14,19 @@ import (
 // recovering parser (internal/parser/native), which galop generates from
 // internal/parser/grammar/gala.g4. Its name predates galop: GALA no longer
 // parses with ANTLR.
-type AntlrGalaParser struct {
-	// galop is galop's native parsers the parser calls, nil for
-	// galopParsers. Only tests set it, on a parser of their own.
-	galop *nativeParsers
-}
+type AntlrGalaParser struct{}
 
 func NewAntlrGalaParser() *AntlrGalaParser {
 	return &AntlrGalaParser{}
 }
 
-// nativeParsers is galop's native parsers of a source file and of an
-// expression, as a parse calls them. Every parse calls galopParsers' but a
-// test's, which gives a parser of its own faulty ones (see
-// AntlrGalaParser.galop).
-type nativeParsers struct {
-	sourceFile func(*native.GalaTokens) (native.SourceFileNode, []native.GalaParseError)
-	expression func(*native.GalaTokens) (native.ExpressionNode, []native.GalaParseError)
-}
-
-// galopParsers is galop's generated parsers. It is never changed.
-var galopParsers = &nativeParsers{
-	sourceFile: native.ParseSourceFileWithRecovery,
-	expression: native.ParseExpressionWithRecovery,
-}
-
-// parsers is the native parsers p calls.
-func (p *AntlrGalaParser) parsers() *nativeParsers {
-	if p == nil || p.galop == nil {
-		return galopParsers
-	}
-	return p.galop
-}
+// parseSourceFile and parseExpression are galop's recovering parsers of a
+// source file and of an expression. Only a test replaces them, with ones
+// that panic as a galop bug would.
+var (
+	parseSourceFile = native.ParseSourceFileWithRecovery
+	parseExpression = native.ParseExpressionWithRecovery
+)
 
 // Parsed is one parse of a source file: its doc comments, its errors, and its
 // native tree (internal/parser/native), clean or error-recovered.
@@ -115,7 +96,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	// The source-text check goes first: an illegal character is the root
 	// cause of any lexer error it provokes, so it should lead the report.
 	charErr := checkSourceChars(input)
-	ts, root, parseErrs, panicErr := galopParse(input, 0, 0, p.parsers().sourceFile)
+	ts, root, parseErrs, panicErr := galopParse(input, 0, 0, parseSourceFile)
 	if panicErr != nil {
 		return &Parsed{Errors: withCharErr(charErr, []error{panicErr})}
 	}
