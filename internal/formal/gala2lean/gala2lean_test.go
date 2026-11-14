@@ -155,6 +155,8 @@ func id[T any](x T) T = x
 
 func bad() int = println(1)
 
+func takesOption(o Option[int]) int = 1
+
 func main() {
     Println(Counter(1).Get())
 }
@@ -162,10 +164,11 @@ func main() {
 	p := export(t, "main.gala", src)
 	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
 	s := gala2lean.CountTranslated(p, err)
-	// Counted: Get, Inc, Box.Get, id, bad, main. Translated: Counter.Get and
-	// main; bad is reported, Inc and Box.Get have receivers outside the
-	// subset, id is generic.
-	require.Equal(t, gala2lean.Stats{Funcs: 6, Methods: 3, Translated: 2}, s, "%v", err)
+	// Counted: Get, Inc, Box.Get, id, bad, takesOption, main. Translated:
+	// Counter.Get and main. bad is reported for its body, takesOption for
+	// a type in its signature (its body would translate); Inc and Box.Get
+	// have receivers outside the subset; id is generic.
+	require.Equal(t, gala2lean.Stats{Funcs: 7, Methods: 3, Translated: 2}, s, "%v", err)
 }
 
 // TestRecursion checks how functions are defined: one that calls itself, or
