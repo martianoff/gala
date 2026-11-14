@@ -1,9 +1,12 @@
 package main
 
+import . "martianoff/gala/examples/evaluation_order_hidden_var_lib"
+
 // A package-level var read in a function is read before the operands to its
 // right are evaluated, also when a binding of the same name appears
 // elsewhere in the function: a lambda parameter, a val in another block.
-// Each line prints the value the left-to-right order gives.
+// The var may be this package's or one a dot-import brings in. Each line
+// prints the value the left-to-right order gives.
 
 var hits = 0
 
@@ -31,8 +34,17 @@ val packageLambda = () int => {
     pick(0) + hits + bump()
 }
 
+func dotImported(flag bool) int {
+    if flag {
+        val Hits = 5
+        Println(s"block val: ${Hits}")
+    }
+    Hits + Bump()
+}
+
 func main() {
     Println(s"after a lambda parameter: ${lambdaParam()}")
     Println(s"after a val in another block: ${blockVal(false)}")
     Println(s"in a package-level lambda: ${packageLambda()}")
+    Println(s"dot-imported var: ${dotImported(false)}")
 }

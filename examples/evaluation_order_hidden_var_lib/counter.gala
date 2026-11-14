@@ -1,0 +1,10 @@
+package evaluation_order_hidden_var_lib
+
+// A package var another package dot-imports, and a function that changes it.
+
+var Hits = 0
+
+func Bump() int {
+    Hits = Hits + 100
+    1
+}

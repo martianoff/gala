@@ -112,40 +112,48 @@ func (t *galaASTTransformer) markDeref(star *ast.StarExpr) *ast.StarExpr {
 	return star
 }
 
-// isPackageVar reports whether name is a package-level var of this package,
-// as packageVarTypes lists them (an embed val is bound like a var, but is
-// none).
+// isPackageVar reports whether name is a package-level var a bare name may
+// read, as packageVarTypes lists them: this package's, or one of a package
+// the file dot-imports. (An embed val is bound like a var, but is none.)
 func (t *galaASTTransformer) isPackageVar(name string) bool {
 	if t.richAST == nil {
 		return false
 	}
-	meta := t.richAST.PackageVals[name]
-	return meta != nil && !meta.IsVal
+	isVar := func(meta *transpiler.PackageValMetadata) bool { return meta != nil && !meta.IsVal }
+	if isVar(t.richAST.PackageVals[name]) {
+		return true
+	}
+	if t.importManager != nil {
+		for _, entry := range t.importManager.All() {
+			if entry.IsDot && isVar(t.richAST.ImportedVals[entry.Path][name]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // markIndex marks idx, an element read `x[i]` lowered from the source, for
-// orderOperands when x is a slice or a map: its elements are shared storage
-// any call may change, as through a pointer. A string or an array value
-// holds its own elements.
+// orderOperands when x is a slice, a map or a pointer to an array: its
+// elements are shared storage any call may change, as through a pointer. A
+// string or an array value holds its own elements.
 //
 // written is the base as written, before its Immutable box, if any, was
-// unwrapped: the node the lowering already asked the type of, so asking
-// again reports nothing new.
+// unwrapped: the node (inside any parentheses) the lowering already asked
+// the type of, so asking again reports nothing new. The type is read through
+// the box and a Go named collection type (url.Values, sort.IntSlice), as for
+// the .Size() sugar.
 func (t *galaASTTransformer) markIndex(idx *ast.IndexExpr, written ast.Expr) {
-	typ := t.getExprTypeName(written)
-	if gen, boxed := typ.(transpiler.GenericType); boxed && t.isImmutableType(typ) && len(gen.Params) == 1 {
-		typ = gen.Params[0]
-	}
-	typ = t.followAliasChain(typ)
-	if u, named := t.goNamedUnderlying(typ); named {
-		typ = u // url.Values, http.Header, sort.IntSlice
-	}
-	switch typ := typ.(type) {
+	switch typ := t.followAliasChain(t.sizeSugarReceiverType(ast.Unparen(written))).(type) {
 	case transpiler.ArrayType:
 		if typ.Fixed {
 			return
 		}
 	case transpiler.MapType:
+	case transpiler.PointerType:
+		if _, toArray := typ.Elem.(transpiler.ArrayType); !toArray {
+			return
+		}
 	default:
 		return
 	}

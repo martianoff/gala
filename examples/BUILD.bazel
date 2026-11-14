@@ -5262,10 +5262,18 @@ gala_exec_test(
 
 # A package var is ordered like one where a binding of its name elsewhere
 # in the function does not reach.
+gala_library(
+    name = "evaluation_order_hidden_var_lib",
+    srcs = ["evaluation_order_hidden_var_lib/counter.gala"],
+    importpath = "martianoff/gala/examples/evaluation_order_hidden_var_lib",
+    visibility = ["//visibility:public"],
+)
+
 gala_exec_test(
     name = "evaluation_order_hidden_var",
     src = "evaluation_order_hidden_var.gala",
     expected = "evaluation_order_hidden_var.out",
+    deps = [":evaluation_order_hidden_var_lib"],
 )
 
 # Named arguments are evaluated in the order they are written.
