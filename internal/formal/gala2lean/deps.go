@@ -104,6 +104,9 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 				positional++
 			}
 		}
+		if positional+len(named) >= len(s.names) {
+			return // no parameter left to its default
+		}
 		// A default sees the parameters before it, never the caller's
 		// locals.
 		params := map[string]bool{}

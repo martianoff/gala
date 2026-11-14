@@ -60,13 +60,9 @@ func funcResult(t string) string {
 // funcDeclType is the Lean type of top-level function f as a value, "" when
 // a type is outside the subset.
 func (g *gen) funcDeclType(f *coreexport.Func) string {
-	t := &coreexport.TypeFunc{Result: f.Result}
-	for _, pn := range f.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok || p.Type == nil {
-			return ""
-		}
-		t.Params = append(t.Params, p.Type)
+	t := paramsType(f.Params, f.Result)
+	if t == nil {
+		return ""
 	}
 	return g.safeType(func() string { return g.funcTypeLean(t) })
 }
@@ -75,15 +71,13 @@ func (g *gen) funcDeclType(f *coreexport.Func) string {
 // written out, else "". A result it cannot tell is `_`: the type is then
 // only good for knowing that the value is a function.
 func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
-	t := &coreexport.TypeFunc{Result: l.Result}
+	t := paramsType(l.Params, l.Result)
+	if t == nil {
+		return ""
+	}
 	ls := newScope(sc, 0)
-	for _, pn := range l.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok || p.Type == nil {
-			return ""
-		}
-		t.Params = append(t.Params, p.Type)
-		ls.bind(p.Name, false, g.safeType(func() string { return g.leanType(p.Type) }))
+	for i, pn := range l.Params {
+		ls.bind(pn.(*coreexport.Param).Name, false, g.safeType(func() string { return g.leanType(t.Params[i]) }))
 	}
 	ft := g.safeType(func() string { return g.funcTypeLean(t) })
 	if l.Result != nil || ft == "" {
@@ -96,7 +90,7 @@ func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
 			res = "Unit"
 		}
 	default:
-		if r := g.exprType(b, ls, map[string]bool{}); r != "" {
+		if r := g.typeOf(b, ls); r != "" {
 			res = r
 		}
 	}
@@ -123,7 +117,7 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 		return g.lambda(l, sc, ft)
 	}
 	if isFunc && len(ft.Params) == 0 {
-		t := g.exprType(e, sc, map[string]bool{})
+		t := g.typeOf(e, sc)
 		if !strings.Contains(t, "→") {
 			if t == "" && !g.isFuncValue(e, sc) {
 				unsup(posOf(e), "by-name-arg")
@@ -171,8 +165,7 @@ func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFun
 			name = "_"
 		}
 		ps = append(ps, fmt.Sprintf("(%s : %s)", name, lt))
-		ls.bind(p.Name, false, lt)
-		ls.vars[p.Name].gtype = t
+		ls.bind(p.Name, false, lt).gtype = t
 	}
 	if expect != nil && len(expect.Params) != len(l.Params) {
 		unsup(l.Pos, "lambda-arity")

@@ -412,6 +412,32 @@ func (g *gen) globalType(gv *globalVar) string {
 	return ""
 }
 
+// typeOf is exprType of e in sc, where plain to see.
+func (g *gen) typeOf(e coreexport.Node, sc *scope) string {
+	return g.exprType(e, sc, map[string]bool{})
+}
+
+// declared reports whether the program declares callable x itself.
+func (g *gen) declared(x string) bool {
+	return g.funcs[x] != nil || g.structs[x] != nil || g.variants[x] != nil
+}
+
+// fieldByType is field name of the struct or sealed type whose Lean name is
+// t, or nil.
+func (g *gen) fieldByType(t, name string) *coreexport.Field {
+	for _, n := range g.typeNames {
+		if ident(n) != t {
+			continue
+		}
+		for _, f := range g.typeFields(n) {
+			if f.Name == name {
+				return f
+			}
+		}
+	}
+	return nil
+}
+
 // exprType is the Lean type of expression e in scope sc (nil for a
 // package-level initializer), "" when it is not plain to see from the
 // declarations: literals, operators, locals and globals of a known type,
@@ -424,16 +450,8 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 	}
 	switch e := e.(type) {
 	case *coreexport.Select:
-		t := g.exprType(e.Target, sc, seen)
-		for _, n := range g.typeNames {
-			if ident(n) != t {
-				continue
-			}
-			for _, f := range g.typeFields(n) {
-				if f.Name == e.Name && f.Type != nil {
-					return g.leanType(f.Type)
-				}
-			}
+		if f := g.fieldByType(g.exprType(e.Target, sc, seen), e.Name); f != nil && f.Type != nil {
+			return g.leanType(f.Type)
 		}
 		return ""
 	case *coreexport.Int:
@@ -486,7 +504,7 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			return ""
 		}
 		switch {
-		case n.Name == "Some" && g.sigOfSafe("Some") == nil && len(e.Args) == 1:
+		case n.Name == "Some" && !g.declared("Some") && len(e.Args) == 1:
 			if t := g.exprType(argNode(e.Args[0]), sc, seen); t != "" {
 				return "(GOption " + t + ")"
 			}

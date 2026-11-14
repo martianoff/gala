@@ -29,11 +29,19 @@ type local struct {
 	gtype coreexport.Node
 }
 
-// lambdaParamTypes is lambda l's type as far as its parameters go (the
-// result is left out), or nil when a parameter type is not written.
-func lambdaParamTypes(l *coreexport.Lambda) *coreexport.TypeFunc {
-	t := &coreexport.TypeFunc{}
-	for _, pn := range l.Params {
+// valueAt is values[i], or nil past the end.
+func valueAt(values []coreexport.Node, i int) coreexport.Node {
+	if i < len(values) {
+		return values[i]
+	}
+	return nil
+}
+
+// paramsType is the function type of params and result, or nil when a
+// parameter's type is not written.
+func paramsType(params []coreexport.Node, result coreexport.Node) *coreexport.TypeFunc {
+	t := &coreexport.TypeFunc{Result: result}
+	for _, pn := range params {
 		p, ok := pn.(*coreexport.Param)
 		if !ok || p.Type == nil {
 			return nil
@@ -54,8 +62,11 @@ func (s *scope) child() *scope { return newScope(s, s.level) }
 // term is a nested scope inside a term-level `do` block.
 func (s *scope) term() *scope { return newScope(s, s.level+1) }
 
-func (s *scope) bind(x string, mutable bool, typ string) {
-	s.vars[x] = &local{mutable: mutable, level: s.level, typ: typ, box: -1}
+// bind declares x in s and returns it, for the caller to fill in the rest.
+func (s *scope) bind(x string, mutable bool, typ string) *local {
+	l := &local{mutable: mutable, level: s.level, typ: typ, box: -1}
+	s.vars[x] = l
+	return l
 }
 
 func (s *scope) lookup(x string) *local {
@@ -259,7 +270,7 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 	for i := range names {
 		types[i] = strings.TrimPrefix(ann, " : ")
 		if types[i] == "" && len(values) > 0 {
-			types[i] = g.exprType(values[i], sc, map[string]bool{})
+			types[i] = g.typeOf(values[i], sc)
 		}
 	}
 	var items []string
@@ -293,14 +304,11 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 	}
 	for i, n := range names {
 		if n != "_" {
-			sc.bind(n, mutable, types[i])
-			sc.vars[n].box = boxes[i]
-			sc.vars[n].gtype = typ
-			if typ == nil && i < len(values) {
-				if l, ok := values[i].(*coreexport.Lambda); ok {
-					if lt := lambdaParamTypes(l); lt != nil {
-						sc.vars[n].gtype = lt
-					}
+			l := sc.bind(n, mutable, types[i])
+			l.box, l.gtype = boxes[i], typ
+			if lam, ok := valueAt(values, i).(*coreexport.Lambda); ok && typ == nil {
+				if lt := paramsType(lam.Params, nil); lt != nil {
+					l.gtype = lt
 				}
 			}
 		}

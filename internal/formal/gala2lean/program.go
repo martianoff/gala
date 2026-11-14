@@ -164,7 +164,7 @@ func (g *gen) unresolved(pos coreexport.Pos, fallback string) {
 // program that declares methods, whose String or Equal would be called.
 func (g *gen) basic(e coreexport.Node, sc *scope) {
 	if g.hasMethods {
-		g.basicType(g.exprType(e, sc, map[string]bool{}), posOf(e))
+		g.basicType(g.typeOf(e, sc), posOf(e))
 	}
 }
 
@@ -359,8 +359,7 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 			unsup(p.Pos, "untyped-param")
 		}
 		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
-		sc.bind(p.Name, false, g.leanType(p.Type))
-		sc.vars[p.Name].gtype = p.Type
+		sc.bind(p.Name, false, g.leanType(p.Type)).gtype = p.Type
 	}
 	res := "Unit"
 	if f.Result != nil {

@@ -19,6 +19,7 @@ type sig struct {
 	// the parameters before it. A field's default sees no field.
 	paramsInDefaults bool
 	unit             bool // a function without a result
+	ctor             bool // a struct or variant constructor, whose call is a value
 }
 
 // stdCtors are the standard library's Option and Either constructors, which
@@ -59,7 +60,7 @@ func (g *gen) sigOfSafe(x string) *sig {
 }
 
 func (g *gen) fieldSig(head string, fields []*coreexport.Field) *sig {
-	s := &sig{head: head}
+	s := &sig{head: head, ctor: true}
 	for _, f := range fields {
 		s.names, s.types, s.defaults = append(s.names, f.Name), append(s.types, f.Type), append(s.defaults, f.Default)
 	}
@@ -109,6 +110,14 @@ func bindArgs(s *sig, args []coreexport.Node, pos coreexport.Pos) []int {
 		}
 	}
 	return given
+}
+
+// positional stops the translation at a named argument where only
+// positional ones are translated (Println, a function value, ...).
+func positional(a coreexport.Node) {
+	if na, ok := a.(*coreexport.NamedArg); ok {
+		unsup(na.Pos, "named-arg")
+	}
 }
 
 // argNode is the expression of a call argument, named or not.
@@ -206,7 +215,7 @@ func (g *gen) apply(s *sig, args []string, subs ...term) term {
 		c = "(" + c + " " + strings.Join(args, " ") + ")"
 	}
 	switch {
-	case !s.paramsInDefaults:
+	case s.ctor:
 		// A constructor: a value.
 		return wrap(c, subs...)
 	case allPure(subs...):
@@ -235,7 +244,8 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 			g.unresolved(e.Pos, "call-of-"+x)
 		}
 	}
-	if s, ok := e.Callee.(*coreexport.Select); ok && !g.isFuncField(s, sc) {
+	ft := g.calleeType(e.Callee, sc)
+	if s, ok := e.Callee.(*coreexport.Select); ok && ft == nil {
 		// pkg.F(...) names a member of an import; v.M(...) calls a method.
 		if n, isName := s.Target.(*coreexport.Name); isName && sc.lookup(n.Name) == nil &&
 			g.globalBy[n.Name] == nil && g.variants[n.Name] == nil {
@@ -249,11 +259,8 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	f := g.expr(e.Callee, sc)
 	parts := []string{f.val()}
 	subs := []term{f}
-	ft := g.calleeType(e.Callee, sc)
 	for i, a := range e.Args {
-		if na, ok := a.(*coreexport.NamedArg); ok {
-			unsup(na.Pos, "named-arg")
-		}
+		positional(a)
 		// The callee's parameter types, when known, type lambda arguments
 		// and turn by-name arguments into thunks.
 		var expect coreexport.Node
@@ -284,25 +291,12 @@ func (g *gen) calleeType(c coreexport.Node, sc *scope) *coreexport.TypeFunc {
 			return ft
 		}
 	case *coreexport.Select:
-		t := g.exprType(c.Target, sc, map[string]bool{})
-		for _, n := range g.typeNames {
-			if ident(n) != t {
-				continue
-			}
-			for _, f := range g.typeFields(n) {
-				if ft, ok := f.Type.(*coreexport.TypeFunc); ok && f.Name == c.Name {
-					return ft
-				}
-			}
+		if f := g.fieldByType(g.typeOf(c.Target, sc), c.Name); f != nil {
+			ft, _ := f.Type.(*coreexport.TypeFunc)
+			return ft
 		}
 	}
 	return nil
-}
-
-// isFuncField reports whether s is a field of a function type, whose call is
-// a call of the function it holds rather than of a method.
-func (g *gen) isFuncField(s *coreexport.Select, sc *scope) bool {
-	return g.calleeType(s, sc) != nil
 }
 
 // print translates Println or Print.
@@ -310,9 +304,7 @@ func (g *gen) print(x string, e *coreexport.Call, sc *scope) term {
 	shown := make([]string, len(e.Args))
 	subs := make([]term, len(e.Args))
 	for i, a := range e.Args {
-		if na, ok := a.(*coreexport.NamedArg); ok {
-			unsup(na.Pos, "named-arg")
-		}
+		positional(a)
 		g.printable(a, sc)
 		subs[i] = g.expr(a, sc)
 		shown[i] = "garg " + subs[i].val()
@@ -325,7 +317,7 @@ func (g *gen) print(x string, e *coreexport.Call, sc *scope) term {
 // what the translation would print: a function (`fmt` prints its address),
 // or, in a program with methods, anything but int, string and bool.
 func (g *gen) printable(e coreexport.Node, sc *scope) {
-	t := g.exprType(e, sc, map[string]bool{})
+	t := g.typeOf(e, sc)
 	if strings.Contains(t, "→") {
 		unsup(posOf(e), "print-pointer")
 	}
@@ -352,9 +344,7 @@ func (g *gen) stdCtor(x string, e *coreexport.Call, sc *scope) term {
 	if want == 0 {
 		return term{code: stdCtors[x], pure: true}
 	}
-	if na, ok := e.Args[0].(*coreexport.NamedArg); ok {
-		unsup(na.Pos, "named-arg")
-	}
+	positional(e.Args[0])
 	v := g.expr(e.Args[0], sc)
 	return wrap("("+stdCtors[x]+" "+v.val()+")", v)
 }
