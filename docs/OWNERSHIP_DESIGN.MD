@@ -701,7 +701,26 @@ gantt
 | 4 | Sendable transfer | 1–2 weeks | The `ArrayOf` example above compiles; a use after the send is E0037 with a secondary span |
 | Adoption | `gala fix` codemod; galop migrated; gala-tui only with approval | 1 week, plus gala-tui | galop at about 90% translatable |
 
-## 7. Open questions for the maintainer
+## 7. Decisions
+
+The maintainer answered the open questions below on 2026-11-13. Phase 1 is approved and in progress. Answers for later phases are provisional and will be confirmed once phase 1's escape reasons are in `COVERAGE.md`.
+
+| # | Decision |
+|---|---|
+| Q1 | **Build phase 1 now.** Decide phase 2 after phase 1's data is in. |
+| Q2 | Keyword **`inout`, reserved**. |
+| Q3 | **`&` marks `inout` arguments**; receivers stay implicit. |
+| Q4 | Calling a mutating method on a `val` is a compile error, **for `inout` receivers and also for today's `Ptr` receivers** (no more silent `AddrOfCopy` mutation of a hidden copy). The `Ptr` part is a breaking change, approved and scheduled independently of phase 2. |
+| Q5 | Mutating an `inout` place inside a `Try`/recover region is a compile error, at least at first. |
+| Q6 | Non-escaping function parameters are **inferred** and recorded in package metadata. |
+| Q7 | A transfer across a `Sendable` boundary is **inferred from last use**. Transfer of `Future` results is decided separately. |
+| Q8 | **Interfaces may declare `inout` method requirements**, lowered to pointer-receiver method-set requirements in Go. |
+| Q9 | **Std's fluent builders (`StringBuilder`, …) will be redesigned** in the `inout`/value style when phase 2 lands. Breaking; approved. |
+| Q10 | Projections (`inout` pattern bindings, `inout` locals) are out of scope. |
+| Q11 | gala-tui's public `*Buffer` API stays as is. Ask again after phase 2. |
+| Q12 | A galaspec heap model and theorem T8 are a **stretch goal of phase 1**. |
+
+## 8. Open questions for the maintainer (answered above)
 
 | # | Question | Recommendation |
 |---|---|---|
