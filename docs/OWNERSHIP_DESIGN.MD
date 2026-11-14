@@ -661,7 +661,7 @@ callback will reach during the call, or that is passed twice: `Swap(p, p)`.
 
 | Option | Guarantee | Go ergonomics | Cost | Verdict |
 |---|---|---|---|---|
-| **A. Copy-in/copy-out wrapper** | Restored for the body: it works on a local copy that only it can reach. Aliased arguments (`Swap(p, p)`) get deterministic Swift semantics: each is copied in, and they are copied out left to right, so the last write wins. | Idiomatic: the Go signature is the expected `*T`, and methods are pointer-receiver methods. | Two shallow struct copies per call from Go. None for GALA callers in the same package. | **Recommended** |
+| **A. Copy-in/copy-out wrapper** | Restored for the body: it works on a local copy that only it can reach. Aliased arguments (`Swap(p, p)`) get deterministic Swift semantics: each is copied in, and they are copied out left to right, so the last write wins. | Idiomatic: the Go signature is the expected `*T`, and methods are pointer-receiver methods. | Two shallow struct copies per call from Go. None for GALA callers, in any package (Q13). | **Recommended** |
 | B. Separate Go-facing signature (`func StepGo(p Parser) Parser`) | Holds, by value semantics. | Poor: a second name breaks "GALA never renames"; methods cannot be expressed; results become tuples. | No copies through a pointer, but a whole value is returned. | Rejected as the default |
 | C. Documented contract only | **None**: unenforceable, and it contradicts the requirement. | Best | Zero | Rejected |
 | D. Refuse to export `inout` (an error on an exported function or method with an `inout` parameter) | Holds trivially. | Blocks Go-facing libraries and Go-visible implementations of interfaces with `inout` methods (Q8). | Zero | Rejected: too restrictive |
@@ -688,13 +688,16 @@ func _gala_Parser_Advance(p *Parser) Token { /* the GALA body */ }
 - **Who calls what:**
   - GALA callers in the same package call `_gala_…` directly. Identifiers starting with
     `_gala_` are reserved for generated code.
-  - GALA callers in another package call the exported wrapper and pay the two copies.
-    Q13 asks whether to export a reserved-name implementation instead.
+  - GALA callers in another package also call the body directly (decision Q13). It is
+    exported under a reserved generated name, so only Go goes through the wrapper.
+    Go exports only identifiers that begin with an upper-case letter, and `_gala_…` does
+    not. So the cross-package body needs an exported spelling in the reserved family,
+    which Q18 asks about.
   - Calls through an interface dispatch to the wrapper.
 - **Panics:** the copy-out is skipped. A Go caller that recovers sees `*p` unchanged:
   all-or-nothing. Inside GALA no caller can observe a partial write anyway, because
-  decision Q5 forbids mutating an `inout` place inside `Try` or recover. Q14 asks
-  whether to keep the partial write instead, to match plain pointer semantics.
+  decision Q5 forbids mutating an `inout` place inside `Try` or recover. This is decided
+  in Q14.
 - **Callbacks:** if the body calls a Go callback that reads `*p` through its own alias,
   it sees the value from before the call. This is the one observable difference from
   plain pointer semantics, and it is exactly what makes the body translatable. It is
@@ -762,13 +765,13 @@ An entry may also carry a Lean model, which the translation needs (3.5.5).
   `bytes.Buffer` writer methods (not `Bytes()`), `fmt.Fprint*` with a `*strings.Builder`
   writer, `binary.Read`, `sort.Sort` on an owned slice adapter, and `json.Unmarshal`'s
   destination.
-- **Users cannot extend the list in this proposal (Q15).** A user annotation would be an
-  unchecked trust point, like `go_interop.Spawn`.
+- **Users cannot extend the list (decision Q15).** Only std's CI-verified list exists. A
+  user annotation would be an unchecked trust point, like `go_interop.Spawn`.
 - **The workaround needs no new feature:** copy in and out by hand,
   `var tmp = x; goFn(&tmp); x = tmp`. Go may keep `&tmp`, but `x` stays exclusive.
 - **Phase 1 relaxation path:** as a translator-only measure, phase 1 may also read the
   pinned compiler's `-m` output to count *coverage* (never to accept a program), so we
-  learn which allow-list entries would pay off (Q17).
+  learn which allow-list entries would pay off (decision Q17).
 
 #### 3.5.3 Interfaces with `inout` methods
 
@@ -787,9 +790,8 @@ interface whose implementers have pointer-receiver methods. An interface value t
 GALA cannot stop Go code from implementing the interface and passing the value in. So the
 guarantee is scoped: **`inout` method calls on interface values built in GALA from
 GALA types are exclusive and translatable. Values of foreign origin are trusted, not
-checked.** Q16 asks whether foreign implementations should instead be rejected at the
-exported boundary, which would be a compile error on exported functions that accept such
-interfaces.
+checked** (decision Q16). The rejected alternative was a compile error on every exported
+function that accepts such an interface.
 
 #### 3.5.4 Goroutines and Futures across Go code
 
@@ -844,7 +846,8 @@ representations (`strings.Builder` as `String`, `bytes.Buffer` as `ByteArray`, o
 | E-inout-escape (extended) | An `inout` binding is passed to a Go parameter or receiver that is not on the allow-list. The hint suggests the copy-in/copy-out pattern. |
 | E-inout-foreign-impl | A Go-declared type is converted to an interface with `inout` method requirements. |
 
-**New open questions**
+**Questions raised by this section.** Q13–Q17 are answered in [§7](#7-decisions). Q18 is
+open.
 
 | # | Question | Recommendation |
 |---|---|---|
@@ -853,6 +856,7 @@ representations (`strings.Builder` as `String`, `bytes.Buffer` as `ByteArray`, o
 | Q15 | May users add allow-list entries (an annotation on a go_interop wrapper)? | Not in this proposal. If they may, it should be an explicit, greppable trust marker, as `go_interop.Spawn` is. |
 | Q16 | Interface values with `inout` methods that arrive from Go: trusted and marked foreign (proposed), or rejected at exported boundaries? | Trusted and marked. Rejecting them would make such interfaces unusable from Go. |
 | Q17 | May the phase 1 translator use the pinned compiler's `-m` escape output, for coverage measurement only? | Yes. It never decides whether a program compiles. |
+| Q18 | *Open.* Go cannot see a lower-case `_gala_…` name from another package. How is the cross-package body from Q13 spelled? | Reserve one exported prefix, for example `GALA_` (`GALA_Parser_Advance`), and extend E0097 to cover it. No GALA identifier in std, the examples, galop, gala-tui, gala-team or gala-acp starts with `GALA_`; only environment-variable strings do. Go users see these names, so each one's doc comment says it is generated and names the method to call instead (`Advance`). |
 
 ## 4. Migration and breaking-change analysis
 
@@ -969,6 +973,11 @@ The maintainer answered the open questions below on 2026-11-13. Phase 1 is appro
 | Q10 | Projections (`inout` pattern bindings, `inout` locals) are out of scope. |
 | Q11 | gala-tui's public `*Buffer` API stays as is. Ask again after phase 2. |
 | Q12 | A galaspec heap model and theorem T8 are a **stretch goal of phase 1**. |
+| Q13 | GALA callers in other packages **call the body directly**. It is exported under a reserved generated name in the `_gala_` family, consistent with [GALA-E0097](errors/GALA-E0097.md). Only Go goes through the copy-in/copy-out wrapper. The exported spelling is still open (Q18 in [3.5.5](#355-what-stays-trusted-and-how-lean-sees-go)). |
+| Q14 | On a panic the **copy-back is skipped**: a Go caller that recovers sees its value unchanged (all-or-nothing). |
+| Q15 | **No user allow-list entries** for now. Only std's list, verified in CI. |
+| Q16 | Interface values with `inout` methods that arrive from Go are **trusted and marked foreign**. The Lean translation treats calls on them as opaque Go calls. |
+| Q17 | Phase 1 **may read the pinned compiler's escape output to measure coverage**, never to decide whether a program compiles. |
 
 ## 8. Open questions for the maintainer (answered above)
 
