@@ -26,7 +26,13 @@ changes its receiver. The `String` GALA generates for a struct or a sealed type
 prints each field through a copy of the field, so printing a value with a field
 whose pointer-receiver `String` changes its receiver is rejected too, whether
 the value printed is a `var`, a `val` or a pointer (see "Fields printed through
-a copy" below).
+a copy" below). A method that prints a field of its receiver this way, as
+`Println(r.c)` or `s"${r.c}"` does, runs that `String` on the receiver's own
+field, so it counts as changing its receiver. fmt prints a value by its
+`Format`, then its `Error`, then its `String`: a value with a `Format` or an
+`Error` of its own prints by that, and a pointer-receiver `Format` or `Error`
+runs before a pointer-receiver `String`, so the method checked is the one
+that runs.
 
 **Minimal repro.**
 

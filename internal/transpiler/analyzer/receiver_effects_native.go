@@ -31,10 +31,10 @@ func nativeReceiverEffects(fn native.FunctionDeclarationNode, recv string) []tra
 	}
 	var effects []transpiler.ReceiverEffect
 	if body := fn.Block(); body.Ok() {
-		effects = receiverEffectsIn(body.GalaNodeRef, recv, effects)
+		effects = receiverEffectsIn(body.GalaNodeRef, recv, native.GalaNodeRef{}, effects)
 	}
 	if body := fn.Expression(); body.Ok() {
-		effects = receiverEffectsIn(body.GalaNodeRef, recv, effects)
+		effects = receiverEffectsIn(body.GalaNodeRef, recv, native.GalaNodeRef{}, effects)
 	}
 	// Sorted, so that the metadata is stable and duplicates are adjacent.
 	slices.SortFunc(effects, func(a, b transpiler.ReceiverEffect) int {
@@ -46,13 +46,18 @@ func nativeReceiverEffects(fn native.FunctionDeclarationNode, recv string) []tra
 }
 
 // receiverEffectsIn appends the effects of the uses of recv under root,
-// those inside interpolated strings included.
-func receiverEffectsIn(root native.GalaNodeRef, recv string, effects []transpiler.ReceiverEffect) []transpiler.ReceiverEffect {
+// those inside interpolated strings included. printed is the expression an
+// interpolation prints when root is one, and no node otherwise.
+func receiverEffectsIn(root native.GalaNodeRef, recv string, printed native.GalaNodeRef, effects []transpiler.ReceiverEffect) []transpiler.ReceiverEffect {
 	root.Walk(func(n native.GalaNodeRef) bool {
 		switch n.Kind() {
 		case native.GalaKIND_postfixExpr:
-			if eff, ok := receiverUse(native.PostfixExprNode{GalaNodeRef: n}, recv); ok {
+			pe := native.PostfixExprNode{GalaNodeRef: n}
+			if eff, ok := receiverUse(pe, recv); ok {
 				effects = append(effects, eff)
+			}
+			if path, ok := printedPlace(pe, recv, printed); ok {
+				effects = append(effects, transpiler.ReceiverEffect{Kind: transpiler.ReceiverPrint, Path: path})
 			}
 		case native.GalaKIND_literal:
 			effects = interpolatedReceiverEffects(native.LiteralNode{GalaNodeRef: n}, recv, effects)
@@ -86,9 +91,78 @@ func interpolatedReceiverEffects(lit native.LiteralNode, recv string, effects []
 			effects = append(effects, transpiler.ReceiverEffect{Kind: transpiler.ReceiverEscape})
 			continue
 		}
-		effects = receiverEffectsIn(expr.GalaNodeRef, recv, effects)
+		// The expression is printed unless an explicit spec other than %v or
+		// %s (or a Go-syntax one, `%#v`) prints it as Go does.
+		var printed native.GalaNodeRef
+		if spec := part.FormatSpec; spec == "" || (strings.ContainsAny(spec[len(spec)-1:], "vs") && !strings.Contains(spec, "#")) {
+			printed = expr.GalaNodeRef
+		}
+		effects = receiverEffectsIn(expr.GalaNodeRef, recv, printed, effects)
 	}
 	return effects
+}
+
+// printedPlace is the path of the place pe names, when pe, rooted at recv, is
+// a place (`r.a`, `r.items[0]`, `*r`) that is printed whole: an argument of
+// Println or Print, or the expression printed, an interpolated one. A name
+// that shadows Println or Print counts as well: it can only make the method
+// look like it mutates its receiver.
+func printedPlace(pe native.PostfixExprNode, recv string, printed native.GalaNodeRef) ([]string, bool) {
+	if !isReceiverPrimary(pe.PrimaryExpr(), recv) || pe.MATCH().Ok() {
+		return nil, false
+	}
+	var path []string
+	for _, s := range pe.AllPostfixSuffix() {
+		switch {
+		case s.Identifier().Ok():
+			path = append(path, s.Identifier().GetText())
+		case s.ExpressionList().Ok():
+			path = append(path, transpiler.ReceiverIndex)
+		default:
+			return nil, false // a call's result
+		}
+	}
+	place := pe.Parent() // the unaryExpr holding pe
+	if len(path) == 0 {
+		if unaryOperator(place.Parent()) != "*" {
+			return nil, false // the pointer itself, an escape
+		}
+		place = place.Parent()
+	}
+	whole, binaryOperand := expressionOf(place)
+	if binaryOperand || !whole.Ok() {
+		return nil, false
+	}
+	if (printed.Ok() && whole == printed) || isPrintArgument(whole) {
+		return path, true
+	}
+	return nil, false
+}
+
+// isPrintArgument reports whether the expression expr is a whole argument of
+// a call of Println or Print.
+func isPrintArgument(expr native.GalaNodeRef) bool {
+	arg := expr.Parent()
+	if arg.Ok() && arg.Kind() == native.GalaKIND_expressionPattern {
+		arg = arg.Parent()
+	}
+	if !arg.Ok() || arg.Kind() != native.GalaKIND_argument || (native.ArgumentNode{GalaNodeRef: arg}).Identifier().Ok() {
+		return false
+	}
+	suffix := arg.Parent().Parent() // argumentList, then postfixSuffix
+	if !suffix.Ok() || suffix.Kind() != native.GalaKIND_postfixSuffix {
+		return false
+	}
+	call := suffix.Parent()
+	if !call.Ok() || call.Kind() != native.GalaKIND_postfixExpr {
+		return false
+	}
+	pe := native.PostfixExprNode{GalaNodeRef: call}
+	suffixes := pe.AllPostfixSuffix()
+	if len(suffixes) == 0 || suffixes[0].GalaNodeRef != suffix {
+		return false
+	}
+	return isReceiverPrimary(pe.PrimaryExpr(), "Println") || isReceiverPrimary(pe.PrimaryExpr(), "Print")
 }
 
 // receiverUse classifies a postfix expression rooted at recv: `r.a.b` read as

@@ -1,0 +1,18 @@
+faulted
+f=faulted
+Some(faulted)
+0
+faulted
+0
+fancy
+fy=fancy
+Some(fancy)
+0
+pointed error 3
+p=pointed error 3
+Some(pointed error 3)
+pointed error 3
+pointed error 4
+Holder(faulted, pointed error 5)
+plain 6
+Some(plain 7)

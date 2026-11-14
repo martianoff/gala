@@ -76,6 +76,20 @@ func (b *GBox[T]) String() string = "gbox"
 
 struct GOuter(var b GBox[int])
 
+struct OwnError(var g Guarded)
+
+func (o OwnError) Error() string = "own error"
+
+struct PtrOwnError(var g Guarded)
+
+func (o Ptr[PtrOwnError]) Error() string = "ptr own error"
+
+struct GuardedError(var mu sync.Mutex)
+
+func (g *GuardedError) String() string = "guarded"
+
+func (g GuardedError) Error() string = "guarded error"
+
 func mk() Guarded = Guarded(sync.Mutex{}, 3)
 `
 
@@ -100,6 +114,8 @@ func mk() Guarded = Guarded(sync.Mutex{}, 3)
 		{"a pointer field to a value with such a field", "var o = Outer(mk(), 1)\n    val w = ViaPointer(&o)\n    Println(w)", "cannot print this ViaPointer: its field o.g, a Guarded"},
 		{"a field printed with %q", "var o = Outer(mk(), 1)\n    Println(f\"$o%q\")", "cannot print this Outer"},
 		{"a generic field, named with its type arguments", "var o = GOuter(GBox[int](sync.Mutex{}, 1))\n    Println(o)", "hold the field as a pointer (`*GBox[int]`)"},
+		// fmt, given the value, prints it by its generated String.
+		{"a value whose Error is on its pointer", "var o = PtrOwnError(mk())\n    Println(o)", "cannot print this PtrOwnError: its field g, a Guarded"},
 	}
 	for _, tc := range rejected {
 		t.Run("rejected/"+tc.name, func(t *testing.T) {
@@ -118,6 +134,10 @@ func mk() Guarded = Guarded(sync.Mutex{}, 3)
 		{"a field held by pointer", "val b = ByPointer(&Guarded(sync.Mutex{}, 1))\n    Println(b)", "fmt.Println(b)"},
 		{"a field of a type with its own String", "var o = OwnString(mk())\n    Println(o)", "fmt.Println(o)"},
 		{"a copyable field", "val o = PlainOuter(Plain(1))\n    Println(o)", "fmt.Println(o)"},
+		// fmt prints these by an Error, before any String.
+		{"a value printed by its own Error", "val g = GuardedError(sync.Mutex{})\n    Println(g)", "fmt.Println(g)"},
+		{"a field of a value printed by its own Error", "var o = OwnError(mk())\n    Println(o)", "fmt.Println(o)"},
+		{"a pointer printed by its pointer-receiver Error", "var o = PtrOwnError(mk())\n    Println(&o)", "fmt.Println(&o)"},
 	}
 	for _, tc := range accepted {
 		t.Run("accepted/"+tc.name, func(t *testing.T) {

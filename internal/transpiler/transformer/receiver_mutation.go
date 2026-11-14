@@ -15,7 +15,9 @@ import (
 //
 //   - a GALA method: its ReceiverEffects, judged here against the types of
 //     the fields they reach; a call it makes on its receiver, or on a field
-//     stored in it, counts when that method mutates;
+//     stored in it, counts when that method mutates, and so does printing
+//     such a place by a pointer-receiver method that mutates (see
+//     pointerPrinted), which a print runs on the place itself;
 //   - a Go method (one of a Go type, or one hand-written Go declares on a GALA
 //     type): the read-only methods the analyzer works out from the Go source
 //     (see goReadOnlyMethods).
@@ -110,6 +112,14 @@ func (t *galaASTTransformer) effectsMutate(recvType transpiler.Type, effects []t
 			continue
 		case eff.Kind == transpiler.ReceiverWrite:
 			return true
+		case eff.Kind == transpiler.ReceiverPrint:
+			// Printed through its address when it prints through a pointer
+			// by a String declared in GALA (see printedValue); fmt prints
+			// any other value without a pointer method of it.
+			if method, galaString := t.pointerPrinted(place); method != "" && galaString && t.methodMutates(place, method, seen) {
+				return true
+			}
+			continue
 		}
 		if _, _, isField := t.fieldOf(place, eff.Method); isField {
 			continue // a read of the field
