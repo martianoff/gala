@@ -5451,3 +5451,13 @@ gala_exec_test(
     expected = "inout_interfaces.out",
     deps = ["//collection_immutable"],
 )
+
+# A struct literal's keys are field names: `Pair{Left: 1}` sets the field
+# Left, though a bare `Left` elsewhere is std's Either constructor. Keys were
+# lowered as expressions, so an exported std name came out as `std.Left` and
+# failed in go build.
+gala_exec_test(
+    name = "struct_literal_std_named_fields",
+    src = "struct_literal_std_named_fields.gala",
+    expected = "struct_literal_std_named_fields.out",
+)

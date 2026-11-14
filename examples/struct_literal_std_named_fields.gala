@@ -1,0 +1,51 @@
+package main
+
+// Struct literal keys are field names, even when std exports a symbol of the
+// same name. `Pair{Left: 1}` sets the field Left, not std's Either constructor.
+
+struct Pair(Left int, Right int)
+
+struct Results(Some int, None int, Success string, Failure string)
+
+struct Misc(Option int, Tuple int, FromOption int, NoSuchElement string)
+
+struct Box[T any](Left T, Right T)
+
+struct Holder(Left Either[int, string], Some Option[int])
+
+type Block struct {
+    Left int
+    Right string
+}
+
+func sum(p Pair) int = p match {
+    case Pair(l, r) => l + r
+    case _ => 0
+}
+
+func main() {
+    val p = Pair{Left: 1, Right: 2}
+    Println(s"pair: ${p.Left} ${p.Right} sum=${sum(p)}")
+    Println(s"copy: ${p.Copy(Left = 10).Left}")
+
+    val r = Results{Some: 3, None: 4, Success: "ok", Failure: "err"}
+    Println(s"results: ${r.Some} ${r.None} ${r.Success} ${r.Failure}")
+
+    val m = Misc{Option: 5, Tuple: 6, FromOption: 7, NoSuchElement: "x"}
+    Println(s"misc: ${m.Option} ${m.Tuple} ${m.FromOption} ${m.NoSuchElement}")
+
+    val b = Box[string]{Left: "l", Right: "r"}
+    Println(s"box: ${b.Left} ${b.Right}")
+
+    // The key is the field, the value is still std's constructor.
+    val h = Holder{Left: Left[int, string](8), Some: Some(9)}
+    Println(s"holder: ${h.Left} ${h.Some}")
+
+    val k = Block{Left: 11, Right: "eleven"}
+    Println(s"block: ${k.Left} ${k.Right}")
+
+    // A local named like the field is still read as the value.
+    val Right = 12
+    val local = Pair{Left: Right, Right: Right + 1}
+    Println(s"local: ${local.Left} ${local.Right}")
+}

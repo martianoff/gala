@@ -602,6 +602,28 @@ func (c compositeSrc) elems() []keyedElem {
 	return out
 }
 
+// compositeKeysAreFields reports whether a bare-name key in a literal of
+// typeExpr is a field name, in the struct's own namespace: `Pair{Left: 1}`
+// names the field Left, though a bare `Left` elsewhere is std's Either
+// constructor. Only a type known not to be a struct, such as a named Go map
+// with constant keys (`url.Values{k: v}`), takes expression keys. A type the
+// type info does not describe is taken as a struct, the only kind a bare-name
+// key usually belongs to.
+func (t *galaASTTransformer) compositeKeysAreFields(typeExpr ast.Expr, resolvedTypeName string, fields []string) bool {
+	if len(fields) > 0 {
+		return true
+	}
+	if _, qualifiedName := extractTypeNameFromExpr(typeExpr); t.goTypeInfo != nil && qualifiedName != "" {
+		if td := t.goTypeInfo.GetTypeData(t.goTypeKey(qualifiedName)); td != nil {
+			return td.Kind == "struct"
+		}
+	}
+	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
+		return len(meta.Fields) > 0
+	}
+	return true
+}
+
 // transformCompositeLiteral lowers the composite literal c.
 func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr, error) {
 	t.nativeShape(c.node, "composite")
@@ -646,6 +668,8 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 		fieldIndex[f] = i
 	}
 
+	fieldKeys := t.compositeKeysAreFields(typeExpr, resolvedTypeName, fields)
+
 	// Transform the elements
 	var elts []ast.Expr
 	given := make(map[string]bool) // the fields a keyed literal names
@@ -653,8 +677,14 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 	for _, el := range c.elems() {
 		if el.key.ok() {
 			// Key-value pair
-			key, err := t.lowerExpr(el.key)
-			if err != nil {
+			name := ""
+			if fieldKeys {
+				name = el.key.bareIdent()
+			}
+			var key ast.Expr
+			if name != "" {
+				key = ast.NewIdent(name)
+			} else if key, err = t.lowerExpr(el.key); err != nil {
 				return nil, err
 			}
 			value, err := t.lowerExpr(el.value)
@@ -663,18 +693,16 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 			}
 			keyed = true
 			// Wrap value with NewImmutable() if the field is immutable (val, not var)
-			if keyIdent, ok := key.(*ast.Ident); ok {
-				given[keyIdent.Name] = true
-				if idx, found := fieldIndex[keyIdent.Name]; found {
-					if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
-						// Reject nil assignment to immutable (val) fields — use Option[T] instead
-						if ident, isIdent := value.(*ast.Ident); isIdent && ident.Name == "nil" {
-							return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-								"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
-								keyIdent.Name, keyIdent.Name))
-						}
-						value = t.wrapImmutableFieldValue(value, fieldTypes[keyIdent.Name], typeArgSubst)
+			if name != "" {
+				given[name] = true
+				if idx, found := fieldIndex[name]; found && idx < len(immutFlags) && immutFlags[idx] {
+					// Reject nil assignment to immutable (val) fields — use Option[T] instead
+					if ident, isIdent := value.(*ast.Ident); isIdent && ident.Name == "nil" {
+						return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+							"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
+							name, name))
 					}
+					value = t.wrapImmutableFieldValue(value, fieldTypes[name], typeArgSubst)
 				}
 			}
 			elts = append(elts, &ast.KeyValueExpr{Key: key, Value: value})
