@@ -485,9 +485,6 @@ func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type, li
 	if _, isPtr := typ.(transpiler.PointerType); isPtr {
 		return expr, typ, t.checkPrintedFieldsCopy(typ, line, col)
 	}
-	if t.getTypeMeta(typ.BaseName()) == nil {
-		return expr, typ, nil
-	}
 	method, galaString := t.pointerPrinted(typ)
 	if method == "" || !galaString {
 		return expr, typ, t.checkPrintedFieldsCopy(typ, line, col)
@@ -515,87 +512,103 @@ type printChoice struct {
 	method    string // "Format", "Error" or "String"; "" for none
 	onPointer bool   // declared on the pointer receiver
 	generated bool   // the String generated for a GALA struct or sealed type
+	inGALA    bool   // declared in GALA or generated, not declared in Go
 }
 
-// printedBy is the method fmt prints a value of typ by, chosen as fmt
+// printChoices is the method fmt prints a value of typ by, chosen as fmt
 // chooses it: Format, then Error, then String (printMethods), each with its
-// interface's signature, declared in GALA, generated, or declared in Go, and
-// in the method set of what fmt is given: the value, which has the
-// value-receiver methods, or, when viaPointer, a pointer to it, which has
-// them all. It is the zero printChoice when fmt prints the value by none.
-func (t *galaASTTransformer) printedBy(typ transpiler.Type, viaPointer bool) printChoice {
+// interface's signature, declared in GALA, generated, or declared in Go.
+// byValue is fmt's choice given the value, which has the value-receiver
+// methods; byPointer, given a pointer to it, which has them all. str is the
+// type's String, wherever fmt would call it. Each is the zero printChoice
+// when there is none.
+func (t *galaASTTransformer) printChoices(typ transpiler.Type) (byValue, byPointer, str printChoice) {
 	_, meta, goData, ok := t.receiverTypeInfo(typ)
 	if !ok {
-		return printChoice{}
+		return
 	}
 	for _, name := range printMethods {
-		if c, _, declared := t.printMethod(meta, goData, name); declared && (viaPointer || !c.onPointer) {
-			return c
+		c := t.printMethod(meta, goData, name)
+		if c.method == "" {
+			continue
+		}
+		if byPointer.method == "" {
+			byPointer = c
+		}
+		if byValue.method == "" && !c.onPointer {
+			byValue = c
+		}
+		if name == "String" {
+			str = c
 		}
 	}
-	return printChoice{}
+	return
+}
+
+// printedBy is the method fmt prints a value of typ by (see printChoices):
+// given the value, or, when viaPointer, a pointer to it.
+func (t *galaASTTransformer) printedBy(typ transpiler.Type, viaPointer bool) printChoice {
+	byValue, byPointer, _ := t.printChoices(typ)
+	if viaPointer {
+		return byPointer
+	}
+	return byValue
 }
 
 // pointerPrinted is the method GALA prints a value of typ by through a
 // pointer to it, as std's run-time printsByPointerString chooses: when fmt,
 // given the value, prints it by none of its own methods, and a pointer to it
 // has a String, the value prints as fmt prints that pointer, by the method
-// printedBy names for it (a pointer-receiver Format or Error before the
+// printChoices names for it (a pointer-receiver Format or Error before the
 // String). method is "" for any other value. galaString reports whether that
 // String is declared in GALA rather than in Go.
 func (t *galaASTTransformer) pointerPrinted(typ transpiler.Type) (method string, galaString bool) {
-	_, meta, goData, ok := t.receiverTypeInfo(typ)
-	if !ok || t.printedBy(typ, false).method != "" {
+	byValue, byPointer, str := t.printChoices(typ)
+	if byValue.method != "" || str.method == "" {
 		return "", false
 	}
-	if _, inGALA, declared := t.printMethod(meta, goData, "String"); declared {
-		return t.printedBy(typ, true).method, inGALA
-	}
-	return "", false
+	return byPointer.method, str.inGALA
 }
 
-// printMethod reports whether the type meta and goData describe declares
-// name, one of printMethods, with the signature fmt calls it by: in GALA
-// (inGALA), as the generated String, or in Go, on a Go type or by
-// hand-written Go on a GALA type.
-func (t *galaASTTransformer) printMethod(meta *transpiler.TypeMetadata, goData *transpiler.GoTypeData, name string) (c printChoice, inGALA, declared bool) {
+// printMethod is name, one of printMethods, as the type meta and goData
+// describe declares it with the signature fmt calls it by: in GALA, as the
+// generated String, or in Go, on a Go type or by hand-written Go on a GALA
+// type. It is the zero printChoice when the type has no such method.
+func (t *galaASTTransformer) printMethod(meta *transpiler.TypeMetadata, goData *transpiler.GoTypeData, name string) printChoice {
 	if meta != nil {
 		if name == "String" && t.printsByGeneratedString(meta) {
-			return printChoice{method: name, generated: true}, true, true
+			return printChoice{method: name, generated: true, inGALA: true}
 		}
 		if m := meta.Methods[name]; m != nil && !m.GoDeclared && printSignature(name, m.ParamTypes, m.ReturnType) {
-			return printChoice{method: name, onPointer: m.PointerReceiver}, true, true
+			return printChoice{method: name, onPointer: m.PointerReceiver, inGALA: true}
 		}
 	}
 	if goData == nil {
-		return printChoice{}, false, false
+		return printChoice{}
 	}
-	sig := goData.Methods[name]
-	if sig == nil || len(sig.Returns) > 1 {
-		return printChoice{}, false, false
+	if sig := goData.Methods[name]; sig == nil || !goPrintSignature(name, sig) {
+		return printChoice{}
 	}
-	params := make([]transpiler.Type, len(sig.Params))
-	for i, p := range sig.Params {
-		params[i] = p.Type
-	}
-	var result transpiler.Type = transpiler.VoidType{}
-	if len(sig.Returns) == 1 {
-		result = sig.Returns[0]
-	}
-	if !printSignature(name, params, result) {
-		return printChoice{}, false, false
-	}
-	return printChoice{method: name, onPointer: goData.PointerMethods[name]}, false, true
+	return printChoice{method: name, onPointer: goData.PointerMethods[name]}
 }
 
-// printSignature reports whether params and result are those of name, one
-// of printMethods, as fmt's interfaces declare it: `Format(fmt.State, rune)`,
-// `Error() string`, `String() string`.
+// printSignature reports whether a GALA method's params and result are those
+// of name, one of printMethods, as fmt's interfaces declare it:
+// `Format(fmt.State, rune)`, `Error() string`, `String() string`.
 func printSignature(name string, params []transpiler.Type, result transpiler.Type) bool {
 	if name == "Format" {
 		return isVoidResult(result) && isFormatterParams(params)
 	}
 	return len(params) == 0 && isBasicNamed(result, "string")
+}
+
+// goPrintSignature is printSignature for a Go method's signature sig.
+func goPrintSignature(name string, sig *transpiler.GoFuncSignature) bool {
+	if name == "Format" {
+		return len(sig.Returns) == 0 && len(sig.Params) == 2 &&
+			isFormatterParams([]transpiler.Type{sig.Params[0].Type, sig.Params[1].Type})
+	}
+	return len(sig.Params) == 0 && len(sig.Returns) == 1 && isBasicNamed(sig.Returns[0], "string")
 }
 
 // printsByGeneratedString reports whether a value of the GALA type meta

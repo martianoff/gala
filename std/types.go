@@ -651,7 +651,9 @@ func pointerString(v reflect.Value) (s string, ok bool) {
 
 // pointerText is the text fmt prints p, a pointer with a String, as: by its
 // Format or its Error, which fmt calls before String, when p has one, and
-// otherwise by its String.
+// otherwise by its String. String is called directly, so a panic in it
+// reaches pointerString's recover; fmt reports one in Format or Error in the
+// text, as it does when it prints the pointer itself.
 func pointerText(p fmt.Stringer) string {
 	switch p.(type) {
 	case fmt.Formatter, error:

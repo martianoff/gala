@@ -44,6 +44,7 @@ struct Shows(var c Loud, var q Quiet, var f Fault, var p Ptr[Loud])
 
 func (s Ptr[Shows]) Line() { Println(s.c) }
 func (s Ptr[Shows]) Spaced() { Print("c:", s.c, "\n") }
+func (s Ptr[Shows]) Paren() { Println((s.c)) }
 func (s Ptr[Shows]) Text() string = s"c=${s.c}"
 func (s Ptr[Shows]) Spec() string = f"c=${s.c}%s"
 func (s Ptr[Shows]) Hex() string = f"c=${s.c}%x"
@@ -129,6 +130,7 @@ func TestPrintedReceiverFieldMutates(t *testing.T) {
 	rejected := []struct{ name, body, want string }{
 		{"a field printed by Println", shows + "s.Line()", "cannot call Line on this Shows"},
 		{"a field printed by Print", shows + "s.Spaced()", "cannot call Spaced on this Shows"},
+		{"a field in parentheses", shows + "s.Paren()", "cannot call Paren on this Shows"},
 		{"an interpolated field", shows + "Println(s.Text())", "cannot call Text on this Shows"},
 		{"a field formatted with %s", shows + "Println(s.Spec())", "cannot call Spec on this Shows"},
 		{"a val printed by a String that prints such a field", "val h = Shown(Loud(0))\n    Println(h)", "cannot print this Shown: its String can change its receiver"},

@@ -51,6 +51,18 @@ type Part struct {
 	Start, End int
 }
 
+// PrintedByString reports whether fmt prints the embedded expression p as
+// it prints an operand of Println, by a String it has: with no spec, or with
+// a %v or %s one that is not Go syntax (`%#v`).
+func (p Part) PrintedByString() bool {
+	spec := p.FormatSpec
+	if spec == "" {
+		return true
+	}
+	verb := spec[len(spec)-1]
+	return (verb == 'v' || verb == 's') && !strings.Contains(spec, "#")
+}
+
 // Split parses the CONTENT of an interpolated/format string — i.e. the text
 // between the opening `s"`/`f"` and the closing `"` — into ordered parts.
 // Handles `$identifier`, `${expression}`, and `$$` (literal `$`). With

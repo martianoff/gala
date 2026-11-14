@@ -91,10 +91,8 @@ func interpolatedReceiverEffects(lit native.LiteralNode, recv string, effects []
 			effects = append(effects, transpiler.ReceiverEffect{Kind: transpiler.ReceiverEscape})
 			continue
 		}
-		// The expression is printed unless an explicit spec other than %v or
-		// %s (or a Go-syntax one, `%#v`) prints it as Go does.
 		var printed native.GalaNodeRef
-		if spec := part.FormatSpec; spec == "" || (strings.ContainsAny(spec[len(spec)-1:], "vs") && !strings.Contains(spec, "#")) {
+		if part.PrintedByString() {
 			printed = expr.GalaNodeRef
 		}
 		effects = receiverEffectsIn(expr.GalaNodeRef, recv, printed, effects)
@@ -108,7 +106,7 @@ func interpolatedReceiverEffects(lit native.LiteralNode, recv string, effects []
 // that shadows Println or Print counts as well: it can only make the method
 // look like it mutates its receiver.
 func printedPlace(pe native.PostfixExprNode, recv string, printed native.GalaNodeRef) ([]string, bool) {
-	if !isReceiverPrimary(pe.PrimaryExpr(), recv) || pe.MATCH().Ok() {
+	if !isBareName(pe.PrimaryExpr(), recv) || pe.MATCH().Ok() {
 		return nil, false
 	}
 	var path []string
@@ -130,6 +128,10 @@ func printedPlace(pe native.PostfixExprNode, recv string, printed native.GalaNod
 		place = place.Parent()
 	}
 	whole, binaryOperand := expressionOf(place)
+	// A place in parentheses, `(r.a)`, is printed as itself.
+	for outer, ok := parenthesized(whole); ok && len(outer.AllPostfixSuffix()) == 0 && !outer.MATCH().Ok(); outer, ok = parenthesized(whole) {
+		whole, binaryOperand = expressionOf(outer.Parent())
+	}
 	if binaryOperand || !whole.Ok() {
 		return nil, false
 	}
@@ -162,7 +164,7 @@ func isPrintArgument(expr native.GalaNodeRef) bool {
 	if len(suffixes) == 0 || suffixes[0].GalaNodeRef != suffix {
 		return false
 	}
-	return isReceiverPrimary(pe.PrimaryExpr(), "Println") || isReceiverPrimary(pe.PrimaryExpr(), "Print")
+	return isBareName(pe.PrimaryExpr(), "Println") || isBareName(pe.PrimaryExpr(), "Print")
 }
 
 // receiverUse classifies a postfix expression rooted at recv: `r.a.b` read as
@@ -171,7 +173,7 @@ func isPrintArgument(expr native.GalaNodeRef) bool {
 // an operand of a comparison or dereferenced (`*r`), both of which read it.
 // ok is false for an expression not rooted at recv, or one that only reads.
 func receiverUse(pe native.PostfixExprNode, recv string) (transpiler.ReceiverEffect, bool) {
-	if !isReceiverPrimary(pe.PrimaryExpr(), recv) {
+	if !isBareName(pe.PrimaryExpr(), recv) {
 		return transpiler.ReceiverEffect{}, false
 	}
 	return placeUse(pe, nil, false)
@@ -267,14 +269,14 @@ func receiverCall(path []string) (transpiler.ReceiverEffect, bool) {
 	return transpiler.ReceiverEffect{Kind: transpiler.ReceiverCall, Path: path[:i:i], Method: path[i]}, true
 }
 
-// isReceiverPrimary reports whether pe is the bare name recv.
-func isReceiverPrimary(pe native.PrimaryExprNode, recv string) bool {
+// isBareName reports whether pe is the bare identifier name.
+func isBareName(pe native.PrimaryExprNode, name string) bool {
 	p := pe.Primary()
 	if !p.Ok() || p.ChildCount() != 1 {
 		return false
 	}
 	id := p.Identifier()
-	return id.Ok() && id.GetText() == recv
+	return id.Ok() && id.GetText() == name
 }
 
 // unaryOperator is the operator of n when n is a unary expression that
