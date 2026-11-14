@@ -117,7 +117,7 @@ These are theorems about the *spec* (and a model of one lowering, and one progra
 translation under gala2lean's prelude), not about the transpiler.
 
 Not proved: T1, T2, T3 and T5–T7, and T4 beyond the scope of a default value.
-[docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems) gives the statements
+[docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems-the-road-to-an-end-to-end-proof) gives the statements
 they need: fuel adequacy and monotonicity for T1, alpha-invariance with its side
 conditions for T2, and an observational statement about the order of effects for T3.
 
