@@ -101,12 +101,14 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		name, src, want string
 	}{
 		{"import", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(1) }\n", "import"},
-		{"lambda", "package main\nfunc main() { val f = (x int) => x\n Println(1) }\n", "lambda"},
+		{"lambda without parameter types", "package main\nfunc main() { val f = (x) => x\n Println(1) }\n", "untyped-lambda-param"},
 		{"method call", "package main\nstruct P(X int)\nfunc main() { Println(P(1).Copy()) }\n", "method-call"},
 		{"go builtin", "package main\nfunc main() { println(1) }\n", "call-of-println"},
 		{"return in an expression", "package main\nfunc f(n int) int { val x = if (n > 0) { return 1 } else 2\n x }\nfunc main() { Println(f(1)) }\n", "return-inside-expression"},
 		{"no main", "package main\nfunc f() int = 1\n", "no-main"},
-		{"default argument", "package main\nfunc f(n int = 1) int = n\nfunc main() { Println(f()) }\n", "param-default"},
+		{"nil function", "package main\nfunc main() { var f func() int\n Println(1) }\n", "nil"},
+		{"printing a function", "package main\nfunc main() { val f = (x int) => x\n Println(f) }\n", "print-pointer"},
+		{"captured var of a function type", "package main\nfunc main() { var f = (x int) => x\n val g = () => f(1)\n Println(g()) }\n", "func-in-state"},
 		{"untyped global", "package main\nval g = h()\nfunc h() (int, int) = (1, 2)\nfunc main() { Println(g) }\n", "go-results"},
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},
 		{"stable identifier compared in a program with methods", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +

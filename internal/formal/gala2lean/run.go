@@ -105,7 +105,18 @@ const (
 	// LeanRejected: Lean rejected the translation for another reason, a
 	// gala2lean bug; Message has Lean's first error.
 	LeanRejected
+	// Untyped: Lean could not infer a type the translation left to it (Core
+	// JSON carries no types for most expressions), such as the element
+	// type of a `None()` printed on its own; Decl names the function.
+	Untyped
 )
+
+// isTypingGap reports whether Lean error msg says that it could not infer a
+// type or find an instance for one it does not know.
+func isTypingGap(msg string) bool {
+	return strings.Contains(msg, "typeclass instance problem is stuck") ||
+		strings.Contains(msg, "don't know how to synthesize")
+}
 
 // RunResult is one run of a translated program.
 type RunResult struct {
@@ -164,8 +175,11 @@ func (r *Runner) Run(res *Result, timeout time.Duration) (RunResult, error) {
 		if d := res.DeclAt(line); d != nil {
 			rr.Decl = d.Name
 		}
-		if strings.Contains(m[2], "to be monotone") {
+		switch {
+		case strings.Contains(m[2], "to be monotone"):
 			rr.Kind = NotMonotone
+		case isTypingGap(m[2]):
+			rr.Kind = Untyped
 		}
 		return rr, nil
 	}

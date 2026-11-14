@@ -148,7 +148,9 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	}
 	g := newGen()
 	g.library = opts.Library
+	g.ns = opts.Namespace
 	g.collect(p)
+	g.findBoxes(p)
 	// Every declaration is translated even after one failed, so that every
 	// construct outside the subset is reported.
 	g.emitProgram(opts)
@@ -185,4 +187,3 @@ func (g *gen) guard(decl string, f func()) (ok bool) {
 	f()
 	return true
 }
-

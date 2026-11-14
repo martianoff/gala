@@ -1,0 +1,378 @@
+package gala2lean
+
+import (
+	"fmt"
+	"strings"
+
+	"martianoff/gala/internal/formal/coreexport"
+)
+
+// Lambdas and closures. A lambda is a Lean `fun` returning an action. GALA
+// captures by reference (docs/FORMAL_SEMANTICS.MD, "Decisions"), so a `var`
+// a lambda refers to lives in a reference cell in the program state (a
+// "box"): the lambda and the code around it read and write the same cell.
+// Each type of boxed variable gets a heap, an array in the state, and three
+// helpers: _gala_newN allocates a cell, _gala_getN reads it, _gala_setN
+// writes it. A `val` is captured by value, which is the same thing.
+
+// boxKey names one variable a `var` declaration binds.
+type boxKey struct {
+	decl coreexport.Node
+	name string
+}
+
+// funcTypeLean is GALA function type t in Lean: `A → B → M R`, with Unit
+// for a function without parameters or without a result.
+func (g *gen) funcTypeLean(t *coreexport.TypeFunc) string {
+	var parts []string
+	for _, p := range t.Params {
+		parts = append(parts, g.leanType(p))
+	}
+	if len(parts) == 0 {
+		parts = []string{"Unit"}
+	}
+	res := "Unit"
+	if t.Result != nil {
+		res = g.leanType(t.Result)
+	}
+	return "(" + strings.Join(parts, " → ") + " → _gala_M " + res + ")"
+}
+
+// funcResult is the result type R of Lean function type `(A → _gala_M R)`
+// as funcTypeLean writes it, "" for any other type.
+func funcResult(t string) string {
+	const m = " → _gala_M "
+	depth := 0
+	for i, r := range t {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+		if depth == 1 && strings.HasPrefix(t[i:], m) && strings.HasSuffix(t, ")") {
+			return t[i+len(m) : len(t)-1]
+		}
+	}
+	return ""
+}
+
+// funcDeclType is the Lean type of top-level function f as a value, "" when
+// a type is outside the subset.
+func (g *gen) funcDeclType(f *coreexport.Func) string {
+	t := &coreexport.TypeFunc{Result: f.Result}
+	for _, pn := range f.Params {
+		p, ok := pn.(*coreexport.Param)
+		if !ok || p.Type == nil {
+			return ""
+		}
+		t.Params = append(t.Params, p.Type)
+	}
+	return g.safeType(func() string { return g.funcTypeLean(t) })
+}
+
+// lambdaType is the Lean type of lambda l when its parameter types are
+// written out, else "". A result it cannot tell is `_`: the type is then
+// only good for knowing that the value is a function.
+func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
+	t := &coreexport.TypeFunc{Result: l.Result}
+	ls := newScope(sc, 0)
+	for _, pn := range l.Params {
+		p, ok := pn.(*coreexport.Param)
+		if !ok || p.Type == nil {
+			return ""
+		}
+		t.Params = append(t.Params, p.Type)
+		ls.bind(p.Name, false, g.safeType(func() string { return g.leanType(p.Type) }))
+	}
+	ft := g.safeType(func() string { return g.funcTypeLean(t) })
+	if l.Result != nil || ft == "" {
+		return ft
+	}
+	res := "_"
+	switch b := l.Body.(type) {
+	case *coreexport.Block:
+		if !returnsValue(b) {
+			res = "Unit"
+		}
+	default:
+		if r := g.exprType(b, ls, map[string]bool{}); r != "" {
+			res = r
+		}
+	}
+	return strings.TrimSuffix(ft, "Unit)") + res + ")"
+}
+
+// safeType is f's type, or "" when f stops at a construct outside the
+// subset (the translation reports it where it matters).
+func (g *gen) safeType(f func() string) (t string) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(unsupportedPanic); !ok {
+				panic(r)
+			}
+			t = ""
+		}
+	}()
+	return f()
+}
+
+// exprExpect translates e where a value of type expect (nil when unknown) is
+// wanted: a lambda takes its parameter and result types from it, and an
+// expression passed for a `func() T` parameter becomes a thunk (a by-name
+// argument).
+func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) term {
+	ft, isFunc := expect.(*coreexport.TypeFunc)
+	if l, ok := e.(*coreexport.Lambda); ok {
+		if !isFunc {
+			ft = nil
+		}
+		return g.lambda(l, sc, ft)
+	}
+	if isFunc && len(ft.Params) == 0 {
+		t := g.exprType(e, sc, map[string]bool{})
+		if !strings.Contains(t, "→") {
+			if t == "" && !g.isFuncValue(e, sc) {
+				unsup(posOf(e), "by-name-arg")
+			}
+			if t != "" {
+				// A by-name argument: run when the callee calls it.
+				v := g.expr(e, sc.term())
+				return term{code: "(fun (_ : Unit) => " + v.mon() + ")", pure: true}
+			}
+		}
+	}
+	return g.expr(e, sc)
+}
+
+// isFuncValue reports whether e plainly names a function value: a declared
+// function.
+func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
+	n, ok := e.(*coreexport.Name)
+	return ok && sc.lookup(n.Name) == nil && g.funcs[n.Name] != nil
+}
+
+// lambda translates a lambda; expect is the function type the context wants,
+// or nil.
+func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFunc) term {
+	ls := newScope(sc, 0)
+	var ps []string
+	for i, pn := range l.Params {
+		p, ok := pn.(*coreexport.Param)
+		if !ok {
+			unsupAt(pn)
+		}
+		if p.Default != nil {
+			unsup(p.Pos, "param-default")
+		}
+		t := p.Type
+		if t == nil && expect != nil && i < len(expect.Params) {
+			t = expect.Params[i]
+		}
+		if t == nil {
+			unsup(p.Pos, "untyped-lambda-param")
+		}
+		lt := g.leanType(t)
+		name := ident(p.Name)
+		if p.Name == "_" {
+			name = "_"
+		}
+		ps = append(ps, fmt.Sprintf("(%s : %s)", name, lt))
+		ls.bind(p.Name, false, lt)
+	}
+	if expect != nil && len(expect.Params) != len(l.Params) {
+		unsup(l.Pos, "lambda-arity")
+	}
+	if len(ps) == 0 {
+		ps = []string{"(_ : Unit)"}
+	}
+	// The result: declared, wanted by the context, or, for a block body,
+	// void unless it returns a value.
+	res := "_"
+	switch {
+	case l.Result != nil:
+		res = g.leanType(l.Result)
+	case expect != nil && expect.Result == nil:
+		res = "Unit"
+	case expect != nil:
+		res = g.leanType(expect.Result)
+	default:
+		if b, ok := l.Body.(*coreexport.Block); ok && !returnsValue(b) {
+			res = "Unit"
+		}
+	}
+	saved := g.fn
+	g.fn = &fnCtx{result: res}
+	var items []string
+	switch b := l.Body.(type) {
+	case *coreexport.Block:
+		items = g.fnBlock(b, ls)
+	default:
+		if res == "Unit" {
+			items = g.unitItems(b, ls)
+		} else {
+			items = g.valueItems(b, ls)
+		}
+	}
+	g.fn = saved
+	return term{code: fmt.Sprintf("(fun %s => (do\n%s : _gala_M %s))", strings.Join(ps, " "), indentLines(items, 2), res), pure: true}
+}
+
+// returnsValue reports whether block b has a `return` with a value of its
+// own (not one of a nested lambda's).
+func returnsValue(b *coreexport.Block) bool {
+	found := false
+	var visit func(n coreexport.Node)
+	visit = func(n coreexport.Node) {
+		switch n := n.(type) {
+		case *coreexport.Lambda:
+			return
+		case *coreexport.Return:
+			if n.Value != nil {
+				found = true
+			}
+		}
+		walkChildren(n, visit)
+	}
+	visit(b)
+	return found
+}
+
+// heap is the index of the heap holding boxed variables of Lean type t,
+// added on first use.
+func (g *gen) heap(t string) int {
+	g.stateType(t, coreexport.Pos{})
+	for i, h := range g.heaps {
+		if h == t {
+			return i
+		}
+	}
+	g.heaps = append(g.heaps, t)
+	return len(g.heaps) - 1
+}
+
+// heapDecls are the state fields and helpers of the heaps.
+func (g *gen) heapFields() string {
+	var b strings.Builder
+	for i, t := range g.heaps {
+		fmt.Fprintf(&b, "  _gala_heap%d : Array %s := #[]\n", i, t)
+	}
+	return b.String()
+}
+
+func (g *gen) heapHelpers() string {
+	var b strings.Builder
+	for i, t := range g.heaps {
+		fmt.Fprintf(&b, "/-- A new cell for a boxed variable of type %s. -/\n", t)
+		fmt.Fprintf(&b, "def _gala_new%d (v : %s) : _gala_M Nat := do\n  let s ← get\n  set { s with _gala_heap%d := s._gala_heap%d.push v }\n  pure s._gala_heap%d.size\n\n", i, t, i, i, i)
+		fmt.Fprintf(&b, "def _gala_get%d (r : Nat) : _gala_M %s := do\n  pure ((← get)._gala_heap%d.getD r default)\n\n", i, t, i)
+		fmt.Fprintf(&b, "def _gala_set%d (r : Nat) (v : %s) : _gala_M Unit :=\n  modify fun s => { s with _gala_heap%d := s._gala_heap%d.set! r v }\n\n", i, t, i, i)
+	}
+	return b.String()
+}
+
+// boxDecl is a declaration a name refers to, while finding boxes.
+type boxDecl struct {
+	key     boxKey
+	mutable bool
+	depth   int // how many lambdas enclose the declaration
+}
+
+// findBoxes marks every `var` that a lambda refers to, reading or writing
+// it, from inside the lambda.
+func (g *gen) findBoxes(p *coreexport.Program) {
+	g.boxed = map[boxKey]bool{}
+	depth := 0
+	var scopes []map[string]*boxDecl
+	push := func() { scopes = append(scopes, map[string]*boxDecl{}) }
+	pop := func() { scopes = scopes[:len(scopes)-1] }
+	declare := func(decl coreexport.Node, name string, mutable bool) {
+		scopes[len(scopes)-1][name] = &boxDecl{boxKey{decl, name}, mutable, depth}
+	}
+	use := func(name string) {
+		for i := len(scopes) - 1; i >= 0; i-- {
+			if d, ok := scopes[i][name]; ok {
+				if d.mutable && d.depth < depth {
+					g.boxed[d.key] = true
+				}
+				return
+			}
+		}
+	}
+	var visit func(n coreexport.Node)
+	visit = func(n coreexport.Node) {
+		switch n := n.(type) {
+		case nil:
+			return
+		case *coreexport.Name:
+			use(n.Name)
+			return
+		case *coreexport.Select:
+			visit(n.Target)
+			return
+		case *coreexport.Block:
+			push()
+			for _, st := range n.Stmts {
+				visit(st)
+			}
+			pop()
+			return
+		case *coreexport.Val:
+			for _, v := range n.Values {
+				visit(v)
+			}
+			for _, x := range n.Names {
+				declare(n, x, false)
+			}
+			return
+		case *coreexport.Var:
+			for _, v := range n.Values {
+				visit(v)
+			}
+			for _, x := range n.Names {
+				declare(n, x, true)
+			}
+			return
+		case *coreexport.Func:
+			push()
+			for _, pn := range n.Params {
+				if p, ok := pn.(*coreexport.Param); ok {
+					visit(p.Default)
+					declare(p, p.Name, false)
+				}
+			}
+			visit(n.Body)
+			pop()
+			return
+		case *coreexport.Lambda:
+			depth++
+			push()
+			for _, pn := range n.Params {
+				if p, ok := pn.(*coreexport.Param); ok {
+					declare(p, p.Name, false)
+				}
+			}
+			visit(n.Body)
+			pop()
+			depth--
+			return
+		case *coreexport.Case:
+			push()
+			binders := map[string]bool{}
+			g.patBinders(n.Pattern, binders)
+			for x := range binders {
+				declare(n, x, false)
+			}
+			visit(n.Pattern)
+			visit(n.Guard)
+			visit(n.Body)
+			pop()
+			return
+		}
+		walkChildren(n, visit)
+	}
+	push()
+	for _, f := range p.Files {
+		visit(f)
+	}
+}

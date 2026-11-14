@@ -73,13 +73,46 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		return
 	case *coreexport.Func:
 		inner := maps.Clone(bound)
+		// A parameter's default counts at each call that leaves it out
+		// (the Call case), not here.
 		for _, p := range n.Params {
 			if p, ok := p.(*coreexport.Param); ok {
-				g.refs(p.Default, inner, out)
 				inner[p.Name] = true
 			}
 		}
 		g.refs(n.Body, inner, out)
+		return
+	case *coreexport.Call:
+		for _, a := range n.Args {
+			g.refs(a, bound, out)
+		}
+		g.refs(n.Callee, bound, out)
+		c, ok := n.Callee.(*coreexport.Name)
+		if !ok || bound[c.Name] {
+			return
+		}
+		s := g.sigOfSafe(c.Name)
+		if s == nil {
+			return
+		}
+		named := map[string]bool{}
+		positional := 0
+		for _, a := range n.Args {
+			if na, isNamed := a.(*coreexport.NamedArg); isNamed {
+				named[na.Name] = true
+			} else {
+				positional++
+			}
+		}
+		// A default sees the parameters before it, never the caller's
+		// locals.
+		params := map[string]bool{}
+		for k, name := range s.names {
+			if k >= positional && !named[name] {
+				g.refs(s.defaults[k], params, out)
+			}
+			params[name] = true
+		}
 		return
 	case *coreexport.Lambda:
 		inner := maps.Clone(bound)

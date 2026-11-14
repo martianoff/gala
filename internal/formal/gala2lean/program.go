@@ -33,6 +33,17 @@ type gen struct {
 	library bool
 	// refsOf caches funcRefs, by function name.
 	refsOf map[string]map[string]bool
+	// noBEq is the types holding a function, which do not compare;
+	// unprintable the types whose printed text would hold an address.
+	noBEq, unprintable map[string]bool
+	// ns is Options.Namespace; qualify makes function references full
+	// names (funcRef).
+	ns      string
+	qualify bool
+	// boxed is every captured var (findBoxes); heaps the Lean types of
+	// the heaps their cells live in.
+	boxed map[boxKey]bool
+	heaps []string
 
 	unsup []Unsupported
 	out   strings.Builder
@@ -65,13 +76,15 @@ type fnCtx struct {
 
 func newGen() *gen {
 	return &gen{
-		structs:  map[string]*coreexport.Struct{},
-		sealeds:  map[string]*coreexport.Sealed{},
-		variants: map[string]*variantInfo{},
-		funcs:    map[string]*coreexport.Func{},
-		globalBy: map[string]*globalVar{},
-		selected: map[string]bool{},
-		refsOf:   map[string]map[string]bool{},
+		structs:     map[string]*coreexport.Struct{},
+		sealeds:     map[string]*coreexport.Sealed{},
+		variants:    map[string]*variantInfo{},
+		funcs:       map[string]*coreexport.Func{},
+		globalBy:    map[string]*globalVar{},
+		selected:    map[string]bool{},
+		refsOf:      map[string]map[string]bool{},
+		noBEq:       map[string]bool{},
+		unprintable: map[string]bool{},
 	}
 }
 
@@ -212,16 +225,17 @@ func (g *gen) write(s string) {
 // emitProgram writes the module.
 func (g *gen) emitProgram(opts Options) {
 	ok := true
-	var typeDecls string
+	var typeDecls, fnTypeDecls string
 	ok = g.guard("", func() {
 		g.typeOrder()
-		typeDecls = g.typeDecls()
+		typeDecls, fnTypeDecls = g.typeDecls()
 	}) && ok
 	// The package-level variables' types and initialization order.
 	var initOrder []*globalVar
 	ok = g.guard("", func() {
 		for _, gv := range g.globals {
 			gv.leanT = g.globalType(gv)
+			g.stateType(gv.leanT, gv.pos)
 		}
 		initOrder = g.initOrder()
 	}) && ok
@@ -258,6 +272,8 @@ func (g *gen) emitProgram(opts Options) {
 	g.write("namespace " + opts.Namespace + "\n\nopen Gala.Gen\n\n")
 	g.write(typeDecls)
 	g.write(g.stateDecl())
+	g.write(g.heapHelpers())
+	g.write(fnTypeDecls)
 	for _, grp := range groups {
 		mutual := len(grp) > 1
 		if mutual {
@@ -288,6 +304,7 @@ func (g *gen) stateDecl() string {
 	var b strings.Builder
 	b.WriteString("/-- The program state: the printed output and the package-level variables. -/\n")
 	b.WriteString("structure _gala_St where\n  _gala_out : String := \"\"\n")
+	b.WriteString(g.heapFields())
 	for _, gv := range g.globals {
 		fmt.Fprintf(&b, "  %s : %s := default\n", ident(gv.name), gv.leanT)
 	}
@@ -328,9 +345,6 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 		p, ok := pn.(*coreexport.Param)
 		if !ok {
 			unsupAt(pn)
-		}
-		if p.Default != nil {
-			unsup(p.Pos, "param-default")
 		}
 		if p.Type == nil {
 			unsup(p.Pos, "untyped-param")

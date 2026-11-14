@@ -28,7 +28,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 		}
 		unsup(t.Pos, "type-%s", t.Name)
 	case *coreexport.TypeFunc:
-		unsup(t.Pos, "type-func")
+		return g.funcTypeLean(t)
 	case *coreexport.Unsupported:
 		unsup(t.Pos, "%s", t.What)
 	}
@@ -54,6 +54,10 @@ func (g *gen) zero(t coreexport.Node) string {
 func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 	if depth > 64 {
 		unsup(posOf(t), "zero-value-depth")
+	}
+	if _, ok := t.(*coreexport.TypeFunc); ok {
+		// A function's zero value is nil.
+		unsup(posOf(t), "nil")
 	}
 	lt := g.leanType(t)
 	switch lt {
@@ -159,25 +163,63 @@ func (g *gen) typeFields(n string) []*coreexport.Field {
 
 // typeDecls declares every struct and sealed type, with how its values
 // print.
-func (g *gen) typeDecls() string {
-	var b strings.Builder
+// The types holding a function come apart (fnTypes): a function is an action
+// over the program state, so they follow the state, which may hold only the
+// others.
+func (g *gen) typeDecls() (plain, fnTypes string) {
+	var b, f strings.Builder
 	for _, n := range g.typeNames {
+		var d string
 		if s := g.structs[n]; s != nil {
-			b.WriteString(g.structDecl(s))
+			d = g.structDecl(s)
 		} else {
-			b.WriteString(g.sealedDecl(g.sealeds[n]))
+			d = g.sealedDecl(g.sealeds[n])
+		}
+		if g.noBEq[n] {
+			f.WriteString(d)
+		} else {
+			b.WriteString(d)
 		}
 	}
-	return b.String()
+	return b.String(), f.String()
+}
+
+// stateType checks that a value of Lean type t, a package-level variable or
+// a captured var, can live in the program state: it must not hold a
+// function, which is itself an action over the state.
+func (g *gen) stateType(t string, pos coreexport.Pos) {
+	if strings.Contains(t, "→") {
+		unsup(pos, "func-in-state")
+	}
+	g.stateTypeIn(t, g.noBEq, pos, "func-in-state")
+}
+
+// stateTypeIn stops the translation with construct when Lean type t names
+// one of types.
+func (g *gen) stateTypeIn(t string, types map[string]bool, pos coreexport.Pos, construct string) {
+	for _, w := range strings.FieldsFunc(t, func(r rune) bool { return r == ' ' || r == '(' || r == ')' }) {
+		for n := range types {
+			if w == ident(n) {
+				unsup(pos, "%s", construct)
+			}
+		}
+	}
+}
+
+// directFn reports whether one of fields has a function type.
+func (g *gen) directFn(fields []*coreexport.Field) bool {
+	for _, f := range fields {
+		if _, ok := f.Type.(*coreexport.TypeFunc); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // fieldType is a field's Lean type; every field has a declared type.
 func (g *gen) fieldType(f *coreexport.Field) string {
 	if f.Type == nil {
 		unsup(f.Pos, "untyped-field")
-	}
-	if f.Default != nil {
-		unsup(f.Pos, "field-default")
 	}
 	return g.leanType(f.Type)
 }
@@ -195,24 +237,41 @@ func (g *gen) structDecl(s *coreexport.Struct) string {
 		b.WriteString("  mk ::\n")
 	}
 	var shows, plain, raws []string
-	hasString := false
+	hasString, hasFn, unprintable := false, false, false
 	for _, f := range fields {
 		fmt.Fprintf(&b, "  %s : %s\n", ident(f.Name), g.fieldType(f))
 		v := "s." + ident(f.Name)
-		shows = append(shows, "gshow "+v)
-		raw := fmt.Sprintf("wrapImm %t (graw %s)", f.Mutable, v)
-		raws = append(raws, raw)
+		_, isFn := f.Type.(*coreexport.TypeFunc)
+		hasFn = hasFn || isFn || g.noBEq[typeName(f.Type)]
+		unprintable = unprintable || g.unprintable[typeName(f.Type)]
+		show, raw := "gshow "+v, fmt.Sprintf("wrapImm %t (graw %s)", f.Mutable, v)
+		if isFn {
+			// Inside a generated String a function prints as <fn>; anywhere
+			// else fmt prints its address (unprintable below).
+			show, raw = "fnText", "fnText"
+		}
+		shows, raws = append(shows, show), append(raws, raw)
 		if isUpper(f.Name) {
-			plain = append(plain, "gshow "+v)
+			plain = append(plain, show)
 		} else {
 			plain = append(plain, raw)
 		}
 		hasString = hasString || f.Name == "String"
 	}
-	b.WriteString("  deriving BEq, Inhabited\n\n")
+	derive := "BEq, Inhabited"
+	if hasFn {
+		// Functions do not compare; GALA rejects `==` on such a struct.
+		derive = "Inhabited"
+		g.noBEq[s.Name] = true
+	}
+	fmt.Fprintf(&b, "  deriving %s\n\n", derive)
 	show := `"{" ++ " ".intercalate [` + strings.Join(plain, ", ") + `] ++ "}"`
-	if s.Shorthand && !hasString {
+	generated := s.Shorthand && !hasString
+	if generated {
 		show = fmt.Sprintf(`"%s(" ++ ", ".intercalate [%s] ++ ")"`, s.Name, strings.Join(shows, ", "))
+	}
+	if g.directFn(fields) && (!generated || g.rawPrinted()[s.Name]) || unprintable {
+		g.unprintable[s.Name] = true
 	}
 	fmt.Fprintf(&b, "instance : GShow %s where\n  gshow s := %s\n  graw s := \"{\" ++ \" \".intercalate [%s] ++ \"}\"\n\n",
 		name, show, strings.Join(raws, ", "))
@@ -234,6 +293,7 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 	uses := map[string][]fieldUse{}
 	fieldTy := map[string]coreexport.Node{}
 	var arms []string
+	hasFn, unprintable := false, false
 	for _, vn := range s.Variants {
 		v := vn.(*coreexport.Variant)
 		vname := ident(v.Name)
@@ -245,8 +305,14 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 			fmt.Fprintf(&b, " (%s : %s)", ident(f.Name), ft)
 			a := fmt.Sprintf("a%d", i)
 			sh := "GShow.gshow " + a
-			if typeName(f.Type) == s.Name {
+			_, isFn := f.Type.(*coreexport.TypeFunc)
+			hasFn = hasFn || isFn || g.noBEq[typeName(f.Type)]
+			unprintable = unprintable || g.unprintable[typeName(f.Type)] || isFn && g.rawPrinted()[s.Name]
+			switch {
+			case typeName(f.Type) == s.Name:
 				sh = name + "._gala_show " + a
+			case isFn:
+				sh = "fnText"
 			}
 			binds, shows = append(binds, a), append(shows, sh)
 			if prev, ok := fieldTy[f.Name]; ok && typeName(prev) != typeName(f.Type) {
@@ -262,7 +328,15 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 		}
 		arms = append(arms, fmt.Sprintf("  | %s => \"%s(\" ++ \", \".intercalate [%s] ++ \")\"", pattern, v.Name, strings.Join(shows, ", ")))
 	}
-	b.WriteString("  deriving BEq, Inhabited\n\n")
+	if hasFn {
+		b.WriteString("  deriving Inhabited\n\n")
+		g.noBEq[s.Name] = true
+	} else {
+		b.WriteString("  deriving BEq, Inhabited\n\n")
+	}
+	if unprintable {
+		g.unprintable[s.Name] = true
+	}
 	fmt.Fprintf(&b, "/-- How a %s prints: the String method GALA generates for it. -/\ndef %s._gala_show : %s → String\n%s\n\n",
 		s.Name, name, name, strings.Join(arms, "\n"))
 	fmt.Fprintf(&b, "instance : GShow %s where\n  gshow := %s._gala_show\n", name, name)
@@ -369,12 +443,25 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		if v := g.variants[e.Name]; v != nil && len(v.fields) == 0 {
 			return ident(v.sealed.Name)
 		}
+		if f := g.funcs[e.Name]; f != nil {
+			return g.funcDeclType(f)
+		}
+	case *coreexport.Lambda:
+		return g.lambdaType(e, sc)
 	case *coreexport.Call:
 		n, ok := e.Callee.(*coreexport.Name)
-		if !ok {
+		if !ok || sc != nil && sc.lookup(n.Name) != nil {
+			// A function value: the result of its type.
+			if r := funcResult(g.exprType(e.Callee, sc, seen)); r != "_" {
+				return r
+			}
 			return ""
 		}
 		switch {
+		case n.Name == "Some" && g.sigOfSafe("Some") == nil && len(e.Args) == 1:
+			if t := g.exprType(argNode(e.Args[0]), sc, seen); t != "" {
+				return "(GOption " + t + ")"
+			}
 		case g.funcs[n.Name] != nil:
 			return g.leanType(g.funcs[n.Name].Result)
 		case g.structs[n.Name] != nil:
@@ -495,7 +582,11 @@ func (g *gen) sealedRaw(s *coreexport.Sealed) []string {
 				unsup(f.Pos, "print-pointer")
 			}
 			if i, ok := at[f.Name]; ok {
-				parts = append(parts, "wrapImm false (graw "+binds[i]+")")
+				if _, isFn := f.Type.(*coreexport.TypeFunc); isFn {
+					parts = append(parts, "fnText")
+				} else {
+					parts = append(parts, "wrapImm false (graw "+binds[i]+")")
+				}
 			} else {
 				parts = append(parts, strLit("{"+g.rawZero(f.Type, 0)+"}", f.Pos))
 			}
@@ -514,6 +605,9 @@ func (g *gen) sealedRaw(s *coreexport.Sealed) []string {
 func (g *gen) rawZero(t coreexport.Node, depth int) string {
 	if depth > 64 {
 		unsup(posOf(t), "zero-value-depth")
+	}
+	if _, ok := t.(*coreexport.TypeFunc); ok {
+		return "<nil>"
 	}
 	switch g.leanType(t) {
 	case "Int64":

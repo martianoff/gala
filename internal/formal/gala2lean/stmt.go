@@ -21,6 +21,9 @@ type local struct {
 	level   int
 	// typ is its Lean type, "" when not known.
 	typ string
+	// box is the heap of the cell a captured var lives in, -1 for a plain
+	// Lean binding.
+	box int
 }
 
 func newScope(parent *scope, level int) *scope {
@@ -35,7 +38,7 @@ func (s *scope) child() *scope { return newScope(s, s.level) }
 func (s *scope) term() *scope { return newScope(s, s.level+1) }
 
 func (s *scope) bind(x string, mutable bool, typ string) {
-	s.vars[x] = &local{mutable: mutable, level: s.level, typ: typ}
+	s.vars[x] = &local{mutable: mutable, level: s.level, typ: typ, box: -1}
 }
 
 func (s *scope) lookup(x string) *local {
@@ -116,9 +119,9 @@ func (g *gen) unitItems(e coreexport.Node, sc *scope) []string {
 func (g *gen) stmt(st coreexport.Node, sc *scope, value bool) []string {
 	switch st := st.(type) {
 	case *coreexport.Val:
-		return g.local(st.Names, st.Destructure, st.Type, st.Values, false, st.Pos, sc)
+		return g.local(st, st.Names, st.Destructure, st.Type, st.Values, false, st.Pos, sc)
 	case *coreexport.Var:
-		return g.local(st.Names, st.Destructure, st.Type, st.Values, true, st.Pos, sc)
+		return g.local(st, st.Names, st.Destructure, st.Type, st.Values, true, st.Pos, sc)
 	case *coreexport.Assign:
 		return g.assign(st, sc)
 	case *coreexport.IncDec:
@@ -186,7 +189,7 @@ func terminates(list []coreexport.Node) bool {
 }
 
 // local translates a local val or var.
-func (g *gen) local(names []string, destructure bool, typ coreexport.Node, values []coreexport.Node, mutable bool, pos coreexport.Pos, sc *scope) []string {
+func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ coreexport.Node, values []coreexport.Node, mutable bool, pos coreexport.Pos, sc *scope) []string {
 	kw := "let "
 	if mutable {
 		kw = "let mut "
@@ -207,6 +210,9 @@ func (g *gen) local(names []string, destructure bool, typ coreexport.Node, value
 			}
 		}
 		for _, n := range names {
+			if g.boxed[boxKey{decl, n}] {
+				unsup(pos, "captured-destructured-var")
+			}
 			if n != "_" {
 				sc.bind(n, mutable, "")
 			}
@@ -229,7 +235,14 @@ func (g *gen) local(names []string, destructure bool, typ coreexport.Node, value
 			}
 			vals[i] = g.zero(typ)
 		} else {
-			vals[i] = g.expr(values[i], sc).val()
+			vals[i] = g.exprExpect(values[i], sc, typ).val()
+		}
+	}
+	types := make([]string, len(names))
+	for i := range names {
+		types[i] = strings.TrimPrefix(ann, " : ")
+		if types[i] == "" && len(values) > 0 {
+			types[i] = g.exprType(values[i], sc, map[string]bool{})
 		}
 	}
 	var items []string
@@ -241,24 +254,31 @@ func (g *gen) local(names []string, destructure bool, typ coreexport.Node, value
 		}
 		vals = tmps
 	}
+	boxes := make([]int, len(names))
 	for i, n := range names {
+		boxes[i] = -1
 		if n == "_" {
 			if len(names) == 1 {
 				items = append(items, fmt.Sprintf("let _%s := %s", ann, vals[i]))
 			}
 			continue
 		}
+		if g.boxed[boxKey{decl, n}] {
+			// A var a lambda refers to: a cell in the state.
+			if types[i] == "" {
+				unsup(pos, "captured-var-type")
+			}
+			boxes[i] = g.heap(types[i])
+			items = append(items, fmt.Sprintf("let %s ← _gala_new%d %s", ident(n), boxes[i], vals[i]))
+			continue
+		}
 		items = append(items, fmt.Sprintf("%s%s%s := %s", kw, ident(n), ann, vals[i]))
 	}
 	for i, n := range names {
-		if n == "_" {
-			continue
+		if n != "_" {
+			sc.bind(n, mutable, types[i])
+			sc.vars[n].box = boxes[i]
 		}
-		t := strings.TrimPrefix(ann, " : ")
-		if t == "" && len(values) > 0 {
-			t = g.exprType(values[i], sc, map[string]bool{})
-		}
-		sc.bind(n, mutable, t)
 	}
 	return items
 }
@@ -320,6 +340,9 @@ func (g *gen) assign(st *coreexport.Assign, sc *scope) []string {
 	return items
 }
 
+// parenthesize makes s one argument.
+func parenthesize(s string) string { return "(" + s + ")" }
+
 // assignTo stores f(current value) into target t: a local var, a
 // package-level variable, or a field of one (at any depth).
 func (g *gen) assignTo(t coreexport.Node, f func(cur string) string, sc *scope, pos coreexport.Pos) []string {
@@ -355,10 +378,18 @@ func (g *gen) assignTo(t coreexport.Node, f func(cur string) string, sc *scope, 
 		if !l.mutable {
 			unsup(pos, "assign-to-val")
 		}
+		x := ident(n.Name)
+		if l.box >= 0 {
+			// A captured var: write its cell, at any depth of expression.
+			cur := g.freshName("c")
+			return []string{
+				fmt.Sprintf("let %s ← _gala_get%d %s", cur, l.box, x),
+				fmt.Sprintf("_gala_set%d %s %s", l.box, x, parenthesize(update(cur, path))),
+			}
+		}
 		if l.level != sc.level {
 			unsup(pos, "var-mutated-inside-expression")
 		}
-		x := ident(n.Name)
 		return []string{x + " := " + update(x, path)}
 	}
 	if gv := g.globalBy[n.Name]; gv != nil {
