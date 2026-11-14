@@ -546,7 +546,7 @@ func (t *galaASTTransformer) checkPrintedFieldsCopy(typ transpiler.Type, line, c
 	if path, fieldType := t.printedField(typ, t.mutatedPrintedField, make(map[string]bool)); path != "" {
 		return galaerr.NewCodedSemanticError(galaerr.CodeMutatingCallOnCopy, line, col,
 			fmt.Sprintf("cannot print this %s: its field %s, a %s, prints by its String on a copy, and that String can change its receiver, so the change would be made to the copy and lost", receiverBase(typ), path, receiverBase(fieldType)),
-			fmt.Sprintf("hold the field as a `Ptr[%s]`, or declare a String for %s", fieldType, receiverBase(typ)))
+			fmt.Sprintf("hold the field as a `Ptr[%s]`, so its String runs on the value it points to", fieldType))
 	}
 	return nil
 }
@@ -637,23 +637,29 @@ func (t *galaASTTransformer) mutatedPrintedField(fieldType transpiler.Type, viaP
 // printsFieldByPointerString reports whether std.FormatStruct prints a field
 // of typ by a `String` declared on its pointer receiver only: one declared in
 // GALA (printsByPointerString), or one in Go, on a Go type or by hand-written
-// Go on a GALA type, that no Error or Format of the value comes before.
+// Go on a GALA type. An Error or Format of the value itself comes first, so a
+// type with one does not.
 func (t *galaASTTransformer) printsFieldByPointerString(typ transpiler.Type) bool {
 	_, meta, goData, ok := t.receiverTypeInfo(typ)
-	switch {
-	case !ok:
-		return false
-	case meta != nil && printsByPointerString(meta):
-		return true
-	case goData == nil || !goData.PointerMethods["String"]:
+	if !ok {
 		return false
 	}
 	for _, first := range []string{"Error", "Format"} {
-		if _, has := goData.Methods[first]; has && !goData.PointerMethods[first] {
-			return false
+		if meta != nil {
+			if m := meta.Methods[first]; m != nil && !m.PointerReceiver {
+				return false
+			}
+		}
+		if goData != nil {
+			if _, has := goData.Methods[first]; has && !goData.PointerMethods[first] {
+				return false
+			}
 		}
 	}
-	return true
+	if meta != nil && printsByPointerString(meta) {
+		return true
+	}
+	return goData != nil && goData.PointerMethods["String"]
 }
 
 // printedInPlace reports whether expr, a generated Go expression of a value

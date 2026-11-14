@@ -2,9 +2,10 @@ package main
 
 // A struct's generated String prints each field through a copy of it, so a
 // field whose pointer-receiver String changes its receiver cannot be printed
-// that way: the change would be made to the copy and lost (GALA-E0110). Each
-// struct here prints such a field so that its String runs on the field
-// itself, and the count the String keeps is still there afterwards.
+// that way: the change would be made to the copy and lost (GALA-E0110).
+// Held by pointer, the field prints by its String on the value it points to,
+// and the count that String keeps is still there afterwards. A field of a
+// var printed on its own prints in place too.
 
 struct Counter(var shown int)
 
@@ -14,26 +15,20 @@ func (c Ptr[Counter]) String() string {
     s"shown ${c.shown}"
 }
 
-// Tracked holds its counter by pointer: the generated String prints the
-// value the pointer points to.
+// Tracked holds its counter by pointer.
 struct Tracked(c Ptr[Counter])
 
-// Holder declares its own String on its pointer receiver, which prints the
-// field in place.
 struct Holder(var c Counter)
-
-func (h Ptr[Holder]) String() string = s"Holder(${h.c})"
 
 func main() {
     var shared = Counter(0)
     val t = Tracked(&shared)
     Println(t)
-    Println(t)
+    Println(s"again: $t")
     Println(shared.shown)
 
     var h = Holder(Counter(0))
-    Println(h)
-    Println(s"again: $h")
     Println(h.c)
+    Println(s"again: ${h.c}")
     Println(h.c.shown)
 }

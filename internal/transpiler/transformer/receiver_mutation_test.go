@@ -246,6 +246,17 @@ sealed type Shout {
     case Says(l Loud)
     case Hush()
 }
+
+struct Fault(var n int)
+
+func (f *Fault) String() string {
+    f.n = f.n + 1
+    "fault"
+}
+
+func (f Fault) Error() string = "faulted"
+
+struct FaultHolder(var f Fault)
 `
 
 // TestMutatingFieldPrintRejected pins GALA-E0110 for a field printed through
@@ -292,6 +303,7 @@ func main() {
 		{"a field whose String only reads it", "val q = QuietHolder(Quiet(1))\n    Println(q)", "fmt.Println(q)"},
 		{"a type with its own String", "val o = LoudOwn(Loud(0))\n    Println(o)", "fmt.Println(o)"},
 		{"a field printed by its own String", "var h = LoudHolder(Loud(0), 1)\n    Println(h.l)", "std.StringAt(&h.l)"},
+		{"a field printed by its value's Error", "var h = FaultHolder(Fault(0))\n    Println(h)", "fmt.Println(h)"},
 	}
 	for _, tc := range accepted {
 		t.Run("accepted/"+tc.name, func(t *testing.T) {

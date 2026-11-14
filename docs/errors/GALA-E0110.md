@@ -102,16 +102,15 @@ error[GALA-E0110]: cannot print this Holder: its field c, a Counter, prints by i
   --> main.gala:14:13
    |
 14 |     Println(h)
-   |             ^ hold the field as a `Ptr[Counter]`, or declare a String for…
+   |             ^ hold the field as a `Ptr[Counter]`, so its String runs on th…
    |
-   = hint: hold the field as a `Ptr[Counter]`, or declare a String for Holder
+   = hint: hold the field as a `Ptr[Counter]`, so its String runs on the value it points to
 ```
 
-The error is reported where the value is printed, by `Println`, `Print` or
-interpolation, and follows fields into nested structs and sealed cases. Hold
-the field as a `Ptr`, so its `String` runs on the value it points to, or give
-the struct its own `String` on its pointer receiver, which prints the field in
-place:
+The error is reported where `Println`, `Print` or interpolation prints the
+value, and follows fields into nested structs and sealed cases. Hold the field
+as a `Ptr`, so its `String` runs on the value it points to. A field of a `var`
+printed on its own, `Println(h.c)`, runs its `String` in place:
 
 ```gala
 package main
@@ -125,29 +124,22 @@ func (c Ptr[Counter]) String() string {
 
 struct Tracked(c Ptr[Counter])
 
-struct Holder(var c Counter)
-
-func (h Ptr[Holder]) String() string = s"Holder(${h.c})"
-
 func main() {
     var shared = Counter(0)
     val t = Tracked(&shared)
     Println(t)            // Tracked(shown 1)
     Println(shared.shown) // 1
-
-    var h = Holder(Counter(0))
-    Println(h)            // Holder(shown 1)
-    Println(h.c.shown)    // 1
 }
 ```
 
-**Not checked: values whose type is known only at run time.** A value of a
-type parameter, of `any` or of another interface type, such as an element a
-collection or a tuple prints, reaches the printer as a copy, since storing a
-value in an interface copies it. Its pointer-receiver `String` runs on that
-copy, and a change it makes is lost. The type is not known where such a value
-is printed, so nothing reports it. Give such a type a `String` that only reads
-its receiver, or keep its values behind a `Ptr`.
+**Not checked.** The check runs where `Println`, `Print` or interpolation
+prints a value of a struct or sealed type. It does not cover the other ways the
+generated `String` runs, each of which already holds a copy: an element a
+collection or a tuple prints, a value of a type parameter, of `any` or of
+another interface (storing a value in an interface copies it), an explicit
+`h.String()` call (the generated `String` has a value receiver) and Go's `fmt`.
+A change a field's `String` makes there is lost too. A `String` that only reads
+its receiver, or a field held by `Ptr`, avoids it everywhere.
 
 **What counts as changing the receiver.** A method can change its receiver
 when its body, or a lambda in it:
