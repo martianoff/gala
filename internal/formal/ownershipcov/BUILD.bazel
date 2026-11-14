@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# Test tooling for the formal semantics: its visibility keeps it out of the
+# gala CLI and every other shipped binary.
+go_library(
+    name = "ownershipcov",
+    srcs = [
+        "ownershipcov.go",
+        "render.go",
+    ],
+    importpath = "martianoff/gala/internal/formal/ownershipcov",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/ownership",
+    ],
+)
+
+go_test(
+    name = "ownershipcov_test",
+    srcs = ["ownershipcov_test.go"],
+    embed = [":ownershipcov"],
+    deps = [
+        "//internal/transpiler/ownership",
+        "@com_github_stretchr_testify//require",
+    ],
+)

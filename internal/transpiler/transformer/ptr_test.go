@@ -137,6 +137,21 @@ func main() {
 			msg: "cannot use find() (*int) as Ptr[int]",
 		},
 		{
+			name: "nullable pointer among one call's results in a multi-value assignment",
+			input: `package main
+
+func find() (*int, int) = (nil, 1)
+
+func main() {
+    var x = 1
+    var p = &x
+    var n = 0
+    p, n = find()
+    Println(*p, n)
+}`,
+			msg: "cannot use find() (*int) as Ptr[int]",
+		},
+		{
 			name: "nullable pointer in a self tail call",
 			input: `package main
 

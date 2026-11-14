@@ -226,6 +226,19 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A function passed to a collection method (Partition, Span, SortBy,
+# Stream.FlatMap, ...) runs exactly once per element, in element order.
+gala_exec_test(
+    name = "collection_function_call_count",
+    src = "collection_function_call_count.gala",
+    expected = "collection_function_call_count.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+        "//stream",
+    ],
+)
+
 # The expected type reaches an untyped constant or an empty constructor: a
 # FoldLeft accumulator, a tuple inside a call, an empty ArrayOf(), a generic
 # constructor in an interface slot, the argument of a generated Equal.
@@ -355,6 +368,24 @@ gala_exec_test(
     name = "future_go_scalar_capture",
     src = "future_go_scalar_capture.gala",
     expected = "future_go_scalar_capture.out",
+    deps = [
+        "//concurrent",
+    ],
+)
+
+gala_exec_test(
+    name = "val_field_go_alias_interface",
+    src = "val_field_go_alias_interface.gala",
+    expected = "val_field_go_alias_interface.out",
+    deps = [
+        "//concurrent",
+    ],
+)
+
+gala_exec_test(
+    name = "future_of_inferred",
+    src = "future_of_inferred.gala",
+    expected = "future_of_inferred.out",
     deps = [
         "//concurrent",
     ],
@@ -1289,6 +1320,46 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+gala_library(
+    name = "transitive_package_types_shape",
+    srcs = ["transitive_package_types/shape/shape.gala"],
+    importpath = "martianoff/gala/examples/transitive_package_types/shape",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "transitive_package_types_geo",
+    srcs = ["transitive_package_types/geo/geo.gala"],
+    importpath = "martianoff/gala/examples/transitive_package_types/geo",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":transitive_package_types_shape",
+        "//collection_immutable",
+    ],
+)
+
+gala_library(
+    name = "transitive_package_types_report",
+    srcs = ["transitive_package_types/report/report.gala"],
+    importpath = "martianoff/gala/examples/transitive_package_types/report",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":transitive_package_types_geo",
+        "//collection_immutable",
+    ],
+)
+
+gala_exec_test(
+    name = "transitive_package_types",
+    src = "transitive_package_types/main.gala",
+    expected = "transitive_package_types/main.out",
+    gala_deps = [
+        ":transitive_package_types_geo",
+        ":transitive_package_types_report",
+    ],
+    deps = ["//collection_immutable"],
+)
+
 # Temporarily enabled for debugging
 gala_exec_test(
     name = "try_recovery",
@@ -1964,6 +2035,19 @@ gala_exec_test(
     expected = "generated_decl_collisions.out",
 )
 
+gala_exec_test(
+    name = "builtin_named_declarations",
+    srcs = [
+        "builtin_named_declarations/main.gala",
+        "builtin_named_declarations/other.gala",
+    ],
+    expected = "builtin_named_declarations/builtin_named_declarations.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
 # Documentation verification tests (GALA.MD)
 gala_exec_test(
     name = "doc_verify_gala_md_basics",
@@ -2133,6 +2217,53 @@ gala_exec_test(
     name = "struct_printing",
     src = "struct_printing.gala",
     expected = "struct_printing.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
+# A method of a generic type whose signature names another generic type is a
+# function in Go, called and named as a method value as any method is
+gala_exec_test(
+    name = "fanout_methods",
+    src = "fanout_methods.gala",
+    expected = "fanout_methods.out",
+    deps = ["//collection_immutable"],
+)
+
+# A pointer to a Go struct prints as &{...} in every GALA format
+gala_exec_test(
+    name = "go_struct_pointer_printing",
+    src = "go_struct_pointer_printing.gala",
+    expected = "go_struct_pointer_printing.out",
+)
+
+# A String on a pointer receiver prints the value, addressable or not
+gala_exec_test(
+    name = "pointer_string_printing",
+    src = "pointer_string_printing.gala",
+    expected = "pointer_string_printing.out",
+)
+
+# A String on a pointer receiver runs on an addressable value itself, not a
+# copy: it sees writes through other pointers and copies no lock
+gala_exec_test(
+    name = "pointer_string_original_value",
+    src = "pointer_string_original_value.gala",
+    expected = "pointer_string_original_value.out",
+    deps = [
+        "//go_interop",
+        "//stream",
+    ],
+)
+
+# An element with a pointer-receiver String prints with it in collections,
+# tuples, generic functions and values of type any
+gala_exec_test(
+    name = "pointer_string_in_collections",
+    src = "pointer_string_in_collections.gala",
+    expected = "pointer_string_in_collections.out",
     deps = [
         "//collection_immutable",
         "//collection_mutable",
@@ -3995,6 +4126,37 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A generic method's own type parameters are inferred from constraints, and a
+# receiver may write `_` for a type parameter another constraint names.
+gala_exec_test(
+    name = "generic_method_constraint_inference",
+    src = "generic_method_constraint_inference.gala",
+    expected = "generic_method_constraint_inference.out",
+    deps = ["//collection_immutable"],
+)
+
+# `==` on time.Time calls its Equal, in concrete code as in generic code.
+gala_exec_test(
+    name = "equal_go_time",
+    src = "equal_go_time.gala",
+    expected = "equal_go_time.out",
+    deps = ["//collection_immutable"],
+)
+
+# `==` on a Go type with an Equal(T) bool, and on a type parameter whose
+# constraint is a Go interface embedding comparable, compares as it does in
+# generic code. In a directory of its own: the single-file example corpus
+# that the transformer guards transpile cannot resolve its Go bridge package.
+gala_exec_test(
+    name = "equal_go_bridge_types",
+    src = "equal_go_bridge_types/main.gala",
+    expected = "equal_go_bridge_types/equal_go_bridge_types.out",
+    deps = [
+        "//collection_immutable",
+        "//examples/go_equal_bridge",
+    ],
+)
+
 # Sealed-case widening at function-call argument sites (cross-package
 # dot-import; the gala_team Status shape).  Both positional and
 # named-arg construction must widen to the parent sealed type, the
@@ -5112,6 +5274,57 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Left-to-right order holds when a later call changes an earlier operand
+# through a pointer, and for locals the generated Go renames.
+gala_exec_test(
+    name = "evaluation_order_pointers",
+    src = "evaluation_order_pointers.gala",
+    expected = "evaluation_order_pointers.out",
+    deps = ["//collection_immutable"],
+)
+
+# A local binding named like a package-level val is not that val: its Get
+# may change an earlier operand.
+gala_exec_test(
+    name = "evaluation_order_shadowed_val",
+    src = "evaluation_order_shadowed_val.gala",
+    expected = "evaluation_order_shadowed_val.out",
+    deps = ["//go_interop"],
+)
+
+# An element of a Go slice or map is read before a later call writes it.
+gala_exec_test(
+    name = "evaluation_order_elements",
+    src = "evaluation_order_elements.gala",
+    expected = "evaluation_order_elements.out",
+    deps = ["//go_interop"],
+)
+
+# A compound assignment reads its target before the right-hand side's calls,
+# and a function taken out of a slice is read before the call's arguments.
+gala_exec_test(
+    name = "evaluation_order_compound",
+    src = "evaluation_order_compound.gala",
+    expected = "evaluation_order_compound.out",
+    deps = ["//go_interop"],
+)
+
+# A package var is ordered like one where a binding of its name elsewhere
+# in the function does not reach.
+gala_library(
+    name = "evaluation_order_hidden_var_lib",
+    srcs = ["evaluation_order_hidden_var_lib/counter.gala"],
+    importpath = "martianoff/gala/examples/evaluation_order_hidden_var_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "evaluation_order_hidden_var",
+    src = "evaluation_order_hidden_var.gala",
+    expected = "evaluation_order_hidden_var.out",
+    deps = [":evaluation_order_hidden_var_lib"],
+)
+
 # Named arguments are evaluated in the order they are written.
 gala_exec_test(
     name = "named_argument_order",
@@ -5143,4 +5356,16 @@ gala_exec_test(
     src = "field_default_type_named_like_field.gala",
     expected = "field_default_type_named_like_field.out",
     deps = ["//collection_immutable"],
+)
+
+# A generic function over Iterable[T, C] gets the concrete collection back,
+# for immutable and mutable Array and List
+gala_exec_test(
+    name = "iterable_self_type",
+    src = "iterable_self_type.gala",
+    expected = "iterable_self_type.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
 )

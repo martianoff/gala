@@ -1,8 +1,12 @@
-# GALA-E0097 — Identifier uses the reserved `_gala_` prefix
+# GALA-E0097 — Identifier uses a reserved prefix
 
-**When it fires.** An identifier starts with `_gala_`. The prefix is reserved
-for names the transpiler generates, so no GALA name may use it: a local, a
-parameter, a top-level function, val or var, a field, or a type.
+**When it fires.** An identifier starts with `_gala_` or `GALA_`. Both prefixes
+are reserved for names the transpiler generates, so no GALA name may use them:
+a local, a parameter, a top-level function, val or var, an embed val, a field,
+a type or a type parameter. The match is exact and case-sensitive: `Gala_x`,
+`GALAX` and `gala_x` are ordinary names, and a string such as `"GALA_HOME"` is
+just text. A Go package may export a `GALA_` name, so a member reached through
+a dot (`pkg.GALA_X`, `v.GALA_Field`) or a named argument stays usable.
 
 **Minimal repro.**
 
@@ -27,6 +31,26 @@ error[GALA-E0097]: identifier _gala_total starts with _gala_, a prefix reserved 
   = hint: rename it so it does not start with _gala_
 ```
 
+The `GALA_` prefix is reported the same way:
+
+```gala
+package main
+
+func GALA_Parser_Advance() int = 1
+
+func main() = Println(GALA_Parser_Advance())
+```
+
+```
+error[GALA-E0097]: identifier GALA_Parser_Advance starts with GALA_, a prefix reserved for names the transpiler generates
+  --> main.gala:3:6
+  |
+3 | func GALA_Parser_Advance() int = 1
+  |      ^^^^^^^^^^^^^^^^^^^ rename it so it does not start with GALA_
+  |
+  = hint: rename it so it does not start with GALA_
+```
+
 **Fix.** Rename it:
 
 ```gala
@@ -42,5 +66,7 @@ func main() {
 like a Go predeclared identifier or `std`, such as `len` or `string`, is
 emitted as `_gala_len` or `_gala_string`, so code the transpiler generates
 around it still reaches Go's `len` and `string`. Go's `fmt` may be imported as
-`_gala_fmt`. A name of yours with the prefix could meet one of these and
-quietly mean something else.
+`_gala_fmt`. `GALA_` is the exported counterpart: Go exports only names that
+start with an upper-case letter, so a generated name that other packages reach
+is spelled with `GALA_`. A name of yours with either prefix could meet one of
+these and quietly mean something else.

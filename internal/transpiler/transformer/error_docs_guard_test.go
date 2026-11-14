@@ -1459,6 +1459,18 @@ func main() {
 			},
 		},
 		{
+			name: "identifier with the reserved GALA_ prefix",
+			code: galaerr.CodeReservedNamePrefix, // GALA-E0097
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func GALA_Parser_Advance() int = 1
+
+func main() = Println(GALA_Parser_Advance())
+`)
+			},
+		},
+		{
 			name: "field default that reads a field",
 			code: galaerr.CodeFieldDefaultReadsField, // GALA-E0098
 			render: func(t *testing.T) string {
@@ -1591,6 +1603,133 @@ func main() {
 }
 `)
 			},
+		},
+		{
+			name: "positional argument after a named one",
+			code: galaerr.CodePositionalAfterNamed, // GALA-E0105
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func divide(dividend int, divisor int) int = dividend / divisor
+
+func main() {
+    Println(divide(dividend = 20, 4))
+}
+`)
+			},
+		},
+		{
+			name: "type named like a Go predeclared type",
+			code: galaerr.CodePredeclaredTypeName, // GALA-E0106
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct error(Code int, Msg string)
+
+func lookup(code int) error = error(code, "not found")
+
+func main() {
+    Println(lookup(404).Msg)
+}
+`)
+			},
+		},
+		{
+			name: "type named like a Go builtin function",
+			code: galaerr.CodePredeclaredTypeName, // GALA-E0106
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct len(Items int)
+
+func main() {
+    Println(len(3).Items)
+}
+`)
+			},
+		},
+		{
+			name: "printing a val whose String runs on a copy of a lock",
+			code: galaerr.CodeNoCopyReceiverCopied, // GALA-E0053
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "sync"
+
+struct Guarded(var mu sync.Mutex, var n int)
+
+func (g *Guarded) String() string = s"guarded ${g.n}"
+
+func main() {
+    val g = Guarded(sync.Mutex{}, 1)
+    Println(g)
+}
+`)
+			},
+		},
+		{
+			name: "a type's own Equal passes its type to a comparable type parameter",
+			code: galaerr.CodeEqualReentry, // GALA-E0108
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func same[T comparable](a T, b T) bool = a == b
+
+struct Point(x int, label string)
+
+func (p Point) Equal(o Point) bool = same(p.label, o.label) && same(p, o)
+
+func main() {
+    Println(Point(1, "a") == Point(2, "a"))
+}
+`)
+			},
+		},
+		{
+			name: "a type pattern for an interface a type has only through free functions",
+			code: galaerr.CodeInterfaceViaLoweredMethod, // GALA-E0109
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+type HasKeys interface {
+    Keys() HashSet[string]
+}
+
+func probe(x any) string = x match {
+    case h: HasKeys => "keys"
+    case _ => "none"
+}
+
+func main() = Println(probe(HashMapOf(("a", 1))))
+`)
+			},
+		},
+		{
+			name: "a pointer method that changes its receiver, called on a val",
+			code: galaerr.CodeMutatingCallOnCopy, // GALA-E0110
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func (c Ptr[Counter]) Bump() {
+    c.n = c.n + 1
+}
+
+func main() {
+    val c = Counter(0)
+    c.Bump()
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name:   "builtin-named function the package's hand-written Go refers to",
+			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
+			render: renderBuiltinNameFromGoRepro,
 		},
 		{
 			name: "Go struct tag on a block-form struct field",
@@ -1842,6 +1981,43 @@ func main() {
 	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
 	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
 	return rendered
+}
+
+// builtinNameFromGoMain and builtinNameFromGoBridge are GALA-E0107's repro:
+// a package whose hand-written Go calls max, next to a GALA function max.
+const (
+	builtinNameFromGoMain = `package main
+
+func max(a int, b int) int = if (a > b) a else b
+
+func main() {
+    Println(larger(1, 2))
+}
+`
+	builtinNameFromGoBridge = `package main
+
+func larger(a, b int) int { return max(a, b) }
+`
+)
+
+// renderBuiltinNameFromGoRepro drives GALA-E0107. The hand-written Go has to
+// sit on disk beside the GALA file for the analyzer to read it.
+func renderBuiltinNameFromGoRepro(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(builtinNameFromGoBridge), 0o600))
+	mainPath := filepath.Join(dir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(builtinNameFromGoMain), 0o600))
+
+	_, err := newDocGuardTranspiler().Transpile(builtinNameFromGoMain, mainPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   mainPath,
+		FallbackSource: builtinNameFromGoMain,
+		Color:          false,
+	})
+	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
+	return strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
 }
 
 // renderUnexportedPredicateRepro drives GALA-E0083: main calls the private

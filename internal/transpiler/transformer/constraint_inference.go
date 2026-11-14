@@ -48,6 +48,49 @@ func (t *galaASTTransformer) inferFromConstraints(typeParams []string, constrain
 	}
 }
 
+// inferMethodFromConstraints adds to bound the type parameters of the generic
+// method m that the constraints of its bound ones determine, as
+// inferFromConstraints does for a function. typeParams names m's type
+// parameters, position by position, as bound does; bound may hold other
+// names, and only typeParams are added. The constraints are read with the
+// receiver's type parameters, recvParams, bound to its type arguments,
+// recvArgs. m's own parameters are renamed to fresh names first, so a
+// receiver type argument that names a type parameter of the caller spelled
+// like one of m's (`T` in `Wrap[T]` inside a `func g[T any]`) stays apart
+// from it (see resolveMethodCallTypeWithParams).
+func (t *galaASTTransformer) inferMethodFromConstraints(m *transpiler.MethodMetadata, typeParams []string, recvParams []string, recvArgs []transpiler.Type, bound map[string]transpiler.Type) {
+	// Only a constraint that names another of the method's type parameters
+	// can bind it (see inferFromConstraints).
+	if len(typeParams) != len(m.TypeParams) || !slices.ContainsFunc(m.TypeParams, func(tp string) bool {
+		c := m.TypeParamConstraints[tp]
+		return transpiler.IsInterfaceConstraint(c) && typeMentionsTypeParam(c, m.TypeParams)
+	}) {
+		return
+	}
+	fresh := make([]string, len(m.TypeParams))
+	rename := make(map[string]transpiler.Type, len(m.TypeParams))
+	for i, tp := range m.TypeParams {
+		fresh[i] = freshMethodTypeParamName(i)
+		rename[tp] = transpiler.NamedType{Name: fresh[i]}
+	}
+	constraints := make(map[string]transpiler.Type, len(m.TypeParams))
+	own := make(map[string]transpiler.Type, len(m.TypeParams))
+	for i, tp := range m.TypeParams {
+		if c := m.TypeParamConstraints[tp]; c != nil {
+			constraints[fresh[i]] = t.substituteConcreteTypes(t.substituteInType(c, rename), recvParams, recvArgs)
+		}
+		if typ, ok := bound[typeParams[i]]; ok {
+			own[fresh[i]] = typ
+		}
+	}
+	t.inferFromConstraints(fresh, constraints, own)
+	for i, name := range fresh {
+		if _, ok := bound[typeParams[i]]; !ok && own[name] != nil {
+			bound[typeParams[i]] = own[name]
+		}
+	}
+}
+
 // inferFromConstraint binds, in bound, the type parameters of typeParams
 // that unifying the methods the constraint c requires with those of arg, the
 // type argument c constrains, determines. It reports whether it bound any.
@@ -116,12 +159,7 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(c callSrc, callCtx function
 	}) {
 		return nil
 	}
-	bound := make(typeSubstMap, len(callCtx.inferredTypeSubst))
-	for tp, typ := range callCtx.inferredTypeSubst {
-		if !callCtx.placeholderTypeParams[tp] {
-			bound[tp] = typ
-		}
-	}
+	bound := boundTypeArgs(callCtx)
 	for _, tp := range fm.TypeParams {
 		constraint, typeArg := fm.TypeParamConstraints[tp], bound[tp]
 		if typeArg == nil || !transpiler.IsInterfaceConstraint(constraint) {
@@ -146,6 +184,19 @@ func (t *galaASTTransformer) checkConstraintTypeArgs(c callSrc, callCtx function
 			hint)
 	}
 	return nil
+}
+
+// boundTypeArgs is the type arguments of callCtx's call that are known: those
+// its lambdas were lowered against (inferFuncTypeSubstFromArgs), placeholders
+// left out.
+func boundTypeArgs(callCtx functionCallContext) typeSubstMap {
+	bound := make(typeSubstMap, len(callCtx.inferredTypeSubst))
+	for tp, typ := range callCtx.inferredTypeSubst {
+		if !callCtx.placeholderTypeParams[tp] {
+			bound[tp] = typ
+		}
+	}
+	return bound
 }
 
 // constraintMismatch says why typeArg lacks one of required, the methods of
@@ -194,26 +245,65 @@ func (t *galaASTTransformer) checkConstraintInference(c callSrc, callCtx functio
 	if fm == nil || len(placeholder) == 0 {
 		return nil
 	}
-	subst := callCtx.inferredTypeSubst
-	for _, tp := range fm.TypeParams {
-		if !placeholder[tp] {
+	sig := genericSignature{name: fm.Name, typeParams: fm.TypeParams, constraints: fm.TypeParamConstraints, paramTypes: fm.ParamTypes, paramNames: fm.ParamNames, variadic: fm.Variadic}
+	return t.constraintInferenceError(c, sig, fm.Name, func(tp string) bool { return placeholder[tp] }, callCtx.inferredTypeSubst)
+}
+
+// checkMethodConstraintInference is checkConstraintInference for a call of
+// m, a generic method of the type owner, whose type parameters inference
+// bound in subst as far as it could: `ops.Keep(s, (x) => x > 1)` for
+// `func (o Ops) Keep[T any, C Seq[T, C]](xs C, p func(T) bool)`. m's
+// constraints are read with the receiver's type parameters, recvParams,
+// bound to its type arguments, recvArgs.
+func (t *galaASTTransformer) checkMethodConstraintInference(c callSrc, owner string, m *transpiler.MethodMetadata, recvParams []string, recvArgs []transpiler.Type, subst typeSubstMap) error {
+	unbound := func(tp string) bool { return subst[tp] == nil || subst[tp].IsNil() }
+	if !slices.ContainsFunc(m.TypeParams, unbound) {
+		return nil
+	}
+	constraints := make(map[string]transpiler.Type, len(m.TypeParamConstraints))
+	for tp, ct := range m.TypeParamConstraints {
+		constraints[tp] = t.substituteConcreteTypes(ct, recvParams, recvArgs)
+	}
+	sig := genericSignature{name: owner + "." + m.Name, typeParams: m.TypeParams, constraints: constraints, paramTypes: m.ParamTypes, paramNames: m.ParamNames, variadic: m.Variadic}
+	return t.constraintInferenceError(c, sig, m.Name, unbound, subst)
+}
+
+// genericSignature is what checking the inference of a generic call reads
+// of the function or method called.
+type genericSignature struct {
+	name        string // the callee, as the diagnostic names it
+	typeParams  []string
+	constraints map[string]transpiler.Type
+	paramTypes  []transpiler.Type
+	paramNames  []string
+	variadic    bool
+}
+
+// constraintInferenceError is the GALA-E0104 of a call of sig, which the
+// hint spells as callee, when inference left a type parameter unbound (as
+// unbound reports; subst holds the bound ones) that appears only in the
+// constraint of a bound one and that a lambda argument needs. It is nil when
+// there is none.
+func (t *galaASTTransformer) constraintInferenceError(c callSrc, sig genericSignature, callee string, unbound func(string) bool, subst map[string]transpiler.Type) error {
+	for _, tp := range sig.typeParams {
+		if !unbound(tp) {
 			continue
 		}
 		// The bound parameter whose constraint names tp.
 		var owner string
 		var constraint transpiler.Type
-		for _, other := range fm.TypeParams {
-			if oc := fm.TypeParamConstraints[other]; !placeholder[other] && transpiler.IsInterfaceConstraint(oc) && typeMentionsTypeParam(oc, []string{tp}) {
+		for _, other := range sig.typeParams {
+			if oc := sig.constraints[other]; !unbound(other) && transpiler.IsInterfaceConstraint(oc) && typeMentionsTypeParam(oc, []string{tp}) {
 				owner, constraint = other, oc
 				break
 			}
 		}
-		if owner == "" || !t.lambdaNeedsTypeParam(fm, c.args, tp) {
+		if owner == "" || !t.lambdaNeedsTypeParam(sig, c.args, tp) {
 			continue
 		}
-		spelled := make([]string, len(fm.TypeParams))
-		for k, p := range fm.TypeParams {
-			if placeholder[p] {
+		spelled := make([]string, len(sig.typeParams))
+		for k, p := range sig.typeParams {
+			if unbound(p) {
 				spelled[k] = "<" + p + ">"
 			} else {
 				spelled[k] = displayType(subst[p])
@@ -222,19 +312,20 @@ func (t *galaASTTransformer) checkConstraintInference(c callSrc, callCtx functio
 		r := c.anchor().rng()
 		return spanErrorAt(galaerr.CodeConstraintInference, r, r,
 			fmt.Sprintf("cannot infer %s in this call of %s: %s appears only in %s, the constraint of %s, and the methods of %s's type argument %s do not determine it",
-				tp, fm.Name, tp, displayType(constraint), owner, owner, displayType(subst[owner])),
-			fmt.Sprintf("write the type arguments: %s[%s](...)", fm.Name, strings.Join(spelled, ", ")))
+				tp, sig.name, tp, displayType(constraint), owner, owner, displayType(subst[owner])),
+			fmt.Sprintf("write the type arguments: %s[%s](...)", callee, strings.Join(spelled, ", ")))
 	}
 	return nil
 }
 
 // lambdaNeedsTypeParam reports whether a lambda among args with a parameter
-// that declares no type fills a parameter of fm whose type mentions the type
-// parameter tp. A lambda whose parameters are all annotated binds tp itself.
-func (t *galaASTTransformer) lambdaNeedsTypeParam(fm *transpiler.FunctionMetadata, args argsSrc, tp string) bool {
-	for _, a := range t.callArgs(args, fm.ParamNames) {
-		pi := paramIndex(a.slot, fm.ParamTypes, fm.Variadic)
-		if !a.lambda.ok() || pi < 0 || !typeMentionsTypeParam(fm.ParamTypes[pi], []string{tp}) {
+// that declares no type fills a parameter of sig whose type mentions the
+// type parameter tp. A lambda whose parameters are all annotated binds tp
+// itself.
+func (t *galaASTTransformer) lambdaNeedsTypeParam(sig genericSignature, args argsSrc, tp string) bool {
+	for _, a := range t.callArgs(args, sig.paramNames) {
+		pi := paramIndex(a.slot, sig.paramTypes, sig.variadic)
+		if !a.lambda.ok() || pi < 0 || !typeMentionsTypeParam(sig.paramTypes[pi], []string{tp}) {
 			continue
 		}
 		if slices.ContainsFunc(a.lambda.params(), func(p paramDecl) bool { return !p.typ.ok() }) {

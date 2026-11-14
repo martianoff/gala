@@ -83,7 +83,7 @@ func (s Shape) IsEmpty() bool {
 	return s._variant == _Shape_Empty
 }
 func (s Shape) Copy() Shape {
-	return Shape{r: std.Copy(s.r), w: std.Copy(s.w), h: std.Copy(s.h), _variant: std.Copy(s._variant)}
+	return Shape{r: s.r, w: s.w, h: s.h, _variant: s._variant}
 }
 func (s Shape) Equal(other Shape) bool {
 	if s._variant != other._variant {
@@ -91,9 +91,9 @@ func (s Shape) Equal(other Shape) bool {
 	}
 	switch s._variant {
 	case _Shape_Circle:
-		return std.Equal(s.r, other.r)
+		return s.r.Get() == other.r.Get()
 	case _Shape_Rect:
-		return std.Equal(s.w, other.w) && std.Equal(s.h, other.h)
+		return s.w.Get() == other.w.Get() && s.h.Get() == other.h.Get()
 	}
 	return true
 }
@@ -132,10 +132,10 @@ type Box struct {
 }
 
 func (s Box) Copy() Box {
-	return Box{label: std.Copy(s.label), size: std.Copy(s.size)}
+	return Box{label: s.label, size: s.size}
 }
 func (s Box) Equal(other Box) bool {
-	return std.Equal(s.label, other.label) && std.Equal(s.size, other.size)
+	return s.label.Get() == other.label.Get() && s.size == other.size
 }
 
 //line $DIR/main.gala:16
@@ -145,10 +145,10 @@ type Point struct {
 }
 
 func (s Point) Copy() Point {
-	return Point{X: std.Copy(s.X), Y: std.Copy(s.Y)}
+	return Point{X: s.X, Y: s.Y}
 }
 func (s Point) Equal(other Point) bool {
-	return std.Equal(s.X, other.X) && std.Equal(s.Y, other.Y)
+	return s.X.Get() == other.X.Get() && s.Y.Get() == other.Y.Get()
 }
 func (s Point) Unapply(v any) (std.Immutable[int], std.Immutable[int], bool) {
 	if p, ok := v.(Point); ok {
@@ -166,10 +166,10 @@ type Rules struct {
 }
 
 func (s Rules) Copy() Rules {
-	return Rules{pick: std.Copy(s.pick)}
+	return Rules{pick: s.pick.Copy()}
 }
 func (s Rules) Equal(other Rules) bool {
-	return std.Equal(s.pick, other.pick)
+	return s.pick.Equal(other.pick)
 }
 func (s Rules) String() string {
 	return std.FormatStruct("Rules", s.pick)

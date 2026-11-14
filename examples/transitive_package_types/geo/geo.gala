@@ -1,0 +1,29 @@
+package geo
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/transitive_package_types/shape"
+)
+
+// A point that may be missing.
+func MaybePoint(n int) Option[shape.Point] =
+    if (n > 0) Some(shape.Point(X = n, Y = n * 2)) else None()
+
+// Describes a labelled point that may be missing.
+func Describe(p Tuple[int, Option[shape.Point]]) string = p match {
+    case (n, Some(pt)) => s"$n at ${pt.X},${pt.Y}"
+    case (n, _)        => s"$n nowhere"
+}
+
+struct Labelled(Tag string, At Tuple[int, Option[shape.Point]])
+
+func (l Labelled) Show() string = s"${l.Tag}: ${Describe(l.At)}"
+
+func Origin() shape.Point = shape.Point(X = 0, Y = 0)
+
+func Points(n int) Array[shape.Point] = ArrayTabulate(n, (i) => shape.Point(X = i, Y = i))
+
+func TakeOpt(o Option[shape.Point]) string = o match {
+    case Some(_) => "some"
+    case _       => "none"
+}

@@ -623,6 +623,155 @@ func main() = Println(_gala_Id(1))`,
 			expectContains: "identifier _gala_Id starts with _gala_",
 		},
 		{
+			name: "GALA-E0097 local with the exported reserved prefix",
+			input: `package main
+
+func main() {
+    val GALA_total = 2
+    Println(GALA_total)
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "error_codes_test.gala:4:8 identifier GALA_total starts with GALA_, a prefix reserved for names the transpiler generates (hint: rename it so it does not start with GALA_)",
+		},
+		{
+			name: "GALA-E0097 parameter with the exported reserved prefix",
+			input: `package main
+
+func twice(GALA_n int) int = GALA_n * 2
+
+func main() = Println(twice(2))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_n starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 lambda parameter with the exported reserved prefix",
+			input: `package main
+
+func main() {
+    Println(Some(1).Map((GALA_x) => GALA_x + 1))
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_x starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 pattern binding with the exported reserved prefix",
+			input: `package main
+
+func main() {
+    val n = Some(1) match {
+        case Some(GALA_v) => GALA_v
+        case _ => 0
+    }
+    Println(n)
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_v starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 top-level function with the exported reserved prefix",
+			input: `package main
+
+func GALA_Parser_Advance() int = 1
+
+func main() = Println(GALA_Parser_Advance())`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_Parser_Advance starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 top-level val with the exported reserved prefix",
+			input: `package main
+
+val GALA_Limit = 3
+
+func main() = Println(GALA_Limit)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_Limit starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 top-level var with the exported reserved prefix",
+			input: `package main
+
+var GALA_count = 0
+
+func main() = Println(GALA_count)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_count starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 embed val with the exported reserved prefix",
+			input: `package main
+
+embed val GALA_readme = "README.md"
+
+func main() = Println(GALA_readme)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_readme starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 field with the exported reserved prefix",
+			input: `package main
+
+struct Point(GALA_X int, Y int)
+
+func main() = Println(Point(1, 2).Y)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_X starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 type with the exported reserved prefix",
+			input: `package main
+
+type GALA_Id int
+
+func main() = Println(GALA_Id(1))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_Id starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 type parameter with the exported reserved prefix",
+			input: `package main
+
+func first[GALA_T any](xs Array[GALA_T]) Option[GALA_T] = xs.HeadOption()
+
+func main() = Println(first(ArrayOf(1)))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_T starts with GALA_",
+		},
+		{
+			// A Go value may have a GALA_ member, so a selected member is
+			// not held to the prefix: the reference reaches member
+			// resolution, which finds nothing here.
+			name: "GALA_ member selection is not GALA-E0097",
+			input: `package main
+
+struct P(X int)
+
+func main() = Println(P(1).GALA_X)`,
+			expectCode:     galaerr.CodeUnknownMethod,
+			expectContains: "P has no field or method GALA_X",
+		},
+		{
+			name: "GALA_ named argument is not GALA-E0097",
+			input: `package main
+
+struct P(X int)
+
+func main() = Println(P(GALA_X = 1))`,
+			expectCode:     galaerr.CodeMissingStructField,
+			expectContains: `unknown field "GALA_X" in construction of "P"`,
+		},
+		{
+			name: "GALA_ in an interpolated expression is undefined",
+			input: `package main
+
+func main() {
+    val total = 3
+    Println(s"${GALA_total}")
+}`,
+			expectCode:     galaerr.CodeUndefinedVariable,
+			expectContains: "undefined: GALA_total",
+		},
+		{
 			name: "GALA-E0098 struct field default reads an earlier field",
 			input: `package main
 
@@ -723,7 +872,7 @@ func main() {
     Some(-1).ForEach((n) => save(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "error_codes_test.gala:8:21 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
+			expectContains: "error_codes_test.gala:8:28 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 GALA method discarded in a void block lambda",
@@ -743,7 +892,7 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from conn.Close in void lambda",
+			expectContains: "error_codes_test.gala:13:8 cannot discard error return from conn.Close in void lambda",
 		},
 		{
 			name: "GALA-E0101 method of a val field named as written",
@@ -762,7 +911,7 @@ func main() {
     Some(1).ForEach((n) => h.conn.Close())
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from h.conn.Close in void lambda (hint: use FromError(h.conn.Close(...)) to handle the error)",
+			expectContains: "error_codes_test.gala:13:27 cannot discard error return from h.conn.Close in void lambda (hint: use FromError(h.conn.Close(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 generic GALA method returning error",
@@ -779,7 +928,7 @@ func main() {
     Some(1).ForEach((n) => conn.Send(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from conn.Send in void lambda",
+			expectContains: "error_codes_test.gala:11:27 cannot discard error return from conn.Send in void lambda",
 		},
 		{
 			name: "GALA-E0101 function value returning error",
@@ -792,7 +941,162 @@ func main() {
     Some(-1).ForEach((n) => check(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from check in void lambda",
+			expectContains: "error_codes_test.gala:7:28 cannot discard error return from check in void lambda",
+		},
+		{
+			name: "GALA-E0094 unused default reading a later parameter, at its declaration",
+			input: `package main
+
+func area(w int = h * 2, h int = 1) int = w * h
+
+func main() = Println("no call leaves w out")`,
+			expectCode:     galaerr.CodeDefaultReadsLaterParam,
+			expectContains: "error_codes_test.gala:3:18 the default value of parameter w reads parameter h, which is not bound until after it",
+		},
+		{
+			name: "GALA-E0094 unused method default reading its own parameter, at its declaration",
+			input: `package main
+
+struct Box(n int)
+
+func (b Box) Grow(by int = by + b.n) int = b.n + by
+
+func main() = Println(Box(1).Grow(2))`,
+			expectCode:     galaerr.CodeDefaultReadsLaterParam,
+			expectContains: "error_codes_test.gala:5:27 the default value of parameter by reads by itself",
+		},
+		{
+			name: "GALA-E0094 default reading a later parameter, called before its declaration",
+			input: `package main
+
+func main() = Println(area())
+
+func area(w int = h, h int = 1) int = w * h`,
+			expectCode:     galaerr.CodeDefaultReadsLaterParam,
+			expectContains: "error_codes_test.gala:5:18 the default value of parameter w reads parameter h, which is not bound until after it",
+		},
+		{
+			name: "GALA-E0101 error-only call in an if inside a void block lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => {
+        if (n < 0) {
+            Println("saving")
+            save(n)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:11:12 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 Go error-only call in an if inside a void block lambda",
+			input: `package main
+
+import "os"
+
+func main() {
+    Some("x").ForEach((p) => {
+        if (p != "") {
+            Println(p)
+            os.Remove(p)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:9:12 cannot discard error return from os.Remove in void lambda",
+		},
+		{
+			name: "GALA-E0101 error-only call in an if-expression body of a void lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => if (n < 0) save(n) else Println(n))
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:8:39 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 if whose every branch is an error-only call, in a void block lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => {
+        Println(n)
+        if (n < 0) save(n) else save(0)
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:10:19 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 match whose every arm is an error-only call, as a void expression lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => n match {
+        case 0 => save(1)
+        case _ => save(n)
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:9:18 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 error-only call in a match arm of a void lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => {
+        n match {
+            case 0 => Println("zero")
+            case _ => save(n)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:11:22 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 error-only call in a match arm block of a void expression lambda",
+			input: `package main
+
+import "errors"
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Some(-1).ForEach((n) => n match {
+        case 0 => Println("zero")
+        case _ => {
+            Println("saving")
+            save(n)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:12:12 cannot discard error return from save in void lambda",
 		},
 		{
 			// No field is in scope, so W is the package val: a mistake.
@@ -2027,6 +2331,49 @@ func main() {
     val s string = "x" + "y"
     Println(x * 2.0, x + 'a', 1.5 * 2 + x, f * 1.5, b + 200, d * 2, x < 1e3, x * (3 / 2), s + "z")
     Println(g, r, c, n, time.Duration(1.5e9), Some[any](3))
+}`
+	_, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+}
+
+// TestDeclaredDefaultsAccepted is the positive companion to GALA-E0094 at a
+// declaration: a default reading an earlier parameter, or a name its own
+// lambda or match binds that a later parameter shares, is accepted, and so is
+// a void lambda that handles the error of a call nested in an if or a match
+// (GALA-E0101).
+func TestDeclaredDefaultsAccepted(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	input := `package main
+
+import "errors"
+
+func scale(a int, b int = a * 2) int = a + b
+
+func pick(f func(int) int = (n) => n + 1, n int = 3) int = f(n)
+
+func label(o Option[int] = Some(1), v int = 0) string = o match {
+    case Some(v) => s"some $v"
+    case _       => "none"
+}
+
+func save(n int) error = if (n < 0) errors.New("negative") else nil
+
+func main() {
+    Println(scale(1), pick(), label())
+    Some(-1).ForEach((n) => {
+        if (n < 0) {
+            Println(FromError(save(n)).IsFailure())
+        }
+        n match {
+            case 0 => Println("zero")
+            case _ => Println(FromError(save(n)).IsSuccess())
+        }
+    })
 }`
 	_, err := trans.Transpile(input, "")
 	require.NoError(t, err)

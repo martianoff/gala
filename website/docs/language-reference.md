@@ -246,9 +246,23 @@ func divide(dividend int, divisor int) int = dividend / divisor
 
 divide(divisor = 4, dividend = 20)  // 5 — reordered to divide(20, 4)
 divide(20, 4)                        // 5 — positional works too
+divide(20, divisor = 4)              // 5 — positional first, then named
 ```
 
 Named arguments work with struct construction, `Copy()` method overrides, and regular function calls.
+
+Positional arguments come first. Once an argument is named, every argument
+after it is named too, in every call form: function and method calls, struct
+and sealed case constructors, and `Copy()` (whose overrides are all named). A
+positional argument after a named one is [GALA-E0105](/docs/errors/gala-e0105/):
+
+<!-- doc-check: error GALA-E0105 -->
+```gala
+func divide(dividend int, divisor int) int = dividend / divisor
+
+val q = divide(dividend = 20, 4)
+// error[GALA-E0105]: positional argument `4` follows named argument `dividend`
+```
 
 Named arguments are evaluated in the order they are written, then passed in
 parameter order. This holds for function and method calls, struct and sealed
@@ -528,15 +542,17 @@ A `Copy` override can be any expression, lambdas included. A lambda's parameter 
 
 #### Equality: `==` and `!=`
 
-`a == b` means `a.Equal(b)`, and `a != b` means `!a.Equal(b)`, for every type with an `Equal(other T) bool` method: every struct, sealed type and tuple, `Option`, `Either` and `Try`, the immutable collections, and any type that declares its own `Equal`. Values compare by value, as Scala's case classes do: `ListOf(1, 2) == ListOf(1, 2)` is `true`, and so is `==` on two structs whose `List` fields hold the same elements.
+`==` is structural, and uses a type's `Equal` method when it has one, in generic and concrete code alike. `a == b` means `a.Equal(b)`, and `a != b` means `!a.Equal(b)`, for every type with an `Equal(other T) bool` method: every struct, sealed type and tuple, `Option`, `Either` and `Try`, the immutable collections, any type that declares its own `Equal`, and a Go type such as `time.Time` whose `Equal` takes the type itself. Values compare by value, as Scala's case classes do: `ListOf(1, 2) == ListOf(1, 2)` is `true`, and so is `==` on two structs whose `List` fields hold the same elements.
 
 Where Go's `==` gives the same answer — a type of primitives only, through its fields, cases and type arguments, with no `Equal` of its own anywhere in it (`struct Point(x int, y int)`, `Option[int]`, `(int, string)`) — the comparison stays Go's `==` and costs nothing extra. A NaN equals nothing either way.
 
-On a type parameter constrained by `comparable`, `a == b` is true when Go's `==` is, or when the values' `Equal` method says so: a `List` passed as `T` compares by its elements, a struct or sealed type by value, a primitive and a pointer with Go's `==`. A Go type with an `Equal` method, such as `time.Time`, is compared by that method here.
+On a type parameter constrained by `comparable`, or by a Go interface that embeds `comparable`, `a == b` is true when Go's `==` is, or when the values' `Equal` method says so: a `List` passed as `T` compares by its elements, a struct or sealed type by value, a primitive and a pointer with Go's `==`.
 
-`==` keeps Go's meaning where there is no `Equal`: pointers (`*T`, `Ptr[T]`, and so the mutable collections) compare by identity, interfaces as Go compares them, Go types such as `time.Time` with Go's `==`, and `nil` checks as in Go. A struct *holding* a pointer compares with `Equal`, which compares what it points to.
+A Go type compares with its `Equal` method when that method is in the value's own method set and its signature is exactly `Equal(T) bool`, `T` being the type itself: two `time.Time`s of the same instant in different locations are `==`. An `Equal` declared on the pointer only, or one that takes `*T` or another type, is not used, and `==` on that type stays Go's, in generic code as well.
 
-Inside a type's own `Equal`, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`, since lowering it would call the method being defined; on a type Go cannot compare it is [GALA-E0084](/docs/errors/gala-e0084/). `==` on values Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a `T any` — is GALA-E0084 too, and so is `==` on a struct, sealed type or tuple holding a function unless it declares its own `Equal`. With a literal on the left, `0 == a` calls `a.Equal(0)`. Go code that compares GALA values with its own `==` keeps Go's meaning.
+`==` keeps Go's meaning where there is no `Equal`: pointers (`*T`, `Ptr[T]`, and so the mutable collections) compare by identity, interfaces as Go compares them, Go types with no `Equal(T) bool`, such as `time.Duration`, with Go's `==`, and `nil` checks as in Go. A struct *holding* a pointer compares with `Equal`, which compares what it points to.
+
+Inside a type's own `Equal`, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`, since lowering it would call the method being defined; on a type Go cannot compare it is [GALA-E0084](/docs/errors/gala-e0084/). A generic function that `Equal` calls is not inside it: `==` on its `comparable` type parameter calls `Equal` again. So a type's own `Equal` may not pass its type, or a type holding it by value, to a generic function or method as the type argument of a `comparable` type parameter; `same(p, o)` in `Point`'s `Equal` is [GALA-E0108](/docs/errors/gala-e0108/), and so is `Pair(p, o).Same()` for a `Pair[T comparable]`, or a function of the same file that `Equal` calls and that makes such a call. Pass the fields instead. `==` on values Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a `T any` — is GALA-E0084 too, and so is `==` on a struct, sealed type or tuple holding a function unless it declares its own `Equal`. With a literal on the left, `0 == a` calls `a.Equal(0)`. Go code that compares GALA values with its own `==` keeps Go's meaning.
 
 ### Type Aliases {#type-aliases}
 
@@ -1615,7 +1631,8 @@ func main() {
 
 - A shorthand struct prints as `Name(field, …)`, as a sealed value and a Scala case class do. Each field prints in its own format: a nested struct or sealed value recursively, a collection by its elements, an `Option`, `Either` or `Try` as `Some(…)`, `Right(…)`, `Success(…)`, a tuple as `(a, b)`. Strings print without quotes, and a function field prints as `<fn>`.
 - The transpiler generates the `String() string` method that does this on every shorthand struct, so Go code that prints one with `fmt` sees the same text, and every verb that uses `String` does: `%+v` and `%s` print `Pt(1, 2.5)` too, while `%#v` still prints the Go struct. A struct that declares its own `String() string` method, in GALA or in a hand-written `.go` file of its package, prints with that one instead (a `String` of another signature is GALA-E0093), and a struct with a field named `String` keeps Go's format.
-- A pointer field (`Ptr[T]`, `OptionPtr[T]`, `*T`) of a struct or a sealed case prints the value it points to; a pointer to a Go struct prints its address, as `%v` does. A pointer field reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`. A cycle that passes only through collections or `Option`s, with no pointer field of a struct on it, is not detected and recurses until the stack overflows.
+- A pointer field (`Ptr[T]`, `OptionPtr[T]`, `*T`) of a struct, a sealed case or an `Option`, `Either` or `Try` prints the value it points to; a pointer to a Go struct prints as `%v` prints a pointer operand, `&{field field}`, as in `Some(&{1 2})`. A pointer field reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`. A cycle that passes only through collections or `Option`s, with no pointer field of a struct on it, is not detected and recurses until the stack overflows.
+- A `String() string` declared on a pointer receiver, `func (p *Pt) String() string`, prints the value too: `Println`, `Print`, `s"..."` and `f"..."` (with no spec, or `%v` or `%s`; `%#v` still prints the Go struct), and a field, a sealed case or an `Option` printed in GALA's format, call it. `Println`, `Print` and interpolation call it on the value itself when it is addressable, as any pointer-receiver method is called: a `var`, a parameter, a pattern binding, a field or element of one of these, or a value reached through a pointer (`*p`, `p.Field`), so `String` sees what was written through other pointers and a lock the value holds is not copied. A `val` and a field of one, a call's result and a field printed in GALA's format are printed through a copy, so the value need not be addressable: `Println(Pt(1, 2))` prints what that `String` returns. Printing through a copy a value that must not be copied (one holding a `sync.Mutex`, a `WaitGroup` or another lock) is [GALA-E0053](/docs/errors/gala-e0053/), as calling the method on it would be, and so is printing a struct or sealed value whose generated `String` prints a field of such a type. Printing a `val` or a call's result by a `String` declared on its pointer receiver that can change that receiver is [GALA-E0110](/docs/errors/gala-e0110/), as that call would be. Go code that prints the value with `fmt` sees Go's format, since a pointer-receiver method is not in a value's method set.
 - A block-form struct (`type T struct { … }`) and a struct declared in Go print with Go's `%v`, `{field field}`: the block form is how GALA mirrors a Go struct. Declare a `String() string` method to print one otherwise.
 
 ### Rune Literals
@@ -1661,20 +1678,30 @@ struct Job(select bool)     // GALA-E0055
 
 Pick another name, such as `defaultPort` or `selected`. GALA does not rename the identifier for you: a renamed struct field or exported function would be visible to Go code, JSON field names and reflection under a name you never wrote. A bare `break` or `continue` statement in a `for` loop is loop control and is not affected; a bare `defer`, `go`, `goto`, `fallthrough`, `select` or `chan` statement is [GALA-E0036](/docs/errors/gala-e0036/).
 
-Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max` and so on — are not keywords. A local binding may take one; in a value position the name then means the binding, and in a type position the type.
+Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max` and so on — are not keywords. A local binding may take one, and so may a top-level function, val or var; in a value position the name then means the binding, and in a type position the type.
 
-### Names Starting with `_gala_` Are Reserved
+### Names Starting with `_gala_` or `GALA_` Are Reserved
 
-An identifier may not start with `_gala_`. The prefix is reserved for names the transpiler generates, so using it for a local, a parameter, a top-level function, val or var, a field or a type is a transpile error ([GALA-E0097](/docs/errors/gala-e0097/)).
+An identifier may not start with `_gala_` or `GALA_`. Both prefixes are reserved for names the transpiler generates (`GALA_` for exported ones, since Go exports only upper-case names), so using either for a local, a parameter, a top-level function, val or var, an embed val, a field, a type or a type parameter is a transpile error ([GALA-E0097](/docs/errors/gala-e0097/)). The match is exact and case-sensitive: `Gala_x` and `GALAX` are ordinary names, a string such as `"GALA_HOME"` is just text, and a member of a Go package or value reached through a dot (`pkg.GALA_X`) or a named argument stays usable.
 
 <!-- doc-check: error GALA-E0097 -->
 ```gala
 val _gala_total = 3         // GALA-E0097: the _gala_ prefix is reserved
+val GALA_total = 3          // GALA-E0097: the GALA_ prefix is reserved
+```
+
+### A Type May Not Take the Name of a Go Predeclared Type, Builtin Function or std
+
+A type may not be named like one of Go's predeclared types: `bool`, `byte`, `rune`, `string`, `error`, `any`, `comparable`, `int`, `int8` to `int64`, `uint`, `uint8` to `uint64`, `uintptr`, `float32`, `float64`, `complex64` and `complex128`. GALA reads such a name as Go's type in every type position, so the declared type could not be written as a type. Nor may a type be named like a Go builtin function (`append`, `cap`, `clear`, `close`, `complex`, `copy`, `delete`, `imag`, `len`, `make`, `max`, `min`, `new`, `panic`, `print`, `println`, `real`, `recover`) or `std`: in the Go GALA generates, the type would hide the builtin or the std package that Go calls. The rule covers a struct (shorthand or block), an interface, an alias, an opaque type, a sealed type and each of its cases, and a type parameter, at the top level or in a body: such a declaration is a transpile error ([GALA-E0106](/docs/errors/gala-e0106/)). A value, a field or a function may still take the name, as above.
+
+<!-- doc-check: error GALA-E0106 -->
+```gala
+struct error(Code int, Msg string)   // GALA-E0106: error is a Go predeclared type
 ```
 
 ## 12. Immutability Under the Hood {#12-immutability-under-the-hood}
 
-A stored immutable value — a struct field or a package-level `val` — is a `std.Immutable[T]` in the generated Go. A local `val` is a plain Go variable: GALA rejects writing it, writing a field through it and `&` of it, and a pointer-receiver method called on it runs on a copy.
+A stored immutable value — a struct field or a package-level `val` — is a `std.Immutable[T]` in the generated Go. A local `val` is a plain Go variable: GALA rejects writing it, writing a field through it and `&` of it, and a pointer-receiver method called on it runs on a copy (one that can change its receiver is [GALA-E0110](/docs/errors/gala-e0110/)).
 
 ### Package-Level Bindings
 A package-level `val` is a `std.Immutable[T]` in the generated Go but reads as a plain `T` everywhere — its own file, sibling files, and other packages (qualified, aliased, or dot-imported). A package-level `var` stays a plain, reassignable variable.
@@ -1724,7 +1751,9 @@ val ptr = &data  // error: GALA-E0076
 Immutable linked data is a sealed type (`case End()` / `case Cons(head int, tail IntList)`), which needs no pointers. A type that holds itself by value any other way, such as `struct Node(next Option[Node])`, is [GALA-E0077](/docs/errors/gala-e0077/).
 
 ### Pointer-Receiver Methods on a `val`
-A method with a pointer receiver (a GALA `func (c *Counter) Bump()`, or Go's `url.URL.String`) can be called on a `val`, a field reached through one, a call result or a literal. Go only calls such a method on an addressable value, so it runs on a fresh copy and whatever it assigns to the receiver's own fields is lost. A `var`, a function parameter and a pattern binding are addressable, so there the method changes the variable itself.
+A `var`, a function parameter, a pattern binding, `*p` and a `var` field of one of these are addressable, so a method with a pointer receiver (a GALA `func (c *Counter) Bump()` or `func (c Ptr[Counter]) Bump()`, or Go's `url.URL.String`) changes the variable itself. A `val`, a field reached through one, a call result and a literal cannot be addressed, and Go can call a pointer method on them only through a fresh copy. A method that only reads its receiver, such as `url.URL.String`, is called on that copy. A method that can change its receiver is [GALA-E0110](/docs/errors/gala-e0110/), since its change would be lost: declare the value with `var`, or hold a `Ptr` to it.
+
+A method can change its receiver when it assigns to the receiver or a place in it, takes the address of one, uses the receiver pointer itself as a value (passes, returns, stores or captures it), or calls a method that can change its receiver on the receiver or on a field it holds by value. A write through a pointer, slice or map that a field holds does not count: the copy shares it. GALA works this out for each method from its body, and for a Go method from its Go source.
 
 ```gala
 struct Counter(var n int)
@@ -1734,10 +1763,12 @@ func (c *Counter) Bump() int {
     return c.n
 }
 
+func (c *Counter) Peek() int = c.n
+
 func main() {
     val c = Counter(n = 1)
-    Println(c.Bump())  // 2 — bumped a copy
-    Println(c.n)       // 1 — the val is unchanged
+    Println(c.Peek())  // 1 — Peek only reads, so it runs on a copy
+    // c.Bump()        // GALA-E0110: the change would be lost
 
     var m = Counter(n = 10)
     m.Bump()
@@ -1767,7 +1798,7 @@ func main() {
 
 A `Ptr[T]` fills a `*T` slot as it is. `nil`, or a `*T` that may be nil, never fills a `Ptr[T]`, and a `Ptr` is not compared with nil ([GALA-E0080](/docs/errors/gala-e0080/)). A pointer from Go becomes a `Ptr` once, at the boundary: `RequirePtr(p)` panics with a GALA message on nil, and `OptionPtrOf(p)` gives an `OptionPtr[T]` that is empty on nil. A `Ptr` has no default value ([GALA-E0075](/docs/errors/gala-e0075/)), a codec rejects it ([GALA-E0050](/docs/errors/gala-e0050/)), and a typed pattern cannot test for one. A `var` that later takes a Go pointer, or nil, is declared with the nullable type: `var current *Node = &head`.
 
-A method declared on `Ptr[T]` is called only on a value that is never nil: an addressable `T` (reached as `&x`), a `val`, a `Ptr[T]` or `RequirePtr(p)`. Calling it on a `*T` that may be nil, taking it as a method value from one, matching such a `*T` through a [sealed view](#sealed-views) whose `MatchView` has a `Ptr` receiver, passing it where an interface with that method is expected, or making it the type argument (written, or inferred from an argument, the expected type or the function type a function reference fills) of a type parameter whose constraint has that method is [GALA-E0080](/docs/errors/gala-e0080/), for a method of another package as for one of the same package; the receiver of a `*T` method is such a pointer too. A method declared on `*T` is still callable on any `*T`.
+A method declared on `Ptr[T]` is called only on a value that is never nil: an addressable `T` (reached as `&x`), a `val` (through a copy, when the method only reads its receiver; see [Pointer-Receiver Methods on a `val`](#pointer-receiver-methods-on-a-val)), a `Ptr[T]` or `RequirePtr(p)`. Calling it on a `*T` that may be nil, taking it as a method value from one, matching such a `*T` through a [sealed view](#sealed-views) whose `MatchView` has a `Ptr` receiver, passing it where an interface with that method is expected, or making it the type argument (written, or inferred from an argument, the expected type or the function type a function reference fills) of a type parameter whose constraint has that method is [GALA-E0080](/docs/errors/gala-e0080/), for a method of another package as for one of the same package; the receiver of a `*T` method is such a pointer too. A method declared on `*T` is still callable on any `*T`.
 
 Where Go can be the caller, a `Ptr` parameter is checked on entry: in an exported function or method (and an exported method checks its `Ptr` receiver), and in a lambda with a `Ptr[T]` parameter filling a function slot whose parameter is a `*T` (a Go callback). Calls between GALA functions are not checked. Not covered: Go writing a struct field, reflection, Go generic code's `var zero T`, a `Ptr` converted to `any`, a `*T` held as `any` or as an interface without a `Ptr`-receiver method and then tested for one that has one, a function value taking a `Ptr` (a named function or a lambda bound to a `val`) passed as a `func(*T)`, and `p, err = goCall()`.
 

@@ -39,7 +39,10 @@ type galaASTTransformer struct {
 	activeTypeParams    map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
 	// equalOwner is the type whose Equal method is being transformed, nil
 	// outside one: there `==` on that type is Go's (see equalityOf).
-	equalOwner       *transpiler.TypeMetadata
+	equalOwner *transpiler.TypeMetadata
+	// reentry records, per declaration of the file, the calls an Equal can
+	// reach a recursion through (see checkIndirectEqualReentry).
+	reentry          *equalReentryGraph
 	typeParamNames   map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
 	structFields     map[string][]string
 	structFieldTypes map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
@@ -84,12 +87,14 @@ type galaASTTransformer struct {
 	cachedTypeResolver     *resolver.TypeResolver
 	cachedTypeResolverRev  uint64 // import-manager revision cachedTypeResolver was built at
 	tempVarCount           int
-	sourceTempNames        map[string]bool                               // names in the file's source spelled like a temporary; see freshTempName
+	sourceGenNames         map[string]bool                               // names in the file's source spelled like a generated name; see userSpells
 	localRefs              map[*ast.Ident]bool                           // source references to local bindings, renamed by renameShadowingLocals
+	topLevelRefs           map[*ast.Ident]bool                           // source references to top-level declarations, renamed by renameShadowingTopLevel
 	callFrames             []*callFrame                                  // one per call being lowered, innermost last; see call_order.go
 	defaultRefDecls        []ast.Decl                                    // package-level aliases through which a default reads a package-level name a local shadows at its use site; see default_scope.go
 	defaultRefNames        map[string]bool                               // names of defaultRefDecls
-	mutableVars            map[string]transpiler.Type                    // every local `var` and `var` parameter of the file by name, with its type (nil when two disagree); see eval_order.go
+	mutableVars            map[string]transpiler.Type                    // every local `var` and `var` parameter of the file by Go name, with its type (nil when two disagree); see eval_order.go
+	operandMarks           map[ast.Node]operandMark                      // how lowered selectors, derefs and Get calls reach storage, for orderOperands; see eval_order.go
 	returnSlot             returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
@@ -97,6 +102,7 @@ type galaASTTransformer struct {
 	ptrReceiverMethods     map[string]bool                               // names of the known methods on a Ptr receiver; gates the receiver nullability checks
 	ptrConstraintMethods   map[string][]string                           // memo of ptrConstraint: a type-parameter constraint to its methods on a Ptr receiver
 	goTypeInfo             *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
+	lookupGoReadOnly       func(importPath, typeName string) map[string]bool // RichAST.GoReadOnlyMethods
 	filePath               string                                        // source file path (for error reporting)
 	richAST                *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
 	traceTypeResolution    bool                                          // when true, type resolution events are recorded
@@ -132,6 +138,7 @@ type galaASTTransformer struct {
 	branchingCalls         map[*ast.CallExpr]branchingSite               // the function-literal call each match or if-expression whose value is used lowered to, checked by checkBranchingCalls once the file is complete
 	userReturns            map[*ast.ReturnStmt]loopControlSite           // source position of each `return` lowered from source, checked by checkBranchingCalls
 	voidCalls              map[*ast.CallExpr]voidCallSite                // each call of void type with its source, checked by checkVoidCalls once the file is complete
+	errorCalls             map[*ast.CallExpr]loopControlSite             // source position of each call of type error, where GALA-E0101 reports one a void lambda discards (see checkDiscardedError)
 	hoisted                map[*ast.Ident]hoistedValue                   // a match or if-expression lowered as statements, by the placeholder that stands for it until its consumer takes it (see hoisted_value.go)
 	escapeCache            map[native.GalaNodeRef]bool                   // whether a subtree holds control flow that would leave a construct lowered to a function literal (see cachedEscape)
 	hoistedPre             []ast.Stmt                                    // statements the local declaration being lowered needs before it, set when its initializer is lowered as statements (see hoisted_value.go)
@@ -373,12 +380,15 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.loopControlSites = nil
 	t.branchingCalls = nil
 	t.mutableVars = nil
+	t.operandMarks = nil
 	t.defaultRefDecls, t.defaultRefNames = nil, nil
 	t.userReturns = nil
 	t.voidCalls = nil
+	t.errorCalls = nil
 	t.hoisted = nil
 	t.escapeCache = nil
 	t.userLoops = nil
+	t.reentry = nil
 	if collectLSPMetadata {
 		t.lspVarTypes = make(map[string]transpiler.Type)
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
@@ -423,9 +433,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		t.typeAliases[name] = underlyingType
 	}
 	t.goTypeInfo = richAST.GoTypeInfo
+	t.lookupGoReadOnly = richAST.GoReadOnlyMethods
 	t.tempVarCount = 0
-	t.sourceTempNames = sourceTempNames(richAST.SourceContent)
+	t.sourceGenNames = sourceGenNames(richAST.SourceContent)
 	t.localRefs = nil
+	t.topLevelRefs = nil
 	t.structMetas = make(map[string]*structMetaConfig)
 	t.interfaceLiterals = make(map[string]string)
 	t.interfaceLiteralMisses = make(map[string]bool)
@@ -506,6 +518,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			t.registerPackageVal(name, meta)
 		}
 	}
+	// So are the embed vals, which no PackageVals entry lists.
+	for name, typeName := range richAST.PackageEmbedVals {
+		t.addVar(name, embedValType(typeName))
+	}
 
 	fset = token.NewFileSet()
 	src, err := newWalkSource(richAST)
@@ -515,6 +531,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName
+	t.reentry = newEqualReentryGraph(pkgName, richAST.Types)
 	file = &ast.File{
 		// This file's own package doc, from the per-file table: the merged
 		// RichAST.PackageDoc can come from a sibling file of the package.
@@ -602,6 +619,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 	}
 
+	// Every function an Equal of the file can call is lowered by now.
+	if err := t.checkIndirectEqualReentry(); err != nil {
+		return nil, nil, err
+	}
+
 	file.Decls = append(file.Decls, t.interfaceLiteralDecls...)
 	file.Decls = append(file.Decls, t.unapplyHelperDecls...)
 	file.Decls = append(file.Decls, t.defaultRefDecls...)
@@ -643,6 +665,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	if err := t.finalizeCodecs(file); err != nil {
 		return nil, nil, err
 	}
+	// Last, once no pass reads a name back: a top-level declaration named
+	// like a Go predeclared identifier gets its Go name.
+	t.renameShadowingTopLevel(file.Decls)
 
 	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)
@@ -1276,6 +1301,31 @@ func (t *galaASTTransformer) dotImportedFunction(name string) *ImportEntry {
 		}
 	}
 	return nil
+}
+
+// dotImportedGoTypeKey returns the Go type info key of the type named name
+// that the hand-written .go files of a dot-imported GALA package declare
+// (`ExecutionContext` under `import . "martianoff/gala/concurrent"`), "" when
+// none does. Such a type has no GALA metadata, so a bare reference to it
+// resolves to no package. A name a GALA type answers to (the package's own,
+// std's, a dot import's) is that type instead.
+func (t *galaASTTransformer) dotImportedGoTypeKey(name string) string {
+	if t.goTypeInfo == nil || name == "" || strings.Contains(name, ".") || t.isActiveTypeParam(name) {
+		return ""
+	}
+	// Keyed by import path only: a Go package sharing the GALA package's name
+	// (io/fs beside GALA's fs) files its types under the same `pkg.Name`.
+	for _, entry := range t.galaDotImports {
+		if key := entry.Path + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
+			// A GALA type of the name wins. Asked only on a hit, which is
+			// rare, so a miss stays a few map lookups.
+			if t.resolveTypeMetaName(name) != "" {
+				return ""
+			}
+			return key
+		}
+	}
+	return ""
 }
 
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.

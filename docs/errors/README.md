@@ -109,7 +109,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0092` | Copy names a field the sealed value cannot have | [GALA-E0092.md](GALA-E0092.md) |
 | `GALA-E0093` | Method replaces a generated one with another signature | [GALA-E0093.md](GALA-E0093.md) |
 | `GALA-E0094` | Default value reads a later parameter | [GALA-E0094.md](GALA-E0094.md) |
-| `GALA-E0097` | Identifier uses the reserved `_gala_` prefix | [GALA-E0097.md](GALA-E0097.md) |
+| `GALA-E0097` | Identifier uses a reserved prefix (`_gala_` or `GALA_`) | [GALA-E0097.md](GALA-E0097.md) |
 | `GALA-E0098` | Field default reads a field | [GALA-E0098.md](GALA-E0098.md) |
 | `GALA-E0099` | Pointer used where the value is expected | [GALA-E0099.md](GALA-E0099.md) |
 | `GALA-E0100` | Type does not implement the interface it is used as | [GALA-E0100.md](GALA-E0100.md) |
@@ -117,6 +117,12 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0102` | Unused local val or var | [GALA-E0102.md](GALA-E0102.md) |
 | `GALA-E0103` | Function type used as a value | [GALA-E0103.md](GALA-E0103.md) |
 | `GALA-E0104` | Type parameter only a constraint determines cannot be inferred | [GALA-E0104.md](GALA-E0104.md) |
+| `GALA-E0105` | Positional argument after a named argument | [GALA-E0105.md](GALA-E0105.md) |
+| `GALA-E0106` | Type named like a Go predeclared type, builtin function or std | [GALA-E0106.md](GALA-E0106.md) |
+| `GALA-E0107` | Declaration named like a Go builtin that hand-written Go refers to | [GALA-E0107.md](GALA-E0107.md) |
+| `GALA-E0108` | A type's own Equal passes its type to a comparable type parameter | [GALA-E0108.md](GALA-E0108.md) |
+| `GALA-E0109` | A type pattern tests for an interface a type has only through free functions | [GALA-E0109.md](GALA-E0109.md) |
+| `GALA-E0110` | Pointer method that changes its receiver, called on a value that cannot be addressed | [GALA-E0110.md](GALA-E0110.md) |
 
 ### Retired codes
 

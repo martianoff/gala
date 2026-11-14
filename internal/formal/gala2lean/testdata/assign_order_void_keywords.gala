@@ -1,0 +1,24 @@
+package main
+
+struct S(var A int, var B int)
+
+var g = S(0, 0)
+
+func h() int {
+    g.B = 5
+    1
+}
+
+func fortyTwo() int = 42
+
+func warmUp() = fortyTwo()
+
+func forall(n int) bool = n > 0
+
+func main() {
+    g.A = h()
+    Println(g.A, g.B)
+    warmUp()
+    val sorry = 2
+    Println(forall(sorry))
+}

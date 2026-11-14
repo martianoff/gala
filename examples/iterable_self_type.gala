@@ -1,0 +1,59 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/collection_mutable"
+)
+
+// Iterable[T, C] carries the collection's own type C. Bounding C by
+// Iterable[T, C] lets generic code chain the sub-collection methods (each
+// returns C) and hand the caller's concrete collection back. T and C are
+// inferred from the argument.
+
+// evensAfterFirst drops the first element and keeps the even ones: an Array
+// for an Array, a List for a List.
+func evensAfterFirst[C Iterable[int, C]](xs C) C = xs.Tail().Filter((x) => x % 2 == 0)
+
+// middle drops the first and the last element, whatever the element type.
+func middle[T any, C Iterable[T, C]](xs C) C = xs.Drop(1).Init()
+
+// halves splits at the middle and keeps the prefix of the back half that
+// satisfies p.
+func halves[T any, C Iterable[T, C]](xs C, p func(T) bool) Tuple[C, C] {
+    val (front, back) = xs.SplitAt(xs.Size() / 2)
+    (front, back.TakeWhile(p))
+}
+
+// describe reads the elements through the interface.
+func describe[T any, C Iterable[T, C]](xs C) string =
+    s"size=${xs.Size()} head=${xs.HeadOption()} [${xs.MkString(", ")}]"
+
+func main() {
+    // The results are the concrete collections, with their own methods.
+    val arr = evensAfterFirst(ArrayOf(1, 2, 3, 4, 5, 6))
+    val list = evensAfterFirst(ListOf(2, 4, 5, 8))
+    Println(arr, arr.Get(0))
+    Println(list, list.Prepend(0))
+    Println(middle(ListOf("x", "y", "z")).Head(), middle(ArrayOf(1.5, 2.5, 3.5)))
+
+    val (front, back) = halves(ArrayOf("a", "b", "c", "d"), (s) => s == "c")
+    Println(front, back, back.Last())
+    Println(halves(ListOf(1, 2, 3, 4), (n) => n > 5))
+
+    // A value of the concrete type fills an Iterable slot directly.
+    val it Iterable[int, Array[int]] = ArrayOf(7, 8, 9)
+    val (small, large) = it.Partition((x) => x < 8)
+    Println(small, large)
+    Println(describe(it.Drop(1)))
+    Println(describe(EmptyList[string]()))
+
+    // The mutable collections implement it through their pointer,
+    // Ptr[Array[T]] as Iterable[T, Ptr[Array[T]]].
+    val buf = collection_mutable.ArrayOf(1, 2, 3, 4)
+    val evens = evensAfterFirst(buf)
+    evens.Append(10)
+    Println(evens, buf, buf.Span((x) => x < 3))
+    val queue = collection_mutable.ListOf(3, 4, 5, 6)
+    val (odd, others) = queue.Span((x) => x % 2 == 1)
+    Println(odd, others, middle(queue), describe(queue))
+}

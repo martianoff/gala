@@ -162,6 +162,7 @@ func buildSyntheticCache() *CachedRichAST {
 					ParamTypes:   []transpiler.Type{transpiler.BasicType{Name: "int"}},
 					ReturnType:   transpiler.BasicType{Name: "string"},
 					DefaultExprs: map[int]transpiler.DefaultExpr{0: {Text: "1 + 2", Pos: transpiler.SourcePos{Line: 9, Column: 4}}},
+					Borrow:       &transpiler.BorrowSummary{ReceiverBorrowed: true, BorrowedParams: []bool{false}},
 				},
 			},
 		}
@@ -193,6 +194,9 @@ func buildSyntheticCache() *CachedRichAST {
 			TypeParamConstraints: map[string]transpiler.Type{"T": transpiler.GenericType{Base: transpiler.NamedType{Package: "synthetic", Name: "Seq"}, Params: []transpiler.Type{transpiler.BasicType{Name: "T"}}}},
 			Variadic:             true,
 			DefaultExprs:         map[int]transpiler.DefaultExpr{1: {Text: "(s string) => s + \"!\"", Pos: transpiler.SourcePos{Line: 5, Column: 30}}},
+		}
+		if i%2 == 0 {
+			r.Functions["synthetic."+name].Borrow = &transpiler.BorrowSummary{BorrowedParams: []bool{false, true}, ReturnsFresh: true}
 		}
 	}
 	return r

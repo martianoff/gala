@@ -144,9 +144,10 @@ func (t *galaASTTransformer) lowerSuffixes(p postfixSrc, suffixes []suffixSrc) (
 			return nil, err
 		}
 	}
-	// A call that produces no value may only stand alone (see void_calls.go).
+	// A call that produces no value may only stand alone (see void_calls.go),
+	// and one of type error may not be discarded (see checkDiscardedError).
 	if last := suffixes[len(suffixes)-1]; last.opener() == "(" {
-		t.recordVoidCall(callSrc{post: p, suffix: last}, result)
+		t.recordCallSite(callSrc{post: p, suffix: last}, result)
 	}
 	return result, nil
 }
@@ -199,7 +200,12 @@ func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes [
 		switch s.opener() {
 		case "(":
 			t.suffixShape(s, "call")
-			return t.applyGoCallSuffix(base, callSrc{post: p, suffix: s, args: s.args()})
+			args := s.args()
+			copyCall := i > 0 && suffixes[i-1].ident() == "Copy"
+			if err := checkPositionalAfterNamed(args, copyCall); err != nil {
+				return nil, err
+			}
+			return t.applyGoCallSuffix(base, callSrc{post: p, suffix: s, args: args})
 		case "[":
 			t.suffixShape(s, "index")
 			return t.resolveIndexAccess(base, indexSrc{s})

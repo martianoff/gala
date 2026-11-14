@@ -388,13 +388,9 @@ func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSr
 	}
 	// Reject block lambdas in void context that discard error returns.
 	if isVoidExpected {
-		for _, stmt := range b.List {
-			if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
-				line, col := l.at().start()
-				if err := t.checkDiscardedError(exprStmt.X, line, col); err != nil {
-					return nil, nil, err
-				}
-			}
+		line, col := l.at().start()
+		if err := t.checkDiscardedErrors(b, line, col); err != nil {
+			return nil, nil, err
 		}
 	}
 	// When void is expected, strip any trailing "return nil" (legacy pattern).
@@ -528,14 +524,9 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 			return nil, nil, err
 		}
 		// Silently dropping an error-only return is a bug, not a discard.
-		if len(body.List) != 1 {
-			return body, nil, nil
-		}
-		if es, ok := body.List[0].(*ast.ExprStmt); ok {
-			line, col := l.at().start()
-			if err := t.checkDiscardedError(es.X, line, col); err != nil {
-				return nil, nil, err
-			}
+		line, col := l.at().start()
+		if err := t.checkDiscardedErrors(body, line, col); err != nil {
+			return nil, nil, err
 		}
 		return body, nil, nil
 	}
@@ -593,14 +584,57 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 // (T, error) is one GALA value (see go_results.go), and a discarded one is
 // dropped back to the plain call; a generic method returning its type
 // parameter yields a value even when that is `error` (see isErrorCall).
+// It is reported at the call, or at line:col, the lambda, for a call whose
+// position was not recorded (see recordCallSite).
 func (t *galaASTTransformer) checkDiscardedError(expr ast.Expr, line, col int) error {
 	if !t.isErrorReturningCall(expr) {
 		return nil
 	}
-	name := t.calleeName(expr.(*ast.CallExpr))
+	call := expr.(*ast.CallExpr)
+	if site, ok := t.errorCalls[call]; ok {
+		line, col = site.line, site.col
+	}
+	name := t.calleeName(call)
 	return galaerr.NewCodedSemanticError(galaerr.CodeDiscardedErrorReturn, line, col,
 		fmt.Sprintf("cannot discard error return from %s in void lambda", name),
 		fmt.Sprintf("use FromError(%s(...)) to handle the error", name))
+}
+
+// checkDiscardedErrors applies checkDiscardedError to every statement of
+// body, the lowered body of a lambda that returns nothing, also to one nested
+// in an if, a switch case, a loop or a block, and in a result-less func
+// literal called as a statement (an if or match run for its effects). Any
+// other func literal is a lambda of its own, checked where it is lowered.
+func (t *galaASTTransformer) checkDiscardedErrors(body *ast.BlockStmt, line, col int) error {
+	var err error
+	ast.Inspect(body, func(n ast.Node) bool {
+		if err != nil {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ExprStmt:
+			if isVoidIIFE(n.X) {
+				err = t.checkDiscardedErrors(n.X.(*ast.CallExpr).Fun.(*ast.FuncLit).Body, line, col)
+			} else {
+				err = t.checkDiscardedError(t.firstErrorCall(n.X), line, col)
+			}
+			return false
+		}
+		return true
+	})
+	return err
+}
+
+// firstErrorCall is the error-only call expr's error comes from when expr is
+// an if or match whose every branch yields one (see errorBranches): the
+// first branch's. expr itself otherwise.
+func (t *galaASTTransformer) firstErrorCall(expr ast.Expr) ast.Expr {
+	if lit, returns := t.errorBranches(expr); lit != nil && len(returns) > 0 {
+		return t.firstErrorCall(t.rawGoCall(returns[0].Results[0]))
+	}
+	return expr
 }
 
 // calleeName is the name a diagnostic gives the callee of call, as the
@@ -698,17 +732,20 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 
 	// Build LHS variable names: _v0, _v1, ... _vN, _err
 	var lhsExprs []ast.Expr
-	for i := 0; i < valueCount; i++ {
-		lhsExprs = append(lhsExprs, ast.NewIdent(fmt.Sprintf("_v%d", i)))
+	valueNames := make([]string, valueCount)
+	for i := range valueNames {
+		valueNames[i] = t.generatedName(fmt.Sprintf("_v%d", i))
+		lhsExprs = append(lhsExprs, ast.NewIdent(valueNames[i]))
 	}
-	lhsExprs = append(lhsExprs, ast.NewIdent("_err"))
+	errName := t.generatedName("_err")
+	lhsExprs = append(lhsExprs, ast.NewIdent(errName))
 
 	// Build the return expression and type
 	var returnExpr ast.Expr
 	var returnTypeExpr ast.Expr
 	if valueCount == 1 {
 		// (T, error) -> return _v0, type is T
-		returnExpr = ast.NewIdent("_v0")
+		returnExpr = ast.NewIdent(valueNames[0])
 		returnTypeExpr = t.typeToExpr(returns[0])
 	} else {
 		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
@@ -739,7 +776,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 				Key: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
 				Value: &ast.CallExpr{
 					Fun:  t.stdIdent("NewImmutable"),
-					Args: []ast.Expr{ast.NewIdent(fmt.Sprintf("_v%d", i))},
+					Args: []ast.Expr{ast.NewIdent(valueNames[i])},
 				},
 			})
 		}
@@ -763,7 +800,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 			// if _err != nil { panic(_err) }
 			&ast.IfStmt{
 				Cond: &ast.BinaryExpr{
-					X:  ast.NewIdent("_err"),
+					X:  ast.NewIdent(errName),
 					Op: token.NEQ,
 					Y:  ast.NewIdent("nil"),
 				},
@@ -771,7 +808,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 					List: []ast.Stmt{
 						&ast.ExprStmt{X: &ast.CallExpr{
 							Fun:  ast.NewIdent("panic"),
-							Args: []ast.Expr{ast.NewIdent("_err")},
+							Args: []ast.Expr{ast.NewIdent(errName)},
 						}},
 					},
 				},
@@ -1133,7 +1170,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 		paramType = transpiler.BasicType{Name: "any"}
 	}
 
-	paramName := "_pf_arg"
+	paramName := t.generatedName("_pf_arg")
 	t.pushScope()
 	defer t.popScope()
 	t.addVar(paramName, paramType)
@@ -1147,7 +1184,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 		return nil, err
 	}
 	if viewed {
-		casesParam = "_pf_view"
+		casesParam = t.generatedName("_pf_view")
 		t.addVar(casesParam, casesType)
 		clauses = append(clauses, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(casesParam)}, Tok: token.DEFINE, Rhs: []ast.Expr{viewExpr},

@@ -38,10 +38,10 @@ type Point struct {
 }
 
 func (s Point) Copy() Point {
-	return Point{x: std.Copy(s.x), y: std.Copy(s.y)}
+	return Point{x: s.x, y: s.y}
 }
 func (s Point) Equal(other Point) bool {
-	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
+	return s.x.Get() == other.x.Get() && s.y.Get() == other.y.Get()
 }
 func (s Point) String() string {
 	return std.FormatStruct("Point", s.x, s.y)
@@ -96,10 +96,10 @@ type Mixed struct {
 }
 
 func (s Mixed) Copy() Mixed {
-	return Mixed{Name: std.Copy(s.Name), Age: std.Copy(s.Age)}
+	return Mixed{Name: s.Name, Age: s.Age}
 }
 func (s Mixed) Equal(other Mixed) bool {
-	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
+	return s.Name.Get() == other.Name.Get() && s.Age == other.Age
 }
 func (s Mixed) Unapply(v any) (std.Immutable[string], int, bool) {
 	if p, ok := v.(Mixed); ok {
@@ -122,18 +122,16 @@ type Mutable struct {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 type Mutable struct {
 	X int
 	Y int
 }
 
 func (s Mutable) Copy() Mutable {
-	return Mutable{X: std.Copy(s.X), Y: std.Copy(s.Y)}
+	return Mutable{X: s.X, Y: s.Y}
 }
 func (s Mutable) Equal(other Mutable) bool {
-	return std.Equal(s.X, other.X) && std.Equal(s.Y, other.Y)
+	return s.X == other.X && s.Y == other.Y
 }
 func (s Mutable) Unapply(v any) (int, int, bool) {
 	if p, ok := v.(Mutable); ok {

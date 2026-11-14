@@ -356,6 +356,33 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.GoDeclared)
 	e.writeBool(m.OfTypeDecl)
 	e.writeTypeSlice(m.GoResults)
+	e.writeBorrowSummary(m.Borrow)
+	e.writeReceiverEffects(m.ReceiverEffects)
+}
+
+// writeReceiverEffects emits a method's ReceiverEffects.
+func (e *encoder) writeReceiverEffects(effects []transpiler.ReceiverEffect) {
+	e.writeUvarint(uint64(len(effects)))
+	for _, eff := range effects {
+		e.writeByte(byte(eff.Kind))
+		e.writeStringSlice(eff.Path)
+		e.writeString(eff.Method)
+	}
+}
+
+// writeBorrowSummary emits an optional BorrowSummary.
+func (e *encoder) writeBorrowSummary(s *transpiler.BorrowSummary) {
+	if s == nil {
+		e.writeBool(false)
+		return
+	}
+	e.writeBool(true)
+	e.writeBool(s.ReceiverBorrowed)
+	e.writeBool(s.ReturnsFresh)
+	e.writeUvarint(uint64(len(s.BorrowedParams)))
+	for _, b := range s.BorrowedParams {
+		e.writeBool(b)
+	}
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -441,6 +468,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeString(f.DefinedIn)
 	e.writeBool(f.Variadic)
 	e.writeTypeSlice(f.GoResults)
+	e.writeBorrowSummary(f.Borrow)
 }
 
 func (e *encoder) writeStringFuncMetaMap(m map[string]*transpiler.FunctionMetadata) {
@@ -541,8 +569,11 @@ func (e *encoder) writeGoTypeData(t *transpiler.GoTypeData) {
 	e.writeType(t.Underlying)
 	e.writeStringSlice(t.TypeParams)
 	e.writeStringSet(t.PointerMethods)
+	e.writeStringSet(t.ReadOnlyMethods)
 	e.writeString(t.NoCopy)
 	e.writeBool(t.Incomparable)
+	e.writeBool(t.EmbedsComparable)
+	e.writeBool(t.SelfEqual)
 }
 
 func (e *encoder) writeStringGoTypeDataMap(m map[string]*transpiler.GoTypeData) {
@@ -899,7 +930,38 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.GoDeclared = d.readBool()
 	m.OfTypeDecl = d.readBool()
 	m.GoResults = d.readTypeSlice()
+	m.Borrow = d.readBorrowSummary()
+	m.ReceiverEffects = d.readReceiverEffects()
 	return m
+}
+
+// readBorrowSummary reads what writeBorrowSummary wrote.
+func (d *decoder) readBorrowSummary() *transpiler.BorrowSummary {
+	if !d.readBool() {
+		return nil
+	}
+	s := &transpiler.BorrowSummary{ReceiverBorrowed: d.readBool(), ReturnsFresh: d.readBool()}
+	n := d.readUvarint()
+	for i := uint64(0); i < n && d.err == nil; i++ {
+		s.BorrowedParams = append(s.BorrowedParams, d.readBool())
+	}
+	return s
+}
+
+func (d *decoder) readReceiverEffects() []transpiler.ReceiverEffect {
+	n := d.readUvarint()
+	if d.err != nil || n == 0 {
+		return nil
+	}
+	out := make([]transpiler.ReceiverEffect, 0, n)
+	for i := uint64(0); i < n && d.err == nil; i++ {
+		var eff transpiler.ReceiverEffect
+		eff.Kind = transpiler.ReceiverEffectKind(d.readByte())
+		eff.Path = d.readStringSlice()
+		eff.Method = d.readString()
+		out = append(out, eff)
+	}
+	return out
 }
 
 func (d *decoder) readStringMethodMap() map[string]*transpiler.MethodMetadata {
@@ -996,6 +1058,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f.DefinedIn = d.readString()
 	f.Variadic = d.readBool()
 	f.GoResults = d.readTypeSlice()
+	f.Borrow = d.readBorrowSummary()
 	return f
 }
 
@@ -1129,8 +1192,11 @@ func (d *decoder) readGoTypeData() *transpiler.GoTypeData {
 	t.Underlying = d.readType()
 	t.TypeParams = d.readStringSlice()
 	t.PointerMethods = d.readStringSet()
+	t.ReadOnlyMethods = d.readStringSet()
 	t.NoCopy = d.readString()
 	t.Incomparable = d.readBool()
+	t.EmbedsComparable = d.readBool()
+	t.SelfEqual = d.readBool()
 	return t
 }
 

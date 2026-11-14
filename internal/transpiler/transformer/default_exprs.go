@@ -654,10 +654,13 @@ func (src defaultSource) unboundTypeParams() []string {
 // declared type. As in a typed `val` initializer, an unannotated lambda
 // parameter that the type does not cover is an error rather than `any`.
 //
-// A bare `nil` is returned as is: it is already a value of the declared type
-// (the absent function, pointer, ...), and must not be lifted into a thunk
-// `func() T { return nil }` by the by-name sugar that an explicit argument to a
-// zero-argument function parameter gets.
+// A bare `nil` is returned as is, typed as the declared type: it is already
+// a value of it (the absent function, pointer, ...), and must not be lifted
+// into a thunk `func() T { return nil }` by the by-name sugar that an
+// explicit argument to a zero-argument function parameter gets. The type is
+// known here even where the callee's type parameters are inferred from the
+// other arguments, so whatever asks for the default's type afterwards finds
+// it.
 func (t *galaASTTransformer) transformWithDeclaredType(e exprSrc, declared transpiler.Type, typeParams []string) (ast.Expr, error) {
 	if declared != nil {
 		if inner, isSendable := transpiler.UnwrapSendable(declared); isSendable {
@@ -668,7 +671,9 @@ func (t *galaASTTransformer) transformWithDeclaredType(e exprSrc, declared trans
 		return t.lowerExpr(e)
 	}
 	if e.isNil() {
-		return ast.NewIdent("nil"), nil
+		nilIdent := ast.NewIdent("nil")
+		t.typeNilAs(nilIdent, declared)
+		return nilIdent, nil
 	}
 	return t.transformArgument(e, typedSlot(declared), true)
 }

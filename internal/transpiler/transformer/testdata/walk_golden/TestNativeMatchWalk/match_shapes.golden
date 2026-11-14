@@ -16,10 +16,10 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{v: std.Copy(s.v), tag: std.Copy(s.tag)}
+	return Box[T]{v: s.v.Copy(), tag: s.tag}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
-	return std.Equal(s.v, other.v) && std.Equal(s.tag, other.tag)
+	return s.v.Equal(other.v) && s.tag.Get() == other.tag.Get()
 }
 func (s Box[T]) String() string {
 	return std.FormatStruct("Box", s.v, s.tag)
@@ -39,10 +39,10 @@ type Bag struct {
 }
 
 func (s Bag) Copy() Bag {
-	return Bag{items: std.Copy(s.items)}
+	return Bag{items: s.items.Copy()}
 }
 func (s Bag) Equal(other Bag) bool {
-	return std.Equal(s.items, other.items)
+	return s.items.Equal(other.items)
 }
 func (s Bag) String() string {
 	return std.FormatStruct("Bag", s.items)

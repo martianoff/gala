@@ -52,3 +52,11 @@ func TestEqualGoStructWithUnexportedFields(t *testing.T) {
 	assert.True(t, Equal(goStruct{1, "a"}, goStruct{1, "a"}))
 	assert.False(t, Equal(goStruct{1, "a"}, goStruct{2, "a"}))
 }
+
+// TestEqualReflectedEqualWithNil: a value whose Equal method is found by
+// reflection (T is any) is not equal to nil, rather than panicking on nil's
+// missing type.
+func TestEqualReflectedEqualWithNil(t *testing.T) {
+	assert.False(t, Equal[any](caseless("ab"), nil))
+	assert.True(t, Equal[any](caseless("ab"), caseless("xy")))
+}

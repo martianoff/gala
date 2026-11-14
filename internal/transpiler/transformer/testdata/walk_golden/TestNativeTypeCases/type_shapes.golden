@@ -15,10 +15,10 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{v: std.Copy(s.v)}
+	return Box[T]{v: s.v.Copy()}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
-	return std.Equal(s.v, other.v)
+	return s.v.Equal(other.v)
 }
 func (s Box[T]) String() string {
 	return std.FormatStruct("Box", s.v)
@@ -57,10 +57,10 @@ type Shapes struct {
 }
 
 func (s Shapes) Copy() Shapes {
-	return Shapes{named: std.Copy(s.named), qualified: std.Copy(s.qualified), generic: std.Copy(s.generic), nested: std.Copy(s.nested), triple: std.Copy(s.triple), pair: std.Copy(s.pair), opt: std.Copy(s.opt), arr: std.Copy(s.arr), ptr: std.Copy(s.ptr), nonNull: std.Copy(s.nonNull), slice: std.Copy(s.slice), m: std.Copy(s.m), pred: std.Copy(s.pred), untypedParam: std.Copy(s.untypedParam), variadic: std.Copy(s.variadic), goResults: std.Copy(s.goResults), noResult: std.Copy(s.noResult), curried: std.Copy(s.curried), wildcard: std.Copy(s.wildcard), sendable: std.Copy(s.sendable)}
+	return Shapes{named: s.named, qualified: s.qualified.Copy(), generic: s.generic.Copy(), nested: s.nested.Copy(), triple: s.triple.Copy(), pair: s.pair.Copy(), opt: s.opt.Copy(), arr: s.arr.Copy(), ptr: s.ptr.Copy(), nonNull: s.nonNull.Copy(), slice: s.slice.Copy(), m: s.m.Copy(), pred: s.pred.Copy(), untypedParam: s.untypedParam.Copy(), variadic: s.variadic.Copy(), goResults: s.goResults.Copy(), noResult: s.noResult.Copy(), curried: s.curried.Copy(), wildcard: s.wildcard.Copy(), sendable: std.Copy(s.sendable)}
 }
 func (s Shapes) Equal(other Shapes) bool {
-	return std.Equal(s.named, other.named) && std.Equal(s.qualified, other.qualified) && std.Equal(s.generic, other.generic) && std.Equal(s.nested, other.nested) && std.Equal(s.triple, other.triple) && std.Equal(s.pair, other.pair) && std.Equal(s.opt, other.opt) && std.Equal(s.arr, other.arr) && std.Equal(s.ptr, other.ptr) && std.Equal(s.nonNull, other.nonNull) && std.Equal(s.slice, other.slice) && std.Equal(s.m, other.m) && std.Equal(s.pred, other.pred) && std.Equal(s.untypedParam, other.untypedParam) && std.Equal(s.variadic, other.variadic) && std.Equal(s.goResults, other.goResults) && std.Equal(s.noResult, other.noResult) && std.Equal(s.curried, other.curried) && std.Equal(s.wildcard, other.wildcard) && std.Equal(s.sendable, other.sendable)
+	return s.named.Get() == other.named.Get() && s.qualified.Equal(other.qualified) && s.generic.Equal(other.generic) && s.nested.Equal(other.nested) && s.triple.Equal(other.triple) && s.pair.Equal(other.pair) && s.opt.Equal(other.opt) && s.arr.Equal(other.arr) && s.ptr.Equal(other.ptr) && s.nonNull.Equal(other.nonNull) && s.slice.Equal(other.slice) && s.m.Equal(other.m) && s.pred.Equal(other.pred) && s.untypedParam.Equal(other.untypedParam) && s.variadic.Equal(other.variadic) && s.goResults.Equal(other.goResults) && s.noResult.Equal(other.noResult) && s.curried.Equal(other.curried) && s.wildcard.Equal(other.wildcard) && std.Equal(s.sendable, other.sendable)
 }
 
 //line $DIR/main.gala:33
@@ -76,10 +76,10 @@ type Pair[A any, B any] struct {
 }
 
 func (s Pair[A, B]) Copy() Pair[A, B] {
-	return Pair[A, B]{first: std.Copy(s.first), second: std.Copy(s.second)}
+	return Pair[A, B]{first: s.first.Copy(), second: std.Copy(s.second)}
 }
 func (s Pair[A, B]) Equal(other Pair[A, B]) bool {
-	return std.Equal(s.first, other.first) && std.Equal(s.second, other.second)
+	return s.first.Equal(other.first) && std.Equal(s.second, other.second)
 }
 func (s Pair[A, B]) String() string {
 	return std.FormatStruct("Pair", s.first, s.second)

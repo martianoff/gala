@@ -273,11 +273,14 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 	if b, ok := typ.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(b.Name) {
 		return b.Name == "error"
 	}
-	// A Go type is what its Go declaration says.
-	if t.goTypeInfo != nil {
-		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
-			return td.Kind == "interface"
+	// A Go type is what its Go declaration says; an alias, what its target
+	// is, which for one Go type info does not describe is known only when it
+	// is predeclared (`type Failure = error`).
+	if td, target := t.goTypeDataThroughAliases(typ); td != nil {
+		if td.Kind == "alias" {
+			return target != nil && (target.IsAny() || isErrorType(target))
 		}
+		return td.Kind == "interface"
 	}
 	// Unlike interfaceMethodNames, a GALA interface with no methods counts:
 	// it holds any value.
@@ -288,8 +291,15 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 // isGoTypeWithoutInfo reports whether typ, through any GALA aliases, is a type
 // of a Go package that this file's Go type information does not describe:
 // one reached through another GALA package, such as the `io.Reader` field of
-// a struct that package declares, when this file does not import `io`.
+// a struct that package declares, when this file does not import `io`. So is
+// a Go alias of such a type (`type ExecutionContext =
+// go_interop.ExecutionContext` in a mixed GALA+Go package, when this file has
+// no Go type information for go_interop).
 func (t *galaASTTransformer) isGoTypeWithoutInfo(typ transpiler.Type) bool {
+	if td, target := t.goTypeDataThroughAliases(typ); td != nil && td.Kind == "alias" {
+		nt, named := target.(transpiler.NamedType)
+		return named && !t.isOwnPackageType(nt)
+	}
 	nt, ok := t.followAliasChain(typ).(transpiler.NamedType)
 	if !ok || !t.isGoTyped(nt) || t.isOwnPackageType(nt) {
 		return false
@@ -309,13 +319,14 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 	}
 	// A Go type (of a Go package, or of this package's .go files) is what its
 	// Go declaration says, whatever metadata was synthesized for it.
-	if t.goTypeInfo != nil {
-		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
-			if td.Kind != "interface" {
-				return nil, false
-			}
-			return slices.Collect(maps.Keys(td.Methods)), true
+	if td, target := t.goTypeDataThroughAliases(typ); td != nil {
+		if td.Kind == "alias" && isErrorType(target) {
+			return []string{"Error"}, true
 		}
+		if td.Kind != "interface" {
+			return nil, false
+		}
+		return slices.Collect(maps.Keys(td.Methods)), true
 	}
 	if meta := t.getTypeMeta(typ.BaseName()); meta != nil {
 		if !meta.IsInterface || len(meta.Methods) == 0 {

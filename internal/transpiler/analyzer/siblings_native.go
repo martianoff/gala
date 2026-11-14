@@ -299,6 +299,9 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 				PtrReceiver:     ptr,
 				DefinedIn:       absSibPath,
 			}
+			if pointer {
+				methodMeta.ReceiverEffects = nativeReceiverEffects(ctx, methodMeta.ReceiverName)
+			}
 			var constraintTexts map[string]string
 			methodMeta.TypeParams, constraintTexts = nativeTypeParamsOf(ctx.TypeParameters())
 			recvNames := nativeReceiverTypeArgNames(recvType)

@@ -86,7 +86,7 @@ func (s Shape) IsDot() bool {
 	return s._variant == _Shape_Dot
 }
 func (s Shape) Copy() Shape {
-	return Shape{Radius: std.Copy(s.Radius), Width: std.Copy(s.Width), Height: std.Copy(s.Height), _variant: std.Copy(s._variant)}
+	return Shape{Radius: s.Radius, Width: s.Width, Height: s.Height, _variant: s._variant}
 }
 func (s Shape) Equal(other Shape) bool {
 	if s._variant != other._variant {
@@ -94,9 +94,9 @@ func (s Shape) Equal(other Shape) bool {
 	}
 	switch s._variant {
 	case _Shape_Circle:
-		return std.Equal(s.Radius, other.Radius)
+		return s.Radius.Get() == other.Radius.Get()
 	case _Shape_Rect:
-		return std.Equal(s.Width, other.Width) && std.Equal(s.Height, other.Height)
+		return s.Width.Get() == other.Width.Get() && s.Height.Get() == other.Height.Get()
 	}
 	return true
 }
@@ -195,7 +195,7 @@ func (s Color) IsBlue() bool {
 	return s._variant == _Color_Blue
 }
 func (s Color) Copy() Color {
-	return Color{_variant: std.Copy(s._variant)}
+	return Color{_variant: s._variant}
 }
 func (s Color) Equal(other Color) bool {
 	return s._variant == other._variant
@@ -235,10 +235,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
+	return s.name.Get() == other.name.Get() && s.age.Get() == other.age.Get()
 }
 func (s Person) String() string {
 	return std.FormatStruct("Person", s.name, s.age)
@@ -251,10 +251,10 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{v: std.Copy(s.v), tag: std.Copy(s.tag)}
+	return Box[T]{v: s.v.Copy(), tag: s.tag}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
-	return std.Equal(s.v, other.v) && std.Equal(s.tag, other.tag)
+	return s.v.Equal(other.v) && s.tag.Get() == other.tag.Get()
 }
 func (s Box[T]) String() string {
 	return std.FormatStruct("Box", s.v, s.tag)
@@ -284,10 +284,10 @@ type MaybeInt struct {
 }
 
 func (s MaybeInt) Copy() MaybeInt {
-	return MaybeInt{raw: std.Copy(s.raw)}
+	return MaybeInt{raw: s.raw}
 }
 func (s MaybeInt) Equal(other MaybeInt) bool {
-	return std.Equal(s.raw, other.raw)
+	return s.raw.Get() == other.raw.Get()
 }
 func (s MaybeInt) String() string {
 	return std.FormatStruct("MaybeInt", s.raw)

@@ -300,6 +300,9 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			if err := t.checkTypeParamMethod(recvType, method, c); err != nil {
 				return nil, err
 			}
+			if err := t.checkMethodEqualReentry(c, recvType, lookupBaseName, method); err != nil {
+				return nil, err
+			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
@@ -316,6 +319,9 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
 			funcMeta := t.getFunction(funcName)
+			if funcMeta != nil && ownFunc {
+				t.noteReentryCall(c, t.reentryKey(funcMeta.Name, ""))
+			}
 			if funcMeta != nil {
 				if err := funcParamList(funcMeta.Name, funcMeta).checkPositional(0, sl, sc); err != nil {
 					return nil, err
@@ -834,6 +840,15 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			typeSubst[tp] = inferred
 		}
 	}
+	// A type parameter only a constraint mentions comes from the methods of
+	// the one it constrains (constraint_inference.go).
+	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 {
+		t.inferMethodFromConstraints(methodMeta, methodMeta.TypeParams, typeMeta.TypeParams, recvTypeArgTypes, typeSubst)
+		// One they do not determine either would reach a lambda as `any`.
+		if err := t.checkMethodConstraintInference(c, typeMeta.Name, methodMeta, typeMeta.TypeParams, recvTypeArgTypes, typeSubst); err != nil {
+			return true, nil, err
+		}
+	}
 	// Harvest type params from earlier lambdas to refine later ones.
 	// We transform args in declaration order. Each lambda is transformed with
 	// a *view* of typeSubst in which still-unresolved method type params are
@@ -1006,6 +1021,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 	if methodMeta != nil {
+		if err := t.checkEqualReentry(c, method, methodMeta.TypeParams, methodMeta.TypeParamConstraints, typeSubst); err != nil {
+			return true, nil, err
+		}
 		for _, tp := range methodMeta.TypeParams {
 			if _, ok := typeSubst[tp]; !ok {
 				t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
@@ -2751,6 +2769,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	if err := t.checkTypeParamMethod(recvType, method, c); err != nil {
 		return nil, err
 	}
+	if err := t.checkMethodEqualReentry(c, recvType, lookupBaseName, method); err != nil {
+		return nil, err
+	}
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
@@ -2800,6 +2821,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	}
 	if err := t.checkConstraintTypeArgs(c, callCtx); err != nil {
 		return nil, err
+	}
+	if fm := callCtx.funcMeta; fm != nil {
+		if ownFunc {
+			t.noteReentryCall(c, t.reentryKey(fm.Name, ""))
+		}
+		if len(fm.TypeParams) > 0 {
+			if err := t.checkEqualReentry(c, fm.Name, fm.TypeParams, fm.TypeParamConstraints, boundTypeArgs(callCtx)); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// --- Section 6.5: opaque-type conversion `UserID(x)` ---
@@ -3054,22 +3085,35 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 }
 
-// checkPositionalBeforeNamed reports a positional argument written after a
-// named one in a construction of qualifiedName: positional arguments fill the
-// leading fields, so one after a named argument has no field to take.
-func checkPositionalBeforeNamed(qualifiedName string, args argsSrc) error {
-	named := false
+// checkPositionalAfterNamed reports the first positional argument written
+// after a named one in args, the arguments of any call (GALA-E0105): once an
+// argument is named, every later one is named too. Positional arguments fill
+// the leading parameters or fields, so one after a named argument has no
+// position to take. copyCall is set for a `.Copy(...)` call, whose overrides
+// are all named, so its hint does not suggest moving the argument.
+func checkPositionalAfterNamed(args argsSrc, copyCall bool) error {
+	var firstNamed string
 	for _, arg := range args.list {
-		if arg.named() {
-			named = true
+		if name, _ := arg.name(); name != "" {
+			if firstNamed == "" {
+				firstNamed = name
+			}
 			continue
 		}
-		if named {
-			line, col := arg.at().start()
-			return galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField,
-				line, col,
-				fmt.Sprintf("a positional argument follows a named one in construction of %q", qualifiedName),
-				"put the positional arguments first, or name this one too")
+		if firstNamed != "" {
+			// The argument is quoted when it is short and on one line; the
+			// span underlines it either way.
+			quoted := "a positional argument"
+			if text := arg.at().sourceText(); quotable(text) {
+				quoted = "positional argument `" + text + "`"
+			}
+			hint := "name it, or move it before the named arguments"
+			if copyCall {
+				hint = "name it: Copy overrides are all named, Copy(field = value)"
+			}
+			r := arg.at().rng()
+			return spanErrorAt(galaerr.CodePositionalAfterNamed, r, r,
+				fmt.Sprintf("%s follows named argument `%s`", quoted, firstNamed), hint)
 		}
 	}
 	return nil
@@ -3078,18 +3122,14 @@ func checkPositionalBeforeNamed(qualifiedName string, args argsSrc) error {
 // bindPositionalStructArgs binds the positional arguments of a construction
 // that also names some fields to the struct's leading fields, the rule a
 // function call follows for its parameters, and returns them merged with the
-// named ones. A positional argument after a named one, a spread one and a field
-// given both ways are errors; arguments beyond the fields are left for the
-// caller to report.
+// named ones. A spread argument and a field given both ways are errors;
+// arguments beyond the fields are left for the caller to report.
 func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, list argsSrc) (map[string]ast.Expr, error) {
 	if len(args) == 0 {
 		return namedArgs, nil
 	}
-	if err := checkPositionalBeforeNamed(qualifiedName, list); err != nil {
-		return nil, err
-	}
-	// The positional arguments come first (checked just now), so argument i of
-	// the list is args[i].
+	// The positional arguments come first (checkPositionalAfterNamed, run on
+	// every call), so argument i of the list is args[i].
 	bound := maps.Clone(namedArgs)
 	for i, arg := range args[:min(len(args), len(fields))] {
 		if a := list.list[i]; a.spread() {
@@ -3615,7 +3655,7 @@ func (t *galaASTTransformer) resultSlotTypeArgs(result transpiler.Type, typePara
 
 // unifyThroughInterface binds typeParams, into args, from a slot of a generic
 // GALA interface type that a value of type result fills: `Array[T]` in an
-// `Iterable[int]` slot. Each method the interface declares is unified with the
+// `Iterable[int, Array[int]]` slot. Each method the interface declares is unified with the
 // same-named method of result's type, both instantiated (`Head() T` with
 // `Head() int` binds T to int), so the binding is the one Go's
 // implementation check would need.

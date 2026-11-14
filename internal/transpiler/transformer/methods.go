@@ -446,6 +446,202 @@ func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames 
 	return t.stringMethodDecl(name, tParams, &ast.ReturnStmt{Results: []ast.Expr{t.formatStructExpr(name, fields)}})
 }
 
+// printedValue is expr, a value Println, Print or an interpolation prints,
+// as it is passed to fmt, and the type it then has; typ is expr's type. A
+// value whose String is declared on a pointer receiver only, which fmt, given
+// the value, would not call, prints by that String:
+//
+//   - one of a GALA type with such a String becomes the text that String
+//     gives it, of type string. String runs where any pointer-receiver method
+//     would: on the value itself when printedInPlace, `std.StringAt(&expr)`,
+//     so it sees what other pointers write and copies no lock the value
+//     holds; otherwise (a val, a call's result) on a copy,
+//     `std.PtrString(expr)`; and
+//   - one whose type is known only at run time — a type parameter, `any` or
+//     another interface, as an element a collection or a tuple prints is —
+//     becomes `std.Printed(expr)`, which makes the same choice at run time
+//     and otherwise is the value itself, so typ is unchanged.
+//
+// Every other value is expr itself.
+//
+// A print that would run a pointer-receiver String on a copy of a value that
+// must not be copied (see noCopyReason) is GALA-E0053, as a call of that
+// String would be: the value printed when it is not printedInPlace, or a
+// field its generated String prints (see copiedPrintedField). Printing a
+// value that is not printedInPlace by a String that can change its receiver
+// is GALA-E0110, as that call would be. line and col locate the printed value.
+func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type, line, col int) (ast.Expr, transpiler.Type, error) {
+	if transpiler.IsUnusable(typ) {
+		return expr, typ, nil
+	}
+	// An error prints by its Error, which every value it holds has.
+	if t.holdsAnyType(typ) && !isBasicNamed(typ, "error") {
+		return &ast.CallExpr{Fun: t.stdIdent("Printed"), Args: []ast.Expr{expr}}, typ, nil
+	}
+	if _, isPtr := typ.(transpiler.PointerType); isPtr {
+		return expr, typ, t.checkPrintedFieldsCopy(typ, line, col)
+	}
+	meta := t.getTypeMeta(typ.BaseName())
+	if meta == nil {
+		return expr, typ, nil
+	}
+	if !printsByPointerString(meta) {
+		return expr, typ, t.checkPrintedFieldsCopy(typ, line, col)
+	}
+	if t.printedInPlace(expr) {
+		return &ast.CallExpr{Fun: t.stdIdent("StringAt"), Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: expr}}}, transpiler.BasicType{Name: "string"}, nil
+	}
+	if typeName, why := t.noCopyWhy(typ); why != "" {
+		return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeNoCopyReceiverCopied, line, col,
+			fmt.Sprintf("cannot print this %s: it cannot be addressed here, so its String would run on a copy, and %s", typeName, why),
+			"declare it with `var`, or hold a pointer (`&T{...}`)")
+	}
+	if t.pointerMethodMutates(typ, "String") {
+		return nil, nil, mutatingCallOnCopyError("String", true, typ, line, col)
+	}
+	return &ast.CallExpr{Fun: t.stdIdent("PtrString"), Args: []ast.Expr{expr}}, transpiler.BasicType{Name: "string"}, nil
+}
+
+// printsByPointerString reports whether a value of the GALA type meta
+// describes prints by a `String() string` declared in GALA on its pointer
+// receiver only, which printedValue calls for it.
+func printsByPointerString(meta *transpiler.TypeMetadata) bool {
+	m := meta.Methods["String"]
+	return m != nil && m.PointerReceiver && !m.GoDeclared && len(m.ParamTypes) == 0 && isBasicNamed(m.ReturnType, "string")
+}
+
+// printsByGeneratedString reports whether a value of the GALA type meta
+// describes prints by the String generated for it, which prints its fields
+// by std.FormatStruct.
+func (t *galaASTTransformer) printsByGeneratedString(meta *transpiler.TypeMetadata) bool {
+	if !transpiler.GeneratedMethodNames(meta)["String"] {
+		return false
+	}
+	if m := meta.Methods["String"]; m != nil && !m.OfTypeDecl {
+		return false
+	}
+	_, inGo := t.goMethodsOnGalaType(meta)["String"]
+	return !inGo
+}
+
+// checkPrintedFieldsCopy reports GALA-E0053 when printing a value of typ, or
+// the value a pointer typ points to, runs a pointer-receiver String on a copy
+// of a field that must not be copied (see copiedPrintedField). line and col
+// locate the printed value.
+func (t *galaASTTransformer) checkPrintedFieldsCopy(typ transpiler.Type, line, col int) error {
+	if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
+		typ = ptr.Elem // fmt calls the generated String on a copy of *p
+	}
+	path, fieldType := t.copiedPrintedField(typ, make(map[string]bool))
+	if path == "" {
+		return nil
+	}
+	typeName, why := t.noCopyWhy(fieldType)
+	return galaerr.NewCodedSemanticError(galaerr.CodeNoCopyReceiverCopied, line, col,
+		fmt.Sprintf("cannot print this %s: its field %s, a %s, prints by its String on a copy, and %s", receiverBase(typ), path, typeName, why),
+		fmt.Sprintf("hold the field as a pointer (`*%s`), or declare a String for %s", fieldType, receiverBase(typ)))
+}
+
+// copiedPrintedField finds a field that printing a value of typ runs a
+// pointer-receiver String on a copy of, when the field's type must not be
+// copied: typ prints by its generated String (a shorthand struct's or a
+// sealed type's), whose std.FormatStruct prints a field of a type whose
+// String is declared on its pointer receiver only through a copy of it. A
+// field that prints by its own generated String is searched in turn, held by
+// value or by pointer: either way that String runs on a copy. It returns the
+// field's path from typ (`inner` or `inner.g`) and its type, or "" when there
+// is none. A sealed type's cases are searched together, since the printed
+// value's case is not known. seen guards a recursive type.
+func (t *galaASTTransformer) copiedPrintedField(typ transpiler.Type, seen map[string]bool) (string, transpiler.Type) {
+	_, meta, _, ok := t.receiverTypeInfo(typ)
+	if !ok || meta == nil || seen[typ.String()] || !t.printsByGeneratedString(meta) {
+		return "", nil
+	}
+	seen[typ.String()] = true
+	typeArgs := t.getReceiverTypeArgTypes(typ)
+	var names []string
+	var types []transpiler.Type
+	if meta.IsSealed {
+		for _, v := range meta.SealedVariants {
+			names = append(names, v.FieldNames...)
+			types = append(types, v.FieldTypes...)
+		}
+	} else {
+		for _, name := range meta.FieldNames {
+			names = append(names, name)
+			types = append(types, meta.Fields[name])
+		}
+	}
+	for i, fieldType := range types {
+		fieldType = t.substituteConcreteTypes(fieldType, meta.TypeParams, typeArgs)
+		ptr, viaPointer := fieldType.(transpiler.PointerType)
+		if viaPointer {
+			fieldType = ptr.Elem
+		}
+		// A type holding nothing that must not be copied has no such field.
+		if t.noCopyReason(fieldType, make(map[string]bool)) == "" {
+			continue
+		}
+		_, fieldMeta, _, ok := t.receiverTypeInfo(fieldType)
+		if !ok || fieldMeta == nil {
+			continue
+		}
+		if printsByPointerString(fieldMeta) {
+			if !viaPointer { // through a pointer it runs on the field itself
+				return names[i], fieldType
+			}
+			continue
+		}
+		if path, inner := t.copiedPrintedField(fieldType, seen); path != "" {
+			return names[i] + "." + path, inner
+		}
+	}
+	return "", nil
+}
+
+// printedInPlace reports whether expr, a generated Go expression of a value
+// type, is printed through its own address, `&expr`: a pointer-receiver
+// method call would run on it in place (isAddressable), and `&` of it
+// compiles. That is `*p` or a path from a variable (a var, a parameter, a
+// pattern binding) whose every index is into a slice or an array; not a
+// call's result, such as an Immutable's Get, nor a path from a local val that
+// sealPlainValPath would re-box as one. isAddressable takes an index into a
+// value of unresolved type for addressable, which `&` of a map element is not.
+func (t *galaASTTransformer) printedInPlace(expr ast.Expr) bool {
+	if _, ok := expr.(*ast.StarExpr); ok {
+		return true
+	}
+	if !t.variablePath(expr) {
+		return false
+	}
+	if root, judged := t.plainValPathRoot(expr); root != nil && !judged {
+		return false
+	}
+	return t.isAddressable(expr)
+}
+
+// variablePath reports whether path is an identifier, or fields and elements
+// reached from one, indexing only slices and arrays.
+func (t *galaASTTransformer) variablePath(path ast.Expr) bool {
+	for {
+		switch e := path.(type) {
+		case *ast.Ident:
+			return true
+		case *ast.ParenExpr:
+			path = e.X
+		case *ast.SelectorExpr:
+			path = e.X
+		case *ast.IndexExpr:
+			if _, isArray := t.getExprTypeName(e.X).(transpiler.ArrayType); !isArray {
+				return false
+			}
+			path = e.X
+		default:
+			return false
+		}
+	}
+}
+
 // formatStructExpr is the text a struct or sealed case called name prints
 // as, from its field values fields: `std.FormatStruct("Pt", s.X, s.Y)`, or
 // the literal "Pt()" for no fields.
@@ -475,19 +671,15 @@ func (t *galaASTTransformer) stringMethodDecl(name string, tParams *ast.FieldLis
 
 func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var elts []ast.Expr
+	fieldCtx := newFieldTypeCtx(tParams)
 	for _, field := range fields.List {
 		for _, fieldName := range field.Names {
 			elts = append(elts, &ast.KeyValueExpr{
 				Key: ast.NewIdent(fieldName.Name),
-				Value: &ast.CallExpr{
-					Fun: t.stdIdent("Copy"),
-					Args: []ast.Expr{
-						&ast.SelectorExpr{
-							X:   ast.NewIdent("s"),
-							Sel: ast.NewIdent(fieldName.Name),
-						},
-					},
-				},
+				Value: t.fieldCopyExpr(fieldCtx, field.Type, &ast.SelectorExpr{
+					X:   ast.NewIdent("s"),
+					Sel: ast.NewIdent(fieldName.Name),
+				}),
 			})
 		}
 	}
@@ -538,21 +730,12 @@ func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldLi
 
 func (t *galaASTTransformer) generateEqualMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var condition ast.Expr
+	fieldCtx := newFieldTypeCtx(tParams)
 	for _, field := range fields.List {
 		for _, fieldName := range field.Names {
-			expr := &ast.CallExpr{
-				Fun: t.stdIdent("Equal"),
-				Args: []ast.Expr{
-					&ast.SelectorExpr{
-						X:   ast.NewIdent("s"),
-						Sel: ast.NewIdent(fieldName.Name),
-					},
-					&ast.SelectorExpr{
-						X:   ast.NewIdent("other"),
-						Sel: ast.NewIdent(fieldName.Name),
-					},
-				},
-			}
+			expr := t.fieldEqualExpr(fieldCtx, field.Type,
+				&ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(fieldName.Name)},
+				&ast.SelectorExpr{X: ast.NewIdent("other"), Sel: ast.NewIdent(fieldName.Name)})
 
 			if condition == nil {
 				condition = expr

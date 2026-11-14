@@ -9,6 +9,7 @@ import (
 
 	"martianoff/gala/internal/formal/coreexport"
 	"martianoff/gala/internal/formal/coreexport/analyzerhints"
+	"martianoff/gala/internal/formal/gala2lean"
 	"martianoff/gala/internal/transpiler/fuzz/progrun"
 )
 
@@ -33,6 +34,9 @@ type Harness struct {
 	Spec Spec
 	// Dir is where the Core JSON documents are written.
 	Dir string
+	// Lean, when set, runs each program gala2lean translates, the third
+	// oracle (Record.Lean).
+	Lean LeanRunner
 }
 
 // Check compares one program, and fails tb only for a broken setup: a
@@ -62,14 +66,30 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
 	rec := Record{ID: p.ID, Source: p.Source, Constructs: constructs, Spec: spec.Outcome}
+	var leanRes *gala2lean.Result
+	if h.Lean != nil {
+		res, construct, err := translate(exported)
+		if err != nil {
+			tb.Fatalf("%s: gala2lean: %v", p.ID, err)
+		}
+		leanRes = res
+		rec.Lean = &LeanRecord{Comparison: Comparison{Unsupported, "outside what gala2lean translates: " + construct}, Construct: construct}
+	}
 	var (
 		real   Run
 		stderr string
 	)
-	if NeedsReal(spec.Outcome) {
+	if NeedsReal(spec.Outcome) || leanRes != nil {
 		real, stderr = realRun(tb, p)
 	}
 	rec.Comparison = Compare(spec, real)
+	if leanRes != nil {
+		lr, err := compareLean(h.Lean, leanRes, spec, real)
+		if err != nil {
+			tb.Fatalf("%s: %v", p.ID, err)
+		}
+		rec.Lean = &lr
+	}
 	// An example's .out holds stdout and stderr together (the example test
 	// compares combined output), so it is no oracle for the stdout of a
 	// program that also wrote to stderr: its builtin println, say.

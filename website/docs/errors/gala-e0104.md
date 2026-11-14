@@ -4,14 +4,14 @@ title: "GALA-E0104 — Type Parameter Only a Constraint Determines Cannot Be Inf
 description: "GALA-E0104 fires when a generic call leaves a type parameter a lambda needs unbound, because only another parameter's constraint mentions it and that type argument's methods do not determine it."
 keywords: "gala-e0104, gala cannot infer type parameter, gala constraint inference, gala f-bounded generics, gala type arguments"
 permalink: /docs/errors/gala-e0104/
-last_modified_at: 2026-11-11
+last_modified_at: 2026-11-13
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0104</p>
 
 # GALA-E0104 — Type parameter only a constraint determines cannot be inferred
 
-**When it fires.** A call of a generic function leaves a type parameter
+**When it fires.** A call of a generic function or method leaves a type parameter
 unbound that a lambda argument needs, and the parameter appears only in the
 constraint of another type parameter (`T` in `[T any, C Labeled[T]]`). GALA
 infers such a parameter, as Go does, from the methods of the other

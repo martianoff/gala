@@ -12,10 +12,10 @@ type Handle struct {
 }
 
 func (s Handle) Copy() Handle {
-	return Handle{name: std.Copy(s.name)}
+	return Handle{name: s.name}
 }
 func (s Handle) Equal(other Handle) bool {
-	return std.Equal(s.name, other.name)
+	return s.name.Get() == other.name.Get()
 }
 
 //line $DIR/main.gala:9
@@ -36,10 +36,10 @@ type Cell struct {
 }
 
 func (s Cell) Copy() Cell {
-	return Cell{n: std.Copy(s.n), label: std.Copy(s.label)}
+	return Cell{n: s.n, label: s.label}
 }
 func (s Cell) Equal(other Cell) bool {
-	return std.Equal(s.n, other.n) && std.Equal(s.label, other.label)
+	return s.n == other.n && s.label.Get() == other.label.Get()
 }
 func (s Cell) String() string {
 	return std.FormatStruct("Cell", s.n, s.label)

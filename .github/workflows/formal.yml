@@ -244,9 +244,10 @@ jobs:
         # check with the theorems COVERAGE.md calls proved, the galaspec fixture
         # and command-line tests. Lake above stays the primary build. Here, not in
         # a job of its own, so Lean is fetched and galaspec built once for this
-        # step and the differential run.
+        # step and the differential run. gala2lean's lean_test runs the
+        # fixtures' translations with the same Lean.
         run: |
-          bazel test --config=formal //formal/... \
+          bazel test --config=formal //formal/... //internal/formal/gala2lean:lean_test \
             --test_output=errors --verbose_failures \
             --action_env=GOROOT="$GOROOT" --action_env=PATH
 

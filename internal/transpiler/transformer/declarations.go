@@ -8,6 +8,7 @@ import (
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
+	"slices"
 	"strings"
 )
 
@@ -93,8 +94,10 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 
 	switch typeName {
 	case transpiler.TypeEmbeddedFS, "std.EmbeddedFS":
-		// Generate: var _embed_<name> embed.FS
-		embedGoVar := "_embed_" + varName
+		// Generate: var _embed_<name> embed.FS, under a name no binding of
+		// the source has.
+		embedGoVar := t.generatedName("_embed_" + varName)
+		t.setEmbedGoVar(varName, embedGoVar)
 		embedVarDecl := &ast.GenDecl{
 			Tok: token.VAR,
 			Specs: []ast.Spec{
@@ -128,7 +131,7 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 		decls = append(decls, wrapperDecl)
 
 		// Register as var (no Immutable wrapping — EmbeddedFS is inherently immutable)
-		t.addVar(varName, transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS})
+		t.addVar(varName, embedValType(typeName))
 
 	default:
 		// string or other simple type — generate: var <name> <type>
@@ -143,12 +146,41 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 			},
 		}
 		decls = append(decls, varDecl)
+		// renameShadowingTopLevel renames a var named like a Go builtin.
+		t.setEmbedGoVar(varName, localGoName(varName))
 
 		// Register as var (no Immutable wrapping — //go:embed populates this directly)
-		t.addVar(varName, transpiler.BasicType{Name: typeName})
+		t.addVar(varName, embedValType(typeName))
 	}
 
 	return decls, nil
+}
+
+// embedValType is the type of an `embed val` whose directive resolves its
+// type to typeName: EmbeddedFS, or a basic type such as string.
+func embedValType(typeName string) transpiler.Type {
+	if typeName == transpiler.TypeEmbeddedFS || typeName == "std.EmbeddedFS" {
+		return transpiler.NamedType{Package: "std", Name: transpiler.TypeEmbeddedFS}
+	}
+	return transpiler.BasicType{Name: typeName}
+}
+
+// setEmbedGoVar records goVar as the Go var the `//go:embed` directive of
+// `embed val varName` goes on (see transpiler.EmbedDirective.GoVar): the
+// lowering names it, as it names every generated or renamed declaration. The
+// directives are copied first, so a copy of the RichAST sharing them is not
+// changed.
+func (t *galaASTTransformer) setEmbedGoVar(varName, goVar string) {
+	if t.richAST == nil {
+		return
+	}
+	dirs := slices.Clone(t.richAST.EmbedDirectives)
+	for i := range dirs {
+		if dirs[i].VarName == varName {
+			dirs[i].GoVar = goVar
+		}
+	}
+	t.richAST.EmbedDirectives = dirs
 }
 
 // declName is a name a declaration binds, and where it is written.
@@ -297,7 +329,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 			case declType == nil && id.text == "_":
 				tempNames[i] = "_"
 			case anchor != "":
-				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
+				tempNames[i] = t.generatedName(fmt.Sprintf("__val_%s_%d", anchor, i))
 			default:
 				tempNames[i] = t.nextTempVar()
 			}
@@ -569,9 +601,9 @@ func (t *galaASTTransformer) tupleTempName(topLevel bool, names []declName) stri
 		return "_"
 	}
 	if anchor := packageTempAnchor(topLevel, names); anchor != "" {
-		return "__tuple_" + anchor
+		return t.generatedName("__tuple_" + anchor)
 	}
-	return fmt.Sprintf("__tuple_%d", t.nextTupleID())
+	return t.freshTempName("__tuple_", &t.tempVarCount)
 }
 
 // checkBlankDeclaration rejects `val _ = expr` and `var _ = expr`, typed or
@@ -858,7 +890,12 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()
-		t.constrainReceiverTypeParams(recvTypeParams, t.getTypeMeta(receiverBaseName))
+		recvMeta := t.getTypeMeta(receiverBaseName)
+		if named := nameWildcardReceiverTypeArgs(recv.typ, recvTypeExpr, recvMeta); named != nil {
+			defer t.bindTypeParams(named...)()
+			recvTypeParams = named
+		}
+		t.constrainReceiverTypeParams(recvTypeParams, recvMeta)
 
 		// The receiver is in scope with its declared type: a pointer
 		// receiver as a `*T` or a `Ptr[T]`, so its nullability is checked
@@ -898,6 +935,15 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 			defer func() { t.equalOwner = prevOwner }()
 		}
 	}
+	// The calls the body makes are recorded under it (equal_reentry.go).
+	reentryDecl, equalOf := t.reentryKey(name, ""), (*transpiler.TypeMetadata)(nil)
+	if receiverTypeName != "" {
+		reentryDecl = t.reentryKey(receiverTypeName, name)
+		if name == "Equal" {
+			equalOf = t.equalOwner
+		}
+	}
+	defer t.enterReentryDecl(reentryDecl, equalOf)()
 
 	// Type Parameters
 	var typeParams *ast.FieldList
@@ -1966,6 +2012,9 @@ func (t *galaASTTransformer) lowerTypeParams(params []typeParam) (*ast.FieldList
 func (t *galaASTTransformer) lowerSignature(sig sigSrc, typeParams *ast.FieldList) (*ast.FuncType, []loweredParam, error) {
 	t.noteNativeShape(srcNode{node: sig.node.GalaNodeRef}, "sig")
 	params := sig.params()
+	if err := declaredDefaultsReadLaterParams(params); err != nil {
+		return nil, nil, err
+	}
 	fieldList := &ast.FieldList{}
 	lowered := make([]loweredParam, 0, len(params))
 	for _, p := range params {

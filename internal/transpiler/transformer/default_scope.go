@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -104,6 +105,45 @@ func laterParamError(def exprSrc, later []string, lowered ast.Expr) error {
 		fmt.Sprintf("a default may read only the parameters before its own; declare %s before %s, or pass %s explicitly", name, later[0], later[0]))
 }
 
+// declaredDefaultsReadLaterParams reports GALA-E0094 at the declaration of
+// params, for a default that reads its own parameter or a later one, so a
+// default no call leaves out is checked too. It judges the source alone: a
+// default that binds names of its own (a lambda, a match, a block) may bind
+// the parameter's name, and is left to the check at a call that lowers it
+// (transformDefaultExpr). What it reports, that check reports in the same
+// words at the same place.
+func declaredDefaultsReadLaterParams(params []paramDecl) error {
+	names := make([]string, len(params))
+	for i, p := range params {
+		names[i] = p.name
+	}
+	for i, p := range params {
+		if !p.hasDefault || !p.def.node.Ok() || bindsNames(p.def) {
+			continue
+		}
+		_, later := defaultParams(names, nil, i, nil)
+		if err := laterParamError(p.def, later, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bindsNames reports whether e holds a construct that binds names: a lambda,
+// a partial function, a match case, a block or a bind declaration.
+func bindsNames(e exprSrc) bool {
+	binds := false
+	e.node.Walk(func(n native.GalaNodeRef) bool {
+		switch n.Kind() {
+		case native.GalaKIND_lambdaExpression, native.GalaKIND_partialFunctionLiteral,
+			native.GalaKIND_caseClause, native.GalaKIND_block, native.GalaKIND_bindDeclaration:
+			binds = true
+		}
+		return !binds
+	})
+	return binds
+}
+
 // bindDefaultNames rewrites expr, the lowered default src, for its use site,
 // whose scope is useScope (see above).
 func (t *galaASTTransformer) bindDefaultNames(expr ast.Expr, src defaultSource, useScope *scope, useLine, useCol int) (ast.Expr, error) {
@@ -175,26 +215,30 @@ func (t *galaASTTransformer) packageNameAlias(name string, src defaultSource) (a
 	for root != nil && root.parent != nil {
 		root = root.parent
 	}
+	// The reference to the package-level name, which keeps reaching it if
+	// renameShadowingTopLevel renames it.
+	ref := ast.NewIdent(name)
+	t.markTopLevelRef(ref)
 	var value ast.Expr
 	deref := false
 	switch {
 	case t.isTopLevelBinding(name) && root != nil && root.vals[name]:
 		// A val never changes: the alias holds its value.
-		value = ast.NewIdent(name)
+		value = ref
 		root.vals[alias], root.valTypes[alias] = true, root.valTypes[name]
 		if root.boxedVals[name] {
 			root.boxedVals[alias] = true // non-nil: it holds name
 		}
 	case t.isTopLevelBinding(name) && root != nil:
 		// A var does: the alias points at it.
-		value, deref = &ast.UnaryExpr{Op: token.AND, X: ast.NewIdent(name)}, true
+		value, deref = &ast.UnaryExpr{Op: token.AND, X: ref}, true
 		root.vals[alias], root.valTypes[alias] = false, transpiler.PointerType{Elem: root.valTypes[name]}
 	default:
 		fm, ok := t.unshadowedFunctionByName(name)
 		if !ok || len(fm.TypeParams) > 0 {
 			return nil, fmt.Errorf("the default value of a parameter reads %s, which a local of this call site shadows; rename the local", name)
 		}
-		value = ast.NewIdent(name)
+		value = ref
 	}
 	if !t.defaultRefNames[alias] {
 		if t.defaultRefNames == nil {
@@ -206,7 +250,7 @@ func (t *galaASTTransformer) packageNameAlias(name string, src defaultSource) (a
 		}})
 	}
 	if deref {
-		return &ast.ParenExpr{X: &ast.StarExpr{X: ast.NewIdent(alias)}}, nil
+		return &ast.ParenExpr{X: t.markDeref(&ast.StarExpr{X: ast.NewIdent(alias)})}, nil
 	}
 	return ast.NewIdent(alias), nil
 }

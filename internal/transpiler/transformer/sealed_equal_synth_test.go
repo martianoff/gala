@@ -75,8 +75,8 @@ func main() {
 				"func (s Status) Equal(other Status) bool",
 				"if s._variant != other._variant {",
 				// Each case compares only its own fields.
-				"case _Status_StRecovering:\n\t\treturn std.Equal(s.Attempt, other.Attempt) && std.Equal(s.Max, other.Max)\n",
-				"case _Status_StHelpWaiting:\n\t\treturn std.Equal(s.Question, other.Question)\n",
+				"case _Status_StRecovering:\n\t\treturn s.Attempt.Get() == other.Attempt.Get() && s.Max.Get() == other.Max.Get()\n",
+				"case _Status_StHelpWaiting:\n\t\treturn s.Question.Get() == other.Question.Get()\n",
 			},
 		},
 	}

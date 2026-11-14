@@ -571,7 +571,9 @@ const (
 	// `url.URL.String` but wrong for these types: a copied Mutex locks
 	// nothing and its Unlock is a fatal runtime error, and writes to a copied
 	// Builder or Buffer are lost. The value has to live in a `var` or behind a
-	// pointer.
+	// pointer. Printing such a value by a String declared on its pointer
+	// receiver is the same call, and so is printing a value whose generated
+	// String prints a field of such a type.
 	CodeNoCopyReceiverCopied ErrorCode = "GALA-E0053"
 
 	// E0054: a value was called as a function — a val, var or parameter, or a
@@ -907,10 +909,11 @@ const (
 	// parameters bound, as in Scala and Kotlin.
 	CodeDefaultReadsLaterParam ErrorCode = "GALA-E0094"
 
-	// E0097: an identifier starts with `_gala_`, a prefix reserved for names
-	// the transpiler generates (a local named like a Go predeclared
+	// E0097: an identifier starts with `_gala_` or `GALA_`, prefixes reserved
+	// for names the transpiler generates (a local named like a Go predeclared
 	// identifier is emitted as `_gala_<name>`, fmt may be imported as
-	// `_gala_fmt`). A user name with the prefix could meet one of them.
+	// `_gala_fmt`; `GALA_` is for exported generated names that other
+	// packages reach). A user name with either could meet one of them.
 	CodeReservedNamePrefix ErrorCode = "GALA-E0097"
 
 	// E0098: the default value of a shorthand struct's field or a sealed
@@ -953,13 +956,54 @@ const (
 	// (`EmptyArray[func() int]()`); a function value is a lambda.
 	CodeFuncTypeAsValue ErrorCode = "GALA-E0103"
 
-	// E0104: a call of a generic function leaves a type parameter that a
+	// E0104: a call of a generic function or method leaves a type parameter that a
 	// lambda argument needs unbound, because it appears only in the
 	// constraint of another type parameter (`T` in `[T any, C Seq[T, C]]`)
 	// and the methods of that parameter's type argument do not determine it.
 	// The lambda would be lowered against `any`; the call writes the type
 	// arguments instead.
 	CodeConstraintInference ErrorCode = "GALA-E0104"
+
+	// E0105: a positional argument written after a named one, in any call:
+	// a function or method call, a struct or sealed-case construction, a
+	// Copy. Once an argument is named, every later argument is named too.
+	CodePositionalAfterNamed ErrorCode = "GALA-E0105"
+
+	// E0106: a type declared with the name of a Go predeclared type (`error`,
+	// `string`, `int`, `any`, …): a struct, a sealed type or one of its
+	// cases, an opaque type, an interface, an alias or a type parameter. GALA
+	// reads such a name as Go's type in every type position, so the declared
+	// type could not be written as a type. The same holds for a type named
+	// like a Go builtin function (`len`, `make`, …) or `std`, which would hide
+	// the builtin or the package in the generated Go.
+	CodePredeclaredTypeName ErrorCode = "GALA-E0106"
+
+	// E0107: a top-level function, val or var of a package with hand-written
+	// .go files is named like a Go predeclared identifier those files refer
+	// to. The transpiler renames the declaration, so the Go reaches Go's
+	// builtin, not it.
+	CodeBuiltinNameReachedFromGo ErrorCode = "GALA-E0107"
+
+	// E0108: a type's own Equal calls a generic function or method with
+	// that type, or a type holding it by value, as the type argument of a
+	// type parameter constrained by comparable. == on that type parameter
+	// calls the value's Equal, which would call the function again without
+	// end.
+	CodeEqualReentry ErrorCode = "GALA-E0108"
+
+	// E0109: a type pattern tests for an interface that a type has every
+	// method of only because some of those methods are generated as free
+	// functions (a generic type's method that names another generic type).
+	// Go's type test would never match such a value, so the pattern is
+	// rejected rather than silently falling through.
+	CodeInterfaceViaLoweredMethod ErrorCode = "GALA-E0109"
+
+	// E0110: a method with a pointer receiver that can mutate its receiver
+	// is called on a value Go cannot address — a val, a field reached
+	// through one, a call result, a literal. The call would run on a copy
+	// (std.AddrOfCopy) and its change would be lost. A method that only
+	// reads its receiver is still called on a copy.
+	CodeMutatingCallOnCopy ErrorCode = "GALA-E0110"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

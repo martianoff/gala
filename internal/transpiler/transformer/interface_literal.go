@@ -295,7 +295,7 @@ func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral, line i
 	if !t.isLocalPackage(meta.Package) {
 		ifaceName = meta.Package + "_" + meta.Name
 	}
-	name := "_" + ifaceName + "_literal" + t.codecFileSuffix()
+	name := t.generatedName("_" + ifaceName + "_literal" + t.codecFileSuffix())
 	t.interfaceLiterals[lit.resolved] = name
 
 	restore := t.onlyTypeParams(meta.TypeParams)

@@ -41,10 +41,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{Name: std.Copy(s.Name), Age: std.Copy(s.Age)}
+	return Person{Name: s.Name, Age: s.Age}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
+	return s.Name.Get() == other.Name.Get() && s.Age.Get() == other.Age.Get()
 }
 func (s Person) Unapply(v any) (std.Immutable[string], std.Immutable[int], bool) {
 	if p, ok := v.(Person); ok {
@@ -75,10 +75,10 @@ type Config struct {
 }
 
 func (s Config) Copy() Config {
-	return Config{ID: std.Copy(s.ID), Count: std.Copy(s.Count)}
+	return Config{ID: s.ID, Count: s.Count}
 }
 func (s Config) Equal(other Config) bool {
-	return std.Equal(s.ID, other.ID) && std.Equal(s.Count, other.Count)
+	return s.ID.Get() == other.ID.Get() && s.Count == other.Count
 }
 func (s Config) Unapply(v any) (std.Immutable[string], int, bool) {
 	if p, ok := v.(Config); ok {
@@ -107,10 +107,10 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
-	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
+	return s.name.Get() == other.name.Get() && s.age.Get() == other.age.Get()
 }
 func (s Person) String() string {
 	return std.FormatStruct("Person", s.name, s.age)

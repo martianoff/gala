@@ -403,7 +403,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []stmtSrc,
 			// its pointee, as the first clause is the receiver of a
 			// value-receiver Zip. (A pointer parameter's base is `*M`.)
 			if t.monadBaseName(t.followAliasChain(paramType)) == prepped[i].lookupBaseName {
-				arg = derefPointer(arg, prepped[i].recvType)
+				arg = t.derefPointer(arg, prepped[i].recvType)
 			}
 		}
 		zipTypeArgs = append(zipTypeArgs, t.typeToExpr(prepped[i].elemType))
@@ -437,7 +437,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []stmtSrc,
 	}
 
 	// FlatMap lambda: func(g TupleN) M[R] { a0 := g.V1.Get(); ...; <continuation> }.
-	const tupleParam = "_zip"
+	tupleParam := t.generatedName("_zip")
 	lambdaBody := &ast.BlockStmt{}
 	for i, p := range prepped {
 		// std tuples store their fields Immutable-wrapped (Tuple.Vi is

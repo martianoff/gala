@@ -17,18 +17,19 @@ import (
 // mutating method on it in place would change the val, so it counts as not
 // addressable too (isAddressable).
 //
-// Such a receiver is handed to the method as `std.AddrOfCopy(recv)`: a pointer
-// to a fresh copy. The method runs on that copy, so a mutating method cannot
-// change the val — the val stays immutable, which is what GALA promises.
+// Such a receiver is handed to a method that only reads it as
+// `std.AddrOfCopy(recv)`: a pointer to a fresh copy.
 //
-// A value that must not be copied (see noCopyReason) is rejected instead with
-// GALA-E0053: on a copy, a Mutex locks nothing and a Builder's writes are lost.
+// A method that can mutate its receiver (see pointerMethodMutates) would
+// change only that copy, and the change would be lost, so such a call is
+// GALA-E0110. A value that must not be copied (see noCopyReason) is rejected
+// with GALA-E0053 whatever the method: on a copy, a Mutex locks nothing.
 
 // addressableReceiver returns the receiver to select `method` on. It is recv
 // itself unless the method has a pointer receiver and recv is not
 // addressable, in which case it is recv wrapped in std.AddrOfCopy — or
-// GALA-E0053 when the receiver's type must not be copied. line and col locate
-// the method name.
+// GALA-E0053 when the receiver's type must not be copied, or GALA-E0110 when
+// the method can mutate its receiver. line and col locate the method name.
 func (t *galaASTTransformer) addressableReceiver(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
 	if !t.hasPointerReceiverMethod(recvType, method) || t.isAddressable(recv) {
 		return t.sealPlainValPath(recv), nil
@@ -50,7 +51,7 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 		return recv, nil
 	}
 	if !m.PointerReceiver {
-		return derefPointer(recv, recvType), nil
+		return t.derefPointer(recv, recvType), nil
 	}
 	if _, _, _, isValue := t.receiverTypeInfo(recvType); !isValue {
 		return recv, nil
@@ -63,14 +64,14 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 
 // derefPointer is `*expr` when typ is a pointer (`x` for `&x`), and expr
 // otherwise.
-func derefPointer(expr ast.Expr, typ transpiler.Type) ast.Expr {
+func (t *galaASTTransformer) derefPointer(expr ast.Expr, typ transpiler.Type) ast.Expr {
 	if _, isPtr := typ.(transpiler.PointerType); !isPtr {
 		return expr
 	}
 	if addr, ok := expr.(*ast.UnaryExpr); ok && addr.Op == token.AND {
 		return addr.X
 	}
-	return &ast.StarExpr{X: expr}
+	return t.markDeref(&ast.StarExpr{X: expr})
 }
 
 // loweredReceiverType is the type of the receiver argument
@@ -89,14 +90,10 @@ func loweredReceiverType(recvType transpiler.Type, m *transpiler.MethodMetadata)
 
 // addressedCopy hands recv, a value that cannot be addressed, to a
 // pointer-receiver method as `std.AddrOfCopy(recv)`, or reports GALA-E0053
-// when its type must not be copied.
+// when its type must not be copied, or GALA-E0110 when the method can mutate
+// its receiver.
 func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
-	if reason := t.noCopyReason(recvType, make(map[string]bool)); reason != "" {
-		typeName := receiverBase(recvType).String()
-		why := fmt.Sprintf("%s must not be copied", reason)
-		if reason != typeName {
-			why = fmt.Sprintf("%s contains %s, which must not be copied", typeName, reason)
-		}
+	if typeName, why := t.noCopyWhy(recvType); why != "" {
 		return nil, galaerr.NewCodedSemanticError(
 			galaerr.CodeNoCopyReceiverCopied,
 			line, col,
@@ -104,10 +101,28 @@ func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Ty
 			"declare it with `var`, or hold a pointer (`&T{...}`)",
 		)
 	}
+	if t.pointerMethodMutates(recvType, method) {
+		return nil, mutatingCallOnCopyError(method, false, recvType, line, col)
+	}
 	return &ast.CallExpr{
 		Fun:  t.stdIdent(transpiler.FuncAddrOfCopy),
 		Args: []ast.Expr{recv},
 	}, nil
+}
+
+// noCopyWhy names typ's base type and says why a value of typ must not be
+// copied ("sync.Mutex must not be copied", "Guarded contains sync.Mutex,
+// which must not be copied"); why is "" when copying it is fine.
+func (t *galaASTTransformer) noCopyWhy(typ transpiler.Type) (typeName, why string) {
+	reason := t.noCopyReason(typ, make(map[string]bool))
+	if reason == "" {
+		return "", ""
+	}
+	typeName = receiverBase(typ).String()
+	if reason == typeName {
+		return typeName, fmt.Sprintf("%s must not be copied", reason)
+	}
+	return typeName, fmt.Sprintf("%s contains %s, which must not be copied", typeName, reason)
 }
 
 // receiverBase strips a generic instantiation to its base type.

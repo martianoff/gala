@@ -49,10 +49,10 @@ type Point struct {
 }
 
 func (s Point) Copy() Point {
-	return Point{x: std.Copy(s.x), y: std.Copy(s.y), z: std.Copy(s.z)}
+	return Point{x: s.x, y: s.y, z: s.z}
 }
 func (s Point) Equal(other Point) bool {
-	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y) && std.Equal(s.z, other.z)
+	return s.x.Get() == other.x.Get() && s.y == other.y && s.z.Get() == other.z.Get()
 }
 func (s Point) String() string {
 	return std.FormatStruct("Point", s.x, s.y, s.z)
@@ -67,10 +67,10 @@ type Pair[A any, B any] struct {
 }
 
 func (s Pair[A, B]) Copy() Pair[A, B] {
-	return Pair[A, B]{first: std.Copy(s.first), second: std.Copy(s.second)}
+	return Pair[A, B]{first: s.first.Copy(), second: s.second.Copy()}
 }
 func (s Pair[A, B]) Equal(other Pair[A, B]) bool {
-	return std.Equal(s.first, other.first) && std.Equal(s.second, other.second)
+	return s.first.Equal(other.first) && s.second.Equal(other.second)
 }
 func (s Pair[A, B]) String() string {
 	return std.FormatStruct("Pair", s.first, s.second)
@@ -94,10 +94,10 @@ type Shape struct {
 }
 
 func (s Shape) Copy() Shape {
-	return Shape{Name: std.Copy(s.Name), Sides: std.Copy(s.Sides)}
+	return Shape{Name: s.Name, Sides: s.Sides}
 }
 func (s Shape) Equal(other Shape) bool {
-	return std.Equal(s.Name, other.Name) && std.Equal(s.Sides, other.Sides)
+	return s.Name.Get() == other.Name.Get() && s.Sides == other.Sides
 }
 func (s Shape) Unapply(v any) (std.Immutable[string], int, bool) {
 	if p, ok := v.(Shape); ok {
@@ -188,7 +188,7 @@ func (s Tree) IsNode() bool {
 	return s._variant == _Tree_Node
 }
 func (s Tree) Copy() Tree {
-	return Tree{v: std.Copy(s.v), l: std.Copy(s.l), r: std.Copy(s.r), _variant: std.Copy(s._variant)}
+	return Tree{v: s.v, l: std.Copy(s.l), r: std.Copy(s.r), _variant: s._variant}
 }
 func (s Tree) Equal(other Tree) bool {
 	if s._variant != other._variant {
@@ -196,7 +196,7 @@ func (s Tree) Equal(other Tree) bool {
 	}
 	switch s._variant {
 	case _Tree_Leaf:
-		return std.Equal(s.v, other.v)
+		return s.v.Get() == other.v.Get()
 	case _Tree_Node:
 		return (s.l == other.l || s.l != nil && other.l != nil && s.l.Equal(*other.l)) && (s.r == other.r || s.r != nil && other.r != nil && s.r.Equal(*other.r))
 	}

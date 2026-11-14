@@ -116,8 +116,8 @@ sealed type Shape {
 		{
 			name:      "a positional argument after a named one",
 			body:      `func main() { Println(Circle(Label = "x", 5)) }`,
-			wantCode:  galaerr.CodeMissingStructField,
-			wantError: `a positional argument follows a named one in construction of "Circle"`,
+			wantCode:  galaerr.CodePositionalAfterNamed,
+			wantError: "positional argument `5` follows named argument `Label`",
 		},
 		{
 			name: "a generic case built by position and by name",

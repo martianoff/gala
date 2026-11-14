@@ -86,6 +86,14 @@ type GoTypeData struct {
 	// method set of *T but not of T). Go calls these only on an addressable
 	// receiver.
 	PointerMethods map[string]bool
+	// ReadOnlyMethods names the PointerMethods whose bodies are known not to
+	// write through their receiver, directly or through a method they call:
+	// `(*bytes.Buffer).Len`. Calling one on a copy loses nothing. A pointer
+	// method missing here may mutate its receiver (GALA-E0110). It is
+	// recorded for the types of the hand-written .go files of a package GALA
+	// compiles; an imported Go package is read on demand instead (see
+	// RichAST.GoReadOnlyMethods).
+	ReadOnlyMethods map[string]bool
 	// NoCopy names the type that makes a value of this type unsafe to copy
 	// ("sync.Mutex" for a struct holding one), or "" when copying is fine.
 	// See noCopyReason in the analyzer.
@@ -94,6 +102,15 @@ type GoTypeData struct {
 	// it is, or holds by value, a slice, map or function. It is false when the
 	// type is comparable or that is not known, as for a generic type.
 	Incomparable bool
+	// EmbedsComparable is true for an interface that embeds comparable,
+	// directly or through another interface it embeds. A type parameter it
+	// constrains is comparable, and == on it compares as on one constrained
+	// by comparable.
+	EmbedsComparable bool
+	// SelfEqual is true when the value method set of this (non-generic,
+	// non-interface) type has `Equal(T) bool` with T the type itself, as
+	// time.Time's does: == on it calls that Equal.
+	SelfEqual bool
 }
 
 // NewGoTypeInfo creates an empty GoTypeInfo.

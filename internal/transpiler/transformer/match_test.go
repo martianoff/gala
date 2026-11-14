@@ -249,8 +249,6 @@ func describe(l Light) string = l match {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 // Light has no default value: create it with a case constructor, NewLightOn, NewLightOff. Its zero value Light{} is none of its cases.
 type Light struct {
 	_variant uint8
@@ -297,7 +295,7 @@ func (s Light) IsOff() bool {
 	return s._variant == _Light_Off
 }
 func (s Light) Copy() Light {
-	return Light{_variant: std.Copy(s._variant)}
+	return Light{_variant: s._variant}
 }
 func (s Light) Equal(other Light) bool {
 	return s._variant == other._variant
@@ -357,8 +355,6 @@ func describe(l Light) string = l match {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 // Light has no default value: create it with a case constructor, NewLightOn, NewLightOff. Its zero value Light{} is none of its cases.
 type Light struct {
 	_variant uint8
@@ -405,7 +401,7 @@ func (s Light) IsOff() bool {
 	return s._variant == _Light_Off
 }
 func (s Light) Copy() Light {
-	return Light{_variant: std.Copy(s._variant)}
+	return Light{_variant: s._variant}
 }
 func (s Light) Equal(other Light) bool {
 	return s._variant == other._variant
@@ -629,10 +625,10 @@ type Cell[T any] struct {
 }
 
 func (s Cell[T]) Copy() Cell[T] {
-	return Cell[T]{Value: std.Copy(s.Value)}
+	return Cell[T]{Value: s.Value.Copy()}
 }
 func (s Cell[T]) Equal(other Cell[T]) bool {
-	return std.Equal(s.Value, other.Value)
+	return s.Value.Equal(other.Value)
 }
 func (s Cell[T]) String() string {
 	return std.FormatStruct("Cell", s.Value)
@@ -669,10 +665,10 @@ type Holder struct {
 }
 
 func (s Holder) Copy() Holder {
-	return Holder{Cell: std.Copy(s.Cell)}
+	return Holder{Cell: s.Cell.Copy()}
 }
 func (s Holder) Equal(other Holder) bool {
-	return std.Equal(s.Cell, other.Cell)
+	return s.Cell.Equal(other.Cell)
 }
 func (s Holder) String() string {
 	return std.FormatStruct("Holder", s.Cell)

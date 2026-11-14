@@ -128,8 +128,17 @@ type RichAST struct {
 	CompanionObjects map[string]*CompanionObjectMetadata // companion name -> metadata
 	GoExports        map[string][]string                 // pkgName -> exported symbol names (from Go-only packages)
 	GoTypeInfo       *GoTypeInfo                         // type info extracted from Go source files and packages
+	// GoReadOnlyMethods gives, for a Go type by its package's import path
+	// and its name, the pointer methods that only read their receiver (see
+	// GoTypeData.ReadOnlyMethods), reading the package's Go source on first
+	// use. Nil when no lookup is available.
+	GoReadOnlyMethods func(importPath, typeName string) map[string]bool
 	TypeAliases      map[string]Type                     // type alias name -> underlying type (e.g., "Handler" -> func(Request) Future[Response])
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
+	// PackageEmbedVals holds the `embed val` declarations of every file of
+	// the package, this one and its siblings, by name, each with its
+	// EmbedDirective.TypeName; EmbedDirectives has this file's only.
+	PackageEmbedVals map[string]string
 	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
 	ImportedVals     map[string]map[string]*PackageValMetadata // import path -> exported package-level val/var name -> metadata (see AddImportedVals)
 	// PackageKeys holds, by import path, the key each imported package is
@@ -758,6 +767,44 @@ type MethodMetadata struct {
 	// interface with type arguments (`C Iterable[T, C]`), resolved in the
 	// declaring package.
 	TypeParamConstraints map[string]Type
+	// Borrow is the ownership analysis's borrow summary of the method (see
+	// BorrowSummary); nil when it has no pointer receiver, parameter or
+	// result, or was not analyzed.
+	Borrow *BorrowSummary
+	// ReceiverEffects lists what the body of a method with a pointer
+	// receiver does with that receiver, beyond reading it: the places it
+	// writes, the methods it calls on it or on its fields, and whether the
+	// pointer itself escapes. Whether the method can mutate its receiver
+	// follows from these and the field types (see GALA-E0110). Nil for a
+	// method whose body only reads its receiver, or that has a value
+	// receiver.
+	ReceiverEffects []ReceiverEffect
+}
+
+// ReceiverEffectKind is what a ReceiverEffect does with its place.
+type ReceiverEffectKind uint8
+
+const (
+	// ReceiverWrite assigns, increments or takes the address of the place.
+	ReceiverWrite ReceiverEffectKind = iota + 1
+	// ReceiverCall selects Method on the place: calls it, or takes it as a
+	// method value. When Method names a field of the place, it only reads it.
+	ReceiverCall
+	// ReceiverEscape uses the receiver pointer itself as a value: passes,
+	// returns, stores or captures it. Path is empty.
+	ReceiverEscape
+)
+
+// ReceiverIndex is the Path element of an index expression (`r.items[i]`).
+const ReceiverIndex = "[]"
+
+// ReceiverEffect is one use of a pointer receiver r in its method's body.
+// Path is the place, as the field selectors from r (`r.a.b` is ["a", "b"]),
+// with ReceiverIndex for an index; an empty Path is *r.
+type ReceiverEffect struct {
+	Kind   ReceiverEffectKind
+	Path   []string
+	Method string // the method a ReceiverCall calls
 }
 
 type FunctionMetadata struct {
@@ -778,6 +825,40 @@ type FunctionMetadata struct {
 	GoResults []Type
 	// TypeParamConstraints is MethodMetadata.TypeParamConstraints.
 	TypeParamConstraints map[string]Type
+	// Borrow is MethodMetadata.Borrow.
+	Borrow *BorrowSummary
+}
+
+// BorrowSummary is what the ownership analysis (internal/transpiler/ownership,
+// docs/OWNERSHIP_DESIGN.MD section 3.1) infers about a GALA function or method
+// that takes or returns a pointer (`Ptr[T]` or `*T`). A borrowed pointer is
+// only lent downward for the duration of the call: the callee never stores
+// it, returns it, captures it in a closure, aliases it into a binding, or
+// passes it to Go or to a callee that does not borrow it. No part of the
+// transpiler reads it, so it never changes the generated Go.
+type BorrowSummary struct {
+	// ReceiverBorrowed is true for a pointer receiver that is borrowed.
+	ReceiverBorrowed bool
+	// BorrowedParams is index-aligned with the parameters: true for a pointer
+	// parameter that is borrowed, false for any other.
+	BorrowedParams []bool
+	// ReturnsFresh is true for a pointer result that is always a new
+	// allocation no other binding refers to.
+	ReturnsFresh bool
+}
+
+// ParamBorrowed reports whether parameter i is a borrowed pointer.
+func (s *BorrowSummary) ParamBorrowed(i int) bool {
+	return s != nil && i >= 0 && i < len(s.BorrowedParams) && s.BorrowedParams[i]
+}
+
+// Equal reports whether s and o are the same summary.
+func (s *BorrowSummary) Equal(o *BorrowSummary) bool {
+	if s == nil || o == nil {
+		return s == o
+	}
+	return s.ReceiverBorrowed == o.ReceiverBorrowed && s.ReturnsFresh == o.ReturnsFresh &&
+		slices.Equal(s.BorrowedParams, o.BorrowedParams)
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

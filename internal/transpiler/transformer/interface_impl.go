@@ -19,7 +19,7 @@ import (
 // type implements the interface under Go's rules: each method the interface
 // declares is in the type's method set with an identical signature. Go has no
 // covariant results, so `Tail() Array[int]` does not implement
-// `Tail() Iterable[int]`. GALA-E0100 reports the first method that fails,
+// `Tail() List[int]` of `Iterable[int, List[int]]`. GALA-E0100 reports the first method that fails,
 // rather than leaving `go build` to report it against the generated code.
 //
 // The check judges only what it can read exactly. A value or slot type it
@@ -52,7 +52,16 @@ type implType struct {
 // a slot of type slotType, when slotType is an interface its concrete type
 // does not implement (GALA-E0100).
 func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpiler.Type, at srcNode) error {
-	if !at.ok() || transpiler.IsUnusableOrAny(slotType) || isNilIdent(expr) {
+	if isNilIdent(expr) {
+		return nil
+	}
+	return t.checkInterfaceSlotType(func() transpiler.Type { return t.probeExprType(expr) }, slotType, at)
+}
+
+// checkInterfaceSlotType is checkInterfaceSlot for a value of the type
+// valType returns, read only when slotType is an interface with methods.
+func (t *galaASTTransformer) checkInterfaceSlotType(valTypeOf func() transpiler.Type, slotType transpiler.Type, at srcNode) error {
+	if !at.ok() || transpiler.IsUnusableOrAny(slotType) {
 		return nil
 	}
 	slotType = t.followAliasChain(slotType)
@@ -60,7 +69,7 @@ func (t *galaASTTransformer) checkInterfaceSlot(expr ast.Expr, slotType transpil
 	if !ok {
 		return nil
 	}
-	valType := t.probeExprType(expr)
+	valType := valTypeOf()
 	impl, ok := t.implTypeOf(valType)
 	if !ok {
 		return nil
@@ -86,6 +95,41 @@ func (t *galaASTTransformer) checkSlotFill(expr ast.Expr, typ transpiler.Type, a
 		return err
 	}
 	return t.checkInterfaceSlot(expr, typ, at)
+}
+
+// checkAssignFill checks expr, a value of `a, b = x, y` filling a target of
+// type typ, as checkResultFill checks one result of a call. Unlike a bind
+// clause, which reads a pointer to its monad through it, an assignment
+// target never takes a pointer to the value it holds.
+func (t *galaASTTransformer) checkAssignFill(expr ast.Expr, typ transpiler.Type, at srcNode) error {
+	if err := t.checkPtrSlot(expr, typ, at); err != nil {
+		return err
+	}
+	if err := t.checkPointerForValue(expr, typ, at); err != nil {
+		return err
+	}
+	return t.checkInterfaceSlot(expr, typ, at)
+}
+
+// checkResultFill checks one result, of type valType, of the call written
+// at at whose results fill several targets (`a, b = f()`), against its
+// target's type typ as lowerAgainst checks a value: neither a pointer that
+// may be nil where a Ptr is expected (GALA-E0080), nor a pointer where the
+// value it points to is (GALA-E0099), nor a value of a type that does not
+// implement the target's interface (GALA-E0100).
+func (t *galaASTTransformer) checkResultFill(valType transpiler.Type, typ transpiler.Type, at srcNode) error {
+	if transpiler.IsUnusable(typ) || !at.ok() {
+		return nil
+	}
+	typ = t.followAliasChain(typ)
+	val := func() transpiler.Type { return valType }
+	if err := t.checkPtrSlotType(val, typ, at); err != nil {
+		return err
+	}
+	if err := t.checkPointerForValueType(val, typ, at, false); err != nil {
+		return err
+	}
+	return t.checkInterfaceSlotType(val, typ, at)
 }
 
 // requiredMethods returns, to be listed once a value is known to need them,
@@ -244,9 +288,14 @@ func (t *galaASTTransformer) implMismatch(impl implType, want ifaceMethod) (why,
 		}
 		return "it has no method " + want.name, signatureHint
 	}
+	// A method lowered to a function without type parameters of its own
+	// (it names another generic type) is not in the type's Go method set.
+	if m.IsGeneric && len(m.TypeParams) == 0 {
+		return loweredMethodReason(want.name), loweredMethodHint
+	}
 	// A method with type parameters of its own is lowered to a function; Go
 	// reports it as missing, but its spelling there is the transformer's.
-	if len(m.TypeParams) > 0 || m.IsGeneric {
+	if len(m.TypeParams) > 0 {
 		return "", ""
 	}
 	if m.PointerReceiver && !impl.pointer {

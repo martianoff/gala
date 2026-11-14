@@ -511,6 +511,9 @@ type goFilesResult struct {
 	info     *transpiler.GoTypeInfo
 	ownTypes map[string]bool
 	imports  []string // the import paths of the files that took part
+	// builtinRefs are the Go predeclared identifiers (`len`, `print`, …)
+	// the files refer to.
+	builtinRefs map[string]bool
 }
 
 // AnalyzeGoFiles parses and type-checks local .go files and extracts type info.
@@ -542,6 +545,13 @@ func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) (*transpiler.GoTypeInfo, map[string]bool, []string) {
 	r := analyzeGoFilesMemo(dirPath, importPath, pkgName)
 	return r.info, r.ownTypes, r.imports
+}
+
+// OwnGoBuiltinRefs is the set of Go predeclared identifiers (`len`, `print`,
+// `string`, …) that the hand-written .go files of the package named pkgName
+// in dirPath refer to (see AnalyzeOwnGoFiles); nil when there are none.
+func OwnGoBuiltinRefs(dirPath, importPath, pkgName string) map[string]bool {
+	return analyzeGoFilesMemo(dirPath, importPath, pkgName).builtinRefs
 }
 
 func analyzeGoFilesMemo(dirPath, importPath, pkgName string) goFilesResult {
@@ -625,6 +635,14 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	}
 
 	pkg, _ := conf.Check(importPath, fset, files, typesInfo)
+	for id, obj := range typesInfo.Uses {
+		if obj != nil && types.Universe.Lookup(id.Name) == obj {
+			if result.builtinRefs == nil {
+				result.builtinRefs = make(map[string]bool)
+			}
+			result.builtinRefs[id.Name] = true
+		}
+	}
 	if pkg == nil {
 		// Even if type-checking fails, try to extract what we can from AST
 		extractFromAST(files, info)
@@ -635,6 +653,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	extractPackageInfo(pkg, info, own)
 	repairUnresolvedSignatures(files, pkg.Name(), info, own)
 	extractMethodsOnForeignTypes(files, typesInfo, pkg, info, own)
+	recordReadOnlyMethods(files, pkg, info)
 	info.AddImportPathKeys(pkg.Name(), importPath)
 	result.ownTypes = make(map[string]bool)
 	for _, name := range pkg.Scope().Names() {
@@ -851,8 +870,17 @@ func repairGenDecl(d *ast.GenDecl, imports map[string]string, pkgName string, in
 	for _, spec := range d.Specs {
 		switch sp := spec.(type) {
 		case *ast.TypeSpec:
+			// An alias whose target go/types could not load (`type
+			// ExecutionContext = go_interop.ExecutionContext`, the target a
+			// package of the GALA module) names it as written.
+			key := pkgName + "." + sp.Name.Name
+			if cur, ok := info.TypeAliases[key]; ok && sp.Assign.IsValid() && sp.TypeParams == nil && transpiler.ContainsUnusable(cur) {
+				if rec := syntacticGoType(sp.Type, imports, pkgName, nil); !transpiler.ContainsUnusable(rec) {
+					info.TypeAliases[key] = rec
+				}
+			}
 			st, ok := sp.Type.(*ast.StructType)
-			td := info.Types[pkgName+"."+sp.Name.Name]
+			td := info.Types[key]
 			if !ok || td == nil || st.Fields == nil {
 				continue
 			}
@@ -1280,6 +1308,48 @@ func isGenericGoType(typ types.Type) bool {
 	return false
 }
 
+// hasSelfEqual reports whether the value method set of typ has
+// `Equal(typ) bool`: the method std.EqualComparable finds (Equatable[T]), so
+// == compares with it in concrete code as in generic code. An Equal on the
+// pointer only, or one taking *typ or another type, does not count.
+func hasSelfEqual(typ types.Type) bool {
+	sel := types.NewMethodSet(typ).Lookup(nil, "Equal")
+	if sel == nil {
+		return false
+	}
+	sig, ok := sel.Type().(*types.Signature)
+	return ok && !sig.Variadic() && sig.Params().Len() == 1 && sig.Results().Len() == 1 &&
+		types.Identical(sig.Params().At(0).Type(), typ) &&
+		types.Identical(sig.Results().At(0).Type(), types.Typ[types.Bool])
+}
+
+// universeComparable is Go's predeclared comparable constraint.
+var universeComparable = types.Universe.Lookup("comparable").Type()
+
+// embedsComparable reports whether iface embeds comparable, directly or
+// through an interface it embeds. seen guards an embedding cycle, which the
+// type checker reports but may still hand over.
+func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bool {
+	for i := range iface.NumEmbeddeds() {
+		e := iface.EmbeddedType(i)
+		if types.Identical(e, universeComparable) {
+			return true
+		}
+		inner, ok := e.Underlying().(*types.Interface)
+		if !ok || seen[inner] {
+			continue
+		}
+		if seen == nil {
+			seen = map[*types.Interface]bool{}
+		}
+		seen[iface] = true
+		if embedsComparable(inner, seen) {
+			return true
+		}
+	}
+	return false
+}
+
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
 // and methods are recorded and, when own (the type belongs to the package being
 // compiled), the unexported ones that package declares as well.
@@ -1321,6 +1391,11 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	// A generic type's comparability depends on its type arguments.
 	if !isGenericGoType(typ) {
 		data.Incomparable = !types.Comparable(typ)
+	}
+	if iface, ok := typ.Underlying().(*types.Interface); ok {
+		data.EmbedsComparable = embedsComparable(iface, nil)
+	} else if !isGenericGoType(typ) {
+		data.SelfEqual = hasSelfEqual(typ)
 	}
 
 	// Extract struct fields. Preserve declaration order in FieldOrder so

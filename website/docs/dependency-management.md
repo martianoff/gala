@@ -573,7 +573,7 @@ module(
 )
 
 # GALA Bazel rules + language module.
-bazel_dep(name = "rules_gala", version = "0.3.2")
+bazel_dep(name = "rules_gala", version = "0.6.11")
 bazel_dep(name = "gala", version = "0.84.1")
 
 # Register the GALA toolchains shipped by the gala language module.

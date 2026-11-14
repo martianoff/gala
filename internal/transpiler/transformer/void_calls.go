@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"strings"
-	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -27,16 +25,28 @@ type voidCallSite struct {
 	lambda bool
 }
 
-// recordVoidCall records call, the lowering of the postfix expression whose
-// last suffix is the call c, when its type is known to be void. A call of
+// recordCallSite records call, the lowering of the postfix expression whose
+// last suffix is the call c, when its type is known to be void, and its
+// position in errorCalls when its type is error. A call of
 // unknown or any other type is not recorded, nor counted as a give-up (see
 // probeExprType). c need not carry its arguments.
-func (t *galaASTTransformer) recordVoidCall(c callSrc, call ast.Expr) {
+func (t *galaASTTransformer) recordCallSite(c callSrc, call ast.Expr) {
 	ce, ok := call.(*ast.CallExpr)
 	if !ok {
 		return
 	}
-	if _, void := t.probeExprType(ce).(transpiler.VoidType); !void {
+	typ := t.probeExprType(ce)
+	if isErrorType(typ) {
+		// A call of type error a void lambda discards is reported here
+		// (see checkDiscardedError).
+		if t.errorCalls == nil {
+			t.errorCalls = make(map[*ast.CallExpr]loopControlSite)
+		}
+		line, col := c.post.at().start()
+		t.errorCalls[ce] = loopControlSite{line, col}
+		return
+	}
+	if _, void := typ.(transpiler.VoidType); !void {
 		return
 	}
 	if t.voidCalls == nil {
@@ -57,7 +67,7 @@ func (t *galaASTTransformer) recordVoidCall(c callSrc, call ast.Expr) {
 // its callee followed by `(...)`, or "" when that is long too.
 func voidCallText(c callSrc) string {
 	text := c.post.at().sourceText()
-	if utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r") {
+	if quotable(text) {
 		return text
 	}
 	if callee := c.calleeText(); callee != "" {

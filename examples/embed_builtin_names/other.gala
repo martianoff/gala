@@ -1,0 +1,8 @@
+package main
+
+// Another file of the package reaches the embed vals main.gala declares,
+// and a hidden var name of theirs, by the names the source gives them.
+
+embed val _embed_copy = "data/greeting.txt"
+
+func fromSibling() string = s"$len / ${_embed_copy.ByteSize()} / ${len.Size()}"

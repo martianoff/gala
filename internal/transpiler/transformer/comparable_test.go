@@ -20,6 +20,25 @@ var equalCall = regexp.MustCompile(`\.Equal\(`)
 // call std.Equal on each field, and std.Equal calls written in the source.
 var synthesizedEqual = regexp.MustCompile(`std\.Equal\(|^func \(`)
 
+// fieldEqualCall matches a synthesized Equal's call of a field's own Equal,
+// `s.f.Equal(other.f)`, when both name the same field.
+var fieldEqualCall = regexp.MustCompile(`\bs\.(\w+)\.Equal\(other\.(\w+)\)`)
+
+// onlyFieldEqualCalls reports whether every Equal call on line is a
+// synthesized Equal's `s.f.Equal(other.f)` of one field.
+func onlyFieldEqualCalls(line string) bool {
+	matches := fieldEqualCall.FindAllStringSubmatch(line, -1)
+	if len(matches) == 0 || len(matches) != len(equalCall.FindAllString(line, -1)) {
+		return false
+	}
+	for _, m := range matches {
+		if m[1] != m[2] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestEqualityLowersToEqual: `==` and `!=` compare values by their Equal
 // method, which every GALA struct, sealed type and tuple has and the
 // collections declare: `a == b` is `a.Equal(b)` and `a != b` is
@@ -160,6 +179,25 @@ func main() { Println(describe(Post(ListOf("intro")))) }`, want: []string{".Equa
 func differ[T comparable](a T, b T) bool = a != b
 
 func main() { Println(same(ListOf(1), ListOf(1)), differ(1, 2)) }`, want: []string{"return std.EqualComparable(a, b)", "return !std.EqualComparable(a, b)"}},
+		{name: "Go type with an Equal of its own", src: `import "time"
+
+func same(a time.Time, b time.Time) bool = a == b
+
+func differ(a time.Time, b time.Time) bool = a != b
+
+func main() { Println(same(time.Unix(0, 0), time.Unix(0, 0)), differ(time.Unix(0, 0), time.Unix(1, 0))) }`, want: []string{"return a.Equal(b)", "return !a.Equal(b)"}},
+		{name: "struct field of a Go type with an Equal", src: `import "time"
+
+struct Ev(at time.Time)
+
+func (e Ev) Equal(o Ev) bool = e.at == o.at
+
+func main() { Println(Ev(time.Unix(0, 0)) == Ev(time.Unix(0, 0))) }`, want: []string{"e.at.Get().Equal(o.at.Get())"}},
+		{name: "Go slice type with an Equal of its own", src: `import "net"
+
+func same(a net.IP, b net.IP) bool = a == b
+
+func main() { Println(same(net.IPv4(1, 2, 3, 4), net.IPv4(1, 2, 3, 4))) }`, want: []string{"return a.Equal(b)"}},
 		{name: "a field compared inside another type's Equal", src: `struct W(xs List[int])
 
 func (w W) Equal(o W) bool = w.xs == o.xs
@@ -244,11 +282,16 @@ func main() { Println(same(1, ArrayOf(1))) }`, want: "return a == b"},
 		{name: "comparisons with nil", src: `func f(g func(int) int, m map[string]int, s []int) bool = g == nil || m != nil || nil == s
 
 func main() { Println(f(nil, nil, nil)) }`, want: "return g == nil || m != nil || nil == s"},
-		{name: "Go comparable struct", src: `import "time"
+		{name: "Go comparable struct with no Equal", src: `import "image"
 
-func same(a time.Time, b time.Time) bool = a == b
+func same(a image.Point, b image.Point) bool = a == b
 
-func main() { Println(same(time.Unix(0, 0), time.Unix(0, 0))) }`, want: "return a == b"},
+func main() { Println(same(image.Pt(0, 0), image.Pt(0, 0))) }`, want: "return a == b"},
+		{name: "pointer to a Go type with an Equal", src: `import "time"
+
+func same(a *time.Time, b *time.Time) bool = a == b
+
+func main() { Println(same(nil, nil)) }`, want: "return a == b"},
 		{name: "mutable collections by pointer", src: `import "martianoff/gala/collection_mutable"
 
 func same(a *collection_mutable.Array[int], b *collection_mutable.Array[int]) bool = a == b
@@ -289,7 +332,7 @@ func main() { Println(describe(Pt(0, 0))) }`, want: "== Origin.Get()"},
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
 			for _, line := range strings.Split(out, "\n") {
-				if equalCall.MatchString(line) && !synthesizedEqual.MatchString(line) {
+				if equalCall.MatchString(line) && !synthesizedEqual.MatchString(line) && !onlyFieldEqualCalls(line) {
 					t.Errorf("unexpected Equal call: %s", line)
 				}
 			}

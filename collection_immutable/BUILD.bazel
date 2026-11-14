@@ -141,6 +141,7 @@ go_test(
     srcs = [
         "array_differential_test.go",
         "hash_cache_test.go",
+        "iterable_impl_test.go",
         "list_differential_test.go",
         "map_set_differential_test.go",
         "rbtree_invariant_test.go",

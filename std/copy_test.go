@@ -1,6 +1,7 @@
 package std
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,4 +60,28 @@ func TestCopyPointerSkipsPointeeCopy(t *testing.T) {
 	assert.Same(t, anyNode, Copy[any](anyNode).(*anyCopyNode))
 	assert.Same(t, anyNode, Copy(anyCopyHolder{Node: anyNode}).Node)
 	assert.Equal(t, 0, anyCalls)
+}
+
+type labelCopy struct{ Label string }
+
+// Copy returns an interface; its result is a labelCopy marked as copied.
+func (c labelCopy) Copy() any { return labelCopy{Label: c.Label + " copied"} }
+
+func (c labelCopy) String() string { return c.Label }
+
+type strayCopy struct{ Label string }
+
+// Copy returns a value of another type, which std.Copy must not put in place
+// of a strayCopy.
+func (c strayCopy) Copy() any { return "not a strayCopy" }
+
+// TestCopyReflectedCopyResult guards which result of a Copy method found by
+// reflection std.Copy returns: one its type argument accepts (the value's own
+// type, or an interface it implements), and otherwise the value copied field
+// by field.
+func TestCopyReflectedCopyResult(t *testing.T) {
+	assert.Equal(t, labelCopy{Label: "a copied"}, Copy(labelCopy{Label: "a"}))
+	assert.Equal(t, labelCopy{Label: "b copied"}, Copy[fmt.Stringer](labelCopy{Label: "b"}))
+	assert.Equal(t, labelCopy{Label: "c copied"}, Copy[any](labelCopy{Label: "c"}))
+	assert.Equal(t, strayCopy{Label: "d"}, Copy(strayCopy{Label: "d"}))
 }

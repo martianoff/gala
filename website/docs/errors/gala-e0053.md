@@ -4,7 +4,7 @@ title: "GALA-E0053 — Pointer Method on a Copy of a Value That Must Not Be Copi
 description: "GALA-E0053 rejects a pointer-receiver call on a val, val field, call result or literal whose type holds a sync.Mutex, WaitGroup, atomic, strings.Builder or bytes.Buffer, because the call would run on a copy."
 keywords: "gala-e0053, gala mutex val, gala copylocks, gala sync.Mutex copy, gala strings.Builder val, gala pointer receiver val, gala nocopy"
 permalink: /docs/errors/gala-e0053/
-last_modified_at: 2026-09-27
+last_modified_at: 2026-11-13
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0053</p>
@@ -27,6 +27,42 @@ A `val`, a `val` struct field (fields are `val` unless marked `var`), a call
 result, a literal and a type assertion cannot be addressed. GALA calls a
 pointer method on such a receiver through a fresh copy, which is fine for
 `url.URL.String` but wrong for these types, so the call is rejected.
+
+Printing calls a method too. `Println`, `Print`, `s"..."` and `f"..."` print a
+value whose `String()` is declared on a pointer receiver by calling that
+`String`, and on a value that cannot be addressed they call it on a copy. So
+printing such a value is rejected the same way:
+
+```gala
+package main
+
+import "sync"
+
+struct Guarded(var mu sync.Mutex, var n int)
+
+func (g *Guarded) String() string = s"guarded ${g.n}"
+
+func main() {
+    val g = Guarded(sync.Mutex{}, 1)
+    Println(g)
+}
+```
+
+```
+error[GALA-E0053]: cannot print this Guarded: it cannot be addressed here, so its String would run on a copy, and Guarded contains sync.Mutex, which must not be copied
+  --> main.gala:11:13
+   |
+11 |     Println(g)
+   |             ^ declare it with `var`, or hold a pointer
+   |
+   = hint: declare it with `var`, or hold a pointer (`&T{...}`)
+```
+
+Declare it with `var g = ...` and `String` runs on `g` itself. Printing a
+struct or a sealed value whose generated `String` prints a field of such a
+type is rejected too: the generated `String` prints each field through a copy
+of it, even when the value printed is a `var` or a pointer. Hold the field as a pointer
+(`g *Guarded`), or declare the outer type's own `String`.
 
 A type must not be copied when it, or any field reached through struct fields
 (and, for a Go type, array elements; not through pointers, slices, maps or
@@ -91,9 +127,10 @@ var c = Counter(&sync.Mutex{}, 0)
 
 **Rationale.** A `val` is stored as `Immutable[T]` and read through `Get()`,
 which returns a copy. Go calls a pointer-receiver method only on an
-addressable value, so the call runs on a copy made for it. For most types the
-only effect is that the method's writes to the receiver are dropped, and the
-`val` stays as it was. For these types the copy breaks the program:
+addressable value, so the call runs on a copy made for it. For most types a
+method that only reads its receiver may run on that copy, and one that changes
+it is [GALA-E0110](/docs/errors/gala-e0110/). For these types the copy breaks
+the program whatever the method does:
 
 - `Lock` and `Unlock` each get their own copy of a `Mutex`, so nothing is
   locked, and the `Unlock` is a fatal runtime error (`sync: unlock of unlocked
@@ -111,5 +148,6 @@ method works on the value itself: a `var`, a function parameter, a pattern
 binding, and a `var` field (of a `var`, or reached through a pointer). A `val`
 field is read through a copy even behind a pointer, which is why the repro
 above is rejected.
-Types that are fine to copy (`url.URL`, `time.Time`) still run their pointer
-methods on a copy of a `val`.
+Types that are fine to copy (`url.URL`, `time.Time`) still run a pointer
+method that only reads its receiver, such as `url.URL.String`, on a copy of a
+`val`; one that changes its receiver is [GALA-E0110](/docs/errors/gala-e0110/).

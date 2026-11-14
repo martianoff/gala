@@ -661,6 +661,10 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		if err := transformer.CheckReservedPrefixNative(root); err != nil {
 			return nil, err
 		}
+		// GALA-E0106: a type named like a Go predeclared type.
+		if err := checkPredeclaredTypeNamesNative(root); err != nil {
+			return nil, err
+		}
 	}
 
 	clause := packageClauseNative(root, docs)
@@ -812,6 +816,9 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		Functions:        make(map[string]*transpiler.FunctionMetadata),
 		Packages:         make(map[string]string),
 		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
+		// Read on demand: only a pointer method called on a value Go
+		// cannot address needs to know whether it writes its receiver.
+		GoReadOnlyMethods: GoReadOnlyMethods,
 	}
 
 	// 0. Populate base metadata if provided (deprecated, for backward compatibility)
@@ -1028,6 +1035,13 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 				a.loadGalaMetadata(path, richAST)
 			}
 		}
+		// GALA-E0107: hand-written Go cannot reach a declaration named like
+		// a Go builtin, which the transpiler renames.
+		if isTopLevel {
+			if err := checkBuiltinNamesReachedFromGo(root, OwnGoBuiltinRefs(dirPath, richAST.OwnImportPath, pkgName)); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	logPhase("analyze-local-go-files", phaseStart)
@@ -1037,7 +1051,9 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
 	siblingImports := make([][]fileImport, len(siblings))
+	richAST.PackageEmbedVals = embedValsNative(root, nil)
 	for i, sib := range siblings {
+		richAST.PackageEmbedVals = embedValsNative(sib.nf.root.GalaNodeRef, richAST.PackageEmbedVals)
 		siblingImports[i] = scanFileImportsNative(sib.nf.root.GalaNodeRef)
 		a.loadGalaImports(siblingImports[i], richAST, mergeVisited)
 	}
@@ -1278,6 +1294,10 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	if err := a.fieldNamedLikeMethodError(richAST, pkgName, filePath); err != nil {
 		return nil, err
 	}
+
+	// 2d. Methods of the package's generic types that would instantiate
+	// other generic types are functions (#872).
+	markFanOutMethods(richAST, pkgName)
 
 	// 3. Discover companion objects - types with Unapply methods that can be
 	// used for pattern matching.
@@ -2679,6 +2699,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		}
 	}
 	scopes.record(pkgAST, a.paths.canonical)
+	// The ownership analysis's borrow summaries, for importers (see
+	// internal/transpiler/ownership). They never change the generated Go.
+	ownershipSummaries(pkgAST, candidatePaths, entries)
 
 	// Scan .go files for exported symbols and type information.
 	// Extract GoExports unconditionally. Even in mixed GALA+Go packages

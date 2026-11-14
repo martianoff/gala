@@ -1,6 +1,6 @@
 # GALA-E0104 — Type parameter only a constraint determines cannot be inferred
 
-**When it fires.** A call of a generic function leaves a type parameter
+**When it fires.** A call of a generic function or method leaves a type parameter
 unbound that a lambda argument needs, and the parameter appears only in the
 constraint of another type parameter (`T` in `[T any, C Labeled[T]]`). GALA
 infers such a parameter, as Go does, from the methods of the other

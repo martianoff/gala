@@ -677,6 +677,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyForInference(paramType, argType, freshParamNames, inferredMap)
 	}
+	t.inferMethodFromConstraints(methodMeta, freshParamNames, structTypeParams, structTypeArgs, inferredMap)
 
 	// Build result in order of type params
 	if len(inferredMap) == 0 {
@@ -1604,6 +1605,55 @@ func (t *galaASTTransformer) substituteGoTypeParamsIn(types []transpiler.Type, s
 		}
 	}
 	return out
+}
+
+// goTypeDataThroughAliases returns the Go type info record of typ (as
+// goTypeLookupName keys it, or, for a bare name, as the hand-written Go of a
+// dot-imported GALA package declares it), following Go type aliases to the
+// type they name: the record of `type ExecutionContext =
+// go_interop.ExecutionContext` is the alias's own, of kind "alias", while
+// what the type is — an interface, a struct — is its target's. nil when Go
+// type info does not describe typ.
+//
+// A record still of kind "alias" is one whose target Go type info does not
+// describe; target is then that target as the alias names it (`error`, a type
+// of a package this file has no Go type information for), nil when unknown.
+func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) (td *transpiler.GoTypeData, target transpiler.Type) {
+	if t.goTypeInfo == nil {
+		return nil, nil
+	}
+	key := t.goTypeLookupName(typ)
+	td = t.goTypeInfo.GetTypeData(key)
+	if name, bare := bareTypeName(typ); td == nil && bare {
+		if key = t.dotImportedGoTypeKey(name); key != "" {
+			td = t.goTypeInfo.GetTypeData(key)
+		}
+	}
+	// The hop bound stops an alias chain that refers back to itself.
+	for hop := 0; hop < 16 && td != nil && td.Kind == "alias"; hop++ {
+		target = t.goTypeInfo.ResolveTypeAlias(key)
+		if target == nil {
+			break
+		}
+		next := t.goTypeLookupName(target)
+		nextTD := t.goTypeInfo.GetTypeData(next)
+		if nextTD == nil {
+			break
+		}
+		key, td, target = next, nextTD, nil
+	}
+	return td, target
+}
+
+// bareTypeName returns the name of typ written without a package qualifier.
+func bareTypeName(typ transpiler.Type) (string, bool) {
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		return v.Name, true
+	case transpiler.NamedType:
+		return v.Name, v.Package == "" && v.ImportPath == ""
+	}
+	return "", false
 }
 
 // goTypeLookupName returns the name Go type info records typ under, one

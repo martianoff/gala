@@ -20,7 +20,7 @@ import (
 // callSrc is a call suffix and the postfix expression it ends, as the postfix
 // driver builds it (lowerSuffix): post carries the hint owner the call takes
 // its slot's type for (postfixSrc.owner). A callSrc built only to quote or
-// locate the call (recordVoidCall, lambdaArgCallee) leaves args empty.
+// locate the call (recordCallSite, lambdaArgCallee) leaves args empty.
 type callSrc struct {
 	post   postfixSrc
 	suffix suffixSrc
@@ -132,15 +132,17 @@ func (c callSrc) calleeText() string {
 	if to.Start < from.Start {
 		return ""
 	}
-	text := tree.Src[from.Start:to.Start]
-	// At most 60 code points.
-	if utf8.RuneCountInString(text) > 60 {
-		return ""
+	if text := tree.Src[from.Start:to.Start]; quotable(text) {
+		return text
 	}
-	if text == "" || strings.ContainsAny(text, "\n\r") {
-		return ""
-	}
-	return text
+	return ""
+}
+
+// quotable reports whether a diagnostic quotes source text as written: when
+// it is non-empty, on one line, at most 60 code points and free of the
+// backticks a diagnostic quotes it in.
+func quotable(text string) bool {
+	return text != "" && utf8.RuneCountInString(text) <= 60 && !strings.ContainsAny(text, "\n\r`")
 }
 
 // at is where p is written.

@@ -146,7 +146,7 @@ by the Go compiler, which reports the type mismatches GALA leaves to it.
 When a variable is declared using `val`:
 1. The transpiler infers the type of the right-hand side (RHS) expression.
 2. In a function, the RHS is the variable's value as it is; at package level, it is wrapped with a call to `std.NewImmutable(rhs)`, so another package reads it through the same accessor.
-3. The variable is added to the transpiler's scope as an immutable variable. Writing it, writing a field reached through it, and `&` of it are rejected; a pointer-receiver method called on it runs on a copy (`std.AddrOfCopy(x)`).
+3. The variable is added to the transpiler's scope as an immutable variable. Writing it, writing a field reached through it, and `&` of it are rejected; a pointer-receiver method called on it runs on a copy (`std.AddrOfCopy(x)`) when it only reads its receiver, and is GALA-E0110 when it can change it.
 
 Example:
 ```gala

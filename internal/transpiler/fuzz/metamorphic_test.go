@@ -15,9 +15,10 @@ import (
 // FuzzAlphaRenaming checks that renaming local binders does not change what
 // a program does. It generates a program (metamorphic_gen_test.go), renames
 // every val, parameter, lambda parameter and pattern variable to a hostile
-// name — obj, _tmp_1, std, panic, string, len, fmt, __p0, or the name of
-// another binder in scope, shadowing it where that keeps every reference
-// resolving as before — and checks that the program builds and prints
+// name — obj, _tmp_1, __tuple_1, _err, std, panic, string, len, fmt, __p0,
+// or the name of another binder in scope, shadowing it where that keeps
+// every reference resolving as before — and its top-level functions to the
+// names of Go builtins (panic, new, len, …), and checks that it builds and prints
 // exactly the output the generator computed. When it does not, the same
 // program with plain names is run too, so the report says whether the
 // renaming is to blame.
@@ -31,7 +32,14 @@ func FuzzAlphaRenaming(f *testing.F) {
 // FuzzEvaluationOrder checks that GALA evaluates left to right. Its
 // programs call tracing functions from operands, positional and named
 // arguments, constructor arguments, default arguments, match subjects,
-// guards and extractors in sub-patterns, and must print the trace the
+// guards and extractors in sub-patterns, read local vars that later
+// operands change through a pointer (an address taken, a pointer-receiver
+// method, a val holding a pointer, a function reading through its pointer
+// parameter) or an element of a Go slice or map that later operands write,
+// some of them named like Go builtins, read the package var counter where a
+// block elsewhere binds the name, assign to a var, an element or counter
+// with `op=` whose right side changes it, call a function out of a slice
+// whose argument replaces it, and must print the trace the
 // generator computed from source order: left to right, an extractor only
 // after the sibling sub-patterns before it matched, a match subject once,
 // one if branch.

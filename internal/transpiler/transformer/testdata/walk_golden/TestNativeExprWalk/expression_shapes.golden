@@ -16,10 +16,10 @@ type P struct {
 }
 
 func (s P) Copy() P {
-	return P{x: std.Copy(s.x), y: std.Copy(s.y)}
+	return P{x: s.x, y: s.y}
 }
 func (s P) Equal(other P) bool {
-	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
+	return s.x.Get() == other.x.Get() && s.y == other.y
 }
 func (s P) String() string {
 	return std.FormatStruct("P", s.x, s.y)

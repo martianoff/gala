@@ -1,0 +1,10 @@
+package report
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/transitive_package_types/geo"
+)
+
+// A library, not a program, whose Go also names shape.Point: the lambda's
+// parameter type.
+func Diagonal(n int) string = geo.Points(n).Map((p) => s"${p.X}/${p.Y}").MkString(" ")

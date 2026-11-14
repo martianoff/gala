@@ -13,6 +13,11 @@ import (
 // Extracted from getExprTypeNameManualUncached for readability.
 func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpiler.Type {
 	xType := t.getExprTypeNameManual(e.X)
+	// A field read through an alias of a pointer (`type Ref *T`) is a field
+	// of T.
+	if ptr, ok := t.followAliasChain(xType).(transpiler.PointerType); ok {
+		xType = ptr
+	}
 	xTypeName := xType.String()
 	// Extract base type name (strip generic parameters + pointer prefix)
 	baseTypeName := stripTypeNameDecorations(xTypeName)
@@ -213,6 +218,14 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		return t.resolveType(id.Name)
 	}
 
+	// A function read out of a slice or map, `fs[0](x)` (markIndex): the
+	// element's result. Its index is no type argument.
+	if t.marked(e.Fun, operandThroughPointer) {
+		if result, ok := t.funcValueCallResult(t.getExprTypeNameManual(e.Fun)); ok {
+			return result
+		}
+	}
+
 	// Handle b.Get() or std.Some()
 	// Capture type arguments from generic calls like Tuple[int, string](...)
 	fun := e.Fun
@@ -230,6 +243,15 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if sel, ok := fun.(*ast.SelectorExpr); ok {
 		if result := t.inferCallSelectorType(e, sel, typeArgs); result != nil && !result.IsNil() {
 			return result
+		}
+		// A call of a func-typed field of a GALA struct, `b.fn(x)`: the
+		// field's result. Only on a receiver already typed (the cache holds
+		// only successes): typing an untyped receiver again would query, and
+		// report, sub-expressions the method path never asked about.
+		if xType, typed := t.exprTypeCache[sel.X]; typed && len(typeArgs) == 0 && t.isStructField(xType, sel.Sel.Name) {
+			if result, ok := t.funcValueCallResult(t.inferSelectorExprType(sel)); ok {
+				return result
+			}
 		}
 	}
 	if id, ok := fun.(*ast.Ident); ok {
@@ -251,6 +273,13 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		}
 	}
 	return transpiler.NilType{}
+}
+
+// isStructField reports whether name is a field of the GALA struct xType is,
+// or points to.
+func (t *galaASTTransformer) isStructField(xType transpiler.Type, name string) bool {
+	_, ok := t.structFieldTypes[t.resolveStructTypeName(stripTypeNameDecorations(xType.String()))][name]
+	return ok
 }
 
 // inferCallSelectorType handles type inference for call expressions with selector function (e.g., x.Method()).

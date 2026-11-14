@@ -1,0 +1,54 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A generic method's own type parameters are inferred from constraints as a
+// function's are, and a receiver may write `_` for a type parameter that
+// another parameter's constraint names.
+type Seq[T any, C any] interface {
+    Rest() C
+    Keep(p func(T) bool) C
+    Show() string
+}
+
+struct Nums(xs Array[int])
+
+func (s Nums) Rest() Nums = Nums(s.xs.Tail())
+func (s Nums) Keep(p func(int) bool) Nums = Nums(s.xs.Filter(p))
+func (s Nums) Show() string = s"Nums(${s.xs.MkString(", ")})"
+
+struct Words(xs List[string])
+
+func (w Words) Rest() Words = Words(w.xs.Tail())
+func (w Words) Keep(p func(string) bool) Words = Words(w.xs.Filter(p))
+func (w Words) Show() string = s"Words(${w.xs.MkString(" ")})"
+
+struct Ops(name string)
+
+// T appears only in C's constraint: it is inferred from the methods of C's
+// type argument, so the lambda's parameter is typed.
+func (o Ops) DropFirstKeep[T any, C Seq[T, C]](xs C, p func(T) bool) C = xs.Rest().Keep(p)
+
+func (o Ops) Label[T any, C Seq[T, C]](xs C) string = s"${o.name}: ${xs.Rest().Show()}"
+
+struct Holder[T any, C Seq[T, C]](inner C)
+
+// The receiver writes `_` for T, which C's constraint names.
+func (h Holder[_, C]) Plain() string = h.inner.Rest().Show()
+
+func (h Holder[_, C]) Tagged[U any](tag U) string = s"${h.inner.Rest().Show()} #$tag"
+
+func main() {
+    val nums = Nums(ArrayOf(1, 2, 3, 4, 5, 6))
+    val words = Words(ListOf("a", "bb", "ccc", "dddd"))
+    val ops = Ops("ops")
+
+    Println(ops.DropFirstKeep(nums, (x) => x > 2).Show())
+    Println(ops.DropFirstKeep(words, (w) => w.Size() > 2).Show())
+    Println(ops.Label(words))
+
+    val h = Holder(nums)
+    Println(h.Plain())
+    Println(h.Tagged(7))
+    Println(Holder(words).Tagged("w"))
+}

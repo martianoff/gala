@@ -1,7 +1,8 @@
 # Coverage of the Lean semantics
 
-Written by hand, except the "Differential testing" section at the end, which a
-differential run generates (see [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#coverage)).
+Written by hand, except two generated sections at the end: "Differential testing", which a
+differential run generates (see [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#coverage)), and
+"Ownership", which `bazel run //internal/formal/ownershipcov/update` generates.
 
 The tiers mean exactly this:
 
@@ -113,10 +114,32 @@ fail if a theorem listed here is missing; keep `requiredTheorems` there and
 | `Gala.Spec.evalList_cons`, `evalList_nil` | **T3, for operand lists.** The arguments of every call (function, lambda, constructor, `Println`), the elements of a tuple and the parts of an interpolated string are evaluated first to last, each completely before the next. The statement is the definition's own equation: the theorem records it, as T1 does. |
 | `Gala.Spec.capturedEnv_captured`, `lookup_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in: every name resolves as it did there, a `var` to the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells, as evaluation builds them; that evaluation keeps this invariant is not proved. |
 | `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, for scoping.** A default value is evaluated in a scope holding only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That the order of evaluation is the decided one (arguments as written, then defaults in parameter order) is the definition of `bindArgs`, not a theorem. |
+| `Gala.Gala2Lean.Examples.Match.eval_total` | About gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it: its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
 
-These are theorems about the *spec* (and a model of one lowering), not about the
-transpiler. T2 for whole programs (renaming every binder leaves the outcome unchanged) is
+These are theorems about the *spec* (and a model of one lowering, and one program's
+translation under gala2lean's prelude), not about the transpiler. T2 for whole programs (renaming every binder leaves the outcome unchanged) is
 not proved: the lemmas above are the name-resolution part of it.
+
+## gala2lean
+
+[gala2lean](README.md#gala2lean-a-third-oracle) translates the programs it covers to
+Lean definitions. It translates subset S1 (as galaspec models it, except as listed below)
+and nothing of S2 yet. It translates a whole program or nothing: one construct outside
+its subset anywhere in the program, even in a function `main` never calls, stops it, and
+is reported. Beyond what Core JSON leaves out, it does not translate yet:
+
+- lambdas, function types and functions as values (`lambda`, `type-func`, `func-value`);
+  interpolated strings (`interp`); named arguments and default values (`named-arg`,
+  `param-default`, `field-default`, `default-argument`);
+- a `return` or an assignment to an outer `var` inside an expression
+  (`return-inside-expression`, `var-mutated-inside-expression`);
+- tuples of more than four elements; a sealed type used as a zero value without a
+  default case (`sealed-zero-value`); a package-level variable whose type is not plain to
+  see from its initializer (`untyped-global`); local functions and structs;
+- printing or comparing a value of a type other than `int`, `string` or `bool` in a
+  program that declares methods (`method`).
+
+The section below gives each example's gala2lean verdict next to galaspec's.
 
 ## What is not covered
 
@@ -132,16 +155,22 @@ Each program runs through galaspec and through the transpiler and Go; the two
 runs are compared on stdout and outcome. These are test results, not proofs: they
 say the programs below behave as the spec says, not that the transpiler is correct.
 
+Each program gala2lean translates is also run as Lean, a third account of what
+it means, and compared with the Go run (the gala2lean columns). A program it
+translates and that agrees says that the translation and Go print the same
+thing for it, nothing more.
+
 ### Verdicts
 
-| Verdict | Examples | Generated programs |
-|---|---|---|
-| AGREE | 28 | 1 |
-| DISAGREE | 0 | 0 |
-| UNSUPPORTED | 431 | 34 |
-| INCONCLUSIVE | 0 | 0 |
+| Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
+|---|---|---|---|---|
+| AGREE | 28 | 1 | 10 | 1 |
+| DISAGREE | 0 | 0 | 0 | 0 |
+| UNSUPPORTED | 445 | 34 | 463 | 34 |
+| INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
+Examples gala2lean translates whose Lean run agrees with Go: **10** (ratchet baseline 10).
 
 ### Constructs
 
@@ -150,47 +179,49 @@ A construct is **modelled** when galaspec ran a program using it to the end, and
 disagrees or is inconclusive. **Proved** lists the kernel-checked theorems about the
 spec that cover it. A construct no program reached is "not seen": the run says
 nothing about it.
+**gala2lean** says how the programs using it that gala2lean translated fared
+when run as Lean and compared with Go.
 
-| Construct (Core JSON kind) | Modelled | Tested against the spec | Proved |
-|---|---|---|---|
-| `file` | yes | yes: 29 agree | no |
-| `val` | yes | yes: 11 agree | no |
-| `var` | yes | yes: 4 agree | no |
-| `func` | yes | yes: 29 agree | no |
-| `param` | yes | yes: 26 agree | no |
-| `struct` | yes | yes: 3 agree | no |
-| `field` | yes | yes: 7 agree | no |
-| `sealed` | yes | yes: 7 agree | no |
-| `variant` | yes | yes: 7 agree | no |
-| `type-name` | yes | yes: 27 agree | no |
-| `block` | yes | yes: 29 agree | no |
-| `if` | yes | yes: 6 agree | no |
-| `return` | yes | yes: 5 agree | no |
-| `assign` | yes | yes: 4 agree | no |
-| `incdec` | not seen | no | no |
-| `int` | yes | yes: 26 agree | no |
-| `bool` | yes | yes: 8 agree | no |
-| `string` | yes | yes: 21 agree | no |
-| `name` | yes | yes: 29 agree | no |
-| `unary` | yes | yes: 5 agree | no |
-| `binary` | yes | yes: 22 agree | no |
-| `call` | yes | yes: 29 agree | no |
-| `select` | yes | yes: 4 agree | no |
-| `paren` | yes | no: 1 agree | no |
-| `tuple` | not seen | no | no |
-| `if-expr` | yes | yes: 10 agree | no |
-| `match` | yes | yes: 13 agree | no |
-| `case` | yes | yes: 13 agree | no |
-| `pat-wild` | yes | yes: 7 agree | no |
-| `pat-name` | yes | yes: 7 agree | no |
-| `pat-lit` | yes | yes: 7 agree | no |
-| `pat-tuple` | not seen | no | no |
-| `pat-extract` | yes | yes: 4 agree | no |
-| `named-arg` | yes | yes: 5 agree | no |
-| `lambda` | yes | yes: 5 agree | no |
-| `type-func` | yes | yes: 3 agree | no |
-| `interp` | yes | yes: 13 agree | no |
-| `interp-text` | yes | yes: 13 agree | no |
+| Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
+|---|---|---|---|---|
+| `file` | yes | yes: 29 agree | no | translated: 11 agree |
+| `val` | yes | yes: 11 agree | no | translated: 1 agree |
+| `var` | yes | yes: 4 agree | no | translated: 2 agree |
+| `func` | yes | yes: 29 agree | no | translated: 11 agree |
+| `param` | yes | yes: 26 agree | no | translated: 10 agree |
+| `struct` | yes | yes: 3 agree | no | translated: 1 agree |
+| `field` | yes | yes: 7 agree | no | translated: 2 agree |
+| `sealed` | yes | yes: 7 agree | no | translated: 4 agree |
+| `variant` | yes | yes: 7 agree | no | translated: 4 agree |
+| `type-name` | yes | yes: 27 agree | no | translated: 10 agree |
+| `block` | yes | yes: 29 agree | no | translated: 11 agree |
+| `if` | yes | yes: 6 agree | no | translated: 2 agree |
+| `return` | yes | yes: 5 agree | no | translated: 2 agree |
+| `assign` | yes | yes: 4 agree | no | translated: 2 agree |
+| `incdec` | not seen | no | no | not translated |
+| `int` | yes | yes: 26 agree | no | translated: 9 agree |
+| `bool` | yes | yes: 8 agree | no | translated: 2 agree |
+| `string` | yes | yes: 21 agree | no | translated: 6 agree |
+| `name` | yes | yes: 29 agree | no | translated: 11 agree |
+| `unary` | yes | yes: 5 agree | no | translated: 2 agree |
+| `binary` | yes | yes: 22 agree | no | translated: 9 agree |
+| `call` | yes | yes: 29 agree | no | translated: 11 agree |
+| `select` | yes | yes: 4 agree | no | translated: 1 agree |
+| `paren` | yes | no: 1 agree | no | not translated |
+| `tuple` | not seen | no | no | not translated |
+| `if-expr` | yes | yes: 10 agree | no | translated: 5 agree |
+| `match` | yes | yes: 13 agree | no | translated: 6 agree |
+| `case` | yes | yes: 13 agree | no | translated: 6 agree |
+| `pat-wild` | yes | yes: 7 agree | no | translated: 2 agree |
+| `pat-name` | yes | yes: 7 agree | no | translated: 4 agree |
+| `pat-lit` | yes | yes: 7 agree | no | translated: 2 agree |
+| `pat-tuple` | not seen | no | no | not translated |
+| `pat-extract` | yes | yes: 4 agree | no | translated: 2 agree |
+| `named-arg` | yes | yes: 5 agree | no | not translated |
+| `lambda` | yes | yes: 5 agree | no | not translated |
+| `type-func` | yes | yes: 3 agree | no | not translated |
+| `interp` | yes | yes: 13 agree | no | not translated |
+| `interp-text` | yes | yes: 13 agree | no | not translated |
 
 ### Outside the subset
 
@@ -198,28 +229,123 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 
 | Construct | Programs |
 |---|---|
-| `import` | 123 |
-| `method-call` | 119 |
+| `import` | 129 |
+| `method-call` | 123 |
 | `index` | 72 |
 | `generic-type` | 53 |
 | `generic-decl` | 15 |
-| `address-of` | 9 |
+| `address-of` | 12 |
 | `unresolved-name` | 9 |
 | `float-literal` | 8 |
 | `composite-literal` | 7 |
 | `local-struct` | 4 |
 | `stuck` | 4 |
 | `by-name-arg` | 3 |
+| `method` | 3 |
 | `slice-type` | 3 |
 | `char-literal` | 2 |
 | `expression-pattern` | 2 |
 | `for` | 2 |
 | `format-string` | 2 |
-| `method` | 2 |
 | `type-Value` | 2 |
 | `type-any` | 2 |
+
+### Outside what gala2lean translates
+
+The first construct gala2lean did not translate in each program, by how many programs (64 kinds, the top 20 shown):
+
+| Construct | Programs |
+|---|---|
+| `generic-type` | 131 |
+| `import` | 107 |
+| `index` | 44 |
+| `interp` | 25 |
+| `method-call` | 23 |
+| `type-func` | 16 |
+| `type-float64` | 13 |
+| `qualified-type` | 10 |
+| `field-default` | 8 |
+| `method` | 7 |
+| `lambda` | 6 |
+| `variadic-param` | 6 |
+| `address-of` | 5 |
+| `named-arg` | 5 |
+| `pointer-type` | 5 |
+| `untyped-global` | 5 |
+| `local-struct` | 4 |
+| `slice-type` | 4 |
+| `type-error` | 4 |
+| `expression-pattern` | 3 |
 
 ### Known disagreements
 
 None.
 <!-- difftest:end -->
+
+<!-- ownership:begin -->
+## Ownership: why pointers are not unique
+
+Generated by `bazel run //internal/formal/ownershipcov/update`; do not edit by hand.
+It is the output of phase 1 of [the ownership design](../docs/OWNERSHIP_DESIGN.MD) (inferred
+uniqueness, `internal/transpiler/ownership`) over the repository's GALA code. A pointer
+binding (a `Ptr`/`*T` receiver or parameter, or a local `val` bound to a pointer) is
+**unique** when it is of fresh origin, only ever lent downward, never reaches Go, and points
+at an owned-shaped value. These are analysis results, not proofs.
+
+| | Libraries | Examples | 
+|---|---|---|
+| Functions and methods | 1758 | 1686 | 
+| …with a pointer binding | 584 | 133 | 
+| …whose pointer bindings are all unique | 0 (0.0%) | 2 (1.5%) | 
+| Pointer bindings | 834 | 197 | 
+| …receivers unique | 0 of 467 | 0 of 48 | 
+| …params unique | 0 of 90 | 2 of 44 | 
+| …locals unique | 0 of 277 | 4 of 105 | 
+| Packages that did not analyze | 0 | 2 | 
+
+### Reasons
+
+Each binding that is not unique is counted once under every reason it has. The first
+location is where the analysis first met the reason.
+
+| Reason | Meaning | Libraries | Examples | First location |
+|---|---|---|---|---|
+| `stored` | stored in a field, constructor, literal, tuple or Option | 18 | 3 | `collection_mutable/array.gala:431` |
+| `collection` | aliased through a collection | 24 | 5 | `collection_mutable/array.gala:387` |
+| `aliased` | bound to another name | 13 | 1 | `collection_immutable/array.gala:422` |
+| `returned` | returned while not fresh | 75 | 5 | `collection_immutable/array.gala:499` |
+| `captured` | captured by a closure, method value, by-name argument or bind | 119 | 18 | `collection_immutable/array.gala:638` |
+| `passed-to-go` | it, or a reference inside its pointee, flows into Go | 315 | 36 | `collection_immutable/array.gala:184` |
+| `compared` | compared or matched | 1 | 12 | `std/ptr.gala:14` |
+| `escaping-callee` | lent to a parameter or receiver that escapes | 293 | 75 | `collection_immutable/array.gala:98` |
+| `unknown-callee` | used in a call without a summary | 22 | 10 | `collection_mutable/array.gala:106` |
+| `rebound` | its name is bound more than once | 20 | 0 | `collection_immutable/treemap.gala:329` |
+| `other` | another use (reassigned, indexed, address taken, an operand) | 26 | 1 | `collection_immutable/array.gala:332` |
+| `origin` | not of fresh origin | 282 | 67 | `collection_immutable/array.gala:96` |
+| `from-go` | received from Go | 497 | 63 | `collection_immutable/array.gala:183` |
+| `shape` | the pointee is not owned-shaped | 834 | 140 | `collection_immutable/array.gala:96` |
+| `nullable` | a `*T` that may be nil | 11 | 77 | `collection_immutable/array.gala:422` |
+
+### Where pointers reach Go
+
+The Go functions, methods and conversions that `passed-to-go` bindings reach, by how many
+bindings reach each (the 15 most frequent).
+
+| Go side | Bindings |
+|---|---|
+| `passed-to-go:a reference inside it` | 158 |
+| `passed-to-go:a reference inside it, passed to the function value f` | 47 |
+| `passed-to-go:a reference inside it, passed to go_interop.SliceAppend` | 19 |
+| `passed-to-go:a reference inside it, passed to the function value p` | 19 |
+| `passed-to-go:a reference inside it, passed to std.Some` | 13 |
+| `passed-to-go:a reference inside it, passed to collection_immutable.treeMapNode` | 12 |
+| `passed-to-go:a reference inside it, passed to collection_immutable.treeNode` | 11 |
+| `passed-to-go:a reference inside it, passed to List.Append` | 8 |
+| `passed-to-go:bytes.Buffer.WriteString receiver, on a field` | 8 |
+| `passed-to-go:a reference inside it, passed to mutableTreeMapCompare` | 7 |
+| `passed-to-go:a reference inside it, passed to treeMapCompare` | 7 |
+| `passed-to-go:bytes.Buffer.WriteByte receiver, on a field` | 7 |
+| `passed-to-go:a reference inside it, passed to compare` | 6 |
+| `passed-to-go:a reference inside it, passed to std.Equal` | 6 |
+| `passed-to-go:a reference inside it, passed to std.KeyIndex` | 6 |
+<!-- ownership:end -->

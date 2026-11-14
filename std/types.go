@@ -54,10 +54,16 @@ var (
 // pointer-receiver MarshalJSON applies too. HTML escaping is left to the
 // calling encoder, which applies its own setting to the result.
 func (i Immutable[T]) MarshalJSON() ([]byte, error) {
+	return marshalJSONNoEscape(&i.value)
+}
+
+// marshalJSONNoEscape encodes ptr's value as JSON without HTML escaping. It
+// is not generic, so it is compiled once rather than with every Immutable.
+func marshalJSONNoEscape(ptr any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(&i.value); err != nil {
+	if err := enc.Encode(ptr); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -107,26 +113,43 @@ func unwrapImmutable(obj any) any {
 // happens before the calls to its right.
 func EvalOperand[T any](v T) T { return v }
 
+// Copy and Equal are generic so that a value of a concrete type reaches its
+// own Copy or Equal without reflection, and are called with hundreds of type
+// arguments in a large program. Go compiles a generic function once per type
+// argument shape, so each keeps only what needs T in its generic body and
+// leaves the reflective rest to a plain function compiled once (copyAny,
+// equalAny).
 func Copy[T any](v T) T {
-	val := reflect.ValueOf(v)
-
-	// Handle nil pointers early - return nil as-is. A pointer whose Copy is
-	// its pointee's value-receiver Copy is returned as-is too: that Copy
-	// copies the pointee, not the pointer, so calling it copied the whole
-	// pointee (for a linked structure, every node behind the pointer) only to
-	// discard the result or put the pointee where the pointer belongs.
-	if val.Kind() == reflect.Ptr && (val.IsNil() || copiesPointee(val.Type())) {
+	// v is converted to any where it is used, as Equal does.
+	if copiesAsIs(any(v)) {
 		return v
 	}
-
-	// Handle nil interfaces
-	if !val.IsValid() {
-		return v
-	}
-
 	if c, ok := any(v).(Copyable[T]); ok {
 		return c.Copy()
 	}
+	if r, ok := copyAny(any(v), reflect.TypeFor[T]()); ok {
+		return r.(T)
+	}
+	return v
+}
+
+// copiesAsIs reports whether Copy returns v itself without looking for a Copy
+// method: v is a nil interface or a nil pointer, or a pointer whose Copy is
+// its pointee's value-receiver Copy. That Copy copies the pointee, not the
+// pointer, so calling it copied the whole pointee (for a linked structure,
+// every node behind the pointer) only to discard the result or put the
+// pointee where the pointer belongs.
+func copiesAsIs(v any) bool {
+	val := reflect.ValueOf(v)
+	return !val.IsValid() || val.Kind() == reflect.Ptr && (val.IsNil() || copiesPointee(val.Type()))
+}
+
+// copyAny is Copy's reflective part, for a v that is not Copyable[T], where t
+// is Copy's type argument T: v's own type, or an interface v implements. It
+// returns v's copy, which v.(T) accepts, reporting ok, or reports !ok when v
+// is copied as it is.
+func copyAny(v any, t reflect.Type) (any, bool) {
+	val := reflect.ValueOf(v)
 
 	// Fallback to check Copy method via reflection if T is any or interface
 	// mismatch. A Copy whose concrete result is not the value's own type is
@@ -135,15 +158,15 @@ func Copy[T any](v T) T {
 		mt := copyMeth.Type()
 		if mt.NumIn() == 0 && mt.NumOut() == 1 && (mt.Out(0) == val.Type() || mt.Out(0).Kind() == reflect.Interface) {
 			res := copyMeth.Call(nil)[0].Interface()
-			if r, ok := res.(T); ok {
-				return r
+			if holds(res, t) {
+				return res, true
 			}
 		}
 	}
 
 	// For non-struct types (primitives, slices, etc.), return as-is (shallow copy)
 	if val.Kind() != reflect.Struct {
-		return v
+		return nil, false
 	}
 
 	newStruct := reflect.New(val.Type()).Elem()
@@ -155,7 +178,19 @@ func Copy[T any](v T) T {
 			newField.Set(reflect.ValueOf(copiedField))
 		}
 	}
-	return newStruct.Interface().(T)
+	return newStruct.Interface(), true
+}
+
+// holds reports whether the type assertion v.(t) succeeds.
+func holds(v any, t reflect.Type) bool {
+	vt := reflect.TypeOf(v)
+	if vt == nil {
+		return false
+	}
+	if t.Kind() == reflect.Interface {
+		return vt.Implements(t)
+	}
+	return vt == t
 }
 
 // copiesPointee reports whether the pointer type ptr's Copy is its pointee's
@@ -169,25 +204,27 @@ func copiesPointee(ptr reflect.Type) bool {
 
 func Equal[T any](v1, v2 T) bool {
 	v1, v2 = unwrapPanic(v1), unwrapPanic(v2)
-	if eq, ok := equalPrimitive(v1, v2); ok {
+	// Each conversion to any is its own, so the boxes of the primitive path
+	// stay on the stack and only the reflective fallback's escape.
+	if eq, ok := equalPrimitive(any(v1), any(v2)); ok {
 		return eq
 	}
 	if e, ok := any(v1).(Equatable[T]); ok {
 		return e.Equal(v2)
 	}
+	return equalAny(any(v1), any(v2))
+}
 
+// equalAny is Equal's reflective part (see Copy), for values whose type is
+// neither primitive nor Equatable[T] of Equal's type argument.
+func equalAny(v1, v2 any) bool {
 	val1 := reflect.ValueOf(v1)
 	val2 := reflect.ValueOf(v2)
 
 	// Fallback to check Equal method via reflection if T is any or interface mismatch
-	if val1.IsValid() {
-		equalMeth := val1.MethodByName("Equal")
-		if equalMeth.IsValid() && equalMeth.Type().NumIn() == 1 && equalMeth.Type().NumOut() == 1 && equalMeth.Type().Out(0).Kind() == reflect.Bool {
-			argType := equalMeth.Type().In(0)
-			if val2.Type().AssignableTo(argType) {
-				res := equalMeth.Call([]reflect.Value{val2})[0].Bool()
-				return res
-			}
+	if val1.IsValid() && val2.IsValid() {
+		if m, ok := equalMethodTaking(val1, val2.Type()); ok {
+			return m.Call([]reflect.Value{val2})[0].Bool()
 		}
 	}
 
@@ -219,15 +256,15 @@ func Equal[T any](v1, v2 T) bool {
 // path concludes for them (a NaN equals nothing, and values of different
 // types differ), without its reflection. A named type is left out: it may
 // declare an Equal of its own.
-func equalPrimitive[T any](v1, v2 T) (eq bool, ok bool) {
+func equalPrimitive(v1, v2 any) (eq bool, ok bool) {
 	// The predeclared primitive types; the collection packages' HashSet
 	// hashes the same ones but uintptr and the complex types (std.HashesByValue).
-	switch a := any(v1).(type) {
+	switch v1.(type) {
 	case bool, string,
 		int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64, complex64, complex128:
-		return a == any(v2), true
+		return v1 == v2, true
 	}
 	return false, false
 }
@@ -507,16 +544,18 @@ func hashAddress(a uint64) uint32 {
 }
 
 // FormatStruct formats a struct as GALA prints it, `Name(field, field, …)`.
-// The String method generated on every shorthand struct calls it. Each field
-// prints as fmt's %v prints it, so a nested struct, sealed value, collection,
-// Option or tuple prints in its own format; a field held in an Immutable
-// prints the value it holds, and a function field prints as <fn>.
+// The String method generated on every shorthand struct and every sealed
+// type (Option, Either and Try among them) calls it. Each field prints as
+// fmt's %v prints it, so a nested struct, sealed value, collection, Option or
+// tuple prints in its own format; a field held in an Immutable prints the
+// value it holds, and a function field prints as <fn>.
 //
-// A pointer field prints the value it points to, but for a pointer to a
-// struct with no String method of its own, which prints its address as %v
-// does. A pointer field this goroutine is already printing, reached again
-// through a cycle, prints as <cycle>, so a value that refers to itself through
-// a pointer field prints instead of recursing without end.
+// A pointer field prints the value it points to; a pointer to a struct with
+// no String method of its own, such as a Go struct, prints as %v prints a
+// pointer operand, `&{field field}`. A pointer field this goroutine is
+// already printing, reached again through a cycle, prints as <cycle>, so a
+// value that refers to itself through a pointer field prints instead of
+// recursing without end.
 func FormatStruct(name string, fields ...any) string {
 	var b strings.Builder
 	b.WriteString(name)
@@ -538,30 +577,129 @@ func formatField(b *strings.Builder, f any) {
 	case v.Kind() == reflect.Func:
 		b.WriteString("<fn>")
 	case v.Kind() == reflect.Pointer && !v.IsNil():
-		switch f.(type) {
-		case fmt.Stringer, fmt.Formatter, error:
-			// A pointer to a value that prints itself (a GALA struct, a
-			// mutable collection) prints by its method, which can lead
-			// back here: the cycle guard.
-			key := printingKey{goroutineID(), v.Pointer(), v.Type()}
-			if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
-				b.WriteString("<cycle>")
-				return
-			}
-			defer printing.Delete(key)
-			fmt.Fprint(b, f)
-		default:
-			if v.Elem().Kind() == reflect.Struct {
-				// A Go struct: its address, as %v prints a nested pointer,
-				// rather than reading its fields (a lock, a file) here.
-				fmt.Fprintf(b, "%p", f)
-				return
-			}
-			fmt.Fprint(b, v.Elem().Interface())
+		_, printsItself := f.(fmt.Stringer)
+		if !printsItself {
+			_, printsItself = f.(fmt.Formatter)
 		}
-	default:
+		if !printsItself {
+			_, printsItself = f.(error)
+		}
+		if !printsItself && v.Elem().Kind() != reflect.Struct {
+			// A pointer to a plain value prints that value, which cannot
+			// lead back here.
+			fmt.Fprint(b, v.Elem().Interface())
+			return
+		}
+		// A value that prints itself (a GALA struct, a mutable collection)
+		// by its method, or a Go struct by the fields %v prints, which is
+		// `&{field field}` for a pointer operand: either can lead back
+		// here, so the cycle guard.
+		key := printingKey{goroutineID(), v.Pointer(), v.Type()}
+		if _, busy := printing.LoadOrStore(key, struct{}{}); busy {
+			b.WriteString("<cycle>")
+			return
+		}
+		defer printing.Delete(key)
 		fmt.Fprint(b, f)
+	default:
+		fmt.Fprint(b, printed(v, f))
 	}
+}
+
+var (
+	stringerType  = reflect.TypeFor[fmt.Stringer]()
+	formatterType = reflect.TypeFor[fmt.Formatter]()
+	errorType     = reflect.TypeFor[error]()
+)
+
+// pointerStringTypes caches, per reflect.Type, whether a value of the type
+// prints by a String declared on a pointer receiver only (see pointerString).
+var pointerStringTypes sync.Map // reflect.Type -> bool
+
+// printsByPointerString reports whether a value of type t prints by a String
+// declared on *t: t has no String, Error or Format of its own, which fmt
+// would use first, and *t has String.
+func printsByPointerString(t reflect.Type) bool {
+	if known, ok := pointerStringTypes.Load(t); ok {
+		return known.(bool)
+	}
+	ok := t.Name() != "" && t.Kind() != reflect.Pointer && t.Kind() != reflect.Interface &&
+		!t.Implements(stringerType) && !t.Implements(formatterType) && !t.Implements(errorType) &&
+		reflect.PointerTo(t).Implements(stringerType)
+	pointerStringTypes.Store(t, ok)
+	return ok
+}
+
+// pointerString is the text of v, a value whose type declares String on a
+// pointer receiver only, as that String gives it for a copy of v (see
+// PtrString); ok is false for any other value, which fmt prints itself, and
+// for one whose String panics on the copy (a Go type that refuses to be
+// copied, such as strings.Builder), which fmt then prints as it would have.
+func pointerString(v reflect.Value) (s string, ok bool) {
+	if !v.IsValid() || !printsByPointerString(v.Type()) {
+		return "", false
+	}
+	defer func() {
+		if recover() != nil {
+			s, ok = "", false
+		}
+	}()
+	p := reflect.New(v.Type())
+	p.Elem().Set(v)
+	return p.Interface().(fmt.Stringer).String(), true
+}
+
+// Printed is v as GALA prints a value whose type is known only at run time:
+// one of a type parameter, of `any` or of another interface type, such as an
+// element a collection, a tuple or a generic function prints. A value whose
+// type declares String on a pointer receiver only prints as that String gives
+// it (see PtrString); any other value is v itself, which fmt prints as it
+// would have. Println, Print and interpolation pass such a value through it,
+// and FormatStruct prints every field by the same rule.
+func Printed(v any) any {
+	switch v.(type) {
+	case nil, string, bool, int, int64, int32, uint8, uint32, uint64, float64, fmt.Stringer, error:
+		// The common elements, and a value that prints itself, need no
+		// reflection.
+		return v
+	}
+	return printed(reflect.ValueOf(v), v)
+}
+
+// printed is Printed(f), for f's reflect.Value v.
+func printed(v reflect.Value, f any) any {
+	if s, ok := pointerString(v); ok {
+		return shown{s}
+	}
+	return f
+}
+
+// shown is the text a value prints as, from PtrString or Printed. It prints as that
+// text with fmt's %v and %s, and is not a string, so Print still puts a
+// space between it and another operand that is not one.
+type shown struct{ text string }
+
+func (s shown) String() string { return s.text }
+
+// PtrString is the text of v, whose type declares `String() string` on a
+// pointer receiver: GALA prints such a value by calling that String on a
+// copy of it. Println, Print and interpolation call it for a value of a GALA
+// type with such a String that a pointer-receiver method would get a copy of
+// too (a val, a call's result); an addressable one is printed by StringAt.
+// FormatStruct does the same for a field.
+func PtrString[T any, P interface {
+	*T
+	String() string
+}](v T) shown {
+	return shown{P(&v).String()}
+}
+
+// StringAt is the text p's String gives, as PtrString's is for a copy.
+// Println, Print and interpolation call it with the address of an
+// addressable value whose String is declared on a pointer receiver only, so
+// String runs on the value itself.
+func StringAt[P interface{ String() string }](p P) shown {
+	return shown{p.String()}
 }
 
 // printingKey names a pointer one goroutine is printing. The type tells a

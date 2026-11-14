@@ -1,0 +1,55 @@
+package main
+
+import (
+    "sort"
+
+    . "martianoff/gala/go_interop"
+)
+
+// An element of a Go slice or map is read before the operands to its right
+// are evaluated, even when a later call writes it through the shared
+// storage. Each line prints the value the left-to-right order gives.
+
+func setFirst(xs []int, v int) int {
+    xs[0] = v
+    v
+}
+
+func addAt(m map[string]int, k string, v int) int {
+    m[k] = m[k] + v
+    m[k]
+}
+
+struct Grid(cells []int)
+
+func sumFirst(xs []int, v int) int = xs[0] + setFirst(xs, v)
+
+val shared = SliceOf(9)
+
+func viaNamed(s sort.IntSlice) int = s[0] + setFirst(s, 40)
+
+func main() {
+    val xs = SliceOf(1, 2)
+    Println(s"slice element: ${xs[0] + setFirst(xs, 10)}")
+
+    val m = MapPut(MapEmpty[string, int](), "a", 1)
+    Println(s"map element: ${m["a"] + addAt(m, "a", 10)}")
+
+    val g = Grid(SliceOf(3, 4))
+    Println(s"slice in a field: ${g.cells[0] + setFirst(g.cells, 30)}")
+
+    val ys = SliceOf(5)
+    Println(s"slice parameter: ${sumFirst(ys, 50)}")
+
+    // An element passed as an argument ahead of the call that writes it.
+    val zs = SliceOf(7)
+    Println(s"argument: ${Tuple(zs[0], setFirst(zs, 70))}")
+
+    // A slice held in a package-level val, and a Go named slice type.
+    Println(s"package-level slice: ${shared[0] + setFirst(shared, 90)}")
+    Println(s"Go named slice type: ${viaNamed(sort.IntSlice(SliceOf(4, 8)))}")
+
+    // A string's bytes are its own: nothing to order.
+    val s = "hey"
+    Println(s"string byte: ${s[0]}")
+}

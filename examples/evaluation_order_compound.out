@@ -1,0 +1,12 @@
+plus: 2
+minus: 4
+times: 6
+divide: 10
+string: ab
+captured local: 2
+slice element: 2
+map element: 2
+through a pointer: 3
+plain local: 6
+index read first: 11 2
+function from a slice: 2

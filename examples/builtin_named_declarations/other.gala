@@ -1,0 +1,8 @@
+package main
+
+// Another file of the package refers to the builtin-named declarations of
+// main.gala, and its own generated code to Go's builtins.
+func fromOtherFile() string = Some(len(5)) match {
+    case Some(n) => s"$n ${panic(0)} $string $std $max"
+    case _ => "none"
+}

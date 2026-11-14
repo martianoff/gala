@@ -229,13 +229,13 @@ func runMutTreeMap[K cmp.Ordered](t *testing.T, kind KeyKind[K]) {
 			lo, hi := 0, len(keys)-1
 			for m.NonEmpty() {
 				if p.Rng.Intn(2) == 0 {
-					e := m.PopMinEntry()
+					e := TreeMap_PopMinEntry(m)
 					if e.V1.Get() != keys[lo] || e.V2.Get() != ref[keys[lo]] {
 						p.Fatalf("PopMinEntry = %v, want (%v, %d)", e, keys[lo], ref[keys[lo]])
 					}
 					lo++
 				} else {
-					e := m.PopMaxEntry()
+					e := TreeMap_PopMaxEntry(m)
 					if e.V1.Get() != keys[hi] || e.V2.Get() != ref[keys[hi]] {
 						p.Fatalf("PopMaxEntry = %v, want (%v, %d)", e, keys[hi], ref[keys[hi]])
 					}

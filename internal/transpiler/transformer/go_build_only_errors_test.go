@@ -65,6 +65,42 @@ func main() {
 			contains: []string{"cannot use &pt (Ptr[Pt]) as Pt", "declare the parameter, field or variable as Ptr[Pt], or pass the value itself: `pt`"},
 		},
 		{
+			name: "Ptr to a struct assigned to a value target of a multiple assignment",
+			input: `package main
+
+struct Pt(X int)
+
+func main() {
+    var pt = Pt(1)
+    var q = Pt(0)
+    var n = 0
+    q, n = &pt, 2
+    Println(q.X, n)
+}`,
+			code:     galaerr.CodePointerForValue,
+			line:     9,
+			contains: []string{"cannot use &pt (Ptr[Pt]) as Pt", "or pass the value itself: `pt`"},
+		},
+		{
+			name: "Ptr among one call's results assigned to a value target",
+			input: `package main
+
+struct Pt(X int)
+
+func pair(p Ptr[Pt]) (Ptr[Pt], int) = (p, 2)
+
+func main() {
+    var pt = Pt(1)
+    var q = Pt(0)
+    var n = 0
+    q, n = pair(&pt)
+    Println(q.X, n)
+}`,
+			code:     galaerr.CodePointerForValue,
+			line:     11,
+			contains: []string{"cannot use pair(&pt) (Ptr[Pt]) as Pt", "declare the parameter, field or variable as Ptr[Pt]"},
+		},
+		{
 			name: "field of a collection type initialised with EmptyArray()",
 			input: `package main
 

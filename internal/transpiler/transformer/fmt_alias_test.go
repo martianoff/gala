@@ -51,7 +51,7 @@ func main() { Println(fmt()) }`,
 		{
 			name:     "a type parameter named fmt",
 			body:     "func show[fmt any](x fmt) string = s\"v=$x\"\nfunc main() { Println(show(2)) }",
-			contains: []string{`_gala_fmt.Sprintf("v=%v", x)`},
+			contains: []string{`_gala_fmt.Sprintf("v=%v", std.Printed(x))`},
 		},
 		{
 			name:     "fmt imported under another name",

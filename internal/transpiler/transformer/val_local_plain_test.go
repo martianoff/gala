@@ -174,8 +174,9 @@ func f() int {
 }
 
 // TestLocalValStaysImmutable checks that the plain lowering of a local val
-// keeps every guarantee the box gave: a pointer-receiver method runs on a
-// copy, so it cannot change the val, and a write or `&` is still rejected.
+// keeps every guarantee the box gave: a pointer-receiver method that only
+// reads its receiver runs on a copy, one that changes it is rejected
+// (GALA-E0110), and a write or `&` is still rejected.
 func TestLocalValStaysImmutable(t *testing.T) {
 	trans := newTranspiler()
 	const decls = `package main
@@ -187,18 +188,25 @@ func (c *Counter) Bump() int {
     c.n
 }
 
+func (c *Counter) Peek() int = c.n
+
 struct Holder(var c Counter)
 
 `
-	t.Run("pointer method on a val runs on a copy", func(t *testing.T) {
-		got, err := trans.Transpile(decls+"func f() int {\n    val c = Counter(1)\n    c.Bump()\n}", "")
+	t.Run("read-only pointer method on a val runs on a copy", func(t *testing.T) {
+		got, err := trans.Transpile(decls+"func f() int {\n    val c = Counter(1)\n    c.Peek()\n}", "")
 		require.NoError(t, err)
-		assert.Contains(t, got, "return std.AddrOfCopy(c).Bump()")
+		assert.Contains(t, got, "return std.AddrOfCopy(c).Peek()")
 	})
-	t.Run("pointer method on a field of a val runs on a copy", func(t *testing.T) {
-		got, err := trans.Transpile(decls+"func f() int {\n    val h = Holder(Counter(1))\n    h.c.Bump()\n}", "")
+	t.Run("mutating pointer method on a val is rejected", func(t *testing.T) {
+		_, err := trans.Transpile(decls+"func f() int {\n    val c = Counter(1)\n    c.Bump()\n}", "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0110")
+	})
+	t.Run("read-only pointer method on a field of a val runs on a copy", func(t *testing.T) {
+		got, err := trans.Transpile(decls+"func f() int {\n    val h = Holder(Counter(1))\n    h.c.Peek()\n}", "")
 		require.NoError(t, err)
-		assert.Contains(t, got, "return std.AddrOfCopy(h.c).Bump()")
+		assert.Contains(t, got, "return std.AddrOfCopy(h.c).Peek()")
 	})
 	t.Run("pointer method on a var addresses it", func(t *testing.T) {
 		got, err := trans.Transpile(decls+"func f() int {\n    var c = Counter(1)\n    c.Bump()\n}", "")

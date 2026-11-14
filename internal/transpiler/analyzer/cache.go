@@ -197,7 +197,27 @@ import (
 //
 // v41: a type parameter's constraint is a transpiler.Type, which may carry
 // type arguments (`C Iterable[T, C]`). A v40 payload records it as a name.
-const CacheVersion = "v41"
+//
+// v42: a Go interface records whether it embeds comparable
+// (GoTypeData.EmbedsComparable), so == on a type parameter it constrains
+// compares as on one constrained by comparable, and a Go type whether its
+// value method set has Equal(T) bool (GoTypeData.SelfEqual), which == then
+// calls. A v41 payload lacks both.
+//
+// v43: a Go type alias whose target go/types could not load (a package of
+// the GALA module, `type ExecutionContext = go_interop.ExecutionContext`)
+// records the target as written. A v42 payload records it as unresolved.
+//
+// v44: a function or method that takes or returns a pointer records its
+// ownership borrow summary (FunctionMetadata/MethodMetadata.Borrow). A v43
+// payload lacks it, so a caller in another package would see every pointer
+// it lends to that function as escaping.
+//
+// v45: a method with a pointer receiver records what its body does with the
+// receiver (MethodMetadata.ReceiverEffects), and a Go type which of its
+// pointer methods only read their receiver (GoTypeData.ReadOnlyMethods). A
+// v44 payload lacks both, so every such method would count as mutating.
+const CacheVersion = "v45"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

@@ -1,0 +1,143 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// An operand is read before the operands to its right are evaluated, even
+// when a later call changes it through a pointer: a pointer parameter, a
+// pointer-receiver method, or a pointer held in a val or a field. Each line
+// prints the value the left-to-right order gives.
+
+struct Counter(var n int)
+
+func (c *Counter) Inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+func (c *Counter) Sum() int = c.n + c.Inc()
+
+struct Holder(var c Counter)
+
+struct Ref(p *Counter)
+
+func bump(p *int) int {
+    *p = *p + 10
+    *p
+}
+
+func incVia(p *Counter) int = p.Inc()
+
+func viaParam(p *int) int = *p + bump(p)
+
+val viaLambda = (p *Counter) => p.n + p.Inc()
+
+func self(p *Counter) *Counter = p
+
+func (c Counter) Plus(k int) int = c.n * 100 + k
+
+struct Box(var fn func(int) int)
+
+func swap(b *Box) int {
+    b.fn = (x) => x * 10
+    1
+}
+
+func fieldViaParam(p *Counter) int = p.n + incVia(p)
+
+func (c Counter) Two(a int, b int) int = c.n * 100 + a * 10 + b
+
+func pair(a int, b int) int = a * 100 + b
+
+struct Outer(var inner Box)
+
+func swapInner(o *Outer) int {
+    o.inner.fn = (x) => x * 10
+    1
+}
+
+type CounterRef *Counter
+
+func viaAlias(p CounterRef) int = p.n + p.Inc()
+
+var calls = 0
+
+func tick() int {
+    calls = calls + 1
+    0
+}
+
+func main() {
+    var x = 1
+    Println(s"address taken: ${x + bump(&x)}")
+
+    var c = Counter(1)
+    Println(s"pointer receiver: ${c.n + c.Inc()}")
+    Println(s"pointer argument: ${c.n + incVia(&c)}")
+
+    val p = &c
+    Println(s"pointer val: ${p.n + p.Inc()}")
+
+    var y = 1
+    Println(s"pointer parameter: ${viaParam(&y)}")
+    Println(s"field through a pointer parameter: ${fieldViaParam(&c)}")
+    Println(s"field of a pointer receiver: ${c.Sum()}")
+
+    var h = Holder(Counter(1))
+    Println(s"field receiver: ${h.c.n + h.c.Inc()}")
+
+    val r = Ref(&c)
+    Println(s"pointer field: ${r.p.n + c.Inc()}")
+
+    // Locals named like Go builtins are renamed in the generated Go.
+    var len = 5
+    val grow = () int => {
+        len = len + 1
+        len
+    }
+    Println(s"renamed var, closure: ${len + grow()}")
+
+    var string = 5
+    Println(s"renamed var, address taken: ${string + bump(&string)}")
+
+    var d = Counter(1)
+    ArrayOf(&d).ForEach((q) => Println(s"lambda parameter: ${q.n + q.Inc()}"))
+    Println(s"top-level lambda: ${viaLambda(&d)}")
+    Println(s"call result: ${self(&d).n + d.Inc()}")
+
+    // A value-receiver method or a func field called through a pointer
+    // reads its target before the arguments are evaluated.
+    val q = &d
+    Println(s"value method through a pointer: ${q.Plus(q.Inc())}")
+    var b = Box((x) => x + 1)
+    val bp = &b
+    Println(s"func field through a pointer: ${bp.fn(swap(bp))}")
+
+    // The same when the receiver is a field path, or the pointer's type is
+    // an alias.
+    var h2 = Holder(Counter(1))
+    Println(s"value method on a field: ${h2.c.Plus(h2.c.Inc())}")
+    var o = Outer(Box((x) => x + 1))
+    val op = &o
+    Println(s"func field below a pointer: ${op.inner.fn(swapInner(op))}")
+    var e = Counter(1)
+    Println(s"pointer alias: ${viaAlias(&e)}")
+
+    // Named arguments written out of parameter order are evaluated as
+    // written, also when one reads through a pointer.
+    var f = Counter(1)
+    val fp = &f
+    Println(s"named arguments through a pointer: ${pair(b = fp.n, a = incVia(fp))}")
+    var g = Counter(1)
+    val gp = &g
+    Println(s"named arguments, value method through a pointer: ${gp.Two(b = gp.Inc(), a = tick())}")
+
+    // The same through a pointer held in a var.
+    var k = Counter(1)
+    var kp = &k
+    val reread = () => kp.n
+    Println(s"value method through a var pointer: ${kp.Plus(kp.Inc())} ${reread()}")
+    var b2 = Box((x) => x + 1)
+    var bp2 = &b2
+    val rebind = () => bp2
+    Println(s"func field through a var pointer: ${bp2.fn(swap(bp2))} ${rebind().fn(1)}")
+}
