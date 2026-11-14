@@ -33,6 +33,9 @@ type Record struct {
 	Constructs map[string]int
 	// Spec is galaspec's outcome.
 	Spec Outcome
+	// Lean is the third oracle's result, gala2lean's translation run with
+	// Lean; nil when the run did not use it.
+	Lean *LeanRecord
 }
 
 // Baseline is the ratchet the coverage may not fall below.
@@ -40,6 +43,21 @@ type Baseline struct {
 	// AgreeingExamples is how many examples run wholly inside the subset
 	// and agree with the spec.
 	AgreeingExamples int `json:"agreeing_examples"`
+	// Gala2LeanAgreeingExamples is how many examples gala2lean translates
+	// whose Lean run agrees with Go.
+	Gala2LeanAgreeingExamples int `json:"gala2lean_agreeing_examples"`
+}
+
+// Gala2LeanAgreeingExamples is how many example records gala2lean
+// translated and whose Lean run agrees with the real one.
+func Gala2LeanAgreeingExamples(records []Record) int {
+	n := 0
+	for _, r := range records {
+		if r.Source == FromExample && r.Lean != nil && r.Lean.Verdict == Agree {
+			n++
+		}
+	}
+	return n
 }
 
 // AgreeingExamples is how many example records agree: each one ran wholly
@@ -56,15 +74,33 @@ func AgreeingExamples(records []Record) int {
 
 // CheckBaseline fails when the agreeing examples fell below the baseline.
 // A count above it is reported, so the baseline can be raised.
+// The gala2lean count is checked only for a run that used gala2lean.
 func CheckBaseline(b Baseline, records []Record) (problem, note string) {
-	n := AgreeingExamples(records)
-	switch {
-	case n < b.AgreeingExamples:
-		return fmt.Sprintf("only %d examples agree with the spec, down from the baseline %d: the coverage may not go down", n, b.AgreeingExamples), ""
-	case n > b.AgreeingExamples:
-		return "", fmt.Sprintf("%d examples agree with the spec, up from the baseline %d: raise agreeing_examples in baseline.json", n, b.AgreeingExamples)
+	var problems, notes []string
+	check := func(n, base int, what, field string) {
+		switch {
+		case n < base:
+			problems = append(problems, fmt.Sprintf("only %d %s, down from the baseline %d: the coverage may not go down", n, what, base))
+		case n > base:
+			notes = append(notes, fmt.Sprintf("%d %s, up from the baseline %d: raise %s in baseline.json", n, what, base, field))
+		}
 	}
-	return "", ""
+	check(AgreeingExamples(records), b.AgreeingExamples, "examples agree with the spec", "agreeing_examples")
+	if usesLean(records) {
+		check(Gala2LeanAgreeingExamples(records), b.Gala2LeanAgreeingExamples,
+			"examples gala2lean translates agree with Go", "gala2lean_agreeing_examples")
+	}
+	return strings.Join(problems, "; "), strings.Join(notes, "; ")
+}
+
+// usesLean reports whether the run compared gala2lean's translations.
+func usesLean(records []Record) bool {
+	for _, r := range records {
+		if r.Lean != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // MinAgreeing is how many agreeing programs a construct needs, with none
@@ -98,25 +134,87 @@ func Render(c Coverage) string {
 	b.WriteString("Each program runs through galaspec and through the transpiler and Go; the two\n")
 	b.WriteString("runs are compared on stdout and outcome. These are test results, not proofs: they\n")
 	b.WriteString("say the programs below behave as the spec says, not that the transpiler is correct.\n\n")
+	lean := usesLean(c.Records)
+	if lean {
+		b.WriteString("Each program gala2lean translates is also run as Lean, a third account of what\n")
+		b.WriteString("it means, and compared with the Go run (the gala2lean columns). A program it\n")
+		b.WriteString("translates and that agrees says that the translation and Go print the same\n")
+		b.WriteString("thing for it, nothing more.\n\n")
+	}
 
-	renderVerdicts(&b, c.Records)
-	fmt.Fprintf(&b, "Examples that run wholly inside the subset and agree with the spec: **%d** (ratchet baseline %d).\n\n",
+	renderVerdicts(&b, c.Records, lean)
+	fmt.Fprintf(&b, "Examples that run wholly inside the subset and agree with the spec: **%d** (ratchet baseline %d).\n",
 		AgreeingExamples(c.Records), c.Baseline.AgreeingExamples)
-	renderConstructs(&b, c)
+	if lean {
+		fmt.Fprintf(&b, "Examples gala2lean translates whose Lean run agrees with Go: **%d** (ratchet baseline %d).\n",
+			Gala2LeanAgreeingExamples(c.Records), c.Baseline.Gala2LeanAgreeingExamples)
+	}
+	b.WriteString("\n")
+	renderConstructs(&b, c, lean)
 	renderUnsupported(&b, c.Records)
+	if lean {
+		renderLeanUnsupported(&b, c.Records)
+	}
 	renderKnown(&b, c.Known)
 	return b.String()
 }
 
-func renderVerdicts(b *strings.Builder, records []Record) {
+func renderVerdicts(b *strings.Builder, records []Record, lean bool) {
 	counts := map[Source]map[Verdict]int{FromExample: {}, FromGenerator: {}}
+	leanCounts := map[Source]map[Verdict]int{FromExample: {}, FromGenerator: {}}
 	for _, r := range records {
 		counts[r.Source][r.Verdict]++
+		if r.Lean != nil {
+			leanCounts[r.Source][r.Lean.Verdict]++
+		}
 	}
 	b.WriteString("### Verdicts\n\n")
-	b.WriteString("| Verdict | Examples | Generated programs |\n|---|---|---|\n")
+	if !lean {
+		b.WriteString("| Verdict | Examples | Generated programs |\n|---|---|---|\n")
+		for _, v := range Verdicts {
+			fmt.Fprintf(b, "| %s | %d | %d |\n", v, counts[FromExample][v], counts[FromGenerator][v])
+		}
+		b.WriteString("\n")
+		return
+	}
+	b.WriteString("| Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |\n|---|---|---|---|---|\n")
 	for _, v := range Verdicts {
-		fmt.Fprintf(b, "| %s | %d | %d |\n", v, counts[FromExample][v], counts[FromGenerator][v])
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %d |\n", v, counts[FromExample][v], counts[FromGenerator][v],
+			leanCounts[FromExample][v], leanCounts[FromGenerator][v])
+	}
+	b.WriteString("\n")
+}
+
+// renderLeanUnsupported lists what gala2lean did not translate.
+func renderLeanUnsupported(b *strings.Builder, records []Record) {
+	programs := map[string]int{}
+	for _, r := range records {
+		if r.Lean != nil && r.Lean.Verdict == Unsupported {
+			programs[r.Lean.Construct]++
+		}
+	}
+	b.WriteString("### Outside what gala2lean translates\n\n")
+	if len(programs) == 0 {
+		b.WriteString("gala2lean translated every program.\n\n")
+		return
+	}
+	renderCounts(b, programs, "The first construct gala2lean did not translate in each program, by how many programs")
+}
+
+// renderCounts writes counts as a table, most frequent first, at most
+// maxUnsupportedRows rows, after the sentence intro.
+func renderCounts(b *strings.Builder, counts map[string]int, intro string) {
+	kinds := slices.SortedFunc(maps.Keys(counts), func(x, y string) int {
+		return cmp.Or(cmp.Compare(counts[y], counts[x]), cmp.Compare(x, y))
+	})
+	fmt.Fprintf(b, "%s (%d kinds", intro, len(kinds))
+	if len(kinds) > maxUnsupportedRows {
+		fmt.Fprintf(b, ", the top %d shown", maxUnsupportedRows)
+		kinds = kinds[:maxUnsupportedRows]
+	}
+	b.WriteString("):\n\n| Construct | Programs |\n|---|---|\n")
+	for _, k := range kinds {
+		fmt.Fprintf(b, "| `%s` | %d |\n", k, counts[k])
 	}
 	b.WriteString("\n")
 }
@@ -126,12 +224,33 @@ type constructTally struct {
 	ran, agree, disagree, inconclusive int
 }
 
-func renderConstructs(b *strings.Builder, c Coverage) {
+// add counts one program's verdict.
+func (t *constructTally) add(v Verdict) {
+	switch v {
+	case Agree:
+		t.agree++
+	case Disagree:
+		t.disagree++
+	case Inconclusive:
+		t.inconclusive++
+	}
+}
+
+func renderConstructs(b *strings.Builder, c Coverage, lean bool) {
 	tally := map[string]*constructTally{}
+	leanTally := map[string]*constructTally{}
 	for _, k := range coreexport.Kinds() {
 		tally[k] = &constructTally{}
+		leanTally[k] = &constructTally{}
 	}
 	for _, r := range c.Records {
+		if r.Lean != nil && r.Lean.Verdict != Unsupported {
+			for k := range r.Constructs {
+				if t, ok := leanTally[k]; ok {
+					t.add(r.Lean.Verdict)
+				}
+			}
+		}
 		if r.Verdict == Unsupported {
 			continue
 		}
@@ -145,14 +264,7 @@ func renderConstructs(b *strings.Builder, c Coverage) {
 			if k := r.Spec.Kind; k == KindOK || k == KindPanic {
 				t.ran++
 			}
-			switch r.Verdict {
-			case Agree:
-				t.agree++
-			case Disagree:
-				t.disagree++
-			case Inconclusive:
-				t.inconclusive++
-			}
+			t.add(r.Verdict)
 		}
 	}
 	b.WriteString("### Constructs\n\n")
@@ -160,8 +272,17 @@ func renderConstructs(b *strings.Builder, c Coverage) {
 	fmt.Fprintf(b, "**tested against the spec** when at least %d programs using it agree and none\n", MinAgreeing)
 	b.WriteString("disagrees or is inconclusive. **Proved** lists the kernel-checked theorems about the\n")
 	b.WriteString("spec that cover it. A construct no program reached is \"not seen\": the run says\n")
-	b.WriteString("nothing about it.\n\n")
-	b.WriteString("| Construct (Core JSON kind) | Modelled | Tested against the spec | Proved |\n|---|---|---|---|\n")
+	b.WriteString("nothing about it.\n")
+	if lean {
+		b.WriteString("**gala2lean** says how the programs using it that gala2lean translated fared\n")
+		b.WriteString("when run as Lean and compared with Go.\n")
+	}
+	b.WriteString("\n")
+	if lean {
+		b.WriteString("| Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |\n|---|---|---|---|---|\n")
+	} else {
+		b.WriteString("| Construct (Core JSON kind) | Modelled | Tested against the spec | Proved |\n|---|---|---|---|\n")
+	}
 	for _, k := range coreexport.Kinds() {
 		t := tally[k]
 		modelled, tested := "not seen", "no"
@@ -180,7 +301,19 @@ func renderConstructs(b *strings.Builder, c Coverage) {
 		if ts := c.Proved[k]; len(ts) > 0 {
 			proved = "`" + strings.Join(ts, "`, `") + "`"
 		}
-		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", k, modelled, tested, proved)
+		if !lean {
+			fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", k, modelled, tested, proved)
+			continue
+		}
+		lt := leanTally[k]
+		translated := "not translated"
+		switch {
+		case lt.disagree > 0 || lt.inconclusive > 0:
+			translated = fmt.Sprintf("translated: %d agree, %d disagree, %d inconclusive", lt.agree, lt.disagree, lt.inconclusive)
+		case lt.agree > 0:
+			translated = fmt.Sprintf("translated: %d agree", lt.agree)
+		}
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s | %s |\n", k, modelled, tested, proved, translated)
 	}
 	b.WriteString("\n")
 }
@@ -200,19 +333,7 @@ func renderUnsupported(b *strings.Builder, records []Record) {
 		b.WriteString("No program was outside the subset.\n\n")
 		return
 	}
-	kinds := slices.SortedFunc(maps.Keys(programs), func(x, y string) int {
-		return cmp.Or(cmp.Compare(programs[y], programs[x]), cmp.Compare(x, y))
-	})
-	fmt.Fprintf(b, "The constructs galaspec stopped at, by how many programs it stopped at each (%d kinds", len(kinds))
-	if len(kinds) > maxUnsupportedRows {
-		fmt.Fprintf(b, ", the top %d shown", maxUnsupportedRows)
-		kinds = kinds[:maxUnsupportedRows]
-	}
-	b.WriteString("):\n\n| Construct | Programs |\n|---|---|\n")
-	for _, k := range kinds {
-		fmt.Fprintf(b, "| `%s` | %d |\n", k, programs[k])
-	}
-	b.WriteString("\n")
+	renderCounts(b, programs, "The constructs galaspec stopped at, by how many programs it stopped at each")
 }
 
 func renderKnown(b *strings.Builder, known []Known) {
@@ -223,7 +344,7 @@ func renderKnown(b *strings.Builder, known []Known) {
 	}
 	b.WriteString("| Program | Issue | Symptom |\n|---|---|---|\n")
 	for _, k := range known {
-		fmt.Fprintf(b, "| `%s` | #%d | %s |\n", k.Program, k.Issue, strings.ReplaceAll(k.Symptom, "|", `\|`))
+		fmt.Fprintf(b, "| `%s` | #%d | %s |\n", k.Key(), k.Issue, strings.ReplaceAll(k.Symptom, "|", `\|`))
 	}
 }
 

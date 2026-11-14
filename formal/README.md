@@ -32,6 +32,10 @@ GALA release.
   in a small GALA core, and the Go constructs the transpiler lowers them to (tagged
   struct, `Unapply` chain, panic).
 
+- **gala2lean's prelude and proofs**, `Gala/Gala2Lean/`: the runtime model that the Lean
+  `internal/formal/gala2lean` writes for a GALA program imports, and theorems about one
+  such translation (see [gala2lean](#gala2lean-a-third-oracle)).
+
 [COVERAGE.md](COVERAGE.md) lists what is modelled, tested and proved.
 
 ```mermaid
@@ -58,6 +62,7 @@ Each definition's doc comment says what it models, and each file's header names 
 | `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
 | `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS` in `BUILD.bazel`. Lake and the Lake proof check find modules by directory, not through it. |
 | `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems` the theorems about it. |
+| `Gala/Gala2Lean/` | gala2lean's prelude (`Prelude`), a translation it wrote (`Examples/`) and theorems about it (`Theorems`); see [gala2lean](#gala2lean-a-third-oracle). |
 | `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
 | `galaspec_tests.sh` | Runs the galaspec fixture tests under Bazel, from `formal/` in the runfiles. |
 | `scripts/ProofCheck.lean` | The proof check (below). |
@@ -180,6 +185,77 @@ must know the version.
 **Proving a theorem COVERAGE.md lists:** add it to `requiredTheorems` in
 `scripts/ProofCheck.lean` and to `REQUIRED_THEOREMS` in `BUILD.bazel`.
 
+## gala2lean: a third oracle
+
+galaspec is GALA's definition, written by hand. `internal/formal/gala2lean` is a second,
+mechanical account: a deterministic translator from a program's Core JSON to ordinary
+Lean 4 definitions, one per GALA function, which Lean runs and which can be reasoned
+about like any Lean code. It does not replace galaspec; the differential run compares
+both with the real transpiler and Go.
+
+```mermaid
+flowchart LR
+    SRC[GALA program] --> EXP[core exporter] --> J[Core JSON]
+    J --> SPEC[galaspec] --> V{compare}
+    J --> G2L[gala2lean] --> LEAN[Lean module<br/>imports Gala/Gala2Lean/Prelude] --> RUN[lean --run] --> V
+    SRC --> TR[transpiler + go build] --> V
+```
+
+- **Provable output.** Every function is a `def` in `Gala.Gen.Prog St`, which is
+  `ExceptT Panic (StateT St Option)`: the state holds the printed output and the
+  package-level variables, a panic keeps the state, and `none` is divergence, as in
+  Aeneas. A function that recurses (alone or with others, in a `mutual` block) is
+  defined by `partial_fixpoint`, so it has equations; no definition is `partial`. Where
+  `partial_fixpoint` cannot prove a function monotone, the run reports that function by
+  name (`monotonicity:<function>`) instead of falling back to `partial`.
+- **Proofs about generated code.** `Gala/Gala2Lean/Examples/Match.lean` is the
+  translator's output for `tests/src/match.gala`, unedited (a test fails when it differs
+  from what the translator writes); `Gala/Gala2Lean/Theorems.lean` proves `eval_total`
+  about it. Regenerate it after changing the translator:
+
+  ```shell
+  bazel run //internal/formal/gala2lean/cmd/gala2lean -- -namespace Gala.Gala2Lean.Examples.Match \
+      "$PWD/formal/tests/src/match.gala" > formal/Gala/Gala2Lean/Examples/Match.lean
+  ```
+
+- **Deterministic.** The same Core JSON gives byte-identical Lean (tested on every
+  example).
+- **Nothing dropped.** A construct outside what it translates is reported, by name and
+  position, for each declaration it occurs in, and nothing is written. A top-level
+  declaration it does not translate (an `import`, a generic type) means nothing until a
+  name refers to it, and every name it cannot resolve is reported, as that declaration's
+  construct; in a program that declares methods, only `int`, `string` and `bool` values
+  may be printed or compared with `==` (a `String` or `Equal` method would change them).
+
+To run one program:
+
+```shell
+bazel run //internal/formal/gala2lean/cmd/gala2lean -- -main "$PWD/main.gala" > Main.lean
+lean -o lib/Gala/Gala2Lean/Prelude.olean Gala/Gala2Lean/Prelude.lean   # once, from formal/
+LEAN_PATH=$PWD/lib lean --run Main.lean
+```
+
+The tests: `bazel test //internal/formal/gala2lean:gala2lean_test` (no Lean: determinism,
+the committed translation, unsupported constructs), and, with Lean,
+`bazel test --config=formal //internal/formal/gala2lean:lean_test`, which runs every
+fixture in `tests/src` through the translation and Lean and compares it with the
+fixture's `.out` and `.outcome`. The differential run uses the same `lean` (or
+`GALA_LEAN_BIN` without the config).
+
+### What gala2lean trusts
+
+A gala2lean result is only as good as these parts. None of them is the transformer.
+
+| Component | Why it is trusted | Mitigation |
+|---|---|---|
+| The translator, `internal/formal/gala2lean` | Its rules decide what each Lean definition means | Every rule is mechanical and listed in its package doc; the output is compared with galaspec and with Go on every translated example |
+| The prelude, `Gala/Gala2Lean/Prelude.lean` | It models Go's `int64` division and shifts, panics and how `Println`/`Print` lay out values | Small (about 170 lines); independent of galaspec's `Print.lean`, so a mistake in either shows up as a disagreement |
+| The shared front end: galop parser, interpolated-string splitter, Core JSON exporter and the analyzer's literal hints | gala2lean and galaspec read the same Core JSON | As for galaspec (docs/FORMAL_SEMANTICS.MD, "What is trusted") |
+| The Lean kernel and compiler | Lean checks the theorems and runs the programs | none needed |
+
+A theorem about a translation, such as `eval_total`, holds for the translation under the
+prelude's model. It says nothing about the Go build, which is tested, not proved.
+
 ## Honest coverage
 
 These rules apply to every doc, release note and PR that mentions this work:
@@ -191,6 +267,9 @@ These rules apply to every doc, release note and PR that mentions this work:
 - Neither word is used for constructs outside the modelled subset.
 - We never claim the transpiler is verified. A lowering model proves what a correct
   lowering must do, not that the transpiler does it.
+- For gala2lean, a program is **translated** when gala2lean writes Lean for it, and
+  **agrees** when that Lean prints what the Go build prints. Neither says the program or
+  the transpiler is verified.
 
 ## Licensing
 
