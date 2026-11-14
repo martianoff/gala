@@ -319,9 +319,69 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 | a method of a generic type whose signature names another generic type, e.g. `Array.ToList()`, `HashMap.Keys()` | a free function `collection_immutable.Array_ToList(arr)`, unless an interface the declaring package sees has a method of that name (`Iterable`, `Seq`, ...). Go compiles every method of a generic type for each type argument, so a method that brings in another generic type is a function, compiled only where it is called |
 | `Array[T]`, `List[T]`, `HashMap[K, V]` | `collection_immutable.Array[T]` etc.: `ArrayOf`, `ArrayFromSlice`, `.Size()`, `.ToGoSlice()` |
 | package-level `var X` / `val X` | a Go variable / a `std.Immutable` variable (read with `X.Get()`) |
+| `func Step(inout p Parser)`, `func (inout p Parser) Advance()` | the same function and pointer method, which [lend the GALA body a copy](#inout-functions-and-methods); GALA code calls the body, `GALA_Step` or `GALA_Parser_Advance` |
 | PascalCase / camelCase names | exported / unexported, exactly as in Go. GALA never renames an identifier |
 
 Every type also gets `Copy()`, `Equal(other)` and, for sealed types, `String()`.
+
+### `inout` functions and methods
+
+An [`inout` parameter](GALA.MD#inout-parameters) promises the callee an
+exclusive place for the call. Go makes no such promise: it may pass a
+pointer it keeps, shares with another goroutine, or passes twice. So an
+exported function or method with an `inout` parameter or receiver keeps its
+Go signature, but Go calls a wrapper that lends the GALA body a copy:
+
+```go
+// func Transfer(inout from Account, inout to Account, amount int) in GALA
+func Transfer(from *Account, to *Account, amount int) {
+	_gala_in_from := *from // copy in
+	_gala_in_to := *to
+	GALA_Transfer(&_gala_in_from, &_gala_in_to, amount)
+	*from = _gala_in_from // copy out, on a normal return only
+	*to = _gala_in_to
+}
+
+// GALA_Transfer is generated: it is the GALA body of Transfer, ...
+func GALA_Transfer(from *Account, to *Account, amount int) { ... }
+```
+
+- **Go calls `Transfer`.** An `inout` method stays a Go method with a
+  pointer receiver, `func (a *Account) Deposit(amount int) int`, so method
+  sets and interfaces work as for any pointer method.
+- **GALA calls the body.** A GALA call of the function, in this package or
+  another, calls `GALA_Transfer`, or `GALA_Account_Deposit(&a, amount)` for an
+  `inout` method, and pays no copies. The `GALA_` prefix is reserved
+  ([GALA-E0097](errors/GALA-E0097.md)), so these names cannot clash with a
+  declaration of yours; two generated names that would clash are GALA-E0111.
+  Some calls keep calling the wrapper, which is just as correct and costs the
+  two copies: a function value (`val f = Transfer`), a call through an
+  interface, a method with a `Ptr` receiver, a generic method, and a method
+  that declares a Go result list.
+- **Aliased arguments.** `Transfer(a, a, 5)` from Go copies `*a` twice and
+  copies both back, left to right: the last write wins.
+- **Panics.** A panic in the body skips the copy back. A Go caller that
+  recovers sees its values unchanged.
+- **Callbacks.** A Go callback that reads `*a` through its own pointer while
+  the body runs sees the value from before the call.
+- **The copy is shallow.** A slice, map or pointer field still shares its
+  target with whatever Go holds.
+- **Cost.** Two shallow struct copies per call from Go. A Go-facing API that
+  is called in a hot loop with large structs can take a `Ptr[T]` instead.
+
+A non-exported `inout` function gets a wrapper too, since Go files of its
+own package can call it. One that lends a place of a type that must not be
+copied (a `strings.Builder`) has none, and only GALA can call it; an exported
+one is GALA-E0111.
+
+The other direction is narrower. GALA lends an `inout` place to Go only where
+Go provably keeps no reference to it: a Go pointer method on the compiler's
+no-retain allow-list (`bytes.Buffer.WriteString`, `strings.Builder.Grow`,
+...). Each entry is checked in CI against the pinned Go compiler's escape
+analysis, and programs cannot add entries. Any other Go call that would get
+the place's address is [GALA-E0113](errors/GALA-E0113.md); copy the place
+first (`var tmp = b`, call Go on `tmp`, then `b = tmp`). `strings.Builder`'s
+write methods are not on the list: they store the builder's own address.
 
 ### Methods of generic types that Go sees as functions
 

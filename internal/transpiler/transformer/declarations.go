@@ -1102,26 +1102,42 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 	// Go code can call an exported function or method with a nil pointer.
 	// A method lowered to a function takes its receiver as the first
 	// parameter, which is checked as the receiver.
+	recvLowered := d.recv != nil && receiver == nil
+	var entryChecks []ast.Stmt
 	if ast.IsExported(name) {
 		var recvField *ast.Field
-		recvLowered := d.recv != nil && receiver == nil
 		switch {
 		case recvLowered:
 			recvField = funcType.Params.List[0]
 		case receiver != nil:
 			recvField = receiver.List[0]
 		}
-		checks := t.ptrReceiverEntryCheck(recvField, funcSlot.funcName)
-		checks = append(checks, t.ptrEntryChecks(funcType.Params, funcSlot.funcName, func(pos int) bool { return !recvLowered || pos > 0 })...)
-		body = withPtrEntryChecks(body, checks)
+		entryChecks = t.ptrReceiverEntryCheck(recvField, funcSlot.funcName)
+		entryChecks = append(entryChecks, t.ptrEntryChecks(funcType.Params, funcSlot.funcName, func(pos int) bool { return !recvLowered || pos > 0 })...)
 	}
-
-	return &ast.FuncDecl{
+	fd := &ast.FuncDecl{
 		Recv: receiver,
 		Name: ast.NewIdent(name),
 		Type: funcType,
 		Body: body,
-	}, nil
+	}
+	// Go reaches a function that lends places through a wrapper, which runs
+	// the nil checks; GALA calls the body (inout_interop.go).
+	wrapper, err := t.splitInoutBody(d, fd, originalRecvTypeExpr, receiverBaseNameBare(receiverTypeName, t.packageName), entryChecks)
+	if err != nil {
+		return nil, err
+	}
+	if wrapper == nil {
+		fd.Body = withPtrEntryChecks(fd.Body, entryChecks)
+	}
+	t.inoutWrapper = wrapper
+	return fd, nil
+}
+
+// receiverBaseNameBare is the bare name of a receiver type named name in the
+// package pkg.
+func receiverBaseNameBare(name, pkg string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(name, pkg+"."), "*")
 }
 
 // registerFunctionParametersInScope walks a lowered signature's parameters

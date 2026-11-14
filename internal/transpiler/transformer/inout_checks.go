@@ -190,12 +190,13 @@ func (t *galaASTTransformer) checkInoutReceiverUse(base ast.Expr, xType transpil
 	if !ok {
 		return nil
 	}
-	_, meta, goData, _ := t.receiverTypeInfo(xType)
+	recvBase, meta, goData, _ := t.receiverTypeInfo(xType)
 	var m *transpiler.MethodMetadata
 	if meta != nil {
 		m = meta.Methods[method]
 	}
-	pointer := m != nil && m.PointerReceiver || m == nil && goData != nil && goData.PointerMethods[method]
+	goMethod := m == nil && goData != nil && goData.PointerMethods[method] || m != nil && m.GoDeclared && m.PointerReceiver
+	pointer := m != nil && m.PointerReceiver || goMethod
 	switch {
 	case !pointer:
 		return nil
@@ -205,10 +206,32 @@ func (t *galaASTTransformer) checkInoutReceiverUse(base ast.Expr, xType transpil
 			fmt.Sprintf("call it on the spot (`%s.%s(...)`), or wrap the call in a function that takes %s inout", name, method, name))
 	case m != nil && (m.InoutReceiver || m.Borrow != nil && m.Borrow.ReceiverBorrowed):
 		return nil
+	case goMethod && t.isNoRetainGoMethod(recvBase, method):
+		return nil // on the compiler's no-retain allow-list
 	}
 	return galaerr.NewCodedSemanticError(galaerr.CodeInoutEscape, line, col,
 		fmt.Sprintf("calling %s on the inout place %s lends its address to a method that may keep it past the call", method, name),
 		fmt.Sprintf("declare %s's receiver `inout`, or copy the place first: `var tmp = %s`, call it on tmp, and assign %s = tmp", method, name, name))
+}
+
+// isNoRetainGoMethod reports whether method of the Go type base is on the
+// no-retain allow-list (transpiler.IsNoRetainMethod): a Go pointer method
+// that keeps no reference to its receiver, verified against the Go
+// compiler's escape analysis in CI.
+func (t *galaASTTransformer) isNoRetainGoMethod(base transpiler.Type, method string) bool {
+	named, isNamed := base.(transpiler.NamedType)
+	if !isNamed {
+		return false
+	}
+	path := named.ImportPath
+	if path == "" {
+		entry, ok := t.goImportForPathlessType(named)
+		if !ok {
+			return false
+		}
+		path = entry.Path
+	}
+	return transpiler.IsNoRetainMethod(path, named.Name, method)
 }
 
 // checkInoutThunk rejects a by-name argument (expr wrapped as a thunk) that

@@ -1,0 +1,40 @@
+package inout_go_wrapper
+
+import "martianoff/gala/go_builtins"
+
+// Exported inout functions and methods are reached from Go through a
+// wrapper that lends the body a copy of each inout argument (ledger.go calls
+// them as Go does). GALA code, in this package and in others, calls the body.
+
+struct Account(var Balance int)
+
+// Deposit adds amount to the account. A negative amount panics after the
+// balance has changed.
+func (inout a Account) Deposit(amount int) int {
+    a.Balance = a.Balance + amount
+    if (amount < 0) {
+        Println(s"rejecting $amount")
+        go_builtins.Panic("negative amount")
+    }
+    a.Balance
+}
+
+// Transfer moves amount from one account to another.
+func Transfer(inout from Account, inout to Account, amount int) {
+    from.Balance = from.Balance - amount
+    to.Balance = to.Balance + amount
+}
+
+// Clamp caps the balance; its parameter shares a Go builtin's name.
+func Clamp(inout a Account, max int) int {
+    if (a.Balance > max) {
+        a.Balance = max
+    }
+    a.Balance
+}
+
+// Write makes an Account an io.Writer: Go sees the result list.
+func (inout a Account) Write(p []byte) (int, error) {
+    a.Balance = a.Balance + p.Size()
+    Success(p.Size())
+}

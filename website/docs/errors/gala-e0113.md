@@ -23,7 +23,7 @@ fires when a function with an `inout` binding `c`:
   a call);
 - calls a pointer-receiver method on it, or on a field of it, that may keep
   its receiver: a `Ptr`-receiver method of this package, a Go pointer
-  method, or a method of another package whose ownership summary does not
+  method that is not on the compiler's no-retain allow-list, or a method of another package whose ownership summary does not
   show its receiver as borrowed. A method with an `inout` receiver, and a
   value-receiver method, are always fine.
 

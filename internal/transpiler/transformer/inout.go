@@ -149,6 +149,15 @@ type inoutCallee struct {
 	name      string
 	shift     int
 	recvInout bool
+	// method and recvType are the method called and its receiver's type; nil
+	// for a function.
+	method   *transpiler.MethodMetadata
+	recvType transpiler.Type
+	// declared is true for a declared function or method, false for a
+	// function value.
+	declared bool
+	// fm is the declared function called; nil for a method or a function value.
+	fm *transpiler.FunctionMetadata
 }
 
 // lends reports whether the callee lends a place: an `inout` parameter or
@@ -166,7 +175,7 @@ func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c
 		if !transpiler.IsUnusable(recvType) {
 			if meta := t.getTypeMeta(key); meta != nil && meta.Methods[method] != nil {
 				m := meta.Methods[method]
-				c = inoutCallee{inout: m.InoutParams, params: m.ParamNames, name: method, recvInout: m.InoutReceiver}
+				c = inoutCallee{inout: m.InoutParams, params: m.ParamNames, name: method, recvInout: m.InoutReceiver, method: m, recvType: recvType, declared: true}
 				if sel, isSel := call.Fun.(*ast.SelectorExpr); !isSel || sel.Sel.Name != method {
 					c.shift = 1
 				}
@@ -179,7 +188,7 @@ func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c
 		// A qualified call names `pkg.F`; the set holds F.
 		if t.inoutNames[name[strings.LastIndex(name, ".")+1:]] {
 			if fm := t.getFunction(name); fm != nil {
-				c = inoutCallee{inout: fm.InoutParams, params: fm.ParamNames, name: fm.Name}
+				c = inoutCallee{inout: fm.InoutParams, params: fm.ParamNames, name: fm.Name, declared: true, fm: fm}
 				return c, c.lends()
 			}
 		}
@@ -306,7 +315,11 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 		return inoutError(at, fmt.Sprintf("the argument %s of %s is passed to an inout parameter without `&`", text, callee.name),
 			fmt.Sprintf("lend the place with `&%s`; an inout argument is marked at the call site", text))
 	}
-	return t.checkInoutOverlap(call, callee, c)
+	if err := t.checkInoutOverlap(call, callee, c); err != nil {
+		return err
+	}
+	t.inoutBodyCall(call, callee)
+	return nil
 }
 
 // inoutArgAt is where the value for parameter i of callee is written in the
