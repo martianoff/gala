@@ -224,6 +224,18 @@ type constructTally struct {
 	ran, agree, disagree, inconclusive int
 }
 
+// add counts one program's verdict.
+func (t *constructTally) add(v Verdict) {
+	switch v {
+	case Agree:
+		t.agree++
+	case Disagree:
+		t.disagree++
+	case Inconclusive:
+		t.inconclusive++
+	}
+}
+
 func renderConstructs(b *strings.Builder, c Coverage, lean bool) {
 	tally := map[string]*constructTally{}
 	leanTally := map[string]*constructTally{}
@@ -235,14 +247,7 @@ func renderConstructs(b *strings.Builder, c Coverage, lean bool) {
 		if r.Lean != nil && r.Lean.Verdict != Unsupported {
 			for k := range r.Constructs {
 				if t, ok := leanTally[k]; ok {
-					switch r.Lean.Verdict {
-					case Agree:
-						t.agree++
-					case Disagree:
-						t.disagree++
-					case Inconclusive:
-						t.inconclusive++
-					}
+					t.add(r.Lean.Verdict)
 				}
 			}
 		}
@@ -259,14 +264,7 @@ func renderConstructs(b *strings.Builder, c Coverage, lean bool) {
 			if k := r.Spec.Kind; k == KindOK || k == KindPanic {
 				t.ran++
 			}
-			switch r.Verdict {
-			case Agree:
-				t.agree++
-			case Disagree:
-				t.disagree++
-			case Inconclusive:
-				t.inconclusive++
-			}
+			t.add(r.Verdict)
 		}
 	}
 	b.WriteString("### Constructs\n\n")

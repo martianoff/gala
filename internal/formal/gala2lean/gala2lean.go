@@ -41,7 +41,6 @@ package gala2lean
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -187,12 +186,3 @@ func (g *gen) guard(decl string, f func()) (ok bool) {
 	return true
 }
 
-// sortedKeys is m's keys in order, for deterministic output.
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}

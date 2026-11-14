@@ -127,7 +127,7 @@ func (g *gen) stmt(st coreexport.Node, sc *scope, value bool) []string {
 	case *coreexport.If:
 		return []string{g.ifStmt(st, sc)}
 	case *coreexport.Return:
-		if sc.level != g.fn.level {
+		if sc.level != 0 {
 			unsup(st.Pos, "return-inside-expression")
 		}
 		if st.Value == nil {
@@ -152,13 +152,7 @@ func (g *gen) stmt(st coreexport.Node, sc *scope, value bool) []string {
 		}
 		return []string{"if " + c.val() + " then\n" + indentLines(th, 2) + "\nelse\n" + indentLines(el, 2)}
 	case *coreexport.Block:
-		var items []string
-		if value {
-			items = g.stmts(st.Stmts, sc.child(), true)
-		} else {
-			items = g.stmts(st.Stmts, sc.child(), false)
-		}
-		return []string{"do\n" + indentLines(items, 2)}
+		return []string{"do\n" + indentLines(g.stmts(st.Stmts, sc.child(), value), 2)}
 	case *coreexport.Paren:
 		return g.stmt(st.Expr, sc, value)
 	}

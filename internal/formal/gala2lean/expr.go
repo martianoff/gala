@@ -79,8 +79,6 @@ func posOf(n coreexport.Node) coreexport.Pos {
 	switch n := n.(type) {
 	case *coreexport.Unsupported:
 		return n.Pos
-	case interface{ GetMeta() coreexport.Meta }:
-		return n.GetMeta().Pos
 	}
 	return metaPos(n)
 }

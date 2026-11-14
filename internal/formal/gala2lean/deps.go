@@ -1,6 +1,7 @@
 package gala2lean
 
 import (
+	"maps"
 	"reflect"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -47,7 +48,7 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		}
 		return
 	case *coreexport.Block:
-		inner := copyBound(bound)
+		inner := maps.Clone(bound)
 		for _, st := range n.Stmts {
 			g.refs(st, inner, out)
 			switch st := st.(type) {
@@ -71,7 +72,7 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		}
 		return
 	case *coreexport.Func:
-		inner := copyBound(bound)
+		inner := maps.Clone(bound)
 		for _, p := range n.Params {
 			if p, ok := p.(*coreexport.Param); ok {
 				g.refs(p.Default, inner, out)
@@ -81,7 +82,7 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		g.refs(n.Body, inner, out)
 		return
 	case *coreexport.Lambda:
-		inner := copyBound(bound)
+		inner := maps.Clone(bound)
 		for _, p := range n.Params {
 			if p, ok := p.(*coreexport.Param); ok {
 				inner[p.Name] = true
@@ -90,7 +91,7 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		g.refs(n.Body, inner, out)
 		return
 	case *coreexport.Case:
-		inner := copyBound(bound)
+		inner := maps.Clone(bound)
 		g.refs(n.Pattern, bound, out)
 		g.patBinders(n.Pattern, inner)
 		g.refs(n.Guard, inner, out)
@@ -163,8 +164,12 @@ func (g *gen) patBinders(p coreexport.Node, m map[string]bool) {
 
 // funcRefs is what function f refers to.
 func (g *gen) funcRefs(f *coreexport.Func) map[string]bool {
+	if out, ok := g.refsOf[f.Name]; ok {
+		return out
+	}
 	out := map[string]bool{}
 	g.refs(f, map[string]bool{}, out)
+	g.refsOf[f.Name] = out
 	return out
 }
 
@@ -239,7 +244,7 @@ func (g *gen) initOrder() []*globalVar {
 		seenFn := map[string]bool{}
 		var visit func(refs map[string]bool)
 		visit = func(refs map[string]bool) {
-			for _, r := range sortedKeys(refs) {
+			for r := range refs {
 				if g.globalBy[r] != nil {
 					reach[r] = true
 				} else if f := g.funcs[r]; f != nil && !seenFn[r] {

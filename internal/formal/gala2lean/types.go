@@ -2,6 +2,8 @@ package gala2lean
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -270,7 +272,7 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 	b.WriteString("\n")
 	// A field read on a value whose case lacks it is the field type's zero
 	// value, as in the Go struct that holds every case.
-	for _, fname := range sortedKeys(uses) {
+	for _, fname := range slices.Sorted(maps.Keys(uses)) {
 		if !g.selected[fname] {
 			continue
 		}

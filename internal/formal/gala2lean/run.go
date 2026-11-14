@@ -65,15 +65,13 @@ func LeanFromRunfiles(loc string) (string, error) {
 		manifests = append(manifests, filepath.Join(d, "MANIFEST"))
 	}
 	for _, m := range manifests {
-		data, err := os.ReadFile(m)
+		r, err := runfiles.New(runfiles.ManifestFile(m))
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if real, ok := strings.CutPrefix(strings.TrimRight(line, "\r"), loc+" "); ok {
-				if _, err := os.Stat(real); err == nil {
-					return real, nil
-				}
+		if real, err := r.Rlocation(loc); err == nil {
+			if _, err := os.Stat(real); err == nil {
+				return real, nil
 			}
 		}
 	}

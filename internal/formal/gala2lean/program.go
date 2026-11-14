@@ -31,6 +31,8 @@ type gen struct {
 	hasMethods bool
 	// library is Options.Library.
 	library bool
+	// refsOf caches funcRefs, by function name.
+	refsOf map[string]map[string]bool
 
 	unsup []Unsupported
 	out   strings.Builder
@@ -51,7 +53,6 @@ type variantInfo struct {
 // globalVar is one name a package-level val or var declares.
 type globalVar struct {
 	name  string
-	decl  coreexport.Node // the *Val or *Var
 	value coreexport.Node // its initializer, nil for none
 	typ   coreexport.Node // its declared type, nil for none
 	pos   coreexport.Pos
@@ -60,7 +61,6 @@ type globalVar struct {
 
 type fnCtx struct {
 	result string // Lean result type
-	level  int    // the do-nesting level of the function body
 }
 
 func newGen() *gen {
@@ -71,6 +71,7 @@ func newGen() *gen {
 		funcs:    map[string]*coreexport.Func{},
 		globalBy: map[string]*globalVar{},
 		selected: map[string]bool{},
+		refsOf:   map[string]map[string]bool{},
 	}
 }
 
@@ -112,9 +113,9 @@ func (g *gen) collect(p *coreexport.Program) {
 				g.funcs[d.Name] = d
 				g.funcOrder = append(g.funcOrder, d)
 			case *coreexport.Val:
-				g.addGlobal(d, d.Names, d.Destructure, d.Type, d.Values, d.Pos)
+				g.addGlobal(d.Names, d.Destructure, d.Type, d.Values, d.Pos)
 			case *coreexport.Var:
-				g.addGlobal(d, d.Names, d.Destructure, d.Type, d.Values, d.Pos)
+				g.addGlobal(d.Names, d.Destructure, d.Type, d.Values, d.Pos)
 			default:
 				g.unsup = append(g.unsup, Unsupported{Construct: "top-level-" + d.Kind()})
 			}
@@ -163,7 +164,7 @@ func (g *gen) unsupNode(decl string, n coreexport.Node) {
 	g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: what, Pos: pos})
 }
 
-func (g *gen) addGlobal(decl coreexport.Node, names []string, destructure bool, typ coreexport.Node, values []coreexport.Node, pos coreexport.Pos) {
+func (g *gen) addGlobal(names []string, destructure bool, typ coreexport.Node, values []coreexport.Node, pos coreexport.Pos) {
 	if destructure {
 		g.unsup = append(g.unsup, Unsupported{Decl: strings.Join(names, ", "), Construct: "global-destructure", Pos: pos})
 		return
@@ -173,7 +174,7 @@ func (g *gen) addGlobal(decl coreexport.Node, names []string, destructure bool, 
 		return
 	}
 	for i, n := range names {
-		gv := &globalVar{name: n, decl: decl, typ: typ, pos: pos}
+		gv := &globalVar{name: n, typ: typ, pos: pos}
 		if len(values) > 0 {
 			gv.value = values[i]
 		}
@@ -341,7 +342,7 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 	if f.Result != nil {
 		res = g.leanType(f.Result)
 	}
-	g.fn = &fnCtx{result: res, level: 0}
+	g.fn = &fnCtx{result: res}
 	var body string
 	if b, ok := f.Body.(*coreexport.Block); ok {
 		body = indentLines(g.fnBlock(b, sc), 2)
