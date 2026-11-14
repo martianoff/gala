@@ -584,11 +584,17 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 // (T, error) is one GALA value (see go_results.go), and a discarded one is
 // dropped back to the plain call; a generic method returning its type
 // parameter yields a value even when that is `error` (see isErrorCall).
+// It is reported at the call, or at line:col, the lambda, for a call whose
+// position was not recorded (see recordCallSite).
 func (t *galaASTTransformer) checkDiscardedError(expr ast.Expr, line, col int) error {
 	if !t.isErrorReturningCall(expr) {
 		return nil
 	}
-	name := t.calleeName(expr.(*ast.CallExpr))
+	call := expr.(*ast.CallExpr)
+	if site, ok := t.errorCalls[call]; ok {
+		line, col = site.line, site.col
+	}
+	name := t.calleeName(call)
 	return galaerr.NewCodedSemanticError(galaerr.CodeDiscardedErrorReturn, line, col,
 		fmt.Sprintf("cannot discard error return from %s in void lambda", name),
 		fmt.Sprintf("use FromError(%s(...)) to handle the error", name))

@@ -78,17 +78,25 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 	if err := t.checkPtrFuncRefSlot(expr, expected, at); err != nil {
 		return err
 	}
-	// Most slots hold no Ptr: skip the expression's type inference for them.
-	if !hasPtr(expected) {
-		return t.checkPtrInterfaceSlot(expr, expected, at)
-	}
 	if isNilIdent(expr) {
 		if !transpiler.IsPtr(expected) {
 			return nil
 		}
 		return ptrErrorAt(at, fmt.Sprintf("cannot use nil as %s: a Ptr is never nil", displayType(expected)), ptrMayBeAbsentHint)
 	}
-	actual := t.probeExprType(expr)
+	return t.checkPtrSlotType(func() transpiler.Type { return t.probeExprType(expr) }, expected, at)
+}
+
+// checkPtrSlotType is checkPtrSlot for a value of the type valType returns,
+// written at at, read only when the check needs it: one result of a call
+// whose results fill several targets. expected has had its aliases
+// followed.
+func (t *galaASTTransformer) checkPtrSlotType(valType func() transpiler.Type, expected transpiler.Type, at srcNode) error {
+	// Most slots hold no Ptr: skip the expression's type inference for them.
+	if !hasPtr(expected) {
+		return t.checkPtrInterfaceSlot(valType, expected, at)
+	}
+	actual := valType()
 	if transpiler.IsUnusable(actual) || !nullableWherePtr(expected, actual) {
 		return nil
 	}
@@ -107,18 +115,32 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 // `Ptr[Array[int]]`, where an `Array[int]` is expected. Only a slot whose
 // type is a GALA type is probed.
 func (t *galaASTTransformer) checkPointerForValue(expr ast.Expr, expected transpiler.Type, at srcNode) error {
-	if !at.ok() || isNilIdent(expr) || t.slotValueTypeMeta(expected) == nil {
+	if isNilIdent(expr) {
 		return nil
 	}
-	ptr, ok := t.probeExprType(expr).(transpiler.PointerType)
+	return t.checkPointerForValueType(func() transpiler.Type { return t.probeExprType(expr) }, expected, at, true)
+}
+
+// checkPointerForValueType is checkPointerForValue for a value of the type
+// valType returns, written at at, read only when the slot's type is a GALA
+// type. derefFix offers to dereference the value as written, which is
+// wrong for one result of a call whose results fill several targets.
+func (t *galaASTTransformer) checkPointerForValueType(valType func() transpiler.Type, expected transpiler.Type, at srcNode, derefFix bool) error {
+	if !at.ok() || t.slotValueTypeMeta(expected) == nil {
+		return nil
+	}
+	ptr, ok := valType().(transpiler.PointerType)
 	meta := t.pointeeOfSlot(ptr, expected)
 	if !ok || meta == nil {
 		return nil
 	}
 	text := at.sourceText()
-	fix := fmt.Sprintf("dereference the pointer: `*%s`", text)
-	if addressed, ok := strings.CutPrefix(text, "&"); ok {
-		fix = fmt.Sprintf("pass the value itself: `%s`", addressed)
+	fix := ""
+	if derefFix {
+		fix = fmt.Sprintf("dereference the pointer: `*%s`", text)
+		if addressed, ok := strings.CutPrefix(text, "&"); ok {
+			fix = fmt.Sprintf("pass the value itself: `%s`", addressed)
+		}
 	}
 	return pointerForValueError(at.rng(), text, ptr, expected, meta, fix)
 }
@@ -273,16 +295,17 @@ func (t *galaASTTransformer) checkPtrViewReceiverAt(subjectType transpiler.Type,
 // checkPtrInterfaceSlot rejects a pointer that may be nil filling an
 // interface slot (GALA-E0080) when its type implements a method of the
 // interface on a `Ptr` receiver: a call through the interface would run that
-// method on whatever pointer the interface holds.
-func (t *galaASTTransformer) checkPtrInterfaceSlot(expr ast.Expr, expected transpiler.Type, at srcNode) error {
-	if len(t.ptrReceiverMethods) == 0 || isNilIdent(expr) {
+// method on whatever pointer the interface holds. The value's type is what
+// valType returns, read only when the check needs it.
+func (t *galaASTTransformer) checkPtrInterfaceSlot(valType func() transpiler.Type, expected transpiler.Type, at srcNode) error {
+	if len(t.ptrReceiverMethods) == 0 {
 		return nil
 	}
 	methods := t.ptrInterfaceMethods(expected)
 	if len(methods) == 0 {
 		return nil
 	}
-	ptr, m, ok := t.nullablePtrMethod(t.probeExprType(expr), methods)
+	ptr, m, ok := t.nullablePtrMethod(valType(), methods)
 	if !ok {
 		return nil
 	}

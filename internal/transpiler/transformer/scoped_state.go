@@ -163,6 +163,7 @@ var accumulatedStateFields = []string{
 	"defaultRefNames",
 	"userReturns",
 	"voidCalls",
+	"errorCalls",
 	"hoisted",
 	"escapeCache",
 	"userLoops",

@@ -65,6 +65,13 @@ func viewed(s Option[geo.Spot]) string = s match {
     case _             => "other"
 }
 
+// A tuple-literal subject whose element type comes from that package.
+func tupleSubject(tag int, n int) string = (tag, geo.MaybePoint(n)) match {
+    case (0, Some(Some(p))) => s"tuple ${p.X},${p.Y}"
+    case (_, Some(None()))  => "tuple empty"
+    case _                  => "other"
+}
+
 func main() {
     Println(afterSibling(0, 3))
     Println(afterSibling(1, 3))
@@ -94,4 +101,8 @@ func main() {
     Println(viewed(Some(geo.Spot(9))))
     Println(viewed(Some(geo.Spot(0))))
     Println(viewed(None()))
+    Println(tupleSubject(0, 11))
+    Println(tupleSubject(1, 11))
+    Println(tupleSubject(1, 0))
+    Println(tupleSubject(0, -11))
 }

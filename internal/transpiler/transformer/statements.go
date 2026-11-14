@@ -225,11 +225,12 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		return nil, err
 	}
 	// `a, b = x, y` lowers its values with no slot; a nil, or a pointer that
-	// may be nil, still never fills a Ptr target.
+	// may be nil, still never fills a Ptr target, nor a pointer a target of
+	// the type it points to.
 	if len(lhsExprs) > 1 && len(rhsExprs) == len(lhsExprs) {
 		values := d.rhs.exprs()
 		for i, rhs := range rhsExprs {
-			if err := t.checkSlotFill(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
+			if err := t.checkAssignFill(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
 				return nil, err
 			}
 		}
@@ -246,8 +247,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		if results := t.resolveGoCallReturnTypes(unwrappedRhs[0]); len(results) == len(lhsExprs) {
 			at := d.rhs.exprs()[0].at()
 			for i, result := range results {
-				valType := func() transpiler.Type { return result }
-				if err := t.checkInterfaceSlotType(valType, t.getExprTypeName(lhsExprs[i]), at); err != nil {
+				if err := t.checkResultFill(result, t.getExprTypeName(lhsExprs[i]), at); err != nil {
 					return nil, err
 				}
 			}

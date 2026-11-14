@@ -327,10 +327,24 @@ const (
 // GALA name is the same, and the file's suffix keeps two files of one
 // package from both declaring it.
 func (t *galaASTTransformer) patternHelper(base string) string {
+	return t.fileHelper(base, func(name string) *ast.FuncDecl { return patternHelperDecl(base, name) })
+}
+
+// fileHelper returns the Go name of this file's generic helper named base,
+// declaring it with build(name) on first use: the name is base, which
+// carries the reserved `_gala_` prefix, followed by the file's suffix.
+func (t *galaASTTransformer) fileHelper(base string, build func(name string) *ast.FuncDecl) string {
 	if name, ok := t.unapplyHelpers[base]; ok {
 		return name
 	}
 	name := base + t.codecFileSuffix()
+	t.unapplyHelperDecls = append(t.unapplyHelperDecls, build(name))
+	t.unapplyHelpers[base] = name
+	return name
+}
+
+// patternHelperDecl declares the pattern helper named base as name.
+func patternHelperDecl(base, name string) *ast.FuncDecl {
 	id := ast.NewIdent
 	anyParam := func(names ...string) *ast.Field {
 		idents := make([]*ast.Ident, len(names))
@@ -339,10 +353,9 @@ func (t *galaASTTransformer) patternHelper(base string) string {
 		}
 		return &ast.Field{Names: idents, Type: id("any")}
 	}
-	var decl *ast.FuncDecl
 	switch base {
 	case derefHelper:
-		decl = &ast.FuncDecl{
+		return &ast.FuncDecl{
 			Name: id(name),
 			Type: &ast.FuncType{
 				TypeParams: &ast.FieldList{List: []*ast.Field{anyParam("T")}},
@@ -371,7 +384,7 @@ func (t *galaASTTransformer) patternHelper(base string) string {
 		if base == zeroApplyHelper {
 			params = append(params, &ast.Field{Type: id("A")})
 		}
-		decl = &ast.FuncDecl{
+		return &ast.FuncDecl{
 			Name: id(name),
 			Type: &ast.FuncType{
 				TypeParams: &ast.FieldList{List: []*ast.Field{typeParams}},
@@ -384,9 +397,6 @@ func (t *galaASTTransformer) patternHelper(base string) string {
 		// invariant: pattern-helper — base is one of the constants above.
 		panic("no pattern helper " + base)
 	}
-	t.unapplyHelperDecls = append(t.unapplyHelperDecls, decl)
-	t.unapplyHelpers[base] = name
-	return name
 }
 
 // spliceStmts returns stmts with ins inserted before index at.

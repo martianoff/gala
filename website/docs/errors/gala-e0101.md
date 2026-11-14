@@ -36,10 +36,10 @@ func main() {
 
 ```
 error[GALA-E0101]: cannot discard error return from save in void lambda
-  --> main.gala:8:22
+  --> main.gala:8:29
   |
 8 |     Some(-1).ForEach((n) => save(n))
-  |                      ^ use FromError(save(...)) to handle the error
+  |                             ^^^^ use FromError(save(...)) to handle the error
   |
   = hint: use FromError(save(...)) to handle the error
 ```

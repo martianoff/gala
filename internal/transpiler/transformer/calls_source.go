@@ -20,7 +20,7 @@ import (
 // callSrc is a call suffix and the postfix expression it ends, as the postfix
 // driver builds it (lowerSuffix): post carries the hint owner the call takes
 // its slot's type for (postfixSrc.owner). A callSrc built only to quote or
-// locate the call (recordVoidCall, lambdaArgCallee) leaves args empty.
+// locate the call (recordCallSite, lambdaArgCallee) leaves args empty.
 type callSrc struct {
 	post   postfixSrc
 	suffix suffixSrc
