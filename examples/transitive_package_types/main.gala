@@ -1,0 +1,71 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/transitive_package_types/geo"
+)
+
+// Every function below uses a type of package shape, which this file does
+// not import: geo reaches it. The generated Go has to name that type.
+
+// A tuple element typed by the argument it fills.
+func slotTyped(n int) string = geo.Describe((n, None()))
+
+// A tuple element typed by the struct field it fills.
+func fieldTyped(n int) string = geo.Labelled(Tag = "field", At = (n, None())).Show()
+
+// A lambda whose result is a tuple holding that type.
+func mappedTuples(xs Array[int]) string =
+    xs.Map((n) => (n, geo.MaybePoint(n))).Map((p) => geo.Describe(p)).MkString("; ")
+
+// A lambda whose parameter has that type.
+func scaled(n int) string = geo.Points(n).Map((p) => p.X * 10).MkString(",")
+
+// A lambda whose result has that type.
+func viaLambda(n int) string {
+    val f = (k int) => geo.MaybePoint(k)
+    f(n).Map((p) => s"lambda ${p.X},${p.Y}").GetOrElse("lambda none")
+}
+
+// A lambda with an accumulator of that type.
+func last(n int) string {
+    val p = geo.Points(n).FoldLeft(geo.Origin(), (acc, q) => if (q.X > acc.X) q else acc)
+    s"last ${p.X},${p.Y}"
+}
+
+// An if used as a value of that type.
+func pick(c bool) string {
+    val p = if (c) geo.Points(3).Last() else geo.Origin()
+    s"if ${p.X},${p.Y}"
+}
+
+// A match used as a value of that type.
+func choose(n int) string {
+    val p = n match {
+        case 0 => geo.Origin()
+        case _ => geo.Points(n + 1).Last()
+    }
+    s"match ${p.X},${p.Y}"
+}
+
+// Some of a value of that type.
+func wrapped() string = Some(geo.Points(2).Last()).Map((p) => s"some ${p.X},${p.Y}").GetOrElse("none")
+
+// None typed by the argument it fills.
+func unset() string = geo.TakeOpt(None())
+
+func main() {
+    Println(slotTyped(1))
+    Println(fieldTyped(2))
+    Println(mappedTuples(ArrayOf(3, -4)))
+    Println(scaled(3))
+    Println(viaLambda(5))
+    Println(viaLambda(-5))
+    Println(last(4))
+    Println(pick(true))
+    Println(pick(false))
+    Println(choose(0))
+    Println(choose(2))
+    Println(wrapped())
+    Println(unset())
+}

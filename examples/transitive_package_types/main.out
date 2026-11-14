@@ -1,0 +1,13 @@
+1 nowhere
+field: 2 nowhere
+3 at 3,6; -4 nowhere
+0,10,20
+lambda 5,10
+lambda none
+last 3,3
+if 2,2
+if 0,0
+match 0,0
+match 2,2
+some 1,1
+none
