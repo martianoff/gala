@@ -43,6 +43,9 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 		}
 		t.markSourceRef(ident)
 		if s.inout[name] {
+			if err := t.checkInoutCapture(s, name, at, false, false); err != nil {
+				return nil, err
+			}
 			return t.inoutRead(ident), nil
 		}
 		if s.parent == nil && t.isPackageVar(name) {

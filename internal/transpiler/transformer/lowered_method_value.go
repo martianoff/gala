@@ -36,7 +36,7 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		return nil, false
 	}
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(base, method)
-	var sig transpiler.Type = signatureType(mm.ParamTypes, mm.ReturnType, nil)
+	var sig transpiler.Type = signatureType(mm.ParamTypes, mm.InoutParams, mm.ReturnType, nil)
 	if len(meta.TypeParams) > 0 {
 		gen, isGeneric := plain.(transpiler.GenericType)
 		if !isGeneric || len(gen.Params) != len(meta.TypeParams) {

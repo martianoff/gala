@@ -1880,9 +1880,38 @@ func main() {
   `Ptr[Counter]` parameter. A read of `x` as a whole is `*x`, and an exported
   function checks its `inout` parameters for nil on entry, as it does `Ptr`
   parameters.
+- **Function types.** `func(inout Counter)` and `func(Ptr[Counter])` are
+  distinct GALA types with the same Go type, `func(*Counter)`. A call through
+  a value of a `func(inout T)` type is checked like a call of a declared
+  function. A function whose parameter is not `inout`, a `func(Ptr[T])` or
+  a lambda `(k) => …`, does not fill a `func(inout T)` slot: it may keep the
+  pointer it is lent (GALA-E0113). Nor does an `inout` function fill a
+  `func(Ptr[T])` slot, whose callers may pass a pointer they share.
 
-The design, and the checks that make an `inout` borrow exclusive and
-non-escaping, are in [OWNERSHIP_DESIGN.MD](https://github.com/martianoff/gala/blob/master/docs/OWNERSHIP_DESIGN.MD).
+The compiler checks that an `inout` borrow is exclusive and lasts only for
+the call:
+
+- **Exclusive.** One call never lends one place twice: two `inout` arguments
+  naming the same place or a place and its field (`both(&c, &c)`,
+  `f(&p, &p.lex)`), an `inout` receiver lent again as an argument, or a
+  lambda argument reading a place the call lends, is
+  [GALA-E0112](/docs/errors/gala-e0112/). Disjoint fields of one place may be
+  lent together: `both(&p.left, &p.right)`.
+- **No escape.** Inside the callee, nothing keeps a reference to the place
+  past the call ([GALA-E0113](/docs/errors/gala-e0113/)). `&c` is only an
+  argument to another `inout` parameter: it is not bound, returned, or
+  passed to a parameter that is not `inout` or to Go. `c` is not captured by
+  a lambda or a by-name argument, and no method value is taken on it. A
+  pointer-receiver method is called on it only when its receiver is `inout`
+  or, for a method of another package, borrowed; a value-receiver method
+  gets a copy and is always fine. To keep the value, copy it: `val n = c.n`.
+- **No partial updates.** The thunk of `Try(...)` does not use an `inout`
+  place ([GALA-E0115](/docs/errors/gala-e0115/)): a panic `Try` catches would
+  leave the caller's place half updated. Work on a copy and assign the place
+  once `Try` has succeeded.
+
+The design, with its rationale and prior art, is in
+[OWNERSHIP_DESIGN.MD](https://github.com/martianoff/gala/blob/master/docs/OWNERSHIP_DESIGN.MD).
 
 ## 13. GALA Packages {#13-gala-packages}
 

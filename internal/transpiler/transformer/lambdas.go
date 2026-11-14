@@ -142,6 +142,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 		t.onNativeLambda(l.node.GalaNodeRef)
 	}
 	t.pushScope()
+	t.currentScope.lambda, t.currentScope.tryRegion = true, t.isTryThunk(l)
 	defer t.popScope()
 	fieldList := &ast.FieldList{}
 	if params := l.params(); len(params) > 0 {
@@ -185,6 +186,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 					switch {
 					case p.isInout && isPtr && ptr.NonNull:
 						// `(inout b) => …` filling a `func(inout T)` slot.
+						t.markOperand(typeExpr, operandInoutParam)
 						t.addInout(p.name, expType)
 					case p.isInout:
 						return nil, inoutError(p.at, fmt.Sprintf("lambda parameter %s is inout, but the function it fills takes a %s, not an inout parameter", p.name, displayType(expType)),
@@ -1182,6 +1184,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 
 	paramName := t.generatedName("_pf_arg")
 	t.pushScope()
+	t.currentScope.lambda = true
 	defer t.popScope()
 	t.addVar(paramName, paramType)
 
@@ -1582,6 +1585,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// their correct per-position types via paramTypes below.
 	scopeType := placeholderScopeType(paramTypes)
 	t.pushScope()
+	t.currentScope.lambda = true
 	t.addVar("_", scopeType)
 	body, err := t.lowerExpr(e)
 	// Resolve the body's concrete result type while `_` is still bound in scope

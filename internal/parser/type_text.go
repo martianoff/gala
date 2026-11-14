@@ -126,7 +126,7 @@ func writeSignatureText(b *strings.Builder, sig grammar.ISignatureContext) {
 					b.WriteString("...")
 				}
 				if param.INOUT() != nil {
-					b.WriteString(PtrTypeName + "[")
+					b.WriteString("inout " + PtrTypeName + "[")
 				}
 				if param.Type_() != nil {
 					writeTypeText(b, param.Type_())

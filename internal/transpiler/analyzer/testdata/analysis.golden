@@ -24,21 +24,21 @@ collection: type parameter on an interface method: main.gala	7a7ff4bb804ecd1b	c9
 collection: type redefined in a sibling: a.gala	f5b0576044f6310e	5789f8e3039e9371
 collection: type redefined in a sibling: b.gala	f5b0576044f6310e	38f1b10b46e735cd
 collection: type redefined: main.gala	2ff80334d3333cba	e1c838cb25e706fb
-corpus/collection_immutable/array.gala	eef1db3c5f7a151a	97e5498199f897ae
-corpus/collection_immutable/hashmap.gala	eef1db3c5f7a151a	b5cbe5635446f6f6
-corpus/collection_immutable/hashset.gala	eef1db3c5f7a151a	5c4dddd924ee8f22
-corpus/collection_immutable/list.gala	eef1db3c5f7a151a	7e9db99460cfc1cf
-corpus/collection_immutable/treemap.gala	eef1db3c5f7a151a	67bcfb022c66d750
-corpus/collection_immutable/treeset.gala	eef1db3c5f7a151a	d43b167a46d9e424
-corpus/collection_mutable/array.gala	6ab90dd12d34bbe3	b7bc6cb1e2171632
-corpus/collection_mutable/hashmap.gala	6ab90dd12d34bbe3	17dd68851bca149e
-corpus/collection_mutable/hashset.gala	6ab90dd12d34bbe3	9051708c346dd7af
-corpus/collection_mutable/list.gala	6ab90dd12d34bbe3	c4000cf1352885d6
-corpus/collection_mutable/treemap.gala	6ab90dd12d34bbe3	f67543a5f8a3c95f
-corpus/collection_mutable/treeset.gala	6ab90dd12d34bbe3	1977820bfec3e12b
+corpus/collection_immutable/array.gala	eef1db3c5f7a151a	3a20051009ebaa71
+corpus/collection_immutable/hashmap.gala	eef1db3c5f7a151a	7e463071abb91073
+corpus/collection_immutable/hashset.gala	eef1db3c5f7a151a	6ca5e8eb851d8650
+corpus/collection_immutable/list.gala	eef1db3c5f7a151a	19e4014cf44d6ec0
+corpus/collection_immutable/treemap.gala	eef1db3c5f7a151a	beb441537c263a77
+corpus/collection_immutable/treeset.gala	eef1db3c5f7a151a	bed4398a4d250355
+corpus/collection_mutable/array.gala	6ab90dd12d34bbe3	2f604141394043d2
+corpus/collection_mutable/hashmap.gala	6ab90dd12d34bbe3	cc1acacc7414e5e9
+corpus/collection_mutable/hashset.gala	6ab90dd12d34bbe3	6e8931eb051f50c0
+corpus/collection_mutable/list.gala	6ab90dd12d34bbe3	15691788f3543c21
+corpus/collection_mutable/treemap.gala	6ab90dd12d34bbe3	57429c9140120050
+corpus/collection_mutable/treeset.gala	6ab90dd12d34bbe3	229fb72ab548331b
 corpus/concurrent/event_bus.gala	e262e1ea292ca8f5	e33263d8758add7f
-corpus/concurrent/future.gala	e262e1ea292ca8f5	67246a7328b6cebb
-corpus/concurrent/retry.gala	e262e1ea292ca8f5	4cb0f8bffb291add
+corpus/concurrent/future.gala	e262e1ea292ca8f5	38f3c6741aa38a0c
+corpus/concurrent/retry.gala	e262e1ea292ca8f5	27db9e87958679b8
 corpus/crypto/crypto.gala	39cf2c73886d1ea6	81fa55fc94e22f12
 corpus/examples/alias_expected_type/checks/checks.gala	2572618b659a8cca	b024215e3ceff568
 corpus/examples/alias_expected_type_test.gala	47d7cf5c882cfe37	29aadce9028149a6
@@ -47,34 +47,34 @@ corpus/examples/anonymous_struct_type.gala	47d7cf5c882cfe37	9e0d3354ca24401a
 corpus/examples/apply_method.gala	47d7cf5c882cfe37	e64bb4f062213d07
 corpus/examples/array_large_access.gala	47d7cf5c882cfe37	e0d6c3b4ff186271
 corpus/examples/array_tabulate_lambda_inference.gala	47d7cf5c882cfe37	7586e5ebb6b72aad
-corpus/examples/bare_funcref_map.gala	47d7cf5c882cfe37	16cfb2b8fd2ebddd
+corpus/examples/bare_funcref_map.gala	47d7cf5c882cfe37	9d59cd4347e2bf35
 corpus/examples/bare_variant_pattern.gala	47d7cf5c882cfe37	60b13fb0a34e2323
 corpus/examples/bind_in_branches.gala	47d7cf5c882cfe37	cf0c654bf2bf0189
 corpus/examples/bind_notation.gala	47d7cf5c882cfe37	9e2636e89c8c881a
 corpus/examples/bind_notation_also.gala	47d7cf5c882cfe37	4242c765e971ef41
 corpus/examples/bind_notation_desugared.gala	47d7cf5c882cfe37	2b6261594cb55623
 corpus/examples/bind_notation_future.gala	47d7cf5c882cfe37	752625670b24cd49
-corpus/examples/bind_notation_user.gala	47d7cf5c882cfe37	e5646b5bc518cda4
-corpus/examples/bind_notation_user_monad.gala	47d7cf5c882cfe37	d1c2841db043b5be
+corpus/examples/bind_notation_user.gala	47d7cf5c882cfe37	e66b5df165fcacfb
+corpus/examples/bind_notation_user_monad.gala	47d7cf5c882cfe37	ea895264cc7199fe
 corpus/examples/bind_notation_validated.gala	47d7cf5c882cfe37	ac51257ca4592ac7
 corpus/examples/block_function_trailing_value.gala	47d7cf5c882cfe37	75cdf482c1ad99ef
-corpus/examples/block_lambda_field_type.gala	47d7cf5c882cfe37	65216cc0c811a130
-corpus/examples/block_lambda_generic_func.gala	47d7cf5c882cfe37	d3510028ee1c8e18
+corpus/examples/block_lambda_field_type.gala	47d7cf5c882cfe37	52553dbb093d8e47
+corpus/examples/block_lambda_generic_func.gala	47d7cf5c882cfe37	e9d35229b1143038
 corpus/examples/block_lambda_match.gala	47d7cf5c882cfe37	ff2ab11c30405016
-corpus/examples/block_lambda_return.gala	47d7cf5c882cfe37	ef20e046bd07e0fa
+corpus/examples/block_lambda_return.gala	47d7cf5c882cfe37	0999dfcb04bde059
 corpus/examples/block_struct_zero_arg_ctor.gala	47d7cf5c882cfe37	4c1639148d12ac8e
 corpus/examples/bool_operator.gala	47d7cf5c882cfe37	f4207d6e4aa65577
 corpus/examples/byte_conversion.gala	47d7cf5c882cfe37	0c935b9be94f0999
-corpus/examples/callback_generic_param.gala	47d7cf5c882cfe37	0ddeb565b5522b41
+corpus/examples/callback_generic_param.gala	47d7cf5c882cfe37	96d5a7f51bb87782
 corpus/examples/case_guard_bool.gala	47d7cf5c882cfe37	33f98702d947a1b2
 corpus/examples/chained_flatmap_type_args.gala	47d7cf5c882cfe37	a8cd991037ba8a59
 corpus/examples/channel_receive.gala	47d7cf5c882cfe37	030b52827e8acc42
 corpus/examples/char_and_raw_string.gala	47d7cf5c882cfe37	3cc60ff60e30d9d4
 corpus/examples/codec_imported_struct/billing/billing.gala	57739ea50ed6e42c	4c051d78cece4546
-corpus/examples/codec_imported_struct/main.gala	ad1a06e03a7489a2	773e4cd66b8d6121
+corpus/examples/codec_imported_struct/main.gala	ad1a06e03a7489a2	5790c33b6cb2f095
 corpus/examples/codec_root_shapes.gala	47d7cf5c882cfe37	8df12ad1c2f753d8
 corpus/examples/collect_partial_function.gala	47d7cf5c882cfe37	45c37a5de0a093ea
-corpus/examples/collect_type_param_result.gala	47d7cf5c882cfe37	ef45a877cc781433
+corpus/examples/collect_type_param_result.gala	47d7cf5c882cfe37	fe7e747d894ddfaf
 corpus/examples/collection_default_param.gala	47d7cf5c882cfe37	daacc510be848496
 corpus/examples/collection_lambda_inference.gala	47d7cf5c882cfe37	e3b6c89bec2319c2
 corpus/examples/comparable_equality.gala	47d7cf5c882cfe37	233f64afe7fea5dc
@@ -83,8 +83,8 @@ corpus/examples/composite_lit_if_cond.gala	47d7cf5c882cfe37	522503d9410458b0
 corpus/examples/composite_lit_if_expr_cond.gala	47d7cf5c882cfe37	c27f2a9e52a4828a
 corpus/examples/copy_and_equal.gala	47d7cf5c882cfe37	0e6bc943078740cd
 corpus/examples/copy_chained_field_access.gala	47d7cf5c882cfe37	79b336bee6175527
-corpus/examples/copy_lambda_override.gala	47d7cf5c882cfe37	63dbd51abae11d1c
-corpus/examples/copy_lambda_override/handlers/handlers.gala	baa9967307d0f0c1	a2cec6dad9a1cb20
+corpus/examples/copy_lambda_override.gala	47d7cf5c882cfe37	832d19f40a40f8ea
+corpus/examples/copy_lambda_override/handlers/handlers.gala	baa9967307d0f0c1	714b5dd42bca21c5
 corpus/examples/copy_self_qualified_struct/lib.gala	e44c51ab4a492d7f	1ce4ee65f6927ebc
 corpus/examples/cross_file_import_lib/ops.gala	c16f5866a99bca33	18d74546a6953f87
 corpus/examples/cross_file_import_lib/types.gala	c16f5866a99bca33	779c455a88c91a7b
@@ -99,9 +99,9 @@ corpus/examples/cross_pkg_copy_overrides/shapes/shapes.gala	82d1a17e5c0b82b1	f39
 corpus/examples/cross_pkg_copy_overrides_test.gala	47d7cf5c882cfe37	94f82b962aad5703
 corpus/examples/cross_pkg_field_eq/lib/lib.gala	67392c98d36291b2	c9d8c7be5ed7f7ef
 corpus/examples/cross_pkg_field_eq/main.gala	73ba083a39a7dcf5	9cb5a204b9e35416
-corpus/examples/cross_pkg_generic_ctor_lambda/lib/lib.gala	df4d2d86c635e01b	3c2350a1de23c2f4
+corpus/examples/cross_pkg_generic_ctor_lambda/lib/lib.gala	df4d2d86c635e01b	a443314718cbe8e9
 corpus/examples/cross_pkg_generic_ctor_lambda/main.gala	5e6861fc6f2b2aec	99383a96473e9446
-corpus/examples/cross_pkg_lambda_infer/lib/lib.gala	2562b7f38c2476a5	0e4f2a0d3bc3d1de
+corpus/examples/cross_pkg_lambda_infer/lib/lib.gala	2562b7f38c2476a5	b809fb3194486575
 corpus/examples/cross_pkg_lambda_infer/main.gala	ee4ca55bf869af7a	d637bb9168e06bb0
 corpus/examples/cross_pkg_namedarg/lib/lib.gala	ca7711ca2daa3421	0cebfeeb10e9200f
 corpus/examples/cross_pkg_namedarg/main.gala	65bb85c20abbf43b	5836360423121357
@@ -114,7 +114,7 @@ corpus/examples/cross_pkg_try_chain/main/main.gala	ce2e47b3f64c19c1	34939353ad98
 corpus/examples/cross_pkg_try_chain/pkg_proc/proc.gala	7123605445b53d51	30523ec6c0ea06a7
 corpus/examples/cross_pkg_try_chain/pkg_session/session.gala	357f1c6320a5be27	e7d1140fefd8c106
 corpus/examples/cross_pkg_try_match/corelib/corelib.gala	ef13f50bab6c03b2	6d7a0f6e235823cf
-corpus/examples/cross_pkg_try_match/main.gala	c8da35494773a7b0	3f2655c3717d1437
+corpus/examples/cross_pkg_try_match/main.gala	c8da35494773a7b0	a5220d0ee01ff614
 corpus/examples/crossfile_package_val/main.gala	d04e621d69081d09	7153f6a13d782d4f
 corpus/examples/crossfile_package_val/protocol.gala	d04e621d69081d09	279e402c17ed37fa
 corpus/examples/crosspkg_funcref_chain.gala	47d7cf5c882cfe37	542295c1ec8b3c7a
@@ -136,8 +136,8 @@ corpus/examples/dependency_injection.gala	47d7cf5c882cfe37	e5fd8b395c0b9f66
 corpus/examples/doc_io_verify.gala	47d7cf5c882cfe37	b1bc8247f300d9b9
 corpus/examples/doc_verify/concurrent_cancellation.gala	b12df3899cc51f44	ef4d7f7fda436635
 corpus/examples/doc_verify/concurrent_md.gala	b12df3899cc51f44	77f1adb0c35a4af8
-corpus/examples/doc_verify/examples_md.gala	b12df3899cc51f44	2e8ac9f9fb8092be
-corpus/examples/doc_verify/gala_md_basics.gala	b12df3899cc51f44	624e7cdf17cc2223
+corpus/examples/doc_verify/examples_md.gala	b12df3899cc51f44	12fea721f1179455
+corpus/examples/doc_verify/gala_md_basics.gala	b12df3899cc51f44	08451fe8e0ebbc11
 corpus/examples/doc_verify/gala_md_monads.gala	b12df3899cc51f44	afb8b21fffe6d35d
 corpus/examples/doc_verify/gala_md_patterns.gala	b12df3899cc51f44	252fbd7fd542f204
 corpus/examples/doc_verify/immutable_collections_md.gala	b12df3899cc51f44	0b14a2bced62e702
@@ -150,8 +150,8 @@ corpus/examples/either_map_flatmap.gala	47d7cf5c882cfe37	48357fa95c447871
 corpus/examples/either_match_in_lambda.gala	47d7cf5c882cfe37	2f3180ce8df7ecc1
 corpus/examples/equality_value_semantics.gala	47d7cf5c882cfe37	e123333881901666
 corpus/examples/execution_context.gala	47d7cf5c882cfe37	99825d02a9fcfd19
-corpus/examples/expr_as_thunk_sugar.gala	47d7cf5c882cfe37	5a12b73e5787dbec
-corpus/examples/expr_body_multiline_lambda.gala	47d7cf5c882cfe37	c654b988e790bacb
+corpus/examples/expr_as_thunk_sugar.gala	47d7cf5c882cfe37	ab053a17c3680c75
+corpus/examples/expr_body_multiline_lambda.gala	47d7cf5c882cfe37	a072fb8d13b756e2
 corpus/examples/extractor_type_inference.gala	47d7cf5c882cfe37	a8d35627bd2b83b6
 corpus/examples/field_named_like_type/lib/lib.gala	abc6f1ae25bc9575	08f4d8f5338ae1bc
 corpus/examples/field_named_like_type/main.gala	c1087f5ffb31ba7b	3e3bf457ed3ac334
@@ -159,7 +159,7 @@ corpus/examples/fix001_some_reassign.gala	47d7cf5c882cfe37	7d667e39c3fec605
 corpus/examples/fix004_if_string_iife.gala	47d7cf5c882cfe37	80cbb76d89d63f4e
 corpus/examples/fix004_repro.gala	47d7cf5c882cfe37	87892ec842b2d1d4
 corpus/examples/fix005_sized_field_literal.gala	47d7cf5c882cfe37	7620ccb823e594d7
-corpus/examples/fix006_match_in_lambda_void_arms.gala	47d7cf5c882cfe37	8cd70b7b74aaafae
+corpus/examples/fix006_match_in_lambda_void_arms.gala	47d7cf5c882cfe37	c3142d2ab9966b5f
 corpus/examples/fix007_repro.gala	47d7cf5c882cfe37	c58b35673a2c9849
 corpus/examples/fix007_sealed_tuple_widen.gala	47d7cf5c882cfe37	673a16e56f3f9164
 corpus/examples/fix009_eq_literal_immutable.gala	47d7cf5c882cfe37	cef5f930aa3706bd
@@ -172,7 +172,7 @@ corpus/examples/foldleft_method/main.gala	63b3825b8a212dff	fc04167a25476787
 corpus/examples/foldleft_on_sequence_get.gala	47d7cf5c882cfe37	58d384ccd2bb6f47
 corpus/examples/foldleft_spread_type.gala	47d7cf5c882cfe37	7a1c367f5c62fabf
 corpus/examples/for_loops.gala	47d7cf5c882cfe37	a8ff1c244e2d37f6
-corpus/examples/for_range_groupby_key_type.gala	47d7cf5c882cfe37	35e4d972852c29b5
+corpus/examples/for_range_groupby_key_type.gala	47d7cf5c882cfe37	94a74376d456f1f5
 corpus/examples/foreach_void_lambda.gala	47d7cf5c882cfe37	d2d0a2af41d808ba
 corpus/examples/foreign_default_dot_scope/lib/inside.gala	0b9434a32f4b1355	4c7815f9ee5a8a2f
 corpus/examples/foreign_default_dot_scope/lib/lib.gala	0b9434a32f4b1355	a690d1555e05a858
@@ -181,16 +181,16 @@ corpus/examples/foreign_default_dot_scope/pb/pb.gala	17acdc6d59726e04	75469b28d5
 corpus/examples/foreign_default_dot_scope_test.gala	47d7cf5c882cfe37	cfc6856041d1e195
 corpus/examples/from_error.gala	47d7cf5c882cfe37	589fd322b156bccb
 corpus/examples/fs_roundtrip.gala	47d7cf5c882cfe37	cf68e6722c39ff82
-corpus/examples/func_struct_field.gala	47d7cf5c882cfe37	15dd92288446d2e6
-corpus/examples/func_typed_defaults.gala	47d7cf5c882cfe37	8f467e5adb18718d
-corpus/examples/func_value_lambda_arg.gala	47d7cf5c882cfe37	56f7c6d4030e0318
-corpus/examples/function_shadows_std_type.gala	47d7cf5c882cfe37	c529fbed9e485eb4
+corpus/examples/func_struct_field.gala	47d7cf5c882cfe37	c40d1c87477b9b7b
+corpus/examples/func_typed_defaults.gala	47d7cf5c882cfe37	60aeffa17a8a66ff
+corpus/examples/func_value_lambda_arg.gala	47d7cf5c882cfe37	420d8d4b2e28449d
+corpus/examples/function_shadows_std_type.gala	47d7cf5c882cfe37	b7bcc47b7a9a12af
 corpus/examples/future_capture_safety.gala	47d7cf5c882cfe37	f034b2cfe728c854
 corpus/examples/future_field_capture.gala	47d7cf5c882cfe37	bc8b48f95dbf1e0f
 corpus/examples/future_get_type_chain.gala	47d7cf5c882cfe37	555ea6dfff213371
 corpus/examples/future_go_scalar_capture.gala	47d7cf5c882cfe37	2ebdb1959535ca27
 corpus/examples/future_pattern_match.gala	47d7cf5c882cfe37	cf0cef20bd826af9
-corpus/examples/future_sendable_wrapper.gala	47d7cf5c882cfe37	a4f065f801c1bc5a
+corpus/examples/future_sendable_wrapper.gala	47d7cf5c882cfe37	d2a32d3b64041da9
 corpus/examples/gap04_repro.gala	47d7cf5c882cfe37	e94d2b50ea0ecb58
 corpus/examples/gap09_group_map_reduce.gala	47d7cf5c882cfe37	5a3bc83d2bb2ae1c
 corpus/examples/gap10_tuple_literal_append.gala	47d7cf5c882cfe37	b6498b5964aaa49b
@@ -199,35 +199,35 @@ corpus/examples/generic_alias_crosspkg/report/report.gala	ee28af80a33954bf	4e548
 corpus/examples/generic_alias_crosspkg/shapes/shapes.gala	c2a7188e0ab4c4d9	9c90234e8bbca98a
 corpus/examples/generic_alias_crosspkg_test.gala	47d7cf5c882cfe37	0ba95ec351ac5d34
 corpus/examples/generic_field_named_like_type/lib/lib.gala	f35820fc589c718e	5f87fcb10dc7cb3d
-corpus/examples/generic_field_named_like_type/lib/types.gala	f35820fc589c718e	d17726cb0e5bbb70
-corpus/examples/generic_field_named_like_type/main.gala	d1d451b20c9b661b	516cef54d84d8f6e
+corpus/examples/generic_field_named_like_type/lib/types.gala	f35820fc589c718e	63936c338bf2993d
+corpus/examples/generic_field_named_like_type/main.gala	d1d451b20c9b661b	9c1a90f7a7b786e4
 corpus/examples/generic_func_alias.gala	47d7cf5c882cfe37	d6524ffd0064a888
 corpus/examples/generic_funcref_chain.gala	47d7cf5c882cfe37	07d2e3a80277d2ed
 corpus/examples/generic_interface.gala	47d7cf5c882cfe37	c9fcf419f03a17fc
-corpus/examples/generic_method_constraint.gala	47d7cf5c882cfe37	a23354e93482b170
+corpus/examples/generic_method_constraint.gala	47d7cf5c882cfe37	cbca85074190a9ee
 corpus/examples/generic_method_cycle.gala	47d7cf5c882cfe37	f862848f921f88a8
-corpus/examples/generic_method_named_args.gala	47d7cf5c882cfe37	f07fe53b38e1260b
-corpus/examples/generic_methods.gala	47d7cf5c882cfe37	f8834b08eb9b9744
-corpus/examples/generic_pointer_method_autoaddr.gala	47d7cf5c882cfe37	df807dffba7ca45a
+corpus/examples/generic_method_named_args.gala	47d7cf5c882cfe37	beeed050691ff76f
+corpus/examples/generic_methods.gala	47d7cf5c882cfe37	03dbec94de8d444c
+corpus/examples/generic_pointer_method_autoaddr.gala	47d7cf5c882cfe37	8677318baad7e9ff
 corpus/examples/generic_sealed_exhaustive.gala	47d7cf5c882cfe37	4428d53d6f67f92a
 corpus/examples/generic_struct_alias_ctor.gala	47d7cf5c882cfe37	bc2541310e034f59
 corpus/examples/generic_struct_copy.gala	47d7cf5c882cfe37	61efce86e035c50f
 corpus/examples/generic_struct_copy/boxes/boxes.gala	102d198ddacdabb8	b44d457f32a4035a
-corpus/examples/generic_struct_extractor.gala	47d7cf5c882cfe37	d102a9a30591a196
+corpus/examples/generic_struct_extractor.gala	47d7cf5c882cfe37	5d27a78b28d99322
 corpus/examples/generic_struct_extractor/cell/cell.gala	83cb1d4262ce4ff6	3ebeb54e5c65aa80
 corpus/examples/generic_type_alias.gala	47d7cf5c882cfe37	86127ad5c84f9275
-corpus/examples/generic_type_param_none.gala	47d7cf5c882cfe37	2754f91d5ac58fe8
+corpus/examples/generic_type_param_none.gala	47d7cf5c882cfe37	5250332baf5fe6b2
 corpus/examples/generic_wrap_match.gala	47d7cf5c882cfe37	52f131ac4bd3f411
 corpus/examples/get_generic_pointer_receiver.gala	47d7cf5c882cfe37	cde85b548ad5e42c
 corpus/examples/go_call_results.gala	47d7cf5c882cfe37	c1f4a041c9b23cc0
 corpus/examples/go_func_void_lambda.gala	47d7cf5c882cfe37	83a1ef5686d689ad
-corpus/examples/go_generic_lambda_return.gala	47d7cf5c882cfe37	487f564d4ab64961
+corpus/examples/go_generic_lambda_return.gala	47d7cf5c882cfe37	f0304e8b60234af3
 corpus/examples/go_generic_multireturn_destructure.gala	47d7cf5c882cfe37	6d41462331076903
-corpus/examples/go_generic_option_lambda_return.gala	47d7cf5c882cfe37	3108613e9c6a21a6
+corpus/examples/go_generic_option_lambda_return.gala	47d7cf5c882cfe37	baff90bb9523e2c0
 corpus/examples/go_generic_struct_dot_import.gala	47d7cf5c882cfe37	9c5bd6d7fd264ade
 corpus/examples/go_generic_struct_dot_import_only_generic.gala	47d7cf5c882cfe37	b6fad30b6d0316c9
 corpus/examples/go_method_multi_results.gala	47d7cf5c882cfe37	70941ebb668536e3
-corpus/examples/go_multi_result_callbacks.gala	47d7cf5c882cfe37	40286e148080136c
+corpus/examples/go_multi_result_callbacks.gala	47d7cf5c882cfe37	a6fab65d8d585315
 corpus/examples/go_multi_result_methods.gala	47d7cf5c882cfe37	d0893d83edea67c0
 corpus/examples/go_named_func_type_slots.gala	47d7cf5c882cfe37	6fb01d594bb2028f
 corpus/examples/go_pkg_shares_gala_name/gala_side.gala	4729acc10fe178bd	c5ebf10ae57e65f3
@@ -244,7 +244,7 @@ corpus/examples/go_type_inference_cross_pkg.gala	47d7cf5c882cfe37	f6395f5da301ab
 corpus/examples/go_type_inference_lib/textutil.gala	8ba5145747c1dba7	59dea2aff0eaf1ef
 corpus/examples/go_type_inference_multifile/helpers.gala	f8615f477d3f64eb	2efaa0212b860473
 corpus/examples/go_type_inference_multifile/main.gala	f8615f477d3f64eb	d4679ccdafa36dbb
-corpus/examples/go_type_positions.gala	47d7cf5c882cfe37	f4a00ed8b6084fab
+corpus/examples/go_type_positions.gala	47d7cf5c882cfe37	a2ea5d80e6b6aa2c
 corpus/examples/hashable_collection_keys.gala	47d7cf5c882cfe37	b0954fd2b6f5d5ca
 corpus/examples/hashable_std_keys.gala	47d7cf5c882cfe37	d32902bdc5307448
 corpus/examples/hashmap.gala	47d7cf5c882cfe37	9bbf0ebc0202be0c
@@ -264,20 +264,20 @@ corpus/examples/if_expr_batch_regress/types.gala	27eb401a25310d2d	6e5c73fca256c2
 corpus/examples/if_expr_batch_regress_test.gala	47d7cf5c882cfe37	663ad48cb8134d9f
 corpus/examples/if_expr_branch_statements.gala	47d7cf5c882cfe37	58f51de898f36ec2
 corpus/examples/if_expr_concrete_type.gala	47d7cf5c882cfe37	8041cb66f5fafd31
-corpus/examples/if_expr_lambda_return_type.gala	47d7cf5c882cfe37	a2a51a68a88fa00c
+corpus/examples/if_expr_lambda_return_type.gala	47d7cf5c882cfe37	af267249f5151afb
 corpus/examples/if_expr_return_generic.gala	47d7cf5c882cfe37	8b0092265556cb28
 corpus/examples/if_expr_trailing_match.gala	47d7cf5c882cfe37	bfb2ec10845d4c96
 corpus/examples/if_expr_unit_func_param.gala	47d7cf5c882cfe37	eceeef6a6842abb7
 corpus/examples/if_expression_block.gala	47d7cf5c882cfe37	0bf67eefb32313b2
 corpus/examples/if_iife_terminating_branches.gala	47d7cf5c882cfe37	5b1224a10aac650c
 corpus/examples/immutable_go_json.gala	47d7cf5c882cfe37	531a6064a9be8ccc
-corpus/examples/immutable_lambda_params_receivers.gala	47d7cf5c882cfe37	4b07cc297c2cc1a1
+corpus/examples/immutable_lambda_params_receivers.gala	47d7cf5c882cfe37	22af9a27a74984f3
 corpus/examples/immutable_slice_field.gala	47d7cf5c882cfe37	a6227a71bd219919
 corpus/examples/immutable_typed_field_ctor.gala	47d7cf5c882cfe37	cf7838539e02b242
 corpus/examples/imports.gala	47d7cf5c882cfe37	e9696c348a53ef76
 corpus/examples/inc_dec.gala	47d7cf5c882cfe37	0950c8f02258a0ad
 corpus/examples/interface.gala	47d7cf5c882cfe37	f20e70d9a2c71e9c
-corpus/examples/interface_literal.gala	47d7cf5c882cfe37	e51eca1bbf56cd9b
+corpus/examples/interface_literal.gala	47d7cf5c882cfe37	119d86acc7921369
 corpus/examples/interface_val_field.gala	47d7cf5c882cfe37	c7e2e5af79cf6c72
 corpus/examples/interface_val_field_crosspkg.gala	47d7cf5c882cfe37	19f983a1d0415732
 corpus/examples/interpolation_escaped_quotes.gala	47d7cf5c882cfe37	c5e99ba014634694
@@ -299,16 +299,16 @@ corpus/examples/json_unicode_roundtrip.gala	47d7cf5c882cfe37	3ced314f8803667b
 corpus/examples/kvstore.gala	47d7cf5c882cfe37	cc70f9fd3d39f9a5
 corpus/examples/lambda_block_body_repro.gala	47d7cf5c882cfe37	5884ac0c5854ad98
 corpus/examples/lambda_block_val_trailing.gala	47d7cf5c882cfe37	2dceb829fa288cd6
-corpus/examples/lambda_expected_type.gala	47d7cf5c882cfe37	0cebc4427a1e134e
+corpus/examples/lambda_expected_type.gala	47d7cf5c882cfe37	ed9e2e4919b96ce2
 corpus/examples/lambda_explicit_ret_block.gala	47d7cf5c882cfe37	a4eb59b1041dfd3b
 corpus/examples/lambda_explicit_return_type.gala	47d7cf5c882cfe37	5cfcfca32a9f3b6a
-corpus/examples/lambda_multi_return_type.gala	47d7cf5c882cfe37	ae9094d00559a2f2
+corpus/examples/lambda_multi_return_type.gala	47d7cf5c882cfe37	549c6b61b3e23ca8
 corpus/examples/lambda_multi_return_unify.gala	47d7cf5c882cfe37	117bb7e829bc070e
-corpus/examples/lambda_return_generic.gala	47d7cf5c882cfe37	02a1593948d390fd
-corpus/examples/lambda_return_slot.gala	47d7cf5c882cfe37	fbe0b613a0c12704
-corpus/examples/lambda_type_inference.gala	47d7cf5c882cfe37	a14d0cb02c6a2bf6
+corpus/examples/lambda_return_generic.gala	47d7cf5c882cfe37	2111b39e7665fafd
+corpus/examples/lambda_return_slot.gala	47d7cf5c882cfe37	9d91aa826f5aea2f
+corpus/examples/lambda_type_inference.gala	47d7cf5c882cfe37	07c0fb9dcf35b807
 corpus/examples/language_ergonomics.gala	47d7cf5c882cfe37	fb89f3d1b3644c45
-corpus/examples/lib/generic.gala	bf9a47664ec283c5	fd5f47fdbb49273f
+corpus/examples/lib/generic.gala	bf9a47664ec283c5	852b4645a5590033
 corpus/examples/list_concat_partition_order.gala	47d7cf5c882cfe37	aa61d30403b438ce
 corpus/examples/list_groupby_string_keys.gala	47d7cf5c882cfe37	b9325792ad924dd8
 corpus/examples/list_pattern_match.gala	47d7cf5c882cfe37	c8645e6f877a4aa1
@@ -324,8 +324,8 @@ corpus/examples/match_arm_panic.gala	47d7cf5c882cfe37	120aad3ecf361d4f
 corpus/examples/match_block_branch.gala	47d7cf5c882cfe37	17925113f56b8ec3
 corpus/examples/match_chained_call_generic.gala	47d7cf5c882cfe37	9d39d058f53e2af6
 corpus/examples/match_extractors.gala	47d7cf5c882cfe37	9554f882a80b1b8e
-corpus/examples/match_generic_inference.gala	47d7cf5c882cfe37	ca74826a7388936c
-corpus/examples/match_generic_return_dispatch.gala	47d7cf5c882cfe37	c70cb3b127b65ac8
+corpus/examples/match_generic_inference.gala	47d7cf5c882cfe37	2b026926aca3a06b
+corpus/examples/match_generic_return_dispatch.gala	47d7cf5c882cfe37	dae9d8e810e019c9
 corpus/examples/match_go_constant.gala	47d7cf5c882cfe37	9edf6afb4514deee
 corpus/examples/match_interface_return.gala	47d7cf5c882cfe37	cf14b3a9707ff984
 corpus/examples/match_lambda_arg/main.gala	2269b25610f952c5	d1d41911fbeaf94e
@@ -346,7 +346,7 @@ corpus/examples/match_stmt_guard_dispatch.gala	47d7cf5c882cfe37	ef041e696af77218
 corpus/examples/match_stmt_mixed_void.gala	47d7cf5c882cfe37	446dd141e2ebc11c
 corpus/examples/match_stmt_true_dangle.gala	47d7cf5c882cfe37	07111bce5a3c6bbf
 corpus/examples/match_type_inference.gala	47d7cf5c882cfe37	cd47b30654974804
-corpus/examples/match_type_switch.gala	47d7cf5c882cfe37	15a11d2583171ff3
+corpus/examples/match_type_switch.gala	47d7cf5c882cfe37	73c4124017302ab3
 corpus/examples/match_var_fields.gala	47d7cf5c882cfe37	c30f5466762f3e0f
 corpus/examples/match_void_branches.gala	47d7cf5c882cfe37	114eda76f09f1c7e
 corpus/examples/match_void_dispatch.gala	47d7cf5c882cfe37	68d5901625564e0d
@@ -378,8 +378,8 @@ corpus/examples/multifile_lib_regress/directive_pkg/directive.gala	0600bfe2a13c0
 corpus/examples/multifile_lib_regress/events_pipe.gala	bbdad92c77c6befd	4392df493f448b4e
 corpus/examples/multifile_lib_regress/generic_funcref.gala	bbdad92c77c6befd	1b8df38f3f8f132b
 corpus/examples/multifile_lib_regress/generic_sealed.gala	bbdad92c77c6befd	2ac12b2aefd768a1
-corpus/examples/multifile_lib_regress/go_interop.gala	bbdad92c77c6befd	1dfa304d1459d398
-corpus/examples/multifile_lib_regress/logic.gala	bbdad92c77c6befd	eff06ab412bcbf3f
+corpus/examples/multifile_lib_regress/go_interop.gala	bbdad92c77c6befd	4688f648b36e9ddf
+corpus/examples/multifile_lib_regress/logic.gala	bbdad92c77c6befd	fc3e229a7e5b10d6
 corpus/examples/multifile_lib_regress/lowercase_variant_match.gala	bbdad92c77c6befd	645aca6706160047
 corpus/examples/multifile_lib_regress/lowercase_variant_types.gala	bbdad92c77c6befd	035d2da7df756f58
 corpus/examples/multifile_lib_regress/opaque_a.gala	bbdad92c77c6befd	1df8a441fb4a9469
@@ -394,7 +394,7 @@ corpus/examples/multifile_lib_regress/shadow_func/shadow.gala	97607ccaa1790f89	f
 corpus/examples/multifile_lib_regress/symbol_scope.gala	bbdad92c77c6befd	9351de9b28a3f315
 corpus/examples/multifile_lib_regress/team_lookup.gala	bbdad92c77c6befd	9514cb393b46ef26
 corpus/examples/multifile_lib_regress/team_pkg/team.gala	6ba0827916b99291	ccb862d57a077536
-corpus/examples/multifile_lib_regress/time_pkg/time.gala	6cb9dfa1084538f6	58cb298a156b737d
+corpus/examples/multifile_lib_regress/time_pkg/time.gala	6cb9dfa1084538f6	30d5d3de3ab54624
 corpus/examples/multifile_lib_regress/tuple_vals_a.gala	bbdad92c77c6befd	9af471bb8bf20d3e
 corpus/examples/multifile_lib_regress/tuple_vals_b.gala	bbdad92c77c6befd	5ca37ac7b8ce0c43
 corpus/examples/multifile_lib_regress/types.gala	bbdad92c77c6befd	0849643107b9218c
@@ -404,14 +404,14 @@ corpus/examples/multifile_lib_regress/variant_pkg/variant.gala	72a351b86f6978d6	
 corpus/examples/multifile_lib_regress_test.gala	47d7cf5c882cfe37	1e88748e1c47f2ee
 corpus/examples/multipackage_subpkg/main.gala	780e8de04fac6e51	d106405346c05300
 corpus/examples/multipackage_subpkg/state/state.gala	291c4fac2f9a1fd1	f2318179f1a8d900
-corpus/examples/mutable_collections.gala	47d7cf5c882cfe37	6e8e678da2218a92
+corpus/examples/mutable_collections.gala	47d7cf5c882cfe37	474b33b4c9572545
 corpus/examples/named_arg_sealed.gala	47d7cf5c882cfe37	467227bd72ad85ae
 corpus/examples/named_arg_sealed_model.gala	47d7cf5c882cfe37	54ec0f02837ed252
 corpus/examples/named_args.gala	47d7cf5c882cfe37	9d54b57632e0a3e9
 corpus/examples/named_args_defaults_generics.gala	47d7cf5c882cfe37	1c3c0d16ce13dd45
 corpus/examples/named_args_variadic_omitted.gala	47d7cf5c882cfe37	e00fe4c49a60c7b6
 corpus/examples/named_sub_patterns.gala	47d7cf5c882cfe37	ea1acede1e314d3b
-corpus/examples/nested_generic_flatmap.gala	47d7cf5c882cfe37	a26be2eec770b9e7
+corpus/examples/nested_generic_flatmap.gala	47d7cf5c882cfe37	5ad4797711aec723
 corpus/examples/nested_match.gala	47d7cf5c882cfe37	5f899ef0118214bd
 corpus/examples/nested_tuple_destruct.gala	47d7cf5c882cfe37	f23521b35aa32f6b
 corpus/examples/nested_tuple_pattern.gala	47d7cf5c882cfe37	11b8f7f6f48c2c4d
@@ -419,7 +419,7 @@ corpus/examples/nested_type_match.gala	47d7cf5c882cfe37	1330f7d0ede0ad92
 corpus/examples/nested_wildcard_type_pattern.gala	47d7cf5c882cfe37	0b625e7d07e0f85a
 corpus/examples/newimmutable_nil.gala	47d7cf5c882cfe37	0a076393ad783e86
 corpus/examples/newline_deref_statement.gala	47d7cf5c882cfe37	789ac8429a988254
-corpus/examples/newline_paren_statement.gala	47d7cf5c882cfe37	3a171c76944e4172
+corpus/examples/newline_paren_statement.gala	47d7cf5c882cfe37	70310d32345b06df
 corpus/examples/newline_split_header.gala	47d7cf5c882cfe37	3b81f0bdf30fab14
 corpus/examples/none_branch_result_type.gala	47d7cf5c882cfe37	cc339c048a2768e8
 corpus/examples/none_downward_inference.gala	47d7cf5c882cfe37	2b8c2558c60e4d28
@@ -448,14 +448,14 @@ corpus/examples/package_tuple_destructure/main.gala	954a54fe391dd7a7	1efd2172605
 corpus/examples/package_tuple_destructure/values.gala	954a54fe391dd7a7	767052a3d2eba4cd
 corpus/examples/package_val_init_types.gala	47d7cf5c882cfe37	04cc9db299e49885
 corpus/examples/package_val_init_types/consts/consts.gala	51b53007c883ad0a	44719b4caf73037d
-corpus/examples/partial_ctor_type_args.gala	47d7cf5c882cfe37	94996f4fb6a47435
+corpus/examples/partial_ctor_type_args.gala	47d7cf5c882cfe37	ce598834ee5564fc
 corpus/examples/partial_function.gala	47d7cf5c882cfe37	52beae24eb6dc9e7
-corpus/examples/partial_function_suffix_arg.gala	47d7cf5c882cfe37	35f4863d343c79be
+corpus/examples/partial_function_suffix_arg.gala	47d7cf5c882cfe37	d5ee6330fdc7ad61
 corpus/examples/path_basics.gala	47d7cf5c882cfe37	eda7353ab94fb589
 corpus/examples/pattern_match_filter.gala	47d7cf5c882cfe37	87b494b73265a35f
 corpus/examples/pf_repro.gala	47d7cf5c882cfe37	c5ba9853462346c0
 corpus/examples/placeholder_field_unwrap.gala	47d7cf5c882cfe37	04b3df90160f7d4a
-corpus/examples/placeholder_generic_ctor.gala	47d7cf5c882cfe37	f5bbd246d857d58d
+corpus/examples/placeholder_generic_ctor.gala	47d7cf5c882cfe37	d13cf4d5de545323
 corpus/examples/placeholder_lambda.gala	47d7cf5c882cfe37	e8e8b13185d97518
 corpus/examples/placeholder_void_context.gala	47d7cf5c882cfe37	68f08ab31462d8ee
 corpus/examples/plugin_test_file.gala	47d7cf5c882cfe37	c366515206a995f7
@@ -463,13 +463,13 @@ corpus/examples/pointer_hash_keys.gala	47d7cf5c882cfe37	8a4fdde67dc7b212
 corpus/examples/pointer_method_on_val.gala	47d7cf5c882cfe37	e1d6567f429dd737
 corpus/examples/pointer_receiver_generic_method_val.gala	47d7cf5c882cfe37	010e4a87d8e6331a
 corpus/examples/pointer_semantics.gala	47d7cf5c882cfe37	d944ab58fa4a832c
-corpus/examples/ptr_checked.gala	47d7cf5c882cfe37	ff8d216dfeffd6c0
+corpus/examples/ptr_checked.gala	47d7cf5c882cfe37	a29b7e6d3adfa546
 corpus/examples/ptr_cycle_lowered_crosspkg.gala	47d7cf5c882cfe37	75ba27dceac9e649
 corpus/examples/ptr_cycle_lowered_lib/box.gala	fa7d0ca9affd592b	2b62984a48be6f34
 corpus/examples/ptr_receiver.gala	47d7cf5c882cfe37	d9b41574d5096594
-corpus/examples/ptr_receiver_bind.gala	47d7cf5c882cfe37	7c0fa76349d10ec3
+corpus/examples/ptr_receiver_bind.gala	47d7cf5c882cfe37	cd1848353b8f0e57
 corpus/examples/qualified_lambda_infer.gala	47d7cf5c882cfe37	2f0001d7400dc243
-corpus/examples/receiver_type_param_rename.gala	47d7cf5c882cfe37	890d399b85f2fdce
+corpus/examples/receiver_type_param_rename.gala	47d7cf5c882cfe37	3e2a71899875e890
 corpus/examples/regex_usage.gala	47d7cf5c882cfe37	901cd8c51e626150
 corpus/examples/resource_combinators.gala	47d7cf5c882cfe37	f301fb90c04d5409
 corpus/examples/retry_backoff.gala	47d7cf5c882cfe37	80940d21898343c7
@@ -488,7 +488,7 @@ corpus/examples/sealed_field_clash.gala	47d7cf5c882cfe37	218334ae9437f948
 corpus/examples/sealed_field_named_like_method.gala	47d7cf5c882cfe37	a8376f7a4b8265d0
 corpus/examples/sealed_foreign_field_cmd_lib/cmd.gala	89991e996788baa6	f433df70ffee5d87
 corpus/examples/sealed_foreign_field_lib/edge.gala	c994e37bfe73322d	59bbcce1b6deb17b
-corpus/examples/sealed_func_field_string.gala	47d7cf5c882cfe37	2255ef3f2481ca65
+corpus/examples/sealed_func_field_string.gala	47d7cf5c882cfe37	ef271088889e806a
 corpus/examples/sealed_inference_arg_context.gala	47d7cf5c882cfe37	031b0304b8a0d48a
 corpus/examples/sealed_inference_container_context.gala	47d7cf5c882cfe37	aee6d379181b463d
 corpus/examples/sealed_inference_match_arm.gala	47d7cf5c882cfe37	fecbccf4b03b67af
@@ -510,9 +510,9 @@ corpus/examples/seq_pattern_match.gala	47d7cf5c882cfe37	6d164c9cb924fc63
 corpus/examples/seq_rest_edge.gala	47d7cf5c882cfe37	aafd5da738d761c5
 corpus/examples/sequence_pattern_exact_length.gala	47d7cf5c882cfe37	139188e4add1df73
 corpus/examples/sequence_pattern_nested_ctor.gala	47d7cf5c882cfe37	be26d154083155b1
-corpus/examples/shadowed_function.gala	47d7cf5c882cfe37	8685ec64c1981665
+corpus/examples/shadowed_function.gala	47d7cf5c882cfe37	45d3c61894278bc5
 corpus/examples/short_var_decl_multi_value.gala	47d7cf5c882cfe37	448e7ca2d6bcf047
-corpus/examples/single_letter_type_names.gala	47d7cf5c882cfe37	97a3d88b2f8a0bab
+corpus/examples/single_letter_type_names.gala	47d7cf5c882cfe37	ad4422811b4078c9
 corpus/examples/size_method.gala	47d7cf5c882cfe37	c050e9cf8064509b
 corpus/examples/slice_element_unwrap.gala	47d7cf5c882cfe37	1b24b7b1933242cb
 corpus/examples/slice_type_param.gala	47d7cf5c882cfe37	08d1774d7d2fd67d
@@ -527,20 +527,20 @@ corpus/examples/spread_operator.gala	47d7cf5c882cfe37	041d86745d64f7b1
 corpus/examples/stable_identifier_pattern.gala	47d7cf5c882cfe37	60315c4c2bdff2b9
 corpus/examples/std_shadow_lib/types.gala	df8e2cfeeb9ffab7	149350bef564b262
 corpus/examples/std_shadow_lib/use.gala	df8e2cfeeb9ffab7	a001d2325f437f7f
-corpus/examples/std_type_in_lambda.gala	47d7cf5c882cfe37	c884af176ee15b74
+corpus/examples/std_type_in_lambda.gala	47d7cf5c882cfe37	4fab50f9d13e3992
 corpus/examples/std_type_qualified.gala	47d7cf5c882cfe37	63ada926884fe73c
 corpus/examples/string_builder.gala	47d7cf5c882cfe37	1d48718d84eff3cf
 corpus/examples/string_escapes.gala	47d7cf5c882cfe37	081659e9a8ce3428
 corpus/examples/string_interpolation.gala	47d7cf5c882cfe37	11e3a8581cbc4ed2
 corpus/examples/strings_basics.gala	47d7cf5c882cfe37	22f3117a6c9ee49d
 corpus/examples/struct_expected_type/units/units.gala	31a17114ec26e9fc	7c4f18a19f68f1f8
-corpus/examples/struct_expected_type_test.gala	47d7cf5c882cfe37	64fdd24ce757178c
+corpus/examples/struct_expected_type_test.gala	47d7cf5c882cfe37	e31126ff482a62ca
 corpus/examples/struct_features.gala	47d7cf5c882cfe37	ffb148a843101926
 corpus/examples/struct_field_defaults.gala	47d7cf5c882cfe37	0215abff7fcc4ef0
 corpus/examples/struct_field_defaults_crosspkg.gala	47d7cf5c882cfe37	60883f271b522250
 corpus/examples/struct_field_unwrap/main.gala	f19acd694045479d	48a5352b0b41a939
 corpus/examples/struct_field_unwrap/types.gala	f19acd694045479d	5ffc7a75a9edc86a
-corpus/examples/struct_lambda_inference.gala	47d7cf5c882cfe37	590d63c2af4ad984
+corpus/examples/struct_lambda_inference.gala	47d7cf5c882cfe37	e002ec7dc83ca4f2
 corpus/examples/struct_mixed_args.gala	47d7cf5c882cfe37	1a2ad35d6f73dd72
 corpus/examples/struct_pattern_interface_subject.gala	47d7cf5c882cfe37	df1c3d4e7b2d5acd
 corpus/examples/struct_shorthand_generic.gala	47d7cf5c882cfe37	0ff761f9cbcaeadb
@@ -585,7 +585,7 @@ corpus/examples/tuple_as_argument.gala	47d7cf5c882cfe37	817fc0216479756b
 corpus/examples/tuple_call_field_unwrap.gala	47d7cf5c882cfe37	39e6a01f927310f9
 corpus/examples/tuple_destructuring.gala	47d7cf5c882cfe37	0d073fd8eebd60bd
 corpus/examples/tuple_field_access.gala	47d7cf5c882cfe37	113d74a2e3c1866d
-corpus/examples/tuple_field_unwrap.gala	47d7cf5c882cfe37	54bf10d3752c76b6
+corpus/examples/tuple_field_unwrap.gala	47d7cf5c882cfe37	d042eb7546d45adf
 corpus/examples/tuple_interface_element.gala	47d7cf5c882cfe37	ab93e716a94dda76
 corpus/examples/tuple_match_irrefutable.gala	47d7cf5c882cfe37	658edba258193fca
 corpus/examples/tuple_multi_return.gala	47d7cf5c882cfe37	ac76f2835824e91e
@@ -599,13 +599,13 @@ corpus/examples/tuple_syntax.gala	47d7cf5c882cfe37	03bc6f8a8ba740d6
 corpus/examples/type_alias.gala	47d7cf5c882cfe37	435cabcb8651e67a
 corpus/examples/type_alias_conversion.gala	47d7cf5c882cfe37	7c13746ba8e79d93
 corpus/examples/type_alias_lambda_inference.gala	47d7cf5c882cfe37	65e0d62d7bb63fef
-corpus/examples/type_alias_lib_match/processor.gala	75092eb14ee90a1a	0383704c66918cdb
+corpus/examples/type_alias_lib_match/processor.gala	75092eb14ee90a1a	0d2e703dc326b001
 corpus/examples/type_alias_lib_match/types.gala	75092eb14ee90a1a	e39e100d0a5e264a
 corpus/examples/type_alias_lib_match_test.gala	47d7cf5c882cfe37	f5d2070db000b980
 corpus/examples/type_arg_roundtrip.gala	47d7cf5c882cfe37	fff52baf4f01142e
 corpus/examples/type_match.gala	47d7cf5c882cfe37	c76a96c5da47664e
-corpus/examples/type_param_shadows_std.gala	47d7cf5c882cfe37	f5401ea4cd076eba
-corpus/examples/typed_partial_function.gala	47d7cf5c882cfe37	71d8a7054b49bfac
+corpus/examples/type_param_shadows_std.gala	47d7cf5c882cfe37	1f7912b5f6c8116b
+corpus/examples/typed_partial_function.gala	47d7cf5c882cfe37	c5398391094b765e
 corpus/examples/typed_pattern_option_ptr.gala	47d7cf5c882cfe37	297eb7e83780c189
 corpus/examples/typed_val_lambda_inference.gala	47d7cf5c882cfe37	71f43b4c5dcb1f93
 corpus/examples/unapply_inference.gala	47d7cf5c882cfe37	41b24d9facbe3311
@@ -633,16 +633,16 @@ corpus/examples/use_std_shadow_lib.gala	47d7cf5c882cfe37	16a5773540bb6bdd
 corpus/examples/user_get_method_option_chain.gala	47d7cf5c882cfe37	00078d494136c722
 corpus/examples/val_go_interface_method.gala	47d7cf5c882cfe37	b7ff20ee5f9655f6
 corpus/examples/val_multi_return.gala	47d7cf5c882cfe37	2d5387ee1bfdbc90
-corpus/examples/val_param_plain.gala	47d7cf5c882cfe37	5ee305263ff85f8f
+corpus/examples/val_param_plain.gala	47d7cf5c882cfe37	f7c9b28901913cf6
 corpus/examples/val_pointer_field_mutation.gala	47d7cf5c882cfe37	7fece63bc256260f
 corpus/examples/value_match_control_flow.gala	47d7cf5c882cfe37	525065b9a1f242a9
 corpus/examples/value_match_return.gala	47d7cf5c882cfe37	8dc64a2a65178cd6
 corpus/examples/value_match_use_release.gala	47d7cf5c882cfe37	e440f55a5891d0b4
-corpus/examples/value_receiver_bind_ptr.gala	47d7cf5c882cfe37	08c3b38cbef49e51
+corpus/examples/value_receiver_bind_ptr.gala	47d7cf5c882cfe37	521604e93c3b981d
 corpus/examples/var_tuple_destructuring.gala	47d7cf5c882cfe37	60518571aa75feb3
 corpus/examples/variadic_functions.gala	47d7cf5c882cfe37	91ce57c2640e1601
 corpus/examples/variadic_generic_spread.gala	47d7cf5c882cfe37	94c9efb6a961c314
-corpus/examples/variadic_tail_args.gala	47d7cf5c882cfe37	2dcac6d5a54a192b
+corpus/examples/variadic_tail_args.gala	47d7cf5c882cfe37	666f57945ec38e59
 corpus/examples/void_expression_function.gala	47d7cf5c882cfe37	f2a3f130dd99fe95
 corpus/examples/void_match.gala	47d7cf5c882cfe37	42e0f5211ce84e62
 corpus/examples/when_flatmap_regress/logic.gala	060071f0703e10a7	66d16377b322f4df
@@ -658,39 +658,39 @@ corpus/examples/yaml_codec_collections.gala	47d7cf5c882cfe37	57b586c12b39c9df
 corpus/examples/zero_field_struct_ctor.gala	47d7cf5c882cfe37	91ac6fec65e764d6
 corpus/fs/dir_ops.gala	29c57b44fe56e892	e4b39bcc8e983638
 corpus/fs/fs.gala	29c57b44fe56e892	30f3eb500b66d1c1
-corpus/fs/streaming.gala	29c57b44fe56e892	fc6a6334b85d063f
-corpus/io/io.gala	1c786e1eb57a87c0	fe8de4cbf77bfcf9
+corpus/fs/streaming.gala	29c57b44fe56e892	bd7d70400483ebfe
+corpus/io/io.gala	1c786e1eb57a87c0	ab172bbfd71d120e
 corpus/json/codec.gala	6de027c4fba108a7	f6491242f8e4d19b
-corpus/json/helpers.gala	6de027c4fba108a7	f800c9c85e676ad3
-corpus/json/json.gala	6de027c4fba108a7	33b12c60231ef2cc
+corpus/json/helpers.gala	6de027c4fba108a7	c7e75cf41095d6e1
+corpus/json/json.gala	6de027c4fba108a7	6228c49a437d3e93
 corpus/json/naming.gala	6de027c4fba108a7	14bd589783c442fd
-corpus/lazy/lazy.gala	ecb5b1c6cd670fde	33ab4c10dc3fa84c
+corpus/lazy/lazy.gala	ecb5b1c6cd670fde	889e8fd592d87946
 corpus/path/path.gala	d536a74599fdcac7	26c035f8dd8db5a7
 corpus/regex/regex.gala	695b742f7f10c59b	e5173fa7fe4964ec
-corpus/resource/resource.gala	18eecca6ec6531e7	4eb4b06f49dd7164
-corpus/std/either.gala	ed1e7d52d9370e7b	1c97498b599d5604
+corpus/resource/resource.gala	18eecca6ec6531e7	978b54f5b459a007
+corpus/std/either.gala	ed1e7d52d9370e7b	85395c662a98d99c
 corpus/std/errors.gala	ed1e7d52d9370e7b	30819f1568d672e3
 corpus/std/hashable.gala	ed1e7d52d9370e7b	cc3bff6a63662495
 corpus/std/immutable.gala	ed1e7d52d9370e7b	0959a3dbaab69af3
-corpus/std/iterable.gala	ed1e7d52d9370e7b	decf017379b03203
-corpus/std/meta.gala	ed1e7d52d9370e7b	f328ab8f874a8044
-corpus/std/option.gala	ed1e7d52d9370e7b	3a2b91028b29637a
-corpus/std/option_ptr.gala	ed1e7d52d9370e7b	0318bd329eef70f1
+corpus/std/iterable.gala	ed1e7d52d9370e7b	2e9a8c555ff5f6b9
+corpus/std/meta.gala	ed1e7d52d9370e7b	fd4db1924af37bbb
+corpus/std/option.gala	ed1e7d52d9370e7b	735e0760d4153494
+corpus/std/option_ptr.gala	ed1e7d52d9370e7b	72cbf8c7ec26d117
 corpus/std/ordered.gala	ed1e7d52d9370e7b	3e75ee58800a4650
 corpus/std/ptr.gala	ed1e7d52d9370e7b	468ef6a6f4340190
 corpus/std/seq.gala	ed1e7d52d9370e7b	33695317708a5152
-corpus/std/try.gala	ed1e7d52d9370e7b	f6751e8f9294ef1d
+corpus/std/try.gala	ed1e7d52d9370e7b	e840351c97f34b6c
 corpus/std/tuple.gala	ed1e7d52d9370e7b	c20553f3714218ec
-corpus/stream/stream.gala	99f57ff211b18f31	3354aca63e67555b
-corpus/strings/strings.gala	752b049793db04f8	0e9ebaa9c95404a1
+corpus/stream/stream.gala	99f57ff211b18f31	b47e85805ed11b7f
+corpus/strings/strings.gala	752b049793db04f8	e66396198f2e3f45
 corpus/subprocess/async.gala	fba58aad2b62a0d3	35cd029cd9d04120
 corpus/subprocess/subprocess.gala	fba58aad2b62a0d3	b65fa0fa56874798
 corpus/test/assertions.gala	2a4d11402b98a3b1	142f617385c6068a
-corpus/test/bench.gala	2a4d11402b98a3b1	702b1b561d1bb1aa
-corpus/test/framework.gala	2a4d11402b98a3b1	dc660f40a39eca52
+corpus/test/bench.gala	2a4d11402b98a3b1	06a181f55b07b75e
+corpus/test/framework.gala	2a4d11402b98a3b1	e7e5f88269367bb2
 corpus/test/table.gala	2a4d11402b98a3b1	6cd3dad5d851c21a
 corpus/time_utils/time_utils.gala	76bef7ed9f741bc1	82b7ae65f1a8d8ce
-corpus/validation/validated.gala	b6589e00f442ae87	cfd56524da64934b
+corpus/validation/validated.gala	b6589e00f442ae87	ba8b3cf4de768c41
 error reference example 0: main.gala	f1b7545b60969587	08d1774d7d2fd67d
 error reference example 100: main.gala	6e482e03f5220fd8	08d1774d7d2fd67d
 error reference example 101: main.gala	3ad324a6ddc70680	0572e8e09501191b
@@ -733,7 +733,7 @@ error reference example 134: main.gala	a66007776745919d	08d1774d7d2fd67d
 error reference example 135: main.gala	e5ea523855a942dd	cf9650eaba255a44
 error reference example 136: main.gala	a319d20000b7c84d	08d1774d7d2fd67d
 error reference example 137: main.gala	e346459155cd79c2	08d1774d7d2fd67d
-error reference example 138: main.gala	5b87b2a30d840d7c	230b91ef51d2cc51
+error reference example 138: main.gala	5b87b2a30d840d7c	886d9d5afc5cbfe5
 error reference example 139: main.gala	edede2cdc82aa09c	08d1774d7d2fd67d
 error reference example 13: main.gala	3ffa719a6fb19b03	08d1774d7d2fd67d
 error reference example 140: main.gala	d8712ca44be9d5f2	405abf640da99d64
@@ -852,8 +852,8 @@ error reference example 240: main.gala	7aadadd9de68a358	89b8cbc594642a1d
 error reference example 241: main.gala	435d205c4124c97f	08d1774d7d2fd67d
 error reference example 242: main.gala	7e69f15f20bc438c	0b36df41a99ed5b6
 error reference example 243: main.gala	000696b9d7bf8f5f	38202cea716a72ed
-error reference example 244: main.gala	865d82a8b858d3a7	c981aabb1df13dfc
-error reference example 245: main.gala	d600d46c4d711779	4dba0e64a7a1e293
+error reference example 244: main.gala	865d82a8b858d3a7	7c1a2b7994ad6375
+error reference example 245: main.gala	d600d46c4d711779	90f558498456231b
 error reference example 246: main.gala	f80e97d46ebb0957	283d6f99585ec4cb
 error reference example 247: main.gala	0270fb3a2ea86f35	16b5e2a9ebfd8ac0
 error reference example 248: main.gala	d39dc50a270f6ffa	76e280271c1eaf2d
@@ -982,4 +982,4 @@ undefined: method signature allowance: a.gala	dc45b72813b797a9	c96146c72d8e0dd6
 undefined: method signature allowance: b.gala	dc45b72813b797a9	cdc276e56970b633
 undefined: types: main.gala	d75eaefed1cb4072	120dbe92b481f107
 undefined: values: main.gala	a0b47bceb45dd4e5	6ba77793f913f4f1
-val inference 0: main.gala	1a22aa340b9ac991	f059974b9c6494e6
+val inference 0: main.gala	1a22aa340b9ac991	4ce64d11475a3fe0

@@ -1894,7 +1894,7 @@ func (t *galaASTTransformer) lowerParam(p paramDecl, requireType bool) (*ast.Fie
 			if err := checkInoutParamDecl(p.at, p.name, typ, p.variadic, p.hasDefault); err != nil {
 				return nil, loweredParam{}, err
 			}
-			typ = t.ptrStar(typ)
+			typ = t.inoutParamType(typ)
 		}
 		declared = t.astTypeToTranspilerType(typ)
 	}

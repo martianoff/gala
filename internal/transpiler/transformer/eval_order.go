@@ -68,6 +68,12 @@ const (
 	// operandInoutRead is the `*x` of `(*x)`, a read of an `inout` binding x
 	// (see inout.go).
 	operandInoutRead
+	// operandInoutParam is the `*T` type an `inout T` parameter lowers to, so
+	// a function type read back from Go types keeps it `inout`.
+	operandInoutParam
+	// operandInoutLend is `&x` of an `inout` place x, lent as a call
+	// argument (see checkInoutLend).
+	operandInoutLend
 )
 
 func (t *galaASTTransformer) markOperand(n ast.Node, mark operandMark) {

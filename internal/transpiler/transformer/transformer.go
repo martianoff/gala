@@ -53,6 +53,12 @@ type galaASTTransformer struct {
 	// inoutNames holds the names of the functions and methods the file can
 	// call that declare an `inout` parameter (see checkInoutArgs).
 	inoutNames map[string]bool
+	// inoutTypesSeen is set when the file can see an `inout` parameter or
+	// function type, so a call through a function value is checked for one.
+	// inoutLends is set once it lends an `inout` place (checkInoutLend), and
+	// inoutApproved holds the lends a call passed to an `inout` parameter.
+	inoutTypesSeen, inoutLends bool
+	inoutApproved              map[ast.Node]bool
 	// localBindings holds the Go name of each local val or var a declaration
 	// emits, with where its GALA name is written (see unused_bindings.go).
 	localBindings map[*ast.Ident]localBinding
@@ -408,7 +414,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.ptrStars = nil
-	t.inoutNames = collectInoutNames(richAST)
+	t.inoutNames, t.inoutTypesSeen = collectInoutNames(richAST)
+	t.inoutLends, t.inoutApproved = false, nil
 	t.localBindings = nil
 	t.patternDefineTypes = nil
 	t.patternReads = nil

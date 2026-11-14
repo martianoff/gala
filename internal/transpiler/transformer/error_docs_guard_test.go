@@ -1747,6 +1747,64 @@ func main() {
 			},
 		},
 		{
+			name: "one call lends a place twice",
+			code: galaerr.CodeInoutOverlap, // GALA-E0112
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func both(inout a Counter, inout b Counter) {
+    a.n = a.n + b.n
+}
+
+func main() {
+    var c = Counter(1)
+    both(&c, &c)
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name: "a lambda captures an inout place",
+			code: galaerr.CodeInoutEscape, // GALA-E0113
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func later(inout c Counter) func() int = () => c.n
+
+func main() {
+    var c = Counter(1)
+    Println(later(&c)())
+}
+`)
+			},
+		},
+		{
+			name: "an inout place written inside Try",
+			code: galaerr.CodeInoutInTry, // GALA-E0115
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func step(inout c Counter) = Println(Try(() => {
+    c.n = c.n + 1
+    c.n
+}))
+
+func main() {
+    var c = Counter(1)
+    step(&c)
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
 			name: "an inout method called on a val",
 			code: galaerr.CodeInoutReceiver, // GALA-E0114
 			render: func(t *testing.T) string {
