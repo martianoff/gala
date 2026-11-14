@@ -1,8 +1,8 @@
 # Ownership: Inferred Uniqueness and `inout` Parameters
 
 Status: phase 1 (inferred uniqueness) and phase 2 (`inout`) are implemented. Phase 4 is a
-proposal decided in section 7. Phase 3 is designed in 3.3, and its open questions are
-listed in section 9.
+proposal decided in section 7. Phase 3 is designed in 3.3 and decided in section 9;
+its analysis part is being built.
 Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 Related: [FORMAL_SEMANTICS.MD](FORMAL_SEMANTICS.MD), [CONCURRENCY_SAFETY.MD](CONCURRENCY_SAFETY.MD).
 
@@ -555,8 +555,8 @@ in place (see Prior art). The translated Lean is efficient as well as faithful.
 
 ### 3.3 Phase 3: non-escaping closures may capture `inout` places
 
-Status: designed, not implemented. The open questions are Q19–Q26 in
-[§9](#9-open-questions-for-phase-3).
+Status: designed and decided ([§9](#9-phase-3-decisions)). The analysis (3a, 3b) is
+being built; the language change and the Lean translation wait for gala2lean (Q19).
 
 Phase 3 lets a closure capture a place that is lent: an `inout` binding, or a pointer that
 phase 1 proves unique. The closure may do this only if it cannot outlive the call it is
@@ -1334,10 +1334,23 @@ The maintainer answered the open questions below on 2026-11-13. Phase 1 is appro
 | Q11 | Migrating gala-tui's public `*Buffer` API to `inout Buffer` breaks gala-tui users. Is it worth it? | Only after phase 2 is stable, and only with your approval. |
 | Q12 | Should galaspec gain a heap model for `Ptr`, so that T8 (uniqueness implies the two semantics agree) can be proved? | Yes, as a stretch goal for phase 1. Without it, phase 1's soundness rests on the argument in 3.1 and on differential testing. |
 
-## 9. Open questions for phase 3
+## 9. Phase 3 decisions
 
 Phase 3 is described in [3.3](#33-phase-3-non-escaping-closures-may-capture-inout-places).
-These questions are not yet answered.
+The maintainer answered Q19–Q26 on 2026-11-14 and took every recommendation.
+
+| # | Decision |
+|---|---|
+| Q19 | **Build the analysis now:** PR 3a (phase 1 precision) and PR 3b (non-escaping summaries). The language change (3c) and the Lean translation (3e) wait until gala2lean translates collections, `Option`, types from other packages and `Ptr` receivers. |
+| Q20 | Non-escaping parameters of exported functions stay **inferred**, with no new syntax. **LSP hover and `gala doc` show them**, so a change is visible. |
+| Q21 | A lambda bound to a local `val` **always escapes**. |
+| Q22 | Function types and interface methods **cannot declare** non-escaping parameters. |
+| Q23 | The Lean translation uses the **scoped cell (B)**, documented as argued and tested, not proved. |
+| Q24 | **E0115 is unchanged.** |
+| Q25 | **gala2lean decides non-escaping itself.** The transformer's summary is not a trust point. |
+| Q26 | **No Go-callback allow-list entries** for now. |
+
+### 9.1 The questions as asked (answered above)
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
