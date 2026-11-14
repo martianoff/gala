@@ -209,6 +209,49 @@ func main() = Println(describe(Nums(1), (x) => s"$x"))`,
 			code:     galaerr.CodeConstraintInference,
 			contains: "cannot infer T in this call of describe: T appears only in Labeled[T], the constraint of C, and the methods of C's type argument Nums do not determine it",
 		},
+		{
+			name: "a generic method's type parameter only a constraint mentions, and no method determines",
+			body: `type Labeled[T any] interface {
+    Label() string
+}
+
+func (s Nums) Label() string = "n"
+
+struct Ops(n int)
+
+func (o Ops) Describe[T any, C Labeled[T]](c C, show func(T) string) string = c.Label()
+
+func main() = Println(Ops(0).Describe(Nums(1), (x) => s"$x"))`,
+			code:     galaerr.CodeConstraintInference,
+			contains: "cannot infer T in this call of Ops.Describe: T appears only in Labeled[T], the constraint of C, and the methods of C's type argument Nums do not determine it",
+		},
+		{
+			name: "a generic method of a generic type, its constraint naming the receiver's type parameter",
+			body: `type Tagged[T any, K any] interface {
+    Tag() K
+}
+
+func (s Nums) Tag() string = "n"
+
+struct Box[K any](k K)
+
+func (b Box[K]) Describe[T any, C Tagged[T, K]](c C, show func(T) string) string = c.Tag()
+
+func main() = Println(Box("k").Describe(Nums(1), (x) => s"$x"))`,
+			code:     galaerr.CodeConstraintInference,
+			contains: "cannot infer T in this call of Box.Describe: T appears only in Tagged[T, string], the constraint of C",
+		},
+		// A receiver's `_` is named internally; a diagnostic spells it `_`.
+		{
+			name: "method on a receiver's _ type parameter",
+			body: `struct Holder[T any, C Seq[T, C]](inner C, first T)
+
+func (h Holder[_, C]) Peek() int = h.first.Size()
+
+func main() = Println("x")`,
+			code:     galaerr.CodeUnknownMethod,
+			contains: "_ has no method Size: it is a type parameter constrained by any, which declares no methods",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,6 +259,9 @@ func main() = Println(describe(Nums(1), (x) => s"$x"))`,
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), string(tc.code))
 			assert.Contains(t, err.Error(), tc.contains)
+			// A name the transpiler generates never reaches a diagnostic,
+			// its hint included.
+			assert.NotContains(t, err.Error(), "_gala_")
 		})
 	}
 }

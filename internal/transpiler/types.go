@@ -134,8 +134,37 @@ func IsNullablePtr(t Type) bool {
 	return ok && !p.NonNull
 }
 
+// ReservedNamePrefix starts every name the transpiler generates where the
+// source could otherwise have one of its own; no source name starts with it
+// (GALA-E0097).
+const ReservedNamePrefix = "_gala_"
+
+// WildcardTypeParamPrefix starts the name the transpiler gives a type
+// parameter a receiver writes as `_` (`Holder[_, C]` lowers to
+// `Holder[_gala_wild_T, C]`, T being the type's parameter there).
+const WildcardTypeParamPrefix = ReservedNamePrefix + "wild_"
+
+// IsWildcardTypeParamName reports whether name is one WildcardTypeParamPrefix
+// starts.
+func IsWildcardTypeParamName(name string) bool {
+	return strings.HasPrefix(name, WildcardTypeParamPrefix)
+}
+
+// IsWildcardTypeParam reports whether t is the type parameter a receiver
+// writes as `_`.
+func IsWildcardTypeParam(t Type) bool {
+	switch v := t.(type) {
+	case NamedType:
+		return v.Package == "" && IsWildcardTypeParamName(v.Name)
+	case BasicType:
+		return IsWildcardTypeParamName(v.Name)
+	}
+	return false
+}
+
 // DisplayType is t as GALA source spells it: a non-null pointer reads
-// `Ptr[T]` where String reads `*T`. Every other kind reads as String does.
+// `Ptr[T]` where String reads `*T`, and a type parameter a receiver writes
+// as `_` reads `_`. Every other kind reads as String does.
 func DisplayType(t Type) string {
 	return DisplayTypeNamed(t, func(leaf Type) string { return leaf.String() })
 }
@@ -173,6 +202,9 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 		}
 		return s + " (" + displayTypes(v.Results, name) + ")"
 	case NamedType, BasicType:
+		if IsWildcardTypeParam(t) {
+			return "_"
+		}
 		return name(t)
 	}
 	return t.String()
