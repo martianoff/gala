@@ -5260,6 +5260,15 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# A compound assignment reads its target before the right-hand side's calls,
+# and a function taken out of a slice is read before the call's arguments.
+gala_exec_test(
+    name = "evaluation_order_compound",
+    src = "evaluation_order_compound.gala",
+    expected = "evaluation_order_compound.out",
+    deps = ["//go_interop"],
+)
+
 # A package var is ordered like one where a binding of its name elsewhere
 # in the function does not reach.
 gala_library(

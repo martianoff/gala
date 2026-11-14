@@ -218,6 +218,14 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		return t.resolveType(id.Name)
 	}
 
+	// A function read out of a slice or map, `fs[0](x)` (markIndex): the
+	// element's result. Its index is no type argument.
+	if t.marked(e.Fun, operandThroughPointer) {
+		if result, ok := t.funcValueCallResult(t.getExprTypeNameManual(e.Fun)); ok {
+			return result
+		}
+	}
+
 	// Handle b.Get() or std.Some()
 	// Capture type arguments from generic calls like Tuple[int, string](...)
 	fun := e.Fun

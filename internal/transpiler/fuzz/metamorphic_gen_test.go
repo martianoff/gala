@@ -47,7 +47,10 @@ import (
 // program must print is known. main also declares local vars, int or Cell,
 // vals holding a Cell var's address, and vals holding a Go slice or map;
 // operands read them and change them through a pointer or the shared
-// storage (metaCells), and the model keeps their values in mState. A main
+// storage (metaCells), and the model keeps their values in mState. Some of
+// them, and counter, are the targets of compound assignments whose right
+// side changes them (sCompound), and main calls a function out of a slice
+// that its argument replaces (sFnSlot). A main
 // that reads the package var counter also binds the name in a
 // block that does not run (metaShadow), which must not hide the var
 // anywhere else.
@@ -66,6 +69,7 @@ const (
 	mCellPtr     // a val holding the address of a Cell var
 	mSlice       // a val holding a Go slice of main: its element 0 is read and changed
 	mMap         // a val holding a Go map of main: its key 0 is read and changed
+	mFnSlice     // a val holding a Go slice of functions: element 0 is called and replaced
 )
 
 // metaDomain is declared in every program. Its own names are fixed: renaming
@@ -163,6 +167,13 @@ func addKey(m map[int]int, k int) int {
 }
 
 func sumKey(m map[int]int, k int) int = m[0] + addKey(m, k)
+
+func addOne(x int) int = x + 1
+
+func swapFirst(fs []func(int) int, k int) int {
+    fs[0] = (x) => x * 10
+    k
+}
 `
 
 // metaCellsImport is written with metaCells: main makes its slice and map
@@ -924,6 +935,91 @@ func (v *sLambda) scan(c *mScan) {
 	c.declareVal(v.f, from)
 }
 
+// sCompound is `target op= value` followed by `Println(target)`. target is
+// the package var counter when b is nil, or main's var b read as eVar
+// renders it. The target is read before value is evaluated.
+type sCompound struct {
+	b     *mBinder
+	op    string
+	value mExpr
+}
+
+func (v *sCompound) exec(s *mState, env mEnv) mEnv {
+	get := func() int { return s.counter }
+	set := func(n int) { s.counter = n }
+	if v.b != nil {
+		cell := v.b.cell()
+		get = func() int { return s.vars[cell] }
+		set = func(n int) { s.vars[cell] = n }
+	}
+	old := get()
+	n := eBin{v.op, eLit{old}, eLit{v.value.eval(s, env).n}}.eval(s, env).n
+	set(n)
+	s.out.WriteString(fmt.Sprint(n) + "\n")
+	return env
+}
+
+func (v *sCompound) target() string {
+	if v.b == nil {
+		return "counter"
+	}
+	return eVar{v.b}.render()
+}
+
+func (v *sCompound) render() string {
+	target := v.target()
+	return target + " " + v.op + "= " + v.value.render() + "\nPrintln(" + target + ")"
+}
+
+func (v *sCompound) scan(c *mScan) {
+	if v.b != nil {
+		c.ref(v.b)
+	}
+	v.value.scan(c)
+	if v.b != nil {
+		c.ref(v.b)
+	}
+}
+
+// compoundOn is a compound assignment to b (counter when nil) whose value
+// changes the target before the assignment stores: a change through a
+// pointer or the shared storage, or bump, alone or added to a literal. It
+// takes no pick, so a seed's other choices stay as they were; seed varies
+// the shape.
+func compoundOn(b *mBinder, seed int) *sCompound {
+	var change mExpr = eBump{1 + seed%4}
+	if b != nil {
+		b.uses++
+		change = eMut{b: b, k: 1 + seed%4, sum: seed%5 == 0, method: seed%2 == 0}
+	}
+	if seed%2 == 1 {
+		change = eBin{"+", eLit{seed % 5}, change}
+	}
+	return &sCompound{b, string("+-*"[seed%3]), change}
+}
+
+// sFnSlot is `val fs = SliceOf(addOne)` followed by
+// `Println(fs[0](swapFirst(fs, k)))`: the function is read out of the slice
+// before swapFirst replaces it.
+type sFnSlot struct {
+	b *mBinder
+	k int
+}
+
+func (v *sFnSlot) exec(s *mState, env mEnv) mEnv {
+	s.out.WriteString(fmt.Sprint(v.k+1) + "\n")
+	return env
+}
+
+func (v *sFnSlot) render() string {
+	return fmt.Sprintf("val %[1]s = SliceOf(addOne)\nPrintln(%[1]s[0](swapFirst(%[1]s, %[2]d)))", v.b.name, v.k)
+}
+
+func (v *sFnSlot) scan(c *mScan) {
+	c.declare(v.b)
+	c.ref(v.b)
+}
+
 // sShadow is metaShadow, which prints nothing.
 type sShadow struct{}
 
@@ -1601,6 +1697,10 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 		switch g.pick(10) {
 		case 8, 9:
 			stmts = append(stmts, g.newVar(mainRegion, &varNamesTaken))
+			// Every other var is the target of a compound assignment.
+			if v := g.vars[len(g.vars)-1]; v.id%2 == 0 {
+				stmts = append(stmts, compoundOn(v, v.id/2))
+			}
 		case 0, 1:
 			t := []mType{mInt, mInt, mShape, mOpt}[g.pick(4)]
 			init := g.expr(t, 3, false)
@@ -1628,6 +1728,14 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 		default:
 			stmts = append(stmts, &sPrint{[]mExpr{g.intExpr(3, false)}})
 		}
+	}
+	// Shapes that take no pick, so a seed's other choices stay as they were:
+	// a compound assignment to counter, and a function called out of a slice.
+	if g.counter {
+		stmts = append(stmts, compoundOn(nil, len(stmts)))
+	}
+	if len(g.vars) > 0 {
+		stmts = append(stmts, &sFnSlot{g.binder(mFnSlice, mainRegion), len(stmts) % 5})
 	}
 	for _, b := range vals {
 		if b.uses == 0 {
