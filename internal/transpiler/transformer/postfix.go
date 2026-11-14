@@ -874,9 +874,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// The function literal binds the subject itself (`_subj := subject`, as an
-	// inlined match does) instead of taking it as a parameter, so the
-	// subject's type is never written: it may name a package the file does
-	// not import, and the generated Go must not import one. A subject whose
+	// inlined match does) instead of taking it as a parameter, so Go infers
+	// the subject's type and the lowering never writes it. A subject whose
 	// type only the cases tell, or that is matched as `any`, keeps the typed
 	// parameter, which converts it.
 	funcLit := &ast.FuncLit{Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField}}

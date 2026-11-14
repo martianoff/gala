@@ -89,15 +89,16 @@ jobs:
     # gala_team's MODULE.bazel requires, so the override matches what
     # gala_team is written against.
     env:
-      # gala_tui 0.15.4 (the commit its 0.15.4 tag points at) — the release
-      # gala_team's MODULE.bazel requires at GALA_TEAM_REF. Move the two pins
-      # together: older gala_tui releases contain code that newer GALA checks
-      # correctly reject (0.15.2 still has a `val _ =`, GALA-E0060).
-      GALA_TUI_REF: c46554dd1e24a2074c4b99dd2294f30cbe955489
-      # gala_team master after app/headless depends on gala's concurrent
-      # package directly: it calls Future.Await, which GALA generates as the
-      # free function concurrent.Future_Await (martianoff/gala-team#150).
-      GALA_TEAM_REF: "9fc06f7f704b40e2375494fb003683a6137655ed"
+      # gala_tui main after it moved to rules_gala 0.6.11
+      # (martianoff/gala-tui#96): 0.16.0, the release gala_team's MODULE.bazel
+      # requires at GALA_TEAM_REF, plus that bump. Move the two pins together:
+      # older gala_tui releases contain code that newer GALA checks correctly
+      # reject (0.15.2 still has a `val _ =`, GALA-E0060).
+      GALA_TUI_REF: 41217a9113a41d95d6514462460623d501fe906b
+      # gala_team master after it moved to rules_gala 0.6.11
+      # (martianoff/gala-team#151), so generated Go may name types of packages
+      # a file reaches only through another one.
+      GALA_TEAM_REF: "2ac265d7aeb078ab5faa9424210f4420cf7a9499"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 

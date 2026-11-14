@@ -13,10 +13,9 @@ import (
 
 // patternType is the Go type of a name a pattern's `:=` declares: a type
 // expression already built, or the GALA type to build one from. The
-// expression is built only when hoistPatternDecls writes that type out:
-// building it records the imports it names, and a type the generated Go never
-// writes must not keep an import (a package the GALA file may not import).
-// A nil patternType, or one that builds to nil, means unknown.
+// expression is built only when hoistPatternDecls writes that type out, as
+// most of a pattern's `:=` are never hoisted. A nil patternType, or one that
+// builds to nil, means unknown.
 type patternType = *patternTypeOf
 
 type patternTypeOf struct {
