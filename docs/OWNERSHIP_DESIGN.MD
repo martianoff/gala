@@ -599,9 +599,9 @@ that work.
 
 | Tree | Bindings with `captured` | Fixed when captures are allowed | Remaining blockers |
 |---|---|---|---|
-| galop | 31 bindings, at 75 capture sites in 55 closures | 18 (strict rule) to 28 (every capture) | Go slices in the pointee (`lexer`, the mutable collections), `rand` stored in `walker` |
+| galop | 49 bindings (of 128), at 75 capture sites in 55 closures | 18 (strict rule) to 28 (every capture) | Go slices in the pointee (`lexer`, the mutable collections), `rand` stored in `walker` |
 | std and other libraries | 119 | 0 | Each one also has `shape`, `from-go` or `passed-to-go` |
-| examples | 18 | 0 under the strict rule, 2 for by-name arguments | the same |
+| examples | 19 | 0 under the strict rule, 2 for by-name arguments | the same |
 
 Here is what galop's 55 closures do with what they capture, counted by hand from the 75
 sites:
@@ -884,8 +884,8 @@ Each PR keeps the generated Go byte-identical.
 
 | PR | Content | Done when |
 |---|---|---|
-| 3a | Phase 1 precision: no `captured` reason for a binding declared inside the lambda (the false positive in `Parse`), and a `captured-nonescaping` sub-reason in `COVERAGE.md` | galop's capture counts match 3.3.1 |
-| 3b | Non-escaping summaries for function-typed and by-name parameters; package metadata and an analysis cache bump; phase 1 treats a capture in a non-escaping closure as a lend | `ownershipcov` reports the 17 galop functions as unique |
+| 3a | Phase 1 precision: no `captured` reason for a binding declared inside a lambda or partial function, whose result is walked as an escape (the false positive in `Parse`) | `Parse`'s `p` shows its real reason; galop bindings with `captured` go from 49 to 47 |
+| 3b | Non-escaping summaries for function-typed and by-name parameters; package metadata and an analysis cache bump; phase 1 treats a capture in a non-escaping closure as a lend; `COVERAGE.md` counts those lends; LSP hover and `gala doc` show non-escaping parameters (Q20) | `ownershipcov` reports the 17 galop functions as unique |
 | 3c | Language: E0113 relaxed as in 3.3.2, with reasons in its message; error pages and website mirror; an `examples/` program with a `.out` (an `inout` place mutated through `ForEach`, `Map` and `FoldLeft`) | The example runs; the E0112, E0113 and E0115 negatives still fire |
 | 3d | Go callback allow-list entries (`sort.Slice`, `slices.SortFunc`, `strings.Map`), each verified with `-gcflags=-m` in CI | The escape test passes for every entry |
 | 3e | gala2lean: the scoped-cell translation (B), lifting `ptr-escape` for lent places; gala2lean decides non-escaping itself (Q25); fixtures for two closures sharing one cell; reviewed by the math expert | A fixture and an example with an `inout` capture agree with Go in `lean_test` and difftest |
