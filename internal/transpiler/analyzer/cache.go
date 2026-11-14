@@ -212,7 +212,12 @@ import (
 // ownership borrow summary (FunctionMetadata/MethodMetadata.Borrow). A v43
 // payload lacks it, so a caller in another package would see every pointer
 // it lends to that function as escaping.
-const CacheVersion = "v44"
+//
+// v45: a method with a pointer receiver records what its body does with the
+// receiver (MethodMetadata.ReceiverEffects), and a Go type which of its
+// pointer methods only read their receiver (GoTypeData.ReadOnlyMethods). A
+// v44 payload lacks both, so every such method would count as mutating.
+const CacheVersion = "v45"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

@@ -113,7 +113,7 @@ func main() {
     val slot = shelf.Make("s")
     Println(s"${slot.Label} ${slot.Scale(4)} ${slot.Count()}")
 
-    val g = NewGreeter("world")
+    var g = NewGreeter("world")
     g.Rename("there")
     Println(g.Hello())
 
@@ -172,8 +172,8 @@ func main() {
 		"2 5 6",
 		"1 named",
 		"s 40 2",
-		// The val is not renamed: the pointer method runs on a copy.
-		"hello world",
+		// A var is renamed in place (on a val, Rename is GALA-E0110).
+		"hello there",
 		"3",
 		"4",
 		"2 3",

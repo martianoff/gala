@@ -119,6 +119,7 @@ var accumulatedStateFields = []string{
 	"typeAliases",
 	"fileTypeDeclTargets",
 	"goTypeInfo",
+	"lookupGoReadOnly",
 	"filePath",
 	"richAST",
 	"onNativeDecl",

@@ -4505,7 +4505,7 @@ func main() {
 - A shorthand struct prints as `Name(field, …)`, as a sealed value and a Scala case class do. Each field prints in its own format: a nested struct or sealed value recursively, a collection by its elements, an `Option`, `Either` or `Try` as `Some(…)`, `Right(…)`, `Success(…)`, a tuple as `(a, b)`. Strings print without quotes, and a function field prints as `<fn>`.
 - The transpiler generates the `String() string` method that does this on every shorthand struct, so Go code that prints one with `fmt` sees the same text, and every verb that uses `String` does: `%+v` and `%s` print `Pt(1, 2.5)` too, while `%#v` still prints the Go struct. A struct that declares its own `String() string` method, in GALA or in a hand-written `.go` file of its package, prints with that one instead (a `String` of another signature is GALA-E0093), and a struct with a field named `String` keeps Go's format.
 - A pointer field (`Ptr[T]`, `OptionPtr[T]`, `*T`) of a struct, a sealed case or an `Option`, `Either` or `Try` prints the value it points to; a pointer to a Go struct prints as `%v` prints a pointer operand, `&{field field}`, as in `Some(&{1 2})`. A pointer field reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`. A cycle that passes only through collections or `Option`s, with no pointer field of a struct on it, is not detected and recurses until the stack overflows.
-- A `String() string` declared on a pointer receiver, `func (p *Pt) String() string`, prints the value too: `Println`, `Print`, `s"..."` and `f"..."` (with no spec, or `%v` or `%s`; `%#v` still prints the Go struct), and a field, a sealed case or an `Option` printed in GALA's format, call it. `Println`, `Print` and interpolation call it on the value itself when it is addressable, as any pointer-receiver method is called: a `var`, a parameter, a pattern binding, a field or element of one of these, or a value reached through a pointer (`*p`, `p.Field`), so `String` sees what was written through other pointers and a lock the value holds is not copied. A `val` and a field of one, a call's result and a field printed in GALA's format are printed through a copy, so the value need not be addressable: `Println(Pt(1, 2))` prints what that `String` returns. Printing through a copy a value that must not be copied (one holding a `sync.Mutex`, a `WaitGroup` or another lock) is [GALA-E0053](errors/GALA-E0053.md), as calling the method on it would be, and so is printing a struct or sealed value whose generated `String` prints a field of such a type. Go code that prints the value with `fmt` sees Go's format, since a pointer-receiver method is not in a value's method set.
+- A `String() string` declared on a pointer receiver, `func (p *Pt) String() string`, prints the value too: `Println`, `Print`, `s"..."` and `f"..."` (with no spec, or `%v` or `%s`; `%#v` still prints the Go struct), and a field, a sealed case or an `Option` printed in GALA's format, call it. `Println`, `Print` and interpolation call it on the value itself when it is addressable, as any pointer-receiver method is called: a `var`, a parameter, a pattern binding, a field or element of one of these, or a value reached through a pointer (`*p`, `p.Field`), so `String` sees what was written through other pointers and a lock the value holds is not copied. A `val` and a field of one, a call's result and a field printed in GALA's format are printed through a copy, so the value need not be addressable: `Println(Pt(1, 2))` prints what that `String` returns. Printing through a copy a value that must not be copied (one holding a `sync.Mutex`, a `WaitGroup` or another lock) is [GALA-E0053](errors/GALA-E0053.md), as calling the method on it would be, and so is printing a struct or sealed value whose generated `String` prints a field of such a type. Printing a `val` or a call's result by a `String` declared on its pointer receiver that can change that receiver is [GALA-E0110](errors/GALA-E0110.md), as that call would be. Go code that prints the value with `fmt` sees Go's format, since a pointer-receiver method is not in a value's method set.
 - A block-form struct (`type T struct { … }`) and a struct declared in Go print with Go's `%v`, `{field field}`: the block form is how GALA mirrors a Go struct. Declare a `String() string` method to print one otherwise.
 
 ### Rune Literals
@@ -4750,7 +4750,7 @@ never on the GALA surface.
 
 ## 12. Immutability Under the Hood
 
-When GALA transpiles to Go, an immutable value that is stored — a struct field or a package-level `val` — is wrapped in a `std.Immutable[T]` container, so Go code and other packages read it through one accessor. A local `val` is a plain Go variable: GALA already rejects writing it, writing a field reached through it and taking its address, and a pointer-receiver method called on it runs on a copy, so it needs no wrapper at run time.
+When GALA transpiles to Go, an immutable value that is stored — a struct field or a package-level `val` — is wrapped in a `std.Immutable[T]` container, so Go code and other packages read it through one accessor. A local `val` is a plain Go variable: GALA already rejects writing it, writing a field reached through it and taking its address, and a pointer-receiver method called on it runs on a copy (or, when the method can change its receiver, is rejected), so it needs no wrapper at run time.
 
 ### Package-Level Bindings
 
@@ -4928,13 +4928,27 @@ sharing them by value is cheap and nothing can change them underneath you.
 
 #### Pointer-Receiver Methods on a `val`
 
-A method with a pointer receiver — a GALA `func (c *Counter) Bump()` or a Go
-one such as `url.URL.String` — can be called on a `val`, on a field reached
-through one, on a call result, or on a literal. Go can only call such a method
-on an addressable value, so the method runs on a fresh copy (`std.AddrOfCopy`),
-and whatever it assigns to the receiver's own fields is lost when the call
-returns. A `var`, a function parameter and a pattern binding are addressable
-Go variables, so there the method works on the variable itself.
+A `var`, a function parameter, a pattern binding, `*p` and a `var` field of
+one of these are addressable Go variables, so a method with a pointer
+receiver — a GALA `func (c *Counter) Bump()` or `func (c Ptr[Counter]) Bump()`,
+or a Go one such as `url.URL.String` — works on the variable itself. A `val`,
+a field reached through one, a call result and a literal cannot be addressed.
+Go can call a pointer method on them only through a fresh copy
+(`std.AddrOfCopy`), so:
+
+- a method that only reads its receiver, such as `url.URL.String`, is called
+  on a copy;
+- a method that can change its receiver is
+  [GALA-E0110](errors/GALA-E0110.md): its change would be made to the copy
+  and lost. Declare the value with `var`, or hold a `Ptr` to it.
+
+A method can change its receiver when it assigns to the receiver or a place
+in it, takes the address of one, uses the receiver pointer itself as a value
+(passes, returns, stores or captures it), or calls a method that can change
+its receiver on the receiver or on a field it holds by value. A write through
+a pointer, slice or map that a field holds does not count: the copy shares it.
+GALA works this out for each method, from its body; for a Go method, from its
+Go source.
 
 ```gala
 package main
@@ -4948,13 +4962,15 @@ func (c *Counter) Bump() int {
     return c.n
 }
 
+func (c *Counter) Peek() int = c.n
+
 func main() {
     val u = url.URL(Scheme = "https", Host = "example.com")
     Println(u.String())  // https://example.com
 
     val c = Counter(n = 1)
-    Println(c.Bump())    // 2 — bumped a copy
-    Println(c.n)         // 1 — the val is unchanged
+    Println(c.Peek())    // 1 — Peek only reads, so it runs on a copy
+    // c.Bump()          // GALA-E0110: the change would be lost
 
     var m = Counter(n = 10)
     m.Bump()
@@ -5057,7 +5073,9 @@ func main() {
 
 **Methods on a `Ptr[T]` receiver.** A method declared on `Ptr[T]` is called
 only on a value that is never nil: a `T` that can be addressed (a `var`, which
-the call reaches as `&x`), a `val` (through an addressed copy), a `Ptr[T]`, or
+the call reaches as `&x`), a `val` (through an addressed copy, when the
+method only reads its receiver; see
+[Pointer-Receiver Methods on a `val`](#pointer-receiver-methods-on-a-val)), a `Ptr[T]`, or
 `RequirePtr(p)`. Selecting it on a `*T` that may be nil is
 [GALA-E0080](errors/GALA-E0080.md), for a call (`p.Bump()`) and a method value
 (`p.Bump`) alike, and so are matching such a `*T` through a
@@ -5199,7 +5217,7 @@ val bodyBytes, readErr = io.ReadAll(resp.Body)
 | Go `(value, error)` return handled in GALA | `val x = call` | `x` is a `Try[T]`: match on it, `.GetOrElse`, `.Map` |
 | Go `(value, error)` return passed back to Go | `val v, err = call` | Both values are raw Go types |
 | Go struct value whose fields you write | `var` | A field reached through a `val` cannot be written |
-| Go value whose pointer-receiver methods must change it | `var` | On a `val`, such a method runs on a copy |
+| Go value whose pointer-receiver methods must change it | `var` | On a `val`, such a method is GALA-E0110 |
 
 ## 13. GALA Packages
 

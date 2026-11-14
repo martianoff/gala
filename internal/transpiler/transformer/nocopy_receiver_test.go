@@ -14,8 +14,8 @@ import (
 // value Go cannot address runs on a copy (std.AddrOfCopy), which is wrong for
 // a value that must not be copied — a copied Mutex locks nothing, a copied
 // Builder loses its writes. Such calls are rejected; a value that is fine to
-// copy (url.URL, time.Time) still gets the copy, and an addressable receiver
-// is untouched.
+// copy (url.URL) still gets the copy for a method that only reads it, and an
+// addressable receiver is untouched.
 func TestNoCopyReceiverRejected(t *testing.T) {
 	trans := newDefaultsTranspiler()
 
@@ -112,7 +112,7 @@ func makeWG() sync.WaitGroup = sync.WaitGroup{}
 		mustContain string
 	}{
 		{"url.URL val runs on a copy", "val u = url.URL(Scheme = \"https\", Host = \"x\")\n    Println(u.String())", "std.AddrOfCopy(u).String()"},
-		{"time.Time val runs on a copy", "val tm = time.Now()\n    Println(tm.UnmarshalText(go_interop.ToBytes(\"x\")))", "std.AddrOfCopy(tm).UnmarshalText("},
+		{"url.URL Redacted on a val runs on a copy", "val u = url.URL(Scheme = \"https\", Host = \"x\")\n    Println(u.Redacted())", "std.AddrOfCopy(u).Redacted()"},
 		{"var Mutex is addressable", "var m = sync.Mutex{}\n    m.Lock()", "m.Lock()"},
 		{"pointer to a Mutex", "val m = &sync.Mutex{}\n    m.Lock()", "m.Lock()"},
 		{"generic GALA struct of a copyable type", "val b = Box[int](1)\n    Println(b.Touch())", "std.AddrOfCopy(b).Touch()"},

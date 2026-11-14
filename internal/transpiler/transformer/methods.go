@@ -467,8 +467,9 @@ func (t *galaASTTransformer) generateStructStringMethod(name string, fieldNames 
 // A print that would run a pointer-receiver String on a copy of a value that
 // must not be copied (see noCopyReason) is GALA-E0053, as a call of that
 // String would be: the value printed when it is not printedInPlace, or a
-// field its generated String prints (see copiedPrintedField). line and col
-// locate the printed value.
+// field its generated String prints (see copiedPrintedField). Printing a
+// value that is not printedInPlace by a String that can change its receiver
+// is GALA-E0110, as that call would be. line and col locate the printed value.
 func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type, line, col int) (ast.Expr, transpiler.Type, error) {
 	if transpiler.IsUnusable(typ) {
 		return expr, typ, nil
@@ -494,6 +495,9 @@ func (t *galaASTTransformer) printedValue(expr ast.Expr, typ transpiler.Type, li
 		return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeNoCopyReceiverCopied, line, col,
 			fmt.Sprintf("cannot print this %s: it cannot be addressed here, so its String would run on a copy, and %s", typeName, why),
 			"declare it with `var`, or hold a pointer (`&T{...}`)")
+	}
+	if t.pointerMethodMutates(typ, "String") {
+		return nil, nil, mutatingCallOnCopyError("String", true, typ, line, col)
 	}
 	return &ast.CallExpr{Fun: t.stdIdent("PtrString"), Args: []ast.Expr{expr}}, transpiler.BasicType{Name: "string"}, nil
 }

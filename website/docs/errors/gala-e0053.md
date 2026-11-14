@@ -127,9 +127,10 @@ var c = Counter(&sync.Mutex{}, 0)
 
 **Rationale.** A `val` is stored as `Immutable[T]` and read through `Get()`,
 which returns a copy. Go calls a pointer-receiver method only on an
-addressable value, so the call runs on a copy made for it. For most types the
-only effect is that the method's writes to the receiver are dropped, and the
-`val` stays as it was. For these types the copy breaks the program:
+addressable value, so the call runs on a copy made for it. For most types a
+method that only reads its receiver may run on that copy, and one that changes
+it is [GALA-E0110](/docs/errors/gala-e0110/). For these types the copy breaks
+the program whatever the method does:
 
 - `Lock` and `Unlock` each get their own copy of a `Mutex`, so nothing is
   locked, and the `Unlock` is a fatal runtime error (`sync: unlock of unlocked
@@ -147,5 +148,6 @@ method works on the value itself: a `var`, a function parameter, a pattern
 binding, and a `var` field (of a `var`, or reached through a pointer). A `val`
 field is read through a copy even behind a pointer, which is why the repro
 above is rejected.
-Types that are fine to copy (`url.URL`, `time.Time`) still run their pointer
-methods on a copy of a `val`.
+Types that are fine to copy (`url.URL`, `time.Time`) still run a pointer
+method that only reads its receiver, such as `url.URL.String`, on a copy of a
+`val`; one that changes its receiver is [GALA-E0110](/docs/errors/gala-e0110/).

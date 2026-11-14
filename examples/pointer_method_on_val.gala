@@ -5,7 +5,8 @@ import (
 )
 
 // A pointer-receiver method needs an addressable receiver in Go. A val is read
-// through a copy, so the method runs on a fresh copy and the val never changes.
+// through a copy, so a method that only reads its receiver runs on a fresh
+// copy. One that changes its receiver needs a var.
 
 struct Counter(var n int)
 
@@ -13,6 +14,8 @@ func (c *Counter) Bump() int {
     c.n = c.n + 1
     return c.n
 }
+
+func (c *Counter) Peek() int = c.n
 
 struct Link(target url.URL, label string)
 
@@ -34,9 +37,11 @@ func main() {
     Println(home().String())
     Println(url.URL(Scheme = "ftp", Host = "files.example.com").String())
 
-    // GALA method with a pointer receiver: it mutates the copy, not the val.
+    // GALA method with a pointer receiver that only reads it: it runs on a
+    // copy. Bump changes its receiver, so `c.Bump()` would lose the change
+    // and is rejected (GALA-E0110).
     val c = Counter(n = 1)
-    Println(c.Bump())
+    Println(c.Peek())
     Println(c.n)
 
     // A var is addressable, so the method mutates it in place.

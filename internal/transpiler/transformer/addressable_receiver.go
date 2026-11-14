@@ -17,18 +17,19 @@ import (
 // mutating method on it in place would change the val, so it counts as not
 // addressable too (isAddressable).
 //
-// Such a receiver is handed to the method as `std.AddrOfCopy(recv)`: a pointer
-// to a fresh copy. The method runs on that copy, so a mutating method cannot
-// change the val — the val stays immutable, which is what GALA promises.
+// Such a receiver is handed to a method that only reads it as
+// `std.AddrOfCopy(recv)`: a pointer to a fresh copy.
 //
-// A value that must not be copied (see noCopyReason) is rejected instead with
-// GALA-E0053: on a copy, a Mutex locks nothing and a Builder's writes are lost.
+// A method that can mutate its receiver (see pointerMethodMutates) would
+// change only that copy, and the change would be lost, so such a call is
+// GALA-E0110. A value that must not be copied (see noCopyReason) is rejected
+// with GALA-E0053 whatever the method: on a copy, a Mutex locks nothing.
 
 // addressableReceiver returns the receiver to select `method` on. It is recv
 // itself unless the method has a pointer receiver and recv is not
 // addressable, in which case it is recv wrapped in std.AddrOfCopy — or
-// GALA-E0053 when the receiver's type must not be copied. line and col locate
-// the method name.
+// GALA-E0053 when the receiver's type must not be copied, or GALA-E0110 when
+// the method can mutate its receiver. line and col locate the method name.
 func (t *galaASTTransformer) addressableReceiver(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
 	if !t.hasPointerReceiverMethod(recvType, method) || t.isAddressable(recv) {
 		return t.sealPlainValPath(recv), nil
@@ -89,7 +90,8 @@ func loweredReceiverType(recvType transpiler.Type, m *transpiler.MethodMetadata)
 
 // addressedCopy hands recv, a value that cannot be addressed, to a
 // pointer-receiver method as `std.AddrOfCopy(recv)`, or reports GALA-E0053
-// when its type must not be copied.
+// when its type must not be copied, or GALA-E0110 when the method can mutate
+// its receiver.
 func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
 	if typeName, why := t.noCopyWhy(recvType); why != "" {
 		return nil, galaerr.NewCodedSemanticError(
@@ -98,6 +100,9 @@ func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Ty
 			fmt.Sprintf("cannot call %s on this %s: it cannot be addressed here, so the call would run on a copy, and %s", method, typeName, why),
 			"declare it with `var`, or hold a pointer (`&T{...}`)",
 		)
+	}
+	if t.pointerMethodMutates(recvType, method) {
+		return nil, mutatingCallOnCopyError(method, false, recvType, line, col)
 	}
 	return &ast.CallExpr{
 		Fun:  t.stdIdent(transpiler.FuncAddrOfCopy),
