@@ -914,12 +914,9 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	// place of the element's own type, so its NewImmutable wrapper names the
 	// same type argument.
 	slotTypes := make([]transpiler.Type, n)
-	// inferred marks an element whose type argument is the element's own
-	// type, which Go infers from its NewImmutable wrapper.
-	inferred := make([]bool, n)
-	// unspellable is set when an element's own type names a GALA package
-	// this file does not import (see tupleOfImmutables).
-	unspellable := false
+	// ownTypes records, per element whose type argument is its own type,
+	// that type (see tupleOfImmutables).
+	ownTypes := make([]transpiler.Type, n)
 	for i, expr := range exprs {
 		var expected transpiler.Type = transpiler.NilType{}
 		if slotElems != nil && slotElems[i] != nil {
@@ -959,18 +956,12 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 				}
 			}
 			typeParams = append(typeParams, t.typeToExpr(exprType))
-			inferred[i] = !t.isImmutableType(exprType)
-			unspellable = unspellable || t.namesUnimportedGalaPackage(exprType)
+			ownTypes[i] = exprType
 		}
 	}
 
 	// Build the type expression: std.TupleN[T1, T2, ...]
-	var typeExpr ast.Expr = t.stdIdent(typeName)
-	if len(typeParams) == 1 {
-		typeExpr = &ast.IndexExpr{X: typeExpr, Index: typeParams[0]}
-	} else if len(typeParams) > 1 {
-		typeExpr = &ast.IndexListExpr{X: typeExpr, Indices: typeParams}
-	}
+	typeExpr := withTypeArgs(t.stdIdent(typeName), typeParams)
 
 	// Build the composite literal: std.TupleN[...]{V1: NewImmutable(a), V2: NewImmutable(b), ...}
 	// Tuple fields are Immutable, so we need to wrap each value
@@ -994,48 +985,46 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 		Type: typeExpr,
 		Elts: elts,
 	}
-	// A type of a GALA package this file reaches only through another one
-	// cannot be spelled: the import it needs is one Bazel's strict
-	// dependencies reject. Go infers it from the element instead, and the
-	// call has the literal's type.
-	if unspellable {
-		if call, ok := t.tupleOfImmutables(exprs, typeParams, inferred); ok {
-			t.exprTypeCache[call] = t.getExprTypeName(lit)
-			return call, nil
-		}
+	// The call, when the literal cannot spell its type, has the literal's.
+	if call, ok := t.tupleOfImmutables(exprs, typeParams, ownTypes); ok {
+		t.exprTypeCache[call] = t.getExprTypeName(lit)
+		return call, nil
 	}
 	return lit, nil
 }
 
-// tupleOfImmutables lowers a tuple literal without spelling its type:
+// tupleOfImmutables lowers a tuple literal whose type the file cannot spell
+// without spelling it: an element's own type (ownTypes[i]) names a GALA
+// package this file reaches only through another one, and the import it
+// needs is one Bazel's strict dependencies reject. It is lowered to
 // `_gala_tuple2(std.NewImmutable(a), std.NewImmutable[T](b))`, a call of a
 // generic helper of this file that builds the TupleN from its Immutable
-// fields. Go infers each type argument from its field: an element marked
-// inferred is wrapped as it is, and every other element's wrapper names its
-// type argument from typeParams, so the tuple has the same type as its
-// composite literal would. ok is false when an element is already an
-// Immutable, which the composite literal stores as it is.
-func (t *galaASTTransformer) tupleOfImmutables(exprs, typeParams []ast.Expr, inferred []bool) (ast.Expr, bool) {
+// fields. Go infers each type argument from its field: such an element is
+// wrapped as it is, and every other element's wrapper names its type
+// argument from typeParams, so the tuple has the same type as its composite
+// literal would. ok is false for a tuple whose type can be spelled, or one
+// with an element that is already an Immutable, which the composite literal
+// stores as it is.
+func (t *galaASTTransformer) tupleOfImmutables(exprs, typeParams []ast.Expr, ownTypes []transpiler.Type) (ast.Expr, bool) {
+	unspellable := make([]bool, len(exprs))
+	if !slices.ContainsFunc(ownTypes, func(own transpiler.Type) bool { return own != nil && t.isImmutableType(own) }) {
+		for i, own := range ownTypes {
+			unspellable[i] = own != nil && t.namesUnimportedGalaPackage(own)
+		}
+	}
+	if !slices.Contains(unspellable, true) {
+		return nil, false
+	}
 	args := make([]ast.Expr, len(exprs))
 	for i, expr := range exprs {
-		if t.isImmutableType(t.getExprTypeName(expr)) {
-			return nil, false
+		newImmutable := t.stdIdent(transpiler.FuncNewImmutable)
+		if !unspellable[i] {
+			newImmutable = withTypeArgs(newImmutable, typeParams[i:i+1])
 		}
-		if inferred[i] {
-			args[i] = &ast.CallExpr{Fun: t.stdIdent(transpiler.FuncNewImmutable), Args: []ast.Expr{expr}}
-			continue
-		}
-		args[i] = &ast.CallExpr{
-			Fun:  &ast.IndexExpr{X: t.stdIdent(transpiler.FuncNewImmutable), Index: typeParams[i]},
-			Args: []ast.Expr{expr},
-		}
+		args[i] = &ast.CallExpr{Fun: newImmutable, Args: []ast.Expr{expr}}
 	}
 	return &ast.CallExpr{Fun: ast.NewIdent(t.tupleHelper(len(exprs))), Args: args}, true
 }
-
-// tupleHelperBase is the name of tupleHelper's helper for a tuple of n
-// values, before its file suffix.
-func tupleHelperBase(n int) string { return fmt.Sprintf("_gala_tuple%d", n) }
 
 // tupleHelper returns the Go name of this file's helper building a tuple of
 // n values from its Immutable fields, declaring it on first use:
@@ -1044,13 +1033,14 @@ func tupleHelperBase(n int) string { return fmt.Sprintf("_gala_tuple%d", n) }
 //	    return std.Tuple[T1, T2]{V1: v1, V2: v2}
 //	}
 //
-// Like patternHelper's helpers it is one of this file's own.
+// Like patternHelper's helpers it is one of this file's own (see fileHelper).
 func (t *galaASTTransformer) tupleHelper(n int) string {
-	base := tupleHelperBase(n)
-	if name, ok := t.unapplyHelpers[base]; ok {
-		return name
-	}
-	name := base + t.codecFileSuffix()
+	return t.fileHelper(fmt.Sprintf("_gala_tuple%d", n), func(name string) *ast.FuncDecl { return t.tupleHelperDecl(n, name) })
+}
+
+// tupleHelperDecl declares tupleHelper's helper for a tuple of n values as
+// name.
+func (t *galaASTTransformer) tupleHelperDecl(n int, name string) *ast.FuncDecl {
 	typeName, _ := transpiler.TupleArityName(n)
 	typeParams := &ast.Field{Type: ast.NewIdent("any")}
 	typeArgs := make([]ast.Expr, n)
@@ -1067,7 +1057,7 @@ func (t *galaASTTransformer) tupleHelper(n int) string {
 		elts[i] = &ast.KeyValueExpr{Key: ast.NewIdent(fmt.Sprintf("V%d", i+1)), Value: ast.NewIdent(v)}
 	}
 	tupleType := func() ast.Expr { return withTypeArgs(t.stdIdent(typeName), typeArgs) }
-	t.unapplyHelperDecls = append(t.unapplyHelperDecls, &ast.FuncDecl{
+	return &ast.FuncDecl{
 		Name: ast.NewIdent(name),
 		Type: &ast.FuncType{
 			TypeParams: &ast.FieldList{List: []*ast.Field{typeParams}},
@@ -1077,9 +1067,7 @@ func (t *galaASTTransformer) tupleHelper(n int) string {
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{
 			&ast.CompositeLit{Type: tupleType(), Elts: elts},
 		}}}},
-	})
-	t.unapplyHelpers[base] = name
-	return name
+	}
 }
 
 // inferTypeArgsFromApply infers type arguments for a generic type from its Apply method arguments.

@@ -36,7 +36,7 @@ func (t *galaASTTransformer) recordCallSite(c callSrc, call ast.Expr) {
 		return
 	}
 	typ := t.probeExprType(ce)
-	if b, ok := typ.(transpiler.BasicType); ok && b.Name == "error" {
+	if isErrorType(typ) {
 		// A call of type error a void lambda discards is reported here
 		// (see checkDiscardedError).
 		if t.errorCalls == nil {
