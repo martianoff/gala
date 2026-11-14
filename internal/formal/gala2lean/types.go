@@ -424,12 +424,22 @@ func (g *gen) galaType(t string) coreexport.Node {
 	case "Bool":
 		return &coreexport.TypeName{Name: "bool"}
 	}
-	for _, n := range g.typeNames {
-		if ident(n) == t {
-			return &coreexport.TypeName{Name: n}
-		}
+	if n := g.typeByLean(t); n != "" {
+		return &coreexport.TypeName{Name: n}
 	}
 	return nil
+}
+
+// typeByLean is the program's struct or sealed type whose Lean name is t,
+// "" for none.
+func (g *gen) typeByLean(t string) string {
+	if g.leanNames == nil {
+		g.leanNames = map[string]string{}
+		for _, n := range g.typeNames {
+			g.leanNames[ident(n)] = n
+		}
+	}
+	return g.leanNames[t]
 }
 
 // optTypeSafe is the Lean type of optional type t, "" when absent or
@@ -451,10 +461,7 @@ func (g *gen) declared(x string) bool {
 // fieldByType is field name of the struct or sealed type whose Lean name is
 // t, or nil.
 func (g *gen) fieldByType(t, name string) *coreexport.Field {
-	for _, n := range g.typeNames {
-		if ident(n) != t {
-			continue
-		}
+	if n := g.typeByLean(t); n != "" {
 		for _, f := range g.typeFields(n) {
 			if f.Name == name {
 				return f
@@ -523,7 +530,7 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 	case *coreexport.Call:
 		if s, isSel := e.Callee.(*coreexport.Select); isSel {
 			// A method: its declared result, or a generated Copy or Equal.
-			if f, _ := g.methodOfSeen(s.Target, s.Name, sc, seen); f != nil {
+			if f, _ := g.methodOf(s.Target, s.Name, sc, seen); f != nil {
 				return g.safeType(func() string { return g.leanType(f.Result) })
 			}
 			switch s.Name {

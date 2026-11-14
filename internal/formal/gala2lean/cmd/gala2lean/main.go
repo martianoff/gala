@@ -86,18 +86,17 @@ func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed b
 			key := d.Name
 			if d.Receiver != nil {
 				methods++
-				r, isRecv := d.Receiver.(*coreexport.Receiver)
-				t, isName := coreexport.Node(nil), false
-				if isRecv {
-					t = r.Type
-					_, isName = t.(*coreexport.TypeName)
+				r, _ := d.Receiver.(*coreexport.Receiver)
+				var t *coreexport.TypeName
+				if r != nil {
+					t, _ = r.Type.(*coreexport.TypeName)
 				}
-				if !isName {
+				if t == nil {
 					// A receiver outside the subset: never translated.
 					opaque++
 					continue
 				}
-				key = t.(*coreexport.TypeName).Name + "." + d.Name
+				key = t.Name + "." + d.Name
 			}
 			names[key] = true
 		}

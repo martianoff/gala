@@ -220,6 +220,10 @@ func (g *gen) callsSelf(f *coreexport.Func) bool { return g.funcRefs(f)[g.key(f)
 // reference graph, callees before callers, each in source order (Tarjan's
 // algorithm, started from the functions in source order).
 func (g *gen) funcSCCs() [][]*coreexport.Func {
+	keyOf := map[*coreexport.Func]string{}
+	for _, f := range g.funcOrder {
+		keyOf[f] = g.key(f)
+	}
 	index := map[string]int{}
 	low := map[string]int{}
 	onStack := map[string]bool{}
@@ -234,14 +238,14 @@ func (g *gen) funcSCCs() [][]*coreexport.Func {
 		onStack[v] = true
 		refs := g.funcRefs(g.byKey[v])
 		for _, w := range g.funcOrder {
-			if !refs[g.key(w)] {
+			if !refs[keyOf[w]] {
 				continue
 			}
-			if _, seen := index[g.key(w)]; !seen {
-				strong(g.key(w))
-				low[v] = min(low[v], low[g.key(w)])
-			} else if onStack[g.key(w)] {
-				low[v] = min(low[v], index[g.key(w)])
+			if _, seen := index[keyOf[w]]; !seen {
+				strong(keyOf[w])
+				low[v] = min(low[v], low[keyOf[w]])
+			} else if onStack[keyOf[w]] {
+				low[v] = min(low[v], index[keyOf[w]])
 			}
 		}
 		if low[v] == index[v] {
@@ -257,7 +261,7 @@ func (g *gen) funcSCCs() [][]*coreexport.Func {
 			}
 			var scc []*coreexport.Func
 			for _, f := range g.funcOrder {
-				if members[g.key(f)] {
+				if members[keyOf[f]] {
 					scc = append(scc, f)
 				}
 			}
@@ -265,8 +269,8 @@ func (g *gen) funcSCCs() [][]*coreexport.Func {
 		}
 	}
 	for _, f := range g.funcOrder {
-		if _, seen := index[g.key(f)]; !seen {
-			strong(g.key(f))
+		if _, seen := index[keyOf[f]]; !seen {
+			strong(keyOf[f])
 		}
 	}
 	return out

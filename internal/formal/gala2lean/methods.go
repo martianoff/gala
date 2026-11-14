@@ -91,31 +91,26 @@ func (g *gen) funcOrMethodDecl(f *coreexport.Func, recursive bool) string {
 // translation cannot see, only int, string and bool compare.
 func (g *gen) comparable(e coreexport.Node, sc *scope) {
 	t := g.typeOf(e, sc)
-	if len(g.customEqual) > 0 {
-		if t == "" {
-			unsup(posOf(e), "custom-equal")
-		}
-		g.stateTypeIn(t, g.customEqualHolders(), posOf(e), "custom-equal")
-	}
+	g.customCheck(t, g.customEqual, &g.equalHolders, posOf(e), "custom-equal")
 	g.basicType(t, posOf(e))
 }
 
-// customStringHolders are the types that print through a String method of
-// their own: one that declares it, or one holding such a value in a field.
-func (g *gen) customStringHolders() map[string]bool {
-	if g.stringHolders == nil {
-		g.stringHolders = g.holders(g.customString)
+// customCheck stops the translation with construct when a value of Lean
+// type t would go through a String or Equal method of its own: t names a
+// type of custom or one
+// holding one (cached in *holders), or t is not known while custom types
+// exist.
+func (g *gen) customCheck(t string, custom map[string]bool, holders *map[string]bool, pos coreexport.Pos, construct string) {
+	if len(custom) == 0 {
+		return
 	}
-	return g.stringHolders
-}
-
-// customEqualHolders are the types that compare through an Equal method of
-// their own, declared or held in a field.
-func (g *gen) customEqualHolders() map[string]bool {
-	if g.equalHolders == nil {
-		g.equalHolders = g.holders(g.customEqual)
+	if t == "" {
+		unsup(pos, "%s", construct)
 	}
-	return g.equalHolders
+	if *holders == nil {
+		*holders = g.holders(custom)
+	}
+	g.stateTypeIn(t, *holders, pos, construct)
 }
 
 // holders is types and every type holding one of them in a field, at any
@@ -238,18 +233,7 @@ func (g *gen) receiverUses(f *coreexport.Func, name string) {
 			inLambda = true
 		case *coreexport.Select:
 			// p.f, p.f.g and p.m(...) reach the value through p.
-			root := n.Target
-			for {
-				if s, ok := root.(*coreexport.Select); ok {
-					root = s.Target
-					continue
-				}
-				if p, ok := root.(*coreexport.Paren); ok {
-					root = p.Expr
-					continue
-				}
-				break
-			}
+			root, _ := placeRoot(n.Target)
 			if id, ok := root.(*coreexport.Name); ok && id.Name == name {
 				if inLambda {
 					unsup(n.Pos, "ptr-escape")
@@ -267,18 +251,15 @@ func (g *gen) receiverUses(f *coreexport.Func, name string) {
 	visit(f.Body, false)
 }
 
-// methodOf is method m of the type of value e, and that type's name, or nil.
-func (g *gen) methodOf(e coreexport.Node, m string, sc *scope) (*coreexport.Func, string) {
-	return g.methodOfSeen(e, m, sc, map[string]bool{})
-}
-
-// methodOfSeen is methodOf within exprType, which passes its cycle guard.
-func (g *gen) methodOfSeen(e coreexport.Node, m string, sc *scope, seen map[string]bool) (*coreexport.Func, string) {
-	t := g.exprType(e, sc, seen)
-	for _, n := range g.typeNames {
-		if ident(n) == t && g.methods[n][m] != nil {
-			return g.methods[n][m], n
-		}
+// methodOf is method m of the type of value e, and that type's name, or
+// nil. seen is exprType's cycle guard, nil outside it.
+func (g *gen) methodOf(e coreexport.Node, m string, sc *scope, seen map[string]bool) (*coreexport.Func, string) {
+	if seen == nil {
+		seen = map[string]bool{}
+	}
+	n := g.typeByLean(g.exprType(e, sc, seen))
+	if f := g.methods[n][m]; f != nil {
+		return f, n
 	}
 	return nil, ""
 }
@@ -286,15 +267,8 @@ func (g *gen) methodOfSeen(e coreexport.Node, m string, sc *scope, seen map[stri
 // methodSig is the signature of method f of type t, its receiver aside.
 func (g *gen) methodSig(f *coreexport.Func, t string) *sig {
 	r := f.Receiver.(*coreexport.Receiver)
-	s := &sig{head: methodHead(t, f.Name), paramsInDefaults: true, unit: f.Result == nil,
-		recvName: r.Name, recvType: g.optTypeSafe(r.Type)}
-	for _, pn := range f.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok {
-			unsupAt(pn)
-		}
-		s.names, s.types, s.defaults = append(s.names, p.Name), append(s.types, p.Type), append(s.defaults, p.Default)
-	}
+	s := funcSig(f, methodHead(t, f.Name))
+	s.recvName, s.recvType = r.Name, g.optTypeSafe(r.Type)
 	return s
 }
 
@@ -303,7 +277,7 @@ func (g *gen) methodSig(f *coreexport.Func, t string) *sig {
 // a term, so the place it writes back must be one a nested do block can
 // write (a cell or a package-level variable).
 func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
-	f, t := g.methodOf(s.Target, s.Name, sc)
+	f, t := g.methodOf(s.Target, s.Name, sc, nil)
 	if f == nil {
 		return term{}, false
 	}
@@ -329,7 +303,7 @@ func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
 	if !ok {
 		return nil, ""
 	}
-	f, t := g.methodOf(s.Target, s.Name, sc)
+	f, t := g.methodOf(s.Target, s.Name, sc, nil)
 	if f == nil || !f.Receiver.(*coreexport.Receiver).Pointer {
 		return nil, ""
 	}
@@ -347,7 +321,7 @@ func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
 	recv := g.expr(s.Target, sc)
 	sg.recv = &recv
 	sg.recvLast = true
-	items, call := g.callItems(sg, e, sc)
+	items, call := g.callItems(sg, e, sc, true)
 	res, upd := g.freshName("r"), g.freshName("u")
 	items = append(items, fmt.Sprintf("let (%s, %s) ← %s", res, upd, call.mon()))
 	items = append(items, g.assignTo(s.Target, func(string) string { return upd }, sc, s.Pos)...)
@@ -368,28 +342,21 @@ const (
 )
 
 func (g *gen) placeKind(e coreexport.Node, sc *scope) placeKind {
-	for {
-		switch n := e.(type) {
-		case *coreexport.Select:
-			e = n.Target
-			continue
-		case *coreexport.Paren:
-			e = n.Expr
-			continue
-		case *coreexport.Name:
-			l := sc.lookup(n.Name)
-			switch {
-			case l == nil && g.globalBy[n.Name] != nil && g.globalBy[n.Name].mutable:
-				return placeShared
-			case l == nil || !l.mutable:
-				return placeNone
-			case l.box >= 0 && !l.receiver:
-				return placeShared
-			}
-			return placeUnique
-		}
+	root, _ := placeRoot(e)
+	n, ok := root.(*coreexport.Name)
+	if !ok {
 		return placeNone
 	}
+	l := sc.lookup(n.Name)
+	switch {
+	case l == nil && g.globalBy[n.Name] != nil && g.globalBy[n.Name].mutable:
+		return placeShared
+	case l == nil || !l.mutable:
+		return placeNone
+	case l.box >= 0 && !l.receiver:
+		return placeShared
+	}
+	return placeUnique
 }
 
 // generatedMethod translates a call of a method GALA generates for every
@@ -397,12 +364,7 @@ func (g *gen) placeKind(e coreexport.Node, sc *scope) placeKind {
 // declare its own.
 func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
 	t := g.typeOf(s.Target, sc)
-	var name string
-	for _, n := range g.typeNames {
-		if ident(n) == t {
-			name = n
-		}
-	}
+	name := g.typeByLean(t)
 	if name == "" || g.methods[name][s.Name] != nil {
 		return term{}, false
 	}

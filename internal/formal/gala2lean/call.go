@@ -41,16 +41,7 @@ var stdCtors = map[string]string{
 func (g *gen) sigOf(x string) *sig {
 	switch {
 	case g.funcs[x] != nil:
-		f := g.funcs[x]
-		s := &sig{head: g.funcRef(x), paramsInDefaults: true, unit: f.Result == nil}
-		for _, pn := range f.Params {
-			p, ok := pn.(*coreexport.Param)
-			if !ok {
-				unsupAt(pn)
-			}
-			s.names, s.types, s.defaults = append(s.names, p.Name), append(s.types, p.Type), append(s.defaults, p.Default)
-		}
-		return s
+		return funcSig(g.funcs[x], g.funcRef(x))
 	case g.structs[x] != nil:
 		return g.fieldSig(ident(x)+".mk", fieldsOf(g.structs[x].Fields))
 	case g.variants[x] != nil:
@@ -58,6 +49,19 @@ func (g *gen) sigOf(x string) *sig {
 		return g.fieldSig(ident(v.sealed.Name)+"."+ident(x), v.fields)
 	}
 	return nil
+}
+
+// funcSig is the signature of function or method f called as head.
+func funcSig(f *coreexport.Func, head string) *sig {
+	s := &sig{head: head, paramsInDefaults: true, unit: f.Result == nil}
+	for _, pn := range f.Params {
+		p, ok := pn.(*coreexport.Param)
+		if !ok {
+			unsupAt(pn)
+		}
+		s.names, s.types, s.defaults = append(s.names, p.Name), append(s.types, p.Type), append(s.defaults, p.Default)
+	}
+	return s
 }
 
 // sigOfSafe is sigOf, or nil for a callee the translation will report.
@@ -141,7 +145,7 @@ func argNode(a coreexport.Node) coreexport.Node {
 // evaluated after them, in parameter order, in the callee's scope (a
 // function's default sees the parameters before it, a field's none).
 func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
-	items, call := g.callItems(s, e, sc)
+	items, call := g.callItems(s, e, sc, false)
 	if len(items) == 0 {
 		return call
 	}
@@ -149,8 +153,10 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 }
 
 // callItems is callSig as do-items that compute the arguments, and the call
-// that follows them.
-func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope) ([]string, term) {
+// that follows them. With hoist, the items run at sc's own level (a
+// statement), so an argument that calls a pointer method writes its
+// receiver back there, in argument order (`x.m(x.n())`).
+func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]string, term) {
 	given := bindArgs(s, e.Args, e.Pos)
 	paramOf := make([]int, len(e.Args))
 	for k, a := range given {
@@ -159,7 +165,15 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope) ([]string, term) 
 		}
 	}
 	vals := make([]term, len(e.Args))
+	pre := make([][]string, len(e.Args))
+	hoisted := false
 	for i, a := range e.Args {
+		if c, ok := argNode(a).(*coreexport.Call); ok && hoist {
+			if items, res := g.ptrCall(c, sc); items != nil {
+				pre[i], vals[i], hoisted = items, term{code: res, pure: true}, true
+				continue
+			}
+		}
 		vals[i] = g.exprExpect(argNode(a), sc, s.types[paramOf[i]])
 	}
 	inOrder := true
@@ -171,7 +185,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope) ([]string, term) 
 	// A method's receiver comes first; a pointer method's place is read
 	// after the arguments (recvLast), which may change it.
 	recvFirst := s.recv != nil && !s.recvLast
-	if !defaults && inOrder && (s.recv == nil || s.recv.pure || recvFirst || allPure(vals...)) {
+	if !defaults && inOrder && !hoisted && (s.recv == nil || s.recv.pure || recvFirst || allPure(vals...)) {
 		var vs []string
 		subs := vals
 		if s.recv != nil {
@@ -196,6 +210,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope) ([]string, term) 
 	tmps := make([]string, len(e.Args))
 	for i, v := range vals {
 		tmps[i] = g.freshName("a")
+		items = append(items, pre[i]...)
 		items = append(items, "let "+tmps[i]+" := "+v.val())
 	}
 	if s.recv != nil && s.recvLast {
@@ -376,14 +391,9 @@ func (g *gen) printable(e coreexport.Node, sc *scope) {
 	if strings.Contains(t, "→") {
 		unsup(posOf(e), "print-pointer")
 	}
-	if len(g.customString) > 0 {
-		// A type with its own String method prints through it, and so does
-		// a value holding one.
-		if t == "" {
-			unsup(posOf(e), "custom-string")
-		}
-		g.stateTypeIn(t, g.customStringHolders(), posOf(e), "custom-string")
-	}
+	// A type with its own String method prints through it, and so does a
+	// value holding one.
+	g.customCheck(t, g.customString, &g.stringHolders, posOf(e), "custom-string")
 	if len(g.unprintable) > 0 {
 		// A value of a type whose text holds a function's address; when the
 		// type is not plain to see, any value might be one.

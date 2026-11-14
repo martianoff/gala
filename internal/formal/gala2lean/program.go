@@ -40,9 +40,11 @@ type gen struct {
 	byKey                     map[string]*coreexport.Func
 	methodsNamed              map[string][]string
 	customString, customEqual map[string]bool
-	// stringHolders and equalHolders cache customStringHolders and
-	// customEqualHolders.
+	// stringHolders and equalHolders cache the types holding a type with
+	// its own String or Equal (customCheck).
 	stringHolders, equalHolders map[string]bool
+	// leanNames maps a type's Lean name to its GALA name (typeByLean).
+	leanNames map[string]string
 	// refsOf caches funcRefs, by function name.
 	refsOf map[string]map[string]bool
 	// noBEq is the types holding a function, which do not compare;

@@ -17,6 +17,11 @@ func (c *Counter) AddTimes(by int, times int = 2) {
     c.N = c.N + by * times
 }
 
+func (c *Counter) Bump() int {
+    c.N = c.N + 1
+    c.N
+}
+
 func (c *Counter) Reset() {
     if c.N < 0 {
         return
@@ -71,4 +76,9 @@ func main() {
     var times = Counter(1, "t")
     times.AddTimes(5)
     Println(times.N)
+    var x = Counter(10, "x")
+    x.AddTimes(x.Bump())
+    Println(x.N)
+    p.Left.AddTimes(p.Left.Bump())
+    Println(p.Left.N)
 }

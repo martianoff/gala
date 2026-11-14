@@ -397,24 +397,27 @@ func (g *gen) assign(st *coreexport.Assign, sc *scope) []string {
 // parenthesize makes s one argument.
 func parenthesize(s string) string { return "(" + s + ")" }
 
+// placeRoot is the expression a field path `x.f.g` starts from, and the
+// path's field names, parentheses looked through.
+func placeRoot(e coreexport.Node) (coreexport.Node, []string) {
+	var path []string
+	for {
+		switch n := e.(type) {
+		case *coreexport.Paren:
+			e = n.Expr
+		case *coreexport.Select:
+			path = append([]string{n.Name}, path...)
+			e = n.Target
+		default:
+			return e, path
+		}
+	}
+}
+
 // assignTo stores f(current value) into target t: a local var, a
 // package-level variable, or a field of one (at any depth).
 func (g *gen) assignTo(t coreexport.Node, f func(cur string) string, sc *scope, pos coreexport.Pos) []string {
-	// The path of fields from the variable to the target.
-	var path []string
-	root := t
-	for {
-		if p, ok := root.(*coreexport.Paren); ok {
-			root = p.Expr
-			continue
-		}
-		s, ok := root.(*coreexport.Select)
-		if !ok {
-			break
-		}
-		path = append([]string{s.Name}, path...)
-		root = s.Target
-	}
+	root, path := placeRoot(t)
 	n, ok := root.(*coreexport.Name)
 	if !ok {
 		unsup(pos, "assign-target-%s", root.Kind())
