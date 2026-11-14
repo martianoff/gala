@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -100,6 +100,7 @@
             "end": 132
           },
           "name": "classify",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -299,6 +300,7 @@
             "end": 225
           },
           "name": "first",
+          "receiver": null,
           "params": [],
           "result": {
             "kind": "type-name",
@@ -403,6 +405,7 @@
             "end": 271
           },
           "name": "second",
+          "receiver": null,
           "params": [],
           "result": {
             "kind": "type-name",
@@ -481,6 +484,7 @@
             "end": 309
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

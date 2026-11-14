@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 4
+const Version = 5
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -89,10 +89,21 @@ type Var struct {
 // `= expr` form. Result is null when the signature declares none.
 type Func struct {
 	Meta
-	Name   string `json:"name"`
+	Name string `json:"name"`
+	// Receiver is a method's receiver, null for a plain function.
+	Receiver Node   `json:"receiver"`
 	Params []Node `json:"params"`
 	Result Node   `json:"result"`
 	Body   Node   `json:"body"`
+}
+
+// Receiver is a method's receiver `(name Type)` or `(name *Type)`. Pointer
+// is true for the `*Type` form.
+type Receiver struct {
+	Meta
+	Name    string `json:"name"`
+	Type    Node   `json:"type"`
+	Pointer bool   `json:"pointer"`
 }
 
 // Param is a function parameter. Type is null when it is left out.
@@ -366,6 +377,7 @@ func (*File) Kind() string        { return "file" }
 func (*Val) Kind() string         { return "val" }
 func (*Var) Kind() string         { return "var" }
 func (*Func) Kind() string        { return "func" }
+func (*Receiver) Kind() string    { return "receiver" }
 func (*Param) Kind() string       { return "param" }
 func (*Struct) Kind() string      { return "struct" }
 func (*Field) Kind() string       { return "field" }
@@ -404,7 +416,7 @@ func (*Unsupported) Kind() string { return "" }
 
 // nodeTypes is every supported node type, one value each.
 var nodeTypes = []Node{
-	&File{}, &Val{}, &Var{}, &Func{}, &Param{}, &Struct{}, &Field{}, &Sealed{}, &Variant{}, &TypeName{},
+	&File{}, &Val{}, &Var{}, &Func{}, &Receiver{}, &Param{}, &Struct{}, &Field{}, &Sealed{}, &Variant{}, &TypeName{},
 	&Block{}, &If{}, &Return{}, &Assign{}, &IncDec{},
 	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
@@ -431,7 +443,7 @@ const (
 	UnsupportedDefinedType      = "defined-type"
 	UnsupportedInterface        = "interface"
 	UnsupportedGenericDecl      = "generic-decl"
-	UnsupportedMethod           = "method"
+
 	UnsupportedGoResults        = "go-results"
 	UnsupportedParamModifier    = "param-modifier"
 	UnsupportedParamDefault     = "param-default"
@@ -479,7 +491,7 @@ const (
 // unsupportedKinds is every name an Unsupported node can carry.
 var unsupportedKinds = []string{
 	UnsupportedImport, UnsupportedEmbed, UnsupportedOpaqueType, UnsupportedDefinedType,
-	UnsupportedInterface, UnsupportedGenericDecl, UnsupportedMethod, UnsupportedGoResults,
+	UnsupportedInterface, UnsupportedGenericDecl, UnsupportedGoResults,
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
 	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction, UnsupportedPlaceholder,

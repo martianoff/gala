@@ -412,6 +412,32 @@ func (g *gen) globalType(gv *globalVar) string {
 	return ""
 }
 
+// galaType is the GALA type whose Lean type is t, for the types a name
+// spells (int, string, bool, the program's structs and sealed types); nil
+// for any other.
+func (g *gen) galaType(t string) coreexport.Node {
+	switch t {
+	case "Int64":
+		return &coreexport.TypeName{Name: "int"}
+	case "String":
+		return &coreexport.TypeName{Name: "string"}
+	case "Bool":
+		return &coreexport.TypeName{Name: "bool"}
+	}
+	for _, n := range g.typeNames {
+		if ident(n) == t {
+			return &coreexport.TypeName{Name: n}
+		}
+	}
+	return nil
+}
+
+// optTypeSafe is the Lean type of optional type t, "" when absent or
+// outside the subset.
+func (g *gen) optTypeSafe(t coreexport.Node) string {
+	return g.safeType(func() string { return g.optType(t) })
+}
+
 // typeOf is exprType of e in sc, where plain to see.
 func (g *gen) typeOf(e coreexport.Node, sc *scope) string {
 	return g.exprType(e, sc, map[string]bool{})
@@ -495,6 +521,18 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 	case *coreexport.Lambda:
 		return g.lambdaType(e, sc)
 	case *coreexport.Call:
+		if s, isSel := e.Callee.(*coreexport.Select); isSel {
+			// A method: its declared result, or a generated Copy or Equal.
+			if f, _ := g.methodOf(s.Target, s.Name, sc); f != nil {
+				return g.safeType(func() string { return g.leanType(f.Result) })
+			}
+			switch s.Name {
+			case "Copy":
+				return g.exprType(s.Target, sc, seen)
+			case "Equal":
+				return "Bool"
+			}
+		}
 		n, ok := e.Callee.(*coreexport.Name)
 		if !ok || sc != nil && sc.lookup(n.Name) != nil {
 			// A function value: the result of its type.

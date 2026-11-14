@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -78,6 +78,7 @@
             "end": 102
           },
           "name": "bump",
+          "receiver": null,
           "params": [],
           "result": {
             "kind": "type-name",
@@ -177,6 +178,7 @@
             "end": 162
           },
           "name": "note",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -316,6 +318,7 @@
             "end": 222
           },
           "name": "three",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -497,6 +500,7 @@
             "end": 548
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

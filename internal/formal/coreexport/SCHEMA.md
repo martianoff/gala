@@ -1,4 +1,4 @@
-# Core JSON, version 4
+# Core JSON, version 5
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -12,7 +12,8 @@ the parts of S2 listed here:
 - `Println` and `Print`;
 - interpolated strings, `s"..."` (S2);
 - lambdas, function types and functions as values (S2);
-- default values of parameters and fields, and named arguments (S2).
+- default values of parameters and fields, and named arguments (S2);
+- methods: a function with a receiver, by value or `*Type`.
 
 The Go types in [schema.go](schema.go) are the same schema. `schema_test.go` checks
 that every kind and field there is documented here, and that the two lists of
@@ -45,7 +46,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 4,
+  "core": 5,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -145,19 +146,36 @@ One source file.
 
 ### `func`
 
-A function declaration, at top level or in a block. A method (a function with a
-receiver) and a generic function are unsupported.
+A function declaration, at top level or in a block, or a method. A generic function is
+unsupported.
 
 - `name` (string).
+- `receiver` ([`receiver`](#receiver) or null): a method's receiver; null for a plain
+  function.
 - `params` (list of `param`).
 - `result` (type or null): the declared result type.
 - `body` (`block` or expression): a block, or the expression of the `= expr` form.
 
 ```json
-{ "kind": "func", "pos": "…", "name": "id", "params": [ { "kind": "param", "pos": "…", "name": "n",
+{ "kind": "func", "pos": "…", "name": "id", "receiver": null, "params": [ { "kind": "param", "pos": "…", "name": "n",
   "type": { "kind": "type-name", "pos": "…", "name": "int" } } ],
   "result": { "kind": "type-name", "pos": "…", "name": "int" },
   "body": { "kind": "name", "pos": "…", "name": "n" } }
+```
+
+### `receiver`
+
+A method's receiver, `(c Counter)` or `(c *Counter)`. A receiver of any other type
+(`Ptr[Counter]`, a generic type) has that type exported, so it is unsupported; a
+receiver marked `val` or `var` is an unsupported `param-modifier`.
+
+- `name` (string).
+- `type` (type): the receiver's type, without the `*`.
+- `pointer` (bool): true for the `*Type` form.
+
+```json
+{ "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter" },
+  "pointer": true }
 ```
 
 ### `param`
@@ -596,7 +614,6 @@ Every name an `unsupported` node can carry.
 | `defined-type` | a `type` declaration that is neither a struct nor an interface, `type ID int` |
 | `interface` | an interface type declaration |
 | `generic-decl` | a function, struct or sealed type with type parameters |
-| `method` | a function with a receiver |
 | `go-results` | a Go-style multiple result list `(T1, T2)` |
 | `param-modifier` | a function parameter marked `val` or `var` |
 | `param-default` | a parameter of a function type with a default value, `func(x int = 1)` |

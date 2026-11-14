@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 48
           },
           "name": "spin",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -118,6 +119,7 @@
             "end": 107
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

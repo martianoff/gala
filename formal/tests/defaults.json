@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -77,6 +77,7 @@
             "end": 102
           },
           "name": "t",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -216,6 +217,7 @@
             "end": 166
           },
           "name": "ts",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -355,6 +357,7 @@
             "end": 212
           },
           "name": "scale",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -481,6 +484,7 @@
             "end": 291
           },
           "name": "greet",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -596,6 +600,7 @@
             "end": 378
           },
           "name": "three",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -873,6 +878,7 @@
             "end": 443
           },
           "name": "divide",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -1280,6 +1286,7 @@
             "end": 849
           },
           "name": "mark",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -1419,6 +1426,7 @@
             "end": 926
           },
           "name": "hello",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -1771,6 +1779,7 @@
             "end": 1657
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

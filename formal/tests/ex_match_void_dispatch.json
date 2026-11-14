@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 431
+        "end": 407
       },
       "path": "examples/match_void_dispatch.gala",
       "package": "main",
@@ -17,8 +17,8 @@
           "pos": {
             "line": 3,
             "col": 1,
-            "off": 16,
-            "end": 123
+            "off": 14,
+            "end": 116
           },
           "name": "Shape",
           "variants": [
@@ -27,8 +27,8 @@
               "pos": {
                 "line": 4,
                 "col": 5,
-                "off": 41,
-                "end": 53
+                "off": 38,
+                "end": 50
               },
               "name": "Point",
               "default": false,
@@ -39,8 +39,8 @@
               "pos": {
                 "line": 5,
                 "col": 5,
-                "off": 59,
-                "end": 70
+                "off": 55,
+                "end": 66
               },
               "name": "Line",
               "default": false,
@@ -51,8 +51,8 @@
               "pos": {
                 "line": 6,
                 "col": 5,
-                "off": 76,
-                "end": 90
+                "off": 71,
+                "end": 85
               },
               "name": "Nothing",
               "default": false,
@@ -63,8 +63,8 @@
               "pos": {
                 "line": 7,
                 "col": 5,
-                "off": 96,
-                "end": 120
+                "off": 90,
+                "end": 114
               },
               "name": "Nested",
               "default": false,
@@ -74,8 +74,8 @@
                   "pos": {
                     "line": 7,
                     "col": 17,
-                    "off": 108,
-                    "end": 119
+                    "off": 102,
+                    "end": 113
                   },
                   "name": "Inner",
                   "type": {
@@ -83,8 +83,8 @@
                     "pos": {
                       "line": 7,
                       "col": 23,
-                      "off": 114,
-                      "end": 119
+                      "off": 108,
+                      "end": 113
                     },
                     "name": "Shape"
                   },
@@ -100,10 +100,11 @@
           "pos": {
             "line": 10,
             "col": 1,
-            "off": 127,
-            "end": 174
+            "off": 118,
+            "end": 163
           },
           "name": "doStuff",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -111,8 +112,8 @@
             "pos": {
               "line": 10,
               "col": 16,
-              "off": 142,
-              "end": 174
+              "off": 133,
+              "end": 163
             },
             "stmts": [
               {
@@ -120,16 +121,16 @@
                 "pos": {
                   "line": 11,
                   "col": 5,
-                  "off": 149,
-                  "end": 171
+                  "off": 139,
+                  "end": 161
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 11,
                     "col": 5,
-                    "off": 149,
-                    "end": 156
+                    "off": 139,
+                    "end": 146
                   },
                   "name": "Println"
                 },
@@ -139,8 +140,8 @@
                     "pos": {
                       "line": 11,
                       "col": 13,
-                      "off": 157,
-                      "end": 170
+                      "off": 147,
+                      "end": 160
                     },
                     "text": "\"side effect\"",
                     "value": "side effect",
@@ -156,18 +157,19 @@
           "pos": {
             "line": 14,
             "col": 1,
-            "off": 178,
-            "end": 386
+            "off": 165,
+            "end": 366
           },
           "name": "log",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 14,
                 "col": 10,
-                "off": 187,
-                "end": 194
+                "off": 174,
+                "end": 181
               },
               "name": "s",
               "type": {
@@ -175,8 +177,8 @@
                 "pos": {
                   "line": 14,
                   "col": 12,
-                  "off": 189,
-                  "end": 194
+                  "off": 176,
+                  "end": 181
                 },
                 "name": "Shape"
               },
@@ -189,8 +191,8 @@
             "pos": {
               "line": 14,
               "col": 19,
-              "off": 196,
-              "end": 386
+              "off": 183,
+              "end": 366
             },
             "stmts": [
               {
@@ -198,16 +200,16 @@
                 "pos": {
                   "line": 15,
                   "col": 5,
-                  "off": 203,
-                  "end": 383
+                  "off": 189,
+                  "end": 364
                 },
                 "subject": {
                   "kind": "name",
                   "pos": {
                     "line": 15,
                     "col": 5,
-                    "off": 203,
-                    "end": 204
+                    "off": 189,
+                    "end": 190
                   },
                   "name": "s"
                 },
@@ -217,24 +219,24 @@
                     "pos": {
                       "line": 16,
                       "col": 9,
-                      "off": 222,
-                      "end": 253
+                      "off": 207,
+                      "end": 238
                     },
                     "pattern": {
                       "kind": "pat-extract",
                       "pos": {
                         "line": 16,
                         "col": 14,
-                        "off": 227,
-                        "end": 234
+                        "off": 212,
+                        "end": 219
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 16,
                           "col": 14,
-                          "off": 227,
-                          "end": 232
+                          "off": 212,
+                          "end": 217
                         },
                         "name": "Point"
                       },
@@ -246,16 +248,16 @@
                       "pos": {
                         "line": 16,
                         "col": 31,
-                        "off": 244,
-                        "end": 253
+                        "off": 229,
+                        "end": 238
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 16,
                           "col": 31,
-                          "off": 244,
-                          "end": 251
+                          "off": 229,
+                          "end": 236
                         },
                         "name": "doStuff"
                       },
@@ -267,24 +269,24 @@
                     "pos": {
                       "line": 17,
                       "col": 9,
-                      "off": 263,
-                      "end": 300
+                      "off": 247,
+                      "end": 284
                     },
                     "pattern": {
                       "kind": "pat-extract",
                       "pos": {
                         "line": 17,
                         "col": 14,
-                        "off": 268,
-                        "end": 274
+                        "off": 252,
+                        "end": 258
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 17,
                           "col": 14,
-                          "off": 268,
-                          "end": 272
+                          "off": 252,
+                          "end": 256
                         },
                         "name": "Line"
                       },
@@ -296,16 +298,16 @@
                       "pos": {
                         "line": 17,
                         "col": 31,
-                        "off": 285,
-                        "end": 300
+                        "off": 269,
+                        "end": 284
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 17,
                           "col": 31,
-                          "off": 285,
-                          "end": 292
+                          "off": 269,
+                          "end": 276
                         },
                         "name": "Println"
                       },
@@ -315,8 +317,8 @@
                           "pos": {
                             "line": 17,
                             "col": 39,
-                            "off": 293,
-                            "end": 299
+                            "off": 277,
+                            "end": 283
                           },
                           "text": "\"line\"",
                           "value": "line",
@@ -330,24 +332,24 @@
                     "pos": {
                       "line": 18,
                       "col": 9,
-                      "off": 310,
-                      "end": 334
+                      "off": 293,
+                      "end": 317
                     },
                     "pattern": {
                       "kind": "pat-extract",
                       "pos": {
                         "line": 18,
                         "col": 14,
-                        "off": 315,
-                        "end": 324
+                        "off": 298,
+                        "end": 307
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 18,
                           "col": 14,
-                          "off": 315,
-                          "end": 322
+                          "off": 298,
+                          "end": 305
                         },
                         "name": "Nothing"
                       },
@@ -359,8 +361,8 @@
                       "pos": {
                         "line": 18,
                         "col": 31,
-                        "off": 332,
-                        "end": 334
+                        "off": 315,
+                        "end": 317
                       },
                       "stmts": []
                     }
@@ -370,24 +372,24 @@
                     "pos": {
                       "line": 19,
                       "col": 9,
-                      "off": 344,
-                      "end": 376
+                      "off": 326,
+                      "end": 358
                     },
                     "pattern": {
                       "kind": "pat-extract",
                       "pos": {
                         "line": 19,
                         "col": 14,
-                        "off": 349,
-                        "end": 362
+                        "off": 331,
+                        "end": 344
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 19,
                           "col": 14,
-                          "off": 349,
-                          "end": 355
+                          "off": 331,
+                          "end": 337
                         },
                         "name": "Nested"
                       },
@@ -397,8 +399,8 @@
                           "pos": {
                             "line": 19,
                             "col": 21,
-                            "off": 356,
-                            "end": 361
+                            "off": 338,
+                            "end": 343
                           },
                           "name": "inner"
                         }
@@ -410,16 +412,16 @@
                       "pos": {
                         "line": 19,
                         "col": 31,
-                        "off": 366,
-                        "end": 376
+                        "off": 348,
+                        "end": 358
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 19,
                           "col": 31,
-                          "off": 366,
-                          "end": 369
+                          "off": 348,
+                          "end": 351
                         },
                         "name": "log"
                       },
@@ -429,8 +431,8 @@
                           "pos": {
                             "line": 19,
                             "col": 35,
-                            "off": 370,
-                            "end": 375
+                            "off": 352,
+                            "end": 357
                           },
                           "name": "inner"
                         }
@@ -447,10 +449,11 @@
           "pos": {
             "line": 23,
             "col": 1,
-            "off": 390,
-            "end": 431
+            "off": 368,
+            "end": 407
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -458,8 +461,8 @@
             "pos": {
               "line": 23,
               "col": 13,
-              "off": 402,
-              "end": 431
+              "off": 380,
+              "end": 407
             },
             "stmts": [
               {
@@ -467,16 +470,16 @@
                 "pos": {
                   "line": 24,
                   "col": 5,
-                  "off": 409,
-                  "end": 428
+                  "off": 386,
+                  "end": 405
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 24,
                     "col": 5,
-                    "off": 409,
-                    "end": 412
+                    "off": 386,
+                    "end": 389
                   },
                   "name": "log"
                 },
@@ -486,16 +489,16 @@
                     "pos": {
                       "line": 24,
                       "col": 9,
-                      "off": 413,
-                      "end": 427
+                      "off": 390,
+                      "end": 404
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 24,
                         "col": 9,
-                        "off": 413,
-                        "end": 419
+                        "off": 390,
+                        "end": 396
                       },
                       "name": "Nested"
                     },
@@ -505,16 +508,16 @@
                         "pos": {
                           "line": 24,
                           "col": 16,
-                          "off": 420,
-                          "end": 426
+                          "off": 397,
+                          "end": 403
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 24,
                             "col": 16,
-                            "off": 420,
-                            "end": 424
+                            "off": 397,
+                            "end": 401
                           },
                           "name": "Line"
                         },

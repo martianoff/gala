@@ -11,6 +11,7 @@ go_library(
         "expr.go",
         "gala2lean.go",
         "lambda.go",
+        "methods.go",
         "match.go",
         "names.go",
         "program.go",
@@ -64,6 +65,8 @@ go_test(
         "testdata/assign_order_void_keywords.out",
         "testdata/defaults_byname.gala",
         "testdata/defaults_byname.out",
+        "testdata/methods.gala",
+        "testdata/methods.out",
         "//formal:fixture_sources",
     ] + select({
         "//formal:lean_enabled": ["//formal:lean_runtime"],

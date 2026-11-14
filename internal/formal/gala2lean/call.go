@@ -20,6 +20,10 @@ type sig struct {
 	paramsInDefaults bool
 	unit             bool // a function without a result
 	ctor             bool // a struct or variant constructor, whose call is a value
+	// recv is a method's receiver, the first argument; recvLast evaluates
+	// it after the other arguments (a pointer method's place).
+	recv     *term
+	recvLast bool
 }
 
 // stdCtors are the standard library's Option and Either constructors, which
@@ -134,6 +138,16 @@ func argNode(a coreexport.Node) coreexport.Node {
 // evaluated after them, in parameter order, in the callee's scope (a
 // function's default sees the parameters before it, a field's none).
 func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
+	items, call := g.callItems(s, e, sc)
+	if len(items) == 0 {
+		return call
+	}
+	return term{code: doTerm(append(items, call.mon())), unit: s.unit}
+}
+
+// callItems is callSig as do-items that compute the arguments, and the call
+// that follows them.
+func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope) ([]string, term) {
 	given := bindArgs(s, e.Args, e.Pos)
 	paramOf := make([]int, len(e.Args))
 	for k, a := range given {
@@ -151,17 +165,29 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 		inOrder = inOrder && a == k
 		defaults = defaults || a < 0
 	}
-	if !defaults && inOrder {
-		vs := make([]string, len(vals))
-		for i, v := range vals {
-			vs[i] = v.val()
+	// A method's receiver comes first; a pointer method's place is read
+	// after the arguments (recvLast), which may change it.
+	recvFirst := s.recv != nil && !s.recvLast
+	if !defaults && inOrder && (s.recv == nil || s.recv.pure || recvFirst || allPure(vals...)) {
+		var vs []string
+		subs := vals
+		if s.recv != nil {
+			vs, subs = []string{s.recv.val()}, append([]term{*s.recv}, vals...)
 		}
-		return g.apply(s, vs, vals...)
+		for _, v := range vals {
+			vs = append(vs, v.val())
+		}
+		return nil, g.apply(s, vs, subs...)
 	}
 	// Arguments into temporaries, in the order written. Every one gets a
 	// fresh name, even a plain value: the parameters bound below for the
 	// defaults may shadow a caller's local it names.
 	var items []string
+	recv := ""
+	if recvFirst {
+		recv = g.freshName("o")
+		items = append(items, "let "+recv+" := "+s.recv.val())
+	}
 	tmps := make([]string, len(e.Args))
 	for i, v := range vals {
 		tmps[i] = g.freshName("a")
@@ -195,8 +221,14 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 			dsc.bind(s.names[k], false, g.optType(s.types[k]))
 		}
 	}
-	items = append(items, g.apply(s, args).mon())
-	return term{code: doTerm(items), unit: s.unit}
+	if s.recv != nil && s.recvLast {
+		recv = g.freshName("o")
+		items = append(items, "let "+recv+" := "+s.recv.val())
+	}
+	if s.recv != nil {
+		args = append([]string{recv}, args...)
+	}
+	return items, g.apply(s, args)
 }
 
 // optType is the Lean type of an optional type node, "" when absent.
@@ -246,6 +278,12 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	}
 	ft := g.calleeType(e.Callee, sc)
 	if s, ok := e.Callee.(*coreexport.Select); ok && ft == nil {
+		if t, ok := g.methodCall(e, s, sc); ok {
+			return t
+		}
+		if t, ok := g.generatedMethod(e, s, sc); ok {
+			return t
+		}
 		// pkg.F(...) names a member of an import; v.M(...) calls a method.
 		if n, isName := s.Target.(*coreexport.Name); isName && sc.lookup(n.Name) == nil &&
 			g.globalBy[n.Name] == nil && g.variants[n.Name] == nil {
@@ -320,6 +358,14 @@ func (g *gen) printable(e coreexport.Node, sc *scope) {
 	t := g.typeOf(e, sc)
 	if strings.Contains(t, "→") {
 		unsup(posOf(e), "print-pointer")
+	}
+	if len(g.customString) > 0 {
+		// A type with its own String method prints through it, and so does
+		// a value holding one.
+		if t == "" {
+			unsup(posOf(e), "custom-string")
+		}
+		g.stateTypeIn(t, g.customStringHolders(), posOf(e), "custom-string")
 	}
 	if len(g.unprintable) > 0 {
 		// A value of a type whose text holds a function's address; when the

@@ -27,6 +27,9 @@ type local struct {
 	// gtype is its GALA type when declared or plain to see, else nil; a
 	// call of a function value reads its parameter types from it.
 	gtype coreexport.Node
+	// receiver is true for a pointer method's receiver (in a cell, but
+	// reached by no other path).
+	receiver bool
 }
 
 // valueAt is values[i], or nil past the end.
@@ -187,6 +190,16 @@ func (g *gen) stmt(st coreexport.Node, sc *scope, value bool) []string {
 	case *coreexport.Paren:
 		return g.stmt(st.Expr, sc, value)
 	}
+	if c, ok := st.(*coreexport.Call); ok {
+		// A pointer method called as a statement writes its receiver back
+		// at this level, so the place may be a local var.
+		if items, res := g.ptrCall(c, sc); items != nil {
+			if value {
+				return append(items, "pure "+res)
+			}
+			return items
+		}
+	}
 	t := g.expr(st, sc)
 	switch {
 	case value:
@@ -255,6 +268,7 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 		ann = " : " + g.leanType(typ)
 	}
 	// Go evaluates every right-hand side before binding any name.
+	var items []string
 	vals := make([]string, len(names))
 	for i := range names {
 		if len(values) == 0 {
@@ -262,9 +276,17 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 				unsup(pos, "untyped-declaration")
 			}
 			vals[i] = g.zero(typ)
-		} else {
-			vals[i] = g.exprExpect(values[i], sc, typ).val()
+			continue
 		}
+		if c, ok := values[i].(*coreexport.Call); ok && len(names) == 1 {
+			// `val t = p.advance()`: the pointer method's write-back runs at
+			// this level.
+			if pre, res := g.ptrCall(c, sc); pre != nil {
+				items, vals[i] = pre, res
+				continue
+			}
+		}
+		vals[i] = g.exprExpect(values[i], sc, typ).val()
 	}
 	types := make([]string, len(names))
 	for i := range names {
@@ -273,7 +295,6 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 			types[i] = g.typeOf(values[i], sc)
 		}
 	}
-	var items []string
 	if len(names) > 1 {
 		tmps := make([]string, len(names))
 		for i := range names {

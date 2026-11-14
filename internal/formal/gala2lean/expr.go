@@ -249,7 +249,7 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 func (g *gen) binary(e *coreexport.Binary, sc *scope) term {
 	if e.Op == "==" || e.Op == "!=" {
 		// A type's own Equal decides `==` (docs/GALA.MD, "Equality").
-		g.basic(e.Left, sc)
+		g.comparable(e.Left, sc)
 	}
 	l := g.expr(e.Left, sc)
 	r := g.expr(e.Right, sc)

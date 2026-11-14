@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 4
+def supportedCore : Nat := 5
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -255,6 +255,9 @@ def decodeTop (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with
   | "func" =>
+    -- A method is outside the subset galaspec models: its program is decoded as
+    -- declaring one, as before Core JSON exported receivers (version 5).
+    if (← opt j "receiver").isSome then return .unsupported "method"
     match ← decodeParams (← arr j "params") with
     | .error k => return .unsupported k
     | .ok (ps, ds) =>

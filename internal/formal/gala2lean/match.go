@@ -27,11 +27,13 @@ type pat struct {
 	tests     []string
 	refutable bool
 	binders   []string
+	// types are the binders' GALA types, nil where not known.
+	types []coreexport.Node
 }
 
 // pattern translates GALA pattern p. sc is the scope the match is in (for
 // stable identifiers).
-func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
+func (g *gen) pattern(p coreexport.Node, sc *scope, typ coreexport.Node) pat {
 	switch p := p.(type) {
 	case *coreexport.Unsupported:
 		unsup(p.Pos, "%s", p.What)
@@ -51,11 +53,11 @@ func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
 		// An upper-case name that resolves to a value is a stable
 		// identifier: the subject must equal it.
 		if isUpper(x) && (sc.lookup(x) != nil || g.globalBy[x] != nil) {
-			g.basic(&coreexport.Name{Meta: coreexport.Meta{Kind: "name", Pos: p.Pos}, Name: x}, sc)
+			g.comparable(&coreexport.Name{Meta: coreexport.Meta{Kind: "name", Pos: p.Pos}, Name: x}, sc)
 			f := g.freshName("p")
 			return pat{lean: f, tests: []string{fmt.Sprintf("(%s == %s)", f, g.stableValue(x, sc))}}
 		}
-		return pat{lean: ident(x), binders: []string{x}}
+		return pat{lean: ident(x), binders: []string{x}, types: []coreexport.Node{typ}}
 	case *coreexport.PatLit:
 		f := g.freshName("p")
 		lit := g.expr(p.Value, sc)
@@ -70,7 +72,7 @@ func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
 		var out pat
 		var parts []string
 		for _, el := range p.Elems {
-			sub := g.pattern(el, sc)
+			sub := g.pattern(el, sc, nil)
 			parts = append(parts, sub.lean)
 			out = out.merge(sub)
 		}
@@ -84,13 +86,15 @@ func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
 		var ctor string
 		var nf int
 		var out pat
+		var fields []*coreexport.Field
 		switch {
 		case g.variants[c.Name] != nil:
 			v := g.variants[c.Name]
-			ctor, nf = ident(v.sealed.Name)+"."+ident(c.Name), len(v.fields)
+			ctor, nf, fields = ident(v.sealed.Name)+"."+ident(c.Name), len(v.fields), v.fields
 			out.refutable = len(v.sealed.Variants) > 1
 		case g.structs[c.Name] != nil:
-			ctor, nf = ident(c.Name)+".mk", len(g.structs[c.Name].Fields)
+			fields = fieldsOf(g.structs[c.Name].Fields)
+			ctor, nf = ident(c.Name)+".mk", len(fields)
 		case stdCtors[c.Name] != "" && sc.lookup(c.Name) == nil:
 			ctor, nf, out.refutable = stdCtors[c.Name], 1, true
 			if c.Name == "None" {
@@ -102,9 +106,14 @@ func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
 		if len(p.Args) != nf {
 			unsup(p.Pos, "extractor-arity")
 		}
+		// A sub-pattern's binders take the field's type.
+		fieldTypes := make([]coreexport.Node, nf)
+		for i, f := range fields {
+			fieldTypes[i] = f.Type
+		}
 		var parts []string
-		for _, a := range p.Args {
-			sub := g.pattern(a, sc)
+		for i, a := range p.Args {
+			sub := g.pattern(a, sc, fieldTypes[i])
 			parts = append(parts, sub.lean)
 			out = out.merge(sub)
 		}
@@ -124,6 +133,7 @@ func (a pat) merge(b pat) pat {
 		tests:     append(a.tests, b.tests...),
 		refutable: a.refutable || b.refutable,
 		binders:   append(a.binders, b.binders...),
+		types:     append(a.types, b.types...),
 	}
 }
 
@@ -178,23 +188,25 @@ func (g *gen) matchItems(m *coreexport.Match, sc *scope, value bool) []string {
 		items = append(items, "let "+s+" := "+g.expr(m.Subject, sc).val())
 	}
 	rest := []string{"throw Panic.noArm"}
+	subjType := g.galaType(g.typeOf(m.Subject, sc))
 	for i := len(m.Cases) - 1; i >= 0; i-- {
 		c, ok := m.Cases[i].(*coreexport.Case)
 		if !ok {
 			unsupAt(m.Cases[i])
 		}
-		rest = g.arm(c, s, sc, value, rest)
+		rest = g.arm(c, s, subjType, sc, value, rest)
 	}
 	return append(items, rest...)
 }
 
 // arm is the do-items of one match arm followed by rest, the items of the
 // arms after it.
-func (g *gen) arm(c *coreexport.Case, s string, sc *scope, value bool, rest []string) []string {
-	p := g.pattern(c.Pattern, sc)
+func (g *gen) arm(c *coreexport.Case, s string, subjType coreexport.Node, sc *scope, value bool, rest []string) []string {
+	p := g.pattern(c.Pattern, sc, subjType)
 	armSc := sc.child()
-	for _, b := range p.binders {
-		armSc.bind(b, false, "")
+	for i, b := range p.binders {
+		t := p.types[i]
+		armSc.bind(b, false, g.optTypeSafe(t)).gtype = t
 	}
 	var body []string
 	switch {

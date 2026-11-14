@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 367
+        "end": 358
       },
       "path": "examples/tco_deep_sum.gala",
       "package": "main",
@@ -17,18 +17,19 @@
           "pos": {
             "line": 6,
             "col": 1,
-            "off": 240,
-            "end": 315
+            "off": 235,
+            "end": 310
           },
           "name": "sumTo",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 6,
                 "col": 12,
-                "off": 251,
-                "end": 256
+                "off": 246,
+                "end": 251
               },
               "name": "n",
               "type": {
@@ -36,8 +37,8 @@
                 "pos": {
                   "line": 6,
                   "col": 14,
-                  "off": 253,
-                  "end": 256
+                  "off": 248,
+                  "end": 251
                 },
                 "name": "int"
               },
@@ -48,8 +49,8 @@
               "pos": {
                 "line": 6,
                 "col": 19,
-                "off": 258,
-                "end": 265
+                "off": 253,
+                "end": 260
               },
               "name": "acc",
               "type": {
@@ -57,8 +58,8 @@
                 "pos": {
                   "line": 6,
                   "col": 23,
-                  "off": 262,
-                  "end": 265
+                  "off": 257,
+                  "end": 260
                 },
                 "name": "int"
               },
@@ -70,8 +71,8 @@
             "pos": {
               "line": 6,
               "col": 28,
-              "off": 267,
-              "end": 270
+              "off": 262,
+              "end": 265
             },
             "name": "int"
           },
@@ -80,16 +81,16 @@
             "pos": {
               "line": 6,
               "col": 34,
-              "off": 273,
-              "end": 315
+              "off": 268,
+              "end": 310
             },
             "cond": {
               "kind": "binary",
               "pos": {
                 "line": 6,
                 "col": 38,
-                "off": 277,
-                "end": 283
+                "off": 272,
+                "end": 278
               },
               "op": "<=",
               "left": {
@@ -97,8 +98,8 @@
                 "pos": {
                   "line": 6,
                   "col": 38,
-                  "off": 277,
-                  "end": 278
+                  "off": 272,
+                  "end": 273
                 },
                 "name": "n"
               },
@@ -107,8 +108,8 @@
                 "pos": {
                   "line": 6,
                   "col": 43,
-                  "off": 282,
-                  "end": 283
+                  "off": 277,
+                  "end": 278
                 },
                 "text": "0",
                 "hint": {
@@ -121,8 +122,8 @@
               "pos": {
                 "line": 6,
                 "col": 46,
-                "off": 285,
-                "end": 288
+                "off": 280,
+                "end": 283
               },
               "name": "acc"
             },
@@ -131,16 +132,16 @@
               "pos": {
                 "line": 6,
                 "col": 55,
-                "off": 294,
-                "end": 315
+                "off": 289,
+                "end": 310
               },
               "callee": {
                 "kind": "name",
                 "pos": {
                   "line": 6,
                   "col": 55,
-                  "off": 294,
-                  "end": 299
+                  "off": 289,
+                  "end": 294
                 },
                 "name": "sumTo"
               },
@@ -150,8 +151,8 @@
                   "pos": {
                     "line": 6,
                     "col": 61,
-                    "off": 300,
-                    "end": 305
+                    "off": 295,
+                    "end": 300
                   },
                   "op": "-",
                   "left": {
@@ -159,8 +160,8 @@
                     "pos": {
                       "line": 6,
                       "col": 61,
-                      "off": 300,
-                      "end": 301
+                      "off": 295,
+                      "end": 296
                     },
                     "name": "n"
                   },
@@ -169,8 +170,8 @@
                     "pos": {
                       "line": 6,
                       "col": 65,
-                      "off": 304,
-                      "end": 305
+                      "off": 299,
+                      "end": 300
                     },
                     "text": "1",
                     "hint": {
@@ -183,8 +184,8 @@
                   "pos": {
                     "line": 6,
                     "col": 68,
-                    "off": 307,
-                    "end": 314
+                    "off": 302,
+                    "end": 309
                   },
                   "op": "+",
                   "left": {
@@ -192,8 +193,8 @@
                     "pos": {
                       "line": 6,
                       "col": 68,
-                      "off": 307,
-                      "end": 310
+                      "off": 302,
+                      "end": 305
                     },
                     "name": "acc"
                   },
@@ -202,8 +203,8 @@
                     "pos": {
                       "line": 6,
                       "col": 74,
-                      "off": 313,
-                      "end": 314
+                      "off": 308,
+                      "end": 309
                     },
                     "name": "n"
                   }
@@ -217,10 +218,11 @@
           "pos": {
             "line": 8,
             "col": 1,
-            "off": 319,
-            "end": 367
+            "off": 312,
+            "end": 358
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -228,8 +230,8 @@
             "pos": {
               "line": 8,
               "col": 13,
-              "off": 331,
-              "end": 367
+              "off": 324,
+              "end": 358
             },
             "stmts": [
               {
@@ -237,16 +239,16 @@
                 "pos": {
                   "line": 9,
                   "col": 5,
-                  "off": 338,
-                  "end": 364
+                  "off": 330,
+                  "end": 356
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 9,
                     "col": 5,
-                    "off": 338,
-                    "end": 345
+                    "off": 330,
+                    "end": 337
                   },
                   "name": "Println"
                 },
@@ -256,16 +258,16 @@
                     "pos": {
                       "line": 9,
                       "col": 13,
-                      "off": 346,
-                      "end": 363
+                      "off": 338,
+                      "end": 355
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 9,
                         "col": 13,
-                        "off": 346,
-                        "end": 351
+                        "off": 338,
+                        "end": 343
                       },
                       "name": "sumTo"
                     },
@@ -275,8 +277,8 @@
                         "pos": {
                           "line": 9,
                           "col": 19,
-                          "off": 352,
-                          "end": 359
+                          "off": 344,
+                          "end": 351
                         },
                         "text": "1000000",
                         "hint": {
@@ -288,8 +290,8 @@
                         "pos": {
                           "line": 9,
                           "col": 28,
-                          "off": 361,
-                          "end": 362
+                          "off": 353,
+                          "end": 354
                         },
                         "text": "0",
                         "hint": {

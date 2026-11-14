@@ -80,6 +80,9 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 				inner[p.Name] = true
 			}
 		}
+		if r, ok := n.Receiver.(*coreexport.Receiver); ok {
+			inner[r.Name] = true
+		}
 		g.refs(n.Body, inner, out)
 		return
 	case *coreexport.Call:
@@ -138,7 +141,12 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		g.refs(n.Body, inner, out)
 		return
 	case *coreexport.Select:
-		// The selected name is a field, never a package-level name.
+		// The selected name is a field or a method. The receiver's type is
+		// not known here, so it refers to every method of that name: more
+		// edges than calls, which only merges recursive groups.
+		for _, k := range g.methodsNamed[n.Name] {
+			out[k] = true
+		}
 		g.refs(n.Target, bound, out)
 		return
 	case *coreexport.NamedArg:
@@ -196,17 +204,17 @@ func (g *gen) patBinders(p coreexport.Node, m map[string]bool) {
 
 // funcRefs is what function f refers to.
 func (g *gen) funcRefs(f *coreexport.Func) map[string]bool {
-	if out, ok := g.refsOf[f.Name]; ok {
+	if out, ok := g.refsOf[g.key(f)]; ok {
 		return out
 	}
 	out := map[string]bool{}
 	g.refs(f, map[string]bool{}, out)
-	g.refsOf[f.Name] = out
+	g.refsOf[g.key(f)] = out
 	return out
 }
 
 // callsSelf reports whether f refers to itself.
-func (g *gen) callsSelf(f *coreexport.Func) bool { return g.funcRefs(f)[f.Name] }
+func (g *gen) callsSelf(f *coreexport.Func) bool { return g.funcRefs(f)[g.key(f)] }
 
 // funcSCCs groups the functions into strongly connected components of the
 // reference graph, callees before callers, each in source order (Tarjan's
@@ -224,16 +232,16 @@ func (g *gen) funcSCCs() [][]*coreexport.Func {
 		next++
 		stack = append(stack, v)
 		onStack[v] = true
-		refs := g.funcRefs(g.funcs[v])
+		refs := g.funcRefs(g.byKey[v])
 		for _, w := range g.funcOrder {
-			if !refs[w.Name] {
+			if !refs[g.key(w)] {
 				continue
 			}
-			if _, seen := index[w.Name]; !seen {
-				strong(w.Name)
-				low[v] = min(low[v], low[w.Name])
-			} else if onStack[w.Name] {
-				low[v] = min(low[v], index[w.Name])
+			if _, seen := index[g.key(w)]; !seen {
+				strong(g.key(w))
+				low[v] = min(low[v], low[g.key(w)])
+			} else if onStack[g.key(w)] {
+				low[v] = min(low[v], index[g.key(w)])
 			}
 		}
 		if low[v] == index[v] {
@@ -249,7 +257,7 @@ func (g *gen) funcSCCs() [][]*coreexport.Func {
 			}
 			var scc []*coreexport.Func
 			for _, f := range g.funcOrder {
-				if members[f.Name] {
+				if members[g.key(f)] {
 					scc = append(scc, f)
 				}
 			}
@@ -257,8 +265,8 @@ func (g *gen) funcSCCs() [][]*coreexport.Func {
 		}
 	}
 	for _, f := range g.funcOrder {
-		if _, seen := index[f.Name]; !seen {
-			strong(f.Name)
+		if _, seen := index[g.key(f)]; !seen {
+			strong(g.key(f))
 		}
 	}
 	return out
@@ -279,7 +287,7 @@ func (g *gen) initOrder() []*globalVar {
 			for r := range refs {
 				if g.globalBy[r] != nil {
 					reach[r] = true
-				} else if f := g.funcs[r]; f != nil && !seenFn[r] {
+				} else if f := g.byKey[r]; f != nil && !seenFn[r] {
 					seenFn[r] = true
 					visit(g.funcRefs(f))
 				}

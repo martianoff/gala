@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 205
           },
           "name": "f",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -129,6 +130,7 @@
             "end": 258
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
