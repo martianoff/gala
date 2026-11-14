@@ -15,6 +15,9 @@ func (g *gen) leanType(t coreexport.Node) string {
 	case nil:
 		return "Unit"
 	case *coreexport.TypeName:
+		if len(t.Args) > 0 {
+			unsup(t.Pos, "generic-type")
+		}
 		switch t.Name {
 		case "int", "int64":
 			return "Int64"
@@ -38,7 +41,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 
 // typeName is the name of a plain type, "" for any other.
 func typeName(t coreexport.Node) string {
-	if n, ok := t.(*coreexport.TypeName); ok {
+	if n, ok := t.(*coreexport.TypeName); ok && len(n.Args) == 0 {
 		return n.Name
 	}
 	return ""

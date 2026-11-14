@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -22,6 +22,7 @@
           },
           "name": "abs",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -40,7 +41,8 @@
                   "off": 268,
                   "end": 271
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -53,7 +55,8 @@
               "off": 273,
               "end": 276
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -220,6 +223,7 @@
           },
           "name": "absAndSign",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -238,7 +242,8 @@
                   "off": 351,
                   "end": 354
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -251,7 +256,8 @@
               "off": 356,
               "end": 359
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -515,6 +521,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

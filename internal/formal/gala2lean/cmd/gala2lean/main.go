@@ -70,9 +70,7 @@ func main() {
 
 // printStats prints one line: the functions and methods declared, and how
 // many of them gala2lean translates. A function's report names it by its
-// name, a method's by Type.method. A generic function is outside Core JSON
-// and not counted (an unsupported node does not say whether it is a
-// function or a type).
+// name, a method's by Type.method. A generic function counts, as not translated.
 func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed bool) {
 	funcs, methods, opaque := 0, 0, 0
 	names := map[string]bool{}
@@ -83,6 +81,11 @@ func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed b
 				continue
 			}
 			funcs++
+			if len(d.TypeParams) > 0 {
+				// A generic function: not translated yet.
+				opaque++
+				continue
+			}
 			key := d.Name
 			if d.Receiver != nil {
 				methods++

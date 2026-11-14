@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 287
           },
           "name": "FocusState",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -57,6 +58,7 @@
             "end": 413
           },
           "name": "Status",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -98,7 +100,8 @@
                       "off": 358,
                       "end": 361
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -120,7 +123,8 @@
                       "off": 367,
                       "end": 370
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -155,7 +159,8 @@
                       "off": 404,
                       "end": 410
                     },
-                    "name": "string"
+                    "name": "string",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -174,6 +179,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -205,7 +211,8 @@
                     "off": 520,
                     "end": 530
                   },
-                  "name": "FocusState"
+                  "name": "FocusState",
+                  "args": []
                 },
                 "values": [
                   {
@@ -250,7 +257,8 @@
                     "off": 560,
                     "end": 570
                   },
-                  "name": "FocusState"
+                  "name": "FocusState",
+                  "args": []
                 },
                 "values": [
                   {
@@ -295,7 +303,8 @@
                     "off": 600,
                     "end": 610
                   },
-                  "name": "FocusState"
+                  "name": "FocusState",
+                  "args": []
                 },
                 "values": [
                   {
@@ -566,7 +575,8 @@
                     "off": 816,
                     "end": 822
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -638,7 +648,8 @@
                     "off": 855,
                     "end": 861
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -710,7 +721,8 @@
                     "off": 894,
                     "end": 900
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -782,7 +794,8 @@
                     "off": 933,
                     "end": 939
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -827,7 +840,8 @@
                     "off": 962,
                     "end": 968
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -885,7 +899,8 @@
                     "off": 1004,
                     "end": 1010
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {

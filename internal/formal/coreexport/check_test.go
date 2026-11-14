@@ -99,6 +99,13 @@ func (c *posChecker) node(v map[string]any, outer pos) error {
 	case "pat-wild":
 		want = "_"
 	}
+	if args, _ := v["args"].([]any); kind == "type-name" && len(args) > 0 {
+		// A generic type spans its type arguments too, `Option[int]`.
+		if !strings.HasPrefix(text, want+"[") {
+			return fmt.Errorf("type-name spans %q, want %q[...]", text, want)
+		}
+		want = ""
+	}
 	if want != "" && text != want {
 		return fmt.Errorf("%s spans %q, want %q", kind, text, want)
 	}

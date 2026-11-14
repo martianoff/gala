@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 39
           },
           "name": "Counter",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -40,7 +41,8 @@
                   "off": 35,
                   "end": 38
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": true,
               "default": null
@@ -73,10 +75,12 @@
                 "off": 49,
                 "end": 56
               },
-              "name": "Counter"
+              "name": "Counter",
+              "args": []
             },
             "pointer": false
           },
+          "type-params": [],
           "params": [],
           "result": {
             "kind": "type-name",
@@ -86,7 +90,8 @@
               "off": 64,
               "end": 67
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "select",
@@ -135,10 +140,12 @@
                 "off": 84,
                 "end": 91
               },
-              "name": "Counter"
+              "name": "Counter",
+              "args": []
             },
             "pointer": true
           },
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -157,7 +164,8 @@
                   "off": 100,
                   "end": 103
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -268,16 +276,31 @@
             },
             "name": "c",
             "type": {
-              "unsupported": "generic-type",
+              "kind": "type-name",
               "pos": {
                 "line": 11,
                 "col": 9,
                 "off": 137,
                 "end": 149
-              }
+              },
+              "name": "Ptr",
+              "args": [
+                {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 11,
+                    "col": 13,
+                    "off": 141,
+                    "end": 148
+                  },
+                  "name": "Counter",
+                  "args": []
+                }
+              ]
             },
             "pointer": false
           },
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -349,6 +372,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

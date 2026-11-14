@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -13,21 +13,93 @@
       "package": "main",
       "decls": [
         {
-          "unsupported": "import",
+          "kind": "import",
           "pos": {
             "line": 3,
-            "col": 1,
-            "off": 14,
+            "col": 8,
+            "off": 21,
             "end": 26
-          }
+          },
+          "path": "fmt",
+          "alias": ""
         },
         {
-          "unsupported": "generic-decl",
+          "kind": "func",
           "pos": {
             "line": 5,
             "col": 1,
             "off": 28,
             "end": 53
+          },
+          "name": "id",
+          "receiver": null,
+          "type-params": [
+            {
+              "kind": "type-param",
+              "pos": {
+                "line": 5,
+                "col": 9,
+                "off": 36,
+                "end": 41
+              },
+              "name": "T",
+              "constraint": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 5,
+                  "col": 11,
+                  "off": 38,
+                  "end": 41
+                },
+                "name": "any",
+                "args": []
+              }
+            }
+          ],
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 5,
+                "col": 16,
+                "off": 43,
+                "end": 46
+              },
+              "name": "x",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 5,
+                  "col": 18,
+                  "off": 45,
+                  "end": 46
+                },
+                "name": "T",
+                "args": []
+              },
+              "default": null
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 5,
+              "col": 21,
+              "off": 48,
+              "end": 49
+            },
+            "name": "T",
+            "args": []
+          },
+          "body": {
+            "kind": "name",
+            "pos": {
+              "line": 5,
+              "col": 25,
+              "off": 52,
+              "end": 53
+            },
+            "name": "x"
           }
         },
         {
@@ -56,10 +128,12 @@
                 "off": 63,
                 "end": 68
               },
-              "name": "Point"
+              "name": "Point",
+              "args": []
             },
             "pointer": false
           },
+          "type-params": [],
           "params": [],
           "result": {
             "kind": "type-name",
@@ -69,7 +143,8 @@
               "off": 77,
               "end": 80
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "select",
@@ -102,6 +177,7 @@
           },
           "name": "types",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -189,7 +265,8 @@
                       "off": 144,
                       "end": 147
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   }
                 ],
                 "result": {
@@ -200,7 +277,8 @@
                     "off": 149,
                     "end": 152
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 }
               },
               "default": null
@@ -215,13 +293,27 @@
               },
               "name": "o",
               "type": {
-                "unsupported": "generic-type",
+                "kind": "type-name",
                 "pos": {
                   "line": 9,
                   "col": 69,
                   "off": 156,
                   "end": 167
-                }
+                },
+                "name": "Option",
+                "args": [
+                  {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 9,
+                      "col": 76,
+                      "off": 163,
+                      "end": 166
+                    },
+                    "name": "int",
+                    "args": []
+                  }
+                ]
               },
               "default": null
             },
@@ -262,7 +354,8 @@
                   "off": 187,
                   "end": 190
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": {
                 "kind": "int",
@@ -287,7 +380,8 @@
               "off": 196,
               "end": 199
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -350,6 +444,7 @@
             "end": 310
           },
           "name": "Point",
+          "type-params": [],
           "shorthand": false,
           "fields": [
             {
@@ -369,7 +464,8 @@
                   "off": 305,
                   "end": 308
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -386,6 +482,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -437,7 +534,8 @@
                             "off": 341,
                             "end": 344
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }

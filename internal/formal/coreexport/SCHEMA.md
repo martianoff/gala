@@ -1,4 +1,4 @@
-# Core JSON, version 5
+# Core JSON, version 6
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -13,7 +13,9 @@ the parts of S2 listed here:
 - interpolated strings, `s"..."` (S2);
 - lambdas, function types and functions as values (S2);
 - default values of parameters and fields, and named arguments (S2);
-- methods: a function with a receiver, by value or `*Type`.
+- methods: a function with a receiver, by value or `*Type`;
+- generics: type parameters of functions, structs and sealed types, and type arguments
+  of types (`Option[int]`); imports.
 
 The Go types in [schema.go](schema.go) are the same schema. `schema_test.go` checks
 that every kind and field there is documented here, and that the two lists of
@@ -111,11 +113,23 @@ One source file.
 
 - `path` (string): the path the file was given as.
 - `package` (string): the name in its `package` clause.
-- `decls` (list): its declarations: the `import`s (always unsupported) first, then the
-  top-level declarations, in source order.
+- `decls` (list): its declarations: one [`import`](#import) per imported package
+  first, then the top-level declarations, in source order.
 
 ```json
 { "kind": "file", "pos": "…", "path": "main.gala", "package": "main", "decls": [] }
+```
+
+### `import`
+
+One imported package, from `import "fmt"`, `import . "path"`, `import x "path"` or one
+line of an `import ( ... )` block.
+
+- `path` (string): the package path, unquoted.
+- `alias` (string): `""` for none, `"."` for a dot import, else the name.
+
+```json
+{ "kind": "import", "pos": "…", "path": "martianoff/gala/collection_immutable", "alias": "." }
 ```
 
 ### `val`
@@ -146,18 +160,19 @@ One source file.
 
 ### `func`
 
-A function declaration, at top level or in a block, or a method. A generic function is
-unsupported.
+A function declaration, at top level or in a block, or a method.
 
 - `name` (string).
 - `receiver` ([`receiver`](#receiver) or null): a method's receiver; null for a plain
   function.
+- `type-params` (list of [`type-param`](#type-param)): a generic function's type
+  parameters, `[]` for none.
 - `params` (list of `param`).
 - `result` (type or null): the declared result type.
 - `body` (`block` or expression): a block, or the expression of the `= expr` form.
 
 ```json
-{ "kind": "func", "pos": "…", "name": "id", "receiver": null, "params": [ { "kind": "param", "pos": "…", "name": "n",
+{ "kind": "func", "pos": "…", "name": "id", "receiver": null, "type-params": [], "params": [ { "kind": "param", "pos": "…", "name": "n",
   "type": { "kind": "type-name", "pos": "…", "name": "int" } } ],
   "result": { "kind": "type-name", "pos": "…", "name": "int" },
   "body": { "kind": "name", "pos": "…", "name": "n" } }
@@ -166,8 +181,8 @@ unsupported.
 ### `receiver`
 
 A method's receiver, `(c Counter)` or `(c *Counter)`. A receiver of any other type
-(`Ptr[Counter]`, a generic type) has that type exported, so it is unsupported; a
-receiver marked `val` or `var` is an unsupported `param-modifier`.
+(`Ptr[Counter]`, `Box[T]`) has that type exported as it is written; a receiver marked
+`val` or `var` is an unsupported `param-modifier`.
 
 - `name` (string).
 - `type` (type): the receiver's type, without the `*`.
@@ -176,6 +191,18 @@ receiver marked `val` or `var` is an unsupported `param-modifier`.
 ```json
 { "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter" },
   "pointer": true }
+```
+
+### `type-param`
+
+A type parameter, `T any` or `C Iterable[T, C]`, of a generic function, struct or sealed
+type.
+
+- `name` (string).
+- `constraint` (type): the constraint as written; `any` is a `type-name`.
+
+```json
+{ "kind": "type-param", "pos": "…", "name": "T", "constraint": { "kind": "type-name", "pos": "…", "name": "any", "args": [] } }
 ```
 
 ### `param`
@@ -198,11 +225,13 @@ unsupported.
 `type Point struct { X int }`, or the shorthand `struct Pair(Left int, Right string)`.
 
 - `name` (string).
+- `type-params` (list of [`type-param`](#type-param)): `[]` unless generic,
+  `struct Box[T any](Value T)`.
 - `shorthand` (bool): true for the `struct Name(...)` form.
 - `fields` (list of `field`).
 
 ```json
-{ "kind": "struct", "pos": "…", "name": "Pair", "shorthand": true, "fields": [
+{ "kind": "struct", "pos": "…", "name": "Pair", "type-params": [], "shorthand": true, "fields": [
   { "kind": "field", "pos": "…", "name": "Left", "type": { "kind": "type-name", "pos": "…", "name": "int" },
     "mutable": false, "default": null } ] }
 ```
@@ -224,14 +253,14 @@ A field of a struct or of a sealed variant.
 
 ### `sealed`
 
-`sealed type Shape { case Circle(Radius int) case Empty }`. A generic sealed type is
-unsupported.
+`sealed type Shape { case Circle(Radius int) case Empty }`.
 
 - `name` (string).
+- `type-params` (list of [`type-param`](#type-param)): `[]` unless generic.
 - `variants` (list of `variant`), in source order.
 
 ```json
-{ "kind": "sealed", "pos": "…", "name": "Shape", "variants": [
+{ "kind": "sealed", "pos": "…", "name": "Shape", "type-params": [], "variants": [
   { "kind": "variant", "pos": "…", "name": "Empty", "default": false, "fields": [] } ] }
 ```
 
@@ -251,13 +280,16 @@ One `case` of a sealed type. `case Empty` and `case Empty()` are the same varian
 
 ### `type-name`
 
-A type written as a plain name: `int`, `string`, `Point`. Generic, qualified, slice,
-pointer and map types are unsupported; a function type is a [`type-func`](#type-func).
+A type written as a name, with type arguments when generic: `int`, `Point`,
+`Option[int]`, `Array[T]`. Qualified, slice, pointer and map types are unsupported; a
+function type is a [`type-func`](#type-func).
 
 - `name` (string).
+- `args` (list of types): the type arguments, `[]` for none. Not resolved or inferred:
+  only what is written.
 
 ```json
-{ "kind": "type-name", "pos": "…", "name": "int" }
+{ "kind": "type-name", "pos": "…", "name": "Option", "args": [ { "kind": "type-name", "pos": "…", "name": "int", "args": [] } ] }
 ```
 
 ### `block`
@@ -608,12 +640,11 @@ Every name an `unsupported` node can carry.
 
 | Name | Construct |
 |---|---|
-| `import` | an `import` declaration |
+| `import` | an `import` inside a block, or one whose path is not a valid string literal |
 | `embed` | an `embed val` declaration |
 | `opaque-type` | an `opaque type` declaration |
 | `defined-type` | a `type` declaration that is neither a struct nor an interface, `type ID int` |
 | `interface` | an interface type declaration |
-| `generic-decl` | a function, struct or sealed type with type parameters |
 | `go-results` | a Go-style multiple result list `(T1, T2)` |
 | `param-modifier` | a function parameter marked `val` or `var` |
 | `param-default` | a parameter of a function type with a default value, `func(x int = 1)` |
@@ -641,7 +672,6 @@ Every name an `unsupported` node can carry.
 | `format-string` | `f"..."` |
 | `interpolated-escape` | an embedded expression written with a backslash, such as an escaped quote, `s"${f(\"a\")}"` |
 | `string-escape` | a string literal whose escapes Go does not accept |
-| `generic-type` | a type with type arguments, `Option[int]` |
 | `qualified-type` | a type from another package, `pkg.T` |
 | `slice-type` | `[]T` |
 | `pointer-type` | `*T` |

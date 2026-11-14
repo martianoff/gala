@@ -43,5 +43,5 @@ func (e *exporter) funcTypeParam(p native.ParameterNode) Node {
 	case p.Type_().Ok():
 		return e.typ(p.Type_())
 	}
-	return of(e, &TypeName{Name: p.Identifier().GetText()}, p.Identifier().GalaNodeRef)
+	return of(e, &TypeName{Name: p.Identifier().GetText(), Args: []Node{}}, p.Identifier().GalaNodeRef)
 }

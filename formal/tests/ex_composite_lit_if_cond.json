@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 90
           },
           "name": "HttpMethod",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -70,6 +71,7 @@
           },
           "name": "checkMethod",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -88,7 +90,8 @@
                   "off": 111,
                   "end": 121
                 },
-                "name": "HttpMethod"
+                "name": "HttpMethod",
+                "args": []
               },
               "default": null
             }
@@ -101,7 +104,8 @@
               "off": 123,
               "end": 129
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -319,6 +323,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

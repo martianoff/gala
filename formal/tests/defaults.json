@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -78,6 +78,7 @@
           },
           "name": "t",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -96,7 +97,8 @@
                   "off": 56,
                   "end": 62
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -117,7 +119,8 @@
                   "off": 66,
                   "end": 69
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -130,7 +133,8 @@
               "off": 71,
               "end": 74
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -218,6 +222,7 @@
           },
           "name": "ts",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -236,7 +241,8 @@
                   "off": 114,
                   "end": 120
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -257,7 +263,8 @@
                   "off": 124,
                   "end": 130
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             }
@@ -270,7 +277,8 @@
               "off": 132,
               "end": 138
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -358,6 +366,7 @@
           },
           "name": "scale",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -376,7 +385,8 @@
                   "off": 181,
                   "end": 184
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -397,7 +407,8 @@
                   "off": 188,
                   "end": 191
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": {
                 "kind": "binary",
@@ -442,7 +453,8 @@
               "off": 201,
               "end": 204
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "binary",
@@ -485,6 +497,7 @@
           },
           "name": "greet",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -503,7 +516,8 @@
                   "off": 230,
                   "end": 236
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -524,7 +538,8 @@
                   "off": 247,
                   "end": 253
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": {
                 "kind": "name",
@@ -546,7 +561,8 @@
               "off": 264,
               "end": 270
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "interp",
@@ -601,6 +617,7 @@
           },
           "name": "three",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -619,7 +636,8 @@
                   "off": 306,
                   "end": 309
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -640,7 +658,8 @@
                   "off": 313,
                   "end": 316
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": {
                 "kind": "call",
@@ -726,7 +745,8 @@
                   "off": 336,
                   "end": 339
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": {
                 "kind": "call",
@@ -804,7 +824,8 @@
               "off": 358,
               "end": 364
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "interp",
@@ -879,6 +900,7 @@
           },
           "name": "divide",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -897,7 +919,8 @@
                   "off": 401,
                   "end": 404
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -918,7 +941,8 @@
                   "off": 414,
                   "end": 417
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -931,7 +955,8 @@
               "off": 419,
               "end": 422
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "binary",
@@ -973,6 +998,7 @@
             "end": 504
           },
           "name": "Cfg",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -992,7 +1018,8 @@
                   "off": 461,
                   "end": 467
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -1014,7 +1041,8 @@
                   "off": 475,
                   "end": 478
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": {
@@ -1048,7 +1076,8 @@
                   "off": 488,
                   "end": 494
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": {
@@ -1073,6 +1102,7 @@
             "end": 586
           },
           "name": "Shape",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -1102,7 +1132,8 @@
                       "off": 544,
                       "end": 547
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": {
@@ -1149,7 +1180,8 @@
                       "off": 569,
                       "end": 572
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -1171,7 +1203,8 @@
                       "off": 576,
                       "end": 579
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": {
@@ -1201,6 +1234,7 @@
             "end": 614
           },
           "name": "Point",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -1220,7 +1254,8 @@
                   "off": 603,
                   "end": 606
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -1242,7 +1277,8 @@
                   "off": 610,
                   "end": 613
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -1287,6 +1323,7 @@
           },
           "name": "mark",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -1305,7 +1342,8 @@
                   "off": 793,
                   "end": 799
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -1326,7 +1364,8 @@
                   "off": 803,
                   "end": 809
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             }
@@ -1339,7 +1378,8 @@
               "off": 811,
               "end": 817
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -1427,6 +1467,7 @@
           },
           "name": "hello",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -1445,7 +1486,8 @@
                   "off": 867,
                   "end": 873
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -1466,7 +1508,8 @@
                   "off": 884,
                   "end": 890
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": {
                 "kind": "name",
@@ -1488,7 +1531,8 @@
               "off": 899,
               "end": 905
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "interp",
@@ -1780,6 +1824,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

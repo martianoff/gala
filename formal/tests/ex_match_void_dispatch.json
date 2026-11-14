@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 116
           },
           "name": "Shape",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -86,7 +87,8 @@
                       "off": 108,
                       "end": 113
                     },
-                    "name": "Shape"
+                    "name": "Shape",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -105,6 +107,7 @@
           },
           "name": "doStuff",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -162,6 +165,7 @@
           },
           "name": "log",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -180,7 +184,8 @@
                   "off": 176,
                   "end": 181
                 },
-                "name": "Shape"
+                "name": "Shape",
+                "args": []
               },
               "default": null
             }
@@ -454,6 +459,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

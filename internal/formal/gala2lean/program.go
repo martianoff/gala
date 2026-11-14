@@ -123,6 +123,28 @@ func (g *gen) freshName(p string) string {
 func (g *gen) collect(p *coreexport.Program) {
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
+			// Imports and generic declarations are outside the translated
+			// subset for now: declarations outside it, as below.
+			switch d := d.(type) {
+			case *coreexport.Import:
+				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: d.Pos})
+				continue
+			case *coreexport.Func:
+				if len(d.TypeParams) > 0 {
+					g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "generic-decl", Pos: d.Pos})
+					continue
+				}
+			case *coreexport.Struct:
+				if len(d.TypeParams) > 0 {
+					g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "generic-decl", Pos: d.Pos})
+					continue
+				}
+			case *coreexport.Sealed:
+				if len(d.TypeParams) > 0 {
+					g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "generic-decl", Pos: d.Pos})
+					continue
+				}
+			}
 			switch d := d.(type) {
 			case *coreexport.Unsupported:
 				// A declaration outside the subset means nothing until a

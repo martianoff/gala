@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 539
           },
           "name": "Mode",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -70,6 +71,7 @@
           },
           "name": "observeSeen",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -88,7 +90,8 @@
                   "off": 560,
                   "end": 564
                 },
-                "name": "Mode"
+                "name": "Mode",
+                "args": []
               },
               "default": null
             }
@@ -101,7 +104,8 @@
               "off": 566,
               "end": 569
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -419,6 +423,7 @@
           },
           "name": "observePicked",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -437,7 +442,8 @@
                   "off": 813,
                   "end": 817
                 },
-                "name": "Mode"
+                "name": "Mode",
+                "args": []
               },
               "default": null
             }
@@ -450,7 +456,8 @@
               "off": 819,
               "end": 825
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -764,6 +771,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

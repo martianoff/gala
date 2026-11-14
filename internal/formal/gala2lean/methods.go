@@ -52,8 +52,11 @@ func (g *gen) addMethod(f *coreexport.Func) {
 		if u, isUnsup := f.Receiver.(*coreexport.Unsupported); isUnsup {
 			what = u.What
 		} else if ok {
-			if u, isUnsup := r.Type.(*coreexport.Unsupported); isUnsup {
-				what = u.What
+			switch rt := r.Type.(type) {
+			case *coreexport.Unsupported:
+				what = rt.What
+			case *coreexport.TypeName:
+				what = "generic-type" // Ptr[T], Box[T]
 			}
 		}
 		g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: what, Pos: f.Pos})

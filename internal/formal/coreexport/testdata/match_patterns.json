@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 87
           },
           "name": "Expr",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -50,7 +51,8 @@
                       "off": 52,
                       "end": 55
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -85,7 +87,8 @@
                       "off": 72,
                       "end": 76
                     },
-                    "name": "Expr"
+                    "name": "Expr",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -107,7 +110,8 @@
                       "off": 80,
                       "end": 84
                     },
-                    "name": "Expr"
+                    "name": "Expr",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -126,6 +130,7 @@
           },
           "name": "eval",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -144,7 +149,8 @@
                   "off": 101,
                   "end": 105
                 },
-                "name": "Expr"
+                "name": "Expr",
+                "args": []
               },
               "default": null
             }
@@ -157,7 +163,8 @@
               "off": 107,
               "end": 110
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "match",
@@ -480,6 +487,7 @@
           },
           "name": "describe",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -498,7 +506,8 @@
                   "off": 238,
                   "end": 241
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -519,7 +528,8 @@
                   "off": 245,
                   "end": 251
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             }
@@ -532,7 +542,8 @@
               "off": 253,
               "end": 259
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "match",
@@ -929,6 +940,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
