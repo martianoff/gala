@@ -46,8 +46,9 @@ import (
 type operandMark int
 
 const (
-	// operandThroughPointer is `*p`, or a field or method value `p.f` with
-	// p a pointer.
+	// operandThroughPointer is `*p`, a field or method value `p.f` with p a
+	// pointer, or an element `x[i]` of a slice or map x: storage any call
+	// may reach.
 	operandThroughPointer operandMark = 1 << iota
 	// operandAddressed is the receiver x of a method call `x.m(...)` that
 	// takes x's address: a pointer-receiver method on a value.
@@ -59,6 +60,10 @@ const (
 	// operandBoxGet is `x.f.Get()`, a val field read out of its
 	// std.Immutable box: a call that changes nothing.
 	operandBoxGet
+	// operandPackageVar is a name that reads a package-level var, as the
+	// lowering resolved it: a local binding of the same name elsewhere in
+	// the declaration does not hide it (see changeable).
+	operandPackageVar
 )
 
 func (t *galaASTTransformer) markOperand(n ast.Node, mark operandMark) {
@@ -105,6 +110,54 @@ func (t *galaASTTransformer) markMember(sel *ast.SelectorExpr, valueType transpi
 func (t *galaASTTransformer) markDeref(star *ast.StarExpr) *ast.StarExpr {
 	t.markOperand(star, operandThroughPointer)
 	return star
+}
+
+// isPackageVar reports whether name is a package-level var a bare name may
+// read, as packageVarTypes lists them: this package's, or one of a package
+// the file dot-imports. (An embed val is bound like a var, but is none.)
+func (t *galaASTTransformer) isPackageVar(name string) bool {
+	if t.richAST == nil {
+		return false
+	}
+	isVar := func(meta *transpiler.PackageValMetadata) bool { return meta != nil && !meta.IsVal }
+	if isVar(t.richAST.PackageVals[name]) {
+		return true
+	}
+	if t.importManager != nil {
+		for _, entry := range t.importManager.All() {
+			if entry.IsDot && isVar(t.richAST.ImportedVals[entry.Path][name]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// markIndex marks idx, an element read `x[i]` lowered from the source, for
+// orderOperands when x is a slice, a map or a pointer to an array: its
+// elements are shared storage any call may change, as through a pointer. A
+// string or an array value holds its own elements.
+//
+// written is the base as written, before its Immutable box, if any, was
+// unwrapped: the node (inside any parentheses) the lowering already asked
+// the type of, so asking again reports nothing new. The type is read through
+// the box and a Go named collection type (url.Values, sort.IntSlice), as for
+// the .Size() sugar.
+func (t *galaASTTransformer) markIndex(idx *ast.IndexExpr, written ast.Expr) {
+	switch typ := t.followAliasChain(t.sizeSugarReceiverType(ast.Unparen(written))).(type) {
+	case transpiler.ArrayType:
+		if typ.Fixed {
+			return
+		}
+	case transpiler.MapType:
+	case transpiler.PointerType:
+		if _, toArray := typ.Elem.(transpiler.ArrayType); !toArray {
+			return
+		}
+	default:
+		return
+	}
+	t.markOperand(idx, operandThroughPointer)
 }
 
 // recordMutableVar records the local `var` or `var` parameter name, of type
@@ -417,6 +470,9 @@ func (o *operandOrder) readsChangeable(e ast.Expr) (vars, pointers bool) {
 		case *ast.TypeAssertExpr:
 			ast.Inspect(n.X, walk) // not the type
 			return false
+		case *ast.IndexExpr:
+			// An element of a slice or map: any call may change it.
+			pointers = pointers || o.t.marked(n, operandThroughPointer)
 		case *ast.SelectorExpr:
 			if id, ok := n.X.(*ast.Ident); ok && o.isPackageQualifier(id) {
 				vars = vars || o.isImportedVar(id.Name, n.Sel.Name)
@@ -436,7 +492,7 @@ func (o *operandOrder) readsChangeable(e ast.Expr) (vars, pointers bool) {
 			}
 			return false
 		case *ast.Ident:
-			vars = vars || o.changeable(n.Name)
+			vars = vars || o.changeable(n.Name) || o.t.marked(n, operandPackageVar)
 		}
 		return true
 	}
@@ -491,7 +547,11 @@ func (t *galaASTTransformer) makesCallExcept(e ast.Expr, changeable func(string)
 
 // changeable reports whether name, read in this declaration, may be changed by
 // a call: a package-level var the declaration does not shadow, or a local var
-// a function literal or a method call captures.
+// a function literal or a method call captures. Names are compared, not
+// bindings: a read the lowering resolved to a package var is marked
+// (operandPackageVar) and counts wherever the name is bound locally too;
+// this rule covers the reads it did not lower, such as names the transformer
+// writes itself.
 func (o *operandOrder) changeable(name string) bool {
 	if _, ok := o.pkgVars[name]; ok && !o.locals[name] {
 		return true
@@ -500,8 +560,12 @@ func (o *operandOrder) changeable(name string) bool {
 	return local && o.locals[name] && o.captured[name]
 }
 
-// varType is the type of the changeable variable name, nil when unknown.
-func (o *operandOrder) varType(name string) transpiler.Type {
+// varType is the type of the changeable variable id reads, nil when unknown.
+func (o *operandOrder) varType(id *ast.Ident) transpiler.Type {
+	name := id.Name
+	if o.t.marked(id, operandPackageVar) {
+		return o.pkgVars[name] // whatever else the name binds here
+	}
 	if o.locals[name] {
 		return o.t.mutableVars[name]
 	}
@@ -568,7 +632,7 @@ func (o *operandOrder) receiverCopyable(fun ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	return o.t.copyableReceiver(o.varType(id.Name), sel.Sel.Name)
+	return o.t.copyableReceiver(o.varType(id), sel.Sel.Name)
 }
 
 // copyableReceiver reports whether a receiver of type typ can be copied ahead

@@ -380,6 +380,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 	// `F[T]` naming a generic function is its instantiation, not an index of
 	// a value, so the function is no Immutable to unwrap; asking would only
 	// find it typeless until instantiated.
+	written := base // as written, for markIndex
 	genericMethod := false
 	instantiates := t.namesFunction(base)
 	if !instantiates {
@@ -418,7 +419,11 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 		}
 	}
 	if len(indices) == 1 {
-		return &ast.IndexExpr{X: base, Index: indices[0]}, nil
+		idx := &ast.IndexExpr{X: base, Index: indices[0]}
+		if !instantiates && !genericMethod {
+			t.markIndex(idx, written)
+		}
+		return idx, nil
 	}
 	return &ast.IndexListExpr{X: base, Indices: indices}, nil
 }

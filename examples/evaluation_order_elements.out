@@ -1,0 +1,8 @@
+slice element: 11
+map element: 12
+slice in a field: 33
+slice parameter: 55
+argument: (7, 70)
+package-level slice: 99
+Go named slice type: 44
+string byte: 104
