@@ -47,7 +47,7 @@ func (g *gen) key(f *coreexport.Func) string {
 // value prints or compares (hasMethods).
 func (g *gen) addMethod(f *coreexport.Func) {
 	r, ok := f.Receiver.(*coreexport.Receiver)
-	if !ok || typeName(r.Type) == "" {
+	if !ok || typeName(r.Type) == "" || len(f.TypeParams) > 0 {
 		what := "method"
 		if u, isUnsup := f.Receiver.(*coreexport.Unsupported); isUnsup {
 			what = u.What
@@ -56,7 +56,11 @@ func (g *gen) addMethod(f *coreexport.Func) {
 			case *coreexport.Unsupported:
 				what = rt.What
 			case *coreexport.TypeName:
-				what = "generic-type" // Ptr[T], Box[T]
+				if len(rt.Args) > 0 {
+					what = "generic-type" // Ptr[T], Box[T]
+				} else {
+					what = "generic-decl" // a method with type parameters of its own
+				}
 			}
 		}
 		g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: what, Pos: f.Pos})

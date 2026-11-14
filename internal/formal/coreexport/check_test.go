@@ -101,7 +101,7 @@ func (c *posChecker) node(v map[string]any, outer pos) error {
 	}
 	if args, _ := v["args"].([]any); kind == "type-name" && len(args) > 0 {
 		// A generic type spans its type arguments too, `Option[int]`.
-		if !strings.HasPrefix(text, want+"[") {
+		if !strings.HasPrefix(text, want+"[") || !strings.HasSuffix(text, "]") {
 			return fmt.Errorf("type-name spans %q, want %q[...]", text, want)
 		}
 		want = ""

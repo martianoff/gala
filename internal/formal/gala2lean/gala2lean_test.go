@@ -134,6 +134,40 @@ func TestUnsupportedIsNamed(t *testing.T) {
 	}
 }
 
+// TestCountTranslated checks what -stats counts as translated: not a
+// function or method gala2lean does not translate, whether the report names
+// it (an unsupported construct in its body) or it is outside the subset as a
+// whole (a generic function, a method with a Ptr[T] or generic receiver).
+func TestCountTranslated(t *testing.T) {
+	src := `package main
+
+struct Counter(var N int)
+
+struct Box[T any](Value T)
+
+func (c Counter) Get() int = c.N
+
+func (c Ptr[Counter]) Inc() { c.N = c.N + 1 }
+
+func (b Box[T]) Get() T = b.Value
+
+func id[T any](x T) T = x
+
+func bad() int = println(1)
+
+func main() {
+    Println(Counter(1).Get())
+}
+`
+	p := export(t, "main.gala", src)
+	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
+	s := gala2lean.CountTranslated(p, err)
+	// Counted: Get, Inc, Box.Get, id, bad, main. Translated: Counter.Get and
+	// main; bad is reported, Inc and Box.Get have receivers outside the
+	// subset, id is generic.
+	require.Equal(t, gala2lean.Stats{Funcs: 6, Methods: 3, Translated: 2}, s, "%v", err)
+}
+
 // TestRecursion checks how functions are defined: one that calls itself, or
 // a group that call each other, by partial_fixpoint (a mutual block for a
 // group); any other by a plain def; callees before callers.

@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 5,
+  "core": 6,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -155,7 +155,7 @@ line of an `import ( ... )` block.
 
 ```json
 { "kind": "var", "pos": "…", "names": ["d"], "destructure": false,
-  "type": { "kind": "type-name", "pos": "…", "name": "int" }, "values": [] }
+  "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] }, "values": [] }
 ```
 
 ### `func`
@@ -173,8 +173,8 @@ A function declaration, at top level or in a block, or a method.
 
 ```json
 { "kind": "func", "pos": "…", "name": "id", "receiver": null, "type-params": [], "params": [ { "kind": "param", "pos": "…", "name": "n",
-  "type": { "kind": "type-name", "pos": "…", "name": "int" } } ],
-  "result": { "kind": "type-name", "pos": "…", "name": "int" },
+  "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] } } ],
+  "result": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
   "body": { "kind": "name", "pos": "…", "name": "n" } }
 ```
 
@@ -189,7 +189,7 @@ A method's receiver, `(c Counter)` or `(c *Counter)`. A receiver of any other ty
 - `pointer` (bool): true for the `*Type` form.
 
 ```json
-{ "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter" },
+{ "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter", "args": [] },
   "pointer": true }
 ```
 
@@ -216,7 +216,7 @@ unsupported.
   the spec decides where and when it is evaluated.
 
 ```json
-{ "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "name": "int" },
+{ "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
   "default": null }
 ```
 
@@ -232,7 +232,7 @@ unsupported.
 
 ```json
 { "kind": "struct", "pos": "…", "name": "Pair", "type-params": [], "shorthand": true, "fields": [
-  { "kind": "field", "pos": "…", "name": "Left", "type": { "kind": "type-name", "pos": "…", "name": "int" },
+  { "kind": "field", "pos": "…", "name": "Left", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
     "mutable": false, "default": null } ] }
 ```
 
@@ -247,7 +247,7 @@ A field of a struct or of a sealed variant.
   variant's field, `Tries int = 3`.
 
 ```json
-{ "kind": "field", "pos": "…", "name": "Y", "type": { "kind": "type-name", "pos": "…", "name": "int" },
+{ "kind": "field", "pos": "…", "name": "Y", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
   "mutable": true, "default": null }
 ```
 
@@ -274,14 +274,15 @@ One `case` of a sealed type. `case Empty` and `case Empty()` are the same varian
 
 ```json
 { "kind": "variant", "pos": "…", "name": "Circle", "default": false, "fields": [
-  { "kind": "field", "pos": "…", "name": "Radius", "type": { "kind": "type-name", "pos": "…", "name": "int" },
+  { "kind": "field", "pos": "…", "name": "Radius", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
     "mutable": false, "default": null } ] }
 ```
 
 ### `type-name`
 
 A type written as a name, with type arguments when generic: `int`, `Point`,
-`Option[int]`, `Array[T]`. Qualified, slice, pointer and map types are unsupported; a
+`Option[int]`, `Array[T]`. Qualified types (generic ones too, `lib.Box[int]`), slice,
+pointer and map types are unsupported; a
 function type is a [`type-func`](#type-func).
 
 - `name` (string).
@@ -601,8 +602,8 @@ A function type, `func(int, string) bool` (S2). A parameter written with a name,
 - `result` (type or null): null for a function without a result.
 
 ```json
-{ "kind": "type-func", "pos": "…", "params": [ { "kind": "type-name", "pos": "…", "name": "int" } ],
-  "result": { "kind": "type-name", "pos": "…", "name": "bool" } }
+{ "kind": "type-func", "pos": "…", "params": [ { "kind": "type-name", "pos": "…", "name": "int", "args": [] } ],
+  "result": { "kind": "type-name", "pos": "…", "name": "bool", "args": [] } }
 ```
 
 ### `interp`

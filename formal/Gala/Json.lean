@@ -261,6 +261,9 @@ def decodeTop (j : Json) : D Decl := do
   -- decoded as declaring one, as before Core JSON exported them (version 6).
   let kind ← kindOf j
   if kind == "import" then return .unsupported "import"
+  -- A method, generic or not, is a method (below).
+  if kind == "func" then
+    if (← opt j "receiver").isSome then return .unsupported "method"
   if kind == "func" || kind == "struct" || kind == "sealed" then
     unless (← arr j "type-params").isEmpty do return .unsupported "generic-decl"
   match kind with

@@ -292,7 +292,7 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `generic-type` | 148 |
 | `import` | 111 |
 | `index` | 46 |
-| `method-call` | 23 |
+| `method-call` | 22 |
 | `qualified-type` | 17 |
 | `type-float64` | 13 |
 | `type-error` | 7 |
@@ -301,13 +301,13 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `variadic-param` | 6 |
 | `address-of` | 4 |
 | `local-struct` | 4 |
+| `method` | 4 |
 | `type-any` | 4 |
 | `type-uint32` | 4 |
 | `composite-literal` | 3 |
 | `expression-pattern` | 3 |
 | `func-in-state` | 3 |
 | `generic-decl` | 3 |
-| `method` | 3 |
 | `return-inside-expression` | 3 |
 
 ### Known disagreements
