@@ -11,3 +11,4 @@ match 0,0
 match 2,2
 some 1,1
 none
+0/0 1/1 2/2

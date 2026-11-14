@@ -1338,11 +1338,25 @@ gala_library(
     ],
 )
 
+gala_library(
+    name = "transitive_package_types_report",
+    srcs = ["transitive_package_types/report/report.gala"],
+    importpath = "martianoff/gala/examples/transitive_package_types/report",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":transitive_package_types_geo",
+        "//collection_immutable",
+    ],
+)
+
 gala_exec_test(
     name = "transitive_package_types",
     src = "transitive_package_types/main.gala",
     expected = "transitive_package_types/main.out",
-    gala_deps = [":transitive_package_types_geo"],
+    gala_deps = [
+        ":transitive_package_types_geo",
+        ":transitive_package_types_report",
+    ],
     deps = ["//collection_immutable"],
 )
 

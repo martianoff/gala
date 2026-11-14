@@ -3,6 +3,7 @@ package main
 import (
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/examples/transitive_package_types/geo"
+    "martianoff/gala/examples/transitive_package_types/report"
 )
 
 // Every function below uses a type of package shape, which this file does
@@ -68,4 +69,5 @@ func main() {
     Println(choose(2))
     Println(wrapped())
     Println(unset())
+    Println(report.Diagonal(3))
 }
