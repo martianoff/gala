@@ -41,18 +41,8 @@ func (g *gen) funcTypeLean(t *coreexport.TypeFunc) string {
 // funcResult is the result type R of Lean function type `(A → _gala_M R)`
 // as funcTypeLean writes it, "" for any other type.
 func funcResult(t string) string {
-	const m = " → _gala_M "
-	depth := 0
-	for i, r := range t {
-		switch r {
-		case '(':
-			depth++
-		case ')':
-			depth--
-		}
-		if depth == 1 && strings.HasPrefix(t[i:], m) && strings.HasSuffix(t, ")") {
-			return t[i+len(m) : len(t)-1]
-		}
+	if r := parseLean(t).result; r != nil {
+		return r.String()
 	}
 	return ""
 }
@@ -61,7 +51,7 @@ func funcResult(t string) string {
 // a type is outside the subset.
 func (g *gen) funcDeclType(f *coreexport.Func) string {
 	t := paramsType(f.Params, f.Result)
-	if t == nil {
+	if t == nil || len(f.TypeParams) > 0 {
 		return ""
 	}
 	return g.safeType(func() string { return g.funcTypeLean(t) })

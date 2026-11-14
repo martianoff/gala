@@ -50,23 +50,24 @@ func funcKey(f *coreexport.Func) string {
 }
 
 // outsideSubset is the construct that puts function or method f outside
-// the translated subset as a whole, "" when it is inside: type parameters
-// of its own (generic-decl), or a receiver whose type is not a plain type
-// of the program's (Ptr[T], Box[T]: generic-type).
+// the translated subset as a whole, "" when it is inside: for a method, type
+// parameters of its own (generic-decl), or a receiver whose type is not a
+// plain type of the program's (Ptr[T], Box[T]: generic-type). A generic
+// function is inside.
 func outsideSubset(f *coreexport.Func) string {
-	if f.Receiver != nil {
-		r, ok := f.Receiver.(*coreexport.Receiver)
-		switch {
-		case !ok:
-			return f.Receiver.(*coreexport.Unsupported).What
-		case typeName(r.Type) == "":
-			if u, isUnsup := r.Type.(*coreexport.Unsupported); isUnsup {
-				return u.What
-			}
-			return "generic-type"
-		}
+	if f.Receiver == nil {
+		return ""
 	}
-	if len(f.TypeParams) > 0 {
+	r, ok := f.Receiver.(*coreexport.Receiver)
+	switch {
+	case !ok:
+		return f.Receiver.(*coreexport.Unsupported).What
+	case typeName(r.Type) == "":
+		if u, isUnsup := r.Type.(*coreexport.Unsupported); isUnsup {
+			return u.What
+		}
+		return "generic-type"
+	case len(f.TypeParams) > 0:
 		return "generic-decl"
 	}
 	return ""
@@ -126,7 +127,9 @@ func (g *gen) customCheck(t string, custom map[string]bool, holders *map[string]
 	if len(custom) == 0 {
 		return
 	}
-	if t == "" {
+	if t == "" || g.mentionsTypeParam(t) {
+		// Not plain to see, or a type parameter, whose type argument may be
+		// one of the custom types.
 		unsup(pos, "%s", construct)
 	}
 	if *holders == nil {
@@ -146,7 +149,7 @@ func (g *gen) holders(types map[string]bool) map[string]bool {
 				continue
 			}
 			for _, f := range g.typeFields(n) {
-				if out[typeName(f.Type)] {
+				if g.anyIn(n, f.Type, out) {
 					out[n], changed = true, true
 					break
 				}

@@ -83,33 +83,38 @@ func (g *gen) pattern(p coreexport.Node, sc *scope, typ coreexport.Node) pat {
 		if !ok {
 			unsup(p.Pos, "qualified-extractor")
 		}
-		var ctor string
+		var ctor, owner string
 		var nf int
 		var out pat
 		var fields []*coreexport.Field
+		// A sub-pattern's binders take the field's type: for a generic type,
+		// with the subject's type arguments put in, where they are known.
+		var fieldTypes []coreexport.Node
 		switch {
 		case g.variants[c.Name] != nil:
 			v := g.variants[c.Name]
-			ctor, nf, fields = ident(v.sealed.Name)+"."+ident(c.Name), len(v.fields), v.fields
+			ctor, nf, fields, owner = ident(v.sealed.Name)+"."+ident(c.Name), len(v.fields), v.fields, v.sealed.Name
 			out.refutable = len(v.sealed.Variants) > 1
 		case g.structs[c.Name] != nil:
 			fields = fieldsOf(g.structs[c.Name].Fields)
-			ctor, nf = ident(c.Name)+".mk", len(fields)
+			ctor, nf, owner = ident(c.Name)+".mk", len(fields), c.Name
 		case stdCtors[c.Name] != "" && sc.lookup(c.Name) == nil:
 			ctor, nf, out.refutable = stdCtors[c.Name], 1, true
 			if c.Name == "None" {
 				nf = 0
 			}
+			fieldTypes = stdCtorFieldType(c.Name, typ)
 		default:
 			unsup(p.Pos, "extractor")
 		}
 		if len(p.Args) != nf {
 			unsup(p.Pos, "extractor-arity")
 		}
-		// A sub-pattern's binders take the field's type.
-		fieldTypes := make([]coreexport.Node, nf)
+		if fieldTypes == nil {
+			fieldTypes = make([]coreexport.Node, nf)
+		}
 		for i, f := range fields {
-			fieldTypes[i] = f.Type
+			fieldTypes[i] = g.fieldTypeIn(owner, f, typ)
 		}
 		var parts []string
 		for i, a := range p.Args {

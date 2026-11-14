@@ -10,6 +10,7 @@ go_library(
         "deps.go",
         "expr.go",
         "gala2lean.go",
+        "generics.go",
         "lambda.go",
         "methods.go",
         "match.go",
@@ -48,6 +49,13 @@ go_test(
     ],
 )
 
+go_test(
+    name = "gala2lean_internal_test",
+    srcs = ["run_internal_test.go"],
+    embed = [":gala2lean"],
+    deps = ["@com_github_stretchr_testify//require"],
+)
+
 # Runs the galaspec fixtures' translations with Lean. Manual: it needs Lean,
 # which --config=formal provides (//formal:lean_runtime); without the config,
 # GALA_LEAN_BIN must name a lean. The formal CI job runs it with the config.
@@ -66,6 +74,8 @@ go_test(
         "testdata/assign_order_void_keywords.out",
         "testdata/defaults_byname.gala",
         "testdata/defaults_byname.out",
+        "testdata/generics.gala",
+        "testdata/generics.out",
         "testdata/inout_receivers.gala",
         "testdata/inout_receivers.out",
         "testdata/methods.gala",
