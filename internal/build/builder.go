@@ -1292,6 +1292,17 @@ func ensureGoToolchain() error {
 	return nil
 }
 
+// trimpathFlag goes on every `go build` and `go test` the driver runs in a
+// workspace. Without it, cmd/go puts each package's directory into its cache
+// key, and `gala build` and `gala test` work in different workspaces, so
+// neither reuses a package the other compiled. With it, the key holds the
+// import path instead, and the two commands share the Go build cache.
+//
+// Stack traces still name the GALA source: -trimpath rewrites only paths under
+// the workspace's modules and GOROOT, and the //line directives in the
+// generated Go name each .gala file where it lives.
+const trimpathFlag = "-trimpath"
+
 // goCompileCheck runs `go build ./...` in the workspace without producing a binary.
 // This verifies that library packages compile correctly.
 func (b *Builder) goCompileCheck() error {
@@ -1303,7 +1314,7 @@ func (b *Builder) goCompileCheck() error {
 		fmt.Println("Running go build (compile check)...")
 	}
 
-	cmd := exec.Command("go", "build", "./gen/...")
+	cmd := exec.Command("go", "build", trimpathFlag, "./gen/...")
 	cmd.Dir = b.workspace.Dir
 	cmd.Env = append(os.Environ(),
 		"GOMODCACHE="+b.config.GoPkgDir,
@@ -1335,7 +1346,7 @@ func (b *Builder) goBuild(outputPath, buildTarget string) (string, error) {
 	// The target is always a single package: `go build -o <path> ./gen/...`
 	// fails with "cannot write multiple packages to non-directory" as soon as
 	// gen/ holds a main package alongside library subpackages.
-	args := []string{"build", "-o", outputPath, buildTarget}
+	args := []string{"build", trimpathFlag, "-o", outputPath, buildTarget}
 
 	cmd := exec.Command("go", args...)
 	cmd.Dir = b.workspace.Dir
@@ -1675,7 +1686,7 @@ func (b *Builder) Test(verbose bool) error {
 		// subpackages under gen/<sub>/ are pulled in transitively via
 		// imports; targeting "./gen/..." would ask `go build -o` to write
 		// multiple package outputs, which fails.
-		args := []string{"build", "-o", testBinary, "./gen"}
+		args := []string{"build", trimpathFlag, "-o", testBinary, "./gen"}
 		cmd := exec.Command("go", args...)
 		cmd.Dir = b.workspace.Dir
 		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
@@ -1729,7 +1740,7 @@ func (b *Builder) Test(verbose bool) error {
 // runGoTest runs `go test` on pkgs (patterns relative to the workspace) — the
 // packages that carry a generated test harness.
 func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
-	args := []string{"test", "-count=1"}
+	args := []string{"test", trimpathFlag, "-count=1"}
 	if verbose {
 		args = append(args, "-v")
 	}

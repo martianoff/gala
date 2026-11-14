@@ -76,6 +76,7 @@ go_test(
         "sourcemap_stacktrace_test.go",
         "stdlib_extract_race_test.go",
         "transpile_batch_static_test.go",
+        "test_build_cache_reuse_test.go",
         "test_decls_scope_test.go",
         "testmangle_test.go",
         "transpile_perf_test.go",
