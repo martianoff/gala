@@ -4056,18 +4056,16 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	if err := parsed.Err(); err != nil {
 		return a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: galaerr.WithFilePath(err, path), mtime: info.ModTime(), size: info.Size()})
 	}
-	// Converted here, on the goroutine that parsed it (parseFilesConcurrent),
-	// rather than by its first reader: every reader takes the native tree,
-	// and a converted handle no longer holds the token stream (see
-	// parser.Parsed.Native). A clean parse that does not convert is a bug in
-	// galop's converter, which no reader can work around: every reader fails
-	// with it, as an internal error (not as the file's syntax error). The
-	// entry keeps the native tree alone (Native.TreeOnly), not a parse's
-	// ANTLR tree (ANTLR's engine's), trimmed before the cache shares it, as
+	// Trimmed here, on the goroutine that parsed it (parseFilesConcurrent),
+	// rather than by its first reader: every reader takes the native tree
+	// (see parser.Parsed.Native). A clean parse without one is a parser bug,
+	// which no reader can work around: every reader fails with it, as an
+	// internal error (not as the file's syntax error). The entry keeps the
+	// native tree, trimmed (Native.TreeOnly) before the cache shares it, as
 	// the cache keeps the entry for the life of a build worker.
 	kept := parsed.CleanNative().TreeOnly()
-	// The handle, not kept, which is nil when the conversion failed: its
-	// error says why.
+	// The handle, not kept, which is nil when there is no tree: its error
+	// says why.
 	nf, err := nativeFileOf(parsed.CleanNative())
 	if err != nil {
 		return a.cacheParsedFile(canonPath, &parsedFileEntry{internalErr: &InternalError{File: path, Err: err}, mtime: info.ModTime(), size: info.Size()})
@@ -4152,16 +4150,9 @@ func (a *galaAnalyzer) parseFile(path string) (*parsedFileEntry, error) {
 // result holds, at the same index, the syntax error of a file that did
 // not parse.
 //
-// Concurrency: ANTLR's antlr4-go/v4 runtime is NOT thread-safe out of the
-// box, and this function is only safe because the parser layer works
-// around that. Each Parse call constructs its own InputStream / Lexer /
-// Parser, but the generated constructors hand every instance the same
-// package-global PredictionContextCache, whose Put is an unsynchronised
-// map write. parser.ParseFile therefore rebinds each parse's ATN
-// simulator to a private cache (see isolateLexerCaches /
-// isolateParserCaches in internal/parser/parser.go) — do not remove that
-// isolation on the strength of the mutexes in the antlr module's
-// mutex.go, which guard only the ATN's DFA state and edge maps.
+// Concurrency: every parse builds its own tokens and tree, but galop's
+// generated parser shares its prediction DFA caches across all parses, on
+// whatever goroutine, through package-level state it synchronises itself.
 // parsedFileCache reads and writes go through parsedFileCacheMu, taken
 // inside parseFileEntry and cacheParsedFile.
 //

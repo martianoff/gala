@@ -232,7 +232,6 @@ func cafeAt(i int) string = "é"
 // refreshed after a change cannot quietly turn an input into one that no
 // longer exercises its check.
 func TestHandwrittenInputs(t *testing.T) {
-	parseWithGalop(t)
 	_, searchPaths := collectionCorpus(t)
 	a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), searchPaths)
 	type input struct {
@@ -292,7 +291,6 @@ func TestHandwrittenInputs(t *testing.T) {
 // error-recovered tree (Parsed.RecoveredNative), so completion and hover keep
 // answering mid-edit.
 func TestLSPBuffers(t *testing.T) {
-	parseWithGalop(t)
 	_, searchPaths := collectionCorpus(t)
 	a, ok := NewGalaAnalyzerForLSP(galaparser.NewAntlrGalaParser(), searchPaths, t.TempDir()).(*galaAnalyzer)
 	require.True(t, ok, "NewGalaAnalyzerForLSP gives a *galaAnalyzer")

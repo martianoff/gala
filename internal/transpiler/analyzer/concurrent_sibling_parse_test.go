@@ -56,8 +56,8 @@ func siblingFixture(pkg string, seed int) string {
 //
 // This is the path every surviving stack trace in the nondeterministic
 // concurrent-crash report ended in: a worker parsing one file while its peers
-// parse theirs, each through an ANTLR parser whose generated constructors share
-// package-global prediction state. The crash it guards against is not a test
+// parse theirs, each through a generated parser that shares package-global
+// prediction state (ANTLR's then, galop's now). The crash it guards against is not a test
 // failure but a process abort (nil dereference inside the ATN simulator) or a
 // "concurrent map writes" fatal, so the assertions below are almost beside the
 // point — the value is in running this under `-race`, which the `race` job in

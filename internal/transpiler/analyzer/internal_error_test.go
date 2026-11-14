@@ -32,7 +32,6 @@ func (c convertFails) ParseFile(input string) *galaparser.Parsed {
 // and returns the root and an analyzer of it parsing with convertFails.
 func internalErrorProject(t *testing.T, files map[string]string) (string, *galaAnalyzer) {
 	t.Helper()
-	parseWithGalop(t)
 	root := t.TempDir()
 	files["gala.mod"] = "module example.com/repro\n\ngala dev\n"
 	for name, text := range files {

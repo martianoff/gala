@@ -1418,7 +1418,7 @@ func (w *walker) literal(l native.LiteralNode) {
 			continue
 		}
 		line, col := interpolation.Position(content, part.Offset, int(tok.Line), int(tok.Column)+2)
-		expr, _, err := parser.ParseExpressionCheckedAt(part.Text, line, col, "interpolated expression")
+		expr, err := parser.ParseExpressionCheckedAt(part.Text, line, col, "interpolated expression")
 		if err != nil {
 			// Not parsed: any binding it names escapes.
 			for _, word := range wordRe.FindAllString(part.Text, -1) {

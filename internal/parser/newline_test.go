@@ -3,12 +3,28 @@ package parser
 import (
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
+
+// cleanRoot is the root of input's parse, which must have no errors.
+func cleanRoot(t *testing.T, input string) native.SourceFileNode {
+	t.Helper()
+	p := parseGalop(t, input)
+	require.Empty(t, p.Errors)
+	root, ok := p.Native.Root()
+	require.True(t, ok, "no native tree")
+	return native.SourceFileNode{GalaNodeRef: root}
+}
+
+// lastFunctionBody is the block of root's last top-level declaration, a
+// function.
+func lastFunctionBody(root native.SourceFileNode) native.BlockNode {
+	decls := root.AllTopLevelDeclaration()
+	return decls[len(decls)-1].FunctionDeclaration().Block()
+}
 
 // A '(', or a '*' or '&' written against its operand, that starts a line after
 // a token that can end an expression begins a new statement; every other line
@@ -17,20 +33,8 @@ import (
 func TestLineStartTokenStartsStatement(t *testing.T) {
 	for _, tt := range lineStartCases {
 		t.Run(tt.name, func(t *testing.T) {
-			input := lineStartInput(tt.body)
-			parsed := parseConverted(input)
-			tree, errs := parsed.Tree, parsed.Errors
-			require.Empty(t, errs)
-			block := tree.(grammar.ISourceFileContext).TopLevelDeclaration(0).FunctionDeclaration().Block()
-			assert.Len(t, block.AllStatement(), tt.stmts)
-
-			// SLL alone has to accept the input and agree with LL, or the
-			// public SLL-first path pays for a second parse.
-			llTree, _, llErrors := parseFingerprint(input, antlr.PredictionModeLL)
-			sllTree, _, sllErrors := parseFingerprint(input, antlr.PredictionModeSLL)
-			assert.Empty(t, sllErrors)
-			assert.Empty(t, llErrors)
-			assert.Equal(t, llTree, sllTree)
+			body := lastFunctionBody(cleanRoot(t, lineStartInput(tt.body)))
+			assert.Len(t, body.AllStatement(), tt.stmts)
 		})
 	}
 }
@@ -170,11 +174,7 @@ var lineStartDeclCases = []struct {
 func TestBlockAfterHeaderEndingInType(t *testing.T) {
 	for _, tt := range headerTypeCases {
 		t.Run(tt.name, func(t *testing.T) {
-			parsed := parseConverted("package main\n\n" + tt.src + "\n")
-			tree, errs := parsed.Tree, parsed.Errors
-			require.Empty(t, errs)
-			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
-			body := decls[len(decls)-1].FunctionDeclaration().Block()
+			body := lastFunctionBody(cleanRoot(t, "package main\n\n"+tt.src+"\n"))
 			assert.Len(t, body.AllStatement(), tt.stmts)
 		})
 	}
@@ -239,47 +239,36 @@ func TestSplitHeaderOpensBlock(t *testing.T) {
 	const stmts = 6
 	for _, tt := range splitHeaderCases {
 		t.Run(tt.name, func(t *testing.T) {
-			input := "package main\n\n" + tt.src + "\n"
-			parsed := parseConverted(input)
-			tree, errs := parsed.Tree, parsed.Errors
-			require.Empty(t, errs)
+			root := cleanRoot(t, "package main\n\n"+tt.src+"\n")
 			// The body is the block whose first statement is `val q = 1`.
-			var body grammar.IBlockContext
-			var find func(n antlr.Tree)
-			find = func(n antlr.Tree) {
-				if b, ok := n.(grammar.IBlockContext); ok && len(b.AllStatement()) > 0 && b.Statement(0).GetText() == "valq=1" {
-					body = b
+			var body native.BlockNode
+			root.Walk(func(n native.GalaNodeRef) bool {
+				if n.Kind() == native.GalaKIND_block {
+					if b := (native.BlockNode{GalaNodeRef: n}); len(b.AllStatement()) > 0 && b.Statement(0).GetText() == "valq=1" {
+						body = b
+					}
 				}
-				for _, c := range n.GetChildren() {
-					find(c)
-				}
-			}
-			find(tree)
-			require.NotNil(t, body)
+				return true
+			})
+			require.True(t, body.Ok(), "no block starts with `val q = 1`")
 			assert.Len(t, body.AllStatement(), stmts)
-
-			llTree, _, llErrors := parseFingerprint(input, antlr.PredictionModeLL)
-			sllTree, _, sllErrors := parseFingerprint(input, antlr.PredictionModeSLL)
-			assert.Empty(t, sllErrors)
-			assert.Empty(t, llErrors)
-			assert.Equal(t, llTree, sllTree)
 		})
 	}
 }
 
-// antlrExpressionAtChecked parses text held apart from its file, so it has to
+// ParseExpressionCheckedAt parses text held apart from its file, so it has to
 // apply the same rule: a '(' on a new line does not call the line before.
-func TestNewlineParenInANTLRExpressionAt(t *testing.T) {
-	_, _, err := antlrExpressionAtChecked("f(1)\n(2)", 3, 4, "default value")
+func TestNewlineParenInExpressionAt(t *testing.T) {
+	_, err := ParseExpressionCheckedAt("f(1)\n(2)", 3, 4, "default value")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unexpected "(" in default value`)
 
-	_, _, err = antlrExpressionAtChecked("f(1)(2)", 3, 4, "default value")
+	_, err = ParseExpressionCheckedAt("f(1)(2)", 3, 4, "default value")
 	assert.NoError(t, err)
 }
 
 // The re-typed '(' is an implementation detail and never named in a syntax
-// error: ANTLR's expected-token sets list the '(' the user writes instead.
+// error: the expected-token sets list the '(' the user writes instead.
 func TestHideNewlineTokens(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{in: "mismatched input 'int' expecting {'(', NL_LPAREN}", want: "mismatched input 'int' expecting '('"},

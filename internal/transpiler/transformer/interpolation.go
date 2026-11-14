@@ -1,16 +1,13 @@
 package transformer
 
 import (
-	"errors"
 	"go/ast"
 	"go/token"
 	"strconv"
 	"strings"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -229,28 +226,26 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 // The expression is re-parsed on its own, so two things have to be arranged
 // deliberately that a whole-file parse gets for free:
 //
-//   - Errors must be REPORTED. The listeners are replaced, not merely removed:
-//     stripping them without a substitute made ANTLR error-recover silently, so
-//     `s"v=${x +}"` transpiled to `v=%d`/`x` with the dangling operator dropped
-//     and printed `v=1` — invalid source producing a working binary.
+//   - Errors must be REPORTED. A parse that recovered from a syntax error
+//     silently once let `s"v=${x +}"` transpile to `v=%d`/`x` with the
+//     dangling operator dropped and print `v=1` — invalid source producing a
+//     working binary. The expression must also be the whole text: a token
+//     left over after it is an error too.
 //
 //   - Positions must be ABSOLUTE. Parsing the bare expression text put every
 //     token on line 1, so a diagnostic raised while transforming it (a bare
-//     `len` inside an interpolation, say) pointed at line 1 of the file. ANTLR
-//     has no setter for a token's position after the fact, but the lexer can be
-//     SEEDED before it consumes anything: its ATN simulator tracks the current
-//     line and column in exported fields, so starting it at the literal's own
-//     position makes every token it emits carry a true absolute position.
+//     `len` inside an interpolation, say) pointed at line 1 of the file. The
+//     lexer is started at the literal's own position instead, so every token
+//     it emits carries a true absolute position.
 //
-// Seeding is what this does rather than padding the input with the equivalent
-// newlines and spaces. Padding also works — whitespace is skipped, so the tree
-// is identical either way — but it allocates and re-lexes a prefix as long as
-// the line number for EVERY embedded expression, which is quadratic-ish in file
-// size across a file full of interpolations. Seeding is O(1).
+// Starting the lexer there is O(1), where padding the input with the
+// equivalent newlines and spaces would re-lex a prefix as long as the line
+// number for EVERY embedded expression, which is quadratic-ish in file size
+// across a file full of interpolations.
 //
-// line is 1-based and col 0-based, as ANTLR reports them; a line <= 0 means the
-// caller had no position and the expression is parsed at 1:0. The parsing
-// itself is parseExprAt, shared with declared default values.
+// line is 1-based and col 0-based; a line <= 0 means the caller had no
+// position and the expression is parsed at 1:0. The parsing itself is
+// parseExprAt, shared with declared default values.
 func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col int) (ast.Expr, error) {
 	e, err := t.parseExprAt(exprText, line, col, "interpolated expression")
 	if err != nil {
@@ -268,20 +263,16 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 }
 
 // parseExprAt parses text as one expression whose first character sits at
-// line/col of the file into a native tree of its own, made by the engine's
-// parser, as the file's is (parser.ParseExpressionCheckedAt): galop's
-// recovering parser with galop's engine, which reports a syntax error as
-// ANTLR's parser does, and ANTLR's parser and galop's converter with ANTLR's,
-// so `--parser antlr` runs no galop parser here either. The lowering reads
-// only the nodes it is given, so it lowers this tree as it lowers the file's.
-// Only when galop's parser panics (reported on standard error) does ANTLR's
-// parser parse the text instead and its tree is converted, as a whole-file
-// parse falls back to ANTLR's parser.
+// line/col of the file into a native tree of its own, made by galop's
+// recovering parser as the file's is (parser.ParseExpressionCheckedAt). The
+// lowering reads only the nodes it is given, so it lowers this tree as it
+// lowers the file's. A panic in galop's lexer or parser is an internal error
+// (GALA-E0017) at the text's position.
 //
 // Each text is parsed once per position per file (parsedExprs): a default is
 // lowered at every use site, and an interpolation in it with it, but the tree
 // is the same at each, so the caches keyed by its nodes (escapeCache, the
-// hint stack's keys) hit, and galop panics on a text once.
+// hint stack's keys) hit.
 func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string) (exprSrc, error) {
 	file := t.filePath
 	if t.loweringDefault != nil && t.loweringDefault.file != "" {
@@ -311,25 +302,12 @@ type parsedExprKey struct {
 
 // parseExprOnce is parseExprAt's parse of text, written in file.
 func (t *galaASTTransformer) parseExprOnce(text string, line, col int, what, file string) (exprSrc, error) {
-	var n native.ExpressionNode
-	var engineParsed bool
-	var err error
-	if t.refuseNativeParse {
-		n, err = parser.ParseExpressionConvertedAt(text, line, col, what)
-	} else {
-		n, engineParsed, err = parser.ParseExpressionCheckedAt(text, line, col, what)
-	}
-	if errors.Is(err, parser.ErrConvertExpression) {
-		// ANTLR's parser accepted the text and galop's converter failed on it
-		// (reported on standard error): a galop bug, at the text's position.
-		return exprSrc{}, galaerr.NewCodedSemanticError(galaerr.CodeInternalTransformerPanic, line, col,
-			"internal transpiler error: "+err.Error(), internalDefectHint)
-	}
+	n, err := parser.ParseExpressionCheckedAt(text, line, col, what)
 	if err != nil {
 		return exprSrc{}, err
 	}
 	if t.onParsedExpr != nil {
-		t.onParsedExpr(n.Tree(), what, file, engineParsed)
+		t.onParsedExpr(n.Tree(), what, file)
 	}
 	return nativeExpr(n.GalaNodeRef), nil
 }

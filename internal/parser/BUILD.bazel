@@ -1,81 +1,52 @@
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
-
-# `bazel build --//internal/parser:antlr ...` builds GALA to parse with ANTLR's
-# parser by default (see engine.go). galop's parser is built in either way, so
-# the CLI's --parser flag and GALA_PARSER still choose per process.
-bool_flag(
-    name = "antlr",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "antlr_default",
-    flag_values = {":antlr": "true"},
-)
 
 go_library(
     name = "parser",
     srcs = [
         "docs.go",
-        "engine.go",
         "expr_native.go",
         "native_errors.go",
         "native_lex.go",
         "native_tree.go",
         "newline.go",
+        "panic.go",
         "parser.go",
         "source_chars.go",
-        "type_text.go",
         "type_text_native.go",
     ],
     importpath = "martianoff/gala/internal/parser",
     visibility = ["//:__subpackages__"],
-    x_defs = select({
-        ":antlr_default": {"martianoff/gala/internal/parser.defaultEngine": "antlr"},
-        "//conditions:default": {},
-    }),
     deps = [
         "//galaerr",
-        "//internal/parser/galop",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 
 go_test(
     name = "parser_test",
-    # The differential tests (TestEnginesAgree, TestRecoveryParity) parse
-    # every GALA source of the repository and thousands of broken variants
-    # with both engines: about a minute on a 32-thread machine, several on
-    # CI's 4-core runners, past the 300 s a medium test gets.
-    size = "large",
     srcs = [
         "bare_lambda_param_test.go",
         "bom_test.go",
         "broken_parse_bench_test.go",
         "docs_test.go",
         "empty_line_unicode_test.go",
-        "engine_test.go",
-        "engines_fuzz_test.go",
+        "fuzz_test.go",
         "go_type_in_expression_test.go",
+        "golden_test.go",
         "grammar_test.go",
-        "native_handle_test.go",
+        "inputs_test.go",
         "native_lex_test.go",
         "native_tree_test.go",
         "newline_test.go",
-        "parse_expression_at_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
-        "recovery_parity_test.go",
         "source_chars_test.go",
         "struct_tag_test.go",
         "type_text_native_test.go",
         "type_text_test.go",
     ],
-    # engine_test.go parses every GALA source of the repository with both
-    # engines.
+    # The corpus tests (TestNativeLexCorpus, TestRecoveredTrees) and the fuzz
+    # seeds read every GALA source of the repository.
     data = glob(["testdata/**"]) + [
         "//:all_gala_sources",
         "//examples:all_gala_sources",
@@ -89,9 +60,9 @@ go_test(
     embed = [":parser"],
     deps = [
         "//galaerr",
-        "//internal/parser/grammar",
+        "//internal/digestgolden",
         "//internal/parser/native",  # keep
-        "@com_github_antlr4_go_antlr_v4//:antlr",
+        "//internal/testcorpus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",

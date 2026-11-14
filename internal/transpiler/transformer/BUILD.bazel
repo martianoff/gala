@@ -476,13 +476,11 @@ go_test(
     embed = [":transformer"],
     deps = [
         "//galaerr",
-        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "//internal/transpiler/genheader",
         "//internal/transpiler/gooracle",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
@@ -565,20 +563,3 @@ go_test(
     ],
 )
 
-# TestTransformerReadsNoANTLR reads the library's sources and this file, so it
-# stages them, apart from transformer_test, whose corpus guards would read the
-# library's sources too.
-# gazelle:exclude no_antlr_test.go
-go_test(
-    # keep
-    name = "no_antlr_test",
-    srcs = ["no_antlr_test.go"],
-    data = glob(
-        ["*.go"],
-        exclude = ["*_test.go"],
-    ) + ["BUILD.bazel"],
-    deps = [
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-    ],
-)

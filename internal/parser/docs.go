@@ -4,8 +4,6 @@ import (
 	"go/build/constraint"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -17,9 +15,9 @@ import (
 //
 // The lexer routes comments to the hidden channel (see the COMMENT and
 // MULTILINE_COMMENT rules in gala.g4), so the parser never sees them and the
-// grammar is unaffected. extractDocComments walks the filled token stream after
-// the parse and pairs each comment run with the declaration it precedes. This
-// costs one linear token walk; the tokens are already materialized, so no extra
+// grammar is unaffected. nativeDocComments walks the token stream after the
+// lexer and pairs each comment run with the declaration it precedes. This
+// costs one linear token walk over tokens the parse lexes anyway, so no extra
 // lexing happens.
 //
 // Attachment rules mirror go/parser's:
@@ -37,9 +35,9 @@ import (
 // a line.
 
 // DocKey is where a declaration's first token starts: its line (from 1) and
-// column (from 0). Both trees report a token's position this way, while their
-// offsets differ (code points in ANTLR's, bytes in the native tree), so doc
-// comments are keyed by it.
+// column (from 0, counted in code points), as diagnostics report a position.
+// The native tree's offsets count bytes, so doc comments are keyed by the
+// position instead, which every reader of a declaration has.
 type DocKey struct {
 	Line, Column int
 }
@@ -48,46 +46,9 @@ type DocKey struct {
 // documents.
 type Docs = map[DocKey]string
 
-// DocKeyOf is the key of a declaration whose first token is t.
-func DocKeyOf(t antlr.Token) DocKey { return DocKey{t.GetLine(), t.GetColumn()} }
-
-// extractDocComments pairs hidden-channel comment runs with the declarations
-// they document. toks must be the complete token stream, hidden tokens included.
-// Returns nil for a source with no doc comments.
-func extractDocComments(toks []antlr.Token) Docs {
-	run := newDocRun()
-
-	// The previous default-channel token, and the line it ends on. The end line
-	// is computed lazily — only when a comment actually follows — because
-	// Token.GetText reallocates the lexeme on every call (the ANTLR runtime
-	// caches nothing), and all but a handful of tokens in a file are never
-	// followed by a comment. Resolving it eagerly for every token cost one
-	// string allocation per lexeme: ~9k per 1,100-line file, against ~160
-	// comments actually needing it.
-	var prevCode antlr.Token
-	prevCodeEndLine := -1
-
-	for _, tk := range toks {
-		if tk.GetTokenType() == antlr.TokenEOF {
-			break
-		}
-		if tk.GetChannel() != antlr.TokenDefaultChannel {
-			// Hidden channel holds comments only: WS is skipped outright.
-			if prevCode != nil && prevCodeEndLine < 0 {
-				prevCodeEndLine = prevCode.GetLine() + strings.Count(prevCode.GetText(), "\n")
-			}
-			run.comment(tk.GetLine(), prevCodeEndLine, tk.GetText)
-			continue
-		}
-		run.code(tk.GetLine(), tk.GetColumn)
-		prevCode = tk
-		prevCodeEndLine = -1
-	}
-	return run.docs
-}
-
-// nativeDocComments is extractDocComments for galop's native tokens: the
-// same doc comments, by the same keys.
+// nativeDocComments pairs the comment runs of ts, galop's native tokens
+// (hidden ones included), with the declarations they document. It returns
+// nil for a source with no doc comments.
 func nativeDocComments(ts *native.GalaTokens) Docs {
 	run := newDocRun()
 	// A cursor over Hidden rather than ts.HiddenBefore(i), which would binary
@@ -97,8 +58,8 @@ func nativeDocComments(ts *native.GalaTokens) Docs {
 		if tk.Type == native.GalaEOF {
 			break
 		}
-		// The line the previous token ends on, computed once a comment needs
-		// it, as extractDocComments does.
+		// The line the previous token ends on, computed only once a comment
+		// needs it: all but a handful of tokens are followed by none.
 		prevCodeEndLine := -1
 		for ; len(hidden) > 0 && int(hidden[0].Next) == i; hidden = hidden[1:] {
 			if i > 0 && prevCodeEndLine < 0 {

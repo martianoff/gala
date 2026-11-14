@@ -12,7 +12,7 @@ name: Perf — real-repo build budget
 #
 # Thresholds are calibrated for ubuntu-latest GitHub Actions runners
 # (4 vCPU, 16 GB) — not the maintainer's local hardware, which is roughly
-# 3-5x faster. Cold floor is dominated by full-closure ANTLR parsing of
+# 3-5x faster. Cold floor was dominated by full-closure parsing (then ANTLR's) of
 # gala_team's apex transpile (`cmd/main.gala` dot-imports the whole
 # module ≈ 100 packages); persistent-worker mode + memo'd analyzer paths
 # get this down from ~1160 s to ~400 s as of PR #317. They should ratchet

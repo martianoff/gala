@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	galaparser "martianoff/gala/internal/parser"
 )
 
 // exprShapes is a program with every expression shape the native walk
@@ -137,20 +135,12 @@ var keywordCases = []struct{ name, src string }{
 	{"forbidden keyword", "package main\n\nfunc f() {\n\tPrintln(\"ü\")\n\t/* ü */ goto\n}\n"},
 }
 
-// exprWalkRunner selects galop for the test and returns the function that
-// writes a program to a file of its own, holds the walk of it to its golden
-// (checkWalk), and returns the walk's run.
+// exprWalkRunner returns the function that writes a program to a file of
+// its own, holds the walk of it to its golden (checkWalk), and returns the
+// walk's run.
 func exprWalkRunner(t *testing.T) func(t *testing.T, name, src string) walkRun {
-	return walkRunner(t, galaparser.EngineGalop, walkPipeline{})
-}
-
-// walkRunner is exprWalkRunner with engine parsing and w's options for the
-// walk.
-func walkRunner(t *testing.T, engine galaparser.Engine, w walkPipeline) func(t *testing.T, name, src string) walkRun {
-	galaparser.RequestEngine(string(engine))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
-	w.searchPaths = searchPaths
+	w := walkPipeline{searchPaths: searchPaths}
 	dir := t.TempDir()
 	return func(t *testing.T, name, src string) walkRun {
 		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "_"), "main.gala")

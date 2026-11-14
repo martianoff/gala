@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // TestTypeText pins the spelling of a type: its source text without
@@ -28,17 +28,18 @@ func TestTypeText(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
-			parsed := parseConverted("package main\n\nval v " + tc.typ + " = nil\n")
-			tree, err := parsed.Tree, parsed.Err()
-			require.NoError(t, err)
-			var typ grammar.ITypeContext
-			for _, d := range tree.(*grammar.SourceFileContext).AllTopLevelDeclaration() {
-				if vd := d.ValDeclaration(); vd != nil {
-					typ = vd.(*grammar.ValDeclarationContext).Type_()
+			p := parseGalop(t, "package main\n\nval v "+tc.typ+" = nil\n")
+			require.NoError(t, p.Err())
+			root, ok := p.Native.Root()
+			require.True(t, ok)
+			var typ native.TypeNode
+			for _, d := range (native.SourceFileNode{GalaNodeRef: root}).AllTopLevelDeclaration() {
+				if vd := d.ValDeclaration(); vd.Ok() {
+					typ = vd.Type_()
 				}
 			}
-			require.NotNil(t, typ)
-			require.Equal(t, tc.want, TypeText(typ))
+			require.True(t, typ.Ok())
+			require.Equal(t, tc.want, NativeTypeText(typ))
 		})
 	}
 }

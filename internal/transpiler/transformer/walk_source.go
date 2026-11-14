@@ -8,8 +8,7 @@ import (
 )
 
 // The compiled file's top-level walk reads the file's native tree
-// (RichAST.Native), whichever engine parsed it: galop's native parser, or
-// ANTLR's with its tree converted by galop's converter. Every clean parse has
+// (RichAST.Native), which galop's native parser made. Every clean parse has
 // one, and only a clean parse is transformed.
 
 // walkSource is the compiled file as the top-level walk reads it: the root of

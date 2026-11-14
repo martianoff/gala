@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -57,9 +56,9 @@ const typeParamMisuse = "is a type parameter of the enclosing declaration and ta
 // holds a type the native walk reads, the sealed and opaque type
 // declarations, and each diagnostic they position, after multibyte text: a
 // position read off the wrong tree, or a column counted in bytes, shows as a
-// differing error. Every `/* ü */` marks a line where a type or a sealed
-// type declaration must be lowered off the native tree, so a case compares
-// the native walk with ANTLR's, not ANTLR's with itself.
+// differing golden. Every `/* ü */` marks a line where a type or a sealed
+// type declaration must be lowered off the native tree, so a case holds the
+// native walk to its golden.
 var typeCases = []struct {
 	name, src string
 	// want, set on a case that fails, is in its error: the diagnostic code,
@@ -208,8 +207,6 @@ type W struct {
 // type declarations over typeCases to its golden: the Go, or the error, with
 // every marked line's type lowered off the native tree.
 func TestNativeTypeCases(t *testing.T) {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	stdFile, err := bazel.Runfile("std/option.gala")
 	require.NoError(t, err, "std sources not staged")
 	searchPaths := []string{filepath.Dir(filepath.Dir(stdFile))}

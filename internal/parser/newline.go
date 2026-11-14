@@ -5,9 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/antlr4-go/antlr/v4"
-
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -79,14 +76,6 @@ type lineBreakRule struct {
 	headers []header
 }
 
-// newlineTokenSource is ANTLR's lexer with the line-break rule (see
-// lineBreakRule) applied to its tokens. RetypeNewlines applies the same rule
-// to galop's native tokens.
-type newlineTokenSource struct {
-	antlr.Lexer
-	rule lineBreakRule
-}
-
 // header is a function declaration, `if` or `for` whose block's '{' is still
 // to come. It can be split across lines. A func type (`type F func(int) int`,
 // `val g func() int = h`) has no block and is not a header.
@@ -113,14 +102,6 @@ const (
 	braceOpen                    // a '{' that is not a block: a composite literal, case arms, a declaration body
 	blockOpen                    // a block's '{'
 )
-
-var _ antlr.Lexer = (*newlineTokenSource)(nil)
-
-// newTokenStream is the token stream every parse reads: the lexer's tokens
-// with the line-break rule above applied.
-func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
-	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, rule: lineBreakRule{kinds: kinds()}}, antlr.TokenDefaultChannel)
-}
 
 // lineStartToken describes one re-typed token: the source token it is
 // re-typed from, and whether it is re-typed only where a statement can begin
@@ -182,21 +163,9 @@ func at[T any](table []T, ttype int) T {
 // is reports whether ttype is marked in set.
 func is(set []bool, ttype int) bool { return at(set, ttype) }
 
-// kinds is derived once from the generated vocabulary and never changes, like
-// the generated static data it reads. It is built on first use, so a binary
-// that never parses does not pay for it.
-var kinds = sync.OnceValue(func() *tokenKinds {
-	// The parser's vocabulary, not the lexer's: no lexer rule produces the
-	// re-typed tokens, so only the parser knows their types.
-	grammar.GalaParserInit()
-	vocab := &grammar.GalaParserStaticData
-	return kindsOf(vocab.SymbolicNames, vocab.LiteralNames)
-})
-
-// nativeKinds is kinds for galop's native tokens, read from galop's own
-// vocabulary so that a native parse never initializes ANTLR's parser (which
-// deserializes its whole ATN). It numbers the tokens as ANTLR's parser does
-// (TestNativeVocabularyIsANTLRs).
+// nativeKinds is derived once from galop's native vocabulary and never
+// changes, like the generated static data it reads. It is built on first use,
+// so a binary that never parses does not pay for it.
 var nativeKinds = sync.OnceValue(func() *tokenKinds {
 	return kindsOf(native.GalaSymbolicNames, native.GalaLiteralNames)
 })
@@ -264,19 +233,6 @@ func kindsOf(symbolic, literal []string) *tokenKinds {
 		k.endsExpr[mustType(name)] = true
 	}
 	return k
-}
-
-func (s *newlineTokenSource) NextToken() antlr.Token {
-	tok := s.Lexer.NextToken()
-	if tok.GetChannel() != antlr.TokenDefaultChannel {
-		return tok
-	}
-	ttype := tok.GetTokenType()
-	if to := s.rule.next(ttype, tok.GetLine(), tok.GetText, s.operatorStandsApart); to != ttype {
-		tok = s.GetTokenFactory().Create(tok.GetSource(), to, tok.GetText(),
-			tok.GetChannel(), tok.GetStart(), tok.GetStop(), tok.GetLine(), tok.GetColumn())
-	}
-	return tok
 }
 
 // next applies the rule to the next default-channel token, of type ttype,
@@ -396,14 +352,6 @@ func (s *lineBreakRule) atStatementLevel() bool {
 	return len(s.open) > 0 && s.open[len(s.open)-1] == blockOpen && s.pendingHeader() == nil
 }
 
-// operatorStandsApart reports whether the token the lexer has just consumed is
-// followed by whitespace or a comment rather than by its operand. The lexer
-// has just consumed it, so LA(1) is the character after it.
-func (s *newlineTokenSource) operatorStandsApart() bool {
-	in := s.GetInputStream()
-	return standsApartBefore(in.LA(1), in.LA(2))
-}
-
 // standsApartBefore reports whether the characters c and then next, which
 // follow an operator, start whitespace or a comment. A character past the
 // input is negative.
@@ -419,7 +367,7 @@ func standsApartBefore(c, next int) bool {
 }
 
 // hideNewlineTokens keeps the internal re-typed tokens out of syntax errors.
-// It rewrites only the token set ANTLR expected — after "expecting", or
+// It rewrites only the token set the parser expected — after "expecting", or
 // between "missing" and "at" — never the quoted input, which is the user's own
 // text. A re-typed token is dropped from the set: wherever it is expected, the
 // token it was re-typed from is expected too.
@@ -436,9 +384,9 @@ func hideNewlineTokens(msg string) string {
 	return msg
 }
 
-// withoutNewlineTokens removes the re-typed tokens from an ANTLR token set,
-// printed either as one token name or as "{a, b, ...}", and unwraps a set left
-// with a single token the way ANTLR prints one.
+// withoutNewlineTokens removes the re-typed tokens from a token set of a
+// syntax error, printed either as one token name or as "{a, b, ...}", and
+// unwraps a set left with a single token the way the parser prints one.
 func withoutNewlineTokens(set string) string {
 	if tok, ok := lineStartTokens[set]; ok {
 		return tok.from

@@ -6,44 +6,20 @@ import (
 	"strings"
 	"testing"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
-
-	"github.com/antlr4-go/antlr/v4"
 )
 
-// checkNativeHelpers compares, on context ctx of a parse and its native node
-// node, each function of type_text.go that applies to ctx with its native
-// version (type_text_native.go), returning what differs or "". checkNative
-// runs it on every node of the trees it checks, so TestEnginesAgree runs it on
-// every GALA source of the repository; checkNative compares DocKeyOf with
-// NativeDocKeyOf itself, as its check of where each node starts.
-func checkNativeHelpers(nodeOf func(antlr.ParserRuleContext) native.GalaNodeRef, ctx antlr.ParserRuleContext, node native.GalaNodeRef) string {
-	// NativeText takes its own path for a node of one token; any other is
-	// the node's GetText.
-	if node.StopIndex() == node.StartIndex() {
-		if want, got := ctx.GetText(), NativeText(node); got != want {
-			return fmt.Sprintf("GetText is %q, NativeText %q", want, got)
+// checkNativeText checks NativeText on every node of tree whose span is one
+// token, where it takes its own path: it must be the node's GetText. The
+// parser golden holds every helper's output on every node of its inputs.
+func checkNativeText(tree *native.GalaTree) string {
+	for i := range tree.Nodes {
+		n := tree.Node(i)
+		if n.StopIndex() != n.StartIndex() {
+			continue
 		}
-	}
-	// A helper's nil context is no node, as nodeOf finds it.
-	switch c := ctx.(type) {
-	case *grammar.TypeContext:
-		typ := native.TypeNode{GalaNodeRef: node}
-		if want, got := TypeText(c), NativeTypeText(typ); got != want {
-			return fmt.Sprintf("TypeText is %q, NativeTypeText %q", want, got)
-		}
-		if want, got := nodeOf(PtrElem(c)), NativePtrElem(typ).GalaNodeRef; got != want {
-			return fmt.Sprintf("PtrElem is node %d, NativePtrElem node %d", want.Index(), got.Index())
-		}
-		wantElem, wantOk := PointerElem(c)
-		gotElem, gotOk := NativePointerElem(typ)
-		if want := nodeOf(wantElem); gotElem.GalaNodeRef != want || gotOk != wantOk {
-			return fmt.Sprintf("PointerElem is (node %d, %t), NativePointerElem (node %d, %t)", want.Index(), wantOk, gotElem.Index(), gotOk)
-		}
-	case *grammar.TypeAliasContext:
-		if want, got := AliasText(c), NativeAliasText(native.TypeAliasNode{GalaNodeRef: node}); got != want {
-			return fmt.Sprintf("AliasText is %q, NativeAliasText %q", want, got)
+		if want, got := n.GetText(), NativeText(n); got != want {
+			return fmt.Sprintf("node %d (%s): GetText is %q, NativeText %q", i, native.GalaRuleNames[n.Rule()], want, got)
 		}
 	}
 	return ""
@@ -52,9 +28,9 @@ func checkNativeHelpers(nodeOf func(antlr.ParserRuleContext) native.GalaNodeRef,
 // nativeHelperInputs spell types every way the helpers tell apart. GALA
 // names are ASCII, so the non-ASCII text is in comments and strings, between
 // a type's tokens too, where the native tree's token texts, cut from the
-// source by byte offsets, must still be ANTLR's (which counts code points).
-// One input has CRLF line ends and a function type split across lines; the
-// last is broken.
+// source by byte offsets, must still be whole (and positions count code
+// points). One input has CRLF line ends and a function type split across
+// lines; the last is broken.
 var nativeHelperInputs = []string{
 	`package main
 
@@ -83,27 +59,27 @@ func (u *Node) Other(f func() func(a int) map[Node]int) int = 1
 	"package main\n\ntype Conjured map[string int\n\ntype Skipped *)\n\ntype Broken func(a int, ) map[\n\ntype Half Ptr[\n",
 }
 
-// TestNativeTypeHelpers checks the native helpers on nativeHelperInputs,
-// with checkNative, and that the inputs reach the cases they are for.
+// TestNativeTypeHelpers checks the native helpers on nativeHelperInputs
+// (checkNativeText), and that the inputs reach the cases they are for.
 func TestNativeTypeHelpers(t *testing.T) {
 	var typeTexts, aliasTexts []string
 	ptrElems, pointerElems := 0, 0
 	for k, input := range nativeHelperInputs {
-		p := parseConverted(input)
+		p := parseGalop(t, input)
 		broken := k == len(nativeHelperInputs)-1
 		if (len(p.Errors) > 0) != broken {
 			t.Fatalf("input %d: errors %v, want them only for the last input", k, p.Errors)
-		}
-		if msg := checkNative(p, input); msg != "" {
-			t.Fatalf("input %d: %s", k, msg)
 		}
 		tree, err := p.RecoveredNative().Tree()
 		if err != nil {
 			t.Fatal(err)
 		}
+		if msg := checkNativeText(tree); msg != "" {
+			t.Fatalf("input %d: %s", k, msg)
+		}
 		if broken {
 			// The counts below are of the inputs that parse: what error
-			// recovery makes of this one is the engines' to decide. That it
+			// recovery makes of this one is the parser's to decide. That it
 			// reaches what only recovery makes: a conjured token, an error
 			// token and a type of none of TypeText's forms (its default).
 			defaults := 0
@@ -160,34 +136,32 @@ func TestNativeTypeHelpers(t *testing.T) {
 	}
 }
 
-// TestNativeTextConjuredToken: in a tree converted from ANTLR's error
-// recovery, a node that spans one stream token can also hold a conjured one
-// (a package clause whose `package` keyword is missing or misspelt), and
-// NativeText includes its text, as GetText does.
+// TestNativeTextConjuredToken: in an error-recovered tree, a node that spans
+// one stream token can also hold a conjured one (a package clause whose
+// `package` keyword is missing or misspelt), and NativeText includes its
+// text, as GetText does.
 func TestNativeTextConjuredToken(t *testing.T) {
 	for _, src := range []string{
 		"main\n\nval x = 1\n",
 		"packe main\n\nval x = 1\n",
 		"packag\n\nval x = 1\n",
 	} {
-		p := parseConverted(src)
-		tree, err := p.RecoveredNative().Tree()
+		tree, err := parseGalop(t, src).RecoveredNative().Tree()
 		if err != nil {
 			t.Fatalf("%q: %v", src, err)
 		}
 		if len(tree.Conjured) == 0 {
 			t.Fatalf("%q: the recovered tree conjures no token", src)
 		}
-		if msg := checkNative(p, src); msg != "" {
+		if msg := checkNativeText(tree); msg != "" {
 			t.Errorf("%q: %s", src, msg)
 		}
 	}
 }
 
-// TestNativeTextEOFChild: in a tree converted from ANTLR's error recovery, a
-// node whose span is one token can also hold the EOF token, which ANTLR adds
-// as a child but leaves out of the span. NativeText includes its text, as
-// GetText does.
+// TestNativeTextEOFChild: in an error-recovered tree, a node whose span is
+// one token can also hold the EOF token, which the recovery adds as a child
+// but leaves out of the span. NativeText includes its text, as GetText does.
 func TestNativeTextEOFChild(t *testing.T) {
 	for _, src := range []string{
 		"package\n",
@@ -195,8 +169,7 @@ func TestNativeTextEOFChild(t *testing.T) {
 		"s\"${a}\"",
 		"val\n",
 	} {
-		p := parseConverted(src)
-		tree, err := p.RecoveredNative().Tree()
+		tree, err := parseGalop(t, src).RecoveredNative().Tree()
 		if err != nil {
 			t.Fatalf("%q: %v", src, err)
 		}
@@ -207,40 +180,25 @@ func TestNativeTextEOFChild(t *testing.T) {
 		if got, want := NativeText(root), root.GetText(); got != want || !strings.HasSuffix(got, "<EOF>") {
 			t.Errorf("%q: NativeText is %q, GetText %q", src, got, want)
 		}
-		if msg := checkNative(p, src); msg != "" {
+		if msg := checkNativeText(tree); msg != "" {
 			t.Errorf("%q: %s", src, msg)
 		}
 	}
 }
 
 // TestNativeDocKeyOfGalopParse checks NativeDocKeyOf on a tree galop's native
-// parser makes itself, from galop's native lexer, rather than one converted
-// from ANTLR's (whose tokens carry ANTLR's lines and columns): after
-// non-ASCII text, a declaration's column still counts code points, as
-// DocKeyOf's does, and every node starts where the converted tree's does.
+// parser makes from galop's native lexer: after non-ASCII text, a
+// declaration's column still counts code points.
 func TestNativeDocKeyOfGalopParse(t *testing.T) {
 	src := "package main\n\n/* ünï ✓ */ type A int\n/* 日本 */ func f(s string) int = 1\n"
 	root, err := native.ParseSourceFile(native.GalaLex(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := parseConverted(src)
-	converted, err := p.Native.Tree()
-	if err != nil {
-		t.Fatal(err)
-	}
 	parsed := root.Tree()
-	if len(parsed.Nodes) != len(converted.Nodes) {
-		t.Fatalf("galop's parse has %d nodes, the converted tree %d", len(parsed.Nodes), len(converted.Nodes))
-	}
 	var keys []DocKey
 	for i := range parsed.Nodes {
-		got, want := NativeDocKeyOf(parsed.Node(i)), NativeDocKeyOf(converted.Node(i))
-		if got != want {
-			t.Errorf("node %d (%s): galop's parse starts it at %v, the converted tree at %v",
-				i, native.GalaRuleNames[parsed.Node(i).Rule()], got, want)
-		}
-		keys = append(keys, got)
+		keys = append(keys, NativeDocKeyOf(parsed.Node(i)))
 	}
 	// `type` after "/* ünï ✓ */ ", 12 code points and 16 bytes; `func` after
 	// "/* 日本 */ ", 9 code points and 13 bytes.
@@ -255,7 +213,7 @@ func TestNativeDocKeyOfGalopParse(t *testing.T) {
 // nothing, on Ptr types, pointers, other generics and a func type with
 // parameters and Go results; NativeTypeText spells the func type.
 func TestNativeHelpersAllocate(t *testing.T) {
-	p := parseWithGalop("package main\n\ntype F func(a Ptr[int], b ...*int, c std.Ptr[Ptr[int]]) (Map[string, int], error)\n")
+	p := parseGalop(t, "package main\n\ntype F func(a Ptr[int], b ...*int, c std.Ptr[Ptr[int]]) (Map[string, int], error)\n")
 	tree, err := p.Native.Tree()
 	if err != nil {
 		t.Fatal(err)

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
@@ -41,8 +40,6 @@ func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
 // error, or nil.
 func analyzeEachFile(t *testing.T, files map[string]string, check func(t *testing.T, errs map[string]error)) {
 	t.Helper()
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	tmp := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/repro\n\ngala dev\n"), 0644); err != nil {
 		t.Fatal(err)

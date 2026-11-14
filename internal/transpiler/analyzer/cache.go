@@ -266,7 +266,7 @@ var binaryHash = func() string {
 // of an unstamped binary.
 func BinaryHash() string { return binaryHash }
 
-// CachedRichAST is the serializable subset of RichAST (no antlr.Tree).
+// CachedRichAST is the serializable subset of RichAST (no parse tree).
 //
 // Only the package's OWN metadata is persisted on disk. Transitive
 // imports are NOT inlined — instead, DirectImports lists the GALA import

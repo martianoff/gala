@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	galaparser "martianoff/gala/internal/parser"
 )
 
 // postfixShapes is a program with every postfix suffix the native walk
@@ -173,8 +171,6 @@ func main() {
 // runPackageValWalk walks packageValMain in a module whose lib package
 // declares the vals it reads, to its golden (checkWalk).
 func runPackageValWalk(t *testing.T) walkRun {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, std := walkCorpus(t)
 	root := t.TempDir()
 	write := func(rel, content string) {

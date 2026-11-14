@@ -11,7 +11,7 @@ import (
 )
 
 // firstSemanticError returns the single coded diagnostic in err, requiring that
-// exactly one error was reported. The count matters: ANTLR recovers from the
+// exactly one error was reported. The count matters: the parser recovers from the
 // failure by inserting the brace it wanted and re-reports the rest of the file
 // against the same composite literal, so a second error here means the cascade
 // suppression regressed and the user is back to reading invented brace errors.
@@ -133,7 +133,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := parseAgreeing(t, tt.input).Err()
+			err := parseGalop(t, tt.input).Err()
 			se := firstSemanticError(t, err)
 
 			assert.Equal(t, galaerr.CodeGoTypeInExpression, se.Code)
@@ -244,7 +244,7 @@ func total(xs ...int) int = 0`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := parseAgreeing(t, tt.input).Err()
+			err := parseGalop(t, tt.input).Err()
 			assert.NoError(t, err)
 		})
 	}
@@ -299,7 +299,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := parseAgreeing(t, tt.input).Err()
+			err := parseGalop(t, tt.input).Err()
 			require.Error(t, err)
 
 			var multi *galaerr.MultiError
@@ -336,7 +336,7 @@ func main() {
     Println(m)
 }`,
 	} {
-		err := parseAgreeing(t, src).Err()
+		err := parseGalop(t, src).Err()
 		assert.NoError(t, err, "literal should parse; rejection belongs to the analyzer")
 	}
 }

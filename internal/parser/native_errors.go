@@ -8,25 +8,24 @@ import (
 )
 
 // The functions here turn the errors of galop's recovering parse
-// (native.GalaParseWithRecovery) into GALA's diagnostics, as GalaErrorListener
-// turns ANTLR's: the same coded hints (GALA-E0040, GALA-E0042, GALA-E0085),
-// read off the recovered native tree and its tokens instead of ANTLR's parser,
-// the same cascade suppression, and the same plain syntax errors. galop's
-// recovery reports ANTLR's errors, in ANTLR's order, with the rule node ANTLR's
-// parser was in and how many children it had then, so each hint sees what its
-// ANTLR counterpart sees.
+// (native.GalaParseWithRecovery) into GALA's diagnostics: the coded hints
+// (GALA-E0040, GALA-E0042, GALA-E0085), read off the recovered native tree and
+// its tokens, their cascade suppression, and the plain syntax errors. galop's
+// recovery reports its errors as ANTLR's does (galop's repository holds it to
+// ANTLR's): the same messages, in the same order, each with the rule node the
+// parser was in and how many children it had then, which the hints read.
 
 // nativeSyntaxErrors is the diagnostics of a recovering parse of ts: its
-// lexical errors and the parse's errors, in the order ANTLR's lexer and parser
-// report them, through nativeErrorReporter. tree is the parse's tree, nil when
-// it has none.
+// lexical errors and the parse's errors, in the order a lexer that runs as the
+// parser reads tokens reports them, through nativeErrorReporter. tree is the
+// parse's tree, nil when it has none.
 //
-// ANTLR's lexer runs as its parser reads tokens: it reports lexical error i
-// when the parser first reads token ts.ErrorAt[i]. Each parse error says how
-// far the parser had read when it was reported (Read), so the lexical errors
-// up to there come before it. After the last parse error, those the parse
-// read up to come (tree.Read); the rest ANTLR's lexer never reaches, as when
-// an expression's parse stops before them.
+// Lexical error i is reported when the parser first reads token
+// ts.ErrorAt[i]. Each parse error says how far the parser had read when it
+// was reported (Read), so the lexical errors up to there come before it.
+// After the last parse error, those the parse read up to come (tree.Read);
+// the rest the parse never reaches, as when an expression's parse stops
+// before them, and they are not reported.
 func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError) []error {
 	if len(parseErrs) == 0 && len(ts.Errors) == 0 {
 		return nil
@@ -50,22 +49,39 @@ func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs 
 	return r.errs
 }
 
-// nativeErrorReporter is GalaErrorListener for galop's recovering parse: it
-// turns each error into a diagnostic, in order, with the same hints and
-// cascade suppression.
+// nativeErrorReporter turns each error of galop's recovering parse into a
+// diagnostic, in order, with the coded hints and their cascade suppression.
 type nativeErrorReporter struct {
 	tree *native.GalaTree
 	errs []error
 	// reportedGoType is the node of the composite literal a GALA-E0040 has
-	// been reported for, or -1 (GalaErrorListener.reportedGoType).
+	// been reported for, or -1. Once E0040 is reported, the recovery INSERTS
+	// the '{' it wanted and carries on parsing the rest of the file as that
+	// literal's element list, so every following token is re-reported against
+	// the same node ("mismatched input 'Println' expecting {',', '}'}"). Those
+	// follow-ups describe a brace the user never wrote, so they are dropped.
+	// Keyed on the node, so an unrelated error elsewhere in the file is
+	// untouched.
 	reportedGoType int32
-	// bareLambdaLine is the line a GALA-E0042 has been reported on, or 0
-	// (GalaErrorListener.bareLambdaLine).
+	// bareLambdaLine is the line a GALA-E0042 has been reported on, or 0. An
+	// unparenthesized lambda parameter derails the parser for the rest of the
+	// expression, so the parse re-reports it against each enclosing rule it
+	// unwinds through — four errors for one missing pair of parentheses, all
+	// on the same line.
+	//
+	// Keyed on the LINE, unlike reportedGoType: the follow-on errors are
+	// reported from the different rules the parser unwinds through, so no
+	// single node is common to them. The line is what they share. The
+	// tradeoff is the usual one for cascade suppression: a genuinely
+	// unrelated later error on the same line is swallowed too, and a lambda
+	// whose body wraps onto the next line can still leak one follow-on. The
+	// first error on any line is always reported, so nothing is hidden that
+	// would not resurface on the next compile.
 	bareLambdaLine int
 }
 
-// lexical reports a lexical error, as GalaErrorListener reports one of
-// ANTLR's lexer: no hint, but the bare-lambda cascade suppression applies.
+// lexical reports a lexical error: no hint, but the bare-lambda cascade
+// suppression applies.
 func (r *nativeErrorReporter) lexical(l native.GalaSyntaxError) {
 	if r.bareLambdaLine != 0 && l.Line == r.bareLambdaLine {
 		return
@@ -73,7 +89,8 @@ func (r *nativeErrorReporter) lexical(l native.GalaSyntaxError) {
 	r.errs = append(r.errs, galaerr.NewSyntaxError(l.Line, l.Column, hideNewlineTokens(l.Msg)))
 }
 
-// syntax reports a parse error, as GalaErrorListener.SyntaxError does.
+// syntax reports a parse error: as GALA-E0040, GALA-E0042 or GALA-E0085 when
+// it is one of theirs, else as the parser's message.
 func (r *nativeErrorReporter) syntax(e native.GalaParseError) {
 	lit := r.compositeLiteral(e)
 	if lit.Ok() && int32(lit.Index()) == r.reportedGoType {
@@ -115,8 +132,8 @@ func (r *nativeErrorReporter) offending(e native.GalaParseError) (native.GalaTok
 	return r.tree.Tokens[e.Token], true
 }
 
-// compositeLiteral is currentCompositeLiteral: the node e was reported in
-// when it is a compositeLiteral, else no node.
+// compositeLiteral is the node e was reported in when it is a
+// compositeLiteral, else no node.
 func (r *nativeErrorReporter) compositeLiteral(e native.GalaParseError) native.CompositeLiteralNode {
 	if n := r.node(e); n.Ok() && n.Rule() == native.GalaRULE_compositeLiteral {
 		return native.CompositeLiteralNode{GalaNodeRef: n}
@@ -124,10 +141,27 @@ func (r *nativeErrorReporter) compositeLiteral(e native.GalaParseError) native.C
 	return native.CompositeLiteralNode{}
 }
 
-// nativeGoTypeInExpressionError is goTypeInExpressionError on the native
-// tree. kids is how many children lit had when the error was reported: the
-// recovered tree's node has more by then (the brace the recovery conjured, the
-// tokens it skipped), so its ChildCount does not say where the parse died.
+// nativeGoTypeInExpressionError turns the parse failure behind
+// "missing '{' at …" into GALA-E0040 when — and only when — its cause is a Go
+// slice or map type written in expression position. It returns nil for every
+// other failure, so the raw syntax error still reaches the user unchanged.
+//
+// The gate is structural rather than message-based, because the recovery's
+// wording is not part of any contract:
+//
+//   - the rule the error was reported in is `compositeLiteral`
+//     (`type ('{' … '}')`). The parser only lands there for a bracketed
+//     expression when the bracket contents are not an expression list, which
+//     for `f[…](…)` means a type the expression grammar cannot spell;
+//   - that node had exactly one child, the `type`, when the error was
+//     reported (kids) — so the parse died at the '{' slot, before consuming a
+//     brace. A malformed but genuine composite literal (`[]int{1, 2,`) has
+//     consumed its brace by the time it fails and is left to the ordinary
+//     syntax error. The recovered tree's node has more children by then (the
+//     brace the recovery conjured, the tokens it skipped), so its ChildCount
+//     does not say where the parse died;
+//   - and that `type` actually contains a Go slice or map type. Without this
+//     the code would fire on a func type, which is a different problem.
 func nativeGoTypeInExpressionError(lit native.CompositeLiteralNode, kids int) error {
 	if !lit.Ok() || kids != 1 {
 		return nil
@@ -149,9 +183,11 @@ func nativeGoTypeInExpressionError(lit native.CompositeLiteralNode, kids int) er
 		stop >= offender.StartIndex() && offender.Tree().Token(stop).Line == start.Line)
 }
 
-// findNativeGoSliceOrMapType is findGoSliceOrMapType on the native tree: the
-// first type node at or below n, in source order, whose text starts with "[]"
-// or "map[", or no node.
+// findNativeGoSliceOrMapType is the first type node at or below n, in source
+// order, whose text starts with "[]" or "map[", or no node. Searching the
+// whole subtree is what lets the outer type be an ordinary generic — the
+// offender in `EmptyHashMap[string, []byte]` is the type argument, not the
+// literal's type.
 func findNativeGoSliceOrMapType(n native.GalaNodeRef) native.TypeNode {
 	if n.Rule() == native.GalaRULE_type {
 		if txt := n.GetText(); strings.HasPrefix(txt, "[]") || strings.HasPrefix(txt, "map[") {
@@ -168,9 +204,19 @@ func findNativeGoSliceOrMapType(n native.GalaNodeRef) native.TypeNode {
 	return native.TypeNode{}
 }
 
-// bareLambdaParamError is the package-level bareLambdaParamError on galop's
-// tokens. Comments are hidden tokens, not in Tokens, so the code token before
-// the offending one is simply the one before it in Tokens.
+// bareLambdaParamError recognizes a lambda written without parentheses around
+// its single parameter — `x => e` where GALA requires `(x) => e` — and
+// returns GALA-E0042 for it, or nil when the error is something else.
+//
+// The shape is identified from the tokens rather than the tree, because by
+// the time the parser reports this the tree is error-recovered: the
+// offending token is `=>` and the code token immediately before it is a
+// plain IDENTIFIER. That is enough, since every legal `=>` in GALA is
+// preceded by either `)` (a lambda's parameter list) or a pattern in a `case`
+// arm — and a `case` arm's own `=>` is reached only after `case`, which
+// parses fine. Comments are hidden tokens, not in Tokens, so the code token
+// before the offending one is simply the one before it in Tokens: a comment
+// between the parameter and the arrow does not mask the diagnostic.
 func (r *nativeErrorReporter) bareLambdaParamError(e native.GalaParseError) *galaerr.SemanticError {
 	if _, ok := r.offending(e); !ok || e.Token == 0 || r.tree.Text(e.Token) != "=>" {
 		return nil
@@ -182,7 +228,18 @@ func (r *nativeErrorReporter) bareLambdaParamError(e native.GalaParseError) *gal
 	return bareLambdaError(int(prev.Line), int(prev.Column), r.tree.Text(e.Token-1))
 }
 
-// structTagError is the package-level structTagError on the native tree.
+// structTagError recognizes a Go struct tag written after a struct field's
+// type, in either string form (`Name string "json:\"name\""`), and returns
+// GALA-E0085 for it, or nil when the error is something else.
+//
+// GALA has no struct tags, so the grammar has no slot for one and the parser
+// reports the string as extraneous input. The shape is a string literal that
+// the parser hit in the list of a struct's fields, directly after a field and
+// on its line: the field list of a block-form struct, the parameter list of a
+// shorthand struct, or the field list of a sealed case. A string anywhere
+// deeper, such as inside a field's default value, fails in a nested rule and
+// is left to the ordinary syntax error, and so is one in a function's
+// parameter list.
 func (r *nativeErrorReporter) structTagError(e native.GalaParseError) *galaerr.SemanticError {
 	tok, ok := r.offending(e)
 	if !ok || tok.Type != native.GalaSTRING && tok.Type != native.GalaRAW_STRING {
@@ -217,9 +274,10 @@ func nativeFieldName(field native.GalaNodeRef) native.IdentifierNode {
 	return native.IdentifierNode{}
 }
 
-// lastNativeStructField is lastStructField on the native tree: when n, the
-// rule the parser was in when it rejected a string literal, is a struct's
-// field list, the last field parsed in it so far, else no node. n had kids
+// lastNativeStructField is, when n, the rule the parser was in when it
+// rejected a string literal, is a struct's field list (or, at a closing ')',
+// the rule that holds the list), the last field parsed in it so far, else no
+// node. n had kids
 // children then; the recovered tree's n can have more, as recovery goes on in
 // the same rule, so only those are read. A nested list (a shorthand struct's
 // parameterList, a sealed case's sealedCaseFieldList) was finished by then,
@@ -249,7 +307,8 @@ func lastNativeStructField(n native.GalaNodeRef, kids int) native.GalaNodeRef {
 	return native.GalaNodeRef{}
 }
 
-// isNativeShorthandStruct is isShorthandStruct on the native tree.
+// isNativeShorthandStruct reports whether params is a shorthand struct's
+// field list rather than a function's or a lambda's parameter list.
 func isNativeShorthandStruct(params native.GalaNodeRef) bool {
 	p := params.Parent()
 	return p.Ok() && p.Rule() == native.GalaRULE_structShorthandDeclaration

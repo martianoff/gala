@@ -7,9 +7,7 @@
 # import `internal/stdlib`, so it can be built from this tree and serves as the
 # `useLocalBootstrap` escape hatch.
 #
-#   localAntlr       gala.g4 -> internal/parser/grammar/*.go (ANTLR)
-#   localGalop       gala.g4 -> internal/parser/grammar/gala_galop_*.go and
-#                    internal/parser/native/*.go (galop)
+#   localGalop       gala.g4 -> internal/parser/native/*.go (galop)
 #   localTranspiled  releaseGalaBin transpiles the local stdlib, one
 #                    `transpile-package` invocation per package (every
 #                    non-test .gala file as that package's input list, which
@@ -21,7 +19,7 @@
 # Incrementality:
 #   edit Go under internal/ or cmd/   -> gala rebuilds
 #   edit a stdlib .gala file          -> localTranspiled + gala
-#   edit gala.g4                      -> localAntlr + gala
+#   edit gala.g4                      -> localGalop + gala
 #   bump galaReleaseVersion           -> releaseGalaBin + localTranspiled + gala
 #
 # `useLocalBootstrap = true` (packaged as `.#gala-local`) replaces the release
@@ -33,7 +31,6 @@
   buildGoModule,
   fetchurl,
   go,
-  jdk21,
   stdenv,
   # Escape hatch: transpile the stdlib with cmd/gala_bootstrap built from this
   # tree instead of a downloaded release binary.
@@ -70,7 +67,7 @@
       ../go.sum
 
       # Everything `go build ./cmd/...` compiles, plus the Bazel metadata and
-      # ANTLR grammar the stdlib script reads.
+      # grammar the stdlib script reads.
       ../cmd
       ../internal
       ../galaerr
@@ -166,41 +163,9 @@ let
     );
   };
 
-  # Keep in sync with MODULE.bazel's @antlr4_tool http_jar.
-  antlrJar = fetchurl {
-    url = "https://www.antlr.org/download/antlr-4.13.1-complete.jar";
-    hash = "sha256-vBOpxXqN19UZaIghHl7eZXy2SjzpaGCGl+T2aCUahIc=";
-  };
-
-  mkAntlr =
-    label: grammarFile:
-    stdenv.mkDerivation {
-      pname = "gala-antlr-${label}";
-      inherit version;
-      dontUnpack = true;
-      dontConfigure = true;
-      dontInstall = true;
-      nativeBuildInputs = [ jdk21 ];
-      buildPhase = ''
-        runHook preBuild
-        mkdir -p "$out/internal/parser/grammar" internal/parser/grammar
-        # ANTLR requires the basename to equal the grammar name and mirrors
-        # the input's relative path under -o, so stage a relative copy
-        # (passing the store path directly would write flat into antlr/).
-        cp ${grammarFile} internal/parser/grammar/gala.g4
-        java -jar ${antlrJar} -Dlanguage=Go -package grammar \
-          -o antlr internal/parser/grammar/gala.g4
-        cp antlr/internal/parser/grammar/*.go "$out/internal/parser/grammar/"
-        sed -i 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' \
-          "$out"/internal/parser/grammar/*.go
-        runHook postBuild
-      '';
-    };
-  localAntlr = mkAntlr "local" (repoRoot + "/internal/parser/grammar/gala.g4");
-
-  # galop generates its parser for gala.g4 next to ANTLR's, in its antlr
-  # flavor (see internal/parser/grammar/BUILD.bazel); GALA parses with it
-  # first. Its release binary runs at build time, so it is selected by
+  # galop generates GALA's parser for gala.g4, in its native flavor (see
+  # internal/parser/native/BUILD.bazel). Its release binary runs at build
+  # time, so it is selected by
   # buildPlatform; building GALA needs it, so a platform galop publishes no
   # binary for cannot build GALA. The version must equal MODULE.bazel's
   # galop.toolchain version (tools/check_repo_policy.sh checks it).
@@ -240,19 +205,14 @@ let
       runHook preBuild
       install -m755 "$src" galop
       cp ${repoRoot + "/internal/parser/grammar/gala.g4"} gala.g4
-      mkdir -p "$out/internal/parser/grammar" "$out/internal/parser/native"
-      ./galop -o "$out/internal/parser/grammar" -Xexact-output-dir \
-        -Dlanguage=Go -Dflavor=antlr -DnativePackage=martianoff/gala/internal/parser/native \
-        -package grammar gala.g4
+      mkdir -p "$out/internal/parser/native"
       ./galop -o "$out/internal/parser/native" -Xexact-output-dir \
         -Dlanguage=Go -Dflavor=native -visitor -package native gala.g4
       runHook postBuild
     '';
   };
-  # Copies the generated parsers and galop's native tree into a Go source tree.
+  # Copies galop's generated parser and native tree into a Go source tree.
   overlayGrammar = ''
-    cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
-    cp ${localGalop}/internal/parser/grammar/*.go internal/parser/grammar/
     mkdir -p internal/parser/native
     cp ${localGalop}/internal/parser/native/*.go internal/parser/native/
   '';
@@ -471,7 +431,6 @@ gala.overrideAttrs (old: {
   passthru = (old.passthru or { }) // {
     inherit
       releaseGalaBin
-      localAntlr
       localBootstrap
       localTranspiled
       ;

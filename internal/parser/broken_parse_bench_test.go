@@ -31,9 +31,9 @@ func brokenBenchTexts(b *testing.B, src string) map[string]string {
 	}
 }
 
-// BenchmarkParseBrokenFile parses a file with a syntax error with galop's
-// engine and takes its error-recovered tree, as the language server and
-// `gala build` do (see brokenBenchTexts).
+// BenchmarkParseBrokenFile parses a file with a syntax error and takes its
+// error-recovered tree, as the language server and `gala build` do (see
+// brokenBenchTexts).
 func BenchmarkParseBrokenFile(b *testing.B) {
 	path, err := bazel.Runfile("collection_immutable/array.gala")
 	if err != nil {
@@ -45,18 +45,16 @@ func BenchmarkParseBrokenFile(b *testing.B) {
 	}
 	for name, text := range brokenBenchTexts(b, string(data)) {
 		b.Run(name, func(b *testing.B) {
-			withEngine(EngineGalop, func() {
-				if len(NewAntlrGalaParser().ParseFile(text).Errors) == 0 {
-					b.Fatal("the broken text parses")
+			if len(NewAntlrGalaParser().ParseFile(text).Errors) == 0 {
+				b.Fatal("the broken text parses")
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if NewAntlrGalaParser().ParseFile(text).RecoveredNative().TreeOnly() == nil {
+					b.Fatal("no recovered tree")
 				}
-				b.ReportAllocs()
-				b.ResetTimer()
-				for range b.N {
-					if NewAntlrGalaParser().ParseFile(text).RecoveredNative().TreeOnly() == nil {
-						b.Fatal("no recovered tree")
-					}
-				}
-			})
+			}
 		})
 	}
 }

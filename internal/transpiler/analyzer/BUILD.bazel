@@ -126,12 +126,10 @@ go_test(
     deps = [
         "//galaerr",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/genheader",
         "//internal/transpiler/module",
         "//internal/transpiler/registry",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
@@ -174,7 +172,6 @@ go_test(
         "//galaerr",
         "//internal/digestgolden",
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",
         "//internal/testcorpus",
         "//internal/transpiler",
@@ -183,14 +180,3 @@ go_test(
     ],
 )
 
-# gazelle:exclude no_antlr_test.go
-go_test(
-    # keep
-    name = "no_antlr_test",
-    srcs = ["no_antlr_test.go"],
-    data = glob(
-        ["*.go"],
-        exclude = ["*_test.go"],
-    ) + ["BUILD.bazel"],
-    deps = ["//internal/noantlr"],
-)

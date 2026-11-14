@@ -37,7 +37,7 @@ var importsCmd = &cobra.Command{
 	Short: "Extract package name and imports from .gala files (parse-only)",
 	Long: `Extract the package name and import declarations from one or more .gala files.
 
-This is a fast, dependency-free parse: it runs only the ANTLR parser, never the
+This is a fast, dependency-free parse: it runs only the parser, never the
 analyzer or transpiler, so no Go SDK is required. It is intended as a helper for
 build tooling such as the Gazelle extension.
 

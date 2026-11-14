@@ -11,7 +11,7 @@ import (
 )
 
 // buildComplexSource generates a syntactically valid GALA source file whose
-// declarations exercise ANTLR's adaptive-prediction machinery
+// declarations exercise the parser's adaptive-prediction machinery
 // (match/lambda/generics/deeply-nested expressions). The seed varies the
 // identifiers and branch counts so that distinct sources keep producing fresh
 // prediction contexts, which is what forces the shared prediction-context and
@@ -36,19 +36,16 @@ func buildComplexSource(seed int) string {
 
 // TestParseConcurrentStress hammers the parser from many goroutines at once.
 //
-// The ANTLR-generated NewgalaParser/NewgalaLexer share a single
-// PredictionContextCache (and DFA slice) across every instance via
-// package-level static data. That prediction-context cache is not internally
-// synchronised: its Put appends to a backing Go map/slice
-// (`m.store[kh] = append(...)`). Concurrent parses therefore used to perform
-// unsynchronised concurrent map writes and slice appends, corrupting the
-// cache and crashing the process with either a hard fault inside
-// runtime.growslice/memmove or a "fatal error: concurrent map writes".
+// galop's generated parser shares its prediction DFA caches across every
+// parse, on whatever goroutine, through package-level state. (ANTLR's Go
+// runtime, which GALA parsed with before, shared an unsynchronised
+// prediction-context cache the same way, and concurrent parses corrupted it:
+// a hard fault inside runtime.growslice/memmove or a "fatal error:
+// concurrent map writes".)
 //
 // This test drives the concurrent parse path from a cold cache with a
-// simultaneous start barrier, which surfaces that corruption; it also flags
-// the race cleanly under `go test -race`. It must remain stable after the
-// parser is made concurrency-safe.
+// simultaneous start barrier, which surfaces such corruption; it also flags
+// a race cleanly under `go test -race`.
 func TestParseConcurrentStress(t *testing.T) {
 	goroutines := runtime.GOMAXPROCS(0) * 4
 	if goroutines < 8 {

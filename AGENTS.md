@@ -71,7 +71,7 @@ below apply to every change, whoever or whatever wrote it.
 
 | Directory | Purpose |
 |-----------|---------|
-| `internal/parser/grammar` | ANTLR4 grammar `gala.g4` (parser `.go` is Bazel-generated) |
+| `internal/parser/grammar` | ANTLR4-syntax grammar `gala.g4`; galop generates the Go parser (`internal/parser/native`) from it in Bazel |
 | `internal/transpiler/analyzer` | Package metadata extraction; Go type info via the Go SDK |
 | `internal/transpiler/transformer` | GALA AST to Go AST transformation |
 | `internal/transpiler/generator` | Go code generation from AST |

@@ -6,8 +6,6 @@
 package nativewalk
 
 import (
-	"errors"
-
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
@@ -427,10 +425,10 @@ func (w walk) walkLiteral(lit native.LiteralNode) {
 	// (parser.ParseExpressionTree), and walked in the current scope.
 	w.WalkInterpolatedParts(siteOf(tok.Token(), tok.GetText()), func(part string) {
 		expr, errs := parseExpressionTree(part)
-		// A part that parsed but did not convert is not walked: the walk is
-		// incomplete, which its caller learns from Err.
+		// A part galop's lexer or parser panicked on has no tree and is not
+		// walked: the walk is incomplete, which its caller learns from Err.
 		for _, err := range errs {
-			if errors.Is(err, parser.ErrConvertExpression) {
+			if parser.IsInternalError(err) {
 				w.Fail(err)
 				return
 			}

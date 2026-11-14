@@ -66,8 +66,8 @@ LSP, build driver, stdlib. Then work through the checklists below.
   5. whether its validity check compares against the state at *build* time or only the
      *current* state (a cache built under a temporary condition must not outlive it);
   6. whether shared values are truly immutable.
-- **Concurrency.** The analyzer parses a package's files concurrently, and ANTLR's Go
-  runtime is not thread-safe. Any new shared state in the parser, analyzer, or
+- **Concurrency.** The analyzer parses a package's files concurrently, and galop's
+  generated parser shares its prediction caches across those goroutines. Any new shared state in the parser, analyzer, or
   transformer needs a clear owner.
 - **Mode differences.** Check CLI vs LSP (`Transform` vs `TransformForLSP`), batch vs
   single file, persistent worker vs `gala_bootstrap`, and debug modes

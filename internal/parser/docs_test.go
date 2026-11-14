@@ -5,22 +5,27 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/antlr4-go/antlr/v4"
+	"martianoff/gala/internal/parser/native"
 )
 
 // TestDocKeyOfCountsCodePoints pins DocKey's column unit: code points, as
-// ANTLR counts them, not bytes. "/* é */ " before func is 8 code points and 9
-// bytes. (A documented declaration starts its line, so only whitespace comes
-// before it; this pins the unit for any key built from a token.)
+// diagnostics count them, not bytes. "/* é */ " before func is 8 code points
+// and 9 bytes. (A documented declaration starts its line, so only whitespace
+// comes before it; this pins the unit for any key built from a token.)
 func TestDocKeyOfCountsCodePoints(t *testing.T) {
+	root, err := native.ParseSourceFile(lexNative("package main\n\n/* é */ func F() int = 1\n", 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var got []DocKey
-	VisitTokens("/* é */ func F() int = 1\n", func(tok antlr.Token) {
-		if tok.GetText() == "func" {
-			got = append(got, DocKeyOf(tok))
+	root.Walk(func(n native.GalaNodeRef) bool {
+		if n.Kind() == native.GalaKIND_functionDeclaration {
+			got = append(got, NativeDocKeyOf(n))
 		}
+		return true
 	})
-	if want := (DocKey{Line: 1, Column: 8}); len(got) != 1 || got[0] != want {
-		t.Errorf("DocKeyOf(func) = %v, want [%v]", got, want)
+	if want := (DocKey{Line: 3, Column: 8}); len(got) != 1 || got[0] != want {
+		t.Errorf("NativeDocKeyOf(func) = %v, want [%v]", got, want)
 	}
 }
 

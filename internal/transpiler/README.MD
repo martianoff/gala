@@ -6,16 +6,12 @@ This document describes the architecture of the GALA-to-Go transpiler for intern
 
 The transpiler follows a classic 4-stage pipeline:
 
-```
-GALA Source Code
-       ↓
-   [Parser]      → ANTLR Parse Tree
-       ↓
-   [Analyzer]    → RichAST (enriched with type/function metadata)
-       ↓
-  [Transformer]  → Go AST
-       ↓
-  [Generator]    → Go Source Code
+```mermaid
+flowchart TD
+    src[GALA Source Code] --> parser["Parser: galop's native parse tree"]
+    parser --> analyzer["Analyzer: RichAST, enriched with type/function metadata"]
+    analyzer --> transformer[Transformer: Go AST]
+    transformer --> generator[Generator: Go Source Code]
 ```
 
 ## Component Responsibilities
@@ -24,12 +20,15 @@ GALA Source Code
 
 **Interface:** `GalaParser`
 
-Thin wrapper around the ANTLR-generated parser. Converts GALA source text into an ANTLR parse tree.
+Thin wrapper around `internal/parser`, which parses GALA source text with galop's
+generated native lexer and parser into galop's native tree (`parser.Parsed`, with the
+tree in `Parsed.Native`, the syntax errors and the doc comments).
 
 **Key files:**
-- `parser.go` - Adapter wrapping ANTLR parser
+- `parser.go` - Adapter wrapping `internal/parser`
 
-**Note:** Never modify `internal/parser/grammar/*.go` - these are ANTLR-generated.
+**Note:** Never hand-write or check in the generated parser (`internal/parser/native`) -
+galop generates it in Bazel from `internal/parser/grammar/gala.g4`.
 
 ### 2. Analyzer (`analyzer/`)
 
@@ -143,7 +142,7 @@ A named (non-dot) import binds only its qualifier: its names are reached as `pkg
 
 ```go
 type RichAST struct {
-    Tree             antlr.Tree
+    Native           *galaparser.Native // galop's native tree of the file
     PackageName      string
     Types            map[string]*TypeMetadata
     Functions        map[string]*FunctionMetadata
@@ -172,11 +171,11 @@ All components implement well-defined interfaces for testability:
 
 ```go
 type GalaParser interface {
-    Parse(input string) (antlr.Tree, error)
+    ParseFile(input string) *galaparser.Parsed
 }
 
 type Analyzer interface {
-    Analyze(tree antlr.Tree, filePath string) (*RichAST, error)
+    AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*RichAST, error)
 }
 
 type ASTTransformer interface {

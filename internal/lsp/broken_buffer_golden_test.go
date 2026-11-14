@@ -106,8 +106,6 @@ var breakings = []struct {
 // TestBrokenBufferGolden opens a sample of the corpus broken each way of
 // breakings, and holds the server's answers on it to the golden.
 func TestBrokenBufferGolden(t *testing.T) {
-	parser.RequestEngine(string(parser.EngineGalop))
-	t.Cleanup(func() { parser.RequestEngine("") })
 	c := testcorpus.Extract(t)
 	paths := c.GalaFiles()
 	texts := map[string]string{}

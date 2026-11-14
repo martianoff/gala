@@ -4,44 +4,40 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
 // TestParamDefaultClauseWithoutValue: a parameter's default clause can be
-// there without its value, as an error-recovered `x int = ` may leave it and
-// galop's converter carries it to the native tree. Only a clean parse is
-// transformed, and on its tree a default clause always has its value, so
-// reading such a clause is a missing required node: readParamsNative, and the
-// nested-function hint's respelling of the signature (lambdaSignatureOf),
-// fail rather than read the parameter as one without a default, and the
-// transform reports the failure as an internal error (GALA-E0017), not a
-// parameter lowered as if it had no default. The tree is a clean parse's,
-// cut before its native tree converts.
+// there without its value, as an error-recovered `x int = ` may leave it.
+// Only a clean parse is transformed, and on its tree a default clause always
+// has its value, so reading such a clause is a missing required node:
+// readParamsNative, and the nested-function hint's respelling of the
+// signature (lambdaSignatureOf), fail rather than read the parameter as one
+// without a default, and the transform reports the failure as an internal
+// error (GALA-E0017), not a parameter lowered as if it had no default. The
+// tree is a clean parse's, its clause cut.
 func TestParamDefaultClauseWithoutValue(t *testing.T) {
 	const src = "package main\n\nfunc f(x int = 1) int = x\n"
-	// The cut is made on ANTLR's tree, which only ANTLR's engine gives a
-	// clean parse.
-	parser.RequestEngine(string(parser.EngineANTLR))
-	t.Cleanup(func() { parser.RequestEngine("") })
 	parsed := transpiler.NewAntlrGalaParser().ParseFile(src)
-	tree, err := parsed.Tree, parsed.Err()
-	require.NoError(t, err)
-	clause := firstParamDefault(tree)
-	require.NotNil(t, clause, "no default clause")
-	// Drop the clause's value, keeping its `=`.
-	clause.RemoveLastChild()
-	require.Nil(t, clause.Expression(), "the default clause keeps its value")
-	require.False(t, parsed.Native.Converted(), "the native tree converted before the cut")
+	require.NoError(t, parsed.Err())
 	ntree, err := parsed.Native.Tree()
 	require.NoError(t, err)
+	var clause native.ParamDefaultNode
+	for i := range ntree.Nodes {
+		if n := ntree.Node(i); n.Kind() == native.GalaKIND_paramDefault {
+			clause = native.ParamDefaultNode{GalaNodeRef: n}
+			break
+		}
+	}
+	require.True(t, clause.Ok(), "no default clause")
+	// Drop the clause's value, its last child, keeping its `=`.
+	ntree.Nodes[clause.Index()].NKids--
+	require.False(t, clause.Expression().Ok(), "the default clause keeps its value")
 	var sig native.SignatureNode
 	for i := range ntree.Nodes {
 		if n := ntree.Node(i); n.Kind() == native.GalaKIND_signature {
@@ -73,18 +69,4 @@ func TestParamDefaultClauseWithoutValue(t *testing.T) {
 	var semErr *galaerr.SemanticError
 	require.True(t, errors.As(err, &semErr), "the transform gave %v, not a semantic error", err)
 	assert.Equal(t, galaerr.CodeInternalTransformerPanic, semErr.Code)
-}
-
-// firstParamDefault is the first parameter default clause of tree, nil when
-// it has none.
-func firstParamDefault(tree antlr.Tree) *grammar.ParamDefaultContext {
-	if clause, ok := tree.(*grammar.ParamDefaultContext); ok {
-		return clause
-	}
-	for _, kid := range tree.GetChildren() {
-		if clause := firstParamDefault(kid); clause != nil {
-			return clause
-		}
-	}
-	return nil
 }

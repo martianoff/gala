@@ -2,7 +2,6 @@ package nativewalk
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"martianoff/gala/internal/parser"
@@ -10,12 +9,6 @@ import (
 	"martianoff/gala/internal/testcorpus"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
-
-// TestMain parses with galop's engine, whatever the build's default.
-func TestMain(m *testing.M) {
-	parser.RequestEngine(string(parser.EngineGalop))
-	os.Exit(m.Run())
-}
 
 // recorder writes down everything a walk reports, in order: each reference
 // with its site and use, and each call of the EnterFunctionScope hook.
