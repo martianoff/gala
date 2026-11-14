@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 150
+        "end": 144
       },
       "path": "examples/tco_factorial.gala",
       "package": "main",
@@ -17,18 +17,19 @@
           "pos": {
             "line": 3,
             "col": 1,
-            "off": 16,
-            "end": 99
+            "off": 14,
+            "end": 97
           },
           "name": "factorial",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 3,
                 "col": 16,
-                "off": 31,
-                "end": 36
+                "off": 29,
+                "end": 34
               },
               "name": "n",
               "type": {
@@ -36,8 +37,8 @@
                 "pos": {
                   "line": 3,
                   "col": 18,
-                  "off": 33,
-                  "end": 36
+                  "off": 31,
+                  "end": 34
                 },
                 "name": "int"
               },
@@ -48,8 +49,8 @@
               "pos": {
                 "line": 3,
                 "col": 23,
-                "off": 38,
-                "end": 45
+                "off": 36,
+                "end": 43
               },
               "name": "acc",
               "type": {
@@ -57,8 +58,8 @@
                 "pos": {
                   "line": 3,
                   "col": 27,
-                  "off": 42,
-                  "end": 45
+                  "off": 40,
+                  "end": 43
                 },
                 "name": "int"
               },
@@ -70,8 +71,8 @@
             "pos": {
               "line": 3,
               "col": 32,
-              "off": 47,
-              "end": 50
+              "off": 45,
+              "end": 48
             },
             "name": "int"
           },
@@ -80,16 +81,16 @@
             "pos": {
               "line": 3,
               "col": 38,
-              "off": 53,
-              "end": 99
+              "off": 51,
+              "end": 97
             },
             "cond": {
               "kind": "binary",
               "pos": {
                 "line": 3,
                 "col": 42,
-                "off": 57,
-                "end": 63
+                "off": 55,
+                "end": 61
               },
               "op": "<=",
               "left": {
@@ -97,8 +98,8 @@
                 "pos": {
                   "line": 3,
                   "col": 42,
-                  "off": 57,
-                  "end": 58
+                  "off": 55,
+                  "end": 56
                 },
                 "name": "n"
               },
@@ -107,8 +108,8 @@
                 "pos": {
                   "line": 3,
                   "col": 47,
-                  "off": 62,
-                  "end": 63
+                  "off": 60,
+                  "end": 61
                 },
                 "text": "0",
                 "hint": {
@@ -121,8 +122,8 @@
               "pos": {
                 "line": 3,
                 "col": 50,
-                "off": 65,
-                "end": 68
+                "off": 63,
+                "end": 66
               },
               "name": "acc"
             },
@@ -131,16 +132,16 @@
               "pos": {
                 "line": 3,
                 "col": 59,
-                "off": 74,
-                "end": 99
+                "off": 72,
+                "end": 97
               },
               "callee": {
                 "kind": "name",
                 "pos": {
                   "line": 3,
                   "col": 59,
-                  "off": 74,
-                  "end": 83
+                  "off": 72,
+                  "end": 81
                 },
                 "name": "factorial"
               },
@@ -150,8 +151,8 @@
                   "pos": {
                     "line": 3,
                     "col": 69,
-                    "off": 84,
-                    "end": 89
+                    "off": 82,
+                    "end": 87
                   },
                   "op": "-",
                   "left": {
@@ -159,8 +160,8 @@
                     "pos": {
                       "line": 3,
                       "col": 69,
-                      "off": 84,
-                      "end": 85
+                      "off": 82,
+                      "end": 83
                     },
                     "name": "n"
                   },
@@ -169,8 +170,8 @@
                     "pos": {
                       "line": 3,
                       "col": 73,
-                      "off": 88,
-                      "end": 89
+                      "off": 86,
+                      "end": 87
                     },
                     "text": "1",
                     "hint": {
@@ -183,8 +184,8 @@
                   "pos": {
                     "line": 3,
                     "col": 76,
-                    "off": 91,
-                    "end": 98
+                    "off": 89,
+                    "end": 96
                   },
                   "op": "*",
                   "left": {
@@ -192,8 +193,8 @@
                     "pos": {
                       "line": 3,
                       "col": 76,
-                      "off": 91,
-                      "end": 92
+                      "off": 89,
+                      "end": 90
                     },
                     "name": "n"
                   },
@@ -202,8 +203,8 @@
                     "pos": {
                       "line": 3,
                       "col": 80,
-                      "off": 95,
-                      "end": 98
+                      "off": 93,
+                      "end": 96
                     },
                     "name": "acc"
                   }
@@ -217,10 +218,11 @@
           "pos": {
             "line": 5,
             "col": 1,
-            "off": 103,
-            "end": 150
+            "off": 99,
+            "end": 144
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -228,8 +230,8 @@
             "pos": {
               "line": 5,
               "col": 13,
-              "off": 115,
-              "end": 150
+              "off": 111,
+              "end": 144
             },
             "stmts": [
               {
@@ -237,16 +239,16 @@
                 "pos": {
                   "line": 6,
                   "col": 5,
-                  "off": 122,
-                  "end": 147
+                  "off": 117,
+                  "end": 142
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 6,
                     "col": 5,
-                    "off": 122,
-                    "end": 129
+                    "off": 117,
+                    "end": 124
                   },
                   "name": "Println"
                 },
@@ -256,16 +258,16 @@
                     "pos": {
                       "line": 6,
                       "col": 13,
-                      "off": 130,
-                      "end": 146
+                      "off": 125,
+                      "end": 141
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 6,
                         "col": 13,
-                        "off": 130,
-                        "end": 139
+                        "off": 125,
+                        "end": 134
                       },
                       "name": "factorial"
                     },
@@ -275,8 +277,8 @@
                         "pos": {
                           "line": 6,
                           "col": 23,
-                          "off": 140,
-                          "end": 142
+                          "off": 135,
+                          "end": 137
                         },
                         "text": "10",
                         "hint": {
@@ -288,8 +290,8 @@
                         "pos": {
                           "line": 6,
                           "col": 27,
-                          "off": 144,
-                          "end": 145
+                          "off": 139,
+                          "end": 140
                         },
                         "text": "1",
                         "hint": {

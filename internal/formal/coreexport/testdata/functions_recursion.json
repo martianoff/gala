@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 71
           },
           "name": "fact",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -193,6 +194,7 @@
             "end": 169
           },
           "name": "fib",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -447,6 +449,7 @@
             "end": 216
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

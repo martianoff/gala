@@ -1,0 +1,92 @@
+package main
+
+struct Counter(var N int, Name string)
+
+func (c Counter) Get() int = c.N
+
+func (c Counter) Describe(prefix string = "n") string = s"$prefix=${c.N}"
+
+func (c *Counter) Add(by int) int {
+    c.N = c.N + by
+    c.N
+}
+
+func (c Counter) Scaled(k int, by int = k * c.N) int = by
+
+func (c *Counter) AddTimes(by int, times int = 2) {
+    c.N = c.N + by * times
+}
+
+func (c *Counter) Bump() int {
+    c.N = c.N + 1
+    c.N
+}
+
+func (c *Counter) Reset() {
+    if c.N < 0 {
+        return
+    }
+    c.N = 0
+}
+
+func (c *Counter) AddTwice(by int) {
+    c.Add(by)
+    c.Add(by)
+}
+
+type Pair struct {
+    var Left Counter
+    var Right Counter
+}
+
+sealed type Tree {
+    case Leaf(V int)
+    case Node(L Tree, R Tree)
+}
+
+func (t Tree) Sum() int = t match {
+    case Leaf(v) => v
+    case Node(l, r) => l.Sum() + r.Sum()
+}
+
+
+
+func note(v int) int {
+    Println(s"note $v")
+    v
+}
+
+func main() {
+    var c = Counter(1, "c")
+    c.Add(2)
+    val after = c.Add(3)
+    Println(after, c.Get(), c.Describe(), c.Describe(prefix = "count"))
+    c.AddTwice(10)
+    Println(c.N)
+    c.Reset()
+    Println(c.Get())
+    var p = Pair(Counter(0, "l"), Counter(7, "r"))
+    p.Left.Add(4)
+    p.Right.Reset()
+    Println(p.Left.N, p.Right.N)
+    val t = Node(Leaf(1), Node(Leaf(2), Leaf(3)))
+    Println(t.Sum())
+    val d = c.Copy(N = 42)
+    Println(d.N, d.Name, c.Equal(d), d.Equal(c.Copy(N = 42)))
+    val by = 100
+    val k = 7
+    var e = Counter(3, "e")
+    e.AddTimes(1)
+    Println(e.N, e.Scaled(2), by, k)
+    var times = Counter(1, "t")
+    times.AddTimes(5)
+    Println(times.N)
+    var x = Counter(10, "x")
+    x.AddTimes(x.Bump())
+    Println(x.N)
+    p.Left.AddTimes(p.Left.Bump())
+    Println(p.Left.N)
+    var y = Counter(1, "y")
+    y.AddTimes(note(y.N), y.Bump())
+    Println(y.N)
+}

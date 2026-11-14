@@ -412,6 +412,42 @@ func (g *gen) globalType(gv *globalVar) string {
 	return ""
 }
 
+// galaType is the GALA type whose Lean type is t, for the types a name
+// spells (int, string, bool, the program's structs and sealed types); nil
+// for any other.
+func (g *gen) galaType(t string) coreexport.Node {
+	switch t {
+	case "Int64":
+		return &coreexport.TypeName{Name: "int"}
+	case "String":
+		return &coreexport.TypeName{Name: "string"}
+	case "Bool":
+		return &coreexport.TypeName{Name: "bool"}
+	}
+	if n := g.typeByLean(t); n != "" {
+		return &coreexport.TypeName{Name: n}
+	}
+	return nil
+}
+
+// typeByLean is the program's struct or sealed type whose Lean name is t,
+// "" for none.
+func (g *gen) typeByLean(t string) string {
+	if g.leanNames == nil {
+		g.leanNames = map[string]string{}
+		for _, n := range g.typeNames {
+			g.leanNames[ident(n)] = n
+		}
+	}
+	return g.leanNames[t]
+}
+
+// optTypeSafe is the Lean type of optional type t, "" when absent or
+// outside the subset.
+func (g *gen) optTypeSafe(t coreexport.Node) string {
+	return g.safeType(func() string { return g.optType(t) })
+}
+
 // typeOf is exprType of e in sc, where plain to see.
 func (g *gen) typeOf(e coreexport.Node, sc *scope) string {
 	return g.exprType(e, sc, map[string]bool{})
@@ -425,10 +461,7 @@ func (g *gen) declared(x string) bool {
 // fieldByType is field name of the struct or sealed type whose Lean name is
 // t, or nil.
 func (g *gen) fieldByType(t, name string) *coreexport.Field {
-	for _, n := range g.typeNames {
-		if ident(n) != t {
-			continue
-		}
+	if n := g.typeByLean(t); n != "" {
 		for _, f := range g.typeFields(n) {
 			if f.Name == name {
 				return f
@@ -495,6 +528,18 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 	case *coreexport.Lambda:
 		return g.lambdaType(e, sc)
 	case *coreexport.Call:
+		if s, isSel := e.Callee.(*coreexport.Select); isSel {
+			// A method: its declared result, or a generated Copy or Equal.
+			if f, _ := g.methodOf(s.Target, s.Name, sc, seen); f != nil {
+				return g.safeType(func() string { return g.leanType(f.Result) })
+			}
+			switch s.Name {
+			case "Copy":
+				return g.exprType(s.Target, sc, seen)
+			case "Equal":
+				return "Bool"
+			}
+		}
 		n, ok := e.Callee.(*coreexport.Name)
 		if !ok || sc != nil && sc.lookup(n.Name) != nil {
 			// A function value: the result of its type.

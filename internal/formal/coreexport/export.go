@@ -224,15 +224,15 @@ func (e *exporter) varDecl(v native.VarDeclarationNode) Node {
 }
 
 func (e *exporter) function(f native.FunctionDeclarationNode) Node {
-	switch {
-	case f.Receiver().Ok():
-		return e.unsupported(UnsupportedMethod, f.GalaNodeRef)
-	case f.TypeParameters().Ok():
+	if f.TypeParameters().Ok() {
 		return e.unsupported(UnsupportedGenericDecl, f.GalaNodeRef)
 	}
 	sig := f.Signature()
 	fn := of(e, &Func{Name: f.Identifier().GetText(),
 		Params: mapNodes(sig.Parameters().ParameterList().AllParameter(), e.param)}, f.GalaNodeRef)
+	if r := f.Receiver(); r.Ok() {
+		fn.Receiver = e.receiver(r)
+	}
 	switch {
 	case sig.GoResults().Ok():
 		fn.Result = e.unsupported(UnsupportedGoResults, sig.GoResults().GalaNodeRef)
@@ -245,6 +245,23 @@ func (e *exporter) function(f native.FunctionDeclarationNode) Node {
 		fn.Body = e.expr(f.Expression().GalaNodeRef)
 	}
 	return fn
+}
+
+// receiver is a method's receiver: `(c T)`, or `(c *T)` with Pointer set.
+// Any other receiver type (a generic one, `Ptr[T]`) is exported as that
+// type, unsupported.
+func (e *exporter) receiver(r native.ReceiverNode) Node {
+	if r.VAL().Ok() || r.VAR().Ok() {
+		return e.unsupported(UnsupportedParamModifier, r.GalaNodeRef)
+	}
+	t := r.Type_()
+	rec := &Receiver{Name: r.Identifier().GetText()}
+	if firstToken(t.GalaNodeRef) == "*" {
+		rec.Pointer = true
+		t = t.Type_(0)
+	}
+	rec.Type = e.typ(t)
+	return of(e, rec, r.GalaNodeRef)
 }
 
 // unsupportedParam is what makes p, a function parameter or a shorthand

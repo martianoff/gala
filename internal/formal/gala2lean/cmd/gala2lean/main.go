@@ -69,24 +69,36 @@ func main() {
 }
 
 // printStats prints one line: the functions and methods declared, and how
-// many of them gala2lean translates (a method never is: Core JSON leaves
-// methods out).
+// many of them gala2lean translates. A function's report names it by its
+// name, a method's by Type.method. A generic function is outside Core JSON
+// and not counted (an unsupported node does not say whether it is a
+// function or a type).
 func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed bool) {
-	funcs, methods := 0, 0
+	funcs, methods, opaque := 0, 0, 0
 	names := map[string]bool{}
 	for _, f := range doc.Files {
 		for _, d := range f.Decls {
-			switch d := d.(type) {
-			case *coreexport.Func:
-				funcs++
-				names[d.Name] = true
-			case *coreexport.Unsupported:
-				// A generic declaration may be a type, so only methods
-				// count.
-				if d.What == "method" {
-					methods++
-				}
+			d, ok := d.(*coreexport.Func)
+			if !ok {
+				continue
 			}
+			funcs++
+			key := d.Name
+			if d.Receiver != nil {
+				methods++
+				r, _ := d.Receiver.(*coreexport.Receiver)
+				var t *coreexport.TypeName
+				if r != nil {
+					t, _ = r.Type.(*coreexport.TypeName)
+				}
+				if t == nil {
+					// A receiver outside the subset: never translated.
+					opaque++
+					continue
+				}
+				key = t.Name + "." + d.Name
+			}
+			names[key] = true
 		}
 	}
 	untranslated := map[string]bool{}
@@ -97,7 +109,7 @@ func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed b
 			}
 		}
 	}
-	fmt.Printf("functions %d translated %d methods %d\n", funcs+methods, funcs-len(untranslated), methods)
+	fmt.Printf("functions %d translated %d methods %d\n", funcs, funcs-len(untranslated), methods)
 }
 
 func fail(err error) {

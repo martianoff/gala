@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 59
           },
           "name": "apply",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -137,6 +138,7 @@
             "end": 126
           },
           "name": "adder",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -285,6 +287,7 @@
             "end": 357
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

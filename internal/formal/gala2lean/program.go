@@ -31,6 +31,20 @@ type gen struct {
 	hasMethods bool
 	// library is Options.Library.
 	library bool
+	// methods are the methods by receiver type and name; byKey every
+	// function and method by key (key); methodsNamed the keys of the
+	// methods of each name. customString and customEqual are the types
+	// with a String or Equal method of their own, which decide how their
+	// values print or compare.
+	methods                   map[string]map[string]*coreexport.Func
+	byKey                     map[string]*coreexport.Func
+	methodsNamed              map[string][]string
+	customString, customEqual map[string]bool
+	// stringHolders and equalHolders cache the types holding a type with
+	// its own String or Equal (customCheck).
+	stringHolders, equalHolders map[string]bool
+	// leanNames maps a type's Lean name to its GALA name (typeByLean).
+	leanNames map[string]string
 	// refsOf caches funcRefs, by function name.
 	refsOf map[string]map[string]bool
 	// noBEq is the types holding a function, which do not compare;
@@ -66,11 +80,12 @@ type variantInfo struct {
 
 // globalVar is one name a package-level val or var declares.
 type globalVar struct {
-	name  string
-	value coreexport.Node // its initializer, nil for none
-	typ   coreexport.Node // its declared type, nil for none
-	pos   coreexport.Pos
-	leanT string // its Lean type, once known
+	name    string
+	value   coreexport.Node // its initializer, nil for none
+	typ     coreexport.Node // its declared type, nil for none
+	pos     coreexport.Pos
+	leanT   string // its Lean type, once known
+	mutable bool   // a var, not a val
 }
 
 type fnCtx struct {
@@ -86,6 +101,11 @@ func newGen() *gen {
 		globalBy:      map[string]*globalVar{},
 		selected:      map[string]bool{},
 		refsOf:        map[string]map[string]bool{},
+		methods:       map[string]map[string]*coreexport.Func{},
+		byKey:         map[string]*coreexport.Func{},
+		methodsNamed:  map[string][]string{},
+		customString:  map[string]bool{},
+		customEqual:   map[string]bool{},
 		noBEq:         map[string]bool{},
 		unprintable:   map[string]bool{},
 		inDefault:     map[string]bool{},
@@ -128,12 +148,17 @@ func (g *gen) collect(p *coreexport.Program) {
 					g.variants[v.Name] = &variantInfo{sealed: d, v: v, fields: fieldsOf(v.Fields)}
 				}
 			case *coreexport.Func:
+				if d.Receiver != nil {
+					g.addMethod(d)
+					continue
+				}
 				g.funcs[d.Name] = d
+				g.byKey[d.Name] = d
 				g.funcOrder = append(g.funcOrder, d)
 			case *coreexport.Val:
-				g.addGlobal(d.Names, d.Destructure, d.Type, d.Values, d.Pos)
+				g.addGlobal(false, d.Names, d.Destructure, d.Type, d.Values, d.Pos)
 			case *coreexport.Var:
-				g.addGlobal(d.Names, d.Destructure, d.Type, d.Values, d.Pos)
+				g.addGlobal(true, d.Names, d.Destructure, d.Type, d.Values, d.Pos)
 			default:
 				g.unsup = append(g.unsup, Unsupported{Construct: "top-level-" + d.Kind()})
 			}
@@ -186,7 +211,7 @@ func (g *gen) unsupNode(decl string, n coreexport.Node) {
 	g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: what, Pos: pos})
 }
 
-func (g *gen) addGlobal(names []string, destructure bool, typ coreexport.Node, values []coreexport.Node, pos coreexport.Pos) {
+func (g *gen) addGlobal(mutable bool, names []string, destructure bool, typ coreexport.Node, values []coreexport.Node, pos coreexport.Pos) {
 	if destructure {
 		g.unsup = append(g.unsup, Unsupported{Decl: strings.Join(names, ", "), Construct: "global-destructure", Pos: pos})
 		return
@@ -196,7 +221,7 @@ func (g *gen) addGlobal(names []string, destructure bool, typ coreexport.Node, v
 		return
 	}
 	for i, n := range names {
-		gv := &globalVar{name: n, typ: typ, pos: pos}
+		gv := &globalVar{name: n, typ: typ, pos: pos, mutable: mutable}
 		if len(values) > 0 {
 			gv.value = values[i]
 		}
@@ -261,8 +286,8 @@ func (g *gen) emitProgram(opts Options) {
 		var grp []fnOut
 		for _, f := range scc {
 			var code string
-			if g.guard(f.Name, func() { code = g.funcDecl(f, rec) }) {
-				grp = append(grp, fnOut{f.Name, code, rec})
+			if g.guard(g.key(f), func() { code = g.funcOrMethodDecl(f, rec) }) {
+				grp = append(grp, fnOut{g.key(f), code, rec})
 			} else {
 				ok = false
 			}
@@ -349,35 +374,13 @@ func (g *gen) initDecl(order []*globalVar) string {
 // funcDecl is the definition of one top-level function.
 func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 	sc := newScope(nil, 0)
-	var ps []string
-	for _, pn := range f.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok {
-			unsupAt(pn)
-		}
-		if p.Type == nil {
-			unsup(p.Pos, "untyped-param")
-		}
-		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
-		sc.bind(p.Name, false, g.leanType(p.Type)).gtype = p.Type
-	}
+	ps := g.params(f, sc)
 	res := "Unit"
 	if f.Result != nil {
 		res = g.leanType(f.Result)
 	}
 	g.fn = &fnCtx{result: res}
-	var body string
-	if b, ok := f.Body.(*coreexport.Block); ok {
-		body = indentLines(g.fnBlock(b, sc), 2)
-	} else {
-		if res == "Unit" {
-			// A function without a result type runs its expression body as
-			// a statement.
-			body = indentLines(g.unitItems(f.Body, sc), 2)
-		} else {
-			body = indentLines(g.valueItems(f.Body, sc), 2)
-		}
-	}
+	body := indentLines(g.bodyItems(f, sc, res), 2)
 	head := "def " + ident(f.Name)
 	if len(ps) > 0 {
 		head += " " + strings.Join(ps, " ")

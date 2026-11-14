@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 116
+        "end": 107
       },
       "path": "examples/hello.gala",
       "package": "main",
@@ -17,8 +17,8 @@
           "pos": {
             "line": 3,
             "col": 1,
-            "off": 16,
-            "end": 44
+            "off": 14,
+            "end": 42
           },
           "names": [
             "message"
@@ -31,8 +31,8 @@
               "pos": {
                 "line": 3,
                 "col": 15,
-                "off": 30,
-                "end": 44
+                "off": 28,
+                "end": 42
               },
               "text": "\"Hello, GALA!\"",
               "value": "Hello, GALA!",
@@ -45,10 +45,11 @@
           "pos": {
             "line": 4,
             "col": 1,
-            "off": 46,
-            "end": 84
+            "off": 43,
+            "end": 79
           },
           "name": "test",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -56,8 +57,8 @@
             "pos": {
               "line": 4,
               "col": 13,
-              "off": 58,
-              "end": 84
+              "off": 55,
+              "end": 79
             },
             "stmts": [
               {
@@ -65,16 +66,16 @@
                 "pos": {
                   "line": 5,
                   "col": 5,
-                  "off": 65,
-                  "end": 81
+                  "off": 61,
+                  "end": 77
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 5,
                     "col": 5,
-                    "off": 65,
-                    "end": 72
+                    "off": 61,
+                    "end": 68
                   },
                   "name": "println"
                 },
@@ -84,8 +85,8 @@
                     "pos": {
                       "line": 5,
                       "col": 13,
-                      "off": 73,
-                      "end": 80
+                      "off": 69,
+                      "end": 76
                     },
                     "name": "message"
                   }
@@ -99,10 +100,11 @@
           "pos": {
             "line": 8,
             "col": 1,
-            "off": 88,
-            "end": 116
+            "off": 81,
+            "end": 107
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -110,8 +112,8 @@
             "pos": {
               "line": 8,
               "col": 13,
-              "off": 100,
-              "end": 116
+              "off": 93,
+              "end": 107
             },
             "stmts": [
               {
@@ -119,16 +121,16 @@
                 "pos": {
                   "line": 9,
                   "col": 5,
-                  "off": 107,
-                  "end": 113
+                  "off": 99,
+                  "end": 105
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 9,
                     "col": 5,
-                    "off": 107,
-                    "end": 111
+                    "off": 99,
+                    "end": 103
                   },
                   "name": "test"
                 },

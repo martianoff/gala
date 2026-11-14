@@ -136,7 +136,14 @@ galaspec models them, except as listed below):
   around it share it, as GALA's capture by reference says; a `func() T` parameter turns
   a plain argument into a thunk;
 - `Some`, `None`, `Left` and `Right`, as the prelude's `GOption` and `GEither`, with
-  their patterns (their methods are method calls, not translated yet).
+  their patterns (their methods are method calls, not translated yet);
+- methods with a value receiver `(c T)`, a plain function `T.m` taking the receiver
+  first, and with a pointer receiver `(c *T)`, by state passing: `T.m` takes the value
+  and returns its result with the updated value, which the caller writes back to the
+  `var` it called the method on, after the arguments are evaluated and the method
+  returns (a method that panics writes nothing back; no output is lost, since a panic
+  ends the run); the `Copy` (with named arguments) and `Equal` GALA generates for a
+  struct.
 
 It translates a whole program or nothing: one construct outside its subset anywhere in
 the program, even in a function `main` never calls, stops it, and is reported. Beyond
@@ -153,8 +160,14 @@ what Core JSON leaves out, it does not translate yet:
 - tuples of more than four elements; a sealed type used as a zero value without a
   default case (`sealed-zero-value`); a package-level variable whose type is not plain to
   see from its initializer (`untyped-global`); local functions and structs;
-- printing or comparing a value of a type other than `int`, `string` or `bool` in a
-  program that declares methods (`method`).
+- a call of a pointer method on a place another path can reach while the method runs
+  (a package-level `var`, a `var` a lambda captures), or a pointer method that uses its
+  receiver other than through a field or a method call (`ptr-escape`); a pointer method
+  on a value that is not a `var` (`pointer-method-on-value`); printing or comparing a
+  value of a type with its own `String` or `Equal`, or holding one (`custom-string`,
+  `custom-equal`); in a program with a method gala2lean does not see (a `Ptr[T]` or
+  generic receiver), printing or comparing anything but `int`, `string` and `bool`
+  (`method`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 
@@ -181,13 +194,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 28 | 1 | 29 | 1 |
+| AGREE | 28 | 1 | 33 | 1 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 448 | 34 | 447 | 34 |
+| UNSUPPORTED | 449 | 34 | 444 | 34 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
-Examples gala2lean translates whose Lean run agrees with Go: **29** (ratchet baseline 29).
+Examples gala2lean translates whose Lean run agrees with Go: **33** (ratchet baseline 33).
 
 ### Constructs
 
@@ -201,44 +214,45 @@ when run as Lean and compared with Go.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
-| `file` | yes | yes: 29 agree | no | translated: 30 agree |
-| `val` | yes | yes: 11 agree | no | translated: 12 agree |
-| `var` | yes | yes: 4 agree | no | translated: 5 agree |
-| `func` | yes | yes: 29 agree | no | translated: 30 agree |
-| `param` | yes | yes: 26 agree | no | translated: 25 agree |
-| `struct` | yes | yes: 3 agree | no | translated: 3 agree |
-| `field` | yes | yes: 7 agree | no | translated: 7 agree |
-| `sealed` | yes | yes: 7 agree | no | translated: 7 agree |
-| `variant` | yes | yes: 7 agree | no | translated: 7 agree |
-| `type-name` | yes | yes: 27 agree | no | translated: 26 agree |
-| `block` | yes | yes: 29 agree | no | translated: 30 agree |
+| `file` | yes | yes: 29 agree | no | translated: 34 agree |
+| `val` | yes | yes: 11 agree | no | translated: 16 agree |
+| `var` | yes | yes: 4 agree | no | translated: 6 agree |
+| `func` | yes | yes: 29 agree | no | translated: 34 agree |
+| `receiver` | not seen | no | no | translated: 2 agree |
+| `param` | yes | yes: 26 agree | no | translated: 28 agree |
+| `struct` | yes | yes: 3 agree | no | translated: 6 agree |
+| `field` | yes | yes: 7 agree | no | translated: 11 agree |
+| `sealed` | yes | yes: 7 agree | no | translated: 9 agree |
+| `variant` | yes | yes: 7 agree | no | translated: 9 agree |
+| `type-name` | yes | yes: 27 agree | no | translated: 30 agree |
+| `block` | yes | yes: 29 agree | no | translated: 34 agree |
 | `if` | yes | yes: 6 agree | no | translated: 5 agree |
 | `return` | yes | yes: 5 agree | no | translated: 5 agree |
-| `assign` | yes | yes: 4 agree | no | translated: 5 agree |
+| `assign` | yes | yes: 4 agree | no | translated: 6 agree |
 | `incdec` | not seen | no | no | not translated |
-| `int` | yes | yes: 26 agree | no | translated: 26 agree |
-| `bool` | yes | yes: 8 agree | no | translated: 7 agree |
-| `string` | yes | yes: 21 agree | no | translated: 22 agree |
-| `name` | yes | yes: 29 agree | no | translated: 30 agree |
+| `int` | yes | yes: 26 agree | no | translated: 30 agree |
+| `bool` | yes | yes: 8 agree | no | translated: 8 agree |
+| `string` | yes | yes: 21 agree | no | translated: 25 agree |
+| `name` | yes | yes: 29 agree | no | translated: 34 agree |
 | `unary` | yes | yes: 5 agree | no | translated: 6 agree |
-| `binary` | yes | yes: 22 agree | no | translated: 22 agree |
-| `call` | yes | yes: 29 agree | no | translated: 30 agree |
-| `select` | yes | yes: 4 agree | no | translated: 3 agree |
+| `binary` | yes | yes: 22 agree | no | translated: 25 agree |
+| `call` | yes | yes: 29 agree | no | translated: 34 agree |
+| `select` | yes | yes: 4 agree | no | translated: 7 agree |
 | `paren` | yes | no: 1 agree | no | not translated |
 | `tuple` | not seen | no | no | not translated |
 | `if-expr` | yes | yes: 10 agree | no | translated: 9 agree |
-| `match` | yes | yes: 13 agree | no | translated: 15 agree |
-| `case` | yes | yes: 13 agree | no | translated: 15 agree |
+| `match` | yes | yes: 13 agree | no | translated: 16 agree |
+| `case` | yes | yes: 13 agree | no | translated: 16 agree |
 | `pat-wild` | yes | yes: 7 agree | no | translated: 8 agree |
-| `pat-name` | yes | yes: 7 agree | no | translated: 10 agree |
+| `pat-name` | yes | yes: 7 agree | no | translated: 11 agree |
 | `pat-lit` | yes | yes: 7 agree | no | translated: 6 agree |
 | `pat-tuple` | not seen | no | no | not translated |
-| `pat-extract` | yes | yes: 4 agree | no | translated: 7 agree |
-| `named-arg` | yes | yes: 5 agree | no | translated: 5 agree |
+| `pat-extract` | yes | yes: 4 agree | no | translated: 8 agree |
+| `named-arg` | yes | yes: 5 agree | no | translated: 8 agree |
 | `lambda` | yes | yes: 5 agree | no | translated: 4 agree |
 | `type-func` | yes | yes: 3 agree | no | translated: 2 agree |
-| `interp` | yes | yes: 13 agree | no | translated: 15 agree |
-| `interp-text` | yes | yes: 13 agree | no | translated: 15 agree |
+| `interp` | yes | yes: 13 agree | no | translated: 17 agree |
+| `interp-text` | yes | yes: 13 agree | no | translated: 17 agree |
 
 ### Outside the subset
 
@@ -249,7 +263,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 | `import` | 132 |
 | `method-call` | 123 |
 | `index` | 72 |
-| `generic-type` | 53 |
+| `generic-type` | 54 |
 | `generic-decl` | 15 |
 | `address-of` | 12 |
 | `unresolved-name` | 9 |
@@ -269,30 +283,30 @@ The constructs galaspec stopped at, by how many programs it stopped at each (41 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (61 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (64 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `generic-type` | 147 |
+| `generic-type` | 154 |
 | `import` | 111 |
 | `index` | 46 |
-| `method-call` | 30 |
+| `method-call` | 23 |
 | `type-float64` | 13 |
 | `qualified-type` | 11 |
-| `method` | 10 |
+| `type-error` | 7 |
 | `pointer-type` | 6 |
 | `slice-type` | 6 |
 | `variadic-param` | 6 |
-| `address-of` | 5 |
-| `type-error` | 5 |
+| `address-of` | 4 |
 | `generic-decl` | 4 |
 | `local-struct` | 4 |
 | `type-any` | 4 |
+| `type-uint32` | 4 |
+| `composite-literal` | 3 |
 | `expression-pattern` | 3 |
-| `extractor-arity` | 3 |
 | `func-in-state` | 3 |
+| `method` | 3 |
 | `return-inside-expression` | 3 |
-| `type-UserID` | 3 |
 
 ### Known disagreements
 

@@ -178,6 +178,24 @@ func main() {
     })
 }
 `},
+		{"methods", `package main
+
+struct Counter(var N int)
+
+func (c Counter) Get() int = c.N
+
+func (c *Counter) Inc(by int) {
+    c.N = c.N + by
+}
+
+func (c Ptr[Counter]) Reset() { c.N = 0 }
+
+func main() {
+    var c = Counter(0)
+    c.Inc(2)
+    Println(c.Get())
+}
+`},
 		{"unsupported", `package main
 
 import "fmt"

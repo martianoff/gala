@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -196,6 +196,7 @@
             "end": 194
           },
           "name": "note",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -335,6 +336,7 @@
             "end": 241
           },
           "name": "apply",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -451,6 +453,7 @@
             "end": 305
           },
           "name": "twice",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -621,6 +624,7 @@
             "end": 337
           },
           "name": "double",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -697,6 +701,7 @@
             "end": 391
           },
           "name": "runTwice",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -800,6 +805,7 @@
             "end": 2434
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

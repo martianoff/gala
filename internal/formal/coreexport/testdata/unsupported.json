@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -31,12 +31,65 @@
           }
         },
         {
-          "unsupported": "method",
+          "kind": "func",
           "pos": {
             "line": 7,
             "col": 1,
             "off": 55,
             "end": 86
+          },
+          "name": "Norm",
+          "receiver": {
+            "kind": "receiver",
+            "pos": {
+              "line": 7,
+              "col": 6,
+              "off": 60,
+              "end": 69
+            },
+            "name": "p",
+            "type": {
+              "kind": "type-name",
+              "pos": {
+                "line": 7,
+                "col": 9,
+                "off": 63,
+                "end": 68
+              },
+              "name": "Point"
+            },
+            "pointer": false
+          },
+          "params": [],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 7,
+              "col": 23,
+              "off": 77,
+              "end": 80
+            },
+            "name": "int"
+          },
+          "body": {
+            "kind": "select",
+            "pos": {
+              "line": 7,
+              "col": 29,
+              "off": 83,
+              "end": 86
+            },
+            "target": {
+              "kind": "name",
+              "pos": {
+                "line": 7,
+                "col": 29,
+                "off": 83,
+                "end": 84
+              },
+              "name": "p"
+            },
+            "name": "X"
           }
         },
         {
@@ -48,6 +101,7 @@
             "end": 277
           },
           "name": "types",
+          "receiver": null,
           "params": [
             {
               "kind": "param",
@@ -331,6 +385,7 @@
             "end": 664
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {

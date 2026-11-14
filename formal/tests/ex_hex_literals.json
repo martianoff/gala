@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 5,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 530
+        "end": 507
       },
       "path": "examples/hex_literals.gala",
       "package": "main",
@@ -17,10 +17,11 @@
           "pos": {
             "line": 4,
             "col": 1,
-            "off": 83,
-            "end": 530
+            "off": 80,
+            "end": 507
           },
           "name": "main",
+          "receiver": null,
           "params": [],
           "result": null,
           "body": {
@@ -28,8 +29,8 @@
             "pos": {
               "line": 4,
               "col": 13,
-              "off": 95,
-              "end": 530
+              "off": 92,
+              "end": 507
             },
             "stmts": [
               {
@@ -37,8 +38,8 @@
                 "pos": {
                   "line": 5,
                   "col": 5,
-                  "off": 102,
-                  "end": 113
+                  "off": 98,
+                  "end": 109
                 },
                 "names": [
                   "a"
@@ -51,8 +52,8 @@
                     "pos": {
                       "line": 5,
                       "col": 13,
-                      "off": 110,
-                      "end": 113
+                      "off": 106,
+                      "end": 109
                     },
                     "text": "0x0",
                     "hint": {
@@ -66,8 +67,8 @@
                 "pos": {
                   "line": 6,
                   "col": 5,
-                  "off": 119,
-                  "end": 131
+                  "off": 114,
+                  "end": 126
                 },
                 "names": [
                   "b"
@@ -80,8 +81,8 @@
                     "pos": {
                       "line": 6,
                       "col": 13,
-                      "off": 127,
-                      "end": 131
+                      "off": 122,
+                      "end": 126
                     },
                     "text": "0x1F",
                     "hint": {
@@ -95,8 +96,8 @@
                 "pos": {
                   "line": 7,
                   "col": 5,
-                  "off": 137,
-                  "end": 149
+                  "off": 131,
+                  "end": 143
                 },
                 "names": [
                   "c"
@@ -109,8 +110,8 @@
                     "pos": {
                       "line": 7,
                       "col": 13,
-                      "off": 145,
-                      "end": 149
+                      "off": 139,
+                      "end": 143
                     },
                     "text": "0xFF",
                     "hint": {
@@ -124,8 +125,8 @@
                 "pos": {
                   "line": 8,
                   "col": 5,
-                  "off": 155,
-                  "end": 167
+                  "off": 148,
+                  "end": 160
                 },
                 "names": [
                   "d"
@@ -138,8 +139,8 @@
                     "pos": {
                       "line": 8,
                       "col": 13,
-                      "off": 163,
-                      "end": 167
+                      "off": 156,
+                      "end": 160
                     },
                     "text": "0X1f",
                     "hint": {
@@ -153,8 +154,8 @@
                 "pos": {
                   "line": 9,
                   "col": 5,
-                  "off": 217,
-                  "end": 235
+                  "off": 209,
+                  "end": 227
                 },
                 "names": [
                   "e"
@@ -167,8 +168,8 @@
                     "pos": {
                       "line": 9,
                       "col": 13,
-                      "off": 225,
-                      "end": 235
+                      "off": 217,
+                      "end": 227
                     },
                     "text": "0xDEADBEEF",
                     "hint": {
@@ -182,16 +183,16 @@
                 "pos": {
                   "line": 11,
                   "col": 5,
-                  "off": 270,
-                  "end": 280
+                  "off": 260,
+                  "end": 270
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 11,
                     "col": 5,
-                    "off": 270,
-                    "end": 277
+                    "off": 260,
+                    "end": 267
                   },
                   "name": "Println"
                 },
@@ -201,8 +202,8 @@
                     "pos": {
                       "line": 11,
                       "col": 13,
-                      "off": 278,
-                      "end": 279
+                      "off": 268,
+                      "end": 269
                     },
                     "name": "a"
                   }
@@ -213,16 +214,16 @@
                 "pos": {
                   "line": 12,
                   "col": 5,
-                  "off": 286,
-                  "end": 296
+                  "off": 275,
+                  "end": 285
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 12,
                     "col": 5,
-                    "off": 286,
-                    "end": 293
+                    "off": 275,
+                    "end": 282
                   },
                   "name": "Println"
                 },
@@ -232,8 +233,8 @@
                     "pos": {
                       "line": 12,
                       "col": 13,
-                      "off": 294,
-                      "end": 295
+                      "off": 283,
+                      "end": 284
                     },
                     "name": "b"
                   }
@@ -244,16 +245,16 @@
                 "pos": {
                   "line": 13,
                   "col": 5,
-                  "off": 302,
-                  "end": 312
+                  "off": 290,
+                  "end": 300
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 13,
                     "col": 5,
-                    "off": 302,
-                    "end": 309
+                    "off": 290,
+                    "end": 297
                   },
                   "name": "Println"
                 },
@@ -263,8 +264,8 @@
                     "pos": {
                       "line": 13,
                       "col": 13,
-                      "off": 310,
-                      "end": 311
+                      "off": 298,
+                      "end": 299
                     },
                     "name": "c"
                   }
@@ -275,16 +276,16 @@
                 "pos": {
                   "line": 14,
                   "col": 5,
-                  "off": 318,
-                  "end": 328
+                  "off": 305,
+                  "end": 315
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 14,
                     "col": 5,
-                    "off": 318,
-                    "end": 325
+                    "off": 305,
+                    "end": 312
                   },
                   "name": "Println"
                 },
@@ -294,8 +295,8 @@
                     "pos": {
                       "line": 14,
                       "col": 13,
-                      "off": 326,
-                      "end": 327
+                      "off": 313,
+                      "end": 314
                     },
                     "name": "d"
                   }
@@ -306,16 +307,16 @@
                 "pos": {
                   "line": 15,
                   "col": 5,
-                  "off": 334,
-                  "end": 344
+                  "off": 320,
+                  "end": 330
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 15,
                     "col": 5,
-                    "off": 334,
-                    "end": 341
+                    "off": 320,
+                    "end": 327
                   },
                   "name": "Println"
                 },
@@ -325,8 +326,8 @@
                     "pos": {
                       "line": 15,
                       "col": 13,
-                      "off": 342,
-                      "end": 343
+                      "off": 328,
+                      "end": 329
                     },
                     "name": "e"
                   }
@@ -337,8 +338,8 @@
                 "pos": {
                   "line": 18,
                   "col": 5,
-                  "off": 390,
-                  "end": 411
+                  "off": 373,
+                  "end": 394
                 },
                 "names": [
                   "sum"
@@ -351,8 +352,8 @@
                     "pos": {
                       "line": 18,
                       "col": 15,
-                      "off": 400,
-                      "end": 411
+                      "off": 383,
+                      "end": 394
                     },
                     "op": "+",
                     "left": {
@@ -360,8 +361,8 @@
                       "pos": {
                         "line": 18,
                         "col": 15,
-                        "off": 400,
-                        "end": 404
+                        "off": 383,
+                        "end": 387
                       },
                       "text": "0x10",
                       "hint": {
@@ -373,8 +374,8 @@
                       "pos": {
                         "line": 18,
                         "col": 22,
-                        "off": 407,
-                        "end": 411
+                        "off": 390,
+                        "end": 394
                       },
                       "text": "0x01",
                       "hint": {
@@ -389,16 +390,16 @@
                 "pos": {
                   "line": 19,
                   "col": 5,
-                  "off": 417,
-                  "end": 429
+                  "off": 399,
+                  "end": 411
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 19,
                     "col": 5,
-                    "off": 417,
-                    "end": 424
+                    "off": 399,
+                    "end": 406
                   },
                   "name": "Println"
                 },
@@ -408,8 +409,8 @@
                     "pos": {
                       "line": 19,
                       "col": 13,
-                      "off": 425,
-                      "end": 428
+                      "off": 407,
+                      "end": 410
                     },
                     "name": "sum"
                   }
@@ -420,8 +421,8 @@
                 "pos": {
                   "line": 22,
                   "col": 5,
-                  "off": 481,
-                  "end": 504
+                  "off": 460,
+                  "end": 483
                 },
                 "names": [
                   "match_ff"
@@ -434,8 +435,8 @@
                     "pos": {
                       "line": 22,
                       "col": 20,
-                      "off": 496,
-                      "end": 504
+                      "off": 475,
+                      "end": 483
                     },
                     "op": "==",
                     "left": {
@@ -443,8 +444,8 @@
                       "pos": {
                         "line": 22,
                         "col": 20,
-                        "off": 496,
-                        "end": 497
+                        "off": 475,
+                        "end": 476
                       },
                       "name": "c"
                     },
@@ -453,8 +454,8 @@
                       "pos": {
                         "line": 22,
                         "col": 25,
-                        "off": 501,
-                        "end": 504
+                        "off": 480,
+                        "end": 483
                       },
                       "text": "255",
                       "hint": {
@@ -469,16 +470,16 @@
                 "pos": {
                   "line": 23,
                   "col": 5,
-                  "off": 510,
-                  "end": 527
+                  "off": 488,
+                  "end": 505
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 23,
                     "col": 5,
-                    "off": 510,
-                    "end": 517
+                    "off": 488,
+                    "end": 495
                   },
                   "name": "Println"
                 },
@@ -488,8 +489,8 @@
                     "pos": {
                       "line": 23,
                       "col": 13,
-                      "off": 518,
-                      "end": 526
+                      "off": 496,
+                      "end": 504
                     },
                     "name": "match_ff"
                   }
