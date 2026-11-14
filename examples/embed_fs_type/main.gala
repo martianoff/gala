@@ -1,0 +1,25 @@
+package main
+
+// EmbeddedFS is an ordinary std type: it can be a parameter, a struct
+// field and a return type, not only the type of an `embed val`.
+
+embed val data EmbeddedFS = "data/*"
+
+struct Assets(files EmbeddedFS, prefix string)
+
+func readOr(fs EmbeddedFS, path string) string = fs.ReadString(path) match {
+    case Success(content) => content
+    case Failure(_) => s"missing: $path"
+}
+
+func assets() EmbeddedFS = data
+
+func (a Assets) read(name string) string = readOr(a.files, a.prefix + name)
+
+func main() {
+    Println(readOr(data, "data/a.txt"))
+    Println(readOr(assets(), "data/b.txt"))
+    val bundle = Assets(assets(), "data/")
+    Println(bundle.read("a.txt"))
+    Println(bundle.read("c.txt"))
+}

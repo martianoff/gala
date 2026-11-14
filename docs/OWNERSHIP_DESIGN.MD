@@ -383,7 +383,7 @@ sequenceDiagram
     C->>F: lend place p (exclusive for the call)
     Note over C: p is inaccessible to the caller<br/>and to every closure until F returns
     F->>F: read and write q.pos and q.err,<br/>reassign q, lend q further down with &q
-    F-->>C: return result; p holds the final value of q
+    F-->>C: return result, and p now holds the final value of q
     Note over G: Go: func grammar(q *parser) Grammar<br/>caller: grammar(&p). Same as Ptr code today
 ```
 
@@ -970,7 +970,8 @@ gantt
 | 2 | `inout` syntax, lowering, the five checks and their codes, docs, IDE/LSP; interop (3.5): copy-in/copy-out wrappers, the allow-list and its CI escape check, E-inout-foreign-impl | 4–5 weeks | The generated Go for existing examples is byte-identical; new examples cover each code; gala-tui's `Custom` can be written with `inout` |
 | 3 | Inferred non-escaping function parameters; `StateT` closure translation; monadic std models | 2–3 weeks | galop's `builder` translates; coverage about 76% |
 | 4 | Sendable transfer | 1–2 weeks | The `ArrayOf` example above compiles; a use after the send is E0037 with a secondary span |
-| Adoption | `gala fix` codemod; galop migrated; gala-tui only with approval | 1 week, plus gala-tui | galop at about 90% translatable |
+| Adoption | `gala fix` codemod; galop and std private code (`json`) migrated; builder redesign (Q9). gala-tui is external and not migrated (Q11) | 1–2 weeks | galop at about 90% translatable |
+| Documentation (final) | **Replace this design document** with a user-facing `docs/OWNERSHIP.MD` that explains ownership (`inout`, inferred uniqueness, Sendable transfer, Go interop guarantees) as a language feature, and add it to the GALA documentation: `docs/GALA.MD`, the website mirror and its navigation, `docs/GO_INTEROP.MD`, error pages. Delete `docs/OWNERSHIP_DESIGN.MD` (keep the history in git) | 2–3 days | Every phase has shipped; users can learn the feature without reading a design doc |
 
 ## 7. Decisions
 
@@ -988,7 +989,7 @@ The maintainer answered the open questions below on 2026-11-13. Phase 1 is appro
 | Q8 | **Interfaces may declare `inout` method requirements**, lowered to pointer-receiver method-set requirements in Go. |
 | Q9 | **Std's fluent builders (`StringBuilder`, …) will be redesigned** in the `inout`/value style when phase 2 lands. Breaking; approved. |
 | Q10 | Projections (`inout` pattern bindings, `inout` locals) are out of scope. |
-| Q11 | gala-tui's public `*Buffer` API stays as is. Ask again after phase 2. |
+| Q11 | **gala-tui is treated as an external project.** It must keep building against gala (its downstream CI lane stays green, with release-compatible fixes only), but it is not migrated to `inout` and its `*Buffer` API stays as is. Revisit only if the maintainer asks. |
 | Q12 | A galaspec heap model and theorem T8 are a **stretch goal of phase 1**. |
 | Q13 | GALA callers in other packages **call the body directly**. It is exported under a reserved generated name, consistent with [GALA-E0097](errors/GALA-E0097.md). Only Go goes through the copy-in/copy-out wrapper. The spelling is decided in Q18. |
 | Q14 | On a panic the **copy-back is skipped**: a Go caller that recovers sees its value unchanged (all-or-nothing). |

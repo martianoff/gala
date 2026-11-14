@@ -1,0 +1,12 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test")
+
+# The elements of a spread argument to Println and Print print with a
+# pointer-receiver String, as the same values passed one by one do. Its own
+# package: a spread to Println needs a []any, and the single-file corpus
+# exempts a file that names `any` from the type-erasure check.
+gala_exec_test(
+    name = "pointer_string_spread",
+    src = "main.gala",
+    expected = "main.out",
+    deps = ["//go_interop"],
+)

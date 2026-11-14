@@ -481,6 +481,22 @@ func TestExpressionCheckedNativeMatchesANTLR(t *testing.T) {
 // expressions, converted to galop's native form with its token positions,
 // and fails with ANTLR's error where ANTLR's parser does.
 func TestParseExpressionCheckedAtConvertsANTLR(t *testing.T) {
+	t.Run("invalid UTF-8", func(t *testing.T) {
+		// ANTLR reads a byte of no valid encoding as U+FFFD, and so does the
+		// converted tree, whose token text indexes ANTLR's decoded text.
+		withEngine(EngineANTLR, func() {
+			for _, src := range []string{"'\xe2'", "\"a\xe2b\"", "f(\"\xff\", x)"} {
+				want, _, wantErr := antlrExpressionAtChecked(src, 1, 0, "test expression")
+				got, _, err := ParseExpressionCheckedAt(src, 1, 0, "test expression")
+				if wantErr != nil || err != nil {
+					t.Fatalf("%q: ANTLR error %v, converted error %v", src, wantErr, err)
+				}
+				if w, g := treeText(want), got.ToStringTree(); w != g {
+					t.Errorf("%q: trees differ:\n ANTLR %q\n converted %q", src, w, g)
+				}
+			}
+		})
+	})
 	samples := corpusExpressions(t)
 	withEngine(EngineANTLR, func() {
 		for _, s := range samples {

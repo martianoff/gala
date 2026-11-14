@@ -666,6 +666,29 @@ func Printed(v any) any {
 	return printed(reflect.ValueOf(v), v)
 }
 
+// PrintedEach is vs with each element as Printed gives it: the operands a
+// spread argument `Println(xs...)` passes print as the same operands passed
+// one by one would. vs itself is not changed: it is copied only once an
+// element prints otherwise than as itself, and returned as is when none does.
+func PrintedEach(vs []any) []any {
+	var out []any
+	for i, v := range vs {
+		p := Printed(v)
+		_, was := v.(shown)
+		if _, now := p.(shown); now && !was && out == nil {
+			out = make([]any, len(vs))
+			copy(out, vs[:i])
+		}
+		if out != nil {
+			out[i] = p
+		}
+	}
+	if out == nil {
+		return vs
+	}
+	return out
+}
+
 // printed is Printed(f), for f's reflect.Value v.
 func printed(v reflect.Value, f any) any {
 	if s, ok := pointerString(v); ok {

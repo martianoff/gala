@@ -32,8 +32,8 @@ examples/local_function_lambda.gala: unclosed call	085d1fd94e8f80eb	656eaf2324c1
 examples/match_stmt_true_dangle.gala: half-typed declaration	3a6c3ca2c56ce85d	54737337d478dc37
 examples/match_stmt_true_dangle.gala: member being typed	ce48222291036438	fde64019904987b2
 examples/match_stmt_true_dangle.gala: truncated	58dcb1ba5456131f	2d3b644da66308c4
-examples/match_stmt_true_dangle.gala: unclosed call	db6b159a02e0ed89	d3d81dd3b32e0c30
-examples/sourcemap_imports_demo.gala: unclosed call	ec39e3dc68c13ac0	22a580a5a681c918
+examples/match_stmt_true_dangle.gala: unclosed call	db6b159a02e0ed89	b1018857855b99cb
+examples/sourcemap_imports_demo.gala: unclosed call	ec39e3dc68c13ac0	6e8b31d20c669323
 examples/struct_field_defaults.gala: member being typed	79914670814b7ef0	bbbf881ea96ea0ac
 examples/struct_field_defaults.gala: truncated	7dbb061c634cec70	1c5b90f29a1866da
 examples/struct_field_defaults.gala: unclosed call	cfab5b63ada2c751	83e4b2ff20425b10
