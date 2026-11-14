@@ -988,7 +988,7 @@ The maintainer answered the open questions below on 2026-11-13. Phase 1 is appro
 | Q8 | **Interfaces may declare `inout` method requirements**, lowered to pointer-receiver method-set requirements in Go. |
 | Q9 | **Std's fluent builders (`StringBuilder`, …) will be redesigned** in the `inout`/value style when phase 2 lands. Breaking; approved. |
 | Q10 | Projections (`inout` pattern bindings, `inout` locals) are out of scope. |
-| Q11 | gala-tui's public `*Buffer` API stays as is. Ask again after phase 2. |
+| Q11 | **gala-tui is treated as an external project.** It must keep building against gala (its downstream CI lane stays green, with release-compatible fixes only), but it is not migrated to `inout` and its `*Buffer` API stays as is. Revisit only if the maintainer asks. |
 | Q12 | A galaspec heap model and theorem T8 are a **stretch goal of phase 1**. |
 | Q13 | GALA callers in other packages **call the body directly**. It is exported under a reserved generated name, consistent with [GALA-E0097](errors/GALA-E0097.md). Only Go goes through the copy-in/copy-out wrapper. The spelling is decided in Q18. |
 | Q14 | On a panic the **copy-back is skipped**: a Go caller that recovers sees its value unchanged (all-or-nothing). |
