@@ -207,7 +207,12 @@ import (
 // v43: a Go type alias whose target go/types could not load (a package of
 // the GALA module, `type ExecutionContext = go_interop.ExecutionContext`)
 // records the target as written. A v42 payload records it as unresolved.
-const CacheVersion = "v43"
+//
+// v44: a function or method that takes or returns a pointer records its
+// ownership borrow summary (FunctionMetadata/MethodMetadata.Borrow). A v43
+// payload lacks it, so a caller in another package would see every pointer
+// it lends to that function as escaping.
+const CacheVersion = "v44"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
