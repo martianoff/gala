@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ownership",
+    srcs = [
+        "gofiles.go",
+        "ownership.go",
+        "package.go",
+        "resolve.go",
+        "shape.go",
+        "walk.go",
+    ],
+    importpath = "martianoff/gala/internal/transpiler/ownership",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/interpolation",
+        "//internal/parser",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+        "//internal/transpiler",
+        "//internal/transpiler/genheader",
+    ],
+)
+
+go_test(
+    name = "ownership_test",
+    srcs = ["ownership_test.go"],
+    data = [
+        "//collection_immutable:gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//std:gala_sources",
+    ],
+    deps = [
+        ":ownership",
+        "//internal/parser",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)

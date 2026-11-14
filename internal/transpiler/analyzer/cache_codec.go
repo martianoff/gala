@@ -356,6 +356,22 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.GoDeclared)
 	e.writeBool(m.OfTypeDecl)
 	e.writeTypeSlice(m.GoResults)
+	e.writeBorrowSummary(m.Borrow)
+}
+
+// writeBorrowSummary emits an optional BorrowSummary.
+func (e *encoder) writeBorrowSummary(s *transpiler.BorrowSummary) {
+	if s == nil {
+		e.writeBool(false)
+		return
+	}
+	e.writeBool(true)
+	e.writeBool(s.ReceiverBorrowed)
+	e.writeBool(s.ReturnsFresh)
+	e.writeUvarint(uint64(len(s.BorrowedParams)))
+	for _, b := range s.BorrowedParams {
+		e.writeBool(b)
+	}
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -441,6 +457,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeString(f.DefinedIn)
 	e.writeBool(f.Variadic)
 	e.writeTypeSlice(f.GoResults)
+	e.writeBorrowSummary(f.Borrow)
 }
 
 func (e *encoder) writeStringFuncMetaMap(m map[string]*transpiler.FunctionMetadata) {
@@ -901,7 +918,21 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.GoDeclared = d.readBool()
 	m.OfTypeDecl = d.readBool()
 	m.GoResults = d.readTypeSlice()
+	m.Borrow = d.readBorrowSummary()
 	return m
+}
+
+// readBorrowSummary reads what writeBorrowSummary wrote.
+func (d *decoder) readBorrowSummary() *transpiler.BorrowSummary {
+	if !d.readBool() {
+		return nil
+	}
+	s := &transpiler.BorrowSummary{ReceiverBorrowed: d.readBool(), ReturnsFresh: d.readBool()}
+	n := d.readUvarint()
+	for i := uint64(0); i < n && d.err == nil; i++ {
+		s.BorrowedParams = append(s.BorrowedParams, d.readBool())
+	}
+	return s
 }
 
 func (d *decoder) readStringMethodMap() map[string]*transpiler.MethodMetadata {
@@ -998,6 +1029,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f.DefinedIn = d.readString()
 	f.Variadic = d.readBool()
 	f.GoResults = d.readTypeSlice()
+	f.Borrow = d.readBorrowSummary()
 	return f
 }
 

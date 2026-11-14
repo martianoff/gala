@@ -762,6 +762,10 @@ type MethodMetadata struct {
 	// interface with type arguments (`C Iterable[T, C]`), resolved in the
 	// declaring package.
 	TypeParamConstraints map[string]Type
+	// Borrow is the ownership analysis's borrow summary of the method (see
+	// BorrowSummary); nil when it has no pointer receiver, parameter or
+	// result, or was not analyzed.
+	Borrow *BorrowSummary
 }
 
 type FunctionMetadata struct {
@@ -782,6 +786,40 @@ type FunctionMetadata struct {
 	GoResults []Type
 	// TypeParamConstraints is MethodMetadata.TypeParamConstraints.
 	TypeParamConstraints map[string]Type
+	// Borrow is MethodMetadata.Borrow.
+	Borrow *BorrowSummary
+}
+
+// BorrowSummary is what the ownership analysis (internal/transpiler/ownership,
+// docs/OWNERSHIP_DESIGN.MD section 3.1) infers about a GALA function or method
+// that takes or returns a pointer (`Ptr[T]` or `*T`). A borrowed pointer is
+// only lent downward for the duration of the call: the callee never stores
+// it, returns it, captures it in a closure, aliases it into a binding, or
+// passes it to Go or to a callee that does not borrow it. No part of the
+// transpiler reads it, so it never changes the generated Go.
+type BorrowSummary struct {
+	// ReceiverBorrowed is true for a pointer receiver that is borrowed.
+	ReceiverBorrowed bool
+	// BorrowedParams is index-aligned with the parameters: true for a pointer
+	// parameter that is borrowed, false for any other.
+	BorrowedParams []bool
+	// ReturnsFresh is true for a pointer result that is always a new
+	// allocation no other binding refers to.
+	ReturnsFresh bool
+}
+
+// ParamBorrowed reports whether parameter i is a borrowed pointer.
+func (s *BorrowSummary) ParamBorrowed(i int) bool {
+	return s != nil && i >= 0 && i < len(s.BorrowedParams) && s.BorrowedParams[i]
+}
+
+// Equal reports whether s and o are the same summary.
+func (s *BorrowSummary) Equal(o *BorrowSummary) bool {
+	if s == nil || o == nil {
+		return s == o
+	}
+	return s.ReceiverBorrowed == o.ReceiverBorrowed && s.ReturnsFresh == o.ReturnsFresh &&
+		slices.Equal(s.BorrowedParams, o.BorrowedParams)
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

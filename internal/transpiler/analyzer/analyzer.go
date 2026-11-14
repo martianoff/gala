@@ -2696,6 +2696,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		}
 	}
 	scopes.record(pkgAST, a.paths.canonical)
+	// The ownership analysis's borrow summaries, for importers (see
+	// internal/transpiler/ownership). They never change the generated Go.
+	ownershipSummaries(pkgAST, candidatePaths, entries)
 
 	// Scan .go files for exported symbols and type information.
 	// Extract GoExports unconditionally. Even in mixed GALA+Go packages

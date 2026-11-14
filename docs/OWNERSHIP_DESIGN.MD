@@ -1,6 +1,7 @@
 # Ownership: Inferred Uniqueness and `inout` Parameters
 
-Status: **proposal**, for maintainer review. Nothing here is implemented.
+Status: phase 1 (inferred uniqueness) is implemented; phases 2 to 4 are proposals, decided
+in section 7.
 Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 Related: [FORMAL_SEMANTICS.MD](FORMAL_SEMANTICS.MD), [CONCURRENCY_SAFETY.MD](CONCURRENCY_SAFETY.MD).
 
@@ -300,6 +301,18 @@ infers cover the 205 net `inout`-class functions, provided the whole call graph 
 visible. galop's `parser`, `lexer`, `builder` and `configSet` qualify entirely. Phase 1
 does not cover function values, closures, or a gala-tui widget written by a user in
 another package.
+
+**Implementation.** Phase 1 lives in `internal/transpiler/ownership`. It reads the native
+parse tree and the analyzer's metadata rather than Core JSON, because Core JSON does not
+export methods, pointers or imports. When the analyzer loads a package, it records each
+function's and method's borrow summary in the package metadata
+(`FunctionMetadata.Borrow`, `MethodMetadata.Borrow`, analysis cache v44), so a caller in
+another package reads them. No part of the transpiler reads them, and the generated Go does
+not change. At the Go boundary the analysis is conservative in both directions: any flow of
+a pointer, or of a reference inside its pointee, into Go is the escape `passed-to-go`, and
+a pointer received from Go is `from-go`, never unique. `bazel run
+//internal/formal/ownershipcov/update` writes the escape reasons for the repository's
+libraries and examples into [formal/COVERAGE.md](../formal/COVERAGE.md).
 
 ### 3.2 Phase 2: `inout` parameters
 

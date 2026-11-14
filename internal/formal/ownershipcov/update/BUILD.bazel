@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "update_lib",
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/internal/formal/ownershipcov/update",
+    visibility = ["//visibility:private"],
+    deps = ["//internal/formal/ownershipcov"],
+)
+
+# bazel run //internal/formal/ownershipcov/update rewrites the ownership
+# section of formal/COVERAGE.md.
+go_binary(
+    name = "update",
+    embed = [":update_lib"],
+    visibility = ["//visibility:public"],
+)
