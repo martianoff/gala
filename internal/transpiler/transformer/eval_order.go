@@ -65,6 +65,9 @@ const (
 	// lowering resolved it: a local binding of the same name elsewhere in
 	// the declaration does not hide it (see changeable).
 	operandPackageVar
+	// operandInoutRead is the `*x` of `(*x)`, a read of an `inout` binding x
+	// (see inout.go).
+	operandInoutRead
 )
 
 func (t *galaASTTransformer) markOperand(n ast.Node, mark operandMark) {

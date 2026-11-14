@@ -551,7 +551,7 @@ func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
 			b.WriteString(", ")
 		}
 		if i < len(meta.ParamTypes) {
-			b.WriteString(pn + " " + meta.ParamTypes[i].String())
+			b.WriteString(paramLabel(pn, meta.ParamTypes[i], meta.InoutParams, i))
 		}
 	}
 	b.WriteString(")")
@@ -563,7 +563,11 @@ func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
 // type the method belongs to.
 func formatMethodMeta(owner *transpiler.TypeMetadata, m *transpiler.MethodMetadata) string {
 	var b strings.Builder
-	b.WriteString("func (" + owner.Name + ") " + m.Name)
+	recv := owner.Name
+	if m.InoutReceiver {
+		recv = "inout " + recv
+	}
+	b.WriteString("func (" + recv + ") " + m.Name)
 	if len(m.TypeParams) > 0 {
 		b.WriteString("[" + transpiler.TypeParamList(m.TypeParams, m.TypeParamConstraints) + "]")
 	}
@@ -726,11 +730,21 @@ func localHover(richAST *transpiler.RichAST, name, typStr string) string {
 	return renderHover(name+" "+typStr, "", "") + typeDocSuffix(richAST, typStr)
 }
 
+// paramLabel renders parameter i, named name, of a signature whose types are
+// typ and whose `inout` flags are inout: `name T`, or `inout name T` for an
+// `inout` parameter, whose recorded type is the Ptr[T] it lowers to.
+func paramLabel(name string, typ transpiler.Type, inout []bool, i int) string {
+	if ptr, isPtr := typ.(transpiler.PointerType); isPtr && i < len(inout) && inout[i] {
+		return "inout " + name + " " + ptr.Elem.String()
+	}
+	return name + " " + typ.String()
+}
+
 func formatMethodParams(m *transpiler.MethodMetadata) string {
 	var parts []string
 	for i, name := range m.ParamNames {
 		if i < len(m.ParamTypes) {
-			parts = append(parts, name+" "+m.ParamTypes[i].String())
+			parts = append(parts, paramLabel(name, m.ParamTypes[i], m.InoutParams, i))
 		}
 	}
 	return strings.Join(parts, ", ")

@@ -1004,6 +1004,17 @@ const (
 	// (std.AddrOfCopy) and its change would be lost. A method that only
 	// reads its receiver is still called on a copy.
 	CodeMutatingCallOnCopy ErrorCode = "GALA-E0110"
+
+	// E0111: an `inout` parameter's argument is not `&` of a mutable place
+	// (a `var`, an `inout` parameter, a `var` field path of one, or the
+	// pointee of a Ptr), or an `inout` parameter is declared variadic or
+	// with a default, which would lend no place.
+	CodeInoutArgument ErrorCode = "GALA-E0111"
+
+	// E0114: a method with an `inout` receiver is called on a value that is
+	// not a mutable place: a val, a parameter not declared `var`, a field
+	// reached through one, a call result or a literal.
+	CodeInoutReceiver ErrorCode = "GALA-E0114"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

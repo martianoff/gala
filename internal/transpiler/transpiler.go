@@ -743,6 +743,15 @@ type MethodMetadata struct {
 	// nil (PointerReceiver is true as well). Such a method is selected only on
 	// a value that cannot be nil (GALA-E0080).
 	PtrReceiver bool
+	// InoutReceiver is true for `func (inout r T) M()`: the receiver lends the
+	// caller's place for the call (docs/OWNERSHIP_DESIGN.MD, 3.2). It lowers
+	// to the never-nil `*T` of a Ptr receiver, so PointerReceiver and
+	// PtrReceiver are true as well.
+	InoutReceiver bool
+	// InoutParams is index-aligned with ParamTypes: true for an `inout`
+	// parameter, whose ParamTypes entry is the `Ptr[T]` it lowers to. Nil
+	// when no parameter is `inout`.
+	InoutParams []bool
 	// Variadic is true when the last parameter is `...T`; ParamTypes records
 	// it as T.
 	Variadic bool
@@ -825,6 +834,8 @@ type FunctionMetadata struct {
 	GoResults []Type
 	// TypeParamConstraints is MethodMetadata.TypeParamConstraints.
 	TypeParamConstraints map[string]Type
+	// InoutParams is MethodMetadata.InoutParams.
+	InoutParams []bool
 	// Borrow is MethodMetadata.Borrow.
 	Borrow *BorrowSummary
 }

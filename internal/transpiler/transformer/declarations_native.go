@@ -172,6 +172,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 			name:  r.Identifier().GetText(),
 			at:    srcNode{node: r.GalaNodeRef},
 			isVar: r.VAR().Ok(),
+			isInout: r.INOUT().Ok(),
 			typ:   nativeType(r.Type_()),
 		}
 	}
@@ -239,6 +240,7 @@ func readParamsNative(ps native.ParametersNode) []paramDecl {
 			at:         srcNode{node: p},
 			isVar:      param.VAR().Ok(),
 			isVal:      param.VAL().Ok(),
+			isInout:    param.INOUT().Ok(),
 			variadic:   param.ELLIPSIS().Ok(),
 			hasDefault: param.ParamDefault().Ok(),
 			def:        nativeDefault(param.ParamDefault()),

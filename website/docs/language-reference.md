@@ -1816,6 +1816,74 @@ func main() {
 }
 ```
 
+### `inout` Parameters
+
+An `inout` parameter lends the caller's place to the callee for the call. The
+callee reads and writes it like a `var`, and when the call returns the caller's
+place holds the final value. `inout` is a parameter modifier, like `var`, and a
+reserved word.
+
+```gala
+struct Counter(var n int, label string)
+
+// An inout parameter: the argument is `&place`.
+func bump(inout c Counter, by int) {
+    c.n = c.n + by
+}
+
+// An inout receiver: called on a place, with no `&`.
+func (inout c Counter) inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+struct Point(X int, Y int)
+
+// Every field of Point is val: an inout place is updated by replacing it.
+func moveRight(inout p Point) {
+    p = p.Copy(X = p.X + 1)
+}
+
+func main() {
+    var c = Counter(0, "c")
+    bump(&c, 5)
+    c.inc()
+    Println(c.n)      // 6
+
+    var p = Point(1, 2)
+    moveRight(&p)
+    Println(p.X)      // 2
+}
+```
+
+- **Arguments.** An argument to an `inout` parameter is `&place`. A place is a
+  `var` (local, `var` parameter or package-level), an `inout` parameter, or a
+  `var` field of one of these (`&pair.left`). A `Ptr[T]` the caller holds lends
+  its pointee and is passed as it is. A missing `&`, or `&` of a call result or
+  a literal, is [GALA-E0111](/docs/errors/gala-e0111/); `&` of a `val` or a `val`
+  field is [GALA-E0076](/docs/errors/gala-e0076/). To lend a value, copy it into a
+  `var` first.
+- **Receivers.** `func (inout c T) m()` is called as `v.m()` on a `var`, an
+  `inout` parameter, a `var` field of one, or a `Ptr[T]`. On anything else it
+  is [GALA-E0114](/docs/errors/gala-e0114/), even when `m` only reads its receiver.
+- **In the body.** `c` is a mutable place of type `T`: `c.f` reads a field,
+  `c.f = e` writes a `var` field, `c = e` replaces the whole value (even when
+  every field of `T` is `val`), and `&c` lends the place on to another `inout`
+  parameter. Reading `c` as a whole (`val copy = c`) copies the value.
+- **Declarations.** `inout` is allowed on function and method parameters, on
+  receivers, on lambda parameters (`(inout b Buffer) => …`), and in function
+  types (`func(inout Counter)`). An `inout` parameter is neither variadic nor
+  defaulted ([GALA-E0111](/docs/errors/gala-e0111/)). A generic `inout x T` is
+  allowed.
+- **Go.** `inout x T` is the Go parameter `x *T` and an `inout` receiver a
+  pointer receiver, so `bump(&c, 5)` is the Go a programmer writes with a
+  `Ptr[Counter]` parameter. A read of `x` as a whole is `*x`, and an exported
+  function checks its `inout` parameters for nil on entry, as it does `Ptr`
+  parameters.
+
+The design, and the checks that make an `inout` borrow exclusive and
+non-escaping, are in [OWNERSHIP_DESIGN.MD](https://github.com/martianoff/gala/blob/master/docs/OWNERSHIP_DESIGN.MD).
+
 ## 13. GALA Packages {#13-gala-packages}
 
 GALA supports Go-style imports with aliases and dot imports.

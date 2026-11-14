@@ -18,6 +18,10 @@ func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr
 		if err := t.immutableAddressError(at, operand, expr); err != nil {
 			return nil, err
 		}
+		// `&x` of an inout binding lends its place on: the pointer x.
+		if ptr, ok := t.inoutAddr(expr); ok {
+			return ptr, nil
+		}
 		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}, nil
 	case "*":
 		return t.markDeref(&ast.StarExpr{X: expr}), nil

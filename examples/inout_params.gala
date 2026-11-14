@@ -1,0 +1,176 @@
+package main
+
+// `inout` parameters and receivers lend the caller's place for the call:
+// the callee reads and writes it, and the caller sees the final value.
+
+struct Counter(var n int, label string)
+
+// An inout receiver: called as c.inc() on a var, an inout parameter or a Ptr.
+func (inout c Counter) inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+// A value receiver only reads.
+func (c Counter) show() string = s"${c.label}=${c.n}"
+
+// An inout parameter: the argument is `&place`.
+func bump(inout c Counter, by int) {
+    c.n = c.n + by
+}
+
+// Lending on: an inout parameter is lent further with `&`.
+func bumpTwice(inout c Counter) {
+    bump(&c, 1)
+    c.inc()
+}
+
+// Every field of Point is val: the place is updated by replacing the value.
+struct Point(X int, Y int)
+
+func moveRight(inout p Point) {
+    p = p.Copy(X = p.X + 1)
+}
+
+func swap(inout a int, inout b int) {
+    val tmp = a
+    a = b
+    b = tmp
+}
+
+// Generic: T is any type.
+func replace[T any](inout slot T, v T) T {
+    val old = slot
+    slot = v
+    old
+}
+
+// Disjoint fields of one place may be lent to one call.
+struct Pair(var left Counter, var right Counter)
+
+func transfer(inout from Counter, inout to Counter) {
+    to.n = to.n + from.n
+    from.n = 0
+}
+
+func (inout p Pair) settle() {
+    transfer(&p.left, &p.right)
+    p.left.inc()
+}
+
+// A function value whose parameter is inout.
+func applyTo(inout c Counter, f func(inout Counter)) {
+    f(&c)
+    f(&c)
+}
+
+func countUp(inout c Counter, limit int) {
+    for c.n < limit {
+        c.inc()
+    }
+}
+
+// A replacement takes its type from the place: None() is an Option[int].
+func reset(inout o Option[int]) {
+    o = None()
+}
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+// Matching reads a copy; the case changes by replacing the value.
+func grow(inout s Shape) {
+    s = s match {
+        case Circle(r) => Circle(r + 1)
+        case Square(x) => Square(x + 1)
+    }
+}
+
+func tick(inout n int) {
+    n++
+    n += 10
+}
+
+func describe(inout o Option[int]) string = s"o=${o} defined=${o.IsDefined()}"
+
+// Operands are read left to right: c.n before c.inc() runs.
+func order(inout c Counter) int = c.n * 10 + c.inc()
+
+type Named interface {
+    Name() string
+}
+
+struct Dog(name string)
+
+func (d Dog) Name() string = d.name
+
+// A type parameter and an interface: methods are selected on the place.
+func nameOf[T Named](inout x T) string = x.Name()
+
+func nameVia(inout n Named) string = n.Name()
+
+func main() {
+    var c = Counter(0, "c")
+    bump(&c, 5)
+    val r = c.inc()
+    bumpTwice(&c)
+    Println(c.show(), r)
+
+    var p = Point(1, 2)
+    moveRight(&p)
+    moveRight(&p)
+    Println(p.X, p.Y)
+
+    var x = 1
+    var y = 2
+    swap(&x, &y)
+    Println(x, y)
+
+    var s = "old"
+    val was = replace(&s, "new")
+    Println(was, s)
+
+    var pair = Pair(Counter(3, "l"), Counter(4, "r"))
+    pair.settle()
+    Println(pair.left.show(), pair.right.show())
+
+    // A Ptr lends its pointee.
+    val ptr = &Counter(10, "ptr")
+    bump(ptr, 1)
+    ptr.inc()
+    Println(ptr.show())
+
+    var d = Counter(0, "d")
+    applyTo(&d, (inout k Counter) => { k.n = k.n + 10 })
+    applyTo(&d, (inout k) => k.inc())
+    Println(d.show())
+
+    var e = Counter(0, "e")
+    countUp(&e, 4)
+    Println(e.show())
+
+    var o = Some(3)
+    Println(describe(&o))
+    reset(&o)
+    Println(describe(&o))
+
+    var shape Shape = Circle(1)
+    grow(&shape)
+    grow(&shape)
+    Println(shape)
+
+    var n = 0
+    tick(&n)
+    Println(n)
+
+    var f = Counter(0, "f")
+    Println(order(&f))
+    bump(by = 5, c = &f)
+    Println(f.show())
+
+    var dog = Dog("rex")
+    var named Named = Dog("fido")
+    Println(nameOf(&dog), nameVia(&named))
+}

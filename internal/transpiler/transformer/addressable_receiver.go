@@ -31,7 +31,16 @@ import (
 // GALA-E0053 when the receiver's type must not be copied, or GALA-E0110 when
 // the method can mutate its receiver. line and col locate the method name.
 func (t *galaASTTransformer) addressableReceiver(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
-	if !t.hasPointerReceiverMethod(recvType, method) || t.isAddressable(recv) {
+	if !t.hasPointerReceiverMethod(recvType, method) {
+		return t.sealPlainValPath(recv), nil
+	}
+	// An inout receiver is lent a place, never a copy (GALA-E0114).
+	if _, meta, _, _ := t.receiverTypeInfo(recvType); meta != nil {
+		if err := t.checkInoutReceiver(recv, recvType, meta.Methods[method], line, col); err != nil {
+			return nil, err
+		}
+	}
+	if t.isAddressable(recv) {
 		return t.sealPlainValPath(recv), nil
 	}
 	return t.addressedCopy(recv, recvType, method, line, col)
@@ -55,6 +64,9 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 	}
 	if _, _, _, isValue := t.receiverTypeInfo(recvType); !isValue {
 		return recv, nil
+	}
+	if err := t.checkInoutReceiver(recv, recvType, m, line, col); err != nil {
+		return nil, err
 	}
 	if t.isAddressable(recv) {
 		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(recv)}, nil

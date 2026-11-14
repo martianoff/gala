@@ -114,6 +114,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 	if err != nil || expr == nil {
 		return expr, err
 	}
+	if err := t.checkInoutArgs(base, expr, c); err != nil {
+		return nil, err
+	}
 	line, col := c.start()
 	return t.sequenceCall(expr, base, frame, line, col)
 }
