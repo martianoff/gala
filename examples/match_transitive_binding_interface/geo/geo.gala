@@ -1,0 +1,16 @@
+package geo
+
+import "martianoff/gala/examples/match_transitive_binding_interface/shape"
+
+// An extractor of points, which callers see only through this interface.
+type PointExtractor interface {
+    Unapply(n int) Option[shape.Point]
+}
+
+// A positive number n becomes the point (n, 2n).
+struct Doubler()
+
+func (d Doubler) Unapply(n int) Option[shape.Point] =
+    if (n > 0) Some(shape.Point(X = n, Y = n * 2)) else None()
+
+func Positive() PointExtractor = Doubler()

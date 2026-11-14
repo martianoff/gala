@@ -1,0 +1,31 @@
+package main
+
+import "martianoff/gala/examples/match_transitive_binding_interface/geo"
+
+// ext is an interface value, so the type of what it extracts comes only from
+// its Unapply, whose result names a package this file does not import. Each
+// binding below is declared before the code that runs the extractor.
+
+// The extractor runs after a sibling that can fail.
+func afterSibling(ext geo.PointExtractor, tag int, n int) string = (tag, n) match {
+    case (0, ext(p)) => s"point ${p.X},${p.Y}"
+    case (0, _)      => "not positive"
+    case _           => "other tag"
+}
+
+// The extractor is a nested sub-pattern.
+func nested(ext geo.PointExtractor, o Option[int]) string = o match {
+    case Some(ext(p)) => s"nested ${p.X},${p.Y}"
+    case Some(_)      => "nested not positive"
+    case _            => "none"
+}
+
+func main() {
+    val ext = geo.Positive()
+    Println(afterSibling(ext, 0, 3))
+    Println(afterSibling(ext, 0, -3))
+    Println(afterSibling(ext, 1, 3))
+    Println(nested(ext, Some(4)))
+    Println(nested(ext, Some(-4)))
+    Println(nested(ext, None()))
+}

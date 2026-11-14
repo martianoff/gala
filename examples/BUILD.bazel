@@ -1320,6 +1320,31 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A pattern binding declared ahead of the code that assigns it, extracted by an
+# interface value whose Unapply result names a package the matching file
+# reaches only through another one.
+gala_library(
+    name = "match_transitive_binding_interface_shape",
+    srcs = ["match_transitive_binding_interface/shape/shape.gala"],
+    importpath = "martianoff/gala/examples/match_transitive_binding_interface/shape",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "match_transitive_binding_interface_geo",
+    srcs = ["match_transitive_binding_interface/geo/geo.gala"],
+    importpath = "martianoff/gala/examples/match_transitive_binding_interface/geo",
+    visibility = ["//visibility:public"],
+    deps = [":match_transitive_binding_interface_shape"],
+)
+
+gala_exec_test(
+    name = "match_transitive_binding_interface",
+    src = "match_transitive_binding_interface/main.gala",
+    expected = "match_transitive_binding_interface/main.out",
+    gala_deps = [":match_transitive_binding_interface_geo"],
+)
+
 gala_library(
     name = "transitive_package_types_shape",
     srcs = ["transitive_package_types/shape/shape.gala"],

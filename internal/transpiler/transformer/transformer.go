@@ -125,7 +125,7 @@ type galaASTTransformer struct {
 	interfaceLiterals      map[string]string                             // interface literal helper type name, keyed by the interface's resolved name; see interface_literal.go
 	interfaceLiteralDecls  []ast.Decl                                    // helper type declarations for this file's interface literals
 	interfaceLiteralMisses map[string]bool                               // callee names known to name no interface, so a call of them is no interface literal
-	unapplyHelpers         map[string]string                             // extractor type -> name of the generic Unapply helper declared for it in this file (see unapplyHelper); also a pattern helper's `_gala_` base name -> its name (see patternHelper)
+	unapplyHelpers         map[string]string                             // extractor type -> name of the generic Unapply helper declared for it in this file (see unapplyHelper)
 	unapplyHelperDecls     []ast.Decl                                    // their declarations
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
@@ -155,11 +155,8 @@ type galaASTTransformer struct {
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
 	// declares, so a sub-pattern's statements can be split into declarations
-	// outside a guard and assignments inside it (see hoistPatternDecls). It
-	// also records the type of a name hoistPatternDecls declares from a value
-	// (`var x = v`, keyed by its ValueSpec), for a hoist of an enclosing
-	// pattern.
-	patternDefineTypes map[ast.Node][]patternType
+	// outside a guard and assignments inside it (see hoistPatternDecls).
+	patternDefineTypes map[*ast.AssignStmt][]patternType
 	// patternReads records the extractor calls of patterns that only read the
 	// value they test (a sealed case's generated Unapply), which siblingChain
 	// runs without a guard (see runsCode).
