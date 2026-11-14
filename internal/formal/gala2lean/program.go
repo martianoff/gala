@@ -44,6 +44,9 @@ type gen struct {
 	// the heaps their cells live in.
 	boxed map[boxKey]bool
 	heaps []string
+	// inDefault is the defaults being translated (callee.param), so that a
+	// default that needs itself is reported, not expanded forever.
+	inDefault, refsInDefault map[string]bool
 
 	unsup []Unsupported
 	out   strings.Builder
@@ -76,15 +79,17 @@ type fnCtx struct {
 
 func newGen() *gen {
 	return &gen{
-		structs:     map[string]*coreexport.Struct{},
-		sealeds:     map[string]*coreexport.Sealed{},
-		variants:    map[string]*variantInfo{},
-		funcs:       map[string]*coreexport.Func{},
-		globalBy:    map[string]*globalVar{},
-		selected:    map[string]bool{},
-		refsOf:      map[string]map[string]bool{},
-		noBEq:       map[string]bool{},
-		unprintable: map[string]bool{},
+		structs:       map[string]*coreexport.Struct{},
+		sealeds:       map[string]*coreexport.Sealed{},
+		variants:      map[string]*variantInfo{},
+		funcs:         map[string]*coreexport.Func{},
+		globalBy:      map[string]*globalVar{},
+		selected:      map[string]bool{},
+		refsOf:        map[string]map[string]bool{},
+		noBEq:         map[string]bool{},
+		unprintable:   map[string]bool{},
+		inDefault:     map[string]bool{},
+		refsInDefault: map[string]bool{},
 	}
 }
 
@@ -158,14 +163,18 @@ func (g *gen) unresolved(pos coreexport.Pos, fallback string) {
 // a type no method can change: int, string or bool. It applies only to a
 // program that declares methods, whose String or Equal would be called.
 func (g *gen) basic(e coreexport.Node, sc *scope) {
-	if !g.hasMethods {
+	if g.hasMethods {
+		g.basicType(g.exprType(e, sc, map[string]bool{}), posOf(e))
+	}
+}
+
+// basicType is basic for a value of Lean type t at pos.
+func (g *gen) basicType(t string, pos coreexport.Pos) {
+	switch {
+	case !g.hasMethods, t == "Int64", t == "String", t == "Bool":
 		return
 	}
-	switch g.exprType(e, sc, map[string]bool{}) {
-	case "Int64", "String", "Bool":
-		return
-	}
-	unsup(posOf(e), "method")
+	unsup(pos, "method")
 }
 
 func (g *gen) unsupNode(decl string, n coreexport.Node) {
@@ -351,6 +360,7 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 		}
 		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
 		sc.bind(p.Name, false, g.leanType(p.Type))
+		sc.vars[p.Name].gtype = p.Type
 	}
 	res := "Unit"
 	if f.Result != nil {

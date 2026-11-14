@@ -24,6 +24,23 @@ type local struct {
 	// box is the heap of the cell a captured var lives in, -1 for a plain
 	// Lean binding.
 	box int
+	// gtype is its GALA type when declared or plain to see, else nil; a
+	// call of a function value reads its parameter types from it.
+	gtype coreexport.Node
+}
+
+// lambdaParamTypes is lambda l's type as far as its parameters go (the
+// result is left out), or nil when a parameter type is not written.
+func lambdaParamTypes(l *coreexport.Lambda) *coreexport.TypeFunc {
+	t := &coreexport.TypeFunc{}
+	for _, pn := range l.Params {
+		p, ok := pn.(*coreexport.Param)
+		if !ok || p.Type == nil {
+			return nil
+		}
+		t.Params = append(t.Params, p.Type)
+	}
+	return t
 }
 
 func newScope(parent *scope, level int) *scope {
@@ -268,7 +285,7 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 			if types[i] == "" {
 				unsup(pos, "captured-var-type")
 			}
-			boxes[i] = g.heap(types[i])
+			boxes[i] = g.heap(types[i], pos)
 			items = append(items, fmt.Sprintf("let %s ← _gala_new%d %s", ident(n), boxes[i], vals[i]))
 			continue
 		}
@@ -278,6 +295,14 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 		if n != "_" {
 			sc.bind(n, mutable, types[i])
 			sc.vars[n].box = boxes[i]
+			sc.vars[n].gtype = typ
+			if typ == nil && i < len(values) {
+				if l, ok := values[i].(*coreexport.Lambda); ok {
+					if lt := lambdaParamTypes(l); lt != nil {
+						sc.vars[n].gtype = lt
+					}
+				}
+			}
 		}
 	}
 	return items

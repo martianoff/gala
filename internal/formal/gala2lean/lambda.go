@@ -105,16 +105,9 @@ func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
 
 // safeType is f's type, or "" when f stops at a construct outside the
 // subset (the translation reports it where it matters).
-func (g *gen) safeType(f func() string) (t string) {
-	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(unsupportedPanic); !ok {
-				panic(r)
-			}
-			t = ""
-		}
-	}()
-	return f()
+func (g *gen) safeType(f func() string) string {
+	t, _ := attempt(f)
+	return t
 }
 
 // exprExpect translates e where a value of type expect (nil when unknown) is
@@ -179,6 +172,7 @@ func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFun
 		}
 		ps = append(ps, fmt.Sprintf("(%s : %s)", name, lt))
 		ls.bind(p.Name, false, lt)
+		ls.vars[p.Name].gtype = t
 	}
 	if expect != nil && len(expect.Params) != len(l.Params) {
 		unsup(l.Pos, "lambda-arity")
@@ -240,8 +234,8 @@ func returnsValue(b *coreexport.Block) bool {
 
 // heap is the index of the heap holding boxed variables of Lean type t,
 // added on first use.
-func (g *gen) heap(t string) int {
-	g.stateType(t, coreexport.Pos{})
+func (g *gen) heap(t string, pos coreexport.Pos) int {
+	g.stateType(t, pos)
 	for i, h := range g.heaps {
 		if h == t {
 			return i
@@ -251,7 +245,7 @@ func (g *gen) heap(t string) int {
 	return len(g.heaps) - 1
 }
 
-// heapDecls are the state fields and helpers of the heaps.
+// heapFields are the state fields of the heaps; heapHelpers their helpers.
 func (g *gen) heapFields() string {
 	var b strings.Builder
 	for i, t := range g.heaps {

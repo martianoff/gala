@@ -108,6 +108,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"no main", "package main\nfunc f() int = 1\n", "no-main"},
 		{"nil function", "package main\nfunc main() { var f func() int\n Println(1) }\n", "nil"},
 		{"printing a function", "package main\nfunc main() { val f = (x int) => x\n Println(f) }\n", "print-pointer"},
+		{"a type holding a function of itself", "package main\nstruct Node(F func(Node) int)\nfunc main() { Println(1) }\n", "recursive-func-field"},
+		{"a default that needs itself", "package main\nfunc f(n int = f()) int = n\nfunc main() { Println(f()) }\n", "recursive-default"},
 		{"captured var of a function type", "package main\nfunc main() { var f = (x int) => x\n val g = () => f(1)\n Println(g()) }\n", "func-in-state"},
 		{"untyped global", "package main\nval g = h()\nfunc h() (int, int) = (1, 2)\nfunc main() { Println(g) }\n", "go-results"},
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},

@@ -62,6 +62,8 @@ go_test(
         "//formal:Gala/Gala2Lean/Prelude.lean",
         "testdata/assign_order_void_keywords.gala",
         "testdata/assign_order_void_keywords.out",
+        "testdata/defaults_byname.gala",
+        "testdata/defaults_byname.out",
         "//formal:fixture_sources",
     ] + select({
         "//formal:lean_enabled": ["//formal:lean_runtime"],

@@ -173,17 +173,27 @@ func unsup(pos coreexport.Pos, format string, a ...any) {
 
 // guard runs f, the translation of the declaration named decl, and records
 // the construct it stopped at, if any. It reports whether f finished.
-func (g *gen) guard(decl string, f func()) (ok bool) {
+func (g *gen) guard(decl string, f func()) bool {
+	// A translation stopped midway leaves no state behind for the next.
+	g.qualify, g.inDefault = false, map[string]bool{}
+	_, u := attempt(func() struct{} { f(); return struct{}{} })
+	if u != nil {
+		g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: u.construct, Pos: u.pos})
+	}
+	return u == nil
+}
+
+// attempt runs f and returns its result, or the construct outside the
+// subset it stopped at. Any other panic goes on.
+func attempt[T any](f func() T) (v T, u *unsupportedPanic) {
 	defer func() {
 		if r := recover(); r != nil {
-			u, isUnsup := r.(unsupportedPanic)
-			if !isUnsup {
+			p, ok := r.(unsupportedPanic)
+			if !ok {
 				panic(r)
 			}
-			g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: u.construct, Pos: u.pos})
-			ok = false
+			u = &p
 		}
 	}()
-	f()
-	return true
+	return f(), nil
 }

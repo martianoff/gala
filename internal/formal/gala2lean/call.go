@@ -2,6 +2,7 @@ package gala2lean
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -52,16 +53,9 @@ func (g *gen) sigOf(x string) *sig {
 }
 
 // sigOfSafe is sigOf, or nil for a callee the translation will report.
-func (g *gen) sigOfSafe(x string) (s *sig) {
-	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(unsupportedPanic); !ok {
-				panic(r)
-			}
-			s = nil
-		}
-	}()
-	return g.sigOf(x)
+func (g *gen) sigOfSafe(x string) *sig {
+	s, _ := attempt(func() *sig { return g.sigOf(x) })
+	return s
 }
 
 func (g *gen) fieldSig(head string, fields []*coreexport.Field) *sig {
@@ -94,7 +88,7 @@ func bindArgs(s *sig, args []coreexport.Node, pos coreexport.Pos) []int {
 	for i, a := range args {
 		if na, ok := a.(*coreexport.NamedArg); ok {
 			named = true
-			k := indexOf(s.names, na.Name)
+			k := slices.Index(s.names, na.Name)
 			if k < 0 || given[k] >= 0 {
 				unsup(na.Pos, "named-arg")
 			}
@@ -115,15 +109,6 @@ func bindArgs(s *sig, args []coreexport.Node, pos coreexport.Pos) []int {
 		}
 	}
 	return given
-}
-
-func indexOf(xs []string, x string) int {
-	for i, y := range xs {
-		if y == x {
-			return i
-		}
-	}
-	return -1
 }
 
 // argNode is the expression of a call argument, named or not.
@@ -164,14 +149,12 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 		}
 		return g.apply(s, vs, vals...)
 	}
-	// Arguments into temporaries, in the order written.
+	// Arguments into temporaries, in the order written. Every one gets a
+	// fresh name, even a plain value: the parameters bound below for the
+	// defaults may shadow a caller's local it names.
 	var items []string
 	tmps := make([]string, len(e.Args))
 	for i, v := range vals {
-		if v.pure {
-			tmps[i] = v.code
-			continue
-		}
 		tmps[i] = g.freshName("a")
 		items = append(items, "let "+tmps[i]+" := "+v.val())
 	}
@@ -182,15 +165,21 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 		if a >= 0 {
 			args[k] = tmps[a]
 		} else {
+			key := s.head + "." + s.names[k]
+			if g.inDefault[key] {
+				unsup(e.Pos, "recursive-default")
+			}
+			g.inDefault[key] = true
 			saved := g.qualify
 			g.qualify = true
 			d := g.exprExpect(s.defaults[k], dsc, s.types[k])
 			g.qualify = saved
+			delete(g.inDefault, key)
 			tmp := g.freshName("d")
 			items = append(items, "let "+tmp+" := "+d.val())
 			args[k] = tmp
 		}
-		if s.paramsInDefaults && k+1 < len(s.names) && hasDefaultAfter(given, k) {
+		if s.paramsInDefaults && slices.Contains(given[k+1:], -1) {
 			// The parameters a later default may see.
 			items = append(items, "let "+ident(s.names[k])+" := "+args[k])
 			args[k] = ident(s.names[k])
@@ -199,15 +188,6 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 	}
 	items = append(items, g.apply(s, args).mon())
 	return term{code: doTerm(items), unit: s.unit}
-}
-
-func hasDefaultAfter(given []int, k int) bool {
-	for _, a := range given[k+1:] {
-		if a < 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // optType is the Lean type of an optional type node, "" when absent.
@@ -269,11 +249,18 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	f := g.expr(e.Callee, sc)
 	parts := []string{f.val()}
 	subs := []term{f}
-	for _, a := range e.Args {
+	ft := g.calleeType(e.Callee, sc)
+	for i, a := range e.Args {
 		if na, ok := a.(*coreexport.NamedArg); ok {
 			unsup(na.Pos, "named-arg")
 		}
-		t := g.expr(a, sc)
+		// The callee's parameter types, when known, type lambda arguments
+		// and turn by-name arguments into thunks.
+		var expect coreexport.Node
+		if ft != nil && i < len(ft.Params) {
+			expect = ft.Params[i]
+		}
+		t := g.exprExpect(a, sc, expect)
 		parts, subs = append(parts, t.val()), append(subs, t)
 	}
 	if len(e.Args) == 0 {
@@ -286,21 +273,36 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	return act(c)
 }
 
-// isFuncField reports whether s is a field of a function type, whose call is
-// a call of the function it holds rather than of a method.
-func (g *gen) isFuncField(s *coreexport.Select, sc *scope) bool {
-	t := g.exprType(s.Target, sc, map[string]bool{})
-	for _, n := range g.typeNames {
-		if ident(n) != t {
-			continue
+// calleeType is the GALA function type of a called function value when it is
+// plain to see: a local declared with one, a lambda local, a parameter, or a
+// function-typed field; nil otherwise.
+func (g *gen) calleeType(c coreexport.Node, sc *scope) *coreexport.TypeFunc {
+	switch c := c.(type) {
+	case *coreexport.Name:
+		if l := sc.lookup(c.Name); l != nil {
+			ft, _ := l.gtype.(*coreexport.TypeFunc)
+			return ft
 		}
-		for _, f := range g.typeFields(n) {
-			if _, ok := f.Type.(*coreexport.TypeFunc); ok && f.Name == s.Name {
-				return true
+	case *coreexport.Select:
+		t := g.exprType(c.Target, sc, map[string]bool{})
+		for _, n := range g.typeNames {
+			if ident(n) != t {
+				continue
+			}
+			for _, f := range g.typeFields(n) {
+				if ft, ok := f.Type.(*coreexport.TypeFunc); ok && f.Name == c.Name {
+					return ft
+				}
 			}
 		}
 	}
-	return false
+	return nil
+}
+
+// isFuncField reports whether s is a field of a function type, whose call is
+// a call of the function it holds rather than of a method.
+func (g *gen) isFuncField(s *coreexport.Select, sc *scope) bool {
+	return g.calleeType(s, sc) != nil
 }
 
 // print translates Println or Print.
@@ -335,7 +337,7 @@ func (g *gen) printable(e coreexport.Node, sc *scope) {
 		}
 		g.stateTypeIn(t, g.unprintable, posOf(e), "print-pointer")
 	}
-	g.basic(e, sc)
+	g.basicType(t, posOf(e))
 }
 
 // stdCtor builds an Option or Either value.

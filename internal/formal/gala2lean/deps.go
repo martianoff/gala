@@ -108,8 +108,12 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		// locals.
 		params := map[string]bool{}
 		for k, name := range s.names {
-			if k >= positional && !named[name] {
+			// A default that needs itself is reported where it is
+			// translated; here it only must not recurse forever.
+			if key := s.head + "." + name; k >= positional && !named[name] && !g.refsInDefault[key] {
+				g.refsInDefault[key] = true
 				g.refs(s.defaults[k], params, out)
+				delete(g.refsInDefault, key)
 			}
 			params[name] = true
 		}

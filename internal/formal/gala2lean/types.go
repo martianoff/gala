@@ -104,6 +104,21 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 	return ""
 }
 
+// funcTypeNames is every plain type name in function type t, nested
+// function types included.
+func funcTypeNames(t *coreexport.TypeFunc) []string {
+	var out []string
+	for _, p := range append(slices.Clone(t.Params), t.Result) {
+		switch p := p.(type) {
+		case *coreexport.TypeName:
+			out = append(out, p.Name)
+		case *coreexport.TypeFunc:
+			out = append(out, funcTypeNames(p)...)
+		}
+	}
+	return out
+}
+
 // typeOrder sorts g.typeNames so that each type comes after the types its
 // fields use. A type may use itself (a recursive sealed type); two types
 // that use each other are not translated.
@@ -112,6 +127,19 @@ func (g *gen) typeOrder() {
 	for _, n := range g.typeNames {
 		for _, f := range g.typeFields(n) {
 			if t := typeName(f.Type); t != "" && t != n {
+				deps[n] = append(deps[n], t)
+			}
+			ft, ok := f.Type.(*coreexport.TypeFunc)
+			if !ok {
+				continue
+			}
+			// The types a function field names come first too. Lean has no
+			// type that holds a function taking or giving itself (it is not
+			// strictly positive).
+			for _, t := range funcTypeNames(ft) {
+				if t == n {
+					unsup(f.Pos, "recursive-func-field")
+				}
 				deps[n] = append(deps[n], t)
 			}
 		}
