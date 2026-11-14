@@ -1,7 +1,8 @@
 # Ownership: Inferred Uniqueness and `inout` Parameters
 
-Status: phase 1 (inferred uniqueness) is implemented; phases 2 to 4 are proposals, decided
-in section 7.
+Status: phase 1 (inferred uniqueness) and phase 2 (`inout`) are implemented. Phase 4 is a
+proposal decided in section 7. Phase 3 is designed in 3.3, and its open questions are
+listed in section 9.
 Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 Related: [FORMAL_SEMANTICS.MD](FORMAL_SEMANTICS.MD), [CONCURRENCY_SAFETY.MD](CONCURRENCY_SAFETY.MD).
 
@@ -29,7 +30,13 @@ come with it.
   They also cover what inference cannot see: function types and fields such as
   gala-tui's `Render func(Rect, *Buffer, *HitRegistry)`.
 - **Phase 3: non-escaping closures may capture an `inout` place.** This is what
-  `rules.ForEach((r) => b.add(r))` needs. It recovers about **69 more functions (1.0%)**.
+  `rules.ForEach((r) => b.add(r))` needs. Measured again in
+  [3.3.1](#331-what-is-blocked-today-measured):
+  - it recovers **17 galop functions**, taking galop from 82.3% to 85.3% and the total by
+    0.4 points;
+  - it recovers nothing in std or the examples;
+  - it adds nothing to gala2lean's `-stats` until collections, `Option` and types from
+    other packages translate.
 - **Phase 4: transfer across `Sendable`.** A capture of a disconnected value is accepted
   when nothing uses it after the send. E0037 accepts more programs, and nothing it
   accepts is unsafe.
@@ -128,8 +135,10 @@ not translate their internals.
 
 Two further steps raise the upper bound to about 79%:
 
-- Captured `var`s (106 functions, 1.6%) use the same non-escaping-closure rule as phase 3.
-  The scan cannot tell which of these closures escape, so this is an upper bound.
+- Captured `var`s (106 functions, 1.6%) were expected to need phase 3's
+  non-escaping-closure rule. That expectation is withdrawn: gala2lean keeps a captured
+  `var` in a reference cell and translates it whether or not the closure escapes
+  ([3.3.1](#331-what-is-blocked-today-measured)).
 - Owned Go slices inside owned structs (74 functions) can be modelled as Lean `Array`
   under the freshness rule in section 2.4.
 
@@ -546,9 +555,12 @@ in place (see Prior art). The translated Lean is efficient as well as faithful.
 
 ### 3.3 Phase 3: non-escaping closures may capture `inout` places
 
-galop's `builder` (13 functions), most of gala-tui's `inout-closure` group (29), and
-captured local `var`s (106 functions) all share one shape. A closure that mutates the
-caller's state is passed to a function that only calls it during the call:
+Status: designed, not implemented. The open questions are Q19–Q26 in
+[§9](#9-open-questions-for-phase-3).
+
+Phase 3 lets a closure capture a place that is lent: an `inout` binding, or a pointer that
+phase 1 proves unique. The closure may do this only if it cannot outlive the call it is
+passed to. galop's `builder` is the typical case:
 
 ```gala
 rules.ZipWithIndex().ForEach((ri) => {
@@ -556,32 +568,331 @@ rules.ZipWithIndex().ForEach((ri) => {
 })
 ```
 
-This follows Swift's rule: a closure may capture an `inout` place if the closure is
-**non-escaping**. A function parameter `f` is non-escaping when the callee only calls
-`f`. It never stores, returns or captures `f`, and never passes it to a parameter that
-escapes.
+#### 3.3.1 What is blocked today, measured
 
-- **Inferred,** like the borrow summaries. It is written to package metadata and holds
-  for std's `ForEach`, `Map`, `FoldLeft`, `Filter` and the rest.
-- **Exclusive:** while the closure is live, the captured place is lent to it, so the call
-  may not also lend the place `inout` (this is `sepBy1`'s problem).
-- **`Sendable` parameters always escape.** A `Future` body runs later on another
-  goroutine.
+The measurement uses master, galop at `main`, the phase 1 analysis (`ownershipcov/update -json`),
+the textual scanner from section 2, and `gala2lean -library` and `-stats` on every galop
+package and every example. Each count below was taken from those tools' output, not estimated.
 
-**Lean.** The closure becomes a computation in `StateT S M`, where `S` is the tuple of the
-places it captures. The higher-order function runs in that monad:
+**gala2lean's own verdicts.** `gala2lean -stats` translates 50 of galop's 580 functions
+(8.6%) and 321 of the examples' 1,738 functions (18.5%).
 
-```lean
-let ((), b') ← (rules.zipWithIndex.forM fun ri => do
-    let b ← get
-    let (s, b) ← builder.state b ri.2 .RuleStartState
-    set { b with ruleStart := b.ruleStart.push s }).run b
-b := b'
+- **Lambda capture is the first blocker of none of them.** gala2lean reports one construct
+  per function that it does not translate. In galop these are:
+  - an immutable collection or `Option` type (167 functions);
+  - a type from another galop package (143);
+  - another generic type (52);
+  - a method call (22);
+  - an import (21);
+  - a `Ptr[T]` type (6).
+- **A captured `var` already translates.** gala2lean keeps it in a reference cell in the
+  program state, so `twice(() => { n = n + 1 })` translates and runs today.
+- **What capture does block is narrower: `ptr-escape`.** gala2lean reports it for a
+  pointer or `inout` receiver used inside a lambda, and for a pointer method called on a
+  captured `var`.
+
+So phase 3 adds nothing to `-stats` until gala2lean translates immutable collections,
+`Option`, types from other packages and `Ptr[T]` receivers. Its gain is real only after
+that work.
+
+**The phase 1 analysis.** The `captured` reason appears on these bindings:
+
+| Tree | Bindings with `captured` | Fixed when captures are allowed | Remaining blockers |
+|---|---|---|---|
+| galop | 31 bindings, at 75 capture sites in 55 closures | 18 (strict rule) to 28 (every capture) | Go slices in the pointee (`lexer`, the mutable collections), `rand` stored in `walker` |
+| std and other libraries | 119 | 0 | Each one also has `shape`, `from-go` or `passed-to-go` |
+| examples | 18 | 0 under the strict rule, 2 for by-name arguments | the same |
+
+Here is what galop's 55 closures do with what they capture, counted by hand from the 75
+sites:
+
+- **44 are passed directly to a std higher-order function:** `ForEach`, `Map`, `FlatMap`,
+  `Filter`, `FoldLeft`, `ForAll`, `Find` or `ArrayTabulate`, or to a terminal `ForEach` on
+  a stream. All of these call the closure during the call, and only then.
+- **6 are first bound to a local `val`** (`val visit = (c) => …`) and then called or passed
+  on.
+- **3 conflict with a lend in the same call:** `sepBy1(p, "|", p.alternative)`,
+  `sepBy1(p, ",", p.command)` and `sepBy1(p, ".", () => p.expectId(…))`. Each argument
+  list both lends `p` and captures it. E0112 already rejects this for `inout`, and phase 3
+  does not change that.
+- **1 is a false positive of phase 1:** `Parse` declares `p` inside the lambda, so
+  nothing is captured.
+- **1 is a method value passed to `Find`:** `l.hasPrefix`.
+
+**The scanner, for comparison with section 2.** It counts a function as recovered when
+every pointer binding becomes unique and the rest of its body is translatable. Phase 1
+measured 65.9% overall and 82.3% for galop.
+
+| Rule | galop recovered | galop | All trees |
+|---|---|---|---|
+| Phase 1 (today) | 40 | 82.3% | 65.9% |
+| Phase 3, strict rule: closures passed directly as arguments, no overlapping lend | 57 (+17) | 85.3% | 66.3% |
+| …plus `sepBy1` taking `item func(inout parser) T` (an adoption edit, section 2.1) | 67 (+27) | 87.0% | 66.5% |
+
+The 17 functions are:
+
+- `newBuilder` and 11 `builder` methods;
+- `Sim.closure`, `Sim.Start` and `Sim.Reach` (on `Ptr[configSet]`);
+- `parser.rejectRulePrequel`;
+- `render`.
+
+`Parse` falls just outside the strict rule: its lambda's call to `p.grammar()` reaches the
+`sepBy1` chain.
+
+The scanner's `captured-var` class holds 91 functions: 38 in `collection_immutable`, 35 in
+the examples, 10 in `stream`, 3 in galop and 5 elsewhere. They are not a phase 3 target,
+because gala2lean translates them already (see above). Section 2's earlier upper bound,
+"captured `var`s (106 functions) use the same rule as phase 3", is withdrawn.
+
+**Expected gain.** Up to +17 galop functions, raising galop from 82.3% to 85.3%. Adopting
+`sepBy1` adds 10 more. Nothing is gained in std or the examples, and the total rises by
+0.4 points. All of this becomes visible in `-stats` only once gala2lean's prerequisites
+above are in place. The earlier estimate in this section (+69 functions, 1.0 point) was
+too high by a factor of about four. It counted gala-tui, which is now external (Q11), and
+the persistent-collection internals.
+
+#### 3.3.2 Capture rules
+
+GALA closures capture by reference, as Go does. Phase 3 keeps this. A copying capture
+would change what valid programs print.
+
+| Captured binding | Today | Phase 3 |
+|---|---|---|
+| `val` | by reference, which is the same as a copy | unchanged |
+| local `var` | by reference; gala2lean uses a reference cell | unchanged; escaping closures stay legal |
+| `inout` binding, or a field path of one | E0113 for every capture | allowed in a **non-escaping** closure; E0113 otherwise |
+| `Ptr[T]` that phase 1 proves unique | the `captured` escape reason | a lend, if the closure is non-escaping |
+| method value `x.m` on such a place | E0113 / `captured` | the same rule: a method value is a closure |
+| by-name argument that mentions the place | E0113 / `captured` | the same rule, applied to the by-name parameter |
+
+A closure is **non-escaping** when it is written directly as an argument, a by-name
+argument or a method value, and the parameter it fills is non-escaping.
+
+A closure bound to a local `val` first is escaping. Q21 asks whether to relax this.
+
+A capture always lends the whole place, and it lasts as long as the call the closure is
+passed to. Two rules follow:
+
+- **Exclusivity, already enforced by E0112.** That call may not also lend the place, or an
+  overlapping place, `inout`.
+- **Reads in other arguments.** They are evaluated before the call, as copies, so they
+  stay allowed.
+
+Inside the closure, the place is used as in the body that owns it:
+
+- it can be read, and its `var` fields written;
+- it can be lent onward with `&x`, or called through an `inout` receiver;
+- a nested closure that is itself non-escaping may capture it.
+
+#### 3.3.3 Non-escaping parameters, inferred
+
+A function-typed parameter `f`, or a by-name parameter, is non-escaping when every use of
+it in the body is one of these:
+
+- a call, `f(…)`;
+- an argument to a parameter that is itself non-escaping (a summary edge);
+- a capture by a closure that is itself non-escaping.
+
+Anything else is an escape. That covers:
+
+- being stored in a field, collection, `Option` or tuple;
+- being returned;
+- being bound to a name other than a local only called (Q21);
+- being compared;
+- being passed to a `Sendable` parameter, a `go` statement or `go_interop.Spawn`;
+- being passed to Go, except to an allow-listed callback slot (3.3.5).
+
+The analysis extends phase 1:
+
+- **Summaries:** one bit per function-typed parameter, *calls only* or *escapes*,
+  computed per strongly connected component of the call graph as a greatest fixed point.
+- **Storage:** written to package metadata next to `Borrow` (decision Q6), so a caller in
+  another package reads them. The analysis cache version is bumped.
+- **std, measured with a textual check:**
+  - `collection_immutable`, `std` and `stream` have 198 function-typed parameters;
+  - 122 are only ever called;
+  - 73 are passed on, or captured by an inner lambda, so the fixed point decides them;
+  - 2 are stored.
+  - The lazy stream operations escape: `Stream.Map` captures `f` in its tail thunk. Their
+    terminal operations (`ForEach`, `FoldLeft`) do not.
+- **Evaluation order is part of the summary's meaning.** A Lean model of `Map` must call
+  `f` once per element, in index order. std's `Array.Map`, `ForEach` and `ArrayTabulate`
+  loop in that order today, and the differential tests check it.
+
+Inference makes a library's escape behaviour part of its API without a word in the
+signature. Suppose an exported function starts storing its callback. Callers in other
+packages that capture an `inout` place then get E0113, and the change looks like a body
+edit. Q20 asks whether exported functions should declare the property instead.
+
+#### 3.3.4 Flow of a checked capture
+
+```mermaid
+flowchart TD
+    C[closure captures place x<br/>inout binding or unique Ptr] --> D{written directly as<br/>an argument, by-name<br/>argument or method value?}
+    D -->|no: bound to a val, stored, returned| E1[E0113: x escapes<br/>phase 1: captured]
+    D -->|yes| P{target parameter<br/>non-escaping?<br/>summary or allow-list}
+    P -->|no, or unknown: function value,<br/>interface, Go, Sendable| E2[E0113 with the reason<br/>and where the parameter escapes]
+    P -->|yes| X{same call also lends x<br/>or an overlapping place?}
+    X -->|yes| E3[E0112: overlapping access]
+    X -->|no| T{inside a Try thunk<br/>and x touched?}
+    T -->|yes| E4[E0115, as today]
+    T -->|no| OK[accepted: x is lent<br/>to the closure for the call]
 ```
 
-std's higher-order functions need monad-polymorphic Lean models (`forM`, `mapM`,
-`foldlM`). A GALA-defined higher-order function is translated generically over
-`[Monad m] [MonadLiftT M m]` when it has a non-escaping function parameter (Q6).
+#### 3.3.5 Interactions
+
+- **`inout` and E0113:**
+  - E0113 stops firing for a capture that the rule above accepts.
+  - Every other E0113 case stays: `&x` stored, returned or passed to `Ptr`; a method value
+    called later; a capture in an escaping closure.
+  - The message names the parameter that escapes and, when the summary knows it, the line
+    where it escapes.
+- **Go callbacks.** A closure passed to a Go function-typed parameter escapes by default,
+  as every Go call does (3.5.2). The no-retain allow-list (`internal/transpiler/noretain.go`,
+  11 receiver entries today) gains a second kind of entry: a Go function and a func-typed
+  parameter that Go calls only during the call. Examples are `sort.Slice`'s `less`,
+  `slices.SortFunc`'s `cmp`, and `strings.Map`'s `mapping`. CI verifies each entry the
+  same way: `-gcflags=-m` must report `f does not escape`. Users cannot add entries
+  (decision Q15). A Lean model of the callee must also say when it calls the callback
+  (3.5.5).
+- **Goroutines and `Future`:**
+  - A `Sendable` parameter always escapes. `Future(…)`, `go_interop.Spawn` and a `go`
+    statement make every closure they receive escaping.
+  - E0037 is unchanged, so capturing an `inout` place in such a closure stays E0113.
+  - `Future.Map(f)` and the other callbacks that run later on another goroutine escape
+    through their summaries; this needs no special case.
+- **`Try`:**
+  - The thunk of `Try(...)` runs during the call, so it is non-escaping.
+  - E0115 (decision Q5) still forbids reading or writing an `inout` place inside it.
+  - Phase 3 relaxes nothing there. A closure capturing `x` that is called inside a `Try`
+    thunk is covered by E0115's existing transitive check of the thunk body. Q24 asks
+    whether that is enough.
+- **Interfaces and function values.** A call through a function value or an interface
+  method has no summary, so its function-typed parameters escape. Q22 asks whether a
+  function type may say that a parameter is non-escaping.
+- **The generated Go is unchanged.** A non-escaping closure is the same Go closure as
+  today, so no golden output changes. Go's own escape analysis may now keep more of these
+  closures on the stack, but GALA does not rely on that.
+
+#### 3.3.6 Lean translation
+
+gala2lean already gives each lambda the type `A → _gala_M R` and keeps each captured `var`
+in a reference cell in `_gala_M`'s state. Three shapes can translate a lent place that a
+non-escaping closure captures:
+
+| Option | Shape | std models needed | Panics | Cost |
+|---|---|---|---|---|
+| **A. `StateT`** | The closure runs in `StateT S _gala_M`, where `S` holds the captured places. The higher-order function is lifted. | Generic over the monad (`forM`, `mapM`, `foldlM`), plus `MonadLiftT` instances | `StateT`'s state is lost when `EStateM` raises. Go keeps the writes made before the panic. They differ only if the panic is caught, which E0115 forbids for `inout` places. | A second monad layer in every translated higher-order function |
+| **B. Scoped cell (recommended)** | At the call that receives the closure: copy `x` into a fresh cell, translate the closure against the cell with today's captured-`var` machinery, then read the cell back into `x` after the call. An `inout` method call inside the closure reads the cell, calls the method by state passing, and writes the cell. | None: higher-order functions stay in `_gala_M`, as they are today | Writes made before a raise stay in the cell, as in Go. The `inout` write-back is skipped on a raise, as now (Q14). | One cell per lent place per call |
+| C. Explicit threading | The closure becomes `S → A → _gala_M (R × S)`, and each higher-order function gets an accumulating variant (`mapAccum`, a fold with state). | A threaded model of every higher-order function | Like A | The most models to write; the purest terms for proofs |
+
+**Why B is sound.** B is argued correct under the conditions below, and tested; it is not
+a proved theorem. The argument is a simulation between Go's heap, where the pointee of `x`
+is written in place, and the Lean state, where the value is written to a cell and later
+read back. The math expert reviewed this list.
+
+The check in 3.3.4 enforces three facts:
+
+1. **The cell is fresh.** The cell is allocated at the call, so no path other than the
+   closures of that call reaches it.
+2. **The closure is non-escaping.** No closure that holds the cell is reachable after the
+   higher-order call returns. So nothing writes the cell after the read-back, and the
+   read-back sees the final value.
+3. **Access is exclusive.** A call that lends `x` by state passing can never reach a live
+   closure that captures `x`. Such closures are only direct arguments, never stored, and
+   E0112 forbids passing one to a call that lends `x`. gala2lean's `placeShared` case,
+   which rejects a pointer method on a shared captured `var` today, therefore cannot
+   arise for a place lent this way.
+
+The translation must also meet four conditions:
+
+4. **One cell per place per call.** If one call receives two closures that both capture
+   `x` (`h(() => x.a(), () => x.b())`), both use the same cell. Separate cells would make
+   one write-back overwrite the other. A fixture covers this case.
+5. **Every use of `x` inside the closure goes through the cell.** That includes plain
+   field reads (`x.n`) and uses of the whole value, not only `inout` method calls.
+   Otherwise the closure would read a stale `x` after an earlier call in it wrote the
+   cell.
+6. **No other argument of the call aliases `x`.**
+   - E0112 covers `&x`.
+   - For a unique `Ptr` `p`, passing `p` itself as another argument would give the callee
+     a path that sees Go's writes in place, while B shows it the old value. Phase 1
+     already classes `f(p, p)` as *passed twice*, so `p` is then not unique and B does not
+     apply.
+   - Passing `x`'s value is fine: it is a copy, evaluated before the call in both
+     semantics.
+7. **No panic is caught between the higher-order call and the end of `x`'s lifetime.**
+   E0115, together with the absence of `recover` in the translated subset, gives this
+   today. The condition applies equally to A.
+
+**What B trusts.** The argument rests on the non-escaping inference, which is the
+transpiler's own analysis, the thing the differential run tests. If gala2lean took the
+non-escaping bit from the transformer, a wrong inference would make the Lean side agree
+with the wrong Go, and no differential run could see it. So gala2lean decides
+non-escaping itself:
+
+- from a vetted list of std higher-order models;
+- or by checking the callee it translates: the parameter is only called, or only passed
+  to such a parameter.
+
+Q25 records this choice. If it is ever reversed, the transformer's summary must be listed
+as a trust point in 3.5.5.
+
+A dead cell left in the heap is not observable.
+
+Here is B on `newBuilder`, simplified. The ATN state types are left out:
+
+```lean
+def newBuilder (lexer : Bool) (vocab : Vocabulary) (rules : Array Rule) : _gala_M builder := do
+  let mut b : builder := { … }
+  let cell ← _gala_new3 b                     -- lend b to the closure
+  rulesForEach (zipWithIndex rules) (fun ri => do
+    let b₀ ← _gala_get3 cell
+    let (s, b₁) ← builder.state b₀ ri.2 .RuleStartState   -- state-passed method
+    _gala_set3 cell { b₁ with ruleStart := b₁.ruleStart.push s })
+  b ← _gala_get3 cell                         -- read back after the call
+  return b
+```
+
+**What is claimed.** Phase 3 adds no theorem. Its correctness for the translator rests on
+the argument above and on differential tests, in which the Lean run must agree with the Go
+run.
+
+A natural next statement would be: on programs the phase 3 check accepts, B's output
+agrees with C's pure state threading. It needs galaspec's heap model for `Ptr`, the
+same prerequisite as T8 (decision Q12), so it is not proposed now. Q23 asks which shape to
+build.
+
+#### 3.3.7 Diagnostics
+
+Phase 3 mostly relaxes existing checks, so it needs few new codes. The codes from
+`GALA-E0117` on are free: master and the open pull requests stop at E0116.
+
+| Code | Change |
+|---|---|
+| [GALA-E0113](errors/GALA-E0113.md) | Accepts a capture by a non-escaping closure. Its message says why a parameter escapes ("`f` of `Cache.OnMiss` escapes: it is stored at cache.gala:41"). |
+| [GALA-E0112](errors/GALA-E0112.md) | Unchanged. It already covers a lambda argument that reads a place lent by the same call. Its page gains a phase 3 example. |
+| [GALA-E0115](errors/GALA-E0115.md) | Unchanged. |
+| E0117 (only if Q20 chooses a declaration) | A parameter declared non-escaping escapes in the body: it is stored, returned, or passed to an escaping parameter. |
+| E0118 (only if Q21 chooses option b) | A local function value that captures a lent place is used other than by a call or a non-escaping argument. |
+
+If Q20 and Q21 keep the recommended answers, no new code is needed.
+
+#### 3.3.8 Plan
+
+Each PR keeps the generated Go byte-identical.
+
+| PR | Content | Done when |
+|---|---|---|
+| 3a | Phase 1 precision: no `captured` reason for a binding declared inside the lambda (the false positive in `Parse`), and a `captured-nonescaping` sub-reason in `COVERAGE.md` | galop's capture counts match 3.3.1 |
+| 3b | Non-escaping summaries for function-typed and by-name parameters; package metadata and an analysis cache bump; phase 1 treats a capture in a non-escaping closure as a lend | `ownershipcov` reports the 17 galop functions as unique |
+| 3c | Language: E0113 relaxed as in 3.3.2, with reasons in its message; error pages and website mirror; an `examples/` program with a `.out` (an `inout` place mutated through `ForEach`, `Map` and `FoldLeft`) | The example runs; the E0112, E0113 and E0115 negatives still fire |
+| 3d | Go callback allow-list entries (`sort.Slice`, `slices.SortFunc`, `strings.Map`), each verified with `-gcflags=-m` in CI | The escape test passes for every entry |
+| 3e | gala2lean: the scoped-cell translation (B), lifting `ptr-escape` for lent places; gala2lean decides non-escaping itself (Q25); fixtures for two closures sharing one cell; reviewed by the math expert | A fixture and an example with an `inout` capture agree with Go in `lean_test` and difftest |
+| 3f (after gala2lean's prerequisites) | galop's `builder` and `Sim` round-trip through Lean | `-stats` counts them |
+
+Downstream: phase 3 only accepts more programs, so the gala_team, galop and gala-acp lanes
+cannot break. 3b changes package metadata, so they rebuild their analysis caches once.
 
 ### 3.4 Phase 4: transfer across `Sendable` boundaries
 
@@ -976,7 +1287,7 @@ gantt
 | 1 | Borrow summaries and freshness, written to package metadata; gala2lean translates unique `Ptr`s as values; `COVERAGE.md` lists escape reasons | 2–3 weeks | galop's `lexer` and `configSet` round-trip through Lean and agree with Go on their tests; coverage up about 3 points |
 | 1b (stretch) | A galaspec heap model and theorem T8 | 2 weeks | T8 proved for S1 plus `Ptr` |
 | 2 | `inout` syntax, lowering, the five checks and their codes, docs, IDE/LSP; interop (3.5): copy-in/copy-out wrappers, the allow-list and its CI escape check, E-inout-foreign-impl | 4–5 weeks | The generated Go for existing examples is byte-identical; new examples cover each code; gala-tui's `Custom` can be written with `inout` |
-| 3 | Inferred non-escaping function parameters; `StateT` closure translation; monadic std models | 2–3 weeks | galop's `builder` translates; coverage about 76% |
+| 3 | Inferred non-escaping function parameters; E0113 relaxed; the scoped-cell Lean translation (PRs 3a–3f in [3.3.8](#338-plan); Q19 proposes building the analysis first) | 2–3 weeks | galop's `builder` and `Sim` are unique in `COVERAGE.md` (+17 functions); they translate once gala2lean handles collections |
 | 4 | Sendable transfer | 1–2 weeks | The `ArrayOf` example above compiles; a use after the send is E0037 with a secondary span |
 | Adoption | `gala fix` codemod; galop and std private code (`json`) migrated; builder redesign (Q9). gala-tui is external and not migrated (Q11) | 1–2 weeks | galop at about 90% translatable |
 | Documentation (final) | **Replace this design document** with a user-facing `docs/OWNERSHIP.MD` that explains ownership (`inout`, inferred uniqueness, Sendable transfer, Go interop guarantees) as a language feature, and add it to the GALA documentation: `docs/GALA.MD`, the website mirror and its navigation, `docs/GO_INTEROP.MD`, error pages. Delete `docs/OWNERSHIP_DESIGN.MD` (keep the history in git) | 2–3 days | Every phase has shipped; users can learn the feature without reading a design doc |
@@ -1022,3 +1333,19 @@ The maintainer answered the open questions below on 2026-11-13. Phase 1 is appro
 | Q10 | Hylo-style projections: `inout` pattern bindings, or `inout` locals (`inout l = &p.lex`)? | Out of scope. They need borrowed results, the one thing that brings back backward closures. |
 | Q11 | Migrating gala-tui's public `*Buffer` API to `inout Buffer` breaks gala-tui users. Is it worth it? | Only after phase 2 is stable, and only with your approval. |
 | Q12 | Should galaspec gain a heap model for `Ptr`, so that T8 (uniqueness implies the two semantics agree) can be proved? | Yes, as a stretch goal for phase 1. Without it, phase 1's soundness rests on the argument in 3.1 and on differential testing. |
+
+## 9. Open questions for phase 3
+
+Phase 3 is described in [3.3](#33-phase-3-non-escaping-closures-may-capture-inout-places).
+These questions are not yet answered.
+
+| # | Question | Options | Recommendation |
+|---|---|---|---|
+| Q19 | When should phase 3 be built? The measured gain in `gala2lean -stats` is 0 until gala2lean translates immutable collections, `Option`, types from other packages and `Ptr[T]` receivers. | (a) Build all of it now. (b) Wait for those prerequisites. (c) Build the analysis now (PRs 3a and 3b: no language change), and build the language change (3c) and the translation (3e) after the prerequisites. | **(c).** 3a and 3b are cheap, and they make `COVERAGE.md` show the real phase 3 reasons. The language relaxation has no user asking for it yet. |
+| Q20 | Exported functions: should non-escaping parameters stay inferred (decision Q6), or be declared? With inference, a library that starts storing a callback breaks callers that capture `inout` places, and the signature does not change. | (a) Inferred everywhere, as Q6 decided. (b) Inferred, and shown in hover and `gala doc`, so a change is visible. (c) A declared marker on parameters of exported functions, checked by E0117. | **(b).** It keeps Q6 and adds no syntax. Revisit if a downstream library breaks. |
+| Q21 | Is a closure bound to a local `val` (`val visit = (c) => …`) non-escaping when it is only called or passed to non-escaping parameters? galop has 6 such closures. All 6 are also blocked by mutable collections. | (a) No: such a closure escapes, as in Swift. (b) Yes, with E0118 when it is used otherwise. (c) Decide later. | **(a).** No measured function needs it. |
+| Q22 | May a function type, or an interface method, declare a non-escaping parameter, so that calls through function values can lend places? | (a) No: a call with no summary escapes. (b) Yes, with a modifier on function types. | **(a).** No measured case needs it, and it adds a type-level concept. |
+| Q23 | Which Lean shape should gala2lean use for a lent place captured by a closure? | (A) `StateT` with monad-generic std models. (B) A scoped cell: copy in, translate the closure against the cell, read back, under the seven conditions of 3.3.6. (C) Explicit state threading with accumulating std models. | **B.** It reuses gala2lean's captured-`var` cells and needs no new std models. The math expert agreed, on condition that the doc state B as argued and tested, not proved. A theorem "B agrees with C" waits for galaspec's `Ptr` heap model. |
+| Q24 | `Try`: should a read-only capture of an `inout` place be allowed in a `Try` thunk? | (a) No: E0115 stays as it is (Q5). (b) Allow reads, and forbid only writes. | **(a).** Nothing measured needs it. |
+| Q25 | Where does gala2lean get the non-escaping fact? | (a) It decides it itself, from vetted std models or from the callee it translates. (b) It reads the transformer's summary, which then becomes a listed trust point. | **(a).** Otherwise a wrong inference would make the Lean run agree with wrong Go, and no differential run could catch it (the math expert's condition). |
+| Q26 | Go callbacks: should the no-retain allow-list gain function-parameter entries (`sort.Slice`, `slices.SortFunc` and others) in phase 3? The corpus has 4 such calls: 1 `slices.SortFunc` and 3 `slices.SortStableFunc`. | (a) No: a closure passed to Go escapes. (b) Yes, starting with the callees that appear in the corpus, each verified with `-gcflags=-m`. | **(a) for now.** 4 calls do not pay for the entries and their Lean models. Use (b) when phase 1 reports show demand. |
