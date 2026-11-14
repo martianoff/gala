@@ -134,6 +134,7 @@ type galaASTTransformer struct {
 	branchingCalls         map[*ast.CallExpr]branchingSite               // the function-literal call each match or if-expression whose value is used lowered to, checked by checkBranchingCalls once the file is complete
 	userReturns            map[*ast.ReturnStmt]loopControlSite           // source position of each `return` lowered from source, checked by checkBranchingCalls
 	voidCalls              map[*ast.CallExpr]voidCallSite                // each call of void type with its source, checked by checkVoidCalls once the file is complete
+	errorCalls             map[*ast.CallExpr]loopControlSite             // source position of each call of type error, where GALA-E0101 reports one a void lambda discards (see checkDiscardedError)
 	hoisted                map[*ast.Ident]hoistedValue                   // a match or if-expression lowered as statements, by the placeholder that stands for it until its consumer takes it (see hoisted_value.go)
 	escapeCache            map[native.GalaNodeRef]bool                   // whether a subtree holds control flow that would leave a construct lowered to a function literal (see cachedEscape)
 	hoistedPre             []ast.Stmt                                    // statements the local declaration being lowered needs before it, set when its initializer is lowered as statements (see hoisted_value.go)
@@ -379,6 +380,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.defaultRefDecls, t.defaultRefNames = nil, nil
 	t.userReturns = nil
 	t.voidCalls = nil
+	t.errorCalls = nil
 	t.hoisted = nil
 	t.escapeCache = nil
 	t.userLoops = nil

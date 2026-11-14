@@ -723,7 +723,7 @@ func main() {
     Some(-1).ForEach((n) => save(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "error_codes_test.gala:8:21 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
+			expectContains: "error_codes_test.gala:8:28 cannot discard error return from save in void lambda (hint: use FromError(save(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 GALA method discarded in a void block lambda",
@@ -743,7 +743,7 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from conn.Close in void lambda",
+			expectContains: "error_codes_test.gala:13:8 cannot discard error return from conn.Close in void lambda",
 		},
 		{
 			name: "GALA-E0101 method of a val field named as written",
@@ -762,7 +762,7 @@ func main() {
     Some(1).ForEach((n) => h.conn.Close())
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from h.conn.Close in void lambda (hint: use FromError(h.conn.Close(...)) to handle the error)",
+			expectContains: "error_codes_test.gala:13:27 cannot discard error return from h.conn.Close in void lambda (hint: use FromError(h.conn.Close(...)) to handle the error)",
 		},
 		{
 			name: "GALA-E0101 generic GALA method returning error",
@@ -779,7 +779,7 @@ func main() {
     Some(1).ForEach((n) => conn.Send(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from conn.Send in void lambda",
+			expectContains: "error_codes_test.gala:11:27 cannot discard error return from conn.Send in void lambda",
 		},
 		{
 			name: "GALA-E0101 function value returning error",
@@ -792,7 +792,7 @@ func main() {
     Some(-1).ForEach((n) => check(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from check in void lambda",
+			expectContains: "error_codes_test.gala:7:28 cannot discard error return from check in void lambda",
 		},
 		{
 			name: "GALA-E0094 unused default reading a later parameter, at its declaration",
@@ -843,7 +843,24 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "error_codes_test.gala:8:21 cannot discard error return from save in void lambda",
+			expectContains: "error_codes_test.gala:11:12 cannot discard error return from save in void lambda",
+		},
+		{
+			name: "GALA-E0101 Go error-only call in an if inside a void block lambda",
+			input: `package main
+
+import "os"
+
+func main() {
+    Some("x").ForEach((p) => {
+        if (p != "") {
+            Println(p)
+            os.Remove(p)
+        }
+    })
+}`,
+			expectCode:     galaerr.CodeDiscardedErrorReturn,
+			expectContains: "error_codes_test.gala:9:12 cannot discard error return from os.Remove in void lambda",
 		},
 		{
 			name: "GALA-E0101 error-only call in an if-expression body of a void lambda",
@@ -857,7 +874,7 @@ func main() {
     Some(-1).ForEach((n) => if (n < 0) save(n) else Println(n))
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from save in void lambda",
+			expectContains: "error_codes_test.gala:8:39 cannot discard error return from save in void lambda",
 		},
 		{
 			name: "GALA-E0101 if whose every branch is an error-only call, in a void block lambda",
@@ -874,7 +891,7 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from save in void lambda",
+			expectContains: "error_codes_test.gala:10:19 cannot discard error return from save in void lambda",
 		},
 		{
 			name: "GALA-E0101 match whose every arm is an error-only call, as a void expression lambda",
@@ -891,7 +908,7 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from save in void lambda",
+			expectContains: "error_codes_test.gala:9:18 cannot discard error return from save in void lambda",
 		},
 		{
 			name: "GALA-E0101 error-only call in a match arm of a void lambda",
@@ -910,7 +927,7 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from save in void lambda",
+			expectContains: "error_codes_test.gala:11:22 cannot discard error return from save in void lambda",
 		},
 		{
 			name: "GALA-E0101 error-only call in a match arm block of a void expression lambda",
@@ -930,7 +947,7 @@ func main() {
     })
 }`,
 			expectCode:     galaerr.CodeDiscardedErrorReturn,
-			expectContains: "cannot discard error return from save in void lambda",
+			expectContains: "error_codes_test.gala:12:12 cannot discard error return from save in void lambda",
 		},
 		{
 			// No field is in scope, so W is the package val: a mistake.

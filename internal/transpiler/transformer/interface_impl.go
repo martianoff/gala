@@ -97,6 +97,27 @@ func (t *galaASTTransformer) checkSlotFill(expr ast.Expr, typ transpiler.Type, a
 	return t.checkInterfaceSlot(expr, typ, at)
 }
 
+// checkResultFill checks one result, of type valType, of the call written
+// at at whose results fill several targets (`a, b = f()`), against its
+// target's type typ as lowerAgainst checks a value: neither a pointer that
+// may be nil where a Ptr is expected (GALA-E0080), nor a pointer where the
+// value it points to is (GALA-E0099), nor a value of a type that does not
+// implement the target's interface (GALA-E0100).
+func (t *galaASTTransformer) checkResultFill(valType transpiler.Type, typ transpiler.Type, at srcNode) error {
+	if transpiler.IsUnusable(typ) || !at.ok() {
+		return nil
+	}
+	typ = t.followAliasChain(typ)
+	val := func() transpiler.Type { return valType }
+	if err := t.checkPtrSlotType(val, typ, at); err != nil {
+		return err
+	}
+	if err := t.checkPointerForValueType(val, typ, at, false); err != nil {
+		return err
+	}
+	return t.checkInterfaceSlotType(val, typ, at)
+}
+
 // requiredMethods returns, to be listed once a value is known to need them,
 // the methods slotType requires when it is an interface with methods whose
 // signatures are known: `error`, a GALA interface (instantiated with the
