@@ -12,3 +12,4 @@ import Gala.Theorems
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems
+import Gala.Statements
