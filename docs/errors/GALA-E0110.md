@@ -102,9 +102,9 @@ error[GALA-E0110]: cannot print this Holder: its field c, a Counter, prints by i
   --> main.gala:14:13
    |
 14 |     Println(h)
-   |             ^ hold the field as a `Ptr[Counter]`, so its String runs on th…
+   |             ^ hold field c as a `Ptr[Counter]`, so its String runs on the…
    |
-   = hint: hold the field as a `Ptr[Counter]`, so its String runs on the value it points to
+   = hint: hold field c as a `Ptr[Counter]`, so its String runs on the value it points to
 ```
 
 The error is reported where `Println`, `Print` or interpolation prints the

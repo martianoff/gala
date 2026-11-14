@@ -257,6 +257,23 @@ func (f *Fault) String() string {
 func (f Fault) Error() string = "faulted"
 
 struct FaultHolder(var f Fault)
+
+struct LoudError(var l Loud)
+
+func (e LoudError) Error() string = "loud error"
+
+struct LoudErrorHolder(var e LoudError)
+
+struct Stamp(var n int)
+
+func (s Ptr[Stamp]) String() string {
+    s.n = s.n + 1
+    "stamp"
+}
+
+func (s Stamp) Format(layout string) string = layout
+
+struct StampHolder(var at Stamp)
 `
 
 // TestMutatingFieldPrintRejected pins GALA-E0110 for a field printed through
@@ -287,6 +304,7 @@ func main() {
 		{"a sealed case's field", "val s = Says(Loud(0))\n    Println(s)", "cannot print this Shout: its field l, a Loud"},
 		{"a pointer to the value", "var h = LoudHolder(Loud(0), 1)\n    Println(&h)", "cannot print this LoudHolder: its field l"},
 		{"a pointer field to a value with such a field", "var h = LoudHolder(Loud(0), 1)\n    val d = DeepByPtr(&h)\n    Println(d)", "cannot print this DeepByPtr: its field h.l, a Loud"},
+		{"a Format that is not fmt.Formatter's", "var h = StampHolder(Stamp(0))\n    Println(h)", "cannot print this StampHolder: its field at, a Stamp"},
 	}
 	for _, tc := range rejected {
 		t.Run("rejected/"+tc.name, func(t *testing.T) {
@@ -294,9 +312,15 @@ func main() {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0110")
 			assert.Contains(t, err.Error(), tc.want)
-			assert.Contains(t, err.Error(), "hold the field as a `Ptr[")
+			assert.Contains(t, err.Error(), "as a `Ptr[")
 		})
 	}
+
+	t.Run("rejected/the hint names the nested field", func(t *testing.T) {
+		_, err := trans.Transpile(source("var d = LoudDeep(LoudHolder(Loud(0), 1))\n    Println(d)"), "printed_field_test.gala")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "hold field h.l as a `Ptr[Loud]`")
+	})
 
 	accepted := []struct{ name, body, mustContain string }{
 		{"a field held by pointer", "var l = Loud(0)\n    val b = LoudByPtr(&l)\n    Println(b)", "fmt.Println(b)"},
@@ -304,6 +328,8 @@ func main() {
 		{"a type with its own String", "val o = LoudOwn(Loud(0))\n    Println(o)", "fmt.Println(o)"},
 		{"a field printed by its own String", "var h = LoudHolder(Loud(0), 1)\n    Println(h.l)", "std.StringAt(&h.l)"},
 		{"a field printed by its value's Error", "var h = FaultHolder(Fault(0))\n    Println(h)", "fmt.Println(h)"},
+		{"a value printed by its own Error", "var e = LoudError(Loud(0))\n    Println(e)", "fmt.Println(e)"},
+		{"a nested field printed by its own Error", "var h = LoudErrorHolder(LoudError(Loud(0)))\n    Println(h)", "fmt.Println(h)"},
 	}
 	for _, tc := range accepted {
 		t.Run("accepted/"+tc.name, func(t *testing.T) {

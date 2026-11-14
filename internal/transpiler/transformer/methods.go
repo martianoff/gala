@@ -543,10 +543,13 @@ func (t *galaASTTransformer) checkPrintedFieldsCopy(typ transpiler.Type, line, c
 			fmt.Sprintf("cannot print this %s: its field %s, a %s, prints by its String on a copy, and %s", receiverBase(typ), path, typeName, why),
 			fmt.Sprintf("hold the field as a pointer (`*%s`), or declare a String for %s", fieldType, receiverBase(typ)))
 	}
+	if t.printsByErrorOrFormat(typ) {
+		return nil // fmt prints it by those, not by its generated String
+	}
 	if path, fieldType := t.printedField(typ, t.mutatedPrintedField, make(map[string]bool)); path != "" {
 		return galaerr.NewCodedSemanticError(galaerr.CodeMutatingCallOnCopy, line, col,
 			fmt.Sprintf("cannot print this %s: its field %s, a %s, prints by its String on a copy, and that String can change its receiver, so the change would be made to the copy and lost", receiverBase(typ), path, receiverBase(fieldType)),
-			fmt.Sprintf("hold the field as a `Ptr[%s]`, so its String runs on the value it points to", fieldType))
+			fmt.Sprintf("hold field %s as a `Ptr[%s]`, so its String runs on the value it points to", path, fieldType))
 	}
 	return nil
 }
@@ -628,6 +631,9 @@ func (t *galaASTTransformer) noCopyPrintedField(fieldType transpiler.Type, viaPo
 // pointerMethodMutates): std.FormatStruct runs that String on a copy of the
 // field, so the change is lost. Through a pointer it runs on the field itself.
 func (t *galaASTTransformer) mutatedPrintedField(fieldType transpiler.Type, viaPointer bool) (found, leaf bool) {
+	if t.printsByErrorOrFormat(fieldType) {
+		return false, true // fmt prints it by those; no String of it runs
+	}
 	if !t.printsFieldByPointerString(fieldType) {
 		return false, false
 	}
@@ -635,31 +641,56 @@ func (t *galaASTTransformer) mutatedPrintedField(fieldType transpiler.Type, viaP
 }
 
 // printsFieldByPointerString reports whether std.FormatStruct prints a field
-// of typ by a `String` declared on its pointer receiver only: one declared in
-// GALA (printsByPointerString), or one in Go, on a Go type or by hand-written
-// Go on a GALA type. An Error or Format of the value itself comes first, so a
-// type with one does not.
+// of typ, which does not print by an Error or Format (printsByErrorOrFormat),
+// by a `String() string` declared on its pointer receiver only: one declared
+// in GALA (printsByPointerString), or one in Go, on a Go type or by
+// hand-written Go on a GALA type.
 func (t *galaASTTransformer) printsFieldByPointerString(typ transpiler.Type) bool {
+	_, meta, goData, ok := t.receiverTypeInfo(typ)
+	switch {
+	case !ok:
+		return false
+	case meta != nil && printsByPointerString(meta):
+		return true
+	case goData == nil || !goData.PointerMethods["String"]:
+		return false
+	}
+	sig := goData.Methods["String"]
+	return sig != nil && len(sig.Params) == 0 && len(sig.Returns) == 1 && isBasicNamed(sig.Returns[0], "string")
+}
+
+// printsByErrorOrFormat reports whether a value of typ implements error or
+// fmt.Formatter by a method of the value itself, `Error() string` or a
+// two-parameter `Format` with no result: fmt prints such a value by that
+// method, before any String.
+func (t *galaASTTransformer) printsByErrorOrFormat(typ transpiler.Type) bool {
 	_, meta, goData, ok := t.receiverTypeInfo(typ)
 	if !ok {
 		return false
 	}
-	for _, first := range []string{"Error", "Format"} {
-		if meta != nil {
-			if m := meta.Methods[first]; m != nil && !m.PointerReceiver {
-				return false
-			}
+	if meta != nil {
+		if m := meta.Methods["Error"]; m != nil && !m.PointerReceiver && len(m.ParamTypes) == 0 && isBasicNamed(m.ReturnType, "string") {
+			return true
 		}
-		if goData != nil {
-			if _, has := goData.Methods[first]; has && !goData.PointerMethods[first] {
-				return false
-			}
+		if m := meta.Methods["Format"]; m != nil && !m.PointerReceiver && len(m.ParamTypes) == 2 && isVoidResult(m.ReturnType) {
+			return true
 		}
 	}
-	if meta != nil && printsByPointerString(meta) {
-		return true
+	if goData != nil {
+		if sig := goData.Methods["Error"]; sig != nil && !goData.PointerMethods["Error"] && len(sig.Params) == 0 && len(sig.Returns) == 1 && isBasicNamed(sig.Returns[0], "string") {
+			return true
+		}
+		if sig := goData.Methods["Format"]; sig != nil && !goData.PointerMethods["Format"] && len(sig.Params) == 2 && len(sig.Returns) == 0 {
+			return true
+		}
 	}
-	return goData != nil && goData.PointerMethods["String"]
+	return false
+}
+
+// isVoidResult reports whether typ, a GALA method's ReturnType, is no result.
+func isVoidResult(typ transpiler.Type) bool {
+	_, isVoid := typ.(transpiler.VoidType)
+	return isVoid
 }
 
 // printedInPlace reports whether expr, a generated Go expression of a value
