@@ -513,6 +513,7 @@ func (a *galaAnalyzer) recordStructFieldNative(meta *transpiler.TypeMetadata, fc
 func (a *galaAnalyzer) interfaceMethodNative(meta *transpiler.TypeMetadata, msCtx native.MethodSpecNode, pkgName, definedIn string, docs galaparser.Docs) *transpiler.MethodMetadata {
 	methodMeta := &transpiler.MethodMetadata{
 		Name:       msCtx.Identifier().GetText(),
+		InoutReceiver: msCtx.INOUT().Ok(),
 		Package:    pkgName,
 		Doc:        nativeDocAt(docs, msCtx.GalaNodeRef),
 		DefinedIn:  definedIn,

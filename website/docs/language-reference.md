@@ -1872,14 +1872,22 @@ func main() {
   parameter. Reading `c` as a whole (`val copy = c`) copies the value.
 - **Declarations.** `inout` is allowed on function and method parameters, on
   receivers, on lambda parameters (`(inout b Buffer) => …`), and in function
-  types (`func(inout Counter)`). An `inout` parameter is neither variadic nor
+  types (`func(inout Counter)`), and on interface method specs. An `inout` parameter is neither variadic nor
   defaulted ([GALA-E0111](/docs/errors/gala-e0111/)). A generic `inout x T` is
   allowed.
 - **Go.** `inout x T` is the Go parameter `x *T` and an `inout` receiver a
   pointer receiver, so `bump(&c, 5)` is the Go a programmer writes with a
   `Ptr[Counter]` parameter. A read of `x` as a whole is `*x`, and an exported
   function checks its `inout` parameters for nil on entry, as it does `Ptr`
-  parameters.
+  parameters. Go code calls an exported `inout` function or method through a
+  wrapper that lends the GALA body a copy of each `inout` argument, and GALA
+  code calls the body itself ([Go interop](/docs/go-interop/#inout-functions-and-methods)).
+- **Interfaces.** An interface may declare a method `inout`
+  (`type Stepper interface { inout Step() int }`). A value fills it only when
+  its type implements that method with an `inout` receiver; a Go type only
+  when its method is on the no-retain allow-list below
+  ([GALA-E0116](/docs/errors/gala-e0116/)). An interface value received from Go
+  is trusted as it is.
 - **Function types.** `func(inout Counter)` and `func(Ptr[Counter])` are
   distinct GALA types with the same Go type, `func(*Counter)`. A call through
   a value of a `func(inout T)` type is checked like a call of a declared
@@ -1903,7 +1911,11 @@ the call:
   passed to a parameter that is not `inout` or to Go. `c` is not captured by
   a lambda or a by-name argument, and no method value is taken on it. A
   pointer-receiver method is called on it only when its receiver is `inout`
-  or, for a method of another package, borrowed; a value-receiver method
+  or, for a method of another package, borrowed. A Go pointer method is
+  called on it only when it is on the compiler's no-retain allow-list
+  (`bytes.Buffer.WriteString`, `strings.Builder.Grow`, ...): each entry is
+  checked in CI against the Go compiler's escape analysis, and programs
+  cannot add entries. A value-receiver method
   gets a copy and is always fine. To keep the value, copy it: `val n = c.n`.
 - **No partial updates.** The thunk of `Try(...)` does not use an `inout`
   place ([GALA-E0115](/docs/errors/gala-e0115/)): a panic `Try` catches would

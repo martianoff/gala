@@ -1805,6 +1805,31 @@ func main() {
 			},
 		},
 		{
+			name: "an inout interface method implemented with a Ptr receiver",
+			code: galaerr.CodeInoutForeignImpl, // GALA-E0116
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Stepper interface {
+    inout Step() int
+}
+
+struct Counter(var n int)
+
+func (c Ptr[Counter]) Step() int {
+    c.n = c.n + 1
+    c.n
+}
+
+func run(s Stepper) int = s.Step()
+
+func main() {
+    Println(run(&Counter(0)))
+}
+`)
+			},
+		},
+		{
 			name: "an inout method called on a val",
 			code: galaerr.CodeInoutReceiver, // GALA-E0114
 			render: func(t *testing.T) string {

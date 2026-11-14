@@ -73,7 +73,12 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	case native.GalaKIND_varDeclaration:
 		return oneDecl(t.lowerVarDecl(t.readBindingDeclNative(native.VarDeclarationNode{GalaNodeRef: decl}, "var")))
 	case native.GalaKIND_functionDeclaration:
-		return oneDecl(t.lowerFuncDecl(t.readFuncDeclNative(native.FunctionDeclarationNode{GalaNodeRef: decl})))
+		fd, err := t.lowerFuncDecl(t.readFuncDeclNative(native.FunctionDeclarationNode{GalaNodeRef: decl}))
+		if w := t.inoutWrapper; err == nil && w != nil {
+			t.inoutWrapper = nil
+			return []ast.Decl{w, fd}, nil
+		}
+		return oneDecl(fd, err)
 	case native.GalaKIND_typeDeclaration:
 		return t.lowerTypeDecl(t.readTypeDeclNative(native.TypeDeclarationNode{GalaNodeRef: decl}), false)
 	case native.GalaKIND_structShorthandDeclaration:

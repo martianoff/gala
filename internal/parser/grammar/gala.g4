@@ -75,7 +75,9 @@ structType: 'struct' '{' structField* '}';
 structField: (VAL | VAR)? identifier type;
 
 interfaceType: 'interface' '{' methodSpec* '}';
-methodSpec: identifier (typeParameters)? signature;
+// An `inout` method requirement is met by a method with an `inout` receiver
+// (docs/OWNERSHIP_DESIGN.MD, 3.5.3).
+methodSpec: INOUT? identifier (typeParameters)? signature;
 
 valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;
 varDeclaration: 'var' (tuplePattern | identifierList) (type)? ('=' expressionList)?;

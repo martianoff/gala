@@ -65,6 +65,9 @@ func (t *galaASTTransformer) checkInterfaceSlotType(valTypeOf func() transpiler.
 		return nil
 	}
 	slotType = t.followAliasChain(slotType)
+	if err := t.checkInoutInterfaceSlot(valTypeOf, slotType, at); err != nil {
+		return err
+	}
 	required, ok := t.requiredMethods(slotType)
 	if !ok {
 		return nil

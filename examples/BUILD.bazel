@@ -5412,3 +5412,34 @@ gala_exec_test(
     src = "inout_params.gala",
     expected = "inout_params.out",
 )
+
+# Exported inout functions and methods: Go calls a copy-in/copy-out wrapper
+# (aliased arguments, a recovered panic skipping the copy back), and GALA in
+# another package calls the GALA_ body directly.
+gala_library(
+    name = "inout_go_wrapper",
+    srcs = ["inout_go_wrapper/ledger.gala"],
+    go_srcs = ["inout_go_wrapper/ledger.go"],
+    importpath = "martianoff/gala/examples/inout_go_wrapper",
+    visibility = ["//visibility:public"],
+    deps = ["//go_builtins"],
+)
+
+gala_exec_test(
+    name = "inout_go_wrapper_test",
+    src = "inout_go_wrapper_test.gala",
+    expected = "inout_go_wrapper_test.out",
+    deps = [
+        ":inout_go_wrapper",
+        "//go_interop",
+    ],
+)
+
+# An interface may declare an inout method: GALA types implement it with an
+# inout receiver, and a Go type only through the no-retain allow-list.
+gala_exec_test(
+    name = "inout_interfaces",
+    src = "inout_interfaces.gala",
+    expected = "inout_interfaces.out",
+    deps = ["//collection_immutable"],
+)

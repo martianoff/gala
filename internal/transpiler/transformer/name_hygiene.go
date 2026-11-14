@@ -38,8 +38,8 @@ import (
 const localNamePrefix = transpiler.ReservedNamePrefix
 
 // exportedNamePrefix is reserved for the exported Go names of declarations
-// the transpiler generates for other packages to reach (none yet; the
-// `inout` lowering will export its bodies so). Go exports only upper-case
+// the transpiler generates for other packages to reach: the bodies of
+// Go-visible `inout` functions and methods (inout_interop.go). Go exports only upper-case
 // names, so the `_gala_` prefix cannot serve there. Like
 // localNamePrefix, no GALA identifier may start with it
 // (CheckReservedPrefixNative).

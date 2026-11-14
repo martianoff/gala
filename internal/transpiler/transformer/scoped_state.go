@@ -102,6 +102,7 @@ var accumulatedStateFields = []string{
 	"inoutTypesSeen",
 	"inoutLends",
 	"inoutApproved",
+	"inoutWrapper",
 	"localBindings",
 	"genericMethods",
 	"resultGenericMethods",

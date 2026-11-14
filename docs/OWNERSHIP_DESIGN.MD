@@ -789,6 +789,14 @@ An entry may also carry a Lean model, which the translation needs (3.5.5).
 - **Phase 1 relaxation path:** as a translator-only measure, phase 1 may also read the
   pinned compiler's `-m` output to count *coverage* (never to accept a program), so we
   learn which allow-list entries would pay off (decision Q17).
+- **As implemented:** the list is built into the compiler
+  (`internal/transpiler/noretain.go`) rather than into std's metadata. Since programs
+  cannot extend it (Q15), it needs no package to declare it.
+  - The entries are receivers of Go pointer methods.
+  - `//internal/transpiler:noretain_escape_test` compiles a stub per entry with
+    `-gcflags=-m` and requires `x does not escape`.
+  - The test rejected `strings.Builder`'s write methods, which store the builder's
+    own address for its copy check, and `bytes.Buffer.WriteRune`.
 
 #### 3.5.3 Interfaces with `inout` methods
 

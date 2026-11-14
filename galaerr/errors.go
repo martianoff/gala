@@ -1032,6 +1032,12 @@ const (
 	// Try(...)): a panic Try catches would leave the caller's place half
 	// updated.
 	CodeInoutInTry ErrorCode = "GALA-E0115"
+
+	// E0116: a value fills an interface that declares an `inout` method, but
+	// its type does not implement that method with an `inout` receiver: a
+	// GALA method with another receiver, or a Go method not on the no-retain
+	// allow-list, which may keep or share its receiver.
+	CodeInoutForeignImpl ErrorCode = "GALA-E0116"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

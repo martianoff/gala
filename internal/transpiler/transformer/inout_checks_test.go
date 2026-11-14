@@ -101,6 +101,23 @@ func TestInoutEscapeRejected(t *testing.T) {
 	}
 }
 
+// TestInoutGoAllowList pins the no-retain allow-list: a Go pointer method
+// lent an inout place is accepted only when the compiler's built-in list,
+// checked against Go's escape analysis in CI, says it keeps no reference.
+func TestInoutGoAllowList(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	src := func(body string) string {
+		return "package main\n\nimport \"bytes\"\n\nfunc fill(inout b bytes.Buffer) {\n    " + body + "\n}\n\nfunc main() {\n    var b = bytes.Buffer{}\n    fill(&b)\n    Println(b.Len())\n}\n"
+	}
+	_, err := trans.Transpile(src("b.WriteString(\"x\")\n    b.Truncate(0)"), "inout_allow_test.gala")
+	require.NoError(t, err)
+
+	_, err = trans.Transpile(src("Println(b.Bytes())"), "inout_allow_test.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0113")
+	assert.Contains(t, err.Error(), "calling Bytes on the inout place b lends its address")
+}
+
 // TestInoutOverlapRejected pins GALA-E0112: one call never lends one place
 // twice.
 func TestInoutOverlapRejected(t *testing.T) {

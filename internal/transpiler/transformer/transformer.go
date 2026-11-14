@@ -59,6 +59,9 @@ type galaASTTransformer struct {
 	// inoutApproved holds the lends a call passed to an `inout` parameter.
 	inoutTypesSeen, inoutLends bool
 	inoutApproved              map[ast.Node]bool
+	// inoutWrapper is the Go-visible wrapper lowerFuncDecl made for the
+	// function it lowered, emitted before it (splitInoutBody).
+	inoutWrapper *ast.FuncDecl
 	// localBindings holds the Go name of each local val or var a declaration
 	// emits, with where its GALA name is written (see unused_bindings.go).
 	localBindings map[*ast.Ident]localBinding
@@ -415,7 +418,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.ptrStars = nil
 	t.inoutNames, t.inoutTypesSeen = collectInoutNames(richAST)
-	t.inoutLends, t.inoutApproved = false, nil
+	t.inoutLends, t.inoutApproved, t.inoutWrapper = false, nil, nil
 	t.localBindings = nil
 	t.patternDefineTypes = nil
 	t.patternReads = nil

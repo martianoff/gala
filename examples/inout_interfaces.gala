@@ -1,0 +1,44 @@
+package main
+
+import (
+    "bytes"
+    . "martianoff/gala/collection_immutable"
+)
+
+// An interface may require an inout method: implementations take the
+// receiver's place for the call.
+type Stepper interface {
+    inout Step() int
+}
+
+struct Counter(var n int)
+
+func (inout c Counter) Step() int {
+    c.n = c.n + 1
+    c.n
+}
+
+struct Doubler(var n int)
+
+func (inout d Doubler) Step() int {
+    d.n = d.n * 2
+    d.n
+}
+
+func runAll(steppers Array[Stepper]) Array[int] = steppers.Map((s) => s.Step())
+
+type Sink interface {
+    inout WriteString(s string) (int, error)
+}
+
+func main() {
+    val c = &Counter(0)
+    val d = &Doubler(1)
+    val all = ArrayOf[Stepper](c, d, c)
+    Println(runAll(all))
+    Println(c.n, d.n)
+    val buf = &bytes.Buffer{}
+    var sink Sink = buf
+    sink.WriteString("on the allow-list")
+    Println(buf.String())
+}
