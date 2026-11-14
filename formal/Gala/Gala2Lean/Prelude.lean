@@ -212,13 +212,26 @@ instance [GShow α] : GShow (GList α) where
 section
 variable {σ : Type}
 
+/-- `GetOption`, `HeadOption`, `LastOption`: `None` where `Get`, `Head`, `Last` panic
+    (array.gala:452, 469, 486; list.gala:100, 216, 250). -/
+def toGOption : Option α → GOption α
+  | some x => .Some x
+  | none => .None
+
+/-- The element found, or `Panic.std` where std panics for want of one. -/
+def orStd : Option α → Prog σ α
+  | some x => pure x
+  | none => throw .std
+
 /-- The element at index `i`, or `Panic.std` out of range: `Array.Get` (array.gala:433),
     `List.Get` (list.gala:204), `Updated`'s range check. -/
 def seqGet (xs : List α) (i : Int64) : Prog σ α :=
-  if i < 0 then throw .std else
-  match xs[i.toInt.toNat]? with
-  | some x => pure x
-  | none => throw .std
+  if i < 0 then throw .std else orStd xs[i.toInt.toNat]?
+
+/-- `Prepend(v)`: `v` first (array.gala:609, list.gala:154). It takes the receiver
+    first, so that the translation evaluates the receiver before the argument, as Go
+    does. -/
+def seqPrepend (xs : List α) (v : α) : List α := v :: xs
 
 /-- `Updated(i, v)`: `Panic.std` out of range (array.gala:507, list.gala:224). -/
 def seqUpdated (xs : List α) (i : Int64) (v : α) : Prog σ (List α) :=
@@ -276,10 +289,8 @@ def seqForAll (xs : List α) (p : α → Prog σ Bool) : Prog σ Bool := xs.allM
 
 /-- `Find`: `p` from the first element, stopping at the first true (array.gala:915,
     list.gala:486). -/
-def seqFind (xs : List α) (p : α → Prog σ Bool) : Prog σ (GOption α) := do
-  match ← xs.findM? p with
-  | some x => pure (.Some x)
-  | none => pure .None
+def seqFind (xs : List α) (p : α → Prog σ Bool) : Prog σ (GOption α) :=
+  toGOption <$> xs.findM? p
 
 /-- `Count`: `p` on each element from the first, through `FoldLeft` (array.gala:937,
     list.gala:498). -/
@@ -303,14 +314,8 @@ def seqMkString [GShow α] (xs : List α) (sep : String) : String := sep.interca
 
 /-- The first and last elements, `Panic.std` when empty: `Head`, `Last` (array.gala:461,
     478; list.gala:92, 236). -/
-def seqHead (xs : List α) : Prog σ α := match xs.head? with | some x => pure x | none => throw .std
-def seqLast (xs : List α) : Prog σ α := match xs.getLast? with | some x => pure x | none => throw .std
-
-/-- `GetOption`, `HeadOption`, `LastOption`: `None` where `Get`, `Head`, `Last` panic
-    (array.gala:452, 469, 486; list.gala:100, 216, 250). -/
-def toGOption : Option α → GOption α
-  | some x => .Some x
-  | none => .None
+def seqHead (xs : List α) : Prog σ α := orStd xs.head?
+def seqLast (xs : List α) : Prog σ α := orStd xs.getLast?
 end
 
 def seqGetOption (xs : List α) (i : Int64) : GOption α :=

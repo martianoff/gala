@@ -51,4 +51,6 @@ func main() {
     Println(a.Reduce((x int, y int) => show("s", x) + y), ArrayOf(6).Reduce((x int, y int) => x * y))
     Println(a.Partition((n int) => show("p", n) > 2), e.Partition((n int) => n > 2))
     Println(a.ZipWithIndex(), e.ZipWithIndex())
+    // The receiver runs before the argument.
+    Println(ArrayOf(show("r", 1)).Prepend(show("v", 2)), ArrayOf(show("r", 1)).Append(show("v", 2)))
 }

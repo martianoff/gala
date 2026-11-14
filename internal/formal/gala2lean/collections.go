@@ -24,10 +24,6 @@ import (
 // collectionsPath is the import path of the immutable collections.
 const collectionsPath = "martianoff/gala/collection_immutable"
 
-// seqTypes are the collection types the prelude models: GALA name to prelude
-// type.
-var seqTypes = map[string]string{"Array": "GArray", "List": "GList"}
-
 // hashTypes are the collection types whose order the prelude does not model,
 // and the functions that build them.
 var hashTypes = map[string]bool{
@@ -39,23 +35,11 @@ var hashTypes = map[string]bool{
 // seqCtors are the functions that build an Array or a List.
 var seqCtors = map[string]string{"ArrayOf": "GArray", "EmptyArray": "GArray", "ListOf": "GList", "EmptyList": "GList"}
 
-// seqType is the prelude type of collection type name, applied to its type
-// arguments' Lean types; "" when name is not one.
-func (g *gen) seqType(name string, args []string, pos coreexport.Pos) string {
-	if !g.collections || g.declaredType(name) {
-		return ""
-	}
-	if hashTypes[name] {
+// hashType stops the translation at a HashMap or HashSet type (hash-order).
+func (g *gen) hashType(name string, pos coreexport.Pos) {
+	if g.collections && hashTypes[name] && !g.declaredType(name) {
 		unsup(pos, "hash-order")
 	}
-	k := seqTypes[name]
-	if k == "" {
-		return ""
-	}
-	if len(args) != 1 {
-		unsup(pos, "generic-type")
-	}
-	return "(" + k + " " + args[0] + ")"
 }
 
 // seqOf reads Lean type t as an Array or a List: its prelude type and its
@@ -135,7 +119,7 @@ var seqMethods = map[string]seqMethod{
 	"LastOption": {code: "(toGOption {r}.getLast?)", pure: true, result: "O"},
 	"Updated":    {params: []string{"I", "T"}, code: "{k} <$> seqUpdated {r} {0} {1}", result: "S"},
 	"Append":     {params: []string{"T"}, code: "({k} ({r} ++ [{0}]))", pure: true, result: "S"},
-	"Prepend":    {params: []string{"T"}, code: "({k} ({0} :: {r}))", pure: true, result: "S"},
+	"Prepend":    {params: []string{"T"}, code: "({k} (seqPrepend {r} {0}))", pure: true, result: "S"},
 	"AppendAll":  {params: []string{"S"}, code: "({k} ({r} ++ ({0}).data))", pure: true, result: "S"},
 	"Concat":     {params: []string{"S"}, code: "({k} ({r} ++ ({0}).data))", pure: true, result: "S"},
 	"Take":       {params: []string{"I"}, code: "({k} (seqTake {r} {0}))", pure: true, result: "S"},
@@ -174,6 +158,9 @@ func seqMethodOf(kind, name string) (seqMethod, bool) {
 // receiver, then the arguments in the order written, then the function.
 // It reports false when the receiver is not plainly a collection.
 func (g *gen) seqCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
+	if !g.collections {
+		return term{}, false
+	}
 	kind, elem, ok := seqOf(g.typeOf(s.Target, sc))
 	if !ok {
 		return term{}, false
@@ -235,7 +222,10 @@ func (g *gen) seqParamType(p, elem, kind string, u coreexport.Node) coreexport.N
 		case "Str":
 			return &coreexport.TypeName{Name: "string"}
 		case "S":
-			return &coreexport.TypeName{Name: map[string]string{"GArray": "Array", "GList": "List"}[kind], Args: []coreexport.Node{t}}
+			if s := g.galaType("(" + kind + " " + elem + ")"); s != nil {
+				return s
+			}
+			return &coreexport.TypeName{Name: unknownTypeArg}
 		case "_":
 			return &coreexport.TypeName{Name: inferTypeArg}
 		}
@@ -257,6 +247,9 @@ func (g *gen) seqParamType(p, elem, kind string, u coreexport.Node) coreexport.N
 
 // seqCallType is exprType of a call of a function of an Array or a List.
 func (g *gen) seqCallType(e *coreexport.Call, s *coreexport.Select, sc *scope, seen map[string]bool) string {
+	if !g.collections {
+		return ""
+	}
 	kind, elem, ok := seqOf(g.exprType(s.Target, sc, seen))
 	if !ok {
 		return ""

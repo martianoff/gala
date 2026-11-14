@@ -127,26 +127,29 @@ func isTypingGap(msg string, generic []string) bool {
 	if !stuck {
 		return false
 	}
-	if strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither") || strings.Contains(msg, "GArray") || strings.Contains(msg, "GList") {
+	if strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither") {
 		return true
 	}
 	lines := strings.Split(msg, "\n")
-	if len(lines) < 2 || len(generic) == 0 {
+	if len(lines) < 2 {
 		return false
 	}
 	what := strings.TrimSpace(lines[1])
-	names := make([]string, len(generic))
-	for i, n := range generic {
-		names[i] = regexp.QuoteMeta(n)
+	// An Array or List the program builds (`EmptyArray()`) counts as one of
+	// the program's generic types does.
+	names := []string{"GArray", "GList"}
+	for _, n := range generic {
+		names = append(names, regexp.QuoteMeta(n))
 	}
 	alt := "(" + strings.Join(names, "|") + ")"
 	// The head of an application, `@[Ns.]name`; a type applied in the stuck
-	// instance, `Class (name ?m...)`; or the instance a generic function's
-	// type parameter needs, `Class ?m.3`, which only a type argument left to
-	// Lean leaves open.
+	// instance, `Class (name ?m...)`; or, in a program with generic
+	// declarations, the instance a type parameter needs, `Class ?m.3`, which
+	// only a type argument left to Lean leaves open.
 	head := regexp.MustCompile(`^@(?:[\w'.«»]*\.)?` + alt + `(?:\.[\w'«»]+)?(\s|$)`)
-	inst := regexp.MustCompile(`^\w+ (\((?:[\w'.«»]*\.)?` + alt + `\s|\?m\.\d+$)`)
-	return head.MatchString(what) || inst.MatchString(what)
+	inst := regexp.MustCompile(`^\w+ \((?:[\w'.«»]*\.)?` + alt + `\s`)
+	bare := len(generic) > 0 && regexp.MustCompile(`^\w+ \?m\.\d+$`).MatchString(what)
+	return head.MatchString(what) || inst.MatchString(what) || bare
 }
 
 // RunResult is one run of a translated program.

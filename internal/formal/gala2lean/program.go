@@ -27,8 +27,10 @@ type gen struct {
 	// parameter, Option or a tuple, which is not translated.
 	raw, rawGeneric, rawGenericHolders map[string]bool
 	// tparams maps each type parameter in scope to the Lean type it stands
-	// for (withTypeArgs).
-	tparams map[string]string
+	// for (withTypeArgs); cmpParams the Lean names of the declaration's own
+	// type parameters to whether they are comparable.
+	tparams   map[string]string
+	cmpParams map[string]bool
 	// outsideDecls are the top-level declarations outside the subset
 	// (imports, generic declarations, ...), in source order.
 	outsideDecls []*coreexport.Unsupported

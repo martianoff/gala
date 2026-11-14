@@ -26,6 +26,8 @@ func TestIsTypingGap(t *testing.T) {
 		{"a generic name only in the context", synth + "@P.other ?m.3\ncontext:\nx : Chain Int64", false},
 		{"a generic name inside the stuck type", stuck + "GShow (Other (Chain ?m.3))", false},
 		{"a non-generic type", stuck + "GShow (Pair ?m.3)", false},
+		{"an empty Array's element type", stuck + "GShow (GArray ?m.3)", true},
+		{"an Array only in the context", synth + "@P.other ?m.3\ncontext:\nx : GArray Int64", false},
 		{"another error", "Prog1.lean:1:1: error: unknown identifier 'Chain'", false},
 	}
 	for _, c := range cases {

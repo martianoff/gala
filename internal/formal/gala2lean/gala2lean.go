@@ -178,7 +178,7 @@ func unsup(pos coreexport.Pos, format string, a ...any) {
 // the construct it stopped at, if any. It reports whether f finished.
 func (g *gen) guard(decl string, f func()) bool {
 	// A translation stopped midway leaves no state behind for the next.
-	g.qualify, g.inDefault, g.tparams = false, map[string]bool{}, nil
+	g.qualify, g.inDefault, g.tparams, g.cmpParams = false, map[string]bool{}, nil, nil
 	_, u := attempt(func() struct{} { f(); return struct{}{} })
 	if u != nil {
 		g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: u.construct, Pos: u.pos})

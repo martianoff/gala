@@ -124,6 +124,7 @@ func (g *gen) comparableType(t string, pos coreexport.Pos) {
 		unsup(pos, "func-in-equal")
 	}
 	g.stateTypeIn(t, g.noBEq, pos, "func-in-equal")
+	g.equalityOfParams(t, pos)
 	g.customCheck(t, g.customEqual, &g.equalHolders, pos, "custom-equal")
 	g.basicType(t, pos)
 }

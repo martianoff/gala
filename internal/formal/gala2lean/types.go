@@ -34,9 +34,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 			if lt := g.genericType(t.Name, args, t.Pos); lt != "" {
 				return lt
 			}
-			if lt := g.seqType(t.Name, args, t.Pos); lt != "" {
-				return lt
-			}
+			g.hashType(t.Name, t.Pos)
 			unsup(t.Pos, "generic-type")
 		}
 		switch t.Name {
@@ -108,12 +106,12 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 		}
 		return v
 	}
-	if k := seqTypes[name]; k != "" && g.collections && !g.declaredType(name) {
-		// An empty Array or List.
-		return typed(k + ".mk []")
-	}
 	if !g.declaredType(name) {
-		switch std := stdGeneric[name].lean; std {
+		st, _ := g.stdType(name)
+		switch std := st.lean; std {
+		case "GArray", "GList":
+			// An empty Array or List.
+			return typed(std + ".mk []")
 		case "GOption":
 			// None is Option's default case.
 			return typed("GOption.None")
@@ -538,14 +536,9 @@ func (g *gen) galaTypeOf(t ltype) coreexport.Node {
 		name = "bool"
 	default:
 		name = g.typeByLean(t.head)
-		for std, st := range stdGeneric {
-			if st.lean == t.head && !g.declaredType(std) {
+		for std := range stdGeneric {
+			if st, ok := g.stdType(std); ok && st.lean == t.head {
 				name = std
-			}
-		}
-		for coll, lean := range seqTypes {
-			if lean == t.head && g.collections && !g.declaredType(coll) {
-				name = coll
 			}
 		}
 		for x, lt := range g.tparams {
