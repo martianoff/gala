@@ -344,10 +344,16 @@ func (t *galaASTTransformer) qualifyTypeExprs(exprs []ast.Expr) []ast.Expr {
 func (t *galaASTTransformer) qualifyTypeArgsInExpr(expr ast.Expr) ast.Expr {
 	switch e := expr.(type) {
 	case *ast.IndexExpr:
-		return &ast.IndexExpr{
-			X:     t.qualifyTypeArgsInExpr(e.X),
-			Index: t.qualifyTypeExpr(e.Index),
+		// An element read (markIndex) has no type arguments: it is kept as
+		// the node orderOperands knows it by, its index included.
+		if t.marked(e, operandThroughPointer) {
+			return e
 		}
+		x, index := t.qualifyTypeArgsInExpr(e.X), t.qualifyTypeExpr(e.Index)
+		if x == e.X && index == e.Index {
+			return e
+		}
+		return &ast.IndexExpr{X: x, Index: index}
 	case *ast.IndexListExpr:
 		return &ast.IndexListExpr{
 			X:       t.qualifyTypeArgsInExpr(e.X),

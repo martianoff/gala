@@ -1,0 +1,102 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// A compound assignment `x op= y` reads its target x before it evaluates y,
+// even when a call in y changes x; and a function value taken out of a slice
+// is read before the call's arguments are evaluated. Each line prints the
+// value the left-to-right order gives.
+
+var g = 1
+
+func bump() int {
+    g = g + 10
+    1
+}
+
+var text = "a"
+
+func grow() string {
+    text = text + "zz"
+    "b"
+}
+
+func setFirst(xs []int, v int) int {
+    xs[0] = v
+    1
+}
+
+func addAt(m map[string]int, k string, v int) int {
+    m[k] = m[k] + v
+    1
+}
+
+struct Counter(var n int)
+
+func incVia(p *Counter) int {
+    p.n = p.n + 100
+    1
+}
+
+var at = 0
+
+func moveAt() int {
+    at = 1
+    10
+}
+
+func replaceFirst(fs []func(int) int) int {
+    fs[0] = (x) => x * 10
+    1
+}
+
+func main() {
+    g += bump()
+    Println(s"plus: $g")
+    g = 5
+    g -= bump()
+    Println(s"minus: $g")
+    g = 3
+    g *= bump() + 1
+    Println(s"times: $g")
+    g = 20
+    g /= bump() + 1
+    Println(s"divide: $g")
+
+    text += grow()
+    Println(s"string: $text")
+
+    var n = 1
+    val inc = () int => {
+        n = n + 10
+        1
+    }
+    n += inc()
+    Println(s"captured local: $n")
+
+    val xs = SliceOf(1)
+    xs[0] += setFirst(xs, 10)
+    Println(s"slice element: ${xs[0]}")
+
+    val m = MapPut(MapEmpty[string, int](), "a", 1)
+    m["a"] += addAt(m, "a", 10)
+    Println(s"map element: ${m["a"]}")
+
+    val p = &Counter(2)
+    p.n += incVia(p)
+    Println(s"through a pointer: ${p.n}")
+
+    // A local var no call reaches: nothing to order.
+    var k = 4
+    k += 2
+    Println(s"plain local: $k")
+
+    // The index says where the result is stored: it is read first too.
+    val ys = SliceOf(1, 2)
+    ys[at] += moveAt()
+    Println(s"index read first: ${ys[0]} ${ys[1]}")
+
+    val plusOne func(int) int = (x) => x + 1
+    val fs = SliceOf(plusOne)
+    Println(s"function from a slice: ${fs[0](replaceFirst(fs))}")
+}

@@ -22,7 +22,8 @@ import (
 // operand reads a variable that a call could change, and a later operand of
 // the same expression makes a call, the read is wrapped in std.EvalOperand: a
 // call, so Go evaluates it, and with it the read, before the calls to its
-// right. Every other operand list is left exactly as it was lowered.
+// right. A compound assignment `x op= y` reads x before y the same way
+// (compound). Every other operand list is left exactly as it was lowered.
 //
 // Storage a call can change is a package-level `var`; a local `var` (or `var`
 // parameter) that a function literal of the same declaration mentions, whose
@@ -350,6 +351,12 @@ func (o *operandOrder) visit(n ast.Node) bool {
 			}
 		case *ast.Ident:
 			slots = append(slots, &n.Fun)
+		case *ast.IndexExpr:
+			// A function read out of a slice or map is read in order with
+			// the arguments; an unmarked index is a type argument list.
+			if o.t.marked(fun, operandThroughPointer) {
+				slots = append(slots, &n.Fun)
+			}
 		}
 		for i := range n.Args {
 			slots = append(slots, &n.Args[i])
@@ -369,7 +376,7 @@ func (o *operandOrder) visit(n ast.Node) bool {
 		// ordered against the exact calls only, as in sequence.
 		if recv != nil && argCall {
 			if vars, pointers := o.receiverReads(recv); vars || pointers && argExact {
-				n.Fun = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{n.Fun}}
+				n.Fun = o.t.evalOperand(n.Fun)
 			}
 		}
 	case *ast.CompositeLit:
@@ -387,8 +394,84 @@ func (o *operandOrder) visit(n ast.Node) bool {
 			}
 		}
 		o.sequence(slots, nil)
+	case *ast.AssignStmt:
+		o.compound(n)
 	}
 	return true
+}
+
+// compound orders the compound assignment as, `x op= y`: GALA reads the
+// target x before it evaluates y, where gc reads x after y's calls. x and y
+// are ordered as the operands of `x op y` are, and where sequence wraps x,
+// as is rewritten to `x = std.EvalOperand(x) op y`, with the operands that
+// locate x read first too (pinTarget). x is then evaluated twice, so only a
+// target that makes no call of its own is rewritten.
+func (o *operandOrder) compound(as *ast.AssignStmt) {
+	if as.Tok < token.ADD_ASSIGN || as.Tok > token.AND_NOT_ASSIGN || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+		return
+	}
+	target, value := as.Lhs[0], as.Rhs[0]
+	if call, _ := o.makesCall(value); !call || o.t.makesCallExcept(target, o.changeable, o.rereadable) {
+		return
+	}
+	if _, binary := value.(*ast.BinaryExpr); binary {
+		value = &ast.ParenExpr{X: value}
+	}
+	// ADD_ASSIGN through AND_NOT_ASSIGN follow ADD through AND_NOT in order.
+	rhs := &ast.BinaryExpr{X: target, Op: as.Tok - token.ADD_ASSIGN + token.ADD, Y: value}
+	o.sequence([]*ast.Expr{&rhs.X, &rhs.Y}, nil)
+	if rhs.X == target {
+		return
+	}
+	o.pinTarget(target)
+	as.Tok = token.ASSIGN
+	as.Rhs[0] = rhs
+}
+
+// pinTarget wraps in std.EvalOperand each operand of target, an assignment's
+// target, that says where it stores and that a call could change: the index,
+// and a slice, map or pointer it stores through. Go evaluates the target's
+// calls before the right-hand side's, so the store goes where the target
+// pointed before them. target is shared by the store and the read, so both
+// get the wraps.
+func (o *operandOrder) pinTarget(target ast.Expr) {
+	pin := func(slot *ast.Expr) {
+		if vars, pointers := o.readsChangeable(*slot); vars || pointers {
+			*slot = o.t.evalOperand(*slot)
+		}
+	}
+	switch tg := ast.Unparen(target).(type) {
+	case *ast.IndexExpr:
+		if o.t.marked(tg, operandThroughPointer) {
+			pin(&tg.X)
+		}
+		pin(&tg.Index)
+	case *ast.SelectorExpr:
+		if o.t.marked(tg, operandThroughPointer) {
+			pin(&tg.X)
+		}
+	case *ast.StarExpr:
+		pin(&tg.X)
+	}
+}
+
+// rereadable reports whether call, in an assignment's target, gives the same
+// value however often it is made: a val read out of its std.Immutable box.
+func (o *operandOrder) rereadable(call *ast.CallExpr) bool {
+	return o.isPackageValGet(call) || o.t.marked(call, operandBoxGet)
+}
+
+// evalOperand wraps e in std.EvalOperand, a call, so Go evaluates it in order
+// with the calls around it.
+func (t *galaASTTransformer) evalOperand(e ast.Expr) ast.Expr {
+	return &ast.CallExpr{Fun: t.stdIdent("EvalOperand"), Args: []ast.Expr{e}}
+}
+
+// copyMarks gives rebuilt the operand marks of the node it replaces, old.
+func (t *galaASTTransformer) copyMarks(old, rebuilt ast.Node) {
+	if mark := t.operandMarks[old]; mark != 0 {
+		t.markOperand(rebuilt, mark)
+	}
 }
 
 // receiverReads reports what the call reads through its receiver recv when it
@@ -434,7 +517,7 @@ func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool
 		if vars, pointers := o.readsChangeable(*slot); !vars && !(pointers && laterExact[i]) {
 			continue
 		}
-		*slot = &ast.CallExpr{Fun: o.t.stdIdent("EvalOperand"), Args: []ast.Expr{*slot}}
+		*slot = o.t.evalOperand(*slot)
 	}
 	return laterCall[0], laterExact[0]
 }

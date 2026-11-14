@@ -168,7 +168,8 @@ func (t *galaASTTransformer) sealPlainValPath(path ast.Expr) ast.Expr {
 		X:   &ast.CallExpr{Fun: t.stdIdent(transpiler.FuncNewImmutable), Args: []ast.Expr{root}},
 		Sel: ast.NewIdent(transpiler.MethodGet),
 	}}
-	return replacePathRoot(path, boxed)
+	t.markOperand(boxed, operandBoxGet) // reads the val, changes nothing
+	return t.replacePathRoot(path, boxed)
 }
 
 // plainValPathRoot returns the local val a selector/index path is rooted at,
@@ -213,17 +214,22 @@ func (t *galaASTTransformer) plainValPathRoot(path ast.Expr) (root *ast.Ident, j
 }
 
 // replacePathRoot rebuilds a selector/index path with its root ident
-// replaced by root.
-func replacePathRoot(path, root ast.Expr) ast.Expr {
+// replaced by root. Each rebuilt node keeps the operand marks of the node it
+// replaces, for orderOperands.
+func (t *galaASTTransformer) replacePathRoot(path, root ast.Expr) ast.Expr {
+	var rebuilt ast.Expr
 	switch e := path.(type) {
 	case *ast.ParenExpr:
-		return &ast.ParenExpr{X: replacePathRoot(e.X, root)}
+		rebuilt = &ast.ParenExpr{X: t.replacePathRoot(e.X, root)}
 	case *ast.SelectorExpr:
-		return &ast.SelectorExpr{X: replacePathRoot(e.X, root), Sel: e.Sel}
+		rebuilt = &ast.SelectorExpr{X: t.replacePathRoot(e.X, root), Sel: e.Sel}
 	case *ast.IndexExpr:
-		return &ast.IndexExpr{X: replacePathRoot(e.X, root), Index: e.Index}
+		rebuilt = &ast.IndexExpr{X: t.replacePathRoot(e.X, root), Index: e.Index}
+	default:
+		return root
 	}
-	return root
+	t.copyMarks(path, rebuilt)
+	return rebuilt
 }
 
 // pathRootIdent returns the ident a selector/index path starts from.

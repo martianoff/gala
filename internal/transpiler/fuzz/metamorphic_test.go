@@ -37,7 +37,9 @@ func FuzzAlphaRenaming(f *testing.F) {
 // method, a val holding a pointer, a function reading through its pointer
 // parameter) or an element of a Go slice or map that later operands write,
 // some of them named like Go builtins, read the package var counter where a
-// block elsewhere binds the name, and must print the trace the
+// block elsewhere binds the name, assign to a var, an element or counter
+// with `op=` whose right side changes it, call a function out of a slice
+// whose argument replaces it, and must print the trace the
 // generator computed from source order: left to right, an extractor only
 // after the sibling sub-patterns before it matched, a match subject once,
 // one if branch.
