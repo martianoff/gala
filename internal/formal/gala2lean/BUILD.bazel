@@ -1,0 +1,78 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# gala2lean: GALA programs (Core JSON) to Lean 4 definitions
+# (docs/FORMAL_SEMANTICS.MD, "gala2lean"). A test-support library: its
+# visibility keeps it out of the gala CLI and every other shipped binary.
+go_library(
+    name = "gala2lean",
+    srcs = [
+        "deps.go",
+        "expr.go",
+        "gala2lean.go",
+        "match.go",
+        "names.go",
+        "program.go",
+        "run.go",
+        "stmt.go",
+        "types.go",
+    ],
+    importpath = "martianoff/gala/internal/formal/gala2lean",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [
+        "//internal/formal/coreexport",
+        "@rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "gala2lean_test",
+    srcs = [
+        "gala2lean_test.go",
+        "helpers_test.go",
+    ],
+    data = [
+        "//examples:all_gala_sources",
+        "//formal:Gala/Gala2Lean/Examples/Match.lean",
+        "//formal:fixture_sources",
+    ],
+    deps = [
+        ":gala2lean",
+        "//internal/formal/coreexport",
+        "//internal/formal/coreexport/analyzerhints",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)
+
+# Runs the galaspec fixtures' translations with Lean. Manual: it needs Lean,
+# which --config=formal provides (//formal:lean_runtime); without the config,
+# GALA_LEAN_BIN must name a lean. The formal CI job runs it with the config.
+go_test(
+    name = "lean_test",
+    size = "large",
+    srcs = [
+        "helpers_test.go",
+        "lean_test.go",
+    ],
+    # Lean only under --config=formal: without it, nothing here refers to a
+    # Lean target, so building this test never downloads Lean.
+    data = [
+        "//formal:Gala/Gala2Lean/Prelude.lean",
+        "//formal:fixture_sources",
+    ] + select({
+        "//formal:lean_enabled": ["//formal:lean_runtime"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//formal:lean_enabled": {"GALA_LEAN_RLOCATION": "$(rlocationpath //formal:lean_runtime)"},
+        "//conditions:default": {},
+    }),
+    tags = ["manual"],
+    deps = [
+        ":gala2lean",
+        "//internal/formal/coreexport",
+        "//internal/formal/coreexport/analyzerhints",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)

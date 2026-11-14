@@ -4,7 +4,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load(":lean.bzl", "lean_binary", "lean_library", "lean_proof_test")
+load(":lean.bzl", "lean_binary", "lean_library", "lean_proof_test", "lean_runtime")
 
 # Set by --config=formal in //.bazelrc.
 bool_flag(
@@ -41,6 +41,7 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.lookup_captured",
     "Gala.Spec.defaultFrame_other",
     "Gala.Spec.defaultFrame_last",
+    "Gala.Gala2Lean.Examples.Match.eval_total",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -63,6 +64,9 @@ GALASPEC_MAIN = "Gala/Main.lean"
 # Models and theorems, and Gala.lean, which imports every module and stays last.
 GALA_SRCS = [
     "Gala/MatchLowering.lean",
+    "Gala/Gala2Lean/Prelude.lean",
+    "Gala/Gala2Lean/Examples/Match.lean",
+    "Gala/Gala2Lean/Theorems.lean",
     "Gala/Theorems.lean",
     "Gala.lean",
 ]
@@ -165,4 +169,34 @@ sh_test(
         "tests/*.out",
         "tests/*.outcome",
     ]),
+)
+
+# gala2lean (internal/formal/gala2lean): the prelude every translated program
+# imports, and the translation Gala/Gala2Lean/Theorems.lean proves things
+# about, which a test there keeps equal to the translator's output.
+exports_files(
+    [
+        "Gala/Gala2Lean/Prelude.lean",
+        "Gala/Gala2Lean/Examples/Match.lean",
+    ],
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
+# The galaspec fixtures' GALA sources and expected output, which gala2lean's
+# tests run through the translation too.
+filegroup(
+    name = "fixture_sources",
+    srcs = glob([
+        "tests/src/*.gala",
+        "tests/*.out",
+        "tests/*.outcome",
+    ]),
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
+# The toolchain's `lean`, for tests that elaborate and run the Lean gala2lean
+# writes. Like every Lean target, only under --config=formal.
+lean_runtime(
+    name = "lean_runtime",
+    visibility = ["//internal/formal:__subpackages__"],
 )
