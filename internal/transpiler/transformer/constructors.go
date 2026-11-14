@@ -605,23 +605,16 @@ func (c compositeSrc) elems() []keyedElem {
 // compositeKeysAreFields reports whether a bare-name key in a literal of
 // typeExpr is a field name, in the struct's own namespace: `Pair{Left: 1}`
 // names the field Left, though a bare `Left` elsewhere is std's Either
-// constructor. Only a type known not to be a struct, such as a named Go map
-// with constant keys (`url.Values{k: v}`), takes expression keys. A type the
-// type info does not describe is taken as a struct, the only kind a bare-name
-// key usually belongs to.
-func (t *galaASTTransformer) compositeKeysAreFields(typeExpr ast.Expr, resolvedTypeName string, fields []string) bool {
-	if len(fields) > 0 {
+// constructor. The type must be known to be a struct: a GALA struct, or a Go
+// struct directly, through an alias or a dot import. Any other literal, such
+// as a named Go map with expression keys (`url.Values{k: v}`), lowers its keys
+// as expressions.
+func (t *galaASTTransformer) compositeKeysAreFields(typeExpr ast.Expr, meta *transpiler.TypeMetadata, fields []string) bool {
+	if len(fields) > 0 || (meta != nil && len(meta.Fields) > 0) {
 		return true
 	}
-	if _, qualifiedName := extractTypeNameFromExpr(typeExpr); t.goTypeInfo != nil && qualifiedName != "" {
-		if td := t.goTypeInfo.GetTypeData(t.goTypeKey(qualifiedName)); td != nil {
-			return td.Kind == "struct"
-		}
-	}
-	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
-		return len(meta.Fields) > 0
-	}
-	return true
+	td, _ := t.goTypeDataThroughAliases(t.astTypeToTranspilerType(typeExpr))
+	return td != nil && td.Kind == "struct"
 }
 
 // transformCompositeLiteral lowers the composite literal c.
@@ -668,7 +661,8 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 		fieldIndex[f] = i
 	}
 
-	fieldKeys := t.compositeKeysAreFields(typeExpr, resolvedTypeName, fields)
+	meta := t.getTypeMeta(resolvedTypeName)
+	fieldKeys := t.compositeKeysAreFields(typeExpr, meta, fields)
 
 	// Transform the elements
 	var elts []ast.Expr
@@ -716,7 +710,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 		}
 	}
 
-	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
+	if meta != nil {
 		// A sealed type's literal names none of its cases: it is the type's
 		// default value.
 		if meta.IsSealed && len(elts) == 0 {

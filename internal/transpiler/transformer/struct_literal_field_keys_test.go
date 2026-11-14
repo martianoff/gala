@@ -76,16 +76,34 @@ func main() {
 			want: []string{"image.Point{X: 1, Y: 2}"},
 		},
 		{
+			// os.PathError is an alias of fs.PathError. The package-level vals
+			// named like its fields must not be read as the keys.
+			name: "Go alias of a struct",
+			src: `import "os"
+
+val Op = "read"
+val Path = "/tmp/x"
+
+func main() {
+    val e = os.PathError{Op: Op, Path: Path}
+    Println(e.Op)
+}`,
+			want: []string{"os.PathError{Op: Op.Get(), Path: Path.Get()}"},
+		},
+		{
+			// A map key is a value: a package-level val is read through Get.
 			name: "named Go map keeps expression keys",
 			src: `import "text/template"
 
+val name = "up"
+
 func upper(s string) string = s
+
 func main() {
-    val name = "up"
     val fm = template.FuncMap{name: upper}
     Println(fm.Size())
 }`,
-			want: []string{"template.FuncMap{name: upper}"},
+			want: []string{"template.FuncMap{name.Get(): upper}"},
 		},
 	}
 	for _, tc := range tests {
