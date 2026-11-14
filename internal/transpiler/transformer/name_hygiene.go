@@ -36,23 +36,81 @@ import (
 // GALA identifier may start with it (CheckReservedPrefixNative).
 const localNamePrefix = "_gala_"
 
+// exportedNamePrefix is reserved for the exported Go names of declarations
+// the transpiler generates for other packages to reach (none yet; the
+// `inout` lowering will export its bodies so). Go exports only upper-case
+// names, so the `_gala_` prefix cannot serve there. Like
+// localNamePrefix, no GALA identifier may start with it
+// (CheckReservedPrefixNative).
+const exportedNamePrefix = "GALA_"
+
+// reservedPrefixOf is the prefix reserved for generated names
+// (localNamePrefix or exportedNamePrefix) that name starts with, or "" when
+// it starts with neither.
+func reservedPrefixOf(name string) string {
+	switch {
+	case strings.HasPrefix(name, localNamePrefix):
+		return localNamePrefix
+	case strings.HasPrefix(name, exportedNamePrefix):
+		return exportedNamePrefix
+	}
+	return ""
+}
+
 // CheckReservedPrefixNative reports GALA-E0097 for the first identifier below
-// root, a node of the native tree, that starts with localNamePrefix, or nil
-// when none does. The prefix is the transpiler's: a user name spelled with it
-// could meet a renamed local (localGoName) or another name the transpiler
-// emits. The analyzer checks each source file with it. An interpolated
-// expression needs no check: no binding can carry the prefix, so a name with
-// it there is undefined (GALA-E0023).
+// root, a node of the native tree, that starts with a prefix reserved for
+// generated names (reservedPrefixOf), or nil when none does. A user name
+// spelled with one could meet a renamed local (localGoName) or another name
+// the transpiler emits. The analyzer checks each source file with it. An
+// interpolated expression needs no check: no GALA binding can carry a
+// reserved prefix, so a bare name with one there is undefined (GALA-E0023).
+//
+// A Go package may export a name with exportedNamePrefix, so a member
+// selected from another value or package (namesMember) may carry it: only a
+// name the source declares or reaches bare is held to it.
 func CheckReservedPrefixNative(root native.GalaNodeRef) error {
-	id := firstIdentifier(root, func(name string) bool { return strings.HasPrefix(name, localNamePrefix) })
+	var id native.GalaNodeRef
+	var prefix string
+	root.Walk(func(n native.GalaNodeRef) bool {
+		if id.Ok() {
+			return false
+		}
+		if n.Kind() != native.GalaKIND_identifier {
+			return true
+		}
+		p := reservedPrefixOf(galaparser.NativeText(n))
+		if p == localNamePrefix || (p == exportedNamePrefix && !namesMember(n)) {
+			id, prefix = n, p
+		}
+		return false
+	})
 	if !id.Ok() {
 		return nil
 	}
 	name := galaparser.NativeText(id)
 	line, col := srcNode{node: id}.start()
 	return galaerr.NewCodedSemanticError(galaerr.CodeReservedNamePrefix, line, col,
-		fmt.Sprintf("identifier %s starts with %s, a prefix reserved for names the transpiler generates", name, localNamePrefix),
-		fmt.Sprintf("rename it so it does not start with %s", localNamePrefix))
+		fmt.Sprintf("identifier %s starts with %s, a prefix reserved for names the transpiler generates", name, prefix),
+		fmt.Sprintf("rename it so it does not start with %s", prefix))
+}
+
+// namesMember reports whether id, an identifier node, names a member of
+// something else rather than a binding of its own: the selection in `x.m`,
+// a later part of a qualified name (`pkg.T`), or a named argument's field
+// (`Cfg(m = 1)`). A Go member may be spelled with exportedNamePrefix; a GALA
+// one is held to it where it is declared.
+func namesMember(id native.GalaNodeRef) bool {
+	parent := id.Parent()
+	if !parent.Ok() {
+		return false
+	}
+	switch parent.Kind() {
+	case native.GalaKIND_postfixSuffix, native.GalaKIND_argument:
+		return true
+	case native.GalaKIND_qualifiedIdentifier:
+		return native.QualifiedIdentifierNode{GalaNodeRef: parent}.Identifier(0).GalaNodeRef != id
+	}
+	return false
 }
 
 // shadowsGeneratedName reports whether a local binding named name would hide

@@ -1459,6 +1459,18 @@ func main() {
 			},
 		},
 		{
+			name: "identifier with the reserved GALA_ prefix",
+			code: galaerr.CodeReservedNamePrefix, // GALA-E0097
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func GALA_Parser_Advance() int = 1
+
+func main() = Println(GALA_Parser_Advance())
+`)
+			},
+		},
+		{
 			name: "field default that reads a field",
 			code: galaerr.CodeFieldDefaultReadsField, // GALA-E0098
 			render: func(t *testing.T) string {

@@ -909,10 +909,11 @@ const (
 	// parameters bound, as in Scala and Kotlin.
 	CodeDefaultReadsLaterParam ErrorCode = "GALA-E0094"
 
-	// E0097: an identifier starts with `_gala_`, a prefix reserved for names
-	// the transpiler generates (a local named like a Go predeclared
+	// E0097: an identifier starts with `_gala_` or `GALA_`, prefixes reserved
+	// for names the transpiler generates (a local named like a Go predeclared
 	// identifier is emitted as `_gala_<name>`, fmt may be imported as
-	// `_gala_fmt`). A user name with the prefix could meet one of them.
+	// `_gala_fmt`; `GALA_` is for exported generated names that other
+	// packages reach). A user name with either could meet one of them.
 	CodeReservedNamePrefix ErrorCode = "GALA-E0097"
 
 	// E0098: the default value of a shorthand struct's field or a sealed

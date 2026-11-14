@@ -111,4 +111,11 @@ func main() {
         case Empty() => "empty"
     }
     Println(shown)
+
+    // Names near the reserved GALA_ prefix, which only an exact `GALA_`
+    // start hits; the prefix inside a string is just text.
+    val Gala_x = 1
+    val GALAX = 2
+    val gala_y = 3
+    Println(s"${Gala_x + GALAX + gala_y} GALA_HOME")
 }
