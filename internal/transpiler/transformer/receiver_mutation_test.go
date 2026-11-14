@@ -221,3 +221,177 @@ func TestMutatingCallOnCopyGoSibling(t *testing.T) {
 		})
 	}
 }
+
+// printedFieldDecls declares types whose generated String prints a field by
+// a pointer-receiver String (Loud's changes its receiver, Quiet's only reads
+// it). std.FormatStruct prints such a field through a copy of it.
+const printedFieldDecls = `
+struct LoudHolder(var l Loud, var k int)
+
+struct LoudDeep(var h LoudHolder)
+
+struct LoudBox[T any](var v T)
+
+struct LoudByPtr(l Ptr[Loud])
+
+struct DeepByPtr(h Ptr[LoudHolder])
+
+struct QuietHolder(var q Quiet)
+
+struct LoudOwn(var l Loud)
+
+func (o LoudOwn) String() string = "own"
+
+sealed type Shout {
+    case Says(l Loud)
+    case Hush()
+}
+
+struct Fault(var n int)
+
+func (f *Fault) String() string {
+    f.n = f.n + 1
+    "fault"
+}
+
+func (f Fault) Error() string = "faulted"
+
+struct FaultHolder(var f Fault)
+
+struct LoudError(var l Loud)
+
+func (e LoudError) Error() string = "loud error"
+
+struct LoudErrorHolder(var e LoudError)
+
+struct Stamp(var n int)
+
+func (s Ptr[Stamp]) String() string {
+    s.n = s.n + 1
+    "stamp"
+}
+
+func (s Stamp) Format(layout string) string = layout
+
+struct StampHolder(var at Stamp)
+
+struct Odd(var n int)
+
+func (o Ptr[Odd]) String() string {
+    o.n = o.n + 1
+    "odd"
+}
+
+func (o Odd) Format(a int, b int) {
+    Println(a + b)
+}
+
+struct OddHolder(var o Odd)
+
+struct PtrError(var l Loud)
+
+func (e Ptr[PtrError]) Error() string = "ptr error"
+`
+
+// TestMutatingFieldPrintRejected pins GALA-E0110 for a field printed through
+// a copy: a struct's or sealed case's generated String prints each field by
+// std.FormatStruct, which runs a field's pointer-receiver String on a copy of
+// the field however the value itself is held. When that String can change its
+// receiver the change is lost, so printing the value is rejected at the
+// print. A field held by pointer, a String that only reads its receiver, and
+// a type with a String of its own print as before.
+func TestMutatingFieldPrintRejected(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	source := func(body string) string {
+		return `package main
+` + receiverMutationDecls + printedFieldDecls + `
+func main() {
+    ` + body + `
+}
+`
+	}
+
+	rejected := []struct{ name, body, want string }{
+		{"a var by Println", "var h = LoudHolder(Loud(0), 1)\n    Println(h)", "cannot print this LoudHolder: its field l, a Loud, prints by its String on a copy, and that String can change its receiver"},
+		{"a val by Print", "val h = LoudHolder(Loud(0), 1)\n    Print(h)", "cannot print this LoudHolder: its field l"},
+		{"an interpolation", "var h = LoudHolder(Loud(0), 1)\n    Println(s\"h=$h\")", "cannot print this LoudHolder"},
+		{"a formatted value with %q", "var h = LoudHolder(Loud(0), 1)\n    Println(f\"$h%q\")", "cannot print this LoudHolder"},
+		{"a nested field", "var d = LoudDeep(LoudHolder(Loud(0), 1))\n    Println(d)", "cannot print this LoudDeep: its field h.l, a Loud"},
+		{"a type argument", "var b = LoudBox[Loud](Loud(0))\n    Println(b)", "cannot print this LoudBox: its field v, a Loud"},
+		{"a sealed case's field", "val s = Says(Loud(0))\n    Println(s)", "cannot print this Shout: its field l, a Loud"},
+		{"a pointer to the value", "var h = LoudHolder(Loud(0), 1)\n    Println(&h)", "cannot print this LoudHolder: its field l"},
+		{"a pointer field to a value with such a field", "var h = LoudHolder(Loud(0), 1)\n    val d = DeepByPtr(&h)\n    Println(d)", "cannot print this DeepByPtr: its field h.l, a Loud"},
+		{"a Format that is not fmt.Formatter's", "var h = StampHolder(Stamp(0))\n    Println(h)", "cannot print this StampHolder: its field at, a Stamp"},
+		{"a two-parameter Format that is not fmt.Formatter's", "var h = OddHolder(Odd(0))\n    Println(h)", "cannot print this OddHolder: its field o, a Odd"},
+	}
+	for _, tc := range rejected {
+		t.Run("rejected/"+tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(source(tc.body), "printed_field_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0110")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Contains(t, err.Error(), "as a `Ptr[")
+		})
+	}
+
+	t.Run("rejected/the hint names the nested field", func(t *testing.T) {
+		_, err := trans.Transpile(source("var d = LoudDeep(LoudHolder(Loud(0), 1))\n    Println(d)"), "printed_field_test.gala")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "hold field h.l as a `Ptr[Loud]`")
+	})
+
+	accepted := []struct{ name, body, mustContain string }{
+		{"a field held by pointer", "var l = Loud(0)\n    val b = LoudByPtr(&l)\n    Println(b)", "fmt.Println(b)"},
+		{"a field whose String only reads it", "val q = QuietHolder(Quiet(1))\n    Println(q)", "fmt.Println(q)"},
+		{"a type with its own String", "val o = LoudOwn(Loud(0))\n    Println(o)", "fmt.Println(o)"},
+		{"a field printed by its own String", "var h = LoudHolder(Loud(0), 1)\n    Println(h.l)", "std.StringAt(&h.l)"},
+		{"a field printed by its value's Error", "var h = FaultHolder(Fault(0))\n    Println(h)", "fmt.Println(h)"},
+		{"a value printed by its own Error", "var e = LoudError(Loud(0))\n    Println(e)", "fmt.Println(e)"},
+		{"a nested field printed by its own Error", "var h = LoudErrorHolder(LoudError(Loud(0)))\n    Println(h)", "fmt.Println(h)"},
+		{"a pointer printed by its pointer-receiver Error", "var e = PtrError(Loud(0))\n    Println(&e)", "fmt.Println(&e)"},
+	}
+	for _, tc := range accepted {
+		t.Run("accepted/"+tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(source(tc.body), "printed_field_test.gala")
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.mustContain)
+		})
+	}
+}
+
+// goSiblingTally is a hand-written .go file of the package: a type whose
+// pointer-receiver String counts how often it ran, and one whose String only
+// reads its receiver.
+const goSiblingTally = `
+type Tally struct{ n int }
+
+func (t *Tally) String() string { t.n++; return "tally" }
+
+type Mark struct{ n int }
+
+func (m *Mark) String() string { return "mark" }
+`
+
+// TestMutatingFieldPrintGoString covers GALA-E0110 for a field of a Go type
+// whose String is declared on its pointer receiver: std.FormatStruct runs it
+// on a copy of the field as it does a GALA one. Whether it changes its
+// receiver is read from the Go source.
+func TestMutatingFieldPrintGoString(t *testing.T) {
+	for _, tc := range []struct{ field, err string }{
+		{"Tally", "cannot print this Wrap: its field t, a Tally, prints by its String on a copy"},
+		{"Mark", ""},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", "package main\n"+goSiblingTally,
+				"package main\n\nstruct Wrap(var t "+tc.field+")\n\nfunc main() {\n    var w = Wrap("+tc.field+"{})\n    Println(w)\n}\n")
+			_, err := transpileInModule(t, files, galaFile)
+			if tc.err == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0110")
+			assert.Contains(t, err.Error(), tc.err)
+		})
+	}
+}

@@ -1,0 +1,34 @@
+package main
+
+// A struct's generated String prints each field through a copy of it, so a
+// field whose pointer-receiver String changes its receiver cannot be printed
+// that way: the change would be made to the copy and lost (GALA-E0110).
+// Held by pointer, the field prints by its String on the value it points to,
+// and the count that String keeps is still there afterwards. A field of a
+// var printed on its own prints in place too.
+
+struct Counter(var shown int)
+
+// String counts how often this value was printed.
+func (c Ptr[Counter]) String() string {
+    c.shown = c.shown + 1
+    s"shown ${c.shown}"
+}
+
+// Tracked holds its counter by pointer.
+struct Tracked(c Ptr[Counter])
+
+struct Holder(var c Counter)
+
+func main() {
+    var shared = Counter(0)
+    val t = Tracked(&shared)
+    Println(t)
+    Println(s"again: $t")
+    Println(shared.shown)
+
+    var h = Holder(Counter(0))
+    Println(h.c)
+    Println(s"again: ${h.c}")
+    Println(h.c.shown)
+}

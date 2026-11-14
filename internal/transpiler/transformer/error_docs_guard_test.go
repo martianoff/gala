@@ -1825,6 +1825,29 @@ func main() {
 			},
 		},
 		{
+			name: "a field printed through a copy by a String that changes it",
+			code: galaerr.CodeMutatingCallOnCopy, // GALA-E0110
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var shown int)
+
+func (c Ptr[Counter]) String() string {
+    c.shown = c.shown + 1
+    s"shown ${c.shown}"
+}
+
+struct Holder(var c Counter)
+
+func main() {
+    var h = Holder(Counter(0))
+    Println(h)
+    Println(h.c.shown)
+}
+`)
+			},
+		},
+		{
 			name:   "builtin-named function the package's hand-written Go refers to",
 			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
 			render: renderBuiltinNameFromGoRepro,
