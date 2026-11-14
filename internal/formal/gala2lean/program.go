@@ -423,7 +423,8 @@ func (g *gen) funcDeclIn(f *coreexport.Func, recursive bool, tparams []string) s
 func (g *gen) fnBlock(b *coreexport.Block, sc *scope) []string {
 	inner := sc.child()
 	items := g.stmts(b.Stmts, inner, g.fn.result != "Unit")
-	if g.fn.result != "Unit" && (len(b.Stmts) == 0 || !isExpr(b.Stmts[len(b.Stmts)-1])) && !terminates(b.Stmts) {
+	last := len(b.Stmts) - 1
+	if g.fn.result != "Unit" && (last < 0 || !isExpr(b.Stmts[last]) && !isValueIf(b.Stmts[last])) && !terminates(b.Stmts) {
 		// Every path returned (GALA checks this); Lean still wants a value
 		// at the end.
 		items = append(items, "pure default")

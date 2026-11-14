@@ -159,6 +159,12 @@ func (g *gen) stmt(st coreexport.Node, sc *scope, value bool) []string {
 		op := map[string]string{"++": "+", "--": "-"}[st.Op]
 		return g.assignTo(st.Target, func(cur string) string { return fmt.Sprintf("(%s %s 1)", cur, op) }, sc, st.Pos)
 	case *coreexport.If:
+		if value && st.Else != nil {
+			// The trailing `if` of a block whose value is used, with block
+			// branches: its value is the taken branch's trailing expression
+			// (docs/GALA.MD: "a trailing `if`/`else` carries the value in its branches").
+			return []string{g.ifValue(st, sc)}
+		}
 		return []string{g.ifStmt(st, sc)}
 	case *coreexport.Return:
 		if sc.level != 0 {
@@ -335,6 +341,27 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 		}
 	}
 	return items
+}
+
+// ifValue is an `if` statement with an else used as a value: each branch's
+// do-items end with its value.
+func (g *gen) ifValue(st *coreexport.If, sc *scope) string {
+	c := g.expr(st.Cond, sc)
+	s := "if " + c.val() + " then\n" + indentLines(g.valueItems(st.Then, sc.child()), 2)
+	if el, ok := st.Else.(*coreexport.If); ok {
+		if el.Else == nil {
+			unsup(el.Pos, "if-without-else-as-value")
+		}
+		return s + "\nelse\n" + indentLines([]string{g.ifValue(el, sc.child())}, 2)
+	}
+	return s + "\nelse\n" + indentLines(g.valueItems(st.Else, sc.child()), 2)
+}
+
+// isValueIf reports whether n is an `if` statement with an else, which is
+// the value of a block it ends (ifValue).
+func isValueIf(n coreexport.Node) bool {
+	st, ok := n.(*coreexport.If)
+	return ok && st.Else != nil
 }
 
 func (g *gen) ifStmt(st *coreexport.If, sc *scope) string {
