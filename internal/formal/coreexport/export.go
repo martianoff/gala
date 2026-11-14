@@ -284,6 +284,10 @@ func (e *exporter) receiver(r native.ReceiverNode) Node {
 	rec := &Receiver{Name: r.Identifier().GetText()}
 	rec.Inout = r.INOUT().Ok()
 	if firstToken(t.GalaNodeRef) == "*" {
+		if rec.Inout {
+			// An inout receiver of a pointer type is not GALA (GALA-E0111).
+			return e.unsupported(UnsupportedParamModifier, r.GalaNodeRef)
+		}
 		rec.Pointer = true
 		t = t.Type_(0)
 	}

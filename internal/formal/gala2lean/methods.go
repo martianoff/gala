@@ -23,6 +23,11 @@ import (
 //     back to the place it called the method on. Inside, the receiver lives
 //     in a cell, so the body may write its fields from any depth of
 //     expression, and `return` leaves the body as usual.
+//   - An `inout` receiver `(inout c T)` lends the caller's place as a `*T`
+//     receiver does (it lowers to one), so it is translated the same way
+//     (statePassed), under the same rules: the diagnostics below that say
+//     "pointer" apply to it too. Reading or replacing the receiver as a
+//     whole (`c = c.Copy(...)`) is reported as ptr-escape, as for `*T`.
 //
 // The place must be one no other path reaches while the method runs: a
 // local var no lambda captures (or a field path in one), or the enclosing
