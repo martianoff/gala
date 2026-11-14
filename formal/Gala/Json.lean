@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 6
+def supportedCore : Nat := 7
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String

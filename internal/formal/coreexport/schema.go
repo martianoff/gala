@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 6
+const Version = 7
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {

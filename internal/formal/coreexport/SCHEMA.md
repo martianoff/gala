@@ -1,4 +1,4 @@
-# Core JSON, version 6
+# Core JSON, version 7
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 6,
+  "core": 7,
   "files": [ { "kind": "file", ... } ]
 }
 ```
