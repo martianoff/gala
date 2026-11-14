@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -44,9 +45,7 @@ func TestBuildAfterTest_ReusesGoBuildCache(t *testing.T) {
 		"main.gala":           "package main\n\nimport \"example.com/reuse/util\"\n\nfunc main() {\n    Println(util.Scale(0))\n}\n",
 	}
 	for name, content := range files {
-		p := filepath.Join(projectDir, filepath.FromSlash(name))
-		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
-		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
 	}
 
 	isolateUserState(t)
@@ -63,29 +62,32 @@ func TestBuildAfterTest_ReusesGoBuildCache(t *testing.T) {
 		t.Fatalf("gala test failed: %v", err)
 	}
 
-	// The build's `go build -x` trace goes to the driver's stderr.
-	setEnvForTest(t, "GOFLAGS", "-x")
-	trace := filepath.Join(t.TempDir(), "go-build-x.txt")
-	traceFile, err := os.Create(trace)
-	require.NoError(t, err)
-	origStderr := os.Stderr
-	os.Stderr = traceFile
 	bb, err := NewBuilderForMode(projectDir, "test", false, ModeBuild)
-	var binPath string
-	if err == nil {
-		binPath, err = bb.Build("")
-	}
-	os.Stderr = origStderr
-	require.NoError(t, traceFile.Close())
-	if err != nil && isToolchainEnvError(err.Error()) {
-		t.Skipf("Go toolchain unavailable/mismatched in this environment: %v", err)
-	}
-	require.NoError(t, err, "gala build failed; go output:\n%s", readFileString(t, trace))
+	require.NoError(t, err)
 	require.NotEqual(t, tb.Workspace().Dir, bb.Workspace().Dir,
 		"the test only proves something if the two commands use different workspaces")
 
+	// The build's `go build -x` trace goes to the driver's stderr. -x is added
+	// to the GOFLAGS the test run saw, so the two runs differ only in it.
+	setEnvForTest(t, "GOFLAGS", strings.TrimSpace(os.Getenv("GOFLAGS")+" -x"))
+	tracePath := filepath.Join(t.TempDir(), "go-build-x.txt")
+	binPath, err := func() (string, error) {
+		traceFile, err := os.Create(tracePath)
+		require.NoError(t, err)
+		defer traceFile.Close()
+		origStderr := os.Stderr
+		os.Stderr = traceFile
+		defer func() { os.Stderr = origStderr }()
+		return bb.Build("")
+	}()
+	if err != nil && isToolchainEnvError(err.Error()) {
+		t.Skipf("Go toolchain unavailable/mismatched in this environment: %v", err)
+	}
+	trace := readFileString(t, tracePath)
+	require.NoError(t, err, "gala build failed; go output:\n%s", trace)
+
 	var compiled []string
-	for _, m := range compiledPackageRE.FindAllStringSubmatch(readFileString(t, trace), -1) {
+	for _, m := range compiledPackageRE.FindAllStringSubmatch(trace, -1) {
 		compiled = append(compiled, m[1])
 	}
 	require.Contains(t, compiled, "main",
@@ -103,4 +105,17 @@ func TestBuildAfterTest_ReusesGoBuildCache(t *testing.T) {
 	assert.Contains(t, out, filepath.Base(projectDir)+"/main.gala:6",
 		"the user's frame must name main.gala; output:\n%s", out)
 	assert.NotContains(t, out, ".gen.go", "output:\n%s", out)
+}
+
+// TestWorkspaceGoCmd_TrimpathAheadOfUserGOFLAGS checks that the driver's go
+// commands get -trimpath before the user's GOFLAGS, so a user's
+// -trimpath=false, read later, still turns it off.
+func TestWorkspaceGoCmd_TrimpathAheadOfUserGOFLAGS(t *testing.T) {
+	setEnvForTest(t, "GOFLAGS", "-p=2 -trimpath=false")
+	b := &Builder{config: &Config{GoPkgDir: t.TempDir()}, workspace: &Workspace{Dir: t.TempDir()}}
+
+	cmd := b.workspaceGoCmd("build", "./gen/...")
+
+	assert.Equal(t, []string{"go", "build", "./gen/..."}, cmd.Args)
+	assert.Equal(t, "GOFLAGS=-trimpath -p=2 -trimpath=false", cmd.Env[len(cmd.Env)-1])
 }
