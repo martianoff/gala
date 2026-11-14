@@ -653,6 +653,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	extractPackageInfo(pkg, info, own)
 	repairUnresolvedSignatures(files, pkg.Name(), info, own)
 	extractMethodsOnForeignTypes(files, typesInfo, pkg, info, own)
+	recordReadOnlyMethods(files, pkg, info)
 	info.AddImportPathKeys(pkg.Name(), importPath)
 	result.ownTypes = make(map[string]bool)
 	for _, name := range pkg.Scope().Names() {

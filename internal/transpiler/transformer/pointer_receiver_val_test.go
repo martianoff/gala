@@ -11,9 +11,11 @@ import (
 // pointer-receiver method is emitted when Go cannot address the receiver. A
 // val reads through Get(), which returns a copy, so `u.Get().String()` is
 // rejected by Go ("cannot call pointer method String on url.URL"). The
-// receiver is handed over as std.AddrOfCopy(...) instead: the method runs on a
-// copy and the val stays unchanged. An addressable receiver (a var, a pointer)
-// and a value-receiver method must be emitted exactly as before.
+// receiver of a method that only reads it is handed over as
+// std.AddrOfCopy(...) instead: the method runs on a copy. (A method that can
+// change its receiver is GALA-E0110; see receiver_mutation_test.go.) An
+// addressable receiver (a var, a pointer) and a value-receiver method must be
+// emitted exactly as before.
 func TestPointerReceiverMethodOnNonAddressableReceiver(t *testing.T) {
 	trans := newDefaultsTranspiler()
 
@@ -39,14 +41,14 @@ func TestPointerReceiverMethodOnNonAddressableReceiver(t *testing.T) {
 			mustContain: []string{"std.AddrOfCopy(w.link.Get()).String()"},
 		},
 		{
-			name:        "GALA pointer method on a val",
-			body:        `val c = Counter(n = 1)` + "\n    Println(c.Bump())",
-			mustContain: []string{"std.AddrOfCopy(c).Bump()"},
+			name:        "read-only GALA pointer method on a val",
+			body:        `val c = Counter(n = 1)` + "\n    Println(c.Get())",
+			mustContain: []string{"std.AddrOfCopy(c).Get()"},
 		},
 		{
-			name:        "GALA pointer method on a function result",
-			body:        `Println(makeCounter().Bump())`,
-			mustContain: []string{"std.AddrOfCopy(makeCounter()).Bump()"},
+			name:        "read-only GALA pointer method on a function result",
+			body:        `Println(makeCounter().Get())`,
+			mustContain: []string{"std.AddrOfCopy(makeCounter()).Get()"},
 		},
 		{
 			name:           "var receiver is addressable",
@@ -85,6 +87,8 @@ func (c *Counter) Bump() int {
 }
 
 func (c Counter) Peek() int = c.n
+
+func (c *Counter) Get() int = c.n
 
 func makeCounter() Counter = Counter(n = 5)
 

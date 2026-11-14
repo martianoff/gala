@@ -1707,6 +1707,26 @@ func main() = Println(probe(HashMapOf(("a", 1))))
 			},
 		},
 		{
+			name: "a pointer method that changes its receiver, called on a val",
+			code: galaerr.CodeMutatingCallOnCopy, // GALA-E0110
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func (c Ptr[Counter]) Bump() {
+    c.n = c.n + 1
+}
+
+func main() {
+    val c = Counter(0)
+    c.Bump()
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
 			name:   "builtin-named function the package's hand-written Go refers to",
 			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
 			render: renderBuiltinNameFromGoRepro,

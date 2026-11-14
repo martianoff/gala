@@ -357,6 +357,17 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.OfTypeDecl)
 	e.writeTypeSlice(m.GoResults)
 	e.writeBorrowSummary(m.Borrow)
+	e.writeReceiverEffects(m.ReceiverEffects)
+}
+
+// writeReceiverEffects emits a method's ReceiverEffects.
+func (e *encoder) writeReceiverEffects(effects []transpiler.ReceiverEffect) {
+	e.writeUvarint(uint64(len(effects)))
+	for _, eff := range effects {
+		e.writeByte(byte(eff.Kind))
+		e.writeStringSlice(eff.Path)
+		e.writeString(eff.Method)
+	}
 }
 
 // writeBorrowSummary emits an optional BorrowSummary.
@@ -558,6 +569,7 @@ func (e *encoder) writeGoTypeData(t *transpiler.GoTypeData) {
 	e.writeType(t.Underlying)
 	e.writeStringSlice(t.TypeParams)
 	e.writeStringSet(t.PointerMethods)
+	e.writeStringSet(t.ReadOnlyMethods)
 	e.writeString(t.NoCopy)
 	e.writeBool(t.Incomparable)
 	e.writeBool(t.EmbedsComparable)
@@ -919,6 +931,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.OfTypeDecl = d.readBool()
 	m.GoResults = d.readTypeSlice()
 	m.Borrow = d.readBorrowSummary()
+	m.ReceiverEffects = d.readReceiverEffects()
 	return m
 }
 
@@ -933,6 +946,22 @@ func (d *decoder) readBorrowSummary() *transpiler.BorrowSummary {
 		s.BorrowedParams = append(s.BorrowedParams, d.readBool())
 	}
 	return s
+}
+
+func (d *decoder) readReceiverEffects() []transpiler.ReceiverEffect {
+	n := d.readUvarint()
+	if d.err != nil || n == 0 {
+		return nil
+	}
+	out := make([]transpiler.ReceiverEffect, 0, n)
+	for i := uint64(0); i < n && d.err == nil; i++ {
+		var eff transpiler.ReceiverEffect
+		eff.Kind = transpiler.ReceiverEffectKind(d.readByte())
+		eff.Path = d.readStringSlice()
+		eff.Method = d.readString()
+		out = append(out, eff)
+	}
+	return out
 }
 
 func (d *decoder) readStringMethodMap() map[string]*transpiler.MethodMetadata {
@@ -1163,6 +1192,7 @@ func (d *decoder) readGoTypeData() *transpiler.GoTypeData {
 	t.Underlying = d.readType()
 	t.TypeParams = d.readStringSlice()
 	t.PointerMethods = d.readStringSet()
+	t.ReadOnlyMethods = d.readStringSet()
 	t.NoCopy = d.readString()
 	t.Incomparable = d.readBool()
 	t.EmbedsComparable = d.readBool()

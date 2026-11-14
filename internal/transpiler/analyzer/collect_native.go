@@ -737,6 +737,9 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				PtrReceiver:     ptr,
 				DefinedIn:       filePath,
 			}
+			if pointer {
+				methodMeta.ReceiverEffects = nativeReceiverEffects(ctx, methodMeta.ReceiverName)
+			}
 			var constraintTexts map[string]string
 			methodMeta.TypeParams, constraintTexts = nativeTypeParamsOf(ctx.TypeParameters())
 

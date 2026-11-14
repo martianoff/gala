@@ -99,6 +99,7 @@ type galaASTTransformer struct {
 	ptrReceiverMethods     map[string]bool                               // names of the known methods on a Ptr receiver; gates the receiver nullability checks
 	ptrConstraintMethods   map[string][]string                           // memo of ptrConstraint: a type-parameter constraint to its methods on a Ptr receiver
 	goTypeInfo             *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
+	lookupGoReadOnly       func(importPath, typeName string) map[string]bool // RichAST.GoReadOnlyMethods
 	filePath               string                                        // source file path (for error reporting)
 	richAST                *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
 	traceTypeResolution    bool                                          // when true, type resolution events are recorded
@@ -428,6 +429,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		t.typeAliases[name] = underlyingType
 	}
 	t.goTypeInfo = richAST.GoTypeInfo
+	t.lookupGoReadOnly = richAST.GoReadOnlyMethods
 	t.tempVarCount = 0
 	t.sourceGenNames = sourceGenNames(richAST.SourceContent)
 	t.localRefs = nil

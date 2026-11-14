@@ -10,8 +10,9 @@ import (
 // A String declared on a pointer receiver runs on the printed value itself
 // when that value is addressable (a var, a field of one, `*p`): it sees
 // what other pointers wrote, what it writes stays, and a lock the value holds
-// is not copied. A val and a call's result are printed through a copy, as a
-// pointer-receiver method gets a copy of them.
+// is not copied. A val and a call's result could only be printed through a
+// copy, and Counter's String changes its receiver, so printing one is
+// GALA-E0110.
 
 struct Counter(var N int, var Shown int)
 
@@ -26,8 +27,6 @@ func (c *Counter) String() string {
 }
 
 struct Holder(var C Counter)
-
-func fresh() Counter = Counter(5, 0)
 
 // Guarded is changed by one goroutine while another prints it. String takes
 // the lock of the value printed, not of a copy made without it.
@@ -64,13 +63,6 @@ func main() {
     h.C.Inc()
     Println(h.C)
     Println(h.C)
-
-    Println(fresh())
-    Println(fresh())
-
-    val v = Counter(7, 0)
-    Println(v)
-    Println(v)
 
     var g = Guarded(sync.Mutex{}, 0)
     var done sync.WaitGroup

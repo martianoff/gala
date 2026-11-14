@@ -44,18 +44,18 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 			absent: []string{".Size()", ".ByteSize()"},
 		},
 		{
-			name: "pointer-receiver method on a val binding of a Go-declared type is called on a copy (#614)",
+			name: "read-only pointer-receiver method on a val binding of a Go-declared type is called on a copy (#614)",
 			goSrc: "type Greeter struct{ Name string }\n\n" +
 				"func (g Greeter) Hello() string    { return \"hello \" + g.Name }\n" +
+				"func (g *Greeter) Shout() string   { return g.Name + \"!\" }\n" +
 				"func (g *Greeter) Rename(s string) { g.Name = s }\n\n" +
 				"func NewGreeter(n string) Greeter { return Greeter{Name: n} }\n",
 			galaSrc: "func greet() string {\n" +
 				"    x := NewGreeter(\"world\")\n" +
-				"    x.Rename(\"there\")\n" +
-				"    return x.Hello()\n" +
+				"    return x.Shout() + x.Hello()\n" +
 				"}\n",
-			want:   []string{"std.AddrOfCopy(x).Rename(\"there\")"},
-			absent: []string{"\tx.Get().Rename("},
+			want:   []string{"std.AddrOfCopy(x).Shout()"},
+			absent: []string{"\tx.Get().Shout("},
 		},
 		{
 			name: "resource.Using infers its resource from a Go-declared constructor (#618)",

@@ -816,6 +816,9 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		Functions:        make(map[string]*transpiler.FunctionMetadata),
 		Packages:         make(map[string]string),
 		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
+		// Read on demand: only a pointer method called on a value Go
+		// cannot address needs to know whether it writes its receiver.
+		GoReadOnlyMethods: GoReadOnlyMethods,
 	}
 
 	// 0. Populate base metadata if provided (deprecated, for backward compatibility)

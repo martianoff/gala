@@ -997,6 +997,13 @@ const (
 	// Go's type test would never match such a value, so the pattern is
 	// rejected rather than silently falling through.
 	CodeInterfaceViaLoweredMethod ErrorCode = "GALA-E0109"
+
+	// E0110: a method with a pointer receiver that can mutate its receiver
+	// is called on a value Go cannot address — a val, a field reached
+	// through one, a call result, a literal. The call would run on a copy
+	// (std.AddrOfCopy) and its change would be lost. A method that only
+	// reads its receiver is still called on a copy.
+	CodeMutatingCallOnCopy ErrorCode = "GALA-E0110"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

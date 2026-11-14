@@ -2,8 +2,9 @@ package main
 
 // A generic method on a pointer receiver is lowered to a function that takes
 // the receiver as its first argument. Called on an addressable value, it runs
-// on that value through its address, as a method call does; called on a val
-// or a call result, it runs on an addressed copy, so the original is unchanged.
+// on that value through its address, as a method call does. One that only
+// reads its receiver can also be called on a val or a call result: it runs on
+// an addressed copy.
 
 // Box holds a value and counts the calls made on it.
 struct Box[T any](var V T, var Hits int)
@@ -25,6 +26,9 @@ func (b *Box[T]) Touch[U any]() Option[U] {
     b.Hits = b.Hits + 1
     None[U]()
 }
+
+// Peek maps the box's value and only reads the box.
+func (b *Box[T]) Peek[U any](f func(T) U) U = f(b.V)
 
 // Holder reaches a box through a field.
 struct Holder(var box Box[int])
@@ -69,15 +73,13 @@ func main() {
     Println(s"field fold: ${h.box.Fold("", (acc, v) => s"$acc$v")}")
     Println(s"field hits: ${h.box.Hits}")
 
-    // A val: each call runs on a copy, and the val keeps its count.
+    // A val or a call result: Peek only reads the box, so it runs on a
+    // copy. Map, Fold and Touch count their calls, so calling them here
+    // would lose the count (GALA-E0110).
     val c = Box(V = 3, Hits = 0)
-    Println(s"val map: ${c.Map(_ - 1)}")
-    Println(s"val fold: ${c.Fold(0, (acc, v) => acc - v)}")
+    Println(s"val peek: ${c.Peek(_ - 1)}")
     Println(s"val hits: ${c.Hits}")
-
-    // A call result: runs on a copy of it.
-    Println(s"result map: ${newBox().Map((v) => v * v)}")
-    Println(s"result fold: ${newBox().Fold(1, (acc, v) => acc * v)}")
+    Println(s"result peek: ${newBox().Peek((v) => v * v)}")
 
     // A pointer is passed as it is.
     val p = &b
