@@ -24,8 +24,9 @@ value whose `String()` is declared on a pointer receiver by calling that
 `String`, so printing such a value is rejected the same way when its `String`
 changes its receiver. The `String` GALA generates for a struct or a sealed type
 prints each field through a copy of the field, so printing a value with a field
-whose pointer-receiver `String` changes its receiver is rejected too, however
-the value itself is held (see "Fields printed through a copy" below).
+whose pointer-receiver `String` changes its receiver is rejected too, whether
+the value printed is a `var`, a `val` or a pointer (see "Fields printed through
+a copy" below).
 
 **Minimal repro.**
 
@@ -120,8 +121,7 @@ error[GALA-E0110]: cannot print this Holder: its field c, a Counter, prints by i
 
 The error is reported where `Println`, `Print` or interpolation prints the
 value, and follows fields into nested structs and sealed cases. Hold the field
-as a `Ptr`, so its `String` runs on the value it points to. A field of a `var`
-printed on its own, `Println(h.c)`, runs its `String` in place:
+as a `Ptr`, so its `String` runs on the value it points to:
 
 ```gala
 package main

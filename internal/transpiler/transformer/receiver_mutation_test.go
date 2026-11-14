@@ -274,6 +274,23 @@ func (s Ptr[Stamp]) String() string {
 func (s Stamp) Format(layout string) string = layout
 
 struct StampHolder(var at Stamp)
+
+struct Odd(var n int)
+
+func (o Ptr[Odd]) String() string {
+    o.n = o.n + 1
+    "odd"
+}
+
+func (o Odd) Format(a int, b int) {
+    Println(a + b)
+}
+
+struct OddHolder(var o Odd)
+
+struct PtrError(var l Loud)
+
+func (e Ptr[PtrError]) Error() string = "ptr error"
 `
 
 // TestMutatingFieldPrintRejected pins GALA-E0110 for a field printed through
@@ -305,6 +322,7 @@ func main() {
 		{"a pointer to the value", "var h = LoudHolder(Loud(0), 1)\n    Println(&h)", "cannot print this LoudHolder: its field l"},
 		{"a pointer field to a value with such a field", "var h = LoudHolder(Loud(0), 1)\n    val d = DeepByPtr(&h)\n    Println(d)", "cannot print this DeepByPtr: its field h.l, a Loud"},
 		{"a Format that is not fmt.Formatter's", "var h = StampHolder(Stamp(0))\n    Println(h)", "cannot print this StampHolder: its field at, a Stamp"},
+		{"a two-parameter Format that is not fmt.Formatter's", "var h = OddHolder(Odd(0))\n    Println(h)", "cannot print this OddHolder: its field o, a Odd"},
 	}
 	for _, tc := range rejected {
 		t.Run("rejected/"+tc.name, func(t *testing.T) {
@@ -330,6 +348,7 @@ func main() {
 		{"a field printed by its value's Error", "var h = FaultHolder(Fault(0))\n    Println(h)", "fmt.Println(h)"},
 		{"a value printed by its own Error", "var e = LoudError(Loud(0))\n    Println(e)", "fmt.Println(e)"},
 		{"a nested field printed by its own Error", "var h = LoudErrorHolder(LoudError(Loud(0)))\n    Println(h)", "fmt.Println(h)"},
+		{"a pointer printed by its pointer-receiver Error", "var e = PtrError(Loud(0))\n    Println(&e)", "fmt.Println(&e)"},
 	}
 	for _, tc := range accepted {
 		t.Run("accepted/"+tc.name, func(t *testing.T) {
