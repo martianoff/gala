@@ -1727,6 +1727,46 @@ func main() {
 			},
 		},
 		{
+			name: "an inout argument without its &",
+			code: galaerr.CodeInoutArgument, // GALA-E0111
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func bump(inout c Counter) {
+    c.n = c.n + 1
+}
+
+func main() {
+    var c = Counter(0)
+    bump(c)
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name: "an inout method called on a val",
+			code: galaerr.CodeInoutReceiver, // GALA-E0114
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func (inout c Counter) bump() {
+    c.n = c.n + 1
+}
+
+func main() {
+    val c = Counter(0)
+    c.bump()
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
 			name:   "builtin-named function the package's hand-written Go refers to",
 			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
 			render: renderBuiltinNameFromGoRepro,

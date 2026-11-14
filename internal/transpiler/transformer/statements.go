@@ -215,7 +215,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`, and so does a
 	// field or element target: `s.cur = None()` for `cur Option[int]`.
 	var lhsType transpiler.Type
-	if lhsName, lhsOk := singleAssignmentLHSName(targets); lhsOk {
+	if lhsName, lhsOk := singleAssignmentLHSName(targets); lhsOk && !t.isInoutName(lhsName) {
 		lhsType = t.getValType(lhsName)
 	} else if len(lhsExprs) == 1 {
 		lhsType = t.getExprTypeName(lhsExprs[0])

@@ -235,16 +235,20 @@ func nativeReceiverTypeArgNames(t native.TypeNode) []string {
 	return names
 }
 
-// nativeReceiverPointers reports whether a method receiver of type t is
-// declared as a pointer, `*T` (`func (c *Counter) Bump()`) or `Ptr[T]`, and
-// whether it is declared as the non-null `Ptr[T]` (`func (c Ptr[Counter])
-// Bump()`).
-func nativeReceiverPointers(t native.TypeNode) (pointer, ptr bool) {
+// nativeReceiverPointers reports whether the method receiver recv is a
+// pointer, `*T` (`func (c *Counter) Bump()`), `Ptr[T]` or `inout T`; whether it
+// is a non-null one, `Ptr[T]` (`func (c Ptr[Counter]) Bump()`) or `inout T`;
+// and whether it is `inout T`, which lowers to the `*T` of a `Ptr[T]`.
+func nativeReceiverPointers(recv native.ReceiverNode) (pointer, ptr, inout bool) {
+	if recv.INOUT().Ok() {
+		return true, true, true
+	}
+	t := recv.Type_()
 	if galaparser.NativePtrElem(t).Ok() {
-		return true, true
+		return true, true, false
 	}
 	_, pointer = galaparser.NativePointerElem(t)
-	return pointer, false
+	return pointer, false, false
 }
 
 // nativeSignatureResult resolves a declared signature's result: its result
@@ -279,6 +283,9 @@ type nativeSignatureParams struct {
 	names    []string
 	defaults map[int]transpiler.DefaultExpr
 	spans    map[int]defaultExprSpan
+	// inout is index-aligned with types: true for an `inout` parameter, whose
+	// type is the `Ptr[T]` it lowers to. Nil when none is.
+	inout []bool
 }
 
 // nativeParamsOf reads the parameters of params (see nativeSignatureParams).
@@ -287,6 +294,11 @@ func (a *galaAnalyzer) nativeParamsOf(params native.ParametersNode, pkgName stri
 	for i, p := range nativeParams(params) {
 		if typ := p.Type_(); typ.Ok() {
 			sp.types = append(sp.types, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, typeParams))
+			if p.INOUT().Ok() {
+				sp.types[i] = transpiler.PointerType{Elem: sp.types[i], NonNull: true}
+				sp.inout = append(sp.inout, make([]bool, i+1-len(sp.inout))...)
+				sp.inout[i] = true
+			}
 			sp.variadic = p.ELLIPSIS().Ok()
 		} else {
 			sp.types = append(sp.types, transpiler.NilType{})
@@ -296,7 +308,9 @@ func (a *galaAnalyzer) nativeParamsOf(params native.ParametersNode, pkgName stri
 			name = id.GetText()
 		}
 		sp.names = append(sp.names, name)
-		if pd := p.ParamDefault(); pd.Ok() {
+		// An inout parameter takes no default (GALA-E0111, reported by the
+		// transformer); its default is not checked against the Ptr[T] here.
+		if pd := p.ParamDefault(); pd.Ok() && !p.INOUT().Ok() {
 			expr := pd.Expression()
 			if sp.defaults == nil {
 				sp.defaults = make(map[int]transpiler.DefaultExpr)
@@ -509,6 +523,7 @@ func (a *galaAnalyzer) interfaceMethodNative(meta *transpiler.TypeMetadata, msCt
 	methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)
 	params := a.nativeParamsOf(sig.Parameters(), pkgName, meta.TypeParams)
 	methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
+	methodMeta.InoutParams = params.inout
 	return methodMeta
 }
 
@@ -726,7 +741,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				fullBaseType = qualifiedName(pkgName, baseType)
 			}
 
-			pointer, ptr := nativeReceiverPointers(recvType)
+			pointer, ptr, inout := nativeReceiverPointers(recvCtx)
 			methodMeta := &transpiler.MethodMetadata{
 				Name:            methodName,
 				Package:         pkgName,
@@ -735,6 +750,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				ReceiverName:    recvCtx.Identifier().GetText(),
 				PointerReceiver: pointer,
 				PtrReceiver:     ptr,
+				InoutReceiver:   inout,
 				DefinedIn:       filePath,
 			}
 			if pointer {
@@ -765,6 +781,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 
 			params := a.nativeParamsOf(sig.Parameters(), pkgName, allTypeParams)
 			methodMeta.ParamTypes, methodMeta.Variadic, methodMeta.ParamNames, methodMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
+			methodMeta.InoutParams = params.inout
 
 			// The signature takes its type's parameter names after
 			// section 2.5, when every file's types are known.
@@ -833,6 +850,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 		funcMeta.ReturnType, funcMeta.GoResults = a.nativeSignatureResult(sig, pkgName, funcMeta.TypeParams)
 		params := a.nativeParamsOf(sig.Parameters(), pkgName, funcMeta.TypeParams)
 		funcMeta.ParamTypes, funcMeta.Variadic, funcMeta.ParamNames, funcMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
+		funcMeta.InoutParams = params.inout
 		// Validate default parameter rules once the sibling files' type
 		// declarations are known too (section 2.5).
 		if len(funcMeta.DefaultExprs) > 0 {

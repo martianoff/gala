@@ -1,0 +1,15 @@
+c=8 6
+3 2
+2 1
+old new
+l=1 r=7
+ptr=12
+d=22
+e=4
+o=Some(3) defined=true
+o=None() defined=false
+Circle(3)
+11
+1
+f=6
+rex fido

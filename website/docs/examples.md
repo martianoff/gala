@@ -692,6 +692,48 @@ func main() {
 }
 ```
 
+## `inout` Parameters
+
+An `inout` parameter lends the caller's place for the call; the argument is
+`&place`, and an `inout` receiver is called on a place with no `&`. See
+[`inout` parameters](/docs/language-reference/#inout-parameters).
+
+```gala
+package main
+
+struct Counter(var n int)
+
+func (inout c Counter) inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+func swap(inout a int, inout b int) {
+    val tmp = a
+    a = b
+    b = tmp
+}
+
+func reset(inout o Option[int]) {
+    o = None()
+}
+
+func main() {
+    var c = Counter(0)
+    c.inc()
+    Println(c.n)      // 1
+
+    var x = 1
+    var y = 2
+    swap(&x, &y)
+    Println(x, y)     // 2 1
+
+    var o = Some(3)
+    reset(&o)
+    Println(o)        // None()
+}
+```
+
 ## Using External Libraries
 
 GALA allows you to organize your code into multiple packages and import them as needed.

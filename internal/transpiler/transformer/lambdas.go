@@ -181,7 +181,17 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 				if expType != nil && !unresolvedSlot && !expType.IsAny() {
 					typeExpr := t.typeToExpr(expType)
 					field.Type = typeExpr
-					t.addParam(p.name, expType, p.isVar)
+					ptr, isPtr := expType.(transpiler.PointerType)
+					switch {
+					case p.isInout && isPtr && ptr.NonNull:
+						// `(inout b) => …` filling a `func(inout T)` slot.
+						t.addInout(p.name, expType)
+					case p.isInout:
+						return nil, inoutError(p.at, fmt.Sprintf("lambda parameter %s is inout, but the function it fills takes a %s, not an inout parameter", p.name, displayType(expType)),
+							"drop `inout`: the lambda gets a copy of the value")
+					default:
+						t.addParam(p.name, expType, p.isVar)
+					}
 					if t.lspVarTypes != nil && t.loweringDefault == nil {
 						line, col := p.nameAt.start()
 						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{

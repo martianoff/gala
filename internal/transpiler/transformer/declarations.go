@@ -839,7 +839,9 @@ type receiverDecl struct {
 	name  string
 	at    srcNode
 	isVar bool
-	typ   typeSrc
+	// isInout marks an `inout` receiver (see inout.go).
+	isInout bool
+	typ     typeSrc
 }
 
 // lowerFuncDecl lowers a function or method declaration.
@@ -882,6 +884,13 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		if err != nil {
 			return nil, err
 		}
+		if recv.isInout {
+			if err := checkInoutParamDecl(recv.at, recvName, recvTypeExpr, false, false); err != nil {
+				return nil, err
+			}
+			// An `inout` receiver is the never-nil `*T` of a Ptr receiver.
+			recvTypeExpr = t.ptrStar(recvTypeExpr)
+		}
 		originalRecvTypeExpr = recvTypeExpr
 
 		recvBaseName := t.getBaseTypeName(recvTypeExpr)
@@ -908,7 +917,11 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 
 		// The receiver is a plain Go receiver that can never be rebound; an
 		// explicit `val` is a no-op marker for it.
-		t.addReceiver(recvName, typeForScope, isPointer)
+		if recv.isInout {
+			t.addInout(recvName, typeForScope)
+		} else {
+			t.addReceiver(recvName, typeForScope, isPointer)
+		}
 
 		receiver = &ast.FieldList{
 			List: []*ast.Field{
@@ -1119,7 +1132,11 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(params []loweredP
 	for _, param := range params {
 		// Only an explicit `var` parameter is reassignable; an unmarked one is
 		// `val` by default, and an explicit `val` is a no-op marker for it.
-		t.addParam(param.name, paramScopeType(param.declared, param.variadic), param.isVar)
+		if param.isInout {
+			t.addInout(param.name, param.declared)
+		} else {
+			t.addParam(param.name, paramScopeType(param.declared, param.variadic), param.isVar)
+		}
 		// Remember a `Sendable[F]`-declared parameter: lowerType erased the
 		// marker from its type, so the capture-safety check relies on this flag
 		// to accept the parameter when it is forwarded across a boundary.
@@ -1322,7 +1339,10 @@ type paramDecl struct {
 	at, nameAt   srcNode
 	name         string
 	isVar, isVal bool
-	variadic     bool
+	// isInout marks an `inout` parameter: it lends the caller's place and
+	// lowers to a Go `*T` (see inout.go).
+	isInout  bool
+	variadic bool
 	// hasDefault reports a default clause. An error-recovered tree can hold
 	// one without its value (`x int = `), so def can be none when it is set.
 	hasDefault bool
@@ -1368,6 +1388,11 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 	meta := t.getTypeMeta(name)
 	for i, param := range d.params {
 		isVal := !param.isVar // Default to immutable if VAR is not present
+		if param.isInout {
+			return nil, inoutError(param.at,
+				fmt.Sprintf("field %s cannot be inout: inout marks a parameter that lends a place for one call", param.name),
+				fmt.Sprintf("declare it `var %s` to make it a mutable field", param.name))
+		}
 
 		// For shorthand structs, we want the fields in the struct to be std.Immutable if isVal
 		// but lowerParam handles function parameters.
@@ -1865,6 +1890,12 @@ func (t *galaASTTransformer) lowerParam(p paramDecl, requireType bool) (*ast.Fie
 		if typ, err = t.lowerType(p.typ); err != nil {
 			return nil, loweredParam{}, err
 		}
+		if p.isInout {
+			if err := checkInoutParamDecl(p.at, p.name, typ, p.variadic, p.hasDefault); err != nil {
+				return nil, loweredParam{}, err
+			}
+			typ = t.ptrStar(typ)
+		}
 		declared = t.astTypeToTranspilerType(typ)
 	}
 	qualified := declared
@@ -1872,8 +1903,16 @@ func (t *galaASTTransformer) lowerParam(p paramDecl, requireType bool) (*ast.Fie
 		qualified = qName
 	}
 	// A parameter is a plain Go parameter whatever its keyword; only `var`
-	// makes it reassignable, for a function and a lambda alike.
-	t.addParam(name, paramScopeType(qualified, p.variadic), p.isVar)
+	// makes it reassignable, for a function and a lambda alike. An `inout`
+	// one is a place the body reads and writes through its pointer.
+	switch {
+	case p.isInout && p.typ.ok():
+		t.addInout(name, declared)
+	case p.isInout:
+		// An untyped `(inout k) => …` is bound when its slot is known.
+	default:
+		t.addParam(name, paramScopeType(qualified, p.variadic), p.isVar)
+	}
 	// A `Sendable[F]`-annotated lambda/function parameter: record the erased
 	// marker so a forwarded function value is accepted by the capture check.
 	lowered := loweredParam{paramDecl: p, declared: declared, sendable: p.typ.isSendable()}

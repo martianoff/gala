@@ -123,6 +123,8 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0108` | A type's own Equal passes its type to a comparable type parameter | [GALA-E0108.md](GALA-E0108.md) |
 | `GALA-E0109` | A type pattern tests for an interface a type has only through free functions | [GALA-E0109.md](GALA-E0109.md) |
 | `GALA-E0110` | Pointer method that changes its receiver, called on a value that cannot be addressed | [GALA-E0110.md](GALA-E0110.md) |
+| `GALA-E0111` | An `inout` argument is not `&` of a mutable place | [GALA-E0111.md](GALA-E0111.md) |
+| `GALA-E0114` | An `inout`-receiver method called on a value that is not a mutable place | [GALA-E0114.md](GALA-E0114.md) |
 
 ### Retired codes
 

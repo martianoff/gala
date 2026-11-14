@@ -713,6 +713,27 @@ side-effect dispatch still rely on per-arm inference.
 
 ---
 
+## `inout` Parameters
+
+An `inout x T` parameter has two types, and inference uses each where it
+applies:
+
+- **In the signature it is `Ptr[T]`.** The analyzer records the parameter's
+  type as `Ptr[T]` (with `InoutParams` marking it), so an argument `&place`, a
+  `Ptr[T]`, checks against it like any `Ptr` parameter, and a function type
+  `func(inout T)` is `func(Ptr[T])`.
+- **In the body it is `T`.** The binding is in scope as the `Ptr[T]` of its Go
+  parameter, and each read is the dereference `(*x)`, whose type is `T`. So
+  `val y = x` infers `T`, `x.f` is a field of `T`, and the right side of
+  `x = e` is lowered against `T`: `o = None()` takes `Option[int]` from an
+  `inout o Option[int]`, as a sealed case or a generic constructor would from
+  a `var` of that type.
+- **An untyped lambda parameter** `(inout k) => …` takes its `T` from a
+  `func(inout T)` slot; in a slot whose parameter is not `inout` it is
+  GALA-E0111.
+
+---
+
 ## Untyped Constants in Immutable Slots
 
 An untyped numeric constant takes the type of the slot it initialises, exactly

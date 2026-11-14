@@ -50,6 +50,9 @@ type galaASTTransformer struct {
 	// ptrStars holds the `*T` expressions emitted for a non-null `Ptr[T]`, so a
 	// type read back from generated Go keeps the marker (see ptr.go).
 	ptrStars map[*ast.StarExpr]bool
+	// inoutNames holds the names of the functions and methods the file can
+	// call that declare an `inout` parameter (see checkInoutArgs).
+	inoutNames map[string]bool
 	// localBindings holds the Go name of each local val or var a declaration
 	// emits, with where its GALA name is written (see unused_bindings.go).
 	localBindings map[*ast.Ident]localBinding
@@ -408,6 +411,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.ptrStars = nil
+	t.inoutNames = collectInoutNames(richAST)
 	t.localBindings = nil
 	t.patternDefineTypes = nil
 	t.patternReads = nil

@@ -34,7 +34,7 @@ func (e *exporter) funcType(t native.TypeNode) Node {
 // parameter without a type, and is the type's name.
 func (e *exporter) funcTypeParam(p native.ParameterNode) Node {
 	switch {
-	case p.VAL().Ok() || p.VAR().Ok():
+	case p.VAL().Ok() || p.VAR().Ok() || p.INOUT().Ok():
 		return e.unsupported(UnsupportedParamModifier, p.GalaNodeRef)
 	case p.ELLIPSIS().Ok():
 		return e.unsupported(UnsupportedVariadicParam, p.GalaNodeRef)

@@ -288,7 +288,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			if err := a.checkSiblingMethod(&sm, pkgName, absSibPath, sibDisplay, decls); err != nil {
 				return err
 			}
-			pointer, ptr := nativeReceiverPointers(recvType)
+			pointer, ptr, inout := nativeReceiverPointers(recvCtx)
 			methodMeta := &transpiler.MethodMetadata{
 				Name:            sm.name,
 				Package:         pkgName,
@@ -297,6 +297,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 				ReceiverName:    recvCtx.Identifier().GetText(),
 				PointerReceiver: pointer,
 				PtrReceiver:     ptr,
+				InoutReceiver:   inout,
 				DefinedIn:       absSibPath,
 			}
 			if pointer {
@@ -321,6 +322,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 			}
 			params := a.nativeParamsOf(sig.Parameters(), pkgName, allTypeParams)
 			methodMeta.ParamTypes, methodMeta.Variadic, methodMeta.ParamNames, methodMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
+			methodMeta.InoutParams = params.inout
 			sm.add(richAST, methodMeta, recvNames, pkgName, decls)
 			continue
 		}
@@ -343,6 +345,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, sx siblingExtrac
 		funcMeta.ReturnType, funcMeta.GoResults = a.nativeSignatureResult(sig, pkgName, funcMeta.TypeParams)
 		params := a.nativeParamsOf(sig.Parameters(), pkgName, funcMeta.TypeParams)
 		funcMeta.ParamTypes, funcMeta.Variadic, funcMeta.ParamNames, funcMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
+		funcMeta.InoutParams = params.inout
 		richAST.Functions[sf.fullName] = funcMeta
 	}
 

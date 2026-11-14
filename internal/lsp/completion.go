@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -306,7 +305,7 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string, snippets bo
 
 func keywordCompletions() []lsp.CompletionItem {
 	keywords := []string{
-		"package", "import", "val", "var", "bind", "also", "use", "func", "type", "struct",
+		"package", "import", "val", "var", "inout", "bind", "also", "use", "func", "type", "struct",
 		"interface", "sealed", "default", "opaque", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
@@ -424,7 +423,7 @@ func formatFuncSig(meta *transpiler.FunctionMetadata) string {
 			b.WriteString(", ")
 		}
 		if i < len(meta.ParamTypes) {
-			b.WriteString(fmt.Sprintf("%s %s", name, meta.ParamTypes[i]))
+			b.WriteString(paramLabel(name, meta.ParamTypes[i], meta.InoutParams, i))
 		}
 	}
 	b.WriteString(")")
@@ -682,7 +681,7 @@ func formatMethodSig(meta *transpiler.MethodMetadata) string {
 			b.WriteString(", ")
 		}
 		if i < len(meta.ParamTypes) {
-			b.WriteString(fmt.Sprintf("%s %s", name, meta.ParamTypes[i]))
+			b.WriteString(paramLabel(name, meta.ParamTypes[i], meta.InoutParams, i))
 		}
 	}
 	b.WriteString(")")

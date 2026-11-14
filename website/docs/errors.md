@@ -158,6 +158,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0108](/docs/errors/gala-e0108/) | A type's own Equal passes its type to a comparable type parameter | Types |
 | [GALA-E0109](/docs/errors/gala-e0109/) | A type pattern tests for an interface a type has only through free functions | Types |
 | [GALA-E0110](/docs/errors/gala-e0110/) | Pointer method that changes its receiver, called on a value that cannot be addressed | Immutability |
+| [GALA-E0111](/docs/errors/gala-e0111/) | An `inout` argument is not `&` of a mutable place | Ownership |
+| [GALA-E0114](/docs/errors/gala-e0114/) | An `inout`-receiver method called on a value that is not a mutable place | Ownership |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -204,6 +206,8 @@ Everyday type mismatches transpile cleanly and surface from the **Go compiler** 
 **Control flow** — [E0015](/docs/errors/gala-e0015/) bare `return` in a match whose value is used · [E0059](/docs/errors/gala-e0059/) `break` or `continue` that cannot reach its loop (outside a loop, in a lambda, or in a match or if-expression whose value is used) · [E0069](/docs/errors/gala-e0069/) a `return` that would leave only a match or if-expression whose value is used.
 
 **Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method or print on a copy of a lock or builder · [E0110](/docs/errors/gala-e0110/) a pointer method that changes its receiver, called on a `val` · [E0076](/docs/errors/gala-e0076/) the address of a `val`, a parameter or a receiver. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
+
+**Ownership (`inout`)** — [E0111](/docs/errors/gala-e0111/) an `inout` argument that is not `&` of a mutable place · [E0114](/docs/errors/gala-e0114/) an `inout`-receiver method called on a value that is not a place. See [`inout` parameters](/docs/language-reference/#inout-parameters).
 
 **Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
 

@@ -5377,3 +5377,13 @@ gala_exec_test(
         "//collection_mutable",
     ],
 )
+
+# `inout` parameters and receivers lend the caller's place for the call:
+# functions, methods, lending on with `&`, value replacement, generics,
+# disjoint fields, a Ptr lending its pointee, inout lambdas, loops, and a
+# replacement typed by its place (`o = None()`, a sealed case, `n++`).
+gala_exec_test(
+    name = "inout_params",
+    src = "inout_params.gala",
+    expected = "inout_params.out",
+)

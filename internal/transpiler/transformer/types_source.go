@@ -158,6 +158,8 @@ type funcTypeParam struct {
 	typ      typeSrc
 	name     string
 	variadic bool
+	isInout  bool
+	at       srcNode
 }
 
 // signatureParts is the parameters and results of the signature sig.
@@ -165,7 +167,7 @@ func signatureParts(sig native.SignatureNode) ([]funcTypeParam, []typeSrc) {
 	var params []funcTypeParam
 	for p := range galaparser.NativeKids(sig.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		param := native.ParameterNode{GalaNodeRef: p}
-		fp := funcTypeParam{variadic: param.ELLIPSIS().Ok()}
+		fp := funcTypeParam{variadic: param.ELLIPSIS().Ok(), isInout: param.INOUT().Ok(), at: srcNode{node: p}}
 		if typ := param.Type_(); typ.Ok() {
 			fp.typ = nativeType(typ)
 		} else {
@@ -225,6 +227,14 @@ func (t *galaASTTransformer) lowerSignatureType(sig native.SignatureNode) (*ast.
 			field.Type = typ
 		} else {
 			field.Type = t.funcTypeParamName(p.name)
+		}
+		if p.isInout {
+			// `func(inout T)` takes the place as a `*T`, as an inout
+			// parameter of a declaration does.
+			if err := checkInoutParamDecl(p.at, p.name, field.Type, p.variadic, false); err != nil {
+				return nil, err
+			}
+			field.Type = t.ptrStar(field.Type)
 		}
 		if p.variadic {
 			field.Type = &ast.Ellipsis{Elt: field.Type}

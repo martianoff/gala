@@ -261,7 +261,7 @@ func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 }
 
 func (e *exporter) param(p native.ParameterNode) Node {
-	if p.VAL().Ok() || p.VAR().Ok() {
+	if p.VAL().Ok() || p.VAR().Ok() || p.INOUT().Ok() {
 		return e.unsupported(UnsupportedParamModifier, p.GalaNodeRef)
 	}
 	if bad := e.unsupportedParam(p); bad != nil {

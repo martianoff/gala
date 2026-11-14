@@ -231,10 +231,18 @@ func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 		if param.ELLIPSIS().Ok() {
 			b.WriteString("...")
 		}
+		// An `inout T` parameter takes its place as the Ptr[T] it lowers to.
+		inout := param.INOUT().Ok()
+		if inout {
+			b.WriteString(PtrTypeName + "[")
+		}
 		if typ := param.Type_(); typ.Ok() {
 			writeNativeTypeText(b, typ)
 		} else if id := param.Identifier(); id.Ok() {
 			b.WriteString(id.GetText())
+		}
+		if inout {
+			b.WriteByte(']')
 		}
 	}
 	b.WriteByte(')')
