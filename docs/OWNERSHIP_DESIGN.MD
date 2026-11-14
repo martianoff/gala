@@ -39,6 +39,12 @@ come with it.
   captured `var`s, the upper bound is about **79%**. The research estimate of "about 80%"
   was optimistic. Its "about 7%" of pointer-blocked functions includes persistent
   collection internals, escaping pointers, and functions that have a second blocker.
+- **Interop guarantees ([3.5](#35-interop-guarantees)):** `inout`'s guarantees also hold
+  at the Go boundary, in both directions:
+  - Go calls into an exported `inout` function through a copy-in/copy-out wrapper.
+  - GALA may pass an `inout` place to Go only when the callee is on an allow-list of
+    functions that don't retain pointers. CI checks the list against the pinned Go
+    compiler's escape analysis.
 
 ```mermaid
 flowchart LR
@@ -60,7 +66,7 @@ flowchart LR
 |---|---|---|
 | G1 | **Faithful Lean translation of single-owner mutable state.** A function that mutates state through a uniquely owned pointer translates to a pure Lean function `T → M (R × T)`, with no heap model. | Share of functions that gala2lean translates, reported in `formal/COVERAGE.md`. |
 | G2 | **Safe moves across `Future`/`Sendable`.** A freshly built mutable value may be handed to another goroutine when the sender never uses it again. | Programs E0037 rejects today that are race-free by construction. |
-| G3 | **No change to the generated Go or to Go's GC.** Existing programs transpile byte for byte as today. `inout` lowers to the `*T` code that `Ptr[T]` produces. | Unchanged golden outputs; no new runtime package. |
+| G3 | **No change to the generated Go or to Go's GC.** Existing programs transpile byte for byte as today. `inout` lowers to the `*T` code that `Ptr[T]` produces. The one addition is a copy-in/copy-out wrapper on Go-visible `inout` functions (3.5.1). | Unchanged golden outputs; no new runtime package. |
 | G4 | **Opt-in.** No existing program changes meaning or stops compiling. | Zero source changes required in std, galop, gala-tui, gala-team and gala-acp. |
 
 **Non-goals**
@@ -378,7 +384,7 @@ sequenceDiagram
 | **Exclusivity** | No two `inout` arguments of one call, the receiver included, may name overlapping places: the same root, or a path where one is a prefix of the other (`&p` and `&p.lex`). Disjoint fields of the same `var` (`&p.a`, `&p.b`) are allowed. No other argument of that call may be a closure that captures an overlapping place. Plain reads of the place in other arguments are allowed: they run before the call, left to right, and produce copies. |
 | **No escape** | An `inout` binding `x` may be read and lent (`&x` to another `inout` position) but not captured by a lambda or method value (phase 3 allows non-escaping closures). `&x` may not be stored, returned, put in a collection or `Option`, converted to `any` or an interface, passed to a `Ptr[T]` or `*T` parameter, or passed to Go. |
 | **Second-class** | `inout` appears only on parameters, receivers and the parameters of function types. It is not a type. A field, local, result or type argument cannot be `inout`. |
-| **Function types** | `func(inout T, A) R` is a GALA function type distinct from `func(Ptr[T], A) R`. Both lower to Go's `func(*T, A) R`. A function with an `inout` parameter fills a `func(inout T…)` slot, and also a Go `func(*T)` slot (the Go caller is outside the translation). A `func(*T)` value never fills a `func(inout T)` slot, because it may store its argument. |
+| **Function types** | `func(inout T, A) R` is a GALA function type distinct from `func(Ptr[T], A) R`. Both lower to Go's `func(*T, A) R`. A function with an `inout` parameter fills a `func(inout T…)` slot. It can also fill a Go `func(*T)` slot, where it is wrapped in the copy-in/copy-out adapter of [3.5.1](#351-go-calls-gala), because Go may call it with an aliased pointer. A `func(*T)` value never fills a `func(inout T)` slot, because it may store its argument. |
 
 **Interactions**
 
@@ -411,8 +417,10 @@ sequenceDiagram
   - an exported function checks its `inout` parameters for nil on entry, as it does for
     `Ptr` parameters.
 
-  Go code can still call an exported function with two aliasing pointers. Go callers are
-  outside the translation.
+  Go code may hold, share or alias the pointer it passes. An exported function or method
+  with an `inout` parameter is therefore reached from Go through a copy-in/copy-out
+  wrapper ([3.5.1](#351-go-calls-gala)). Passing an `inout` place *to* Go is limited to
+  allow-listed callees ([3.5.2](#352-gala-calls-go)).
 
 #### 3.2.4 Error codes
 
@@ -604,6 +612,248 @@ only accepts more programs, and only ones that are race-free by construction. AG
 rule 8 forbids weakening checks, so this needs the maintainer's explicit approval, as
 does the sending of non-`Shareable` `Future` results back to the awaiting goroutine (Q7).
 
+### 3.5 Interop guarantees
+
+An `inout` parameter promises three things for the duration of a call:
+
+- **exclusive:** nothing else reads or writes the place;
+- **non-escaping:** no reference to it outlives the call;
+- **unaliased:** no second path to it exists.
+
+These guarantees, and the Lean translation that relies on them, must hold when the caller
+or the callee is Go. Go has no such rules. A `*T` can be stored, shared between
+goroutines, or passed twice. So every crossing either **re-establishes** the guarantee
+with a value copy, **proves** it from a checked fact, or **refuses**.
+
+```mermaid
+flowchart LR
+    subgraph GO_SIDE[Go]
+      GC[Go caller<br/>p *T, maybe aliased or retained]
+      GF[Go function<br/>f p *T]
+      GI[Go type implementing<br/>a GALA interface]
+    end
+    subgraph GALA_SIDE[GALA]
+      W[exported wrapper<br/>copy-in, copy-out]
+      IMPL[implementation<br/>inout x T: exclusive]
+      PL[inout place / unique Ptr]
+      AL{callee on the<br/>no-retain allow-list?}
+      IF[interface with<br/>inout method]
+    end
+    GC -->|"Step(p)"| W
+    W -->|"v := *p, then impl(&v)"| IMPL
+    IMPL -->|"*p = v on normal return"| W
+    W --> GC
+    PL -->|"&x to a *T parameter"| AL
+    AL -->|yes, verified in CI| GF
+    AL -->|no| ERR[E-inout-escape<br/>phase 1: UNSUPPORTED go-escape]
+    GI -.->|converted in GALA code:<br/>E-inout-foreign-impl| IF
+    GC -.->|"interface value from Go:<br/>foreign, opaque"| IF
+```
+
+#### 3.5.1 Go calls GALA
+
+An exported function `func Step(inout p Parser)` must be callable from Go as
+`Step(p *Parser)`, the shape GO_INTEROP.MD promises: a GALA declaration *is* a Go
+declaration, and GALA never renames. The method form, `func (inout p Parser) Advance()`,
+must be a Go pointer-receiver method so that method sets and interfaces work (decision
+Q8). Go may hand in a `p` that it has stored, that another goroutine holds, that a
+callback will reach during the call, or that is passed twice: `Swap(p, p)`.
+
+| Option | Guarantee | Go ergonomics | Cost | Verdict |
+|---|---|---|---|---|
+| **A. Copy-in/copy-out wrapper** | Restored for the body: it works on a local copy that only it can reach. Aliased arguments (`Swap(p, p)`) get deterministic Swift semantics: each is copied in, and they are copied out left to right, so the last write wins. | Idiomatic: the Go signature is the expected `*T`, and methods are pointer-receiver methods. | Two shallow struct copies per call from Go. None for GALA callers in the same package. | **Recommended** |
+| B. Separate Go-facing signature (`func StepGo(p Parser) Parser`) | Holds, by value semantics. | Poor: a second name breaks "GALA never renames"; methods cannot be expressed; results become tuples. | No copies through a pointer, but a whole value is returned. | Rejected as the default |
+| C. Documented contract only | **None**: unenforceable, and it contradicts the requirement. | Best | Zero | Rejected |
+| D. Refuse to export `inout` (an error on an exported function or method with an `inout` parameter) | Holds trivially. | Blocks Go-facing libraries and Go-visible implementations of interfaces with `inout` methods (Q8). | Zero | Rejected: too restrictive |
+
+**Recommended: option A.** This is the Swift definition of `inout`. Swift *specifies*
+`inout` as copy-in/copy-out and treats passing by reference as an optimisation that is
+valid only when exclusivity is proved. GALA proves exclusivity statically for GALA
+callers, so it passes by reference there. For Go callers it cannot, so it copies.
+
+How the code is generated:
+
+```go
+// Generated for: func (inout p Parser) Advance() Token
+func (p *Parser) Advance() Token {          // the Go-visible symbol, unchanged name
+    if p == nil { panic(/* existing Ptr entry-check message */) }
+    v := *p                                 // copy in
+    r := _gala_Parser_Advance(&v)           // body: exclusive local place
+    *p = v                                  // copy out, on normal return only
+    return r
+}
+func _gala_Parser_Advance(p *Parser) Token { /* the GALA body */ }
+```
+
+- **Who calls what:**
+  - GALA callers in the same package call `_gala_…` directly. Identifiers starting with
+    `_gala_` are reserved for generated code.
+  - GALA callers in another package call the exported wrapper and pay the two copies.
+    Q13 asks whether to export a reserved-name implementation instead.
+  - Calls through an interface dispatch to the wrapper.
+- **Panics:** the copy-out is skipped. A Go caller that recovers sees `*p` unchanged:
+  all-or-nothing. Inside GALA no caller can observe a partial write anyway, because
+  decision Q5 forbids mutating an `inout` place inside `Try` or recover. Q14 asks
+  whether to keep the partial write instead, to match plain pointer semantics.
+- **Callbacks:** if the body calls a Go callback that reads `*p` through its own alias,
+  it sees the value from before the call. This is the one observable difference from
+  plain pointer semantics, and it is exactly what makes the body translatable. It is
+  documented on the wrapper's doc comment.
+- **The copy is shallow.** A Go slice, map or pointer field still shares its target with
+  whatever Go holds. Section 2.4's owned-slice rule therefore treats a value that
+  arrived from Go as **not fresh**. The body still compiles and runs. Its slice fields
+  translate only if the body replaces them with fresh slices first.
+- **`New<T>` and `std.Immutable`:** unaffected. `inout` may replace a value whose fields
+  are `val` (`p = p.Copy(...)`). Seen from Go, `*p = v` replaces the struct, including
+  its `std.Immutable` fields. That matches GALA's model: the binding is reassigned, and
+  no immutable field is mutated in place.
+- **Concurrency:** Go writing `*p` from another goroutine during the call is a Go data
+  race, outside GALA's guarantees. That is true of any Go function that takes a pointer.
+- **Lean:** the wrapper is Go-only glue and is not translated. The translation covers
+  `_gala_…`, whose precondition (exclusive, unaliased) the wrapper establishes.
+
+**Cost.** A shallow copy of the struct's header words, twice per call from Go: for
+gala-tui's `Buffer`, nine words. That is negligible next to the call. Large value structs
+called in hot Go loops are the only case where it shows. Such an API can keep a `Ptr[T]`
+parameter, which stays legal and is simply not translated.
+
+#### 3.5.2 GALA calls Go
+
+GALA passes a place to Go as `&x` to a `*T` parameter, or by calling a Go pointer-receiver
+method on it (`b.WriteString(s)` on an `inout b strings.Builder`).
+
+| Option | Sound? | Coverage | Stable? | Verdict |
+|---|---|---|---|---|
+| **1. Every Go call escapes** | Yes | Lowest | Yes | **The default.** Phase 1 already does this (`UNSUPPORTED go-escape`), and phase 2's E-inout-escape rejects passing an `inout` binding to Go. |
+| 2. Go's escape analysis decides | Not on its own (see below) | High | No: it depends on the Go version | Rejected as the deciding rule. Used only to verify option 3. |
+| **3. Allow-list of non-retaining Go functions** | Yes, relative to a verified list | Targeted | Yes, versioned | **Recommended relaxation** |
+
+**Why gc's escape analysis cannot be the rule.** `go build -gcflags=-m` reports
+`p does not escape` or `leaking param: p` (`leaking param content`, `… to result`).
+These are not a contract:
+
+- The facts change between Go releases and with inlining decisions. Whether a GALA
+  program compiles must not depend on compiler internals.
+- `go/types` and x/tools' SSA expose no escape facts, and writing our own escape
+  analysis over Go SSA is a project in itself.
+- "Does not escape" is about the heap. It misses retention through
+  `uintptr(unsafe.Pointer(p))`, and it says nothing about results that alias the
+  argument's *contents* unless `-m` reports a leak to the result. `bytes.Buffer.Bytes()`
+  returns a slice of the receiver's storage.
+- Dynamic calls (interfaces, function values) are always "escapes".
+
+**The allow-list.** The list lives in the standard library's metadata, so it uses the same
+resolution as any other package (AGENTS.md rule 2). Each entry names a Go function or
+method and a parameter (or the receiver). It asserts two things:
+
+- the callee does not retain the pointer or anything reachable from it after returning;
+- no result aliases memory reachable from it.
+
+An entry may also carry a Lean model, which the translation needs (3.5.5).
+
+- **Verified in CI.** A test builds a stub that calls each entry with the pinned toolchain
+  (`MODULE.bazel` pins Go 1.25.5) under `-gcflags=-m=2`. An entry fails the test when the
+  parameter shows as leaking, to the heap or to a result. A Go upgrade that changes a
+  verdict breaks the build, not a user program.
+- **What it relaxes:** E-inout-escape is not reported for an allow-listed parameter.
+  Phase 1 stops counting such calls as `go-escape`.
+- **Initial scope:** about 30 entries chosen from the phase 1 escape reasons, starting
+  with the most frequent `go-escape` callees. Candidates are `strings.Builder` and
+  `bytes.Buffer` writer methods (not `Bytes()`), `fmt.Fprint*` with a `*strings.Builder`
+  writer, `binary.Read`, `sort.Sort` on an owned slice adapter, and `json.Unmarshal`'s
+  destination.
+- **Users cannot extend the list in this proposal (Q15).** A user annotation would be an
+  unchecked trust point, like `go_interop.Spawn`.
+- **The workaround needs no new feature:** copy in and out by hand,
+  `var tmp = x; goFn(&tmp); x = tmp`. Go may keep `&tmp`, but `x` stays exclusive.
+- **Phase 1 relaxation path:** as a translator-only measure, phase 1 may also read the
+  pinned compiler's `-m` output to count *coverage* (never to accept a program), so we
+  learn which allow-list entries would pay off (Q17).
+
+#### 3.5.3 Interfaces with `inout` methods
+
+Decision Q8 allows `inout` method requirements in an interface. They lower to a Go
+interface whose implementers have pointer-receiver methods. An interface value therefore
+*holds a pointer*, and two interface values can hold the same one.
+
+| Situation | Checked | Trusted |
+|---|---|---|
+| A **GALA** type implements the interface | Its `inout` method bodies, under the normal rules. Go dispatch reaches them through the 3.5.1 wrapper, so they are exclusive. | — |
+| An interface value built in GALA from `&T(...)` or `&T{...}` (fresh) | Phase 1 tracks it like a unique `Ptr`. Calling an `inout` method lends the boxed value. It is translatable while the interface value is unique. | — |
+| An interface value built from `&x` of a GALA `var` | It stores a pointer to `x`, so `x` is no longer unique. In phase 2 this is E-inout-escape if `x` is an `inout` binding. | — |
+| A **Go-declared** type converted to the interface in GALA code | **E-inout-foreign-impl**: its methods are unchecked Go and may retain or alias the receiver. Types on the allow-list (methods marked non-retaining) are accepted. | The allow-list entries |
+| An interface value that **arrives from Go** (a parameter of an exported function, the result of a Go call) | It is marked *foreign*. Calls compile and run with Go semantics, and the translation treats them as opaque Go calls (3.5.5). | That the Go implementation does what its Lean model says, if one exists |
+
+GALA cannot stop Go code from implementing the interface and passing the value in. So the
+guarantee is scoped: **`inout` method calls on interface values built in GALA from
+GALA types are exclusive and translatable. Values of foreign origin are trusted, not
+checked.** Q16 asks whether foreign implementations should instead be rejected at the
+exported boundary, which would be a compile error on exported functions that accept such
+interfaces.
+
+#### 3.5.4 Goroutines and Futures across Go code
+
+Phase 4 transfer (3.4) has three interactions with Go:
+
+- **A Go call is never a transfer.** Passing a disconnected value to Go makes it
+  connected, unless the callee is allow-listed as non-retaining. Examples are a Go
+  library that starts a goroutine, `go_interop.Spawn`, and a channel send through
+  go_interop. The value can no longer be sent to a `Future`.
+- **Values from Go are not disconnected.** A Go result may be retained by the library,
+  for example in a registry. Go's escape analysis cannot tell a fresh result from a
+  retained one: every returned pointer "escapes". So only allow-list entries marked
+  `returns fresh` (such as `bytes.NewBuffer`, `strings.NewReader`) produce disconnected
+  values. A GALA composite literal of a Go struct type (`strings.Builder{}`) is fresh.
+- **`inout` never crosses a goroutine boundary.** The no-escape rule already forbids
+  capturing an `inout` binding in a `Sendable` closure. A Go callee cannot receive it
+  except through 3.5.2, and allow-listed callees do not retain it, so they do not start
+  goroutines that keep it.
+
+`go_interop.Spawn`, `SpawnWithRecover` and raw channels remain the unchecked zone that
+CONCURRENCY_SAFETY.MD describes. Values passed there are treated as escaped.
+
+#### 3.5.5 What stays trusted, and how Lean sees Go
+
+| Trust point | Why it is trusted | Mitigation |
+|---|---|---|
+| The Go compiler and runtime | We run Go, we do not model it. | Out of scope, as in FORMAL_SEMANTICS.MD. |
+| The no-retain allow-list | It is a claim about Go code. | Each entry is verified in CI against the pinned compiler's escape output; reviewed like code. |
+| `returns fresh` entries | Escape analysis cannot see freshness. | Few entries, constructors only, each with a comment citing the source it was read from. |
+| Lean models of Go APIs (the prelude) | A model can be wrong. | Each model is a small pure function, tested differentially (the model's result against a real Go call on generated inputs). |
+| Go implementations of `inout` interfaces, and Go callers' concurrency | Go code is unchecked. | Foreign values are marked; the copy-in/copy-out wrapper confines the effect to before and after the call. |
+| `unsafe`, reflection, cgo | They bypass the type system. | Untranslatable; never allow-listed. |
+
+**How the Lean translation treats a Go call.** A Go call is translatable only when its
+callee has a Lean model in the prelude. A model is a pure function over the Lean
+representations (`strings.Builder` as `String`, `bytes.Buffer` as `ByteArray`, owned
+`[]T` as `Array T`).
+
+- An allow-listed call that lends an `inout` place or a unique pointer is translated like
+  a GALA `inout` call. The model has type `T → M (R × T)`, and the caller rebinds the
+  place.
+- A call with no model is `UNSUPPORTED go-call <pkg.Func>` in `COVERAGE.md`, counted per
+  callee. That count decides which models to write next.
+- Callbacks that Go calls (a GALA lambda passed to Go) are translatable only if the model
+  describes when Go calls them. `sort.Slice`'s comparator is an example. Otherwise they
+  are unsupported.
+
+**Error codes added by this section**, with numbers allocated when implemented:
+
+| Code | Error |
+|---|---|
+| E-inout-escape (extended) | An `inout` binding is passed to a Go parameter or receiver that is not on the allow-list. The hint suggests the copy-in/copy-out pattern. |
+| E-inout-foreign-impl | A Go-declared type is converted to an interface with `inout` method requirements. |
+
+**New open questions**
+
+| # | Question | Recommendation |
+|---|---|---|
+| Q13 | Should GALA callers in *another* package pay the wrapper's two copies, or should the implementation also be exported under a reserved name (for example `GALA_impl_…`) that GALA calls directly? | Pay the copies at first, and measure. A reserved exported name is visible to Go users and needs its own naming decision. |
+| Q14 | On a panic, skip the copy-out (all-or-nothing, as proposed) or perform it (plain pointer semantics)? | Skip it. It cannot be observed from GALA (Q5), and Go callers get a cleaner contract. |
+| Q15 | May users add allow-list entries (an annotation on a go_interop wrapper)? | Not in this proposal. If they may, it should be an explicit, greppable trust marker, as `go_interop.Spawn` is. |
+| Q16 | Interface values with `inout` methods that arrive from Go: trusted and marked foreign (proposed), or rejected at exported boundaries? | Trusted and marked. Rejecting them would make such interfaces unusable from Go. |
+| Q17 | May the phase 1 translator use the pinned compiler's `-m` escape output, for coverage measurement only? | Yes. It never decides whether a program compiles. |
+
 ## 4. Migration and breaking-change analysis
 
 **Opt-in, not mandatory.** Every phase adds capability without changing what existing
@@ -696,7 +946,7 @@ gantt
 |---|---|---|---|
 | 1 | Borrow summaries and freshness, written to package metadata; gala2lean translates unique `Ptr`s as values; `COVERAGE.md` lists escape reasons | 2–3 weeks | galop's `lexer` and `configSet` round-trip through Lean and agree with Go on their tests; coverage up about 3 points |
 | 1b (stretch) | A galaspec heap model and theorem T8 | 2 weeks | T8 proved for S1 plus `Ptr` |
-| 2 | `inout` syntax, lowering, the five checks and their codes, docs, IDE/LSP | 3–4 weeks | The generated Go for existing examples is byte-identical; new examples cover each code; gala-tui's `Custom` can be written with `inout` |
+| 2 | `inout` syntax, lowering, the five checks and their codes, docs, IDE/LSP; interop (3.5): copy-in/copy-out wrappers, the allow-list and its CI escape check, E-inout-foreign-impl | 4–5 weeks | The generated Go for existing examples is byte-identical; new examples cover each code; gala-tui's `Custom` can be written with `inout` |
 | 3 | Inferred non-escaping function parameters; `StateT` closure translation; monadic std models | 2–3 weeks | galop's `builder` translates; coverage about 76% |
 | 4 | Sendable transfer | 1–2 weeks | The `ArrayOf` example above compiles; a use after the send is E0037 with a secondary span |
 | Adoption | `gala fix` codemod; galop migrated; gala-tui only with approval | 1 week, plus gala-tui | galop at about 90% translatable |
