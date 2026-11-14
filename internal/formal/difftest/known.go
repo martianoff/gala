@@ -24,7 +24,25 @@ type Known struct {
 	// that starts disagreeing for another reason is not taken for the
 	// issue.
 	Symptom string `json:"symptom"`
+	// Oracle is whose disagreement with Go it is: "" for galaspec,
+	// OracleGala2Lean for gala2lean's translation.
+	Oracle string `json:"oracle,omitempty"`
 }
+
+// OracleGala2Lean marks a known disagreement of gala2lean's translation.
+const OracleGala2Lean = "gala2lean"
+
+// Key is the entry's key in the results CheckKnown compares: the program's ID
+// for galaspec, LeanKey(ID) for gala2lean.
+func (k Known) Key() string {
+	if k.Oracle == OracleGala2Lean {
+		return LeanKey(k.Program)
+	}
+	return k.Program
+}
+
+// LeanKey is the key of gala2lean's comparison of program id.
+func LeanKey(id string) string { return OracleGala2Lean + ":" + id }
 
 // ParseKnown reads the known-disagreements file: a JSON list of entries,
 // each with a program, an issue and a symptom, no program twice. Unknown
@@ -45,15 +63,18 @@ func ParseKnown(data []byte) ([]Known, error) {
 			return nil, fmt.Errorf("known disagreements: %s has no issue number", k.Program)
 		case strings.TrimSpace(k.Symptom) == "":
 			return nil, fmt.Errorf("known disagreements: %s has no symptom", k.Program)
-		case seen[k.Program]:
+		case k.Oracle != "" && k.Oracle != OracleGala2Lean:
+			return nil, fmt.Errorf("known disagreements: %s has an unknown oracle %q (want none, or %q)", k.Program, k.Oracle, OracleGala2Lean)
+		case seen[k.Key()]:
 			return nil, fmt.Errorf("known disagreements: %s is listed twice", k.Program)
 		}
-		seen[k.Program] = true
+		seen[k.Key()] = true
 	}
 	return list, nil
 }
 
-// CheckKnown compares the verdicts of a run, by program ID, with the known
+// CheckKnown compares the verdicts of a run, by Known.Key (the program ID, or
+// LeanKey of it for gala2lean's comparisons), with the known
 // disagreements, and lists every problem:
 //
 //   - a DISAGREE that is not listed;
@@ -65,7 +86,7 @@ func ParseKnown(data []byte) ([]Known, error) {
 func CheckKnown(known []Known, results map[string]Comparison) []string {
 	listed := map[string]Known{}
 	for _, k := range known {
-		listed[k.Program] = k
+		listed[k.Key()] = k
 	}
 	var problems []string
 	for _, id := range slices.Sorted(maps.Keys(results)) {
@@ -81,8 +102,8 @@ func CheckKnown(known []Known, results map[string]Comparison) []string {
 		}
 	}
 	for _, k := range known {
-		if _, ran := results[k.Program]; !ran {
-			problems = append(problems, fmt.Sprintf("%s: listed for #%d but not compared in this run: remove the stale entry", k.Program, k.Issue))
+		if _, ran := results[k.Key()]; !ran {
+			problems = append(problems, fmt.Sprintf("%s: listed for #%d but not compared in this run: remove the stale entry", k.Key(), k.Issue))
 		}
 	}
 	return problems

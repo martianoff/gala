@@ -16,21 +16,29 @@ go_test(
     data = [
         "//examples:all_gala_sources",
         "//examples:expected_outputs",
+        "//formal:Gala/Gala2Lean/Prelude.lean",
         "//internal/formal/difftest:baseline.json",
         "//internal/formal/difftest:known_disagreements.json",
         "//internal/formal/difftest:proved_constructs.json",
         "//internal/formal/difftest:stdlib_sources",
     ] + select({
-        "//formal:lean_enabled": ["//formal:galaspec"],
+        "//formal:lean_enabled": [
+            "//formal:galaspec",
+            "//formal:lean_runtime",
+        ],
         "//conditions:default": [],
     }),
     env = select({
-        "//formal:lean_enabled": {"GALA_SPEC_RLOCATION": "$(rlocationpath //formal:galaspec)"},
+        "//formal:lean_enabled": {
+            "GALA_LEAN_RLOCATION": "$(rlocationpath //formal:lean_runtime)",
+            "GALA_SPEC_RLOCATION": "$(rlocationpath //formal:galaspec)",
+        },
         "//conditions:default": {},
     }),
     tags = ["manual"],
     deps = [
         "//internal/formal/difftest",
+        "//internal/formal/gala2lean",
         "@rules_go//go/runfiles",
         "@rules_go//go/tools/bazel",
     ],

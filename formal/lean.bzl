@@ -15,6 +15,7 @@ load(
     _lean_proof_test = "lean_proof_test",
     _lean_test = "lean_test",
 )
+load("@rules_lean//lean:toolchain.bzl", "LEAN_TOOLCHAIN_TYPE")
 
 _LEAN_ONLY = select({
     "//formal:lean_enabled": [],
@@ -41,3 +42,22 @@ def lean_test(**kwargs):
 
 def lean_proof_test(**kwargs):
     _gated(_lean_proof_test, kwargs)
+
+def _lean_runtime_impl(ctx):
+    tc = ctx.toolchains[LEAN_TOOLCHAIN_TYPE]
+    return [DefaultInfo(
+        files = depset([tc.lean]),
+        runfiles = ctx.runfiles(files = [tc.lean], transitive_files = tc.lean_files),
+    )]
+
+_lean_runtime = rule(
+    implementation = _lean_runtime_impl,
+    toolchains = [LEAN_TOOLCHAIN_TYPE],
+    doc = "The toolchain's `lean` executable, with everything it needs to run in the " +
+          "runfiles of a target that has this as data: its libraries and Lean's own " +
+          "prebuilt modules. For tests that elaborate and run Lean files they write.",
+)
+
+def lean_runtime(**kwargs):
+    """The `lean` executable of the registered toolchain, as data for a test."""
+    _gated(_lean_runtime, kwargs)

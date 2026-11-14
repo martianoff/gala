@@ -183,7 +183,37 @@ A theorem counts as **proved** only if it type-checks with no `sorry`, and
 `#print axioms` lists only Lean's standard axioms (`propext`, `Quot.sound`,
 `Classical.choice`). CI checks both.
 
-### 6. Optional: lowering models
+### 6. gala2lean: a third oracle
+
+galaspec is written by hand. Discussion #961 asked for a model that is derived
+mechanically instead. `internal/formal/gala2lean` is that: a deterministic translator
+from a program's Core JSON to ordinary Lean 4 definitions, one per GALA function. It does
+not replace galaspec, which stays GALA's definition; it is a third account of each
+program, and the differential harness compares all three.
+
+```mermaid
+flowchart LR
+    J[Core JSON] --> SPEC[galaspec] --> V{compare}
+    J --> G2L[gala2lean] --> L[Lean definitions<br/>+ trusted prelude] --> R[lean --run] --> V
+    SRC[GALA program] --> TR[transpiler + Go] --> V
+```
+
+- **Provable from the start.** Every function lives in a monad with a divergence outcome
+  (`ExceptT Panic (StateT St Option)`, as Aeneas does), and recursion is
+  `partial_fixpoint`, so every definition has equations. No definition is `partial`. A
+  function `partial_fixpoint` cannot handle is reported by name. A proof about generated
+  code, unedited, is part of the proof check (`eval_total`).
+- **Deterministic.** The same input gives byte-identical Lean.
+- **Honest.** Code it does not translate is reported with the construct named, never
+  dropped. A translated program that agrees with Go is reported as "translated" and
+  "agrees", nothing stronger.
+- **What it trusts:** the translator, its Lean prelude and the front end it shares with
+  galaspec ([formal/README.md](../formal/README.md#what-gala2lean-trusts)).
+- **Phases:** S1 with provable output first; then lambdas and closures (a captured `var`
+  becomes a reference cell in the state), interpolation and `Option`/`Either`/`Try`;
+  then generics and the immutable collections, modelled in the prelude.
+
+### 7. Optional: lowering models
 
 For the riskiest lowerings, a small Lean model of only the Go that GALA emits for them can
 be proved correct against the spec. This is *not* a Go semantics. The existing prototype
@@ -203,6 +233,7 @@ The table is honest about what the guarantees rest on.
 | Interpolated-string splitter (`internal/interpolation`) | Shared by both sides: it splits `s"..."` into text and embedded expressions | Small and lexical; the expressions it finds are parsed and checked like any other |
 | Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; round-trip test (export → print → parse → export) |
 | Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
+| gala2lean's translator and prelude | They decide what its Lean definitions mean | Mechanical rules; independent of galaspec; compared with galaspec and Go on every translated program |
 | Go toolchain and runtime | We run it, not model it | Out of scope |
 | The transformer | **Not trusted.** It is what we test | — |
 
@@ -230,6 +261,8 @@ puts it into the file and leaves the hand-written rest alone.
 - "Proved" is used only for kernel-checked theorems about the spec.
 - "Tested against the spec" is used for differential results.
 - Neither is used for constructs outside the subset.
+- For gala2lean, "translated" and "agrees" are used only where true; neither means
+  verified.
 - We never claim the transpiler is verified.
 
 **Ratchets in CI:**
