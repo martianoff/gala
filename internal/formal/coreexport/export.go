@@ -272,7 +272,8 @@ func (e *exporter) function(f native.FunctionDeclarationNode) Node {
 	return fn
 }
 
-// receiver is a method's receiver: `(c T)`, or `(c *T)` with Pointer set.
+// receiver is a method's receiver: `(c T)`, `(c *T)` with Pointer set, or
+// `(inout c T)` with Inout set.
 // Any other receiver type (a generic one, `Ptr[T]`) is exported as that
 // type, unsupported.
 func (e *exporter) receiver(r native.ReceiverNode) Node {
@@ -281,7 +282,12 @@ func (e *exporter) receiver(r native.ReceiverNode) Node {
 	}
 	t := r.Type_()
 	rec := &Receiver{Name: r.Identifier().GetText()}
+	rec.Inout = r.INOUT().Ok()
 	if firstToken(t.GalaNodeRef) == "*" {
+		if rec.Inout {
+			// An inout receiver of a pointer type is not GALA (GALA-E0111).
+			return e.unsupported(UnsupportedParamModifier, r.GalaNodeRef)
+		}
 		rec.Pointer = true
 		t = t.Type_(0)
 	}

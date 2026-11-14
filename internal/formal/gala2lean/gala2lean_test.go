@@ -107,6 +107,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"pointer method on a captured var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nfunc main() { var c = C(0)\n val f = () => c.N\n c.Inc()\n Println(f()) }\n", "ptr-escape"},
 		{"receiver passed on", "package main\nstruct C(var N int)\nfunc show(c C) int = c.N\nfunc (c *C) Show() int = show(c)\nfunc main() { var c = C(0)\n Println(c.Show()) }\n", "ptr-escape"},
 		{"pointer method on a val", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nfunc main() { val c = C(0)\n c.Inc()\n Println(c.N) }\n", "pointer-method-on-value"},
+		{"inout receiver replaced whole", "package main\nstruct C(var N int)\nfunc (inout c C) Reset() { c = C(0) }\nfunc main() { var c = C(1)\n c.Reset()\n Println(c.N) }\n", "ptr-escape"},
+		{"inout method on a val", "package main\nstruct C(var N int)\nfunc (inout c C) Inc() { c.N = c.N + 1 }\nfunc main() { val c = C(0)\n c.Inc()\n Println(c.N) }\n", "pointer-method-on-value"},
 		{"printing a type with its own String", "package main\nstruct C(N int)\nfunc (c C) String() string = \"c\"\nfunc main() { Println(C(1)) }\n", "custom-string"},
 		{"go builtin", "package main\nfunc main() { println(1) }\n", "call-of-println"},
 		{"return in an expression", "package main\nfunc f(n int) int { val x = if (n > 0) { return 1 } else 2\n x }\nfunc main() { Println(f(1)) }\n", "return-inside-expression"},
@@ -199,4 +201,15 @@ func main() {
 	require.Contains(t, res.Lean, "mutual\n\ndef even")
 	require.Equal(t, 3, strings.Count(res.Lean, "\npartial_fixpoint\n"))
 	require.NotContains(t, res.Lean, "partial def")
+}
+
+// TestInoutReceiver checks that a method with an inout receiver is
+// translated by state passing, as a *T receiver's is: it returns its result
+// with the updated receiver, and the caller writes that back.
+func TestInoutReceiver(t *testing.T) {
+	src := "package main\n\nstruct C(var N int)\nfunc (inout c C) Add(by int) int {\n    c.N = c.N + by\n    c.N\n}\nfunc main() {\n    var c = C(1)\n    val r = c.Add(2)\n    Println(r, c.N)\n}\n"
+	res, err := gala2lean.Translate(export(t, "main.gala", src), gala2lean.Options{Namespace: "P"})
+	require.NoError(t, err)
+	require.Contains(t, res.Lean, "def C.Add (_gala_self : C) («by» : Int64) : _gala_M (Int64 × C)")
+	require.Contains(t, res.Lean, "← (C.Add c (2 : Int64))")
 }

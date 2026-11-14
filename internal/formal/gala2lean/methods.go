@@ -23,6 +23,11 @@ import (
 //     back to the place it called the method on. Inside, the receiver lives
 //     in a cell, so the body may write its fields from any depth of
 //     expression, and `return` leaves the body as usual.
+//   - An `inout` receiver `(inout c T)` lends the caller's place as a `*T`
+//     receiver does (it lowers to one), so it is translated the same way
+//     (statePassed), under the same rules: the diagnostics below that say
+//     "pointer" apply to it too. Reading or replacing the receiver as a
+//     whole (`c = c.Copy(...)`) is reported as ptr-escape, as for `*T`.
 //
 // The place must be one no other path reaches while the method runs: a
 // local var no lambda captures (or a field path in one), or the enclosing
@@ -173,7 +178,7 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 		res = g.leanType(f.Result)
 	}
 	var body string
-	if !r.Pointer {
+	if !statePassed(r) {
 		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(r.Name), lt))
 		sc.bind(r.Name, false, lt).gtype = r.Type
 		ps = append(ps, g.params(f, sc)...)
@@ -298,7 +303,7 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 	if f == nil {
 		return term{}, false
 	}
-	if f.Receiver.(*coreexport.Receiver).Pointer {
+	if statePassed(f.Receiver.(*coreexport.Receiver)) {
 		items, res := g.ptrCall(e, sc.term())
 		if items == nil {
 			return term{}, false
@@ -321,7 +326,7 @@ func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
 		return nil, ""
 	}
 	f, t := g.methodOf(s.Target, s.Name, sc, nil)
-	if f == nil || !f.Receiver.(*coreexport.Receiver).Pointer {
+	if f == nil || !statePassed(f.Receiver.(*coreexport.Receiver)) {
 		return nil, ""
 	}
 	switch g.placeKind(s.Target, sc) {
@@ -418,3 +423,9 @@ func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scop
 	}
 	return term{}, false
 }
+
+// statePassed reports whether the method of receiver r is translated by
+// state passing: a `*T` receiver, and an `inout` receiver, which lends the
+// caller's place as a `*T` receiver does and lowers to one
+// (docs/OWNERSHIP_DESIGN.MD, 3.2.5).
+func statePassed(r *coreexport.Receiver) bool { return r.Pointer || r.Inout }

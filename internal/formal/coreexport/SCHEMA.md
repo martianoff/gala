@@ -1,4 +1,4 @@
-# Core JSON, version 6
+# Core JSON, version 7
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 6,
+  "core": 7,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -180,13 +180,14 @@ A function declaration, at top level or in a block, or a method.
 
 ### `receiver`
 
-A method's receiver, `(c Counter)` or `(c *Counter)`. A receiver of any other type
+A method's receiver, `(c Counter)`, `(c *Counter)` or `(inout c Counter)`. A receiver of any other type
 (`Ptr[Counter]`, `Box[T]`) has that type exported as it is written; a receiver marked
 `val` or `var` is an unsupported `param-modifier`.
 
 - `name` (string).
 - `type` (type): the receiver's type, without the `*`.
 - `pointer` (bool): true for the `*Type` form.
+- `inout` (bool, omitted when false): true for an `inout` receiver, `(inout c Counter)`.
 
 ```json
 { "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter", "args": [] },
