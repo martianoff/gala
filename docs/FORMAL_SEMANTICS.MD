@@ -263,7 +263,8 @@ column lists what each milestone's claim rests on beyond them.
   the same outcome up to the text of `stuck` and `unsupported` messages (those name
   variables, so renaming changes them). `σ` renames each binder together with the
   occurrences it binds, and must be capture-avoiding: no occurrence ends up bound by a
-  different binder. Shadowing is allowed, so two binders in different scopes may get one
+  different binder, and no free name (a builtin such as `Println` included) ends up bound
+  by one. Shadowing is allowed, so two binders in different scopes may get one
   name. In addition, galaspec's name resolution needs:
   - a binder is never renamed to `_`, which binds nothing;
   - a binder is never renamed to the name of a package-level declaration (function,
@@ -434,7 +435,7 @@ The table is honest about what the guarantees rest on.
 |---|---|---|
 | Lean kernel | Small, widely used | none needed |
 | The spec's definitions | They *are* the definition of GALA | Reviewable size; every definition cites its `docs/GALA.MD` section; the 400+ examples are a conformance suite |
-| galop parser | Shared by both sides (the transpiler falls back to ANTLR only on input with a syntax error, which the exporter rejects) | Already fuzzed against the ANTLR grammar |
+| galop parser | Shared by both sides. The transpiler falls back to ANTLR when galop reports a syntax error or fails; the exporter uses galop alone, so on such input the two sides do not share a parser | Already fuzzed against the ANTLR grammar |
 | Interpolated-string splitter (`internal/interpolation`) | Shared by both sides: it splits `s"..."` into text and embedded expressions | Small and lexical; the expressions it finds are parsed and checked like any other |
 | Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; golden and schema tests (a round-trip test, export → print → parse → export, is planned) |
 | Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
