@@ -327,13 +327,13 @@ at an owned-shaped value. These are analysis results, not proofs.
 
 | | Libraries | Examples | 
 |---|---|---|
-| Functions and methods | 1758 | 1686 | 
-| …with a pointer binding | 584 | 133 | 
-| …whose pointer bindings are all unique | 0 (0.0%) | 2 (1.5%) | 
-| Pointer bindings | 834 | 197 | 
-| …receivers unique | 0 of 467 | 0 of 48 | 
-| …params unique | 0 of 90 | 2 of 44 | 
-| …locals unique | 0 of 277 | 4 of 105 | 
+| Functions and methods | 1758 | 1734 | 
+| …with a pointer binding | 584 | 160 | 
+| …whose pointer bindings are all unique | 0 (0.0%) | 9 (5.6%) | 
+| Pointer bindings | 834 | 229 | 
+| …receivers unique | 0 of 467 | 1 of 55 | 
+| …params unique | 0 of 90 | 7 of 63 | 
+| …locals unique | 0 of 277 | 6 of 111 | 
 | Packages that did not analyze | 0 | 2 | 
 
 ### Reasons
@@ -344,20 +344,21 @@ location is where the analysis first met the reason.
 | Reason | Meaning | Libraries | Examples | First location |
 |---|---|---|---|---|
 | `stored` | stored in a field, constructor, literal, tuple or Option | 18 | 3 | `collection_mutable/array.gala:431` |
-| `collection` | aliased through a collection | 24 | 5 | `collection_mutable/array.gala:387` |
-| `aliased` | bound to another name | 13 | 1 | `collection_immutable/array.gala:422` |
-| `returned` | returned while not fresh | 75 | 5 | `collection_immutable/array.gala:499` |
-| `captured` | captured by a closure, method value, by-name argument or bind | 119 | 18 | `collection_immutable/array.gala:638` |
-| `passed-to-go` | it, or a reference inside its pointee, flows into Go | 315 | 36 | `collection_immutable/array.gala:184` |
-| `compared` | compared or matched | 1 | 12 | `std/ptr.gala:14` |
-| `escaping-callee` | lent to a parameter or receiver that escapes | 293 | 75 | `collection_immutable/array.gala:98` |
-| `unknown-callee` | used in a call without a summary | 22 | 10 | `collection_mutable/array.gala:106` |
+| `collection` | aliased through a collection | 24 | 7 | `collection_mutable/array.gala:387` |
+| `aliased` | bound to another name | 13 | 5 | `collection_immutable/array.gala:422` |
+| `returned` | returned while not fresh | 75 | 6 | `collection_immutable/array.gala:499` |
+| `captured` | captured by a closure, method value, by-name argument or bind | 116 | 18 | `collection_immutable/array.gala:638` |
+| `passed-to-go` | it, or a reference inside its pointee, flows into Go | 318 | 39 | `collection_immutable/array.gala:184` |
+| `compared` | compared or matched | 1 | 14 | `std/ptr.gala:14` |
+| `passed-twice` | two arguments of one call reach it | 0 | 1 | `examples/inout_interfaces.gala:37` |
+| `escaping-callee` | lent to a parameter or receiver that escapes | 295 | 76 | `collection_immutable/array.gala:98` |
+| `unknown-callee` | used in a call without a summary | 22 | 11 | `collection_mutable/array.gala:106` |
 | `rebound` | its name is bound more than once | 20 | 0 | `collection_immutable/treemap.gala:329` |
-| `other` | another use (reassigned, indexed, address taken, an operand) | 26 | 1 | `collection_immutable/array.gala:332` |
-| `origin` | not of fresh origin | 282 | 67 | `collection_immutable/array.gala:96` |
-| `from-go` | received from Go | 497 | 63 | `collection_immutable/array.gala:183` |
-| `shape` | the pointee is not owned-shaped | 834 | 140 | `collection_immutable/array.gala:96` |
-| `nullable` | a `*T` that may be nil | 11 | 77 | `collection_immutable/array.gala:422` |
+| `other` | another use (reassigned, indexed, address taken, an operand) | 26 | 11 | `collection_immutable/array.gala:332` |
+| `origin` | not of fresh origin | 282 | 69 | `collection_immutable/array.gala:96` |
+| `from-go` | received from Go | 497 | 68 | `collection_immutable/array.gala:183` |
+| `shape` | the pointee is not owned-shaped | 834 | 146 | `collection_immutable/array.gala:96` |
+| `nullable` | a `*T` that may be nil | 11 | 83 | `collection_immutable/array.gala:422` |
 
 ### Where pointers reach Go
 
@@ -367,7 +368,7 @@ bindings reach each (the 15 most frequent).
 | Go side | Bindings |
 |---|---|
 | `passed-to-go:a reference inside it` | 158 |
-| `passed-to-go:a reference inside it, passed to the function value f` | 47 |
+| `passed-to-go:a reference inside it, passed to the function value f` | 48 |
 | `passed-to-go:a reference inside it, passed to go_interop.SliceAppend` | 19 |
 | `passed-to-go:a reference inside it, passed to the function value p` | 19 |
 | `passed-to-go:a reference inside it, passed to std.Some` | 13 |

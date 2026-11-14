@@ -21,6 +21,10 @@ type binding struct {
 	line    int
 	col     int
 	reasons []Reason
+	// depth is how many overrides were active where b was bound. Those are
+	// about the closures and arguments b lives in, not about b, so only the
+	// ones pushed after it apply to it.
+	depth int
 }
 
 // escapes reports whether b has a reason that lets it escape.
@@ -273,7 +277,7 @@ func (w *walker) typed(name string) transpiler.Type {
 func (w *walker) newBinding(name string, role Role, index int, pointee transpiler.Type, fresh bool, at native.GalaNodeRef, nullable bool) *binding {
 	tok := at.Start()
 	b := &binding{name: name, role: role, index: index, pointee: pointee, fresh: fresh,
-		file: w.d.file.path, line: int(tok.Line), col: int(tok.Column) + 1}
+		file: w.d.file.path, line: int(tok.Line), col: int(tok.Column) + 1, depth: len(w.overrides)}
 	if nullable {
 		w.reason(b, Nullable, "", at)
 	}
@@ -303,9 +307,11 @@ func (w *walker) reason(b *binding, k ReasonKind, detail string, at native.GalaN
 	b.reasons = append(b.reasons, r)
 }
 
-// overridden records the active override against b, if there is one.
+// overridden records the active override against b, if one applies to it:
+// one pushed after b was bound. A binding declared inside a lambda is not
+// captured by that lambda.
 func (w *walker) overridden(b *binding, at native.GalaNodeRef) bool {
-	if len(w.overrides) == 0 {
+	if len(w.overrides) <= b.depth {
 		return false
 	}
 	o := w.overrides[len(w.overrides)-1]
