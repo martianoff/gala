@@ -98,7 +98,7 @@ func TestPrintMethodChoice(t *testing.T) {
 	accepted := []struct{ name, body, mustContain string }{
 		{"a val printed by its Error", "val f = Fault(0)\n    Println(f)", "fmt.Println(f)"},
 		{"a var printed by its Error", "var f = Fault(0)\n    Println(f)", "fmt.Println(f)"},
-		{"an interpolated val printed by its Error", "val f = Fault(0)\n    Println(s\"f=$f\")", "f=%s"},
+		{"an interpolated val printed by its Error", "val f = Fault(0)\n    Println(s\"f=$f\")", "fmt.Sprintf(\"f=%v\", f)"},
 		{"a val printed by its Format", "val f = Fancy(0)\n    Println(f)", "fmt.Println(f)"},
 		{"a var printed by its Format", "var f = Fancy(0)\n    Println(f)", "fmt.Println(f)"},
 		{"a val whose pointer Error reads it", "val e = QuietPtrError(0)\n    Println(e)", "std.PtrString(e)"},
