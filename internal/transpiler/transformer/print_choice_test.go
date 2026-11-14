@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,6 +60,12 @@ struct Shown(var c Loud)
 func (s Ptr[Shown]) String() string = s"Shown(${s.c})"
 
 func (l Ptr[Loud]) Again() { Println(*l) }
+
+struct GBox[T any](var v T)
+
+func (b *GBox[T]) Show() { Println(b.v) }
+
+func (s Ptr[Shows]) Dump() { Println(s.Count) }
 `
 
 // printChoiceSource is a program with receiverMutationDecls,
@@ -110,8 +117,19 @@ func TestPrintMethodChoice(t *testing.T) {
 			out, err := trans.Transpile(printChoiceSource(tc.body), "print_choice_test.gala")
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.mustContain)
-			assert.NotContains(t, out, "std.PtrString(f)")
-			assert.NotContains(t, out, "std.StringAt(&f)")
+			// A value printed by its own method is passed to fmt as it is;
+			// one printed through its pointer by exactly one of these.
+			printedVia := 0
+			for _, form := range []string{"std.PtrString(", "std.StringAt(&"} {
+				if strings.Contains(out, form+"f)") || strings.Contains(out, form+"e)") {
+					printedVia++
+				}
+			}
+			if strings.HasPrefix(tc.mustContain, "fmt.") {
+				assert.Zero(t, printedVia)
+			} else {
+				assert.Equal(t, 1, printedVia)
+			}
 		})
 	}
 }
@@ -153,6 +171,8 @@ func TestPrintedReceiverFieldMutates(t *testing.T) {
 		{"a field held by pointer", shows + "s.ByPointer()"},
 		{"an expression of a field", shows + "s.Sum()"},
 		{"a var printed by such a String", "var h = Shown(Loud(0))\n    Println(h)"},
+		{"a field of a type parameter, printed through a copy", "val b = GBox(Loud(0))\n    b.Show()"},
+		{"a method value", shows + "s.Dump()"},
 	}
 	for _, tc := range accepted {
 		t.Run("accepted/"+tc.name, func(t *testing.T) {
