@@ -51,6 +51,11 @@ func (t Tree) Sum() int = t match {
 
 
 
+func note(v int) int {
+    Println(s"note $v")
+    v
+}
+
 func main() {
     var c = Counter(1, "c")
     c.Add(2)
@@ -81,4 +86,7 @@ func main() {
     Println(x.N)
     p.Left.AddTimes(p.Left.Bump())
     Println(p.Left.N)
+    var y = Counter(1, "y")
+    y.AddTimes(note(y.N), y.Bump())
+    Println(y.N)
 }
