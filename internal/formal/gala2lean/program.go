@@ -34,6 +34,9 @@ type gen struct {
 	outsideDecls []*coreexport.Unsupported
 	// hasMethods is true when the program declares a method.
 	hasMethods bool
+	// collections is true when the program dot-imports the immutable
+	// collections (collectionsPath).
+	collections bool
 	// library is Options.Library.
 	library bool
 	// methods are the methods by receiver type and name; byKey every
@@ -131,7 +134,13 @@ func (g *gen) collect(p *coreexport.Program) {
 			// Imports are outside the translated subset for now: a
 			// declaration outside it, as below.
 			if imp, ok := d.(*coreexport.Import); ok {
-				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
+				// The immutable collections, dot-imported, are modelled
+				// (collections.go); any other import is outside the subset.
+				if imp.Path == collectionsPath && imp.Alias == "." {
+					g.collections = true
+				} else {
+					g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
+				}
 				continue
 			}
 			switch d := d.(type) {

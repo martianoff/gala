@@ -65,9 +65,13 @@ func TestFixturesRunInLean(t *testing.T) {
 			continue
 		}
 		name := strings.TrimSuffix(path.Base(p), ".gala")
-		// gala2lean's own cases must translate and end ok.
+		// gala2lean's own cases must translate, and end ok unless a .outcome
+		// says how Go's run of them ends (a panic class, `panic:other`).
 		own := dir == testdata
 		wantOutcome, wantOut := "ok", files[testdata+"/"+name+".out"]
+		if o, ok := files[testdata+"/"+name+".outcome"]; own && ok {
+			wantOutcome = strings.TrimSpace(o)
+		}
 		if !own {
 			wantOutcome = strings.TrimSpace(files["formal/tests/"+name+".outcome"])
 			wantOut = files["formal/tests/"+name+".out"]

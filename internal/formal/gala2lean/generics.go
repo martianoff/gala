@@ -402,6 +402,9 @@ func (g *gen) unify(p coreexport.Node, t ltype, params []string, m map[string]st
 			return
 		}
 		head := stdGeneric[p.Name].lean
+		if g.collections && seqTypes[p.Name] != "" {
+			head = seqTypes[p.Name]
+		}
 		if g.declaredType(p.Name) {
 			head = ident(p.Name)
 		}

@@ -1,0 +1,54 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Each List function gala2lean models, against the real std: the empty
+// list, indices out of range and negative, and functions that print, so
+// the order they run in and where they stop are checked too.
+
+struct P(X int, Y string)
+
+func show(tag string, n int) int {
+    Print(s"$tag$n ")
+    n
+}
+
+func main() {
+    val a = ListOf(3, 1, 4, 1, 5)
+    val e List[int] = EmptyList()
+    val e2 List[int] = EmptyList()
+    Println(a, e, ListOf("x", "y"), ListOf(P(1, "a")))
+    Println(a.Size(), a.Length(), e.Size(), a.IsEmpty(), e.IsEmpty(), a.NonEmpty(), e.NonEmpty())
+    Println(a.Get(0), a.Get(4), a.Head(), a.Last())
+    Println(a.GetOption(2), a.GetOption(5), a.GetOption(-1), e.GetOption(0))
+    Println(a.HeadOption(), e.HeadOption(), a.LastOption(), e.LastOption())
+    Println(a.Updated(0, 9), a.Updated(4, 0))
+    Println(a.Append(2), e.Append(2), a.Prepend(2), e.Prepend(2))
+    Println(a.AppendAll(ListOf(7, 8)), a.AppendAll(e), e.AppendAll(a), a.Concat(ListOf(6)))
+    Println(a.Take(2), a.Take(0), a.Take(-1), a.Take(9), e.Take(1))
+    Println(a.Drop(2), a.Drop(0), a.Drop(-1), a.Drop(9), e.Drop(1))
+    Println(a.Reverse(), e.Reverse())
+    Println(a.Contains(4), a.Contains(7), e.Contains(1), ListOf(P(1, "a")).Contains(P(1, "a")))
+    Println(a.IndexOf(1), a.IndexOf(7), e.IndexOf(1))
+    Println(a.MkString(", "), e.MkString("-"), ListOf("x", "y").MkString(""))
+    Println(a == ListOf(3, 1, 4, 1, 5), a == a.Reverse(), e == e2, ListOf(P(1, "a")) == ListOf(P(1, "a")))
+    Println(a.ToArray(), e.ToArray())
+
+    // Each function that takes one, with a function that prints: the order
+    // it runs in and where it stops.
+    Println(a.Map((n int) => show("m", n) * 2))
+    Println(e.Map((n int) => show("m", n)))
+    Println(a.Filter((n int) => show("f", n) > 1))
+    a.ForEach((n int) => { show("e", n) })
+    Println()
+    Println(a.Exists((n int) => show("x", n) == 4), a.Exists((n int) => show("x", n) > 9), e.Exists((n int) => show("x", n) > 0))
+    Println(a.ForAll((n int) => show("a", n) < 4), a.ForAll((n int) => show("a", n) > 0), e.ForAll((n int) => show("a", n) > 0))
+    Println(a.Find((n int) => show("d", n) == 1), a.Find((n int) => show("d", n) > 9))
+    Println(a.Count((n int) => show("c", n) == 1))
+    Println(a.FoldLeft("", (acc string, n int) => s"$acc${show("l", n)}"))
+    Println(a.FoldRight("", (n int, acc string) => s"$acc${show("r", n)}"))
+    Println(e.FoldLeft(7, (acc int, n int) => acc + n), e.FoldRight(7, (n int, acc int) => acc + n))
+    Println(a.Reduce((x int, y int) => show("s", x) + y), ListOf(6).Reduce((x int, y int) => x * y))
+    Println(a.Partition((n int) => show("p", n) > 2), e.Partition((n int) => n > 2))
+    Println(a.ZipWithIndex(), e.ZipWithIndex())
+}

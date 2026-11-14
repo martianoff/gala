@@ -150,7 +150,15 @@ galaspec models them, except as listed below):
   `BEq` derived for their type, which compares as GALA's generated `Equal` does: field
   by field, and case then fields for a sealed value. `Option`, `Either`, `Tuple`,
   `Tuple3` and `Tuple4` in types are the prelude's `GOption`, `GEither` and `T2` to
-  `T4`.
+  `T4`;
+- `Array` and `List` from the dot-imported `collection_immutable`, as the prelude's
+  `GArray` and `GList`, with the functions the prelude models (`ArrayOf`, `ListOf`,
+  `EmptyArray`, `EmptyList`, `Size`, `Get`, `Map`, `Filter`, `FoldLeft`, `FoldRight`,
+  `Reduce`, `Partition`, `MkString`, ...; `Prelude.lean` lists them), each after the
+  std code it cites: the functions a call passes run in the order std runs them, with
+  the same early exits, and where std panics (`Get` out of range, `Reduce` of an empty
+  sequence) the model panics with the same class, `other`. Each function has a case in
+  `internal/formal/gala2lean/testdata` whose output the gala CLI printed.
 
 It translates a whole program or nothing: one construct outside its subset anywhere in
 the program, even in a function `main` never calls, stops it, and is reported. Beyond
@@ -186,7 +194,11 @@ what Core JSON leaves out, it does not translate yet:
   Core JSON does not carry (`index`); a type nested in itself through a generic type,
   `Next Option[Node]` (`nested-recursive-type`); printing a value whose raw text (a
   lower-case field `fmt` prints as a Go struct) reaches a generic type, a type
-  parameter, `Option` or a tuple (`print-raw-generic`); methods of generic types.
+  parameter, `Option` or a tuple (`print-raw-generic`); methods of generic types;
+- `HashMap` and `HashSet` (`hash-order`), whose printing, iteration and folding follow
+  their hash trie's order, which the prelude does not model; a function of `Array` or
+  `List` the prelude does not model (`collection-method`); comparing values that hold
+  a function (`func-in-equal`); any other import (`import`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 

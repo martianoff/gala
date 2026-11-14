@@ -127,7 +127,7 @@ func isTypingGap(msg string, generic []string) bool {
 	if !stuck {
 		return false
 	}
-	if strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither") {
+	if strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither") || strings.Contains(msg, "GArray") || strings.Contains(msg, "GList") {
 		return true
 	}
 	lines := strings.Split(msg, "\n")
