@@ -383,7 +383,7 @@ sequenceDiagram
     C->>F: lend place p (exclusive for the call)
     Note over C: p is inaccessible to the caller<br/>and to every closure until F returns
     F->>F: read and write q.pos and q.err,<br/>reassign q, lend q further down with &q
-    F-->>C: return result; p holds the final value of q
+    F-->>C: return result, and p now holds the final value of q
     Note over G: Go: func grammar(q *parser) Grammar<br/>caller: grammar(&p). Same as Ptr code today
 ```
 
