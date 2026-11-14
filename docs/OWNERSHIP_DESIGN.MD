@@ -678,21 +678,25 @@ How the code is generated:
 func (p *Parser) Advance() Token {          // the Go-visible symbol, unchanged name
     if p == nil { panic(/* existing Ptr entry-check message */) }
     v := *p                                 // copy in
-    r := _gala_Parser_Advance(&v)           // body: exclusive local place
+    r := GALA_Parser_Advance(&v)            // body: exclusive local place
     *p = v                                  // copy out, on normal return only
     return r
 }
-func _gala_Parser_Advance(p *Parser) Token { /* the GALA body */ }
+
+// GALA_Parser_Advance is generated: Go code calls Advance.
+func GALA_Parser_Advance(p *Parser) Token { /* the GALA body */ }
 ```
 
 - **Who calls what:**
-  - GALA callers in the same package call `_gala_…` directly. Identifiers starting with
-    `_gala_` are reserved for generated code.
-  - GALA callers in another package also call the body directly (decision Q13). It is
-    exported under a reserved generated name, so only Go goes through the wrapper.
-    Go exports only identifiers that begin with an upper-case letter, and `_gala_…` does
-    not. So the cross-package body needs an exported spelling in the reserved family,
-    which Q18 asks about.
+  - GALA callers in every package, its own included, call the body
+    `GALA_<Type>_<Method>` (or `GALA_<Func>`) directly (decisions Q13 and Q18). Go only
+    exports names that begin with an upper-case letter, so the body uses the reserved
+    exported prefix `GALA_` instead of `_gala_`.
+  - [GALA-E0097](errors/GALA-E0097.md) rejects a user identifier that starts with
+    `GALA_`, just as it rejects one that starts with `_gala_`. That reservation ships
+    ahead of phase 2, so no program can take such a name first.
+  - Only Go goes through the wrapper. The body's doc comment tells Go users it is
+    generated and names the method to call instead.
   - Calls through an interface dispatch to the wrapper.
 - **Panics:** the copy-out is skipped. A Go caller that recovers sees `*p` unchanged:
   all-or-nothing. Inside GALA no caller can observe a partial write anyway, because
@@ -713,7 +717,7 @@ func _gala_Parser_Advance(p *Parser) Token { /* the GALA body */ }
 - **Concurrency:** Go writing `*p` from another goroutine during the call is a Go data
   race, outside GALA's guarantees. That is true of any Go function that takes a pointer.
 - **Lean:** the wrapper is Go-only glue and is not translated. The translation covers
-  `_gala_…`, whose precondition (exclusive, unaliased) the wrapper establishes.
+  `GALA_…` body, whose precondition (exclusive, unaliased) the wrapper establishes.
 
 **Cost.** A shallow copy of the struct's header words, twice per call from Go: for
 gala-tui's `Buffer`, nine words. That is negligible next to the call. Large value structs
@@ -846,8 +850,8 @@ representations (`strings.Builder` as `String`, `bytes.Buffer` as `ByteArray`, o
 | E-inout-escape (extended) | An `inout` binding is passed to a Go parameter or receiver that is not on the allow-list. The hint suggests the copy-in/copy-out pattern. |
 | E-inout-foreign-impl | A Go-declared type is converted to an interface with `inout` method requirements. |
 
-**Questions raised by this section.** Q13–Q17 are answered in [§7](#7-decisions). Q18 is
-open.
+**Questions raised by this section.** All of them (Q13–Q18) are answered in
+[§7](#7-decisions).
 
 | # | Question | Recommendation |
 |---|---|---|
@@ -856,7 +860,7 @@ open.
 | Q15 | May users add allow-list entries (an annotation on a go_interop wrapper)? | Not in this proposal. If they may, it should be an explicit, greppable trust marker, as `go_interop.Spawn` is. |
 | Q16 | Interface values with `inout` methods that arrive from Go: trusted and marked foreign (proposed), or rejected at exported boundaries? | Trusted and marked. Rejecting them would make such interfaces unusable from Go. |
 | Q17 | May the phase 1 translator use the pinned compiler's `-m` escape output, for coverage measurement only? | Yes. It never decides whether a program compiles. |
-| Q18 | *Open.* Go cannot see a lower-case `_gala_…` name from another package. How is the cross-package body from Q13 spelled? | Reserve one exported prefix, for example `GALA_` (`GALA_Parser_Advance`), and extend E0097 to cover it. No GALA identifier in std, the examples, galop, gala-tui, gala-team or gala-acp starts with `GALA_`; only environment-variable strings do. Go users see these names, so each one's doc comment says it is generated and names the method to call instead (`Advance`). |
+| Q18 | *Answered.* Go cannot see a lower-case `_gala_…` name from another package. How is the cross-package body from Q13 spelled? | Reserve one exported prefix, for example `GALA_` (`GALA_Parser_Advance`), and extend E0097 to cover it. No GALA identifier in std, the examples, galop, gala-tui, gala-team or gala-acp starts with `GALA_`; only environment-variable strings do. Go users see these names, so each one's doc comment says it is generated and names the method to call instead (`Advance`). |
 
 ## 4. Migration and breaking-change analysis
 
@@ -973,11 +977,12 @@ The maintainer answered the open questions below on 2026-11-13. Phase 1 is appro
 | Q10 | Projections (`inout` pattern bindings, `inout` locals) are out of scope. |
 | Q11 | gala-tui's public `*Buffer` API stays as is. Ask again after phase 2. |
 | Q12 | A galaspec heap model and theorem T8 are a **stretch goal of phase 1**. |
-| Q13 | GALA callers in other packages **call the body directly**. It is exported under a reserved generated name in the `_gala_` family, consistent with [GALA-E0097](errors/GALA-E0097.md). Only Go goes through the copy-in/copy-out wrapper. The exported spelling is still open (Q18 in [3.5.5](#355-what-stays-trusted-and-how-lean-sees-go)). |
+| Q13 | GALA callers in other packages **call the body directly**. It is exported under a reserved generated name, consistent with [GALA-E0097](errors/GALA-E0097.md). Only Go goes through the copy-in/copy-out wrapper. The spelling is decided in Q18. |
 | Q14 | On a panic the **copy-back is skipped**: a Go caller that recovers sees its value unchanged (all-or-nothing). |
 | Q15 | **No user allow-list entries** for now. Only std's list, verified in CI. |
 | Q16 | Interface values with `inout` methods that arrive from Go are **trusted and marked foreign**. The Lean translation treats calls on them as opaque Go calls. |
 | Q17 | Phase 1 **may read the pinned compiler's escape output to measure coverage**, never to decide whether a program compiles. |
+| Q18 | The body is exported with the **reserved `GALA_` prefix** (`GALA_Parser_Advance`). **GALA-E0097 is extended** so that no user identifier may start with `GALA_`. The reservation is implemented now, ahead of phase 2, so that no program can claim such a name first. |
 
 ## 8. Open questions for the maintainer (answered above)
 
