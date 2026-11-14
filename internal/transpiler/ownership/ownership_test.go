@@ -220,6 +220,20 @@ func localCapturedInner() int = applyOne((k) => {
     val c = newCounter()
     applyOne((j) => c.get() + j + k)
 })
+func applyPtr(f func(int) Ptr[counter]) Ptr[counter] = f(1)
+func localResultOfLambda() Ptr[counter] = applyPtr((k) => {
+    val c = newCounter()
+    c
+})
+func localReturnedFromLambda() Ptr[counter] = applyPtr((k) => {
+    val c = newCounter()
+    return c
+})
+func lazyInt(f func() int) int = f()
+func localInByName() int = lazyInt(if (true) {
+    val c = newCounter()
+    c.n
+} else 0)
 `
 
 func TestSummariesAndReasons(t *testing.T) {
@@ -273,6 +287,12 @@ func TestSummariesAndReasons(t *testing.T) {
 		{"counter.Exported", "c", []string{"from-go"}},
 		// A lambda nested in the one that binds c captures it.
 		{"localCapturedInner", "c", []string{"captured"}},
+		// A pointer declared in a lambda escapes through its result.
+		{"localResultOfLambda", "c", []string{"returned"}},
+		{"localReturnedFromLambda", "c", []string{"returned"}},
+		// A by-name argument is not a lambda body: its thunk may outlive the
+		// call, so every pointer use in it is a capture.
+		{"localInByName", "c", []string{"captured"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.fn+"/"+tc.binding, func(t *testing.T) {
