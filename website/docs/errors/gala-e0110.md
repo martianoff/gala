@@ -4,7 +4,7 @@ title: "GALA-E0110 — Mutating Pointer Method on a Value That Cannot Be Address
 description: "GALA-E0110 rejects a call of a pointer-receiver method that can change its receiver on a val, a val field, a call result or a literal, because the change would be made to a copy and lost."
 keywords: "gala-e0110, gala pointer receiver val, gala Ptr receiver, gala mutating method val, gala lost mutation, gala var"
 permalink: /docs/errors/gala-e0110/
-last_modified_at: 2026-11-13
+last_modified_at: 2026-11-14
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0110</p>
@@ -22,7 +22,11 @@ copy and lost.
 Printing calls a method too: `Println`, `Print`, `s"..."` and `f"..."` print a
 value whose `String()` is declared on a pointer receiver by calling that
 `String`, so printing such a value is rejected the same way when its `String`
-changes its receiver.
+changes its receiver. The `String` GALA generates for a struct or a sealed type
+prints each field through a copy of the field, so printing a value with a field
+whose pointer-receiver `String` changes its receiver is rejected too, whether
+the value printed is a `var`, a `val` or a pointer (see "Fields printed through
+a copy" below).
 
 **Minimal repro.**
 
@@ -79,6 +83,76 @@ func main() {
 ```
 
 For a field, mark the field `var` and reach it through a `var` or a pointer.
+
+**Fields printed through a copy.** A shorthand struct or a sealed type prints
+by the `String` GALA generates for it, `Holder(shown 1)`. That `String` has a
+value receiver and prints each field through a copy of the field, so a field
+whose pointer-receiver `String` changes its receiver would have the change made
+to the copy, even when the struct is a `var`:
+
+```gala
+package main
+
+struct Counter(var shown int)
+
+func (c Ptr[Counter]) String() string {
+    c.shown = c.shown + 1
+    s"shown ${c.shown}"
+}
+
+struct Holder(var c Counter)
+
+func main() {
+    var h = Holder(Counter(0))
+    Println(h)
+    Println(h.c.shown)
+}
+```
+
+```
+error[GALA-E0110]: cannot print this Holder: its field c, a Counter, prints by its String on a copy, and that String can change its receiver, so the change would be made to the copy and lost
+  --> main.gala:14:13
+   |
+14 |     Println(h)
+   |             ^ hold field c as a `Ptr[Counter]`, so its String runs on the…
+   |
+   = hint: hold field c as a `Ptr[Counter]`, so its String runs on the value it points to
+```
+
+The error is reported where `Println`, `Print` or interpolation prints the
+value, and follows fields into nested structs and sealed cases. A value fmt
+prints by its own `Error` or `Format` never runs its generated `String`, so it
+is not checked. Hold the field as a `Ptr`, so its `String` runs on the value it
+points to:
+
+```gala
+package main
+
+struct Counter(var shown int)
+
+func (c Ptr[Counter]) String() string {
+    c.shown = c.shown + 1
+    s"shown ${c.shown}"
+}
+
+struct Tracked(c Ptr[Counter])
+
+func main() {
+    var shared = Counter(0)
+    val t = Tracked(&shared)
+    Println(t)            // Tracked(shown 1)
+    Println(shared.shown) // 1
+}
+```
+
+**Not checked.** The check runs where `Println`, `Print` or interpolation
+prints a value of a struct or sealed type. It does not cover the other ways the
+generated `String` runs, each of which already holds a copy: an element a
+collection or a tuple prints, a value of a type parameter, of `any` or of
+another interface (storing a value in an interface copies it), an explicit
+`h.String()` call (the generated `String` has a value receiver) and Go's `fmt`.
+A change a field's `String` makes there is lost too. A `String` that only reads
+its receiver, or a field held by `Ptr`, avoids it everywhere.
 
 **What counts as changing the receiver.** A method can change its receiver
 when its body, or a lambda in it:

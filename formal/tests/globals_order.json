@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -100,6 +100,8 @@
             "end": 132
           },
           "name": "classify",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -118,7 +120,8 @@
                   "off": 63,
                   "end": 66
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -131,7 +134,8 @@
               "off": 68,
               "end": 74
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "match",
@@ -299,6 +303,8 @@
             "end": 225
           },
           "name": "first",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": {
             "kind": "type-name",
@@ -308,7 +314,8 @@
               "off": 181,
               "end": 184
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -403,6 +410,8 @@
             "end": 271
           },
           "name": "second",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": {
             "kind": "type-name",
@@ -412,7 +421,8 @@
               "off": 241,
               "end": 244
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -481,6 +491,8 @@
             "end": 309
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

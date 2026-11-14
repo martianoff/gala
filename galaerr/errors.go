@@ -1004,6 +1004,40 @@ const (
 	// (std.AddrOfCopy) and its change would be lost. A method that only
 	// reads its receiver is still called on a copy.
 	CodeMutatingCallOnCopy ErrorCode = "GALA-E0110"
+
+	// E0111: an `inout` parameter's argument is not `&` of a mutable place
+	// (a `var`, an `inout` parameter, a `var` field path of one, or the
+	// pointee of a Ptr), or an `inout` parameter is declared variadic or
+	// with a default, which would lend no place.
+	CodeInoutArgument ErrorCode = "GALA-E0111"
+
+	// E0112: two places one call lends overlap: the same place, or one a
+	// field path of the other (`blit(&b, &b)`, `f(&p, &p.lex)`, an inout
+	// receiver lent again as an argument), or a lambda argument of the call
+	// captures a place the call lends.
+	CodeInoutOverlap ErrorCode = "GALA-E0112"
+
+	// E0113: an `inout` place escapes its call: `&x` is stored, returned,
+	// passed to a parameter that is not inout, or passed to Go; x is
+	// captured by a lambda or by-name argument; or a method value or a
+	// pointer-receiver method that may retain its receiver is taken on it.
+	CodeInoutEscape ErrorCode = "GALA-E0113"
+
+	// E0114: a method with an `inout` receiver is called on a value that is
+	// not a mutable place: a val, a parameter not declared `var`, a field
+	// reached through one, a call result or a literal.
+	CodeInoutReceiver ErrorCode = "GALA-E0114"
+
+	// E0115: an `inout` place is used inside a Try region (the thunk of
+	// Try(...)): a panic Try catches would leave the caller's place half
+	// updated.
+	CodeInoutInTry ErrorCode = "GALA-E0115"
+
+	// E0116: a value fills an interface that declares an `inout` method, but
+	// its type does not implement that method with an `inout` receiver: a
+	// GALA method with another receiver, or a Go method not on the no-retain
+	// allow-list, which may keep or share its receiver.
+	CodeInoutForeignImpl ErrorCode = "GALA-E0116"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

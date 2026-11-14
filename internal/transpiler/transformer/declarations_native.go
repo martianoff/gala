@@ -73,7 +73,12 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	case native.GalaKIND_varDeclaration:
 		return oneDecl(t.lowerVarDecl(t.readBindingDeclNative(native.VarDeclarationNode{GalaNodeRef: decl}, "var")))
 	case native.GalaKIND_functionDeclaration:
-		return oneDecl(t.lowerFuncDecl(t.readFuncDeclNative(native.FunctionDeclarationNode{GalaNodeRef: decl})))
+		fd, err := t.lowerFuncDecl(t.readFuncDeclNative(native.FunctionDeclarationNode{GalaNodeRef: decl}))
+		if w := t.inoutWrapper; err == nil && w != nil {
+			t.inoutWrapper = nil
+			return []ast.Decl{w, fd}, nil
+		}
+		return oneDecl(fd, err)
 	case native.GalaKIND_typeDeclaration:
 		return t.lowerTypeDecl(t.readTypeDeclNative(native.TypeDeclarationNode{GalaNodeRef: decl}), false)
 	case native.GalaKIND_structShorthandDeclaration:
@@ -172,6 +177,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 			name:  r.Identifier().GetText(),
 			at:    srcNode{node: r.GalaNodeRef},
 			isVar: r.VAR().Ok(),
+			isInout: r.INOUT().Ok(),
 			typ:   nativeType(r.Type_()),
 		}
 	}
@@ -239,6 +245,7 @@ func readParamsNative(ps native.ParametersNode) []paramDecl {
 			at:         srcNode{node: p},
 			isVar:      param.VAR().Ok(),
 			isVal:      param.VAL().Ok(),
+			isInout:    param.INOUT().Ok(),
 			variadic:   param.ELLIPSIS().Ok(),
 			hasDefault: param.ParamDefault().Ok(),
 			def:        nativeDefault(param.ParamDefault()),

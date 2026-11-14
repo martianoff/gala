@@ -1,21 +1,26 @@
 # Formal Semantics and Spec-Based Testing
 
-Status: **design proposal**. Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
+Status: **design proposal, partly built**. Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 
 This document describes how GALA gets an executable, machine-checked definition of what
-programs mean, and how the transpiler is tested against it. Only the first step exists: the
-`formal/` project with the match lowering model and its CI job.
+programs mean, and how the transpiler is tested against it. What exists today (the
+reference interpreter, the differential harness, gala2lean, and the theorems proved so
+far) is listed in [formal/COVERAGE.md](../formal/COVERAGE.md).
 
 ## Summary
 
 - We write **GALA's semantics in Lean 4**. A Lean definition says what every supported
   program means. Lean compiles that definition into a **reference interpreter**.
-- We **do not model Go**. Generated code is tested by running it: the real transpiler and
-  the real Go toolchain run the program, and the reference interpreter must print the
-  same output.
-- We **prove properties of the language**, not of the transpiler. Examples: names
-  resolve to their nearest binding, evaluation runs left to right, and an exhaustive match
-  on a constructed value never panics. Lean's kernel checks these proofs.
+- **Today, generated code is tested by running it**: the real transpiler and the real Go
+  toolchain run the program, and the reference interpreter must print the same output.
+  We do not model Go as a whole.
+- **The goal is a proof** that a GALA program and the Go the transpiler emits for it mean
+  the same thing. We get there in milestones
+  ([Theorems](#5-theorems-the-road-to-an-end-to-end-proof)): first properties of the
+  spec itself, then a Lean model of only the Go subset the transpiler emits (GoCore), then
+  a check of the transpiler's actual output against a lowering proved correct, one
+  program at a time. Lean's kernel checks the proofs. Most of this is not done yet;
+  [COVERAGE.md](../formal/COVERAGE.md) lists what is proved.
 - **Coverage is partial and is published honestly.** The spec covers a stated subset of
   GALA. Every program outside that subset is counted and reported. It is never silently
   passed.
@@ -112,8 +117,9 @@ formal/
   Gala/Eval.lean            big-step semantics with fuel, outcomes below
   Gala/Std/*.lean           models of Option, Either, Try, Println formatting
   Gala/Main.lean            `galaspec run prog.json` → stdout + outcome line
-  Gala/Theorems/*.lean      proofs about the semantics
-  Gala/*Lowering.lean       optional: small models of individual lowerings
+  Gala/Theorems.lean        proofs about the semantics
+  Gala/Statements.lean      the pinned statements of the theorems COVERAGE.md calls proved
+  Gala/*Lowering.lean       models of individual lowerings; they become the reference lowering (M3, M5)
   COVERAGE.md               hand-written now, generated later; see "Coverage"
 ```
 
@@ -162,26 +168,220 @@ flowchart TD
 | **`FuzzPrograms` generator.** Its hand-written model of expected output is replaced by `galaspec`. During the switch, all three are compared. | Endless random programs, with an oracle we can review. | Yes |
 
 The two metamorphic generators are cheap and need no spec at all. They ship first. Their
-correctness argument is also a theorem we prove about the spec: *renaming bound variables
+correctness argument is also a theorem we plan to prove about the spec (T2): *renaming bound variables
 does not change a program's meaning*. That ties the test to the proof.
 
-### 5. Theorems
+### 5. Theorems: the road to an end-to-end proof
 
-These are proved about the spec, in order of value:
+The goal is a proof, not a test, that a GALA program and the Go program the transpiler
+emits for it mean the same thing: the same output and the same outcome. We get there in
+milestones. Each one makes a claim that is true on its own, names what it still trusts,
+and removes something from that list or widens the subset.
 
-| # | Statement (informal) | Guards against |
-|---|---|---|
-| T1 | Evaluation is deterministic. | spec bugs |
-| T2 | **Alpha-invariance:** renaming bound variables apart does not change the outcome. | #996, #997, #999, #1002 |
-| T3 | **Left-to-right:** the effects of operands, arguments (including named ones) and sub-patterns happen in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 |
-| T4 | **Default arguments** are evaluated in the callee's scope, with earlier parameters bound. | #999 |
-| T5 | **Exhaustiveness:** a well-typed exhaustive match on a value built by a constructor never ends in `panic match`. | match lowering |
-| T6 | **Equality:** `Equal` on sealed values is an equivalence that depends only on the active variant's fields. | #1004, #1005 |
-| T7 | **Type soundness** for the subset: well-typed programs do not get stuck (stretch goal). | typing bugs |
+Three semantics are involved:
+
+- **galaspec** (`Gala/Eval.lean`): what a GALA program means. It is the definition, so
+  it is trusted by construction; it is checked against `docs/GALA.MD` by review and
+  against Go by the differential run.
+- **GoCore** (planned): a Lean semantics of the *subset of Go the transpiler emits* for
+  the covered GALA subset. It is not a semantics of Go. That real Go behaves as GoCore
+  says is an assumption, tested by running GoCore on the transpiler's output next to
+  `go run` (a fourth oracle).
+- **The transformer's actual output**, read back from the generated Go (`go/ast`) into
+  GoCore syntax by a small exporter.
+
+```mermaid
+flowchart LR
+    SRC[GALA program] --> P[galop parser]
+    P --> CJ[Core JSON] --> GS[galaspec<br/>meaning of GALA]
+    P --> TR[transformer<br/>not trusted] --> GOSRC[generated Go]
+    GOSRC --> GX[Go AST exporter] --> GC[GoCore program]
+    GC --> GCS[GoCore semantics<br/>meaning of the emitted Go]
+    GS --- EQ{same output<br/>and outcome}
+    GCS --- EQ
+    GOSRC --> GOR[go build + run]
+    GOR -. tested against .-> GCS
+```
+
+#### The theorems
+
+These are the properties of the spec the milestones prove (T1–T7), with the bugs each
+guards against. Only T4 is proved so far, and only for the scope a default value sees;
+[formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) lists what is proved.
+
+| # | Statement (informal) | Guards against | Milestone |
+|---|---|---|---|
+| T1 | **Fuel adequacy and monotonicity:** if a run with fuel `n` ends in anything but `fuel`, every run with more fuel ends the same way and prints the same output. (Plain determinism holds of any Lean function and says nothing.) | an `AGREE` or `INCONCLUSIVE` verdict that means something else | M1 |
+| T2 | **Alpha-invariance:** a capture-avoiding renaming of bound variables does not change the output or the outcome (see M2 for the side conditions). | #996, #997, #999, #1002 | M2 |
+| T3 | **Left-to-right**, stated on what a program does, not on the evaluator's definition: the output and effects of an operand list, a call (named arguments included), a compound assignment and a pattern are those of its parts, in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 | M2 |
+| T4 | **Default arguments** are evaluated in the callee's scope, with earlier parameters bound. | #999 | M2 |
+| T5 | **Exhaustiveness:** a well-typed exhaustive match on a value built by a constructor never ends in `panic match`. Needs a typing judgment, which the spec does not have. | match lowering | not scheduled |
+| T6 | **Equality:** `Equal` on sealed values is an equivalence that depends only on the active variant's fields. | #1004, #1005 | M7 |
+| T7 | **Type soundness** for the subset: well-typed programs do not get stuck. Needs a typing judgment too. | typing bugs | not scheduled |
 
 A theorem counts as **proved** only if it type-checks with no `sorry`, and
 `#print axioms` lists only Lean's standard axioms (`propext`, `Quot.sound`,
-`Classical.choice`). CI checks both.
+`Classical.choice`). CI checks both. Its statement is pinned in
+`formal/Gala/Statements.lean`.
+
+#### The milestones
+
+Throughout, galaspec's definitions and Lean's kernel are trusted. The "Also trusted"
+column lists what each milestone's claim rests on beyond them.
+
+| # | Milestone | Claim it lets us make | Also trusted | Size |
+|---|---|---|---|---|
+| M1 | Fuel adequacy (T1) | galaspec's answer for a program never depends on the fuel budget, except that too little fuel ends in `fuel` | nothing | 2–3 weeks |
+| M2 | Alpha-invariance, left-to-right, defaults (T2–T4) | for the subset galaspec models (S1 plus lambdas, closures, named arguments and defaults), renaming bound variables apart never changes what galaspec says a program does, its effects happen in source order, and a default sees only the callee's earlier parameters | nothing | 6–8 weeks |
+| M3 | Match lowering against galaspec | the scoped `match` lowering, into a first fragment of GoCore, is correct with respect to galaspec itself (not a separate toy semantics), for every S1 pattern form | that the lowering describes what the transformer emits | 3–4 weeks |
+| M4 | GoCore and the Go AST exporter | for every S1 program in the corpus, GoCore run on the transformer's *actual* output agrees with galaspec and with `go run` (tested, not proved) | parser, interpolation splitter, analyzer annotations, both exporters, GoCore's fidelity to Go | 5–8 weeks |
+| M5 | Reference lowering for all of S1 | a lowering from galaspec's syntax to GoCore, covering everything the transformer emits for S1, is proved to preserve meaning | that the lowering describes what the transformer emits | 6–9 weeks |
+| M6 | Per-program translation validation | for each S1 program the validator accepts, every run of it that galaspec ends `ok` or in a panic is proved to have the same output and outcome as the Go the transformer emitted, run in GoCore | as M4, plus the validator's run (kernel or compiled Lean) | 8–12 weeks |
+| M7 | Widening the subset | M6's claim for S2 (lambdas, defaults, named arguments, interpolation), then methods, `Option`/`Either`/`Try` and generics | as M6 | 2–4 weeks per construct family |
+
+#### M1: fuel adequacy (an oracle we can trust)
+
+- **Claim:** galaspec's result does not depend on the fuel budget once it is large
+  enough; `fuel` only ever means "not enough fuel".
+- **Statement:** for every program `p` and fuels `n ≤ m`, if `(run p n).1` is not
+  `.fuel` then `run p m = run p n`. `run` passes the same number to `runM` as the
+  recursion depth of `eval` and as its step count, so the lemma for each function of
+  `eval`'s mutual block says: more depth and more steps give the same result and the
+  same final state, except for the steps left.
+- **What it gives:** an `AGREE` or `DISAGREE` verdict is about the program's meaning, not
+  about the budget the harness chose.
+- **Risk:** the mutual well-founded recursion makes equation lemmas heavy; `tryCatch` and
+  the heap need their own monotonicity facts.
+
+#### M2: alpha-invariance, left-to-right and defaults
+
+- **Claim:** for the subset galaspec models (S1 plus lambdas, closures, named arguments
+  and defaults), renaming bound variables apart never changes galaspec's output or
+  outcome; operands, arguments and sub-patterns take effect in source order; a default
+  value sees only the callee's earlier parameters.
+- **Statement (T2):** `run (rename σ p) n ≈ run p n`, where `≈` means the same output and
+  the same outcome up to the text of `stuck` and `unsupported` messages (those name
+  variables, so renaming changes them). `σ` renames each binder together with the
+  occurrences it binds, and must be capture-avoiding: no occurrence ends up bound by a
+  different binder, and no free name (a builtin such as `Println` included) ends up bound
+  by one. Shadowing is allowed, so two binders in different scopes may get one
+  name. In addition, galaspec's name resolution needs:
+  - a binder is never renamed to `_`, which binds nothing;
+  - a binder is never renamed to the name of a package-level declaration (function,
+    `val`/`var`, struct or sealed case): pattern names count as mentions when
+    galaspec orders package-level initialization (`mentions`), and a bare pattern name
+    that names a case of the subject's type is a case test;
+  - the renaming keeps every name capitalized exactly when it was: a capitalized
+    pattern name with a binding in scope is a stable identifier (`classifyPatName`),
+    so a lowercase binder renamed to a capitalized one could turn a later pattern
+    binder into a comparison;
+  - renaming a function's parameter renames the named arguments at its call sites too,
+    since `bindArgs` resolves `name = value` by parameter name.
+
+  Renaming top-level declarations consistently is a separate, simpler lemma.
+- **What it gives:** a proof that the metamorphic renaming generator is sound. It gives a
+  binder a hostile name (another binder's in scope, `std`, `panic`, …) only where every
+  reference still resolves to its own binder, which is capture avoidance; M2 also checks
+  its renamings against the remaining conditions above. A renaming that changes Go's
+  output is then a transpiler bug, never a spec artefact.
+- **Statements (T3, T4):** T3 relates the output and state of each compound construct to
+  those of its parts in source order; T4 extends today's lemmas about the default frame
+  to `bindArgs` itself.
+- **Risk:** the renaming must commute with `resolve`, pattern classification, closures'
+  captured scopes and default frames. A state relation (environments renamed, heap equal)
+  carries the induction. Needs M1's lemmas.
+
+#### M3: the match lowering against galaspec
+
+- **Claim:** the scoped lowering of `match` (the transformer's shape: a temporary for the
+  subject, an `Unapply` per arm, binders scoped to their arm, a panic at the end) is
+  correct with respect to galaspec, for every S1 pattern form: nested, literal,
+  wildcard, tuple and extractor patterns, bare case names, stable identifiers, and
+  guards.
+- **Statement:** a lowering `lowerMatch` from galaspec's syntax to a first fragment of
+  GoCore, and `GoCore.eval (lowerMatch e) ≈ Spec.eval e` under an environment relation,
+  as `compile_correct` does today for a separate toy language.
+- **What it removes:** the separate source semantics `seval` in `MatchLowering.lean`,
+  which no theorem ties to galaspec today. `compile_correct`, `program_correct` and the
+  #996 counterexample `leaky_not_correct` are restated against galaspec and GoCore, and
+  their pinned statements in `Statements.lean` change with them.
+- **Risk:** galaspec's match runs in a monad with state, fuel and a heap; the simulation
+  needs M1's fuel lemmas.
+
+#### M4: GoCore and the Go AST exporter
+
+- **Claim (tested, not proved):** for each S1 program in the corpus, GoCore run on the
+  transformer's actual output prints what galaspec prints and ends the same way, and
+  prints what `go run` prints.
+- **What is built:**
+  - GoCore: int64 arithmetic with Go's wrapping, division and shift rules; `if`; blocks
+    and `:=`; function calls; structs; the sealed parent struct with its variant tag;
+    `Unapply` returning an `Option`; `panic`; package-level initialization; and `fmt`'s
+    printing of the values S1 has.
+  - An exporter from the generated Go's `go/ast` to GoCore JSON. A construct outside
+    GoCore is reported, never dropped, as Core JSON does.
+- **What it changes:** the link to the real transformer exists; until M6 it is tested.
+- **Risk:** the transformer emits incidental shapes (helper calls, immutability wrappers,
+  generated `String` methods) that GoCore must cover; `fmt` is the largest single model.
+  GoCore has no stack limit, while Go aborts a deep recursion with a fatal stack
+  overflow: a run Go aborts for lack of stack or memory is outside every claim here, and
+  the differential run reports such runs instead of comparing them.
+
+#### M5: the reference lowering for all of S1
+
+- **Claim:** a lowering `lower : Spec.Program → GoCore.Program` that produces the shapes
+  the transformer emits (M4 shows which) preserves meaning for every S1 program.
+- **Statement:** for every S1 program `p` whose galaspec run ends `ok` or in a panic,
+  `GoCore.run (lower p)` ends the same way with the same output, and a program that runs
+  out of every fuel budget in one runs out in the other. It generalizes M3 from `match`
+  to arithmetic, `if`, blocks, calls, structs, sealed values, package-level
+  initialization and printing.
+- **Risk:** printing and initialization order are the largest proofs; GoCore's `fmt`
+  model has to be exact for the theorem to say anything about real output.
+
+#### M6: per-program translation validation
+
+- **Claim:** for each S1 program it accepts, the validator proves that the Go the
+  transformer emitted, run in GoCore, means the same as the program: for every run that
+  galaspec ends `ok` or in a panic, the same output and outcome, and divergence in one
+  exactly when in the other.
+- **Statement:** a checker `validate : Spec.Program → GoCore.Program → Bool` and one
+  soundness theorem, proved once: if `validate p q = true` then `q` is equivalent to
+  `lower p` in GoCore, so by M5, for every `n` where `(Spec.run p n).1` is `ok` or a
+  panic, some `m` gives `GoCore.run q m ≈ Spec.run p n`, and the same in the other
+  direction. Per program, `validate p q = true` is then evaluated, by the kernel
+  (`decide`) where that is fast enough, or by compiled Lean, which then joins the
+  trusted base and is named as such.
+- **What it does not cover:** a run galaspec ends `stuck` or `unsupported`. `stuck` marks a
+  program GALA's type checker should reject; ruling it out statically needs T7, which is
+  not scheduled, so the claim is stated per run, not per program.
+- **How the checker works:** it compares the emitted Go with `lower p` up to the renaming
+  of temporaries and the normal forms of incidental shapes, so a transformer change that
+  keeps the reference shapes needs no new proof, and one that breaks them is rejected
+  with the construct named. Its soundness needs alpha-invariance of GoCore for
+  temporaries and a correctness lemma for each normalization rule; both are part of
+  M6's size.
+- **What it removes:** the transformer from the trusted base, for each validated program.
+- **Risk:** the transformer's output must be normalized before comparison; a validator
+  that is too strict rejects correct output and stalls coverage.
+
+#### M7 and later: widening
+
+Each family of constructs extends galaspec, GoCore, the reference lowering and the
+validator together: S2 first (closures capture by reference, so GoCore needs heap cells),
+then methods and the generated `Copy`/`Equal`/`String` (with T6), `Option`/`Either`/`Try`,
+and erased generics. A verified lowering, the transformer replaced by Lean code proved
+correct, is not planned: per-program validation gives the same guarantee for the
+programs it accepts, without rewriting the transformer. T5 and T7 need a typing judgment
+for the subset, which none of M1–M6 requires; they are scheduled only if the validator
+comes to need typing facts.
+
+**What stays trusted at the end:** the galop parser and the interpolated-string splitter
+(shared by both sides), the analyzer's type annotations, the Core JSON and Go AST
+exporters, galaspec's definitions (the meaning of GALA, checked against `docs/GALA.MD`),
+GoCore's fidelity to the Go compiler and runtime (tested), and Lean's kernel (and the
+Lean compiler, if the validator runs compiled). [What is trusted](#what-is-trusted) lists
+each with its mitigation.
 
 ### 6. gala2lean: a third oracle
 
@@ -213,13 +413,19 @@ flowchart LR
   becomes a reference cell in the state), interpolation and `Option`/`Either`/`Try`;
   then generics and the immutable collections, modelled in the prelude.
 
-### 7. Optional: lowering models
+### 7. Lowering models and the reference lowering
 
-For the riskiest lowerings, a small Lean model of only the Go that GALA emits for them can
-be proved correct against the spec. This is *not* a Go semantics. The existing prototype
-does this for sealed `match`. It proves that a scoped lowering preserves meaning, and that
-the current lowering does not. Candidates are `match`, default and named arguments, and
-sealed `Equal`/`Copy`. Each model is about 100–300 lines, and each is opt-in.
+A lowering model is a Lean model of only the Go that GALA emits for one construct, with a
+proof that the lowering preserves meaning. It is *not* a Go semantics. The existing
+prototype, `formal/Gala/MatchLowering.lean`, does this for sealed `match`. It proves, for a
+small model of `match` and of the Go it lowers to (not for the transpiler's output), that
+a scoped lowering preserves meaning and that the leaky lowering of #996 does not.
+
+The roadmap above turns these models into the **reference lowering**. M3 restates the
+`match` model against galaspec, with a first fragment of GoCore as its target; M5 extends
+it to all of S1; M6's validator checks the transformer's actual output against it,
+program by program. Each further construct (closures, default and named arguments,
+sealed `Equal`/`Copy`) gets its reference lowering when M7 reaches it.
 
 ## What is trusted
 
@@ -229,13 +435,15 @@ The table is honest about what the guarantees rest on.
 |---|---|---|
 | Lean kernel | Small, widely used | none needed |
 | The spec's definitions | They *are* the definition of GALA | Reviewable size; every definition cites its `docs/GALA.MD` section; the 400+ examples are a conformance suite |
-| galop parser | Shared by both sides | Already fuzzed against the ANTLR grammar |
+| galop parser | Shared by both sides. The transpiler falls back to ANTLR when galop reports a syntax error or fails; the exporter uses galop alone, so on such input the two sides do not share a parser | Already fuzzed against the ANTLR grammar |
 | Interpolated-string splitter (`internal/interpolation`) | Shared by both sides: it splits `s"..."` into text and embedded expressions | Small and lexical; the expressions it finds are parsed and checked like any other |
-| Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; round-trip test (export → print → parse → export) |
+| Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; golden and schema tests (a round-trip test, export → print → parse → export, is planned) |
 | Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
 | gala2lean's translator and prelude | They decide what its Lean definitions mean | Mechanical rules; independent of galaspec; compared with galaspec and Go on every translated program |
-| Go toolchain and runtime | We run it, not model it | Out of scope |
-| The transformer | **Not trusted.** It is what we test | — |
+| Go toolchain and runtime | Today we run it, not model it. From M4, GoCore models the subset the transpiler emits, and that real Go behaves as GoCore says is assumed | GoCore runs next to `go run` on the transformer's output for every program in the corpus; runs Go aborts for lack of stack or memory are outside every claim |
+| Go AST exporter (planned, M4) | It decides which GoCore program the emitted Go is | A plain syntax dump; constructs outside GoCore are reported, never dropped |
+| The validator's run (planned, M6) | Evaluated by Lean's kernel, or by compiled Lean when the kernel is too slow | The kernel needs no mitigation; compiled Lean is named as trusted where it is used |
+| The transformer | **Not trusted.** It is what we test, and from M6 what we validate per program | — |
 
 ## Coverage
 
@@ -258,12 +466,15 @@ The run writes this as the section between the `<!-- difftest:begin -->` and
 puts it into the file and leaves the hand-written rest alone.
 
 **Wording rules for docs, release notes and the README:**
-- "Proved" is used only for kernel-checked theorems about the spec.
+- "Proved" is used only for kernel-checked theorems, and always with what they are
+  about: the spec, a lowering model, or (from M5) GoCore and the reference lowering.
 - "Tested against the spec" is used for differential results.
 - Neither is used for constructs outside the subset.
 - For gala2lean, "translated" and "agrees" are used only where true; neither means
   verified.
-- We never claim the transpiler is verified.
+- We never claim the transpiler is verified. From M6, a program is "validated" when the
+  validator proved its Go output equivalent to it, and the word always comes with what
+  it is relative to: GoCore, runs galaspec ends `ok` or in a panic, and the trusted base.
 
 **Ratchets in CI:**
 - The number of examples that run fully inside the subset and agree may not go down
@@ -397,44 +608,57 @@ To keep our obligations at zero:
 
 ## Plan
 
-The estimates assume one maintainer working with AI agents. Weeks 1–4 are the commitment;
-weeks 5–6 are stretch goals.
+Done so far: the metamorphic generators, the Core JSON exporter, galaspec for S1 and part
+of S2, the differential harness over `examples/`, gala2lean, and the match lowering model.
+The estimates are in weeks of one maintainer working with AI agents, and the chart runs
+the proof milestones one after another (M3 needs only M1, so M2 and M3 could overlap with
+a second person). The spec-coverage lane, the rest of S2 and S3 in galaspec and
+switching `FuzzPrograms` to galaspec as its oracle, is separate work run by other agents
+and is drawn alongside. The dates are placeholders that show order and length, not
+commitments.
 
 ```mermaid
 gantt
     dateFormat  YYYY-MM-DD
-    axisFormat  W%W
-    section No Lean needed
-    Metamorphic renaming + order generators   :m1, 2026-11-16, 5d
-    Fix scoping bugs they catch (#996 #997 #998) :m2, after m1, 5d
-    section Spec
-    formal/ scaffold, CI job, prototype moved  :s0, 2026-11-16, 3d
-    Core JSON exporter v1 (S1)                 :s1, after s0, 4d
-    galaspec S1 + difftest over examples       :s2, after s1, 5d
-    FuzzPrograms oracle switch                 :s3, after s2, 4d
-    S2 (lambdas, defaults, named args, std)    :s4, after s3, 7d
-    S3 (generics, Equal/Copy, collections)     :s5, after s4, 7d
-    section Proofs
-    T1 determinism, T2 alpha-invariance        :p1, after s2, 5d
-    T3 left-to-right, T4 defaults              :p2, after s4, 5d
-    T5 exhaustiveness, T6 equality             :p3, after s5, 5d
-    T7 type soundness for S1 (stretch)         :p4, after p3, 10d
+    axisFormat  %b %Y
+    section Trust the oracle
+    M1 fuel adequacy                         :m1, 2026-11-23, 21d
+    M2 alpha-invariance, T3, T4              :m2, after m1, 49d
+    section Link to the transformer
+    M3 match lowering against galaspec       :m3, after m2, 28d
+    M4 GoCore and the Go AST exporter        :m4, after m3, 49d
+    M5 reference lowering for S1             :m5, after m4, 56d
+    M6 per-program translation validation    :m6, after m5, 70d
+    section Widen
+    M7 S2, methods, Option/Either/Try, generics :m7, after m6, 84d
+    section Spec coverage
+    S2 rest, S3, FuzzPrograms oracle switch  :c1, 2026-11-23, 120d
 ```
 
-| Week | Deliverable | Done when |
+| Milestone | Size | Done when |
 |---|---|---|
-| 1 | The two metamorphic generators in `internal/transpiler/fuzz`. `formal/` scaffold with the match prototype; `formal.yml` builds it and checks axioms. | The generators reproduce #996–#1003 on `master`, and their failing cases are committed as seeds. |
-| 2 | Core JSON exporter for S1; `galaspec` S1; `difftest` over `examples/`; first `COVERAGE.md`. Fixes for #996, #997, #998. | Baseline coverage published; zero unexplained `DISAGREE`. |
-| 3 | `FuzzPrograms` uses `galaspec` as its oracle. Theorems T1 and T2. Decisions on #1000, #1001 and #999. | T1 and T2 proved; fuzzing runs against the spec in CI. |
-| 4 | S2 in the spec. Theorems T3 and T4. Fixes for #999 and #1000. | Lambdas, defaults and named arguments are modelled, tested against the spec, and T3/T4 are proved. |
-| 5–6 (stretch) | S3; theorems T5 and T6; T7 for S1; a lowering model for the fixed `match`. | As in the tables above. |
+| M1 | 2–3 weeks | T1 is proved, pinned in `Statements.lean` and listed in COVERAGE.md. |
+| M2 | 6–8 weeks | T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator is checked against T2's conditions. |
+| M3 | 3–4 weeks | `MatchLowering.lean`'s separate source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form. |
+| M4 | 5–8 weeks | GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |
+| M5 | 6–9 weeks | The reference lowering covers everything the transformer emits for S1, and its correctness theorem is proved. |
+| M6 | 8–12 weeks | The validator's soundness theorem is proved, and CI validates every S1 program in the corpus, listing the ones it rejects and why. |
+| M7 | 2–4 weeks per construct family | Each family is in galaspec, GoCore, the reference lowering and the validator. |
 
 **Risks:**
 - **The spec is wrong.** Mitigation: the three-way check against `.out` files; a reviewer
   reads every definition next to `docs/GALA.MD`.
-- **Proof effort is underestimated.** Mitigation: theorems are optional per week, and
-  testing against the spec delivers value without them.
+- **Model drift.** galaspec, GoCore, the reference lowering and the transformer can each
+  change without the others. Mitigation: the differential run compares galaspec and
+  GoCore with `go run` on every formal-relevant PR; the validator rejects output that no
+  longer fits the reference lowering, naming the construct, instead of passing it.
+- **GoCore's fidelity to Go is assumed, not proved.** Mitigation: GoCore runs next to
+  `go run` on the transformer's output for every program in the corpus, and the
+  assumption is listed in [What is trusted](#what-is-trusted).
+- **Proof effort is underestimated.** Mitigation: each milestone states its claim on its
+  own, and testing against the spec delivers value without the proofs.
 - **Language churn.** Mitigation: the spec covers a stated subset; new features start as
   `UNSUPPORTED` and are reported, not hidden.
 - **Lean expertise.** Mitigation: no Mathlib; plain functional definitions in the style
-  of the prototype. AI agents write most proofs, and the kernel checks them.
+  of the prototype. AI agents write most proofs, and the kernel checks them; statements
+  are pinned so a proof cannot be quietly weakened.

@@ -7,6 +7,7 @@ go_library(
         "go_result_value.go",
         "go_type_info.go",
         "import_names.go",
+        "noretain.go",
         "package_rename.go",
         "parser.go",
         "transpiler.go",
@@ -20,6 +21,17 @@ go_library(
         "//internal/transpiler/profiler",
         "//internal/transpiler/registry",
     ],
+)
+
+# The no-retain allow-list is checked against the pinned Go compiler's escape
+# analysis (docs/OWNERSHIP_DESIGN.MD, 3.5.2).
+go_test(
+    name = "noretain_escape_test",
+    srcs = ["noretain_escape_test.go"],
+    data = ["@rules_go//go"],
+    embed = [":transpiler"],
+    env = {"GO_BIN": "$(rlocationpath @rules_go//go)"},
+    deps = ["@rules_go//go/runfiles"],
 )
 
 go_test(

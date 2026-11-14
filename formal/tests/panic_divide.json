@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,8 @@
             "end": 48
           },
           "name": "div",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -39,7 +41,8 @@
                   "off": 25,
                   "end": 28
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -60,7 +63,8 @@
                   "off": 32,
                   "end": 35
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -73,7 +77,8 @@
               "off": 37,
               "end": 40
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "binary",
@@ -115,6 +120,8 @@
             "end": 131
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

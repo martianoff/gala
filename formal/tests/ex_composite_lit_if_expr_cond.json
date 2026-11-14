@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 1197
+        "end": 1161
       },
       "path": "examples/composite_lit_if_expr_cond.gala",
       "package": "main",
@@ -17,18 +17,19 @@
           "pos": {
             "line": 3,
             "col": 1,
-            "off": 16,
-            "end": 84
+            "off": 14,
+            "end": 79
           },
           "name": "Dir",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
               "pos": {
                 "line": 4,
                 "col": 5,
-                "off": 39,
-                "end": 57
+                "off": 36,
+                "end": 54
               },
               "name": "LeftToRight",
               "default": false,
@@ -39,8 +40,8 @@
               "pos": {
                 "line": 5,
                 "col": 5,
-                "off": 63,
-                "end": 81
+                "off": 59,
+                "end": 77
               },
               "name": "RightToLeft",
               "default": false,
@@ -53,18 +54,20 @@
           "pos": {
             "line": 10,
             "col": 1,
-            "off": 240,
-            "end": 306
+            "off": 231,
+            "end": 297
           },
           "name": "flip",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 10,
                 "col": 11,
-                "off": 250,
-                "end": 255
+                "off": 241,
+                "end": 246
               },
               "name": "d",
               "type": {
@@ -72,10 +75,11 @@
                 "pos": {
                   "line": 10,
                   "col": 13,
-                  "off": 252,
-                  "end": 255
+                  "off": 243,
+                  "end": 246
                 },
-                "name": "Dir"
+                "name": "Dir",
+                "args": []
               },
               "default": null
             }
@@ -85,26 +89,27 @@
             "pos": {
               "line": 10,
               "col": 18,
-              "off": 257,
-              "end": 263
+              "off": 248,
+              "end": 254
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "if-expr",
             "pos": {
               "line": 10,
               "col": 27,
-              "off": 266,
-              "end": 306
+              "off": 257,
+              "end": 297
             },
             "cond": {
               "kind": "binary",
               "pos": {
                 "line": 10,
                 "col": 31,
-                "off": 270,
-                "end": 288
+                "off": 261,
+                "end": 279
               },
               "op": "==",
               "left": {
@@ -112,8 +117,8 @@
                 "pos": {
                   "line": 10,
                   "col": 31,
-                  "off": 270,
-                  "end": 271
+                  "off": 261,
+                  "end": 262
                 },
                 "name": "d"
               },
@@ -122,16 +127,16 @@
                 "pos": {
                   "line": 10,
                   "col": 36,
-                  "off": 275,
-                  "end": 288
+                  "off": 266,
+                  "end": 279
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 10,
                     "col": 36,
-                    "off": 275,
-                    "end": 286
+                    "off": 266,
+                    "end": 277
                   },
                   "name": "RightToLeft"
                 },
@@ -143,8 +148,8 @@
               "pos": {
                 "line": 10,
                 "col": 51,
-                "off": 290,
-                "end": 295
+                "off": 281,
+                "end": 286
               },
               "text": "\"rtl\"",
               "value": "rtl",
@@ -155,8 +160,8 @@
               "pos": {
                 "line": 10,
                 "col": 62,
-                "off": 301,
-                "end": 306
+                "off": 292,
+                "end": 297
               },
               "text": "\"ltr\"",
               "value": "ltr",
@@ -169,18 +174,20 @@
           "pos": {
             "line": 13,
             "col": 1,
-            "off": 381,
-            "end": 521
+            "off": 369,
+            "end": 506
           },
           "name": "name",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 13,
                 "col": 11,
-                "off": 391,
-                "end": 396
+                "off": 379,
+                "end": 384
               },
               "name": "d",
               "type": {
@@ -188,10 +195,11 @@
                 "pos": {
                   "line": 13,
                   "col": 13,
-                  "off": 393,
-                  "end": 396
+                  "off": 381,
+                  "end": 384
                 },
-                "name": "Dir"
+                "name": "Dir",
+                "args": []
               },
               "default": null
             }
@@ -201,26 +209,27 @@
             "pos": {
               "line": 13,
               "col": 18,
-              "off": 398,
-              "end": 404
+              "off": 386,
+              "end": 392
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "if-expr",
             "pos": {
               "line": 14,
               "col": 5,
-              "off": 412,
-              "end": 521
+              "off": 399,
+              "end": 506
             },
             "cond": {
               "kind": "binary",
               "pos": {
                 "line": 14,
                 "col": 9,
-                "off": 416,
-                "end": 434
+                "off": 403,
+                "end": 421
               },
               "op": "==",
               "left": {
@@ -228,8 +237,8 @@
                 "pos": {
                   "line": 14,
                   "col": 9,
-                  "off": 416,
-                  "end": 417
+                  "off": 403,
+                  "end": 404
                 },
                 "name": "d"
               },
@@ -238,16 +247,16 @@
                 "pos": {
                   "line": 14,
                   "col": 14,
-                  "off": 421,
-                  "end": 434
+                  "off": 408,
+                  "end": 421
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 14,
                     "col": 14,
-                    "off": 421,
-                    "end": 432
+                    "off": 408,
+                    "end": 419
                   },
                   "name": "LeftToRight"
                 },
@@ -259,8 +268,8 @@
               "pos": {
                 "line": 14,
                 "col": 29,
-                "off": 436,
-                "end": 451
+                "off": 423,
+                "end": 438
               },
               "text": "\"left-to-right\"",
               "value": "left-to-right",
@@ -271,16 +280,16 @@
               "pos": {
                 "line": 15,
                 "col": 10,
-                "off": 462,
-                "end": 521
+                "off": 448,
+                "end": 506
               },
               "cond": {
                 "kind": "binary",
                 "pos": {
                   "line": 15,
                   "col": 14,
-                  "off": 466,
-                  "end": 484
+                  "off": 452,
+                  "end": 470
                 },
                 "op": "==",
                 "left": {
@@ -288,8 +297,8 @@
                   "pos": {
                     "line": 15,
                     "col": 14,
-                    "off": 466,
-                    "end": 467
+                    "off": 452,
+                    "end": 453
                   },
                   "name": "d"
                 },
@@ -298,16 +307,16 @@
                   "pos": {
                     "line": 15,
                     "col": 19,
-                    "off": 471,
-                    "end": 484
+                    "off": 457,
+                    "end": 470
                   },
                   "callee": {
                     "kind": "name",
                     "pos": {
                       "line": 15,
                       "col": 19,
-                      "off": 471,
-                      "end": 482
+                      "off": 457,
+                      "end": 468
                     },
                     "name": "RightToLeft"
                   },
@@ -319,8 +328,8 @@
                 "pos": {
                   "line": 15,
                   "col": 34,
-                  "off": 486,
-                  "end": 501
+                  "off": 472,
+                  "end": 487
                 },
                 "text": "\"right-to-left\"",
                 "value": "right-to-left",
@@ -331,8 +340,8 @@
                 "pos": {
                   "line": 16,
                   "col": 10,
-                  "off": 512,
-                  "end": 521
+                  "off": 497,
+                  "end": 506
                 },
                 "text": "\"unknown\"",
                 "value": "unknown",
@@ -346,18 +355,20 @@
           "pos": {
             "line": 19,
             "col": 1,
-            "off": 593,
-            "end": 718
+            "off": 575,
+            "end": 697
           },
           "name": "guarded",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 19,
                 "col": 14,
-                "off": 606,
-                "end": 611
+                "off": 588,
+                "end": 593
               },
               "name": "d",
               "type": {
@@ -365,10 +376,11 @@
                 "pos": {
                   "line": 19,
                   "col": 16,
-                  "off": 608,
-                  "end": 611
+                  "off": 590,
+                  "end": 593
                 },
-                "name": "Dir"
+                "name": "Dir",
+                "args": []
               },
               "default": null
             }
@@ -378,26 +390,27 @@
             "pos": {
               "line": 19,
               "col": 21,
-              "off": 613,
-              "end": 619
+              "off": 595,
+              "end": 601
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "match",
             "pos": {
               "line": 19,
               "col": 30,
-              "off": 622,
-              "end": 718
+              "off": 604,
+              "end": 697
             },
             "subject": {
               "kind": "name",
               "pos": {
                 "line": 19,
                 "col": 30,
-                "off": 622,
-                "end": 623
+                "off": 604,
+                "end": 605
               },
               "name": "d"
             },
@@ -407,16 +420,16 @@
                 "pos": {
                   "line": 20,
                   "col": 5,
-                  "off": 637,
-                  "end": 688
+                  "off": 618,
+                  "end": 669
                 },
                 "pattern": {
                   "kind": "pat-name",
                   "pos": {
                     "line": 20,
                     "col": 10,
-                    "off": 642,
-                    "end": 647
+                    "off": 623,
+                    "end": 628
                   },
                   "name": "other"
                 },
@@ -425,8 +438,8 @@
                   "pos": {
                     "line": 20,
                     "col": 19,
-                    "off": 651,
-                    "end": 673
+                    "off": 632,
+                    "end": 654
                   },
                   "op": "==",
                   "left": {
@@ -434,8 +447,8 @@
                     "pos": {
                       "line": 20,
                       "col": 19,
-                      "off": 651,
-                      "end": 656
+                      "off": 632,
+                      "end": 637
                     },
                     "name": "other"
                   },
@@ -444,16 +457,16 @@
                     "pos": {
                       "line": 20,
                       "col": 28,
-                      "off": 660,
-                      "end": 673
+                      "off": 641,
+                      "end": 654
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 20,
                         "col": 28,
-                        "off": 660,
-                        "end": 671
+                        "off": 641,
+                        "end": 652
                       },
                       "name": "RightToLeft"
                     },
@@ -465,8 +478,8 @@
                   "pos": {
                     "line": 20,
                     "col": 45,
-                    "off": 677,
-                    "end": 688
+                    "off": 658,
+                    "end": 669
                   },
                   "text": "\"guard-rtl\"",
                   "value": "guard-rtl",
@@ -478,16 +491,16 @@
                 "pos": {
                   "line": 21,
                   "col": 5,
-                  "off": 694,
-                  "end": 715
+                  "off": 674,
+                  "end": 695
                 },
                 "pattern": {
                   "kind": "pat-wild",
                   "pos": {
                     "line": 21,
                     "col": 10,
-                    "off": 699,
-                    "end": 700
+                    "off": 679,
+                    "end": 680
                   }
                 },
                 "guard": null,
@@ -496,8 +509,8 @@
                   "pos": {
                     "line": 21,
                     "col": 15,
-                    "off": 704,
-                    "end": 715
+                    "off": 684,
+                    "end": 695
                   },
                   "text": "\"guard-ltr\"",
                   "value": "guard-ltr",
@@ -512,18 +525,20 @@
           "pos": {
             "line": 26,
             "col": 1,
-            "off": 818,
-            "end": 917
+            "off": 793,
+            "end": 891
           },
           "name": "countdown",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 26,
                 "col": 16,
-                "off": 833,
-                "end": 838
+                "off": 808,
+                "end": 813
               },
               "name": "d",
               "type": {
@@ -531,10 +546,11 @@
                 "pos": {
                   "line": 26,
                   "col": 18,
-                  "off": 835,
-                  "end": 838
+                  "off": 810,
+                  "end": 813
                 },
-                "name": "Dir"
+                "name": "Dir",
+                "args": []
               },
               "default": null
             },
@@ -543,8 +559,8 @@
               "pos": {
                 "line": 26,
                 "col": 23,
-                "off": 840,
-                "end": 845
+                "off": 815,
+                "end": 820
               },
               "name": "n",
               "type": {
@@ -552,10 +568,11 @@
                 "pos": {
                   "line": 26,
                   "col": 25,
-                  "off": 842,
-                  "end": 845
+                  "off": 817,
+                  "end": 820
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -565,26 +582,27 @@
             "pos": {
               "line": 26,
               "col": 30,
-              "off": 847,
-              "end": 850
+              "off": 822,
+              "end": 825
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "if-expr",
             "pos": {
               "line": 27,
               "col": 5,
-              "off": 858,
-              "end": 917
+              "off": 832,
+              "end": 891
             },
             "cond": {
               "kind": "binary",
               "pos": {
                 "line": 27,
                 "col": 9,
-                "off": 862,
-                "end": 889
+                "off": 836,
+                "end": 863
               },
               "op": "&&",
               "left": {
@@ -592,8 +610,8 @@
                 "pos": {
                   "line": 27,
                   "col": 9,
-                  "off": 862,
-                  "end": 880
+                  "off": 836,
+                  "end": 854
                 },
                 "op": "==",
                 "left": {
@@ -601,8 +619,8 @@
                   "pos": {
                     "line": 27,
                     "col": 9,
-                    "off": 862,
-                    "end": 863
+                    "off": 836,
+                    "end": 837
                   },
                   "name": "d"
                 },
@@ -611,16 +629,16 @@
                   "pos": {
                     "line": 27,
                     "col": 14,
-                    "off": 867,
-                    "end": 880
+                    "off": 841,
+                    "end": 854
                   },
                   "callee": {
                     "kind": "name",
                     "pos": {
                       "line": 27,
                       "col": 14,
-                      "off": 867,
-                      "end": 878
+                      "off": 841,
+                      "end": 852
                     },
                     "name": "RightToLeft"
                   },
@@ -632,8 +650,8 @@
                 "pos": {
                   "line": 27,
                   "col": 31,
-                  "off": 884,
-                  "end": 889
+                  "off": 858,
+                  "end": 863
                 },
                 "op": ">",
                 "left": {
@@ -641,8 +659,8 @@
                   "pos": {
                     "line": 27,
                     "col": 31,
-                    "off": 884,
-                    "end": 885
+                    "off": 858,
+                    "end": 859
                   },
                   "name": "n"
                 },
@@ -651,8 +669,8 @@
                   "pos": {
                     "line": 27,
                     "col": 35,
-                    "off": 888,
-                    "end": 889
+                    "off": 862,
+                    "end": 863
                   },
                   "text": "0",
                   "hint": {
@@ -666,16 +684,16 @@
               "pos": {
                 "line": 27,
                 "col": 38,
-                "off": 891,
-                "end": 910
+                "off": 865,
+                "end": 884
               },
               "callee": {
                 "kind": "name",
                 "pos": {
                   "line": 27,
                   "col": 38,
-                  "off": 891,
-                  "end": 900
+                  "off": 865,
+                  "end": 874
                 },
                 "name": "countdown"
               },
@@ -685,8 +703,8 @@
                   "pos": {
                     "line": 27,
                     "col": 48,
-                    "off": 901,
-                    "end": 902
+                    "off": 875,
+                    "end": 876
                   },
                   "name": "d"
                 },
@@ -695,8 +713,8 @@
                   "pos": {
                     "line": 27,
                     "col": 51,
-                    "off": 904,
-                    "end": 909
+                    "off": 878,
+                    "end": 883
                   },
                   "op": "-",
                   "left": {
@@ -704,8 +722,8 @@
                     "pos": {
                       "line": 27,
                       "col": 51,
-                      "off": 904,
-                      "end": 905
+                      "off": 878,
+                      "end": 879
                     },
                     "name": "n"
                   },
@@ -714,8 +732,8 @@
                     "pos": {
                       "line": 27,
                       "col": 55,
-                      "off": 908,
-                      "end": 909
+                      "off": 882,
+                      "end": 883
                     },
                     "text": "1",
                     "hint": {
@@ -730,8 +748,8 @@
               "pos": {
                 "line": 27,
                 "col": 63,
-                "off": 916,
-                "end": 917
+                "off": 890,
+                "end": 891
               },
               "name": "n"
             }
@@ -742,10 +760,12 @@
           "pos": {
             "line": 29,
             "col": 1,
-            "off": 921,
-            "end": 1197
+            "off": 893,
+            "end": 1161
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -753,8 +773,8 @@
             "pos": {
               "line": 29,
               "col": 13,
-              "off": 933,
-              "end": 1197
+              "off": 905,
+              "end": 1161
             },
             "stmts": [
               {
@@ -762,16 +782,16 @@
                 "pos": {
                   "line": 30,
                   "col": 5,
-                  "off": 940,
-                  "end": 968
+                  "off": 911,
+                  "end": 939
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 30,
                     "col": 5,
-                    "off": 940,
-                    "end": 947
+                    "off": 911,
+                    "end": 918
                   },
                   "name": "Println"
                 },
@@ -781,16 +801,16 @@
                     "pos": {
                       "line": 30,
                       "col": 13,
-                      "off": 948,
-                      "end": 967
+                      "off": 919,
+                      "end": 938
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 30,
                         "col": 13,
-                        "off": 948,
-                        "end": 952
+                        "off": 919,
+                        "end": 923
                       },
                       "name": "flip"
                     },
@@ -800,16 +820,16 @@
                         "pos": {
                           "line": 30,
                           "col": 18,
-                          "off": 953,
-                          "end": 966
+                          "off": 924,
+                          "end": 937
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 30,
                             "col": 18,
-                            "off": 953,
-                            "end": 964
+                            "off": 924,
+                            "end": 935
                           },
                           "name": "RightToLeft"
                         },
@@ -824,16 +844,16 @@
                 "pos": {
                   "line": 31,
                   "col": 5,
-                  "off": 974,
-                  "end": 1002
+                  "off": 944,
+                  "end": 972
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 31,
                     "col": 5,
-                    "off": 974,
-                    "end": 981
+                    "off": 944,
+                    "end": 951
                   },
                   "name": "Println"
                 },
@@ -843,16 +863,16 @@
                     "pos": {
                       "line": 31,
                       "col": 13,
-                      "off": 982,
-                      "end": 1001
+                      "off": 952,
+                      "end": 971
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 31,
                         "col": 13,
-                        "off": 982,
-                        "end": 986
+                        "off": 952,
+                        "end": 956
                       },
                       "name": "flip"
                     },
@@ -862,16 +882,16 @@
                         "pos": {
                           "line": 31,
                           "col": 18,
-                          "off": 987,
-                          "end": 1000
+                          "off": 957,
+                          "end": 970
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 31,
                             "col": 18,
-                            "off": 987,
-                            "end": 998
+                            "off": 957,
+                            "end": 968
                           },
                           "name": "LeftToRight"
                         },
@@ -886,16 +906,16 @@
                 "pos": {
                   "line": 32,
                   "col": 5,
-                  "off": 1008,
-                  "end": 1036
+                  "off": 977,
+                  "end": 1005
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 32,
                     "col": 5,
-                    "off": 1008,
-                    "end": 1015
+                    "off": 977,
+                    "end": 984
                   },
                   "name": "Println"
                 },
@@ -905,16 +925,16 @@
                     "pos": {
                       "line": 32,
                       "col": 13,
-                      "off": 1016,
-                      "end": 1035
+                      "off": 985,
+                      "end": 1004
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 32,
                         "col": 13,
-                        "off": 1016,
-                        "end": 1020
+                        "off": 985,
+                        "end": 989
                       },
                       "name": "name"
                     },
@@ -924,16 +944,16 @@
                         "pos": {
                           "line": 32,
                           "col": 18,
-                          "off": 1021,
-                          "end": 1034
+                          "off": 990,
+                          "end": 1003
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 32,
                             "col": 18,
-                            "off": 1021,
-                            "end": 1032
+                            "off": 990,
+                            "end": 1001
                           },
                           "name": "RightToLeft"
                         },
@@ -948,16 +968,16 @@
                 "pos": {
                   "line": 33,
                   "col": 5,
-                  "off": 1042,
-                  "end": 1073
+                  "off": 1010,
+                  "end": 1041
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 33,
                     "col": 5,
-                    "off": 1042,
-                    "end": 1049
+                    "off": 1010,
+                    "end": 1017
                   },
                   "name": "Println"
                 },
@@ -967,16 +987,16 @@
                     "pos": {
                       "line": 33,
                       "col": 13,
-                      "off": 1050,
-                      "end": 1072
+                      "off": 1018,
+                      "end": 1040
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 33,
                         "col": 13,
-                        "off": 1050,
-                        "end": 1057
+                        "off": 1018,
+                        "end": 1025
                       },
                       "name": "guarded"
                     },
@@ -986,16 +1006,16 @@
                         "pos": {
                           "line": 33,
                           "col": 21,
-                          "off": 1058,
-                          "end": 1071
+                          "off": 1026,
+                          "end": 1039
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 33,
                             "col": 21,
-                            "off": 1058,
-                            "end": 1069
+                            "off": 1026,
+                            "end": 1037
                           },
                           "name": "RightToLeft"
                         },
@@ -1010,16 +1030,16 @@
                 "pos": {
                   "line": 34,
                   "col": 5,
-                  "off": 1079,
-                  "end": 1110
+                  "off": 1046,
+                  "end": 1077
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 34,
                     "col": 5,
-                    "off": 1079,
-                    "end": 1086
+                    "off": 1046,
+                    "end": 1053
                   },
                   "name": "Println"
                 },
@@ -1029,16 +1049,16 @@
                     "pos": {
                       "line": 34,
                       "col": 13,
-                      "off": 1087,
-                      "end": 1109
+                      "off": 1054,
+                      "end": 1076
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 34,
                         "col": 13,
-                        "off": 1087,
-                        "end": 1094
+                        "off": 1054,
+                        "end": 1061
                       },
                       "name": "guarded"
                     },
@@ -1048,16 +1068,16 @@
                         "pos": {
                           "line": 34,
                           "col": 21,
-                          "off": 1095,
-                          "end": 1108
+                          "off": 1062,
+                          "end": 1075
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 34,
                             "col": 21,
-                            "off": 1095,
-                            "end": 1106
+                            "off": 1062,
+                            "end": 1073
                           },
                           "name": "LeftToRight"
                         },
@@ -1072,16 +1092,16 @@
                 "pos": {
                   "line": 35,
                   "col": 5,
-                  "off": 1116,
-                  "end": 1152
+                  "off": 1082,
+                  "end": 1118
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 35,
                     "col": 5,
-                    "off": 1116,
-                    "end": 1123
+                    "off": 1082,
+                    "end": 1089
                   },
                   "name": "Println"
                 },
@@ -1091,16 +1111,16 @@
                     "pos": {
                       "line": 35,
                       "col": 13,
-                      "off": 1124,
-                      "end": 1151
+                      "off": 1090,
+                      "end": 1117
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 35,
                         "col": 13,
-                        "off": 1124,
-                        "end": 1133
+                        "off": 1090,
+                        "end": 1099
                       },
                       "name": "countdown"
                     },
@@ -1110,16 +1130,16 @@
                         "pos": {
                           "line": 35,
                           "col": 23,
-                          "off": 1134,
-                          "end": 1147
+                          "off": 1100,
+                          "end": 1113
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 35,
                             "col": 23,
-                            "off": 1134,
-                            "end": 1145
+                            "off": 1100,
+                            "end": 1111
                           },
                           "name": "RightToLeft"
                         },
@@ -1130,8 +1150,8 @@
                         "pos": {
                           "line": 35,
                           "col": 38,
-                          "off": 1149,
-                          "end": 1150
+                          "off": 1115,
+                          "end": 1116
                         },
                         "text": "3",
                         "hint": {
@@ -1147,16 +1167,16 @@
                 "pos": {
                   "line": 36,
                   "col": 5,
-                  "off": 1158,
-                  "end": 1194
+                  "off": 1123,
+                  "end": 1159
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 36,
                     "col": 5,
-                    "off": 1158,
-                    "end": 1165
+                    "off": 1123,
+                    "end": 1130
                   },
                   "name": "Println"
                 },
@@ -1166,16 +1186,16 @@
                     "pos": {
                       "line": 36,
                       "col": 13,
-                      "off": 1166,
-                      "end": 1193
+                      "off": 1131,
+                      "end": 1158
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 36,
                         "col": 13,
-                        "off": 1166,
-                        "end": 1175
+                        "off": 1131,
+                        "end": 1140
                       },
                       "name": "countdown"
                     },
@@ -1185,16 +1205,16 @@
                         "pos": {
                           "line": 36,
                           "col": 23,
-                          "off": 1176,
-                          "end": 1189
+                          "off": 1141,
+                          "end": 1154
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 36,
                             "col": 23,
-                            "off": 1176,
-                            "end": 1187
+                            "off": 1141,
+                            "end": 1152
                           },
                           "name": "LeftToRight"
                         },
@@ -1205,8 +1225,8 @@
                         "pos": {
                           "line": 36,
                           "col": 38,
-                          "off": 1191,
-                          "end": 1192
+                          "off": 1156,
+                          "end": 1157
                         },
                         "text": "3",
                         "hint": {

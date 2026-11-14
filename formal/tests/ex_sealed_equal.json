@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 1178
+        "end": 1140
       },
       "path": "examples/sealed_equal.gala",
       "package": "main",
@@ -17,18 +17,19 @@
           "pos": {
             "line": 7,
             "col": 1,
-            "off": 218,
-            "end": 296
+            "off": 212,
+            "end": 287
           },
           "name": "FocusState",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
               "pos": {
                 "line": 8,
                 "col": 5,
-                "off": 248,
-                "end": 268
+                "off": 241,
+                "end": 261
               },
               "name": "FocusComposer",
               "default": false,
@@ -39,8 +40,8 @@
               "pos": {
                 "line": 9,
                 "col": 5,
-                "off": 274,
-                "end": 293
+                "off": 266,
+                "end": 285
               },
               "name": "FocusSidebar",
               "default": false,
@@ -53,18 +54,19 @@
           "pos": {
             "line": 12,
             "col": 1,
-            "off": 300,
-            "end": 428
+            "off": 289,
+            "end": 413
           },
           "name": "Status",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
               "pos": {
                 "line": 13,
                 "col": 5,
-                "off": 326,
-                "end": 339
+                "off": 314,
+                "end": 327
               },
               "name": "StIdle",
               "default": false,
@@ -75,8 +77,8 @@
               "pos": {
                 "line": 14,
                 "col": 5,
-                "off": 345,
-                "end": 384
+                "off": 332,
+                "end": 371
               },
               "name": "StRecovering",
               "default": false,
@@ -86,8 +88,8 @@
                   "pos": {
                     "line": 14,
                     "col": 23,
-                    "off": 363,
-                    "end": 374
+                    "off": 350,
+                    "end": 361
                   },
                   "name": "Attempt",
                   "type": {
@@ -95,10 +97,11 @@
                     "pos": {
                       "line": 14,
                       "col": 31,
-                      "off": 371,
-                      "end": 374
+                      "off": 358,
+                      "end": 361
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -108,8 +111,8 @@
                   "pos": {
                     "line": 14,
                     "col": 36,
-                    "off": 376,
-                    "end": 383
+                    "off": 363,
+                    "end": 370
                   },
                   "name": "Max",
                   "type": {
@@ -117,10 +120,11 @@
                     "pos": {
                       "line": 14,
                       "col": 40,
-                      "off": 380,
-                      "end": 383
+                      "off": 367,
+                      "end": 370
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -132,8 +136,8 @@
               "pos": {
                 "line": 15,
                 "col": 5,
-                "off": 390,
-                "end": 425
+                "off": 376,
+                "end": 411
               },
               "name": "StHelpWaiting",
               "default": false,
@@ -143,8 +147,8 @@
                   "pos": {
                     "line": 15,
                     "col": 24,
-                    "off": 409,
-                    "end": 424
+                    "off": 395,
+                    "end": 410
                   },
                   "name": "Question",
                   "type": {
@@ -152,10 +156,11 @@
                     "pos": {
                       "line": 15,
                       "col": 33,
-                      "off": 418,
-                      "end": 424
+                      "off": 404,
+                      "end": 410
                     },
-                    "name": "string"
+                    "name": "string",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -169,10 +174,12 @@
           "pos": {
             "line": 18,
             "col": 1,
-            "off": 432,
-            "end": 1178
+            "off": 415,
+            "end": 1140
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -180,8 +187,8 @@
             "pos": {
               "line": 18,
               "col": 13,
-              "off": 444,
-              "end": 1178
+              "off": 427,
+              "end": 1140
             },
             "stmts": [
               {
@@ -189,8 +196,8 @@
                 "pos": {
                   "line": 20,
                   "col": 5,
-                  "off": 532,
-                  "end": 567
+                  "off": 513,
+                  "end": 548
                 },
                 "names": [
                   "f1"
@@ -201,10 +208,11 @@
                   "pos": {
                     "line": 20,
                     "col": 12,
-                    "off": 539,
-                    "end": 549
+                    "off": 520,
+                    "end": 530
                   },
-                  "name": "FocusState"
+                  "name": "FocusState",
+                  "args": []
                 },
                 "values": [
                   {
@@ -212,16 +220,16 @@
                     "pos": {
                       "line": 20,
                       "col": 25,
-                      "off": 552,
-                      "end": 567
+                      "off": 533,
+                      "end": 548
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 20,
                         "col": 25,
-                        "off": 552,
-                        "end": 565
+                        "off": 533,
+                        "end": 546
                       },
                       "name": "FocusComposer"
                     },
@@ -234,8 +242,8 @@
                 "pos": {
                   "line": 21,
                   "col": 5,
-                  "off": 573,
-                  "end": 608
+                  "off": 553,
+                  "end": 588
                 },
                 "names": [
                   "f2"
@@ -246,10 +254,11 @@
                   "pos": {
                     "line": 21,
                     "col": 12,
-                    "off": 580,
-                    "end": 590
+                    "off": 560,
+                    "end": 570
                   },
-                  "name": "FocusState"
+                  "name": "FocusState",
+                  "args": []
                 },
                 "values": [
                   {
@@ -257,16 +266,16 @@
                     "pos": {
                       "line": 21,
                       "col": 25,
-                      "off": 593,
-                      "end": 608
+                      "off": 573,
+                      "end": 588
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 21,
                         "col": 25,
-                        "off": 593,
-                        "end": 606
+                        "off": 573,
+                        "end": 586
                       },
                       "name": "FocusComposer"
                     },
@@ -279,8 +288,8 @@
                 "pos": {
                   "line": 22,
                   "col": 5,
-                  "off": 614,
-                  "end": 648
+                  "off": 593,
+                  "end": 627
                 },
                 "names": [
                   "f3"
@@ -291,10 +300,11 @@
                   "pos": {
                     "line": 22,
                     "col": 12,
-                    "off": 621,
-                    "end": 631
+                    "off": 600,
+                    "end": 610
                   },
-                  "name": "FocusState"
+                  "name": "FocusState",
+                  "args": []
                 },
                 "values": [
                   {
@@ -302,16 +312,16 @@
                     "pos": {
                       "line": 22,
                       "col": 25,
-                      "off": 634,
-                      "end": 648
+                      "off": 613,
+                      "end": 627
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 22,
                         "col": 25,
-                        "off": 634,
-                        "end": 646
+                        "off": 613,
+                        "end": 625
                       },
                       "name": "FocusSidebar"
                     },
@@ -324,16 +334,16 @@
                 "pos": {
                   "line": 23,
                   "col": 5,
-                  "off": 654,
-                  "end": 675
+                  "off": 632,
+                  "end": 653
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 23,
                     "col": 5,
-                    "off": 654,
-                    "end": 661
+                    "off": 632,
+                    "end": 639
                   },
                   "name": "Println"
                 },
@@ -343,24 +353,24 @@
                     "pos": {
                       "line": 23,
                       "col": 13,
-                      "off": 662,
-                      "end": 674
+                      "off": 640,
+                      "end": 652
                     },
                     "callee": {
                       "kind": "select",
                       "pos": {
                         "line": 23,
                         "col": 13,
-                        "off": 662,
-                        "end": 670
+                        "off": 640,
+                        "end": 648
                       },
                       "target": {
                         "kind": "name",
                         "pos": {
                           "line": 23,
                           "col": 13,
-                          "off": 662,
-                          "end": 664
+                          "off": 640,
+                          "end": 642
                         },
                         "name": "f1"
                       },
@@ -372,8 +382,8 @@
                         "pos": {
                           "line": 23,
                           "col": 22,
-                          "off": 671,
-                          "end": 673
+                          "off": 649,
+                          "end": 651
                         },
                         "name": "f2"
                       }
@@ -386,16 +396,16 @@
                 "pos": {
                   "line": 24,
                   "col": 5,
-                  "off": 681,
-                  "end": 702
+                  "off": 658,
+                  "end": 679
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 24,
                     "col": 5,
-                    "off": 681,
-                    "end": 688
+                    "off": 658,
+                    "end": 665
                   },
                   "name": "Println"
                 },
@@ -405,24 +415,24 @@
                     "pos": {
                       "line": 24,
                       "col": 13,
-                      "off": 689,
-                      "end": 701
+                      "off": 666,
+                      "end": 678
                     },
                     "callee": {
                       "kind": "select",
                       "pos": {
                         "line": 24,
                         "col": 13,
-                        "off": 689,
-                        "end": 697
+                        "off": 666,
+                        "end": 674
                       },
                       "target": {
                         "kind": "name",
                         "pos": {
                           "line": 24,
                           "col": 13,
-                          "off": 689,
-                          "end": 691
+                          "off": 666,
+                          "end": 668
                         },
                         "name": "f1"
                       },
@@ -434,8 +444,8 @@
                         "pos": {
                           "line": 24,
                           "col": 22,
-                          "off": 698,
-                          "end": 700
+                          "off": 675,
+                          "end": 677
                         },
                         "name": "f3"
                       }
@@ -448,16 +458,16 @@
                 "pos": {
                   "line": 25,
                   "col": 5,
-                  "off": 708,
-                  "end": 725
+                  "off": 684,
+                  "end": 701
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 25,
                     "col": 5,
-                    "off": 708,
-                    "end": 715
+                    "off": 684,
+                    "end": 691
                   },
                   "name": "Println"
                 },
@@ -467,8 +477,8 @@
                     "pos": {
                       "line": 25,
                       "col": 13,
-                      "off": 716,
-                      "end": 724
+                      "off": 692,
+                      "end": 700
                     },
                     "op": "==",
                     "left": {
@@ -476,8 +486,8 @@
                       "pos": {
                         "line": 25,
                         "col": 13,
-                        "off": 716,
-                        "end": 718
+                        "off": 692,
+                        "end": 694
                       },
                       "name": "f1"
                     },
@@ -486,8 +496,8 @@
                       "pos": {
                         "line": 25,
                         "col": 19,
-                        "off": 722,
-                        "end": 724
+                        "off": 698,
+                        "end": 700
                       },
                       "name": "f2"
                     }
@@ -499,16 +509,16 @@
                 "pos": {
                   "line": 26,
                   "col": 5,
-                  "off": 731,
-                  "end": 748
+                  "off": 706,
+                  "end": 723
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 26,
                     "col": 5,
-                    "off": 731,
-                    "end": 738
+                    "off": 706,
+                    "end": 713
                   },
                   "name": "Println"
                 },
@@ -518,8 +528,8 @@
                     "pos": {
                       "line": 26,
                       "col": 13,
-                      "off": 739,
-                      "end": 747
+                      "off": 714,
+                      "end": 722
                     },
                     "op": "==",
                     "left": {
@@ -527,8 +537,8 @@
                       "pos": {
                         "line": 26,
                         "col": 13,
-                        "off": 739,
-                        "end": 741
+                        "off": 714,
+                        "end": 716
                       },
                       "name": "f1"
                     },
@@ -537,8 +547,8 @@
                       "pos": {
                         "line": 26,
                         "col": 19,
-                        "off": 745,
-                        "end": 747
+                        "off": 720,
+                        "end": 722
                       },
                       "name": "f3"
                     }
@@ -550,8 +560,8 @@
                 "pos": {
                   "line": 29,
                   "col": 5,
-                  "off": 837,
-                  "end": 871
+                  "off": 809,
+                  "end": 843
                 },
                 "names": [
                   "s1"
@@ -562,10 +572,11 @@
                   "pos": {
                     "line": 29,
                     "col": 12,
-                    "off": 844,
-                    "end": 850
+                    "off": 816,
+                    "end": 822
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -573,16 +584,16 @@
                     "pos": {
                       "line": 29,
                       "col": 21,
-                      "off": 853,
-                      "end": 871
+                      "off": 825,
+                      "end": 843
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 29,
                         "col": 21,
-                        "off": 853,
-                        "end": 865
+                        "off": 825,
+                        "end": 837
                       },
                       "name": "StRecovering"
                     },
@@ -592,8 +603,8 @@
                         "pos": {
                           "line": 29,
                           "col": 34,
-                          "off": 866,
-                          "end": 867
+                          "off": 838,
+                          "end": 839
                         },
                         "text": "1",
                         "hint": {
@@ -605,8 +616,8 @@
                         "pos": {
                           "line": 29,
                           "col": 37,
-                          "off": 869,
-                          "end": 870
+                          "off": 841,
+                          "end": 842
                         },
                         "text": "2",
                         "hint": {
@@ -622,8 +633,8 @@
                 "pos": {
                   "line": 30,
                   "col": 5,
-                  "off": 877,
-                  "end": 911
+                  "off": 848,
+                  "end": 882
                 },
                 "names": [
                   "s2"
@@ -634,10 +645,11 @@
                   "pos": {
                     "line": 30,
                     "col": 12,
-                    "off": 884,
-                    "end": 890
+                    "off": 855,
+                    "end": 861
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -645,16 +657,16 @@
                     "pos": {
                       "line": 30,
                       "col": 21,
-                      "off": 893,
-                      "end": 911
+                      "off": 864,
+                      "end": 882
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 30,
                         "col": 21,
-                        "off": 893,
-                        "end": 905
+                        "off": 864,
+                        "end": 876
                       },
                       "name": "StRecovering"
                     },
@@ -664,8 +676,8 @@
                         "pos": {
                           "line": 30,
                           "col": 34,
-                          "off": 906,
-                          "end": 907
+                          "off": 877,
+                          "end": 878
                         },
                         "text": "1",
                         "hint": {
@@ -677,8 +689,8 @@
                         "pos": {
                           "line": 30,
                           "col": 37,
-                          "off": 909,
-                          "end": 910
+                          "off": 880,
+                          "end": 881
                         },
                         "text": "2",
                         "hint": {
@@ -694,8 +706,8 @@
                 "pos": {
                   "line": 31,
                   "col": 5,
-                  "off": 917,
-                  "end": 951
+                  "off": 887,
+                  "end": 921
                 },
                 "names": [
                   "s3"
@@ -706,10 +718,11 @@
                   "pos": {
                     "line": 31,
                     "col": 12,
-                    "off": 924,
-                    "end": 930
+                    "off": 894,
+                    "end": 900
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -717,16 +730,16 @@
                     "pos": {
                       "line": 31,
                       "col": 21,
-                      "off": 933,
-                      "end": 951
+                      "off": 903,
+                      "end": 921
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 31,
                         "col": 21,
-                        "off": 933,
-                        "end": 945
+                        "off": 903,
+                        "end": 915
                       },
                       "name": "StRecovering"
                     },
@@ -736,8 +749,8 @@
                         "pos": {
                           "line": 31,
                           "col": 34,
-                          "off": 946,
-                          "end": 947
+                          "off": 916,
+                          "end": 917
                         },
                         "text": "3",
                         "hint": {
@@ -749,8 +762,8 @@
                         "pos": {
                           "line": 31,
                           "col": 37,
-                          "off": 949,
-                          "end": 950
+                          "off": 919,
+                          "end": 920
                         },
                         "text": "4",
                         "hint": {
@@ -766,8 +779,8 @@
                 "pos": {
                   "line": 32,
                   "col": 5,
-                  "off": 957,
-                  "end": 981
+                  "off": 926,
+                  "end": 950
                 },
                 "names": [
                   "s4"
@@ -778,10 +791,11 @@
                   "pos": {
                     "line": 32,
                     "col": 12,
-                    "off": 964,
-                    "end": 970
+                    "off": 933,
+                    "end": 939
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -789,16 +803,16 @@
                     "pos": {
                       "line": 32,
                       "col": 21,
-                      "off": 973,
-                      "end": 981
+                      "off": 942,
+                      "end": 950
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 32,
                         "col": 21,
-                        "off": 973,
-                        "end": 979
+                        "off": 942,
+                        "end": 948
                       },
                       "name": "StIdle"
                     },
@@ -811,8 +825,8 @@
                 "pos": {
                   "line": 33,
                   "col": 5,
-                  "off": 987,
-                  "end": 1024
+                  "off": 955,
+                  "end": 992
                 },
                 "names": [
                   "s5"
@@ -823,10 +837,11 @@
                   "pos": {
                     "line": 33,
                     "col": 12,
-                    "off": 994,
-                    "end": 1000
+                    "off": 962,
+                    "end": 968
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -834,16 +849,16 @@
                     "pos": {
                       "line": 33,
                       "col": 21,
-                      "off": 1003,
-                      "end": 1024
+                      "off": 971,
+                      "end": 992
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 33,
                         "col": 21,
-                        "off": 1003,
-                        "end": 1016
+                        "off": 971,
+                        "end": 984
                       },
                       "name": "StHelpWaiting"
                     },
@@ -853,8 +868,8 @@
                         "pos": {
                           "line": 33,
                           "col": 35,
-                          "off": 1017,
-                          "end": 1023
+                          "off": 985,
+                          "end": 991
                         },
                         "text": "\"why?\"",
                         "value": "why?",
@@ -869,8 +884,8 @@
                 "pos": {
                   "line": 34,
                   "col": 5,
-                  "off": 1030,
-                  "end": 1067
+                  "off": 997,
+                  "end": 1034
                 },
                 "names": [
                   "s6"
@@ -881,10 +896,11 @@
                   "pos": {
                     "line": 34,
                     "col": 12,
-                    "off": 1037,
-                    "end": 1043
+                    "off": 1004,
+                    "end": 1010
                   },
-                  "name": "Status"
+                  "name": "Status",
+                  "args": []
                 },
                 "values": [
                   {
@@ -892,16 +908,16 @@
                     "pos": {
                       "line": 34,
                       "col": 21,
-                      "off": 1046,
-                      "end": 1067
+                      "off": 1013,
+                      "end": 1034
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 34,
                         "col": 21,
-                        "off": 1046,
-                        "end": 1059
+                        "off": 1013,
+                        "end": 1026
                       },
                       "name": "StHelpWaiting"
                     },
@@ -911,8 +927,8 @@
                         "pos": {
                           "line": 34,
                           "col": 35,
-                          "off": 1060,
-                          "end": 1066
+                          "off": 1027,
+                          "end": 1033
                         },
                         "text": "\"why?\"",
                         "value": "why?",
@@ -927,16 +943,16 @@
                 "pos": {
                   "line": 35,
                   "col": 5,
-                  "off": 1073,
-                  "end": 1094
+                  "off": 1039,
+                  "end": 1060
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 35,
                     "col": 5,
-                    "off": 1073,
-                    "end": 1080
+                    "off": 1039,
+                    "end": 1046
                   },
                   "name": "Println"
                 },
@@ -946,24 +962,24 @@
                     "pos": {
                       "line": 35,
                       "col": 13,
-                      "off": 1081,
-                      "end": 1093
+                      "off": 1047,
+                      "end": 1059
                     },
                     "callee": {
                       "kind": "select",
                       "pos": {
                         "line": 35,
                         "col": 13,
-                        "off": 1081,
-                        "end": 1089
+                        "off": 1047,
+                        "end": 1055
                       },
                       "target": {
                         "kind": "name",
                         "pos": {
                           "line": 35,
                           "col": 13,
-                          "off": 1081,
-                          "end": 1083
+                          "off": 1047,
+                          "end": 1049
                         },
                         "name": "s1"
                       },
@@ -975,8 +991,8 @@
                         "pos": {
                           "line": 35,
                           "col": 22,
-                          "off": 1090,
-                          "end": 1092
+                          "off": 1056,
+                          "end": 1058
                         },
                         "name": "s2"
                       }
@@ -989,16 +1005,16 @@
                 "pos": {
                   "line": 36,
                   "col": 5,
-                  "off": 1100,
-                  "end": 1121
+                  "off": 1065,
+                  "end": 1086
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 36,
                     "col": 5,
-                    "off": 1100,
-                    "end": 1107
+                    "off": 1065,
+                    "end": 1072
                   },
                   "name": "Println"
                 },
@@ -1008,24 +1024,24 @@
                     "pos": {
                       "line": 36,
                       "col": 13,
-                      "off": 1108,
-                      "end": 1120
+                      "off": 1073,
+                      "end": 1085
                     },
                     "callee": {
                       "kind": "select",
                       "pos": {
                         "line": 36,
                         "col": 13,
-                        "off": 1108,
-                        "end": 1116
+                        "off": 1073,
+                        "end": 1081
                       },
                       "target": {
                         "kind": "name",
                         "pos": {
                           "line": 36,
                           "col": 13,
-                          "off": 1108,
-                          "end": 1110
+                          "off": 1073,
+                          "end": 1075
                         },
                         "name": "s1"
                       },
@@ -1037,8 +1053,8 @@
                         "pos": {
                           "line": 36,
                           "col": 22,
-                          "off": 1117,
-                          "end": 1119
+                          "off": 1082,
+                          "end": 1084
                         },
                         "name": "s3"
                       }
@@ -1051,16 +1067,16 @@
                 "pos": {
                   "line": 37,
                   "col": 5,
-                  "off": 1127,
-                  "end": 1148
+                  "off": 1091,
+                  "end": 1112
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 37,
                     "col": 5,
-                    "off": 1127,
-                    "end": 1134
+                    "off": 1091,
+                    "end": 1098
                   },
                   "name": "Println"
                 },
@@ -1070,24 +1086,24 @@
                     "pos": {
                       "line": 37,
                       "col": 13,
-                      "off": 1135,
-                      "end": 1147
+                      "off": 1099,
+                      "end": 1111
                     },
                     "callee": {
                       "kind": "select",
                       "pos": {
                         "line": 37,
                         "col": 13,
-                        "off": 1135,
-                        "end": 1143
+                        "off": 1099,
+                        "end": 1107
                       },
                       "target": {
                         "kind": "name",
                         "pos": {
                           "line": 37,
                           "col": 13,
-                          "off": 1135,
-                          "end": 1137
+                          "off": 1099,
+                          "end": 1101
                         },
                         "name": "s1"
                       },
@@ -1099,8 +1115,8 @@
                         "pos": {
                           "line": 37,
                           "col": 22,
-                          "off": 1144,
-                          "end": 1146
+                          "off": 1108,
+                          "end": 1110
                         },
                         "name": "s4"
                       }
@@ -1113,16 +1129,16 @@
                 "pos": {
                   "line": 38,
                   "col": 5,
-                  "off": 1154,
-                  "end": 1175
+                  "off": 1117,
+                  "end": 1138
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 38,
                     "col": 5,
-                    "off": 1154,
-                    "end": 1161
+                    "off": 1117,
+                    "end": 1124
                   },
                   "name": "Println"
                 },
@@ -1132,24 +1148,24 @@
                     "pos": {
                       "line": 38,
                       "col": 13,
-                      "off": 1162,
-                      "end": 1174
+                      "off": 1125,
+                      "end": 1137
                     },
                     "callee": {
                       "kind": "select",
                       "pos": {
                         "line": 38,
                         "col": 13,
-                        "off": 1162,
-                        "end": 1170
+                        "off": 1125,
+                        "end": 1133
                       },
                       "target": {
                         "kind": "name",
                         "pos": {
                           "line": 38,
                           "col": 13,
-                          "off": 1162,
-                          "end": 1164
+                          "off": 1125,
+                          "end": 1127
                         },
                         "name": "s5"
                       },
@@ -1161,8 +1177,8 @@
                         "pos": {
                           "line": 38,
                           "col": 22,
-                          "off": 1171,
-                          "end": 1173
+                          "off": 1134,
+                          "end": 1136
                         },
                         "name": "s6"
                       }

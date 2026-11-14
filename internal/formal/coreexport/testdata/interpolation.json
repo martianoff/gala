@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 29
           },
           "name": "P",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -40,7 +41,8 @@
                   "off": 25,
                   "end": 28
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -56,6 +58,8 @@
             "end": 339
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

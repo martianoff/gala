@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -50,6 +50,8 @@
             "end": 182
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -110,7 +112,8 @@
                     "off": 66,
                     "end": 69
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 },
                 "values": [
                   {
@@ -194,7 +197,8 @@
                     "off": 102,
                     "end": 105
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 },
                 "values": []
               },

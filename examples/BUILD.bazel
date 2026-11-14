@@ -1320,6 +1320,31 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A pattern binding declared ahead of the code that assigns it, extracted by an
+# interface value whose Unapply result names a package the matching file
+# reaches only through another one.
+gala_library(
+    name = "match_transitive_binding_interface_shape",
+    srcs = ["match_transitive_binding_interface/shape/shape.gala"],
+    importpath = "martianoff/gala/examples/match_transitive_binding_interface/shape",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "match_transitive_binding_interface_geo",
+    srcs = ["match_transitive_binding_interface/geo/geo.gala"],
+    importpath = "martianoff/gala/examples/match_transitive_binding_interface/geo",
+    visibility = ["//visibility:public"],
+    deps = [":match_transitive_binding_interface_shape"],
+)
+
+gala_exec_test(
+    name = "match_transitive_binding_interface",
+    src = "match_transitive_binding_interface/main.gala",
+    expected = "match_transitive_binding_interface/main.out",
+    gala_deps = [":match_transitive_binding_interface_geo"],
+)
+
 gala_library(
     name = "transitive_package_types_shape",
     srcs = ["transitive_package_types/shape/shape.gala"],
@@ -2256,6 +2281,14 @@ gala_exec_test(
         "//go_interop",
         "//stream",
     ],
+)
+
+# A field whose pointer-receiver String changes it keeps the change when held
+# by pointer, or when a var's field is printed on its own
+gala_exec_test(
+    name = "pointer_string_mutating_field",
+    src = "pointer_string_mutating_field.gala",
+    expected = "pointer_string_mutating_field.out",
 )
 
 # An element with a pointer-receiver String prints with it in collections,
@@ -5376,4 +5409,45 @@ gala_exec_test(
         "//collection_immutable",
         "//collection_mutable",
     ],
+)
+
+# `inout` parameters and receivers lend the caller's place for the call:
+# functions, methods, lending on with `&`, value replacement, generics,
+# disjoint fields, a Ptr lending its pointee, inout lambdas, loops, and a
+# replacement typed by its place (`o = None()`, a sealed case, `n++`).
+gala_exec_test(
+    name = "inout_params",
+    src = "inout_params.gala",
+    expected = "inout_params.out",
+)
+
+# Exported inout functions and methods: Go calls a copy-in/copy-out wrapper
+# (aliased arguments, a recovered panic skipping the copy back), and GALA in
+# another package calls the GALA_ body directly.
+gala_library(
+    name = "inout_go_wrapper",
+    srcs = ["inout_go_wrapper/ledger.gala"],
+    go_srcs = ["inout_go_wrapper/ledger.go"],
+    importpath = "martianoff/gala/examples/inout_go_wrapper",
+    visibility = ["//visibility:public"],
+    deps = ["//go_builtins"],
+)
+
+gala_exec_test(
+    name = "inout_go_wrapper_test",
+    src = "inout_go_wrapper_test.gala",
+    expected = "inout_go_wrapper_test.out",
+    deps = [
+        ":inout_go_wrapper",
+        "//go_interop",
+    ],
+)
+
+# An interface may declare an inout method: GALA types implement it with an
+# inout receiver, and a Go type only through the no-retain allow-list.
+gala_exec_test(
+    name = "inout_interfaces",
+    src = "inout_interfaces.gala",
+    expected = "inout_interfaces.out",
+    deps = ["//collection_immutable"],
 )

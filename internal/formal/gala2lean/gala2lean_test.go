@@ -101,16 +101,27 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		name, src, want string
 	}{
 		{"import", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(1) }\n", "import"},
-		{"lambda", "package main\nfunc main() { val f = (x int) => x\n Println(1) }\n", "lambda"},
-		{"method call", "package main\nstruct P(X int)\nfunc main() { Println(P(1).Copy()) }\n", "method-call"},
+		{"lambda without parameter types", "package main\nfunc main() { val f = (x) => x\n Println(1) }\n", "untyped-lambda-param"},
+		{"method call", "package main\nfunc main() { Println(\"abc\".Size()) }\n", "method-call"},
+		{"pointer method on a package-level var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nvar g = C(0)\nfunc main() { g.Inc()\n Println(g.N) }\n", "ptr-escape"},
+		{"pointer method on a captured var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nfunc main() { var c = C(0)\n val f = () => c.N\n c.Inc()\n Println(f()) }\n", "ptr-escape"},
+		{"receiver passed on", "package main\nstruct C(var N int)\nfunc show(c C) int = c.N\nfunc (c *C) Show() int = show(c)\nfunc main() { var c = C(0)\n Println(c.Show()) }\n", "ptr-escape"},
+		{"pointer method on a val", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nfunc main() { val c = C(0)\n c.Inc()\n Println(c.N) }\n", "pointer-method-on-value"},
+		{"inout receiver replaced whole", "package main\nstruct C(var N int)\nfunc (inout c C) Reset() { c = C(0) }\nfunc main() { var c = C(1)\n c.Reset()\n Println(c.N) }\n", "ptr-escape"},
+		{"inout method on a val", "package main\nstruct C(var N int)\nfunc (inout c C) Inc() { c.N = c.N + 1 }\nfunc main() { val c = C(0)\n c.Inc()\n Println(c.N) }\n", "pointer-method-on-value"},
+		{"printing a type with its own String", "package main\nstruct C(N int)\nfunc (c C) String() string = \"c\"\nfunc main() { Println(C(1)) }\n", "custom-string"},
 		{"go builtin", "package main\nfunc main() { println(1) }\n", "call-of-println"},
 		{"return in an expression", "package main\nfunc f(n int) int { val x = if (n > 0) { return 1 } else 2\n x }\nfunc main() { Println(f(1)) }\n", "return-inside-expression"},
 		{"no main", "package main\nfunc f() int = 1\n", "no-main"},
-		{"default argument", "package main\nfunc f(n int = 1) int = n\nfunc main() { Println(f()) }\n", "param-default"},
+		{"nil function", "package main\nfunc main() { var f func() int\n Println(1) }\n", "nil"},
+		{"printing a function", "package main\nfunc main() { val f = (x int) => x\n Println(f) }\n", "print-pointer"},
+		{"a type holding a function of itself", "package main\nstruct Node(F func(Node) int)\nfunc main() { Println(1) }\n", "recursive-func-field"},
+		{"a default that needs itself", "package main\nfunc f(n int = f()) int = n\nfunc main() { Println(f()) }\n", "recursive-default"},
+		{"captured var of a function type", "package main\nfunc main() { var f = (x int) => x\n val g = () => f(1)\n Println(g()) }\n", "func-in-state"},
 		{"untyped global", "package main\nval g = h()\nfunc h() (int, int) = (1, 2)\nfunc main() { Println(g) }\n", "go-results"},
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},
-		{"stable identifier compared in a program with methods", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
-			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "method"},
+		{"stable identifier of a type with its own Equal", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
+			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "custom-equal"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -123,6 +134,43 @@ func TestUnsupportedIsNamed(t *testing.T) {
 			require.Contains(t, err.Error(), c.want)
 		})
 	}
+}
+
+// TestCountTranslated checks what -stats counts as translated: not a
+// function or method gala2lean does not translate, whether the report names
+// it (an unsupported construct in its body) or it is outside the subset as a
+// whole (a generic function, a method with a Ptr[T] or generic receiver).
+func TestCountTranslated(t *testing.T) {
+	src := `package main
+
+struct Counter(var N int)
+
+struct Box[T any](Value T)
+
+func (c Counter) Get() int = c.N
+
+func (c Ptr[Counter]) Inc() { c.N = c.N + 1 }
+
+func (b Box[T]) Get() T = b.Value
+
+func id[T any](x T) T = x
+
+func bad() int = println(1)
+
+func takesOption(o Option[int]) int = 1
+
+func main() {
+    Println(Counter(1).Get())
+}
+`
+	p := export(t, "main.gala", src)
+	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
+	s := gala2lean.CountTranslated(p, err)
+	// Counted: Get, Inc, Box.Get, id, bad, takesOption, main. Translated:
+	// Counter.Get and main. bad is reported for its body, takesOption for
+	// a type in its signature (its body would translate); Inc and Box.Get
+	// have receivers outside the subset; id is generic.
+	require.Equal(t, gala2lean.Stats{Funcs: 7, Methods: 3, Translated: 2}, s, "%v", err)
 }
 
 // TestRecursion checks how functions are defined: one that calls itself, or
@@ -153,4 +201,15 @@ func main() {
 	require.Contains(t, res.Lean, "mutual\n\ndef even")
 	require.Equal(t, 3, strings.Count(res.Lean, "\npartial_fixpoint\n"))
 	require.NotContains(t, res.Lean, "partial def")
+}
+
+// TestInoutReceiver checks that a method with an inout receiver is
+// translated by state passing, as a *T receiver's is: it returns its result
+// with the updated receiver, and the caller writes that back.
+func TestInoutReceiver(t *testing.T) {
+	src := "package main\n\nstruct C(var N int)\nfunc (inout c C) Add(by int) int {\n    c.N = c.N + by\n    c.N\n}\nfunc main() {\n    var c = C(1)\n    val r = c.Add(2)\n    Println(r, c.N)\n}\n"
+	res, err := gala2lean.Translate(export(t, "main.gala", src), gala2lean.Options{Namespace: "P"})
+	require.NoError(t, err)
+	require.Contains(t, res.Lean, "def C.Add (_gala_self : C) («by» : Int64) : _gala_M (Int64 × C)")
+	require.Contains(t, res.Lean, "← (C.Add c (2 : Int64))")
 }

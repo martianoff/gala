@@ -75,7 +75,9 @@ structType: 'struct' '{' structField* '}';
 structField: (VAL | VAR)? identifier type;
 
 interfaceType: 'interface' '{' methodSpec* '}';
-methodSpec: identifier (typeParameters)? signature;
+// An `inout` method requirement is met by a method with an `inout` receiver
+// (docs/OWNERSHIP_DESIGN.MD, 3.5.3).
+methodSpec: INOUT? identifier (typeParameters)? signature;
 
 valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;
 varDeclaration: 'var' (tuplePattern | identifierList) (type)? ('=' expressionList)?;
@@ -98,7 +100,9 @@ tuplePattern: '(' identifierList ')';
 
 functionDeclaration: 'func' (receiver)? identifier (typeParameters)? signature (block | '=' expression);
 
-receiver: '(' (VAL | VAR)? identifier type ')';
+// An `inout` receiver or parameter lends the caller's place for the call
+// (docs/OWNERSHIP_DESIGN.MD, 3.2). It lowers to a Go `*T`.
+receiver: '(' (VAL | VAR | INOUT)? identifier type ')';
 
 // A signature has one result type, or a Go result list of two or more types,
 // `(int, error)`, for a function Go calls with several results (an io.Writer's
@@ -114,7 +118,7 @@ parameterList: parameter (',' parameter)* ','?;
 // - Named without type: "x" (type inferred)
 // - Type only (for function types): "int", "Option[T]", "...int"
 // - With default value: "x int = 42", "host string = \"localhost\""
-parameter: (VAL | VAR)? (identifier ELLIPSIS? type? paramDefault? | ELLIPSIS? type);
+parameter: (VAL | VAR | INOUT)? (identifier ELLIPSIS? type? paramDefault? | ELLIPSIS? type);
 paramDefault: '=' expression;
 
 ELLIPSIS: '...';
@@ -288,6 +292,7 @@ literal
 // Lexer
 VAL: 'val';
 VAR: 'var';
+INOUT: 'inout';
 BIND: 'bind';
 ALSO: 'also';
 USE: 'use';

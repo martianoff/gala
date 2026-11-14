@@ -51,6 +51,10 @@ func TestCompareLean(t *testing.T) {
 			want: Unsupported, reason: "partial_fixpoint cannot define walk", construct: "monotonicity:walk",
 		},
 		{
+			name: "a type Lean cannot infer", out: gala2lean.RunResult{Kind: gala2lean.Untyped, Decl: "main", Message: "typeclass instance problem is stuck"},
+			want: Unsupported, reason: "Lean cannot infer a type in main", construct: "lean-type-inference:main",
+		},
+		{
 			name: "rejected by Lean", out: gala2lean.RunResult{Kind: gala2lean.LeanRejected, Decl: "f", Message: "type mismatch"},
 			want: Disagree, reason: "Lean rejected the translation (in f): type mismatch",
 		},

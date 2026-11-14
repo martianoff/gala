@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,8 @@
             "end": 155
           },
           "name": "sign",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -39,7 +41,8 @@
                   "off": 26,
                   "end": 29
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -52,7 +55,8 @@
               "off": 31,
               "end": 37
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -245,6 +249,8 @@
             "end": 246
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 122
           },
           "name": "Expr",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -50,7 +51,8 @@
                       "off": 52,
                       "end": 55
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -85,7 +87,8 @@
                       "off": 72,
                       "end": 76
                     },
-                    "name": "Expr"
+                    "name": "Expr",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -107,7 +110,8 @@
                       "off": 80,
                       "end": 84
                     },
-                    "name": "Expr"
+                    "name": "Expr",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -142,7 +146,8 @@
                       "off": 101,
                       "end": 105
                     },
-                    "name": "Expr"
+                    "name": "Expr",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -172,6 +177,8 @@
             "end": 294
           },
           "name": "eval",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -190,7 +197,8 @@
                   "off": 136,
                   "end": 140
                 },
-                "name": "Expr"
+                "name": "Expr",
+                "args": []
               },
               "default": null
             }
@@ -203,7 +211,8 @@
               "off": 142,
               "end": 145
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "match",
@@ -636,6 +645,8 @@
             "end": 514
           },
           "name": "classify",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -654,7 +665,8 @@
                   "off": 328,
                   "end": 331
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -667,7 +679,8 @@
               "off": 333,
               "end": 339
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "match",
@@ -988,6 +1001,8 @@
             "end": 1343
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

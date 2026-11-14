@@ -557,7 +557,7 @@ func resolveCallTarget(call *callContext, enclosingFunc string, richAST *transpi
 
 func functionSignature(name string, fm *transpiler.FunctionMetadata) *lsp.SignatureInformation {
 	summary, paramDocs := splitDoc(fm.Doc, fm.ParamNames)
-	params, labels := buildParamList(fm.ParamNames, fm.ParamTypes, paramDocs)
+	params, labels := buildParamList(fm.ParamNames, fm.ParamTypes, fm.InoutParams, paramDocs)
 	var label strings.Builder
 	label.WriteString("func " + name)
 	if len(fm.TypeParams) > 0 {
@@ -574,7 +574,7 @@ func functionSignature(name string, fm *transpiler.FunctionMetadata) *lsp.Signat
 
 func methodSignature(name string, m *transpiler.MethodMetadata) *lsp.SignatureInformation {
 	summary, paramDocs := splitDoc(m.Doc, m.ParamNames)
-	params, labels := buildParamList(m.ParamNames, m.ParamTypes, paramDocs)
+	params, labels := buildParamList(m.ParamNames, m.ParamTypes, m.InoutParams, paramDocs)
 	var label strings.Builder
 	label.WriteString(name)
 	if len(m.TypeParams) > 0 {
@@ -597,7 +597,7 @@ func methodSignature(name string, m *transpiler.MethodMetadata) *lsp.SignatureIn
 // "Note:"-style line out of the summary whenever its label happened to match a
 // field name.
 func constructorSignature(name string, fields []string, types []transpiler.Type, doc string, fieldDocs map[string]string) *lsp.SignatureInformation {
-	params, labels := buildParamList(fields, types, fieldDocs)
+	params, labels := buildParamList(fields, types, nil, fieldDocs)
 	return &lsp.SignatureInformation{
 		Label:         name + "(" + strings.Join(labels, ", ") + ")",
 		Documentation: markdown(doc),
@@ -610,13 +610,13 @@ func constructorSignature(name string, fields []string, types []transpiler.Type,
 // slices are returned so each Parameter's Label matches the corresponding
 // substring inside the signature label — clients use that substring to
 // visually highlight the active parameter.
-func buildParamList(names []string, types []transpiler.Type, docs map[string]string) ([]lsp.ParameterInformation, []string) {
+func buildParamList(names []string, types []transpiler.Type, inout []bool, docs map[string]string) ([]lsp.ParameterInformation, []string) {
 	params := make([]lsp.ParameterInformation, 0, len(names))
 	labels := make([]string, 0, len(names))
 	for i, n := range names {
 		var labelPart string
 		if i < len(types) && types[i] != nil && !types[i].IsNil() {
-			labelPart = n + " " + types[i].String()
+			labelPart = paramLabel(n, types[i], inout, i)
 		} else {
 			labelPart = n
 		}

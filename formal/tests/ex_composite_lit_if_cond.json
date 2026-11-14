@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 547
+        "end": 523
       },
       "path": "examples/composite_lit_if_cond.gala",
       "package": "main",
@@ -17,18 +17,19 @@
           "pos": {
             "line": 3,
             "col": 1,
-            "off": 16,
-            "end": 96
+            "off": 14,
+            "end": 90
           },
           "name": "HttpMethod",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
               "pos": {
                 "line": 4,
                 "col": 5,
-                "off": 46,
-                "end": 56
+                "off": 43,
+                "end": 53
               },
               "name": "GET",
               "default": false,
@@ -39,8 +40,8 @@
               "pos": {
                 "line": 5,
                 "col": 5,
-                "off": 62,
-                "end": 73
+                "off": 58,
+                "end": 69
               },
               "name": "POST",
               "default": false,
@@ -51,8 +52,8 @@
               "pos": {
                 "line": 6,
                 "col": 5,
-                "off": 79,
-                "end": 93
+                "off": 74,
+                "end": 88
               },
               "name": "OPTIONS",
               "default": false,
@@ -65,18 +66,20 @@
           "pos": {
             "line": 9,
             "col": 1,
-            "off": 100,
-            "end": 423
+            "off": 92,
+            "end": 405
           },
           "name": "checkMethod",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
               "pos": {
                 "line": 9,
                 "col": 18,
-                "off": 117,
-                "end": 129
+                "off": 109,
+                "end": 121
               },
               "name": "m",
               "type": {
@@ -84,10 +87,11 @@
                 "pos": {
                   "line": 9,
                   "col": 20,
-                  "off": 119,
-                  "end": 129
+                  "off": 111,
+                  "end": 121
                 },
-                "name": "HttpMethod"
+                "name": "HttpMethod",
+                "args": []
               },
               "default": null
             }
@@ -97,18 +101,19 @@
             "pos": {
               "line": 9,
               "col": 32,
-              "off": 131,
-              "end": 137
+              "off": 123,
+              "end": 129
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
             "pos": {
               "line": 9,
               "col": 39,
-              "off": 138,
-              "end": 423
+              "off": 130,
+              "end": 405
             },
             "stmts": [
               {
@@ -116,16 +121,16 @@
                 "pos": {
                   "line": 12,
                   "col": 5,
-                  "off": 280,
-                  "end": 420
+                  "off": 269,
+                  "end": 403
                 },
                 "cond": {
                   "kind": "binary",
                   "pos": {
                     "line": 12,
                     "col": 8,
-                    "off": 283,
-                    "end": 297
+                    "off": 272,
+                    "end": 286
                   },
                   "op": "==",
                   "left": {
@@ -133,8 +138,8 @@
                     "pos": {
                       "line": 12,
                       "col": 8,
-                      "off": 283,
-                      "end": 284
+                      "off": 272,
+                      "end": 273
                     },
                     "name": "m"
                   },
@@ -143,16 +148,16 @@
                     "pos": {
                       "line": 12,
                       "col": 13,
-                      "off": 288,
-                      "end": 297
+                      "off": 277,
+                      "end": 286
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 12,
                         "col": 13,
-                        "off": 288,
-                        "end": 295
+                        "off": 277,
+                        "end": 284
                       },
                       "name": "OPTIONS"
                     },
@@ -164,8 +169,8 @@
                   "pos": {
                     "line": 12,
                     "col": 23,
-                    "off": 298,
-                    "end": 332
+                    "off": 287,
+                    "end": 319
                   },
                   "stmts": [
                     {
@@ -173,16 +178,16 @@
                       "pos": {
                         "line": 13,
                         "col": 9,
-                        "off": 309,
-                        "end": 325
+                        "off": 297,
+                        "end": 313
                       },
                       "value": {
                         "kind": "string",
                         "pos": {
                           "line": 13,
                           "col": 16,
-                          "off": 316,
-                          "end": 325
+                          "off": 304,
+                          "end": 313
                         },
                         "text": "\"options\"",
                         "value": "options",
@@ -196,16 +201,16 @@
                   "pos": {
                     "line": 14,
                     "col": 12,
-                    "off": 338,
-                    "end": 420
+                    "off": 325,
+                    "end": 403
                   },
                   "cond": {
                     "kind": "binary",
                     "pos": {
                       "line": 14,
                       "col": 15,
-                      "off": 341,
-                      "end": 351
+                      "off": 328,
+                      "end": 338
                     },
                     "op": "==",
                     "left": {
@@ -213,8 +218,8 @@
                       "pos": {
                         "line": 14,
                         "col": 15,
-                        "off": 341,
-                        "end": 342
+                        "off": 328,
+                        "end": 329
                       },
                       "name": "m"
                     },
@@ -223,16 +228,16 @@
                       "pos": {
                         "line": 14,
                         "col": 20,
-                        "off": 346,
-                        "end": 351
+                        "off": 333,
+                        "end": 338
                       },
                       "callee": {
                         "kind": "name",
                         "pos": {
                           "line": 14,
                           "col": 20,
-                          "off": 346,
-                          "end": 349
+                          "off": 333,
+                          "end": 336
                         },
                         "name": "GET"
                       },
@@ -244,8 +249,8 @@
                     "pos": {
                       "line": 14,
                       "col": 26,
-                      "off": 352,
-                      "end": 382
+                      "off": 339,
+                      "end": 367
                     },
                     "stmts": [
                       {
@@ -253,16 +258,16 @@
                         "pos": {
                           "line": 15,
                           "col": 9,
-                          "off": 363,
-                          "end": 375
+                          "off": 349,
+                          "end": 361
                         },
                         "value": {
                           "kind": "string",
                           "pos": {
                             "line": 15,
                             "col": 16,
-                            "off": 370,
-                            "end": 375
+                            "off": 356,
+                            "end": 361
                           },
                           "text": "\"get\"",
                           "value": "get",
@@ -276,8 +281,8 @@
                     "pos": {
                       "line": 16,
                       "col": 12,
-                      "off": 388,
-                      "end": 420
+                      "off": 373,
+                      "end": 403
                     },
                     "stmts": [
                       {
@@ -285,16 +290,16 @@
                         "pos": {
                           "line": 17,
                           "col": 9,
-                          "off": 399,
-                          "end": 413
+                          "off": 383,
+                          "end": 397
                         },
                         "value": {
                           "kind": "string",
                           "pos": {
                             "line": 17,
                             "col": 16,
-                            "off": 406,
-                            "end": 413
+                            "off": 390,
+                            "end": 397
                           },
                           "text": "\"other\"",
                           "value": "other",
@@ -313,10 +318,12 @@
           "pos": {
             "line": 21,
             "col": 1,
-            "off": 427,
-            "end": 547
+            "off": 407,
+            "end": 523
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -324,8 +331,8 @@
             "pos": {
               "line": 21,
               "col": 13,
-              "off": 439,
-              "end": 547
+              "off": 419,
+              "end": 523
             },
             "stmts": [
               {
@@ -333,16 +340,16 @@
                 "pos": {
                   "line": 22,
                   "col": 5,
-                  "off": 446,
-                  "end": 477
+                  "off": 425,
+                  "end": 456
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 22,
                     "col": 5,
-                    "off": 446,
-                    "end": 453
+                    "off": 425,
+                    "end": 432
                   },
                   "name": "Println"
                 },
@@ -352,16 +359,16 @@
                     "pos": {
                       "line": 22,
                       "col": 13,
-                      "off": 454,
-                      "end": 476
+                      "off": 433,
+                      "end": 455
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 22,
                         "col": 13,
-                        "off": 454,
-                        "end": 465
+                        "off": 433,
+                        "end": 444
                       },
                       "name": "checkMethod"
                     },
@@ -371,16 +378,16 @@
                         "pos": {
                           "line": 22,
                           "col": 25,
-                          "off": 466,
-                          "end": 475
+                          "off": 445,
+                          "end": 454
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 22,
                             "col": 25,
-                            "off": 466,
-                            "end": 473
+                            "off": 445,
+                            "end": 452
                           },
                           "name": "OPTIONS"
                         },
@@ -395,16 +402,16 @@
                 "pos": {
                   "line": 23,
                   "col": 5,
-                  "off": 483,
-                  "end": 510
+                  "off": 461,
+                  "end": 488
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 23,
                     "col": 5,
-                    "off": 483,
-                    "end": 490
+                    "off": 461,
+                    "end": 468
                   },
                   "name": "Println"
                 },
@@ -414,16 +421,16 @@
                     "pos": {
                       "line": 23,
                       "col": 13,
-                      "off": 491,
-                      "end": 509
+                      "off": 469,
+                      "end": 487
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 23,
                         "col": 13,
-                        "off": 491,
-                        "end": 502
+                        "off": 469,
+                        "end": 480
                       },
                       "name": "checkMethod"
                     },
@@ -433,16 +440,16 @@
                         "pos": {
                           "line": 23,
                           "col": 25,
-                          "off": 503,
-                          "end": 508
+                          "off": 481,
+                          "end": 486
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 23,
                             "col": 25,
-                            "off": 503,
-                            "end": 506
+                            "off": 481,
+                            "end": 484
                           },
                           "name": "GET"
                         },
@@ -457,16 +464,16 @@
                 "pos": {
                   "line": 24,
                   "col": 5,
-                  "off": 516,
-                  "end": 544
+                  "off": 493,
+                  "end": 521
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
                     "line": 24,
                     "col": 5,
-                    "off": 516,
-                    "end": 523
+                    "off": 493,
+                    "end": 500
                   },
                   "name": "Println"
                 },
@@ -476,16 +483,16 @@
                     "pos": {
                       "line": 24,
                       "col": 13,
-                      "off": 524,
-                      "end": 543
+                      "off": 501,
+                      "end": 520
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
                         "line": 24,
                         "col": 13,
-                        "off": 524,
-                        "end": 535
+                        "off": 501,
+                        "end": 512
                       },
                       "name": "checkMethod"
                     },
@@ -495,16 +502,16 @@
                         "pos": {
                           "line": 24,
                           "col": 25,
-                          "off": 536,
-                          "end": 542
+                          "off": 513,
+                          "end": 519
                         },
                         "callee": {
                           "kind": "name",
                           "pos": {
                             "line": 24,
                             "col": 25,
-                            "off": 536,
-                            "end": 540
+                            "off": 513,
+                            "end": 517
                           },
                           "name": "POST"
                         },

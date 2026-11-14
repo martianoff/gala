@@ -50,6 +50,18 @@ type galaASTTransformer struct {
 	// ptrStars holds the `*T` expressions emitted for a non-null `Ptr[T]`, so a
 	// type read back from generated Go keeps the marker (see ptr.go).
 	ptrStars map[*ast.StarExpr]bool
+	// inoutNames holds the names of the functions and methods the file can
+	// call that declare an `inout` parameter (see checkInoutArgs).
+	inoutNames map[string]bool
+	// inoutTypesSeen is set when the file can see an `inout` parameter or
+	// function type, so a call through a function value is checked for one.
+	// inoutLends is set once it lends an `inout` place (checkInoutLend), and
+	// inoutApproved holds the lends a call passed to an `inout` parameter.
+	inoutTypesSeen, inoutLends bool
+	inoutApproved              map[ast.Node]bool
+	// inoutWrapper is the Go-visible wrapper lowerFuncDecl made for the
+	// function it lowered, emitted before it (splitInoutBody).
+	inoutWrapper *ast.FuncDecl
 	// localBindings holds the Go name of each local val or var a declaration
 	// emits, with where its GALA name is written (see unused_bindings.go).
 	localBindings map[*ast.Ident]localBinding
@@ -125,7 +137,7 @@ type galaASTTransformer struct {
 	interfaceLiterals      map[string]string                             // interface literal helper type name, keyed by the interface's resolved name; see interface_literal.go
 	interfaceLiteralDecls  []ast.Decl                                    // helper type declarations for this file's interface literals
 	interfaceLiteralMisses map[string]bool                               // callee names known to name no interface, so a call of them is no interface literal
-	unapplyHelpers         map[string]string                             // extractor type -> name of the generic Unapply helper declared for it in this file (see unapplyHelper); also a pattern helper's `_gala_` base name -> its name (see patternHelper)
+	unapplyHelpers         map[string]string                             // extractor type -> name of the generic Unapply helper declared for it in this file (see unapplyHelper)
 	unapplyHelperDecls     []ast.Decl                                    // their declarations
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
@@ -155,11 +167,8 @@ type galaASTTransformer struct {
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
 	// declares, so a sub-pattern's statements can be split into declarations
-	// outside a guard and assignments inside it (see hoistPatternDecls). It
-	// also records the type of a name hoistPatternDecls declares from a value
-	// (`var x = v`, keyed by its ValueSpec), for a hoist of an enclosing
-	// pattern.
-	patternDefineTypes map[ast.Node][]patternType
+	// outside a guard and assignments inside it (see hoistPatternDecls).
+	patternDefineTypes map[*ast.AssignStmt][]patternType
 	// patternReads records the extractor calls of patterns that only read the
 	// value they test (a sealed case's generated Unapply), which siblingChain
 	// runs without a guard (see runsCode).
@@ -408,6 +417,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.ptrStars = nil
+	t.inoutNames, t.inoutTypesSeen = collectInoutNames(richAST)
+	t.inoutLends, t.inoutApproved, t.inoutWrapper = false, nil, nil
 	t.localBindings = nil
 	t.patternDefineTypes = nil
 	t.patternReads = nil

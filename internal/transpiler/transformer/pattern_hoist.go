@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"slices"
-	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -14,10 +13,9 @@ import (
 
 // patternType is the Go type of a name a pattern's `:=` declares: a type
 // expression already built, or the GALA type to build one from. The
-// expression is built only when hoistPatternDecls writes that type out:
-// building it records the imports it names, and a type the generated Go never
-// writes must not keep an import (a package the GALA file may not import).
-// A nil patternType, or one that builds to nil, means unknown.
+// expression is built only when hoistPatternDecls writes that type out, as
+// most of a pattern's `:=` are never hoisted. A nil patternType, or one that
+// builds to nil, means unknown.
 type patternType = *patternTypeOf
 
 type patternTypeOf struct {
@@ -61,45 +59,6 @@ func (t *galaASTTransformer) buildPatternType(p patternType) ast.Expr {
 	return t.typeToExpr(p.typ)
 }
 
-// spellable reports whether p is a known type this file can write out without
-// a new import: an expression already built (bool, or a type the pattern
-// wrote), or a type every package of which the file imports (see
-// namesOnlyImportedPackages). A value matched in this file can have a type
-// from a package the file reaches only through another one, and an import
-// of that package is one Bazel's strict dependencies reject.
-func (t *galaASTTransformer) spellable(p patternType) bool {
-	switch {
-	case p == nil:
-		return false
-	case p.expr != nil:
-		return true
-	case !p.knowsType():
-		return false
-	}
-	return t.namesOnlyImportedPackages(p.typ)
-}
-
-// knowsType reports whether p's GALA type is one a Go type can be built from.
-func (p *patternTypeOf) knowsType() bool {
-	return p.typ != nil && !transpiler.IsUnusable(p.typ)
-}
-
-// pointerness tells whether a value of type p is a pointer: yes, no, or
-// unknown (ok false).
-func pointerness(p patternType) (pointer, ok bool) {
-	switch {
-	case p == nil:
-		return false, false
-	case p.expr != nil:
-		_, ptr := p.expr.(*ast.StarExpr)
-		return ptr, true
-	case !p.knowsType():
-		return false, false
-	}
-	_, ptr := p.typ.(transpiler.PointerType)
-	return ptr, true
-}
-
 // patternDefine builds `lhs... := rhs` for pattern lowering and records the Go
 // type of each name it declares, so that hoistPatternDecls can later split it
 // into a declaration and an assignment.
@@ -110,293 +69,10 @@ func (t *galaASTTransformer) patternDefine(lhs []string, types []patternType, rh
 	}
 	stmt := &ast.AssignStmt{Lhs: idents, Tok: token.DEFINE, Rhs: []ast.Expr{rhs}}
 	if t.patternDefineTypes == nil {
-		t.patternDefineTypes = make(map[ast.Node][]patternType)
+		t.patternDefineTypes = make(map[*ast.AssignStmt][]patternType)
 	}
 	t.patternDefineTypes[stmt] = types
 	return stmt
-}
-
-// sameTypeValue returns a value of rhs's type that hoistPatternDecls can
-// declare a name from before the guard, in place of the type, or nil when it
-// knows none. rhs is what the guard later assigns the name; the value is only
-// a placeholder for it, so it runs none of rhs's code and cannot panic:
-//
-//   - a name declared before the guard (known) is that name;
-//   - a field's read, `base.F` or an Immutable field's `base.F.Get()`, is
-//     that read of base, a name declared before the guard, through a nil-safe
-//     dereference when base is a pointer;
-//   - an extractor's `E{}.Unapply(x)` is the zero value of its result, typed
-//     from the method value `E{}.Unapply`, which is not called;
-//   - a sequence element's `xs.Get(i)` is the zero value of the element, typed
-//     from the method value `xs.Get`. The sequence pattern reads xs, a plain
-//     read, before the guard already (its size check);
-//   - any other call of a method with at most one argument on a name,
-//     `ext.Unapply(x)` or `v.MatchView()`, is the zero value of its result,
-//     typed from the method value (see methodValue), which is not called;
-//   - a call `h(x)` of a generated Unapply helper (see unapplyHelper) with a
-//     name x is the zero value of its result, typed from h and x
-//     without calling h.
-//
-// Pattern lowering writes `.F.Get()` only for an Immutable field, whose Get
-// has no effect, as runsCode assumes too.
-func (t *galaASTTransformer) sameTypeValue(rhs ast.Expr, known map[string]patternType) ast.Expr {
-	switch e := rhs.(type) {
-	case *ast.Ident:
-		if _, declared := known[e.Name]; declared {
-			return t.localRef(e.Name)
-		}
-	case *ast.SelectorExpr:
-		if recv := t.knownFieldBase(e, known); recv != nil {
-			return &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(e.Sel.Name)}
-		}
-	case *ast.CallExpr:
-		switch fun := e.Fun.(type) {
-		case *ast.Ident:
-			if len(e.Args) != 1 || !t.isUnapplyHelper(fun.Name) {
-				return nil
-			}
-			// The argument is only read, so it must be a name: a field read
-			// may go through a pointer the guard has not checked.
-			if arg, ok := e.Args[0].(*ast.Ident); ok {
-				return t.helperCall(zeroApplyHelper, ast.NewIdent(fun.Name), t.localRef(arg.Name))
-			}
-		case *ast.SelectorExpr:
-			switch {
-			case fun.Sel.Name == "Get" && len(e.Args) == 0:
-				field, ok := fun.X.(*ast.SelectorExpr)
-				if !ok {
-					return nil
-				}
-				if recv := t.knownFieldBase(field, known); recv != nil {
-					return &ast.CallExpr{Fun: &ast.SelectorExpr{
-						X:   &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(field.Sel.Name)},
-						Sel: ast.NewIdent("Get"),
-					}}
-				}
-				return nil
-			case fun.Sel.Name == "Unapply" && len(e.Args) == 1:
-				if lit, ok := fun.X.(*ast.CompositeLit); ok {
-					return t.helperCall(zeroResultHelper, &ast.SelectorExpr{
-						X: &ast.CompositeLit{Type: lit.Type}, Sel: ast.NewIdent("Unapply"),
-					})
-				}
-			case fun.Sel.Name == "Get" && len(e.Args) == 1:
-				if isPlainRead(fun.X) {
-					return t.helperCall(zeroResultHelper, &ast.SelectorExpr{X: fun.X, Sel: ast.NewIdent("Get")})
-				}
-			}
-			if len(e.Args) > 1 {
-				return nil
-			}
-			if mv := t.methodValue(fun, known); mv != nil {
-				if len(e.Args) == 0 {
-					return t.helperCall(zeroResult0Helper, mv)
-				}
-				return t.helperCall(zeroResultHelper, mv)
-			}
-		}
-	}
-	return nil
-}
-
-// isUnapplyHelper reports whether name is an Unapply helper this file
-// declares (see unapplyHelper), not one of the pattern helpers filed beside
-// them under their `_gala_` base names (see patternHelper).
-func (t *galaASTTransformer) isUnapplyHelper(name string) bool {
-	for key, helper := range t.unapplyHelpers {
-		if helper == name && !strings.HasPrefix(key, "_gala_") {
-			return true
-		}
-	}
-	return false
-}
-
-// knownFieldBase is the receiver a placeholder reads field.Sel of: field's
-// base, a name declared before the guard whose pointerness is known, through
-// a nil-safe dereference when it is a pointer. nil otherwise.
-func (t *galaASTTransformer) knownFieldBase(field *ast.SelectorExpr, known map[string]patternType) ast.Expr {
-	base, ok := field.X.(*ast.Ident)
-	if !ok {
-		return nil
-	}
-	p, declared := known[base.Name]
-	pointer, sure := pointerness(p)
-	if !declared || !sure {
-		return nil
-	}
-	var recv ast.Expr = t.localRef(base.Name)
-	if pointer {
-		recv = t.helperCall(derefHelper, recv)
-	}
-	return recv
-}
-
-// methodValue is the method value `recv.M` of fun, recv a name, made safe to
-// evaluate before the guard, where the name may still hold a zero value: recv
-// is a value of a GALA type, or a pointer to one, read through a nil-safe
-// dereference when M has a value receiver. nil for any other receiver, such
-// as an interface value, which may be nil, or one of an unknown type.
-func (t *galaASTTransformer) methodValue(fun *ast.SelectorExpr, known map[string]patternType) ast.Expr {
-	id, ok := fun.X.(*ast.Ident)
-	if !ok {
-		return nil
-	}
-	name := fun.Sel.Name
-	var recv ast.Expr = t.localRef(id.Name)
-	var typ transpiler.Type
-	if p := known[id.Name]; p == nil {
-		typ = t.getExprTypeName(id)
-	} else if p.knowsType() {
-		typ = p.typ
-	}
-	if typ == nil || transpiler.IsUnusable(typ) {
-		return nil
-	}
-	ptr, isPointer := typ.(transpiler.PointerType)
-	elem := typ
-	if isPointer {
-		elem = ptr.Elem
-	}
-	_, meta, _, ok := t.receiverTypeInfo(t.methodReceiverType(elem, name))
-	if !ok || meta == nil || meta.IsInterface || meta.Methods[name] == nil {
-		return nil
-	}
-	if isPointer && !meta.Methods[name].PtrReceiver {
-		recv = t.helperCall(derefHelper, recv)
-	}
-	return &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(name)}
-}
-
-// isPlainRead reports whether e only reads: a name, a field of a plain read,
-// or an Immutable field's `Get()` of one.
-func isPlainRead(e ast.Expr) bool {
-	switch x := e.(type) {
-	case *ast.Ident:
-		return true
-	case *ast.SelectorExpr:
-		return isPlainRead(x.X)
-	case *ast.CallExpr:
-		sel, ok := x.Fun.(*ast.SelectorExpr)
-		return ok && sel.Sel.Name == "Get" && len(x.Args) == 0 && isPlainRead(sel.X)
-	}
-	return false
-}
-
-// localRef is a reference to the local name, recorded so it follows the
-// local when renameShadowingLocals renames it.
-func (t *galaASTTransformer) localRef(name string) *ast.Ident {
-	id := ast.NewIdent(name)
-	if shadowsGeneratedName(name) {
-		t.recordLocalRef(id)
-	}
-	return id
-}
-
-// helperCall is a call of the pattern helper named base. It only reads, so
-// runsCode does not take it for code a guard must hold back.
-func (t *galaASTTransformer) helperCall(base string, args ...ast.Expr) *ast.CallExpr {
-	call := &ast.CallExpr{Fun: ast.NewIdent(t.patternHelper(base)), Args: args}
-	if t.patternReads == nil {
-		t.patternReads = make(map[*ast.CallExpr]bool)
-	}
-	t.patternReads[call] = true
-	return call
-}
-
-// The generic helpers sameTypeValue calls.
-const (
-	// derefHelper is `func[T any](p *T) (v T)`: *p, or the zero value when
-	// p is nil.
-	derefHelper = "_gala_deref"
-	// zeroResultHelper is `func[A, R any](func(A) R) (r R)`: the zero value
-	// of the result of the function it is given, which it does not call.
-	zeroResultHelper = "_gala_zero_result"
-	// zeroResult0Helper is `func[R any](func() R) (r R)`, zeroResultHelper
-	// for a function of no arguments.
-	zeroResult0Helper = "_gala_zero_result0"
-	// zeroApplyHelper is `func[A, R any](func(A) R, A) (r R)`: the zero value
-	// of the result of the function it is given, applied to a value of the
-	// argument's type, which it does not call. The argument lets Go infer
-	// the type arguments of a generic function.
-	zeroApplyHelper = "_gala_zero_apply"
-)
-
-// patternHelper returns the Go name of the helper named base in this file,
-// declaring it on first use. Like an Unapply helper (see unapplyHelper) it is
-// one of this file's own: base carries the reserved `_gala_` prefix, so no
-// GALA name is the same, and the file's suffix keeps two files of one
-// package from both declaring it.
-func (t *galaASTTransformer) patternHelper(base string) string {
-	return t.fileHelper(base, func(name string) *ast.FuncDecl { return patternHelperDecl(base, name) })
-}
-
-// fileHelper returns the Go name of this file's generic helper named base,
-// declaring it with build(name) on first use: the name is base, which
-// carries the reserved `_gala_` prefix, followed by the file's suffix.
-func (t *galaASTTransformer) fileHelper(base string, build func(name string) *ast.FuncDecl) string {
-	if name, ok := t.unapplyHelpers[base]; ok {
-		return name
-	}
-	name := base + t.codecFileSuffix()
-	t.unapplyHelperDecls = append(t.unapplyHelperDecls, build(name))
-	t.unapplyHelpers[base] = name
-	return name
-}
-
-// patternHelperDecl declares the pattern helper named base as name.
-func patternHelperDecl(base, name string) *ast.FuncDecl {
-	id := ast.NewIdent
-	anyParam := func(names ...string) *ast.Field {
-		idents := make([]*ast.Ident, len(names))
-		for i, n := range names {
-			idents[i] = id(n)
-		}
-		return &ast.Field{Names: idents, Type: id("any")}
-	}
-	switch base {
-	case derefHelper:
-		return &ast.FuncDecl{
-			Name: id(name),
-			Type: &ast.FuncType{
-				TypeParams: &ast.FieldList{List: []*ast.Field{anyParam("T")}},
-				Params:     &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{id("p")}, Type: &ast.StarExpr{X: id("T")}}}},
-				Results:    &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{id("v")}, Type: id("T")}}},
-			},
-			Body: &ast.BlockStmt{List: []ast.Stmt{
-				&ast.IfStmt{
-					Cond: &ast.BinaryExpr{X: id("p"), Op: token.NEQ, Y: id("nil")},
-					Body: &ast.BlockStmt{List: []ast.Stmt{assignStmt("v", &ast.StarExpr{X: id("p")})}},
-				},
-				&ast.ReturnStmt{},
-			}},
-		}
-	case zeroResultHelper, zeroResult0Helper, zeroApplyHelper:
-		// func[A, R any](func(A) R) (r R), without A for zeroResult0Helper
-		// and with an A argument for zeroApplyHelper.
-		typeParams, fnParams := anyParam("A", "R"), []*ast.Field{{Type: id("A")}}
-		if base == zeroResult0Helper {
-			typeParams, fnParams = anyParam("R"), nil
-		}
-		params := []*ast.Field{{Type: &ast.FuncType{
-			Params:  &ast.FieldList{List: fnParams},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: id("R")}}},
-		}}}
-		if base == zeroApplyHelper {
-			params = append(params, &ast.Field{Type: id("A")})
-		}
-		return &ast.FuncDecl{
-			Name: id(name),
-			Type: &ast.FuncType{
-				TypeParams: &ast.FieldList{List: []*ast.Field{typeParams}},
-				Params:     &ast.FieldList{List: params},
-				Results:    &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{id("r")}, Type: id("R")}}},
-			},
-			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{}}},
-		}
-	default:
-		// invariant: pattern-helper — base is one of the constants above.
-		panic("no pattern helper " + base)
-	}
 }
 
 // spliceStmts returns stmts with ins inserted before index at.
@@ -412,9 +88,9 @@ func spliceStmts(stmts []ast.Stmt, at int, ins []ast.Stmt) []ast.Stmt {
 
 // optionPayloadDefine builds `name := option.Value.Get()`, the payload of a std
 // Option read from its Some case's field: its zero value when the Option is
-// None. Unlike `var name T` it never names T, whose package the file may not
-// import (Bazel's strict deps only allow the source's imports). The field is
-// read as the analyzer laid Option out. typ is recorded for hoistPatternDecls.
+// None. Go infers the payload's type, so T is written out only when
+// hoistPatternDecls declares the name. The field is read as the analyzer laid
+// Option out. typ is recorded for hoistPatternDecls.
 func (t *galaASTTransformer) optionPayloadDefine(name, option string, typ patternType) (*ast.AssignStmt, error) {
 	optionName := registry.StdPackageName + "." + transpiler.TypeOption
 	meta := t.getTypeMeta(optionName)
@@ -466,18 +142,10 @@ func (t *galaASTTransformer) hoistPatternDecls(stmts []ast.Stmt, subject string,
 			decls = append(decls, st)
 			if gen, ok := st.Decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
 				for _, spec := range gen.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					// A name an inner hoist declared from a value has the
-					// type it recorded (see below).
-					typ := exprType(vs.Type)
-					if types := t.patternDefineTypes[vs]; vs.Type == nil && len(types) == 1 {
-						typ = types[0]
-					}
-					for _, n := range vs.Names {
-						known[n.Name] = typ
+					if vs, ok := spec.(*ast.ValueSpec); ok && vs.Type != nil {
+						for _, n := range vs.Names {
+							known[n.Name] = exprType(vs.Type)
+						}
 					}
 				}
 			}
@@ -492,44 +160,21 @@ func (t *galaASTTransformer) hoistPatternDecls(stmts []ast.Stmt, subject string,
 				if !ok || ident.Name == "_" {
 					continue
 				}
-				var p patternType
+				var typ ast.Expr
 				if i < len(types) {
-					p = types[i]
+					typ = t.buildPatternType(types[i])
 				}
-				var rhs ast.Expr // the value it is declared from, when it is the only one
-				if len(st.Lhs) == 1 && len(st.Rhs) == 1 {
-					rhs = st.Rhs[0]
-				}
-				spelled := t.spellable(p)
-				if src, ok := rhs.(*ast.Ident); ok && !spelled && known[src.Name] != nil {
+				if typ == nil && len(st.Lhs) == 1 && len(st.Rhs) == 1 {
 					// A copy of a name has that name's type.
-					p = known[src.Name]
-					spelled = t.spellable(p)
+					if src, ok := st.Rhs[0].(*ast.Ident); ok {
+						typ = t.buildPatternType(known[src.Name])
+					}
 				}
-				var like ast.Expr
-				if !spelled {
-					// The type is unknown, or names a package this file does
-					// not import: the name takes it from a value of that type
-					// instead, which the guarded assignment then replaces.
-					like = t.sameTypeValue(rhs, known)
-				}
-				if like != nil {
-					known[ident.Name] = p
-					decl := seqVarDecl(ident.Name, nil, like)
-					t.patternDefineTypes[decl.(*ast.DeclStmt).Decl.(*ast.GenDecl).Specs[0]] = []patternType{p}
-					decls = append(decls, decl)
-				} else if !spelled && p != nil && p.knowsType() && t.namesUnimportedGalaPackage(p.typ) {
-					// Spelling the type would import a GALA package this file
-					// does not, which Bazel's strict dependencies reject.
-					return nil, nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, fmt.Sprintf(
-						"cannot declare a value this pattern binds: its type %s is from a package this file does not import (hint: import the package that declares it)",
-						displayType(p.typ)))
-				} else if typ := t.buildPatternType(p); typ != nil {
-					known[ident.Name] = exprType(typ)
-					decls = append(decls, seqVarDecl(ident.Name, typ))
-				} else {
+				if typ == nil {
 					return nil, nil, galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, fmt.Sprintf("cannot determine the type of pattern binding '%s'", ident.Name))
 				}
+				known[ident.Name] = exprType(typ)
+				decls = append(decls, seqVarDecl(ident.Name, typ))
 				// The binding is now assigned, not declared, here; the
 				// var declares it (see renameShadowingLocals).
 				if shadowsGeneratedName(ident.Name) {

@@ -171,11 +171,39 @@ func lastToken(ref native.GalaNodeRef) string {
 // --- Declarations ---
 
 func (e *exporter) file(path string, sf native.SourceFileNode) *File {
-	imports := mapNodes(sf.AllImportDeclaration(), func(d native.ImportDeclarationNode) Node {
-		return e.unsupported(UnsupportedImport, d.GalaNodeRef)
-	})
+	imports := []Node{}
+	for _, d := range sf.AllImportDeclaration() {
+		imports = append(imports, mapNodes(d.AllImportSpec(), e.importSpec)...)
+	}
 	return of(e, &File{Path: path, Package: sf.PackageClause().Identifier().GetText(),
 		Decls: append(imports, mapNodes(sf.AllTopLevelDeclaration(), e.topLevel)...)}, sf.GalaNodeRef)
+}
+
+// importSpec is one imported package, `"path"`, `. "path"` or
+// `name "path"`.
+func (e *exporter) importSpec(s native.ImportSpecNode) Node {
+	path, err := strconv.Unquote(s.STRING().GetText())
+	if err != nil {
+		return e.unsupported(UnsupportedImport, s.GalaNodeRef)
+	}
+	alias := ""
+	switch {
+	case s.Identifier().Ok():
+		alias = s.Identifier().GetText()
+	case firstToken(s.GalaNodeRef) == ".":
+		alias = "."
+	}
+	return of(e, &Import{Path: path, Alias: alias}, s.GalaNodeRef)
+}
+
+// typeParams is a declaration's type parameters, `[T any, K comparable]`.
+func (e *exporter) typeParams(tp native.TypeParametersNode) []Node {
+	if !tp.Ok() {
+		return []Node{}
+	}
+	return mapNodes(tp.TypeParameterList().AllTypeParameter(), func(p native.TypeParameterNode) Node {
+		return of(e, &TypeParam{Name: p.Identifier().GetText(), Constraint: e.typ(p.Type_())}, p.GalaNodeRef)
+	})
 }
 
 func (e *exporter) topLevel(d native.TopLevelDeclarationNode) Node {
@@ -224,15 +252,12 @@ func (e *exporter) varDecl(v native.VarDeclarationNode) Node {
 }
 
 func (e *exporter) function(f native.FunctionDeclarationNode) Node {
-	switch {
-	case f.Receiver().Ok():
-		return e.unsupported(UnsupportedMethod, f.GalaNodeRef)
-	case f.TypeParameters().Ok():
-		return e.unsupported(UnsupportedGenericDecl, f.GalaNodeRef)
-	}
 	sig := f.Signature()
-	fn := of(e, &Func{Name: f.Identifier().GetText(),
+	fn := of(e, &Func{Name: f.Identifier().GetText(), TypeParams: e.typeParams(f.TypeParameters()),
 		Params: mapNodes(sig.Parameters().ParameterList().AllParameter(), e.param)}, f.GalaNodeRef)
+	if r := f.Receiver(); r.Ok() {
+		fn.Receiver = e.receiver(r)
+	}
 	switch {
 	case sig.GoResults().Ok():
 		fn.Result = e.unsupported(UnsupportedGoResults, sig.GoResults().GalaNodeRef)
@@ -245,6 +270,29 @@ func (e *exporter) function(f native.FunctionDeclarationNode) Node {
 		fn.Body = e.expr(f.Expression().GalaNodeRef)
 	}
 	return fn
+}
+
+// receiver is a method's receiver: `(c T)`, `(c *T)` with Pointer set, or
+// `(inout c T)` with Inout set.
+// Any other receiver type (a generic one, `Ptr[T]`) is exported as that
+// type, unsupported.
+func (e *exporter) receiver(r native.ReceiverNode) Node {
+	if r.VAL().Ok() || r.VAR().Ok() {
+		return e.unsupported(UnsupportedParamModifier, r.GalaNodeRef)
+	}
+	t := r.Type_()
+	rec := &Receiver{Name: r.Identifier().GetText()}
+	rec.Inout = r.INOUT().Ok()
+	if firstToken(t.GalaNodeRef) == "*" {
+		if rec.Inout {
+			// An inout receiver of a pointer type is not GALA (GALA-E0111).
+			return e.unsupported(UnsupportedParamModifier, r.GalaNodeRef)
+		}
+		rec.Pointer = true
+		t = t.Type_(0)
+	}
+	rec.Type = e.typ(t)
+	return of(e, rec, r.GalaNodeRef)
 }
 
 // unsupportedParam is what makes p, a function parameter or a shorthand
@@ -261,7 +309,7 @@ func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 }
 
 func (e *exporter) param(p native.ParameterNode) Node {
-	if p.VAL().Ok() || p.VAR().Ok() {
+	if p.VAL().Ok() || p.VAR().Ok() || p.INOUT().Ok() {
 		return e.unsupported(UnsupportedParamModifier, p.GalaNodeRef)
 	}
 	if bad := e.unsupportedParam(p); bad != nil {
@@ -281,8 +329,6 @@ func (e *exporter) paramDefault(d native.ParamDefaultNode) Node {
 
 func (e *exporter) typeDecl(t native.TypeDeclarationNode) Node {
 	switch {
-	case t.TypeParameters().Ok():
-		return e.unsupported(UnsupportedGenericDecl, t.GalaNodeRef)
 	case t.InterfaceType().Ok():
 		return e.unsupported(UnsupportedInterface, t.GalaNodeRef)
 	case t.TypeAlias().Ok():
@@ -292,14 +338,12 @@ func (e *exporter) typeDecl(t native.TypeDeclarationNode) Node {
 		return of(e, &Field{Name: f.Identifier().GetText(), Type: e.typ(f.Type_()), Mutable: f.VAR().Ok()},
 			f.GalaNodeRef)
 	})
-	return of(e, &Struct{Name: t.Identifier().GetText(), Fields: fields}, t.GalaNodeRef)
+	return of(e, &Struct{Name: t.Identifier().GetText(), TypeParams: e.typeParams(t.TypeParameters()), Fields: fields},
+		t.GalaNodeRef)
 }
 
 func (e *exporter) structShorthand(d native.StructShorthandDeclarationNode) Node {
-	if d.TypeParameters().Ok() {
-		return e.unsupported(UnsupportedGenericDecl, d.GalaNodeRef)
-	}
-	return of(e, &Struct{Name: d.Identifier().GetText(), Shorthand: true,
+	return of(e, &Struct{Name: d.Identifier().GetText(), TypeParams: e.typeParams(d.TypeParameters()), Shorthand: true,
 		Fields: mapNodes(d.Parameters().ParameterList().AllParameter(), e.shorthandField)}, d.GalaNodeRef)
 }
 
@@ -312,10 +356,8 @@ func (e *exporter) shorthandField(p native.ParameterNode) Node {
 }
 
 func (e *exporter) sealed(d native.SealedTypeDeclarationNode) Node {
-	if d.TypeParameters().Ok() {
-		return e.unsupported(UnsupportedGenericDecl, d.GalaNodeRef)
-	}
-	return of(e, &Sealed{Name: d.Identifier().GetText(), Variants: mapNodes(d.AllSealedCase(), e.variant)},
+	return of(e, &Sealed{Name: d.Identifier().GetText(), TypeParams: e.typeParams(d.TypeParameters()),
+		Variants: mapNodes(d.AllSealedCase(), e.variant)},
 		d.GalaNodeRef)
 }
 
@@ -340,13 +382,14 @@ func (e *exporter) optType(t native.TypeNode) Node {
 
 func (e *exporter) typ(t native.TypeNode) Node {
 	if q := t.QualifiedIdentifier(); q.Ok() {
-		switch {
-		case t.TypeArguments().Ok():
-			return e.unsupported(UnsupportedGenericType, t.GalaNodeRef)
-		case q.Identifier(1).Ok():
+		if q.Identifier(1).Ok() {
 			return e.unsupported(UnsupportedQualifiedType, t.GalaNodeRef)
 		}
-		return of(e, &TypeName{Name: q.GetText()}, t.GalaNodeRef)
+		args := []Node{}
+		if ta := t.TypeArguments(); ta.Ok() {
+			args = mapNodes(ta.TypeList().AllType_(), e.typ)
+		}
+		return of(e, &TypeName{Name: q.GetText(), Args: args}, t.GalaNodeRef)
 	}
 	if t.FUNC().Ok() {
 		return e.funcType(t)

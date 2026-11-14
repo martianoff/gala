@@ -51,7 +51,8 @@ func main() {
 		if err != nil && !failed {
 			fail(err)
 		}
-		printStats(doc, u, failed)
+		s := gala2lean.CountTranslated(doc, err)
+		fmt.Printf("functions %d translated %d methods %d\n", s.Funcs, s.Translated, s.Methods)
 		return
 	}
 	if errors.As(err, &u) {
@@ -68,37 +69,6 @@ func main() {
 	}
 }
 
-// printStats prints one line: the functions and methods declared, and how
-// many of them gala2lean translates (a method never is: Core JSON leaves
-// methods out).
-func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed bool) {
-	funcs, methods := 0, 0
-	names := map[string]bool{}
-	for _, f := range doc.Files {
-		for _, d := range f.Decls {
-			switch d := d.(type) {
-			case *coreexport.Func:
-				funcs++
-				names[d.Name] = true
-			case *coreexport.Unsupported:
-				// A generic declaration may be a type, so only methods
-				// count.
-				if d.What == "method" {
-					methods++
-				}
-			}
-		}
-	}
-	untranslated := map[string]bool{}
-	if failed {
-		for _, it := range u.Items {
-			if names[it.Decl] {
-				untranslated[it.Decl] = true
-			}
-		}
-	}
-	fmt.Printf("functions %d translated %d methods %d\n", funcs+methods, funcs-len(untranslated), methods)
-}
 
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "gala2lean:", err)

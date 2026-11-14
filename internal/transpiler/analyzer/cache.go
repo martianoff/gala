@@ -217,7 +217,14 @@ import (
 // receiver (MethodMetadata.ReceiverEffects), and a Go type which of its
 // pointer methods only read their receiver (GoTypeData.ReadOnlyMethods). A
 // v44 payload lacks both, so every such method would count as mutating.
-const CacheVersion = "v45"
+//
+// v46: a method with an `inout` receiver and a function or method with `inout`
+// parameters record them (MethodMetadata.InoutReceiver, InoutParams). A v45
+// payload lacks them, so a caller would not know to lend those places.
+//
+// v47: a function type records its `inout` parameters (FuncType.Inout), so
+// `func(inout T)` and `func(Ptr[T])` stay distinct. A v46 payload lacks them.
+const CacheVersion = "v47"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

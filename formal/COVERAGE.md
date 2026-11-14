@@ -27,7 +27,7 @@ The tiers mean exactly this:
 | `==`/`!=` on structs, sealed values and tuples, by value | yes | no | no |
 | `val`/`var` (several names, tuple destructuring, zero values), `=`, `+= -= *= /=`, `++`/`--`, assignment to `var` struct fields | yes | no | no |
 | Package-level `val`/`var`, initialized in Go's dependency order | yes | no | no |
-| Blocks and their scopes, shadowing | yes | no | lookup, update and scope exit only (see below) |
+| Blocks and their scopes, shadowing | yes | no | no |
 | `if` statement and expression, `return`, trailing-expression results | yes | no | no |
 | Top-level functions and recursion | yes | no | no |
 | Structs (block and shorthand), construction, field access | yes | no | no |
@@ -36,9 +36,8 @@ The tiers mean exactly this:
 | `Println`/`Print` formatting of every S1 value | yes | no | no |
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | no |
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | no |
-| S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | no |
-| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | no |
-| Determinism of every run (T1) | — | — | yes |
+| S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | capture of the scope only |
+| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the scope of a default only (T4) |
 
 Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
 compile time, while galaspec wraps it at run time. Only programs Go rejects differ.
@@ -101,43 +100,74 @@ version check and the command line, run while the tests compile.
 
 The proof checks (`scripts/ProofCheck.lean` under Lake, `//formal:proofs` under Bazel)
 fail if a theorem listed here is missing; keep `requiredTheorems` there and
-`REQUIRED_THEOREMS` in `BUILD.bazel` in step with this table.
+`REQUIRED_THEOREMS` in `BUILD.bazel` in step with this table. Each one's statement is
+restated in `Gala/Statements.lean` and checked against its proof, so a changed statement
+fails the build until that file changes too. The definitions a statement mentions are not
+pinned that way.
 
 | Theorem | Statement |
 |---|---|
-| `Gala.MatchLowering.compile_correct`, `program_correct` | The scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
-| `Gala.MatchLowering.leaky_not_correct` | A lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
-| `Gala.Spec.run_deterministic`, `eval_deterministic` | **T1.** A program and a fuel budget have one output and one outcome; an evaluation from a given state has one result and final state. The semantics is a total Lean function, so this holds by construction and the proof is one line; the theorem records it, it does not add a check. |
-| `Gala.Spec.lookup_rename`, `update_rename`, `exitScope_rename` | **T2, for name resolution only.** Under an injective renaming of an environment, a renamed name resolves to the same binding, an assignment updates the same binding, and leaving a scope keeps the same bindings. |
-| `Gala.Spec.lookup_bind_self`, `lookup_bind_other` | A binding shadows its own name and no other. |
-| `Gala.Spec.update_length`, `exitScope_push` | An assignment keeps the scope stack's shape, so leaving a block drops its own bindings and keeps its assignments to outer variables. |
-| `Gala.Spec.evalList_cons`, `evalList_nil` | **T3, for operand lists.** The arguments of every call (function, lambda, constructor, `Println`), the elements of a tuple and the parts of an interpolated string are evaluated first to last, each completely before the next. The statement is the definition's own equation: the theorem records it, as T1 does. |
-| `Gala.Spec.capturedEnv_captured`, `lookup_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in: every name resolves as it did there, a `var` to the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells, as evaluation builds them; that evaluation keeps this invariant is not proved. |
-| `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, for scoping.** A default value is evaluated in a scope holding only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That the order of evaluation is the decided one (arguments as written, then defaults in parameter order) is the definition of `bindArgs`, not a theorem. |
-| `Gala.Gala2Lean.Examples.Match.eval_total` | About gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it: its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
+| `Gala.MatchLowering.compile_correct`, `program_correct` | In the lowering model only (a small GALA core with flat constructor patterns, no guards or literals, integers only; not galaspec, and not the transpiler's output): the scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
+| `Gala.MatchLowering.leaky_not_correct` | In the same model, a lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
+| `Gala.Spec.capturedEnv_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in, a `var` by the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells; that evaluation keeps this invariant is not proved. |
+| `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, the scope only.** The frame a default value is evaluated in holds only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That `bindArgs` uses this frame, and evaluates arguments as written and then defaults in parameter order, is its definition, not a theorem. |
+| `Gala.Gala2Lean.Examples.Match.eval_total` | About one program: gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it, under gala2lean's prelude. Its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
 
 These are theorems about the *spec* (and a model of one lowering, and one program's
-translation under gala2lean's prelude), not about the transpiler. T2 for whole programs (renaming every binder leaves the outcome unchanged) is
-not proved: the lemmas above are the name-resolution part of it.
+translation under gala2lean's prelude), not about the transpiler.
+
+Not proved: T1, T2, T3 and T5–T7, and T4 beyond the scope of a default value.
+[docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems-the-road-to-an-end-to-end-proof) gives the statements
+they need: fuel adequacy and monotonicity for T1, alpha-invariance with its side
+conditions for T2, and an observational statement about the order of effects for T3.
 
 ## gala2lean
 
 [gala2lean](README.md#gala2lean-a-third-oracle) translates the programs it covers to
-Lean definitions. It translates subset S1 (as galaspec models it, except as listed below)
-and nothing of S2 yet. It translates a whole program or nothing: one construct outside
-its subset anywhere in the program, even in a function `main` never calls, stops it, and
-is reported. Beyond what Core JSON leaves out, it does not translate yet:
+Lean definitions. It translates subset S1 and the S2 constructs galaspec models (as
+galaspec models them, except as listed below):
 
-- lambdas, function types and functions as values (`lambda`, `type-func`, `func-value`);
-  interpolated strings (`interp`); named arguments and default values (`named-arg`,
-  `param-default`, `field-default`, `default-argument`);
+- interpolated strings `s"..."`, each part printed as `Println` prints it;
+- named arguments and default values: arguments in the order written, then each
+  left-out default in parameter order, in the callee's scope; package-level
+  initialization follows the defaults a call leaves out, and only those;
+- lambdas, function types and functions as values. A `var` a lambda refers to lives in a
+  reference cell in the program state (one heap per type), so the lambda and the code
+  around it share it, as GALA's capture by reference says; a `func() T` parameter turns
+  a plain argument into a thunk;
+- `Some`, `None`, `Left` and `Right`, as the prelude's `GOption` and `GEither`, with
+  their patterns (their methods are method calls, not translated yet);
+- methods with a value receiver `(c T)`, a plain function `T.m` taking the receiver
+  first, and with a pointer receiver `(c *T)`, by state passing: `T.m` takes the value
+  and returns its result with the updated value, which the caller writes back to the
+  `var` it called the method on, after the arguments are evaluated and the method
+  returns (a method that panics writes nothing back; no output is lost, since a panic
+  ends the run); the `Copy` (with named arguments) and `Equal` GALA generates for a
+  struct.
+
+It translates a whole program or nothing: one construct outside its subset anywhere in
+the program, even in a function `main` never calls, stops it, and is reported. Beyond
+what Core JSON leaves out, it does not translate yet:
+
 - a `return` or an assignment to an outer `var` inside an expression
   (`return-inside-expression`, `var-mutated-inside-expression`);
+- a lambda whose parameter types neither it nor its context gives
+  (`untyped-lambda-param`); the zero value of a function type (`nil`); printing a
+  function, or a value whose text would hold a function's address (`print-pointer`); a
+  function kept in the program state, as a package-level variable or a captured `var`
+  (`func-in-state`); a type Lean cannot infer where Core JSON gives none, such as a
+  `None()` printed on its own (`lean-type-inference:<function>`, reported by the run);
 - tuples of more than four elements; a sealed type used as a zero value without a
   default case (`sealed-zero-value`); a package-level variable whose type is not plain to
   see from its initializer (`untyped-global`); local functions and structs;
-- printing or comparing a value of a type other than `int`, `string` or `bool` in a
-  program that declares methods (`method`).
+- a call of a pointer method on a place another path can reach while the method runs
+  (a package-level `var`, a `var` a lambda captures), or a pointer method that uses its
+  receiver other than through a field or a method call (`ptr-escape`); a pointer method
+  on a value that is not a `var` (`pointer-method-on-value`); printing or comparing a
+  value of a type with its own `String` or `Equal`, or holding one (`custom-string`,
+  `custom-equal`); in a program with a method gala2lean does not see (a `Ptr[T]` or
+  generic receiver), printing or comparing anything but `int`, `string` and `bool`
+  (`method`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 
@@ -164,13 +194,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 28 | 1 | 10 | 1 |
+| AGREE | 28 | 1 | 33 | 1 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 445 | 34 | 463 | 34 |
+| UNSUPPORTED | 450 | 34 | 445 | 34 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
-Examples gala2lean translates whose Lean run agrees with Go: **10** (ratchet baseline 10).
+Examples gala2lean translates whose Lean run agrees with Go: **33** (ratchet baseline 33).
 
 ### Constructs
 
@@ -184,98 +214,101 @@ when run as Lean and compared with Go.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
-| `file` | yes | yes: 29 agree | no | translated: 11 agree |
-| `val` | yes | yes: 11 agree | no | translated: 1 agree |
-| `var` | yes | yes: 4 agree | no | translated: 2 agree |
-| `func` | yes | yes: 29 agree | no | translated: 11 agree |
-| `param` | yes | yes: 26 agree | no | translated: 10 agree |
-| `struct` | yes | yes: 3 agree | no | translated: 1 agree |
-| `field` | yes | yes: 7 agree | no | translated: 2 agree |
-| `sealed` | yes | yes: 7 agree | no | translated: 4 agree |
-| `variant` | yes | yes: 7 agree | no | translated: 4 agree |
-| `type-name` | yes | yes: 27 agree | no | translated: 10 agree |
-| `block` | yes | yes: 29 agree | no | translated: 11 agree |
-| `if` | yes | yes: 6 agree | no | translated: 2 agree |
-| `return` | yes | yes: 5 agree | no | translated: 2 agree |
-| `assign` | yes | yes: 4 agree | no | translated: 2 agree |
+| `file` | yes | yes: 29 agree | no | translated: 34 agree |
+| `import` | yes | no: 2 agree | no | translated: 1 agree |
+| `val` | yes | yes: 11 agree | no | translated: 16 agree |
+| `var` | yes | yes: 4 agree | no | translated: 6 agree |
+| `func` | yes | yes: 29 agree | no | translated: 34 agree |
+| `receiver` | not seen | no | no | translated: 2 agree |
+| `type-param` | not seen | no | no | not translated |
+| `param` | yes | yes: 26 agree | no | translated: 28 agree |
+| `struct` | yes | yes: 3 agree | no | translated: 6 agree |
+| `field` | yes | yes: 7 agree | no | translated: 11 agree |
+| `sealed` | yes | yes: 7 agree | no | translated: 9 agree |
+| `variant` | yes | yes: 7 agree | no | translated: 9 agree |
+| `type-name` | yes | yes: 27 agree | no | translated: 30 agree |
+| `block` | yes | yes: 29 agree | no | translated: 34 agree |
+| `if` | yes | yes: 6 agree | no | translated: 5 agree |
+| `return` | yes | yes: 5 agree | no | translated: 5 agree |
+| `assign` | yes | yes: 4 agree | no | translated: 6 agree |
 | `incdec` | not seen | no | no | not translated |
-| `int` | yes | yes: 26 agree | no | translated: 9 agree |
-| `bool` | yes | yes: 8 agree | no | translated: 2 agree |
-| `string` | yes | yes: 21 agree | no | translated: 6 agree |
-| `name` | yes | yes: 29 agree | no | translated: 11 agree |
-| `unary` | yes | yes: 5 agree | no | translated: 2 agree |
-| `binary` | yes | yes: 22 agree | no | translated: 9 agree |
-| `call` | yes | yes: 29 agree | no | translated: 11 agree |
-| `select` | yes | yes: 4 agree | no | translated: 1 agree |
+| `int` | yes | yes: 26 agree | no | translated: 30 agree |
+| `bool` | yes | yes: 8 agree | no | translated: 8 agree |
+| `string` | yes | yes: 21 agree | no | translated: 25 agree |
+| `name` | yes | yes: 29 agree | no | translated: 34 agree |
+| `unary` | yes | yes: 5 agree | no | translated: 6 agree |
+| `binary` | yes | yes: 22 agree | no | translated: 25 agree |
+| `call` | yes | yes: 29 agree | no | translated: 34 agree |
+| `select` | yes | yes: 4 agree | no | translated: 7 agree |
 | `paren` | yes | no: 1 agree | no | not translated |
 | `tuple` | not seen | no | no | not translated |
-| `if-expr` | yes | yes: 10 agree | no | translated: 5 agree |
-| `match` | yes | yes: 13 agree | no | translated: 6 agree |
-| `case` | yes | yes: 13 agree | no | translated: 6 agree |
-| `pat-wild` | yes | yes: 7 agree | no | translated: 2 agree |
-| `pat-name` | yes | yes: 7 agree | no | translated: 4 agree |
-| `pat-lit` | yes | yes: 7 agree | no | translated: 2 agree |
+| `if-expr` | yes | yes: 10 agree | no | translated: 9 agree |
+| `match` | yes | yes: 13 agree | no | translated: 16 agree |
+| `case` | yes | yes: 13 agree | no | translated: 16 agree |
+| `pat-wild` | yes | yes: 7 agree | no | translated: 8 agree |
+| `pat-name` | yes | yes: 7 agree | no | translated: 11 agree |
+| `pat-lit` | yes | yes: 7 agree | no | translated: 6 agree |
 | `pat-tuple` | not seen | no | no | not translated |
-| `pat-extract` | yes | yes: 4 agree | no | translated: 2 agree |
-| `named-arg` | yes | yes: 5 agree | no | not translated |
-| `lambda` | yes | yes: 5 agree | no | not translated |
-| `type-func` | yes | yes: 3 agree | no | not translated |
-| `interp` | yes | yes: 13 agree | no | not translated |
-| `interp-text` | yes | yes: 13 agree | no | not translated |
+| `pat-extract` | yes | yes: 4 agree | no | translated: 8 agree |
+| `named-arg` | yes | yes: 5 agree | no | translated: 8 agree |
+| `lambda` | yes | yes: 5 agree | no | translated: 4 agree |
+| `type-func` | yes | yes: 3 agree | no | translated: 2 agree |
+| `interp` | yes | yes: 13 agree | no | translated: 17 agree |
+| `interp-text` | yes | yes: 13 agree | no | translated: 17 agree |
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (41 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (42 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 129 |
+| `import` | 132 |
 | `method-call` | 123 |
 | `index` | 72 |
-| `generic-type` | 53 |
-| `generic-decl` | 15 |
+| `generic-type` | 51 |
+| `generic-decl` | 14 |
 | `address-of` | 12 |
 | `unresolved-name` | 9 |
 | `float-literal` | 8 |
 | `composite-literal` | 7 |
 | `local-struct` | 4 |
+| `method` | 4 |
+| `qualified-type` | 4 |
 | `stuck` | 4 |
 | `by-name-arg` | 3 |
-| `method` | 3 |
 | `slice-type` | 3 |
 | `char-literal` | 2 |
 | `expression-pattern` | 2 |
 | `for` | 2 |
 | `format-string` | 2 |
 | `type-Value` | 2 |
-| `type-any` | 2 |
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (64 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (65 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `generic-type` | 131 |
-| `import` | 107 |
-| `index` | 44 |
-| `interp` | 25 |
-| `method-call` | 23 |
-| `type-func` | 16 |
+| `generic-type` | 148 |
+| `import` | 111 |
+| `index` | 46 |
+| `method-call` | 22 |
+| `qualified-type` | 17 |
 | `type-float64` | 13 |
-| `qualified-type` | 10 |
-| `field-default` | 8 |
-| `method` | 7 |
-| `lambda` | 6 |
+| `type-error` | 7 |
+| `pointer-type` | 6 |
+| `slice-type` | 6 |
 | `variadic-param` | 6 |
-| `address-of` | 5 |
-| `named-arg` | 5 |
-| `pointer-type` | 5 |
-| `untyped-global` | 5 |
+| `address-of` | 4 |
 | `local-struct` | 4 |
-| `slice-type` | 4 |
-| `type-error` | 4 |
+| `method` | 4 |
+| `type-any` | 4 |
+| `type-uint32` | 4 |
+| `composite-literal` | 3 |
 | `expression-pattern` | 3 |
+| `func-in-state` | 3 |
+| `generic-decl` | 3 |
+| `return-inside-expression` | 3 |
 
 ### Known disagreements
 

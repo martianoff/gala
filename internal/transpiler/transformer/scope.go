@@ -47,6 +47,14 @@ type scope struct {
 	// set by whatever emitted the declaration, so a read always matches it.
 	// Allocated on first use.
 	boxedVals map[string]bool
+	// inout records the `inout` parameters and receivers, read through
+	// their pointer (see inout.go). Allocated on first use.
+	inout map[string]bool
+	// lambda marks the scope a function literal pushes for its parameters
+	// and body (a lambda, a partial function, a placeholder lambda): a name
+	// bound outside it is captured. tryRegion marks the lambda that is the
+	// thunk of Try(...). See checkInoutCapture.
+	lambda, tryRegion bool
 	// onPop runs, last first, when the scope is popped: it puts back what a
 	// declaration scoped to the block replaced, such as the metadata a local
 	// type declaration registers (see lowerLocalTypeDecl).
@@ -81,6 +89,7 @@ func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 		t.currentScope.valTypes[name] = typeName
 		delete(t.currentScope.fixedParams, name)
 		delete(t.currentScope.boxedVals, name)
+		delete(t.currentScope.inout, name)
 	}
 	t.recordLSPVarType(name, typeName)
 }
@@ -104,6 +113,7 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 		t.currentScope.valTypes[name] = typeName
 		delete(t.currentScope.fixedParams, name)
 		delete(t.currentScope.boxedVals, name)
+		delete(t.currentScope.inout, name)
 	}
 	t.recordLSPVarType(name, typeName)
 }

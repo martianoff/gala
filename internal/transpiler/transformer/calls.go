@@ -114,6 +114,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 	if err != nil || expr == nil {
 		return expr, err
 	}
+	if err := t.checkInoutArgs(base, expr, c); err != nil {
+		return nil, err
+	}
 	line, col := c.start()
 	return t.sequenceCall(expr, base, frame, line, col)
 }
@@ -4645,6 +4648,9 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 	if err != nil {
 		return nil, err
 	}
+	if err := t.checkInoutFuncSlot(lit, s.typ, l.at()); err != nil {
+		return nil, err
+	}
 	return t.spreadLambdaGoResults(lit, s.typ, l.at())
 }
 
@@ -4856,6 +4862,11 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// placeholder lambdas are handled by the earlier branches, so only bare
 	// expressions reach here.
 	if wrapped, ok := t.wrapExprAsThunkIfNeeded(expr, expectedType, s.tryThunk); ok {
+		if t.inoutTypesSeen {
+			if err := t.checkInoutThunk(expr, s.tryThunk, e.at()); err != nil {
+				return nil, err
+			}
+		}
 		expr = wrapped
 	}
 
@@ -5213,7 +5224,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 			}
 		}
 	}
-	return transpiler.FuncType{Params: params, Results: results}
+	return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(fnLit.Type.Params)}
 }
 
 // inferFuncTypeSubstFromArgs pre-scans non-lambda arguments of a generic function call
@@ -5416,6 +5427,7 @@ func (t *galaASTTransformer) genericCtorLambdaExpectation(expected transpiler.Ty
 	return transpiler.FuncType{
 		Params:  maskTypeParamResults(ft.Params, unbound),
 		Results: maskTypeParamResults(ft.Results, unbound),
+		Inout:   ft.Inout,
 	}, funcTypeParamsMentionTypeParams(ft.Params, unbound)
 }
 

@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 52
           },
           "name": "Counter",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -40,7 +41,8 @@
                   "off": 34,
                   "end": 40
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -62,7 +64,8 @@
                   "off": 48,
                   "end": 51
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": true,
               "default": null
@@ -78,6 +81,8 @@
             "end": 177
           },
           "name": "early",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -96,7 +101,8 @@
                   "off": 67,
                   "end": 70
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -109,7 +115,8 @@
               "off": 72,
               "end": 78
             },
-            "name": "string"
+            "name": "string",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -322,6 +329,8 @@
             "end": 607
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -1169,7 +1178,8 @@
                     "off": 538,
                     "end": 541
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 },
                 "values": []
               },
@@ -1193,7 +1203,8 @@
                     "off": 552,
                     "end": 558
                   },
-                  "name": "string"
+                  "name": "string",
+                  "args": []
                 },
                 "values": []
               },
@@ -1217,7 +1228,8 @@
                     "off": 570,
                     "end": 574
                   },
-                  "name": "bool"
+                  "name": "bool",
+                  "args": []
                 },
                 "values": []
               },

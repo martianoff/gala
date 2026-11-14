@@ -1632,7 +1632,7 @@ func main() {
 - A shorthand struct prints as `Name(field, …)`, as a sealed value and a Scala case class do. Each field prints in its own format: a nested struct or sealed value recursively, a collection by its elements, an `Option`, `Either` or `Try` as `Some(…)`, `Right(…)`, `Success(…)`, a tuple as `(a, b)`. Strings print without quotes, and a function field prints as `<fn>`.
 - The transpiler generates the `String() string` method that does this on every shorthand struct, so Go code that prints one with `fmt` sees the same text, and every verb that uses `String` does: `%+v` and `%s` print `Pt(1, 2.5)` too, while `%#v` still prints the Go struct. A struct that declares its own `String() string` method, in GALA or in a hand-written `.go` file of its package, prints with that one instead (a `String` of another signature is GALA-E0093), and a struct with a field named `String` keeps Go's format.
 - A pointer field (`Ptr[T]`, `OptionPtr[T]`, `*T`) of a struct, a sealed case or an `Option`, `Either` or `Try` prints the value it points to; a pointer to a Go struct prints as `%v` prints a pointer operand, `&{field field}`, as in `Some(&{1 2})`. A pointer field reached again while it is being printed, as in a value that refers to itself through a `var` field, prints as `<cycle>`. A cycle that passes only through collections or `Option`s, with no pointer field of a struct on it, is not detected and recurses until the stack overflows.
-- A `String() string` declared on a pointer receiver, `func (p *Pt) String() string`, prints the value too: `Println`, `Print`, `s"..."` and `f"..."` (with no spec, or `%v` or `%s`; `%#v` still prints the Go struct), and a field, a sealed case or an `Option` printed in GALA's format, call it. `Println`, `Print` and interpolation call it on the value itself when it is addressable, as any pointer-receiver method is called: a `var`, a parameter, a pattern binding, a field or element of one of these, or a value reached through a pointer (`*p`, `p.Field`), so `String` sees what was written through other pointers and a lock the value holds is not copied. A `val` and a field of one, a call's result and a field printed in GALA's format are printed through a copy, so the value need not be addressable: `Println(Pt(1, 2))` prints what that `String` returns. Printing through a copy a value that must not be copied (one holding a `sync.Mutex`, a `WaitGroup` or another lock) is [GALA-E0053](/docs/errors/gala-e0053/), as calling the method on it would be, and so is printing a struct or sealed value whose generated `String` prints a field of such a type. Printing a `val` or a call's result by a `String` declared on its pointer receiver that can change that receiver is [GALA-E0110](/docs/errors/gala-e0110/), as that call would be. Go code that prints the value with `fmt` sees Go's format, since a pointer-receiver method is not in a value's method set.
+- A `String() string` declared on a pointer receiver, `func (p *Pt) String() string`, prints the value too: `Println`, `Print`, `s"..."` and `f"..."` (with no spec, or `%v` or `%s`; `%#v` still prints the Go struct), and a field, a sealed case or an `Option` printed in GALA's format, call it. `Println`, `Print` and interpolation call it on the value itself when it is addressable, as any pointer-receiver method is called: a `var`, a parameter, a pattern binding, a field or element of one of these, or a value reached through a pointer (`*p`, `p.Field`), so `String` sees what was written through other pointers and a lock the value holds is not copied. A `val` and a field of one, a call's result and a field printed in GALA's format are printed through a copy, so the value need not be addressable: `Println(Pt(1, 2))` prints what that `String` returns. Printing through a copy a value that must not be copied (one holding a `sync.Mutex`, a `WaitGroup` or another lock) is [GALA-E0053](/docs/errors/gala-e0053/), as calling the method on it would be, and so is printing a struct or sealed value whose generated `String` prints a field of such a type. Printing a `val` or a call's result by a `String` declared on its pointer receiver that can change that receiver is [GALA-E0110](/docs/errors/gala-e0110/), as that call would be, and so is printing a struct or sealed value whose generated `String` prints a field by such a `String`, since it runs on a copy of the field. Where the value printed is already a copy (an element a collection or a tuple prints, a value of a type parameter or of `any`, an explicit call of a generated `String`), a change its `String` makes is lost; that is not checked. Go code that prints the value with `fmt` sees Go's format, since a pointer-receiver method is not in a value's method set.
 - A block-form struct (`type T struct { … }`) and a struct declared in Go print with Go's `%v`, `{field field}`: the block form is how GALA mirrors a Go struct. Declare a `String() string` method to print one otherwise.
 
 ### Rune Literals
@@ -1815,6 +1815,115 @@ func main() {
     Println(sum(head))  // 6
 }
 ```
+
+### `inout` Parameters
+
+An `inout` parameter lends the caller's place to the callee for the call. The
+callee reads and writes it like a `var`, and when the call returns the caller's
+place holds the final value. `inout` is a parameter modifier, like `var`, and a
+reserved word.
+
+```gala
+struct Counter(var n int, label string)
+
+// An inout parameter: the argument is `&place`.
+func bump(inout c Counter, by int) {
+    c.n = c.n + by
+}
+
+// An inout receiver: called on a place, with no `&`.
+func (inout c Counter) inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+struct Point(X int, Y int)
+
+// Every field of Point is val: an inout place is updated by replacing it.
+func moveRight(inout p Point) {
+    p = p.Copy(X = p.X + 1)
+}
+
+func main() {
+    var c = Counter(0, "c")
+    bump(&c, 5)
+    c.inc()
+    Println(c.n)      // 6
+
+    var p = Point(1, 2)
+    moveRight(&p)
+    Println(p.X)      // 2
+}
+```
+
+- **Arguments.** An argument to an `inout` parameter is `&place`. A place is a
+  `var` (local, `var` parameter or package-level), an `inout` parameter, or a
+  `var` field of one of these (`&pair.left`). A `Ptr[T]` the caller holds lends
+  its pointee and is passed as it is. A missing `&`, or `&` of a call result or
+  a literal, is [GALA-E0111](/docs/errors/gala-e0111/); `&` of a `val` or a `val`
+  field is [GALA-E0076](/docs/errors/gala-e0076/). To lend a value, copy it into a
+  `var` first.
+- **Receivers.** `func (inout c T) m()` is called as `v.m()` on a `var`, an
+  `inout` parameter, a `var` field of one, or a `Ptr[T]`. On anything else it
+  is [GALA-E0114](/docs/errors/gala-e0114/), even when `m` only reads its receiver.
+- **In the body.** `c` is a mutable place of type `T`: `c.f` reads a field,
+  `c.f = e` writes a `var` field, `c = e` replaces the whole value (even when
+  every field of `T` is `val`), and `&c` lends the place on to another `inout`
+  parameter. Reading `c` as a whole (`val copy = c`) copies the value.
+- **Declarations.** `inout` is allowed on function and method parameters, on
+  receivers, on lambda parameters (`(inout b Buffer) => …`), and in function
+  types (`func(inout Counter)`), and on interface method specs. An `inout` parameter is neither variadic nor
+  defaulted ([GALA-E0111](/docs/errors/gala-e0111/)). A generic `inout x T` is
+  allowed.
+- **Go.** `inout x T` is the Go parameter `x *T` and an `inout` receiver a
+  pointer receiver, so `bump(&c, 5)` is the Go a programmer writes with a
+  `Ptr[Counter]` parameter. A read of `x` as a whole is `*x`, and an exported
+  function checks its `inout` parameters for nil on entry, as it does `Ptr`
+  parameters. Go code calls an exported `inout` function or method through a
+  wrapper that lends the GALA body a copy of each `inout` argument, and GALA
+  code calls the body itself ([Go interop](/docs/go-interop/#inout-functions-and-methods)).
+- **Interfaces.** An interface may declare a method `inout`
+  (`type Stepper interface { inout Step() int }`). A value fills it only when
+  its type implements that method with an `inout` receiver; a Go type only
+  when its method is on the no-retain allow-list below
+  ([GALA-E0116](/docs/errors/gala-e0116/)). An interface value received from Go
+  is trusted as it is.
+- **Function types.** `func(inout Counter)` and `func(Ptr[Counter])` are
+  distinct GALA types with the same Go type, `func(*Counter)`. A call through
+  a value of a `func(inout T)` type is checked like a call of a declared
+  function. A function whose parameter is not `inout`, a `func(Ptr[T])` or
+  a lambda `(k) => …`, does not fill a `func(inout T)` slot: it may keep the
+  pointer it is lent (GALA-E0113). Nor does an `inout` function fill a
+  `func(Ptr[T])` slot, whose callers may pass a pointer they share.
+
+The compiler checks that an `inout` borrow is exclusive and lasts only for
+the call:
+
+- **Exclusive.** One call never lends one place twice: two `inout` arguments
+  naming the same place or a place and its field (`both(&c, &c)`,
+  `f(&p, &p.lex)`), an `inout` receiver lent again as an argument, or a
+  lambda argument reading a place the call lends, is
+  [GALA-E0112](/docs/errors/gala-e0112/). Disjoint fields of one place may be
+  lent together: `both(&p.left, &p.right)`.
+- **No escape.** Inside the callee, nothing keeps a reference to the place
+  past the call ([GALA-E0113](/docs/errors/gala-e0113/)). `&c` is only an
+  argument to another `inout` parameter: it is not bound, returned, or
+  passed to a parameter that is not `inout` or to Go. `c` is not captured by
+  a lambda or a by-name argument, and no method value is taken on it. A
+  pointer-receiver method is called on it only when its receiver is `inout`
+  or, for a method of another package, borrowed. A Go pointer method is
+  called on it only when it is on the compiler's no-retain allow-list
+  (`bytes.Buffer.WriteString`, `strings.Builder.Grow`, ...): each entry is
+  checked in CI against the Go compiler's escape analysis, and programs
+  cannot add entries. A value-receiver method
+  gets a copy and is always fine. To keep the value, copy it: `val n = c.n`.
+- **No partial updates.** The thunk of `Try(...)` does not use an `inout`
+  place ([GALA-E0115](/docs/errors/gala-e0115/)): a panic `Try` catches would
+  leave the caller's place half updated. Work on a copy and assign the place
+  once `Try` has succeeded.
+
+The design, with its rationale and prior art, is in
+[OWNERSHIP_DESIGN.MD](https://github.com/martianoff/gala/blob/master/docs/OWNERSHIP_DESIGN.MD).
 
 ## 13. GALA Packages {#13-gala-packages}
 

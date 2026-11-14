@@ -1727,6 +1727,152 @@ func main() {
 			},
 		},
 		{
+			name: "an inout argument without its &",
+			code: galaerr.CodeInoutArgument, // GALA-E0111
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func bump(inout c Counter) {
+    c.n = c.n + 1
+}
+
+func main() {
+    var c = Counter(0)
+    bump(c)
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name: "one call lends a place twice",
+			code: galaerr.CodeInoutOverlap, // GALA-E0112
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func both(inout a Counter, inout b Counter) {
+    a.n = a.n + b.n
+}
+
+func main() {
+    var c = Counter(1)
+    both(&c, &c)
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name: "a lambda captures an inout place",
+			code: galaerr.CodeInoutEscape, // GALA-E0113
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func later(inout c Counter) func() int = () => c.n
+
+func main() {
+    var c = Counter(1)
+    Println(later(&c)())
+}
+`)
+			},
+		},
+		{
+			name: "an inout place written inside Try",
+			code: galaerr.CodeInoutInTry, // GALA-E0115
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func step(inout c Counter) = Println(Try(() => {
+    c.n = c.n + 1
+    c.n
+}))
+
+func main() {
+    var c = Counter(1)
+    step(&c)
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name: "an inout interface method implemented with a Ptr receiver",
+			code: galaerr.CodeInoutForeignImpl, // GALA-E0116
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Stepper interface {
+    inout Step() int
+}
+
+struct Counter(var n int)
+
+func (c Ptr[Counter]) Step() int {
+    c.n = c.n + 1
+    c.n
+}
+
+func run(s Stepper) int = s.Step()
+
+func main() {
+    Println(run(&Counter(0)))
+}
+`)
+			},
+		},
+		{
+			name: "an inout method called on a val",
+			code: galaerr.CodeInoutReceiver, // GALA-E0114
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var n int)
+
+func (inout c Counter) bump() {
+    c.n = c.n + 1
+}
+
+func main() {
+    val c = Counter(0)
+    c.bump()
+    Println(c.n)
+}
+`)
+			},
+		},
+		{
+			name: "a field printed through a copy by a String that changes it",
+			code: galaerr.CodeMutatingCallOnCopy, // GALA-E0110
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var shown int)
+
+func (c Ptr[Counter]) String() string {
+    c.shown = c.shown + 1
+    s"shown ${c.shown}"
+}
+
+struct Holder(var c Counter)
+
+func main() {
+    var h = Holder(Counter(0))
+    Println(h)
+    Println(h.c.shown)
+}
+`)
+			},
+		},
+		{
 			name:   "builtin-named function the package's hand-written Go refers to",
 			code:   galaerr.CodeBuiltinNameReachedFromGo, // GALA-E0107
 			render: renderBuiltinNameFromGoRepro,

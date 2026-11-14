@@ -1,0 +1,3 @@
+package shape
+
+struct Point(X int, Y int)

@@ -105,7 +105,21 @@ const (
 	// LeanRejected: Lean rejected the translation for another reason, a
 	// gala2lean bug; Message has Lean's first error.
 	LeanRejected
+	// Untyped: Lean could not infer a type the translation left to it (Core
+	// JSON carries no types for most expressions), such as the element
+	// type of a `None()` printed on its own; Decl names the function.
+	Untyped
 )
+
+// isTypingGap reports whether Lean error msg says that it could not infer the
+// type parameter of an Option or Either the program builds, a type Core JSON
+// does not carry (`Println(None())`). Any other inference failure is a
+// translation bug, and stays one.
+func isTypingGap(msg string) bool {
+	stuck := strings.Contains(msg, "typeclass instance problem is stuck") ||
+		strings.Contains(msg, "don't know how to synthesize")
+	return stuck && (strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither"))
+}
 
 // RunResult is one run of a translated program.
 type RunResult struct {
@@ -164,12 +178,33 @@ func (r *Runner) Run(res *Result, timeout time.Duration) (RunResult, error) {
 		if d := res.DeclAt(line); d != nil {
 			rr.Decl = d.Name
 		}
-		if strings.Contains(m[2], "to be monotone") {
+		switch {
+		case strings.Contains(m[2], "to be monotone"):
 			rr.Kind = NotMonotone
+		case isTypingGap(firstError(stdout.String())):
+			rr.Kind = Untyped
 		}
 		return rr, nil
 	}
 	return RunResult{Kind: Crashed, Message: firstNonEmpty(stderr.String(), stdout.String())}, nil
+}
+
+// firstError is the text of the first error in Lean's output: its line and
+// the indented lines after it.
+func firstError(out string) string {
+	loc := errorLine.FindStringIndex(out)
+	if loc == nil {
+		return ""
+	}
+	lines := strings.Split(out[loc[0]:], "\n")
+	text := lines[0]
+	for _, l := range lines[1:] {
+		if l != "" && l[0] != ' ' && l[0] != '\t' {
+			break
+		}
+		text += "\n" + l
+	}
+	return text
 }
 
 func firstNonEmpty(texts ...string) string {

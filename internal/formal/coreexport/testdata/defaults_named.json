@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,8 @@
             "end": 58
           },
           "name": "scale",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -39,7 +41,8 @@
                   "off": 27,
                   "end": 30
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -60,7 +63,8 @@
                   "off": 34,
                   "end": 37
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": {
                 "kind": "binary",
@@ -105,7 +109,8 @@
               "off": 47,
               "end": 50
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "binary",
@@ -147,6 +152,7 @@
             "end": 98
           },
           "name": "Cfg",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -166,7 +172,8 @@
                   "off": 76,
                   "end": 82
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -188,7 +195,8 @@
                   "off": 90,
                   "end": 93
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": {
@@ -216,6 +224,7 @@
             "end": 153
           },
           "name": "Shape",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -245,7 +254,8 @@
                       "off": 136,
                       "end": 139
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -267,7 +277,8 @@
                       "off": 143,
                       "end": 146
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": {
@@ -297,6 +308,8 @@
             "end": 304
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

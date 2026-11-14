@@ -193,9 +193,9 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 	case *coreexport.Match:
 		return term{code: doTerm(g.matchItems(e, sc.term(), true))}
 	case *coreexport.Lambda:
-		unsup(e.Pos, "lambda")
+		return g.lambda(e, sc, nil)
 	case *coreexport.Interp:
-		unsup(e.Pos, "interp")
+		return g.interp(e, sc)
 	case *coreexport.NamedArg:
 		unsup(e.Pos, "named-arg")
 	}
@@ -214,7 +214,10 @@ func (g *gen) branch(e coreexport.Node, sc *scope) term {
 // name is an identifier used as a value.
 func (g *gen) name(e *coreexport.Name, sc *scope) term {
 	x := e.Name
-	if sc.lookup(x) != nil {
+	if l := sc.lookup(x); l != nil {
+		if l.box >= 0 {
+			return term{code: fmt.Sprintf("(_gala_get%d %s)", l.box, ident(x))}
+		}
 		return term{code: ident(x), pure: true}
 	}
 	if g.globalBy[x] != nil {
@@ -223,7 +226,20 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 	if v := g.variants[x]; v != nil && len(v.fields) == 0 {
 		return term{code: ident(v.sealed.Name) + "." + ident(x), pure: true}
 	}
-	if g.funcs[x] != nil || g.structs[x] != nil || g.variants[x] != nil {
+	if f := g.funcs[x]; f != nil {
+		// A top-level function as a value.
+		if len(f.Params) == 0 {
+			return term{code: "(fun (_ : Unit) => " + g.funcRef(x) + ")", pure: true}
+		}
+		return term{code: g.funcRef(x), pure: true}
+	}
+	if g.structs[x] != nil || g.variants[x] != nil {
+		unsup(e.Pos, "func-value")
+	}
+	if x == "None" {
+		return term{code: stdCtors[x], pure: true}
+	}
+	if stdCtors[x] != "" {
 		unsup(e.Pos, "func-value")
 	}
 	g.unresolved(e.Pos, "unresolved-name")
@@ -233,7 +249,7 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 func (g *gen) binary(e *coreexport.Binary, sc *scope) term {
 	if e.Op == "==" || e.Op == "!=" {
 		// A type's own Equal decides `==` (docs/GALA.MD, "Equality").
-		g.basic(e.Left, sc)
+		g.comparable(e.Left, sc)
 	}
 	l := g.expr(e.Left, sc)
 	r := g.expr(e.Right, sc)
@@ -271,94 +287,6 @@ func (g *gen) binary(e *coreexport.Binary, sc *scope) term {
 		return act(fmt.Sprintf("%s %s %s", fn, l.val(), r.val()))
 	}
 	unsup(e.Pos, "binary-%s", e.Op)
-	return term{}
-}
-
-// args translates positional call arguments, left to right.
-func (g *gen) args(as []coreexport.Node, sc *scope) ([]term, []string) {
-	ts := make([]term, len(as))
-	vs := make([]string, len(as))
-	for i, a := range as {
-		if na, ok := a.(*coreexport.NamedArg); ok {
-			unsup(na.Pos, "named-arg")
-		}
-		ts[i] = g.expr(a, sc)
-		vs[i] = ts[i].val()
-	}
-	return ts, vs
-}
-
-func (g *gen) call(e *coreexport.Call, sc *scope) term {
-	callee, ok := e.Callee.(*coreexport.Name)
-	if !ok {
-		if u, isUnsup := e.Callee.(*coreexport.Unsupported); isUnsup {
-			unsup(u.Pos, "%s", u.What)
-		}
-		if s, isSel := e.Callee.(*coreexport.Select); isSel {
-			// pkg.F(...) names a member of an import; v.M(...) calls a
-			// method.
-			if n, isName := s.Target.(*coreexport.Name); isName && sc.lookup(n.Name) == nil &&
-				g.globalBy[n.Name] == nil && g.variants[n.Name] == nil {
-				g.unresolved(s.Pos, "method-call")
-			}
-			unsup(s.Pos, "method-call")
-		}
-		unsup(e.Pos, "call-of-%s", e.Callee.Kind())
-	}
-	x := callee.Name
-	if sc.lookup(x) != nil {
-		unsup(e.Pos, "call-of-function-value")
-	}
-	switch {
-	case g.funcs[x] != nil:
-		f := g.funcs[x]
-		if len(f.Params) != len(e.Args) {
-			unsup(e.Pos, "default-argument")
-		}
-		ts, vs := g.args(e.Args, sc)
-		c := ident(x)
-		if len(vs) > 0 {
-			c += " " + strings.Join(vs, " ")
-		}
-		unit := f.Result == nil
-		if allPure(ts...) {
-			return term{code: "(" + c + ")", unit: unit}
-		}
-		return actUnit(c, unit)
-	case g.structs[x] != nil:
-		s := g.structs[x]
-		if len(s.Fields) != len(e.Args) {
-			unsup(e.Pos, "default-field")
-		}
-		ts, vs := g.args(e.Args, sc)
-		return wrap(fmt.Sprintf("(%s.mk %s)", ident(x), strings.Join(vs, " ")), ts...)
-	case g.variants[x] != nil:
-		v := g.variants[x]
-		if len(v.fields) != len(e.Args) {
-			unsup(e.Pos, "default-field")
-		}
-		ts, vs := g.args(e.Args, sc)
-		c := ident(v.sealed.Name) + "." + ident(x)
-		if len(vs) > 0 {
-			c = "(" + c + " " + strings.Join(vs, " ") + ")"
-		}
-		return wrap(c, ts...)
-	case x == "Println" || x == "Print":
-		for _, a := range e.Args {
-			g.basic(a, sc)
-		}
-		_, vs := g.args(e.Args, sc)
-		shown := make([]string, len(vs))
-		for i, v := range vs {
-			shown[i] = "garg " + v
-		}
-		fn := map[string]string{"Println": "gprintln", "Print": "gprint"}[x]
-		return actUnit(fmt.Sprintf("%s [%s]", fn, strings.Join(shown, ", ")), true)
-	}
-	if g.globalBy[x] != nil {
-		unsup(e.Pos, "call-of-function-value")
-	}
-	g.unresolved(e.Pos, "call-of-"+x)
 	return term{}
 }
 

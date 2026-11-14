@@ -177,7 +177,7 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 	if mm.IsGeneric || len(mm.TypeParams) > 0 {
 		return nil, false
 	}
-	ft := signatureType(mm.ParamTypes, mm.ReturnType, mm.GoResults)
+	ft := signatureType(mm.ParamTypes, mm.InoutParams, mm.ReturnType, mm.GoResults)
 	gen, isGeneric := recvType.(transpiler.GenericType)
 	if len(meta.TypeParams) == 0 && !isGeneric {
 		return ft, true

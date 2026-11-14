@@ -142,17 +142,6 @@ func (t *galaASTTransformer) namesOnlyImportedPackages(typ transpiler.Type) bool
 	})
 }
 
-// namesUnimportedGalaPackage reports whether typ names a type of a GALA
-// package this file reaches only through another package, one whose import
-// entry is implicit (see namesOnlyImportedPackages): an import of it is one
-// Bazel's strict dependencies reject.
-func (t *galaASTTransformer) namesUnimportedGalaPackage(typ transpiler.Type) bool {
-	return !everyNamedType(typ, func(v transpiler.NamedType) bool {
-		entry, ok := t.importManager.Qualifier(v.Package)
-		return !ok || !entry.Implicit() || t.namesOnlyImportedPackages(v)
-	})
-}
-
 // everyNamedType reports whether ok holds for every named type in typ.
 func everyNamedType(typ transpiler.Type, ok func(transpiler.NamedType) bool) bool {
 	switch v := typ.(type) {

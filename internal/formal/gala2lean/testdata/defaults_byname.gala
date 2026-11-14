@@ -1,0 +1,18 @@
+package main
+
+func pick(x int, y int = 0, z int = x + y) int = z * 10 + y
+
+var calls = 0
+
+func compute() int {
+    calls = calls + 1
+    calls
+}
+
+func main() {
+    val x = 7
+    val y = 8
+    Println(pick(y = 1, x = x), pick(z = y, x = 2), pick(3))
+    val run = (body func() int) => body() + body()
+    Println(run(compute()), calls)
+}

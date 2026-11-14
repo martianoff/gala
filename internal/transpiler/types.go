@@ -2,6 +2,7 @@ package transpiler
 
 import (
 	"go/token"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -193,7 +194,17 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 	case GenericType:
 		return DisplayTypeNamed(v.Base, name) + "[" + displayTypes(v.Params, name) + "]"
 	case FuncType:
-		s := "func(" + displayTypes(v.Params, name) + ")"
+		params := make([]string, len(v.Params))
+		for i, p := range v.Params {
+			// An inout parameter reads as written, `inout T`, not as the
+			// Ptr[T] it lowers to.
+			if ptr, isPtr := p.(PointerType); isPtr && v.IsInout(i) {
+				params[i] = InoutPrefix + DisplayTypeNamed(ptr.Elem, name)
+				continue
+			}
+			params[i] = DisplayTypeNamed(p, name)
+		}
+		s := "func(" + strings.Join(params, ", ") + ")"
 		switch len(v.Results) {
 		case 0:
 			return s
@@ -624,6 +635,11 @@ func (t PointerType) GetPackage() string { return "" }
 type FuncType struct {
 	Params  []Type
 	Results []Type
+	// Inout is index-aligned with Params: true for an `inout` parameter
+	// (`func(inout T)`), whose Params entry is the Ptr[T] it lowers to. Nil
+	// when none is. A `func(inout T)` and a `func(Ptr[T])` are distinct GALA
+	// types with the same Go type.
+	Inout []bool
 }
 
 func (t FuncType) String() string {
@@ -632,6 +648,9 @@ func (t FuncType) String() string {
 	for i, p := range t.Params {
 		if i > 0 {
 			b.WriteString(", ")
+		}
+		if t.IsInout(i) {
+			b.WriteString(InoutPrefix)
 		}
 		b.WriteString(p.String())
 	}
@@ -651,6 +670,26 @@ func (t FuncType) String() string {
 	}
 	return b.String()
 }
+// InoutPrefix is how FuncType.String marks an `inout` parameter, and how
+// ParseType reads it back.
+const InoutPrefix = "inout "
+
+// IsInout reports whether parameter i is `inout`.
+func (t FuncType) IsInout(i int) bool { return i >= 0 && i < len(t.Inout) && t.Inout[i] }
+
+// WithInout is flags, index-aligned with a parameter list, with parameter i
+// marked `inout`; the slice grows to reach i.
+func WithInout(flags []bool, i int) []bool {
+	if i >= len(flags) {
+		flags = append(flags, make([]bool, i+1-len(flags))...)
+	}
+	flags[i] = true
+	return flags
+}
+
+// HasInout reports whether any parameter is `inout`.
+func (t FuncType) HasInout() bool { return slices.Contains(t.Inout, true) }
+
 func (t FuncType) IsNil() bool        { return false }
 func (t FuncType) IsAny() bool        { return false }
 func (t FuncType) IsVoid() bool       { return false }
@@ -701,7 +740,11 @@ func parseFuncType(s string) (FuncType, bool) {
 		return FuncType{}, false
 	}
 	var ft FuncType
-	for _, p := range splitTopLevel(s[len("func(") : closeParen]) {
+	for i, p := range splitTopLevel(s[len("func(") : closeParen]) {
+		if rest, inout := strings.CutPrefix(strings.TrimSpace(p), InoutPrefix); inout {
+			p = rest
+			ft.Inout = WithInout(ft.Inout, i)
+		}
 		ft.Params = append(ft.Params, ParseType(p))
 	}
 	rest := strings.TrimSpace(s[closeParen+1:])
@@ -918,7 +961,7 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 		for i, r := range v.Results {
 			results[i] = SubstituteTypeParams(r, subst)
 		}
-		return FuncType{Params: params, Results: results}
+		return FuncType{Params: params, Results: results, Inout: v.Inout}
 	}
 	return t
 }

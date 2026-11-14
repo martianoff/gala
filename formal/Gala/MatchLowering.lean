@@ -5,7 +5,8 @@
   with the shape of the Go code the transpiler emits for them: a tagged struct, a chain of
   `Unapply` calls tried in order, and a panic when no arm matches.
 
-  This is a *lowering model* (docs/FORMAL_SEMANTICS.MD, "Optional: lowering models"). It
+  This is a *lowering model* (docs/FORMAL_SEMANTICS.MD, "Lowering models and the
+  reference lowering"). It
   is not a semantics of Go: the target language models only the Go constructs the match
   lowering uses.
 

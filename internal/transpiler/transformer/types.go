@@ -370,8 +370,12 @@ func (t *galaASTTransformer) spellType(typ transpiler.Type) ast.Expr {
 		// Params is never nil: go/ast's FuncType.End reads it when there are
 		// no results, so a nil list panics the printer on `func()`.
 		params := &ast.FieldList{}
-		for _, p := range v.Params {
-			params.List = append(params.List, &ast.Field{Type: t.spellType(p)})
+		for i, p := range v.Params {
+			pt := t.spellType(p)
+			if v.IsInout(i) {
+				t.markOperand(pt, operandInoutParam)
+			}
+			params.List = append(params.List, &ast.Field{Type: pt})
 		}
 		var results *ast.FieldList
 		if len(v.Results) > 0 {
@@ -638,7 +642,7 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 				}
 			}
 		}
-		return transpiler.FuncType{Params: params, Results: results}
+		return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(e.Params)}
 	}
 	return transpiler.NilType{}
 }

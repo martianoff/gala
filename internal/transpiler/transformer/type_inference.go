@@ -273,7 +273,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 					}
 				}
 			}
-			return transpiler.FuncType{Params: params, Results: results}
+			return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(e.Type.Params)}
 		}
 	case *ast.CompositeLit:
 		// Use astTypeToTranspilerType to preserve generic type parameters
@@ -463,7 +463,7 @@ func (t *galaASTTransformer) resolveType(name string) transpiler.Type {
 // Use this when callers need to unify the function's signature against an
 // expected param type to bind both method-level and function-level type params.
 func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) transpiler.FuncType {
-	return signatureType(fm.ParamTypes, fm.ReturnType, fm.GoResults)
+	return signatureType(fm.ParamTypes, fm.InoutParams, fm.ReturnType, fm.GoResults)
 }
 
 // signatureType is the FuncType of a declaration with the given parameter
@@ -471,8 +471,8 @@ func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) 
 // declaration with a Go result list (goResults non-nil) has those results
 // instead: its value is a Go function with several results, and a call of
 // that value is lifted as a Go call's is. The parameters are copied.
-func signatureType(paramTypes []transpiler.Type, returnType transpiler.Type, goResults []transpiler.Type) transpiler.FuncType {
-	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...)}
+func signatureType(paramTypes []transpiler.Type, inout []bool, returnType transpiler.Type, goResults []transpiler.Type) transpiler.FuncType {
+	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...), Inout: inout}
 	if goResults != nil {
 		ft.Results = append([]transpiler.Type(nil), goResults...)
 	} else if transpiler.HasResult(returnType) {
@@ -1293,7 +1293,7 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 		for i, r := range v.Results {
 			newResults[i] = t.substituteInTypeDepth(r, paramMap, depth, qualifiedToo)
 		}
-		return transpiler.FuncType{Params: newParams, Results: newResults}
+		return transpiler.FuncType{Params: newParams, Results: newResults, Inout: v.Inout}
 	default:
 		return typ
 	}

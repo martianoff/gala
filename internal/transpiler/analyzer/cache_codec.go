@@ -305,6 +305,7 @@ func (e *encoder) writeType(t transpiler.Type) {
 		for _, p := range v.Results {
 			e.writeType(p)
 		}
+		e.writeBoolSlice(v.Inout)
 	case transpiler.NilType:
 		e.writeByte(typeTagNilType)
 	case transpiler.VoidType:
@@ -357,6 +358,8 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.OfTypeDecl)
 	e.writeTypeSlice(m.GoResults)
 	e.writeBorrowSummary(m.Borrow)
+	e.writeBool(m.InoutReceiver)
+	e.writeBoolSlice(m.InoutParams)
 	e.writeReceiverEffects(m.ReceiverEffects)
 }
 
@@ -469,6 +472,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeBool(f.Variadic)
 	e.writeTypeSlice(f.GoResults)
 	e.writeBorrowSummary(f.Borrow)
+	e.writeBoolSlice(f.InoutParams)
 }
 
 func (e *encoder) writeStringFuncMetaMap(m map[string]*transpiler.FunctionMetadata) {
@@ -869,7 +873,7 @@ func (d *decoder) readType() transpiler.Type {
 				results[i] = d.readType()
 			}
 		}
-		return transpiler.FuncType{Params: params, Results: results}
+		return transpiler.FuncType{Params: params, Results: results, Inout: d.readBoolSlice()}
 	case typeTagNilType:
 		return transpiler.NilType{}
 	case typeTagVoid:
@@ -931,6 +935,8 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.OfTypeDecl = d.readBool()
 	m.GoResults = d.readTypeSlice()
 	m.Borrow = d.readBorrowSummary()
+	m.InoutReceiver = d.readBool()
+	m.InoutParams = d.readBoolSlice()
 	m.ReceiverEffects = d.readReceiverEffects()
 	return m
 }
@@ -1059,6 +1065,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f.Variadic = d.readBool()
 	f.GoResults = d.readTypeSlice()
 	f.Borrow = d.readBorrowSummary()
+	f.InoutParams = d.readBoolSlice()
 	return f
 }
 

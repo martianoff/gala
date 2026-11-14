@@ -1,0 +1,33 @@
+package main
+
+import (
+    "fmt"
+
+    "martianoff/gala/examples/inout_go_wrapper"
+    "martianoff/gala/go_interop"
+)
+
+func main() {
+    // Go calls the wrappers.
+    Println(inout_go_wrapper.GoTransferToSelf(100))
+    Println(inout_go_wrapper.GoDepositRecovered(7))
+    Println(inout_go_wrapper.GoDeposit(7, 3))
+
+    // GALA calls the bodies, across packages.
+    var a = inout_go_wrapper.Account(10)
+    var b = inout_go_wrapper.Account(20)
+    inout_go_wrapper.Transfer(&a, &b, 4)
+    Println(a.Balance, b.Balance)
+    val r = a.Deposit(5)
+    val doubled = r * 2
+    Println(r, doubled)
+
+    var big = inout_go_wrapper.Account(500)
+    Println(inout_go_wrapper.Clamp(&big, 100), big.Balance)
+
+    // A body that declares Go results is still a Go call's value.
+    Println(a.Write(go_interop.ToBytes("abc")), a.Balance)
+    // Go sees the wrapper as an io.Writer.
+    fmt.Fprint(&a, "xy")
+    Println(a.Balance)
+}

@@ -18,7 +18,17 @@ func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr
 		if err := t.immutableAddressError(at, operand, expr); err != nil {
 			return nil, err
 		}
-		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}, nil
+		// `&x` of an inout binding lends its place on: the pointer x.
+		var addr ast.Expr
+		if ptr, ok := t.inoutAddr(expr); ok {
+			addr = ptr
+		} else {
+			addr = &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}
+		}
+		if err := t.checkInoutLend(at, expr, addr); err != nil {
+			return nil, err
+		}
+		return addr, nil
 	case "*":
 		return t.markDeref(&ast.StarExpr{X: expr}), nil
 	case "!":
@@ -818,6 +828,9 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 			return nil, err
 		}
 		if err := t.checkInterfaceSlot(expr, s.typ, e.at()); err != nil {
+			return nil, err
+		}
+		if err := t.checkInoutFuncSlot(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}
 	}

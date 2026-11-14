@@ -65,6 +65,9 @@ func compareLean(r LeanRunner, res *gala2lean.Result, spec, real Run) (LeanRecor
 	case gala2lean.NotMonotone:
 		c := "monotonicity:" + out.Decl
 		return LeanRecord{Comparison: Comparison{Unsupported, "partial_fixpoint cannot define " + out.Decl + ": " + out.Message}, Construct: c}, nil
+	case gala2lean.Untyped:
+		c := "lean-type-inference:" + out.Decl
+		return LeanRecord{Comparison: Comparison{Unsupported, "Lean cannot infer a type in " + out.Decl + ": " + out.Message}, Construct: c}, nil
 	case gala2lean.LeanRejected:
 		where := ""
 		if out.Decl != "" {

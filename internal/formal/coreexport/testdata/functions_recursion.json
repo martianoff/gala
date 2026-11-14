@@ -1,5 +1,5 @@
 {
-  "core": 4,
+  "core": 7,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,8 @@
             "end": 71
           },
           "name": "fact",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -39,7 +41,8 @@
                   "off": 26,
                   "end": 29
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -52,7 +55,8 @@
               "off": 31,
               "end": 34
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "if-expr",
@@ -193,6 +197,8 @@
             "end": 169
           },
           "name": "fib",
+          "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -211,7 +217,8 @@
                   "off": 84,
                   "end": 87
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -224,7 +231,8 @@
               "off": 89,
               "end": 92
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -447,6 +455,8 @@
             "end": 216
           },
           "name": "main",
+          "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
