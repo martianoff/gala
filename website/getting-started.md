@@ -223,7 +223,7 @@ In `MODULE.bazel`:
 ```python
 module(name = "myproject", version = "0.0.1")
 
-bazel_dep(name = "rules_gala", version = "0.3.2")
+bazel_dep(name = "rules_gala", version = "0.6.11")
 bazel_dep(name = "gala", version = "0.84.1")
 bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "gazelle", version = "0.47.0")

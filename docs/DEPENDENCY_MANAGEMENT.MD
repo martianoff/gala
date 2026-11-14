@@ -666,7 +666,7 @@ module(
 )
 
 # GALA rules + language toolchain
-bazel_dep(name = "rules_gala", version = "0.3.2")
+bazel_dep(name = "rules_gala", version = "0.6.11")
 bazel_dep(name = "gala", version = "0.84.1")
 register_toolchains("@gala//tools/toolchain:gala_toolchain")
 
