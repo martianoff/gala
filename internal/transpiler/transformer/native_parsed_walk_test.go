@@ -140,7 +140,7 @@ func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string
 
 // TestNativeParsedWalkFallback holds a walk whose defaults and interpolations
 // all fall back to ANTLR's parser and galop's converter (RefuseNativeParse),
-// as when the engine's parser does not settle them, to its golden on
+// as after a galop panic on them, to its golden on
 // parsedShapes and on each of parsedCases: the Go, or the diagnostic, that
 // ANTLR's walk gave them, with no tree made by the engine's parser.
 func TestNativeParsedWalkFallback(t *testing.T) {
@@ -247,9 +247,9 @@ func Qualified(s string = Thing match {
 // tree numbers its nodes from 0 like the file's, so the cache must key a node
 // with its tree: the answer for one tree's node is not another's.
 func TestEscapeCacheKeysNodesByTree(t *testing.T) {
-	ret, err := galaparser.ParseExpressionNativeAt("if (true) { return 1 } else 2", 1, 0)
+	ret, _, err := galaparser.ParseExpressionCheckedAt("if (true) { return 1 } else 2", 1, 0, "expression")
 	require.NoError(t, err)
-	plain, err := galaparser.ParseExpressionNativeAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0)
+	plain, _, err := galaparser.ParseExpressionCheckedAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0, "expression")
 	require.NoError(t, err)
 	tree := plain.Tree()
 	require.Less(t, ret.Index(), len(tree.Nodes), "the plain tree must have a node at the returning root's index")

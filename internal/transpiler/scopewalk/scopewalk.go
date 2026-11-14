@@ -118,7 +118,7 @@ type Options struct {
 	ParseInterpolations bool
 
 	// RequireCleanInterpolationParse drops an embedded expression whose
-	// re-parse reported errors, instead of walking ANTLR's error-recovered
+	// re-parse reported errors, instead of walking its error-recovered
 	// tree — so a pass that reports on unbound names cannot turn parser
 	// recovery into a diagnostic. It is a narrow guard, not a well-formedness
 	// gate: the expression parser is not anchored at end-of-input, so a

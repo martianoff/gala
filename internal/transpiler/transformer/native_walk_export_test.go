@@ -61,7 +61,7 @@ func OnNativeNodes(tr transpiler.ASTTransformer, h NativeNodeHooks) {
 }
 
 // RefuseNativeParse makes tr's parseExprAt take its ANTLR fallback for every
-// text, as if its native parse had not settled it.
+// text, as after a galop panic on it.
 func RefuseNativeParse(tr transpiler.ASTTransformer) {
 	tr.(*galaASTTransformer).refuseNativeParse = true
 }

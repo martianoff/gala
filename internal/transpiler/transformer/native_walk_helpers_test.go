@@ -55,7 +55,7 @@ type walkRun struct {
 // test requested, each with an analyzer of its own, so no package-load
 // failure carries over from one file to the next. refuseNative parses every
 // default value and interpolated expression with ANTLR's parser, as when the
-// engine's does not settle it (RefuseNativeParse). root is the project root
+// engine's parser panics on it (RefuseNativeParse). root is the project root
 // of the analysis, "" for none.
 type walkPipeline struct {
 	searchPaths  []string

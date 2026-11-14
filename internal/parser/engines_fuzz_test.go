@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"martianoff/gala/galaerr"
 )
 
 // FuzzParserEngines holds galop's lexer and parser to ANTLR's on arbitrary
@@ -22,8 +20,7 @@ import (
 //   - galop's native lexer gives ANTLR's tokens, hidden ones included, its
 //     lexical errors and its doc comments, a BOM and invalid UTF-8 included;
 //     at the start of the input and at an offset, as an expression's default
-//     or interpolation is lexed; where it lexes without errors, the token
-//     stream ANTLR's parser reads after a syntax error is ANTLR's lexer's;
+//     or interpolation is lexed;
 //   - VisitNativeTokens visits the default-channel tokens VisitTokens visits;
 //   - the two engines agree on the parse of a source file (compareEngines:
 //     the same errors and doc comments, the same native tree, clean or
@@ -67,10 +64,10 @@ func checkEnginesAgree(t *testing.T, src string, line, col int) {
 		t.Error(d)
 	}
 	// The lexers at an offset. With line <= 0 both start at 1:0, whatever
-	// col (lexNative, seedLexer), as compareLexers lexed. lexNative drops a
-	// leading BOM, as ParseFile does before ANTLR's lexer reads the text.
+	// col (lexNative, seedLexer), as compareLexers lexed. Both read the text
+	// as an expression's is read, a leading BOM included.
 	if line > 0 {
-		if d := firstTokenDiff(antlrTokens(t, galaerr.StripBOM(src), line, col), nativeTokens(src, line, col)); d != "" {
+		if d := firstTokenDiff(antlrTokens(t, src, line, col), nativeTokens(src, line, col)); d != "" {
 			t.Errorf("the lexers disagree at %d:%d: %s", line, col, d)
 		}
 	}
@@ -109,10 +106,11 @@ func engineSeeds(tb testing.TB) []string {
 	seeds = append(seeds, emptyLineInputs...)
 	return append(seeds,
 		// Invalid UTF-8, which ANTLR reads as U+FFFD, in a doc comment, an
-		// identifier, cut at the end, and after a BOM. Inside a string
-		// literal it is left out until martianoff/galop#45 is fixed: the
-		// converted tree reads the raw byte where ANTLR's reads U+FFFD.
+		// identifier, cut at the end, after a BOM, and in a string literal,
+		// where a byte dropped from a multi-byte character also breaks the
+		// file (see antlrText).
 		"package main\n\n// Two placeho\x94 sum via FoldLeft.\nfunc f() int = 1\n",
+		"package main\n\n// A dash \xe2\x80 cut.\nval s = \"a\x94b\"\nval = \n",
 		"package main\n\nval a\x94b = 1\nval ✓\x94 = 2\n",
 		"package main\n\n// cut at the end \xe2\x82",
 		"\xef\xbb\xbfpackage main\n\n// a \x94\nval x = 1 // (\n",
@@ -121,8 +119,8 @@ func engineSeeds(tb testing.TB) []string {
 		"main\n\nval x = 1\n",
 		"packe main\n\nval x = 1\n",
 		"packag\n\nval x = 1\n",
-		// A syntax error after clean lexing, where ANTLR's parser reads
-		// galop's tokens; an illegal character, a lexical error.
+		// A syntax error after clean lexing, in an interpolation; an
+		// illegal character, a lexical error.
 		"package main\n\nfunc main() {\n    Println(s\"v=${1 +}\")\n}\n",
 		"package main\n\nval s = \"a\uFEFFb\"\n",
 		"package main\n\nval x = 'ab\n",

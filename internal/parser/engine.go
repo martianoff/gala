@@ -15,13 +15,13 @@ import (
 // engine parses with galop's native lexer and parser, many times faster than
 // ANTLR's, and builds no ANTLR tree; ANTLR's engine parses with ANTLR's
 // parser and converts its tree with galop's converter. On input with an
-// error, or if galop's parser fails in any other way, ANTLR's parser parses
-// the input instead, so syntax errors, their hints and the error-recovered
-// tree the language server reads are always ANTLR's.
+// error, galop's parser recovers as ANTLR's does: the same syntax errors,
+// hints and error-recovered tree. Only if galop's lexer or parser panics
+// does ANTLR's parser parse the input instead.
 type Engine string
 
 const (
-	// EngineGalop parses with galop and falls back to ANTLR.
+	// EngineGalop parses with galop, and with ANTLR after a galop panic.
 	EngineGalop Engine = "galop"
 	// EngineANTLR parses with ANTLR's runtime alone.
 	EngineANTLR Engine = "antlr"

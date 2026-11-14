@@ -375,7 +375,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	// (Native.TreeOnly), error-recovered when the parse has errors; nil when
 	// there is none, so no older text's tree outlives the edit. It is taken
 	// before the analysis reads the tree, as TreeOnly trims it.
-	kept := parsed.RecoveredNative().TreeOnly() // converts: not under h.mu
+	kept := parsed.RecoveredNative().TreeOnly() // converts with ANTLR's engine: not under h.mu
 	if errs := parsed.Errors; len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
 		h.keepTree(uri, kept, text)

@@ -42,7 +42,7 @@ func referenceOf(src string) (antlrReference, error) {
 	if !ok {
 		return antlrReference{}, fmt.Errorf("ANTLR's parse gave no tree")
 	}
-	tree, _, ctxs := grammar.GalaToNativeContexts(root, r.stream, src)
+	tree, _, ctxs := grammar.GalaToNativeContexts(root, r.stream, antlrText(src))
 	if tree == nil {
 		return antlrReference{}, fmt.Errorf("the converter gave no tree")
 	}
@@ -128,8 +128,9 @@ func parseConverted(src string) *Parsed {
 
 // TestNativeForCleanParses: a parse without errors has a native tree with
 // either engine; galop's has no ANTLR tree, ANTLR's engine's has one. A
-// parse with syntax errors, by either engine, has ANTLR's error-recovered
-// tree and no clean native tree, only the recovered one.
+// parse with syntax errors, by either engine, has no clean native tree, only
+// the recovered one: galop's recovering parse's with galop's engine, with no
+// ANTLR tree, and ANTLR's error-recovered tree converted with ANTLR's.
 func TestNativeForCleanParses(t *testing.T) {
 	const clean, broken = "package main\n\nval x = 1\n", "package main\n\nval x = \n"
 	galop := parseWithGalop(clean)
@@ -146,16 +147,23 @@ func TestNativeForCleanParses(t *testing.T) {
 	if _, ok := antlrClean.Native.Root(); !ok {
 		t.Error("the clean parse with ANTLR's engine does not convert")
 	}
-	for name, p := range map[string]*Parsed{"ANTLR's engine": antlrBroken, "galop's engine": parseWithGalop(broken)} {
+	galopBroken := parseWithGalop(broken)
+	for name, p := range map[string]*Parsed{"ANTLR's engine": antlrBroken, "galop's engine": galopBroken} {
 		if len(p.Errors) == 0 {
 			t.Fatalf("%s: the broken source parses", name)
 		}
 		if p.Native != nil || p.CleanNative() != nil {
 			t.Errorf("%s: the parse of a syntax error has a clean native tree", name)
 		}
-		if p.Tree == nil || p.RecoveredNative() == nil {
+		if _, ok := p.RecoveredNative().Root(); !ok {
 			t.Errorf("%s: the parse of a syntax error has no recovered tree", name)
 		}
+	}
+	if antlrBroken.Tree == nil {
+		t.Error("ANTLR's engine's parse of a syntax error has no ANTLR tree")
+	}
+	if galopBroken.Tree != nil || !galopBroken.RecoveredNative().Converted() {
+		t.Error("galop's engine parsed a syntax error with ANTLR's parser")
 	}
 }
 
@@ -254,8 +262,8 @@ func TestTreeOnlyTrims(t *testing.T) {
 // parser, with its tree converted.
 func TestNativeParsePanicFallsBack(t *testing.T) {
 	faulty := &nativeParsers{
-		sourceFile: func(*native.GalaTokens) (native.SourceFileNode, error) { panic("injected") },
-		expression: func(*native.GalaTokens) (native.ExpressionNode, error) { panic("injected") },
+		sourceFile: func(*native.GalaTokens) (native.SourceFileNode, []native.GalaParseError) { panic("injected") },
+		expression: func(*native.GalaTokens) (native.ExpressionNode, []native.GalaParseError) { panic("injected") },
 		toNative:   galopParsers.toNative,
 	}
 	before := galopPanics.Load()

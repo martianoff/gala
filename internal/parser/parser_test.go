@@ -332,7 +332,7 @@ func treeFingerprint(tree antlr.Tree) string {
 func parseFingerprint(input string, mode int) (string, Docs, []string) {
 	p := NewAntlrGalaParser()
 	input = galaerr.StripBOM(input)
-	result := parseSourceFileAttempt(input, mode, nil)
+	result := parseSourceFileAttempt(input, mode)
 	errs := append([]error(nil), result.errors...)
 	if err := p.checkEmptyLines(result.input, result.tree); err != nil {
 		errs = append(errs, err)
