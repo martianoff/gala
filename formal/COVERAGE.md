@@ -36,8 +36,8 @@ The tiers mean exactly this:
 | `Println`/`Print` formatting of every S1 value | yes | no | no |
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | no |
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | no |
-| S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | no |
-| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | no |
+| S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | capture of the scope only |
+| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the scope of a default only (T4) |
 
 Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
 compile time, while galaspec wraps it at run time. Only programs Go rejects differ.
@@ -101,8 +101,9 @@ version check and the command line, run while the tests compile.
 The proof checks (`scripts/ProofCheck.lean` under Lake, `//formal:proofs` under Bazel)
 fail if a theorem listed here is missing; keep `requiredTheorems` there and
 `REQUIRED_THEOREMS` in `BUILD.bazel` in step with this table. Each one's statement is
-restated in `Gala/Statements.lean` and checked against its proof, so a weakened statement
-fails the build until that file changes too.
+restated in `Gala/Statements.lean` and checked against its proof, so a changed statement
+fails the build until that file changes too. The definitions a statement mentions are not
+pinned that way.
 
 | Theorem | Statement |
 |---|---|
@@ -115,10 +116,10 @@ fails the build until that file changes too.
 These are theorems about the *spec* (and a model of one lowering, and one program's
 translation under gala2lean's prelude), not about the transpiler.
 
-Not proved: T1, T2 and T3. [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems)
-gives the statements they need: fuel adequacy and monotonicity for T1, alpha-invariance
-with its side conditions for T2, and an observational statement about the order of
-effects for T3.
+Not proved: T1, T2, T3 and T5–T7, and T4 beyond the scope of a default value.
+[docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems) gives the statements
+they need: fuel adequacy and monotonicity for T1, alpha-invariance with its side
+conditions for T2, and an observational statement about the order of effects for T3.
 
 ## gala2lean
 

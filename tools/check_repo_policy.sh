@@ -133,12 +133,17 @@ if [[ -z "$lake_theorems" || "$lake_theorems" != "$bazel_theorems" ]]; then
   diff <(echo "$lake_theorems") <(echo "$bazel_theorems") >&2 || true
 fi
 
-# Each required theorem's statement is restated in formal/Gala/Statements.lean and
-# checked against its proof there, so a weakened statement shows in review.
+# Each required theorem's statement is restated in formal/Gala/Statements.lean, as a
+# theorem whose whole proof is the original (the line after a `:=`), so a changed
+# statement shows in review.
+statements=formal/Gala/Statements.lean
+if grep -qwE 'sorry|admit' "$statements"; then
+  fail "$statements must not use sorry or admit"
+fi
 while IFS= read -r thm; do
   [[ -z "$thm" ]] && continue
-  if ! grep -qE "^  ${thm//./\\.}\$" formal/Gala/Statements.lean; then
-    fail "required theorem $thm has no pinned statement in formal/Gala/Statements.lean"
+  if ! awk -v t="  $thm" 'prev ~ /:=$/ && $0 == t {found = 1} {prev = $0} END {exit !found}' "$statements"; then
+    fail "required theorem $thm has no pinned statement in $statements"
   fi
 done <<< "$lake_theorems"
 

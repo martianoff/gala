@@ -114,7 +114,8 @@ formal/
   Gala/Eval.lean            big-step semantics with fuel, outcomes below
   Gala/Std/*.lean           models of Option, Either, Try, Println formatting
   Gala/Main.lean            `galaspec run prog.json` → stdout + outcome line
-  Gala/Theorems/*.lean      proofs about the semantics
+  Gala/Theorems.lean        proofs about the semantics
+  Gala/Statements.lean      the pinned statements of the theorems COVERAGE.md calls proved
   Gala/*Lowering.lean       optional: small models of individual lowerings
   COVERAGE.md               hand-written now, generated later; see "Coverage"
 ```
@@ -420,7 +421,7 @@ gantt
     S2 (lambdas, defaults, named args, std)    :s4, after s3, 7d
     S3 (generics, Equal/Copy, collections)     :s5, after s4, 7d
     section Proofs
-    T1 determinism, T2 alpha-invariance        :p1, after s2, 5d
+    T1 fuel adequacy, T2 alpha-invariance      :p1, after s2, 5d
     T3 left-to-right, T4 defaults              :p2, after s4, 5d
     T5 exhaustiveness, T6 equality             :p3, after s5, 5d
     T7 type soundness for S1 (stretch)         :p4, after p3, 10d

@@ -83,8 +83,9 @@ imports every module of the library and fails if any declaration depends on `sor
 an axiom other than `propext`, `Quot.sound` and `Classical.choice`, private declarations
 included. It also fails if a theorem that COVERAGE.md calls proved is missing. Each such
 theorem's statement is also restated in `Gala/Statements.lean` and checked against its
-proof there, so weakening one fails `lake build` until that file changes too
-(`tools/check_repo_policy.sh` checks every one is restated). Run
+proof there, so changing one fails `lake build` until that file changes too;
+`tools/check_repo_policy.sh` checks that every one is restated. The definitions a
+statement mentions are not pinned that way. Run
 `lake build` first: the script checks the built modules, so it fails without a build and
 checks old code after a stale one.
 
