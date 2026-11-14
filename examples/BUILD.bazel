@@ -2283,6 +2283,14 @@ gala_exec_test(
     ],
 )
 
+# A field whose pointer-receiver String changes it prints in place, held by
+# pointer or through the struct's own pointer-receiver String
+gala_exec_test(
+    name = "pointer_string_mutating_field",
+    src = "pointer_string_mutating_field.gala",
+    expected = "pointer_string_mutating_field.out",
+)
+
 # An element with a pointer-receiver String prints with it in collections,
 # tuples, generic functions and values of type any
 gala_exec_test(
