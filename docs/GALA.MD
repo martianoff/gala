@@ -4651,15 +4651,21 @@ a value position the name then means the binding for the rest of its scope,
 and in a type position the type, so `val string = "a"` followed by a lambda
 parameter typed `string` compiles.
 
-### Names starting with `_gala_` are reserved
+### Names starting with `_gala_` or `GALA_` are reserved
 
-An identifier may not start with `_gala_`. The prefix is reserved for names the
-transpiler generates, so using it for a local, a parameter, a top-level
-function, val or var, a field or a type is a transpile error (**GALA-E0097**).
+An identifier may not start with `_gala_` or `GALA_`. Both prefixes are reserved
+for names the transpiler generates (`GALA_` for exported ones, since Go exports
+only upper-case names), so using either for a local, a parameter, a top-level
+function, val or var, an embed val, a field, a type or a type parameter is a
+transpile error (**GALA-E0097**). The match is exact and case-sensitive:
+`Gala_x` and `GALAX` are ordinary names, a string such as `"GALA_HOME"` is
+just text, and a member of a Go package or value reached through a dot
+(`pkg.GALA_X`) or a named argument stays usable.
 
 <!-- doc-check: fragment -->
 ```gala
 val _gala_total = 3         // GALA-E0097: the _gala_ prefix is reserved
+val GALA_total = 3          // GALA-E0097: the GALA_ prefix is reserved
 ```
 
 ### A type may not take the name of a Go predeclared type, builtin function or std

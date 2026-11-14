@@ -623,6 +623,155 @@ func main() = Println(_gala_Id(1))`,
 			expectContains: "identifier _gala_Id starts with _gala_",
 		},
 		{
+			name: "GALA-E0097 local with the exported reserved prefix",
+			input: `package main
+
+func main() {
+    val GALA_total = 2
+    Println(GALA_total)
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "error_codes_test.gala:4:8 identifier GALA_total starts with GALA_, a prefix reserved for names the transpiler generates (hint: rename it so it does not start with GALA_)",
+		},
+		{
+			name: "GALA-E0097 parameter with the exported reserved prefix",
+			input: `package main
+
+func twice(GALA_n int) int = GALA_n * 2
+
+func main() = Println(twice(2))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_n starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 lambda parameter with the exported reserved prefix",
+			input: `package main
+
+func main() {
+    Println(Some(1).Map((GALA_x) => GALA_x + 1))
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_x starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 pattern binding with the exported reserved prefix",
+			input: `package main
+
+func main() {
+    val n = Some(1) match {
+        case Some(GALA_v) => GALA_v
+        case _ => 0
+    }
+    Println(n)
+}`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_v starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 top-level function with the exported reserved prefix",
+			input: `package main
+
+func GALA_Parser_Advance() int = 1
+
+func main() = Println(GALA_Parser_Advance())`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_Parser_Advance starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 top-level val with the exported reserved prefix",
+			input: `package main
+
+val GALA_Limit = 3
+
+func main() = Println(GALA_Limit)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_Limit starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 top-level var with the exported reserved prefix",
+			input: `package main
+
+var GALA_count = 0
+
+func main() = Println(GALA_count)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_count starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 embed val with the exported reserved prefix",
+			input: `package main
+
+embed val GALA_readme = "README.md"
+
+func main() = Println(GALA_readme)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_readme starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 field with the exported reserved prefix",
+			input: `package main
+
+struct Point(GALA_X int, Y int)
+
+func main() = Println(Point(1, 2).Y)`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_X starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 type with the exported reserved prefix",
+			input: `package main
+
+type GALA_Id int
+
+func main() = Println(GALA_Id(1))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_Id starts with GALA_",
+		},
+		{
+			name: "GALA-E0097 type parameter with the exported reserved prefix",
+			input: `package main
+
+func first[GALA_T any](xs Array[GALA_T]) Option[GALA_T] = xs.HeadOption()
+
+func main() = Println(first(ArrayOf(1)))`,
+			expectCode:     galaerr.CodeReservedNamePrefix,
+			expectContains: "identifier GALA_T starts with GALA_",
+		},
+		{
+			// A Go value may have a GALA_ member, so a selected member is
+			// not held to the prefix: the reference reaches member
+			// resolution, which finds nothing here.
+			name: "GALA_ member selection is not GALA-E0097",
+			input: `package main
+
+struct P(X int)
+
+func main() = Println(P(1).GALA_X)`,
+			expectCode:     galaerr.CodeUnknownMethod,
+			expectContains: "P has no field or method GALA_X",
+		},
+		{
+			name: "GALA_ named argument is not GALA-E0097",
+			input: `package main
+
+struct P(X int)
+
+func main() = Println(P(GALA_X = 1))`,
+			expectCode:     galaerr.CodeMissingStructField,
+			expectContains: `unknown field "GALA_X" in construction of "P"`,
+		},
+		{
+			name: "GALA_ in an interpolated expression is undefined",
+			input: `package main
+
+func main() {
+    val total = 3
+    Println(s"${GALA_total}")
+}`,
+			expectCode:     galaerr.CodeUndefinedVariable,
+			expectContains: "undefined: GALA_total",
+		},
+		{
 			name: "GALA-E0098 struct field default reads an earlier field",
 			input: `package main
 

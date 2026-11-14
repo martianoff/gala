@@ -109,7 +109,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0092` | Copy names a field the sealed value cannot have | [GALA-E0092.md](GALA-E0092.md) |
 | `GALA-E0093` | Method replaces a generated one with another signature | [GALA-E0093.md](GALA-E0093.md) |
 | `GALA-E0094` | Default value reads a later parameter | [GALA-E0094.md](GALA-E0094.md) |
-| `GALA-E0097` | Identifier uses the reserved `_gala_` prefix | [GALA-E0097.md](GALA-E0097.md) |
+| `GALA-E0097` | Identifier uses a reserved prefix (`_gala_` or `GALA_`) | [GALA-E0097.md](GALA-E0097.md) |
 | `GALA-E0098` | Field default reads a field | [GALA-E0098.md](GALA-E0098.md) |
 | `GALA-E0099` | Pointer used where the value is expected | [GALA-E0099.md](GALA-E0099.md) |
 | `GALA-E0100` | Type does not implement the interface it is used as | [GALA-E0100.md](GALA-E0100.md) |

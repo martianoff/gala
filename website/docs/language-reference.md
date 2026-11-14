@@ -1680,13 +1680,14 @@ Pick another name, such as `defaultPort` or `selected`. GALA does not rename the
 
 Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max` and so on — are not keywords. A local binding may take one, and so may a top-level function, val or var; in a value position the name then means the binding, and in a type position the type.
 
-### Names Starting with `_gala_` Are Reserved
+### Names Starting with `_gala_` or `GALA_` Are Reserved
 
-An identifier may not start with `_gala_`. The prefix is reserved for names the transpiler generates, so using it for a local, a parameter, a top-level function, val or var, a field or a type is a transpile error ([GALA-E0097](/docs/errors/gala-e0097/)).
+An identifier may not start with `_gala_` or `GALA_`. Both prefixes are reserved for names the transpiler generates (`GALA_` for exported ones, since Go exports only upper-case names), so using either for a local, a parameter, a top-level function, val or var, an embed val, a field, a type or a type parameter is a transpile error ([GALA-E0097](/docs/errors/gala-e0097/)). The match is exact and case-sensitive: `Gala_x` and `GALAX` are ordinary names, a string such as `"GALA_HOME"` is just text, and a member of a Go package or value reached through a dot (`pkg.GALA_X`) or a named argument stays usable.
 
 <!-- doc-check: error GALA-E0097 -->
 ```gala
 val _gala_total = 3         // GALA-E0097: the _gala_ prefix is reserved
+val GALA_total = 3          // GALA-E0097: the GALA_ prefix is reserved
 ```
 
 ### A Type May Not Take the Name of a Go Predeclared Type, Builtin Function or std
