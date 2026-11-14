@@ -21,8 +21,8 @@ func (inout c Counter) Double() int = c.Add(c.N)
 func (c Counter) Get() int = c.N
 
 type Pair struct {
-    var First Counter
-    var Second Counter
+    var Left Counter
+    var Right Counter
 }
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
     Println(c.Get())
     val d = c.Double()
     Println(d, c.Get())
-    var p = Pair(First = Counter(10), Second = Counter(20))
-    p.First.Add(p.Second.Add(1))
-    Println(p.First.Get(), p.Second.Get())
+    var p = Pair(Left = Counter(10), Right = Counter(20))
+    p.Left.Add(p.Right.Add(1))
+    Println(p.Left.Get(), p.Right.Get())
 }
