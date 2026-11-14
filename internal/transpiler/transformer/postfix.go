@@ -130,6 +130,11 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 		if base, err = t.addressableReceiver(base, xType, selName, line, col); err != nil {
 			return nil, err
 		}
+		if t.inoutTypesSeen {
+			if err := t.checkInoutReceiverUse(base, xType, selName, m.called, line, col); err != nil {
+				return nil, err
+			}
+		}
 		// A method the generated Go declares as a function, named without
 		// being called: a closure over the receiver.
 		if !m.called {

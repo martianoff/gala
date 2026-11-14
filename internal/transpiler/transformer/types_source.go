@@ -234,7 +234,7 @@ func (t *galaASTTransformer) lowerSignatureType(sig native.SignatureNode) (*ast.
 			if err := checkInoutParamDecl(p.at, p.name, field.Type, p.variadic, false); err != nil {
 				return nil, err
 			}
-			field.Type = t.ptrStar(field.Type)
+			field.Type = t.inoutParamType(field.Type)
 		}
 		if p.variadic {
 			field.Type = &ast.Ellipsis{Elt: field.Type}

@@ -305,6 +305,7 @@ func (e *encoder) writeType(t transpiler.Type) {
 		for _, p := range v.Results {
 			e.writeType(p)
 		}
+		e.writeBoolSlice(v.Inout)
 	case transpiler.NilType:
 		e.writeByte(typeTagNilType)
 	case transpiler.VoidType:
@@ -872,7 +873,7 @@ func (d *decoder) readType() transpiler.Type {
 				results[i] = d.readType()
 			}
 		}
-		return transpiler.FuncType{Params: params, Results: results}
+		return transpiler.FuncType{Params: params, Results: results, Inout: d.readBoolSlice()}
 	case typeTagNilType:
 		return transpiler.NilType{}
 	case typeTagVoid:

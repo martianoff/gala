@@ -2427,10 +2427,16 @@ func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typePara
 
 	// Parse parameters
 	var params []transpiler.Type
+	var inout []bool
 	if paramsStr != "" {
 		paramStrs := a.splitTypeList(paramsStr)
-		for _, p := range paramStrs {
-			params = append(params, a.resolveTypeWithParams(strings.TrimSpace(p), pkgName, typeParams))
+		for i, p := range paramStrs {
+			p = strings.TrimSpace(p)
+			if rest, isInout := strings.CutPrefix(p, transpiler.InoutPrefix); isInout {
+				p = rest
+				inout = transpiler.WithInout(inout, i)
+			}
+			params = append(params, a.resolveTypeWithParams(p, pkgName, typeParams))
 		}
 	}
 
@@ -2448,7 +2454,7 @@ func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typePara
 		}
 	}
 
-	return transpiler.FuncType{Params: params, Results: results}
+	return transpiler.FuncType{Params: params, Results: results, Inout: inout}
 }
 
 // splitTypeList splits a comma-separated type list, respecting brackets

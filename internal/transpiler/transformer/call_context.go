@@ -169,7 +169,7 @@ func (t *galaASTTransformer) sendableInnerExpected(inner transpiler.Type, typePa
 	case len(ft.Results) == 0 || len(typeParams) == 0:
 		return ft
 	case !funcTypeParamsMentionTypeParams(ft.Params, typeParams):
-		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, typeParams)}
+		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, typeParams), Inout: ft.Inout}
 	default:
 		return ft
 	}
@@ -225,6 +225,7 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 			return transpiler.FuncType{
 				Params:  ft.Params,
 				Results: maskTypeParamResults(ft.Results, ctx.applyTypeParams),
+				Inout:   ft.Inout,
 			}
 		}
 		// A parameter naming none of the type's type parameters is known
@@ -267,7 +268,7 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 				// Results so the lambda transformer doesn't emit a literal `T`
 				// return signature; the lambda's body inference fills it in.
 				maskedResults := maskTypeParamResults(ft.Results, ctx.funcMeta.TypeParams)
-				expectedType = transpiler.FuncType{Params: ft.Params, Results: maskedResults}
+				expectedType = transpiler.FuncType{Params: ft.Params, Results: maskedResults, Inout: ft.Inout}
 			}
 		}
 	}
@@ -449,7 +450,7 @@ func (t *galaASTTransformer) maskUnboundMethodTypeParams(typ transpiler.Type, ct
 		return typ
 	}
 	if ft, ok := typ.(transpiler.FuncType); ok && !funcTypeParamsMentionTypeParams(ft.Params, unbound) {
-		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, unbound)}
+		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, unbound), Inout: ft.Inout}
 	}
 	return transpiler.NilType{}
 }

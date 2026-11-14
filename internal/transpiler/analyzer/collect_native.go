@@ -296,8 +296,7 @@ func (a *galaAnalyzer) nativeParamsOf(params native.ParametersNode, pkgName stri
 			sp.types = append(sp.types, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, typeParams))
 			if p.INOUT().Ok() {
 				sp.types[i] = transpiler.PointerType{Elem: sp.types[i], NonNull: true}
-				sp.inout = append(sp.inout, make([]bool, i+1-len(sp.inout))...)
-				sp.inout[i] = true
+				sp.inout = transpiler.WithInout(sp.inout, i)
 			}
 			sp.variadic = p.ELLIPSIS().Ok()
 		} else {
