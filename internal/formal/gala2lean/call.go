@@ -24,6 +24,9 @@ type sig struct {
 	// it after the other arguments (a pointer method's place).
 	recv     *term
 	recvLast bool
+	// recvName and recvType are the method's receiver name and Lean type,
+	// which its parameters' defaults may use.
+	recvName, recvType string
 }
 
 // stdCtors are the standard library's Option and Either constructors, which
@@ -179,51 +182,65 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope) ([]string, term) 
 		}
 		return nil, g.apply(s, vs, subs...)
 	}
-	// Arguments into temporaries, in the order written. Every one gets a
-	// fresh name, even a plain value: the parameters bound below for the
-	// defaults may shadow a caller's local it names.
+	// Arguments into temporaries, in the order written; every name here is
+	// fresh, so nothing the caller sees is shadowed.
 	var items []string
 	recv := ""
-	if recvFirst {
+	bindRecv := func() {
 		recv = g.freshName("o")
 		items = append(items, "let "+recv+" := "+s.recv.val())
+	}
+	if recvFirst {
+		bindRecv()
 	}
 	tmps := make([]string, len(e.Args))
 	for i, v := range vals {
 		tmps[i] = g.freshName("a")
 		items = append(items, "let "+tmps[i]+" := "+v.val())
 	}
-	// Then the defaults, in parameter order.
+	if s.recv != nil && s.recvLast {
+		// A pointer method's place, after the arguments and before the
+		// defaults, which may read the receiver.
+		bindRecv()
+	}
+	// Then the defaults, in parameter order. Each is evaluated in a do block
+	// of its own that binds what it may see (the receiver, the parameters
+	// before it) under their own names, so those bindings end with it.
 	args := make([]string, len(s.names))
-	dsc := newScope(nil, 0)
 	for k, a := range given {
 		if a >= 0 {
 			args[k] = tmps[a]
-		} else {
-			key := s.head + "." + s.names[k]
-			if g.inDefault[key] {
-				unsup(e.Pos, "recursive-default")
+			continue
+		}
+		key := s.head + "." + s.names[k]
+		if g.inDefault[key] {
+			unsup(e.Pos, "recursive-default")
+		}
+		g.inDefault[key] = true
+		dsc := newScope(nil, 0)
+		var seen []string
+		if s.recv != nil && s.recvName != "" {
+			seen = append(seen, "let "+ident(s.recvName)+" := "+recv)
+			dsc.bind(s.recvName, false, s.recvType)
+		}
+		if s.paramsInDefaults {
+			for j := range k {
+				seen = append(seen, "let "+ident(s.names[j])+" := "+args[j])
+				dsc.bind(s.names[j], false, g.optType(s.types[j]))
 			}
-			g.inDefault[key] = true
-			saved := g.qualify
-			g.qualify = true
-			d := g.exprExpect(s.defaults[k], dsc, s.types[k])
-			g.qualify = saved
-			delete(g.inDefault, key)
-			tmp := g.freshName("d")
+		}
+		saved := g.qualify
+		g.qualify = true
+		d := g.exprExpect(s.defaults[k], dsc, s.types[k])
+		g.qualify = saved
+		delete(g.inDefault, key)
+		tmp := g.freshName("d")
+		if len(seen) == 0 {
 			items = append(items, "let "+tmp+" := "+d.val())
-			args[k] = tmp
+		} else {
+			items = append(items, "let "+tmp+" ← "+doTerm(append(seen, d.mon())))
 		}
-		if s.paramsInDefaults && slices.Contains(given[k+1:], -1) {
-			// The parameters a later default may see.
-			items = append(items, "let "+ident(s.names[k])+" := "+args[k])
-			args[k] = ident(s.names[k])
-			dsc.bind(s.names[k], false, g.optType(s.types[k]))
-		}
-	}
-	if s.recv != nil && s.recvLast {
-		recv = g.freshName("o")
-		items = append(items, "let "+recv+" := "+s.recv.val())
+		args[k] = tmp
 	}
 	if s.recv != nil {
 		args = append([]string{recv}, args...)

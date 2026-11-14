@@ -523,7 +523,7 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 	case *coreexport.Call:
 		if s, isSel := e.Callee.(*coreexport.Select); isSel {
 			// A method: its declared result, or a generated Copy or Equal.
-			if f, _ := g.methodOf(s.Target, s.Name, sc); f != nil {
+			if f, _ := g.methodOfSeen(s.Target, s.Name, sc, seen); f != nil {
 				return g.safeType(func() string { return g.leanType(f.Result) })
 			}
 			switch s.Name {

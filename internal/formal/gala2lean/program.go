@@ -40,6 +40,9 @@ type gen struct {
 	byKey                     map[string]*coreexport.Func
 	methodsNamed              map[string][]string
 	customString, customEqual map[string]bool
+	// stringHolders and equalHolders cache customStringHolders and
+	// customEqualHolders.
+	stringHolders, equalHolders map[string]bool
 	// refsOf caches funcRefs, by function name.
 	refsOf map[string]map[string]bool
 	// noBEq is the types holding a function, which do not compare;
@@ -369,35 +372,13 @@ func (g *gen) initDecl(order []*globalVar) string {
 // funcDecl is the definition of one top-level function.
 func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 	sc := newScope(nil, 0)
-	var ps []string
-	for _, pn := range f.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok {
-			unsupAt(pn)
-		}
-		if p.Type == nil {
-			unsup(p.Pos, "untyped-param")
-		}
-		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
-		sc.bind(p.Name, false, g.leanType(p.Type)).gtype = p.Type
-	}
+	ps := g.params(f, sc)
 	res := "Unit"
 	if f.Result != nil {
 		res = g.leanType(f.Result)
 	}
 	g.fn = &fnCtx{result: res}
-	var body string
-	if b, ok := f.Body.(*coreexport.Block); ok {
-		body = indentLines(g.fnBlock(b, sc), 2)
-	} else {
-		if res == "Unit" {
-			// A function without a result type runs its expression body as
-			// a statement.
-			body = indentLines(g.unitItems(f.Body, sc), 2)
-		} else {
-			body = indentLines(g.valueItems(f.Body, sc), 2)
-		}
-	}
+	body := indentLines(g.bodyItems(f, sc, res), 2)
 	head := "def " + ident(f.Name)
 	if len(ps) > 0 {
 		head += " " + strings.Join(ps, " ")

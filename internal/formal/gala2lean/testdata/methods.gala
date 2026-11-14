@@ -11,6 +11,12 @@ func (c *Counter) Add(by int) int {
     c.N
 }
 
+func (c Counter) Scaled(k int, by int = k * c.N) int = by
+
+func (c *Counter) AddTimes(by int, times int = 2) {
+    c.N = c.N + by * times
+}
+
 func (c *Counter) Reset() {
     if c.N < 0 {
         return
@@ -57,4 +63,12 @@ func main() {
     Println(t.Sum())
     val d = c.Copy(N = 42)
     Println(d.N, d.Name, c.Equal(d), d.Equal(c.Copy(N = 42)))
+    val by = 100
+    val k = 7
+    var e = Counter(3, "e")
+    e.AddTimes(1)
+    Println(e.N, e.Scaled(2), by, k)
+    var times = Counter(1, "t")
+    times.AddTimes(5)
+    Println(times.N)
 }

@@ -95,14 +95,28 @@ func (g *gen) comparable(e coreexport.Node, sc *scope) {
 		if t == "" {
 			unsup(posOf(e), "custom-equal")
 		}
-		g.stateTypeIn(t, g.holders(g.customEqual), posOf(e), "custom-equal")
+		g.stateTypeIn(t, g.customEqualHolders(), posOf(e), "custom-equal")
 	}
 	g.basicType(t, posOf(e))
 }
 
 // customStringHolders are the types that print through a String method of
 // their own: one that declares it, or one holding such a value in a field.
-func (g *gen) customStringHolders() map[string]bool { return g.holders(g.customString) }
+func (g *gen) customStringHolders() map[string]bool {
+	if g.stringHolders == nil {
+		g.stringHolders = g.holders(g.customString)
+	}
+	return g.stringHolders
+}
+
+// customEqualHolders are the types that compare through an Equal method of
+// their own, declared or held in a field.
+func (g *gen) customEqualHolders() map[string]bool {
+	if g.equalHolders == nil {
+		g.equalHolders = g.holders(g.customEqual)
+	}
+	return g.equalHolders
+}
 
 // holders is types and every type holding one of them in a field, at any
 // depth.
@@ -135,6 +149,10 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 	if g.structs[t] == nil && g.sealeds[t] == nil {
 		unsup(r.Pos, "method-receiver-type")
 	}
+	// Lean puts a sealed type's cases in the type's namespace too.
+	if v := g.variants[f.Name]; v != nil && v.sealed.Name == t {
+		unsup(f.Pos, "method-name-clash")
+	}
 	lt := g.leanType(r.Type)
 	sc := newScope(nil, 0)
 	ps := []string{}
@@ -162,10 +180,9 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 		inner := newScope(sc, 0)
 		items := []string{
 			fmt.Sprintf("let %s ← _gala_new%d %s", ident(r.Name), h, self),
-			"let _gala_res ← " + doTerm(g.bodyItems(f, inner, res)) + " -- the method body",
+			"let _gala_res ← " + doTerm(g.bodyItems(f, inner, res)),
 			fmt.Sprintf("pure (_gala_res, ← _gala_get%d %s)", h, ident(r.Name)),
 		}
-		items[1] = strings.TrimSuffix(items[1], " -- the method body")
 		body = indentLines(items, 2)
 		res = "(" + res + " × " + lt + ")"
 	}
@@ -252,7 +269,12 @@ func (g *gen) receiverUses(f *coreexport.Func, name string) {
 
 // methodOf is method m of the type of value e, and that type's name, or nil.
 func (g *gen) methodOf(e coreexport.Node, m string, sc *scope) (*coreexport.Func, string) {
-	t := g.typeOf(e, sc)
+	return g.methodOfSeen(e, m, sc, map[string]bool{})
+}
+
+// methodOfSeen is methodOf within exprType, which passes its cycle guard.
+func (g *gen) methodOfSeen(e coreexport.Node, m string, sc *scope, seen map[string]bool) (*coreexport.Func, string) {
+	t := g.exprType(e, sc, seen)
 	for _, n := range g.typeNames {
 		if ident(n) == t && g.methods[n][m] != nil {
 			return g.methods[n][m], n
@@ -263,7 +285,9 @@ func (g *gen) methodOf(e coreexport.Node, m string, sc *scope) (*coreexport.Func
 
 // methodSig is the signature of method f of type t, its receiver aside.
 func (g *gen) methodSig(f *coreexport.Func, t string) *sig {
-	s := &sig{head: methodHead(t, f.Name), paramsInDefaults: true, unit: f.Result == nil}
+	r := f.Receiver.(*coreexport.Receiver)
+	s := &sig{head: methodHead(t, f.Name), paramsInDefaults: true, unit: f.Result == nil,
+		recvName: r.Name, recvType: g.optTypeSafe(r.Type)}
 	for _, pn := range f.Params {
 		p, ok := pn.(*coreexport.Param)
 		if !ok {
