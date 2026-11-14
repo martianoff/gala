@@ -22,8 +22,8 @@ type Stats struct {
 // (nil, or an *UnsupportedError).
 func CountTranslated(p *coreexport.Program, err error) Stats {
 	var s Stats
-	names := map[string]bool{}
-	opaque := 0
+	// The functions inside the subset, by the key the report names them by.
+	inside := map[string]bool{}
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
 			d, ok := d.(*coreexport.Func)
@@ -34,31 +34,17 @@ func CountTranslated(p *coreexport.Program, err error) Stats {
 			if d.Receiver != nil {
 				s.Methods++
 			}
-			if len(d.TypeParams) > 0 {
-				opaque++
-				continue
+			if outsideSubset(d) == "" {
+				inside[funcKey(d)] = true
 			}
-			key := d.Name
-			if d.Receiver != nil {
-				r, _ := d.Receiver.(*coreexport.Receiver)
-				if r == nil || typeName(r.Type) == "" {
-					opaque++
-					continue
-				}
-				key = typeName(r.Type) + "." + d.Name
-			}
-			names[key] = true
 		}
 	}
-	untranslated := map[string]bool{}
 	var u *UnsupportedError
 	if errors.As(err, &u) {
 		for _, it := range u.Items {
-			if names[it.Decl] {
-				untranslated[it.Decl] = true
-			}
+			delete(inside, it.Decl)
 		}
 	}
-	s.Translated = s.Funcs - opaque - len(untranslated)
+	s.Translated = len(inside)
 	return s
 }
