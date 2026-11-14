@@ -128,6 +128,59 @@ func describe[T any](v Option[T] = None[T]()) string = v match {
 	}
 }
 
+// TestNilDefaultTypeParamUnbound: a `nil` default names no type parameter,
+// but Go infers none from an untyped nil either, so a type parameter only a
+// nil-filled parameter mentions is bound like one only the result mentions:
+// by the call's type arguments or by the slot the call fills, else
+// GALA-E0067 at the call rather than Go's "cannot infer T" (#1083).
+func TestNilDefaultTypeParamUnbound(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	const decls = `package main
+
+func first[T any](p *T = nil) string = if (p == nil) "none" else "some"
+
+func label[T any](p *T = nil) Option[T] = None[T]()
+
+func apply[T any](x T, f func(T) T = nil) T = if (f == nil) x else f(x)
+
+struct Box(n int)
+
+func (b Box) first[T any](p *T = nil) Option[T] = None[T]()
+
+`
+	errCases := []struct{ name, body string }{
+		{"default", `Println(first())`},
+		{"written nil", `Println(first(nil))`},
+		{"named nil", `Println(first(p = nil))`},
+		{"method default", `Println(Box(1).first())`},
+	}
+	for _, tc := range errCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(decls+"func main() {\n    "+tc.body+"\n}\n", "")
+			require.Error(t, err)
+			var se *galaerr.SemanticError
+			require.True(t, errors.As(err, &se), "want a SemanticError, got %T: %v", err, err)
+			assert.Equal(t, galaerr.CodeUninferredTypeArgument, se.Code)
+			assert.Contains(t, se.Error(), "cannot infer type argument T")
+		})
+	}
+
+	okCases := []struct{ name, body, want string }{
+		{"type argument written", `Println(first[int]())`, "first[int](nil)"},
+		{"from the slot", "val o Option[int] = label()\n    Println(o)", "label[int](nil)"},
+		{"from another argument", `Println(apply(1))`, "apply(1, nil)"},
+		{"method, from the slot", "val o Option[int] = Box(1).first()\n    Println(o)", "Box_first[int]("},
+	}
+	for _, tc := range okCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+"func main() {\n    "+tc.body+"\n}\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tc.want)
+		})
+	}
+}
+
 // TestDefaultInferredFromCarriedTypeParam: a default that leaves its type
 // argument to the declared type (`None()` for an `Option[T]` parameter) is
 // lowered at a call inside a generic declaration that binds T to a type

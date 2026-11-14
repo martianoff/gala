@@ -672,7 +672,13 @@ func (t *galaASTTransformer) transformWithDeclaredType(e exprSrc, declared trans
 	}
 	if e.isNil() {
 		nilIdent := ast.NewIdent("nil")
-		t.typeNilAs(nilIdent, declared)
+		if declared.IsAny() {
+			// A declared `any` is the parameter's type, not an open slot:
+			// the default is the nil interface value.
+			t.exprTypeCache[nilIdent] = declared
+		} else {
+			t.typeNilAs(nilIdent, declared)
+		}
 		return nilIdent, nil
 	}
 	return t.transformArgument(e, typedSlot(declared), true)

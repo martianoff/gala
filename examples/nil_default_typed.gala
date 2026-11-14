@@ -1,0 +1,17 @@
+package main
+
+// A `nil` default whose type names a type parameter only that parameter
+// mentions takes the type argument the call's slot or type arguments give.
+
+func label[T any](p *T = nil) Option[T] = if (p == nil) None[T]() else Some(*p)
+
+func pick[T any](f func(T) T = nil, fallback string = "none") string = if (f == nil) fallback else "some"
+
+func main() {
+    val missing Option[int] = label()
+    Println(missing)
+    val text Option[string] = label()
+    Println(text)
+    Println(pick[int]())
+    Println(pick[int](fallback = "nothing"))
+}
