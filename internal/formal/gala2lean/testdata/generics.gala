@@ -1,0 +1,99 @@
+package main
+
+// Generic functions, structs and sealed types, and the standard library's
+// Option, Either and tuple types in signatures.
+
+struct Box[T any](V T)
+
+struct Pair[A any, B any](First A, Second B)
+
+sealed type Chain[T any] {
+    case Link(Head T, Tail Chain[T])
+    case End()
+}
+
+// Two cases with the same fields: equal only when the case is the same.
+sealed type Two[T any] {
+    case A(V T)
+    case B(V T)
+}
+
+// A struct named like a type parameter below: inside wrap, T is the
+// parameter.
+struct T(N int, C Chain[int])
+
+// A struct that does not compare, named like the type parameter of Keyed:
+// Keyed[int] still compares.
+struct K(F func() int)
+
+struct Keyed[K comparable](Key K)
+
+struct Holder[T any](Name string, Opt Option[T])
+
+func wrap[T any](x T) Box[T] = Box(x)
+
+func identity[T any](x T) T = x
+
+func same[T comparable](a T, b T) bool = a == b
+
+func swap[A any, B any](p Pair[A, B]) Pair[B, A] = Pair(p.Second, p.First)
+
+func size[T any](c Chain[T]) int = c match {
+    case Link(_, rest) => 1 + size(rest)
+    case End() => 0
+}
+
+func firstOr[T any](c Chain[T], fallback T) T = c match {
+    case Link(h, _) => h
+    case End() => fallback
+}
+
+func headOf[T any](c Chain[T]) Option[T] = c match {
+    case Link(h, _) => Some(h)
+    case _ => None()
+}
+
+func twice[T any](x T, f func(T) T) T = f(f(x))
+
+func describe(o Option[int]) string = o match {
+    case Some(n) if n > 10 => s"big $n"
+    case Some(n) => s"small $n"
+    case None() => "nothing"
+}
+
+func divide(a int, b int) Either[string, int] {
+    if (b == 0) {
+        return Left("division by zero")
+    }
+    return Right(a / b)
+}
+
+func pairUp(a int, b string) Tuple[int, string] = (a, b)
+
+func main() {
+    Println(identity(7), identity("seven"), identity(Box(7)))
+    Println(same(3, 3), same("a", "b"), same(Box(1), Box(1)))
+    Println(swap(Pair(1, "one")))
+    val end Chain[int] = End()
+    val c = Link(1, Link(2, Link(3, end)))
+    val none Chain[string] = End()
+    Println(size(c), firstOr(c, 0), firstOr(none, "empty"))
+    Println(headOf(c), describe(headOf(c)), describe(Some(42)), describe(None()))
+    Println(twice(5, (n int) => n * 3))
+    Println(divide(7, 2), divide(1, 0))
+    val t = pairUp(1, "a")
+    Println(t, t.V1, t.V2)
+    var o Option[string]
+    Println(o, same(o, Some("x")), same(Some(2), Some(2)))
+    var p Pair[int, Box[string]]
+    Println(p)
+    Println(Box(Some(1)), Box((2, "b")))
+    Println(same(A(1), B(1)), same(A(1), A(1)), same(B("x"), B("y")))
+    val empty Option[int] = None()
+    Println(same(Box(Some(1)), Box(Some(1))), same(Box(Some(1)), Box(empty)), same(Box(empty), Box(empty)))
+    var oi Option[int]
+    var h Holder[int]
+    Println(oi, h, same(oi, empty))
+    Println(wrap("s"), wrap(T(1, end)), wrap(wrap(2)))
+    Println(same(Keyed(1), Keyed(1)), same(Keyed("a"), Keyed("b")))
+}

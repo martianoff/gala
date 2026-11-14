@@ -15,7 +15,22 @@ func (g *gen) leanType(t coreexport.Node) string {
 	case nil:
 		return "Unit"
 	case *coreexport.TypeName:
-		if len(t.Args) > 0 {
+		if len(t.Args) == 0 {
+			if lt, ok := g.typeArg(t.Name, t.Pos); ok {
+				return lt
+			}
+			if t.Name == unknownTypeArg {
+				unsup(t.Pos, "unknown-type-arg")
+			}
+		}
+		if len(t.Args) > 0 || g.isGenericDecl(t.Name) {
+			args := make([]string, len(t.Args))
+			for i, a := range t.Args {
+				args[i] = g.leanType(a)
+			}
+			if lt := g.genericType(t.Name, args, t.Pos); lt != "" {
+				return lt
+			}
 			unsup(t.Pos, "generic-type")
 		}
 		switch t.Name {
@@ -26,7 +41,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 		case "bool":
 			return "Bool"
 		}
-		if g.structs[t.Name] != nil || g.sealeds[t.Name] != nil {
+		if g.declaredType(t.Name) {
 			return ident(t.Name)
 		}
 		unsup(t.Pos, "type-%s", t.Name)
@@ -71,16 +86,46 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 	case "Bool":
 		return "false"
 	}
-	name := typeName(t)
+	name := typeHead(t)
+	if _, isParam := g.tparams[name]; isParam && len(t.(*coreexport.TypeName).Args) == 0 {
+		// Lean's default is not Go's zero value for every type argument.
+		unsup(posOf(t), "type-param-zero")
+	}
+	// A generic type's zero value says which type it is: Lean cannot tell
+	// from `GOption.None` alone.
+	typed := func(v string) string {
+		switch {
+		case strings.HasPrefix(lt, "("):
+			return "(" + v + " : " + lt + ")"
+		case strings.Contains(v, " ") || strings.HasSuffix(v, ".mk"):
+			return "(" + v + ")"
+		}
+		return v
+	}
+	if !g.declaredType(name) {
+		switch std := stdGeneric[name].lean; std {
+		case "GOption":
+			// None is Option's default case.
+			return typed("GOption.None")
+		case "T2", "T3", "T4":
+			parts := []string{std + ".mk"}
+			for _, a := range t.(*coreexport.TypeName).Args {
+				parts = append(parts, g.zeroDepth(a, depth+1))
+			}
+			return typed(strings.Join(parts, " "))
+		}
+		unsup(posOf(t), "sealed-zero-value")
+	}
+	args := g.typeArgsOf(name, t)
 	if s := g.structs[name]; s != nil {
 		parts := []string{ident(name) + ".mk"}
 		for _, f := range fieldsOf(s.Fields) {
 			if f.Type == nil {
 				unsup(f.Pos, "untyped-field")
 			}
-			parts = append(parts, g.zeroDepth(f.Type, depth+1))
+			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1))
 		}
-		return "(" + strings.Join(parts, " ") + ")"
+		return typed(strings.Join(parts, " "))
 	}
 	s := g.sealeds[name]
 	for _, vn := range s.Variants {
@@ -93,18 +138,24 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 			if f.Type == nil {
 				unsup(f.Pos, "untyped-field")
 			}
-			if typeName(f.Type) == name {
+			if slices.Contains(typeNamesIn(f.Type), name) {
 				unsup(f.Pos, "sealed-zero-value")
 			}
-			parts = append(parts, g.zeroDepth(f.Type, depth+1))
+			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1))
 		}
 		if len(parts) == 1 {
-			return parts[0]
+			return typed(parts[0])
 		}
-		return "(" + strings.Join(parts, " ") + ")"
+		return typed(strings.Join(parts, " "))
 	}
 	unsup(s.Pos, "sealed-zero-value")
 	return ""
+}
+
+// declaredType reports whether the program declares a struct or sealed type
+// named name.
+func (g *gen) declaredType(name string) bool {
+	return g.structs[name] != nil || g.sealeds[name] != nil
 }
 
 // funcTypeNames is every plain type name in function type t, nested
@@ -140,19 +191,27 @@ func (g *gen) typeOrder() {
 	deps := map[string][]string{}
 	for _, n := range g.typeNames {
 		for _, f := range g.typeFields(n) {
-			if t := typeName(f.Type); t != "" && t != n {
-				deps[n] = append(deps[n], t)
+			// Every type a field's type names comes first. A type may use
+			// itself directly (`Tail Chain[T]`), but not inside a type
+			// argument (`Next Option[Node]`, a nested inductive) or a
+			// function type: Lean has no type that holds a function taking
+			// or giving itself (it is not strictly positive).
+			var inner []string
+			nested := "nested-recursive-type"
+			switch t := f.Type.(type) {
+			case *coreexport.TypeName:
+				if t.Name != n && !g.isTypeParamOf(n, t.Name) {
+					deps[n] = append(deps[n], t.Name)
+				}
+				for _, a := range t.Args {
+					inner = append(inner, g.fieldTypeNames(n, a)...)
+				}
+			case *coreexport.TypeFunc:
+				inner, nested = g.fieldTypeNames(n, t), "recursive-func-field"
 			}
-			ft, ok := f.Type.(*coreexport.TypeFunc)
-			if !ok {
-				continue
-			}
-			// The types a function field names come first too. Lean has no
-			// type that holds a function taking or giving itself (it is not
-			// strictly positive).
-			for _, t := range funcTypeNames(ft) {
+			for _, t := range inner {
 				if t == n {
-					unsup(f.Pos, "recursive-func-field")
+					unsup(f.Pos, "%s", nested)
 				}
 				deps[n] = append(deps[n], t)
 			}
@@ -233,13 +292,16 @@ func (g *gen) stateType(t string, pos coreexport.Pos) {
 	if strings.Contains(t, "→") {
 		unsup(pos, "func-in-state")
 	}
+	if g.mentionsTypeParam(t) {
+		unsup(pos, "generic-in-state")
+	}
 	g.stateTypeIn(t, g.noBEq, pos, "func-in-state")
 }
 
 // stateTypeIn stops the translation with construct when Lean type t names
 // one of types.
 func (g *gen) stateTypeIn(t string, types map[string]bool, pos coreexport.Pos, construct string) {
-	for _, w := range strings.FieldsFunc(t, func(r rune) bool { return r == ' ' || r == '(' || r == ')' }) {
+	for _, w := range leanWords(t) {
 		for n := range types {
 			if w == ident(n) {
 				unsup(pos, "%s", construct)
@@ -271,10 +333,16 @@ func (g *gen) fieldType(f *coreexport.Field) string {
 // a field named String; any other struct prints as Go prints its fields,
 // `{1 2}` (docs/GALA.MD, "How Values Print"; galaspec's Gala/Print.lean).
 func (g *gen) structDecl(s *coreexport.Struct) string {
+	tps := g.typeParams(s.TypeParams)
+	return g.inTypeParams(tps, func() string { return g.structDeclIn(s, tps) })
+}
+
+func (g *gen) structDeclIn(s *coreexport.Struct, tps []typeParam) string {
 	name := ident(s.Name)
+	self := selfType(s.Name, tps)
 	fields := fieldsOf(s.Fields)
 	var b strings.Builder
-	fmt.Fprintf(&b, "structure %s where\n", name)
+	fmt.Fprintf(&b, "structure %s%s where\n", name, typeBinders(tps))
 	if len(fields) == 0 {
 		b.WriteString("  mk ::\n")
 	}
@@ -284,8 +352,8 @@ func (g *gen) structDecl(s *coreexport.Struct) string {
 		fmt.Fprintf(&b, "  %s : %s\n", ident(f.Name), g.fieldType(f))
 		v := "s." + ident(f.Name)
 		_, isFn := f.Type.(*coreexport.TypeFunc)
-		hasFn = hasFn || isFn || g.noBEq[typeName(f.Type)]
-		unprintable = unprintable || g.unprintable[typeName(f.Type)]
+		hasFn = hasFn || isFn || g.anyIn(s.Name, f.Type, g.noBEq)
+		unprintable = unprintable || g.anyIn(s.Name, f.Type, g.unprintable)
 		show, raw := "gshow "+v, fmt.Sprintf("wrapImm %t (graw %s)", f.Mutable, v)
 		if isFn {
 			// Inside a generated String a function prints as <fn>; anywhere
@@ -315,8 +383,8 @@ func (g *gen) structDecl(s *coreexport.Struct) string {
 	if g.directFn(fields) && (!generated || g.rawPrinted()[s.Name]) || unprintable {
 		g.unprintable[s.Name] = true
 	}
-	fmt.Fprintf(&b, "instance : GShow %s where\n  gshow s := %s\n  graw s := \"{\" ++ \" \".intercalate [%s] ++ \"}\"\n\n",
-		name, show, strings.Join(raws, ", "))
+	fmt.Fprintf(&b, "instance%s : GShow %s where\n  gshow s := %s\n  graw s := \"{\" ++ \" \".intercalate [%s] ++ \"}\"\n\n",
+		instBinders(tps), self, show, strings.Join(raws, ", "))
 	return b.String()
 }
 
@@ -324,9 +392,15 @@ func (g *gen) structDecl(s *coreexport.Struct) string {
 // field some select reads, and how its values print: through the String
 // method GALA generates, `Case(f1, f2)`.
 func (g *gen) sealedDecl(s *coreexport.Sealed) string {
+	tps := g.typeParams(s.TypeParams)
+	return g.inTypeParams(tps, func() string { return g.sealedDeclIn(s, tps) })
+}
+
+func (g *gen) sealedDeclIn(s *coreexport.Sealed, tps []typeParam) string {
 	name := ident(s.Name)
+	self := selfType(s.Name, tps)
 	var b strings.Builder
-	fmt.Fprintf(&b, "inductive %s where\n", name)
+	fmt.Fprintf(&b, "inductive %s%s where\n", name, typeBinders(tps))
 	type fieldUse struct {
 		variant string
 		index   int
@@ -348,16 +422,16 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 			a := fmt.Sprintf("a%d", i)
 			sh := "GShow.gshow " + a
 			_, isFn := f.Type.(*coreexport.TypeFunc)
-			hasFn = hasFn || isFn || g.noBEq[typeName(f.Type)]
-			unprintable = unprintable || g.unprintable[typeName(f.Type)] || isFn && g.rawPrinted()[s.Name]
+			hasFn = hasFn || isFn || g.anyIn(s.Name, f.Type, g.noBEq)
+			unprintable = unprintable || g.anyIn(s.Name, f.Type, g.unprintable) || isFn && g.rawPrinted()[s.Name]
 			switch {
-			case typeName(f.Type) == s.Name:
+			case typeHead(f.Type) == s.Name:
 				sh = name + "._gala_show " + a
 			case isFn:
 				sh = "fnText"
 			}
 			binds, shows = append(binds, a), append(shows, sh)
-			if prev, ok := fieldTy[f.Name]; ok && typeName(prev) != typeName(f.Type) {
+			if prev, ok := fieldTy[f.Name]; ok && g.leanType(prev) != ft {
 				unsup(f.Pos, "sealed-field-types-differ")
 			}
 			fieldTy[f.Name] = f.Type
@@ -379,10 +453,10 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 	if unprintable {
 		g.unprintable[s.Name] = true
 	}
-	fmt.Fprintf(&b, "/-- How a %s prints: the String method GALA generates for it. -/\ndef %s._gala_show : %s → String\n%s\n\n",
-		s.Name, name, name, strings.Join(arms, "\n"))
-	fmt.Fprintf(&b, "instance : GShow %s where\n  gshow := %s._gala_show\n", name, name)
-	if g.rawPrinted()[s.Name] {
+	fmt.Fprintf(&b, "/-- How a %s prints: the String method GALA generates for it. -/\ndef %s._gala_show%s : %s → String\n%s\n\n",
+		s.Name, name, instBinders(tps), self, strings.Join(arms, "\n"))
+	fmt.Fprintf(&b, "instance%s : GShow %s where\n  gshow := %s._gala_show\n", instBinders(tps), self, name)
+	if g.rawPrinted()[s.Name] && !g.rawGeneric[s.Name] {
 		fmt.Fprintf(&b, "  graw v := match v with\n%s\n", strings.Join(g.sealedRaw(s), "\n"))
 	}
 	b.WriteString("\n")
@@ -393,7 +467,8 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 			continue
 		}
 		ft := fieldTy[fname]
-		fmt.Fprintf(&b, "def %s.%s : %s → %s\n", name, ident(fname), name, g.leanType(ft))
+		fmt.Fprintf(&b, "def %s.%s%s : %s → %s\n", name, ident(fname),
+			typeOnlyBinders(tps), self, g.leanType(ft))
 		for _, u := range uses[fname] {
 			args := make([]string, u.total)
 			for i := range args {
@@ -403,7 +478,7 @@ func (g *gen) sealedDecl(s *coreexport.Sealed) string {
 			fmt.Fprintf(&b, "  | .%s %s => x\n", ident(u.variant), strings.Join(args, " "))
 		}
 		if len(uses[fname]) < len(s.Variants) {
-			if typeName(ft) == s.Name {
+			if typeHead(ft) == s.Name {
 				unsup(s.Pos, "sealed-self-field-read")
 			}
 			fmt.Fprintf(&b, "  | _ => %s\n", g.zero(ft))
@@ -430,18 +505,52 @@ func (g *gen) globalType(gv *globalVar) string {
 // spells (int, string, bool, the program's structs and sealed types); nil
 // for any other.
 func (g *gen) galaType(t string) coreexport.Node {
-	switch t {
+	if t == "" {
+		return nil
+	}
+	return g.galaTypeOf(parseLean(t))
+}
+
+// galaTypeOf is galaType of a parsed Lean type: a basic type, a program
+// type, a standard-library generic type, a type parameter in scope, or a
+// generic type applied to such types.
+func (g *gen) galaTypeOf(t ltype) coreexport.Node {
+	if t.result != nil {
+		return nil
+	}
+	var name string
+	switch t.head {
 	case "Int64":
-		return &coreexport.TypeName{Name: "int"}
+		name = "int"
 	case "String":
-		return &coreexport.TypeName{Name: "string"}
+		name = "string"
 	case "Bool":
-		return &coreexport.TypeName{Name: "bool"}
+		name = "bool"
+	default:
+		name = g.typeByLean(t.head)
+		for std, st := range stdGeneric {
+			if st.lean == t.head && !g.declaredType(std) {
+				name = std
+			}
+		}
+		for x, lt := range g.tparams {
+			if lt == g.tpLean(x) && t.head == lt && len(t.args) == 0 {
+				name = x
+			}
+		}
 	}
-	if n := g.typeByLean(t); n != "" {
-		return &coreexport.TypeName{Name: n}
+	if name == "" {
+		return nil
 	}
-	return nil
+	out := &coreexport.TypeName{Name: name, Args: []coreexport.Node{}}
+	for _, a := range t.args {
+		an := g.galaTypeOf(a)
+		if an == nil {
+			return nil
+		}
+		out.Args = append(out.Args, an)
+	}
+	return out
 }
 
 // typeByLean is the program's struct or sealed type whose Lean name is t,
@@ -475,12 +584,28 @@ func (g *gen) declared(x string) bool {
 // fieldByType is field name of the struct or sealed type whose Lean name is
 // t, or nil.
 func (g *gen) fieldByType(t, name string) *coreexport.Field {
-	if n := g.typeByLean(t); n != "" {
-		for _, f := range g.typeFields(n) {
-			if f.Name == name {
-				return f
-			}
+	if t == "" {
+		return nil
+	}
+	n := g.typeByLean(parseLean(t).head)
+	if n == "" {
+		return nil
+	}
+	for _, f := range g.typeFields(n) {
+		if f.Name != name {
+			continue
 		}
+		if !g.isGenericDecl(n) {
+			return f
+		}
+		// A generic type's field, with the value's type arguments put in.
+		ft := g.fieldTypeIn(n, f, g.galaType(t))
+		if ft == nil {
+			return nil
+		}
+		c := *f
+		c.Type = ft
+		return &c
 	}
 	return nil
 }
@@ -533,7 +658,7 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			seen[e.Name] = true
 			return g.exprType(gv.value, sc, seen)
 		}
-		if v := g.variants[e.Name]; v != nil && len(v.fields) == 0 {
+		if v := g.variants[e.Name]; v != nil && len(v.fields) == 0 && !g.isGenericDecl(v.sealed.Name) {
 			return ident(v.sealed.Name)
 		}
 		if f := g.funcs[e.Name]; f != nil {
@@ -568,11 +693,16 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 				return "(GOption " + t + ")"
 			}
 		case g.funcs[n.Name] != nil:
-			return g.leanType(g.funcs[n.Name].Result)
+			f := g.funcs[n.Name]
+			if len(f.TypeParams) > 0 {
+				return g.instType(f.Result, g.instFunc(f, e.Args, sc, seen))
+			}
+			return g.leanType(f.Result)
 		case g.structs[n.Name] != nil:
-			return ident(n.Name)
+			return g.ctorType(n.Name, fieldsOf(g.structs[n.Name].Fields), e.Args, sc, seen)
 		case g.variants[n.Name] != nil:
-			return ident(g.variants[n.Name].sealed.Name)
+			v := g.variants[n.Name]
+			return g.ctorType(v.sealed.Name, v.fields, e.Args, sc, seen)
 		}
 	case *coreexport.Tuple:
 		if len(e.Elems) > 4 {
@@ -597,14 +727,35 @@ func (g *gen) rawPrinted() map[string]bool {
 		return g.raw
 	}
 	g.raw = map[string]bool{}
+	g.rawGeneric = map[string]bool{}
+	// reach records that fmt reaches a value of type t raw inside a value
+	// of program type owner. Only plain types are followed: a generic type,
+	// a type parameter, Option or a tuple prints raw as a Go struct whose
+	// text the prelude does not model, so owner's raw text is not
+	// translated (rawGeneric).
 	var add func(t string)
+	reach := func(owner string, t coreexport.Node) {
+		switch t := t.(type) {
+		case *coreexport.TypeFunc:
+			return
+		case *coreexport.TypeName:
+			if len(t.Args) == 0 && !g.isGenericDecl(t.Name) && !g.isTypeParamOf(owner, t.Name) {
+				add(t.Name)
+				return
+			}
+		}
+		g.rawGeneric[owner] = true
+	}
 	add = func(t string) {
 		if g.raw[t] || (g.structs[t] == nil && g.sealeds[t] == nil) {
 			return
 		}
 		g.raw[t] = true
+		if g.isGenericDecl(t) {
+			g.rawGeneric[t] = true
+		}
 		for _, f := range g.typeFields(t) {
-			add(typeName(f.Type))
+			reach(t, f.Type)
 		}
 	}
 	for _, n := range g.typeNames {
@@ -622,7 +773,7 @@ func (g *gen) rawPrinted() map[string]bool {
 		}
 		for _, f := range fields {
 			if !isUpper(f.Name) {
-				add(typeName(f.Type))
+				reach(n, f.Type)
 			}
 		}
 	}

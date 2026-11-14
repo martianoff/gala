@@ -227,6 +227,10 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 		return term{code: ident(v.sealed.Name) + "." + ident(x), pure: true}
 	}
 	if f := g.funcs[x]; f != nil {
+		if len(f.TypeParams) > 0 {
+			// Its type arguments would be left to Lean, from the context.
+			unsup(e.Pos, "generic-func-value")
+		}
 		// A top-level function as a value.
 		if len(f.Params) == 0 {
 			return term{code: "(fun (_ : Unit) => " + g.funcRef(x) + ")", pure: true}

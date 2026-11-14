@@ -125,6 +125,9 @@ type Result struct {
 	Lean string
 	// Decls are the function definitions in it, in output order.
 	Decls []Decl
+	// Generic are the Lean names of the program's generic types and
+	// functions, whose type arguments Lean infers.
+	Generic []string
 }
 
 // DeclAt is the declaration that holds line (from 1), or nil.
@@ -157,7 +160,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	if len(g.unsup) > 0 {
 		return nil, &UnsupportedError{Items: g.unsup}
 	}
-	return &Result{Lean: g.out.String(), Decls: g.decls}, nil
+	return &Result{Lean: g.out.String(), Decls: g.decls, Generic: g.genericNames()}, nil
 }
 
 // unsupportedPanic carries an unsupported construct out of the recursive
@@ -175,7 +178,7 @@ func unsup(pos coreexport.Pos, format string, a ...any) {
 // the construct it stopped at, if any. It reports whether f finished.
 func (g *gen) guard(decl string, f func()) bool {
 	// A translation stopped midway leaves no state behind for the next.
-	g.qualify, g.inDefault = false, map[string]bool{}
+	g.qualify, g.inDefault, g.tparams = false, map[string]bool{}, nil
 	_, u := attempt(func() struct{} { f(); return struct{}{} })
 	if u != nil {
 		g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: u.construct, Pos: u.pos})

@@ -111,14 +111,42 @@ const (
 	Untyped
 )
 
-// isTypingGap reports whether Lean error msg says that it could not infer the
-// type parameter of an Option or Either the program builds, a type Core JSON
-// does not carry (`Println(None())`). Any other inference failure is a
-// translation bug, and stays one.
-func isTypingGap(msg string) bool {
+// isTypingGap reports whether Lean error msg says that it could not infer a
+// type argument of an Option or Either the program builds, or of one of
+// generic, the program's generic types and functions (Result.Generic): a
+// type Core JSON does not carry (`Println(None())`). Any other inference
+// failure is a translation bug, and stays one.
+//
+// A program's generic name counts only where Lean names what it could not
+// infer: the head of the term on the line after the message
+// (`@Chain.End ?m.5`, `@first ?m.3 ...`), or the type in the stuck instance
+// (`GShow (Chain ?m.7)`); not anywhere in the rest of the message.
+func isTypingGap(msg string, generic []string) bool {
 	stuck := strings.Contains(msg, "typeclass instance problem is stuck") ||
 		strings.Contains(msg, "don't know how to synthesize")
-	return stuck && (strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither"))
+	if !stuck {
+		return false
+	}
+	if strings.Contains(msg, "GOption") || strings.Contains(msg, "GEither") {
+		return true
+	}
+	lines := strings.Split(msg, "\n")
+	if len(lines) < 2 || len(generic) == 0 {
+		return false
+	}
+	what := strings.TrimSpace(lines[1])
+	names := make([]string, len(generic))
+	for i, n := range generic {
+		names[i] = regexp.QuoteMeta(n)
+	}
+	alt := "(" + strings.Join(names, "|") + ")"
+	// The head of an application, `@[Ns.]name`; a type applied in the stuck
+	// instance, `Class (name ?m...)`; or the instance a generic function's
+	// type parameter needs, `Class ?m.3`, which only a type argument left to
+	// Lean leaves open.
+	head := regexp.MustCompile(`^@(?:[\w'.«»]*\.)?` + alt + `(?:\.[\w'«»]+)?(\s|$)`)
+	inst := regexp.MustCompile(`^\w+ (\((?:[\w'.«»]*\.)?` + alt + `\s|\?m\.\d+$)`)
+	return head.MatchString(what) || inst.MatchString(what)
 }
 
 // RunResult is one run of a translated program.
@@ -181,7 +209,7 @@ func (r *Runner) Run(res *Result, timeout time.Duration) (RunResult, error) {
 		switch {
 		case strings.Contains(m[2], "to be monotone"):
 			rr.Kind = NotMonotone
-		case isTypingGap(firstError(stdout.String())):
+		case isTypingGap(firstError(stdout.String()), res.Generic):
 			rr.Kind = Untyped
 		}
 		return rr, nil
