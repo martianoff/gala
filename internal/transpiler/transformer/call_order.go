@@ -423,6 +423,9 @@ func (t *galaASTTransformer) inert(e ast.Expr) bool {
 			return false
 		case *ast.StarExpr:
 			reads = true
+		case *ast.IndexExpr:
+			// An element of a slice or map (operandThroughPointer).
+			reads = t.marked(n, operandThroughPointer)
 		case *ast.Ident:
 			if t.changeableInScope(n.Name) {
 				reads = true

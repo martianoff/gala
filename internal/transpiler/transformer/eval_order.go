@@ -46,8 +46,9 @@ import (
 type operandMark int
 
 const (
-	// operandThroughPointer is `*p`, or a field or method value `p.f` with
-	// p a pointer.
+	// operandThroughPointer is `*p`, a field or method value `p.f` with p a
+	// pointer, or an element `x[i]` of a slice or map x: storage any call
+	// may reach.
 	operandThroughPointer operandMark = 1 << iota
 	// operandAddressed is the receiver x of a method call `x.m(...)` that
 	// takes x's address: a pointer-receiver method on a value.
@@ -59,6 +60,10 @@ const (
 	// operandBoxGet is `x.f.Get()`, a val field read out of its
 	// std.Immutable box: a call that changes nothing.
 	operandBoxGet
+	// operandPackageVar is a name that reads a package-level var, as the
+	// lowering resolved it: a local binding of the same name elsewhere in
+	// the declaration does not hide it (see changeable).
+	operandPackageVar
 )
 
 func (t *galaASTTransformer) markOperand(n ast.Node, mark operandMark) {
@@ -105,6 +110,27 @@ func (t *galaASTTransformer) markMember(sel *ast.SelectorExpr, valueType transpi
 func (t *galaASTTransformer) markDeref(star *ast.StarExpr) *ast.StarExpr {
 	t.markOperand(star, operandThroughPointer)
 	return star
+}
+
+// markIndex marks idx, an element read `x[i]` lowered from the source, for
+// orderOperands when x is a slice or a map: its elements are shared storage
+// any call may change, as through a pointer. A string or an array value
+// holds its own elements.
+func (t *galaASTTransformer) markIndex(idx *ast.IndexExpr) {
+	typ, typed := t.exprTypeCache[idx.X] // a type query would report one it cannot find
+	if !typed {
+		return
+	}
+	switch typ := t.followAliasChain(typ).(type) {
+	case transpiler.ArrayType:
+		if typ.Fixed {
+			return
+		}
+	case transpiler.MapType:
+	default:
+		return
+	}
+	t.markOperand(idx, operandThroughPointer)
 }
 
 // recordMutableVar records the local `var` or `var` parameter name, of type
@@ -417,6 +443,9 @@ func (o *operandOrder) readsChangeable(e ast.Expr) (vars, pointers bool) {
 		case *ast.TypeAssertExpr:
 			ast.Inspect(n.X, walk) // not the type
 			return false
+		case *ast.IndexExpr:
+			// An element of a slice or map: any call may change it.
+			pointers = pointers || o.t.marked(n, operandThroughPointer)
 		case *ast.SelectorExpr:
 			if id, ok := n.X.(*ast.Ident); ok && o.isPackageQualifier(id) {
 				vars = vars || o.isImportedVar(id.Name, n.Sel.Name)
@@ -436,7 +465,7 @@ func (o *operandOrder) readsChangeable(e ast.Expr) (vars, pointers bool) {
 			}
 			return false
 		case *ast.Ident:
-			vars = vars || o.changeable(n.Name)
+			vars = vars || o.changeable(n.Name) || o.t.marked(n, operandPackageVar)
 		}
 		return true
 	}
@@ -568,7 +597,11 @@ func (o *operandOrder) receiverCopyable(fun ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	return o.t.copyableReceiver(o.varType(id.Name), sel.Sel.Name)
+	typ := o.varType(id.Name)
+	if o.t.marked(id, operandPackageVar) {
+		typ = o.pkgVars[id.Name] // whatever else the name binds here
+	}
+	return o.t.copyableReceiver(typ, sel.Sel.Name)
 }
 
 // copyableReceiver reports whether a receiver of type typ can be copied ahead

@@ -5252,6 +5252,22 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# An element of a Go slice or map is read before a later call writes it.
+gala_exec_test(
+    name = "evaluation_order_elements",
+    src = "evaluation_order_elements.gala",
+    expected = "evaluation_order_elements.out",
+    deps = ["//go_interop"],
+)
+
+# A package var is ordered like one where a binding of its name elsewhere
+# in the function does not reach.
+gala_exec_test(
+    name = "evaluation_order_hidden_var",
+    src = "evaluation_order_hidden_var.gala",
+    expected = "evaluation_order_hidden_var.out",
+)
+
 # Named arguments are evaluated in the order they are written.
 gala_exec_test(
     name = "named_argument_order",

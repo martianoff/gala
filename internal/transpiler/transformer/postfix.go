@@ -411,7 +411,11 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 		}
 	}
 	if len(indices) == 1 {
-		return &ast.IndexExpr{X: base, Index: indices[0]}, nil
+		idx := &ast.IndexExpr{X: base, Index: indices[0]}
+		if !instantiates && !genericMethod {
+			t.markIndex(idx)
+		}
+		return idx, nil
 	}
 	return &ast.IndexListExpr{X: base, Indices: indices}, nil
 }

@@ -45,8 +45,12 @@ import (
 // extractor runs only after the sibling sub-patterns before it matched, a
 // match subject runs once and only one if branch runs, so the trace the
 // program must print is known. main also declares local vars, int or Cell,
-// and vals holding a Cell var's address; operands read them and change them
-// through a pointer (metaCells), and the model keeps their values in mState.
+// vals holding a Cell var's address, and vals holding a Go slice or map;
+// operands read them and change them through a pointer or the shared
+// storage (metaCells), and the model keeps their values in mState. A main
+// that reads the package var counter also binds the name in a
+// block that does not run (metaShadow), which must not hide the var
+// anywhere else.
 
 // mType is the type of a generated expression or binder.
 type mType int
@@ -60,6 +64,8 @@ const (
 	mVarInt      // an int `var` of main
 	mVarCell     // a Cell `var` of main
 	mCellPtr     // a val holding the address of a Cell var
+	mSlice       // a val holding a Go slice of main: its element 0 is read and changed
+	mMap         // a val holding a Go map of main: its key 0 is read and changed
 )
 
 // metaDomain is declared in every program. Its own names are fixed: renaming
@@ -143,7 +149,35 @@ func incP(c *Cell, k int) int = c.Inc(k)
 func sumP(p *int, k int) int = *p + bumpP(p, k)
 
 func sumC(c *Cell, k int) int = c.n + incP(c, k)
+
+func addFirst(xs []int, k int) int {
+    xs[0] = xs[0] + k
+    xs[0]
+}
+
+func sumFirst(xs []int, k int) int = xs[0] + addFirst(xs, k)
+
+func addKey(m map[int]int, k int) int {
+    m[0] = m[0] + k
+    m[0]
+}
+
+func sumKey(m map[int]int, k int) int = m[0] + addKey(m, k)
 `
+
+// metaCellsImport is the import metaCells needs: its slice and map
+// functions take Go slices and maps, made with go_interop.
+const metaCellsImport = "import . \"martianoff/gala/go_interop\"\n\n"
+
+// metaShadow is a statement of main when the program reads counter: a block
+// that declares a val named counter and never runs. It binds the name only
+// inside the block; every other read of counter in main is still the
+// package var's, and is ordered like one.
+const metaShadow = `val counterShadowed = false
+if counterShadowed {
+    val counter = 1
+    Println(counter)
+}`
 
 // varNames are names a local var may take even with plain names: Go's
 // predeclared identifiers and std's qualifier, which the transpiler renames
@@ -718,8 +752,11 @@ type eVar struct{ b *mBinder }
 
 func (e eVar) eval(s *mState, _ mEnv) mVal { return mVal{n: s.vars[e.b.cell()]} }
 func (e eVar) render() string {
-	if e.b.typ == mVarInt {
+	switch e.b.typ {
+	case mVarInt:
 		return e.b.name
+	case mSlice, mMap:
+		return e.b.name + "[0]"
 	}
 	return e.b.name + ".n"
 }
@@ -751,6 +788,14 @@ func (e eMut) render() string {
 		addr = "&" + e.b.name
 	}
 	switch {
+	case e.b.typ == mSlice && e.sum:
+		return fmt.Sprintf("sumFirst(%s, %d)", e.b.name, e.k)
+	case e.b.typ == mSlice:
+		return fmt.Sprintf("addFirst(%s, %d)", e.b.name, e.k)
+	case e.b.typ == mMap && e.sum:
+		return fmt.Sprintf("sumKey(%s, %d)", e.b.name, e.k)
+	case e.b.typ == mMap:
+		return fmt.Sprintf("addKey(%s, %d)", e.b.name, e.k)
 	case e.b.typ == mVarInt && e.sum:
 		return fmt.Sprintf("sumP(%s, %d)", addr, e.k)
 	case e.b.typ == mVarInt:
@@ -782,7 +827,8 @@ func (e ePeek) scan(c *mScan)  { c.ref(e.b); e.arg.scan(c) }
 
 // ---- statements
 
-// sVar is `var b = init`, or `var b = Cell(init)` for a Cell var.
+// sVar is `var b = init`, or `var b = Cell(init)` for a Cell var, or a val
+// holding a slice or a map whose element 0 is init.
 type sVar struct {
 	b    *mBinder
 	init mExpr
@@ -793,8 +839,13 @@ func (v *sVar) exec(s *mState, env mEnv) mEnv {
 	return env
 }
 func (v *sVar) render() string {
-	if v.b.typ == mVarCell {
+	switch v.b.typ {
+	case mVarCell:
 		return "var " + v.b.name + " = Cell(" + v.init.render() + ")"
+	case mSlice:
+		return "val " + v.b.name + " = SliceOf(" + v.init.render() + ")"
+	case mMap:
+		return "val " + v.b.name + " = MapPut(MapEmpty[int, int](), 0, " + v.init.render() + ")"
 	}
 	return "var " + v.b.name + " = " + v.init.render()
 }
@@ -871,6 +922,13 @@ func (v *sLambda) scan(c *mScan) {
 	c.stack = c.stack[:mark]
 	c.declareVal(v.f, from)
 }
+
+// sShadow is metaShadow, which prints nothing.
+type sShadow struct{}
+
+func (sShadow) exec(_ *mState, env mEnv) mEnv { return env }
+func (sShadow) render() string { return metaShadow }
+func (sShadow) scan(*mScan)    {}
 
 // sPrint is Println(e), or Println(s"${a} ${b}") with two expressions.
 type sPrint struct{ es []mExpr }
@@ -1186,15 +1244,16 @@ func (g *metaGen) varExpr(d int) mExpr {
 	case 0:
 		return eVar{b}
 	case 1:
-		if b.typ != mVarInt {
+		if b.typ == mVarCell || b.typ == mCellPtr {
 			return ePeek{b, g.intExpr(d-1, true)}
 		}
 	}
 	return eMut{b: b, k: 1 + g.pick(4), sum: g.pick(2) == 0, method: g.pick(2) == 0}
 }
 
-// newVar declares a var of main, int or Cell, or a val holding the address
-// of a Cell var. Some vars take one of varNames.
+// newVar declares a var of main, int or Cell, a val holding the address of
+// a Cell var, or a val holding a Go slice or map, whose element calls change
+// through the shared storage. Some vars take one of varNames.
 func (g *metaGen) newVar(region int, taken *int) mStmt {
 	var cells []*mBinder
 	for _, v := range g.vars {
@@ -1209,7 +1268,7 @@ func (g *metaGen) newVar(region int, taken *int) mStmt {
 		g.vars = append(g.vars, p)
 		return &sPtr{p}
 	}
-	t := []mType{mVarInt, mVarCell}[g.pick(2)]
+	t := []mType{mVarInt, mVarCell, mSlice, mMap}[g.pick(4)]
 	init := g.intExpr(2, false)
 	b := g.binder(t, region)
 	if *taken < len(varNames) && g.pick(2) == 0 {
@@ -1574,6 +1633,12 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 		}
 	}
 
+	// A binding named counter in main hides the package var only where it
+	// is in scope.
+	if g.counter {
+		stmts = append([]mStmt{sShadow{}}, stmts...)
+	}
+
 	// The model.
 	st := &mState{vars: map[*mBinder]int{}}
 	env := mEnv{}
@@ -1600,7 +1665,11 @@ func generateMeta(data []byte, cfg metaConfig) metaProgram {
 
 	render := func() string {
 		var b strings.Builder
-		b.WriteString("package main\n\n" + metaDomain)
+		b.WriteString("package main\n\n")
+		if len(g.vars) > 0 {
+			b.WriteString(metaCellsImport)
+		}
+		b.WriteString(metaDomain)
 		if g.counter {
 			b.WriteString(metaCounter)
 		}

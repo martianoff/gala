@@ -1,0 +1,4 @@
+lambda parameter: 6
+after a lambda parameter: 1
+after a val in another block: 11
+in a package-level lambda: 21
