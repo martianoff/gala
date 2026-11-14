@@ -4,7 +4,7 @@ title: "GALA-E0108 — A Type's Own Equal Passes Its Type to a Comparable Type P
 description: "GALA-E0108 fires when a type's own Equal calls a generic function with that type as a comparable type argument: == on the type parameter would call Equal again, forever."
 keywords: "gala-e0108, gala equal recursion, gala comparable, gala equality, gala stack overflow equal"
 permalink: /docs/errors/gala-e0108/
-last_modified_at: 2026-11-12
+last_modified_at: 2026-11-13
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0108</p>
@@ -17,6 +17,14 @@ method, and the call's type argument for a type parameter constrained by
 type that holds it by value: `Option[Point]`, a tuple, a `List[Point]`. `==`
 on such a type parameter calls the value's `Equal`, so `Equal` and the helper
 would call each other until the stack runs out.
+
+`Equal` reaches such a call through a method too: a method of a generic
+type is compiled with the type's `comparable` type parameter, so
+`Pair(p, o).Same()` for `struct Pair[T comparable]` is the call `same(p, o)`
+is. And it reaches one through the functions and methods of the same file
+that it calls: `eq(p, o)` for `func eq(a Point, b Point) bool = same(a, b)`.
+The error then points at the call in `Equal` and names the path to the
+generic call.
 
 **Minimal repro.**
 
@@ -67,9 +75,10 @@ func main() {
 
 **Rationale.** A generic function is compiled once for all its callers, so
 `==` in it cannot be Go's `==` for one caller and `Equal` for the others.
-The check covers the call `Equal` makes itself. A helper that `Equal` calls
-and that passes the value on to another generic function is not checked, and
-recurses the same way.
+The check follows the functions and methods of the file that `Equal` calls.
+It does not see a call made through a function value, or one made by a
+function or method declared in another file or package; such a call recurses
+the same way.
 
 ---
 

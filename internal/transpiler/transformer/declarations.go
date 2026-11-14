@@ -935,6 +935,15 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 			defer func() { t.equalOwner = prevOwner }()
 		}
 	}
+	// The calls the body makes are recorded under it (equal_reentry.go).
+	reentryDecl, equalOf := t.reentryKey(name, ""), (*transpiler.TypeMetadata)(nil)
+	if receiverTypeName != "" {
+		reentryDecl = t.reentryKey(receiverTypeName, name)
+		if name == "Equal" {
+			equalOf = t.equalOwner
+		}
+	}
+	defer t.enterReentryDecl(reentryDecl, equalOf)()
 
 	// Type Parameters
 	var typeParams *ast.FieldList

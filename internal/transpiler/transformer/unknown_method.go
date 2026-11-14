@@ -142,10 +142,17 @@ func (t *galaASTTransformer) checkTypeParamMethod(recvType transpiler.Type, meth
 		return nil
 	}
 	line, col, exact := callAnchorPos(c)
+	// A receiver's `_` reads as written; its constraint is the one its
+	// type declares the parameter with, under the declared name.
+	shown, declared, which := name, name, name
+	if transpiler.IsWildcardTypeParamName(name) {
+		shown, declared = "_", strings.TrimPrefix(name, transpiler.WildcardTypeParamPrefix)
+		which = fmt.Sprintf("%s, which the receiver writes as _,", declared)
+	}
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUnknownMethod, line, col,
-		fmt.Sprintf("%s has no method %s: it is a type parameter constrained by %s, which declares no methods", name, method, transpiler.ConstraintString(constraint)),
-		fmt.Sprintf("constrain %s by an interface that declares %s: `[%s Has%s]`, with `type Has%s interface { %s(...) ... }`", name, method, name, method, method, method),
+		fmt.Sprintf("%s has no method %s: it is a type parameter constrained by %s, which declares no methods", shown, method, transpiler.ConstraintString(constraint)),
+		fmt.Sprintf("constrain %s by an interface that declares %s: `[%s Has%s]`, with `type Has%s interface { %s(...) ... }`", which, method, declared, method, method, method),
 	)
 	if exact {
 		err = err.WithSpan(col + len([]rune(method)))

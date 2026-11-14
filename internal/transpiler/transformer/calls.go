@@ -300,6 +300,9 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			if err := t.checkTypeParamMethod(recvType, method, c); err != nil {
 				return nil, err
 			}
+			if err := t.checkMethodEqualReentry(c, recvType, lookupBaseName, method); err != nil {
+				return nil, err
+			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
@@ -316,6 +319,9 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
 			funcMeta := t.getFunction(funcName)
+			if funcMeta != nil && ownFunc {
+				t.noteReentryCall(c, t.reentryKey(funcMeta.Name, ""))
+			}
 			if funcMeta != nil {
 				if err := funcParamList(funcMeta.Name, funcMeta).checkPositional(0, sl, sc); err != nil {
 					return nil, err
@@ -838,6 +844,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// the one it constrains (constraint_inference.go).
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 {
 		t.inferMethodFromConstraints(methodMeta, methodMeta.TypeParams, typeMeta.TypeParams, recvTypeArgTypes, typeSubst)
+		// One they do not determine either would reach a lambda as `any`.
+		if err := t.checkMethodConstraintInference(c, typeMeta.Name, methodMeta, typeMeta.TypeParams, recvTypeArgTypes, typeSubst); err != nil {
+			return true, nil, err
+		}
 	}
 	// Harvest type params from earlier lambdas to refine later ones.
 	// We transform args in declaration order. Each lambda is transformed with
@@ -2759,6 +2769,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	if err := t.checkTypeParamMethod(recvType, method, c); err != nil {
 		return nil, err
 	}
+	if err := t.checkMethodEqualReentry(c, recvType, lookupBaseName, method); err != nil {
+		return nil, err
+	}
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
@@ -2809,9 +2822,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	if err := t.checkConstraintTypeArgs(c, callCtx); err != nil {
 		return nil, err
 	}
-	if fm := callCtx.funcMeta; fm != nil && t.equalOwner != nil {
-		if err := t.checkEqualReentry(c, fm.Name, fm.TypeParams, fm.TypeParamConstraints, boundTypeArgs(callCtx)); err != nil {
-			return nil, err
+	if fm := callCtx.funcMeta; fm != nil {
+		if ownFunc {
+			t.noteReentryCall(c, t.reentryKey(fm.Name, ""))
+		}
+		if len(fm.TypeParams) > 0 {
+			if err := t.checkEqualReentry(c, fm.Name, fm.TypeParams, fm.TypeParamConstraints, boundTypeArgs(callCtx)); err != nil {
+				return nil, err
+			}
 		}
 	}
 

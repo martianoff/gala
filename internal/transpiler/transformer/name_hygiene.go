@@ -12,6 +12,7 @@ import (
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
 
@@ -34,7 +35,7 @@ import (
 // localNamePrefix starts the Go name of a local binding renamed by
 // localGoName. The `_gala_` prefix is the transpiler's (see fmtAlias): no
 // GALA identifier may start with it (CheckReservedPrefixNative).
-const localNamePrefix = "_gala_"
+const localNamePrefix = transpiler.ReservedNamePrefix
 
 // exportedNamePrefix is reserved for the exported Go names of declarations
 // the transpiler generates for other packages to reach (none yet; the

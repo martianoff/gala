@@ -84,6 +84,7 @@ func scopedStateFieldNames() []string {
 // are therefore exempt from the residue check.
 var accumulatedStateFields = []string{
 	"packageName",
+	"reentry",
 	"operandMismatches",
 	"variantNames",
 	"immutFields",
