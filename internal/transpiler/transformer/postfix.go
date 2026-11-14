@@ -44,7 +44,14 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Ex
 				if i == len(ce.Args)-1 && ce.Ellipsis.IsValid() {
 					break // a spread slice prints as its elements
 				}
-				ce.Args[i], _ = t.printedValue(arg, t.getExprTypeNameManual(arg))
+				at := c.anchor()
+				if i < len(c.args.list) {
+					at = c.args.list[i].at()
+				}
+				line, col := at.start()
+				if ce.Args[i], _, err = t.printedValue(arg, t.getExprTypeNameManual(arg), line, col); err != nil {
+					return nil, err
+				}
 			}
 		}
 		return call, nil

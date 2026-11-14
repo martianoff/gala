@@ -179,7 +179,16 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 		// A value printed by its String: with no spec, or one fmt would
 		// print it by String with (%v, %s, not %#v).
 		if !explicit || (strings.ContainsAny(p.FormatSpec[len(p.FormatSpec)-1:], "vs") && !strings.Contains(p.FormatSpec, "#")) {
-			goExpr, typ = t.printedValue(goExpr, typ)
+			goExpr, typ, err = t.printedValue(goExpr, typ, exprLine, exprCol)
+			if err != nil {
+				return nil, err
+			}
+		} else if strings.ContainsAny(p.FormatSpec[len(p.FormatSpec)-1:], "qxX") {
+			// fmt calls String for %q, %x and %X too, so a generated String
+			// copies the fields it prints as it does for %v.
+			if err := t.checkPrintedFieldsCopy(typ, exprLine, exprCol); err != nil {
+				return nil, err
+			}
 		}
 		if explicit {
 			verb = p.FormatSpec
