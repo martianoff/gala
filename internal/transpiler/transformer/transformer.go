@@ -1466,11 +1466,11 @@ func (t *galaASTTransformer) registerEmbeddedFSMetadata() {
 		Fields:     make(map[string]transpiler.Type),
 		FieldNames: nil,
 	}
+	// Only under its qualified key: a bare `EmbeddedFS` reaches it through
+	// the std step of type resolution, as every std type does, and so is
+	// emitted as std.EmbeddedFS. A bare key would resolve the name as a
+	// type of no package and emit it unqualified.
 	t.typeMetas[fullName] = meta
-	// Also register without package prefix for dot-imported std
-	if _, exists := t.typeMetas[transpiler.TypeEmbeddedFS]; !exists {
-		t.typeMetas[transpiler.TypeEmbeddedFS] = meta
-	}
 }
 
 // DumpTypeTrace writes all recorded type resolution events to w.

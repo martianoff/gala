@@ -1,0 +1,23 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// The elements a spread argument passes to Println and Print print as the
+// same values passed one by one do: one whose type declares String on a
+// pointer receiver prints by that String.
+
+struct Pt(X int, Y int)
+
+func (p *Pt) String() string = s"<${p.X},${p.Y}>"
+
+func main() {
+    val a = Pt(1, 2)
+    val b = Pt(3, 4)
+    Println(a, "and", b, 5)
+    val xs = SliceOf[any](a, "and", b, 5)
+    Println(xs...)
+    Print(a, "and", b, 5)
+    Println()
+    Print(xs...)
+    Println()
+}

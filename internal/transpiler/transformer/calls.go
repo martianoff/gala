@@ -1288,7 +1288,7 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 // injectFuncPhantomTypeArgs). typeArgs is returned as is when nothing needs
 // spelling: Go infers every type argument from the arguments.
 func (t *galaASTTransformer) resultOnlyMethodTypeArgs(c callSrc, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst typeSubstMap, slotTyped map[string]bool, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
-	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
+	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, inferringParamTypes(methodMeta.ParamTypes, methodMeta.Variadic, args))
 	// The call spells a prefix of the type arguments, up to the last phantom
 	// or slot-typed one; Go infers the rest from the arguments and the
 	// receiver.

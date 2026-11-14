@@ -222,6 +222,7 @@ go_test(
         "generic_struct_extractor_test.go",
         "generics_test.go",
         "get_generic_pointer_receiver_test.go",
+        "go_alias_chain_test.go",
         "go_build_only_errors_test.go",
         "go_constructors_test.go",
         "go_generic_multireturn_instantiation_test.go",

@@ -743,7 +743,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		return fun, nil
 	}
-	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, filledParamTypes(funcMeta, len(args), hasSpread))
+	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, inferringParamTypes(filledParamTypes(funcMeta, len(args), hasSpread), funcMeta.Variadic, args))
 	if len(phantom) == 0 && !slices.ContainsFunc(args, t.isUntypedConstArg) {
 		// Every type param is determined by an argument — leave it to Go.
 		return fun, nil
@@ -796,7 +796,61 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	if err := t.checkPtrSlotTypeArgs(t.argCalleeName(fun), funcMeta, resolved, argBound, line, col); err != nil {
 		return nil, err
 	}
+	// A `nil` argument takes its parameter's type, now that the type
+	// arguments it names are spelled.
+	if !hasSpread {
+		for i, arg := range args {
+			if !isNilIdent(arg) {
+				continue
+			}
+			pi := funcParamIndex(funcMeta, i)
+			if pi < 0 {
+				continue
+			}
+			// Typed only when every type parameter the parameter's type
+			// names is resolved; a resolved one may be a type parameter of
+			// the caller under the same name.
+			named := map[string]bool{}
+			t.collectReferencedParams(funcMeta.ParamTypes[pi], funcMeta.TypeParams, named)
+			allResolved := true
+			for tp := range named {
+				allResolved = allResolved && !transpiler.IsUnusable(resolved[tp])
+			}
+			if allResolved {
+				t.typeNilAs(arg, t.substituteInType(funcMeta.ParamTypes[pi], resolved))
+			}
+		}
+	}
 	return instantiated, nil
+}
+
+// inferringParamTypes is paramTypes, of a function or method whose last
+// parameter is variadic when variadic, without the parameters args fills with
+// a bare `nil`, written or a default: Go infers no type argument from an
+// untyped nil, so a type parameter only such a parameter mentions is as
+// phantom as one only the result does (`first[T any](p *T = nil)` called as
+// `first()`). A spread argument is no bare nil, so it binds.
+func inferringParamTypes(paramTypes []transpiler.Type, variadic bool, args []ast.Expr) []transpiler.Type {
+	if !slices.ContainsFunc(args, isNilIdent) {
+		return paramTypes
+	}
+	// A parameter binds unless an argument reaches it and every one that
+	// does is a bare nil.
+	reached := make([]bool, len(paramTypes))
+	binds := make([]bool, len(paramTypes))
+	for i, arg := range args {
+		if pi := paramIndex(i, paramTypes, variadic); pi >= 0 {
+			reached[pi] = true
+			binds[pi] = binds[pi] || !isNilIdent(arg)
+		}
+	}
+	out := make([]transpiler.Type, 0, len(paramTypes))
+	for pi, typ := range paramTypes {
+		if !reached[pi] || binds[pi] {
+			out = append(out, typ)
+		}
+	}
+	return out
 }
 
 // filledParamTypes is the types of the parameters of funcMeta that a call with
@@ -1878,27 +1932,15 @@ func universeMethodSignature(recv transpiler.Type, method string) *transpiler.Go
 	return sig
 }
 
-// getGoFieldType returns the type of a field on a Go struct type.
-// Handles field access like req.Header, resp.StatusCode, etc.
-func (t *galaASTTransformer) getGoFieldType(typeName, fieldName string) transpiler.Type {
-	if t.goTypeInfo == nil {
-		return transpiler.NilType{}
-	}
-	// Strip pointer prefix
-	cleanType := strings.TrimPrefix(typeName, "*")
-
-	// Try direct lookup
-	if fType := t.goTypeInfo.GetFieldType(cleanType, fieldName); fType != nil {
-		return fType
-	}
-
-	// If the type is a Go type alias, resolve and try the underlying type's fields
-	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
-		aliasedName := aliasedType.String()
-		if fType := t.goTypeInfo.GetFieldType(aliasedName, fieldName); fType != nil {
+// getGoFieldType returns the type of the field fieldName of a value of the Go
+// type typ (one pointer level stripped): `req.Header`, `resp.StatusCode`. A
+// Go type alias has its target's fields, through every alias of a chain (see
+// goTypeDataThroughAliases).
+func (t *galaASTTransformer) getGoFieldType(typ transpiler.Type, fieldName string) transpiler.Type {
+	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
+		if fType := td.Fields[fieldName]; fType != nil {
 			return fType
 		}
 	}
-
 	return transpiler.NilType{}
 }
