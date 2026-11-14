@@ -264,10 +264,11 @@ prelude's model. It says nothing about the Go build, which is tested, not proved
 
 These rules apply to every doc, release note and PR that mentions this work:
 
-- **"Proved"** means a kernel-checked theorem about the spec, with no `sorry` and only
-  Lean's standard axioms. Nothing else is called proved.
+- **"Proved"** means a kernel-checked theorem, with no `sorry` and only Lean's standard
+  axioms, and always comes with what it is about: the spec, a lowering model, or one
+  program's translation. Nothing else is called proved.
 - **"Tested against the spec"** means differential results: generated programs and
-  examples agree with the spec. Nothing is in this tier yet.
+  examples agree with the spec ([COVERAGE.md](COVERAGE.md) lists them).
 - Neither word is used for constructs outside the modelled subset.
 - We never claim the transpiler is verified. A lowering model proves what a correct
   lowering must do, not that the transpiler does it.
