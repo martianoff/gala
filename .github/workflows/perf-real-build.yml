@@ -86,8 +86,9 @@ jobs:
     # Update these deliberately, when the gala_tui or gala_team API surface
     # intentionally changes — a red run after a bump is then real semantic
     # drift, attributable to the bump. gala_tui is pinned to the release
-    # gala_team's MODULE.bazel requires, so the override matches what
-    # gala_team is written against.
+    # gala_team's MODULE.bazel requires (or a later commit with only build
+    # changes on top of it), so the override matches what gala_team is
+    # written against.
     env:
       # gala_tui main after it moved to rules_gala 0.6.11
       # (martianoff/gala-tui#96): 0.16.0, the release gala_team's MODULE.bazel
