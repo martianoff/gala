@@ -39,6 +39,9 @@ func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
 		return pat{lean: "_"}
 	case *coreexport.PatName:
 		x := p.Name
+		if x == "None" && sc.lookup(x) == nil && g.globalBy[x] == nil && g.variants[x] == nil {
+			return pat{lean: stdCtors[x], refutable: true}
+		}
 		if v := g.variants[x]; v != nil {
 			if len(v.fields) != 0 {
 				unsup(p.Pos, "bare-pattern-with-fields")
@@ -88,6 +91,11 @@ func (g *gen) pattern(p coreexport.Node, sc *scope) pat {
 			out.refutable = len(v.sealed.Variants) > 1
 		case g.structs[c.Name] != nil:
 			ctor, nf = ident(c.Name)+".mk", len(g.structs[c.Name].Fields)
+		case stdCtors[c.Name] != "" && sc.lookup(c.Name) == nil:
+			ctor, nf, out.refutable = stdCtors[c.Name], 1, true
+			if c.Name == "None" {
+				nf = 0
+			}
 		default:
 			unsup(p.Pos, "extractor")
 		}
@@ -161,7 +169,7 @@ func (g *gen) matchItems(m *coreexport.Match, sc *scope, value bool) []string {
 		subj = p.Expr
 	}
 	var s string
-	if n, ok := subj.(*coreexport.Name); ok && sc.lookup(n.Name) != nil {
+	if n, ok := subj.(*coreexport.Name); ok && sc.lookup(n.Name) != nil && sc.lookup(n.Name).box < 0 {
 		// A local is matched on directly, which keeps its equation for
 		// proofs.
 		s = ident(n.Name)

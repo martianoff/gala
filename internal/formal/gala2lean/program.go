@@ -33,6 +33,20 @@ type gen struct {
 	library bool
 	// refsOf caches funcRefs, by function name.
 	refsOf map[string]map[string]bool
+	// noBEq is the types holding a function, which do not compare;
+	// unprintable the types whose printed text would hold an address.
+	noBEq, unprintable map[string]bool
+	// ns is Options.Namespace; qualify makes function references full
+	// names (funcRef).
+	ns      string
+	qualify bool
+	// boxed is every captured var (findBoxes); heaps the Lean types of
+	// the heaps their cells live in.
+	boxed map[boxKey]bool
+	heaps []string
+	// inDefault is the defaults being translated (callee.param), so that a
+	// default that needs itself is reported, not expanded forever.
+	inDefault, refsInDefault map[string]bool
 
 	unsup []Unsupported
 	out   strings.Builder
@@ -65,13 +79,17 @@ type fnCtx struct {
 
 func newGen() *gen {
 	return &gen{
-		structs:  map[string]*coreexport.Struct{},
-		sealeds:  map[string]*coreexport.Sealed{},
-		variants: map[string]*variantInfo{},
-		funcs:    map[string]*coreexport.Func{},
-		globalBy: map[string]*globalVar{},
-		selected: map[string]bool{},
-		refsOf:   map[string]map[string]bool{},
+		structs:       map[string]*coreexport.Struct{},
+		sealeds:       map[string]*coreexport.Sealed{},
+		variants:      map[string]*variantInfo{},
+		funcs:         map[string]*coreexport.Func{},
+		globalBy:      map[string]*globalVar{},
+		selected:      map[string]bool{},
+		refsOf:        map[string]map[string]bool{},
+		noBEq:         map[string]bool{},
+		unprintable:   map[string]bool{},
+		inDefault:     map[string]bool{},
+		refsInDefault: map[string]bool{},
 	}
 }
 
@@ -145,14 +163,18 @@ func (g *gen) unresolved(pos coreexport.Pos, fallback string) {
 // a type no method can change: int, string or bool. It applies only to a
 // program that declares methods, whose String or Equal would be called.
 func (g *gen) basic(e coreexport.Node, sc *scope) {
-	if !g.hasMethods {
+	if g.hasMethods {
+		g.basicType(g.typeOf(e, sc), posOf(e))
+	}
+}
+
+// basicType is basic for a value of Lean type t at pos.
+func (g *gen) basicType(t string, pos coreexport.Pos) {
+	switch {
+	case !g.hasMethods, t == "Int64", t == "String", t == "Bool":
 		return
 	}
-	switch g.exprType(e, sc, map[string]bool{}) {
-	case "Int64", "String", "Bool":
-		return
-	}
-	unsup(posOf(e), "method")
+	unsup(pos, "method")
 }
 
 func (g *gen) unsupNode(decl string, n coreexport.Node) {
@@ -212,16 +234,17 @@ func (g *gen) write(s string) {
 // emitProgram writes the module.
 func (g *gen) emitProgram(opts Options) {
 	ok := true
-	var typeDecls string
+	var typeDecls, fnTypeDecls string
 	ok = g.guard("", func() {
 		g.typeOrder()
-		typeDecls = g.typeDecls()
+		typeDecls, fnTypeDecls = g.typeDecls()
 	}) && ok
 	// The package-level variables' types and initialization order.
 	var initOrder []*globalVar
 	ok = g.guard("", func() {
 		for _, gv := range g.globals {
 			gv.leanT = g.globalType(gv)
+			g.stateType(gv.leanT, gv.pos)
 		}
 		initOrder = g.initOrder()
 	}) && ok
@@ -258,6 +281,8 @@ func (g *gen) emitProgram(opts Options) {
 	g.write("namespace " + opts.Namespace + "\n\nopen Gala.Gen\n\n")
 	g.write(typeDecls)
 	g.write(g.stateDecl())
+	g.write(g.heapHelpers())
+	g.write(fnTypeDecls)
 	for _, grp := range groups {
 		mutual := len(grp) > 1
 		if mutual {
@@ -288,6 +313,7 @@ func (g *gen) stateDecl() string {
 	var b strings.Builder
 	b.WriteString("/-- The program state: the printed output and the package-level variables. -/\n")
 	b.WriteString("structure _gala_St where\n  _gala_out : String := \"\"\n")
+	b.WriteString(g.heapFields())
 	for _, gv := range g.globals {
 		fmt.Fprintf(&b, "  %s : %s := default\n", ident(gv.name), gv.leanT)
 	}
@@ -329,14 +355,11 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 		if !ok {
 			unsupAt(pn)
 		}
-		if p.Default != nil {
-			unsup(p.Pos, "param-default")
-		}
 		if p.Type == nil {
 			unsup(p.Pos, "untyped-param")
 		}
 		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
-		sc.bind(p.Name, false, g.leanType(p.Type))
+		sc.bind(p.Name, false, g.leanType(p.Type)).gtype = p.Type
 	}
 	res := "Unit"
 	if f.Result != nil {

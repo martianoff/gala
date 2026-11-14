@@ -39,6 +39,10 @@ def Panic.name : Panic → String
     the output printed before it survives), then divergence (`none`). -/
 abbrev Prog (σ : Type) := ExceptT Panic (StateT σ Option)
 
+/-- An action that panics; it makes function types, and so structs holding functions,
+    inhabited. -/
+instance : Inhabited (Prog σ α) := ⟨throw .noArm⟩
+
 /-- A program state that holds the printed output. -/
 class HasOut (σ : Type) where
   out : σ → String
@@ -93,6 +97,33 @@ instance [GShow α] [GShow β] [GShow γ] [GShow δ] : GShow (T4 α β γ δ) wh
   gshow t := "(" ++ ", ".intercalate [gshow t.V1, gshow t.V2, gshow t.V3, gshow t.V4] ++ ")"
   graw t := "{" ++ " ".intercalate [wrapImm false (graw t.V1), wrapImm false (graw t.V2),
     wrapImm false (graw t.V3), wrapImm false (graw t.V4)] ++ "}"
+
+/-! `Option` and `Either` from GALA's standard library (docs/GALA.MD, "Option",
+    "Either"): sealed types that print like any sealed value, `Some(1)`, `None()`. -/
+
+inductive GOption (α : Type) where
+  | Some (Value : α)
+  | None
+  deriving BEq, Inhabited
+
+inductive GEither (α β : Type) where
+  | Left (Value : α)
+  | Right (Value : β)
+  deriving BEq
+
+instance [GShow α] : GShow (GOption α) where
+  gshow
+    | .Some v => "Some(" ++ gshow v ++ ")"
+    | .None => "None()"
+
+instance [GShow α] [GShow β] : GShow (GEither α β) where
+  gshow
+    | .Left v => "Left(" ++ gshow v ++ ")"
+    | .Right v => "Right(" ++ gshow v ++ ")"
+
+/-- A function value prints as `<fn>` inside the `String` method GALA generates for a
+    sealed value or shorthand struct (galaspec's `fmtStr`). -/
+def fnText : String := "<fn>"
 
 /-- One operand of `Println`/`Print`: its text, and whether it is a string. -/
 structure Arg where
