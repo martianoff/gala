@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 59
           },
           "name": "Point",
+          "type-params": [],
           "shorthand": false,
           "fields": [
             {
@@ -40,7 +41,8 @@
                   "off": 40,
                   "end": 43
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -62,7 +64,8 @@
                   "off": 54,
                   "end": 57
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": true,
               "default": null
@@ -78,6 +81,7 @@
             "end": 96
           },
           "name": "Pair",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -97,7 +101,8 @@
                   "off": 78,
                   "end": 81
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -119,7 +124,8 @@
                   "off": 89,
                   "end": 95
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -135,6 +141,7 @@
             "end": 190
           },
           "name": "Shape",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -164,7 +171,8 @@
                       "off": 141,
                       "end": 144
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -199,7 +207,8 @@
                       "off": 162,
                       "end": 165
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -221,7 +230,8 @@
                       "off": 169,
                       "end": 172
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -252,6 +262,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

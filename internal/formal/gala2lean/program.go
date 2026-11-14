@@ -118,11 +118,35 @@ func (g *gen) freshName(p string) string {
 	return fmt.Sprintf("_gala_%s%d", p, g.fresh)
 }
 
+// typeParamsOf is a declaration's type parameters (a generic function,
+// struct or sealed type), nil for any other.
+func typeParamsOf(d coreexport.Node) []coreexport.Node {
+	switch d := d.(type) {
+	case *coreexport.Func:
+		return d.TypeParams
+	case *coreexport.Struct:
+		return d.TypeParams
+	case *coreexport.Sealed:
+		return d.TypeParams
+	}
+	return nil
+}
+
 // collect reads the program's declarations. Unsupported top-level
 // declarations (imports, methods, ...) are recorded.
 func (g *gen) collect(p *coreexport.Program) {
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
+			// Imports and generic declarations are outside the translated
+			// subset for now: declarations outside it, as below.
+			if imp, ok := d.(*coreexport.Import); ok {
+				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
+				continue
+			}
+			if f, ok := d.(*coreexport.Func); !(ok && f.Receiver != nil) && len(typeParamsOf(d)) > 0 {
+				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "generic-decl", Pos: posOf(d)})
+				continue
+			}
 			switch d := d.(type) {
 			case *coreexport.Unsupported:
 				// A declaration outside the subset means nothing until a

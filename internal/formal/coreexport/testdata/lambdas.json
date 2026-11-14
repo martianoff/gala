@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -22,6 +22,7 @@
           },
           "name": "apply",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -40,7 +41,8 @@
                   "off": 27,
                   "end": 30
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -70,7 +72,8 @@
                       "off": 39,
                       "end": 42
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   }
                 ],
                 "result": {
@@ -81,7 +84,8 @@
                     "off": 44,
                     "end": 47
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 }
               },
               "default": null
@@ -95,7 +99,8 @@
               "off": 49,
               "end": 52
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "call",
@@ -139,6 +144,7 @@
           },
           "name": "adder",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -157,7 +163,8 @@
                   "off": 74,
                   "end": 77
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -179,7 +186,8 @@
                   "off": 86,
                   "end": 89
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               }
             ],
             "result": {
@@ -199,7 +207,8 @@
                   "off": 98,
                   "end": 101
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               }
             }
           },
@@ -229,7 +238,8 @@
                     "off": 107,
                     "end": 110
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 },
                 "default": null
               }
@@ -288,6 +298,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -339,7 +350,8 @@
                             "off": 158,
                             "end": 161
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }
@@ -418,7 +430,8 @@
                             "off": 189,
                             "end": 192
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       },
@@ -439,7 +452,8 @@
                             "off": 196,
                             "end": 199
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }
@@ -452,7 +466,8 @@
                         "off": 201,
                         "end": 204
                       },
-                      "name": "int"
+                      "name": "int",
+                      "args": []
                     },
                     "body": {
                       "kind": "block",

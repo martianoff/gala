@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 5
+const Version = 6
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -91,10 +91,28 @@ type Func struct {
 	Meta
 	Name string `json:"name"`
 	// Receiver is a method's receiver, null for a plain function.
-	Receiver Node   `json:"receiver"`
-	Params []Node `json:"params"`
-	Result Node   `json:"result"`
-	Body   Node   `json:"body"`
+	Receiver Node `json:"receiver"`
+	// TypeParams are a generic function's type parameters, empty for none.
+	TypeParams []Node `json:"type-params"`
+	Params     []Node `json:"params"`
+	Result     Node   `json:"result"`
+	Body       Node   `json:"body"`
+}
+
+// TypeParam is a type parameter `T any` of a generic function, struct or
+// sealed type. Constraint is its constraint as written (any type).
+type TypeParam struct {
+	Meta
+	Name       string `json:"name"`
+	Constraint Node   `json:"constraint"`
+}
+
+// Import is `import "path"`, `import . "path"` or `import name "path"`:
+// Alias is "", "." or the name.
+type Import struct {
+	Meta
+	Path  string `json:"path"`
+	Alias string `json:"alias"`
 }
 
 // Receiver is a method's receiver `(name Type)` or `(name *Type)`. Pointer
@@ -119,9 +137,10 @@ type Param struct {
 // `struct Name(fields)`.
 type Struct struct {
 	Meta
-	Name      string `json:"name"`
-	Shorthand bool   `json:"shorthand"`
-	Fields    []Node `json:"fields"`
+	Name       string `json:"name"`
+	TypeParams []Node `json:"type-params"`
+	Shorthand  bool   `json:"shorthand"`
+	Fields     []Node `json:"fields"`
 }
 
 // Field is a field of a struct or of a sealed variant. Mutable is true for a
@@ -138,8 +157,9 @@ type Field struct {
 // Sealed is `sealed type Name { variants }`.
 type Sealed struct {
 	Meta
-	Name     string `json:"name"`
-	Variants []Node `json:"variants"`
+	Name       string `json:"name"`
+	TypeParams []Node `json:"type-params"`
+	Variants   []Node `json:"variants"`
 }
 
 // Variant is one `case` of a sealed type. Default is true for `default case`.
@@ -154,6 +174,8 @@ type Variant struct {
 type TypeName struct {
 	Meta
 	Name string `json:"name"`
+	// Args are the type arguments, `Option[int]`; empty for none.
+	Args []Node `json:"args"`
 }
 
 // --- Statements ---
@@ -378,6 +400,8 @@ func (*Val) Kind() string         { return "val" }
 func (*Var) Kind() string         { return "var" }
 func (*Func) Kind() string        { return "func" }
 func (*Receiver) Kind() string    { return "receiver" }
+func (*TypeParam) Kind() string   { return "type-param" }
+func (*Import) Kind() string      { return "import" }
 func (*Param) Kind() string       { return "param" }
 func (*Struct) Kind() string      { return "struct" }
 func (*Field) Kind() string       { return "field" }
@@ -416,7 +440,7 @@ func (*Unsupported) Kind() string { return "" }
 
 // nodeTypes is every supported node type, one value each.
 var nodeTypes = []Node{
-	&File{}, &Val{}, &Var{}, &Func{}, &Receiver{}, &Param{}, &Struct{}, &Field{}, &Sealed{}, &Variant{}, &TypeName{},
+	&File{}, &Import{}, &Val{}, &Var{}, &Func{}, &Receiver{}, &TypeParam{}, &Param{}, &Struct{}, &Field{}, &Sealed{}, &Variant{}, &TypeName{},
 	&Block{}, &If{}, &Return{}, &Assign{}, &IncDec{},
 	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
@@ -437,12 +461,11 @@ func Kinds() []string {
 // The constructs the exporter reports as unsupported, by the name in their
 // "unsupported" field.
 const (
-	UnsupportedImport           = "import"
-	UnsupportedEmbed            = "embed"
-	UnsupportedOpaqueType       = "opaque-type"
-	UnsupportedDefinedType      = "defined-type"
-	UnsupportedInterface        = "interface"
-	UnsupportedGenericDecl      = "generic-decl"
+	UnsupportedImport      = "import"
+	UnsupportedEmbed       = "embed"
+	UnsupportedOpaqueType  = "opaque-type"
+	UnsupportedDefinedType = "defined-type"
+	UnsupportedInterface   = "interface"
 
 	UnsupportedGoResults        = "go-results"
 	UnsupportedParamModifier    = "param-modifier"
@@ -471,7 +494,6 @@ const (
 	UnsupportedFormatString     = "format-string"
 	UnsupportedInterpEscape     = "interpolated-escape"
 	UnsupportedStringEscape     = "string-escape"
-	UnsupportedGenericType      = "generic-type"
 	UnsupportedQualifiedType    = "qualified-type"
 	UnsupportedSliceType        = "slice-type"
 	UnsupportedPointerType      = "pointer-type"
@@ -491,14 +513,14 @@ const (
 // unsupportedKinds is every name an Unsupported node can carry.
 var unsupportedKinds = []string{
 	UnsupportedImport, UnsupportedEmbed, UnsupportedOpaqueType, UnsupportedDefinedType,
-	UnsupportedInterface, UnsupportedGenericDecl, UnsupportedGoResults,
+	UnsupportedInterface, UnsupportedGoResults,
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
 	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction, UnsupportedPlaceholder,
 	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedSubPattern, UnsupportedSpreadArg,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,
-	UnsupportedStringEscape, UnsupportedGenericType,
+	UnsupportedStringEscape,
 	UnsupportedQualifiedType, UnsupportedSliceType, UnsupportedPointerType, UnsupportedMapType,
 	UnsupportedFuncType, UnsupportedOtherType, UnsupportedDeref, UnsupportedAddressOf, UnsupportedReceive,
 	UnsupportedTypedPattern, UnsupportedRestPattern, UnsupportedSelectPattern,

@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 54
           },
           "name": "Ops",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -40,7 +41,8 @@
                   "off": 30,
                   "end": 36
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -71,7 +73,8 @@
                       "off": 45,
                       "end": 48
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   }
                 ],
                 "result": {
@@ -82,7 +85,8 @@
                     "off": 50,
                     "end": 53
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 }
               },
               "mutable": false,
@@ -99,6 +103,7 @@
             "end": 120
           },
           "name": "Handler",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -137,7 +142,8 @@
                         "off": 99,
                         "end": 102
                       },
-                      "name": "int"
+                      "name": "int",
+                      "args": []
                     }
                   },
                   "mutable": false,
@@ -197,6 +203,7 @@
           },
           "name": "note",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -215,7 +222,8 @@
                   "off": 148,
                   "end": 154
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -236,7 +244,8 @@
                   "off": 158,
                   "end": 161
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -249,7 +258,8 @@
               "off": 163,
               "end": 166
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -337,6 +347,7 @@
           },
           "name": "apply",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -355,7 +366,8 @@
                   "off": 209,
                   "end": 212
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             },
@@ -385,7 +397,8 @@
                       "off": 221,
                       "end": 224
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   }
                 ],
                 "result": {
@@ -396,7 +409,8 @@
                     "off": 226,
                     "end": 229
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 }
               },
               "default": null
@@ -410,7 +424,8 @@
               "off": 231,
               "end": 234
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "call",
@@ -454,6 +469,7 @@
           },
           "name": "twice",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -481,7 +497,8 @@
                       "off": 261,
                       "end": 264
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   }
                 ],
                 "result": {
@@ -492,7 +509,8 @@
                     "off": 266,
                     "end": 269
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 }
               },
               "default": null
@@ -515,7 +533,8 @@
                   "off": 276,
                   "end": 279
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               }
             ],
             "result": {
@@ -526,7 +545,8 @@
                 "off": 281,
                 "end": 284
               },
-              "name": "int"
+              "name": "int",
+              "args": []
             }
           },
           "body": {
@@ -555,7 +575,8 @@
                     "off": 290,
                     "end": 293
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 },
                 "default": null
               }
@@ -625,6 +646,7 @@
           },
           "name": "double",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -643,7 +665,8 @@
                   "off": 321,
                   "end": 324
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -656,7 +679,8 @@
               "off": 326,
               "end": 329
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "binary",
@@ -702,6 +726,7 @@
           },
           "name": "runTwice",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -729,7 +754,8 @@
                     "off": 365,
                     "end": 368
                   },
-                  "name": "int"
+                  "name": "int",
+                  "args": []
                 }
               },
               "default": null
@@ -743,7 +769,8 @@
               "off": 370,
               "end": 373
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "binary",
@@ -806,6 +833,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {
@@ -857,7 +885,8 @@
                             "off": 487,
                             "end": 490
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }
@@ -1154,7 +1183,8 @@
                         "off": 744,
                         "end": 747
                       },
-                      "name": "int"
+                      "name": "int",
+                      "args": []
                     },
                     "body": {
                       "kind": "block",
@@ -1385,7 +1415,8 @@
                           "off": 932,
                           "end": 935
                         },
-                        "name": "int"
+                        "name": "int",
+                        "args": []
                       }
                     },
                     "body": {
@@ -1443,7 +1474,8 @@
                               "off": 970,
                               "end": 973
                             },
-                            "name": "int"
+                            "name": "int",
+                            "args": []
                           },
                           "body": {
                             "kind": "block",
@@ -1702,7 +1734,8 @@
                             "off": 1197,
                             "end": 1200
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }
@@ -1715,7 +1748,8 @@
                         "off": 1202,
                         "end": 1205
                       },
-                      "name": "int"
+                      "name": "int",
+                      "args": []
                     },
                     "body": {
                       "kind": "block",
@@ -2058,7 +2092,8 @@
                             "off": 1428,
                             "end": 1431
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       },
@@ -2079,7 +2114,8 @@
                             "off": 1435,
                             "end": 1438
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }
@@ -2333,7 +2369,8 @@
                                 "off": 1603,
                                 "end": 1606
                               },
-                              "name": "int"
+                              "name": "int",
+                              "args": []
                             },
                             "default": null
                           }
@@ -2864,7 +2901,8 @@
                             "off": 1922,
                             "end": 1928
                           },
-                          "name": "string"
+                          "name": "string",
+                          "args": []
                         },
                         "default": null
                       }
@@ -3010,7 +3048,8 @@
                             "off": 2004,
                             "end": 2007
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       },
@@ -3031,7 +3070,8 @@
                             "off": 2011,
                             "end": 2014
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }
@@ -3509,7 +3549,8 @@
                             "off": 2395,
                             "end": 2398
                           },
-                          "name": "int"
+                          "name": "int",
+                          "args": []
                         },
                         "default": null
                       }

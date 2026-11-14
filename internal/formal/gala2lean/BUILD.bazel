@@ -16,6 +16,7 @@ go_library(
         "names.go",
         "program.go",
         "run.go",
+        "stats.go",
         "stmt.go",
         "types.go",
     ],

@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 5
+def supportedCore : Nat := 6
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -86,7 +86,11 @@ def parseIntLit (text : String) : Option Int :=
 partial def decodeTy (j : Json) : D Ty := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with
-  | "type-name" => return .name (← str j "name")
+  -- A generic type (`Option[int]`, Core JSON version 6) is outside the subset, as it was
+  -- before version 6 exported its arguments.
+  | "type-name" =>
+    if (← arr j "args").isEmpty then return .name (← str j "name")
+    else return .unsupported "generic-type"
   | "type-func" =>
     let result ← match ← opt j "result" with
       | none => pure none
@@ -253,11 +257,18 @@ def decodeField (j : Json) : D Field := do
 /-- A top-level declaration. -/
 def decodeTop (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
-  match ← kindOf j with
-  | "func" =>
-    -- A method is outside the subset galaspec models: its program is decoded as
-    -- declaring one, as before Core JSON exported receivers (version 5).
+  -- An import and a generic declaration are outside the subset: their program is
+  -- decoded as declaring one, as before Core JSON exported them (version 6).
+  let kind ← kindOf j
+  if kind == "import" then return .unsupported "import"
+  -- A method, generic or not, is outside the subset galaspec models, as before Core
+  -- JSON exported receivers (version 5).
+  if kind == "func" then
     if (← opt j "receiver").isSome then return .unsupported "method"
+  if kind == "func" || kind == "struct" || kind == "sealed" then
+    unless (← arr j "type-params").isEmpty do return .unsupported "generic-decl"
+  match kind with
+  | "func" =>
     match ← decodeParams (← arr j "params") with
     | .error k => return .unsupported k
     | .ok (ps, ds) =>

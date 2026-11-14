@@ -15,6 +15,9 @@ func (g *gen) leanType(t coreexport.Node) string {
 	case nil:
 		return "Unit"
 	case *coreexport.TypeName:
+		if len(t.Args) > 0 {
+			unsup(t.Pos, "generic-type")
+		}
 		switch t.Name {
 		case "int", "int64":
 			return "Int64"
@@ -38,7 +41,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 
 // typeName is the name of a plain type, "" for any other.
 func typeName(t coreexport.Node) string {
-	if n, ok := t.(*coreexport.TypeName); ok {
+	if n, ok := t.(*coreexport.TypeName); ok && len(n.Args) == 0 {
 		return n.Name
 	}
 	return ""
@@ -109,14 +112,25 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 func funcTypeNames(t *coreexport.TypeFunc) []string {
 	var out []string
 	for _, p := range append(slices.Clone(t.Params), t.Result) {
-		switch p := p.(type) {
-		case *coreexport.TypeName:
-			out = append(out, p.Name)
-		case *coreexport.TypeFunc:
-			out = append(out, funcTypeNames(p)...)
-		}
+		out = append(out, typeNamesIn(p)...)
 	}
 	return out
+}
+
+// typeNamesIn is every type name in type t: its own, its type arguments',
+// and those in function types, at any depth.
+func typeNamesIn(t coreexport.Node) []string {
+	switch t := t.(type) {
+	case *coreexport.TypeName:
+		out := []string{t.Name}
+		for _, a := range t.Args {
+			out = append(out, typeNamesIn(a)...)
+		}
+		return out
+	case *coreexport.TypeFunc:
+		return funcTypeNames(t)
+	}
+	return nil
 }
 
 // typeOrder sorts g.typeNames so that each type comes after the types its

@@ -1,5 +1,5 @@
 {
-  "core": 5,
+  "core": 6,
   "files": [
     {
       "kind": "file",
@@ -21,6 +21,7 @@
             "end": 39
           },
           "name": "P",
+          "type-params": [],
           "shorthand": true,
           "fields": [
             {
@@ -40,7 +41,8 @@
                   "off": 25,
                   "end": 28
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -62,7 +64,8 @@
                   "off": 32,
                   "end": 38
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "mutable": false,
               "default": null
@@ -78,6 +81,7 @@
             "end": 102
           },
           "name": "Shape",
+          "type-params": [],
           "variants": [
             {
               "kind": "variant",
@@ -107,7 +111,8 @@
                       "off": 79,
                       "end": 82
                     },
-                    "name": "int"
+                    "name": "int",
+                    "args": []
                   },
                   "mutable": false,
                   "default": null
@@ -166,6 +171,7 @@
           },
           "name": "t",
           "receiver": null,
+          "type-params": [],
           "params": [
             {
               "kind": "param",
@@ -184,7 +190,8 @@
                   "off": 129,
                   "end": 135
                 },
-                "name": "string"
+                "name": "string",
+                "args": []
               },
               "default": null
             },
@@ -205,7 +212,8 @@
                   "off": 139,
                   "end": 142
                 },
-                "name": "int"
+                "name": "int",
+                "args": []
               },
               "default": null
             }
@@ -218,7 +226,8 @@
               "off": 144,
               "end": 147
             },
-            "name": "int"
+            "name": "int",
+            "args": []
           },
           "body": {
             "kind": "block",
@@ -306,6 +315,7 @@
           },
           "name": "main",
           "receiver": null,
+          "type-params": [],
           "params": [],
           "result": null,
           "body": {

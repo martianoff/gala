@@ -196,7 +196,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 33 | 1 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 449 | 34 | 444 | 34 |
+| UNSUPPORTED | 450 | 34 | 445 | 34 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -215,10 +215,12 @@ when run as Lean and compared with Go.
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
 | `file` | yes | yes: 29 agree | no | translated: 34 agree |
+| `import` | yes | no: 2 agree | no | translated: 1 agree |
 | `val` | yes | yes: 11 agree | no | translated: 16 agree |
 | `var` | yes | yes: 4 agree | no | translated: 6 agree |
 | `func` | yes | yes: 29 agree | no | translated: 34 agree |
 | `receiver` | not seen | no | no | translated: 2 agree |
+| `type-param` | not seen | no | no | not translated |
 | `param` | yes | yes: 26 agree | no | translated: 28 agree |
 | `struct` | yes | yes: 3 agree | no | translated: 6 agree |
 | `field` | yes | yes: 7 agree | no | translated: 11 agree |
@@ -256,56 +258,56 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (41 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (42 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
 | `import` | 132 |
 | `method-call` | 123 |
 | `index` | 72 |
-| `generic-type` | 54 |
-| `generic-decl` | 15 |
+| `generic-type` | 51 |
+| `generic-decl` | 14 |
 | `address-of` | 12 |
 | `unresolved-name` | 9 |
 | `float-literal` | 8 |
 | `composite-literal` | 7 |
 | `local-struct` | 4 |
+| `method` | 4 |
+| `qualified-type` | 4 |
 | `stuck` | 4 |
 | `by-name-arg` | 3 |
-| `method` | 3 |
 | `slice-type` | 3 |
 | `char-literal` | 2 |
 | `expression-pattern` | 2 |
 | `for` | 2 |
 | `format-string` | 2 |
 | `type-Value` | 2 |
-| `type-any` | 2 |
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (64 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (65 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `generic-type` | 154 |
+| `generic-type` | 148 |
 | `import` | 111 |
 | `index` | 46 |
-| `method-call` | 23 |
+| `method-call` | 22 |
+| `qualified-type` | 17 |
 | `type-float64` | 13 |
-| `qualified-type` | 11 |
 | `type-error` | 7 |
 | `pointer-type` | 6 |
 | `slice-type` | 6 |
 | `variadic-param` | 6 |
 | `address-of` | 4 |
-| `generic-decl` | 4 |
 | `local-struct` | 4 |
+| `method` | 4 |
 | `type-any` | 4 |
 | `type-uint32` | 4 |
 | `composite-literal` | 3 |
 | `expression-pattern` | 3 |
 | `func-in-state` | 3 |
-| `method` | 3 |
+| `generic-decl` | 3 |
 | `return-inside-expression` | 3 |
 
 ### Known disagreements

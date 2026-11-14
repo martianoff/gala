@@ -51,7 +51,8 @@ func main() {
 		if err != nil && !failed {
 			fail(err)
 		}
-		printStats(doc, u, failed)
+		s := gala2lean.CountTranslated(doc, err)
+		fmt.Printf("functions %d translated %d methods %d\n", s.Funcs, s.Translated, s.Methods)
 		return
 	}
 	if errors.As(err, &u) {
@@ -68,49 +69,6 @@ func main() {
 	}
 }
 
-// printStats prints one line: the functions and methods declared, and how
-// many of them gala2lean translates. A function's report names it by its
-// name, a method's by Type.method. A generic function is outside Core JSON
-// and not counted (an unsupported node does not say whether it is a
-// function or a type).
-func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed bool) {
-	funcs, methods, opaque := 0, 0, 0
-	names := map[string]bool{}
-	for _, f := range doc.Files {
-		for _, d := range f.Decls {
-			d, ok := d.(*coreexport.Func)
-			if !ok {
-				continue
-			}
-			funcs++
-			key := d.Name
-			if d.Receiver != nil {
-				methods++
-				r, _ := d.Receiver.(*coreexport.Receiver)
-				var t *coreexport.TypeName
-				if r != nil {
-					t, _ = r.Type.(*coreexport.TypeName)
-				}
-				if t == nil {
-					// A receiver outside the subset: never translated.
-					opaque++
-					continue
-				}
-				key = t.Name + "." + d.Name
-			}
-			names[key] = true
-		}
-	}
-	untranslated := map[string]bool{}
-	if failed {
-		for _, it := range u.Items {
-			if names[it.Decl] {
-				untranslated[it.Decl] = true
-			}
-		}
-	}
-	fmt.Printf("functions %d translated %d methods %d\n", funcs, funcs-len(untranslated), methods)
-}
 
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "gala2lean:", err)

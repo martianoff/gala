@@ -34,11 +34,37 @@ import (
 // would be wrong once a panic can be caught.
 
 // key is a function's name, or "T.m" for method m of type T.
-func (g *gen) key(f *coreexport.Func) string {
+func (g *gen) key(f *coreexport.Func) string { return funcKey(f) }
+
+// funcKey is gen.key, for code without a gen.
+func funcKey(f *coreexport.Func) string {
 	if r, ok := f.Receiver.(*coreexport.Receiver); ok {
 		return typeName(r.Type) + "." + f.Name
 	}
 	return f.Name
+}
+
+// outsideSubset is the construct that puts function or method f outside
+// the translated subset as a whole, "" when it is inside: type parameters
+// of its own (generic-decl), or a receiver whose type is not a plain type
+// of the program's (Ptr[T], Box[T]: generic-type).
+func outsideSubset(f *coreexport.Func) string {
+	if f.Receiver != nil {
+		r, ok := f.Receiver.(*coreexport.Receiver)
+		switch {
+		case !ok:
+			return f.Receiver.(*coreexport.Unsupported).What
+		case typeName(r.Type) == "":
+			if u, isUnsup := r.Type.(*coreexport.Unsupported); isUnsup {
+				return u.What
+			}
+			return "generic-type"
+		}
+	}
+	if len(f.TypeParams) > 0 {
+		return "generic-decl"
+	}
+	return ""
 }
 
 // addMethod records method f. A method whose receiver is outside the subset
@@ -46,21 +72,12 @@ func (g *gen) key(f *coreexport.Func) string {
 // reported, and its String or Equal, if it has one, may decide how any
 // value prints or compares (hasMethods).
 func (g *gen) addMethod(f *coreexport.Func) {
-	r, ok := f.Receiver.(*coreexport.Receiver)
-	if !ok || typeName(r.Type) == "" {
-		what := "method"
-		if u, isUnsup := f.Receiver.(*coreexport.Unsupported); isUnsup {
-			what = u.What
-		} else if ok {
-			if u, isUnsup := r.Type.(*coreexport.Unsupported); isUnsup {
-				what = u.What
-			}
-		}
+	if what := outsideSubset(f); what != "" {
 		g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: what, Pos: f.Pos})
 		g.hasMethods = true
 		return
 	}
-	t := typeName(r.Type)
+	t := typeName(f.Receiver.(*coreexport.Receiver).Type)
 	if g.methods[t] == nil {
 		g.methods[t] = map[string]*coreexport.Func{}
 	}
