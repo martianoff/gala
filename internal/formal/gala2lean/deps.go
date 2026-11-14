@@ -130,14 +130,6 @@ func walkChildren(n coreexport.Node, f func(coreexport.Node)) {
 	}
 }
 
-func copyBound(m map[string]bool) map[string]bool {
-	out := make(map[string]bool, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
 func bindAll(m map[string]bool, names []string) {
 	for _, n := range names {
 		m[n] = true

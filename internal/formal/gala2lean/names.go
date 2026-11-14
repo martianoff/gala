@@ -26,6 +26,9 @@ var leanKeywords = map[string]bool{
 	"termination_by": true, "decreasing_by": true, "partial_fixpoint": true,
 	"omit": true, "include": true, "builtin_initialize": true, "initialize": true,
 	"elab": true, "if_let": true, "fun_prop": true, "λ": true, "deriving_instance": true,
+	"sorry": true, "forall": true, "exists": true, "nonrec": true, "scoped": true,
+	"admit": true, "mod": true, "deriving_handler": true, "declare_syntax_cat": true,
+	"macro_rules": true, "elab_rules": true, "assert!": true, "dbg_trace": true,
 }
 
 // leanReserved are names the generated code uses unqualified, and names Lean

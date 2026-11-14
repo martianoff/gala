@@ -347,7 +347,13 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 	if b, ok := f.Body.(*coreexport.Block); ok {
 		body = indentLines(g.fnBlock(b, sc), 2)
 	} else {
-		body = indentLines(g.valueItems(f.Body, sc), 2)
+		if res == "Unit" {
+			// A function without a result type runs its expression body as
+			// a statement.
+			body = indentLines(g.unitItems(f.Body, sc), 2)
+		} else {
+			body = indentLines(g.valueItems(f.Body, sc), 2)
+		}
 	}
 	head := "def " + ident(f.Name)
 	if len(ps) > 0 {

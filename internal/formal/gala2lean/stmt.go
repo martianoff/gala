@@ -280,7 +280,15 @@ func (g *gen) ifStmt(st *coreexport.If, sc *scope) string {
 func (g *gen) assign(st *coreexport.Assign, sc *scope) []string {
 	if len(st.Targets) == 1 && len(st.Values) == 1 {
 		v := g.expr(st.Values[0], sc)
-		return g.assignTo(st.Targets[0], func(cur string) string {
+		// The right-hand side runs first, so that the stored variable is
+		// read after any change it makes to it.
+		var items []string
+		if !v.pure {
+			tmp := g.freshName("r")
+			items = append(items, "let "+tmp+" := "+v.val())
+			v = term{code: tmp, pure: true}
+		}
+		return append(items, g.assignTo(st.Targets[0], func(cur string) string {
 			switch st.Op {
 			case "=":
 				return v.val()
@@ -293,7 +301,7 @@ func (g *gen) assign(st *coreexport.Assign, sc *scope) []string {
 			}
 			unsup(st.Pos, "assign-%s", st.Op)
 			return ""
-		}, sc, st.Pos)
+		}, sc, st.Pos)...)
 	}
 	if st.Op != "=" || len(st.Targets) != len(st.Values) {
 		unsup(st.Pos, "multi-assign")

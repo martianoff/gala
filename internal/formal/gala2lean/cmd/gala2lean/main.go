@@ -47,7 +47,11 @@ func main() {
 	res, err := gala2lean.Translate(doc, gala2lean.Options{Namespace: *ns, Main: *withMain, Library: *library})
 	var u *gala2lean.UnsupportedError
 	if *stats {
-		printStats(doc, u, errors.As(err, &u))
+		failed := errors.As(err, &u)
+		if err != nil && !failed {
+			fail(err)
+		}
+		printStats(doc, u, failed)
 		return
 	}
 	if errors.As(err, &u) {
@@ -77,7 +81,9 @@ func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed b
 				funcs++
 				names[d.Name] = true
 			case *coreexport.Unsupported:
-				if d.What == "method" || d.What == "generic-decl" {
+				// A generic declaration may be a type, so only methods
+				// count.
+				if d.What == "method" {
 					methods++
 				}
 			}
@@ -91,7 +97,7 @@ func printStats(doc *coreexport.Program, u *gala2lean.UnsupportedError, failed b
 			}
 		}
 	}
-	fmt.Printf("functions %d translated %d other-declarations %d\n", funcs+methods, funcs-len(untranslated), methods)
+	fmt.Printf("functions %d translated %d methods %d\n", funcs+methods, funcs-len(untranslated), methods)
 }
 
 func fail(err error) {

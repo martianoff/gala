@@ -35,10 +35,14 @@ func leanBin(t *testing.T) string {
 	return ""
 }
 
+// testdata holds gala2lean's own runtime cases, each a program and the .out
+// the gala CLI prints for it.
+const testdata = "internal/formal/gala2lean/testdata"
+
 // TestFixturesRunInLean translates each galaspec fixture source
-// (formal/tests/src), runs it with Lean, and compares what it prints and how
-// it ends with the fixture's expected output and outcome, the ones galaspec
-// is held to. A fixture galaspec runs out of fuel on must not finish in Lean
+// (formal/tests/src) and each case in testdata, runs it with Lean, and
+// compares what it prints and how it ends with the expected output and
+// outcome (for a fixture, the ones galaspec is held to). A fixture galaspec runs out of fuel on must not finish in Lean
 // either; one outside the translated subset is logged.
 //
 // It needs Lean, so its target is manual: run it with --config=formal, or
@@ -53,18 +57,25 @@ func TestFixturesRunInLean(t *testing.T) {
 	runner, err := gala2lean.NewRunner(bin, prelude, t.TempDir())
 	require.NoError(t, err)
 
-	files := stagedFiles(t, "formal/tests/")
+	files := stagedFiles(t, "formal/tests/", testdata)
 	ran := 0
 	for _, p := range slices.Sorted(maps.Keys(files)) {
-		if path.Dir(p) != "formal/tests/src" || !strings.HasSuffix(p, ".gala") {
+		dir := path.Dir(p)
+		if (dir != "formal/tests/src" && dir != testdata) || !strings.HasSuffix(p, ".gala") {
 			continue
 		}
 		name := strings.TrimSuffix(path.Base(p), ".gala")
-		wantOutcome := strings.TrimSpace(files["formal/tests/"+name+".outcome"])
-		wantOut := files["formal/tests/"+name+".out"]
+		// gala2lean's own cases must translate and end ok.
+		own := dir == testdata
+		wantOutcome, wantOut := "ok", files[testdata+"/"+name+".out"]
+		if !own {
+			wantOutcome = strings.TrimSpace(files["formal/tests/"+name+".outcome"])
+			wantOut = files["formal/tests/"+name+".out"]
+		}
 		t.Run(name, func(t *testing.T) {
 			res, err := gala2lean.Translate(export(t, path.Base(p), files[p]), gala2lean.Options{Namespace: "GalaProgram", Main: true})
 			if err != nil {
+				require.False(t, own, "%v", err)
 				t.Logf("not translated: %v", err)
 				return
 			}

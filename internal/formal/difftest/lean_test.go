@@ -64,7 +64,13 @@ func TestCompareLean(t *testing.T) {
 			require.Equal(t, tt.construct, got.Construct)
 		})
 	}
-	_, err := compareLean(fakeLean{gala2lean.RunResult{Kind: gala2lean.RanOK, Outcome: "weird"}}, &gala2lean.Result{}, Run{}, goRun)
+	rejected := Run{Outcome: Outcome{Kind: KindRejected, Detail: "go build: x"}}
+	got, err := compareLean(fakeLean{gala2lean.RunResult{Kind: gala2lean.RanOK, Stdout: "1\n", Outcome: "ok"}}, &gala2lean.Result{}, Run{}, rejected)
+	require.NoError(t, err)
+	require.Equal(t, Inconclusive, got.Verdict, "a Go run that never reached an outcome says nothing about the translation")
+	require.Contains(t, got.Reason, "the Go run ended rejected:")
+
+	_, err = compareLean(fakeLean{gala2lean.RunResult{Kind: gala2lean.RanOK, Outcome: "weird"}}, &gala2lean.Result{}, Run{}, goRun)
 	require.Error(t, err, "an outcome the prelude never prints is a broken run, not a verdict")
 }
 

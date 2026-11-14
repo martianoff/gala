@@ -15,6 +15,8 @@ type LeanRunner interface {
 	Run(res *gala2lean.Result, timeout time.Duration) (gala2lean.RunResult, error)
 }
 
+var _ LeanRunner = (*gala2lean.Runner)(nil)
+
 // LeanTimeout bounds one run of a translated program. Lean elaborates the
 // program first, which takes a few seconds.
 const LeanTimeout = 2 * time.Minute
@@ -75,6 +77,13 @@ func compareLean(r LeanRunner, res *gala2lean.Result, spec, real Run) (LeanRecor
 		return LeanRecord{}, fmt.Errorf("gala2lean run: %w", err)
 	}
 	lean := Run{Stdout: out.Stdout, Outcome: o}
+	switch real.Outcome.Kind {
+	case KindRejected, KindTimeout, KindCrash:
+		// The Go side did not run the program to an outcome GALA defines,
+		// so this comparison says nothing about the translation; galaspec's
+		// verdict, or the build, reports the Go side.
+		return LeanRecord{Comparison: Comparison{Inconclusive, "the Go run ended " + real.Outcome.String()}}, nil
+	}
 	d := diff("gala2lean", lean, "go", real)
 	if d == "" {
 		return LeanRecord{Comparison: Comparison{Verdict: Agree}}, nil

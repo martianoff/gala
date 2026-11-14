@@ -109,6 +109,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"default argument", "package main\nfunc f(n int = 1) int = n\nfunc main() { Println(f()) }\n", "param-default"},
 		{"untyped global", "package main\nval g = h()\nfunc h() (int, int) = (1, 2)\nfunc main() { Println(g) }\n", "go-results"},
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},
+		{"stable identifier compared in a program with methods", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
+			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "method"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
