@@ -694,6 +694,7 @@ func (h *GalaHandler) transformAndPublish(uri, doc string, richAST *transpiler.R
 	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 	richAST.Native = nil
+	richAST.OwnBorrowSummaries = nil // it holds the package's native trees too
 	kept := handle.TreeOnly() // the native tree alone, for the features
 
 	h.mu.Lock()
