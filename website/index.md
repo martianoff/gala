@@ -5,7 +5,7 @@ description: "Go, the functional way. Inspired by Scala, GALA is a statically ty
 keywords: "gala language, functional programming go, scala-inspired language for go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
-last_modified_at: 2026-10-20
+last_modified_at: 2026-11-14
 ---
 
 <div class="hero">
@@ -59,7 +59,7 @@ func describe(p Payment) string = p match {
 
 ### Compatible — every Go library, no bindings, native binaries
 
-Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. A Go `(T, error)` call is a `Try[T]` with no wrapping, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go.
+Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. A Go `(T, error)` call is a `Try[T]` with no wrapping, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go. Build time and memory for recent releases are measured and published on the [Performance]({{ '/performance/' | relative_url }}) page.
 
 <pre><code>import "strconv"
 
@@ -339,6 +339,7 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 | [All Documentation]({{ '/docs/' | relative_url }}) | Documentation hub — every guide and standard-library page |
 | [Getting Started]({{ '/getting-started/' | relative_url }}) | Installation, project setup, and first program |
 | [GALA vs Go]({{ '/vs-go/' | relative_url }}) | Side-by-side comparison with idiomatic Go |
+| [Performance]({{ '/performance/' | relative_url }}) | Measured build time, compiler memory and Go cache size, from the release notes |
 | [Sealed Types]({{ '/features/sealed-types/' | relative_url }}) | Algebraic data types and closed hierarchies |
 | [Pattern Matching]({{ '/features/pattern-matching/' | relative_url }}) | Exhaustive matching, destructuring, and guards |
 | [Immutability]({{ '/features/immutability/' | relative_url }}) | `val`, immutable structs, and `Copy()` |

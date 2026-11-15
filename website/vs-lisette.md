@@ -4,7 +4,7 @@ title: "GALA vs Lisette — Two Expressive Languages That Compile to Go"
 description: "GALA and Lisette both add sum types, pattern matching, and Option/Result to Go. The differences: GALA is Scala-flavored with declaration-free Go interop and a mature functional standard library; Lisette is Rust-flavored."
 keywords: "gala vs lisette, lisette alternative, lisette language, compile to go language, rust on go, scala-inspired language for go, golang sum types, golang pattern matching, go interop language, golang option result type"
 permalink: /vs-lisette/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-11-14
 ---
 
 <div class="breadcrumb">
@@ -12,6 +12,8 @@ last_modified_at: 2026-07-05
 </div>
 
 *Two actively developed languages in the same space. This is an honest guide to choosing between them.*
+
+*Checked on 2026-11-14 against [lisette.run](https://lisette.run), its [documentation](https://lisette.run/docs/intro/quickstart/) (Lisette v0.13.0) and the [Lisette README](https://github.com/ivov/lisette). If something here is out of date, please [open an issue](https://github.com/martianoff/gala/issues).*
 
 # GALA vs Lisette
 
@@ -34,10 +36,11 @@ We'll say up front: Lisette is a strong, actively maintained project with real m
 | Immutable by default | Yes | Yes |
 | Compiler written in | Go | Rust |
 | License | Apache 2.0 | MIT |
-| Third-party Go modules | Yes — types inferred **directly from the Go SDK**, no declaration files | Yes — via generated typedefs (`.d.lis`, early preview) |
-| Monadic do-notation | `bind` / `also` | try blocks / pipeline operators |
-| Standard library | `Option`/`Either`/`Try`/`Future`/`IO`, immutable collections, JSON + YAML codecs, regex, crypto, fs | Ships a curated stdlib |
-| Editor tooling | GoLand/IntelliJ plugin + LSP (VS Code, Neovim) | LSP (VS Code, Neovim, Zed) |
+| Third-party Go modules | Yes — types inferred **directly from the Go SDK**, no declaration files | Yes — `lis add` fetches the module and the compiler generates typedefs (`.d.lis`) |
+| Monadic do-notation | `bind` / `also` | `try` blocks, `?` propagation and a pipeline operator |
+| Standard library | `Option`/`Either`/`Try`/`Future`/`IO`, immutable collections, JSON + YAML codecs, regex, crypto, fs | A prelude (`Option`, `Result`, `Slice`, `Map`, channels, ranges, …) plus the Go standard library through typedefs built into the compiler |
+| Editor tooling | GoLand/IntelliJ plugin + LSP; VS Code and Neovim through a generic LSP client. No published VS Code extension yet (one is in review) | LSP with extensions for VS Code, Zed, JetBrains, Neovim, Helix and Emacs |
+| Build performance | Published with recent releases: build time, compiler memory and Go cache size — see [Performance]({{ '/performance/' | relative_url }}) | Describes its compiler as fast and incremental; we found no published benchmark numbers |
 
 ---
 
@@ -75,7 +78,7 @@ val user = fetchUser(id)          // Try[User]
     .GetOrElse("anonymous")
 ```
 
-**Lisette bridges the type systems with declaration files** (`.d.lis`): stdlib typedefs ship with the compiler, and third-party modules are brought in with `lis add`, which downloads the module and generates typedefs (currently an early-preview feature). It's a capable approach modeled on TypeScript's `.d.ts`, but it adds a generation step and a layer to keep in sync.
+**Lisette bridges the type systems with declaration files** (`.d.lis`): Go standard library typedefs are built into the compiler, and third-party modules are brought in with `lis add`, which downloads the module, generates typedefs and records it in `lisette.toml`; typedefs for further packages are generated on demand when you write the import. The typedefs are compiler-written, never hand-written. It's a capable approach in the spirit of TypeScript's `.d.ts`, with a generation step and a manifest to keep in sync (`lis sync`).
 
 If deep, low-friction reuse of the existing Go ecosystem is central to your project, GALA's direct-inference model has fewer moving parts.
 
@@ -93,7 +96,8 @@ Intellectual honesty is the point of this page:
 
 - **You prefer Rust's syntax.** If Rust is your reference point, Lisette will feel more at home than GALA's Scala flavor.
 - **You want Hindley-Milner inference specifically.** Lisette leans on a classic HM type system; if that's a deliberate preference, it's front and center there.
-- **Zed support today.** Lisette ships an LSP that explicitly targets Zed alongside VS Code and Neovim.
+- **Broader editor coverage today.** Lisette ships editor extensions for Zed, VS Code, JetBrains IDEs, Neovim, Helix and Emacs. GALA has a GoLand/IntelliJ plugin and works in other editors through a generic LSP client; its VS Code extension is still in review.
+- **A built-in linter and formatter.** Lisette's tooling advertises 500+ diagnostics.
 
 Both projects are moving quickly. The best way to decide is to write a small program in each.
 
@@ -101,4 +105,4 @@ Both projects are moving quickly. The best way to decide is to write a small pro
 
 ## Try GALA
 
-**[Run GALA in your browser](https://gala-playground.fly.dev)** — no install — or read [GALA vs Go]({{ '/vs-go/' | relative_url }}) for side-by-side code, and [Monadic Binding]({{ '/features/monadic-binding/' | relative_url }}) for the `bind`/`also` do-notation.
+**[Run GALA in your browser](https://gala-playground.fly.dev)** — no install — or read [GALA vs Go]({{ '/vs-go/' | relative_url }}) for side-by-side code, and [Monadic Binding]({{ '/features/monadic-binding/' | relative_url }}) for the `bind`/`also` do-notation. For measured build times and memory, see [Performance]({{ '/performance/' | relative_url }}).
