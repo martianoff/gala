@@ -52,8 +52,10 @@ type Docs = map[DocKey]string
 func nativeDocComments(ts *native.GalaTokens) Docs {
 	run := newDocRun()
 	// A cursor over Hidden rather than ts.HiddenBefore(i), which would binary
-	// search once per token.
-	hidden := ts.Hidden
+	// search once per token. Texts are read with ts.Text and ts.HiddenText:
+	// for a source that is not valid UTF-8 they give U+FFFD for each invalid
+	// byte, as ANTLR reads it, where the token spans index the raw bytes.
+	h := 0
 	for i, tk := range ts.Tokens {
 		if tk.Type == native.GalaEOF {
 			break
@@ -61,13 +63,11 @@ func nativeDocComments(ts *native.GalaTokens) Docs {
 		// The line the previous token ends on, computed only once a comment
 		// needs it: all but a handful of tokens are followed by none.
 		prevCodeEndLine := -1
-		for ; len(hidden) > 0 && int(hidden[0].Next) == i; hidden = hidden[1:] {
+		for ; h < len(ts.Hidden) && int(ts.Hidden[h].Next) == i; h++ {
 			if i > 0 && prevCodeEndLine < 0 {
-				prev := ts.Tokens[i-1]
-				prevCodeEndLine = int(prev.Line) + strings.Count(prev.Text(ts.Src), "\n")
+				prevCodeEndLine = int(ts.Tokens[i-1].Line) + strings.Count(ts.Text(i-1), "\n")
 			}
-			comment := hidden[0].GalaToken
-			run.comment(int(comment.Line), prevCodeEndLine, func() string { return comment.Text(ts.Src) })
+			run.comment(int(ts.Hidden[h].Line), prevCodeEndLine, ts.HiddenText(h))
 		}
 		run.code(int(tk.Line), func() int { return int(tk.Column) })
 	}
@@ -88,12 +88,11 @@ func newDocRun() docRun { return docRun{blockEndLine: -1} }
 
 // comment adds the comment that starts on startLine to the pending run, unless
 // it trails code: prevCodeEndLine is the line the code before it ends on, -1
-// when there is none. text is called only for a comment the run takes.
-func (r *docRun) comment(startLine, prevCodeEndLine int, text func() string) {
+// when there is none. raw is the comment's text.
+func (r *docRun) comment(startLine, prevCodeEndLine int, raw string) {
 	if startLine == prevCodeEndLine {
 		return // trailing comment on a line that already had code
 	}
-	raw := text()
 	// Continue the run when this comment sits on the line right after the
 	// previous one, or on the same line as where it ended —
 	// `/* Deprecated. */ // Use Bar instead.` is one doc comment, not two,

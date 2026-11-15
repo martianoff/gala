@@ -219,18 +219,17 @@ type lexToken struct {
 // lexTokens lexes src (already BOM-less) with galop's native lexer into all
 // its tokens, in source order, the hidden-channel comments included.
 func lexTokens(src string) []lexToken {
-	// Each invalid UTF-8 byte is read as U+FFFD, one code point, as the
-	// parser reads it and as []rune(src) counts it.
-	text := string([]rune(src))
-	// cp maps a byte offset of text to its code-point index.
-	cp := make([]int, len(text)+1)
+	// cp maps a byte offset of src to its code-point index. Each invalid
+	// UTF-8 byte is one code point, as ranging over src steps over it and as
+	// []rune(src) counts it; the lexer reads it as U+FFFD.
+	cp := make([]int, len(src)+1)
 	k := 0
-	for i := range text {
+	for i := range src {
 		cp[i] = k
 		k++
 	}
-	cp[len(text)] = k
-	ts := native.GalaLex(text)
+	cp[len(src)] = k
+	ts := native.GalaLex(src)
 	var toks []lexToken
 	add := func(tok native.GalaToken, hidden bool) {
 		toks = append(toks, lexToken{text: tok.Text(ts.Src), hidden: hidden, start: cp[tok.Start], stop: cp[tok.End] - 1})

@@ -67,7 +67,9 @@ func (t *Native) TreeOnly() *Native {
 // build worker), so the spare is cut where a handle is kept (TreeOnly), not
 // on every parse. The tokens and hidden tokens are the tree's
 // *native.GalaTokens', which nothing but the tree holds once its parse
-// returned.
+// returned. Trimming keeps each slice's length, so Texts and HiddenTexts (set
+// for a source that is not valid UTF-8, and made at their exact length) stay
+// index-aligned with Tokens and Hidden.
 func trimSpare(tree *native.GalaTree) {
 	tree.Nodes = trimmed(tree.Nodes)
 	tree.Kids = trimmed(tree.Kids)

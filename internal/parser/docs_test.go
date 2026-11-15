@@ -1,10 +1,12 @@
 package parser
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/native"
 )
 
@@ -200,5 +202,67 @@ func TestBareLambdaDiagnosticSurvivesComment(t *testing.T) {
 		if !found {
 			t.Errorf("bare-lambda diagnostic lost for %q; got %v", src, errs)
 		}
+	}
+}
+
+// TestInvalidUTF8DocCommentAndString: in a file that is not valid UTF-8, a doc
+// comment and a token's text read each invalid byte as U+FFFD, as ANTLR reads
+// it, while the token spans and Src stay on the file's own bytes; diagnostics
+// count each invalid byte as one column. The doc comment holds a lone
+// continuation byte and a cut three-byte sequence (two invalid bytes); the
+// string holds an invalid byte after a two-byte é.
+func TestInvalidUTF8DocCommentAndString(t *testing.T) {
+	const src = "package main\n\n// Sum of a\x94b, é\xe2\x80.\nval s = \"é\x94\" )\n"
+	p := parseGalop(t, src)
+
+	if got, want := p.Docs[DocKey{Line: 4, Column: 0}], "Sum of a�b, é��."; got != want {
+		t.Errorf("doc of val s = %q, want %q", got, want)
+	}
+
+	// The source-text error names the first invalid byte, in the doc comment
+	// at 3:11 (`// Sum of a` is 11 code points) and spans it alone. The syntax
+	// error is the ')' at 4:13: `val s = "é` is 10 code points, then the
+	// invalid byte, the closing quote and a space.
+	if len(p.Errors) != 2 {
+		t.Fatalf("errors = %v, want 2", p.Errors)
+	}
+	charErr, ok := p.Errors[0].(*galaerr.SemanticError)
+	if !ok || charErr.Line != 3 || charErr.Column != 11 || charErr.EndColumn != 12 ||
+		charErr.Msg != "invalid UTF-8 encoding (byte 0x94)" {
+		t.Errorf("first error = %#v, want the invalid byte 0x94 at 3:11, ending at 12", p.Errors[0])
+	}
+	syntaxErr, ok := p.Errors[1].(*galaerr.SyntaxError)
+	if !ok || syntaxErr.Line != 4 || syntaxErr.Column != 13 || !strings.Contains(syntaxErr.Msg, "')'") {
+		t.Errorf("second error = %#v, want the ')' at 4:13", p.Errors[1])
+	}
+
+	ts := lexNative(src, 0, 0)
+	if ts.Src != src {
+		t.Fatalf("Src = %q, want the source as given", ts.Src)
+	}
+	var strToks []int
+	for i, tok := range ts.Tokens {
+		if tok.Type == native.GalaSTRING {
+			strToks = append(strToks, i)
+		}
+	}
+	if len(strToks) != 1 {
+		t.Fatalf("string tokens at %v, want one", strToks)
+	}
+	i := strToks[0]
+	tok := ts.Tokens[i]
+	if got, want := ts.Text(i), "\"é�\""; got != want {
+		t.Errorf("string token text = %q, want %q", got, want)
+	}
+	if got, want := src[tok.Start:tok.End], "\"é\x94\""; got != want {
+		t.Errorf("string token span = %q, want %q", got, want)
+	}
+	if tok.Line != 4 || tok.Column != 8 {
+		t.Errorf("string token at %d:%d, want 4:8", tok.Line, tok.Column)
+	}
+	var visited []string
+	VisitNativeTokens(src, func(text string) { visited = append(visited, text) })
+	if !slices.Contains(visited, "\"é�\"") {
+		t.Errorf("VisitNativeTokens visited %q, want the string read with U+FFFD", visited)
 	}
 }
