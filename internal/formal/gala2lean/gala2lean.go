@@ -158,6 +158,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 		}
 	}
 	p, depUnsup, depNS := mergePackages(p, opts.Deps)
+	p = ptrReceivers(p)
 	g := newGen()
 	g.depNS = depNS
 	g.library = opts.Library

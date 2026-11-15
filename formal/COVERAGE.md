@@ -138,7 +138,7 @@ galaspec models them, except as listed below):
 - `Some`, `None`, `Left` and `Right`, as the prelude's `GOption` and `GEither`, with
   their patterns (their methods are method calls, not translated yet);
 - methods with a value receiver `(c T)`, a plain function `T.m` taking the receiver
-  first, and with a pointer receiver `(c *T)`, by state passing: `T.m` takes the value
+  first, and with a pointer receiver `(c *T)` or `(c Ptr[T])` (the same Go receiver), by state passing: `T.m` takes the value
   and returns its result with the updated value, which the caller writes back to the
   `var` it called the method on, after the arguments are evaluated and the method
   returns (a method that panics writes nothing back; no output is lost, since a panic
@@ -188,7 +188,7 @@ what Core JSON leaves out, it does not translate yet:
   receiver other than through a field or a method call (`ptr-escape`); a pointer method
   on a value that is not a `var` (`pointer-method-on-value`); printing or comparing a
   value of a type with its own `String`, `Error`, `Format`, `GoString` or `Equal`, seen
-  or not (a method with a `Ptr[T]` or generic receiver), or holding one
+  or not (a method with a generic receiver), or holding one
   (`custom-string`, `custom-equal`); in a program with a method whose receiver type is
   not plain to see, printing or comparing anything but `int`, `string` and `bool`
   (`method`);

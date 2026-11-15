@@ -38,6 +38,67 @@ import (
 // back. That loses no output today, since a panic ends the run, but it
 // would be wrong once a panic can be caught.
 
+// ptrReceivers is p with each receiver `(c Ptr[T])` written `(c *T)`, the
+// receiver it is: the transpiler lowers both to the Go pointer receiver
+// `func (c *T) m`, and a call on a `var` x to `x.m(...)`. (Ptr[T]'s method
+// also panics when c is nil; a receiver the translation passes, a place,
+// never is.) Only std's Ptr is: when the program may declare a type named
+// Ptr itself (a struct or sealed type of that name, or a type declaration
+// Core JSON does not name), nothing is rewritten. The exporter writes the
+// receiver as the source does.
+func ptrReceivers(p *coreexport.Program) *coreexport.Program {
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *coreexport.Struct:
+				if bareName(d.Name) == "Ptr" {
+					return p
+				}
+			case *coreexport.Sealed:
+				if bareName(d.Name) == "Ptr" {
+					return p
+				}
+			case *coreexport.Unsupported:
+				switch d.What {
+				case "defined-type", "interface", "opaque-type":
+					return p
+				}
+			}
+		}
+	}
+	out := &coreexport.Program{Core: p.Core}
+	for _, f := range p.Files {
+		c := *f
+		c.Decls = make([]coreexport.Node, len(f.Decls))
+		for i, d := range f.Decls {
+			c.Decls[i] = d
+			fn, ok := d.(*coreexport.Func)
+			if !ok {
+				continue
+			}
+			r, ok := fn.Receiver.(*coreexport.Receiver)
+			if !ok || r.Pointer || r.Inout {
+				continue
+			}
+			tn, ok := r.Type.(*coreexport.TypeName)
+			if !ok || tn.Package != "" || tn.Name != "Ptr" || len(tn.Args) != 1 {
+				continue
+			}
+			inner, ok := tn.Args[0].(*coreexport.TypeName)
+			if !ok || inner.Package != "" || len(inner.Args) > 0 {
+				continue
+			}
+			rc := *r
+			rc.Type, rc.Pointer = inner, true
+			fc := *fn
+			fc.Receiver = &rc
+			c.Decls[i] = &fc
+		}
+		out.Files = append(out.Files, &c)
+	}
+	return out
+}
+
 // key is a function's name, or "T.m" for method m of type T.
 func (g *gen) key(f *coreexport.Func) string { return funcKey(f) }
 

@@ -22,6 +22,7 @@ type Stats struct {
 // (nil, or an *UnsupportedError).
 func CountTranslated(p *coreexport.Program, err error) Stats {
 	var s Stats
+	p = ptrReceivers(p)
 	// The functions inside the subset, by the key the report names them by.
 	inside := map[string]bool{}
 	for _, f := range p.Files {
