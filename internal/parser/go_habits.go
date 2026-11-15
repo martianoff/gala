@@ -469,7 +469,9 @@ func (s *habitScanner) goConst(i int) {
 		return
 	}
 	end := s.statementEnd(i)
-	if h := s.add(galaerr.CodeGoConst, i, end, end,
+	// The head is the `const` alone: a construct in the value is reported,
+	// and cut, too.
+	if h := s.add(galaerr.CodeGoConst, i, end, i,
 		"Go `const` declaration: GALA declares a constant with `val`",
 		fmt.Sprintf("write it with `val`; here, `val %s`", short(s.src(i+1, end)))); h != nil {
 		h.cut, h.retype, h.retypeTo = keep, i, native.GalaVAL
@@ -768,7 +770,11 @@ func (s *habitScanner) isSoleType(i, j int) bool {
 func (s *habitScanner) typeSet(i, j int) *goHabit {
 	text := s.src(i, j)
 	// A `~` before the first type is no token; it starts the constraint.
-	tilde := s.ts.Tokens[i].Start > 0 && s.ts.Src[s.ts.Tokens[i].Start-1] == '~'
+	tildeAt := int(s.ts.Tokens[i].Start) - 1
+	for tildeAt >= 0 && (s.ts.Src[tildeAt] == ' ' || s.ts.Src[tildeAt] == '	') {
+		tildeAt-- // `~ int`
+	}
+	tilde := tildeAt >= 0 && s.ts.Src[tildeAt] == '~'
 	if tilde {
 		text = "~" + text
 	}
@@ -777,7 +783,7 @@ func (s *habitScanner) typeSet(i, j int) *goHabit {
 		return nil
 	}
 	if tilde {
-		h.err.Column--
+		h.err.Column -= int(s.ts.Tokens[i].Start) - tildeAt
 	}
 	return h
 }
@@ -898,7 +904,7 @@ func (s *habitScanner) fixedArray(i int) bool {
 	// After an operand, `xs[0] * y` multiplies: an element type that is no
 	// name is an array's only when a space sets the `[` apart, `nodes [4]*Node`.
 	spaced := i > 0 && s.ts.Tokens[i-1].End < s.ts.Tokens[i].Start
-	if !s.isIdent(elem) && (s.endsExpression(i-1) && !spaced || s.text(elem) != "*" && s.text(elem) != "[") {
+	if !s.isIdent(elem) && (s.endsExpression(i-1) && !spaced || s.text(elem) != "*" && s.text(elem) != "[" && s.typ(elem) != native.GalaFUNC) {
 		return false
 	}
 	end := s.typeEnd(elem)
@@ -1226,6 +1232,9 @@ func (s *habitScanner) resultList(i int) *goHabit {
 // that name's type: a name, `*`, `[]`, `map`, `func` or `chan`, but not the
 // `[` of a generic type's arguments or the `.` of a qualified one.
 func (s *habitScanner) namesResult(i int) bool {
+	if s.text(i-1) == "chan" {
+		return false // `chan int` is a type
+	}
 	switch {
 	case s.isIdent(i), s.text(i) == "*", s.text(i) == "map", s.typ(i) == native.GalaFUNC:
 		return true

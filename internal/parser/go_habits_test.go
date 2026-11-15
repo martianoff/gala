@@ -487,6 +487,22 @@ func TestGoHabitsReviewFindings(t *testing.T) {
 			want:  []galaerr.ErrorCode{galaerr.CodeGoFuncLiteral},
 		},
 		{
+			name:  "const_with_an_assertion",
+			input: "package main\n\nconst N = x.(int)\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoConst, galaerr.CodeGoTypeAssertion},
+		},
+		{
+			// `(chan int)` is a result type, not a named result.
+			name:  "channel_result_is_no_named_result",
+			input: "package main\n\nfunc f() (chan int) {\n    val x = \n}\n",
+			want:  []galaerr.ErrorCode{""},
+		},
+		{
+			name:  "array_of_functions",
+			input: "package main\n\nfunc main() {\n    var fs [3]func() int\n    Println(fs)\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
+		},
+		{
 			name:  "array_of_a_named_size",
 			input: "package main\n\nfunc main() {\n    var digest [sha256.Size]byte\n    Println(digest)\n}\n",
 			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
@@ -556,6 +572,17 @@ func TestUnterminatedCharIsNoTilde(t *testing.T) {
 	codes, _ := codesOf(t, "package main\n\nval c = '~")
 	assert.NotContains(t, codes, galaerr.CodeGoTypeSetConstraint)
 	assert.Contains(t, codes, galaerr.ErrorCode(""))
+}
+
+// TestSpacedTildeStartsTheConstraint: `~ int` is reported from its `~`.
+func TestSpacedTildeStartsTheConstraint(t *testing.T) {
+	errs := parseGalop(t, "package main\n\ntype N interface {\n    ~ int | ~ float64\n}\n").Errors
+	require.Len(t, errs, 1)
+	var se *galaerr.SemanticError
+	require.True(t, errors.As(errs[0], &se))
+	assert.Equal(t, galaerr.CodeGoTypeSetConstraint, se.Code)
+	assert.Equal(t, 4, se.Column)
+	assert.Contains(t, se.Msg, "`~int | ~ float64`")
 }
 
 // TestTildeAloneDoesNotPanic: a `~` with no token before the end, in a file
