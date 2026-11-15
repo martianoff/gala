@@ -24,16 +24,15 @@ For the full rules of mixing the two languages, see the [Go Interop Guide](/docs
 1. [What changes, and what doesn't](#what-changes-and-what-doesnt)
 2. [Step 1: The Go module you start with](#step-1-the-go-module-you-start-with)
 3. [Step 2: `gala mod init`](#step-2-gala-mod-init)
-4. [Step 3: List your Go dependencies in `gala.mod`](#step-3-list-your-go-dependencies-in-galamod)
-5. [Step 4: Add a `.gala` file to an existing Go package](#step-4-add-a-gala-file-to-an-existing-go-package)
-6. [Step 5: Add a new GALA package that calls Go](#step-5-add-a-new-gala-package-that-calls-go)
-7. [Step 6: Call GALA from Go](#step-6-call-gala-from-go)
-8. [Step 7: Build, run and test](#step-7-build-run-and-test)
-9. [What Go code sees of a GALA API](#what-go-code-sees-of-a-gala-api)
-10. [Consumers without the GALA toolchain](#consumers-without-the-gala-toolchain)
-11. [Building with Bazel](#building-with-bazel)
-12. [What stays in Go](#what-stays-in-go)
-13. [A larger example: a cobra CLI in GALA](#a-larger-example-a-cobra-cli-in-gala)
+4. [Step 3: Add a `.gala` file to an existing Go package](#step-3-add-a-gala-file-to-an-existing-go-package)
+5. [Step 4: Add a new GALA package that calls Go](#step-4-add-a-new-gala-package-that-calls-go)
+6. [Step 5: Call GALA from Go](#step-5-call-gala-from-go)
+7. [Step 6: Build, run and test](#step-6-build-run-and-test)
+8. [What Go code sees of a GALA API](#what-go-code-sees-of-a-gala-api)
+9. [Consumers without the GALA toolchain](#consumers-without-the-gala-toolchain)
+10. [Building with Bazel](#building-with-bazel)
+11. [What stays in Go](#what-stays-in-go)
+12. [A larger example: a cobra CLI in GALA](#a-larger-example-a-cobra-cli-in-gala)
 
 ---
 
@@ -43,7 +42,7 @@ Your `.go` files, `go.mod` and Go tests stay as they are. What changes is the bu
 
 The generated Go is written to a build workspace under `GALA_HOME`, never into your source tree.
 
-Every file and command below is the `add_gala_to_go` fixture in [`tools/ci/cli_path/testdata/add_gala_to_go`](https://github.com/martianoff/gala/tree/master/tools/ci/cli_path/testdata/add_gala_to_go). CI copies it, runs `gala mod init`, `gala build`, `gala run` and `gala test ./...` with a CLI built from the same sources, compares the program's output, and checks that `go.mod` was left alone. A doc test fails when a listing on this page stops matching its file.
+Every file and command below is the `add_gala_to_go` fixture in [`tools/ci/cli_path/testdata/add_gala_to_go`](https://github.com/martianoff/gala/tree/master/tools/ci/cli_path/testdata/add_gala_to_go). CI copies it, runs `gala mod init`, `gala build`, `gala run` and `gala test ./...` with a CLI built from the same sources, compares the program's output, checks that the binary was built with the dependency version `go.mod` pins, and checks that `go.mod` was left alone. A doc test fails when a listing on this page stops matching its file.
 
 ---
 
@@ -53,7 +52,7 @@ A Go module, `example.com/inventory`, with a `main` package at its root and a pa
 
 | File | What it is |
 |------|------------|
-| `go.mod` | `module example.com/inventory` |
+| `go.mod` | `module example.com/inventory`, requiring `github.com/google/uuid` |
 | `main.go` | the Go `main` package |
 | `stock/stock.go` | Go code: a type `Item` and a parser `Parse` |
 | `stock/stock_test.go` | a Go test |
@@ -63,6 +62,8 @@ A Go module, `example.com/inventory`, with a `main` package at its root and a pa
 module example.com/inventory
 
 go 1.25
+
+require github.com/google/uuid v1.3.0
 ```
 
 <!-- doc-source: tools/ci/cli_path/testdata/add_gala_to_go/stock/stock.go -->
@@ -87,6 +88,9 @@ gala mod init
 
 ```
 Initialized gala.mod for module example.com/inventory
+Copied 1 requirement(s) from go.mod as Go dependencies:
+  github.com/google/uuid v1.3.0 // go
+Added .gala/ to .gitignore
 ```
 
 With no argument, `gala mod init` takes the module path from `go.mod`, so Go and GALA agree on import paths: the Go package `stock` is `example.com/inventory/stock` from both languages. It writes a `gala.mod` next to `go.mod`, whose `gala` line is the version of the `gala` that wrote it, and an empty `gala.sum`:
@@ -95,30 +99,15 @@ With no argument, `gala mod init` takes the module path from `go.mod`, so Go and
 module example.com/inventory
 
 gala <version>
+
+require github.com/google/uuid v1.3.0 // go
 ```
 
-`go.mod` is not changed. Commit `gala.mod` and `gala.sum`. The first build creates a `.gala/` cache directory in the module; add it to `.gitignore`.
+`gala build` takes the versions of Go modules from `gala.mod`, not from `go.mod`, so `gala mod init` copies every `require` of `go.mod` into it, at the same version and marked `// go` (an indirect one stays indirect: `// indirect, go`). That keeps `gala build` on the versions `go build` uses, and lets the transpiler find the source of a Go package your `.gala` files import, which it reads to learn its types: that is how a `(T, error)` result becomes a `Try[T]`. The copy is made once: a Go dependency you add or upgrade later goes into `gala.mod` with `gala mod add path@version --go`, at the version `go.mod` names. A requirement `go.mod` replaces is not copied, since `gala build` does not apply replace directives to Go dependencies; `gala mod init` lists it. See [Go Dependencies](/docs/dependency-management/#6-go-dependencies).
 
-## Step 3: List your Go dependencies in `gala.mod`
+It also adds `.gala/`, the cache directory the first build creates in the module, to `.gitignore`. `go.mod` is not changed. Commit `gala.mod` and `gala.sum`.
 
-`gala build` takes its dependencies from `gala.mod`, not from `go.mod`. The example has none, but most Go modules do, so for each direct `require` in `go.mod` add the same module at the same version, marked as Go:
-
-```sh
-gala mod add github.com/google/uuid@v1.6.0 --go
-```
-
-```
-require github.com/google/uuid v1.6.0 // go
-```
-
-Two reasons to do this:
-
-- **Your `.gala` files need it.** The transpiler reads a Go package's source to learn its types, so that a `(T, error)` result becomes a `Try[T]` and `.Size()` on a Go string works. It finds the source through `gala.mod`.
-- **Your versions stay pinned.** A module that only `.go` files import still builds without an entry, but at its latest version rather than the one `go.mod` names.
-
-Use `gala mod add ... --go` (or edit `gala.mod`) rather than `go mod tidy`; see [Go Dependencies](/docs/dependency-management/#6-go-dependencies).
-
-## Step 4: Add a `.gala` file to an existing Go package
+## Step 3: Add a `.gala` file to an existing Go package
 
 A `.gala` file can join a Go package. It declares the same `package` name, and the two languages share one namespace: GALA sees the Go declarations of the package without an import, and Go sees the GALA ones.
 
@@ -156,7 +145,7 @@ func TestReorder(t *testing.T) {
 
 Don't name a hand-written file `reorder.gen.go` next to `reorder.gala`: that is the name the build gives the generated file. [One package, two languages](/docs/go-interop/#part-3-one-package-two-languages) has the other rules for a mixed package.
 
-## Step 5: Add a new GALA package that calls Go
+## Step 4: Add a new GALA package that calls Go
 
 A new directory with only `.gala` files is a GALA package. [`report/report.gala`](https://github.com/martianoff/gala/blob/master/tools/ci/cli_path/testdata/add_gala_to_go/report/report.gala) imports the Go package `stock` by its import path:
 
@@ -204,7 +193,7 @@ func TestBuild(t T) T = Build("A-1,12\nB-2,3\nC-3,0", 5) match {
 }
 ```
 
-## Step 6: Call GALA from Go
+## Step 5: Call GALA from Go
 
 Go imports the GALA package by its import path, like any Go package. Nothing is generated or declared on the Go side. From [`main.go`](https://github.com/martianoff/gala/blob/master/tools/ci/cli_path/testdata/add_gala_to_go/main.go):
 
@@ -229,9 +218,12 @@ Go imports the GALA package by its import path, like any Go package. Nothing is 
 		summary := result.Get()
 		fmt.Println(summary.Units.Get(), summary.Reorder.Get().MkString("+"))
 	}
+
+	// A Go dependency that go.mod requires.
+	fmt.Println(uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").Version())
 ```
 
-## Step 7: Build, run and test
+## Step 6: Build, run and test
 
 The `gala` commands take the place of the `go` ones and build both languages together:
 
@@ -249,6 +241,7 @@ reorder: [B-2 C-3]
 3 items, 15 units, reorder: B-2, C-3 <nil>
 error: line "A-1": want SKU,QTY
 15 B-2+C-3
+VERSION_1
 ```
 
 `gala test ./...` runs the Go test of `stock` and the GALA tests of `report`:

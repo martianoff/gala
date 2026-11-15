@@ -19,9 +19,14 @@ go_library(
 
 go_test(
     name = "graph_test",
-    srcs = ["graph_test.go"],
+    srcs = [
+        "builder_test.go",
+        "graph_test.go",
+    ],
     embed = [":graph"],
     deps = [
+        "//internal/depman/fetch",
+        "//internal/depman/mod",
         "//internal/depman/version",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

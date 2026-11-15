@@ -47,13 +47,12 @@ func parseLines(lines []string) (*File, error) {
 	}
 
 	var inBlock string // "require", "replace", "exclude", or ""
-	var blockIndirect bool
-	var blockGo bool
 
 	for lineNum, line := range lines {
 		lineNum++ // 1-indexed for error messages
 
-		// Track comment markers for current line
+		// Comment markers apply to their own line only: a marker on one
+		// requirement of a block says nothing about the next one.
 		lineIndirect := false
 		lineGo := false
 
@@ -62,17 +61,10 @@ func parseLines(lines []string) (*File, error) {
 			comment := strings.TrimSpace(line[idx+2:])
 			// Parse comment markers (can be "indirect", "go", or "indirect, go")
 			for _, marker := range strings.Split(comment, ",") {
-				marker = strings.TrimSpace(marker)
-				if marker == "indirect" {
-					if inBlock == "require" {
-						blockIndirect = true
-					}
+				switch strings.TrimSpace(marker) {
+				case "indirect":
 					lineIndirect = true
-				}
-				if marker == "go" {
-					if inBlock == "require" {
-						blockGo = true
-					}
+				case "go":
 					lineGo = true
 				}
 			}
@@ -87,8 +79,6 @@ func parseLines(lines []string) (*File, error) {
 		// Handle block start/end
 		if line == ")" {
 			inBlock = ""
-			blockIndirect = false
-			blockGo = false
 			continue
 		}
 
@@ -120,7 +110,7 @@ func parseLines(lines []string) (*File, error) {
 		if inBlock != "" {
 			switch inBlock {
 			case "require":
-				req, err := parseRequireLine(parts, blockIndirect || lineIndirect, blockGo || lineGo)
+				req, err := parseRequireLine(parts, lineIndirect, lineGo)
 				if err != nil {
 					return nil, &ParseError{Line: lineNum, Message: err.Error()}
 				}

@@ -133,9 +133,7 @@ func main() {
 
 	// .gitignore — GALA build-output and cache excludes.
 	// Mirrors the top-level repo .gitignore entries relevant to a user project.
-	gitignoreContent := `# GALA build workspaces and cache
-.gala/
-
+	gitignoreContent := galaGitignoreComment + "\n" + galaCacheDirIgnore + "\n" + `
 # Bazel output (if the user adopts Bazel)
 /bazel-*
 

@@ -338,6 +338,48 @@ require (
 	assert.True(t, f.Require[2].Indirect)
 }
 
+// A marker belongs to its own requirement. gala.mod keeps every requirement in
+// one block, in the order they were added, so a GALA module added after a Go
+// one comes right after a `// go` line, and must not be read as Go (nor as
+// indirect after an `// indirect` line).
+func TestParse_MarkersDoNotCarryToTheNextRequirement(t *testing.T) {
+	content := `module github.com/user/project
+
+require (
+	github.com/example/indirect-go v1.0.0 // indirect, go
+	github.com/example/gala-pkg v1.0.0
+	github.com/example/go-lib v2.0.0 // go
+	github.com/example/gala-indirect v1.0.0 // indirect
+	github.com/example/gala-direct v1.0.0
+)
+`
+	f, err := Parse(content)
+	require.NoError(t, err)
+
+	tests := []struct {
+		path     string
+		indirect bool
+		isGo     bool
+	}{
+		{"github.com/example/indirect-go", true, true},
+		{"github.com/example/gala-pkg", false, false},
+		{"github.com/example/go-lib", false, true},
+		{"github.com/example/gala-indirect", true, false},
+		{"github.com/example/gala-direct", false, false},
+	}
+	for _, tt := range tests {
+		r := f.GetRequire(tt.path)
+		require.NotNil(t, r, tt.path)
+		assert.Equal(t, tt.indirect, r.Indirect, "%s indirect", tt.path)
+		assert.Equal(t, tt.isGo, r.Go, "%s go", tt.path)
+	}
+
+	// What Format writes, Parse reads back unchanged.
+	again, err := Parse(Format(f))
+	require.NoError(t, err)
+	assert.Equal(t, f.Require, again.Require)
+}
+
 func TestFormat_WithGoRequires(t *testing.T) {
 	f := NewFile("github.com/user/project")
 	f.AddRequire("github.com/example/gala-pkg", "v1.0.0", false)

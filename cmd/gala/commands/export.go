@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 
@@ -177,18 +176,11 @@ func runExport(cmd *cobra.Command, args []string) error {
 // needs, or the project's own go.mod's when that is newer.
 func exportGoVersion(root string) (string, error) {
 	v := stdlib.GoVersion
-	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if os.IsNotExist(err) {
-		return v, nil
-	}
+	f, err := readGoMod(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return "", err
 	}
-	f, err := modfile.ParseLax("go.mod", data, nil)
-	if err != nil {
-		return "", err
-	}
-	if f.Go != nil && semver.Compare("v"+f.Go.Version, "v"+v) > 0 {
+	if f != nil && f.Go != nil && semver.Compare("v"+f.Go.Version, "v"+v) > 0 {
 		v = f.Go.Version
 	}
 	return v, nil

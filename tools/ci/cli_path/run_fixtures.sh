@@ -258,18 +258,28 @@ fixture_go_interop() {
 
 # add_gala_to_go: a Go module (go.mod, a Go main package, a Go package with a
 # Go test) that GALA is added to, as docs/ADD_GALA_TO_GO_REPO.MD walks
-# through: `gala mod init` takes the module path from go.mod, a .gala file
-# joins the existing Go package, and a new package is all GALA. go.mod is
-# left as it was.
+# through: `gala mod init` takes the module path from go.mod, copies its
+# requirement (github.com/google/uuid at v1.3.0, below the latest) into
+# gala.mod as a Go dependency and git-ignores .gala/; a .gala file joins the
+# existing Go package, and a new package is all GALA. The binary must be
+# built with the uuid version go.mod pins. go.mod is left as it was. Needs
+# network access.
 fixture_add_gala_to_go() {
   local dir
   dir=$(stage add_gala_to_go)
   cd "$dir"
   gala_ok init.log mod init || return 0
   expect_line "gala mod init reads the module path from go.mod" gala.mod '^module example\.com/inventory$'
+  expect_line "gala mod init copies go.mod's requirement as a Go dependency" gala.mod \
+    '^require github\.com/google/uuid v1\.3\.0 // go$'
+  expect_line "gala mod init lists the requirement it copied" init.log '^  github\.com/google/uuid v1\.3\.0 // go$'
+  expect_line "gala mod init git-ignores .gala/" .gitignore '^\.gala/$'
   gala_ok build.log build -o inventory . || return 0
   "$(exe "$dir/inventory")" >out.txt
   expect_output "built binary" expected.out out.txt
+  go version -m "$(exe "$dir/inventory")" >buildinfo.txt
+  expect_line "the binary uses the uuid version go.mod pins" buildinfo.txt \
+    '^[[:space:]]+dep[[:space:]]+github\.com/google/uuid[[:space:]]+v1\.3\.0([[:space:]]|$)'
   gala_ok run.log run . || return 0
   expect_output "gala run" expected.out run.log
   gala_ok test.log test ./... || return 0

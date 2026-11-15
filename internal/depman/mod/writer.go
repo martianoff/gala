@@ -23,11 +23,11 @@ func Format(f *File) string {
 	// Requires (all together, with appropriate comments)
 	if len(f.Require) > 0 {
 		if len(f.Require) == 1 {
-			sb.WriteString(fmt.Sprintf("require %s\n", formatRequireEntry(f.Require[0])))
+			sb.WriteString(fmt.Sprintf("require %s\n", FormatRequireEntry(f.Require[0])))
 		} else {
 			sb.WriteString("require (\n")
 			for _, r := range f.Require {
-				sb.WriteString(fmt.Sprintf("\t%s\n", formatRequireEntry(r)))
+				sb.WriteString(fmt.Sprintf("\t%s\n", FormatRequireEntry(r)))
 			}
 			sb.WriteString(")\n")
 		}
@@ -66,8 +66,9 @@ func Format(f *File) string {
 	return strings.TrimRight(sb.String(), "\n") + "\n"
 }
 
-// formatRequireEntry formats a require entry with appropriate comments.
-func formatRequireEntry(r Require) string {
+// FormatRequireEntry formats a require entry as gala.mod writes it, with its
+// "// indirect" and "// go" markers.
+func FormatRequireEntry(r Require) string {
 	var sb strings.Builder
 	sb.WriteString(r.Path)
 	sb.WriteString(" ")

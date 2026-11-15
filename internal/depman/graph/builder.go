@@ -76,6 +76,13 @@ func (b *Builder) processRequire(g *Graph, parent *Node, req mod.Require, indire
 	constraint, _ := version.ParseConstraint(req.Version)
 	g.AddEdge(parent, node, constraint, indirect || req.Indirect)
 
+	// A Go module (`// go`) has no gala.mod to read, and the go command
+	// resolves its own requirements; fetching it would clone its repository
+	// for nothing.
+	if req.Go {
+		return nil
+	}
+
 	// Try to get the module's gala.mod to process transitive dependencies
 	depMod, err := b.getModuleGalaMod(req.Path, req.Version)
 	if err != nil {
