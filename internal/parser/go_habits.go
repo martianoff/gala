@@ -21,8 +21,9 @@ import (
 // alone, with shapes valid GALA never has (a Go keyword that GALA reserves as
 // a name, `.(` after an operand, a `:` inside an index), so the grammar does
 // not change and no program that parses today parses differently. The scan
-// runs only on a parse with errors (nativeSyntaxErrors), so it never judges a
-// program the grammar accepts.
+// runs only on a parse with errors (nativeSyntaxErrors), and a construct is
+// kept only in a top-level declaration with an error (inFailedDeclarations),
+// so it never judges a program, or a declaration, the grammar accepts.
 //
 // A construct's syntax errors, and the cascade of the recovery after it, are
 // replaced: the tokens are parsed again with each construct cut out, or
@@ -34,6 +35,8 @@ import (
 // are parsed again without it.
 type goHabit struct {
 	err *galaerr.SemanticError
+	// at is the construct's first token.
+	at int
 	// cut is the first and last token the parse is retried without; none
 	// when cut[1] < cut[0].
 	cut [2]int
@@ -54,9 +57,9 @@ type habitScanner struct {
 	// and reports as a token recognition error: Go's approximation
 	// constraint, `~int`.
 	tildeLines map[int32]bool
-	// typeSets are the first and last token of each type-set constraint
+	// heads are the first token and the last of the head of each construct
 	// reported; a `~` in one is part of it.
-	typeSets [][2]int
+	heads [][2]int
 	habits     []goHabit
 	// claimed is the index of the first token after the head of the last
 	// construct found: a `switch`'s header, a group's parentheses. A
@@ -98,7 +101,7 @@ func goHabits(ts *native.GalaTokens) []goHabit {
 // isTildeError reports whether e, a lexical error, is the lexer's for a `~`,
 // which GALA has no token for: Go's approximation constraint, `~int`.
 func isTildeError(e native.GalaSyntaxError) bool {
-	return strings.HasSuffix(e.Msg, "'~'")
+	return e.Msg == "token recognition error at: '~'"
 }
 
 // at looks for a Go construct that starts at token i.
@@ -126,8 +129,9 @@ func (s *habitScanner) at(i int) {
 	case native.GalaVAR, native.GalaVAL, native.GalaTYPE:
 		s.declGroup(i)
 	case native.GalaINTERFACE, native.GalaSTRUCT:
-		if s.text(i+1) == "{" {
-			s.bodyEnd = max(s.bodyEnd, s.closeOf(i+1))
+		// An unclosed body ends nowhere, and holds no later token.
+		if end := s.match(i + 1); s.text(i+1) == "{" && end > i {
+			s.bodyEnd = max(s.bodyEnd, end)
 		}
 		if t == native.GalaINTERFACE {
 			s.goInterface(i)
@@ -204,17 +208,28 @@ func (s *habitScanner) atLineEnd(i int) bool {
 func (s *habitScanner) match(i int) int {
 	if s.pairs == nil {
 		s.pairs = make([]int32, s.n)
+		// A closing bracket pairs with the nearest open one of its kind;
+		// the open ones above that are left unpaired, and a closing one with
+		// none of its kind open pairs with nothing.
 		var stack []int
 		for k := 0; k < s.n; k++ {
 			s.pairs[k] = -1
-			switch s.text(k) {
+			switch txt := s.text(k); txt {
 			case "(", "[", "{":
 				stack = append(stack, k)
 			case ")", "]", "}":
-				if len(stack) > 0 {
-					open := stack[len(stack)-1]
-					stack = stack[:len(stack)-1]
-					s.pairs[open], s.pairs[k] = int32(k), int32(open)
+				open := "("
+				if txt == "]" {
+					open = "["
+				} else if txt == "}" {
+					open = "{"
+				}
+				for d := len(stack) - 1; d >= 0; d-- {
+					if s.text(stack[d]) == open {
+						s.pairs[stack[d]], s.pairs[k] = int32(k), int32(stack[d])
+						stack = stack[:d]
+						break
+					}
 				}
 			}
 		}
@@ -392,7 +407,8 @@ func (s *habitScanner) add(code galaerr.ErrorCode, from, to, head int, msg, hint
 	if to >= from && s.endLine(to) == start.Line {
 		err = err.WithSpan(int(start.Column) + len([]rune(s.ts.Src[start.Start:s.ts.Tokens[to].End])))
 	}
-	s.habits = append(s.habits, goHabit{err: err, cut: [2]int{from, to}, retype: -1})
+	s.habits = append(s.habits, goHabit{err: err, at: from, cut: [2]int{from, to}, retype: -1})
+	s.heads = append(s.heads, [2]int{from, head})
 	s.claimed = head + 1
 	return &s.habits[len(s.habits)-1]
 }
@@ -737,7 +753,6 @@ func (s *habitScanner) typeSet(i, j int) *goHabit {
 	if tilde {
 		h.err.Column--
 	}
-	s.typeSets = append(s.typeSets, [2]int{i, j})
 	return h
 }
 
@@ -755,7 +770,7 @@ func (s *habitScanner) tildes() {
 			continue
 		}
 		at := min(int(s.ts.ErrorAt[e]), s.n-1)
-		if slices.ContainsFunc(s.typeSets, func(r [2]int) bool { return r[0] <= at && at <= r[1] }) {
+		if slices.ContainsFunc(s.heads, func(r [2]int) bool { return r[0] <= at && at <= r[1] }) {
 			continue
 		}
 		end := at
@@ -764,7 +779,7 @@ func (s *habitScanner) tildes() {
 		}
 		err := galaerr.NewCodedSemanticError(galaerr.CodeGoTypeSetConstraint, l.Line, l.Column,
 			typeSetMessage("~"+s.src(at, end)), typeSetHint)
-		s.habits = append(s.habits, goHabit{err: err, cut: keep, retype: -1})
+		s.habits = append(s.habits, goHabit{err: err, at: at, cut: keep, retype: -1})
 	}
 }
 
@@ -853,10 +868,14 @@ func (s *habitScanner) fixedArray(i int) bool {
 	}
 	end := s.typeEnd(elem)
 	t := s.src(i+3, end)
+	hint := fmt.Sprintf("use a Go slice, `[]%s` (`go_interop.SliceWithSize[%s](%s)` makes one of %s elements), or an `Array[%s]`; a Go API that needs `[%s]%s` keeps it in a `.go` file of the package",
+		short(t), short(t), size, size, short(t), size, short(t))
+	if size == "..." {
+		// The length is the literal's element count: the elements make it.
+		hint = fmt.Sprintf("use a Go slice of the elements, `go_interop.SliceOf(...)`, or an `Array[%s]` from `ArrayOf(...)`; a Go API that needs an array keeps it in a `.go` file of the package", short(t))
+	}
 	if h := s.add(galaerr.CodeGoTypeForm, i, end, end,
-		fmt.Sprintf("Go array type `[%s]%s`: GALA has no fixed-size arrays", size, short(t)),
-		fmt.Sprintf("use a Go slice, `[]%s` (`go_interop.SliceWithSize[%s](%s)` makes one of %s elements), or an `Array[%s]`; a Go API that needs `[%s]%s` keeps it in a `.go` file of the package",
-			short(t), short(t), size, size, short(t), size, short(t))); h != nil {
+		fmt.Sprintf("Go array type `[%s]%s`: GALA has no fixed-size arrays", size, short(t)), hint); h != nil {
 		h.cut = [2]int{i, elem - 1} // the element type stays
 	}
 	return true
@@ -921,6 +940,11 @@ func (s *habitScanner) declaresTypeParams(i int) bool {
 	}
 	switch s.typ(i - 2) {
 	case native.GalaFUNC, native.GalaTYPE, native.GalaSTRUCT:
+		return true
+	}
+	// An interface method's, `Get[K any](k K) V` at the start of a line of
+	// an interface body.
+	if end := s.match(i); i-1 < s.bodyEnd && s.startsStatement(i-1) && end > i && s.text(end+1) == "(" {
 		return true
 	}
 	// A method's, `func (r R) Name[T any](`; a function type's result,
@@ -1041,7 +1065,9 @@ func (s *habitScanner) label(i int) {
 		return
 	}
 	switch next := s.text(i + 2); {
-	case s.typ(i+2) == native.GalaFOR, next == "switch", next == "select", next == "{":
+	// Not `{`: a keyed element's value can be a partial function,
+	// `handler: { case 1 => a }`.
+	case s.typ(i+2) == native.GalaFOR, next == "switch", next == "select":
 	default:
 		return
 	}
@@ -1179,13 +1205,12 @@ func (s *habitScanner) multiReturn(i int) {
 }
 
 // isErrorValue reports whether text, the last value of a Go `return`, reads
-// as an error: `err`, `e`, a name ending in `Err` or `Error`, or a call of
-// `errors.New` or `fmt.Errorf`.
+// as an error: `err`, `e`, or a call of `errors.New` or `fmt.Errorf`.
+// Another value, `hasError` among them, gives the tuple.
 func isErrorValue(text string) bool {
 	switch {
 	case text == "err", text == "e",
-		strings.HasPrefix(text, "errors."), strings.HasPrefix(text, "fmt.Errorf("),
-		strings.HasSuffix(text, "Err"), strings.HasSuffix(text, "Error"):
+		strings.HasPrefix(text, "errors.New("), strings.HasPrefix(text, "fmt.Errorf("):
 		return true
 	}
 	return false
@@ -1230,4 +1255,50 @@ func withoutHabits(ts *native.GalaTokens, habits []goHabit) *native.GalaTokens {
 		}
 	}
 	return out
+}
+
+// inFailedDeclarations is the habits that lie in a top-level declaration
+// with a syntax error of ts (parseErrs, or the lexer's): a declaration that
+// parses is never judged by the scan, whatever fails elsewhere in the file.
+// A declaration starts at a token in the first column that can start one (a
+// declaration keyword, or Go's `const`), and runs to the next such token.
+func inFailedDeclarations(ts *native.GalaTokens, habits []goHabit, parseErrs []native.GalaParseError) []goHabit {
+	if len(habits) == 0 {
+		return nil
+	}
+	// decl is, for each token, the index of its declaration.
+	decl := make([]int32, len(ts.Tokens))
+	d := int32(0)
+	for k, t := range ts.Tokens {
+		if k > 0 && t.Column == 0 && startsDeclaration(ts, k) {
+			d++
+		}
+		decl[k] = d
+	}
+	failed := map[int32]bool{}
+	mark := func(tok int) {
+		if tok >= 0 && tok < len(decl) {
+			failed[decl[tok]] = true
+		}
+	}
+	for _, e := range parseErrs {
+		mark(e.Token)
+	}
+	for _, at := range ts.ErrorAt {
+		mark(int(at))
+	}
+	return slices.DeleteFunc(habits, func(h goHabit) bool { return !failed[decl[h.at]] })
+}
+
+// startsDeclaration reports whether token k of ts can start a top-level
+// declaration.
+func startsDeclaration(ts *native.GalaTokens, k int) bool {
+	switch ts.Tokens[k].Type {
+	case native.GalaFUNC, native.GalaTYPE, native.GalaVAL, native.GalaVAR, native.GalaSTRUCT,
+		native.GalaSEALED, native.GalaOPAQUE, native.GalaEMBED, native.GalaIMPORT, native.GalaEOF:
+		return true
+	case native.GalaIDENTIFIER:
+		return ts.Text(k) == "const"
+	}
+	return false
 }

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -371,4 +372,123 @@ func firstLines(src string, n int) string {
 		end = next + 1
 	}
 	return src[:min(end, len(src))]
+}
+
+// codesOf is the codes of a parse's diagnostics, "" for an uncoded one, and
+// the hint of each coded one.
+func codesOf(t *testing.T, input string) ([]galaerr.ErrorCode, []string) {
+	t.Helper()
+	var codes []galaerr.ErrorCode
+	var hints []string
+	for _, err := range parseGalop(t, input).Errors {
+		var se *galaerr.SemanticError
+		if errors.As(err, &se) {
+			codes = append(codes, se.Code)
+			hints = append(hints, se.Hint)
+		} else {
+			codes = append(codes, "")
+			hints = append(hints, "")
+		}
+	}
+	return codes, hints
+}
+
+// TestGoHabitsReviewFindings pins the review findings on the scan: each input
+// with the codes its parse reports, in order ("" for a plain syntax error).
+func TestGoHabitsReviewFindings(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  []galaerr.ErrorCode
+		hint  string // in the hint of the first coded diagnostic, if set
+	}{
+		{
+			// A keyed element whose value is a partial function is GALA,
+			// not a label, even next to a syntax error in the same body.
+			name: "keyed_partial_function_is_no_label",
+			input: "package main\n\nfunc main() {\n    val h = Handlers{\n" +
+				"        handler: { case 1 => \"a\" },\n    }\n    val x = \n}\n",
+			want: []galaerr.ErrorCode{""},
+		},
+		{
+			// A Go construct in a declaration that parses is not reported
+			// for an error in another declaration.
+			name: "valid_declaration_beside_a_broken_one",
+			input: "package main\n\nfunc ok() {\n    val h = Handlers{\n        handler: { case 1 => \"a\" },\n    }\n}\n\n" +
+				"func broken() {\n    val x = \n}\n",
+			want: []galaerr.ErrorCode{""},
+		},
+		{
+			name:  "tilde_in_a_type_group_is_one_diagnostic",
+			input: "package main\n\ntype (\n    N interface{ ~int }\n)\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoDeclGroup},
+		},
+		{
+			name:  "tilde_in_an_inline_constraint_is_one_diagnostic",
+			input: "package main\n\nfunc f[T interface{ ~int }](x T) T = x\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
+		},
+		{
+			// An unclosed struct body does not hide the constructs after it.
+			name:  "unclosed_body_hides_nothing_after_it",
+			input: "package main\n\ntype S struct {\n    X int\n\nfunc main() {\n    const n = 3\n    Println(n)\n}\n",
+			want:  []galaerr.ErrorCode{"", galaerr.CodeGoConst},
+		},
+		{
+			name:  "interface_method_with_grouped_type_parameters",
+			input: "package main\n\ntype Store interface {\n    Get[K, V any](k K) V\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoGroupedTypeParams},
+			hint:  "`[K any, V any]`",
+		},
+		{
+			name:  "array_of_inferred_length",
+			input: "package main\n\nfunc main() {\n    val xs = [...]int{1, 2, 3}\n    Println(xs)\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
+			hint:  "`go_interop.SliceOf(...)`",
+		},
+		{
+			// A name that only looks like an error is a tuple's value.
+			name:  "boolean_named_like_an_error",
+			input: "package main\n\nfunc f(count int, hasError bool) (int, bool) {\n    return count, hasError\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoMultiReturn},
+			hint:  "`return (count, hasError)`",
+		},
+		{
+			// A `]` that closes a `(` pairs with nothing: the slice
+			// expression after it is still read.
+			name:  "mismatched_bracket_degrades",
+			input: "package main\n\nfunc main() {\n    f(a]\n    Println(s[1:])\n}\n",
+			want:  []galaerr.ErrorCode{"", galaerr.CodeGoSliceExpr},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			codes, hints := codesOf(t, tc.input)
+			got := slices.Compact(slices.Clone(codes))
+			assert.Equal(t, tc.want, got, "all: %v", parseGalop(t, tc.input).Errors)
+			if tc.hint != "" {
+				for k, c := range codes {
+					if c != "" {
+						assert.Contains(t, hints[k], tc.hint)
+						break
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestUnterminatedCharIsNoTilde: the lexer error for a char literal that
+// ends at `~` and the end of the input is not GALA-E0127, and is kept.
+func TestUnterminatedCharIsNoTilde(t *testing.T) {
+	codes, _ := codesOf(t, "package main\n\nval c = '~")
+	assert.NotContains(t, codes, galaerr.CodeGoTypeSetConstraint)
+	assert.Contains(t, codes, galaerr.ErrorCode(""))
+}
+
+// TestEmbeddedAfterMethodWithoutResultIsGALA: `Close()` then `io.Reader` is
+// GALA's method Close with the result io.Reader, so it is not reported.
+func TestEmbeddedAfterMethodWithoutResultIsGALA(t *testing.T) {
+	src := "package main\n\nimport \"io\"\n\ntype C interface {\n    Close()\n    io.Reader\n}\n"
+	assert.Empty(t, parseGalop(t, src).Errors)
 }

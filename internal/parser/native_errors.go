@@ -44,7 +44,7 @@ func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs 
 	// the scan never judges a program the grammar accepts.
 	var habits []goHabit
 	if len(parseErrs) > 0 || len(ts.Errors) > 0 {
-		habits = goHabits(ts)
+		habits = inFailedDeclarations(ts, goHabits(ts), parseErrs)
 	}
 	if len(habits) > 0 && reparse != nil {
 		retry := withoutHabits(ts, habits)

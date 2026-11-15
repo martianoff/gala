@@ -277,11 +277,11 @@ expr/examples/lambda_block_val_trailing.gala	5a5a2d13a3b97356	7ad23a05630b1d45
 expr/examples/lambda_expected_type.gala	7c30a796bf97ff48	1b6dba3eb61a9f9b
 expr/examples/lambda_explicit_ret_block.gala	4a5a0201f199e2c9	ffd87e5a8d31a49b
 expr/examples/lambda_explicit_return_type.gala	cfdd7478ac2c5a95	be39a28faad1e520
-expr/examples/lambda_multi_return_type.gala	22bb96f5ac5241a6	118ae1f318e40fc9
+expr/examples/lambda_multi_return_type.gala	22bb96f5ac5241a6	c0a4a1c4a98cf5c4
 expr/examples/lambda_multi_return_unify.gala	049de7f53ab81123	faa7ca104f619c10
 expr/examples/lambda_return_generic.gala	fca5f25f93e700f2	fb304e29a6e09818
 expr/examples/lambda_return_slot.gala	16f149a288c3adcb	a31c790ef2fdd16c
-expr/examples/lambda_type_inference.gala	b73d44a75cec7577	1fd92a985b9f2ca7
+expr/examples/lambda_type_inference.gala	b73d44a75cec7577	38c8eda0ca4d9229
 expr/examples/language_ergonomics.gala	1a2b07a0802bc106	6a16467ea6f8a67d
 expr/examples/lib/generic.gala	8cf7b716887ecc21	557b840ace8b55b2
 expr/examples/list_concat_partition_order.gala	277be028716c84a8	09c28ed14075bd87
@@ -370,7 +370,7 @@ expr/examples/multifile_lib_regress/symbol_scope.gala	738e0812b78de845	3678b1d45
 expr/examples/multifile_lib_regress/team_lookup.gala	b625630b64bc9740	dc2eb069f6238c27
 expr/examples/multifile_lib_regress/team_pkg/team.gala	6befb49a1cce7ad9	c3eed85e9c55ea6e
 expr/examples/multifile_lib_regress/time_pkg/time.gala	532fbf61f7be59fd	219eba65232f4b97
-expr/examples/multifile_lib_regress/tuple_vals_a.gala	b1141e4d3d9be406	25def9385ff35d98
+expr/examples/multifile_lib_regress/tuple_vals_a.gala	b1141e4d3d9be406	9af5e339d4fd275f
 expr/examples/multifile_lib_regress/tuple_vals_b.gala	339fc5b6305f54a8	800d761f0d8993ed
 expr/examples/multifile_lib_regress/types.gala	aa3adae3f406af9b	9903f6f5ebf138d0
 expr/examples/multifile_lib_regress/var_field_match.gala	52f3e6e008826511	5c6a40afeb359a1b
@@ -437,7 +437,7 @@ expr/examples/plugin_test_file.gala	c2cb6e58a6a43262	f630e9eefb713329
 expr/examples/pointer_hash_keys.gala	5d489f80c67d61f7	03640a0858e98cb4
 expr/examples/pointer_method_on_val.gala	495b8e481cb00818	d805d79e0a838905
 expr/examples/pointer_receiver_generic_method_val.gala	4ed4830e50d862d8	21a4b157ddaf57e1
-expr/examples/pointer_semantics.gala	d62aa93a0154fae8	008d480763d1c1a4
+expr/examples/pointer_semantics.gala	d62aa93a0154fae8	41a18569e3f1e360
 expr/examples/ptr_checked.gala	4a8423a14934fb19	2acd47eee3f095bb
 expr/examples/ptr_cycle_lowered_crosspkg.gala	94c6aeff04709774	292284193af440fe
 expr/examples/ptr_cycle_lowered_lib/box.gala	84689c424f556e5d	75c4ed285f5cfe1d
@@ -543,7 +543,7 @@ expr/examples/try_chain_dot_import_std_repro/runtime.gala	48e797309ec4fc4f	c75db
 expr/examples/try_chain_typeparam_repro/proc.gala	222d7125848feece	75a8d5f3b51d4b71
 expr/examples/try_chain_typeparam_repro/session.gala	af562d6ddd47afb9	5607a33931962470
 expr/examples/try_chain_typeparam_repro_main/main.gala	6dea7503be7a0da5	5bbdfdbc40534cba
-expr/examples/try_chained_method.gala	1260f33838667008	3fe73e2097af1ce1
+expr/examples/try_chained_method.gala	1260f33838667008	f6a2c51a26bf25ad
 expr/examples/try_func_ref.gala	a2d15ff9a7bdfe7f	3d111270ddd9f711
 expr/examples/try_go_interop.gala	5ab76c471bb3449e	008c260bef485780
 expr/examples/try_go_transitive_import.gala	b163e7137930e056	55ff3b5b989a6f83
@@ -670,7 +670,7 @@ file/collection_immutable/array.gala	fcceeed5f79dfdbd	f721f9e92c517a7f
 file/collection_immutable/hashmap.gala	b44ea1a201fcb236	0c9088578dc671a2
 file/collection_immutable/hashset.gala	3219a35c691cc308	6c96ffbee2d3306c
 file/collection_immutable/list.gala	790dcdf2f9259245	476a557a45a4acbc
-file/collection_immutable/treemap.gala	4ccd332d928feb7e	1d701992f22fe755
+file/collection_immutable/treemap.gala	4ccd332d928feb7e	b4451d6059fb9953
 file/collection_immutable/treeset.gala	8020effe7cb5e86f	71e267c9e8e3203d
 file/collection_mutable/array.gala	f2d5dff023a9a6fd	3b7dd41ad3d75481
 file/collection_mutable/hashmap.gala	9183ea640f8ca2a4	91e11d6b0c03dede
@@ -924,7 +924,7 @@ file/examples/interface_val_field.gala	7a4c35d2aa389110	a7ca1e385bdbc3b9
 file/examples/interface_val_field_crosspkg.gala	302e63af3ab02680	266fabdca7196187
 file/examples/interpolation_escaped_quotes.gala	2f8402d2ced4ca24	09b3cc2c5f7f6397
 file/examples/interpolation_nested_strings.gala	331389c6d743f533	75e6dad2fb752200
-file/examples/io_effect.gala	6c499fba5e8442a6	91cb2921795de7c1
+file/examples/io_effect.gala	6c499fba5e8442a6	f416442bac14403e
 file/examples/iterate_lambda_infer.gala	c66e17a5b1872c1e	2ea2d514f9a97704
 file/examples/json_codec.gala	30e4596d6b747a4c	372599ef04287285
 file/examples/json_codec_array_of_structs.gala	ab76f0bc2c109a1c	0a4982bb5a25bc70
@@ -1059,7 +1059,7 @@ file/examples/nested_tuple_destruct.gala	4cddfd97eaab3ea5	c8ebfa8b79298aa5
 file/examples/nested_tuple_pattern.gala	5fdd9e485e82f458	e923d4cb0b7fae68
 file/examples/nested_type_match.gala	4045e26e826bd878	e936aa0675705d27
 file/examples/nested_wildcard_type_pattern.gala	9f6b8ee2f186239e	08bea4ce104e8685
-file/examples/newimmutable_nil.gala	625b9b542a1d5950	ba53aafd40e7c481
+file/examples/newimmutable_nil.gala	625b9b542a1d5950	eabd0ff0da7deb0f
 file/examples/newline_deref_statement.gala	940c55d60440f7aa	6bf227e989b68886
 file/examples/newline_paren_statement.gala	f5ce54020deb38bb	03c9b60b247a5afd
 file/examples/newline_split_header.gala	626b3a67598299d4	64362205b4ba1d53
@@ -1087,7 +1087,7 @@ file/examples/option_when.gala	9d36576d92945e7a	4fc6107ad0e290e1
 file/examples/own_go_func_multi_results/box.gala	85d60f328cf5a6ba	9eadc6548b2519ea
 file/examples/own_go_func_multi_results_test.gala	ecaadba01972b53c	31f8e7a84d5d5e4a
 file/examples/package_tuple_destructure/main.gala	4707d0de3b1708c7	c74eb791644d7901
-file/examples/package_tuple_destructure/values.gala	d1ed4e7b7e4395f8	67fe682e6a41b858
+file/examples/package_tuple_destructure/values.gala	d1ed4e7b7e4395f8	d19a939977954764
 file/examples/package_val_init_types.gala	99dd5aca60976961	9f2ae2cc23f11eae
 file/examples/package_val_init_types/consts/consts.gala	087599dd5e9f7726	227224119a49d066
 file/examples/partial_ctor_type_args.gala	48560320e267098e	bfd0221143947074
@@ -1154,7 +1154,7 @@ file/examples/sequence_pattern_exact_length.gala	de4f8deb11d97d54	245e7616af92b4
 file/examples/sequence_pattern_nested_ctor.gala	b5513885e9846b50	e8bc393800a39d0d
 file/examples/shadowed_function.gala	ff19d22faf0b4c9c	a878dfe57c232e00
 file/examples/short_var_decl_multi_value.gala	bca67578b70a8ddb	fa5581005a4590aa
-file/examples/single_letter_type_names.gala	3cd1331b6e37f26d	5eb8f4b6632926a0
+file/examples/single_letter_type_names.gala	3cd1331b6e37f26d	65865c6df3e9cacc
 file/examples/size_method.gala	893abf76c36818ff	7b4f27e4fccd675f
 file/examples/slice_element_unwrap.gala	66c2f1f893a29f73	25dced92074d68e7
 file/examples/slice_type_param.gala	eb8510bd3ad6d05e	5fc222bd97eccdd5
@@ -1281,7 +1281,7 @@ file/examples/value_match_control_flow.gala	ebb85ae725a6f708	a51e0ec8fcefb57c
 file/examples/value_match_return.gala	16ce7cd8b49d70a7	1797b5508403b3e5
 file/examples/value_match_use_release.gala	0ad88da1f62a5a41	f8a853bd99b8610b
 file/examples/value_receiver_bind_ptr.gala	60793d92e71a8b47	dda260f534aedd6a
-file/examples/var_tuple_destructuring.gala	54b231c04c9f28f4	4b7ef14b6bdd58fc
+file/examples/var_tuple_destructuring.gala	54b231c04c9f28f4	3c80d017b22f12e3
 file/examples/variadic_functions.gala	1ec8f6b9d799d6c5	12daa41659c7fcf5
 file/examples/variadic_generic_spread.gala	8ae057e57ef68115	58050015cca8256b
 file/examples/variadic_tail_args.gala	46b5218ee9126f43	1bae059bc31506c4
@@ -1730,7 +1730,7 @@ fixed/parse/004	2bcb796c548a5772	2ccbb49dc993ce60
 fixed/parse/005	f42dbc9bc8426d4c	5bcd55a521213b5e
 fixed/parse/006	8283fc1f0c130f5b	526891ccd38ef9b5
 fixed/parse/007	efb912dcf483cefa	60cba070455adbf2
-fixed/parse/008	fa2096111a7bcf99	093dabbce2a287f1
+fixed/parse/008	fa2096111a7bcf99	2b75f3229455df79
 fixed/parse/009	c95ee0d3f3759cec	6f304cd0ca935287
 fixed/parse/010	0d76987bfdc7ac68	4391e9e921e6ae42
 fixed/parse/011	4e9416efcf77b840	d23f605533a68468

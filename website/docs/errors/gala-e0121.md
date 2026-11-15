@@ -64,8 +64,8 @@ block in a `.go` file of the same package
 with `mismatched input 'const' expecting {<EOF>, 'val', ...}`; it is now this
 one error, at the `const`, as is a top-level `const ( ... )` block.
 
-**Scope.** The constructs are found only in a file that does not parse.
-A `const` inside a function body that is the file's only error parses, as the name `const`
+**Scope.** A Go construct is reported only in a declaration that does not parse.
+A `const` that is the only error of its function body parses, as the name `const`
 followed by an assignment, so it is still reported as a use of that name.
 A name spelled `const`, such as `val const = 1`, is still
 [GALA-E0055](/docs/errors/gala-e0055/).
