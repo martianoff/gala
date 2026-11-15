@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/formal/coreexport"
 )
 
@@ -78,12 +79,11 @@ func ModuleDeps(p *coreexport.Program, modPath string, load func(path string) (*
 
 // ModulePath is the module path a gala.mod declares, "" for none.
 func ModulePath(galaMod string) string {
-	for _, line := range strings.Split(galaMod, "\n") {
-		if f := strings.Fields(line); len(f) == 2 && f[0] == "module" {
-			return f[1]
-		}
+	f, err := mod.Parse(galaMod)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return f.Module.Path
 }
 
 // pkgPrefix is the namespace part of declaration name x, with its dot: "atn."
@@ -107,6 +107,10 @@ type pkgInfo struct {
 	// top is every name the package declares at the top level, to its
 	// qualified name; types its type names.
 	top, types map[string]string
+	// cases and values are the names of its sealed types' cases and of its
+	// package-level variables: in a pattern, a case's name, or an upper-case
+	// variable's (a stable identifier), refers to it; any other name binds.
+	cases, values map[string]bool
 }
 
 // mergePackages returns the program with the declarations of the module
@@ -126,12 +130,14 @@ func mergePackages(p *coreexport.Program, deps []Package) (*coreexport.Program, 
 	if err != nil {
 		return p, []Unsupported{{Construct: "import-cycle"}}, nil
 	}
-	// Namespaces: a package's name, numbered when two packages share one.
+	// Namespaces: a package's name, numbered when two packages share one,
+	// in the translation's reserved namespace: Lean reads `x.F` as a field
+	// of x when a local x is in scope, and no GALA local starts with _gala_.
 	pkgs := map[string]*pkgInfo{}
 	used := map[string]bool{}
 	for _, path := range order {
 		dep := byPath[path]
-		name := packageName(dep.Program, path)
+		name := "_gala_pkg_" + packageName(dep.Program, path)
 		ns := name
 		for k := 2; used[ns]; k++ {
 			ns = fmt.Sprintf("%s_%d", name, k)
@@ -253,7 +259,8 @@ func packageName(p *coreexport.Program, path string) string {
 }
 
 func newPkgInfo(path, prefix string, p *coreexport.Program) *pkgInfo {
-	info := &pkgInfo{path: path, prefix: prefix, prog: p, top: map[string]string{}, types: map[string]string{}}
+	info := &pkgInfo{path: path, prefix: prefix, prog: p, top: map[string]string{}, types: map[string]string{},
+		cases: map[string]bool{}, values: map[string]bool{}}
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
 			switch d := d.(type) {
@@ -269,16 +276,13 @@ func newPkgInfo(path, prefix string, p *coreexport.Program) *pkgInfo {
 				for _, vn := range d.Variants {
 					if v, ok := vn.(*coreexport.Variant); ok {
 						info.top[v.Name] = prefix + v.Name
+						info.cases[v.Name] = true
 					}
 				}
-			case *coreexport.Val:
-				for _, n := range d.Names {
-					info.top[n] = prefix + n
-				}
-			case *coreexport.Var:
-				for _, n := range d.Names {
-					info.top[n] = prefix + n
-				}
+			}
+			for _, n := range globalNames(d) {
+				info.top[n] = prefix + n
+				info.values[n] = true
 			}
 		}
 	}
@@ -583,7 +587,8 @@ func (q *qualifier) expr(n coreexport.Node, bound map[string]bool) coreexport.No
 func (q *qualifier) pattern(p coreexport.Node, bound, inner map[string]bool) coreexport.Node {
 	switch p := p.(type) {
 	case *coreexport.PatName:
-		if d := q.value(p.Name, bound); d != "" {
+		refers := q.pkg.cases[p.Name] || isUpper(p.Name) && q.pkg.values[p.Name]
+		if d := q.value(p.Name, bound); d != "" && refers {
 			c := *p
 			c.Name = d
 			return &c
@@ -833,39 +838,51 @@ func (g *gen) attributeReach(p *coreexport.Program) {
 	if len(failed) == 0 {
 		return
 	}
+	memo := map[string]string{}
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
 			fn, ok := d.(*coreexport.Func)
 			if !ok || g.isDepKey(funcKey(fn)) || reported[funcKey(fn)] {
 				continue
 			}
-			if c := g.usesFailed(funcKey(fn), failed); c != "" {
+			if c := g.usesFailed(funcKey(fn), failed, memo, map[string]bool{}); c != "" {
 				g.unsup = append(g.unsup, Unsupported{Decl: funcKey(fn), Construct: c, Pos: fn.Pos})
 			}
 		}
 	}
 }
 
-// usesFailed is the construct of the first failed declaration that key
-// uses, directly or not, in a fixed order; "" for none.
-func (g *gen) usesFailed(key string, failed map[string]string) string {
-	seen := map[string]bool{key: true}
-	queue := []string{key}
-	for len(queue) > 0 {
-		k := queue[0]
-		queue = queue[1:]
-		for _, u := range slices.Sorted(maps.Keys(g.uses[k])) {
-			if seen[u] {
-				continue
-			}
-			seen[u] = true
-			if c, ok := failed[u]; ok {
-				return c
-			}
-			queue = append(queue, u)
+// usesFailed is the construct of a failed declaration that key uses,
+// directly or not, the first in a fixed order; "" for none. memo holds the
+// answers found so far; onPath guards a cycle of uses (recursion).
+func (g *gen) usesFailed(key string, failed, memo map[string]string, onPath map[string]bool) string {
+	if c, ok := memo[key]; ok {
+		return c
+	}
+	onPath[key] = true
+	defer delete(onPath, key)
+	uses := slices.Sorted(maps.Keys(g.uses[key]))
+	found := ""
+	for _, u := range uses {
+		if c, ok := failed[u]; ok {
+			found = c
+			break
 		}
 	}
-	return ""
+	for _, u := range uses {
+		if found != "" {
+			break
+		}
+		if !onPath[u] {
+			found = g.usesFailed(u, failed, memo, onPath)
+		}
+	}
+	// Inside a cycle the answer may still change once the cycle is left, so
+	// only an answer found, or one with nothing on the path, is kept.
+	if found != "" || len(onPath) == 1 {
+		memo[key] = found
+	}
+	return found
 }
 
 // isDepKey reports whether report key k (a function, method, type or

@@ -52,7 +52,7 @@ func (g *gen) pattern(p coreexport.Node, sc *scope, typ coreexport.Node) pat {
 		}
 		// An upper-case name that resolves to a value is a stable
 		// identifier: the subject must equal it.
-		if isUpper(x) && (sc.lookup(x) != nil || g.globalBy[x] != nil) {
+		if isUpper(bareName(x)) && (sc.lookup(x) != nil || g.globalBy[x] != nil) {
 			g.comparable(&coreexport.Name{Meta: coreexport.Meta{Kind: "name", Pos: p.Pos}, Name: x}, sc)
 			f := g.freshName("p")
 			return pat{lean: f, tests: []string{fmt.Sprintf("(%s == %s)", f, g.stableValue(x, sc))}}

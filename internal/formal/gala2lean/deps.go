@@ -43,7 +43,7 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		}
 		return
 	case *coreexport.PatName:
-		if !bound[n.Name] && g.globalBy[n.Name] != nil && isUpper(n.Name) {
+		if !bound[n.Name] && g.globalBy[n.Name] != nil && isUpper(bareName(n.Name)) {
 			out[n.Name] = true
 		}
 		return
@@ -201,7 +201,13 @@ func mapChildren(n coreexport.Node, f func(coreexport.Node) coreexport.Node) cor
 		case fv.Kind() == reflect.Slice && fv.Type().Elem() == nodeType:
 			s := reflect.MakeSlice(fv.Type(), fv.Len(), fv.Len())
 			for j := range fv.Len() {
-				s.Index(j).Set(reflect.ValueOf(f(fv.Index(j).Interface().(coreexport.Node))))
+				el := fv.Index(j)
+				if el.IsNil() {
+					continue
+				}
+				if r := f(el.Interface().(coreexport.Node)); r != nil {
+					s.Index(j).Set(reflect.ValueOf(r))
+				}
 			}
 			fv.Set(s)
 		}
@@ -219,7 +225,7 @@ func bindAll(m map[string]bool, names []string) {
 func (g *gen) patBinders(p coreexport.Node, m map[string]bool) {
 	switch p := p.(type) {
 	case *coreexport.PatName:
-		if g.variants[p.Name] == nil && !(isUpper(p.Name) && g.globalBy[p.Name] != nil) {
+		if g.variants[p.Name] == nil && !(isUpper(bareName(p.Name)) && g.globalBy[p.Name] != nil) {
 			m[p.Name] = true
 		}
 	case *coreexport.PatTuple:

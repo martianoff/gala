@@ -589,7 +589,7 @@ func substType(t coreexport.Node, m map[string]coreexport.Node) coreexport.Node 
 	switch t := t.(type) {
 	case *coreexport.TypeName:
 		if len(t.Args) == 0 {
-			if r, ok := m[t.Name]; ok {
+			if r, ok := m[t.Name]; ok && t.Package == "" {
 				return r
 			}
 			return t
@@ -684,7 +684,7 @@ func (g *gen) genericNames() []string {
 // typeHead is the name of a named type, with or without type arguments, ""
 // for any other.
 func typeHead(t coreexport.Node) string {
-	if n, ok := t.(*coreexport.TypeName); ok {
+	if n, ok := t.(*coreexport.TypeName); ok && n.Package == "" {
 		return n.Name
 	}
 	return ""

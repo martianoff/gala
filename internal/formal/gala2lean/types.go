@@ -66,7 +66,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 
 // typeName is the name of a plain type, "" for any other.
 func typeName(t coreexport.Node) string {
-	if n, ok := t.(*coreexport.TypeName); ok && len(n.Args) == 0 {
+	if n, ok := t.(*coreexport.TypeName); ok && len(n.Args) == 0 && n.Package == "" {
 		return n.Name
 	}
 	return ""
@@ -187,7 +187,11 @@ func funcTypeNames(t *coreexport.TypeFunc) []string {
 func typeNamesIn(t coreexport.Node) []string {
 	switch t := t.(type) {
 	case *coreexport.TypeName:
-		out := []string{t.Name}
+		var out []string
+		if t.Package == "" {
+			// A type of another package is no type of the program's.
+			out = append(out, t.Name)
+		}
 		for _, a := range t.Args {
 			out = append(out, typeNamesIn(a)...)
 		}
@@ -214,7 +218,7 @@ func (g *gen) typeOrder() {
 			nested := "nested-recursive-type"
 			switch t := f.Type.(type) {
 			case *coreexport.TypeName:
-				if t.Name != n && !g.isTypeParamOf(n, t.Name) {
+				if t.Package == "" && t.Name != n && !g.isTypeParamOf(n, t.Name) {
 					deps[n] = append(deps[n], t.Name)
 				}
 				for _, a := range t.Args {

@@ -23,6 +23,7 @@ func main() {
     Println(shapes, a.Area(shapes.V3))
     Println(a.Hold(3, a.Box(4)), a.Hold(0, a.Dot()))
     Println(area(5), c.Twice(4), d.Sum())
+    Println(c.Pick(Some(5)), c.Pick(None()), c.IsMax(10), c.IsMax(9), c.Plus(2))
     val c = 7 // a local named like package c hides it
     Println(c + 1)
 }

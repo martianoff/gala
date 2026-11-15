@@ -302,14 +302,16 @@ func (g *gen) emitProgram(opts Options) {
 	}
 	ok = typesOK && ok
 	// The package-level variables' types and initialization order.
+	// Each variable is reported as a declaration of its own, so that what
+	// reads it can be told apart from what does not (attributeReach).
 	var initOrder []*globalVar
-	ok = g.guard("", func() {
-		for _, gv := range g.globals {
+	for _, gv := range g.globals {
+		ok = g.guard(gv.name, func() {
 			gv.leanT = g.globalType(gv)
 			g.stateType(gv.leanT, gv.pos)
-		}
-		initOrder = g.initOrder()
-	}) && ok
+		}) && ok
+	}
+	ok = g.guard("", func() { initOrder = g.initOrder() }) && ok
 	sccs := g.funcSCCs()
 	// Each function's definition, translated before anything is written so
 	// that every unsupported construct is found.
@@ -331,8 +333,8 @@ func (g *gen) emitProgram(opts Options) {
 		}
 		groups = append(groups, grp)
 	}
-	var initCode string
-	ok = g.guard("", func() { initCode = g.initDecl(initOrder) }) && ok
+	initCode, initOK := g.initDecl(initOrder)
+	ok = initOK && ok
 	if !ok {
 		return
 	}
@@ -385,27 +387,32 @@ func (g *gen) stateDecl() string {
 }
 
 // initDecl initializes the package-level variables in order and runs main.
-func (g *gen) initDecl(order []*globalVar) string {
-	g.fn = &fnCtx{result: "Unit"}
+// Each variable's initializer is reported as that variable's declaration
+// (attributeReach); ok is false when one is outside the subset.
+func (g *gen) initDecl(order []*globalVar) (code string, ok bool) {
 	sc := newScope(nil, 0)
 	var items []string
+	ok = true
 	for _, gv := range order {
-		var v string
-		if gv.value != nil {
-			v = g.expr(gv.value, sc).val()
-		} else {
-			v = g.zero(gv.typ)
-		}
-		tmp := g.freshName("i")
-		items = append(items, "let "+tmp+" := "+v,
-			fmt.Sprintf("modify fun _gala_st => { _gala_st with %s := %s }", stateField(gv.name), tmp))
+		ok = g.guard(gv.name, func() {
+			g.fn = &fnCtx{result: "Unit"}
+			var v string
+			if gv.value != nil {
+				v = g.expr(gv.value, sc).val()
+			} else {
+				v = g.zero(gv.typ)
+			}
+			tmp := g.freshName("i")
+			items = append(items, "let "+tmp+" := "+v,
+				fmt.Sprintf("modify fun _gala_st => { _gala_st with %s := %s }", stateField(gv.name), tmp))
+		}) && ok
 	}
 	if g.funcs["main"] != nil {
 		items = append(items, "main")
 	} else {
 		items = append(items, "pure ()")
 	}
-	return "/-- Package initialization, then `main`. -/\ndef _gala_run : _gala_M Unit := do\n" + indentLines(items, 2)
+	return "/-- Package initialization, then `main`. -/\ndef _gala_run : _gala_M Unit := do\n" + indentLines(items, 2), ok
 }
 
 // funcDecl is the definition of one top-level function.
