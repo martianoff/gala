@@ -251,7 +251,7 @@ def intLit (n : Int) : M Val :=
     listed package (`Json.noOutputInitImports`) is reported as any other
     import. -/
 def outsideKind (k : String) : String :=
-  if k == "import-go-std" then "import" else k
+  if k == "import-quiet-init" then "import" else k
 
 /-- A name that resolves to nothing. With top-level declarations outside S1 (an
     `import`, a method), it most likely names one of them, and the run is unsupported

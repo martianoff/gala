@@ -63,17 +63,15 @@ go_test(
     data = [
         "//collection_immutable:gala_sources",
         "//formal:Gala/Json.lean",
-        "//std:embedded_fs.go",
         "//std:gala_sources",
-        "//std:interfaces.go",
-        "//std:types.go",
+        "//std:go_sources",
     ],
     embed = [":gala2lean"],
     env = {
         "COLLECTIONS_GALA": "$(rlocationpaths //collection_immutable:gala_sources)",
         "GALASPEC_JSON_LEAN": "$(rlocationpath //formal:Gala/Json.lean)",
         "STD_GALA": "$(rlocationpaths //std:gala_sources)",
-        "STD_GO": "$(rlocationpath //std:embedded_fs.go) $(rlocationpath //std:interfaces.go) $(rlocationpath //std:types.go)",
+        "STD_GO": "$(rlocationpaths //std:go_sources)",
     },
     deps = [
         "//internal/formal/coreexport",

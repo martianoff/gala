@@ -32,6 +32,17 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# The hand-written Go files of std, which a formal test scans for
+# initialization that prints.
+filegroup(
+    name = "go_sources",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
 gala_bootstrap_transpile(
     name = "option_go",
     src = "option.gala",

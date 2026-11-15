@@ -283,10 +283,10 @@ def decodeTop (j : Json) : D Decl := do
   let kind ← kindOf j
   -- An import runs its package's initializers, which galaspec does not model: `runM`
   -- stops on it (`import`, or `blank-import` for `import _ "pkg"`), except for the
-  -- packages of `noOutputInitImports` (`import-go-std`).
+  -- packages of `noOutputInitImports` (`import-quiet-init`).
   if kind == "import" then
     if (← str j "alias") == "_" then return .unsupported "blank-import"
-    if noOutputInitImports.contains (← str j "path") then return .unsupported "import-go-std"
+    if noOutputInitImports.contains (← str j "path") then return .unsupported "import-quiet-init"
     return .unsupported "import"
   -- A method, generic or not, is outside the subset galaspec models, as before Core
   -- JSON exported receivers (version 5).

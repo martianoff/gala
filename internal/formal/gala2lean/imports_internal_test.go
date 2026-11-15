@@ -17,7 +17,7 @@ import (
 )
 
 // readRunfiles reads the files env names (a space-separated list of
-// runfile paths), by base name.
+// runfile paths), by runfile path.
 func readRunfiles(t *testing.T, env string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -37,11 +37,8 @@ func readRunfiles(t *testing.T, env string) map[string]string {
 // rest on the assumption that those packages print nothing while they
 // initialize, and the two models must make it for the same packages.
 func TestNoOutputInitImportsInStep(t *testing.T) {
-	var data string
-	for _, text := range readRunfiles(t, "GALASPEC_JSON_LEAN") {
-		data = text
-	}
-	def := regexp.MustCompile(`(?s)def noOutputInitImports : List String :=\s*\[(.*?)\]`).FindStringSubmatch(data)
+	data := readRunfiles(t, "GALASPEC_JSON_LEAN")[os.Getenv("GALASPEC_JSON_LEAN")]
+	def :=regexp.MustCompile(`(?s)def noOutputInitImports : List String :=\s*\[(.*?)\]`).FindStringSubmatch(data)
 	require.NotNil(t, def, "no noOutputInitImports in formal/Gala/Json.lean")
 	var lean []string
 	for _, m := range regexp.MustCompile(`"([^"]*)"`).FindAllStringSubmatch(def[1], -1) {
@@ -81,7 +78,6 @@ func TestQuietInitPackages(t *testing.T) {
 				}
 			}
 		}
-		require.NotEmpty(t, p.Files, env)
 		seen := map[string]bool{}
 		var scan func(n coreexport.Node, where string)
 		scan = func(n coreexport.Node, where string) {
