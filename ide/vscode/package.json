@@ -25,7 +25,16 @@
     "Programming Languages"
   ],
   "engines": {
-    "vscode": "^1.138.0"
+    "vscode": "^1.100.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace, the workspace's gala.serverPath setting is ignored, so it cannot choose the executable the extension runs.",
+      "restrictedConfigurations": [
+        "gala.serverPath"
+      ]
+    }
   },
   "activationEvents": [
     "onLanguage:gala"
@@ -93,7 +102,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
-    "@types/vscode": "^1.138.0",
+    "@types/vscode": "~1.100.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.0",

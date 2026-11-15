@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+# The extension itself is built with npm (see README.md); Bazel only runs the
+# check that its TextMate grammar highlights every keyword in gala.g4.
+go_test(
+    name = "vscode_test",
+    srcs = ["grammar_test.go"],
+    data = ["syntaxes/gala.tmLanguage.json"],
+    deps = [
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+    ],
+)

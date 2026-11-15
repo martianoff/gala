@@ -10,6 +10,20 @@ const RELEASES_URL = 'https://github.com/martianoff/gala/releases';
 
 let client: LanguageClient | undefined;
 let outputChannel: vscode.LogOutputChannel | undefined;
+let galaFileWatcher: vscode.FileSystemWatcher | undefined;
+// Every start/stop runs through this chain, so overlapping restarts (the
+// command plus a gala.serverPath change) never leave a server running
+// untracked.
+let lifecycle: Promise<void> = Promise.resolve();
+
+function serialized(step: () => Promise<void>): Promise<void> {
+  lifecycle = lifecycle.then(step, step);
+  return lifecycle;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function getOutputChannel(): vscode.LogOutputChannel {
   outputChannel ??= vscode.window.createOutputChannel('GALA Language Server', {
@@ -21,10 +35,12 @@ function getOutputChannel(): vscode.LogOutputChannel {
 function resolveServerPath(): string {
   const config = vscode.workspace.getConfiguration('gala');
   const inspected = config.inspect<string>('serverPath');
-  const explicit =
-    inspected?.workspaceFolderValue ??
-    inspected?.workspaceValue ??
-    inspected?.globalValue;
+  // A workspace's own setting picks the executable only once the workspace
+  // is trusted (package.json lists gala.serverPath as restricted).
+  const fromWorkspace = vscode.workspace.isTrusted
+    ? inspected?.workspaceFolderValue ?? inspected?.workspaceValue
+    : undefined;
+  const explicit = fromWorkspace ?? inspected?.globalValue;
   if (typeof explicit === 'string' && explicit.trim()) {
     return explicit.trim();
   }
@@ -43,14 +59,11 @@ function serverExecutable(): Executable {
 }
 
 function createClient(): LanguageClient {
-  const serverOptions: ServerOptions = {
-    run: serverExecutable(),
-    debug: serverExecutable(),
-  };
+  const serverOptions: ServerOptions = serverExecutable();
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', language: 'gala' }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.gala'),
+      fileEvents: galaFileWatcher,
     },
     outputChannel: getOutputChannel(),
   };
@@ -62,28 +75,36 @@ function createClient(): LanguageClient {
   );
 }
 
-async function startClient(): Promise<void> {
-  client = createClient();
-  try {
-    await client.start();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    getOutputChannel().error(`Failed to start the GALA language server: ${message}`);
-    const choice = await vscode.window.showErrorMessage(
+// Offers the fix for a failed start without waiting for the answer: a pending
+// notification must not hold up activation or a restart.
+function reportStartFailure(message: string): void {
+  getOutputChannel().error(`Failed to start the GALA language server: ${message}`);
+  void vscode.window
+    .showErrorMessage(
       `GALA: cannot start the language server (${message}). ` +
         'Install the GALA CLI and check that `gala version` works in a terminal, ' +
         'or set "gala.serverPath".',
       'Download GALA',
       'Open Settings',
-    );
-    if (choice === 'Download GALA') {
-      void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
-    } else if (choice === 'Open Settings') {
-      void vscode.commands.executeCommand(
-        'workbench.action.openSettings',
-        'gala.serverPath',
-      );
-    }
+    )
+    .then((choice) => {
+      if (choice === 'Download GALA') {
+        void vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL));
+      } else if (choice === 'Open Settings') {
+        void vscode.commands.executeCommand(
+          'workbench.action.openSettings',
+          'gala.serverPath',
+        );
+      }
+    });
+}
+
+async function startClient(): Promise<void> {
+  client = createClient();
+  try {
+    await client.start();
+  } catch (error) {
+    reportStartFailure(errorMessage(error));
   }
 }
 
@@ -97,20 +118,22 @@ async function stopClient(): Promise<void> {
     await running.stop();
   } catch (error) {
     getOutputChannel().warn(
-      `Stopping the GALA language server failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `Stopping the GALA language server failed: ${errorMessage(error)}`,
     );
   }
 }
 
-async function restartClient(): Promise<void> {
-  await stopClient();
-  await startClient();
+function restartClient(): Promise<void> {
+  return serialized(async () => {
+    await stopClient();
+    await startClient();
+  });
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  galaFileWatcher = vscode.workspace.createFileSystemWatcher('**/*.gala');
   context.subscriptions.push(
+    galaFileWatcher,
     vscode.commands.registerCommand('gala.restartServer', restartClient),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration('gala.serverPath')) {
@@ -118,9 +141,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
   );
-  await startClient();
+  await serialized(startClient);
 }
 
-export async function deactivate(): Promise<void> {
-  await stopClient();
+export function deactivate(): Promise<void> {
+  return serialized(stopClient);
 }

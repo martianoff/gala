@@ -19,10 +19,10 @@
       "include": "#numbers"
     },
     {
-      "include": "#types"
+      "include": "#functions"
     },
     {
-      "include": "#functions"
+      "include": "#types"
     },
     {
       "include": "#operators"
@@ -93,6 +93,11 @@
           "include": "#interpolation"
         },
         {
+          "name": "variable.other.interpolated.gala",
+          "comment": "the short form: s\"hello $name\"",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
           "name": "constant.character.escape.gala",
           "match": "\\\\."
         },
@@ -128,28 +133,7 @@
           "include": "#balanced-braces"
         },
         {
-          "include": "#comments"
-        },
-        {
-          "include": "#strings"
-        },
-        {
-          "include": "#keywords"
-        },
-        {
-          "include": "#numbers"
-        },
-        {
-          "include": "#types"
-        },
-        {
-          "include": "#functions"
-        },
-        {
-          "include": "#operators"
-        },
-        {
-          "include": "#punctuation"
+          "include": "$self"
         }
       ]
     },
@@ -237,7 +221,7 @@
       "patterns": [
         {
           "name": "entity.name.function.gala",
-          "match": "\\b[a-z_][A-Za-z0-9_]*(?=\\s*\\()"
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
         }
       ]
     },

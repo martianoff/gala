@@ -130,9 +130,12 @@ a live template in `liveTemplates/GALA.xml`, and a parser test-data pair
 
 **Extension file:** `ide/vscode/syntaxes/gala.tmLanguage.json` — the `keywords` patterns
 
-**Source of truth:** `internal/parser/grammar/gala.g4` — the named lexer tokens and the inline keyword literals (`'true'`, `'false'`, `'nil'`, `'map'`)
+**Source of truth:** `internal/parser/grammar/gala.g4` — every word-like literal token (named lexer tokens and inline literals such as `'true'`, `'nil'`, `'map'`)
 
-**How to verify:** every named keyword token (`grep -E "^[A-Z_]+: '[a-z]+';" internal/parser/grammar/gala.g4`) and each of `true`, `false`, `nil`, `map` appears in a `keywords` pattern. Contextual keywords keep their context: `default` is matched only before `case`, `map` only before `[`.
+**How to verify:** `TestGrammar_HighlightsEveryGrammarKeyword`
+(`//ide/vscode:vscode_test`) fails when a word token of the generated parser is
+missing from the `keywords` patterns. Contextual keywords keep their context in a
+lookahead: `default` is matched only before `case`, `map` only before `[`.
 
 ## When to Sync
 

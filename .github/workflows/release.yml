@@ -244,7 +244,14 @@ jobs:
 
   vscode-extension:
     name: Build VS Code Extension
+    needs: verify-version
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide/vscode
+    env:
+      # Bare version (no "v"), as verify-version enforces.
+      GALA_VERSION: ${{ github.event.release.tag_name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -257,21 +264,12 @@ jobs:
           cache-dependency-path: ide/vscode/package-lock.json
 
       - name: Install dependencies
-        working-directory: ide/vscode
         run: npm ci
 
-      - name: Set extension version from release tag
-        working-directory: ide/vscode
-        env:
-          GITHUB_REF_NAME: ${{ github.event.release.tag_name }}
-        run: npm pkg set "version=${GITHUB_REF_NAME#v}"
-
       - name: Package extension
-        working-directory: ide/vscode
-        run: npm run package
-
-      - name: Rename vsix for release
-        run: mv ide/vscode/gala-*.vsix "ide/vscode/gala-vscode-${{ github.event.release.tag_name }}.vsix"
+        run: |
+          npm pkg set "version=$GALA_VERSION"
+          npm run package -- -o "gala-vscode-$GALA_VERSION.vsix"
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4
@@ -296,7 +294,7 @@ jobs:
           cd artifacts
           mkdir -p release
           find . -mindepth 2 -type f \( -name 'gala-*' -o -name '*.zip' -o -name '*.vsix' \) -exec mv {} release/ \;
-          rm -rf gala-*/ gala-intellij-plugin/ gala-vscode-extension/
+          rm -rf gala-*/ gala-intellij-plugin/
           mv release/* .
           rmdir release
           sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip *.vsix > checksums-sha256.txt

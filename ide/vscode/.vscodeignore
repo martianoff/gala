@@ -9,3 +9,5 @@ tsconfig.json
 dist/test/**
 *.vsix
 package-lock.json
+BUILD.bazel
+*.go
