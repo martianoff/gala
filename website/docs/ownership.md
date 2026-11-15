@@ -622,7 +622,8 @@ must declare the method `inout` too.
 A typed pattern, `case s: Stepper =>`, is accepted only on a value whose
 static type already guarantees the `inout` methods: Go's dynamic type test
 can't tell an `inout` receiver from a `Ptr` receiver. On an `any`, match the
-concrete type instead (`case c: Ptr[Counter]`).
+concrete type instead (`case p: *Counter`) and call the method on
+`RequirePtr(p)`.
 
 A Go type fills an `inout` interface method only when its method is on the
 [no-retain allow-list](#gala-calls-go), as `bytes.Buffer`'s `WriteString` is

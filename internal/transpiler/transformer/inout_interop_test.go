@@ -265,7 +265,7 @@ func TestInoutGoWrapperNoCopy(t *testing.T) {
 // static type already guarantees them.
 func TestInoutTypePattern(t *testing.T) {
 	trans := newDefaultsTranspiler()
-	src := func(body string) string {
+	src := func(decl, body string) string {
 		return `package main
 
 type Stepper interface {
@@ -294,6 +294,8 @@ struct Leaky(var n int)
 
 func (l Ptr[Leaky]) Step() int = l.n
 
+` + decl + `
+
 func main() {
     ` + body + `
 }
@@ -305,21 +307,24 @@ func main() {
 		"val x any = &Leaky(0)\n    x match {\n        case p: Plain => Println(p.Step())\n        case _ => Println(0)\n    }",
 	}
 	for _, body := range accepted {
-		_, err := trans.Transpile(src(body), "inout_pattern_test.gala")
+		_, err := trans.Transpile(src("", body), "inout_pattern_test.gala")
 		require.NoError(t, err, body)
 	}
 
-	rejected := []struct{ name, body, want string }{
-		{"a value of type any", "val x any = &Leaky(3)\n    x match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+	rejected := []struct{ name, decl, body, want string }{
+		{"a value of type any", "", "val x any = &Leaky(3)\n    x match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
 			"a typed pattern cannot test an any for Stepper"},
-		{"an interface without inout", "val p Plain = &Good(0)\n    p match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+		{"an interface without inout", "", "val p Plain = &Good(0)\n    p match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
 			"a typed pattern cannot test a Plain for Stepper"},
-		{"a concrete type without inout", "val l = &Leaky(1)\n    l match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+		{"a concrete type without inout", "", "val l = &Leaky(1)\n    l match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
 			"Stepper declares Step inout, and Leaky.Step has no inout receiver"},
-	}
+		{"a value of an unconstrained type parameter", "func pick[T any](x T) int = x match {\n    case s: Stepper => s.Step()\n    case _ => 0\n}", "Println(pick(&Leaky(1)))",
+			"a typed pattern cannot test a T (a type parameter that may hold any type) for Stepper"},
+		{"a value of type error", "func pickErr(e error) int = e match {\n    case s: Stepper => s.Step()\n    case _ => 0\n}", "Println(1)",
+			"a typed pattern cannot test a error for Stepper"},	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := trans.Transpile(src(tc.body), "inout_pattern_test.gala")
+			_, err := trans.Transpile(src(tc.decl, tc.body), "inout_pattern_test.gala")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0116")
 			assert.Contains(t, err.Error(), tc.want)

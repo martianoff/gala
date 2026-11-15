@@ -38,7 +38,9 @@ Go's test cannot tell an `inout` receiver from a `Ptr` receiver. So the
 pattern is accepted only on a value whose static type already guarantees the
 `inout` methods: an interface that declares them `inout` too, or a type that
 implements them with `inout` receivers. On an `any`, or an interface without
-them, match the concrete type instead (`case c: Ptr[Counter]`).
+them, match the concrete type instead (`case p: *Counter`) and call the
+method on `RequirePtr(p)`. A value of a type parameter is judged by its
+constraint; one constrained by `any` may hold any type.
 
 An interface value that is already an interface, built in GALA or received
 from Go, fills it as it is: its methods are trusted, not checked.
