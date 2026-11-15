@@ -1,0 +1,7 @@
+# Documentation quotes these fixture projects (docs/ADD_GALA_TO_GO_REPO.MD);
+# the doc check keeps those listings in step with the files.
+filegroup(
+    name = "doc_fixtures",
+    srcs = glob(["testdata/**"]),
+    visibility = ["//internal/doccheck:__pkg__"],
+)

@@ -1,0 +1,75 @@
+package wordstat
+
+import (
+    "fmt"
+    "strings"
+
+    "github.com/spf13/cobra"
+    "martianoff/gala/fs"
+)
+
+// Input returns the text a command works on, given its arguments.
+type Input func([]string) Try[string]
+
+// NewRootCmd builds the wordstat command tree: a root command with a
+// persistent --file flag, and the count and top subcommands.
+func NewRootCmd() *cobra.Command {
+    val root = &cobra.Command(
+        Use = "wordstat",
+        Short = "Count and rank the words of a text",
+        Long = "wordstat counts or ranks the words of a text, read from its arguments or from --file.",
+        SilenceUsage = true,
+    )
+    // cobra writes the flag's value into file when it parses the command line.
+    var file string
+    root.PersistentFlags().StringVarP(&file, "file", "f", "", "read the text from this file instead of the arguments")
+    // The lambda reads file when a command runs, after parsing.
+    val input = (args []string) Try[string] =>
+        if (file == "") Success(strings.Join(args, " ")) else fs.ReadFileString(file)
+    root.AddCommand(newCountCmd(input), newTopCmd(input))
+    root
+}
+
+func newCountCmd(input Input) *cobra.Command {
+    var unit string
+    val cmd = &cobra.Command(
+        Use = "count [text...]",
+        Short = "Count the words, lines or characters of a text",
+        Example = "  wordstat count --unit chars hello world",
+        RunE = (cmd, args) => report(cmd, count(unit, input(args))),
+    )
+    cmd.Flags().StringVarP(&unit, "unit", "u", "words", "what to count: words, lines or chars")
+    cmd
+}
+
+// count parses the --unit value and counts the text, failing on either.
+func count(unitName string, text Try[string]) Try[string] {
+    bind unit = ParseUnit(unitName)
+    bind t = text
+    Success(s"${Count(t, unit)} ${unit.Label()}")
+}
+
+func newTopCmd(input Input) *cobra.Command {
+    var limit int
+    var minLen int
+    val cmd = &cobra.Command(
+        Use = "top [text...]",
+        Short = "List the most frequent words of a text",
+        RunE = (cmd, args) => report(cmd, input(args)
+            .FlatMap((text) => Top(text, limit, minLen))
+            .Map((ranked) => ranked.Map((wc) => s"${wc.V2} ${wc.V1}").MkString("\n"))),
+    )
+    cmd.Flags().IntVarP(&limit, "limit", "n", 3, "how many words to list")
+    cmd.Flags().IntVar(&minLen, "min-len", 1, "ignore words shorter than this")
+    cmd
+}
+
+// report writes a successful result to the command's output, and hands a
+// failure back to cobra as the error RunE returns.
+func report(cmd *cobra.Command, result Try[string]) error = result match {
+    case Success(text) => {
+        fmt.Fprintln(cmd.OutOrStdout(), text)
+        nil
+    }
+    case Failure(err) => err
+}

@@ -1,0 +1,59 @@
+package wordstat
+
+import (
+    "bytes"
+    "path/filepath"
+    "strings"
+
+    "martianoff/gala/fs"
+    . "martianoff/gala/test"
+)
+
+// runArgs executes the command tree with these arguments and returns "ok" or
+// "error" followed by everything it printed.
+func runArgs(args ...string) string {
+    var out bytes.Buffer
+    val root = NewRootCmd()
+    root.SetOut(&out)
+    root.SetErr(&out)
+    root.SetArgs(args)
+    val status = if (FromError(root.Execute()).IsSuccess()) "ok" else "error"
+    s"$status: ${out.String()}"
+}
+
+// run is runArgs on a command line split at spaces, as a shell would split it.
+func run(commandLine string) string = runArgs(strings.Fields(commandLine)...)
+
+func TestCommands(t T) T = RunCases(t,
+    (sub, commandLine, want) => Eq(sub, run(commandLine), want),
+    Case[string, string](Name = "count words by default", Input = "count hello big world", Expected = "ok: 3 words\n"),
+    Case[string, string](Name = "count chars", Input = "count -u chars héllo", Expected = "ok: 5 chars\n"),
+    Case[string, string](Name = "count with a long flag", Input = "count --unit=word a b", Expected = "ok: 2 words\n"),
+    Case[string, string](Name = "count ignores punctuation", Input = "count hello , world !", Expected = "ok: 2 words\n"),
+    Case[string, string](
+        Name = "unknown unit",
+        Input = "count -u pages x",
+        Expected = "error: Error: unknown unit \"pages\": want words, lines or chars\n",
+    ),
+    Case[string, string](
+        Name = "top ranks by frequency, then alphabetically",
+        Input = "top -n 3 the cat and the hat and the bat",
+        Expected = "ok: 3 the\n2 and\n1 bat\n",
+    ),
+    Case[string, string](Name = "top skips short words", Input = "top --min-len 4 a bb cccc cccc ddddd", Expected = "ok: 2 cccc\n1 ddddd\n"),
+    Case[string, string](Name = "top rejects a zero limit", Input = "top -n 0 x", Expected = "error: Error: --limit must be at least 1, got 0\n"),
+    Case[string, string](Name = "a flag cobra does not know", Input = "count --verbose x", Expected = "error: Error: unknown flag: --verbose\n"),
+)
+
+// The persistent --file flag of the root command reaches both subcommands.
+func TestFileFlag(t T) T = fs.MkdirTemp("", "wordstat") match {
+    case Success(dir) => {
+        val path = filepath.Join(dir, "text.txt")
+        val t1 = IsTrue(t, fs.WriteFileString(path, "one two\ntwo three\n", 0o644).IsSuccess())
+        val t2 = Eq(t1, runArgs("count", "-u", "lines", "-f", path), "ok: 2 lines\n")
+        val t3 = Eq(t2, runArgs("top", "--file", path, "-n", "1"), "ok: 2 two\n")
+        fs.RemoveAll(dir)
+        IsTrue(t3, strings.HasPrefix(run("count -f no-such-file.txt"), "error: Error: open no-such-file.txt"))
+    }
+    case Failure(err) => t.Error(err.Error())
+}

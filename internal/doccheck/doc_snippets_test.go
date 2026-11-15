@@ -187,6 +187,7 @@ func matchKnownBug(b block) (knownBug, bool) {
 // docGlobs lists the pages whose ```gala blocks are checked, relative to the
 // repository root.
 var docGlobs = []string{
+	"docs/ADD_GALA_TO_GO_REPO.MD",
 	"docs/DEPENDENCY_INJECTION.MD",
 	"docs/GALA.MD",
 	"docs/EXAMPLES.MD",

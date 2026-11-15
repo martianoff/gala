@@ -1,0 +1,52 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test", "gala_library", "gala_test")
+
+# A command-line tool built on github.com/spf13/cobra, written in GALA: the
+# worked example of docs/ADD_GALA_TO_GO_REPO.MD. cobra is already a Go
+# dependency of this module (the gala CLI uses it), so it comes from the
+# go_deps of MODULE.bazel like any third-party Go package.
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**/*.gala",
+        "**/*.out",
+    ]) + ["BUILD.bazel"],
+    visibility = ["//internal/doccheck:__pkg__"],
+)
+
+WORDSTAT_SRCS = [
+    "wordstat/commands.gala",
+    "wordstat/wordstat.gala",
+]
+
+WORDSTAT_DEPS = [
+    "//collection_immutable",
+    "//fs",
+    "@com_github_spf13_cobra//:cobra",
+]
+
+gala_library(
+    name = "wordstat",
+    srcs = WORDSTAT_SRCS,
+    importpath = "martianoff/gala/examples/cobra_cli/wordstat",
+    deps = WORDSTAT_DEPS,
+)
+
+# Runs each command line through the command tree and checks what it prints.
+gala_test(
+    name = "wordstat_test",
+    srcs = ["wordstat/commands_test.gala"],
+    importpath = "martianoff/gala/examples/cobra_cli/wordstat",
+    lib_srcs = WORDSTAT_SRCS,
+    pkg = "wordstat",
+    deps = WORDSTAT_DEPS,
+)
+
+# The binary run with no arguments prints the root command's help, which
+# lists the subcommands and flags the GALA code registered.
+gala_exec_test(
+    name = "cobra_cli",
+    src = "main.gala",
+    expected = "main.out",
+    gala_deps = [":wordstat"],
+)

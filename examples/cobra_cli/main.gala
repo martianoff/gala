@@ -1,0 +1,12 @@
+package main
+
+import (
+    "os"
+
+    "martianoff/gala/examples/cobra_cli/wordstat"
+)
+
+// main runs the command line; cobra has already printed any error.
+func main() {
+    FromError(wordstat.NewRootCmd().Execute()).OnFailure((_) => os.Exit(1))
+}

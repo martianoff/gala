@@ -1,0 +1,9 @@
+package stock
+
+import . "martianoff/gala/collection_immutable"
+
+// Reorder lists the SKUs of the items whose quantity is below threshold. It
+// takes the package's Go type Item and returns a Go slice, so to Go callers
+// it is an ordinary Go function of package stock.
+func Reorder(items []Item, threshold int) []string =
+    ArrayFromSlice(items).Collect({ case i if i.Qty < threshold => i.SKU }).ToGoSlice()

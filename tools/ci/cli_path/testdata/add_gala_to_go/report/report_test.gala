@@ -1,0 +1,10 @@
+package report
+
+import . "martianoff/gala/test"
+
+func TestBuild(t T) T = Build("A-1,12\nB-2,3\nC-3,0", 5) match {
+    case Success(s) => Eq(Eq(Eq(t, s.Items, 3), s.Units, 15), s.Reorder.MkString(","), "B-2,C-3")
+    case Failure(err) => t.Error(err.Error())
+}
+
+func TestBuildRejectsABadLine(t T) T = IsTrue(t, Build("A-1", 5).IsFailure())

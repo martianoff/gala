@@ -113,6 +113,8 @@ gala new hello && cd hello
 
 This writes `gala.mod`, a `main.gala`, and a `.claude/settings.json` that enables the [Claude Code plugin](#claude-code).
 
+**Already have a Go repo?** Run `gala mod init` in it and put `.gala` files beside your `.go` files: [Add GALA to an Existing Go Repository](docs/ADD_GALA_TO_GO_REPO.MD).
+
 ### 3. Write and run
 
 Replace `main.gala` with:

@@ -1,0 +1,10 @@
+$ wordstat count hello big world
+3 words
+$ wordstat count -u chars hello
+5 chars
+$ wordstat top -n 2 the cat and the hat and the bat
+3 the
+2 and
+$ wordstat count -u pages x
+Error: unknown unit "pages": want words, lines or chars
+exit 1
