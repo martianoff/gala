@@ -44,6 +44,8 @@ func TestForbiddenGoBuiltinsAreHardErrors(t *testing.T) {
 		{"min", "package main\n\nfunc f(a int, b int) int = min(a, b)"},
 		{"max", "package main\n\nfunc f(a int, b int) int = max(a, b)"},
 		{"clear", "package main\n\nfunc f(m map[string]int) {\n    clear(m)\n}"},
+		// Passed as a value, not called: the analyzer reports it.
+		{"max_as_value", "package main\n\nfunc main() {\n    val pick = max\n    Println(pick)\n}"},
 	}
 	for _, tc := range rejected {
 		tc := tc

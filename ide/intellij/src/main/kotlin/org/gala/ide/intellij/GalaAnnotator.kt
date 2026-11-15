@@ -65,7 +65,7 @@ class GalaAnnotator : Annotator {
         // LSP server's builtinFuncs in internal/lsp/completion.go.
         //
         // The bare Go builtins (len/append/make/new/cap/copy/delete/close/
-        // complex/real/imag/panic/recover) are deliberately NOT here: they are
+        // complex/real/imag/panic/recover/min/max/clear) are deliberately NOT here: they are
         // forbidden on GALA's surface (GALA-E0035, see
         // forbiddenGoBuiltinSuggestions in
         // internal/transpiler/transformer/calls.go), so highlighting them as

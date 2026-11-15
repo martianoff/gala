@@ -32,7 +32,7 @@ Present findings in the output format specified at the end.
 Bare Go builtins are **not** part of GALA's surface — calling one is a hard
 transpile error (`GALA-E0035`), not merely "prefer GALA". This applies to
 `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`,
-`imag`, `panic`, `recover`, and `len`. Code that still calls them will not
+`imag`, `panic`, `recover`, `len`, `min`, `max` and `clear`. Code that still calls them will not
 compile, so treat any occurrence as a must-fix. The check is resolver-aware: a
 user-defined function that happens to share one of these names (e.g. a local
 `func delete(...)`) is fine — only the builtin is forbidden.

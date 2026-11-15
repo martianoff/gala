@@ -10,7 +10,7 @@ A scannable rule list for writing idiomatic GALA — useful as both a learning c
 - **No workarounds for transpiler bugs.** If a construct fails to transpile, write a minimal repro test and fix the transpiler. Do not rewrite GALA code to dodge the bug.
 - **No special-casing `std`.** The standard library uses the same import/resolution mechanism as any other library.
 - **Concrete types only.** Never emit `any`/`interface{}` unless the GALA source explicitly asks for it.
-- **No bare Go builtins.** `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, and `len` are a hard error (GALA-E0035). Use the GALA-native form or the sanctioned interop wrapper (see *Length & size* and *Resource cleanup* below). A user-defined function that happens to share one of these names is fine — only the builtin is forbidden.
+- **No bare Go builtins.** `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, `len`, `min`, `max` and `clear` are a hard error (GALA-E0035). Use the GALA-native form or the sanctioned interop wrapper (see *Length & size* and *Resource cleanup* below). A user-defined function that happens to share one of these names is fine — only the builtin is forbidden.
 - **No Go statement keywords.** `defer`, `go`, `goto`, `fallthrough`, `select`, and `chan` are not GALA statements — a bare use is a hard error (GALA-E0036). Use a `use` binding or the `resource` combinators for cleanup, and `go_interop.Spawn(...)` for goroutines (see *Resource cleanup* below).
 
 ---

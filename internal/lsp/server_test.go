@@ -304,7 +304,7 @@ func TestCompletion_BuiltinFunctions(t *testing.T) {
 	}
 	// Bare Go builtins are forbidden on GALA's surface (GALA-E0035); the LSP
 	// must NOT suggest code the compiler rejects.
-	for _, fn := range []string{"len", "cap", "make", "new", "append", "copy", "delete", "close", "complex", "real", "imag", "panic", "recover"} {
+	for _, fn := range []string{"len", "cap", "make", "new", "append", "copy", "delete", "close", "complex", "real", "imag", "panic", "recover", "min", "max", "clear"} {
 		if labels[fn] {
 			t.Errorf("forbidden Go builtin %q should NOT be offered in completion (GALA-E0035)", fn)
 		}

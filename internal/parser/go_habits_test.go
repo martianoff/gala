@@ -487,6 +487,46 @@ func TestGoHabitsReviewFindings(t *testing.T) {
 			want:  []galaerr.ErrorCode{galaerr.CodeGoFuncLiteral},
 		},
 		{
+			name:  "array_of_a_named_size",
+			input: "package main\n\nfunc main() {\n    var digest [sha256.Size]byte\n    Println(digest)\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
+			hint:  "`[]byte`",
+		},
+		{
+			name:  "array_of_pointers_parameter",
+			input: "package main\n\nfunc f(nodes [4]*Node) int = 1\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
+		},
+		{
+			// A `~` after an unclosed interface is not a constraint.
+			name:  "tilde_after_an_unclosed_interface",
+			input: "package main\n\ntype X interface {\n\nfunc main() {\n    val y = ~x\n}\n",
+			want:  []galaerr.ErrorCode{""},
+		},
+		{
+			// `switch match { ... }` matches on a value named switch.
+			name:  "value_named_switch_matched",
+			input: "package main\n\nfunc main() {\n    switch match {\n        case 1 => Println(1)\n        case _ => Println(2)\n    }\n    val x = \n}\n",
+			want:  []galaerr.ErrorCode{""},
+		},
+		{
+			name:  "two_slices_of_one_operand",
+			input: "package main\n\nfunc main() {\n    Println(a[1:3][0:1])\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoSliceExpr},
+		},
+		{
+			// An unindented local `val` stays in its function.
+			name:  "unindented_local_val",
+			input: "package main\n\nfunc f() (int, int) {\n    val y = \nval x = 1\n    return x, x\n}\n",
+			want:  []galaerr.ErrorCode{"", galaerr.CodeGoMultiReturn},
+		},
+		{
+			name:  "type_switch_on_v",
+			input: "package main\n\nfunc f(v any) {\n    switch v.(type) {\n    case int:\n        Println(v)\n    }\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoSwitch},
+			hint:  "`v match { case n: int",
+		},
+		{
 			// The error at EOF of the last declaration is that declaration's.
 			name:  "error_at_eof_belongs_to_the_last_declaration",
 			input: "package main\n\nfunc main() {\n    const n = 3\n    Println(n)\n",

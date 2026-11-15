@@ -55,6 +55,13 @@ func ForbiddenGoBuiltins() map[string]bool {
 	return out
 }
 
+// ForbiddenGoBuiltinHint is the replacement GALA-E0035 suggests for the Go
+// builtin name, and whether name is one.
+func ForbiddenGoBuiltinHint(name string) (string, bool) {
+	hint, ok := forbiddenGoBuiltinSuggestions[name]
+	return hint, ok
+}
+
 // checkForbiddenGoBuiltinCall rejects a call to a bare Go builtin as a hard
 // error (GALA-E0035). It is resolver-aware: the name is only forbidden when it
 // is a bare identifier that does NOT resolve to a user-defined function, a

@@ -514,7 +514,7 @@ func (s *habitScanner) goSwitch(i int) {
 		return
 	}
 	switch s.text(i + 1) {
-	case ":=", "=", ",", ".", "+=", "-=", "*=", "/=", "++", "--", ")", "]":
+	case ":=", "=", ",", ".", "+=", "-=", "*=", "/=", "++", "--", ")", "]", "match":
 		return // `switch` as a name, GALA-E0055
 	}
 	brace := -1
@@ -547,6 +547,9 @@ func (s *habitScanner) goSwitch(i int) {
 		if s.text(tagFrom+1) == ":=" && s.isIdent(tagFrom) {
 			bind = s.text(tagFrom)
 			subject = s.src(tagFrom+2, brace-5)
+		}
+		if bind == subject {
+			bind = "n" // not shadowing the subject, as GALA-E0124's hint
 		}
 		msg = "Go type switch: GALA matches on type patterns"
 		hint = fmt.Sprintf("write it as a match on type patterns; here, `%s match { case %s: %s => ... case _ => ... }`", short(subject), bind, cmp.Or(firstCase, "int"))
@@ -596,6 +599,9 @@ func (s *habitScanner) typeAssertion(i int) {
 		return // not a type between the parentheses
 	}
 	from, subject := s.operand(i - 1)
+	if from < s.claimed {
+		from = i // the operand is a construct reported before: `a[1:2][3:4]`
+	}
 	typ := s.src(i+2, end-1)
 	msg := fmt.Sprintf("Go type assertion `%s.(%s)`: GALA tests a value's type with `match`", short(subject), short(typ))
 	if typ == "type" {
@@ -622,7 +628,9 @@ func (s *habitScanner) goInterface(i int) {
 		return
 	}
 	end := s.closeOf(i + 1)
-	s.typeCtx = append(s.typeCtx, [2]int{i + 1, end})
+	if s.match(i+1) > i {
+		s.typeCtx = append(s.typeCtx, [2]int{i + 1, end})
+	}
 	if !s.declaresType(i) {
 		msg, hint := "Go interface type written inline: GALA names an interface type",
 			"declare it, `type Name interface { ... }`, and write its name here"
@@ -876,20 +884,25 @@ func (s *habitScanner) bracket(i int) {
 // fixedArray is GALA-E0125 for a Go array type `[16]byte` or `[...]T` at i,
 // reporting whether it is one.
 func (s *habitScanner) fixedArray(i int) bool {
-	size := s.text(i + 1)
-	if s.typ(i+1) != native.GalaINT_LIT && size != "..." || s.text(i+2) != "]" || s.line(i+3) != s.line(i) {
+	// `map[K]V` is a map type, its key a name.
+	close := s.arraySize(i)
+	if close < 0 || s.text(i-1) == "map" || s.line(close+1) != s.line(i) {
 		return false
 	}
+	size := s.src(i+1, close-1)
 	// The element type, after every array dimension: `[4][2]int` is one.
-	elem := i + 3
-	for s.text(elem) == "[" && (s.typ(elem+1) == native.GalaINT_LIT || s.text(elem+1) == "...") && s.text(elem+2) == "]" {
-		elem += 3
+	elem := close + 1
+	for c := s.arraySize(elem); c > 0; c = s.arraySize(elem) {
+		elem = c + 1
 	}
-	if !s.isIdent(elem) && (s.endsExpression(i-1) || s.text(elem) != "*" && s.text(elem) != "[") {
+	// After an operand, `xs[0] * y` multiplies: an element type that is no
+	// name is an array's only when a space sets the `[` apart, `nodes [4]*Node`.
+	spaced := i > 0 && s.ts.Tokens[i-1].End < s.ts.Tokens[i].Start
+	if !s.isIdent(elem) && (s.endsExpression(i-1) && !spaced || s.text(elem) != "*" && s.text(elem) != "[") {
 		return false
 	}
 	end := s.typeEnd(elem)
-	t := s.src(i+3, end)
+	t := s.src(close+1, end)
 	hint := fmt.Sprintf("use a Go slice, `[]%s` (`go_interop.SliceWithSize[%s](%s)` makes one of %s elements), or an `Array[%s]`; a Go API that needs `[%s]%s` keeps it in a `.go` file of the package",
 		short(t), short(t), size, size, short(t), size, short(t))
 	if size == "..." {
@@ -901,6 +914,28 @@ func (s *habitScanner) fixedArray(i int) bool {
 		h.cut = [2]int{i, elem - 1} // the element type stays
 	}
 	return true
+}
+
+// arraySize is the index of the `]` of a Go array type's size that starts at
+// the `[` at i, `[16]`, `[...]`, `[N]` or `[sha256.Size]`, or -1.
+func (s *habitScanner) arraySize(i int) int {
+	if s.text(i) != "[" {
+		return -1
+	}
+	k := i + 1
+	switch {
+	case s.typ(k) == native.GalaINT_LIT, s.text(k) == "...":
+		k++
+	case s.isIdent(k):
+		for k++; s.text(k) == "." && s.isIdent(k+1); k += 2 {
+		}
+	default:
+		return -1
+	}
+	if s.text(k) != "]" {
+		return -1
+	}
+	return k
 }
 
 // sliceExpr is GALA-E0128 for a Go slice expression `s[i:j]` whose `[` is at
@@ -924,6 +959,9 @@ func (s *habitScanner) sliceExpr(i int) {
 		return
 	}
 	from, subject := s.operand(i - 1)
+	if from < s.claimed {
+		from = i // the operand is a construct reported before: `a[1:2][3:4]`
+	}
 	lo := s.src(i+1, colons[0]-1)
 	hiEnd := end - 1
 	if len(colons) > 1 {
@@ -1309,13 +1347,23 @@ func inFailedDeclarations(ts *native.GalaTokens, habits []goHabit, parseErrs []n
 		return nil
 	}
 	// decl is, for each token, the index of its declaration.
+	// A `val`, `var` or `const` in the first column inside braces is a
+	// body's, written unindented; a `func` or `type` there starts the
+	// next declaration of a file whose braces do not balance.
 	decl := make([]int32, len(ts.Tokens))
-	d := int32(0)
+	d, depth := int32(0), 0
 	for k, t := range ts.Tokens {
-		if k > 0 && t.Column == 0 && startsDeclaration(ts, k) {
+		if k > 0 && t.Column == 0 && startsDeclaration(ts, k) && (depth == 0 || !bodyDeclaration(ts, k)) {
 			d++
+			depth = 0
 		}
 		decl[k] = d
+		switch ts.Text(k) {
+		case "{":
+			depth++
+		case "}":
+			depth = max(depth-1, 0)
+		}
 	}
 	failed := map[int32]bool{}
 	mark := func(tok int) {
@@ -1333,6 +1381,16 @@ func inFailedDeclarations(ts *native.GalaTokens, habits []goHabit, parseErrs []n
 		mark(int(at) - 1)
 	}
 	return slices.DeleteFunc(habits, func(h goHabit) bool { return !failed[decl[h.at]] })
+}
+
+// bodyDeclaration reports whether token k of ts, which can start a top-level
+// declaration, can also start one in a body.
+func bodyDeclaration(ts *native.GalaTokens, k int) bool {
+	switch ts.Tokens[k].Type {
+	case native.GalaVAL, native.GalaVAR, native.GalaIDENTIFIER:
+		return true
+	}
+	return false
 }
 
 // startsDeclaration reports whether token k of ts can start a top-level
