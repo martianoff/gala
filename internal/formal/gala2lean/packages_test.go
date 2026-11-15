@@ -45,6 +45,9 @@ func TestPackages(t *testing.T) {
 		{"a type of a package outside the module",
 			"package main\n\nimport \"example.com/other/lib\"\n\nfunc show(p lib.Pt) int = 1\n\nfunc main() { Println(show(lib.Origin())) }\n",
 			nil, "qualified-type"},
+		{"an import outside the module that only a declaration nothing reaches uses",
+			"package main\n\nimport \"example.com/m/lib\"\n\nfunc main() { Println(lib.Origin()) }\n",
+			map[string]string{"lib": "package lib\n\nimport \"example.com/other/noisy\"\n\nstruct Pt(X int, Y int)\n\nfunc Origin() Pt = Pt(0, 0)\n\nfunc Loud() int = noisy.F()\n"}, "import"},
 		{"a blank import whose initializer is outside the subset",
 			"package main\n\nimport _ \"example.com/m/lib\"\n\nfunc main() { Println(1) }\n",
 			map[string]string{"lib": lib + "\nval unused int = println(1)\n"}, "call-of-println"},
@@ -77,6 +80,15 @@ func TestPackages(t *testing.T) {
 		second, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Main: true, Deps: deps})
 		require.NoError(t, err)
 		require.Equal(t, first.Lean, second.Lean)
+	})
+
+	t.Run("a Go standard-library import that only a declaration nothing reaches uses", func(t *testing.T) {
+		// Its package prints nothing as it initializes (goStdImports).
+		main := "package main\n\nimport \"example.com/m/lib\"\n\nfunc main() { Println(lib.Origin()) }\n"
+		pkgs := map[string]string{"lib": "package lib\n\nimport \"strings\"\n\nstruct Pt(X int, Y int)\n\nfunc Origin() Pt = Pt(0, 0)\n\nfunc Up(s string) string = strings.ToUpper(s)\n"}
+		p := export(t, "main.gala", main)
+		_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Main: true, Deps: moduleDeps(t, p, pkgs)})
+		require.NoError(t, err)
 	})
 
 	t.Run("a Ptr of another package", func(t *testing.T) {

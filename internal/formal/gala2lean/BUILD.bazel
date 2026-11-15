@@ -56,9 +56,17 @@ go_test(
 
 go_test(
     name = "gala2lean_internal_test",
-    srcs = ["run_internal_test.go"],
+    srcs = [
+        "imports_internal_test.go",
+        "run_internal_test.go",
+    ],
+    data = ["//formal:Gala/Json.lean"],
     embed = [":gala2lean"],
-    deps = ["@com_github_stretchr_testify//require"],
+    env = {"GALASPEC_JSON_LEAN": "$(rlocationpath //formal:Gala/Json.lean)"},
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/runfiles",
+    ],
 )
 
 # Runs the galaspec fixtures' translations with Lean. Manual: it needs Lean,

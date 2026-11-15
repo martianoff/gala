@@ -232,10 +232,16 @@ what Core JSON leaves out, it does not translate yet:
 - `HashMap` and `HashSet` (`hash-order`), whose printing, iteration and folding follow
   their hash trie's order, which the prelude does not model; a function of `Array` or
   `List` the prelude does not model (`collection-method`); comparing values that hold
-  a function (`func-in-equal`); any other import (`import`), a type of a package
-  outside the module (`qualified-type`), a dot import of a package of the module
-  (`dot-import-module`), an `init` function (`init-func`), a blank import of a
-  package it is not given (`blank-import`), whose initializers it cannot run.
+  a function (`func-in-equal`); an import, in any file it translates, reached or
+  not, of a package it is not given (`import`; `blank-import` for `import _ "pkg"`),
+  whose initializers Go runs and it cannot, except a named import of one of the Go
+  standard-library packages galaspec lists (`Json.goStdImports`, exact paths; the
+  same assumption: they print nothing while they initialize), which is reported only
+  where the program uses a name of it, and of GALA's `std` and the dot-imported
+  collections (the Go of any program using `Option` or `Array` imports them, and
+  both models already run such programs without their initializers); a type of a package outside the module
+  (`qualified-type`), a dot import of a package of the module (`dot-import-module`),
+  an `init` function (`init-func`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 

@@ -41,6 +41,7 @@ package gala2lean
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -171,10 +172,67 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	// construct outside the subset is reported.
 	g.emitProgram(opts)
 	g.attributeReach(p)
+	g.unsup = appendNew(g.unsup, namedImportsOutside(p, opts.Deps))
 	if len(g.unsup) > 0 {
 		return nil, &UnsupportedError{Items: g.unsup}
 	}
 	return &Result{Lean: g.out.String(), Decls: g.decls, Generic: g.genericNames()}, nil
+}
+
+// goStdImports are the Go standard-library packages whose import alone
+// stops nothing. Assumption, not modelled: such a package prints nothing
+// while it initializes, so leaving its initializers out prints what Go
+// prints. A name of it is still reported where the program uses one
+// (import). Exact paths only: a GALA package's path carries its module.
+// galaspec makes the same assumption for the same list (Json.goStdImports
+// in formal/Gala/Json.lean; TestGoStdImportsInStep keeps them equal).
+var goStdImports = []string{
+	"bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+	"unicode", "unicode/utf8",
+}
+
+// stdPath is GALA's standard library. The Go a program's Option or Either
+// lowers to imports it whether or not the source does, and both models
+// translate such programs without running its initializers: they already
+// assume that std prints nothing while it initializes, so an import of it
+// adds nothing to model.
+const stdPath = "martianoff/gala/std"
+
+// namedImportsOutside reports each named import of the merged program p,
+// a dependency file's included, of a package the translation does not have:
+// not among deps, not std (stdPath), not the dot-imported collections it
+// models (whose initializers, like std's, print nothing), not one of
+// goStdImports (import). Go initializes every imported package, so its
+// initializers run whether or not a declaration the program reaches uses
+// the import; without the package the translation cannot run them. (A
+// blank import is blankImportsOutside's.)
+func namedImportsOutside(p *coreexport.Program, deps []Package) []Unsupported {
+	known := map[string]bool{}
+	for _, d := range deps {
+		known[d.Path] = true
+	}
+	var out []Unsupported
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			imp, ok := d.(*coreexport.Import)
+			if !ok || imp.Alias == "_" || known[imp.Path] || imp.Path == stdPath || slices.Contains(goStdImports, imp.Path) ||
+				imp.Path == collectionsPath && imp.Alias == "." {
+				continue
+			}
+			out = append(out, Unsupported{Construct: "import", Pos: imp.Pos})
+		}
+	}
+	return out
+}
+
+// appendNew is items with each of more that it does not already hold.
+func appendNew(items, more []Unsupported) []Unsupported {
+	for _, m := range more {
+		if !slices.ContainsFunc(items, func(it Unsupported) bool { return it.Construct == m.Construct && it.Pos == m.Pos }) {
+			items = append(items, m)
+		}
+	}
+	return items
 }
 
 // blankImportsOutside reports each blank import (`import _ "pkg"`) of p whose
