@@ -11,7 +11,17 @@ to byte offsets.
 
 ## What is ported
 
-`Interpolation.lean` implements the same mini-syntax:
+`Interpolation.lean` implements the same API:
+
+| Go | Lean |
+| --- | --- |
+| `Split(content, formatSpecs)` | `split content formatSpecs` |
+| `Part.Offset`, `Part.Start`, `Part.End` | `byteOffset`, `start`, `endPos` |
+| `Part.PrintedByString` | `printedByString` |
+| `Position(content, offset, line, col)` | `position content offset line col` |
+| `EndOfEmbeddedExpr` | `endOfEmbeddedExpr` |
+
+and the same mini-syntax:
 
 | Input | Result |
 | --- | --- |
@@ -20,13 +30,19 @@ to byte offsets.
 | `$$` | literal `$` |
 | `\x` | literal escape pair (the `\` prevents syntax interpretation) |
 | `\"` inside `${...}` | unescaped to `"` |
-| `${x}%04d`, `$x%s` | optional Go printf spec on the expression part |
+| `${x}%04d`, `$x%s` | optional Go printf spec on the expression part — only with `formatSpecs = true`, i.e. for an `f"..."` body; in an `s"..."` body a `%` is literal text |
 | `${` / `${a` | unterminated expression: text to end of content |
 
 Identifiers are ASCII (`_`, `a-z`, `A-Z`) followed by `_`, letters, or digits;
 `$` followed by anything else is literal. All offsets are byte offsets into the
-content passed to `split`. The accepted printf flags, widths, precisions, and
-verb set match the Go implementation exactly.
+content passed to `split`, as are `start` and `endPos`; a format spec after an
+expression is not included in its span. The accepted printf flags, widths,
+precisions, and verb set match the Go implementation exactly.
+
+`printedByString` reports whether `fmt` prints an embedded expression as a
+`Println` operand (no spec, or `%v`/`%s` without `#`). `position` returns the
+line and rune column of a byte offset; it counts an invalid UTF-8 byte as one
+rune, as Go's `utf8.RuneCount` does.
 
 The port uses `ByteArray` throughout, not `String`, so non-UTF-8 bytes and
 offsets are handled exactly like the Go version. Recursive scanners carry fuel,
@@ -74,12 +90,22 @@ apply to it.
 The CLI reads the interpolation body from stdin in normal mode and prints:
 
 ```text
-L <byte-offset> <literal-text-hex>
-E <byte-offset> <format-spec-hex> <expression-text-hex>
+L <byte-offset> <start> <end> <literal-text-hex>
+E <byte-offset> <start> <end> <format-spec-hex> <expression-text-hex> <printed>
 ```
 
-`--batch` reads `c <hex>` lines and prints a `--` separator after each case;
-that is the format used by the differential harness.
+`--format` reads the body as an `f"..."` body (format specs are captured); the
+default is an `s"..."` body.
+
+`--batch` reads one case per line and prints a `--` separator after each:
+
+```text
+s <hex content>                    split content false
+f <hex content>                    split content true
+p <offset> <line> <col> <hex>      position content offset line col
+```
+
+That is the format used by the differential harness.
 
 ## Verify
 
@@ -88,17 +114,18 @@ that is the format used by the differential harness.
 ```
 
 This builds everything, runs the native curated tests, then differentially
-compares the Lean binary against the real Go `interpolation.Split` on
-curated cases, exhaustive short token sequences, every raw byte string up to
-length 5 over a syntax-heavy alphabet, random token sequences, and random raw
-bytes (including invalid UTF-8). The default run uses 20,000 random cases per
-family; set `FUZZ_CASES` and `FUZZ_SEED` to change that.
+compares the Lean binary against the real Go `interpolation.Split` and
+`interpolation.Position` on curated cases, exhaustive short token sequences,
+every raw byte string up to length 5 over a syntax-heavy alphabet, random token
+sequences, random raw bytes (including invalid UTF-8), and every position of
+those bytes. The default run uses 20,000 random cases per family; set
+`FUZZ_CASES` and `FUZZ_SEED` to change that.
 
 At the time of writing:
 
 ```text
 interpolation tests: ok
-differential: 167261 cases, 357788 part lines: MATCH
+differential: 378978 cases, 804601 part lines: MATCH
 build/interpolation: ELF 64-bit LSB pie executable, x86-64, ... dynamically linked ...
 ```
 

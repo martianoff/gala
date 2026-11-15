@@ -39,20 +39,38 @@ def decodeHexAux : List Char → ByteArray → Option ByteArray
 def decodeHex (s : String) : Option ByteArray :=
   decodeHexAux s.toList ByteArray.empty
 
-/-- One `L offset hex` or `E offset spec-hex text-hex` line. -/
+/-- One `L offset start end text-hex` or
+`E offset start end spec-hex text-hex printed` line. -/
 def renderPart (p : Part) : String :=
   if p.isLiteral then
-    s!"L {p.byteOffset} {hexBytes p.text}"
+    s!"L {p.byteOffset} {p.start} {p.endPos} {hexBytes p.text}"
   else
-    s!"E {p.byteOffset} {hexBytes p.formatSpec} {hexBytes p.text}"
+    let printed := if printedByString p then "1" else "0"
+    s!"E {p.byteOffset} {p.start} {p.endPos} {hexBytes p.formatSpec} {hexBytes p.text} {printed}"
 
 def renderParts (parts : Array Part) : String :=
   String.join (parts.toList.map (fun p => renderPart p ++ "\n"))
 
-/-- A batch line is `c <lowercase hex bytes>`; the empty content is `c `. -/
-def parseCaseLine (line : String) : Option ByteArray :=
-  match line.toList with
-  | 'c' :: ' ' :: rest => decodeHex (String.ofList rest)
+/-- A batch line is one of
+
+* `s <hex content>` — `split content false`
+* `f <hex content>` — `split content true`
+* `p <offset> <line> <col> <hex content>` — `position content offset line col`
+-/
+inductive Case where
+  | split (content : ByteArray) (formatSpecs : Bool)
+  | position (content : ByteArray) (offset line col : Nat)
+
+def parseCase (line : String) : Option Case :=
+  let fields := line.splitOn " "
+  match fields with
+  | ["s", h] => decodeHex h |>.map fun c => Case.split c false
+  | ["f", h] => decodeHex h |>.map fun c => Case.split c true
+  | ["p", o, l, c, h] =>
+    match o.toNat?, l.toNat?, c.toNat?, decodeHex h with
+    | some offset, some line, some col, some content =>
+      some (Case.position content offset line col)
+    | _, _, _, _ => none
   | _ => none
 
 def stripCR (s : String) : String :=
@@ -60,30 +78,39 @@ def stripCR (s : String) : String :=
   | '\r' :: rest => String.ofList rest.reverse
   | _ => s
 
+def renderCase (c : Case) : String :=
+  match c with
+  | .split content formatSpecs =>
+    renderParts (split content formatSpecs) ++ "--\n"
+  | .position content offset line col =>
+    let (l, c) := position content offset line col
+    s!"P {l} {c}\n--\n"
+
 def main (args : List String) : IO UInt32 := do
   let batch := args.any (fun a => a == "--batch")
   let input ← readAll (← IO.getStdin)
+  let text ←
+    match String.fromUTF8? input with
+    | some s => pure s
+    | none => do
+      IO.eprintln "interpolation: batch input is not valid UTF-8"
+      IO.Process.exit 1
   if batch then
-    let text ←
-      match String.fromUTF8? input with
-      | some s => pure s
-      | none => do
-        IO.eprintln "interpolation: batch input is not valid UTF-8"
-        IO.Process.exit 1
     let mut out := ""
     for rawLine in text.splitOn "\n" do
       let line := stripCR rawLine
       if line.isEmpty || line.startsWith "#" then
         pure ()
       else
-        match parseCaseLine line with
+        match parseCase line with
         | none => do
           IO.eprintln s!"interpolation: malformed case line: {line}"
           IO.Process.exit 1
-        | some content =>
-          out := out ++ renderParts (split content) ++ "--\n"
+        | some c =>
+          out := out ++ renderCase c
     IO.print out
     return 0
   else
-    IO.print (renderParts (split input))
+    let formatSpecs := args.any (fun a => a == "--format")
+    IO.print (renderParts (split input formatSpecs))
     return 0

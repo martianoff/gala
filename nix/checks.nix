@@ -5,17 +5,50 @@ eachSystem (
     gala-local = self.packages.${system}.gala-local;
 
     # The batch protocol is what `formal/interpolation/test.sh` uses to
-    # compare the port with the Go oracle: one `c <hex>` line in, one part per
-    # line and `--` out.
+    # compare the port with the Go oracle: one `s <hex>` / `f <hex>` /
+    # `p <offset> <line> <col> <hex>` case per line, one part (or position)
+    # per line and `--` out.
     gala-lean-interpolation =
       let
         interpolation = self.packages.${system}.gala-lean-interpolation;
       in
       pkgs.runCommand "gala-lean-interpolation-test" { } ''
-        printf 'c 6120246e616d652062\n' | ${interpolation}/bin/interpolation --batch > out
-        printf '%s\n' 'L 0 6120' 'E 3  6e616d65' 'L 7 2062' '--' > expected
+        printf 's 6120246e616d652062\nf 247825303464\np 9 3 7 68c3a96c6c6f20247bcf807d\n' \
+          | ${interpolation}/bin/interpolation --batch > out
+        printf '%s\n' \
+          'L 0 0 2 6120' \
+          'E 3 2 7  6e616d65 1' \
+          'L 7 7 9 2062' \
+          '--' \
+          'E 1 0 2 25303464 78 0' \
+          '--' \
+          'P 3 15' \
+          '--' > expected
         if [ "$(cat out)" != "$(cat expected)" ]; then
           echo "unexpected gala-lean-interpolation output:" >&2
+          cat out >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
+    # The batch protocol is what `formal/diagnostics/test.sh` uses to compare
+    # the port with the Go renderers: one `r|color|path|source|hint|errors`
+    # case in, the terminal rendering and the JSON envelope out, as hex.
+    gala-lean-diagnostics =
+      let
+        diagnostics = self.packages.${system}.gala-lean-diagnostics;
+      in
+      pkgs.runCommand "gala-lean-diagnostics-test" { } ''
+        printf '%s\n' \
+          'r|0|6e6f2d737563682d66696c652d376133662e67616c61|7061636b616765206d61696e0a||d:47414c412d4530303031:626164:646f20626574746572::1:0:0' \
+          | ${diagnostics}/bin/diagnostics --batch > out
+        printf '%s\n' \
+          'R 6572726f725b47414c412d45303030315d3a206261640a20202d2d3e206e6f2d737563682d66696c652d376133662e67616c613a313a310a20207c0a31207c207061636b616765206d61696e0a20207c205e5e5e5e5e5e5e20646f206265747465720a20207c0a20203d2068696e743a20646f20626574746572' \
+          'J 7b0a202022646961676e6f7374696373223a205b0a202020207b0a202020202020227365766572697479223a20226572726f72222c0a20202020202022636f6465223a202247414c412d4530303031222c0a202020202020226d657373616765223a2022626164222c0a2020202020202268696e74223a2022646f20626574746572222c0a202020202020226c696e65223a20312c0a20202020202022636f6c756d6e223a20312c0a20202020202022646f637355726c223a202268747470733a2f2f67616c612e6679692f646f63732f6572726f72732f67616c612d65303030312f220a202020207d0a20205d0a7d' \
+          '--' > expected
+        if [ "$(cat out)" != "$(cat expected)" ]; then
+          echo "unexpected gala-lean-diagnostics output:" >&2
           cat out >&2
           exit 1
         fi

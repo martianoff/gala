@@ -1,11 +1,18 @@
 // Command go_ref is the differential oracle for the Lean interpolation port.
 //
-// In its default mode it reads `c <hex>` lines, calls the real Go
-// `internal/interpolation.Split`, and prints the same stable text format the
-// Lean binary prints:
+// In its default mode it reads case lines, calls the real Go
+// `internal/interpolation`, and prints the same stable text format the Lean
+// binary prints:
 //
-//	L <offset> <text-hex>
-//	E <offset> <format-spec-hex> <text-hex>
+//	s <hex>                       Split(content, false), an s"..." body
+//	f <hex>                       Split(content, true), an f"..." body
+//	p <off> <line> <col> <hex>    Position(content, off, line, col)
+//
+// Each case prints its parts (or position) and then `--`:
+//
+//	L <offset> <start> <end> <text-hex>
+//	E <offset> <start> <end> <spec-hex> <text-hex> <printed>
+//	P <line> <column>
 //	--
 //
 // With -gen N it emits deterministic curated, exhaustive, and fuzz cases;
@@ -20,6 +27,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 
 	"martianoff/gala/internal/interpolation"
@@ -78,37 +86,55 @@ var fuzzTokens = []string{
 	"a", "_x", "x1", "1", " ", `"`, "é", "π", "\n", "\t", "xy", "%#x", "%.2f",
 }
 
-func emitCase(w *bufio.Writer, b []byte) {
-	w.WriteString("c ")
-	w.WriteString(hex.EncodeToString(b))
-	w.WriteByte('\n')
+func emitSplit(w *bufio.Writer, b []byte, formatSpecs bool) {
+	kind := "s"
+	if formatSpecs {
+		kind = "f"
+	}
+	fmt.Fprintf(w, "%s %s\n", kind, hex.EncodeToString(b))
+}
+
+func emitPos(w *bufio.Writer, b []byte, off, line, col int) {
+	fmt.Fprintf(w, "p %d %d %d %s\n", off, line, col, hex.EncodeToString(b))
 }
 
 func generateExhaustive(w *bufio.Writer) {
 	alphabet := []byte(`${}\"%a0d_`)
-	var walk func(prefix []byte, depth int)
-	walk = func(prefix []byte, depth int) {
-		emitCase(w, prefix)
-		if depth == 0 {
+	var walk func(prefix []byte, depth, max int)
+	walk = func(prefix []byte, depth, max int) {
+		emitSplit(w, prefix, false)
+		emitSplit(w, prefix, true)
+		if depth <= 3 {
+			for off := 0; off <= len(prefix); off++ {
+				emitPos(w, prefix, off, 3, 7)
+			}
+		}
+		if depth == max {
 			return
 		}
 		for _, b := range alphabet {
-			walk(append(prefix, b), depth-1)
+			walk(append(prefix, b), depth+1, max)
 		}
 	}
-	walk(nil, 5)
+	walk(nil, 0, 5)
 }
 
 func generate(w *bufio.Writer, n int, seed int64) {
 	for _, s := range curated {
-		emitCase(w, []byte(s))
+		b := []byte(s)
+		emitSplit(w, b, false)
+		emitSplit(w, b, true)
+		emitPos(w, b, 0, 3, 7)
+		emitPos(w, b, len(b)/2, 3, 7)
+		emitPos(w, b, len(b), 1, 0)
 	}
 
 	// Exhaustive token sequences of length 0..4.
 	alphabet := []string{"$", "{", "}", `\`, `"`, "%", "a", "0", "d", " ", "é"}
 	var walk func(prefix string, depth int)
 	walk = func(prefix string, depth int) {
-		emitCase(w, []byte(prefix))
+		emitSplit(w, []byte(prefix), false)
+		emitSplit(w, []byte(prefix), true)
 		if depth == 0 {
 			return
 		}
@@ -128,7 +154,10 @@ func generate(w *bufio.Writer, n int, seed int64) {
 		for j := 0; j < tokens; j++ {
 			sb.WriteString(fuzzTokens[rng.Intn(len(fuzzTokens))])
 		}
-		emitCase(w, []byte(sb.String()))
+		b := []byte(sb.String())
+		emitSplit(w, b, false)
+		emitSplit(w, b, true)
+		emitPos(w, b, rng.Intn(max(1, len(b)+1)), 1+rng.Intn(4), rng.Intn(8))
 	}
 
 	// Raw-byte fuzz, including bytes that are not valid UTF-8.
@@ -139,8 +168,14 @@ func generate(w *bufio.Writer, n int, seed int64) {
 		for j := range b {
 			b[j] = rawAlphabet[rng.Intn(len(rawAlphabet))]
 		}
-		emitCase(w, b)
+		emitSplit(w, b, false)
+		emitSplit(w, b, true)
+		emitPos(w, b, rng.Intn(length+1), 1+rng.Intn(4), rng.Intn(8))
 	}
+}
+
+func decodeHex(s string) ([]byte, error) {
+	return hex.DecodeString(s)
 }
 
 func main() {
@@ -172,24 +207,50 @@ func main() {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !strings.HasPrefix(line, "c ") {
+		fields := strings.Split(line, " ")
+		switch fields[0] {
+		case "s", "f":
+			if len(fields) != 2 {
+				fmt.Fprintf(os.Stderr, "go_ref: malformed case line: %q\n", line)
+				os.Exit(1)
+			}
+			raw, err := decodeHex(fields[1])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "go_ref: bad hex: %v\n", err)
+				os.Exit(1)
+			}
+			for _, p := range interpolation.Split(string(raw), fields[0] == "f") {
+				printed := "0"
+				if p.PrintedByString() {
+					printed = "1"
+				}
+				if p.IsLiteral {
+					fmt.Fprintf(out, "L %d %d %d %s\n", p.Offset, p.Start, p.End,
+						hex.EncodeToString([]byte(p.Text)))
+				} else {
+					fmt.Fprintf(out, "E %d %d %d %s %s %s\n", p.Offset, p.Start, p.End,
+						hex.EncodeToString([]byte(p.FormatSpec)),
+						hex.EncodeToString([]byte(p.Text)), printed)
+				}
+			}
+		case "p":
+			if len(fields) != 5 {
+				fmt.Fprintf(os.Stderr, "go_ref: malformed case line: %q\n", line)
+				os.Exit(1)
+			}
+			off, err1 := strconv.Atoi(fields[1])
+			lineNo, err2 := strconv.Atoi(fields[2])
+			col, err3 := strconv.Atoi(fields[3])
+			raw, err4 := decodeHex(fields[4])
+			if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+				fmt.Fprintf(os.Stderr, "go_ref: malformed position case: %q\n", line)
+				os.Exit(1)
+			}
+			l, c := interpolation.Position(string(raw), off, lineNo, col)
+			fmt.Fprintf(out, "P %d %d\n", l, c)
+		default:
 			fmt.Fprintf(os.Stderr, "go_ref: malformed case line: %q\n", line)
 			os.Exit(1)
-		}
-		raw, err := hex.DecodeString(line[2:])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "go_ref: bad hex: %v\n", err)
-			os.Exit(1)
-		}
-		parts := interpolation.Split(string(raw))
-		for _, p := range parts {
-			if p.IsLiteral {
-				fmt.Fprintf(out, "L %d %s\n", p.Offset, hex.EncodeToString([]byte(p.Text)))
-			} else {
-				fmt.Fprintf(out, "E %d %s %s\n", p.Offset,
-					hex.EncodeToString([]byte(p.FormatSpec)),
-					hex.EncodeToString([]byte(p.Text)))
-			}
 		}
 		fmt.Fprintln(out, "--")
 	}
