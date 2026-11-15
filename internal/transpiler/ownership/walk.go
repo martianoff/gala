@@ -21,6 +21,9 @@ type binding struct {
 	line    int
 	col     int
 	reasons []Reason
+	// depth is len(w.overrides) where b was bound: a scope override below it
+	// is the body b is declared in (see overridden).
+	depth int
 }
 
 // escapes reports whether b has a reason that lets it escape.
@@ -147,8 +150,10 @@ type walker struct {
 	types map[string]transpiler.Type
 	// overrides, when not empty, says every use of a pointer binding, of
 	// any form, is an escape for the top reason: inside a closure, or an
-	// argument of a callee without a summary.
-	overrides []Reason
+	// argument of a callee without a summary. A lambda's or partial
+	// function's own override does not apply to the bindings it declares
+	// (see overridden).
+	overrides []override
 	// closures counts the closures being walked: a `return` there is not
 	// the function's.
 	closures int
@@ -273,7 +278,7 @@ func (w *walker) typed(name string) transpiler.Type {
 func (w *walker) newBinding(name string, role Role, index int, pointee transpiler.Type, fresh bool, at native.GalaNodeRef, nullable bool) *binding {
 	tok := at.Start()
 	b := &binding{name: name, role: role, index: index, pointee: pointee, fresh: fresh,
-		file: w.d.file.path, line: int(tok.Line), col: int(tok.Column) + 1}
+		file: w.d.file.path, line: int(tok.Line), col: int(tok.Column) + 1, depth: len(w.overrides)}
 	if nullable {
 		w.reason(b, Nullable, "", at)
 	}
@@ -303,18 +308,38 @@ func (w *walker) reason(b *binding, k ReasonKind, detail string, at native.GalaN
 	b.reasons = append(b.reasons, r)
 }
 
-// overridden records the active override against b, if there is one.
+// override is one entry of walker.overrides. scope marks the body of a
+// lambda or partial function: a binding it declares lives in that body,
+// whose result is walked as an escape, so the body's override is not about
+// that binding.
+type override struct {
+	Reason
+	scope bool
+}
+
+// overridden records the active override against b, if one applies to it:
+// any override, except a scope pushed before b was bound (binding.depth).
+// A pointer bound inside a lambda is not captured by that lambda.
 func (w *walker) overridden(b *binding, at native.GalaNodeRef) bool {
-	if len(w.overrides) == 0 {
+	n := len(w.overrides)
+	if n == 0 {
 		return false
 	}
-	o := w.overrides[len(w.overrides)-1]
+	o := w.overrides[n-1]
+	if o.scope && n <= b.depth {
+		return false
+	}
 	w.reason(b, o.Kind, o.Detail, at)
 	return true
 }
 
 func (w *walker) push(k ReasonKind, detail string) {
-	w.overrides = append(w.overrides, Reason{Kind: k, Detail: detail})
+	w.overrides = append(w.overrides, override{Reason: Reason{Kind: k, Detail: detail}})
+}
+
+// pushScope pushes the override of a lambda's or partial function's body.
+func (w *walker) pushScope(detail string) {
+	w.overrides = append(w.overrides, override{Reason: Reason{Kind: Captured, Detail: detail}, scope: true})
 }
 func (w *walker) pop() { w.overrides = w.overrides[:len(w.overrides)-1] }
 
@@ -427,7 +452,7 @@ func (w *walker) statement(s native.StatementNode, u use) {
 	case d.UseDeclaration().Ok():
 		w.expr(d.UseDeclaration().Expression().GalaNodeRef, valueUse(Captured, "bound by use"))
 	case d.FunctionDeclaration().Ok():
-		w.closure("a local function", func() { w.generic(d.FunctionDeclaration().GalaNodeRef) })
+		w.closure("a local function", false, func() { w.generic(d.FunctionDeclaration().GalaNodeRef) })
 	case d.TypeDeclaration().Ok(), d.ImportDeclaration().Ok():
 	case d.IfStatement().Ok():
 		w.ifStatement(d.IfStatement())
@@ -585,7 +610,7 @@ func (w *walker) origin(vals []native.ExpressionNode, res chainResult, typ nativ
 // always fresh.
 func (w *walker) ret(e native.GalaNodeRef) {
 	if w.closures > 0 {
-		w.expr(e, valueUse(Other, "returned from a closure"))
+		w.expr(e, closureResult)
 		return
 	}
 	w.expr(e, use{kind: useReturn})
@@ -1293,24 +1318,36 @@ func (a *pkg) byName(t transpiler.Type) bool {
 	return false
 }
 
-// lambda walks a lambda: every use of a pointer binding inside is a capture.
+// closureResult is the use of a lambda's or partial function's result: it
+// leaves the body, so a pointer declared there escapes through it.
+var closureResult = valueUse(Returned, "returned from a closure")
+
+// lambda walks a lambda: every use inside of a pointer binding declared
+// outside it is a capture.
 func (w *walker) lambda(l native.LambdaExpressionNode) {
-	w.closure("a lambda", func() {
+	w.closure("a lambda", true, func() {
 		for _, p := range l.Parameters().ParameterList().AllParameter() {
 			if def := p.ParamDefault(); def.Ok() {
 				w.expr(def.Expression().GalaNodeRef, use{kind: useDiscard})
 			}
 		}
 		if l.Block().Ok() {
-			w.block(l.Block(), use{kind: useDiscard})
+			w.block(l.Block(), closureResult)
 		} else if l.Expression().Ok() {
-			w.expr(l.Expression().GalaNodeRef, use{kind: useDiscard})
+			w.expr(l.Expression().GalaNodeRef, closureResult)
 		}
 	})
 }
 
-func (w *walker) closure(what string, body func()) {
-	w.push(Captured, what)
+// closure walks a closure's body: every use of a pointer binding there is a
+// capture. With scope (a lambda or a partial function, whose results are
+// walked as closureResult), a binding the body itself declares is exempt.
+func (w *walker) closure(what string, scope bool, body func()) {
+	if scope {
+		w.pushScope(what)
+	} else {
+		w.push(Captured, what)
+	}
 	w.closures++
 	body()
 	w.closures--
@@ -1337,9 +1374,9 @@ func (w *walker) primaryExpr(p native.PrimaryExprNode, u use) {
 	case p.LambdaExpression().Ok():
 		w.lambda(p.LambdaExpression())
 	case p.PartialFunctionLiteral().Ok():
-		w.closure("a partial function", func() {
+		w.closure("a partial function", true, func() {
 			for _, c := range p.PartialFunctionLiteral().AllCaseClause() {
-				w.caseClause(c, use{kind: useDiscard})
+				w.caseClause(c, closureResult)
 			}
 		})
 	case p.IfExpression().Ok():
