@@ -86,7 +86,8 @@ file ([Building a mixed project](/docs/go-interop/#part-4-building-a-mixed-proje
 `//go:embed` variable stayed empty at run time, and a file constrained to
 Linux built and ran on Windows too. Nothing in the build said why.
 
-**Scope.** Only a `//` line comment is a directive, as in Go: `//go:` with no
-space and a name after it, or `// +build`. A comment that mentions a directive
-(`// use embed val, not //go:embed`), `// go:` with a space, and a block
-comment are ordinary comments.
+**Scope.** As in Go, only a `//` line comment that starts its line is a
+directive: `//go:` with no space and a name after it, or `// +build`. A
+comment that mentions a directive (`// use embed val, not //go:embed`),
+`// go:` with a space, a comment after code on its line, and a block comment
+are ordinary comments.

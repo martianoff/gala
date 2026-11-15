@@ -358,9 +358,15 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	// corresponding declared return, so `n, err := strconv.Atoi(s)` types `n`
 	// as int.
 	callReturns := t.multiValueTypes(callValue)
-	if _, isCall := callValue.(*ast.CallExpr); !isCall && (len(idsCtx) != 2 || callReturns == nil) {
-		return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf(
-			"assignment mismatch: %d names but the right-hand side is a single value", len(idsCtx)))
+	if _, isCall := callValue.(*ast.CallExpr); !isCall {
+		if callReturns == nil {
+			return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf(
+				"assignment mismatch: %d names but the right-hand side is a single value", len(idsCtx)))
+		}
+		if len(idsCtx) != len(callReturns) {
+			return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf(
+				"assignment mismatch: %d names but a map index or channel receive gives at most %d values", len(idsCtx), len(callReturns)))
+		}
 	}
 	// The callee's return count is known only for a resolved Go signature; a
 	// GALA callee reports none, and the mismatch surfaces later.

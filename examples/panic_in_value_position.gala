@@ -41,4 +41,13 @@ func main() {
     Println(Try(() => apply((x int) => go_builtins.Panic(s"lambda $x"), 2)))
     val typed func(int) int = (x) => go_builtins.Panic(s"typed $x")
     Println(Try(() => typed(1)))
+    // A return in a lambda whose result type is inferred from its body.
+    val next = (n int) => Some(n).Map((x) => {
+        if (x < 0) {
+            return go_builtins.Panic(s"inferred $x")
+        }
+        x + 1
+    })
+    Println(next(1))
+    Println(Try(() => next(-1)))
 }

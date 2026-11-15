@@ -1719,7 +1719,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// A result-less literal evaluates the body for its side effects: `return
 	// body` is invalid Go when the literal declares no results (and when the
 	// body itself yields no value). Only a call may stand alone as a statement.
-	bodyStmt := t.returnOrDiverge(body)
+	var bodyStmt ast.Stmt
 	if resultField == nil {
 		if _, isCall := body.(*ast.CallExpr); isCall {
 			// Same contract as the explicit void lambda: silently dropping an
@@ -1729,6 +1729,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 			}
 			bodyStmt = &ast.ExprStmt{X: body}
 		}
+	}
+	if bodyStmt == nil {
+		bodyStmt = t.returnOrDiverge(body)
 	}
 
 	funcLit := &ast.FuncLit{

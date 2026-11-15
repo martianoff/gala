@@ -54,10 +54,16 @@ func TestGoDirectiveIsCoded(t *testing.T) {
 		},
 		{
 			name:  "a directive inside a function body",
-			input: "package main\n\nfunc main() {\n    x := 1 //go:noinline\n    Println(x)\n}\n",
-			line:  4,
-			col:   11,
+			input: "package main\n\nfunc main() {\n    x := 1\n    //go:noinline\n    Println(x)\n}\n",
+			line:  5,
+			col:   4,
 			hint:  "GALA has no form of `//go:noinline`",
+		},
+		{
+			name:  "embed separated by a tab",
+			input: "package main\n\n//go:embed\tdata.txt\nvar data string\n",
+			line:  3,
+			hint:  "`embed val data = \"data.txt\"`",
 		},
 	}
 	for _, tc := range cases {
@@ -76,9 +82,11 @@ func TestGoDirectiveIsCoded(t *testing.T) {
 
 // TestGoDirectiveLookalikesAreComments pins what is not a directive: prose
 // that mentions one, `// go:` with a space (Go reads only `//go:` as a
-// directive), a block comment, and a `//go:` inside a string.
+// directive), a block comment, a `//go:` inside a string, and one trailing
+// code on its line, which Go does not read as a directive either.
 func TestGoDirectiveLookalikesAreComments(t *testing.T) {
 	for _, input := range []string{
+		"package main\n\nfunc main() {\n    x := 1 //go:noinline\n    Println(x)\n}\n",
 		"package main\n\n// Use embed val, not //go:embed.\nfunc A() int = 1\n",
 		"package main\n\n// go:embed is Go's directive.\nfunc A() int = 1\n",
 		"package main\n\n/*\n//go:embed hello.txt\n+build linux\n*/\nfunc A() int = 1\n",

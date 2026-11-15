@@ -76,7 +76,7 @@ func TestCommaOkBindingMismatch(t *testing.T) {
 		{
 			name: "a map index binds at most two names",
 			body: `a, b, c := m["a"]`,
-			want: "assignment mismatch: 3 names but the right-hand side is a single value",
+			want: "assignment mismatch: 3 names but a map index or channel receive gives at most 2 values",
 		},
 		{
 			name: "an array index is one value",

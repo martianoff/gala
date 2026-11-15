@@ -18,7 +18,8 @@ import (
 // it only as a declaration's doc, and a directive is never doc (see
 // isPragmaBody) — so it used to be dropped without a word: a `//go:embed`
 // variable stayed empty, and a file constrained to one platform built on
-// every one. A block comment is no directive to Go, and is not one here.
+// every one. As in Go, only a comment that starts its line is a directive:
+// one trailing code, and a block comment, are ordinary comments.
 func goDirectives(ts *native.GalaTokens) []*galaerr.SemanticError {
 	var out []*galaerr.SemanticError
 	for h := range ts.Hidden {
@@ -27,6 +28,9 @@ func goDirectives(ts *native.GalaTokens) []*galaerr.SemanticError {
 			continue
 		}
 		tk := ts.Hidden[h]
+		if prev := int(tk.Next) - 1; prev >= 0 && int(ts.Tokens[prev].Line)+strings.Count(ts.Text(prev), "\n") == int(tk.Line) {
+			continue // trails code on its line
+		}
 		line := "//" + strings.TrimRight(body, " \t\r\n")
 		out = append(out, galaerr.NewCodedSemanticError(
 			galaerr.CodeGoDirective, int(tk.Line), int(tk.Column),
@@ -65,7 +69,10 @@ func declaredName(ts *native.GalaTokens, i int) string {
 // GALA form where there is one (`embed val`), and a Go file of the package
 // otherwise.
 func goDirectiveHint(directive, varName string) string {
-	name, args, _ := strings.Cut(directive, " ")
+	name, args := directive, ""
+	if i := strings.IndexAny(directive, " \t"); i >= 0 {
+		name, args = directive[:i], directive[i:]
+	}
 	switch name {
 	case "go:embed":
 		patterns := embedPatterns(args)
@@ -89,7 +96,8 @@ func embedPatterns(args string) []string {
 	var out []string
 	for rest := strings.TrimSpace(args); rest != ""; rest = strings.TrimSpace(rest) {
 		pattern := rest
-		if quoted, err := strconv.QuotedPrefix(rest); err == nil {
+		// A rune literal ('a') is no quoting Go's embed accepts.
+		if quoted, err := strconv.QuotedPrefix(rest); err == nil && rest[0] != '\'' {
 			pattern, _ = strconv.Unquote(quoted)
 			rest = rest[len(quoted):]
 		} else if i := strings.IndexAny(rest, " \t"); i >= 0 {
