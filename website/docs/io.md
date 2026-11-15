@@ -138,7 +138,6 @@ IO shines when composing multi-step programs where each step may have side effec
 
 ```gala
 import "martianoff/gala/io"
-import "errors"
 
 func fetchData() int = 42
 func process(n int) int = n * 2
