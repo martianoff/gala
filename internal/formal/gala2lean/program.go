@@ -128,6 +128,7 @@ func newGen() *gen {
 		unprintable:   map[string]bool{},
 		inDefault:     map[string]bool{},
 		refsInDefault: map[string]bool{},
+		uses:          map[string]map[string]bool{},
 	}
 }
 
@@ -295,13 +296,11 @@ func (g *gen) write(s string) {
 func (g *gen) emitProgram(opts Options) {
 	ok := true
 	var typeDecls, fnTypeDecls string
-	if g.guard("", g.typeOrder) {
-		var typesOK bool
+	typesOK := g.guard("", g.typeOrder)
+	if typesOK {
 		typeDecls, fnTypeDecls, typesOK = g.typeDecls()
-		ok = typesOK && ok
-	} else {
-		ok = false
 	}
+	ok = typesOK && ok
 	// The package-level variables' types and initialization order.
 	var initOrder []*globalVar
 	ok = g.guard("", func() {

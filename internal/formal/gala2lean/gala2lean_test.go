@@ -112,7 +112,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"printing a type with its own String", "package main\nstruct C(N int)\nfunc (c C) String() string = \"c\"\nfunc main() { Println(C(1)) }\n", "custom-string"},
 		{"printing a type with its own Error", "package main\nstruct E(Msg string)\nfunc (e E) Error() string = \"x\"\nfunc main() { Println(E(\"a\")) }\n", "custom-string"},
 		{"printing a type with a String the translation does not see", "package main\nstruct C(N int)\nfunc (c Ptr[C]) String() string = \"c\"\nfunc main() { Println(C(1)) }\n", "custom-string"},
-		{"go builtin","package main\nfunc main() { println(1) }\n", "call-of-println"},
+		{"go builtin", "package main\nfunc main() { println(1) }\n", "call-of-println"},
 		{"return in an expression", "package main\nfunc f(n int) int { val x = if (n > 0) { return 1 } else 2\n x }\nfunc main() { Println(f(1)) }\n", "return-inside-expression"},
 		{"no main", "package main\nfunc f() int = 1\n", "no-main"},
 		{"nil function", "package main\nfunc main() { var f func() int\n Println(1) }\n", "nil"},

@@ -163,23 +163,23 @@ func mergePackages(p *coreexport.Program, deps []Package) (*coreexport.Program, 
 // sorted by import path, then repeatedly the first package of that list
 // whose imports are all initialized. Go forbids import cycles.
 func depOrder(p *coreexport.Program, byPath map[string]*Package) ([]string, error) {
-	reached := map[string]bool{}
+	imports := map[string][]string{} // each reached package's imports
 	var reach func(paths []string)
 	reach = func(paths []string) {
 		for _, path := range paths {
-			if !reached[path] {
-				reached[path] = true
-				reach(importsOf(byPath[path].Program, byPath))
+			if _, ok := imports[path]; !ok {
+				imports[path] = importsOf(byPath[path].Program, byPath)
+				reach(imports[path])
 			}
 		}
 	}
 	reach(importsOf(p, byPath))
-	pending := slices.Sorted(maps.Keys(reached))
+	pending := slices.Sorted(maps.Keys(imports))
 	done := map[string]bool{}
 	var order []string
 	for len(pending) > 0 {
 		i := slices.IndexFunc(pending, func(path string) bool {
-			for _, imp := range importsOf(byPath[path].Program, byPath) {
+			for _, imp := range imports[path] {
 				if !done[imp] {
 					return false
 				}
@@ -690,20 +690,14 @@ func (r *reacher) mark(n coreexport.Node) {
 	})
 }
 
-// run reaches everything the queue leads to, calling visit on each
-// declaration as it is reached; it stops when visit returns false.
-func (r *reacher) run(visit func(d coreexport.Node) bool) {
+// run reaches everything the queue leads to, and returns every declaration
+// reached.
+func (r *reacher) run() map[coreexport.Node]bool {
+	reached := map[coreexport.Node]bool{}
 	for len(r.queue) > 0 {
 		it := r.queue[0]
 		r.queue = r.queue[1:]
-		if !visit(it.d) {
-			return
-		}
-		if it.full {
-			r.mark(it.d)
-			continue
-		}
-		// Only a type: its fields' types, and its cases.
+		reached[it.d] = true
 		var fields []coreexport.Node
 		switch d := it.d.(type) {
 		case *coreexport.Struct:
@@ -718,9 +712,14 @@ func (r *reacher) run(visit func(d coreexport.Node) bool) {
 			r.mark(it.d)
 			continue
 		}
-		for _, fn := range fields {
-			if f, ok := fn.(*coreexport.Field); ok {
-				r.mark(f.Type)
+		if it.full {
+			r.mark(it.d)
+		} else {
+			// Only a type: its fields' types, not their defaults.
+			for _, fn := range fields {
+				if f, ok := fn.(*coreexport.Field); ok {
+					r.mark(f.Type)
+				}
 			}
 		}
 		// The methods that decide how the type prints or compares.
@@ -732,6 +731,7 @@ func (r *reacher) run(visit func(d coreexport.Node) bool) {
 			}
 		}
 	}
+	return reached
 }
 
 // prune is the declarations of deps that the program's declarations reach
@@ -753,8 +753,7 @@ func prune(program, deps []*coreexport.File) []*coreexport.File {
 			}
 		}
 	}
-	keep := map[coreexport.Node]bool{}
-	r.run(func(d coreexport.Node) bool { keep[d] = true; return true })
+	keep := r.run()
 	var out []*coreexport.File
 	for _, f := range deps {
 		c := *f
@@ -782,11 +781,8 @@ func declNames(d coreexport.Node) []string {
 	case *coreexport.Func:
 		if d.Receiver != nil {
 			names := []string{"." + d.Name}
-			switch d.Name {
-			case "String", "Error", "Format", "GoString", "Equal":
-				if t := receiverTypeName(d); t != "" {
-					names = append(names, t)
-				}
+			if t := receiverTypeName(d); t != "" && customMethods[d.Name] != "" {
+				names = append(names, t)
 			}
 			return names
 		}
@@ -809,9 +805,6 @@ func declNames(d coreexport.Node) []string {
 func (g *gen) use(key string) {
 	if g.cur == "" {
 		return
-	}
-	if g.uses == nil {
-		g.uses = map[string]map[string]bool{}
 	}
 	if g.uses[g.cur] == nil {
 		g.uses[g.cur] = map[string]bool{}

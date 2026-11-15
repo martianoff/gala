@@ -107,12 +107,19 @@ func (g *gen) addMethod(f *coreexport.Func) {
 // "Printing"; GoString for %#v) or compare (Equal, docs/GALA.MD,
 // "Equality").
 func (g *gen) markCustom(t, m string) {
-	switch m {
-	case "String", "Error", "Format", "GoString":
+	switch customMethods[m] {
+	case "print":
 		g.customString[t] = true
-	case "Equal":
+	case "compare":
 		g.customEqual[t] = true
 	}
+}
+
+// customMethods are the method names that decide how a type's values print
+// or compare (markCustom).
+var customMethods = map[string]string{
+	"String": "print", "Error": "print", "Format": "print", "GoString": "print",
+	"Equal": "compare",
 }
 
 // receiverTypeName is the type whose values a method's receiver holds: T
