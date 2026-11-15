@@ -10,6 +10,8 @@
 #     interpolation splitter, as a native executable (a development tool).
 #   * packages.<system>.gala-lean-diagnostics    - the Lean 4 port of galaerr's
 #     terminal and JSON diagnostics renderers, as a native executable.
+#   * packages.<system>.gala-lean-manifest       - the Lean 4 port of the
+#     gala.mod reader and writer, as a native executable.
 #     Ported pieces are named gala-lean-<component>; bare gala-lean is
 #     reserved for the complete Lean implementation.
 #   * overlays.default                   - adds pkgs.gala to nixpkgs
@@ -44,6 +46,7 @@
           gala-local = pkgs.callPackage ./nix/gala.nix { useLocalBootstrap = true; };
           gala-lean-interpolation = pkgs.callPackage ./nix/lean-interpolation.nix { };
           gala-lean-diagnostics = pkgs.callPackage ./nix/lean-diagnostics.nix { };
+          gala-lean-manifest = pkgs.callPackage ./nix/lean-manifest.nix { };
           gala-stdlib = self.packages.${system}.gala.passthru.localTranspiled;
           default = self.packages.${system}.gala;
         }

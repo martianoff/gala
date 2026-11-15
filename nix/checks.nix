@@ -55,6 +55,42 @@ eachSystem (
         touch "$out"
       '';
 
+    # The batch protocol is what `formal/manifest/test.sh` uses to compare the
+    # port with the Go parser and formatter: one `c|content|operations` case
+    # in, a `P` dump, the operations' results, the formatted manifest as hex,
+    # and `--` out. A parse error is `E <hex of the Go error>` and `--`.
+    gala-lean-manifest =
+      let
+        manifest = self.packages.${system}.gala-lean-manifest;
+      in
+      pkgs.runCommand "gala-lean-manifest-test" { } ''
+        printf '%s\n' \
+          'c|6d6f64756c65206d0a726571756972650a' \
+          'c|6d6f64756c65206d0a0a67616c6120312e300a0a7265717569726520280a09612076310a0962207632202f2f20696e6469726563740a290a|a:63:7633:1|g:61|d:62|direct|format' \
+          | ${manifest}/bin/manifest --batch > out
+        printf '%s\n' \
+          'E 67616c612e6d6f643a323a2072657175697265206e65656473207061746820616e642076657273696f6e' \
+          '--' \
+          'P' \
+          'module 6d' \
+          'gala 312e30' \
+          'require 61 7631 0 0' \
+          'require 63 7633 1 0' \
+          'O' \
+          'get 1 7631 0 0' \
+          'remove 1' \
+          'direct 1 61' \
+          'format 6d6f64756c65206d0a0a67616c6120312e300a0a7265717569726520280a09612076310a0963207633202f2f20696e6469726563740a290a' \
+          'F 6d6f64756c65206d0a0a67616c6120312e300a0a7265717569726520280a09612076310a0963207633202f2f20696e6469726563740a290a' \
+          '--' > expected
+        if ! cmp -s out expected; then
+          echo "unexpected gala-lean-manifest output:" >&2
+          diff -u expected out >&2 || true
+          exit 1
+        fi
+        touch "$out"
+      '';
+
     # End-to-end smoke test: scaffold a project, build it with the
     # embedded stdlib, and run it. Works offline (GOPROXY=off).
     smoke =
