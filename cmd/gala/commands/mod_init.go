@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +13,6 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 
-	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
 )
 
@@ -169,7 +169,9 @@ func goRequirementsOf(goMod *modfile.File) (reqs []mod.Require, skipped []string
 		switch {
 		case replaced(path, ver):
 			skipped = append(skipped, fmt.Sprintf("%s %s (go.mod replaces it; gala build does not apply replace directives to Go dependencies)", path, ver))
-		case build.IsStdlibImport(path):
+		// The prefix the build workspace's go.mod generator leaves out of
+		// Go requirements, since it requires the stdlib itself.
+		case strings.HasPrefix(path, "martianoff/gala/"):
 			skipped = append(skipped, fmt.Sprintf("%s %s (part of the GALA standard library, which gala build provides)", path, ver))
 		default:
 			reqs = append(reqs, mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true})
@@ -259,12 +261,16 @@ func ensureGalaGitignored(path string) (added bool, err error) {
 		return false, err
 	}
 	content := string(data)
-	for _, l := range strings.Split(content, "\n") {
-		if strings.Trim(strings.TrimSpace(l), "/") == ".gala" {
-			return false, nil
+	ignored, known := gitIgnores(filepath.Dir(path), galaCacheDirIgnore)
+	if !known {
+		for _, l := range strings.Split(content, "\n") {
+			if strings.Trim(strings.TrimSpace(l), "/") == ".gala" {
+				ignored = true
+				break
+			}
 		}
 	}
-	if gitIgnores(filepath.Dir(path), galaCacheDirIgnore) {
+	if ignored {
 		return false, nil
 	}
 	eol := "\n"
@@ -278,31 +284,68 @@ func ensureGalaGitignored(path string) (added bool, err error) {
 	return true, os.WriteFile(path, []byte(content), 0644)
 }
 
-// gitIgnores reports whether a .gitignore file of the work tree around dir
-// ignores rel: one in dir or a parent directory. A rule only this user has (in
+// gitIgnores asks Git whether a .gitignore file of the work tree around dir
+// (in dir or a parent directory) ignores rel. A rule only this user has (in
 // core.excludesFile or .git/info/exclude) does not count, since the
-// repository's other users do not share it. Outside a work tree, or without
-// git on PATH, it reports false.
-func gitIgnores(dir, rel string) bool {
-	cmd := exec.Command("git", "check-ignore", "-v", rel)
+// repository's other users do not share it. known is false outside a work
+// tree or without git on PATH; the caller then reads .gitignore itself.
+func gitIgnores(dir, rel string) (ignored, known bool) {
+	// -n lists the rule that decides rel, ignoring or not.
+	cmd := exec.Command("git", "check-ignore", "-v", "-n", rel)
 	cmd.Dir = dir
 	out, err := cmd.Output()
-	return err == nil && sharedIgnoreRule(string(out))
+	// Exit status 1 means "not ignored", which -n still describes; anything
+	// else but success means git could not answer.
+	var exit *exec.ExitError
+	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
+		return false, false
+	}
+	return sharedIgnoreRule(string(out)), true
 }
 
-// sharedIgnoreRule reports whether a `git check-ignore -v` line,
+// sharedIgnoreRule reports whether a `git check-ignore -v -n` line,
 // "<source>:<line>:<pattern>\t<path>", names an ignoring (not negated) rule
-// of a .gitignore file of the work tree, which git names by a relative path.
+// of a .gitignore file of the work tree, which git names by a path relative
+// to the work tree. A source with unusual characters is C-quoted; no rule at
+// all reads "::\t<path>".
 func sharedIgnoreRule(line string) bool {
 	match, _, _ := strings.Cut(strings.TrimSpace(line), "\t")
-	end := strings.Index(match, ".gitignore:")
-	if end < 0 {
-		return false
+	var source, rest string
+	if strings.HasPrefix(match, `"`) {
+		end := closingQuote(match)
+		if end < 0 {
+			return false
+		}
+		unquoted, err := strconv.Unquote(match[:end+1])
+		if err != nil {
+			return false
+		}
+		source, rest = unquoted, strings.TrimPrefix(match[end+1:], ":")
+	} else {
+		// The source may hold a colon (C:/...), so it ends at the first
+		// ".gitignore:"; any other source is not a .gitignore file.
+		end := strings.Index(match, ".gitignore:")
+		if end < 0 {
+			return false
+		}
+		source, rest = match[:end+len(".gitignore")], match[end+len(".gitignore:"):]
 	}
-	source := match[:end+len(".gitignore")]
-	rest := match[end+len(".gitignore:"):]
 	_, pattern, _ := strings.Cut(rest, ":")
 	absolute := filepath.IsAbs(source) || strings.HasPrefix(source, "/") ||
 		(len(source) > 1 && source[1] == ':') // a Windows drive, on any OS
 	return filepath.Base(source) == ".gitignore" && !absolute && !strings.HasPrefix(pattern, "!")
+}
+
+// closingQuote returns the index of the quote that closes the C-quoted string
+// s starts with, or -1.
+func closingQuote(s string) int {
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '"':
+			return i
+		}
+	}
+	return -1
 }

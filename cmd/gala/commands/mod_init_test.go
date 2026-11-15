@@ -160,22 +160,28 @@ func stringPtr(s string) *string { return &s }
 // Only a rule of the work tree's own .gitignore files counts: a personal one
 // (core.excludesFile, .git/info/exclude) is not shared with other users.
 func TestSharedIgnoreRule(t *testing.T) {
+	rule := func(source, pattern string) string {
+		return source + ":1:" + pattern + "\t.gala/\n"
+	}
 	tests := []struct {
-		line string
+		out  string
 		want bool
 	}{
-		{".gitignore:3:.gala/\t.gala/\n", true},
-		{"../../.gitignore:1:.gala/\t.gala/\n", true},
-		{"services/.gitignore:7:**/.gala/\t.gala/\n", true},
-		{".git/info/exclude:2:.gala/\t.gala/\n", false},
-		{"C:/Users/me/.gitignore:1:.gala/\t.gala/\n", false},
-		{"/home/me/.gitignore:1:.gala/\t.gala/\n", false},
-		{"/home/me/.config/git/ignore:1:.gala/\t.gala/\n", false},
-		{".gitignore:4:!.gala/\t.gala/\n", false},
+		{rule(".gitignore", ".gala/"), true},
+		{rule("../../.gitignore", ".gala/"), true},
+		{rule("services/.gitignore", "**/.gala/"), true},
+		{rule(`"d\303\251j\303\240/.gitignore"`, ".gala"), true},
+		{rule(`"/home/d\303\251j\303\240/.gitignore"`, ".gala"), false},
+		{rule(".git/info/exclude", ".gala/"), false},
+		{rule("C:/Users/me/.gitignore", ".gala/"), false},
+		{rule("/home/me/.gitignore", ".gala/"), false},
+		{rule("/home/me/.config/git/ignore", ".gala/"), false},
+		{rule(".gitignore", "!.gala/"), false},
+		{"::\t.gala/\n", false}, // -n: no rule matches
 		{"", false},
 	}
 	for _, tt := range tests {
-		assert.Equal(t, tt.want, sharedIgnoreRule(tt.line), "%q", tt.line)
+		assert.Equal(t, tt.want, sharedIgnoreRule(tt.out), "%q", tt.out)
 	}
 }
 
@@ -195,4 +201,21 @@ func TestEnsureGalaGitignoredRespectsGitRules(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, added)
 	assert.NoFileExists(t, filepath.Join(sub, ".gitignore"))
+
+	// A later negation re-includes .gala/, so the line is added after all.
+	negated := ".gala/\n!.gala/\n"
+	require.NoError(t, os.WriteFile(filepath.Join(sub, ".gitignore"), []byte(negated), 0644))
+	added, err = ensureGalaGitignored(filepath.Join(sub, ".gitignore"))
+	require.NoError(t, err)
+	assert.True(t, added)
+
+	// A rule only this clone has, in .git/info/exclude, is not shared.
+	other := t.TempDir()
+	require.NoError(t, exec.Command("git", "init", "-q", other).Run())
+	require.NoError(t, os.MkdirAll(filepath.Join(other, ".git", "info"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(other, ".git", "info", "exclude"), []byte(".gala/\n"), 0644))
+	added, err = ensureGalaGitignored(filepath.Join(other, ".gitignore"))
+	require.NoError(t, err)
+	assert.True(t, added)
+	assert.FileExists(t, filepath.Join(other, ".gitignore"))
 }
