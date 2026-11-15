@@ -49,7 +49,6 @@ go_test(
         "cache_dir_test.go",
         "cache_rebuild_test.go",
         "cachekey_test.go",
-        "concrete_versions_test.go",
         "config_test.go",
         "contention_perf_test.go",
         "default_lexical_scope_test.go",

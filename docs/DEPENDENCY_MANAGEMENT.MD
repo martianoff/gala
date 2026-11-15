@@ -335,11 +335,10 @@ the forms that follow a tag, `vX.Y.(Z+1)-0.<time>-<hash>` and
 GALA modules alike. A pseudo-version whose time does not match its commit is
 rejected, as Go rejects it.
 
-**gala.mod records concrete versions.** `latest`, `^1.2.0` and the other
-queries are for `gala mod add`, which resolves them and writes the version
-they resolved to. A `require` line in `gala.mod` names a tag or a
-pseudo-version; `gala build` stops on one that names a query and tells you to
-run `gala mod add <path>@latest`.
+**Pin the resolved version.** `gala mod add` resolves a query such as
+`latest` and writes the version it resolved to (a tag or a pseudo-version)
+into `gala.mod`. Keep that pinned version in `gala.mod` so every build uses
+the same one.
 
 ### gala mod remove
 
@@ -846,8 +845,8 @@ GALA supports several version constraint syntaxes:
 | `>=1.2.3` | Minimum | At least v1.2.3 |
 | `latest` | Latest stable | Most recent tagged version; for a module with no tag, the pseudo-version of its latest commit |
 
-These are what `gala mod add` accepts. `gala.mod` itself always records the
-concrete version a query resolved to (see [gala mod add](#gala-mod-add)).
+`gala mod add` records the version a query resolved to (see
+[gala mod add](#gala-mod-add)).
 
 **Minimal Version Selection (MVS):**
 

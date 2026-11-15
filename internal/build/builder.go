@@ -90,9 +90,6 @@ func NewBuilderForMode(projectDir string, stdlibVersion string, verbose bool, mo
 		if err != nil {
 			return nil, fmt.Errorf("parsing gala.mod: %w", err)
 		}
-		if err := checkConcreteVersions(galaMod); err != nil {
-			return nil, err
-		}
 	} else {
 		// Create a minimal in-memory gala.mod for standalone files
 		galaMod = &mod.File{
@@ -108,35 +105,6 @@ func NewBuilderForMode(projectDir string, stdlibVersion string, verbose bool, mo
 		stdlibVersion: stdlibVersion,
 		verbose:       verbose,
 	}, nil
-}
-
-// checkConcreteVersions reports a requirement of galaMod whose version is a
-// query (latest, ^1.2.0, >=v1.0.0) rather than a version. gala.mod records the
-// version a query resolved to, so every build of the module uses the same one;
-// `gala mod add` resolves the query and records it.
-func checkConcreteVersions(galaMod *mod.File) error {
-	for _, req := range galaMod.Require {
-		if !isVersionQuery(req.Version) {
-			continue
-		}
-		goFlag := ""
-		if req.Go {
-			goFlag = " --go"
-		}
-		return fmt.Errorf("gala.mod: require %s %s: gala.mod needs a concrete version (a tag such as v1.2.3, or a pseudo-version), not the query %q; run `gala mod add %s@%s%s` to resolve it and record the version",
-			req.Path, req.Version, req.Version, req.Path, req.Version, goFlag)
-	}
-	return nil
-}
-
-// isVersionQuery reports whether v is a version query, as `go get` and `gala
-// mod add` accept, rather than a version.
-func isVersionQuery(v string) bool {
-	switch v {
-	case "latest", "upgrade", "patch":
-		return true
-	}
-	return v != "" && strings.ContainsRune("^~<>=", rune(v[0]))
 }
 
 // timedBuildPhaseValue runs fn under the given profile label and returns

@@ -82,7 +82,7 @@ or let the Go toolchain pick the latest version, as `go get` does:
 gala mod add github.com/spf13/cobra@latest --go
 ```
 
-`@latest` also works for a module with no tagged version: it resolves to the pseudo-version of the module's latest commit (`v0.0.0-20220603013715-3360bf22bea4`), and that is the version `gala.mod` records. `gala.mod` needs a concrete version, a tag or a pseudo-version, so write `latest` on the command line, not in `gala.mod`.
+`@latest` also works for a module with no tagged version: it resolves to the pseudo-version of the module's latest commit (`v0.0.0-20220603013715-3360bf22bea4`), and that is the version `gala.mod` records.
 
 For a package in a subdirectory of its module (`github.com/spf13/cobra/doc`), require the module (`github.com/spf13/cobra`). The modules a required Go module requires itself (cobra requires `github.com/spf13/pflag`) need no line of their own. Under Bazel, Go dependencies are the `deps` of the GALA target, and this check does not run.
 
