@@ -57,7 +57,7 @@ private def decodes (s : String) : Bool := (Json.parse s).toBool
 -- package, which prints nothing as it initializes, does not stop the run.
 private def withImport (path alias : String) : String :=
   let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
-  "{\"core\": 8, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
+  "{\"core\": 9, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
   "\"package\": \"main\", \"decls\": [" ++
   "{\"kind\": \"import\", " ++ pos ++ ", \"path\": \"" ++ path ++ "\", \"alias\": \"" ++ alias ++ "\"}, " ++
   "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"main\", \"receiver\": null, " ++
