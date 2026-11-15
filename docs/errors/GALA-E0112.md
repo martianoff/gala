@@ -68,3 +68,6 @@ func main() {
 distinct places, as Swift's law of exclusivity guarantees. With two paths to
 one place, a write through one is seen through the other, which neither the
 callee nor its translation to value semantics expects.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
+explains every `inout` rule with its fix.

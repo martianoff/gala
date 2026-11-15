@@ -86,4 +86,5 @@ hold.
 ## Related
 
 - [`inout` parameters](/docs/language-reference/#inout-parameters)
+- [Ownership guide](/docs/ownership/#the-rules-and-how-to-fix-each-error): every `inout` rule, with its fix
 - [All GALA error codes](/docs/errors/)

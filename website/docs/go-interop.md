@@ -396,6 +396,9 @@ the place's address is [GALA-E0113](/docs/errors/gala-e0113/); copy the place
 first (`var tmp = b`, call Go on `tmp`, then `b = tmp`). `strings.Builder`'s
 write methods are not on the list: they store the builder's own address.
 
+The [Ownership guide](/docs/ownership/#go-interop) walks through both
+directions with a tested example, and lists the whole allow-list.
+
 ### Methods of generic types that Go sees as functions
 
 Go compiles every method of a generic type once for each type argument, whether or not anything calls it. A method whose signature names *another* generic type would make every `Array[T]` compile a `List[T]`, an `Option[Array[T]]` and their methods too. GALA therefore generates such a method as a free function, which Go compiles only where it is called. GALA code calls it as a method, `arr.ToList()`. Go code calls the function:

@@ -63,3 +63,6 @@ func main() {
 call returns. Ruling out writes inside a region that catches panics keeps
 that true, and keeps the translation of the function to value semantics,
 which returns the new value with the result, faithful.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
+explains every `inout` rule with its fix.

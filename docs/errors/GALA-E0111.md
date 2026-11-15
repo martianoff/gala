@@ -70,3 +70,6 @@ To lend a value that is not a place, copy it into a `var` first:
 **Rationale.** `&` at the call site is Swift's rule for `inout`: a reader sees
 which arguments a call may change. It is also the Go that is generated: an
 `inout x T` is the Go parameter `x *T`.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
+explains every `inout` rule with its fix.

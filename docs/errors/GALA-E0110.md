@@ -174,3 +174,6 @@ compiled and the change silently vanished: the repro above printed `0`.
 
 **Related.** A value that must not be copied at all (a `sync.Mutex`, a
 `strings.Builder`) is [GALA-E0053](GALA-E0053.md) whatever the method does.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-related-check-for-ptr-receivers-e0110)
+puts this check beside the `inout` rules.

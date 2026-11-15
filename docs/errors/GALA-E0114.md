@@ -60,3 +60,6 @@ it only reads its receiver, and is [GALA-E0110](GALA-E0110.md) when it can
 change it. An `inout` receiver is a contract that the method borrows a
 place, so it is never called on a copy. A method that only reads its
 receiver needs no `inout`: give it a value receiver, `func (c T) m()`.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
+explains every `inout` rule with its fix.

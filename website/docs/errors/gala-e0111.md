@@ -88,4 +88,5 @@ which arguments a call may change. It is also the Go that is generated: an
 
 - [`inout` parameters](/docs/language-reference/#inout-parameters)
 - [GALA-E0114](/docs/errors/gala-e0114/): an `inout` method called on a value that is not a place
+- [Ownership guide](/docs/ownership/#the-rules-and-how-to-fix-each-error): every `inout` rule, with its fix
 - [All GALA error codes](/docs/errors/)

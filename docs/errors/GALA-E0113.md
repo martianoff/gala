@@ -69,3 +69,6 @@ declare its receiver `inout` instead.
 outlives the call would be a second path to the caller's value, so neither
 exclusivity nor the translation of the function to value semantics would
 hold.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
+explains every `inout` rule with its fix.

@@ -192,4 +192,5 @@ method does.
 ## Related
 
 - [Pointer-receiver methods on a `val`](/docs/language-reference/#pointer-receiver-methods-on-a-val)
+- [Ownership guide](/docs/ownership/#the-rules-and-how-to-fix-each-error): the related `inout` rules
 - [All GALA error codes](/docs/errors/)

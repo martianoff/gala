@@ -1922,7 +1922,9 @@ the call:
   leave the caller's place half updated. Work on a copy and assign the place
   once `Try` has succeeded.
 
-The design, with its rationale and prior art, is in
+The [Ownership guide](/docs/ownership/) covers the feature with runnable
+examples, each rule with its fix, Go interop, interfaces, and what hover and
+`gala doc` show. The design, with its rationale and prior art, is in
 [OWNERSHIP_DESIGN.MD](https://github.com/martianoff/gala/blob/master/docs/OWNERSHIP_DESIGN.MD).
 
 ## 13. GALA Packages {#13-gala-packages}

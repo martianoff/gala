@@ -84,3 +84,6 @@ receiver.
 no reference to it and nothing else reaches it meanwhile. A `Ptr`-receiver
 method or a Go method makes no such promise, so code calling the interface's
 `inout` method could not rely on it.
+
+**See also.** The [ownership guide](../OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
+explains every `inout` rule with its fix.

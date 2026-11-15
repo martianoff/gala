@@ -5291,7 +5291,9 @@ the call:
   leave the caller's place half updated. Work on a copy and assign the place
   once `Try` has succeeded.
 
-The design, with its rationale and prior art, is in
+[OWNERSHIP.MD](OWNERSHIP.MD) is the guide to the feature: runnable examples,
+each rule with its fix, Go interop, interfaces, and what hover and `gala doc`
+show. The design, with its rationale and prior art, is in
 [OWNERSHIP_DESIGN.MD](OWNERSHIP_DESIGN.MD).
 
 ### val vs var with Go Functions
@@ -6382,6 +6384,7 @@ import "github.com/google/uuid"
 - [Why GALA?](WHY_GALA.MD) - The feature-by-feature case for GALA, with side-by-side Go comparisons.
 - [Design and Tradeoffs](DESIGN.MD) - Why GALA is built the way it is, and what each decision costs.
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
+- [Ownership](OWNERSHIP.MD) - `inout` parameters: lending a place for one call, the rules the compiler checks, and Go interop.
 - [Dependency Injection](DEPENDENCY_INJECTION.MD) - Explicit wiring: interfaces as ports, constructor parameters, a composition root, and fakes built with interface literals.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
 - [Subprocess](SUBPROCESS.MD) - Spawn and drive external child processes with a goroutine-safe `Process` handle.
