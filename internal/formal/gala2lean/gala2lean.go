@@ -161,6 +161,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	p = ptrReceivers(p)
 	g := newGen()
 	g.depNS = depNS
+	g.ownPtrs = ownPtr(p)
 	g.library = opts.Library
 	g.ns = opts.Namespace
 	g.unsup = depUnsup

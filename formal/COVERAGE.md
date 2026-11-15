@@ -138,7 +138,9 @@ galaspec models them, except as listed below):
 - `Some`, `None`, `Left` and `Right`, as the prelude's `GOption` and `GEither`, with
   their patterns (their methods are method calls, not translated yet);
 - methods with a value receiver `(c T)`, a plain function `T.m` taking the receiver
-  first, and with a pointer receiver `(c *T)` or `(c Ptr[T])` (the same Go receiver), by state passing: `T.m` takes the value
+  first, and with a pointer receiver, `(c *T)` or `(c Ptr[T])` (the same Go receiver;
+  `Ptr[T]` only where the package cannot declare a `Ptr` of its own, which a type
+  declaration Core JSON does not name might be), by state passing: `T.m` takes the value
   and returns its result with the updated value, which the caller writes back to the
   `var` it called the method on, after the arguments are evaluated and the method
   returns (a method that panics writes nothing back; no output is lost, since a panic

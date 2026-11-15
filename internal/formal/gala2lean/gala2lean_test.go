@@ -115,7 +115,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a Ptr method on a val", "package main\nstruct C(var N int)\nfunc (c Ptr[C]) Inc() { c.N = c.N + 1 }\nfunc main() { val c = C(0)\n c.Inc()\n Println(c.N) }\n", "pointer-method-on-value"},
 		{"a Ptr method on a captured var", "package main\nstruct C(var N int)\nfunc (c Ptr[C]) Inc() { c.N = c.N + 1 }\nfunc main() { var c = C(0)\n val f = () => c.N\n c.Inc()\n Println(f()) }\n", "ptr-escape"},
 		{"a Ptr receiver passed on", "package main\nstruct C(var N int)\nfunc show(c C) int = c.N\nfunc (c Ptr[C]) Show() int = show(c)\nfunc main() { var c = C(0)\n Println(c.Show()) }\n", "ptr-escape"},
-		{"go builtin","package main\nfunc main() { println(1) }\n", "call-of-println"},
+		{"go builtin", "package main\nfunc main() { println(1) }\n", "call-of-println"},
 		{"return in an expression", "package main\nfunc f(n int) int { val x = if (n > 0) { return 1 } else 2\n x }\nfunc main() { Println(f(1)) }\n", "return-inside-expression"},
 		{"no main", "package main\nfunc f() int = 1\n", "no-main"},
 		{"nil function", "package main\nfunc main() { var f func() int\n Println(1) }\n", "nil"},
@@ -215,6 +215,30 @@ func main() {
 	p := export(t, "main.gala", src)
 	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
 	require.Equal(t, gala2lean.Stats{Funcs: 2, Methods: 1, Translated: 1}, gala2lean.CountTranslated(p, err), "%v", err)
+
+	// A case named Ptr is a Go type of that name too.
+	src = `package main
+
+sealed type Ref[T any] {
+    case Ptr(V T)
+    case Nil()
+}
+
+struct Counter(var N int)
+
+func (c Counter) Get() int = c.N
+
+func (c Ptr[Counter]) Get() int = 99
+
+func main() {
+    val c = Counter(1)
+    Println(c.Get())
+}
+`
+	p = export(t, "main.gala", src)
+	res, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Main: true})
+	require.NoError(t, err)
+	require.NotContains(t, res.Lean, "99", "Ptr[Counter] is the case's method, not Counter's")
 }
 
 // TestRecursion checks how functions are defined: one that calls itself, or
