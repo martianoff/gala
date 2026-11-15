@@ -1892,6 +1892,20 @@ func main() {
 			},
 		},
 		{
+			name: "import nothing in the file refers to",
+			code: galaerr.CodeUnusedImport, // GALA-E0120
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "strings"
+
+func main() {
+    Println("done")
+}
+`)
+			},
+		},
+		{
 			name: "Go function literal as a struct literal field",
 			code: galaerr.CodeGoFuncLiteral, // GALA-E0117
 			render: func(t *testing.T) string {

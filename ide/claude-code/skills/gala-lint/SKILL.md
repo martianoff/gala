@@ -140,6 +140,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | `GALA-E0117` | Go function literal as a value: `RunE: func(*cobra.Command, []string) error { ... }` | A lambda with the same body: `RunE: (_ *cobra.Command, _ []string) error => { ... }` |
 | `GALA-E0118` | `use` of a fallible acquire: `use f = os.Open(p)` (a `Try[*os.File]`) | `use f = os.Open(p).Get()` inside `Try(() => { ... })`, or `use` it in the `Success` arm of a `match` |
 | `GALA-E0119` | Go directive in a `.gala` file: `//go:embed hello.txt`, `//go:build linux` | `embed val content = "hello.txt"`; build constraints and other directives go in a `.go` file of the package |
+| `GALA-E0120` | An import nothing in the file refers to, often a leftover `import . "martianoff/gala/std"` | Remove it; to run only the package's initialization, `import _ "path"` |
 
 ### 1. Immutability (HIGH priority)
 

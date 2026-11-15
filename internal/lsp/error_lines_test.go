@@ -1371,3 +1371,35 @@ func main() {
 		}
 	}
 }
+
+// An unused import (GALA-E0120) is underlined on its import line, across the
+// whole spec: the name and the path.
+func TestErrorRange_UnusedImport(t *testing.T) {
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, `package main
+
+import (
+    "strings"
+    u "unicode"
+)
+
+func main() {
+    Println(strings.ToUpper("a"))
+}
+`)
+	diags := awaitDiagnostics(t, h, uri)
+	for _, d := range diags {
+		if d.Severity == nil || *d.Severity != lsp.SeverityError || !strings.Contains(d.Message, "GALA-E0120") {
+			continue
+		}
+		want := lsp.Range{
+			Start: lsp.Position{Line: 4, Character: 4},
+			End:   lsp.Position{Line: 4, Character: 15},
+		}
+		if d.Range != want {
+			t.Errorf("unused import range = %+v, want %+v (%s)", d.Range, want, d.Message)
+		}
+		return
+	}
+	t.Fatalf("no GALA-E0120 diagnostic among %+v", diags)
+}

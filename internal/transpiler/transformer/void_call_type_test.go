@@ -33,6 +33,8 @@ func each(f func(string)) {
 
 func mk() func() = () => log("mk")
 
+func upper(s string) string = strings.ToUpper(s)
+
 `
 
 // TestVoidCallIsTypedVoid pins that a call of a GALA function declared with no

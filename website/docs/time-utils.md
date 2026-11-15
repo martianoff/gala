@@ -15,6 +15,7 @@ The `time_utils` package provides immutable types for working with time in GALA.
 
 ## Import
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/time_utils"
 ```

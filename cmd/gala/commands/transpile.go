@@ -211,7 +211,7 @@ func runTranspile(cmd *cobra.Command, args []string) {
 	} else {
 		a = analyzer.NewGalaAnalyzer(p, paths)
 	}
-	tr := transformer.NewGalaASTTransformer()
+	tr := transformer.NewGalaASTTransformer(bazelSourceOptions(inputPath)...)
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
 

@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "time"
-    . "martianoff/gala/std"
     . "martianoff/gala/concurrent"
     . "martianoff/gala/collection_immutable"
 )

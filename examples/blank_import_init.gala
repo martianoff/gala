@@ -1,0 +1,11 @@
+package main
+
+// A blank import, `import _ "path"`, imports a package only to run its
+// initialization: plugin's package-level vals print as they are initialized,
+// before main runs, though nothing here names plugin. A plain import that
+// nothing refers to would be GALA-E0120.
+import _ "martianoff/gala/examples/blank_import_init/plugin"
+
+func main() {
+    Println("main: running")
+}

@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "commands",
     srcs = [
+        "bazel_source.go",
         "build.go",
         "buildfail.go",
         "cache.go",
@@ -77,6 +78,7 @@ go_library(
 go_test(
     name = "commands_test",
     srcs = [
+        "bazel_source_test.go",
         "doc_inout_test.go",
         "doc_nonescaping_test.go",
         "doc_opaque_test.go",

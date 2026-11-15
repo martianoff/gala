@@ -43,7 +43,6 @@ Every capture in this program is checked and accepted:
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/concurrent"
     . "martianoff/gala/collection_immutable"
 )
@@ -260,7 +259,6 @@ A closure's shareability cannot be decided from its *type*. A bare `func() T` sa
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/concurrent"
 )
 

@@ -29,8 +29,6 @@ func TestSealedTypeCompanionApplyDispatch(t *testing.T) {
 	// collide with positional struct construction.
 	input := `package main
 
-import . "martianoff/gala/std"
-
 sealed type Box[T any] {
     case box(value T)
 }

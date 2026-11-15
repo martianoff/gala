@@ -13,6 +13,7 @@ last_modified_at: 2026-10-03
 
 GALA's `json` package provides compile-time JSON serialization powered by `StructMeta[T]`. No reflection, no struct tags, fully typed. All operations return `Try[T]` — no unchecked errors. Combined with builder pattern configuration and pattern matching, you get a clean, composable JSON pipeline.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/json"
 ```

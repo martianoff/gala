@@ -25,9 +25,9 @@ import (
 //
 // Layout:
 //
-//	funconly/                  parent package — only `func helper(): Int = 42`
-//	funconly/util.gen.go       STALE — declares a phantom `Helper` symbol
-//	funconly/sub/              subpackage — re-exports `helper` cleanly
+//	funconly/                  parent package — only `func Helper(): Int = 42`
+//	funconly/util.gen.go       STALE — declares a phantom `PhantomHelper` symbol
+//	funconly/sub/              subpackage — re-exports `Helper` cleanly
 //	funconly/demo/             dot-imports both
 //
 // With B5: the stale .gen.go is excluded because the parent's GALA source
@@ -48,7 +48,7 @@ func TestPhantomReExportFromStaleGenGo_FuncOnlyPackage(t *testing.T) {
 	// pre-B5 heuristic.
 	err = os.WriteFile(filepath.Join(tempDir, "util.gala"), []byte(`package funconly
 
-func helper() Int = 42
+func Helper() Int = 42
 `), 0644)
 	assert.NoError(t, err)
 
@@ -78,7 +78,7 @@ func PhantomHelper() int {
 
 import . "github.com/example/funconly"
 
-func PhantomHelper() Int = helper() + 1
+func PhantomHelper() Int = Helper() + 1
 `), 0644)
 	assert.NoError(t, err)
 
@@ -95,7 +95,7 @@ import (
     . "github.com/example/funconly/sub"
 )
 
-func consume() Int = helper() + PhantomHelper()
+func consume() Int = Helper() + PhantomHelper()
 `), 0644)
 	assert.NoError(t, err)
 

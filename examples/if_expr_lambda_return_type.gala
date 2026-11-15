@@ -1,6 +1,5 @@
 package main
 
-import . "martianoff/gala/std"
 import . "martianoff/gala/collection_immutable"
 
 struct TickerState[T any](

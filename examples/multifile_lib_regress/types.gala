@@ -1,7 +1,5 @@
 package multifile_lib_regress
 
-import "time"
-
 // Second file in package to force multi-file batch transpilation.
 // Several bugs only manifest with --package-files.
 

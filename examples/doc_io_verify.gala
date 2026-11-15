@@ -3,7 +3,6 @@ package main
 import (
     "errors"
     "martianoff/gala/io"
-    . "martianoff/gala/std"
 )
 
 func fetchData() int = 42

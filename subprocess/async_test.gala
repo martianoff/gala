@@ -3,7 +3,6 @@ package main
 import (
     "runtime"
     . "martianoff/gala/test"
-    . "martianoff/gala/std"
     . "martianoff/gala/subprocess"
     . "martianoff/gala/time_utils"
     "martianoff/gala/go_interop"

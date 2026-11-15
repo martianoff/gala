@@ -26,6 +26,8 @@ struct Cfg(Name string, Tries int = 3, Loud bool = false)
 struct Opt(Name Option[string], Tries int = 3, Loud bool = false)
 
 func (o Opt) Apply(n int) int = n
+
+func seed() []string = SliceOf("a")
 `
 	cases := []struct {
 		name      string
@@ -48,7 +50,7 @@ func (o Opt) Apply(n int) int = n
 			name:      "a field given by position and by name",
 			body:      `func main() { Println(Cfg("a", Name = "b")) }`,
 			wantCode:  galaerr.CodeMissingStructField,
-			wantError: `main.gala:12:31 field "Name" of "Cfg" is given both by position and by name`,
+			wantError: `main.gala:14:31 field "Name" of "Cfg" is given both by position and by name`,
 		},
 		{
 			name:      "more arguments than fields",

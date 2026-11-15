@@ -3,7 +3,6 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
-    . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
 

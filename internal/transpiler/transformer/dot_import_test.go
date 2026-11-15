@@ -32,6 +32,8 @@ func test() int {
     val x = 42
     return x
 }
+
+func first() Option[int] = Some(1)
 `
 
 	got, err := trans.Transpile(input, "")
@@ -248,6 +250,8 @@ import (
 func test() int {
     return 42
 }
+
+func timeout() Option[Duration] = Some(Seconds(1))
 `
 
 	_, err := trans.Transpile(input, "")

@@ -1,6 +1,5 @@
 package main
 
-import . "martianoff/gala/std"
 import "martianoff/gala/examples/multipackage_subpkg/state"
 
 // Verifies that a project with one root package and one sub-directory package

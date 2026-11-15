@@ -256,13 +256,28 @@ def decodeField (j : Json) : D Field := do
   return { name := ← str j "name", type := ← optTy j "type", mutable := ← bool j "mutable",
            default := ← optExpr j "default" }
 
+/-- Go standard-library packages whose import does not stop a run. Assumption, not
+    modelled: a Go standard-library package prints nothing during initialization, so
+    running without its initializers prints what Go prints. Exact paths only: a GALA
+    module package's path always carries its module prefix, so none matches. Using a
+    name of such a package still stops the run when it is reached. -/
+def goStdImports : List String :=
+  ["bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+   "unicode", "unicode/utf8"]
+
 /-- A top-level declaration. -/
 def decodeTop (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
   -- An import and a generic declaration are outside the subset: their program is
   -- decoded as declaring one, as before Core JSON exported them (version 6).
   let kind ← kindOf j
-  if kind == "import" then return .unsupported "import"
+  -- An import runs its package's initializers, which galaspec does not model: `runM`
+  -- stops on it (`import`, or `blank-import` for `import _ "pkg"`), except for the Go
+  -- standard-library packages of `goStdImports` (`import-go-std`).
+  if kind == "import" then
+    if (← str j "alias") == "_" then return .unsupported "blank-import"
+    if goStdImports.contains (← str j "path") then return .unsupported "import-go-std"
+    return .unsupported "import"
   -- A method, generic or not, is outside the subset galaspec models, as before Core
   -- JSON exported receivers (version 5).
   if kind == "func" then

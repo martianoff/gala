@@ -31,6 +31,8 @@ sealed type Wrapped {
 type Even struct {}
 
 func (_ Even) Unapply(i int) bool = i % 2 == 0
+
+func show(v any) string = fmt.Sprint(v)
 `
 
 	cases := []struct {

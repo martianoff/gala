@@ -20,6 +20,7 @@ func TestAliasedGoImportTypeKeepsItsPackage(t *testing.T) {
 	cases := []struct {
 		name     string
 		imports  string
+		use      string // a main statement that uses the imports beside gostrings
 		contains []string
 		absent   []string
 	}{
@@ -36,6 +37,7 @@ func TestAliasedGoImportTypeKeepsItsPackage(t *testing.T) {
 			name: "aliased Go import beside the same-name GALA package",
 			imports: `gostrings "strings"
     "martianoff/gala/strings"`,
+			use: `Println(strings.TrimSpace(" x "))`,
 			contains: []string{
 				"func(b *gostrings.Builder) string {",
 				"func(b *gostrings.Builder) int {",
@@ -63,6 +65,7 @@ func main() {
     Println(length(text))
     val n = o.Map((b) => b.Len()).GetOrElse(0)
     Println(n + 1)
+    ` + tc.use + `
 }
 `
 			out, err := trans.Transpile(src, "aliased_go_import_types_test.gala")

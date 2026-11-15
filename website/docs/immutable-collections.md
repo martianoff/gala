@@ -68,6 +68,7 @@ The `collection_immutable` package provides persistent (immutable) data structur
 
 ### Import
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/collection_immutable"
 ```

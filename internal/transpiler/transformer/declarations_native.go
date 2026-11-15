@@ -267,7 +267,7 @@ func readImportDeclNative(n native.GalaNodeRef) []importSpecDecl {
 	var specs []importSpecDecl
 	for s := range galaparser.NativeKids(n, native.GalaKIND_importSpec) {
 		spec := native.ImportSpecNode{GalaNodeRef: s}
-		d := importSpecDecl{path: strings.Trim(spec.STRING().GetText(), "\"")}
+		d := importSpecDecl{path: strings.Trim(spec.STRING().GetText(), "\""), at: srcNode{node: s}}
 		switch {
 		case spec.Identifier().Ok():
 			d.kind, d.alias = importAliased, spec.Identifier().GetText()

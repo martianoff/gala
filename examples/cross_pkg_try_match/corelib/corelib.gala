@@ -1,7 +1,5 @@
 package corelib
 
-import . "martianoff/gala/std"
-
 // BridgeResponse is a simple response type (like httpcore.BridgeResponse in gala-server)
 struct BridgeResponse(Code int, Body string)
 

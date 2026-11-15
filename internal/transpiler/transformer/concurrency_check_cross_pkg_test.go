@@ -76,15 +76,16 @@ func NoCounters() MutBatch = MutBatch(ArrayOf[leaf.Counter]())
 // whether the capturing file imported the argument's package or not.
 func TestSendableCaptureCrossPackageTransitiveTypes(t *testing.T) {
 	root := sendableCrossPkgFixture(t)
-	const header = `package main
-
-import (
-    . "martianoff/gala/collection_immutable"
-    . "martianoff/gala/concurrent"
-    "example.com/sendx/mid"
-)
-
-`
+	// collection_immutable is imported only by a body that names one of its
+	// collections; the others reach its types only through mid's.
+	sendxSource := func(body string) string {
+		collections := ""
+		if collectionName.MatchString(body) {
+			collections = "    . \"martianoff/gala/collection_immutable\"\n"
+		}
+		return "package main\n\nimport (\n" + collections +
+			"    . \"martianoff/gala/concurrent\"\n    \"example.com/sendx/mid\"\n)\n\n" + body
+	}
 	allowed := []struct{ name, body string }{
 		{"sealed param with transitive field type", `func f(ts Array[mid.Node]) int = Future(() => ts.Size()).Get()
 
@@ -134,7 +135,7 @@ func main() { Println(f(Bare())) }`},
 	}
 	for _, tc := range allowed {
 		t.Run("allowed/"+tc.name, func(t *testing.T) {
-			_, err := transpileCrossPkg(t, root, header+tc.body)
+			_, err := transpileCrossPkg(t, root, sendxSource(tc.body))
 			require.NoError(t, err)
 		})
 	}
@@ -159,7 +160,7 @@ func main() { Println(f(Local(ArrayOf(mid.WrapCounter())))) }`},
 	}
 	for _, tc := range rejected {
 		t.Run("rejected/"+tc.name, func(t *testing.T) {
-			_, err := transpileCrossPkg(t, root, header+tc.body)
+			_, err := transpileCrossPkg(t, root, sendxSource(tc.body))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0037")
 			// Rejected for its mutable contents, not because its type went unknown.

@@ -51,6 +51,8 @@ func code(r Result[int]) int = r match {
     case Right(v) => v
     case Left(e) => -e.Code
 }
+
+val errBad = errors.New("bad")
 `
 
 func TestGenericAlias(t *testing.T) {

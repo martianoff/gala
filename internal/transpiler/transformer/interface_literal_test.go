@@ -44,6 +44,14 @@ type Box[T any] interface {
 struct MemRepo(name string)
 func (r MemRepo) Find(id int) Option[User] = Some(User(id, r.name))
 `
+	// importUses refers to the imports of decls, which not every case uses.
+	// It follows the case, so it moves no line a case asserts on.
+	const importUses = `
+
+func background() context.Context = context.Background()
+
+func show(v any) string = fmt.Sprint(v)
+`
 	cases := []struct {
 		name      string
 		body      string
@@ -179,7 +187,7 @@ func main() {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := transpileBareVariant(t, decls+tc.body)
+			out, err := transpileBareVariant(t, decls+tc.body+importUses)
 			if tc.wantError != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), string(galaerr.CodeInvalidInterfaceLiteral))

@@ -117,6 +117,7 @@ var accumulatedStateFields = []string{
 	"inoutConstraints",
 	"companionObjects",
 	"importManager",
+	"dependency",
 	"cachedTypeResolver",
 	"cachedTypeResolverRev",
 	"tempVarCount",

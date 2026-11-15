@@ -247,19 +247,25 @@ def intLit (n : Int) : M Val :=
   if minInt ≤ n ∧ n ≤ maxInt then pure (.int n)
   else unsup "int-constant-overflow" (toString n)
 
+/-- The kind a run reports for top-level declaration kind `k` outside S1: an import of a
+    listed Go standard-library package (`Json.goStdImports`) is reported as any other
+    import. -/
+def outsideKind (k : String) : String :=
+  if k == "import-go-std" then "import" else k
+
 /-- A name that resolves to nothing. With top-level declarations outside S1 (an
     `import`, a method), it most likely names one of them, and the run is unsupported
     for that reason; otherwise it is a builtin S1 does not model. -/
 def unresolved (ds : Decls) (x : String) : M α :=
   match ds.unsupported with
-  | k :: _ => unsup k s!"name {x}"
+  | k :: _ => unsup (outsideKind k) s!"name {x}"
   | [] => unsup "unresolved-name" x
 
 /-- Something S1 cannot give a meaning to: with top-level declarations outside S1, most
     likely one of them (a custom extractor needs a method), else a stuck program. -/
 def outsideS1 (ds : Decls) (detail : String) : M α :=
   match ds.unsupported with
-  | k :: _ => unsup k detail
+  | k :: _ => unsup (outsideKind k) detail
   | [] => stuck detail
 
 /-- Read field `f` of a value. A sealed value's field that its active case lacks reads as
@@ -272,7 +278,7 @@ def getField (ds : Decls) (v : Val) (f : String) : M Val :=
       | some x => pure x
       | none => stuck "struct value with missing fields"
     | none => match ds.unsupported with
-      | k :: _ => unsup k s!"member {f}"
+      | k :: _ => unsup (outsideKind k) s!"member {f}"
       | [] => unsup "method-value" f
   | .sealed ty c fs =>
     match (ds.caseFields ty c).findIdx? (·.name == f) with
@@ -869,6 +875,11 @@ def collect (p : Program) : Decls × List GlobalDecl :=
 /-- Run a program: initialize its package-level variables, then call `main`. -/
 def runM (p : Program) (fuel : Nat) : M Unit := do
   let (ds, gs) := collect p
+  -- An import runs its package's initializers before this program's, whether or not
+  -- the run reaches a name of it, and galaspec does not model them: running without
+  -- them could print the wrong output. A blank import is told apart (`blank-import`).
+  if let some k := ds.unsupported.find? (fun k => k == "import" || k == "blank-import") then
+    unsup k
   initGlobals ds fuel gs
   match ds.funcs.lookup "main" with
   | some f => discard (callFunc ds fuel f [])

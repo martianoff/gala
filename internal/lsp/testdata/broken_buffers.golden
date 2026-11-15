@@ -2,7 +2,7 @@
 collection_immutable/array.gala: half-typed declaration	6ba126d319d03678	458bf27c02fadc6e
 collection_immutable/array.gala: member being typed	af52844628c5f161	7aa4472eab07dde3
 collection_immutable/array.gala: truncated	05e6fe89e3ce4ff5	50a9b45b49cd333a
-collection_immutable/array.gala: unclosed call	81ac77d51324b7dd	9a67af8f0aecd084
+collection_immutable/array.gala: unclosed call	81ac77d51324b7dd	48a86ca4286b9f4a
 collection_immutable/list.gala: half-typed declaration	d3b30c2162ee94a0	ccf680eb11982a7f
 collection_immutable/list.gala: member being typed	056979fe44783c8c	945086e20d7a6061
 collection_immutable/list.gala: truncated	c19b0e50ea3bbfaa	73f0c006769af7ac

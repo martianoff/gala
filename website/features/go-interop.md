@@ -21,6 +21,7 @@ This page covers calling Go from GALA, then [the other direction](#calling-gala-
 
 Standard Go imports work directly in GALA:
 
+<!-- doc-check: fragment -->
 ```gala
 import "strings"
 import "fmt"
@@ -30,6 +31,7 @@ import "encoding/json"
 
 Grouped imports are supported:
 
+<!-- doc-check: fragment -->
 ```gala
 import (
     "strings"
@@ -40,6 +42,7 @@ import (
 
 Aliased and dot imports work too:
 
+<!-- doc-check: fragment -->
 ```gala
 import mystrings "strings"
 import . "martianoff/gala/std"

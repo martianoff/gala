@@ -1,7 +1,6 @@
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/json"
 )
 

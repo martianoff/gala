@@ -31,6 +31,8 @@ struct Temp(C int)
 func (t Temp) Unapply(n int) Option[int] = Some(n)
 
 func (e Even) Unapply(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None[int]()
+
+func noInts() Array[int] = EmptyArray[int]()
 `
 	cases := []struct {
 		name    string

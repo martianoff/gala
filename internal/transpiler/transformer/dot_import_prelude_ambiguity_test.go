@@ -29,6 +29,8 @@ func NoSuchElementError(msg string) string = "E:" + msg
 func Ordered(n int) int = n * 10
 
 func Hashable[T any](x T) T = x
+
+func Greet() string = "hi"
 `,
 		"consts/consts.gala": "package consts\n\nval Ordered = 3\n",
 	})
@@ -79,7 +81,7 @@ func Hashable[T any](x T) T = x
 		{
 			name: "std qualifier alone compiles",
 			src: "import (\n    \"martianoff/gala/std\"\n    . \"martianoff/gala/util\"\n)\n\n" +
-				"func main() {\n    Println(std.NoSuchElementError(\"x\").Error())\n}",
+				"func main() {\n    Println(std.NoSuchElementError(\"x\").Error(), Greet())\n}",
 			want: []string{"std.NoSuchElementError"},
 		},
 		{

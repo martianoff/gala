@@ -12,6 +12,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // ImportManager provides a unified API for import tracking.
@@ -38,6 +39,9 @@ type ImportManager struct {
 	// explicitly declared in the source file, e.g., when a lambda parameter type
 	// references a package from a dependency's method signature)
 	transitiveImports map[string]string // path -> alias
+
+	// dotExports memoizes dotImportExports per import path.
+	dotExports map[string]map[string]bool
 
 	// foreign holds the qualifiers of the file a default being lowered was
 	// declared in (see WithForeignQualifiers); nil otherwise.
@@ -618,15 +622,14 @@ func (m *ImportManager) GetTransitiveImports() map[string]string {
 	return m.transitiveImports
 }
 
-// PruneUnused walks the AST file and removes any import that is not referenced by
-// a SelectorExpr (qualified reference), a used dot import, or a blank import.
-// Dot imports are only kept if their package was marked as used via MarkDotImportUsed
-// or if the AST contains identifiers matching the package's exported symbols.
+// ReferencedImports is the import specs of the generated file that its code
+// refers to: through a qualified reference (`name.X`) for a named import, and
+// for a dot import when its package was marked used (MarkDotImportUsed) or the
+// file names one of the package's exports. A blank import is always included.
 //
-// It rewrites the generated file only. The manager keeps every entry it was
-// given, including the ones just dropped from the output, so pruning leaves
-// Revision — and anything cached against it — untouched.
-func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST) {
+// It reads the generated Go, which is what decides whether Go needs the
+// import; whether the source uses it is checkUnusedImports' question.
+func (m *ImportManager) ReferencedImports(file *ast.File, richAST *transpiler.RichAST) map[*ast.ImportSpec]bool {
 	usedPkgs := make(map[string]bool)
 	ast.Inspect(file, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
@@ -639,105 +642,163 @@ func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST)
 		return true
 	})
 
+	referenced := make(map[*ast.ImportSpec]bool)
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok || genDecl.Tok != token.IMPORT {
 			continue
 		}
-		var kept []ast.Spec
 		for _, spec := range genDecl.Specs {
 			importSpec, ok := spec.(*ast.ImportSpec)
 			if !ok {
-				kept = append(kept, spec)
 				continue
 			}
-			if importSpec.Name != nil && importSpec.Name.Name == "_" {
-				kept = append(kept, spec)
-				continue
-			}
-			if importSpec.Name != nil && importSpec.Name.Name == "." {
-				// Only keep dot imports that are actually used. Every package,
-				// std included, is judged the same way: Go rejects an unused
-				// dot import like any other.
-				path := strings.Trim(importSpec.Path.Value, "\"")
-				pkgName := ""
-				if entry, ok := m.GetByPath(path); ok && entry != nil {
-					pkgName = entry.PkgName
-				}
-				if pkgName == "" {
-					parts := strings.Split(path, "/")
-					pkgName = parts[len(parts)-1]
-				}
-				if m.usedDotImports[pkgName] || m.dotImportUsedInAST(file, path, pkgName, richAST) {
-					kept = append(kept, spec)
-				}
-				continue
-			}
-			// Determine the local name used in code for this import
-			localName := ""
-			if importSpec.Name != nil {
-				localName = importSpec.Name.Name
-			} else {
-				path := strings.Trim(importSpec.Path.Value, "\"")
-				// Check ImportManager for the actual package name (may differ from path)
-				if entry, ok := m.GetByPath(path); ok && entry != nil {
-					localName = entry.PkgName
-				}
-				if richAST != nil {
-					if key := richAST.PackageKeys[path]; key != "" {
-						localName = transpiler.PackageKeyName(key, path) // a key names the metadata, not the import
-					}
-				}
-				if localName == "" {
-					parts := strings.Split(path, "/")
-					localName = parts[len(parts)-1]
-				}
-			}
-			if usedPkgs[localName] {
-				kept = append(kept, spec)
+			if m.specReferenced(file, importSpec, usedPkgs, richAST) {
+				referenced[importSpec] = true
 			}
 		}
-		genDecl.Specs = kept
 	}
+	return referenced
+}
 
+// specReferenced reports whether the generated file refers to the package of
+// importSpec (see ReferencedImports); usedPkgs is the set of qualifiers its
+// selectors use.
+func (m *ImportManager) specReferenced(file *ast.File, importSpec *ast.ImportSpec, usedPkgs map[string]bool, richAST *transpiler.RichAST) bool {
+	path := strings.Trim(importSpec.Path.Value, "\"")
+	if importSpec.Name != nil && importSpec.Name.Name == "_" {
+		return true
+	}
+	if importSpec.Name != nil && importSpec.Name.Name == "." {
+		// Every package, std included, is judged the same way: Go rejects an
+		// unused dot import like any other.
+		pkgName := ""
+		if entry, ok := m.GetByPath(path); ok && entry != nil {
+			pkgName = entry.PkgName
+		}
+		if pkgName == "" {
+			pkgName = transpiler.LastPathSegment(path)
+		}
+		if m.usedDotImports[pkgName] {
+			return true
+		}
+		exports := m.dotImportExports(path, pkgName, richAST)
+		return exports == nil || referencesAny(file, exports)
+	}
+	// The local name the generated code uses for this import.
+	if importSpec.Name != nil {
+		return usedPkgs[importSpec.Name.Name]
+	}
+	localName := ""
+	// Check ImportManager for the actual package name (may differ from path)
+	if entry, ok := m.GetByPath(path); ok && entry != nil {
+		localName = entry.PkgName
+	}
+	if richAST != nil {
+		if key := richAST.PackageKeys[path]; key != "" {
+			localName = transpiler.PackageKeyName(key, path) // a key names the metadata, not the import
+		}
+	}
+	if localName == "" {
+		localName = transpiler.LastPathSegment(path)
+	}
+	return usedPkgs[localName]
+}
+
+// PruneUnused settles every import of file that is not in referenced (see
+// ReferencedImports): one in written, an import the source writes, becomes a
+// blank import, so the package is still initialized as the source asks;
+// any other is removed, and so is every import declaration left empty.
+//
+// It rewrites the generated file only. The manager keeps every entry it was
+// given, including the ones just dropped from the output, so pruning leaves
+// Revision — and anything cached against it — untouched.
+func PruneUnused(file *ast.File, referenced, written map[*ast.ImportSpec]bool) {
 	var keptDecls []ast.Decl
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
-		if ok && genDecl.Tok == token.IMPORT && len(genDecl.Specs) == 0 {
+		if !ok || genDecl.Tok != token.IMPORT {
+			keptDecls = append(keptDecls, decl)
 			continue
 		}
-		keptDecls = append(keptDecls, decl)
+		genDecl.Specs = slices.DeleteFunc(genDecl.Specs, func(spec ast.Spec) bool {
+			importSpec, ok := spec.(*ast.ImportSpec)
+			if !ok || referenced[importSpec] {
+				return false
+			}
+			if written[importSpec] {
+				importSpec.Name = ast.NewIdent("_")
+				return false
+			}
+			return true
+		})
+		if len(genDecl.Specs) > 0 {
+			keptDecls = append(keptDecls, decl)
+		}
 	}
 	file.Decls = keptDecls
 }
 
-// dotImportUsedInAST checks if the generated AST contains unqualified identifiers
-// matching exported symbols from the given dot-imported package. This catches
-// function calls and other references not tracked by MarkDotImportUsed.
-//
-// Only identifiers in a referring position count: the selected name of a
-// qualified reference (`fmt.Println`), a struct field or a declared name is not
-// a reference to the dot-imported package, even when it is spelled like one of
-// its exports.
-func (m *ImportManager) dotImportUsedInAST(file *ast.File, path, pkgName string, richAST *transpiler.RichAST) bool {
-	if richAST == nil {
-		return true // be conservative if no metadata available
+// dotImportExports is readDotImportExports, read once per path.
+func (m *ImportManager) dotImportExports(path, pkgName string, richAST *transpiler.RichAST) map[string]bool {
+	if exports, ok := m.dotExports[path]; ok {
+		return exports
 	}
-	// Collect known exports from this package
+	if m.dotExports == nil {
+		m.dotExports = make(map[string]map[string]bool)
+	}
+	exports := readDotImportExports(path, pkgName, richAST)
+	m.dotExports[path] = exports
+	return exports
+}
+
+// NamesOf is every name entry is bound to in source.
+func (m *ImportManager) NamesOf(entry *ImportEntry) []string {
+	names := []string{entry.Alias}
+	for name, e := range m.byAlias {
+		if e == entry {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// readDotImportExports is the exported package-level names of the package at
+// path (named pkgName) that a dot import of it makes bare names: its types,
+// functions, companions and vals, from GALA metadata, and a Go package's
+// declarations, from its type info. It is nil when they are unknown — no
+// metadata, or none for the package — and a caller then counts the import
+// used.
+func readDotImportExports(path, pkgName string, richAST *transpiler.RichAST) map[string]bool {
+	if richAST == nil {
+		return nil
+	}
+	// Metadata names a keyed package (transpiler.PackageKey) by its key; its
+	// plain name then belongs to another package of that name.
+	ofPkg := func(pkg string) bool { return pkg == pkgName }
+	if key := richAST.PackageKeys[path]; key != "" {
+		ofPkg = func(pkg string) bool { return pkg == key }
+	}
 	exports := make(map[string]bool)
 	for _, meta := range richAST.Types {
-		if meta.Package == pkgName {
+		if ofPkg(meta.Package) {
 			exports[meta.Name] = true
 		}
 	}
 	for _, meta := range richAST.Functions {
-		if meta.Package == pkgName {
+		if ofPkg(meta.Package) {
 			exports[meta.Name] = true
 		}
 	}
 	for _, meta := range richAST.CompanionObjects {
-		if meta.Package == pkgName {
+		if ofPkg(meta.Package) {
 			exports[meta.Name] = true
+		}
+	}
+	// Type aliases are recorded under their qualified name, `pkg.Name`.
+	for qualified := range richAST.TypeAliases {
+		if pkg, name, ok := strings.Cut(qualified, "."); ok && ofPkg(pkg) {
+			exports[name] = true
 		}
 	}
 	if goExports, ok := richAST.GoExports[pkgName]; ok {
@@ -747,6 +808,17 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, path, pkgName string,
 	}
 	for name := range richAST.ImportedVals[path] {
 		exports[name] = true
+	}
+	// A prelude package's names the compiler knows without metadata for
+	// them, such as std's `Sendable` and `Ptr`.
+	for _, info := range registry.Global.PreludePackages() {
+		if info.ImportPath == path {
+			for _, names := range [][]string{info.Types, info.Functions, info.Companions} {
+				for _, name := range names {
+					exports[name] = true
+				}
+			}
+		}
 	}
 	// A Go package (the SDK's, or a module dependency's) is known through its
 	// type info, keyed by import path and, when no GALA package of that name
@@ -765,13 +837,24 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, path, pkgName string,
 		}
 	}
 	if len(exports) == 0 {
-		return true // conservatively keep — can't determine if symbols are used
+		return nil
 	}
+	return exports
+}
+
+// exportedIn reports whether name, written bare, can refer to one of exports:
+// only an exported name can refer to another package's declaration; an
+// unexported one spelled the same is a local.
+func exportedIn(exports map[string]bool, name string) bool {
+	return exports[name] && ast.IsExported(name)
+}
+
+// referencesAny reports whether file has an identifier in a referring
+// position (inspectReferences) that is one of exports (exportedIn).
+func referencesAny(file *ast.File, exports map[string]bool) bool {
 	found := false
 	inspectReferences(file, func(ident *ast.Ident) bool {
-		// Only an exported name can refer to another package's declaration;
-		// an unexported one spelled the same is a local.
-		found = exports[ident.Name] && ast.IsExported(ident.Name)
+		found = exportedIn(exports, ident.Name)
 		return !found
 	})
 	return found

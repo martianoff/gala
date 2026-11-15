@@ -3,7 +3,7 @@ package main
 import "fmt"
 import (
     "strings"
-    "strconv"
+    _ "embed"
 )
 
 func main() {

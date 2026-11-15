@@ -179,7 +179,7 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 
 	// Create transpiler pipeline with BatchAnalyzer for shared cache
 	p := transpiler.NewAntlrGalaParser()
-	tr := transformer.NewGalaASTTransformer()
+	tr := transformer.NewGalaASTTransformer(transformer.ForDependency())
 	g := generator.NewGoCodeGenerator()
 	// The analysis cache lives beside the output, never in srcDir: srcDir is
 	// the module cache, which a build must leave exactly as it was fetched.

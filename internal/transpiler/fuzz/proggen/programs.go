@@ -19,6 +19,7 @@ package proggen
 import (
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -244,32 +245,101 @@ func Generate(data []byte) Program {
 		}
 	}
 
+	var code strings.Builder
+	if style == samePackage {
+		code.WriteString(dom)
+		code.WriteString("\n")
+	}
+	for _, f := range g.funcs {
+		code.WriteString(f + "\n\n")
+	}
+	code.WriteString("func main() {\n")
+	for _, s := range g.body {
+		code.WriteString("    " + strings.ReplaceAll(s, "\n", "\n    ") + "\n")
+	}
+	code.WriteString("}\n")
+
+	// An import main's code does not refer to is GALA-E0120, so std and the
+	// library are imported only when the code uses them. The library is
+	// still built, and std is always there.
+	refs := codeNames(code.String())
 	var b strings.Builder
 	b.WriteString("package main\n\n")
-	b.WriteString(stdLine)
+	b.WriteString(ifUsed(stdLine, refs.uses(sp, stdNames)))
 	if g.usesArrays {
 		b.WriteString(collLine)
 	}
-	b.WriteString(libImport)
+	b.WriteString(ifUsed(libImport, refs.uses(g.q, declaredNames(dom))))
 	b.WriteString("\n")
-	if style == samePackage {
-		b.WriteString(dom)
-		b.WriteString("\n")
-	}
-	for _, f := range g.funcs {
-		b.WriteString(f + "\n\n")
-	}
-	b.WriteString("func main() {\n")
-	for _, s := range g.body {
-		b.WriteString("    " + strings.ReplaceAll(s, "\n", "\n    ") + "\n")
-	}
-	b.WriteString("}\n")
+	b.WriteString(code.String())
 	p.Main = b.String()
 	p.Rejection = g.rejection
 	if len(g.out) > 0 {
 		p.Want = strings.Join(g.out, "\n") + "\n"
 	}
 	return p
+}
+
+// stdNames are the std names the generator spells with g.sp.
+var stdNames = map[string]bool{"Option": true, "Some": true, "None": true, "Tuple": true}
+
+// sourceRefs is the names a generated file's code writes: qualifiers (the
+// `a` of `a.X`) and names written on their own.
+type sourceRefs struct{ qualifiers, bare map[string]bool }
+
+var (
+	stringLit = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+	word      = regexp.MustCompile(`[A-Za-z_]\w*`)
+	declName  = regexp.MustCompile(`(?m)^(?:sealed type|type|struct|val|var|func) ([A-Z]\w*)|case ([A-Z]\w*)\(`)
+)
+
+// codeNames reads the sourceRefs of code, string literals aside.
+func codeNames(code string) sourceRefs {
+	r := sourceRefs{qualifiers: map[string]bool{}, bare: map[string]bool{}}
+	code = stringLit.ReplaceAllString(code, `""`)
+	for _, at := range word.FindAllStringIndex(code, -1) {
+		if at[0] > 0 && code[at[0]-1] == '.' {
+			continue // a selected name: the X of a.X
+		}
+		name := code[at[0]:at[1]]
+		r.bare[name] = true
+		if at[1] < len(code) && code[at[1]] == '.' {
+			r.qualifiers[name] = true
+		}
+	}
+	return r
+}
+
+// uses reports whether the code refers to an import whose names it spells
+// with qual: through qual, or, for a dot import (qual ""), through one of
+// names.
+func (r sourceRefs) uses(qual string, names map[string]bool) bool {
+	if qual != "" {
+		return r.qualifiers[strings.TrimSuffix(qual, ".")]
+	}
+	for n := range names {
+		if r.bare[n] {
+			return true
+		}
+	}
+	return false
+}
+
+// declaredNames is the exported names the domain source dom declares.
+func declaredNames(dom string) map[string]bool {
+	names := map[string]bool{}
+	for _, m := range declName.FindAllStringSubmatch(dom, -1) {
+		names[m[1]+m[2]] = true
+	}
+	return names
+}
+
+// ifUsed is the import line when the code uses it, and "" otherwise.
+func ifUsed(line string, used bool) string {
+	if used {
+		return line
+	}
+	return ""
 }
 
 // statement adds a statement that prints one line to main, or one of the

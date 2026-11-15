@@ -17,7 +17,6 @@ func TestStructMetaDeclarationsAreOrdered(t *testing.T) {
 	src := `package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/json"
 )
 

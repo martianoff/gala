@@ -30,7 +30,8 @@ func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, er
 		decl, err := t.lowerLocalTypeDecl(s.typeDecl(t))
 		return decl, nil, err
 	case stmtImport:
-		return t.lowerImportDecl(s.importSpecs()), nil, nil
+		decl, _ := t.lowerImportDecl(s.importSpecs())
+		return decl, nil, nil // a local import is no written import of the file's
 	case stmtIf:
 		stmt, err := t.lowerIfStatement(s.ifStmt(), tailDiscarded, slot{})
 		return nil, stmt, err
@@ -1819,6 +1820,7 @@ type importSpecDecl struct {
 	path  string
 	kind  importSpecKind
 	alias string // an aliased spec's alias
+	at    srcNode
 }
 
 // importSpecKind is how an import spec names its package.
@@ -1831,11 +1833,13 @@ const (
 	importUnnamed                       // something else before the path (parse-error recovery)
 )
 
-// lowerImportDecl lowers an import declaration of specs.
-func (t *galaASTTransformer) lowerImportDecl(specDecls []importSpecDecl) ast.Decl {
+// lowerImportDecl lowers an import declaration of specs. It also returns each
+// spec as written, lowered and added (see writtenImport), in order.
+func (t *galaASTTransformer) lowerImportDecl(specDecls []importSpecDecl) (*ast.GenDecl, []writtenImport) {
 	// import "pkg"  or import ( "pkg1" "pkg2" )
 	var specs []ast.Spec
-	for _, s := range specDecls {
+	written := make([]writtenImport, len(specDecls))
+	for i, s := range specDecls {
 		path := s.path
 		// Map GALA import path to actual Go module path if they differ
 		// (e.g., "martianoff/gala-server" → "github.com/martianoff/gala-server")
@@ -1848,38 +1852,30 @@ func (t *galaASTTransformer) lowerImportDecl(specDecls []importSpecDecl) ast.Dec
 		importSpec := &ast.ImportSpec{
 			Path: &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("%q", goPath)},
 		}
+		// The actual package name from analyzed metadata, if available: the
+		// directory name may differ from the Go package name (e.g., directory
+		// "type_alias_lib_match" but package declaration is "typealiaslib").
+		actualPkgName := ""
+		if t.richAST != nil {
+			actualPkgName = t.importPackageName(path)
+		}
+		written[i] = writtenImport{decl: s, spec: importSpec}
 		switch s.kind {
 		case importAliased:
-			alias := s.alias
-			importSpec.Name = ast.NewIdent(alias)
-			actualPkgName := ""
-			if t.richAST != nil {
-				actualPkgName = t.importPackageName(path)
-			}
-			t.importManager.Add(path, alias, false, actualPkgName)
+			importSpec.Name = ast.NewIdent(s.alias)
+			written[i].entry = t.importManager.Add(path, s.alias, false, actualPkgName)
 		case importDot:
 			importSpec.Name = ast.NewIdent(".")
-			actualPkgName := ""
-			if t.richAST != nil {
-				actualPkgName = t.importPackageName(path)
-			}
-			t.importManager.Add(path, "", true, actualPkgName)
+			written[i].entry = t.importManager.Add(path, "", true, actualPkgName)
 		case importPlain:
-			// No alias — use the actual package name from analyzed metadata if available.
-			// The directory name may differ from the Go package name (e.g., directory
-			// "type_alias_lib_match" but package declaration is "typealiaslib").
-			actualPkgName := ""
-			if t.richAST != nil {
-				actualPkgName = t.importPackageName(path)
-			}
-			t.importManager.Add(path, "", false, actualPkgName)
+			written[i].entry = t.importManager.Add(path, "", false, actualPkgName)
 		}
 		specs = append(specs, importSpec)
 	}
 	return &ast.GenDecl{
 		Tok:   token.IMPORT,
 		Specs: specs,
-	}
+	}, written
 }
 
 // lowerParam lowers a single parameter to a Go field. When

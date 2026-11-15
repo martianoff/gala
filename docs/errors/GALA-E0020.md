@@ -17,6 +17,7 @@ header.
 
 **Minimal repro.**
 
+<!-- doc-check: fragment -->
 ```gala
 package main
 

@@ -30,7 +30,7 @@ import (
 )
 
 func main() {
-    Println("hi")
+    Println(Future(() => 1).Await().GetOrElse(0), SliceOf(2))
 }
 ```
 
@@ -102,6 +102,7 @@ func main() {
 
 An alias works too when you want both short:
 
+<!-- doc-check: fragment -->
 ```gala
 import (
     . "example.com/demo/pkg_a"

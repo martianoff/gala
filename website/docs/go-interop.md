@@ -50,6 +50,7 @@ Every program and Go snippet in this guide is taken from a file in the repositor
 A Go import looks exactly like a Go import. Single, grouped, aliased and dot imports all work, for the standard library, for Go packages in your own module, and for third-party modules. [`gala_calls_go/main.gala`](https://github.com/martianoff/gala/blob/master/examples/go_interop/gala_calls_go/main.gala) imports the standard library, a GALA package, a hand-written Go package of the same module, and GALA's Go helpers:
 
 <!-- doc-source: examples/go_interop/gala_calls_go/main.gala -->
+<!-- doc-check: fragment -->
 ```gala
 import (
     "errors"
@@ -238,8 +239,6 @@ val reported = inv.CheckLowStock(10, &collector)
 **Methods with several results** (`io.Writer`'s `Write([]byte) (int, error)`, `io.Reader`, `json.Marshaler`, `driver.Valuer`) declare Go's result list. The body gives the results' one GALA value, a `Try` for `(T, error)` or a Tuple for `(A, B)` ([Returning several results to Go](https://github.com/martianoff/gala/blob/master/docs/GALA.MD#returning-several-results-to-go)):
 
 ```gala
-import . "martianoff/gala/go_interop"
-
 struct LineCounter(var Lines int)
 
 // io.Writer

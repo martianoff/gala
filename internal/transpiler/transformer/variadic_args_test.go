@@ -3,6 +3,7 @@ package transformer_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -25,9 +26,14 @@ func (g Group) Labelled(label string, cs ...Ptr[Counter]) string = labelled(labe
 `
 
 // ptrVariadicSource is a program of ptrReceiverDecls and ptrVariadicDecls
-// whose main runs body.
+// whose main runs body. go_interop is imported only for a body that spreads
+// one of its slices.
 func ptrVariadicSource(body string) string {
-	return "package main\n\nimport . \"martianoff/gala/collection_immutable\"\nimport . \"martianoff/gala/go_interop\"\n\n" +
+	imports := "import . \"martianoff/gala/collection_immutable\"\n"
+	if strings.Contains(body, "SliceOf") {
+		imports += "import . \"martianoff/gala/go_interop\"\n"
+	}
+	return "package main\n\n" + imports + "\n" +
 		ptrReceiverDecls + "\n" + ptrVariadicDecls + "\nfunc main() {\n    var c = Counter(1)\n    " + body + "\n}\n"
 }
 

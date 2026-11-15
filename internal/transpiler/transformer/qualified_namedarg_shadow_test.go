@@ -90,6 +90,8 @@ func makeSnap() session.Snapshot {
         SavedAt     = int64(1234),
     )
 }
+
+func widgetName(w Widget) string = w.Name
 `
 
 	got, err := trans.Transpile(input, "")

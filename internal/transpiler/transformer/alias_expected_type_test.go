@@ -50,6 +50,7 @@ func takeMaybe(m MaybeInt) MaybeInt = m
 func takeInts(xs Ints) Ints = xs
 func applyChecked(f func(int) Checked) Checked = f(1)
 struct Holder(c Checked)
+val errBad = errors.New("bad")
 `
 
 func newAliasExpectedTranspiler() *checkedTranspiler {
@@ -243,7 +244,7 @@ type Res[T any] Try[T]
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			src := "package main\n\nimport (\n    \"errors\"\n    \"example.com/aliasx/lib\"\n)\n\n" + tt.body + "\n"
+			src := "package main\n\nimport (\n    \"errors\"\n    \"example.com/aliasx/lib\"\n)\n\nval errBad = errors.New(\"bad\")\n\n" + tt.body + "\n"
 			got, err := transpileCrossPkg(t, root, src)
 			require.NoError(t, err)
 			for _, w := range tt.want {

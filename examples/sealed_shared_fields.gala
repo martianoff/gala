@@ -2,7 +2,6 @@ package main
 
 import (
     "fmt"
-    . "martianoff/gala/std"
 )
 
 // Sealed type with shared field names across variants (same type allowed)

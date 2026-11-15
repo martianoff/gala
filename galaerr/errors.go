@@ -1063,6 +1063,14 @@ const (
 	// dropped silently: an embedded variable stayed empty and a
 	// constrained file built on every platform.
 	CodeGoDirective ErrorCode = "GALA-E0119"
+
+	// E0120: an import written in the file that nothing in the file refers
+	// to: no qualified name through it, or, for a dot import, none of the
+	// package's names. Such an import used to be dropped from the generated
+	// Go without a word, so the package's initialization did not run. A blank
+	// import, `import _ "path"`, imports a package for its initialization
+	// only, and is never reported.
+	CodeUnusedImport ErrorCode = "GALA-E0120"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

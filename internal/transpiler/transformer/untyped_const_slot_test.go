@@ -24,6 +24,8 @@ func First[A any, B any](a A, b B) A = a
 func Same[U any](a U, b U) U = b
 func takes(x int64) int64 = x
 func echo(s string) string = s
+func zero() *big.Int = big.NewInt(0)
+func itoa(n int) string = strconv.Itoa(n)
 `
 
 // TestUntypedConstGenericSlot pins that a generic call whose type parameter

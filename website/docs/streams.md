@@ -15,6 +15,7 @@ The `stream` package provides lazy, potentially infinite sequences for GALA. Ele
 
 ## Import
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/stream"
 ```

@@ -21,6 +21,7 @@ The `collection_mutable` package provides mutable data structures optimized for 
 
 ### Import
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/collection_mutable"
 ```

@@ -63,7 +63,6 @@ func MakeTransformer() Transformer = (x) => {
 			input: `package main
 
 import . "martianoff/gala/collection_immutable"
-import . "martianoff/gala/std"
 
 func test() {
     var arr = EmptyArray[int]()
@@ -132,7 +131,6 @@ func process[T any](items Array[State[T]]) Array[State[T]] {
 			input: `package main
 
 import . "martianoff/gala/collection_immutable"
-import . "martianoff/gala/std"
 
 func test() {
     var arr = ArrayOf(1, 2, 3)
@@ -305,43 +303,10 @@ func test() {
 				"fmt.Println",
 			},
 		},
-		{
-			// Truly unused regular imports should be removed.
-			// When a regular import is not referenced in code, it should be dropped.
-			name: "truly unused regular import is removed",
-			input: `package main
-
-import "fmt"
-
-func test() int {
-    return 42
-}`,
-			notContains: []string{
-				`"fmt"`,
-			},
-		},
 
 		// =========================================================================
 		// Code Generation
 		// =========================================================================
-		{
-			// Remove unused dot imports from generated Go code.
-			// When a GALA-analyzed dot-imported package is not referenced, it should
-			// be removed. Tested with the std package using a simple case that
-			// does not reference any std types.
-			name: "unused dot import of std is removed",
-			input: `package main
-
-import . "martianoff/gala/std"
-
-func test() int {
-    return 42
-}`,
-			// std gets no special case: Go rejects an unused import.
-			notContains: []string{
-				`"martianoff/gala/std"`,
-			},
-		},
 		{
 			// Used dot imports are preserved.
 			// When a dot-imported package's symbols are actually used, the import

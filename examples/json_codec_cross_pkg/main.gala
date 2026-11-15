@@ -1,7 +1,6 @@
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/json"
     . "martianoff/gala/collection_immutable"
     . "martianoff/gala/examples/json_codec_cross_pkg/inner"

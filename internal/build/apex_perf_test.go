@@ -117,20 +117,20 @@ func apexFileBody(pkgs []string) string {
 	b.WriteString("func main() {\n")
 	for _, p := range pkgs {
 		// Reference T0 from this pkg (defined in file_00.gala).
-		fmt.Fprintf(&b, "    var _ %s_T_00_0\n", p)
+		fmt.Fprintf(&b, "    var _ T_%s_00_0\n", p)
 	}
 	b.WriteString("}\n")
 	return b.String()
 }
 
 // apexPackageFileBody returns the source for the f-th file in pkgName.
-// Declares apexTypesPerFile struct types prefixed with the package
-// name (so dot-imports don't collide) and a constructor for each.
+// Declares apexTypesPerFile exported struct types named after the package
+// (so dot-imports don't collide) and a constructor for each.
 func apexPackageFileBody(pkgName string, fileIdx int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s\n\n", pkgName)
 	for k := 0; k < apexTypesPerFile; k++ {
-		typeName := fmt.Sprintf("%s_T_%02d_%d", pkgName, fileIdx, k)
+		typeName := fmt.Sprintf("T_%s_%02d_%d", pkgName, fileIdx, k)
 		fmt.Fprintf(&b, "type %s struct {\n    a int\n    b int\n    c string\n    d string\n}\n\n", typeName)
 		fmt.Fprintf(&b, "func make_%s() %s {\n    return %s{a: %d, b: %d, c: \"x\", d: \"y\"}\n}\n\n",
 			typeName, typeName, typeName, k, k)

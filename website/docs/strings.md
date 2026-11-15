@@ -21,6 +21,7 @@ Pick the shape that fits the call site.
 
 ## Import
 
+<!-- doc-check: fragment -->
 ```gala
 import (
     . "martianoff/gala/strings"

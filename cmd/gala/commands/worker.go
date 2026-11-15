@@ -421,7 +421,7 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 			batch.SetPackageFiles(packageFiles)
 		}
 
-		tr := transformer.NewGalaASTTransformer()
+		tr := transformer.NewGalaASTTransformer(bazelSourceOptions(inputPath)...)
 		g := generator.NewGoCodeGenerator()
 		t := transpiler.NewGalaToGoTranspiler(parser, batch, tr, g)
 
@@ -521,7 +521,7 @@ func runWorkerTranspile(argv []string, out io.Writer) int {
 	}
 	batch.SetPackageFiles(pkgFiles)
 
-	tr := transformer.NewGalaASTTransformer()
+	tr := transformer.NewGalaASTTransformer(bazelSourceOptions(input)...)
 	g := generator.NewGoCodeGenerator()
 	t := transpiler.NewGalaToGoTranspiler(parser, batch, tr, g)
 

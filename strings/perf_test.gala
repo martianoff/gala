@@ -3,7 +3,6 @@ package main
 import (
     "unicode"
     "time"
-    . "martianoff/gala/std"
     . "martianoff/gala/strings"
 )
 

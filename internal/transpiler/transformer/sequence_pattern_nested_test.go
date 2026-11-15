@@ -38,6 +38,9 @@ func (p Probe) Unapply(n int) Option[int] {
     return Some(n)
 }
 
+// The import is used here, so a body that names no collection compiles.
+func seqOf(xs Array[int]) Array[int] = xs
+
 `
 
 func transpileSequencePattern(t *testing.T, body string) (string, error) {

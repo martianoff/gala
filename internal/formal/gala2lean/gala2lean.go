@@ -162,7 +162,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	g.depNS = depNS
 	g.library = opts.Library
 	g.ns = opts.Namespace
-	g.unsup = depUnsup
+	g.unsup = append(depUnsup, blankImportsOutside(p, opts.Deps)...)
 	g.collect(p)
 	g.findBoxes(p)
 	// Every declaration is translated even after one failed, so that every
@@ -173,6 +173,28 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 		return nil, &UnsupportedError{Items: g.unsup}
 	}
 	return &Result{Lean: g.out.String(), Decls: g.decls, Generic: g.genericNames()}, nil
+}
+
+// blankImportsOutside reports each blank import (`import _ "pkg"`) of p whose
+// package is not among deps (blank-import). A blank import is there only to
+// run its package's initializers before the program's; without the package
+// the translation cannot run them, and would print without their output. The
+// blank import of a package in deps is translated: its initialization is
+// ordered like any other import's (importsOf).
+func blankImportsOutside(p *coreexport.Program, deps []Package) []Unsupported {
+	known := map[string]bool{}
+	for _, d := range deps {
+		known[d.Path] = true
+	}
+	var out []Unsupported
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			if imp, ok := d.(*coreexport.Import); ok && imp.Alias == "_" && !known[imp.Path] {
+				out = append(out, Unsupported{Construct: "blank-import", Pos: imp.Pos})
+			}
+		}
+	}
+	return out
 }
 
 // unsupportedPanic carries an unsupported construct out of the recursive

@@ -65,6 +65,7 @@ GALA files use the `.gala` extension. Every file must start with a package decla
 
 GALA supports Go-style imports, including aliases and dot imports. Import declarations must also be followed by an empty line.
 
+<!-- doc-check: fragment -->
 ```gala
 package main
 
@@ -3350,6 +3351,7 @@ For comprehensive documentation including Promise, ExecutionContext, sequence op
 
 The `json` package provides zero-reflection, compile-time JSON serialization with builder pattern configuration. Located in the `json` package.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/json"
 ```
@@ -3678,6 +3680,7 @@ A parameter is injected because of its type's shape, not its name: an interface 
 
 `Regex` provides regular expression support with pattern matching extractors. Located in the `regex` package.
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/regex"
 import . "martianoff/gala/collection_immutable"
@@ -3727,6 +3730,7 @@ val parts = "user@example.com" match {
 
 `IO[T]` is a lazy, composable effect type for separating pure and impure code. Located in the `io` package. Unlike `Lazy[T]` (which caches results), `IO[T]` re-executes on every `.Run()`.
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/io"
 ```
@@ -3797,6 +3801,7 @@ surface so consumers can reach for `path.Join(...)`, `path.Dir(...)`, etc.
 without dropping back to the Go stdlib. Names mirror `filepath` so
 migration is mechanical.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/path"
 ```
@@ -3836,6 +3841,7 @@ return `bool`. Bytes flow through `Array[byte]` (immutable) at the
 language boundary, with `ToGoSlice` / `ArrayFromSlice` round trips
 internally at the Go-interop seam.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/fs"
 ```
@@ -3904,6 +3910,7 @@ The `strings` package is GALA's unified string library. One package, two surface
 - **`Str`** — an immutable wrapper that caches the Go string and lazily materialises an `Array[rune]` for functional methods. Chainable: every transform returns a new `Str`.
 - **`StringBuilder`** — a mutable, O(n)-assembly builder for hot-path concatenation.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/strings"
 ```
@@ -5404,6 +5411,7 @@ Cross-file resolution supports: structs (with immutability flags), sealed types 
 
 GALA uses Go-style import declarations. You can import multiple packages in a block or individually.
 
+<!-- doc-check: fragment -->
 ```gala
 import "fmt"
 import (
@@ -5435,6 +5443,16 @@ A few std names are reserved and cannot be redeclared, because the language give
 A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](errors/GALA-E0066.md), because Go forbids it; import that package under a name, or rename the declaration.
 
 A bare name written as a value that std declares as a type and a dot-imported package declares as a function or `val` is ambiguous, and is rejected with [GALA-E0087](errors/GALA-E0087.md): `Void()` beside `import . "example.com/demo/util"`, where `util` declares `func Void()`. Write `util.Void()` through a plain import, or `std.Void` through `import "martianoff/gala/std"`. In a type position (`Try[Void]`) the name is std's type.
+
+### Unused and Blank Imports
+
+Every import a file writes must be used, as in Go. An import that nothing in the file refers to is rejected with [GALA-E0120](errors/GALA-E0120.md). A plain or aliased import is used when its name qualifies something anywhere in the file: a value, a call, a type (`strings.Builder` in a parameter or a type argument), a pattern (`case shapes.Circle(r)`), or an expression inside an interpolated string. A dot import is used when the file writes one of the package's names. Use is read from the source alone: calling a method on a value whose type comes from the package does not use the import, and neither does code GALA generates, since GALA imports what that code needs by itself. The imports GALA adds itself, such as `std`, are never reported. Dependencies are not checked yet: the rule applies to the packages of the module being built, and a dependency module's unused import is dropped from the generated Go as before, without running its package's initialization.
+
+To import a package only for its initialization, write a blank import. The package's package-level `val`s and `var`s are initialized before `main` runs, though the file names nothing from it:
+
+```gala
+import _ "example.com/app/plugins"
+```
 
 ### Using Symbols from Other Packages
 
@@ -6386,6 +6404,7 @@ Then in your Bazel config:
 - `BUILD.bazel`: Add `@com_github_google_uuid//:uuid` to `deps`
 
 Import in `.gala` files as you would in Go:
+<!-- doc-check: fragment -->
 ```gala
 import "github.com/google/uuid"
 ```

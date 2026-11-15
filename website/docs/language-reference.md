@@ -51,6 +51,7 @@ GALA files use the `.gala` extension. Every file must start with a package decla
 
 GALA supports Go-style imports, including aliases and dot imports. Import declarations must also be followed by an empty line.
 
+<!-- doc-check: fragment -->
 ```gala
 package main
 
@@ -1958,6 +1959,16 @@ A few std names are reserved and cannot be redeclared, because the language give
 A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](/docs/errors/gala-e0066/), because Go forbids it; import that package under a name, or rename the declaration.
 
 A bare name written as a value that std declares as a type and a dot-imported package declares as a function or `val` is ambiguous, and is rejected with [GALA-E0087](/docs/errors/gala-e0087/): `Void()` beside `import . "example.com/demo/util"`, where `util` declares `func Void()`. Write `util.Void()` through a plain import, or `std.Void` through `import "martianoff/gala/std"`. In a type position (`Try[Void]`) the name is std's type.
+
+### Unused and Blank Imports {#unused-and-blank-imports}
+
+Every import a file writes must be used, as in Go. An import that nothing in the file refers to is rejected with [GALA-E0120](/docs/errors/gala-e0120/). A plain or aliased import is used when its name qualifies something anywhere in the file: a value, a call, a type (`strings.Builder` in a parameter or a type argument), a pattern (`case shapes.Circle(r)`), or an expression inside an interpolated string. A dot import is used when the file writes one of the package's names. Use is read from the source alone: calling a method on a value whose type comes from the package does not use the import, and neither does code GALA generates, since GALA imports what that code needs by itself. The imports GALA adds itself, such as `std`, are never reported. Dependencies are not checked yet: the rule applies to the packages of the module being built, and a dependency module's unused import is dropped from the generated Go as before, without running its package's initialization.
+
+To import a package only for its initialization, write a blank import. The package's package-level `val`s and `var`s are initialized before `main` runs, though the file names nothing from it:
+
+```gala
+import _ "example.com/app/plugins"
+```
 
 ### Package Visibility {#package-visibility}
 

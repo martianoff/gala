@@ -127,6 +127,10 @@ func run(s Stepper) int = s.Step()
 func main() {
     ` + body + `
 }
+
+func bufLen(b *bytes.Buffer) int = b.Len()
+
+func builderLen(b *strings.Builder) int = b.Len()
 `
 	}
 	_, err := trans.Transpile(src("Println(run(&Good(0)))\n    var s Sink = &bytes.Buffer{}\n    s.WriteString(\"x\")"), "inout_iface_test.gala")
