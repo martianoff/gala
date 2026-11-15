@@ -6,6 +6,10 @@
 #   * packages.<system>.gala-local        - escape hatch for grammar or
 #     codegen work the release cannot handle yet: transpiles with
 #     cmd/gala_bootstrap built from this tree
+#   * packages.<system>.gala-lean-interpolation - the Lean 4 port of GALA's
+#     interpolation splitter, as a native executable (a development tool).
+#     Ported pieces are named gala-lean-<component>; bare gala-lean is
+#     reserved for the complete Lean implementation.
 #   * overlays.default                   - adds pkgs.gala to nixpkgs
 #   * devShells.default                  - Bazelisk, Go, JDK for this repo
 #   * checks.<system>.smoke              - offline build-and-run smoke test
@@ -36,6 +40,7 @@
         system: pkgs: {
           gala = pkgs.callPackage ./nix/gala.nix { };
           gala-local = pkgs.callPackage ./nix/gala.nix { useLocalBootstrap = true; };
+          gala-lean-interpolation = pkgs.callPackage ./nix/lean-interpolation.nix { };
           gala-stdlib = self.packages.${system}.gala.passthru.localTranspiled;
           default = self.packages.${system}.gala;
         }

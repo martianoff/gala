@@ -4,6 +4,24 @@ eachSystem (
     package = self.packages.${system}.gala;
     gala-local = self.packages.${system}.gala-local;
 
+    # The batch protocol is what `formal/interpolation/test.sh` uses to
+    # compare the port with the Go oracle: one `c <hex>` line in, one part per
+    # line and `--` out.
+    gala-lean-interpolation =
+      let
+        interpolation = self.packages.${system}.gala-lean-interpolation;
+      in
+      pkgs.runCommand "gala-lean-interpolation-test" { } ''
+        printf 'c 6120246e616d652062\n' | ${interpolation}/bin/interpolation --batch > out
+        printf '%s\n' 'L 0 6120' 'E 3  6e616d65' 'L 7 2062' '--' > expected
+        if [ "$(cat out)" != "$(cat expected)" ]; then
+          echo "unexpected gala-lean-interpolation output:" >&2
+          cat out >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
     # End-to-end smoke test: scaffold a project, build it with the
     # embedded stdlib, and run it. Works offline (GOPROXY=off).
     smoke =

@@ -81,6 +81,11 @@ escape hatch, which builds `cmd/gala_bootstrap` from this tree instead:
 nix build .#gala-local
 ```
 
+The standalone Lean port under `formal/interpolation` builds as
+`nix build .#gala-lean-interpolation` — the `gala-lean-` prefix marks a piece
+of the staged Lean port of the compiler. Like the Lake build, it is a
+development tool and is not part of a GALA release.
+
 The flake covers `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, and
 `aarch64-darwin`.
 
