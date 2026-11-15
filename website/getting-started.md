@@ -146,6 +146,8 @@ gala mod init github.com/user/myproject
 
 This creates a `gala.mod` file that tracks your module path and dependencies.
 
+**Already have a Go module?** Run `gala mod init` in it and add `.gala` files beside your `.go` files; nothing has to be converted. [Add GALA to an Existing Go Repository]({{ '/docs/add-gala-to-go-repo/' | relative_url }}) walks through it in ten minutes.
+
 ### Directory Structure
 
 A typical GALA project looks like this:
@@ -385,6 +387,7 @@ See the full [IDE Support page]({{ '/features/ide-support/' | relative_url }}) f
 You are set up and running. Here is where to go from here:
 
 - **[Playground]({{ '/playground/' | relative_url }})** -- Try GALA in your browser without installing anything
+- **[Add GALA to a Go Repository]({{ '/docs/add-gala-to-go-repo/' | relative_url }})** -- Bring GALA into an existing Go module, with a cobra CLI as the worked example
 - **[GALA vs Go]({{ '/vs-go/' | relative_url }})** -- Side-by-side comparison of GALA and Go code
 - **[Language Specification](https://github.com/martianoff/gala/blob/master/docs/GALA.MD)** -- Complete reference for GALA syntax and semantics
 - **[Examples](https://github.com/martianoff/gala/blob/master/docs/EXAMPLES.MD)** -- Code examples for all language features

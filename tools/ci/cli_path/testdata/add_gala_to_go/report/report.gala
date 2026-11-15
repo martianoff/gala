@@ -1,0 +1,26 @@
+package report
+
+import (
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+    "example.com/inventory/stock"
+)
+
+// Summary describes a stock list. Its fields are immutable: Go reads them
+// with Get(), and builds a Summary with the generated NewSummary.
+struct Summary(Items int, Units int, Reorder Array[string])
+
+// Build parses a stock list with the Go parser and summarizes it. Parse
+// returns ([]Item, error), which GALA sees as a Try[[]Item].
+func Build(text string, threshold int) Try[Summary] = stock.Parse(text).Map((items) => Summary(
+    Items = items.Size(),
+    Units = ArrayFromSlice(items).FoldLeft(0, (acc, i) => acc + i.Qty),
+    Reorder = ArrayFromSlice(stock.Reorder(items, threshold)),
+))
+
+// Describe declares Go's result list, so Go calls it as it would any Go
+// function returning (string, error); the body gives a Try.
+func Describe(text string, threshold int) (string, error) = Build(text, threshold).Map((s) =>
+    s"${s.Items} items, ${s.Units} units, reorder: ${s.Reorder.MkString(", ")}"
+)

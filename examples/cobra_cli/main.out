@@ -1,0 +1,16 @@
+wordstat counts or ranks the words of a text, read from its arguments or from --file.
+
+Usage:
+  wordstat [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  count       Count the words, lines or characters of a text
+  help        Help about any command
+  top         List the most frequent words of a text
+
+Flags:
+  -f, --file string   read the text from this file instead of the arguments
+  -h, --help          help for wordstat
+
+Use "wordstat [command] --help" for more information about a command.

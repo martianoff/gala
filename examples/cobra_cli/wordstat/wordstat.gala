@@ -1,0 +1,59 @@
+package wordstat
+
+import (
+    "errors"
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// Unit is what the count command counts.
+sealed type Unit {
+    case Words()
+    case Lines()
+    case Chars()
+}
+
+// ParseUnit reads the value of the --unit flag.
+// name: the flag value, such as "words".
+func ParseUnit(name string) Try[Unit] = strings.ToLower(name) match {
+    case "words" | "word" => Success(Words())
+    case "lines" | "line" => Success(Lines())
+    case "chars" | "char" => Success(Chars())
+    case _ => Failure(errors.New(s"unknown unit \"$name\": want words, lines or chars"))
+}
+
+// Label is the unit's name as the --unit flag spells it.
+func (u Unit) Label() string = u match {
+    case Words() => "words"
+    case Lines() => "lines"
+    case Chars() => "chars"
+}
+
+// Count counts the units of text; words are those Top ranks.
+func Count(text string, unit Unit) int = unit match {
+    case Words() => words(text).Size()
+    case Lines() => if (text == "") 0 else strings.Count(strings.TrimRight(text, "\n"), "\n") + 1
+    case Chars() => text.Size()
+}
+
+// words splits text into lower-case words without surrounding punctuation.
+func words(text string) Array[string] =
+    ArrayOf(strings.Fields(strings.ToLower(text))...)
+        .Map((w) => strings.Trim(w, ".,;:!?\"'()"))
+        .Filter((w) => w != "")
+
+// Top ranks the words of text that are at least minLen characters long by
+// frequency, most frequent first and ties in alphabetical order, and keeps
+// the first n.
+func Top(text string, n int, minLen int) Try[Array[Tuple[string, int]]] {
+    if (n < 1) {
+        return Failure(errors.New(s"--limit must be at least 1, got $n"))
+    }
+    val counts = words(text)
+        .Filter((w) => w.Size() >= minLen)
+        .FoldLeft(EmptyHashMap[string, int](), (acc, w) => acc.Put(w, acc.GetOrElse(w, 0) + 1))
+    Success(counts.ToArray()
+        .SortWith((a, b) => if (a.V2 != b.V2) a.V2 > b.V2 else a.V1 < b.V1)
+        .Take(n))
+}

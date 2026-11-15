@@ -4,8 +4,8 @@
 #   GALA=/path/to/gala tools/ci/cli_path/run_fixtures.sh <work-dir> [fixture...]
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
-# nested, lib_only, go_subpkg, go_cmd_main, go_interop, gala_dep, dep_go_subpkg,
-# dep_generic_alias, sequence.
+# nested, lib_only, go_subpkg, go_cmd_main, go_interop, add_gala_to_go, cobra_cli,
+# gala_dep, dep_go_subpkg, dep_generic_alias, sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
 # with the CLI, which transpiles against the stdlib snapshot embedded in the
@@ -178,6 +178,34 @@ fixture_go_subpkg() {
   expect_output "built binary" expected.out out.txt
 }
 
+# cobra_cli: the cobra command-line example of examples/cobra_cli, built as a
+# module of its own with github.com/spf13/cobra as a `// go` requirement of
+# gala.mod; Bazel builds the same package from the repository's go_deps. The
+# program is staged from examples/, its import path moved to the fixture's
+# module, and its tests run with `gala test`. Needs network access.
+fixture_cobra_cli() {
+  local dir
+  dir=$(stage cobra_cli)
+  cp -R "$repo/examples/cobra_cli/wordstat" "$dir/wordstat"
+  sed 's|"martianoff/gala/examples/cobra_cli/wordstat"|"example.com/wordstat/wordstat"|' \
+    "$repo/examples/cobra_cli/main.gala" >"$dir/main.gala"
+  cd "$dir"
+  gala_ok build.log build -o wordstat-cli . || return 0
+  local bin
+  bin=$(exe "$dir/wordstat-cli")
+  {
+    for args in "count hello big world" "count -u chars hello" "top -n 2 the cat and the hat and the bat" \
+      "count -u pages x"; do
+      echo "\$ wordstat $args"
+      # shellcheck disable=SC2086 # split the command line into arguments
+      "$bin" $args 2>&1 || echo "exit $?"
+    done
+  } >out.txt
+  expect_output "built binary" expected.out out.txt
+  gala_ok test.log test ./... || return 0
+  expect_tests_ran "command tests ran" test.log
+}
+
 # go_interop: GALA and Go calling each other in one module, as the Go interop
 # guide (docs/GO_INTEROP.MD) lays it out: a GALA main with a sibling .go file,
 # a package mixing .gala and hand-written .go, a plain Go package importing a
@@ -194,6 +222,29 @@ fixture_go_interop() {
   gala_ok build-gomain.log build -o gomain ./cmd/gomain || return 0
   "$(exe "$dir/gomain")" >out-gomain.txt
   expect_output "Go main binary" expected-gomain.out out-gomain.txt
+}
+
+# add_gala_to_go: a Go module (go.mod, a Go main package, a Go package with a
+# Go test) that GALA is added to, as docs/ADD_GALA_TO_GO_REPO.MD walks
+# through: `gala mod init` takes the module path from go.mod, a .gala file
+# joins the existing Go package, and a new package is all GALA. go.mod is
+# left as it was.
+fixture_add_gala_to_go() {
+  local dir
+  dir=$(stage add_gala_to_go)
+  cd "$dir"
+  gala_ok init.log mod init || return 0
+  expect_line "gala mod init reads the module path from go.mod" gala.mod '^module example\.com/inventory$'
+  gala_ok build.log build -o inventory . || return 0
+  "$(exe "$dir/inventory")" >out.txt
+  expect_output "built binary" expected.out out.txt
+  gala_ok run.log run . || return 0
+  expect_output "gala run" expected.out run.log
+  gala_ok test.log test ./... || return 0
+  expect_tests_ran "Go and GALA tests ran" test.log
+  expect_line "the GALA package's test ran" test.log '^ok .*/report'
+  expect_line "the Go package's test ran" test.log '^ok .*/stock'
+  expect_output "gala leaves go.mod unchanged" "$here/testdata/add_gala_to_go/go.mod" go.mod
 }
 
 # go_cmd_main: main packages under cmd/ that import the module's GALA package,
@@ -315,7 +366,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop gala_dep dep_go_subpkg dep_generic_alias sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop add_gala_to_go cobra_cli gala_dep dep_go_subpkg dep_generic_alias sequence)
 fi
 
 for name in "${fixtures[@]}"; do
