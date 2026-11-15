@@ -4,7 +4,7 @@ title: "Getting Started with GALA — Install and Write Your First Program"
 description: "Install GALA and write your first program in minutes. Pre-built binaries for Linux, macOS, and Windows. Get sum types, pattern matching, and Option types for Go in 3 steps."
 keywords: "install gala, gala getting started, gala tutorial, gala hello world, gala setup, gala quickstart, transpile gala to go, golang sum types install, go pattern matching setup"
 permalink: /getting-started/
-last_modified_at: 2026-10-03
+last_modified_at: 2026-11-14
 ---
 
 <div class="breadcrumb">
@@ -21,9 +21,50 @@ GALA transpiles to Go, so you get native binaries, full Go library access, and t
 
 ## Installation
 
+### One-line Install
+
+Linux and macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.ps1 | iex
+```
+
+The installer picks the binary for your OS and CPU from the latest release, checks its SHA-256 against the release's `checksums-sha256.txt` (and installs nothing if it does not match), and installs it as `gala`:
+
+| | Linux / macOS | Windows |
+|---|---|---|
+| Default directory | `~/.local/bin` | `%LOCALAPPDATA%\Programs\gala\bin` |
+| `PATH` | prints the line to add to your shell startup file | added to your user `PATH` |
+| Pick a release | pipe into `sh -s -- --version 0.101.0` | `$env:GALA_VERSION = "0.101.0"` |
+| Pick a directory | pipe into `sh -s -- --dir ~/bin` | `$env:GALA_INSTALL_DIR = "C:\tools\gala"` |
+| Leave `PATH` alone | (never changed) | `$env:GALA_NO_MODIFY_PATH = "1"` |
+
+Set `GITHUB_TOKEN` if you hit GitHub's API rate limit. The installer then runs `gala version` and checks for Go 1.25+, which GALA needs to compile programs; it tells you where to get Go but does not install it.
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add gala https://github.com/martianoff/gala
+scoop install gala/gala
+```
+
+`scoop update gala` picks up new releases.
+
+### Nix
+
+```bash
+nix profile install github:martianoff/gala
+```
+
 ### Pre-built Binaries
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/martianoff/gala/releases):
+To install by hand, download the latest release for your platform from [GitHub Releases](https://github.com/martianoff/gala/releases):
 
 | Platform | Binary |
 |----------|--------|
@@ -345,7 +386,7 @@ GALA ships with a **GoLand/IntelliJ plugin** and an **LSP server** for editor-ag
 
 **GoLand / IntelliJ IDEA:**
 
-1. Install GALA CLI from [releases](https://github.com/martianoff/gala/releases) and add to PATH
+1. Install the GALA CLI (see [Installation](#installation))
 2. Install plugin: **Settings > Plugins > Install from Disk** > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
 3. Restart the IDE — the LSP server starts automatically when a `.gala` file is opened
 

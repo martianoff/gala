@@ -5,7 +5,7 @@ description: "Go, the functional way. Inspired by Scala, GALA is a statically ty
 keywords: "gala language, functional programming go, scala-inspired language for go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
-last_modified_at: 2026-10-20
+last_modified_at: 2026-11-14
 ---
 
 <div class="hero">
@@ -264,7 +264,17 @@ fmt.Println(d.IsPercent())  // true</code></pre>
 
 ### 1. Install
 
-Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases) for Linux, macOS, or Windows, rename it to `gala`, and put it on your `PATH`. GALA compiles through Go, so you also need [Go 1.25+](https://go.dev/dl/). Nix users can run `nix profile install github:martianoff/gala`.
+```bash
+# Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.ps1 | iex
+```
+
+The installer verifies the download's SHA-256 and installs `gala` (on Windows it also adds it to your `PATH`; on Linux and macOS it prints the line to add). GALA compiles through Go, so you also need [Go 1.25+](https://go.dev/dl/). Scoop, Nix and manual downloads are covered in [Getting Started]({{ '/getting-started/' | relative_url }}#installation).
 
 ### 2. Write
 
