@@ -94,14 +94,39 @@ func (f *GitFetcher) FetchLatest(modulePath string) (string, string, string, err
 		return "", "", "", err
 	}
 
-	if len(versions) == 0 {
-		return "", "", "", fmt.Errorf("no versions found for %s", modulePath)
+	// The latest tagged version, or, for a repository with no semver tag,
+	// the pseudo-version of its default branch's head, as Go resolves
+	// @latest.
+	var latest string
+	if len(versions) > 0 {
+		latest = versions[len(versions)-1].String()
+	} else if latest, err = f.headPseudoVersion(modulePath); err != nil {
+		return "", "", "", err
 	}
+	path, hash, err := f.Fetch(modulePath, latest)
+	return latest, path, hash, err
+}
 
-	// Get the latest (last) version
-	latest := versions[len(versions)-1]
-	path, hash, err := f.Fetch(modulePath, latest.String())
-	return latest.String(), path, hash, err
+// headPseudoVersion returns the pseudo-version of the head commit of the
+// default branch of modulePath's repository.
+func (f *GitFetcher) headPseudoVersion(modulePath string) (string, error) {
+	repo, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
+		URL:   f.gitURL(modulePath),
+		Depth: 1,
+		Tags:  git.NoTags,
+	})
+	if err != nil {
+		return "", fmt.Errorf("no versions found for %s: cannot read its default branch: %w", modulePath, err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("no versions found for %s: %w", modulePath, err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return "", fmt.Errorf("no versions found for %s: %w", modulePath, err)
+	}
+	return pseudoVersion(modulePath, commit.Committer.When, commit.Hash.String()), nil
 }
 
 // ListVersions lists available versions for a module from the remote repository.
@@ -170,7 +195,11 @@ func versionTagNames(ver string) []string {
 }
 
 // resolveVersion resolves ver as a tag, then a branch, then a commit hash.
+// A pseudo-version (see isPseudoVersion) resolves to the commit it names.
 func resolveVersion(repo *git.Repository, ver string) (plumbing.Hash, error) {
+	if isPseudoVersion(ver) {
+		return resolvePseudoVersion(repo, ver)
+	}
 	var candidates []plumbing.Revision
 	for _, tagName := range versionTagNames(ver) {
 		candidates = append(candidates, plumbing.Revision(plumbing.NewTagReferenceName(tagName)))
@@ -185,6 +214,28 @@ func resolveVersion(repo *git.Repository, ver string) (plumbing.Hash, error) {
 		}
 	}
 	return plumbing.ZeroHash, fmt.Errorf("version not found: %s", ver)
+}
+
+// resolvePseudoVersion resolves a pseudo-version to the commit its revision
+// names. As Go does, it rejects one whose timestamp is not that commit's time:
+// the version would not be the one Go gives the commit.
+func resolvePseudoVersion(repo *git.Repository, ver string) (plumbing.Hash, error) {
+	timestamp, rev, err := parsePseudoVersion(ver)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	hash, err := repo.ResolveRevision(plumbing.Revision(rev))
+	if err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("version not found: %s: no commit %s", ver, rev)
+	}
+	commit, err := repo.CommitObject(*hash)
+	if err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("version not found: %s: %w", ver, err)
+	}
+	if got := commit.Committer.When.UTC().Format(pseudoVersionTimeFormat); got != timestamp {
+		return plumbing.ZeroHash, fmt.Errorf("invalid pseudo-version %s: commit %s was made at %s, not %s", ver, rev, got, timestamp)
+	}
+	return *hash, nil
 }
 
 // modulePathToGitURL converts a module path to a Git URL.

@@ -73,9 +73,27 @@ func runModUpdate(cmd *cobra.Command, args []string) {
 		}
 
 		oldVersion := req.Version
+		fmt.Printf("Checking %s...\n", modulePath)
+
+		// A Go module resolves through the Go toolchain, as `gala mod add
+		// --go` does.
+		if req.Go {
+			m, err := downloadGoModule(modulePath, "latest")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to fetch %s: %v\n", modulePath, err)
+				continue
+			}
+			if oldVersion == m.Version {
+				fmt.Printf("  %s is already at latest (%s)\n", modulePath, m.Version)
+				continue
+			}
+			setGoRequire(galaMod, galaSum, modulePath, m.Version)
+			fmt.Printf("  %s: %s -> %s\n", modulePath, oldVersion, m.Version)
+			updated++
+			continue
+		}
 
 		// Fetch latest version
-		fmt.Printf("Checking %s...\n", modulePath)
 		newVersion, cachePath, hash, err := fetcher.FetchLatest(modulePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to fetch %s: %v\n", modulePath, err)

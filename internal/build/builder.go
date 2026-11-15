@@ -90,6 +90,9 @@ func NewBuilderForMode(projectDir string, stdlibVersion string, verbose bool, mo
 		if err != nil {
 			return nil, fmt.Errorf("parsing gala.mod: %w", err)
 		}
+		if err := checkConcreteVersions(galaMod); err != nil {
+			return nil, err
+		}
 	} else {
 		// Create a minimal in-memory gala.mod for standalone files
 		galaMod = &mod.File{
@@ -105,6 +108,35 @@ func NewBuilderForMode(projectDir string, stdlibVersion string, verbose bool, mo
 		stdlibVersion: stdlibVersion,
 		verbose:       verbose,
 	}, nil
+}
+
+// checkConcreteVersions reports a requirement of galaMod whose version is a
+// query (latest, ^1.2.0, >=v1.0.0) rather than a version. gala.mod records the
+// version a query resolved to, so every build of the module uses the same one;
+// `gala mod add` resolves the query and records it.
+func checkConcreteVersions(galaMod *mod.File) error {
+	for _, req := range galaMod.Require {
+		if !isVersionQuery(req.Version) {
+			continue
+		}
+		goFlag := ""
+		if req.Go {
+			goFlag = " --go"
+		}
+		return fmt.Errorf("gala.mod: require %s %s: gala.mod needs a concrete version (a tag such as v1.2.3, or a pseudo-version), not the query %q; run `gala mod add %s@%s%s` to resolve it and record the version",
+			req.Path, req.Version, req.Version, req.Path, req.Version, goFlag)
+	}
+	return nil
+}
+
+// isVersionQuery reports whether v is a version query, as `go get` and `gala
+// mod add` accept, rather than a version.
+func isVersionQuery(v string) bool {
+	switch v {
+	case "latest", "upgrade", "patch":
+		return true
+	}
+	return v != "" && strings.ContainsRune("^~<>=", rune(v[0]))
 }
 
 // timedBuildPhaseValue runs fn under the given profile label and returns
@@ -613,21 +645,16 @@ func goModRequires(reqs []mod.Require, dirs, versions map[string]string) []mod.R
 // downloadGoModules runs `go mod download` for reqs into the Go module cache.
 // A failure is a warning, not an error (see resolveGoModuleSrcDirs).
 func downloadGoModules(config *Config, reqs []mod.Require, verbose bool) {
-	args := []string{"mod", "download"}
+	var mods []string
 	for _, req := range reqs {
-		args = append(args, req.Path+"@"+req.Version)
+		mods = append(mods, req.Path+"@"+req.Version)
 	}
 	if verbose {
-		fmt.Printf("Downloading Go module sources: %s\n", strings.Join(args[2:], ", "))
+		fmt.Printf("Downloading Go module sources: %s\n", strings.Join(mods, ", "))
 	}
-	cmd := exec.Command("go", args...)
-	// Outside any module, so a go.mod or go.work around the working directory
-	// cannot change what is downloaded.
-	cmd.Dir = config.GoPkgDir
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+config.GoPkgDir, "GOWORK=off")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := fetch.GoModDownloadCmd(config.GoPkgDir, mods...).CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not download Go module sources (%s), so their types are unknown: %v\n%s",
-			strings.Join(args[2:], ", "), err, out)
+			strings.Join(mods, ", "), err, out)
 	}
 }
 

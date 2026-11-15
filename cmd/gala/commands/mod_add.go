@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"strings"
@@ -25,13 +26,19 @@ The module path can optionally include a version specifier:
   - module@latest    Latest available version
   - module           Same as @latest
 
+A module with no tagged version resolves to the pseudo-version of its latest
+commit (v0.0.0-20220603013715-3360bf22bea4), and a pseudo-version can be
+given as the version.
+
 Use --go flag to mark a dependency as a Go package (not GALA).
-Go dependencies are tracked in gala.mod but not transpiled.
+Go dependencies are tracked in gala.mod but not transpiled. The Go toolchain
+resolves and downloads them, as 'go get' does.
 
 Examples:
   gala mod add github.com/example/gala-utils
   gala mod add github.com/example/gala-utils@v1.2.3
-  gala mod add github.com/example/go-lib@v2.0.0 --go`,
+  gala mod add github.com/example/go-lib@v2.0.0 --go
+  gala mod add golang.org/x/text@latest --go`,
 	Args: cobra.ExactArgs(1),
 	Run:  runModAdd,
 }
@@ -55,6 +62,11 @@ func runModAdd(cmd *cobra.Command, args []string) {
 	if existing := galaMod.GetRequire(modulePath); existing != nil {
 		fmt.Printf("Module %s already required at version %s\n", modulePath, existing.Version)
 		fmt.Println("Updating to new version...")
+	}
+
+	if modAddIsGo {
+		addGoModule(galaMod, modulePath, versionSpec)
+		return
 	}
 
 	// Create cache and fetcher
@@ -89,10 +101,7 @@ func runModAdd(cmd *cobra.Command, args []string) {
 	}
 
 	// Auto-detect if this is a Go package (no .gala files or gala.mod in cache)
-	isGoPackage := modAddIsGo
-	if !isGoPackage {
-		isGoPackage = !hasGalaFiles(cachePath)
-	}
+	isGoPackage := !hasGalaFiles(cachePath)
 
 	// Read gala.sum before changing anything.
 	galaSum := loadGalaSum()
@@ -136,6 +145,55 @@ func runModAdd(cmd *cobra.Command, args []string) {
 		fmt.Printf("Added %s@%s\n", modulePath, version)
 	}
 	fmt.Printf("  -> %s\n", cachePath)
+}
+
+// addGoModule requires the Go module modulePath at the version query resolves
+// to. The Go toolchain resolves and downloads it, as `go get` does and as the
+// build downloads Go modules, so a module with no tagged version resolves to a
+// pseudo-version and a vanity path (golang.org/x/text) to its repository.
+func addGoModule(galaMod *mod.File, modulePath, query string) {
+	fmt.Printf("Fetching %s@%s...\n", modulePath, cmp.Or(query, "latest"))
+	m, err := downloadGoModule(modulePath, query)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to fetch module: %v\n", err)
+		os.Exit(1)
+	}
+	galaSum := loadGalaSum()
+	// Added by name, so a direct requirement.
+	setGoRequire(galaMod, galaSum, modulePath, m.Version).Indirect = false
+	if err := mod.WriteFile(galaMod, "gala.mod"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to write gala.mod: %v\n", err)
+		os.Exit(1)
+	}
+	if err := sum.WriteFile(galaSum, "gala.sum"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to write gala.sum: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Added %s@%s (Go dependency)\n", modulePath, m.Version)
+	fmt.Printf("  -> %s\n", m.Dir)
+}
+
+// downloadGoModule resolves modulePath@query with the Go toolchain and
+// downloads it into the Go module cache the build reads Go modules from.
+func downloadGoModule(modulePath, query string) (*fetch.GoModule, error) {
+	return fetch.DownloadGoModule(fetch.GoModCacheDir(fetch.DefaultGalaHome()), modulePath, query)
+}
+
+// setGoRequire requires the Go module modulePath at ver in galaMod, and
+// returns the requirement. Its checksum is go.sum's to keep, not gala.sum's
+// (see galaSumFor), so gala.sum gets no entry for it, and loses any it had for
+// the version ver replaces.
+func setGoRequire(galaMod *mod.File, galaSum *sum.File, modulePath, ver string) *mod.Require {
+	req := galaMod.GetRequire(modulePath)
+	if req == nil {
+		galaMod.AddRequire(modulePath, ver, false)
+		req = galaMod.GetRequire(modulePath)
+	} else if req.Version != ver {
+		galaSum.Remove(modulePath, req.Version)
+	}
+	req.Version = ver
+	req.Go = true
+	return req
 }
 
 // hasGalaFiles checks if a directory contains .gala files or gala.mod.

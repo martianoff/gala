@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
@@ -32,6 +33,17 @@ func newModuleRepo(t *testing.T, files map[string]string, ver string, executable
 // 100755, whatever the host filesystem can record.
 func commitVersion(t *testing.T, dir string, files map[string]string, ver string, executable ...string) {
 	t.Helper()
+	head := commitFiles(t, dir, files, "module fixture "+ver, time.Unix(0, 0), executable...)
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+	_, err = repo.CreateTag(ver, head, nil)
+	require.NoError(t, err)
+}
+
+// commitFiles writes files into the repository at dir and commits them at
+// when, without a tag. It returns the commit.
+func commitFiles(t *testing.T, dir string, files map[string]string, msg string, when time.Time, executable ...string) plumbing.Hash {
+	t.Helper()
 	repo, err := git.PlainOpen(dir)
 	require.NoError(t, err)
 	wt, err := repo.Worktree()
@@ -53,12 +65,11 @@ func commitVersion(t *testing.T, dir string, files map[string]string, ver string
 		}
 		require.NoError(t, repo.Storer.SetIndex(idx))
 	}
-	head, err := wt.Commit("module fixture "+ver, &git.CommitOptions{
-		Author: &object.Signature{Name: "fixture", Email: "fixture@example.com", When: time.Unix(0, 0)},
+	head, err := wt.Commit(msg, &git.CommitOptions{
+		Author: &object.Signature{Name: "fixture", Email: "fixture@example.com", When: when},
 	})
 	require.NoError(t, err)
-	_, err = repo.CreateTag(ver, head, nil)
-	require.NoError(t, err)
+	return head
 }
 
 // newLocalFetcher returns a fetcher over a fresh cache that clones every

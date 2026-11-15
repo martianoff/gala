@@ -39,7 +39,7 @@ func DefaultConfig() *Config {
 		GalaHome:   galaHome,
 		BuildDir:   defaultBuildDir(galaHome),
 		StdlibDir:  filepath.Join(galaHome, "stdlib"),
-		GoPkgDir:   filepath.Join(galaHome, "go", "pkg", "mod"),
+		GoPkgDir:   fetch.GoModCacheDir(galaHome),
 		GalaPkgDir: fetch.ModuleCacheDir(galaHome),
 	}
 }
