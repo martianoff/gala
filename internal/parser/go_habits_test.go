@@ -52,6 +52,32 @@ func TestGoHabitsAreCoded(t *testing.T) {
 			hint: "`sealed type`",
 		},
 		{
+			name:  "const_block_on_one_line",
+			input: "package main\n\nconst ( A = 1 )\n\nfunc main() {\n    Println(A)\n}\n",
+			code:  galaerr.CodeGoConst, line: 3, col: 0,
+			hint: "`val A = 1`",
+		},
+		{
+			// The value's own construct is reported too, and cut from the
+			// retried parse.
+			name:  "multiple_return_with_an_assertion",
+			input: "package main\n\nfunc f(x any) (int, error) {\n    return x.(int), nil\n}\n",
+			code:  galaerr.CodeGoTypeAssertion, line: 4, col: 11,
+			hint: "case v: int",
+		},
+		{
+			name:  "embedded_error_interface",
+			input: "package main\n\ntype MyErr interface {\n    error\n    Code() int\n}\n",
+			code:  galaerr.CodeGoEmbedded, line: 4, col: 4,
+			hint: "methods of `error`",
+		},
+		{
+			name:  "nested_fixed_array",
+			input: "package main\n\nfunc main() {\n    var grid [4][2]int\n    Println(grid)\n}\n",
+			code:  galaerr.CodeGoTypeForm, line: 4, col: 13,
+			hint: "`[4][2]int`",
+		},
+		{
 			name:  "var_group",
 			input: "package main\n\nvar (\n    a = 1\n    b = 2\n)\n\nfunc main() {\n    Println(a, b)\n}\n",
 			code:  galaerr.CodeGoDeclGroup, line: 3, col: 0,
@@ -278,6 +304,19 @@ func TestGoHabitsAreCoded(t *testing.T) {
 			assert.Contains(t, first.Hint, tc.hint)
 		})
 	}
+}
+
+// TestEveryTypeSetConstraintOfALineIsReported: a `~` after a union reported
+// on the same line is a constraint of its own, not part of that one.
+func TestEveryTypeSetConstraintOfALineIsReported(t *testing.T) {
+	errs := parseGalop(t, "package main\n\nfunc g[T ~int | ~string, U ~float64](a T, b U) T = a\n").Errors
+	var cols []int
+	for _, err := range errs {
+		var se *galaerr.SemanticError
+		require.Truef(t, errors.As(err, &se) && se.Code == galaerr.CodeGoTypeSetConstraint, "unexpected %v", err)
+		cols = append(cols, se.Column)
+	}
+	assert.Equal(t, []int{9, 27}, cols)
 }
 
 // TestGoHabitsLeaveGALAAlone holds the scan to shapes valid GALA never has:

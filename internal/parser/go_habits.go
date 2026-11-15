@@ -54,6 +54,9 @@ type habitScanner struct {
 	// and reports as a token recognition error: Go's approximation
 	// constraint, `~int`.
 	tildeLines map[int32]bool
+	// typeSets are the first and last token of each type-set constraint
+	// reported; a `~` in one is part of it.
+	typeSets [][2]int
 	habits     []goHabit
 	// claimed is the index of the first token after the head of the last
 	// construct found: a `switch`'s header, a group's parentheses. A
@@ -414,9 +417,9 @@ func (s *habitScanner) goConst(i int) {
 	if !s.startsStatement(i) {
 		return // `const` as a name, GALA-E0055
 	}
-	// A block's first constant starts the next line; an interface method
-	// named const, `const() int`, is GALA-E0055.
-	if s.text(i+1) == "(" && s.line(i+2) > s.line(i+1) {
+	// A block's first constant starts the next line or is `A = ...`; an
+	// interface method named const, `const() int`, is GALA-E0055.
+	if s.text(i+1) == "(" && (s.line(i+2) > s.line(i+1) || s.isIdent(i+2) && s.text(i+3) == "=") {
 		end := s.closeOf(i + 1)
 		hint := "declare each constant with `val`"
 		if first := s.statementEnd(i + 2); i+2 < end && first < end {
@@ -734,9 +737,7 @@ func (s *habitScanner) typeSet(i, j int) *goHabit {
 	if tilde {
 		h.err.Column--
 	}
-	for l := s.line(i); l <= s.endLine(j); l++ {
-		delete(s.tildeLines, l)
-	}
+	s.typeSets = append(s.typeSets, [2]int{i, j})
 	return h
 }
 
@@ -746,14 +747,17 @@ func typeSetMessage(text string) string {
 	return fmt.Sprintf("Go type-set constraint `%s`: GALA has no union or `~` constraints", short(text))
 }
 
-// tildes is GALA-E0127 for each `~` on a line no type-set constraint has
-// been reported for: `[T ~int]`, whose constraint otherwise parses as `int`.
+// tildes is GALA-E0127 for each `~` outside a type-set constraint already
+// reported: `[T ~int]`, whose constraint otherwise parses as `int`.
 func (s *habitScanner) tildes() {
 	for e, l := range s.ts.Errors {
-		if !isTildeError(l) || !s.tildeLines[int32(l.Line)] {
+		if !isTildeError(l) {
 			continue
 		}
 		at := min(int(s.ts.ErrorAt[e]), s.n-1)
+		if slices.ContainsFunc(s.typeSets, func(r [2]int) bool { return r[0] <= at && at <= r[1] }) {
+			continue
+		}
 		end := at
 		if s.isIdent(at) {
 			end = s.typeEnd(at)
@@ -764,12 +768,12 @@ func (s *habitScanner) tildes() {
 	}
 }
 
-// isGoPredeclaredType reports whether name is one of Go's predeclared types,
-// which, alone in an interface, is a type-set element, not an embedded
-// interface.
+// isGoPredeclaredType reports whether name is one of Go's predeclared types
+// that is no interface, which, alone in an interface, is a type-set element.
+// `error`, `any` and `comparable` are interfaces, embedded.
 func isGoPredeclaredType(name string) bool {
 	switch name {
-	case "bool", "string", "error", "any", "comparable", "byte", "rune", "uintptr",
+	case "bool", "string", "byte", "rune", "uintptr",
 		"int", "int8", "int16", "int32", "int64",
 		"uint", "uint8", "uint16", "uint32", "uint64",
 		"float32", "float64", "complex64", "complex128":
@@ -839,17 +843,21 @@ func (s *habitScanner) fixedArray(i int) bool {
 	if s.typ(i+1) != native.GalaINT_LIT && size != "..." || s.text(i+2) != "]" || s.line(i+3) != s.line(i) {
 		return false
 	}
+	// The element type, after every array dimension: `[4][2]int` is one.
 	elem := i + 3
+	for s.text(elem) == "[" && (s.typ(elem+1) == native.GalaINT_LIT || s.text(elem+1) == "...") && s.text(elem+2) == "]" {
+		elem += 3
+	}
 	if !s.isIdent(elem) && (s.endsExpression(i-1) || s.text(elem) != "*" && s.text(elem) != "[") {
 		return false
 	}
 	end := s.typeEnd(elem)
-	t := s.src(elem, end)
+	t := s.src(i+3, end)
 	if h := s.add(galaerr.CodeGoTypeForm, i, end, end,
 		fmt.Sprintf("Go array type `[%s]%s`: GALA has no fixed-size arrays", size, short(t)),
 		fmt.Sprintf("use a Go slice, `[]%s` (`go_interop.SliceWithSize[%s](%s)` makes one of %s elements), or an `Array[%s]`; a Go API that needs `[%s]%s` keeps it in a `.go` file of the package",
 			short(t), short(t), size, size, short(t), size, short(t))); h != nil {
-		h.cut = [2]int{i, i + 2} // the element type stays
+		h.cut = [2]int{i, elem - 1} // the element type stays
 	}
 	return true
 }
@@ -1162,7 +1170,8 @@ func (s *habitScanner) multiReturn(i int) {
 	default:
 		value = "(" + strings.Join(values, ", ") + ")"
 	}
-	if h := s.add(galaerr.CodeGoMultiReturn, i, end, end,
+	// The head is the `return` alone: a construct in a value is reported too.
+	if h := s.add(galaerr.CodeGoMultiReturn, i, end, i,
 		fmt.Sprintf("Go multiple return `return %s`: a GALA function returns one value", short(strings.Join(values, ", "))),
 		fmt.Sprintf("return one value; here, `return %s`, a tuple for a Go result list `(A, B)` and a `Try` for `(T, error)`", short(value))); h != nil {
 		h.cut = [2]int{parts[1][0] - 1, end} // `return` and the first value stay
