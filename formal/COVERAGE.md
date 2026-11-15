@@ -76,11 +76,13 @@ A run ends `unsupported:<kind>` when it reaches:
   initialization (`init-cycle`); a program without `main` (`no-main`);
 - an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
   runs the package's initializers whether or not the run reaches a name of it, and
-  galaspec does not model them. A named import of one of a fixed list of Go
-  standard-library packages (`fmt`, `strings`, … in `Json.goStdImports`, exact paths)
-  does not stop the run: Go standard-library packages print nothing during
-  initialization, and galaspec relies on this for the listed paths. A name of such a
-  package still stops the run when it is reached (`import`);
+  galaspec does not model them. A named import of one of a fixed list of packages
+  (`Json.noOutputInitImports`, exact paths: Go standard-library packages such as `fmt`
+  and `strings`, and GALA's `std` and `collection_immutable`, which the generated Go
+  imports for any program using `Option` or `Array`) does not stop the run: they print
+  nothing during initialization, which galaspec relies on for the listed paths (for
+  the two GALA packages, a gala2lean test checks their package-level initializers). A
+  name of such a package still stops the run when it is reached (`import`);
 - printing a struct or sealed value in a program that declares methods (a `String`
   method would change the text): `method`; a layout `fmt` would print as a pointer
   address: `print-pointer`;
@@ -234,13 +236,11 @@ what Core JSON leaves out, it does not translate yet:
   `List` the prelude does not model (`collection-method`); comparing values that hold
   a function (`func-in-equal`); an import, in any file it translates, reached or
   not, of a package it is not given (`import`; `blank-import` for `import _ "pkg"`),
-  whose initializers Go runs and it cannot, except a named import of one of the Go
-  standard-library packages galaspec lists (`Json.goStdImports`, exact paths; the
-  same assumption: they print nothing while they initialize), which is reported only
-  where the program uses a name of it, and of GALA's `std` and the dot-imported
-  collections (the Go of any program using `Option` or `Array` imports them, and
-  both models already run such programs without their initializers); a type of a package outside the module
-  (`qualified-type`), a dot import of a package of the module (`dot-import-module`),
+  whose initializers Go runs and it cannot, except an import of one of the packages
+  galaspec lists (`Json.noOutputInitImports`, exact paths, the same list and the same
+  assumption: they print nothing while they initialize), which is reported only where
+  the program uses a name of it outside what gala2lean models; a type of a package
+  outside the module (`qualified-type`), a dot import of a package of the module (`dot-import-module`),
   an `init` function (`init-func`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.

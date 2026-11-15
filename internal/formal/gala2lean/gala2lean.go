@@ -179,30 +179,27 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	return &Result{Lean: g.out.String(), Decls: g.decls, Generic: g.genericNames()}, nil
 }
 
-// goStdImports are the Go standard-library packages whose import alone
-// stops nothing. Assumption, not modelled: such a package prints nothing
-// while it initializes, so leaving its initializers out prints what Go
-// prints. A name of it is still reported where the program uses one
-// (import). Exact paths only: a GALA package's path carries its module.
-// galaspec makes the same assumption for the same list (Json.goStdImports
-// in formal/Gala/Json.lean; TestGoStdImportsInStep keeps them equal).
-var goStdImports = []string{
+// noOutputInitImports are the packages whose import alone stops nothing: Go
+// standard-library packages, and GALA's std and collection_immutable, which
+// the Go of any program using Option or Array imports whether or not the
+// source does, so both models already run such programs without their
+// initializers. Assumption, not modelled: none of them prints while it
+// initializes, so leaving their initializers out prints what Go prints
+// (for the two GALA packages, TestQuietInitPackages checks it). A name of
+// one is still reported where the program uses it outside what is modelled
+// (import). Exact paths only: a module package's path carries its module.
+// galaspec makes the same assumption for the same list
+// (Json.noOutputInitImports in formal/Gala/Json.lean;
+// TestNoOutputInitImportsInStep keeps them equal).
+var noOutputInitImports = []string{
 	"bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
-	"unicode", "unicode/utf8",
+	"unicode", "unicode/utf8", "martianoff/gala/std", collectionsPath,
 }
-
-// stdPath is GALA's standard library. The Go a program's Option or Either
-// lowers to imports it whether or not the source does, and both models
-// translate such programs without running its initializers: they already
-// assume that std prints nothing while it initializes, so an import of it
-// adds nothing to model.
-const stdPath = "martianoff/gala/std"
 
 // namedImportsOutside reports each named import of the merged program p,
 // a dependency file's included, of a package the translation does not have:
-// not among deps, not std (stdPath), not the dot-imported collections it
-// models (whose initializers, like std's, print nothing), not one of
-// goStdImports (import). Go initializes every imported package, so its
+// not among deps, not one of noOutputInitImports (import). Go initializes
+// every imported package, so its
 // initializers run whether or not a declaration the program reaches uses
 // the import; without the package the translation cannot run them. (A
 // blank import is blankImportsOutside's.)
@@ -215,8 +212,7 @@ func namedImportsOutside(p *coreexport.Program, deps []Package) []Unsupported {
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
 			imp, ok := d.(*coreexport.Import)
-			if !ok || imp.Alias == "_" || known[imp.Path] || imp.Path == stdPath || slices.Contains(goStdImports, imp.Path) ||
-				imp.Path == collectionsPath && imp.Alias == "." {
+			if !ok || imp.Alias == "_" || known[imp.Path] || slices.Contains(noOutputInitImports, imp.Path) {
 				continue
 			}
 			out = append(out, Unsupported{Construct: "import", Pos: imp.Pos})

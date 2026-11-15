@@ -248,7 +248,7 @@ def intLit (n : Int) : M Val :=
   else unsup "int-constant-overflow" (toString n)
 
 /-- The kind a run reports for top-level declaration kind `k` outside S1: an import of a
-    listed Go standard-library package (`Json.goStdImports`) is reported as any other
+    listed package (`Json.noOutputInitImports`) is reported as any other
     import. -/
 def outsideKind (k : String) : String :=
   if k == "import-go-std" then "import" else k

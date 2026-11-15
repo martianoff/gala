@@ -262,14 +262,18 @@ def decodeField (j : Json) : D Field := do
   return { name := ← str j "name", type := ← optTy j "type", mutable := ← bool j "mutable",
            default := ← optExpr j "default" }
 
-/-- Go standard-library packages whose import does not stop a run. Assumption, not
-    modelled: a Go standard-library package prints nothing during initialization, so
-    running without its initializers prints what Go prints. Exact paths only: a GALA
-    module package's path always carries its module prefix, so none matches. Using a
-    name of such a package still stops the run when it is reached. -/
-def goStdImports : List String :=
+/-- Packages whose import does not stop a run: Go standard-library packages, and the
+    GALA standard-library packages the generated Go already imports for any program
+    using `Option` or `Array` (`std`, `collection_immutable`), whose initialization both
+    models already leave out. Assumption, not modelled: none of them prints during
+    initialization, so running without their initializers prints what Go prints. For
+    the two GALA packages a test checks it (gala2lean's `TestQuietInitPackages`).
+    Exact paths only: a module package's path always carries its module prefix, so
+    none matches. Using a name of such a package still stops the run when it is
+    reached. gala2lean exempts the same list (`TestNoOutputInitImportsInStep`). -/
+def noOutputInitImports : List String :=
   ["bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
-   "unicode", "unicode/utf8"]
+   "unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable"]
 
 /-- A top-level declaration. -/
 def decodeTop (j : Json) : D Decl := do
@@ -278,11 +282,11 @@ def decodeTop (j : Json) : D Decl := do
   -- decoded as declaring one, as before Core JSON exported them (version 6).
   let kind ← kindOf j
   -- An import runs its package's initializers, which galaspec does not model: `runM`
-  -- stops on it (`import`, or `blank-import` for `import _ "pkg"`), except for the Go
-  -- standard-library packages of `goStdImports` (`import-go-std`).
+  -- stops on it (`import`, or `blank-import` for `import _ "pkg"`), except for the
+  -- packages of `noOutputInitImports` (`import-go-std`).
   if kind == "import" then
     if (← str j "alias") == "_" then return .unsupported "blank-import"
-    if goStdImports.contains (← str j "path") then return .unsupported "import-go-std"
+    if noOutputInitImports.contains (← str j "path") then return .unsupported "import-go-std"
     return .unsupported "import"
   -- A method, generic or not, is outside the subset galaspec models, as before Core
   -- JSON exported receivers (version 5).

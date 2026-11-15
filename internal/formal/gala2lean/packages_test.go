@@ -83,7 +83,7 @@ func TestPackages(t *testing.T) {
 	})
 
 	t.Run("a Go standard-library import that only a declaration nothing reaches uses", func(t *testing.T) {
-		// Its package prints nothing as it initializes (goStdImports).
+		// Its package prints nothing as it initializes (noOutputInitImports).
 		main := "package main\n\nimport \"example.com/m/lib\"\n\nfunc main() { Println(lib.Origin()) }\n"
 		pkgs := map[string]string{"lib": "package lib\n\nimport \"strings\"\n\nstruct Pt(X int, Y int)\n\nfunc Origin() Pt = Pt(0, 0)\n\nfunc Up(s string) string = strings.ToUpper(s)\n"}
 		p := export(t, "main.gala", main)
