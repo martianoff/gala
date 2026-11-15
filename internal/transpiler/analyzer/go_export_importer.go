@@ -85,16 +85,21 @@ func (e *exportDataImporter) Import(path string) (*types.Package, error) {
 	return e.source.Import(path)
 }
 
-// importExportData reads path's export data. The gc importer panics on export
+// importExportData reads path's export data.
+func (e *exportDataImporter) importExportData(path string) (*types.Package, error) {
+	return importExportData(e.gc, path)
+}
+
+// importExportData imports path with gc, a "gc" importer. It panics on export
 // data it cannot decode — the format of a newer Go release than the one GALA
 // was built with, say — and that is reported as an error, for the fallback.
-func (e *exportDataImporter) importExportData(path string) (pkg *types.Package, err error) {
+func importExportData(gc types.Importer, path string) (pkg *types.Package, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkg, err = nil, fmt.Errorf("reading export data of %q: %v", path, r)
 		}
 	}()
-	return e.gc.Import(path)
+	return gc.Import(path)
 }
 
 // goListBatch caps the import paths one `go list` is given, keeping its

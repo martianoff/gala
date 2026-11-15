@@ -28,6 +28,13 @@ import (
 var (
 	goImporterOnce sync.Once
 	goImporterInst types.Importer
+
+	// goTableImporter is goImporterInst behind goExportTable (see
+	// SetGoExportFiles): export files a build system hands over come first.
+	// It wraps goImporterInst from the start, whether or not the table has
+	// entries yet, so the importer a package is read with never depends on
+	// when they arrived.
+	goTableImporter types.Importer
 )
 
 // goImporterAvailable tracks whether we have a working Go importer.
@@ -67,6 +74,11 @@ func getGoImporter() types.Importer {
 
 		fset := token.NewFileSet()
 		source := importer.ForCompiler(fset, "source", nil)
+		defer func() {
+			if goImporterInst != nil {
+				goTableImporter = newTableExportImporter(fset, goExportTable, goImporterInst)
+			}
+		}()
 
 		// Export data when the caller opted in (see UseGoExportData) and the
 		// go command produces export data this build of GALA can read;
@@ -86,6 +98,13 @@ func getGoImporter() types.Importer {
 
 		// Try source importer first (works with Bazel Go SDK which has source but no .a files)
 		goImporterInst = source
+		// The standard library's export data, when the build system gave it,
+		// is read before the source importer: probing that with fmt would
+		// type-check fmt and its imports from source for nothing.
+		if readsGoExportData(goExportTable) {
+			goImporterAvailable = true
+			return
+		}
 		if _, err := goImporterInst.Import("fmt"); err == nil {
 			goImporterAvailable = true
 			return
@@ -104,7 +123,7 @@ func getGoImporter() types.Importer {
 	if goImporterInst == nil {
 		return nil
 	}
-	return serialImporter{imp: goImporterInst}
+	return serialImporter{imp: goTableImporter}
 }
 
 // goImporterMu serializes every use of the shared importer. Neither go/importer
@@ -447,6 +466,20 @@ var goPackageCache = struct {
 	mu    sync.Mutex
 	cache map[string]*transpiler.GoTypeInfo
 }{cache: make(map[string]*transpiler.GoTypeInfo)}
+
+// forgetGoPackages drops the cached AnalyzeGoPackage results of paths, or of
+// every package when all is set.
+func forgetGoPackages(paths []string, all bool) {
+	goPackageCache.mu.Lock()
+	defer goPackageCache.mu.Unlock()
+	if all {
+		clear(goPackageCache.cache)
+		return
+	}
+	for _, p := range paths {
+		delete(goPackageCache.cache, p)
+	}
+}
 
 // goTypeInfoNonEmpty reports whether a GoTypeInfo carries any usable type
 // data. Used to decide whether go/importer resolved a package or whether the

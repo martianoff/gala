@@ -343,6 +343,8 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 		search  string
 		goroot  string
 		goSrc   string
+		goExp   string
+		goStd   string
 		scan    bool
 	)
 	fs.StringVar(&inputs, "inputs", "", "")
@@ -350,6 +352,8 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 	fs.StringVar(&search, "search", ".", "")
 	fs.StringVar(&goroot, "goroot", "", "")
 	fs.StringVar(&goSrc, "go-src", "", "")
+	fs.StringVar(&goExp, "go-export", "", "")
+	fs.StringVar(&goStd, "go-stdlib-export", "", "")
 	fs.BoolVar(&scan, "scan", false, "")
 	if err := fs.Parse(argv); err != nil {
 		fmt.Fprintf(out, "transpile-package: parse flags: %v\n", err)
@@ -379,6 +383,10 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 	paths = autoResolveSearchPaths(inList[0], paths)
 	projectRoot := findGalaModDir(filepath.Dir(mustAbs(inList[0])))
 
+	// --go-export takes the same importpath=path list as --go-src, naming
+	// export data files instead of source directories. Set on every request,
+	// so one without the flags is not served an earlier request's files.
+	analyzer.SetGoExportFiles(parseGoSrc(goExp), goStd)
 	parser, batch := getBatchAnalyzer(paths, goroot, projectRoot)
 	if dirs := parseGoSrc(goSrc); dirs != nil {
 		batch.SetGoSrcDirs(dirs)
@@ -457,6 +465,8 @@ func runWorkerTranspile(argv []string, out io.Writer) int {
 		packageFiles string
 		goroot       string
 		goSrc        string
+		goExp        string
+		goStd        string
 	)
 	fs.StringVar(&input, "input", "", "")
 	fs.StringVar(&output, "output", "", "")
@@ -464,6 +474,8 @@ func runWorkerTranspile(argv []string, out io.Writer) int {
 	fs.StringVar(&packageFiles, "package-files", "", "")
 	fs.StringVar(&goroot, "goroot", "", "")
 	fs.StringVar(&goSrc, "go-src", "", "")
+	fs.StringVar(&goExp, "go-export", "", "")
+	fs.StringVar(&goStd, "go-stdlib-export", "", "")
 	if err := fs.Parse(argv); err != nil {
 		fmt.Fprintf(out, "transpile: parse flags: %v\n", err)
 		return 1
@@ -494,6 +506,10 @@ func runWorkerTranspile(argv []string, out io.Writer) int {
 	paths = autoResolveSearchPaths(input, paths)
 	projectRoot := findGalaModDir(filepath.Dir(mustAbs(input)))
 
+	// --go-export takes the same importpath=path list as --go-src, naming
+	// export data files instead of source directories. Set on every request,
+	// so one without the flags is not served an earlier request's files.
+	analyzer.SetGoExportFiles(parseGoSrc(goExp), goStd)
 	parser, batch := getBatchAnalyzer(paths, goroot, projectRoot)
 	if dirs := parseGoSrc(goSrc); dirs != nil {
 		batch.SetGoSrcDirs(dirs)

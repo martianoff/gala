@@ -18,7 +18,8 @@ import (
 // moduleDirs records how a type check resolved the imports it read, its own
 // and those of the packages it loaded from source: for each import path, the
 // source directory a table of Go module sources (see galaAnalyzer.goSrcDirs)
-// gave it, or "" when the table gave none and the shared importer served it.
+// gave it, the export file the build system gave it (see goTypesSource), or ""
+// when neither did and the shared importer served it.
 // A result built under one table is valid under another that resolves each
 // of those paths the same way, so caches keyed by directory serve every build
 // whose table agrees on what they read (a Bazel worker gets a table per target).
@@ -27,7 +28,7 @@ type moduleDirs map[string]string
 // holdIn reports whether goSrcDirs resolves every recorded import as it was.
 func (d moduleDirs) holdIn(goSrcDirs map[string]string) bool {
 	for path, dir := range d {
-		if got, _ := ResolveGoSrcDir(goSrcDirs, path); got != dir {
+		if got, _ := goTypesSource(goSrcDirs, path); got != dir {
 			return false
 		}
 	}
@@ -36,8 +37,9 @@ func (d moduleDirs) holdIn(goSrcDirs map[string]string) bool {
 
 // moduleSourceImporter is the importer the hand-written .go files of a package
 // are type-checked with: a package of a module goSrcDirs names is read from
-// its source directory, any other through the shared Go importer. It records
-// what it resolved in used.
+// its source directory, any other, or one the build system gave export data
+// for (see SetGoExportFiles), through the shared Go importer. It records what
+// it resolved in used.
 //
 // The shared importer reads the standard library, but not a versioned module
 // from the module cache or Bazel's external tree. Without the source
@@ -59,9 +61,15 @@ func newModuleSourceImporter(goSrcDirs map[string]string) *moduleSourceImporter 
 }
 
 func (m *moduleSourceImporter) Import(path string) (*types.Package, error) {
-	dir, fromSource := ResolveGoSrcDir(m.goSrcDirs, path)
-	m.used[path] = dir
-	if fromSource {
+	source, fromExport := goTypesSource(m.goSrcDirs, path)
+	m.used[path] = source
+	if fromExport && m.base != nil {
+		if pkg, err := m.base.Import(path); err == nil {
+			return pkg, nil
+		}
+	}
+	// From source when export data has none to give, or cannot be read.
+	if dir, ok := ResolveGoSrcDir(m.goSrcDirs, path); ok {
 		pkg, used, err := moduleSourcePackages.load(dir, path, m.goSrcDirs)
 		maps.Copy(m.used, used)
 		return pkg, err
@@ -97,6 +105,18 @@ type sourcePackage struct {
 	pkg  *types.Package
 	used moduleDirs
 	err  error
+}
+
+// forget drops the variants drop reports.
+func (c *sourcePackageCache) forget(drop func(sourcePackage) bool) {
+	c.mu.Lock()
+	entries := slices.Collect(maps.Values(c.entries))
+	c.mu.Unlock()
+	for _, e := range entries {
+		e.mu.Lock()
+		e.variants = slices.DeleteFunc(e.variants, drop)
+		e.mu.Unlock()
+	}
 }
 
 func (c *sourcePackageCache) load(dir, path string, goSrcDirs map[string]string) (*types.Package, moduleDirs, error) {
