@@ -2,9 +2,9 @@ load("@rules_gala//galop:defs.bzl", "galop_parser")
 load("@rules_go//go:def.bzl", "go_library")
 
 # galop's native parser and tree for gala.g4: compact tokens and nodes with
-# typed handles, Kind(), Typed(), a listener and a visitor. galop's antlr
-# flavor writes the converter from ANTLR's trees to it (see
-# internal/parser/grammar); internal/parser hands it out with each parse
+# typed handles, Kind(), Typed(), a listener and a visitor: the parser GALA
+# parses with, generated from the grammar
+# (internal/parser/grammar/gala.g4); internal/parser hands it out with each parse
 # (parser.Native).
 galop_parser(
     name = "gala_native_galop",

@@ -55,9 +55,12 @@ func reportGalopPanic(stage, input string, r any) {
 		stage, len(input), first, r, debug.Stack())
 }
 
-// IsParserPanic reports whether err is, or holds, the internal compiler
+// IsParserPanic reports whether err is, or wraps, the internal compiler
 // error (GALA-E0017) of a panic in galop's lexer or parser: the parse has no
-// tree and says nothing about the source.
+// tree and says nothing about the source. Ask it of one error of a parse,
+// not of Parsed.Err's MultiError, which wraps none. It tells the panic from
+// the transformer's GALA-E0017 by parserPanicPrefix, which galopPanicError
+// alone writes.
 func IsParserPanic(err error) bool {
 	var se *galaerr.SemanticError
 	return errors.As(err, &se) && se.Code == galaerr.CodeInternalTransformerPanic &&

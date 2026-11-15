@@ -206,8 +206,8 @@ Check the description against the diff in both directions:
   - If the shared Bazel install base is corrupt, use a private
     `--install_base=<dir>`; do not delete the shared one.
   - Bazel downloads its own pinned Go SDK. If that download fails, generate the parser
-    with `bazel build //internal/parser/grammar:gala_grammar_go`, copy the outputs into
-    the review worktree's `internal/parser/grammar/`, and run the targeted package with
+    with `bazel build //internal/parser/native:gala_native_galop`, copy the outputs into
+    the review worktree's `internal/parser/native/` (as `tools/fuzz.sh` does), and run the targeted package with
     the host `go test` for a local repro only. CI remains the authority.
 - Confirm a proposed fix works by applying it locally, running the repro and the PR's
   own tests, then reverting.

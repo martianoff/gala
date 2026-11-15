@@ -290,7 +290,7 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
   ```
 
   - **How a file is parsed.** `ParseFile` lexes with galop's native lexer, applies GALA's
-    line-break rule to the tokens (`RetypeNewlines`), parses them with galop's native parser,
+    line-break rule to the tokens (`retypeNewlines`), parses them with galop's native parser,
     checks the blank lines on the native tree and takes the doc comments from the hidden
     tokens. galop settles the grammar's parsing decisions when the parser is generated, so
     its parse is several times faster than ANTLR's was.

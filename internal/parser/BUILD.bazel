@@ -24,6 +24,10 @@ go_library(
 
 go_test(
     name = "parser_test",
+    # TestParserGolden re-parses every file of the frozen corpus about a dozen
+    # ways, and the corpus tests read every GALA source of the repository:
+    # well under a minute on a 32-thread machine, more on CI's 4-core runners.
+    size = "large",
     srcs = [
         "bare_lambda_param_test.go",
         "bom_test.go",

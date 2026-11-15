@@ -115,20 +115,35 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 // and parses the tokens with parse, one of galop's recovering parsers. When
 // either panics, the panic is recovered and returned as an internal compiler
 // error at line/col (galopPanicError), with no tokens or tree. Only galop's
-// lexer and parser run under the recover: a panic in what GALA does with
-// their result is GALA's bug, and is not reported as galop's.
-func galopParse[N any](input string, line, col int, parse func(*native.GalaTokens) (N, []native.GalaParseError)) (ts *native.GalaTokens, root N, errs []native.GalaParseError, panicErr error) {
-	stage := "lexer"
+// lexer and parser run under the recover: a panic in GALA's own code (the
+// line-break rule, what GALA does with the result) is GALA's bug, and is not
+// reported as galop's.
+func galopParse[N any](input string, line, col int, parse func(*native.GalaTokens) (N, []native.GalaParseError)) (*native.GalaTokens, N, []native.GalaParseError, error) {
+	var zero N
+	var ts *native.GalaTokens
+	if err := underGalop("lexer", input, line, col, func() { ts = lexGalop(input, line, col) }); err != nil {
+		return nil, zero, nil, err
+	}
+	retypeNewlines(ts)
+	var root N
+	var errs []native.GalaParseError
+	if err := underGalop("parser", input, line, col, func() { root, errs = parse(ts) }); err != nil {
+		return nil, zero, nil, err
+	}
+	return ts, root, errs, nil
+}
+
+// underGalop runs f, a call of galop's stage ("lexer" or "parser") on input
+// at line/col, and returns the internal compiler error of a panic in it
+// (galopPanicError), or nil.
+func underGalop(stage, input string, line, col int, f func()) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			var zero N
-			ts, root, errs, panicErr = nil, zero, nil, galopPanicError(stage, input, line, col, r)
+			err = galopPanicError(stage, input, line, col, r)
 		}
 	}()
-	ts = lexNative(input, line, col)
-	stage = "parser"
-	root, errs = parse(ts)
-	return ts, root, errs, nil
+	f()
+	return nil
 }
 
 // newParsed is a parse with doc comments, errors and native-tree handle: the

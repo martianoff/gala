@@ -52,12 +52,17 @@ func byteAt(src string, i int) int {
 // (antlrText), one character of token text, doc comments and columns. ts.Src
 // is then that decoded text.
 func lexNative(src string, line, col int) *native.GalaTokens {
+	ts := lexGalop(src, line, col)
+	retypeNewlines(ts)
+	return ts
+}
+
+// lexGalop is lexNative without the line-break rule: galop's lexer alone.
+func lexGalop(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
-	ts := native.GalaLexAt(antlrText(src), line, col)
-	retypeNewlines(ts)
-	return ts
+	return native.GalaLexAt(antlrText(src), line, col)
 }
 
 // antlrText is src as ANTLR's input stream reads it: each byte that is not
@@ -96,15 +101,15 @@ func VisitNativeTokens(input string, visit func(text string)) {
 }
 
 // lexNativeRecovered is lexNative of input at its start, or nil when galop's
-// lexer panics on it (see reportGalopPanic).
-func lexNativeRecovered(input string) (ts *native.GalaTokens) {
-	defer func() {
-		if r := recover(); r != nil {
-			reportGalopPanic("lexer", input, r)
-			ts = nil
-		}
-	}()
-	return lexNative(input, 0, 0)
+// lexer panics on it (reported on standard error under GALA_PANIC_STACK=1;
+// a parse of the same text reports it as a diagnostic, see galopPanicError).
+func lexNativeRecovered(input string) *native.GalaTokens {
+	var ts *native.GalaTokens
+	if underGalop("lexer", input, 0, 0, func() { ts = lexGalop(input, 0, 0) }) != nil {
+		return nil
+	}
+	retypeNewlines(ts)
+	return ts
 }
 
 // parseExpressionAt parses input as an expression whose first character sits
