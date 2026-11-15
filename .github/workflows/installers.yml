@@ -192,7 +192,10 @@ jobs:
       # The bucket is this checkout: Scoop clones it like any bucket repository.
       - name: scoop install gala from this bucket
         run: |
-          scoop bucket add gala "$env:GITHUB_WORKSPACE"
+          # Scoop takes only Git URLs, so the checkout is passed as a file://
+          # one, and git must trust a repository the runner user did not create.
+          git config --global --add safe.directory '*'
+          scoop bucket add gala ([Uri]$env:GITHUB_WORKSPACE).AbsoluteUri
           if ($LASTEXITCODE -ne 0) { throw "scoop bucket add failed" }
           scoop install gala/gala
           if ($LASTEXITCODE -ne 0) { throw "scoop install failed" }
