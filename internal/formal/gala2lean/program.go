@@ -42,6 +42,8 @@ type gen struct {
 	// depNS is the namespaces of the packages of the module the program
 	// imports (packages.go).
 	depNS map[string]bool
+	// ownPtrs is the packages that may declare their own Ptr type (ownPtr).
+	ownPtrs map[string]bool
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).

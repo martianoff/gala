@@ -78,4 +78,15 @@ func TestPackages(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, first.Lean, second.Lean)
 	})
+
+	t.Run("a Ptr of another package", func(t *testing.T) {
+		// Only a package's own Ptr hides std's from its methods.
+		main := "package main\n\nimport \"example.com/m/lib\"\n\nstruct C(var N int)\n\nfunc (c Ptr[C]) Inc() { c.N = c.N + 1 }\n\n" +
+			"func wrap(n int) lib.Ptr[int] = lib.Ptr(n)\n\n" +
+			"func main() {\n    var c = C(0)\n    c.Inc()\n    Println(lib.Origin(), c.N, wrap(1))\n}\n"
+		pkgs := map[string]string{"lib": lib + "\nstruct Ptr[T any](V T)\n"}
+		p := export(t, "main.gala", main)
+		_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Main: true, Deps: moduleDeps(t, p, pkgs)})
+		require.NoError(t, err)
+	})
 }

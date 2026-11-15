@@ -3,6 +3,7 @@ package gala2lean
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -38,6 +39,120 @@ import (
 // back. That loses no output today, since a panic ends the run, but it
 // would be wrong once a panic can be caught.
 
+// ptrReceivers is p with each receiver `(c Ptr[T])` written `(c *T)`, the
+// receiver it is: the transpiler lowers both to the Go pointer receiver
+// `func (c *T) m`, and a call on a `var` x to `x.m(...)`. (Ptr[T]'s method
+// also panics when c is nil; a receiver the translation passes, a place,
+// never is.) Only std's Ptr is: in a package that may declare a type named
+// Ptr itself (ownPtr), nothing is rewritten. The exporter writes the
+// receiver as the source does.
+func ptrReceivers(p *coreexport.Program) *coreexport.Program {
+	own := ownPtr(p)
+	out := &coreexport.Program{Core: p.Core}
+	changed := false
+	for _, f := range p.Files {
+		var c *coreexport.File
+		for i, d := range f.Decls {
+			fn, ok := d.(*coreexport.Func)
+			if !ok {
+				continue
+			}
+			inner := stdPtrReceiver(fn, own)
+			if inner == nil {
+				continue
+			}
+			if c == nil {
+				cf := *f
+				cf.Decls = slices.Clone(f.Decls)
+				c = &cf
+			}
+			rc := *fn.Receiver.(*coreexport.Receiver)
+			rc.Type, rc.Pointer = inner, true
+			fc := *fn
+			fc.Receiver = &rc
+			c.Decls[i] = &fc
+		}
+		if c == nil {
+			out.Files = append(out.Files, f)
+			continue
+		}
+		changed = true
+		out.Files = append(out.Files, c)
+	}
+	if !changed {
+		return p
+	}
+	return out
+}
+
+// stdPtrReceiver is T for a method whose receiver is `(c Ptr[T])`, std's Ptr
+// over a plain type T of its package; nil for any other. own is ownPtr.
+func stdPtrReceiver(fn *coreexport.Func, own map[string]bool) coreexport.Node {
+	r, ok := fn.Receiver.(*coreexport.Receiver)
+	if !ok || r.Pointer || r.Inout {
+		return nil
+	}
+	tn, ok := r.Type.(*coreexport.TypeName)
+	if !ok || tn.Package != "" || tn.Name != "Ptr" || len(tn.Args) != 1 {
+		return nil
+	}
+	inner, ok := tn.Args[0].(*coreexport.TypeName)
+	if !ok || inner.Package != "" || len(inner.Args) > 0 || own[pkgPrefix(inner.Name)] {
+		return nil
+	}
+	return inner
+}
+
+// ownPtr is the packages, by namespace prefix ("" for the program's own),
+// that may declare a type named Ptr themselves, which a receiver `Ptr[T]`
+// in them then names: a struct, sealed type or case of that name (a case is
+// a Go type too), or a type declaration Core JSON does not name (an
+// interface, a defined or opaque type), which might be one. Only a
+// package's own declarations can hide std's Ptr from its methods: a method
+// is declared in its receiver type's package.
+func ownPtr(p *coreexport.Program) map[string]bool {
+	own := map[string]bool{}
+	for _, f := range p.Files {
+		prefix, unnamed := "", false
+		for _, d := range f.Decls {
+			var names []string
+			switch d := d.(type) {
+			case *coreexport.Struct:
+				names = []string{d.Name}
+			case *coreexport.Sealed:
+				names = append(names, d.Name)
+				for _, vn := range d.Variants {
+					if v, ok := vn.(*coreexport.Variant); ok {
+						names = append(names, pkgPrefix(d.Name)+v.Name)
+					}
+				}
+			case *coreexport.Func:
+				if d.Receiver == nil {
+					names = []string{d.Name}
+				} else if t := receiverTypeName(d, nil); t != "" {
+					prefix = pkgPrefix(t)
+				}
+			case *coreexport.Unsupported:
+				switch d.What {
+				case coreexport.UnsupportedDefinedType, coreexport.UnsupportedInterface, coreexport.UnsupportedOpaqueType:
+					unnamed = true
+				}
+			}
+			for _, n := range names {
+				prefix = pkgPrefix(n)
+				if bareName(n) == "Ptr" {
+					own[prefix] = true
+				}
+			}
+		}
+		// The file's package is the one its named declarations are in.
+		if unnamed {
+			own[prefix] = true
+		}
+	}
+	return own
+}
+
 // key is a function's name, or "T.m" for method m of type T.
 func (g *gen) key(f *coreexport.Func) string { return funcKey(f) }
 
@@ -52,8 +167,8 @@ func funcKey(f *coreexport.Func) string {
 // outsideSubset is the construct that puts function or method f outside
 // the translated subset as a whole, "" when it is inside: for a method, type
 // parameters of its own (generic-decl), or a receiver whose type is not a
-// plain type of the program's (Ptr[T], Box[T]: generic-type). A generic
-// function is inside.
+// plain type of the program's (Box[T]: generic-type). A Ptr[T] receiver is
+// a pointer receiver (ptrReceivers). A generic function is inside.
 func outsideSubset(f *coreexport.Func) string {
 	if f.Receiver == nil {
 		return ""
@@ -74,16 +189,16 @@ func outsideSubset(f *coreexport.Func) string {
 }
 
 // addMethod records method f. A method whose receiver is outside the subset
-// (Ptr[T], a generic type) is a declaration outside it: a call of it is
-// reported, and its String or Equal, if it has one, may decide how any
-// value prints or compares (hasMethods).
+// (a generic type) is a declaration outside it: a call of it is reported,
+// and its String or Equal, if it has one, decides how its type's values
+// print or compare (markCustom).
 func (g *gen) addMethod(f *coreexport.Func) {
 	if what := outsideSubset(f); what != "" {
 		g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: what, Pos: f.Pos})
 		// A method the translation does not see changes how values print
 		// or compare only through its name, on its receiver's type; when
 		// that type is not plain to see, any value might be affected.
-		if t := receiverTypeName(f); t != "" {
+		if t := receiverTypeName(f, g.ownPtrs); t != "" {
 			g.markCustom(t, f.Name)
 		} else {
 			g.hasMethods = true
@@ -124,7 +239,7 @@ var customMethods = map[string]string{
 
 // receiverTypeName is the type whose values a method's receiver holds: T
 // for `(c T)`, `(c Ptr[T])` and `(c T[A])`; "" when not plain to see.
-func receiverTypeName(f *coreexport.Func) string {
+func receiverTypeName(f *coreexport.Func, own map[string]bool) string {
 	r, ok := f.Receiver.(*coreexport.Receiver)
 	if !ok {
 		return ""
@@ -134,7 +249,11 @@ func receiverTypeName(f *coreexport.Func) string {
 		return ""
 	}
 	if tn.Name == "Ptr" && len(tn.Args) == 1 {
-		return typeHead(tn.Args[0])
+		// Std's Ptr, unless the method's package declares its own (own,
+		// ownPtr), whose method it then is.
+		if t := typeHead(tn.Args[0]); !own[pkgPrefix(t)] {
+			return t
+		}
 	}
 	return tn.Name
 }

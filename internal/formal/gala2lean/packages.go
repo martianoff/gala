@@ -845,7 +845,7 @@ func declNames(d coreexport.Node) []string {
 	case *coreexport.Func:
 		if d.Receiver != nil {
 			names := []string{"." + d.Name}
-			if t := receiverTypeName(d); t != "" && customMethods[d.Name] != "" {
+			if t := receiverTypeName(d, nil); t != "" && customMethods[d.Name] != "" {
 				names = append(names, t)
 			}
 			return names

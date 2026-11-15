@@ -113,6 +113,9 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"printing a type with its own String", "package main\nstruct C(N int)\nfunc (c C) String() string = \"c\"\nfunc main() { Println(C(1)) }\n", "custom-string"},
 		{"printing a type with its own Error", "package main\nstruct E(Msg string)\nfunc (e E) Error() string = \"x\"\nfunc main() { Println(E(\"a\")) }\n", "custom-string"},
 		{"printing a type with a String the translation does not see", "package main\nstruct C(N int)\nfunc (c Ptr[C]) String() string = \"c\"\nfunc main() { Println(C(1)) }\n", "custom-string"},
+		{"a Ptr method on a val", "package main\nstruct C(var N int)\nfunc (c Ptr[C]) Inc() { c.N = c.N + 1 }\nfunc main() { val c = C(0)\n c.Inc()\n Println(c.N) }\n", "pointer-method-on-value"},
+		{"a Ptr method on a captured var", "package main\nstruct C(var N int)\nfunc (c Ptr[C]) Inc() { c.N = c.N + 1 }\nfunc main() { var c = C(0)\n val f = () => c.N\n c.Inc()\n Println(f()) }\n", "ptr-escape"},
+		{"a Ptr receiver passed on", "package main\nstruct C(var N int)\nfunc show(c C) int = c.N\nfunc (c Ptr[C]) Show() int = show(c)\nfunc main() { var c = C(0)\n Println(c.Show()) }\n", "ptr-escape"},
 		{"go builtin", "package main\nfunc main() { println(1) }\n", "call-of-println"},
 		{"return in an expression", "package main\nfunc f(n int) int { val x = if (n > 0) { return 1 } else 2\n x }\nfunc main() { Println(f(1)) }\n", "return-inside-expression"},
 		{"no main", "package main\nfunc f() int = 1\n", "no-main"},
@@ -187,10 +190,56 @@ func main() {
 	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
 	s := gala2lean.CountTranslated(p, err)
 	// Counted: Get, Inc, Box.Get, id, bad, takesTry, main. Translated:
-	// Counter.Get, id and main. bad is reported for its body, takesTry for
-	// a type in its signature (its body would translate); Inc and Box.Get
-	// have receivers outside the subset.
-	require.Equal(t, gala2lean.Stats{Funcs: 7, Methods: 3, Translated: 3}, s, "%v", err)
+	// Counter.Get, Counter.Inc (a Ptr[Counter] receiver is a pointer
+	// receiver), id and main. bad is reported for its body, takesTry for a
+	// type in its signature (its body would translate); Box.Get has a
+	// generic receiver, outside the subset.
+	require.Equal(t, gala2lean.Stats{Funcs: 7, Methods: 3, Translated: 4}, s, "%v", err)
+}
+
+// TestOwnPtr checks that a receiver `Ptr[T]` is a pointer receiver only
+// when Ptr is std's: in a program that declares a type Ptr, it is that
+// type, a generic receiver outside the subset.
+func TestOwnPtr(t *testing.T) {
+	src := `package main
+
+struct Ptr[T any](Value T)
+
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Get() int = 1
+
+func main() {
+    Println(1)
+}
+`
+	p := export(t, "main.gala", src)
+	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
+	require.Equal(t, gala2lean.Stats{Funcs: 2, Methods: 1, Translated: 1}, gala2lean.CountTranslated(p, err), "%v", err)
+
+	// A case named Ptr is a Go type of that name too.
+	src = `package main
+
+sealed type Ref[T any] {
+    case Ptr(V T)
+    case Nil()
+}
+
+struct Counter(var N int)
+
+func (c Counter) Get() int = c.N
+
+func (c Ptr[Counter]) Get() int = 99
+
+func main() {
+    val c = Counter(1)
+    Println(c.Get())
+}
+`
+	p = export(t, "main.gala", src)
+	res, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Main: true})
+	require.NoError(t, err)
+	require.NotContains(t, res.Lean, "99", "Ptr[Counter] is the case's method, not Counter's")
 }
 
 // TestRecursion checks how functions are defined: one that calls itself, or

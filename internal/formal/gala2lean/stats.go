@@ -14,7 +14,7 @@ type Stats struct {
 	Funcs, Methods int
 	// Translated is how many of Funcs the translation covers: not a
 	// generic function or method, not a method whose receiver is outside
-	// the subset (Ptr[T], Box[T]), and not one err names.
+	// the subset (Box[T], or Ptr[T] over one), and not one err names.
 	Translated int
 }
 
@@ -22,6 +22,7 @@ type Stats struct {
 // (nil, or an *UnsupportedError).
 func CountTranslated(p *coreexport.Program, err error) Stats {
 	var s Stats
+	p = ptrReceivers(p)
 	// The functions inside the subset, by the key the report names them by.
 	inside := map[string]bool{}
 	for _, f := range p.Files {
