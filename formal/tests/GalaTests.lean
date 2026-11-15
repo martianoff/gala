@@ -53,8 +53,9 @@ private def decodes (s : String) : Bool := (Json.parse s).toBool
 
 -- An import runs its package's initializers, which galaspec does not model, whether
 -- or not the run reaches a name of it: the program is unsupported before anything
--- runs, a blank import as `blank-import`. An import of a listed Go standard-library
--- package, which prints nothing as it initializes, does not stop the run.
+-- runs, a blank import as `blank-import`. An import of a listed package
+-- (`noOutputInitImports`), which prints nothing as it initializes, does not stop the
+-- run.
 private def withImport (path alias : String) : String :=
   let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
   "{\"core\": 9, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
@@ -68,6 +69,9 @@ private def withImport (path alias : String) : String :=
 #guard (Cli.evaluate (withImport "fmt" "") Cli.defaultFuel).2.1 == "ok"
 #guard (Cli.evaluate (withImport "fmt" "_") Cli.defaultFuel).2.1 == "unsupported:blank-import"
 #guard (Cli.evaluate (withImport "x/fmt" "") Cli.defaultFuel).2.1 == "unsupported:import"
+#guard (Cli.evaluate (withImport "martianoff/gala/std" ".") Cli.defaultFuel).2.1 == "ok"
+#guard (Cli.evaluate (withImport "martianoff/gala/collection_immutable" ".") Cli.defaultFuel).2.1 == "ok"
+#guard (Cli.evaluate (withImport "martianoff/gala/json" "") Cli.defaultFuel).2.1 == "unsupported:import"
 
 -- The command line.
 #guard Cli.parseArgs ["run", "p.json"] == some ("p.json", Cli.defaultFuel)

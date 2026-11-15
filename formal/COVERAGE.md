@@ -333,30 +333,30 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (35 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (37 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 335 |
-| `method-call` | 37 |
-| `generic-type` | 26 |
-| `index` | 16 |
+| `import` | 275 |
+| `method-call` | 51 |
+| `generic-type` | 41 |
+| `index` | 38 |
 | `generic-decl` | 15 |
+| `address-of` | 10 |
 | `unresolved-name` | 9 |
-| `composite-literal` | 7 |
-| `address-of` | 6 |
-| `float-literal` | 6 |
+| `composite-literal` | 8 |
+| `float-literal` | 7 |
 | `method` | 6 |
 | `stuck` | 4 |
 | `by-name-arg` | 2 |
 | `char-literal` | 2 |
+| `for` | 2 |
 | `format-string` | 2 |
 | `type-Value` | 2 |
 | `type-any` | 2 |
 | `typed-pattern` | 2 |
 | `blank-import` | 1 |
 | `defined-type` | 1 |
-| `expression-pattern` | 1 |
 
 ### Outside what gala2lean translates
 
