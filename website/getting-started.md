@@ -47,6 +47,14 @@ The installer picks the binary for your OS and CPU from the latest release, chec
 
 Set `GITHUB_TOKEN` if you hit GitHub's API rate limit. The installer then runs `gala version` and checks for Go 1.25+, which GALA needs to compile programs; it tells you where to get Go but does not install it.
 
+### Homebrew (macOS, Linux)
+
+```sh
+brew install martianoff/gala/gala
+```
+
+The formula installs Go as a dependency. `brew upgrade gala` picks up new releases.
+
 ### Scoop (Windows)
 
 ```powershell

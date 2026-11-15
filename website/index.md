@@ -274,7 +274,7 @@ curl -fsSL https://raw.githubusercontent.com/martianoff/gala/master/tools/instal
 irm https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.ps1 | iex
 ```
 
-The installer verifies the download's SHA-256 and installs `gala` (on Windows it also adds it to your `PATH`; on Linux and macOS it prints the line to add). GALA compiles through Go, so you also need [Go 1.25+](https://go.dev/dl/). Scoop, Nix and manual downloads are covered in [Getting Started]({{ '/getting-started/' | relative_url }}#installation).
+The installer verifies the download's SHA-256 and installs `gala` (on Windows it also adds it to your `PATH`; on Linux and macOS it prints the line to add). GALA compiles through Go, so you also need [Go 1.25+](https://go.dev/dl/). Homebrew, Scoop, Nix and manual downloads are covered in [Getting Started]({{ '/getting-started/' | relative_url }}#installation).
 
 ### 2. Write
 

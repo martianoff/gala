@@ -90,7 +90,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.ps1 | iex
 ```
 
-Or with [Scoop](https://scoop.sh): `scoop bucket add gala https://github.com/martianoff/gala` then `scoop install gala/gala`.
+Or with [Homebrew](https://brew.sh): `brew install martianoff/gala/gala` (installs Go too), or [Scoop](https://scoop.sh): `scoop bucket add gala https://github.com/martianoff/gala` then `scoop install gala/gala`.
 
 The installers download the latest release for your OS and CPU, check its SHA-256 against the release's `checksums-sha256.txt`, and install `gala` into `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\gala\bin`, added to your user `PATH`). To pick a release or directory, end the Linux/macOS command with `| sh -s -- --version 0.101.0 --dir ~/bin`, or on Windows set `$env:GALA_VERSION` / `$env:GALA_INSTALL_DIR` first; all options are listed at the top of [install.sh](tools/install/install.sh) and [install.ps1](tools/install/install.ps1).
 
