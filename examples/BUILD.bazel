@@ -5469,6 +5469,14 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# An inout place calls Ptr-receiver methods of its own package that only
+# borrow their receiver, as the package's ownership analysis shows.
+gala_exec_test(
+    name = "inout_same_package_ptr_methods",
+    src = "inout_same_package_ptr_methods.gala",
+    expected = "inout_same_package_ptr_methods.out",
+)
+
 # A struct literal's keys are field names: `Pair{Left: 1}` sets the field
 # Left, though a bare `Left` elsewhere is std's Either constructor. Keys were
 # lowered as expressions, so an exported std name came out as `std.Left` and

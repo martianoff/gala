@@ -191,6 +191,16 @@ type RichAST struct {
 	// walkSource), and drops it after; it is per-file and never merged or
 	// cached.
 	Native *galaparser.Native
+
+	// OwnBorrowSummaries records the borrow summaries (BorrowSummary) of
+	// the analyzed package's own functions and methods in their metadata,
+	// on its first call; later calls do nothing. An imported package's
+	// metadata carries them already. The analyzed package's are computed
+	// only when a check needs them (an `inout` place lent to a method of
+	// the package). It holds the native trees of the package's files, so
+	// the pipeline drops it after the transform, as it drops Native. Nil
+	// when the analysis did not set it.
+	OwnBorrowSummaries func()
 }
 
 // ReportSiblingSyntaxErrors returns what to report for err, a failure of a
@@ -1086,6 +1096,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// The transform is the native tree's last reader: drop the handle, and
 	// with it the tree, before generating.
 	richAST.Native = nil
+	richAST.OwnBorrowSummaries = nil // it holds the package's native trees too
 	if err != nil {
 		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(err), filePath)
 	}

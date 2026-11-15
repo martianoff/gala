@@ -1,0 +1,68 @@
+package main
+
+// An inout place may call a Ptr-receiver method of its own package when that
+// method keeps no reference to its receiver: the ownership analysis of the
+// package says the receiver is only borrowed.
+
+struct Tally(var hits int, var misses int)
+
+func (t Ptr[Tally]) hit() {
+    t.hits = t.hits + 1
+}
+
+func (t Ptr[Tally]) miss() {
+    t.misses = t.misses + 1
+}
+
+// Lends its receiver on to other borrowing methods.
+func (t Ptr[Tally]) record(ok bool) {
+    if ok {
+        t.hit()
+    } else {
+        t.miss()
+    }
+}
+
+// Reads through the pointer and returns a value.
+func (t Ptr[Tally]) total() int = t.hits + t.misses
+
+// An inout parameter calls the methods on its place.
+func score(inout t Tally, first bool, second bool) int {
+    t.record(first)
+    t.record(second)
+    t.total()
+}
+
+// So does an inout receiver.
+func (inout t Tally) reset() {
+    t.hit()
+    t.hits = 0
+    t.misses = 0
+}
+
+// And an inout lambda parameter.
+func apply(inout t Tally, f func(inout Tally)) = f(&t)
+
+// Declared after its callers: the analysis covers the whole package.
+func (t Ptr[Tally]) twice() {
+    t.later()
+    t.later()
+}
+
+func (t Ptr[Tally]) later() {
+    t.hit()
+}
+
+func main() {
+    var t = Tally(0, 0)
+    Println(score(&t, true, false))
+    apply(&t, (inout k) => k.twice())
+    Println(s"hits=${t.hits} misses=${t.misses}")
+    t.reset()
+    Println(s"hits=${t.hits} misses=${t.misses}")
+    apply(&t, (inout k) => {
+        k.record(false)
+        k.miss()
+    })
+    Println(s"hits=${t.hits} misses=${t.misses}")
+}
