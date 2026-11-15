@@ -81,8 +81,8 @@ structure St extends Core where
 abbrev M := ExceptT Stop (StateM St)
 
 /-- Evaluation that does not count steps: it can neither see nor spend them, so what it
-    does never depends on the fuel (Gala/Fuel.lean). Only `tick` and `eval`'s mutual
-    block, which spend steps, run in `M`. -/
+    does never depends on the fuel (Gala/Fuel.lean). Only `tick`, which spends steps, and
+    the code that calls it (`eval`'s mutual block, `initGlobals`, `runM`) run in `M`. -/
 abbrev H := ExceptT Stop (StateM Core)
 
 /-- Run a step that does not count steps on the state's `Core`. -/
