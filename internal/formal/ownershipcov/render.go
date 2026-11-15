@@ -13,6 +13,10 @@ type counts struct {
 	funcs, pointerFuncs, uniqueFuncs int
 	bindings, unique                 int
 	byRole                           map[ownership.Role][2]int // [all, unique]
+	// uniqueFuncs3 and unique3 are uniqueFuncs and unique in phase 3's view;
+	// closureLent counts the phase-3-unique bindings a closure passed to a
+	// non-escaping parameter uses, which phase 1 counts as captured.
+	pointerFuncs3, uniqueFuncs3, bindings3, unique3, closureLent int
 	// reasons counts the bindings with at least one reason of each kind;
 	// first is where the first such binding is.
 	reasons map[ownership.ReasonKind]int
@@ -28,6 +32,21 @@ func (t *Tree) count() counts {
 	for _, r := range t.Reports {
 		for _, f := range r.Funcs {
 			c.funcs++
+			if len(f.Phase3) > 0 {
+				c.pointerFuncs3++
+				if f.Phase3Unique() {
+					c.uniqueFuncs3++
+				}
+			}
+			for _, b := range f.Phase3 {
+				c.bindings3++
+				if b.Unique {
+					c.unique3++
+					if b.ClosureLent {
+						c.closureLent++
+					}
+				}
+			}
 			if len(f.Bindings) == 0 {
 				continue
 			}
@@ -87,7 +106,11 @@ func Render(trees []*Tree) string {
 	w("uniqueness, `internal/transpiler/ownership`) over the repository's GALA code. A pointer\n")
 	w("binding (a `Ptr`/`*T` receiver or parameter, or a local `val` bound to a pointer) is\n")
 	w("**unique** when it is of fresh origin, only ever lent downward, never reaches Go, and points\n")
-	w("at an owned-shaped value. These are analysis results, not proofs.\n\n")
+	w("at an owned-shaped value. Phase 1 is what the compiler's checks rely on.\n\n")
+	w("The rows marked *phase 3* are analysis only, not enforced: there the analysis treats a\n")
+	w("closure passed to a non-escaping parameter (one the callee only calls during the call) as\n")
+	w("borrowing the pointers it uses, where phase 1 counts a capture. These are analysis\n")
+	w("results, not proofs.\n\n")
 
 	w("| | ")
 	for _, t := range trees {
@@ -117,6 +140,11 @@ func Render(trees []*Tree) string {
 			return fmt.Sprintf("%d of %d", r[1], r[0])
 		})
 	}
+	row("*Phase 3* (analysis only, not enforced): functions whose pointer bindings are all unique", func(c counts) string {
+		return fmt.Sprintf("%d of %d (%s)", c.uniqueFuncs3, c.pointerFuncs3, pct(c.uniqueFuncs3, c.pointerFuncs3))
+	})
+	row("*Phase 3*: pointer bindings unique", func(c counts) string { return fmt.Sprintf("%d of %d", c.unique3, c.bindings3) })
+	row("*Phase 3*: …of which a closure passed to a non-escaping parameter uses", func(c counts) string { return fmt.Sprint(c.closureLent) })
 	w("| Packages that did not analyze | ")
 	for _, t := range trees {
 		w("%d | ", len(t.Failed))

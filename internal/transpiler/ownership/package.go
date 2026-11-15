@@ -2,6 +2,7 @@ package ownership
 
 import (
 	"go/token"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -178,7 +179,7 @@ func (a *pkg) newDecl(fc *fileCtx, fn native.FunctionDeclarationNode) *decl {
 	d.hasRes = sig.Type_().Ok() || sig.GoResults().Ok()
 	d.relevant = d.recvPtr || isPointer(d.result)
 	for i := range d.params {
-		if a.pointerParam(d, i) {
+		if a.pointerParam(d, i) || a.funcParam(d, i) {
 			d.relevant = true
 		}
 	}
@@ -186,6 +187,19 @@ func (a *pkg) newDecl(fc *fileCtx, fn native.FunctionDeclarationNode) *decl {
 		d.summary = optimistic(d, a)
 	}
 	return d
+}
+
+// tparams are the type parameters d's parameter types may name: its own,
+// and for a method its receiver type's.
+func (d *decl) tparams(a *pkg) []string {
+	if d.fmeta != nil {
+		return d.fmeta.TypeParams
+	}
+	out := slices.Clone(d.mmeta.TypeParams)
+	if tm := a.rich.Types[d.typeKey]; tm != nil {
+		out = append(out, tm.TypeParams...)
+	}
+	return out
 }
 
 // goCallable reports whether Go code outside the analysis may call d: an
@@ -207,13 +221,33 @@ func (a *pkg) pointerParam(d *decl, i int) bool {
 	return isPointer(d.params[i])
 }
 
+// funcParam reports whether parameter i of d is a function (or by-name)
+// parameter the summary has a non-escaping bit for: not the variadic one.
+func (a *pkg) funcParam(d *decl, i int) bool {
+	if d.variadic && i == len(d.params)-1 {
+		return false
+	}
+	return a.funcType(d.params[i])
+}
+
+// funcType reports whether t is a function type, or an alias of one.
+func (a *pkg) funcType(t transpiler.Type) bool {
+	_, ok := a.unalias(t).(transpiler.FuncType)
+	return ok
+}
+
 // optimistic is the greatest summary d could have: the fixed point starts
 // there and only demotes.
 func optimistic(d *decl, a *pkg) *transpiler.BorrowSummary {
-	s := &transpiler.BorrowSummary{ReceiverBorrowed: d.recvPtr, ReturnsFresh: isPointer(d.result)}
+	s := &transpiler.BorrowSummary{ReceiverBorrowed: d.recvPtr, ReturnsFresh: isPointer(d.result),
+		ClosureReceiverBorrowed: d.recvPtr, ClosureReturnsFresh: isPointer(d.result)}
 	s.BorrowedParams = make([]bool, len(d.params))
+	s.ClosureBorrowedParams = make([]bool, len(d.params))
+	s.NonEscapingParams = make([]bool, len(d.params))
 	for i := range d.params {
 		s.BorrowedParams[i] = a.pointerParam(d, i)
+		s.ClosureBorrowedParams[i] = a.pointerParam(d, i)
+		s.NonEscapingParams[i] = a.funcParam(d, i)
 	}
 	return s
 }
@@ -221,6 +255,11 @@ func optimistic(d *decl, a *pkg) *transpiler.BorrowSummary {
 // fixpoint computes the greatest fixed point of the summaries: every
 // summary starts optimistic, recursive calls included, and is demoted until
 // none changes. Each round can only clear bits, so it ends.
+//
+// Each declaration is walked twice per round: once as phase 1 sees it, where
+// every capture is an escape (the bits the compiler's checks read), and once
+// as phase 3 sees it, where a capture by a closure passed to a non-escaping
+// parameter is a lend (the Closure* bits and NonEscapingParams).
 func (a *pkg) fixpoint() {
 	for changed := true; changed; {
 		changed = false
@@ -228,12 +267,21 @@ func (a *pkg) fixpoint() {
 			if !d.relevant {
 				continue
 			}
-			s := a.walk(d).summary()
+			s := a.walk(d, false).summary()
+			s3 := a.walk(d, true).summary()
+			s.ClosureReceiverBorrowed, s.ClosureBorrowedParams, s.ClosureReturnsFresh =
+				s3.ReceiverBorrowed, s3.BorrowedParams, s3.ReturnsFresh
+			s.NonEscapingParams = s3.NonEscapingParams
 			// Only demote: keep the iteration monotone.
-			s.ReceiverBorrowed = s.ReceiverBorrowed && d.summary.ReceiverBorrowed
-			s.ReturnsFresh = s.ReturnsFresh && d.summary.ReturnsFresh
+			old := d.summary
+			s.ReceiverBorrowed = s.ReceiverBorrowed && old.ReceiverBorrowed
+			s.ReturnsFresh = s.ReturnsFresh && old.ReturnsFresh
+			s.ClosureReceiverBorrowed = s.ClosureReceiverBorrowed && old.ClosureReceiverBorrowed
+			s.ClosureReturnsFresh = s.ClosureReturnsFresh && old.ClosureReturnsFresh
 			for i := range s.BorrowedParams {
-				s.BorrowedParams[i] = s.BorrowedParams[i] && d.summary.BorrowedParams[i]
+				s.BorrowedParams[i] = s.BorrowedParams[i] && old.BorrowedParams[i]
+				s.ClosureBorrowedParams[i] = s.ClosureBorrowedParams[i] && old.ClosureBorrowedParams[i]
+				s.NonEscapingParams[i] = s.NonEscapingParams[i] && old.NonEscapingParams[i]
 			}
 			if !s.Equal(d.summary) {
 				d.summary = s

@@ -12,9 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/module"
+	"martianoff/gala/internal/transpiler/ownership"
 )
 
 var docJSON bool
@@ -79,6 +82,10 @@ type docSignat struct {
 	// Synthesized marks a method the transpiler generates rather than one
 	// declared in source: Hash and Compare on an opaque type.
 	Synthesized bool `json:"synthesized,omitempty"`
+	// NonEscaping names the function parameters the callable only calls
+	// during the call, as the ownership analysis infers them
+	// (docs/OWNERSHIP_DESIGN.MD section 3.3).
+	NonEscaping []string `json:"nonEscaping,omitempty"`
 }
 
 type docPackage struct {
@@ -252,8 +259,37 @@ func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
 	if err != nil {
 		return nil, err
 	}
+	ownershipSummaries(p, rich, files, dir, parsed)
 
 	return collectPackageDoc(pkgName, rich), nil
+}
+
+// ownershipSummaries records in rich the ownership analysis's summaries of
+// the package's own functions and methods, which the analyzer computes only
+// for imported packages: the doc shows which function parameters are
+// non-escaping. first is files[0]'s parse, already made. A file that does
+// not parse is left out; the analysis never fails the command.
+func ownershipSummaries(p transpiler.GalaParser, rich *transpiler.RichAST, files []string, dir string, first *parser.Parsed) {
+	var srcs []ownership.File
+	for i, f := range files {
+		parsed := first
+		if i > 0 {
+			content, err := os.ReadFile(f)
+			if err != nil {
+				continue
+			}
+			parsed = p.ParseFile(string(content))
+		}
+		tree, err := parsed.CleanNative().Tree()
+		if err != nil {
+			continue
+		}
+		srcs = append(srcs, ownership.File{Path: f, Root: native.SourceFileNode{GalaNodeRef: tree.Root()}})
+	}
+	if len(srcs) == 0 {
+		return
+	}
+	ownership.AnalyzeAndApply(rich.PackageName, srcs, rich, ownership.Options{HandWrittenGo: ownership.HasHandWrittenGo(dir)})
 }
 
 // collectPackageDoc filters the analyzed metadata down to what this package
@@ -288,9 +324,10 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 		out.Functions = append(out.Functions, docSignat{
 			Name:       bare,
 			Doc:        meta.Doc,
-			TypeParams: meta.TypeParams,
-			Params:     namedTypes(meta.ParamNames, meta.ParamTypes),
-			Returns:    typeString(meta.ReturnType),
+			TypeParams:  meta.TypeParams,
+			Params:      namedTypes(meta.ParamNames, meta.ParamTypes),
+			Returns:     typeString(meta.ReturnType),
+			NonEscaping: meta.Borrow.NonEscapingNames(meta.ParamNames),
 		})
 	}
 
@@ -342,11 +379,12 @@ func buildDocType(name string, meta *transpiler.TypeMetadata, rich *transpiler.R
 			continue
 		}
 		dt.Methods = append(dt.Methods, docSignat{
-			Name:       methodName,
-			Doc:        m.Doc,
-			TypeParams: m.TypeParams,
-			Params:     namedTypes(m.ParamNames, m.ParamTypes),
-			Returns:    typeString(m.ReturnType),
+			Name:        methodName,
+			Doc:         m.Doc,
+			TypeParams:  m.TypeParams,
+			Params:      namedTypes(m.ParamNames, m.ParamTypes),
+			Returns:     typeString(m.ReturnType),
+			NonEscaping: m.Borrow.NonEscapingNames(m.ParamNames),
 		})
 	}
 	for _, m := range meta.SynthesizedOpaqueMethods(rich) {
@@ -457,9 +495,9 @@ func renderPackageDoc(w io.Writer, pkg *docPackage) {
 			renderProse(w, f.Doc, "        ")
 		}
 		for _, m := range t.Methods {
-			suffix := ""
+			suffix := nonEscapingSuffix(m)
 			if m.Synthesized {
-				suffix = "  (synthesized)"
+				suffix += "  (synthesized)"
 			}
 			fmt.Fprintf(w, "    %s%s\n", formatSignature(m), suffix)
 			renderProse(w, m.Doc, "        ")
@@ -470,10 +508,19 @@ func renderPackageDoc(w io.Writer, pkg *docPackage) {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "functions")
 		for _, f := range pkg.Functions {
-			fmt.Fprintf(w, "    %s\n", formatSignature(f))
+			fmt.Fprintf(w, "    %s%s\n", formatSignature(f), nonEscapingSuffix(f))
 			renderProse(w, f.Doc, "        ")
 		}
 	}
+}
+
+// nonEscapingSuffix marks a callable's non-escaping function parameters
+// after its signature: `  (non-escaping: f)`.
+func nonEscapingSuffix(s docSignat) string {
+	if len(s.NonEscaping) == 0 {
+		return ""
+	}
+	return "  (non-escaping: " + strings.Join(s.NonEscaping, ", ") + ")"
 }
 
 // renderProse writes a doc comment under the declaration it documents, indented

@@ -382,10 +382,11 @@ func (e *encoder) writeBorrowSummary(s *transpiler.BorrowSummary) {
 	e.writeBool(true)
 	e.writeBool(s.ReceiverBorrowed)
 	e.writeBool(s.ReturnsFresh)
-	e.writeUvarint(uint64(len(s.BorrowedParams)))
-	for _, b := range s.BorrowedParams {
-		e.writeBool(b)
-	}
+	e.writeBoolSlice(s.BorrowedParams)
+	e.writeBoolSlice(s.NonEscapingParams)
+	e.writeBool(s.ClosureReceiverBorrowed)
+	e.writeBool(s.ClosureReturnsFresh)
+	e.writeBoolSlice(s.ClosureBorrowedParams)
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -947,10 +948,11 @@ func (d *decoder) readBorrowSummary() *transpiler.BorrowSummary {
 		return nil
 	}
 	s := &transpiler.BorrowSummary{ReceiverBorrowed: d.readBool(), ReturnsFresh: d.readBool()}
-	n := d.readUvarint()
-	for i := uint64(0); i < n && d.err == nil; i++ {
-		s.BorrowedParams = append(s.BorrowedParams, d.readBool())
-	}
+	s.BorrowedParams = d.readBoolSlice()
+	s.NonEscapingParams = d.readBoolSlice()
+	s.ClosureReceiverBorrowed = d.readBool()
+	s.ClosureReturnsFresh = d.readBool()
+	s.ClosureBorrowedParams = d.readBoolSlice()
 	return s
 }
 

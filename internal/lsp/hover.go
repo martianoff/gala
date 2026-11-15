@@ -556,7 +556,25 @@ func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
 	}
 	b.WriteString(")")
 	b.WriteString(resultSuffix(meta.ReturnType, meta.GoResults))
-	return renderHover(b.String(), meta.Doc, meta.Package)
+	return renderHover(b.String(), meta.Doc, meta.Package) + nonEscapingNote(meta.ParamNames, meta.Borrow)
+}
+
+// nonEscapingNote names the function parameters the ownership analysis
+// inferred non-escaping (BorrowSummary.NonEscapingParams): the callee only
+// calls them during the call. "" when there are none, or no summary (a
+// function of the package being edited has none).
+func nonEscapingNote(names []string, s *transpiler.BorrowSummary) string {
+	ns := s.NonEscapingNames(names)
+	for i, n := range ns {
+		ns[i] = "`" + n + "`"
+	}
+	switch len(ns) {
+	case 0:
+		return ""
+	case 1:
+		return "\n*Non-escaping: " + ns[0] + " is only called during the call.*\n"
+	}
+	return "\n*Non-escaping: " + strings.Join(ns, ", ") + " are only called during the call.*\n"
 }
 
 // formatMethodMeta renders a method with its receiver, so the popup says which
@@ -577,7 +595,7 @@ func formatMethodMeta(owner *transpiler.TypeMetadata, m *transpiler.MethodMetada
 	if pkg == "" {
 		pkg = owner.Package
 	}
-	return renderHover(b.String(), m.Doc, pkg)
+	return renderHover(b.String(), m.Doc, pkg) + nonEscapingNote(m.ParamNames, m.Borrow)
 }
 
 func formatField(owner *transpiler.TypeMetadata, name string, ft transpiler.Type) string {

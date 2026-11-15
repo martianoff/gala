@@ -56,6 +56,7 @@ go_library(
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "//internal/transpiler/module",
+        "//internal/transpiler/ownership",
         "//internal/transpiler/profiler",
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//server",
@@ -74,6 +75,7 @@ go_library(
 go_test(
     name = "commands_test",
     srcs = [
+        "doc_nonescaping_test.go",
         "doc_opaque_test.go",
         "doc_prose_test.go",
         "export_test.go",

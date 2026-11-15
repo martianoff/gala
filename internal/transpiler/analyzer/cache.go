@@ -224,7 +224,13 @@ import (
 //
 // v47: a function type records its `inout` parameters (FuncType.Inout), so
 // `func(inout T)` and `func(Ptr[T])` stay distinct. A v46 payload lacks them.
-const CacheVersion = "v47"
+//
+// v48: a borrow summary records ownership phase 3's non-escaping function
+// parameters and its closure-aware bits (BorrowSummary.NonEscapingParams,
+// ClosureReceiverBorrowed, ClosureBorrowedParams, ClosureReturnsFresh), and
+// a function with only function-typed parameters gets a summary. A v47
+// payload lacks them.
+const CacheVersion = "v48"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
