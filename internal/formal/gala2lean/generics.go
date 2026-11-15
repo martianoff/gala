@@ -44,17 +44,32 @@ import (
 // a type of that name.
 
 // stdType is a generic type of GALA's standard library the prelude models:
-// its prelude type, and how many type arguments it takes.
+// its prelude type, how many type arguments it takes, and whether it is
+// one of the immutable collections, which a program has only when it
+// imports them (collections.go).
 type stdType struct {
-	lean  string
-	arity int
+	lean        string
+	arity       int
+	collections bool
 }
 
 // stdGeneric maps the generic types of GALA's standard library the prelude
 // models to their prelude types.
 var stdGeneric = map[string]stdType{
-	"Option": {"GOption", 1}, "Either": {"GEither", 2},
-	"Tuple": {"T2", 2}, "Tuple3": {"T3", 3}, "Tuple4": {"T4", 4},
+	"Option": {"GOption", 1, false}, "Either": {"GEither", 2, false},
+	"Tuple": {"T2", 2, false}, "Tuple3": {"T3", 3, false}, "Tuple4": {"T4", 4, false},
+	"Array": {"GArray", 1, true}, "List": {"GList", 1, true},
+}
+
+// stdType is the standard-library generic type name stands for in this
+// program, if any: one the program does not declare itself, and a
+// collection only when the program imports them.
+func (g *gen) stdType(name string) (stdType, bool) {
+	st, ok := stdGeneric[name]
+	if !ok || g.declaredType(name) || st.collections && !g.collections {
+		return stdType{}, false
+	}
+	return st, true
 }
 
 // stdCtorArg is, for each Option and Either constructor with a field, its
@@ -204,10 +219,27 @@ func (g *gen) fieldTypeNames(owner string, t coreexport.Node) []string {
 // standing for itself.
 func (g *gen) inTypeParams(tps []typeParam, f func() string) string {
 	m := map[string]string{}
+	cmp := map[string]bool{}
 	for _, tp := range tps {
 		m[tp.name] = tp.lean
+		cmp[tp.lean] = tp.comparable
 	}
+	saved := g.cmpParams
+	g.cmpParams = cmp
+	defer func() { g.cmpParams = saved }()
 	return g.withTypeArgs(m, f)
+}
+
+// equalityOfParams stops the translation where a value of Lean type t is
+// compared and t mentions a type parameter in scope that is not
+// comparable: the definition has no BEq for it (and std.Equal, which a
+// collection's Contains calls, panics on a function type argument).
+func (g *gen) equalityOfParams(t string, pos coreexport.Pos) {
+	for _, w := range leanWords(t) {
+		if c, isParam := g.cmpParams[w]; isParam && !c && g.mentionsTypeParam(w) {
+			unsup(pos, "type-param-equal")
+		}
+	}
 }
 
 // withTypeArgs runs f with the type parameters named in m standing for the
@@ -254,7 +286,7 @@ func leanWords(t string) []string {
 func (g *gen) genericType(name string, args []string, pos coreexport.Pos) string {
 	var head string
 	var want int
-	std, isStd := stdGeneric[name]
+	std, isStd := g.stdType(name)
 	switch {
 	case g.declaredType(name):
 		head, want = ident(name), len(g.declTypeParams(name))
@@ -401,7 +433,8 @@ func (g *gen) unify(p coreexport.Node, t ltype, params []string, m map[string]st
 			}
 			return
 		}
-		head := stdGeneric[p.Name].lean
+		st, _ := g.stdType(p.Name)
+		head := st.lean
 		if g.declaredType(p.Name) {
 			head = ident(p.Name)
 		}

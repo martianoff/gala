@@ -1,0 +1,12 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// std panics here (go_builtins.Panic with a message, class other); what
+// was printed before stays printed.
+func main() {
+    val a List[int] = EmptyList()
+    Println("before")
+    Println(a.Reduce((x int, y int) => x + y))
+    Println("not reached")
+}

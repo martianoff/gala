@@ -19,8 +19,11 @@ func (g *gen) leanType(t coreexport.Node) string {
 			if lt, ok := g.typeArg(t.Name, t.Pos); ok {
 				return lt
 			}
-			if t.Name == unknownTypeArg {
+			switch t.Name {
+			case unknownTypeArg:
 				unsup(t.Pos, "unknown-type-arg")
+			case inferTypeArg:
+				return "_"
 			}
 		}
 		if len(t.Args) > 0 || g.isGenericDecl(t.Name) {
@@ -31,6 +34,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 			if lt := g.genericType(t.Name, args, t.Pos); lt != "" {
 				return lt
 			}
+			g.hashType(t.Name, t.Pos)
 			unsup(t.Pos, "generic-type")
 		}
 		switch t.Name {
@@ -103,7 +107,11 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 		return v
 	}
 	if !g.declaredType(name) {
-		switch std := stdGeneric[name].lean; std {
+		st, _ := g.stdType(name)
+		switch std := st.lean; std {
+		case "GArray", "GList":
+			// An empty Array or List.
+			return typed(std + ".mk []")
 		case "GOption":
 			// None is Option's default case.
 			return typed("GOption.None")
@@ -528,8 +536,8 @@ func (g *gen) galaTypeOf(t ltype) coreexport.Node {
 		name = "bool"
 	default:
 		name = g.typeByLean(t.head)
-		for std, st := range stdGeneric {
-			if st.lean == t.head && !g.declaredType(std) {
+		for std := range stdGeneric {
+			if st, ok := g.stdType(std); ok && st.lean == t.head {
 				name = std
 			}
 		}
@@ -672,6 +680,9 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			if f, _ := g.methodOf(s.Target, s.Name, sc, seen); f != nil {
 				return g.safeType(func() string { return g.leanType(f.Result) })
 			}
+			if t := g.seqCallType(e, s, sc, seen); t != "" {
+				return t
+			}
 			switch s.Name {
 			case "Copy":
 				return g.exprType(s.Target, sc, seen)
@@ -688,6 +699,8 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			return ""
 		}
 		switch {
+		case g.collections && seqCtors[n.Name] != "" && !g.declared(n.Name):
+			return g.seqCtorType(n.Name, e, sc, seen)
 		case n.Name == "Some" && !g.declared("Some") && len(e.Args) == 1:
 			if t := g.exprType(argNode(e.Args[0]), sc, seen); t != "" {
 				return "(GOption " + t + ")"

@@ -27,13 +27,18 @@ type gen struct {
 	// parameter, Option or a tuple, which is not translated.
 	raw, rawGeneric, rawGenericHolders map[string]bool
 	// tparams maps each type parameter in scope to the Lean type it stands
-	// for (withTypeArgs).
-	tparams map[string]string
+	// for (withTypeArgs); cmpParams the Lean names of the declaration's own
+	// type parameters to whether they are comparable.
+	tparams   map[string]string
+	cmpParams map[string]bool
 	// outsideDecls are the top-level declarations outside the subset
 	// (imports, generic declarations, ...), in source order.
 	outsideDecls []*coreexport.Unsupported
 	// hasMethods is true when the program declares a method.
 	hasMethods bool
+	// collections is true when the program dot-imports the immutable
+	// collections (collectionsPath).
+	collections bool
 	// library is Options.Library.
 	library bool
 	// methods are the methods by receiver type and name; byKey every
@@ -131,7 +136,13 @@ func (g *gen) collect(p *coreexport.Program) {
 			// Imports are outside the translated subset for now: a
 			// declaration outside it, as below.
 			if imp, ok := d.(*coreexport.Import); ok {
-				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
+				// The immutable collections, dot-imported, are modelled
+				// (collections.go); any other import is outside the subset.
+				if imp.Path == collectionsPath && imp.Alias == "." {
+					g.collections = true
+				} else {
+					g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
+				}
 				continue
 			}
 			switch d := d.(type) {
@@ -414,7 +425,8 @@ func (g *gen) funcDeclIn(f *coreexport.Func, recursive bool, tparams []string) s
 func (g *gen) fnBlock(b *coreexport.Block, sc *scope) []string {
 	inner := sc.child()
 	items := g.stmts(b.Stmts, inner, g.fn.result != "Unit")
-	if g.fn.result != "Unit" && (len(b.Stmts) == 0 || !isExpr(b.Stmts[len(b.Stmts)-1])) && !terminates(b.Stmts) {
+	last := len(b.Stmts) - 1
+	if g.fn.result != "Unit" && (last < 0 || !isExpr(b.Stmts[last]) && !isValueIf(b.Stmts[last])) && !terminates(b.Stmts) {
 		// Every path returned (GALA checks this); Lean still wants a value
 		// at the end.
 		items = append(items, "pure default")

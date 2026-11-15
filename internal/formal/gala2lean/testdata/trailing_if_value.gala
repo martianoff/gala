@@ -1,0 +1,31 @@
+package main
+
+// A trailing `if`/`else` with block branches carries the value of the block
+// it ends: a function body, a lambda body, a match arm.
+
+func sign(n int) string {
+    val zero = n == 0
+    if (zero) { "zero" } else if (n > 0) { "positive" } else { "negative" }
+}
+
+func describe(n int) string = n match {
+    case 0 => {
+        val label = "none"
+        if (label == "none") { "nothing" } else { label }
+    }
+    case _ => {
+        val doubled = n * 2
+        if (doubled > 10) { "big" } else { "small" }
+    }
+}
+
+func main() {
+    Println(sign(0), sign(3), sign(-3))
+    Println(describe(0), describe(9), describe(2))
+    Println(both((b bool) => {
+        val t = "yes"
+        if (b) { t } else { "no" }
+    }))
+}
+
+func both(f func(bool) string) string = f(true) + " " + f(false)

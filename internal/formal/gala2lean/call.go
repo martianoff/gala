@@ -309,6 +309,10 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 			return g.print(x, e, sc)
 		case stdCtors[x] != "":
 			return g.stdCtor(x, e, sc)
+		case g.collections && seqCtors[x] != "":
+			return g.seqCtor(x, e, sc)
+		case g.collections && hashTypes[x]:
+			unsup(e.Pos, "hash-order")
 		case g.globalBy[x] == nil:
 			g.unresolved(e.Pos, "call-of-"+x)
 		}
@@ -321,10 +325,18 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 		if t, ok := g.generatedMethod(e, s, sc); ok {
 			return t
 		}
+		if t, ok := g.seqCall(e, s, sc); ok {
+			return t
+		}
 		// pkg.F(...) names a member of an import; v.M(...) calls a method.
 		if n, isName := s.Target.(*coreexport.Name); isName && sc.lookup(n.Name) == nil &&
 			g.globalBy[n.Name] == nil && g.variants[n.Name] == nil {
 			g.unresolved(s.Pos, "method-call")
+		}
+		if _, isCall := s.Target.(*coreexport.Call); isCall {
+			// The receiver runs first: a construct outside the subset in
+			// it (`HashSetOf(1).Size()`) is the one to report.
+			g.expr(s.Target, sc)
 		}
 		unsup(s.Pos, "method-call")
 	}
@@ -392,25 +404,30 @@ func (g *gen) print(x string, e *coreexport.Call, sc *scope) term {
 // what the translation would print: a function (`fmt` prints its address),
 // or, in a program with methods, anything but int, string and bool.
 func (g *gen) printable(e coreexport.Node, sc *scope) {
-	t := g.typeOf(e, sc)
+	g.printableType(g.typeOf(e, sc), posOf(e))
+}
+
+// printableType is printable for a value of Lean type t ("" when not plain
+// to see) at pos.
+func (g *gen) printableType(t string, pos coreexport.Pos) {
 	if strings.Contains(t, "→") {
-		unsup(posOf(e), "print-pointer")
+		unsup(pos, "print-pointer")
 	}
 	// A type with its own String method prints through it, and so does a
 	// value holding one.
-	g.customCheck(t, g.customString, &g.stringHolders, posOf(e), "custom-string")
+	g.customCheck(t, g.customString, &g.stringHolders, pos, "custom-string")
 	if len(g.unprintable) > 0 {
 		// A value of a type whose text holds a function's address; when the
 		// type is not plain to see, any value might be one.
 		if t == "" || g.mentionsTypeParam(t) {
-			unsup(posOf(e), "print-pointer")
+			unsup(pos, "print-pointer")
 		}
-		g.stateTypeIn(t, g.unprintable, posOf(e), "print-pointer")
+		g.stateTypeIn(t, g.unprintable, pos, "print-pointer")
 	}
 	// A value whose raw text reaches a generic type (rawPrinted).
 	g.rawPrinted()
-	g.customCheck(t, g.rawGeneric, &g.rawGenericHolders, posOf(e), "print-raw-generic")
-	g.basicType(t, posOf(e))
+	g.customCheck(t, g.rawGeneric, &g.rawGenericHolders, pos, "print-raw-generic")
+	g.basicType(t, pos)
 }
 
 // stdCtor builds an Option or Either value.

@@ -28,12 +28,16 @@ inductive Panic where
   | noArm
   /-- A negative shift count. -/
   | shift
+  /-- A panic the standard library raises with a message (`go_builtins.Panic`), such
+      as `Array.Get` out of range: a string panic, class `other` in Go. -/
+  | std
   deriving Repr, Inhabited, BEq
 
 def Panic.name : Panic → String
   | .divide => "divide"
   | .noArm => "match"
   | .shift => "other"
+  | .std => "other"
 
 /-- The monad of a translated program: state `σ`, then a panic (which keeps the state, so
     the output printed before it survives), then divergence (`none`). -/
@@ -176,6 +180,149 @@ def gshl (a b : Int64) : Prog σ Int64 :=
 def gshr (a b : Int64) : Prog σ Int64 :=
   if b < 0 then throw .shift else pure (if b ≥ 64 then (if a < 0 then -1 else 0) else a >>> b)
 end
+
+/-! `Array` and `List` from GALA's `collection_immutable` (`collection_immutable/array.gala`,
+    `collection_immutable/list.gala`), as the list of their elements. Each function below
+    cites the std code it mirrors, and runs the functions it is given in the order and
+    with the early exits that code does. A function that panics in std (`go_builtins.Panic`
+    with a message) throws `Panic.std`, class `other`, as the Go run is classed.
+
+    Both compare as their `Equal` does: the same length, then each element `Equal`, which
+    for the types gala2lean translates is the derived `BEq` (array.gala:294, list.gala:131).
+    -/
+
+structure GArray (α : Type) where
+  data : List α
+  deriving BEq, Inhabited
+
+structure GList (α : Type) where
+  data : List α
+  deriving BEq, Inhabited
+
+/-- `Array.String` (array.gala:1107) and `List.String` (list.gala:652): `Array(1, 2)`,
+    each element as `s"${e}"` prints it. -/
+def seqText [GShow α] (name : String) (xs : List α) : String :=
+  name ++ "(" ++ ", ".intercalate (xs.map gshow) ++ ")"
+
+instance [GShow α] : GShow (GArray α) where
+  gshow a := seqText "Array" a.data
+instance [GShow α] : GShow (GList α) where
+  gshow l := seqText "List" l.data
+
+section
+variable {σ : Type}
+
+/-- `GetOption`, `HeadOption`, `LastOption`: `None` where `Get`, `Head`, `Last` panic
+    (array.gala:452, 469, 486; list.gala:100, 216, 250). -/
+def toGOption : Option α → GOption α
+  | some x => .Some x
+  | none => .None
+
+/-- The element found, or `Panic.std` where std panics for want of one. -/
+def orStd : Option α → Prog σ α
+  | some x => pure x
+  | none => throw .std
+
+/-- The element at index `i`, or `Panic.std` out of range: `Array.Get` (array.gala:433),
+    `List.Get` (list.gala:204), `Updated`'s range check. -/
+def seqGet (xs : List α) (i : Int64) : Prog σ α :=
+  if i < 0 then throw .std else orStd xs[i.toInt.toNat]?
+
+/-- `Prepend(v)`: `v` first (array.gala:609, list.gala:154). It takes the receiver
+    first, so that the translation evaluates the receiver before the argument, as Go
+    does. -/
+def seqPrepend (xs : List α) (v : α) : List α := v :: xs
+
+/-- `Updated(i, v)`: `Panic.std` out of range (array.gala:507, list.gala:224). -/
+def seqUpdated (xs : List α) (i : Int64) (v : α) : Prog σ (List α) :=
+  if i < 0 || i.toInt.toNat ≥ xs.length then throw .std else pure (xs.set i.toInt.toNat v)
+
+/-- `Take(n)`: nothing for `n ≤ 0`, everything for `n` past the end (array.gala:673,
+    list.gala:271). -/
+def seqTake (xs : List α) (n : Int64) : List α := if n ≤ 0 then [] else xs.take n.toInt.toNat
+
+/-- `Drop(n)`: everything for `n ≤ 0`, nothing for `n` past the end (array.gala:688,
+    list.gala:279). -/
+def seqDrop (xs : List α) (n : Int64) : List α := if n ≤ 0 then xs else xs.drop n.toInt.toNat
+
+/-- `IndexOf(e)`: the first index whose element is `Equal`, else -1 (array.gala:750,
+    list.gala:314). -/
+def seqIndexOf [BEq α] (xs : List α) (e : α) : Int64 :=
+  match xs.findIdx? (· == e) with
+  | some i => Int64.ofNat i
+  | none => -1
+
+/-- `FoldLeft`: `f` on each element from the first (array.gala:851, list.gala:415). -/
+def seqFoldLeft (xs : List α) (z : β) (f : β → α → Prog σ β) : Prog σ β := xs.foldlM f z
+
+/-- `FoldRight`: `f` on each element from the last; List's recursion
+    `f(l.head, tail.FoldRight(...))` (list.gala:426) evaluates the tail's fold before `f`,
+    as Array's loop from the end does (array.gala:860). -/
+def seqFoldRight (xs : List α) (z : β) (f : α → β → Prog σ β) : Prog σ β := xs.foldrM f z
+
+/-- `Reduce`: `Panic.std` on an empty sequence, else a left fold from the first element
+    (array.gala:870, list.gala:436). -/
+def seqReduce (xs : List α) (f : α → α → Prog σ α) : Prog σ α :=
+  match xs with
+  | [] => throw .std
+  | x :: r => r.foldlM f x
+
+/-- `Map`: `f` on each element from the first. Array's loop (array.gala:780), and List's
+    `consList(f(l.head), tail.Map(f))` (list.gala:344), whose arguments Go evaluates left to
+    right. -/
+def seqMap (xs : List α) (f : α → Prog σ β) : Prog σ (List β) := xs.mapM f
+
+/-- `Filter`: `p` on each element from the first (array.gala:821; list.gala:380 tests the
+    head before the tail's filter). -/
+def seqFilter (xs : List α) (p : α → Prog σ Bool) : Prog σ (List α) := xs.filterM p
+
+/-- `ForEach`: `f` on each element from the first (array.gala:888, list.gala:453). -/
+def seqForEach (xs : List α) (f : α → Prog σ Unit) : Prog σ Unit := xs.forM f
+
+/-- `Exists`: `p` from the first element, stopping at the first true (array.gala:895,
+    list.gala:462). -/
+def seqExists (xs : List α) (p : α → Prog σ Bool) : Prog σ Bool := xs.anyM p
+
+/-- `ForAll`: `p` from the first element, stopping at the first false (array.gala:905,
+    list.gala:474). -/
+def seqForAll (xs : List α) (p : α → Prog σ Bool) : Prog σ Bool := xs.allM p
+
+/-- `Find`: `p` from the first element, stopping at the first true (array.gala:915,
+    list.gala:486). -/
+def seqFind (xs : List α) (p : α → Prog σ Bool) : Prog σ (GOption α) :=
+  toGOption <$> xs.findM? p
+
+/-- `Count`: `p` on each element from the first, through `FoldLeft` (array.gala:937,
+    list.gala:498). -/
+def seqCount (xs : List α) (p : α → Prog σ Bool) : Prog σ Int64 :=
+  xs.foldlM (fun n x => do pure (if ← p x then n + 1 else n)) 0
+
+/-- `Partition(p)`: `p` on each element from the first, in one pass; the elements it
+    holds for, then the others, each in order (array.gala:836, list.gala:399). -/
+def seqPartition (xs : List α) (p : α → Prog σ Bool) : Prog σ (List α × List α) := do
+  let (yes, no) ← xs.foldlM (fun (yes, no) x => do
+    pure (if ← p x then (x :: yes, no) else (yes, x :: no))) ([], [])
+  pure (yes.reverse, no.reverse)
+
+/-- `ZipWithIndex()`: each element with its index (array.gala:960, list.gala:519). -/
+def seqZipWithIndex (xs : List α) : List (T2 α Int64) :=
+  xs.zipIdx.map fun (x, i) => T2.mk x (Int64.ofNat i)
+
+/-- `MkString(sep)`: the elements as `s"${e}"` prints them, `sep` between (array.gala:1122,
+    list.gala:671). -/
+def seqMkString [GShow α] (xs : List α) (sep : String) : String := sep.intercalate (xs.map gshow)
+
+/-- The first and last elements, `Panic.std` when empty: `Head`, `Last` (array.gala:461,
+    478; list.gala:92, 236). -/
+def seqHead (xs : List α) : Prog σ α := orStd xs.head?
+def seqLast (xs : List α) : Prog σ α := orStd xs.getLast?
+end
+
+def seqGetOption (xs : List α) (i : Int64) : GOption α :=
+  if i < 0 then .None else toGOption xs[i.toInt.toNat]?
+
+/-- The integer GALA's `Size`, `Length`, `IndexOf` and `Count` give. -/
+def seqSize (xs : List α) : Int64 := Int64.ofNat xs.length
 
 /-- The outcome line a run ends with on stderr, in galaspec's spelling. -/
 def outcomeLine (o : String) : String := "gala2lean: outcome=" ++ o

@@ -7,6 +7,7 @@ go_library(
     name = "gala2lean",
     srcs = [
         "call.go",
+        "collections.go",
         "deps.go",
         "expr.go",
         "gala2lean.go",
@@ -70,18 +71,12 @@ go_test(
     # Lean target, so building this test never downloads Lean.
     data = [
         "//formal:Gala/Gala2Lean/Prelude.lean",
-        "testdata/assign_order_void_keywords.gala",
-        "testdata/assign_order_void_keywords.out",
-        "testdata/defaults_byname.gala",
-        "testdata/defaults_byname.out",
-        "testdata/generics.gala",
-        "testdata/generics.out",
-        "testdata/inout_receivers.gala",
-        "testdata/inout_receivers.out",
-        "testdata/methods.gala",
-        "testdata/methods.out",
         "//formal:fixture_sources",
-    ] + select({
+    ] + glob([
+        "testdata/*.gala",
+        "testdata/*.out",
+        "testdata/*.outcome",
+    ]) + select({
         "//formal:lean_enabled": ["//formal:lean_runtime"],
         "//conditions:default": [],
     }),

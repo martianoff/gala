@@ -132,6 +132,12 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"printing a type parameter beside a type holding a function", "package main\ntype F struct { G func() int }\nfunc show[T any](x T) { Println(x) }\nfunc main() { show(1) }\n", "print-pointer"},
 		{"an Option printed raw", "package main\ntype S struct { n Option[int] }\nfunc main() { var s S\n Println(s) }\n", "print-raw-generic"},
 		{"a generic type's raw text", "package main\ntype S[T any] struct { n T }\nfunc main() { var s S[int]\n Println(s) }\n", "print-raw-generic"},
+		{"a HashMap", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val m HashMap[int, string] = EmptyHashMap()\n Println(m.Size()) }\n", "hash-order"},
+		{"building a HashSet", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(HashSetOf(1, 2).Size()) }\n", "hash-order"},
+		{"an Array function not modelled", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(ArrayOf(2, 1).Sorted()) }\n", "collection-method"},
+		{"an Array holding functions compared", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val f = (x int) => x\n Println(ArrayOf(f).Contains(f)) }\n", "func-in-equal"},
+		{"Contains on a type parameter that is not comparable", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc has[T any](a Array[T], x T) bool = a.Contains(x)\nfunc main() { Println(has(ArrayOf(1), 1)) }\n", "type-param-equal"},
+		{"another package of the standard library", "package main\nimport . \"martianoff/gala/collection_mutable\"\n\nfunc main() { Println(Thing(1)) }\n", "import"},
 		{"a type nested in itself", "package main\nstruct Node(Next Option[Node])\nfunc main() { Println(1) }\n", "nested-recursive-type"},
 	}
 	for _, c := range cases {

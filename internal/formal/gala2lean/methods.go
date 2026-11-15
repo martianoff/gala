@@ -113,9 +113,20 @@ func (g *gen) funcOrMethodDecl(f *coreexport.Func, recursive bool) string {
 // type is not plain to see, any type does. In a program with a method the
 // translation cannot see, only int, string and bool compare.
 func (g *gen) comparable(e coreexport.Node, sc *scope) {
-	t := g.typeOf(e, sc)
-	g.customCheck(t, g.customEqual, &g.equalHolders, posOf(e), "custom-equal")
-	g.basicType(t, posOf(e))
+	g.comparableType(g.typeOf(e, sc), posOf(e))
+}
+
+// comparableType is comparable for a value of Lean type t at pos.
+func (g *gen) comparableType(t string, pos coreexport.Pos) {
+	// A value holding a function does not compare: Go rejects `==` on it,
+	// and std.Equal, which a collection's Equal or Contains calls, panics.
+	if strings.Contains(t, "→") {
+		unsup(pos, "func-in-equal")
+	}
+	g.stateTypeIn(t, g.noBEq, pos, "func-in-equal")
+	g.equalityOfParams(t, pos)
+	g.customCheck(t, g.customEqual, &g.equalHolders, pos, "custom-equal")
+	g.basicType(t, pos)
 }
 
 // customCheck stops the translation with construct when a value of Lean
