@@ -9,7 +9,7 @@ import (
 )
 
 // TestBareLambdaParamIsCoded pins L1: `x => e` is reported as GALA-E0042 with a
-// hint naming the parenthesized form, instead of the raw ANTLR cascade (up to
+// hint naming the parenthesized form, instead of the raw parser cascade (up to
 // four errors, each dumping the full expected-token set and none of them
 // mentioning parentheses).
 func TestBareLambdaParamIsCoded(t *testing.T) {
@@ -32,7 +32,7 @@ func TestBareLambdaParamIsCoded(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			errs := parseAgreeing(t, tc.input).Errors
+			errs := parseGalop(t, tc.input).Errors
 			require.NotEmpty(t, errs, "the bare lambda form must be rejected")
 			var coded *galaerr.SemanticError
 			for _, e := range errs {
@@ -61,7 +61,7 @@ func TestCaseArmWithBareIdentifierStillParses(t *testing.T) {
 		"package main\n\nfunc f(n int) string = n match {\n    case x if x > 0 => \"pos\"\n    case y => \"other\"\n}",
 	}
 	for _, in := range inputs {
-		errs := parseAgreeing(t, in).Errors
+		errs := parseGalop(t, in).Errors
 		require.Empty(t, errs, "a bare-identifier case arm must still parse: %s", in)
 	}
 }

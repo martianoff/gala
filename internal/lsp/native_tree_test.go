@@ -34,13 +34,9 @@ func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 	return texts, paths, c.Root
 }
 
-// galopCorpus is the frozen corpus, extracted, for a test that parses with
-// galop's engine, the CLI's default, whatever the build's or environment's
-// default engine.
+// galopCorpus is the frozen corpus, extracted for t.
 func galopCorpus(t *testing.T) testcorpus.Corpus {
 	t.Helper()
-	parser.RequestEngine(string(parser.EngineGalop))
-	t.Cleanup(func() { parser.RequestEngine("") })
 	return testcorpus.Extract(t)
 }
 
@@ -358,7 +354,6 @@ func bufferOf(h *GalaHandler, uri lsp.DocumentURI) bufferState {
 func assertTreeOf(t *testing.T, name string, got bufferState, text string) {
 	t.Helper()
 	require.NotNil(t, got.handle, "%s: no native tree kept", name)
-	assert.True(t, got.handle.Converted(), "%s: the kept handle still holds a parse to convert", name)
 	assert.Equal(t, text, got.text, "%s: the kept tree's text", name)
 	root, ok := got.handle.Root()
 	require.True(t, ok, "%s: the kept tree has no root", name)

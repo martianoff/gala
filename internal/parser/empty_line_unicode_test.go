@@ -10,7 +10,7 @@ import (
 // TestEmptyLineChecksAreRuneIndexed guards the blank-line layout checks
 // against a rune/byte offset mismatch.
 //
-// ANTLR reports token offsets as code-point indices, but checkEmptyLines used
+// ANTLR reported token offsets as code-point indices, but checkEmptyLines used
 // to slice the raw source string with them. A Go string slices by BYTES, so a
 // single non-ASCII rune anywhere before the package/import boundary shifted
 // the inspected window by the extra bytes of that rune — and the checker then

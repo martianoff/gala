@@ -15,10 +15,8 @@ import (
 
 	"unicode/utf8"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 )
 
 // Encoding mutations FuzzSourceEncoding can apply, as bits of its mode byte.
@@ -75,7 +73,7 @@ func FuzzSourceEncoding(f *testing.F) {
 		switch {
 		case lres.Err != nil && rres.Err != nil:
 			lcodes, rcodes := diagnosticCodes(lres.Err), diagnosticCodes(rres.Err)
-			// After a syntax error the tree is ANTLR's error recovery, and
+			// After a syntax error the tree is the parser's error recovery, and
 			// the parser's blank-line check reads the text between recovered
 			// tokens, where an inserted comment can make the difference
 			// between "no gap to inspect" and "a gap without a blank line".
@@ -169,10 +167,10 @@ func encodingVariants(src string, mode uint8, salt uint16) (string, string, bool
 				if gluedLineStartUnary(runes, toks, i) {
 					continue
 				}
-				if tok.GetChannel() == antlr.TokenDefaultChannel && (i+int(salt))%3 == 0 {
+				if !tok.hidden && (i+int(salt))%3 == 0 {
 					// Space-padded: glued to a preceding `/` the opener
 					// would read as `//*`, a line comment.
-					ins = append(ins, insertion{at: tok.GetStart(), right: " /*" + pick(i) + "*/ "})
+					ins = append(ins, insertion{at: tok.start, right: " /*" + pick(i) + "*/ "})
 				}
 			}
 		}
@@ -180,7 +178,7 @@ func encodingVariants(src string, mode uint8, salt uint16) (string, string, bool
 			for i, tok := range literalTokens(toks) {
 				r := encodingRunes[(i+int(salt))%len(encodingRunes)]
 				// Just past the opening quote, which is outside any ${...}.
-				at := tok.GetStart() + literalPrefix(tok.GetText())
+				at := tok.start + literalPrefix(tok.text)
 				ins = append(ins, insertion{at: at, left: escapeRune(r), right: string(r)})
 			}
 		}
@@ -209,19 +207,51 @@ func encodingVariants(src string, mode uint8, salt uint16) (string, string, bool
 	return string(left), prefix + string(right), true
 }
 
-// lexTokens lexes src (already BOM-less) into all its tokens, hidden-channel
-// comments included. Token start/stop indices are code-point offsets.
-func lexTokens(src string) []antlr.Token {
-	var toks []antlr.Token
-	galaparser.VisitTokens(src, func(tok antlr.Token) { toks = append(toks, tok) })
+// lexToken is a token of GALA's lexer: its text, whether it is a comment
+// (hidden from the parser), and the indices of its first and last code points
+// in the source.
+type lexToken struct {
+	text        string
+	hidden      bool
+	start, stop int
+}
+
+// lexTokens lexes src (already BOM-less) with galop's native lexer into all
+// its tokens, in source order, the hidden-channel comments included.
+func lexTokens(src string) []lexToken {
+	// Each invalid UTF-8 byte is read as U+FFFD, one code point, as the
+	// parser reads it and as []rune(src) counts it.
+	text := string([]rune(src))
+	// cp maps a byte offset of text to its code-point index.
+	cp := make([]int, len(text)+1)
+	k := 0
+	for i := range text {
+		cp[i] = k
+		k++
+	}
+	cp[len(text)] = k
+	ts := native.GalaLex(text)
+	var toks []lexToken
+	add := func(tok native.GalaToken, hidden bool) {
+		toks = append(toks, lexToken{text: tok.Text(ts.Src), hidden: hidden, start: cp[tok.Start], stop: cp[tok.End] - 1})
+	}
+	for i, tok := range ts.Tokens {
+		for _, h := range ts.HiddenBefore(i) {
+			add(h.GalaToken, true)
+		}
+		if tok.Type == native.GalaEOF {
+			break
+		}
+		add(tok, false)
+	}
 	return toks
 }
 
 // tokenCoverage marks the code points that fall within a token.
-func tokenCoverage(runes []rune, toks []antlr.Token) []bool {
+func tokenCoverage(runes []rune, toks []lexToken) []bool {
 	covered := make([]bool, len(runes))
 	for _, tok := range toks {
-		for i := max(tok.GetStart(), 0); i <= tok.GetStop() && i < len(runes); i++ {
+		for i := max(tok.start, 0); i <= tok.stop && i < len(runes); i++ {
 			covered[i] = true
 		}
 	}
@@ -260,26 +290,26 @@ func blankLineEndingAt(runes []rune, nl int) bool {
 // starts its line — a line break separates it from the default-channel token
 // before it, comments aside, as the parser counts lines. Such a `*p` / `&n`
 // is a new statement only while the operator touches its operand.
-func gluedLineStartUnary(runes []rune, toks []antlr.Token, i int) bool {
+func gluedLineStartUnary(runes []rune, toks []lexToken, i int) bool {
 	op := prevDefaultToken(toks, i)
 	if op < 0 {
 		return false
 	}
-	if text := toks[op].GetText(); (text != "*" && text != "&") || toks[op].GetStop()+1 != toks[i].GetStart() {
+	if text := toks[op].text; (text != "*" && text != "&") || toks[op].stop+1 != toks[i].start {
 		return false
 	}
 	from := 0
 	if before := prevDefaultToken(toks, op); before >= 0 {
-		from = toks[before].GetStop() + 1
+		from = toks[before].stop + 1
 	}
-	return slices.Contains(runes[from:toks[op].GetStart()], '\n')
+	return slices.Contains(runes[from:toks[op].start], '\n')
 }
 
 // prevDefaultToken is the index of the default-channel token before toks[i],
 // or -1.
-func prevDefaultToken(toks []antlr.Token, i int) int {
+func prevDefaultToken(toks []lexToken, i int) int {
 	for j := i - 1; j >= 0; j-- {
-		if toks[j].GetChannel() == antlr.TokenDefaultChannel {
+		if !toks[j].hidden {
 			return j
 		}
 	}
@@ -288,14 +318,14 @@ func prevDefaultToken(toks []antlr.Token, i int) int {
 
 // literalTokens returns the string, s"..." and f"..." literals whose value is
 // program data — not the path of an import spec, which names a package.
-func literalTokens(toks []antlr.Token) []antlr.Token {
-	var out []antlr.Token
+func literalTokens(toks []lexToken) []lexToken {
+	var out []lexToken
 	inImport, inImportBlock := false, false
 	for _, tok := range toks {
-		if tok.GetChannel() != antlr.TokenDefaultChannel {
+		if tok.hidden {
 			continue
 		}
-		switch text := tok.GetText(); {
+		switch text := tok.text; {
 		case text == "import":
 			inImport = true
 			continue
@@ -306,7 +336,7 @@ func literalTokens(toks []antlr.Token) []antlr.Token {
 			inImport, inImportBlock = false, false
 			continue
 		}
-		switch literalPrefix(tok.GetText()) {
+		switch literalPrefix(tok.text) {
 		case 1: // "..."
 			if inImport {
 				if !inImportBlock {

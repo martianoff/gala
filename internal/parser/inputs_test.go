@@ -1,36 +1,164 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
-	"hash/fnv"
+	"io/fs"
 	"math/rand"
 	"os"
-	"runtime"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 
-	"martianoff/gala/galaerr"
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
+
 	"martianoff/gala/internal/parser/native"
 )
 
-// parseAgreeing parses input with galop's engine, after checking that ANTLR's
-// engine gives the same parse (compareEngines: the same doc comments, the
-// same errors with their codes, hints and spans, the same native tree, clean
-// or error-recovered). The syntax-error tests parse through it, so each of
-// their inputs holds galop's recovery and hints to ANTLR's too.
-func parseAgreeing(t *testing.T, input string) *Parsed {
+// The inputs the parser's tests share, and how they break and compare them.
+
+// parseGalop parses input as a source file, for a test that asserts on what
+// the parse reports.
+func parseGalop(t *testing.T, input string) *Parsed {
 	t.Helper()
-	_, got, diffs := compareEngines(input, false)
-	for _, d := range diffs {
-		t.Errorf("%q: %s", input, d)
-	}
-	return got.parsed
+	return NewAntlrGalaParser().ParseFile(input)
 }
 
-// mutation is a way TestRecoveryParity breaks a source file: it returns src
+// gatherSources returns the .gala files staged as data of parser_test; under
+// plain `go test` (tools/fuzz.sh), which stages no runfiles, the repository's
+// own .gala files.
+func gatherSources(t testing.TB) []string {
+	t.Helper()
+	var paths []string
+	if os.Getenv("TEST_SRCDIR") == "" {
+		paths = repoSources(t)
+	} else {
+		files, err := bazel.ListRunfiles()
+		if err != nil {
+			t.Fatalf("cannot list the runfiles: %v", err)
+		}
+		for _, f := range files {
+			if strings.HasSuffix(f.ShortPath, ".gala") {
+				paths = append(paths, f.Path)
+			}
+		}
+	}
+	sort.Strings(paths)
+	if len(paths) < 200 {
+		t.Fatalf("found %d .gala files in the runfiles; the sources are not staged", len(paths))
+	}
+	return paths
+}
+
+// repoSources is every .gala file of the repository the test runs in, for
+// gatherSources under plain `go test`: the files under the module root, but
+// for hidden directories (the IDE's, agents' worktrees, vendored caches) and
+// Bazel's output links.
+func repoSources(tb testing.TB) []string {
+	tb.Helper()
+	root, err := os.Getwd()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			tb.Fatal("cannot find the module root (go.mod)")
+		}
+		root = parent
+	}
+	var paths []string
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := d.Name()
+		if d.IsDir() && path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "bazel-") || name == "node_modules") {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(name, ".gala") {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return paths
+}
+
+// sourceTexts is the text of every staged source (see gatherSources).
+func sourceTexts(tb testing.TB) []string {
+	tb.Helper()
+	var texts []string
+	for _, path := range gatherSources(tb) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		texts = append(texts, string(data))
+	}
+	return texts
+}
+
+// positionInputs exercise what the lexer counts positions over: non-ASCII
+// text, CRLF line ends and comments that span lines.
+var positionInputs = []string{
+	"package main\n\n/* a block comment\n   over three lines, with ünïcödé ✓\n*/\nfunc main() {\n    val s = \"héllo wörld ✓ 日本\" // trailing — comment\n    Println(s)\n}\n",
+	"package main\r\n\r\n/* block\r\n   comment */\r\nfunc main() {\r\n    val s = \"ä\"\r\n    Println(s + s\"${s}é\")\r\n}\r\n",
+	"package main\n\n// ünïcödé line comment\nfunc f(a int) int = a /* inline\n multi-line ✓ */ + 1\n",
+}
+
+// expressionAtInputs are expressions placed by ParseExpressionCheckedAt, among
+// them ones that span lines, where the starting column applies to the first
+// line only (a multi-line default value).
+var expressionAtInputs = []string{
+	"a + b",
+	"Array(1,\n    2,\n    3)",
+	"Config(\n    name = \"ünïcödé\",\n    retries = 3,\n)",
+	"xs.Map((x) => x *\n    2)",
+	"s\"${a}\\n${b}\"",
+}
+
+// breakSource drops a few bytes of src somewhere: mostly a syntax error, at
+// times still valid code.
+func breakSource(r *rand.Rand, src string) string {
+	i := r.Intn(len(src) + 1)
+	j := min(len(src), i+1+r.Intn(8))
+	return src[:i] + src[j:]
+}
+
+// interpolation matches the ${...} parts of interpolated strings, whose text
+// the transpiler re-parses as expressions.
+var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
+
+// diffAt shows where want and got first differ: the line number, and each
+// side's text around the first differing byte of that line (tree text is one
+// long line, so a whole line can be too long to read).
+func diffAt(want, got string) string {
+	i := 0
+	for i < len(want) && i < len(got) && want[i] == got[i] {
+		i++
+	}
+	// i is at most either length; show from up to 120 bytes before it, on its
+	// line, to up to 240 bytes after it, on the same line.
+	from := max(strings.LastIndexByte(want[:i], '\n')+1, i-120)
+	window := func(s string) string {
+		end := min(len(s), i+240)
+		if nl := strings.IndexByte(s[i:end], '\n'); nl >= 0 {
+			end = i + nl
+		}
+		return fmt.Sprintf("%q", s[from:end])
+	}
+	line := strings.Count(want[:i], "\n") + 1
+	return fmt.Sprintf("first difference at line %d, byte %d\n  want: %s\n  got:  %s", line, i, window(want), window(got))
+}
+
+// mutation is a way the parser golden breaks a source file: it returns src
 // changed, given its tokens, or "" when it does not apply.
 type mutation struct {
 	name string
@@ -66,7 +194,7 @@ func pickIndex(r *rand.Rand, n int, at func(i int) bool) (int, bool) {
 	return found[r.Intn(len(found))], true
 }
 
-// mutations are the ways TestRecoveryParity breaks a file: token edits,
+// mutations are the ways the parser golden breaks a file: token edits,
 // which keep the rest of the file lexing as before, byte drops and stray
 // characters, which can break a literal or comment open (lexical errors), a
 // cut multi-byte character (invalid UTF-8), and three that aim at the coded
@@ -104,14 +232,14 @@ var mutations = []mutation{
 	}},
 	{"stray character, then a token edit", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		// Two edits on one line: the lexical error just after a syntax error,
-		// where the order ANTLR reports them in depends on how far its parser
+		// where the order they are reported in depends on how far the parser
 		// has read.
 		t := toks[r.Intn(len(toks))]
 		return src[:t.Start] + mutationTokens[r.Intn(len(mutationTokens))] + " " + t.Text(src) +
 			strayCharacters[r.Intn(len(strayCharacters))] + src[t.End:]
 	}},
 	{"cut a multi-byte character, then a token edit", func(r *rand.Rand, src string, toks []native.GalaToken) string {
-		// Invalid UTF-8, which ANTLR reads as U+FFFD, with a syntax error
+		// Invalid UTF-8, which the lexer reads as U+FFFD, with a syntax error
 		// after it: the recovered tree's offsets index the decoded text.
 		i, ok := pickIndex(r, len(src), func(i int) bool { return src[i] >= 0xC0 })
 		if !ok {
@@ -157,100 +285,4 @@ var mutations = []mutation{
 		t := toks[i]
 		return src[:t.End] + ` "json:\"f\""` + src[t.End:]
 	}},
-}
-
-// TestRecoveryParity is the differential test of galop's error recovery: it
-// breaks every GALA source of the repository (examples/, std/ and the rest)
-// with each of mutations, parses each mutant and brokenInputs with galop's
-// engine and with ANTLR's, and holds the two to compareEngines: the same
-// errors, in order, with the same codes, hints and spans, the same doc
-// comments, and the same error-recovered native tree. Any difference is a
-// bug. It logs the match rate and how often each coded hint fired. The
-// sources are mutated and compared on every CPU at once; each source's
-// mutants are drawn from a random stream of its own, so they do not depend
-// on that order.
-func TestRecoveryParity(t *testing.T) {
-	var mu sync.Mutex // guards the counts below
-	inputs, broken, lexical, mismatched := 0, 0, 0, 0
-	codes := map[galaerr.ErrorCode]int{}
-	compare := func(what, src string) {
-		want, _, diffs := compareEngines(src, false)
-		for _, d := range diffs {
-			t.Errorf("%s: %s", what, d)
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		inputs++
-		if strings.Contains(want.out, "token recognition error") {
-			lexical++
-		}
-		if len(want.parsed.Errors) > 0 {
-			broken++
-		}
-		for _, err := range want.parsed.Errors {
-			var se *galaerr.SemanticError
-			if errors.As(err, &se) && se.Code != "" {
-				codes[se.Code]++
-			}
-		}
-		if len(diffs) > 0 {
-			mismatched++
-		}
-	}
-	// mutate compares the mutants of the source at path.
-	mutate := func(path string) error {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		ts := lexNative(galaerr.StripBOM(string(data)), 0, 0)
-		src, toks := ts.Src, ts.Tokens[:len(ts.Tokens)-1] // without EOF
-		if len(toks) == 0 {
-			return nil
-		}
-		h := fnv.New64a()
-		h.Write(data)
-		r := rand.New(rand.NewSource(int64(h.Sum64())))
-		for _, m := range mutations {
-			if mutant := m.run(r, src, toks); mutant != "" && mutant != src {
-				compare(fmt.Sprintf("%s (%s)", path, m.name), mutant)
-			}
-		}
-		return nil
-	}
-	for k, src := range brokenInputs {
-		compare(fmt.Sprintf("broken input %d", k), src)
-	}
-	paths := make(chan string)
-	var wg sync.WaitGroup
-	for range runtime.GOMAXPROCS(0) {
-		wg.Go(func() {
-			for path := range paths {
-				if err := mutate(path); err != nil {
-					t.Error(err)
-				}
-			}
-		})
-	}
-	for _, path := range gatherSources(t) {
-		paths <- path
-	}
-	close(paths)
-	wg.Wait()
-	var hints []string
-	for c, n := range codes {
-		hints = append(hints, fmt.Sprintf("%s %d", c, n))
-	}
-	sort.Strings(hints)
-	t.Logf("%d inputs, %d with errors, %d of them lexical; %d match (%.2f%%), %d differ; coded errors: %s",
-		inputs, broken, lexical, inputs-mismatched, 100*float64(inputs-mismatched)/float64(inputs),
-		mismatched, strings.Join(hints, ", "))
-	for _, c := range []galaerr.ErrorCode{galaerr.CodeGoTypeInExpression, galaerr.CodeBareLambdaParam, galaerr.CodeStructTag} {
-		if codes[c] == 0 {
-			t.Errorf("no mutant gave %s: its hint was not compared", c)
-		}
-	}
-	if broken < inputs/2 {
-		t.Errorf("only %d of %d inputs have errors: the mutations break too little", broken, inputs)
-	}
 }

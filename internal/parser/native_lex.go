@@ -1,31 +1,26 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 	"unicode/utf8"
-
-	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/native"
 )
 
-// The functions here run galop's native lexer and parser directly, without
-// ANTLR's: the native tokens take GALA's line-break rule (RetypeNewlines),
-// doc comments come from their hidden channel (nativeDocComments), and the
-// blank-line check reads the native tree (checkEmptyLinesNative). Each
-// matches its ANTLR counterpart, which the tests hold it to over the corpus.
-// With galop's engine they are how GALA parses: ParseFile parses a file
-// with them, ParseExpressionCheckedAt an expression, and the language server
-// lexes with them (VisitNativeTokens).
+// The functions here run galop's native lexer and parser: the native tokens
+// take GALA's line-break rule (retypeNewlines), doc comments come from their
+// hidden channel (nativeDocComments), and the blank-line check reads the
+// native tree (checkEmptyLinesNative). ParseFile parses a file with them,
+// ParseExpressionCheckedAt and ParseExpressionTree an expression, and the
+// language server lexes with them (VisitNativeTokens).
 
-// RetypeNewlines applies GALA's line-break rule (see lineBreakRule) to ts in
-// place, as newlineTokenSource applies it to ANTLR's lexer: a '(' that starts
-// a line after a token that can end an expression becomes NL_LPAREN, and a
-// '*' or '&' written against its operand where a statement can begin becomes
-// NL_STAR or NL_AMP. Run it once, before parsing ts.
-func RetypeNewlines(ts *native.GalaTokens) {
+// retypeNewlines applies GALA's line-break rule (see lineBreakRule) to ts in
+// place: a '(' that starts a line after a token that can end an expression
+// becomes NL_LPAREN, and a '*' or '&' written against its operand where a
+// statement can begin becomes NL_STAR or NL_AMP. Run it once, before parsing
+// ts.
+func retypeNewlines(ts *native.GalaTokens) {
 	rule := lineBreakRule{kinds: nativeKinds()}
 	src := ts.Src
 	for i := range ts.Tokens {
@@ -49,20 +44,25 @@ func byteAt(src string, i int) int {
 	return int(src[i])
 }
 
-// lexNative lexes src with galop's native lexer from line and column col (as
-// ANTLR counts them; line <= 0 starts at 1:0, as seedLexer does) and applies
-// the line-break rule. A leading UTF-8 BOM is the caller's to drop, as
-// ParseFile and VisitNativeTokens drop it; an expression's text keeps it, as
-// ANTLR's lexer reads it. Invalid UTF-8 is read as ANTLR's input stream reads
-// it (antlrText), so token text, doc comments and columns are ANTLR's. ts.Src
+// lexNative lexes src with galop's native lexer from line and column col
+// (line 1-based, col 0-based, counted in code points; line <= 0 starts at
+// 1:0) and applies the line-break rule. A leading UTF-8 BOM is the caller's
+// to drop, as ParseFile and VisitNativeTokens drop it; an expression's text
+// keeps it. Each byte that is not valid UTF-8 reads as U+FFFD
+// (antlrText), one character of token text, doc comments and columns. ts.Src
 // is then that decoded text.
 func lexNative(src string, line, col int) *native.GalaTokens {
+	ts := lexGalop(src, line, col)
+	retypeNewlines(ts)
+	return ts
+}
+
+// lexGalop is lexNative without the line-break rule: galop's lexer alone.
+func lexGalop(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
-	ts := native.GalaLexAt(antlrText(src), line, col)
-	RetypeNewlines(ts)
-	return ts
+	return native.GalaLexAt(antlrText(src), line, col)
 }
 
 // antlrText is src as ANTLR's input stream reads it: each byte that is not
@@ -80,21 +80,16 @@ func antlrText(src string) string {
 }
 
 // VisitNativeTokens lexes input with galop's native lexer and calls visit
-// with the text of every default-channel token, in order, stopping at EOF:
-// VisitTokens on galop's lexer, whose tokens match ANTLR's lexer's
-// (TestNativeLexMatchesANTLR). Lexical errors are not reported. A panic in
-// galop's lexer is recovered and reported through noteGalopPanic, and input
-// is then lexed with ANTLR's lexer instead, before any token is visited.
+// with the text of every default-channel token, in order, stopping at EOF. A
+// leading BOM is dropped. Lexical errors are not reported, and a panic in
+// galop's lexer is recovered: input is then visited as no tokens, and the
+// panic is reported as ParseFile reports it, on standard error under
+// GALA_PANIC_STACK=1 (the parse of the same text reports it as an error).
 //
 // Like ParseFile it is safe to call from several goroutines at once.
 func VisitNativeTokens(input string, visit func(text string)) {
-	ts := lexNativeRecovered(input)
+	ts := lexNativeRecovered(galaerr.StripBOM(input))
 	if ts == nil {
-		VisitTokens(input, func(tok antlr.Token) {
-			if tok.GetChannel() == antlr.TokenDefaultChannel {
-				visit(tok.GetText())
-			}
-		})
 		return
 	}
 	for _, tok := range ts.Tokens {
@@ -105,166 +100,67 @@ func VisitNativeTokens(input string, visit func(text string)) {
 	}
 }
 
-// lexNativeRecovered is lexNative of input at its start, a leading BOM
-// dropped as VisitTokens drops it, or nil when galop's lexer panics on it
-// (reported through noteGalopPanic).
-func lexNativeRecovered(input string) (ts *native.GalaTokens) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic("lexer", input, r)
-			ts = nil
-		}
-	}()
-	return lexNative(galaerr.StripBOM(input), 0, 0)
-}
-
-// ErrConvertExpression is the error of a failed conversion of an expression
-// ANTLR's parser accepted to galop's native tree: a bug in galop's converter.
-var ErrConvertExpression = errors.New("parser: galop's converter failed on the expression")
-
-// expressionNative parses input as an expression whose first character sits
-// at line/col of an enclosing file (line 1-based, col 0-based, as ANTLR
-// reports them; line <= 0 parses at 1:0), with galop's native lexer and
-// recovering parser, not anchored at end of input: its tree, error-recovered
-// when there are errors, and the errors, as ANTLR's lexer and parser report
-// them (nativeSyntaxErrors). Every token of the tree carries its position in
-// that file. ok is false when galop's lexer or parser panicked (see
-// galopParse).
-func (g *nativeParsers) expressionNative(input string, line, col int) (native.ExpressionNode, []error, bool) {
-	ts, expr, parseErrs, ok := galopParse(input, line, col, g.expression)
-	if !ok {
-		return native.ExpressionNode{}, nil, false
+// lexNativeRecovered is lexNative of input at its start, or nil when galop's
+// lexer panics on it (reported on standard error under GALA_PANIC_STACK=1;
+// a parse of the same text reports it as a diagnostic, see galopPanicError).
+func lexNativeRecovered(input string) *native.GalaTokens {
+	var ts *native.GalaTokens
+	if underGalop("lexer", input, 0, 0, func() { ts = lexGalop(input, 0, 0) }) != nil {
+		return nil
 	}
-	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs), true
+	retypeNewlines(ts)
+	return ts
 }
 
-// expressionCheckedNative is expressionNative of input as exactly one
-// expression: a syntax error is the first error ANTLR's parser reports, with
-// its hint, and a token left over after the expression is an error naming
-// what input is parsed as, as antlrExpressionAtChecked reports them. ok is
-// false when galop panicked.
-func (g *nativeParsers) expressionCheckedNative(input string, line, col int, what string) (native.ExpressionNode, error, bool) {
-	expr, errs, ok := g.expressionNative(input, line, col)
-	switch {
-	case !ok:
-		return native.ExpressionNode{}, nil, false
-	case len(errs) > 0:
-		return native.ExpressionNode{}, errs[0], true
+// parseExpressionAt parses input as an expression whose first character sits
+// at line/col of an enclosing file (line 1-based, col 0-based; line <= 0
+// parses at 1:0), with galop's native lexer and recovering parser, not
+// anchored at end of input: its tree, error-recovered when there are errors,
+// and the errors (nativeSyntaxErrors). Every token of the tree carries its
+// position in that file. A panic in galop's lexer or parser gives no tree
+// and the internal compiler error alone (galopPanicError).
+func parseExpressionAt(input string, line, col int) (native.ExpressionNode, []error) {
+	ts, expr, parseErrs, panicErr := galopParse(input, line, col, parseExpression)
+	if panicErr != nil {
+		return native.ExpressionNode{}, []error{panicErr}
+	}
+	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs)
+}
+
+// ParseExpressionCheckedAt is input's native tree as exactly one GALA
+// expression whose first character sits at line/col of an enclosing file
+// (see parseExpressionAt). It is how the transpiler parses expression text it
+// holds apart from its file: the embedded expressions of an interpolated
+// string, and declared default values. A syntax error is the first error of
+// the parse; a token left over after the expression is an error naming what
+// input is parsed as (`x +` is not `x` with the operator dropped). A panic in
+// galop's lexer or parser is an internal compiler error at line/col.
+func ParseExpressionCheckedAt(input string, line, col int, what string) (native.ExpressionNode, error) {
+	expr, errs := parseExpressionAt(input, line, col)
+	if len(errs) > 0 {
+		return native.ExpressionNode{}, errs[0]
 	}
 	tree := expr.Tree()
 	if next := tree.Tokens[tree.Next]; next.Type != native.GalaEOF {
 		return native.ExpressionNode{}, galaerr.NewSyntaxError(int(next.Line), int(next.Column),
-			fmt.Sprintf("unexpected %q in %s", next.Text(tree.Src), what)), true
+			fmt.Sprintf("unexpected %q in %s", next.Text(tree.Src), what))
 	}
-	return expr, nil, true
-}
-
-// ParseExpressionCheckedAt is input's native tree as exactly one GALA
-// expression whose first character sits at line/col of an enclosing file (see
-// expressionNative), made by the engine's parser as a file's native tree is.
-// With galop's engine, galop's native lexer and recovering parser parse
-// input, and report a syntax error as ANTLR's parser does
-// (expressionCheckedNative); only a galop panic has ANTLR's parser parse it
-// instead (ParseExpressionConvertedAt). With ANTLR's engine, ANTLR's parser
-// parses it once and its tree is converted. A syntax error names what input
-// is parsed as. engineParsed is whether there is a tree and it is the
-// engine's own parse rather than the fallback's: always so with ANTLR's
-// engine when it parses.
-func ParseExpressionCheckedAt(input string, line, col int, what string) (expr native.ExpressionNode, engineParsed bool, err error) {
-	return galopParsers.expressionCheckedAt(input, line, col, what)
-}
-
-// expressionCheckedAt is ParseExpressionCheckedAt with g's parser and
-// converter.
-func (g *nativeParsers) expressionCheckedAt(input string, line, col int, what string) (expr native.ExpressionNode, engineParsed bool, err error) {
-	engine, engineErr := currentEngine()
-	antlrEngine := engineErr == nil && engine == EngineANTLR
-	if !antlrEngine {
-		if expr, err, ok := g.expressionCheckedNative(input, line, col, what); ok {
-			return expr, err == nil, err
-		}
-	}
-	expr, err = g.expressionConvertedAt(input, line, col, what)
-	return expr, antlrEngine && err == nil, err
-}
-
-// ParseExpressionConvertedAt parses input with ANTLR's parser alone, whatever
-// the engine, as exactly one expression at line/col (see
-// antlrExpressionAtChecked), and converts it to galop's native tree: the
-// fallback of a caller whose engine's parser panicked on input. A syntax
-// error, or a token left over after the expression, is ANTLR's first error,
-// naming what input is parsed as. A failed conversion is an error wrapping
-// ErrConvertExpression.
-func ParseExpressionConvertedAt(input string, line, col int, what string) (native.ExpressionNode, error) {
-	return galopParsers.expressionConvertedAt(input, line, col, what)
-}
-
-// expressionConvertedAt is ParseExpressionConvertedAt with g's converter.
-func (g *nativeParsers) expressionConvertedAt(input string, line, col int, what string) (native.ExpressionNode, error) {
-	ctx, stream, err := antlrExpressionAtChecked(input, line, col, what)
-	if err != nil {
-		return native.ExpressionNode{}, err
-	}
-	return g.convertExpression(ctx, stream, input)
+	return expr, nil
 }
 
 // ParseExpressionTree is src's native tree as an expression, and the syntax
-// errors: src parsed as an expression, not anchored at end of input,
-// so `x +` gives the tree of `x`, with no error. With galop's engine, galop's
-// native lexer and recovering parser parse src (expressionNative), its tree
-// error-recovered when there are errors; only a galop panic has ANTLR's
-// parser parse it instead. With ANTLR's engine, ANTLR's parser parses it, its
-// tree error-recovered when there are errors, and galop's converter converts
-// it. No tree is the zero node, with the reason among the errors: the
-// converter failed (an error wrapping ErrConvertExpression; a panic is also
-// reported through noteGalopPanic), or no engine can be chosen.
+// errors: src parsed by galop's native lexer and recovering parser as an
+// expression (parseExpressionAt), not anchored at end of input, so `x +`
+// gives the tree of `x`, with no error. The tree is error-recovered when
+// there are errors. A panic in galop's lexer or parser gives the zero node
+// and the internal compiler error alone (see IsParserPanic).
 func ParseExpressionTree(src string) (native.ExpressionNode, []error) {
-	return galopParsers.expressionTree(src)
+	return parseExpressionAt(src, 0, 0)
 }
 
-// expressionTree is ParseExpressionTree with g's parser and converter.
-func (g *nativeParsers) expressionTree(src string) (native.ExpressionNode, []error) {
-	engine, err := currentEngine()
-	if err != nil {
-		return native.ExpressionNode{}, []error{err}
-	}
-	if engine == EngineGalop {
-		if expr, errs, ok := g.expressionNative(src, 0, 0); ok {
-			return expr, errs
-		}
-	}
-	ctx, stream, errs := antlrExpressionAt(src, 0, 0)
-	if ctx == nil {
-		return native.ExpressionNode{}, errs
-	}
-	expr, err := g.convertExpression(ctx, stream, src)
-	if err != nil {
-		return native.ExpressionNode{}, append(errs, err)
-	}
-	return expr, errs
-}
-
-// convertExpression converts ctx, an expression ANTLR's parser read from
-// stream over src, to galop's native tree with g's converter, reading src as
-// ANTLR does (antlrText). A panic in the
-// converter is recovered and reported through noteGalopPanic.
-func (g *nativeParsers) convertExpression(ctx antlr.ParserRuleContext, stream *antlr.CommonTokenStream, src string) (expr native.ExpressionNode, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			noteGalopPanic("parser", src, r)
-			expr, err = native.ExpressionNode{}, fmt.Errorf("%w: converter panic: %v", ErrConvertExpression, r)
-		}
-	}()
-	tree := g.toNative(ctx, stream, antlrText(src))
-	if tree == nil {
-		return native.ExpressionNode{}, fmt.Errorf("%w: the converter gave no tree", ErrConvertExpression)
-	}
-	return native.ExpressionNode{GalaNodeRef: tree.Root()}, nil
-}
-
-// checkEmptyLinesNative is checkEmptyLines on the native tree: the blank line
-// required after the package clause and after the import block. Native
-// tokens span bytes of the source, so the gaps are read straight from it.
+// checkEmptyLinesNative enforces the blank line required after the package
+// clause and after the import block. Native tokens span bytes of the source,
+// so the gaps are read straight from it.
 func checkEmptyLinesNative(root native.SourceFileNode) error {
 	pkg := root.PackageClause()
 	if !pkg.Ok() || pkg.StopIndex() < pkg.StartIndex() {
@@ -273,7 +169,8 @@ func checkEmptyLinesNative(root native.SourceFileNode) error {
 	src := root.Tree().Src
 	// gapLacksBlankLine reports whether the source between the end of token
 	// last and the start of token next has no blank line. An empty gap is
-	// never reported (see runeSpan).
+	// never reported: there is no gap to inspect (GALA's grammar always
+	// separates the two tokens).
 	gapLacksBlankLine := func(last, next native.GalaToken) bool {
 		return last.End < next.Start && !emptyLineRegex.MatchString(src[last.End:next.Start])
 	}

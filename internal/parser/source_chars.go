@@ -20,7 +20,7 @@ import (
 // and the program compiled with a different string value than the one written.
 //
 // input must already have its leading BOM removed. The returned diagnostic is
-// positioned the way ANTLR positions tokens — 1-based line, 0-based column
+// positioned the way the lexer positions tokens — 1-based line, 0-based column
 // counted in code points, with each invalid byte counting as one — so it lines
 // up with every other diagnostic on the same line.
 func checkSourceChars(input string) *galaerr.SemanticError {

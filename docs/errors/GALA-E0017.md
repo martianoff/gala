@@ -11,6 +11,14 @@ by the top-level `recover` in `Transform`
 error. Any panic that is not already a `*galaerr.SemanticError` lands here, with
 the recovered value preserved in the message.
 
+A panic in galop's lexer or parser lands here too: the parse recovers it and
+reports it for that file as `internal compiler error: galop's parser panicked:
+<recovered value>` (`galop's lexer` for the lexer), at 1:0, or, for a default
+value or interpolated expression parsed on its own, at that expression's
+position. The build fails on that file and `gala lsp` shows the diagnostic;
+neither crashes. Set `GALA_PANIC_STACK=1` to print the panic's stack on
+standard error for the report.
+
 **Minimal repro.** None. A panic is by definition an unintended path, so there
 is no user-triggerable repro to show; a specific input that reaches it is a bug
 to be fixed, not a documented trigger.

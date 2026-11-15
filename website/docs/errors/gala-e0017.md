@@ -13,6 +13,8 @@ last_modified_at: 2026-09-25
 
 **What it means.** A `panic` inside the transformer was caught by the top-level recover and surfaced as a coded error. Well-formed GALA source should never trigger this.
 
+A panic in galop's lexer or parser surfaces the same way: the file gets `internal compiler error: galop's parser panicked: …` (`galop's lexer` for the lexer) at 1:0, or, for a default value or interpolated expression parsed on its own, at that expression's position. The build fails on that file and `gala lsp` shows the diagnostic; neither crashes. Set `GALA_PANIC_STACK=1` to print the panic's stack on standard error for the report.
+
 **This is a transpiler bug, not an error in your program.**
 
 ---

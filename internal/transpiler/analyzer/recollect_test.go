@@ -41,7 +41,6 @@ func methodNamesOf(meta *transpiler.TypeMetadata) []string {
 // specs, a sealed type's case predicates, a method the file has since
 // deleted. A method another file declares on the type survives.
 func TestRecollectedDeclarationDropsStaleMethods(t *testing.T) {
-	parseWithGalop(t)
 	cases := []struct {
 		name, first, again string
 		// wantMethods is the methods the re-collected entry has, the

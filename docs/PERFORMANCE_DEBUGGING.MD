@@ -98,26 +98,18 @@ Enables per-phase timing logs from
 generate, print). Look here first for "what's slow" — heap profiling is
 overkill until phase timing tells you which phase is the suspect.
 
-### `GALA_PARSER=antlr` / `--parser=antlr`
+### `GALA_PANIC_STACK=1`
 
-GALA parses with galop's native parser, which builds no ANTLR tree and
-recovers from syntax errors as ANTLR's does, with the same errors and
-error-recovered tree (see [DESIGN.MD](DESIGN.MD#implementation-notes)). `GALA_PARSER=antlr`, or the
-`--parser=antlr` flag of any `gala` command, parses with ANTLR's parser
-alone and converts its tree to galop's native tree, which is what the
-transpiler reads. Both give the same native tree, so the output must not
-change; compare the two when a parse looks wrong or slow. On the galop
-project (67 files and the stdlib), galop's parser takes transpile time from 3.7 s to 2.0 s
-and a warm `gala build` from 5.1 s to 3.5 s. A Bazel build with
-`--//internal/parser:antlr` makes ANTLR's parser the default of the
-binaries it builds; galop's is still built in.
+GALA parses with galop's native parser alone (see
+[DESIGN.MD](DESIGN.MD#implementation-notes)); on the galop project (67 files and the
+stdlib) it took transpile time from 3.7 s to 2.0 s and a warm `gala build` from 5.1 s to
+3.5 s against ANTLR's parser, which GALA no longer has.
 
-A panic in galop's lexer or parser falls back to ANTLR's and prints
-`gala: warning: galop's parser panicked (N so far in this process) ...`
-(`galop's lexer` for the lexer) for the 1st, 10th, 100th, ... panic: each
-one costs a second pass and is
-a galop bug worth reporting. `GALA_PANIC_STACK=1` prints every one, with
-its stack.
+A panic in galop's lexer or parser is a galop bug. It does not crash the build or
+`gala lsp`: the file (or the default value or interpolated expression parsed on its own)
+gets a `GALA-E0017` diagnostic, `internal compiler error: galop's parser panicked: ...`
+(`galop's lexer` for the lexer). `GALA_PANIC_STACK=1` also prints the panic's stack on
+standard error, for the report.
 
 ## When the disk cache eats space
 

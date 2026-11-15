@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"martianoff/gala/internal/build"
-	"martianoff/gala/internal/parser"
 )
 
 var rootCmd = &cobra.Command{
@@ -120,24 +119,10 @@ func init() {
 	// whole GALA home.
 	rootCmd.PersistentFlags().StringVar(&buildDir, "build-dir", "",
 		"Directory for build workspaces (default: $GALA_BUILD_DIR, else <gala home>/build)")
-	rootCmd.PersistentFlags().StringVar(&parserEngine, "parser", "",
-		parserFlagHelp())
-	// Runs after flag parsing, before any command constructs a Config or
-	// parses a file. An unusable parser name fails the parses, not the
-	// commands that parse nothing.
+	// Runs after flag parsing, before any command constructs a Config.
 	cobra.OnInitialize(func() {
 		build.SetBuildDirOverride(buildDir)
-		parser.RequestEngine(parserEngine)
 	})
 }
 
-var (
-	buildDir     string
-	parserEngine string
-)
-
-// parserFlagHelp describes --parser with this build's default engine.
-func parserFlagHelp() string {
-	return `Parser: "galop" (ANTLR reports syntax errors) or "antlr" (default: $GALA_PARSER, else ` +
-		string(parser.DefaultEngine()) + `)`
-}
+var buildDir string

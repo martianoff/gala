@@ -7,30 +7,39 @@ import (
 	"martianoff/gala/internal/parser/native"
 )
 
-// The functions here read galop's native tree as type_text.go and docs.go
-// read ANTLR's:
-//
-//   - NativeTypeText, NativePtrElem, NativePointerElem and NativeAliasText
-//     take the native node of a context (Native.Node) and return what TypeText,
-//     PtrElem, PointerElem and AliasText return for the context, a returned
-//     context as its native node.
-//   - NativeDocKeyOf takes a node where DocKeyOf takes a token: it is DocKeyOf
-//     of the node's first token.
+// The functions here read what the transpiler needs off galop's native tree:
+// a type's spelling (NativeTypeText, NativeAliasText), its pointer element
+// (NativePtrElem, NativePointerElem), where a declaration starts
+// (NativeDocKeyOf), and a node's text and children.
 //
 // No node gives the empty result. They read children through the rule
 // handles and NativeKids, never through Typed, which builds a handle per
 // node, and walk a list in one pass without allocating: the All accessors
 // allocate, and the indexed ones rescan the children from the first.
 
-// NativeTypeText is TypeText for the native node of a type.
+// NativeTypeText spells the type t as one string, the form
+// transpiler.ParseType reads: `Array[int]`, `map[string]int`,
+// `func(int, ...string) Option[int]`. It is the type's source text without
+// whitespace, except that a function type's parameter names are left out:
+// GetText drops the whitespace between a name and its type, so
+// `func(msg string)` would read as one parameter of type `msgstring`.
 func NativeTypeText(t native.TypeNode) string {
 	var b strings.Builder
 	writeNativeTypeText(&b, t)
 	return b.String()
 }
 
-// NativePtrElem is PtrElem for the native node of a type: the type argument
-// of `Ptr[T]` or `std.Ptr[T]`, or no node.
+// PtrTypeName is the name of GALA's non-null pointer marker, `Ptr[T]`.
+const PtrTypeName = "Ptr"
+
+// IsPtrTypeName reports whether name, the base of a generic type `name[T]`,
+// names the non-null pointer marker: `Ptr` unqualified or as `std.Ptr`.
+func IsPtrTypeName(name string) bool {
+	return name == PtrTypeName || name == "std."+PtrTypeName
+}
+
+// NativePtrElem is the type argument of GALA's non-null pointer annotation
+// `Ptr[T]` or `std.Ptr[T]`, or no node when t is not one.
 func NativePtrElem(t native.TypeNode) native.TypeNode {
 	if !t.Ok() {
 		return native.TypeNode{}
@@ -59,8 +68,9 @@ func isNativePtrName(qid native.QualifiedIdentifierNode) bool {
 	return IsPtrTypeName(qid.GetText())
 }
 
-// NativePointerElem is PointerElem for the native node of a type: the element
-// type of `*T` or `Ptr[T]` and true, or (t, false).
+// NativePointerElem is the element type of a pointer type annotation, `*T`
+// or the non-null `Ptr[T]`, and true; for any other type it is (t, false). A
+// receiver is a pointer receiver exactly when its type is one of the two.
 func NativePointerElem(t native.TypeNode) (native.TypeNode, bool) {
 	if elem := NativePtrElem(t); elem.Ok() {
 		return elem, true
@@ -73,7 +83,9 @@ func NativePointerElem(t native.TypeNode) (native.TypeNode, bool) {
 	return t, false
 }
 
-// NativeAliasText is AliasText for the native node of a typeAlias.
+// NativeAliasText spells the target of `type X Y` as NativeTypeText does. Its
+// grammar is `identifier | type`: `type Millis int64` takes the identifier
+// branch.
 func NativeAliasText(a native.TypeAliasNode) string {
 	if !a.Ok() {
 		return ""
@@ -84,11 +96,11 @@ func NativeAliasText(a native.TypeAliasNode) string {
 	return a.GetText()
 }
 
-// NativeDocKeyOf is DocKeyOf of node n's first token: the key of the
-// declaration n is. A node that spans no token has no first token (the
-// converter starts it at the token after the ones before it, which may be
-// past the last), so it, like no node, gives the zero key; a declaration
-// always spans tokens.
+// NativeDocKeyOf is where node n's first token starts: the key of the
+// declaration n is (see DocKey). A node that spans no token has no first
+// token (the parser starts it at the token after the ones before it, which
+// may be past the last), so it, like no node, gives the zero key; a
+// declaration always spans tokens.
 func NativeDocKeyOf(n native.GalaNodeRef) DocKey {
 	if !n.Ok() || n.StopIndex() < n.StartIndex() {
 		return DocKey{}
@@ -97,10 +109,10 @@ func NativeDocKeyOf(n native.GalaNodeRef) DocKey {
 	return DocKey{Line: int(start.Line), Column: int(start.Column)}
 }
 
-// NativeStartText has no ANTLR counterpart: it is the text of the token
-// ANTLR's GetStart gives for n's context, which for a node that spans no
-// token is the token after it. Past the last token it is "": that token is
-// none of the ones writeNativeTypeText and NativePointerElem look for.
+// NativeStartText is the text of the token n starts at, which for a node that
+// spans no token is the token after it. Past the last token it is "": that
+// token is none of the ones writeNativeTypeText and NativePointerElem look
+// for.
 func NativeStartText(n native.GalaNodeRef) string {
 	tree, i := n.Tree(), n.StartIndex()
 	if i >= len(tree.Tokens) {
@@ -113,10 +125,10 @@ func NativeStartText(n native.GalaNodeRef) string {
 // of one token, an identifier's, is that token's text, a slice of the source.
 //
 // A node's span (StartIndex to StopIndex) does not always hold every token
-// under it. In a tree converted from ANTLR's error recovery a node can hold
-// a conjured token ("<missing 'package'>"), which sits past the stream's
-// tokens, or the EOF token, which ANTLR adds as a child but leaves out of the
-// span. So a node takes the fast path only when it is a chain of single
+// under it. In an error-recovered tree a node can hold a conjured token
+// ("<missing 'package'>"), which sits past the stream's tokens, or the EOF
+// token, which the recovery adds as a child but leaves out of the span. So a
+// node takes the fast path only when it is a chain of single
 // children down to the one token its span starts at.
 func NativeText(n native.GalaNodeRef) string {
 	if i := n.StartIndex(); n.StopIndex() == i {
@@ -169,8 +181,7 @@ func OnlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeR
 	return only, count == 1
 }
 
-// writeNativeTypeList writes n's child types as writeTypeText writes a list
-// of types: separated by commas.
+// writeNativeTypeList writes n's child types separated by commas.
 func writeNativeTypeList(b *strings.Builder, n native.GalaNodeRef) {
 	first := true
 	for typ := range NativeKids(n, native.GalaKIND_type) {
@@ -214,8 +225,10 @@ func writeNativeTypeText(b *strings.Builder, t native.TypeNode) {
 	}
 }
 
-// writeNativeSignatureText is writeSignatureText for the native node of a
-// signature.
+// writeNativeSignatureText writes the function type signature s as
+// `(params) result`. A parameter is a type, or a name and a type; a lone
+// name is the type itself (`func(int)` parses its `int` as a parameter name
+// with no type).
 func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 	if !s.Ok() {
 		return

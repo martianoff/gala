@@ -144,7 +144,7 @@ func checkDiagnostics(tb testing.TB, src string, err error) {
 		if line < 1 || line > len(lines) {
 			tb.Fatalf("diagnostic line %d is outside the input (1..%d): %v\ninput:\n%q", line, len(lines), leaf, src)
 		}
-		// Columns are 0-based code-point offsets (ANTLR's convention); a
+		// Columns are 0-based code-point offsets (the lexer's convention); a
 		// diagnostic at end of line sits one past the last rune.
 		if width := utf8.RuneCountInString(lines[line-1]); col < 0 || col > width {
 			tb.Fatalf("diagnostic column %d is outside line %d (0..%d): %v\ninput:\n%q", col, line, width, leaf, src)

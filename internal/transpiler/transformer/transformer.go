@@ -214,15 +214,10 @@ type galaASTTransformer struct {
 	// changes nothing; the walk tests set it to count them.
 	onNativeCase func(n native.GalaNodeRef)
 	// onParsedExpr, when set, is told of each tree parseExprAt parses, with
-	// what it parsed, the file it is written in, and whether the engine's
-	// parser made the tree rather than the fallback, ANTLR's parser and
-	// galop's converter. It observes and changes nothing; the native walk
-	// tests set it to tell those trees' nodes from the file's.
-	onParsedExpr func(tree *native.GalaTree, what, file string, engineParsed bool)
-	// refuseNativeParse, when set, makes parseExprAt take its fallback, ANTLR's
-	// parser and galop's converter, without trying the engine's parser. Only
-	// TestNativeParsedWalkFallback sets it.
-	refuseNativeParse bool
+	// what it parsed and the file it is written in. It observes and changes
+	// nothing; the native walk tests set it to tell those trees' nodes from
+	// the file's.
+	onParsedExpr func(tree *native.GalaTree, what, file string)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that

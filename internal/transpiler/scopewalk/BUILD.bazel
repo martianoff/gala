@@ -21,14 +21,3 @@ go_test(
     ],
 )
 
-# gazelle:exclude no_antlr_test.go
-go_test(
-    # keep
-    name = "no_antlr_test",
-    srcs = ["no_antlr_test.go"],
-    data = glob(
-        ["*.go"],
-        exclude = ["*_test.go"],
-    ) + ["BUILD.bazel"],
-    deps = ["//internal/noantlr"],
-)

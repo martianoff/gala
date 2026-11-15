@@ -8,8 +8,7 @@ import (
 )
 
 // The compiled file's top-level walk reads the file's native tree
-// (RichAST.Native), whichever engine parsed it: galop's native parser, or
-// ANTLR's with its tree converted by galop's converter. Every clean parse has
+// (RichAST.Native), which galop's native parser made. Every clean parse has
 // one, and only a clean parse is transformed.
 
 // walkSource is the compiled file as the top-level walk reads it: the root of
@@ -18,9 +17,8 @@ type walkSource struct {
 	root native.SourceFileNode
 }
 
-// newWalkSource is the walk of richAST's file, converting its native tree if
-// the analysis has not. A file without a native tree, or whose conversion
-// failed, is an internal error: every clean parse has one.
+// newWalkSource is the walk of richAST's file, on its native tree. A file
+// without a native tree is an internal error: every clean parse has one.
 func newWalkSource(richAST *transpiler.RichAST) (walkSource, error) {
 	tree, err := richAST.Native.Tree()
 	if err != nil {

@@ -389,8 +389,8 @@ func TestParsedFileEntryKeepsDocsAndNative(t *testing.T) {
 	if len(entry.parsed.Docs) == 0 {
 		t.Error("the cached parse has no docs")
 	}
-	if !entry.parsed.Native.Converted() || !entry.nf.root.Ok() {
-		t.Error("the parsed-file cache keeps no converted native tree, which the file's reads take")
+	if _, ok := entry.parsed.Native.Root(); !ok || !entry.nf.root.Ok() {
+		t.Error("the parsed-file cache keeps no native tree, which the file's reads take")
 	}
 	if entry.pkgName != "spkg" || entry.pkgPos != (transpiler.SourcePos{Line: 1, Column: 0}) {
 		t.Errorf("package clause: %q at %+v, want spkg at 1:0", entry.pkgName, entry.pkgPos)

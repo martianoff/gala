@@ -15,13 +15,6 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// parseWithGalop makes tb's parses use galop's parser whatever the build's
-// or environment's default, until tb ends.
-func parseWithGalop(tb testing.TB) {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	tb.Cleanup(func() { galaparser.RequestEngine("") })
-}
-
 // collectionCorpus is the paths of the GALA sources of the frozen corpus
 // (internal/testcorpus), extracted for tb, in name order, and the search path
 // that resolves their imports.
@@ -190,7 +183,6 @@ func docExamples(tb testing.TB) [][][2]string {
 // editor's buffer is analyzed on mid-edit, see Parsed.RecoveredNative); no
 // handle gives none, an error.
 func TestCollectionTakesEveryParse(t *testing.T) {
-	parseWithGalop(t)
 	p := galaparser.NewAntlrGalaParser()
 	broken := p.ParseFile("package main\n\nfunc f( = 1\n")
 	if len(broken.Errors) == 0 {
@@ -214,7 +206,6 @@ func TestCollectionTakesEveryParse(t *testing.T) {
 // type's entry, and both twins give it the type parameters of the declaration
 // collected last, rather than appending them to the ones it holds.
 func TestRecollectedTypeParams(t *testing.T) {
-	parseWithGalop(t)
 	const generic = `package box
 
 type Box[T comparable] struct {
@@ -348,7 +339,6 @@ func collectTwice(tb testing.TB, a *galaAnalyzer, collect typeCollector, first, 
 // old form. The methods declared on a struct, and the DefinedIn an interface
 // does not set, survive the re-collection.
 func TestRecollectedTypeChangesForm(t *testing.T) {
-	parseWithGalop(t)
 	forms := []struct{ name, src string }{
 		{"shorthand", "package box\n\nstruct Cfg[T any](Name string, Tries int = 3, Extra T)\n"},
 		{"block", "package box\n\ntype Cfg struct {\n    var Name string\n    Size int\n}\n"},
@@ -525,7 +515,6 @@ var valShapes = []struct{ name, init, inferred, recorded string }{
 // bindings gives each the type valShapes holds, and the binding records its
 // own type — never a wrong one in place of one the inference cannot tell.
 func TestValInitTypeShapes(t *testing.T) {
-	parseWithGalop(t)
 	_, searchPaths := collectionCorpus(t)
 	shapeType := func(typ transpiler.Type) string {
 		if typ == nil || typ.IsNil() {
@@ -675,7 +664,6 @@ func sortedKeys(m reflect.Value) []reflect.Value {
 // ("file": analyze's sections 1 to 2b). "convert" is the conversion to the
 // native tree itself, which every file pays once.
 func BenchmarkCollect(b *testing.B) {
-	parseWithGalop(b)
 	paths, searchPaths := collectionCorpus(b)
 	type source struct {
 		path, pkgName string
@@ -744,7 +732,6 @@ func BenchmarkCollect(b *testing.B) {
 // for the declaration. A nil docs map or a missing entry (a pass that did not
 // thread the docs, or a cache load) never erases a doc already recorded.
 func TestNativeSetDocKeepsExistingWhenAbsent(t *testing.T) {
-	parseWithGalop(t)
 	parsed := galaparser.NewAntlrGalaParser().ParseFile("package main\n\ntype T struct {\n    x int\n}\n")
 	nf, err := nativeFileOf(parsed.CleanNative())
 	if err != nil || len(nf.types) != 1 {

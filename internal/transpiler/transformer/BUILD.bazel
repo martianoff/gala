@@ -477,24 +477,22 @@ go_test(
     embed = [":transformer"],
     deps = [
         "//galaerr",
-        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
         "//internal/transpiler/genheader",
         "//internal/transpiler/gooracle",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
     ],
 )
 
-# The transformer's walk of the native tree: over the GALA sources
-# TestEnginesAgree parses, under galop's engine and ANTLR's (TestWalkEnginesAgree),
+# The transformer's walk of the native tree: over the GALA sources staged as
+# data (TestWalkCorpus, TestWalkCorpusRest),
 # and over the walk tests' cases, each held to its golden in
 # testdata/walk_golden. A target of its own: it stages all of the sources and
-# transpiles each twice. Gazelle leaves its files out of transformer_test (the
+# transpiles each. Gazelle leaves its files out of transformer_test (the
 # exclude directives) and keeps this rule as written. Run one case test alone,
 # in seconds, with e.g. --test_filter=TestNativeTypeCases; rewrite the goldens
 # with --test_sharding_strategy=disabled --test_arg=-update
@@ -523,8 +521,8 @@ go_test(
     # file a second time, which Bazel rejects as conflicting actions.
     size = "large",
     # Three shards: the case tests (TestNativeMatchCases, TestNativeWalkCases)
-    # and the two halves of the corpus run (TestWalkEnginesAgree,
-    # TestWalkEnginesAgreeRest) side by side, one shard each.
+    # and the two halves of the corpus run (TestWalkCorpus,
+    # TestWalkCorpusRest) side by side, one shard each.
     shard_count = 3,
     srcs = [
         "native_args_walk_test.go",
@@ -566,20 +564,3 @@ go_test(
     ],
 )
 
-# TestTransformerReadsNoANTLR reads the library's sources and this file, so it
-# stages them, apart from transformer_test, whose corpus guards would read the
-# library's sources too.
-# gazelle:exclude no_antlr_test.go
-go_test(
-    # keep
-    name = "no_antlr_test",
-    srcs = ["no_antlr_test.go"],
-    data = glob(
-        ["*.go"],
-        exclude = ["*_test.go"],
-    ) + ["BUILD.bazel"],
-    deps = [
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-    ],
-)

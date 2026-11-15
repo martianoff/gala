@@ -40,7 +40,7 @@ go_sdk.download(version = "1.25.5")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-use_repo(go_deps, "com_github_antlr4_go_antlr_v4", "com_github_go_git_go_git_v5", "com_github_owenrumney_go_lsp", "com_github_spf13_cobra", "com_github_stretchr_testify", "org_golang_x_mod", "org_golang_x_sys")
+use_repo(go_deps, "com_github_go_git_go_git_v5", "com_github_owenrumney_go_lsp", "com_github_spf13_cobra", "com_github_stretchr_testify", "org_golang_x_mod", "org_golang_x_sys")
 
 # Synthetic external module used by the cross-module gala_transpile
 # regression test under //bazel_test_fixtures/external_gala_consumer.
@@ -72,8 +72,8 @@ lean = use_extension("@rules_lean//lean:extensions.bzl", "lean", dev_dependency 
 # tools/check_repo_policy.sh fails when the two differ.
 lean.toolchain(version = "4.35.0")
 
-# galop, the parser generator the GALA parser is also built with (see
-# internal/parser/grammar): its prebuilt release binaries, registered as
+# galop, the parser generator GALA's parser is generated with (see
+# internal/parser/native): its prebuilt release binaries, registered as
 # toolchains by rules_gala. Building GALA needs one for the build host (see
 # CONTRIBUTING.MD for the hosts); elsewhere the build fails with "No matching
 # toolchains found" for galop's toolchain type.
@@ -83,7 +83,8 @@ use_repo(galop, "galop_toolchains")
 
 register_toolchains("@galop_toolchains//:all")
 
-# ANTLR tool jar (not in BCR, loaded via use_repo_rule)
+# ANTLR tool jar (not in BCR, loaded via use_repo_rule), for the IntelliJ
+# plugin's Java parser only (//internal/parser/grammar:gala_grammar_java).
 http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
 
 http_jar(

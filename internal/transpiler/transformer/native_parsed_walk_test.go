@@ -100,18 +100,11 @@ var parsedCases = []struct{ name, what, kind, src string }{
 // TestNativeParsedWalk holds the native walk of parsedShapes and of each of
 // parsedCases to its golden (checkWalk), which holds each case
 // to its diagnostic, at its line and column, and requires the
-// native walk to have read the lines they mark on the native tree: under
-// each engine, which parses the file and, for the native walk, its defaults
-// and interpolations (ANTLR's through galop's converter, see
-// parser.ParseExpressionCheckedAt).
+// native walk to have read the lines they mark on the native tree: on the
+// file's tree and, for its defaults and interpolations, on the trees
+// parser.ParseExpressionCheckedAt makes of them.
 func TestNativeParsedWalk(t *testing.T) {
-	for _, engine := range []galaparser.Engine{galaparser.EngineGalop, galaparser.EngineANTLR} {
-		t.Run(string(engine), func(t *testing.T) { checkNativeParsedWalk(t, walkRunner(t, engine, walkPipeline{})) })
-	}
-}
-
-// checkNativeParsedWalk is TestNativeParsedWalk with run.
-func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string) walkRun) {
+	run := exprWalkRunner(t)
 	t.Run("parsed shapes", func(t *testing.T) {
 		n := run(t, "parsed shapes", parsedShapes)
 		require.NoError(t, n.err, "the program does not transpile")
@@ -138,38 +131,12 @@ func checkNativeParsedWalk(t *testing.T, run func(t *testing.T, name, src string
 	}
 }
 
-// TestNativeParsedWalkFallback holds a walk whose defaults and interpolations
-// all fall back to ANTLR's parser and galop's converter (RefuseNativeParse),
-// as after a galop panic on them, to its golden on
-// parsedShapes and on each of parsedCases: the Go, or the diagnostic, that
-// ANTLR's walk gave them, with no tree made by the engine's parser.
-func TestNativeParsedWalkFallback(t *testing.T) {
-	run := walkRunner(t, galaparser.EngineGalop, walkPipeline{refuseNative: true})
-	check := func(t *testing.T, name, src string) walkRun {
-		n := run(t, name, src)
-		assert.Zerof(t, n.engineTrees, "the engine's parser parsed %d expressions, which it was refused", n.engineTrees)
-		return n
-	}
-	t.Run("parsed shapes", func(t *testing.T) {
-		n := check(t, "parsed shapes", parsedShapes)
-		require.NoError(t, n.err, "the program does not transpile")
-		assert.Positive(t, n.fallbackTrees, "no expression was parsed by the fallback")
-	})
-	for _, c := range parsedCases {
-		t.Run(c.name, func(t *testing.T) {
-			require.Error(t, check(t, c.name, c.src).err, "the case transpiles")
-		})
-	}
-}
-
-// TestNativeParsedWalkForeign holds the two walks to the same Go, or the same
+// TestNativeParsedWalkForeign holds the native walk to its golden Go, or
 // diagnostic, for defaults declared in another package, whose names resolve
 // where they are written (outOfLexicalScope): one that lowers, and two whose
 // names only the using file's imports declare, reported at their own token in
 // the default's file.
 func TestNativeParsedWalkForeign(t *testing.T) {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
 	root := t.TempDir()
 	write := func(rel, content string) string {
@@ -247,9 +214,9 @@ func Qualified(s string = Thing match {
 // tree numbers its nodes from 0 like the file's, so the cache must key a node
 // with its tree: the answer for one tree's node is not another's.
 func TestEscapeCacheKeysNodesByTree(t *testing.T) {
-	ret, _, err := galaparser.ParseExpressionCheckedAt("if (true) { return 1 } else 2", 1, 0, "expression")
+	ret, err := galaparser.ParseExpressionCheckedAt("if (true) { return 1 } else 2", 1, 0, "expression")
 	require.NoError(t, err)
-	plain, _, err := galaparser.ParseExpressionCheckedAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0, "expression")
+	plain, err := galaparser.ParseExpressionCheckedAt("if (true) { 1 + 2 + 3 + 4 } else 5 + 6 + 7 + 8 + 9", 1, 0, "expression")
 	require.NoError(t, err)
 	tree := plain.Tree()
 	require.Less(t, ret.Index(), len(tree.Nodes), "the plain tree must have a node at the returning root's index")

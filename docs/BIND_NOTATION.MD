@@ -401,7 +401,7 @@ to the effect it adds (ordering for concurrency, error set for accumulation).
 
 `bind`/`also` are declarations, modeled on the existing
 `valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;` in
-`internal/parser/grammar/gala.g4` (the ANTLR source; the generated `*.go` is never
+`internal/parser/grammar/gala.g4` (the grammar source, in ANTLR4 syntax; the generated `*.go` is never
 hand-edited):
 
 ```antlr

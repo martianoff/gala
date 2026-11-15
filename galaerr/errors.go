@@ -396,7 +396,7 @@ const (
 	// E0042: a lambda was written with an unparenthesized parameter, as in
 	// `xs.Map(x => x * 2)`. GALA's lambdaExpression requires a `parameters`
 	// list, so the single-parameter shorthand Scala, Kotlin, JS and C# all
-	// accept is a syntax error here — and one ANTLR reports badly: the bare
+	// accept is a syntax error here — and one the parser reports badly: the bare
 	// form produced up to four cascading errors, each dumping the twenty-odd
 	// tokens the parser would have accepted, and none of them naming the
 	// missing parentheses.
@@ -404,7 +404,7 @@ const (
 	// The grammar is deliberately NOT relaxed to admit the bare form. `pattern`
 	// reaches `expression`, which reaches `primaryExpr`, whose FIRST
 	// alternative is `lambdaExpression` — so a bare-identifier lambda would
-	// make `case x => body` ambiguous, and ANTLR would resolve it silently to
+	// make `case x => body` ambiguous, and the parser would resolve it silently to
 	// the lambda reading rather than erroring. A mis-parse that still compiles
 	// is a worse outcome than the syntax error this code replaces.
 	CodeBareLambdaParam ErrorCode = "GALA-E0042"
@@ -836,8 +836,8 @@ const (
 	// sealed case, is followed by a string literal: a Go struct tag. GALA has
 	// no struct tags. JSON and YAML wire shapes are configured on Codec[T],
 	// and a type a Go reflection library must read through tags is written in
-	// a .go file of the package. Reported by the parser's error listener in
-	// place of ANTLR's "extraneous input" message.
+	// a .go file of the package. Reported by the parser's error reporter in
+	// place of the parser's "extraneous input" message.
 	CodeStructTag ErrorCode = "GALA-E0085"
 
 	// E0086: a method spec of an interface declares its own type

@@ -47,8 +47,8 @@ func (e *exporter) interpolated(l native.LiteralNode) Node {
 			return e.unsupported(UnsupportedInterpEscape, l.GalaNodeRef)
 		}
 		pl, pc := interpolation.Position(content, p.Offset, line, col)
-		// Parsed as the transpiler parses it: the engine's parser, ANTLR's as the fallback.
-		expr, _, err := parser.ParseExpressionCheckedAt(p.Text, pl, pc, "interpolated expression")
+		// Parsed as the transpiler parses it.
+		expr, err := parser.ParseExpressionCheckedAt(p.Text, pl, pc, "interpolated expression")
 		if err != nil {
 			return e.unsupported(UnsupportedInterpolated, l.GalaNodeRef)
 		}

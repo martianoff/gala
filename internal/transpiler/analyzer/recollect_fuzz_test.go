@@ -38,7 +38,6 @@ func FuzzRecollect(f *testing.F) {
 		rng.Read(seed)
 		f.Add(seed)
 	}
-	parseWithGalop(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		first, again := generateRecollectPair(data)
 		collect := declCollectors["native"]
@@ -194,4 +193,3 @@ func (g *recollectGen) version(required, docs map[string]bool) recollectVersion 
 	v.src = b.String()
 	return v
 }
-

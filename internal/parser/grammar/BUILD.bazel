@@ -1,65 +1,8 @@
-load("@rules_gala//galop:defs.bzl", "galop_parser")
-load("@rules_go//go:def.bzl", "go_library")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
-genrule(
-    name = "gala_grammar_go",
-    srcs = ["gala.g4"],
-    outs = [
-        "gala_base_listener.go",
-        "gala_lexer.go",
-        "gala_listener.go",
-        "gala_parser.go",
-    ],
-    cmd = """
-        set -e && \
-        export PATH="/usr/bin:/bin:$$PATH" && \
-        ANTLR_OUT=antlr_tmp_$$$$ && \
-        mkdir -p $$ANTLR_OUT && \
-        "$(JAVA)" -jar $(location @antlr4_tool//jar) -Dlanguage=Go -package grammar -o $$ANTLR_OUT $(location gala.g4) && \
-        find $$ANTLR_OUT -name '*.go' -type f | while read f; do \
-            sed 's|github.com/antlr/antlr4/runtime/Go/antlr|github.com/antlr4-go/antlr/v4|g' "$$f" > "$(@D)/$$(basename $$f)"; \
-        done && \
-        rm -rf $$ANTLR_OUT
-    """,
-    toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
-    tools = ["@antlr4_tool//jar"],
-)
-
-# galop's antlr flavor for the same grammar. internal/parser uses only its
-# converter, gala_galop_native.go (written with nativePackage), from ANTLR's
-# trees, error-recovered ones included, to the native tree of
-# internal/parser/native: GALA parses with galop's native flavor
-# (internal/parser/native) and with ANTLR's parser above. The flavor's own
-# lexer and parser, generated with the converter, are not used.
-#
-# galop runs on the build host, from the prebuilt binaries rules_gala
-# registers; building GALA needs one (see CONTRIBUTING.MD for the hosts).
-galop_parser(
-    name = "gala_grammar_galop",
-    defines = {"nativePackage": "martianoff/gala/internal/parser/native"},
-    flavor = "antlr",
-    grammar = "gala.g4",
-    package = "grammar",
-)
-
-go_library(
-    name = "grammar",
-    srcs = [
-        "gala_base_listener.go",
-        "gala_lexer.go",
-        "gala_listener.go",
-        "gala_parser.go",
-        ":gala_grammar_galop",  # keep
-    ],
-    importpath = "martianoff/gala/internal/parser/grammar",
-    visibility = ["//visibility:public"],
-    deps = [
-        # gala_galop_native.go, generated, imports the native tree.
-        "//internal/parser/native",  # keep
-        "@com_github_antlr4_go_antlr_v4//:antlr",
-    ],
-)
+# gala.g4 is the grammar of GALA, its single source of truth. galop generates
+# the Go parser GALA parses with from it (//internal/parser/native). The only
+# ANTLR tool use left is the IntelliJ plugin's Java parser, generated below.
 
 exports_files(["gala.g4"])
 

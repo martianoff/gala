@@ -271,68 +271,48 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
   signatures — but if the SDK is absent, transpilation still succeeds with a warning and
   GALA's own type system is unaffected. The graceful degradation keeps GALA's core
   independent of an external toolchain.
-- **Two parsers, one tree.** `gala.g4` is the only grammar. Bazel generates two parsers from it:
-  ANTLR's (`internal/parser/grammar`), and [galop](https://github.com/martianoff/galop)'s
-  native lexer and parser (`internal/parser/native`). galop's parser builds galop's native
-  tree: flat arrays of nodes and tokens, far smaller than ANTLR's contexts. The analyzer, the
-  transformer, the scope walk and the language server read the native tree alone
-  (`Parsed.Native`), and dispatch on a node's `Kind()`.
+- **One grammar, one parser.** `gala.g4` is the only grammar. Bazel generates GALA's parser
+  from it with [galop](https://github.com/martianoff/galop): a native lexer and parser
+  (`internal/parser/native`) that build galop's native tree, flat arrays of nodes and tokens.
+  The analyzer, the transformer, the scope walk and the language server read the native tree
+  (`Parsed.Native`), and dispatch on a node's `Kind()`. GALA has no ANTLR runtime and no
+  generated ANTLR Go parser; galop's own repository holds its lexer and parser to ANTLR's.
 
   ```mermaid
   flowchart TD
       src[source text] --> chars[source-text check]
-      chars --> engine{engine}
-      engine -- antlr --> sll[ANTLR: SLL, then LL on an error]
-      engine -- galop, the default --> lex[galop's native lexer]
+      chars --> lex[galop's native lexer]
       lex --> parse[galop's recovering parser]
-      parse -- panic --> sll
+      parse -- panic --> ice[GALA-E0017 internal compiler error for the file]
       parse --> hints[errors and their hints, read off the native tree]
       hints --> blank{blank-line check}
-      blank --> galopTree[galop's native tree, error-recovered on an error; Parsed.Tree is nil]
-      sll --> antlrTree[ANTLR's tree in Parsed.Tree; native tree converted on first use]
+      blank --> galopTree[galop's native tree, error-recovered on an error]
   ```
 
-  - **galop parses by default.** `ParseFile` lexes with galop's native lexer, applies GALA's
-    line-break rule to the tokens (`RetypeNewlines`), parses them with galop's native parser,
+  - **How a file is parsed.** `ParseFile` lexes with galop's native lexer, applies GALA's
+    line-break rule to the tokens (`retypeNewlines`), parses them with galop's native parser,
     checks the blank lines on the native tree and takes the doc comments from the hidden
-    tokens. It builds no ANTLR tree: `Parsed.Tree` is nil, and `Parsed.Native` holds the tree
-    galop built. galop settles the grammar's parsing decisions when the parser is generated,
-    so its parse is several times faster than ANTLR's.
+    tokens. galop settles the grammar's parsing decisions when the parser is generated, so
+    its parse is several times faster than ANTLR's was.
   - **galop recovers from syntax errors as ANTLR does.** Input with a lexical or syntax error
     is parsed once, by galop's recovering parser (`ParseSourceFileWithRecovery`): it reports
-    every error ANTLR's LL parse would, in order, with ANTLR's messages, and builds the
-    error-recovered tree ANTLR's parser builds, as the native tree (`Parsed.RecoveredNative`),
+    the errors ANTLR's LL parse would, in order, with ANTLR's messages, and builds the
+    error-recovered tree ANTLR's parser would, as the native tree (`Parsed.RecoveredNative`),
     which the language server analyzes mid-edit. Each error carries the token it was reported
     at and the rule node the parser was in, with how many children that node had then, so
     the coded hints (`GALA-E0040`, `GALA-E0042`, `GALA-E0085`) and the cascade suppression
-    read the native tree as they read ANTLR's parser (`internal/parser/native_errors.go`).
-    `TestRecoveryParity` holds the errors, hints and recovered trees to ANTLR's engine on
-    mutants of every GALA source in the repository. If galop's lexer or parser panics,
-    ANTLR's parser parses the file instead, so a galop bug can't take down `gala lsp` or a
-    build; the panic is reported on standard error.
-  - **`--parser antlr` is ANTLR plus the converter.** `--parser=antlr` or `GALA_PARSER=antlr`
-    per process, or a build with `--//internal/parser:antlr`, whose binaries default to ANTLR
-    (see `internal/parser/engine.go`), parses every file with ANTLR's lexer and parser. galop's
-    converter turns the parse's tree, clean or error-recovered, into the native tree on first
-    use, so the readers get the same native tree with either engine. Every build has both parsers. galop generates
-    the converter in its `antlr` flavor, next to ANTLR's parser, together with that flavor's
-    own lexer and parser, which are compiled in but no longer called.
-  - **No bridge to ANTLR's tree.** The native tree used to pair each native node with its ANTLR
-    context, so code could move to the native tree one consumer at a time. Every consumer has
-    moved, and a clean parse has no ANTLR tree to pair with, so the pairing is gone: a native
-    node has no ANTLR context, and no reader can reach one. The transformer, the scope walk,
-    the analyzer, the language server and the transpiler's own library don't import ANTLR's
-    runtime, generated parser or galop's converter, and their Bazel libraries name none as a
-    dependency (`TestTransformerReadsNoANTLR`, `noantlr.Check`). They still reach all three
-    transitively through `//internal/parser`, which parses with them; the guard doesn't check
-    that.
+    are read off the native tree (`internal/parser/native_errors.go`).
+  - **A galop panic is an internal compiler error.** If galop's lexer or parser panics, the
+    panic is recovered and the file gets a `GALA-E0017` diagnostic ("internal compiler error:
+    galop's parser panicked: ...", at 1:0; an expression parsed on its own reports it at the
+    expression's position), so a galop bug can't take down `gala lsp` or a build, and is never
+    dropped silently. `GALA_PANIC_STACK=1` prints the panic's stack on standard error.
   - **What else reads the native tree.** The default values and interpolated expressions the
-    transformer lowers are each parsed on their own by the engine's parser (galop's
-    recovering parser, or ANTLR's and galop's converter), which reports a syntax error with
-    ANTLR's message and hint either way. The state keyed by a subtree (the expected-type hints, the escape
-    cache) is keyed by its native node. Only a clean parse is transformed, and every clean
-    parse has a native tree, so a file without one is an internal error, never read on
-    ANTLR's tree instead. `transpile()` drops the handle after the transform, and the
+    transformer lowers are each parsed on their own by galop's recovering parser, which
+    reports a syntax error with its message and hint. The state keyed by a subtree (the
+    expected-type hints, the escape cache) is keyed by its native node. Only a clean parse is
+    transformed, and every clean parse has a native tree, so a file without one is an internal
+    error. `transpile()` drops the handle after the transform, and the
     transformer keeps neither it nor a node of it. A holder that keeps a handle long (the
     analyzer's parsed-file cache, the language server's tree for each open document) takes
     `Native.TreeOnly`, which cuts the spare capacity off the tree's slices. Doc comments are
@@ -340,11 +320,13 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
   - **Building GALA needs galop.** It runs at build time from prebuilt release binaries, which
     Bazel (rules_gala's galop toolchain) and nix download for linux and macOS (amd64 and arm64)
     and windows-amd64. No other host can build GALA.
-  - **Tests and CI:** `TestEnginesAgree` parses every GALA source of the repository, and broken
-    variants of each, with both engines: the native trees, doc comments and errors must be the
-    same, and so must the error-recovered trees. `TestRecoveryParity` does the same for
-    targeted mutants (token edits, stray characters, and the shapes the coded hints look for),
-    comparing every error's code, hint and span too. CI runs the suite under each engine.
+  - **Tests and CI:** `TestParserGolden` holds what GALA makes of galop's output (tokens, doc
+    comments, errors with their codes, hints and spans, clean and error-recovered native trees,
+    and what the native-tree helpers read off each node) on every file of the frozen corpus
+    (`internal/testcorpus`), broken several ways including the shapes the coded hints look
+    for, and on fixed edge-case inputs, to `internal/parser/testdata/parser.golden`. The golden
+    was recorded when GALA still checked galop against ANTLR's engine on the same inputs;
+    galop's repository runs the ANTLR parity tests in its CI.
 - **Coded diagnostics are the user-facing edge of the inference/exhaustiveness checks.** When
   inference or resolution can't proceed, GALA emits a named, documented `GALA-Exxxx` error
   (see [docs/errors/](errors/)) rather than a vague failure.

@@ -201,7 +201,6 @@ func subjectOf(res *transpiler.RichAST, path string) subjectAnalysis {
 // analyzes a file, and holds what each analysis holds of its subject to the
 // golden.
 func TestAnalysisGolden(t *testing.T) {
-	parseWithGalop(t)
 	inputs, searchPaths, written := goldenInputs(t)
 	projectRoot := t.TempDir()
 	a := NewBatchAnalyzer(galaparser.NewAntlrGalaParser(), searchPaths, projectRoot).inner

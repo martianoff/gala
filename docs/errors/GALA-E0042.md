@@ -72,7 +72,7 @@ case x => body
 ```
 
 ambiguous: `x => body` matches the new lambda form, leaving the arm's own `=>`
-missing. ANTLR resolves that kind of conflict by prediction rather than by
+missing. The parser resolves that kind of conflict by prediction rather than by
 erroring, so the greedy reading would win silently and the arm would quietly
 mean something other than what it says. A mis-parse that still compiles is a
 worse failure than a syntax error, so the single spelling is kept and this

@@ -4,90 +4,18 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
-	"os"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
 
-// lexErrors collects a lexer's errors as "line:col msg".
-type lexErrors struct {
-	*antlr.DefaultErrorListener
-	msgs []string
-}
-
-func (l *lexErrors) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column int, msg string, _ antlr.RecognitionException) {
-	l.msgs = append(l.msgs, fmt.Sprintf("%d:%d %s", line, column, msg))
-}
-
-// antlrTokens lexes src with ANTLR's lexer and the newline token source, from
-// line and column col (see seedLexer), and prints every token, the hidden ones
-// included, and every lexical error (see printToken).
-func antlrTokens(tb testing.TB, src string, line, col int) []string {
-	tb.Helper()
-	out, _ := antlrLex(tb, src, line, col)
-	return out
-}
-
-// antlrLex is antlrTokens and the token stream it prints.
-func antlrLex(tb testing.TB, src string, line, col int) ([]string, *antlr.CommonTokenStream) {
-	tb.Helper()
-	errs := &lexErrors{DefaultErrorListener: antlr.NewDefaultErrorListener()}
-	stream := antlrStream(tb, src, line, col, errs)
-	var out []string
-	for _, tok := range stream.GetAllTokens() {
-		out = append(out, printToken(tok.GetTokenType(), tok.GetChannel(), tok.GetLine(), tok.GetColumn(), tok.GetText()))
-	}
-	return append(out, errs.msgs...), stream
-}
-
-// antlrStream is src lexed with ANTLR's lexer and the newline token source,
-// from line and column col (see seedLexer), every token read; listener, when
-// not nil, hears the lexical errors.
-func antlrStream(tb testing.TB, src string, line, col int, listener antlr.ErrorListener) *antlr.CommonTokenStream {
-	tb.Helper()
-	lexer := grammar.NewgalaLexer(antlr.NewInputStream(src))
-	isolateLexerCaches(lexer.BaseLexer)
-	if !seedLexer(lexer.BaseLexer, line, col) {
-		tb.Fatal("cannot seed ANTLR's lexer")
-	}
-	lexer.RemoveErrorListeners()
-	if listener != nil {
-		lexer.AddErrorListener(listener)
-	}
-	stream := newTokenStream(lexer)
-	stream.Fill()
-	return stream
-}
-
-// sourceTexts is the text of every staged source (see gatherSources).
-func sourceTexts(tb testing.TB) []string {
-	tb.Helper()
-	var texts []string
-	for _, path := range gatherSources(tb) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			tb.Fatal(err)
-		}
-		texts = append(texts, string(data))
-	}
-	return texts
-}
-
-// nativeTokens is antlrTokens for galop's native lexer and RetypeNewlines.
-func nativeTokens(src string, line, col int) []string {
-	return printNative(lexNative(src, line, col))
-}
-
-// printNative prints ts as antlrTokens prints ANTLR's tokens.
+// printNative prints ts: each token, hidden ones in their place, then each
+// lexical error.
 func printNative(ts *native.GalaTokens) []string {
 	var out []string
 	for i, tok := range ts.Tokens {
@@ -104,20 +32,6 @@ func printNative(ts *native.GalaTokens) []string {
 
 func printToken(ttype, channel, line, col int, text string) string {
 	return fmt.Sprintf("%s/%d %d:%d %q", native.GalaTokenName(int32(ttype)), channel, line, col, text)
-}
-
-// firstTokenDiff is "" when want and got are the same, else where they first
-// differ.
-func firstTokenDiff(want, got []string) string {
-	for i := range min(len(want), len(got)) {
-		if want[i] != got[i] {
-			return fmt.Sprintf("token %d: ANTLR %s, native %s", i, want[i], got[i])
-		}
-	}
-	if len(want) != len(got) {
-		return fmt.Sprintf("ANTLR gives %d tokens and errors, native %d", len(want), len(got))
-	}
-	return ""
 }
 
 // corpusInputs is every staged source, two broken variants of each (lexical
@@ -148,169 +62,61 @@ func fileVariants(src string) []string {
 	return out
 }
 
-// TestNativeVocabularyIsANTLRs: nativeKinds reads galop's native vocabulary,
-// which must number the tokens as ANTLR's parser does.
-func TestNativeVocabularyIsANTLRs(t *testing.T) {
-	grammar.GalaParserInit()
-	vocab := &grammar.GalaParserStaticData
-	if !slices.Equal(vocab.SymbolicNames, native.GalaSymbolicNames) {
-		t.Errorf("symbolic names differ:\nANTLR:  %q\nnative: %q", vocab.SymbolicNames, native.GalaSymbolicNames)
-	}
-	// ANTLR's literal names stop at the last token with one; galop's run on
-	// with empty names to the vocabulary's end.
-	literal := native.GalaLiteralNames
-	for len(literal) > len(vocab.LiteralNames) && literal[len(literal)-1] == "" {
-		literal = literal[:len(literal)-1]
-	}
-	if !slices.Equal(vocab.LiteralNames, literal) {
-		t.Errorf("literal names differ:\nANTLR:  %q\nnative: %q", vocab.LiteralNames, native.GalaLiteralNames)
-	}
-}
-
-// lexComparison is what compareLexers saw of an input, for the corpus test's
-// counts.
-type lexComparison struct {
-	tokens []string // galop's tokens and lexical errors, as printNative prints them
-	docs   int      // ANTLR's doc comments
-}
-
-// compareLexers lexes src from its start with galop's native lexer and
-// RetypeNewlines and with ANTLR's lexer and newlineTokenSource, and returns
-// what it saw and every way the two differ:
-//
-//   - the tokens (types after re-typing, channels, lines, columns, text), the
-//     lexical errors and the doc comments read from the hidden channel must
-//     be the same; a leading BOM is dropped, as ParseFile and VisitTokens
-//     drop it;
-//   - VisitNativeTokens must visit the texts of the default-channel tokens
-//     VisitTokens visits, in order.
-func compareLexers(tb testing.TB, src string) (seen lexComparison, diffs []string) {
-	tb.Helper()
-	want, stream := antlrLex(tb, galaerr.StripBOM(src), 0, 0)
-	ts := lexNative(galaerr.StripBOM(src), 0, 0)
-	seen.tokens = printNative(ts)
-	if d := firstTokenDiff(want, seen.tokens); d != "" {
-		diffs = append(diffs, "the lexers disagree: "+d)
-	}
-	wantDocs, gotDocs := extractDocComments(stream.GetAllTokens()), nativeDocComments(ts)
-	if fmt.Sprint(wantDocs) != fmt.Sprint(gotDocs) {
-		diffs = append(diffs, fmt.Sprintf("doc comments differ\nANTLR:  %q\nnative: %q", wantDocs, gotDocs))
-	}
-	seen.docs = len(wantDocs)
-	var visited, nativeVisited []string
-	VisitTokens(src, func(tok antlr.Token) {
-		if tok.GetChannel() == antlr.TokenDefaultChannel {
-			visited = append(visited, tok.GetText())
-		}
-	})
-	VisitNativeTokens(src, func(text string) { nativeVisited = append(nativeVisited, text) })
-	if !slices.Equal(visited, nativeVisited) {
-		diffs = append(diffs, fmt.Sprintf("the visited tokens differ\nVisitTokens:       %q\nVisitNativeTokens: %q", visited, nativeVisited))
-	}
-	return seen, diffs
-}
-
-// TestNativeLexMatchesANTLR holds galop's native lexer to ANTLR's over every
-// corpus input, ten of them again with a leading BOM, and one with a BOM and
-// invalid UTF-8 (compareLexers). FuzzParserEngines does the same on
-// arbitrary input.
-func TestNativeLexMatchesANTLR(t *testing.T) {
+// TestNativeLexCorpus lexes every corpus input (corpusInputs), ten of them
+// again with a leading BOM: galop's lexer must not panic, VisitNativeTokens
+// must visit the default-channel tokens the lexer gives, and over the corpus
+// the line-break rule must re-type tokens and the doc comments must be found
+// (too few would mean a pass did nothing). The parser golden holds what the
+// lexer gives for the frozen corpus token for token.
+func TestNativeLexCorpus(t *testing.T) {
 	retyped, documented := 0, 0
-	nl := []string{"NL_LPAREN/", "NL_STAR/", "NL_AMP/"}
 	inputs := corpusInputs(t)
 	for _, input := range inputs[:10] {
 		inputs = append(inputs, "\xef\xbb\xbf"+input) // a UTF-8 BOM
 	}
-	inputs = append(inputs, "\xef\xbb\xbfpackage main\n\n// a \x94\nval s = \"a\x94b\" // (\n")
 	for k, input := range inputs {
-		seen, diffs := compareLexers(t, input)
-		for _, d := range diffs {
-			t.Errorf("input %d (%.60q): %s", k, input, d)
+		ts := lexNativeRecovered(galaerr.StripBOM(input))
+		if ts == nil {
+			t.Errorf("input %d (%.60q): galop's lexer panicked (rerun with GALA_PANIC_STACK=1 for the stack)", k, input)
+			continue
 		}
-		for _, tok := range seen.tokens {
-			for _, p := range nl {
-				if strings.HasPrefix(tok, p) {
-					retyped++
-				}
+		var want, visited []string
+		for _, tok := range ts.Tokens {
+			if tok.Type == native.GalaEOF {
+				break
+			}
+			want = append(want, tok.Text(ts.Src))
+			switch tok.Type {
+			case native.GalaNL_LPAREN, native.GalaNL_STAR, native.GalaNL_AMP:
+				retyped++
 			}
 		}
-		documented += seen.docs
+		VisitNativeTokens(input, func(text string) { visited = append(visited, text) })
+		if !slices.Equal(want, visited) {
+			t.Errorf("input %d (%.60q): VisitNativeTokens visits %q, the lexer gives %q", k, input, visited, want)
+		}
+		documented += len(nativeDocComments(ts))
 	}
-	// The corpus re-types and documents plenty; too few would
-	// mean a pass did nothing.
 	if retyped < 50 || documented < 1000 {
 		t.Errorf("only %d tokens re-typed and %d doc comments over the corpus", retyped, documented)
 	}
-	t.Logf("%d re-typed tokens, %d doc comments", retyped, documented)
-}
-
-// TestNativeLexInvalidUTF8: a byte that is not valid UTF-8, in a comment, a
-// doc comment, a string or an identifier, lexes as ANTLR lexes it, as U+FFFD:
-// the same token text, columns and doc comments.
-func TestNativeLexInvalidUTF8(t *testing.T) {
-	for _, src := range []string{
-		"package main\n\n// Two placeho\x94 sum via FoldLeft.\nfunc f() int = 1\n",
-		"package main\n\n/* surface\x94 a\n   successful */\nval x = 1 // trailing \xff\xfe\n",
-		"package main\n\nval s = \"a\x94b\" + `c\xe2\x82d`\n",
-		"package main\n\nval a\x94b = 1\nval ✓\x94 = 2\n",
-		"package main\n\n// cut at the end \xe2\x82",
-		"\xef\xbb\xbfpackage main\n\n// after a BOM \x94\nval x = 1\n",
-	} {
-		_, diffs := compareLexers(t, src)
-		for _, d := range diffs {
-			t.Errorf("%q: %s", src, d)
-		}
-	}
-	// The same holds for an expression lexed at an offset.
-	for _, expr := range []string{"\"a\x94b\" + c", "f(x) /* \x94 */ + 1"} {
-		if d := firstTokenDiff(antlrTokens(t, expr, 4, 9), nativeTokens(expr, 4, 9)); d != "" {
-			t.Errorf("%q at 4:9: %s", expr, d)
-		}
-	}
-}
-
-// TestRetypeNewlinesCases lexes the sources of newline_test.go's line-break
-// tests both ways, and bodies that put a comment or a line-spanning literal
-// next to a re-typed token.
-func TestRetypeNewlinesCases(t *testing.T) {
-	inputs := lineBreakInputs()
-	for _, body := range []string{
-		"Println(\"zero\") /* a\nb */ (1, 2)",
-		"val a = b\n* p",
-		"val a = b\n*/* c */p",
-		"val a = b\n*//c\np",
-		"val a = b\n*",
-		"if (a) x else y\n*p = 1",
-	} {
-		inputs = append(inputs, lineStartInput(body))
-	}
-	if len(inputs) < 100 {
-		t.Fatalf("only %d inputs: newline_test.go's tables are not reached", len(inputs))
-	}
-	for _, src := range inputs {
-		if d := firstTokenDiff(antlrTokens(t, src, 0, 0), nativeTokens(src, 0, 0)); d != "" {
-			t.Errorf("%q: %s", src, d)
-		}
-	}
+	t.Logf("%d inputs, %d re-typed tokens, %d doc comments", len(inputs), retyped, documented)
 }
 
 // TestLexNativeAt: lexing from a line and column, as the transpiler re-parses
-// default values and interpolated expressions, gives ANTLR's seeded lexer's
-// tokens and positions, a line <= 0 starting at 1:0.
+// default values and interpolated expressions, starts the first token there,
+// a token on a following line at that line's own column, and a line <= 0 at
+// 1:0.
 func TestLexNativeAt(t *testing.T) {
-	inputs := append(slices.Clone(expressionAtInputs), "a\n(b)", "x /* c\n */ *y", "\"ünï\" + `\n` + é")
-	for _, input := range inputs {
-		for _, at := range [][2]int{{0, 0}, {0, 7}, {-3, 5}, {1, 0}, {12, 30}, {400, 2}} {
-			want, got := antlrTokens(t, input, at[0], at[1]), nativeTokens(input, at[0], at[1])
-			if d := firstTokenDiff(want, got); d != "" {
-				t.Errorf("%q at %v: %s", input, at, d)
-			}
-		}
-	}
 	ts := lexNative("a +\n  b", 7, 12)
 	if got := fmt.Sprintf("%d:%d %d:%d %d:%d", ts.Tokens[0].Line, ts.Tokens[0].Column,
 		ts.Tokens[1].Line, ts.Tokens[1].Column, ts.Tokens[2].Line, ts.Tokens[2].Column); got != "7:12 7:14 8:2" {
 		t.Errorf("positions %s, want 7:12 7:14 8:2", got)
+	}
+	for _, at := range [][2]int{{0, 0}, {0, 7}, {-3, 5}} {
+		if tok := lexNative("x", at[0], at[1]).Tokens[0]; tok.Line != 1 || tok.Column != 0 {
+			t.Errorf("at %v: the first token starts at %d:%d, want 1:0", at, tok.Line, tok.Column)
+		}
 	}
 }
 
@@ -329,205 +135,13 @@ var emptyLineInputs = []string{
 	"package main\n\nimport \"fmt\"\n",
 }
 
-// TestCheckEmptyLinesNativeMatchesANTLR: the blank-line check on the native
-// tree reports what checkEmptyLines reports on ANTLR's, for every input that
-// parses.
-func TestCheckEmptyLinesNativeMatchesANTLR(t *testing.T) {
-	p := NewAntlrGalaParser()
-	checked, rejected := 0, 0
-	for k, input := range append(slices.Clone(emptyLineInputs), corpusInputs(t)...) {
-		ts := lexNative(input, 0, 0)
-		if len(ts.Errors) > 0 {
-			continue // ParseFile reports the lexical errors, not the blank lines
-		}
-		root, err := native.ParseSourceFile(ts)
-		if err != nil {
-			continue
-		}
-		// lexNative drops a leading BOM, as ParseFile does before either
-		// parser reads the text.
-		r := parseSourceFile(galaerr.StripBOM(input))
-		if len(r.errors) > 0 {
-			t.Errorf("input %d (%.60q): native parses, ANTLR's parser does not: %v", k, input, r.errors)
-			continue
-		}
-		want := fmt.Sprint(p.checkEmptyLines(r.input, r.tree))
-		if got := fmt.Sprint(checkEmptyLinesNative(root)); got != want {
-			t.Errorf("input %d (%.60q): ANTLR %s, native %s", k, input, want, got)
-		}
-		checked++
-		if want != "<nil>" {
-			rejected++
-		}
-	}
-	if rejected < 6 {
-		t.Errorf("only %d inputs rejected", rejected)
-	}
-	t.Logf("%d inputs checked, %d rejected", checked, rejected)
-}
-
-// expressionSample is an expression's text and where it sits in its file.
-type expressionSample struct {
-	src       string
-	line, col int
-}
-
-// corpusExpressions are the corpus's default values, at their positions, its
-// interpolated expressions and token runs at drawn positions, and a broken
-// variant of each.
-func corpusExpressions(t *testing.T) []expressionSample {
-	t.Helper()
-	r := rand.New(rand.NewSource(4))
-	var out []expressionSample
-	add := func(s expressionSample) {
-		out = append(out, s, expressionSample{breakSource(r, s.src), s.line, s.col})
-	}
-	for _, input := range expressionAtInputs {
-		add(expressionSample{input, 3, 4})
-	}
-	defaults := 0
-	for _, src := range sourceTexts(t) {
-		if root, err := native.ParseSourceFile(lexNative(src, 0, 0)); err == nil {
-			root.Walk(func(n native.GalaNodeRef) bool {
-				if n.Kind() == native.GalaKIND_paramDefault {
-					e := native.ParamDefaultNode{GalaNodeRef: n}.Expression()
-					start := e.Start()
-					add(expressionSample{e.SourceText(), int(start.Line), int(start.Column)})
-					defaults++
-				}
-				return true
-			})
-		}
-		for _, m := range interpolation.FindAllStringSubmatch(src, -1) {
-			add(expressionSample{m[1], 1 + r.Intn(500), r.Intn(80)})
-		}
-		if toks := lexed(src); len(toks) > 1 {
-			i := r.Intn(len(toks))
-			j := min(len(toks), i+1+r.Intn(12))
-			add(expressionSample{src[toks[i].GetStart() : toks[j-1].GetStop()+1], 1 + r.Intn(500), r.Intn(80)})
-		}
-	}
-	if defaults < 50 {
-		t.Fatalf("only %d default values in the corpus", defaults)
-	}
-	return out
-}
-
-// antlrTerminals prints the terminals under tree with their positions.
-func antlrTerminals(b *strings.Builder, tree antlr.Tree) {
-	if n, ok := tree.(antlr.TerminalNode); ok {
-		tok := n.GetSymbol()
-		fmt.Fprintf(b, " %s@%d:%d", native.GalaTokenName(int32(tok.GetTokenType())), tok.GetLine(), tok.GetColumn())
-		return
-	}
-	for i := 0; i < tree.GetChildCount(); i++ {
-		antlrTerminals(b, tree.GetChild(i))
-	}
-}
-
-// nativeTerminals is antlrTerminals for a native node.
-func nativeTerminals(b *strings.Builder, n native.GalaNodeRef) {
-	for i := range n.ChildCount() {
-		c := n.Child(i)
-		if c.IsToken() {
-			tok := c.Terminal().Token()
-			fmt.Fprintf(b, " %s@%d:%d", native.GalaTokenName(tok.Type), tok.Line, tok.Column)
-		} else {
-			nativeTerminals(b, c.Node())
-		}
-	}
-}
-
-// TestExpressionCheckedNativeMatchesANTLR: over the corpus's expressions,
-// galop's recovering parse accepts exactly what ANTLR's parser accepts
-// (antlrExpressionAtChecked), with the same tree and token positions, and
-// fails with ANTLR's error on the rest.
-func TestExpressionCheckedNativeMatchesANTLR(t *testing.T) {
-	accepted, rejected := 0, 0
-	samples := corpusExpressions(t)
-	withEngine(EngineANTLR, func() {
-		for _, s := range samples {
-			want, _, wantErr := antlrExpressionAtChecked(s.src, s.line, s.col, "test expression")
-			got, err, ok := galopParsers.expressionCheckedNative(s.src, s.line, s.col, "test expression")
-			switch {
-			case !ok:
-				t.Errorf("%q at %d:%d: galop panicked", s.src, s.line, s.col)
-			case errorFields(err) != errorFields(wantErr):
-				t.Errorf("%q at %d:%d: ANTLR error %v, native error %v", s.src, s.line, s.col, wantErr, err)
-			case err != nil:
-				rejected++
-			default:
-				accepted++
-				if w, g := treeText(want), got.ToStringTree(); w != g {
-					t.Errorf("%q at %d:%d: trees differ: %s", s.src, s.line, s.col, diffAt(w, g))
-				}
-				var w, g strings.Builder
-				antlrTerminals(&w, want)
-				nativeTerminals(&g, got.GalaNodeRef)
-				if w.String() != g.String() {
-					t.Errorf("%q at %d:%d: token positions differ: %s", s.src, s.line, s.col, diffAt(w.String(), g.String()))
-				}
-			}
-		}
-	})
-	if accepted < 500 || rejected < 100 {
-		t.Errorf("%d expressions accepted, %d rejected: the sample is too thin", accepted, rejected)
-	}
-	t.Logf("%d expressions accepted, %d rejected", accepted, rejected)
-}
-
-// TestParseExpressionCheckedAtConvertsANTLR: with ANTLR's engine,
-// ParseExpressionCheckedAt gives ANTLR's tree of each of the corpus's
-// expressions, converted to galop's native form with its token positions,
-// and fails with ANTLR's error where ANTLR's parser does.
-func TestParseExpressionCheckedAtConvertsANTLR(t *testing.T) {
-	t.Run("invalid UTF-8", func(t *testing.T) {
-		// ANTLR reads a byte of no valid encoding as U+FFFD, and so does the
-		// converted tree, whose token text indexes ANTLR's decoded text.
-		withEngine(EngineANTLR, func() {
-			for _, src := range []string{"'\xe2'", "\"a\xe2b\"", "f(\"\xff\", x)"} {
-				want, _, wantErr := antlrExpressionAtChecked(src, 1, 0, "test expression")
-				got, _, err := ParseExpressionCheckedAt(src, 1, 0, "test expression")
-				if wantErr != nil || err != nil {
-					t.Fatalf("%q: ANTLR error %v, converted error %v", src, wantErr, err)
-				}
-				if w, g := treeText(want), got.ToStringTree(); w != g {
-					t.Errorf("%q: trees differ:\n ANTLR %q\n converted %q", src, w, g)
-				}
-			}
-		})
-	})
-	samples := corpusExpressions(t)
-	withEngine(EngineANTLR, func() {
-		for _, s := range samples {
-			want, _, wantErr := antlrExpressionAtChecked(s.src, s.line, s.col, "test expression")
-			got, engineParsed, err := ParseExpressionCheckedAt(s.src, s.line, s.col, "test expression")
-			switch {
-			case err == nil && !engineParsed:
-				t.Errorf("%q at %d:%d: ANTLR's engine's tree reported as the fallback's", s.src, s.line, s.col)
-			case errorFields(err) != errorFields(wantErr):
-				t.Errorf("%q at %d:%d: ANTLR error %v, converted error %v", s.src, s.line, s.col, wantErr, err)
-			case err == nil:
-				if w, g := treeText(want), got.ToStringTree(); w != g {
-					t.Errorf("%q at %d:%d: trees differ: %s", s.src, s.line, s.col, diffAt(w, g))
-				}
-				var w, g strings.Builder
-				antlrTerminals(&w, want)
-				nativeTerminals(&g, got.GalaNodeRef)
-				if w.String() != g.String() {
-					t.Errorf("%q at %d:%d: token positions differ: %s", s.src, s.line, s.col, diffAt(w.String(), g.String()))
-				}
-			}
-		}
-	})
-}
-
-// TestExpressionCheckedNativeLeftovers: an expression followed by more
-// tokens is not one expression.
-func TestExpressionCheckedNativeLeftovers(t *testing.T) {
+// TestExpressionCheckedLeftovers: an expression followed by more tokens is
+// not one expression.
+func TestExpressionCheckedLeftovers(t *testing.T) {
 	for _, src := range []string{"a b", "x +", "f(1))", "", "a\n(b)", "1 @"} {
-		if _, err, ok := galopParsers.expressionCheckedNative(src, 2, 3, "test expression"); !ok || err == nil {
-			t.Errorf("%q: error %v (galop panicked: %v), want a syntax error", src, err, !ok)
+		_, err := ParseExpressionCheckedAt(src, 2, 3, "test expression")
+		if err == nil || IsParserPanic(err) {
+			t.Errorf("%q: error %v, want a syntax error", src, err)
 		}
 	}
 }
@@ -587,21 +201,12 @@ func largestSource(b *testing.B) string {
 	return largest
 }
 
-// BenchmarkLexRetype compares lexing the largest staged source with galop's
-// native lexer and RetypeNewlines against ANTLR's lexer and
-// newlineTokenSource.
+// BenchmarkLexRetype lexes the largest staged source with galop's native
+// lexer and the line-break rule.
 func BenchmarkLexRetype(b *testing.B) {
 	src := largestSource(b)
-	b.Run("native", func(b *testing.B) {
-		b.SetBytes(int64(len(src)))
-		for b.Loop() {
-			lexNative(src, 0, 0)
-		}
-	})
-	b.Run("antlr", func(b *testing.B) {
-		b.SetBytes(int64(len(src)))
-		for b.Loop() {
-			antlrStream(b, src, 0, 0, nil)
-		}
-	})
+	b.SetBytes(int64(len(src)))
+	for b.Loop() {
+		lexNative(src, 0, 0)
+	}
 }

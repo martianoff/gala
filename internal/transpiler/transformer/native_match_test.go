@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	galaparser "martianoff/gala/internal/parser"
 )
 
 // patternShapes is the matchCases program that has every pattern form the
@@ -233,7 +231,7 @@ func main() {
 	{"bare case with fields nested in a field of type any", "package main\n\nsealed type S {\n\tcase C(r int)\n\tcase W(inner any)\n}\n\nfunc f(s S) string = s match {\n\t/* ü */ case W(C) => \"wrapped\"\n\tcase _ => \"other\"\n}\n"},
 	{"qualified generic case on an any subject", "package main\n\nimport \"martianoff/gala/std\"\n\nfunc f(x any) string = x match {\n\t/* ü */ case std.None => \"none\"\n\tcase _ => \"other\"\n}\n"},
 	{"guard that is not a bool", "package main\n\nfunc f(x string) int = x match {\n\t/* ü */ case s if s => 1\n\tcase _ => 0\n}\n"},
-	{"type parameter as a pattern","package main\n\nfunc f[T any](x any) int = x match {\n\t/* ü */ case T(v) => 1\n\tcase _ => 0\n}\n"},
+	{"type parameter as a pattern", "package main\n\nfunc f[T any](x any) int = x match {\n\t/* ü */ case T(v) => 1\n\tcase _ => 0\n}\n"},
 }
 
 // caseMarkerLine is the line of src's first `/* ü */` marker, and false when
@@ -252,8 +250,6 @@ func caseMarkerLine(src string) (int, bool) {
 // native tree — every case clause of the file on a clean transpile, and the
 // case clause a diagnostic is about on an error.
 func TestNativeMatchCases(t *testing.T) {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
 	w := &walkPipeline{searchPaths: searchPaths}
 	dir := t.TempDir()

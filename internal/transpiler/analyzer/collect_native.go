@@ -37,10 +37,10 @@ type nativeFile struct {
 	types, sealed, opaque, funcs, embeds, vals []native.GalaNodeRef
 }
 
-// nativeFileOf is the native tree of a parse's handle h, converted now if it
-// was not yet, with its top-level declarations bucketed in one pass. An error
-// says there is none: a nil handle, or the conversion failed (a bug in galop's
-// converter), which no reader of the file can work around.
+// nativeFileOf is the native tree of a parse's handle h, with its top-level
+// declarations bucketed in one pass. An error says there is none (a nil
+// handle, for a clean parse a parser bug), which no reader of the file can
+// work around.
 func nativeFileOf(h *galaparser.Native) (nativeFile, error) {
 	tree, err := h.Tree()
 	if err != nil {

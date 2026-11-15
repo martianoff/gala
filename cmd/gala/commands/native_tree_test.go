@@ -38,10 +38,6 @@ const (
 // extracted for t, in name order, and the corpus.
 func stagedSources(t *testing.T) ([]string, testcorpus.Corpus) {
 	t.Helper()
-	// Parse with galop's engine, the CLI's default, whatever the build's or
-	// environment's default engine.
-	parser.RequestEngine(string(parser.EngineGalop))
-	t.Cleanup(func() { parser.RequestEngine("") })
 	c := testcorpus.Extract(t)
 	return c.GalaFiles(), c
 }

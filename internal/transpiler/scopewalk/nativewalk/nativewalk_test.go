@@ -2,7 +2,6 @@ package nativewalk
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"martianoff/gala/internal/parser"
@@ -10,12 +9,6 @@ import (
 	"martianoff/gala/internal/testcorpus"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
-
-// TestMain parses with galop's engine, whatever the build's default.
-func TestMain(m *testing.M) {
-	parser.RequestEngine(string(parser.EngineGalop))
-	os.Exit(m.Run())
-}
 
 // recorder writes down everything a walk reports, in order: each reference
 // with its site and use, and each call of the EnterFunctionScope hook.
@@ -92,40 +85,31 @@ type discard struct{}
 func (discard) Reference(string, scopewalk.Site, scopewalk.Use) {}
 
 // BenchmarkWalk walks every source of the frozen corpus from its root with the
-// undefined-symbol check's options: on the native tree converted within the
-// timed walk, as the transpiler does ("native"), and on the native tree
-// converted beforehand ("native-walk"). Each iteration
-// parses the sources afresh, untimed.
+// undefined-symbol check's options, on its native tree. Each iteration parses
+// the sources afresh, untimed.
 func BenchmarkWalk(b *testing.B) {
 	var texts []string
 	for _, name := range testcorpus.GalaNames() {
 		texts = append(texts, testcorpus.Files()[name])
 	}
 	opts := scopewalk.Options{ParseInterpolations: true, RequireCleanInterpolationParse: true, SkipCompositeLiteralKeys: true, SkipTypedPatternArgument: true}
-	for _, mode := range []string{"native", "native-walk"} {
-		b.Run(mode, func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				parses := make([]*parser.Parsed, 0, len(texts))
-				for _, text := range texts {
-					if p := parser.NewAntlrGalaParser().ParseFile(text); p.Err() == nil {
-						if mode == "native-walk" {
-							p.Native.Tree()
-						}
-						parses = append(parses, p)
-					}
-				}
-				b.StartTimer()
-				for _, p := range parses {
-					w := scopewalk.New(discard{}, opts)
-					tree, err := p.Native.Tree()
-					if err != nil {
-						b.Fatal(err)
-					}
-					New(w, nil).Walk(tree.Root())
-				}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		parses := make([]*parser.Parsed, 0, len(texts))
+		for _, text := range texts {
+			if p := parser.NewAntlrGalaParser().ParseFile(text); p.Err() == nil {
+				parses = append(parses, p)
 			}
-		})
+		}
+		b.StartTimer()
+		for _, p := range parses {
+			w := scopewalk.New(discard{}, opts)
+			tree, err := p.Native.Tree()
+			if err != nil {
+				b.Fatal(err)
+			}
+			New(w, nil).Walk(tree.Root())
+		}
 	}
 }

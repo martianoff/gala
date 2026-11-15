@@ -66,8 +66,8 @@ LSP, build driver, stdlib. Then work through the checklists below.
   5. whether its validity check compares against the state at *build* time or only the
      *current* state (a cache built under a temporary condition must not outlive it);
   6. whether shared values are truly immutable.
-- **Concurrency.** The analyzer parses a package's files concurrently, and ANTLR's Go
-  runtime is not thread-safe. Any new shared state in the parser, analyzer, or
+- **Concurrency.** The analyzer parses a package's files concurrently, and galop's
+  generated parser shares its prediction caches across those goroutines. Any new shared state in the parser, analyzer, or
   transformer needs a clear owner.
 - **Mode differences.** Check CLI vs LSP (`Transform` vs `TransformForLSP`), batch vs
   single file, persistent worker vs `gala_bootstrap`, and debug modes
@@ -206,8 +206,8 @@ Check the description against the diff in both directions:
   - If the shared Bazel install base is corrupt, use a private
     `--install_base=<dir>`; do not delete the shared one.
   - Bazel downloads its own pinned Go SDK. If that download fails, generate the parser
-    with `bazel build //internal/parser/grammar:gala_grammar_go`, copy the outputs into
-    the review worktree's `internal/parser/grammar/`, and run the targeted package with
+    with `bazel build //internal/parser/native:gala_native_galop`, copy the outputs into
+    the review worktree's `internal/parser/native/` (as `tools/fuzz.sh` does), and run the targeted package with
     the host `go test` for a local repro only. CI remains the authority.
 - Confirm a proposed fix works by applying it locally, running the repro and the PR's
   own tests, then reverting.

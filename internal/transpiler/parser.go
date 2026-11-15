@@ -8,7 +8,8 @@ type antlrGalaParser struct {
 	wrapper *parser.AntlrGalaParser
 }
 
-// NewAntlrGalaParser creates a new GalaParser implementation using ANTLR.
+// NewAntlrGalaParser creates the GalaParser: galop's generated parser
+// (parser.AntlrGalaParser, whose name predates galop).
 func NewAntlrGalaParser() GalaParser {
 	return &antlrGalaParser{
 		wrapper: parser.NewAntlrGalaParser(),

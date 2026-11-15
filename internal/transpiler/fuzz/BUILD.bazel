@@ -53,10 +53,9 @@ go_test(
     ],
     deps = [
         "//galaerr",
-        "//internal/parser",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/fuzz/proggen",
         "//internal/transpiler/fuzz/progrun",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )

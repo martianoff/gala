@@ -6652,7 +6652,7 @@ Cache hits/misses are reported when the disk cache is active:
 
 The transpiler caches analyzed package metadata on disk in `.gala/cache/`. The cache is keyed by a SHA-256 hash of all source files in the package, so it automatically invalidates when any file changes.
 
-The cache stores the `RichAST` metadata (types, functions, companion objects, Go type info) but not the ANTLR parse tree. This avoids redundant re-analysis of imports like `std` and `collection_immutable` across separate transpilation processes.
+The cache stores the `RichAST` metadata (types, functions, companion objects, Go type info) but not the parse tree. This avoids redundant re-analysis of imports like `std` and `collection_immutable` across separate transpilation processes.
 
 **Cache location:** `.gala/cache/` in the project root (detected by walking up to `go.mod` or `gala.mod`).
 

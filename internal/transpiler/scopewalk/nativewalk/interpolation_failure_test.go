@@ -1,19 +1,19 @@
 package nativewalk
 
 import (
-	"errors"
-	"fmt"
 	"testing"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
-// TestInterpolationConversionFailureIsReported: an interpolated expression
-// galop's converter does not convert is not walked, and the walk says so
-// (Walker.Err), rather than leaving its references out unnoticed.
-func TestInterpolationConversionFailureIsReported(t *testing.T) {
+// TestInterpolationParserPanicIsReported: an interpolated expression galop's
+// parser panicked on (an internal compiler error, parser.IsParserPanic) is
+// not walked, and the walk says so (Walker.Err), rather than leaving its
+// references out unnoticed.
+func TestInterpolationParserPanicIsReported(t *testing.T) {
 	src := "package main\n\nfunc f(x int) string = s\"${x + 1}\"\n"
 	tree, err := parser.NewAntlrGalaParser().ParseFile(src).CleanNative().Tree()
 	if err != nil {
@@ -25,14 +25,16 @@ func TestInterpolationConversionFailureIsReported(t *testing.T) {
 		return w.Err()
 	}
 	if err := walkIt(); err != nil {
-		t.Fatalf("a walk that converted every part failed: %v", err)
+		t.Fatalf("a walk that parsed every part failed: %v", err)
 	}
+	panicked := galaerr.NewCodedSemanticError(galaerr.CodeInternalTransformerPanic, 1, 0,
+		"internal compiler error: galop's parser panicked: injected", "")
 	saved := parseExpressionTree
 	defer func() { parseExpressionTree = saved }()
 	parseExpressionTree = func(string) (native.ExpressionNode, []error) {
-		return native.ExpressionNode{}, []error{fmt.Errorf("%w: injected", parser.ErrConvertExpression)}
+		return native.ExpressionNode{}, []error{panicked}
 	}
-	if err := walkIt(); !errors.Is(err, parser.ErrConvertExpression) {
-		t.Fatalf("Err = %v, want the conversion failure", err)
+	if err := walkIt(); !parser.IsParserPanic(err) {
+		t.Fatalf("Err = %v, want the parser's internal error", err)
 	}
 }

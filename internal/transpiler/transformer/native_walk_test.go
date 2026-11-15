@@ -8,28 +8,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	galaparser "martianoff/gala/internal/parser"
 )
 
-// TestWalkEnginesAgree holds the transformer's walk of every GALA source
-// staged as data, transpiled as the CLI transpiles a file, under galop's
-// engine (galop's native parser) to its walk under ANTLR's (ANTLR's parser,
-// its tree converted by galop's converter): byte-identical Go, or the same
-// error, both ways. Each file's walk must have lowered every declaration,
-// body statement, lambda and case clause of its native tree (checkWalk). The
-// sources are split in two halves, each a test of its own, so the target's
-// shards run them side by side.
-func TestWalkEnginesAgree(t *testing.T) { walkEnginesAgree(t, 0) }
+// TestWalkCorpus walks every GALA source staged as data, transpiled as the
+// CLI transpiles a file: each file's walk must have lowered every
+// declaration, body statement, lambda and case clause of its native tree
+// (checkWalk). The sources are split in two halves, each a test of its own,
+// so the target's shards run them side by side.
+func TestWalkCorpus(t *testing.T) { walkCorpusHalf(t, 0) }
 
-// TestWalkEnginesAgreeRest is TestWalkEnginesAgree over the other half of the
-// sources.
-func TestWalkEnginesAgreeRest(t *testing.T) { walkEnginesAgree(t, 1) }
+// TestWalkCorpusRest is TestWalkCorpus over the other half of the sources.
+func TestWalkCorpusRest(t *testing.T) { walkCorpusHalf(t, 1) }
 
-// walkEnginesAgree is TestWalkEnginesAgree over every other source, from the
-// half-th on.
-func walkEnginesAgree(t *testing.T, half int) {
-	t.Cleanup(func() { galaparser.RequestEngine("") })
+// walkCorpusHalf is TestWalkCorpus over every other source, from the half-th
+// on.
+func walkCorpusHalf(t *testing.T, half int) {
 	paths, searchPaths := walkCorpus(t)
 	w := &walkPipeline{searchPaths: searchPaths}
 	files, clean, decls, stmts, lambdas, exprs, cases := 0, 0, 0, 0, 0, 0, 0
@@ -39,18 +32,10 @@ func walkEnginesAgree(t *testing.T, half int) {
 		}
 		src, err := os.ReadFile(path)
 		require.NoError(t, err)
-		galaparser.RequestEngine(string(galaparser.EngineGalop))
 		n, _, ok := checkWalk(t, w, path, string(src), false)
 		if !ok {
 			continue
 		}
-		galaparser.RequestEngine(string(galaparser.EngineANTLR))
-		a, _, ok := checkWalk(t, w, path, string(src), false)
-		require.Truef(t, ok, "%s: parses cleanly with galop's engine but not with ANTLR's", path)
-		if n.out != a.out {
-			assert.Failf(t, "the engines' Go differs", "%s: galop's engine's Go differs from ANTLR's at %s", path, firstLineDiff(n.out, a.out))
-		}
-		assert.Equalf(t, a.err, n.err, "%s: galop's engine's error differs from ANTLR's", path)
 		files++
 		decls += n.native
 		stmts += n.stmts
@@ -408,8 +393,6 @@ const statementShapes = "statement shapes"
 // TestNativeWalkCases holds the walk of each of walkCases to its golden
 // (checkWalk).
 func TestNativeWalkCases(t *testing.T) {
-	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
 	w := &walkPipeline{searchPaths: searchPaths}
 	dir := t.TempDir()
@@ -430,8 +413,8 @@ func TestNativeWalkCases(t *testing.T) {
 			}
 			// A case with a lambda must have lowered it on the native tree,
 			// and a case passing to a Sendable parameter must have checked
-			// its captures there, so its diagnostic, or its Go, compares the
-			// native lambda lowering and capture check with ANTLR's.
+			// its captures there, so its diagnostic, or its Go, held to the
+			// golden, is the native lambda lowering's and capture check's.
 			if want.lambdas > 0 && !captureFailsFirst[c.name] {
 				assert.Positivef(t, n.lambdas, "the native walk lowered no lambda; error: %v", n.err)
 			}

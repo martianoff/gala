@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Run the native Go fuzz targets: the transpiler's (internal/transpiler/fuzz),
-# the parser engines' (internal/parser) and the analyzer's (its re-collection).
+# the parser's (internal/parser) and the analyzer's (its re-collection).
 #
 #   tools/fuzz.sh                                  # list the targets
 #   tools/fuzz.sh FuzzStringLiterals               # fuzz one target for 10m
@@ -14,9 +14,9 @@
 # inputs needs `go test -fuzz`, which builds the coverage-instrumented binary
 # the fuzzer is guided by — something a Bazel go_test does not produce. Plain
 # `go test` in turn needs the parser sources Bazel generates and the repository
-# does not check in: ANTLR's and galop's parsers (internal/parser/grammar) and
-# galop's native tree (internal/parser/native). This script builds them first
-# and copies them into those directories (the copies are git-ignored). Copies
+# does not check in: galop's parser and native tree (internal/parser/native).
+# This script builds them first and copies them into that directory (the
+# copies are git-ignored). Copies
 # the script created are removed when it exits, so they cannot go stale after
 # a grammar change.
 #
@@ -83,8 +83,7 @@ if [[ -z "$bazel_cmd" ]]; then
   fi
 fi
 
-"$bazel_cmd" build //internal/parser/grammar:gala_grammar_go \
-  //internal/parser/grammar:gala_grammar_galop //internal/parser/native:gala_native_galop
+"$bazel_cmd" build //internal/parser/native:gala_native_galop
 bin_dir="$("$bazel_cmd" info bazel-bin)"
 created=()
 cleanup() {
@@ -100,12 +99,6 @@ copy_generated() {
   cp -f "$1" "$dest"
   chmod u+w "$dest"
 }
-for f in gala_base_listener.go gala_lexer.go gala_listener.go gala_parser.go; do
-  copy_generated "$bin_dir/internal/parser/grammar/$f" internal/parser/grammar
-done
-for f in "$bin_dir"/internal/parser/grammar/gala_grammar_galop/*.go; do
-  copy_generated "$f" internal/parser/grammar
-done
 for f in "$bin_dir"/internal/parser/native/gala_native_galop/*.go; do
   copy_generated "$f" internal/parser/native
 done

@@ -42,25 +42,17 @@ type walkRun struct {
 	// parsedAt is what it read on a tree of its own, a default value's or an
 	// interpolated expression's: stmt, lambda, expr, case.
 	parsedAt map[parsedLine]map[string]bool
-	// engineTrees and fallbackTrees count the trees parsed on their own by
-	// the engine's parser and by the fallback, ANTLR's parser and galop's
-	// converter.
-	engineTrees, fallbackTrees int
 	// hints is each look at the hint stack's top, in order: a take or a
 	// withhold, and whether the hint there was the asking value's.
 	hints []byte
 }
 
-// walkPipeline transpiles files the way the CLI does, with the engine the
-// test requested, each with an analyzer of its own, so no package-load
-// failure carries over from one file to the next. refuseNative parses every
-// default value and interpolated expression with ANTLR's parser, as when the
-// engine's parser panics on it (RefuseNativeParse). root is the project root
-// of the analysis, "" for none.
+// walkPipeline transpiles files the way the CLI does, each with an analyzer
+// of its own, so no package-load failure carries over from one file to the
+// next. root is the project root of the analysis, "" for none.
 type walkPipeline struct {
-	searchPaths  []string
-	root         string
-	refuseNative bool
+	searchPaths []string
+	root        string
 }
 
 // parsedLine is a line of an expression parsed on its own: of a default value
@@ -92,13 +84,6 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 		Stmt:   func(index, line int) { run.stmtNodes[index], run.stmtLines[line] = true, true },
 		Lambda: func(index, _ int) { lambdas[index] = true },
 		Expr:   func(index, line int) { exprs[index], run.exprLines[line] = true, true },
-		ParsedTree: func(engine bool) {
-			if engine {
-				run.engineTrees++
-			} else {
-				run.fallbackTrees++
-			}
-		},
 		Parsed: func(kind string, o transformer.ParsedOrigin, line int) {
 			at := parsedLine{o.What, o.File, line}
 			if run.parsedAt[at] == nil {
@@ -107,9 +92,6 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 			run.parsedAt[at][kind] = true
 		},
 	})
-	if w.refuseNative {
-		transformer.RefuseNativeParse(tr)
-	}
 	transformer.OnNativeCapture(tr, func() { run.captures++ })
 	transformer.OnNativeShape(tr, func(line int, shape string) {
 		if run.shapes[line] == nil {
@@ -168,7 +150,7 @@ func (p *handleParser) ParseFile(input string) *galaparser.Parsed {
 }
 
 // walkCorpus is the paths of the GALA sources staged as the test's data
-// (those TestEnginesAgree parses), sorted, and the search path that resolves
+// (the repository's GALA sources), sorted, and the search path that resolves
 // their imports.
 func walkCorpus(tb testing.TB) ([]string, []string) {
 	stdFile, err := bazel.Runfile("std/option.gala")
@@ -319,7 +301,7 @@ func checkWalk(tb testing.TB, w *walkPipeline, path, src string, golden bool) (r
 	return n, want, true
 }
 
-// firstLineDiff describes the first line where x and y differ.
+// firstLineDiff describes the first line where x (got) and y (want) differ.
 func firstLineDiff(x, y string) string {
 	xl, yl := strings.Split(x, "\n"), strings.Split(y, "\n")
 	for i := 0; i < len(xl) || i < len(yl); i++ {
@@ -331,7 +313,7 @@ func firstLineDiff(x, y string) string {
 			b = yl[i]
 		}
 		if a != b {
-			return "line " + strconv.Itoa(i+1) + ":\n native: " + a + "\n  ANTLR: " + b
+			return "line " + strconv.Itoa(i+1) + ":\n  got: " + a + "\n want: " + b
 		}
 	}
 	return "nowhere"

@@ -292,7 +292,7 @@ type pkgResultCacheEntry struct {
 // stat calls, the cached tree is dropped and the file is re-parsed.
 type parsedFileEntry struct {
 	// parsed is the file's parse: its doc comments and its native-tree
-	// handle, converted already (see parseFileEntry), which every read of
+	// handle, trimmed already (see parseFileEntry), which every read of
 	// the file takes (see siblings_native.go).
 	parsed *galaparser.Parsed
 	// nf is the native tree of parsed's handle, its declarations bucketed
@@ -305,8 +305,8 @@ type parsedFileEntry struct {
 	// is nil then), stamped with the file's path. Cached like a parse, so a
 	// broken sibling is not re-parsed by every file of its package.
 	syntaxErr error
-	// internalErr is the InternalError of a file that parses but whose
-	// parse did not convert to a native tree (parsed is nil then). Cached
+	// internalErr is the InternalError of a file that parses but has no
+	// native tree (parsed is nil then). Cached
 	// like a parse; every reader of the file fails with it.
 	internalErr error
 	mtime       time.Time
@@ -481,10 +481,10 @@ func (a *galaAnalyzer) SetPackageFiles(files []string) {
 }
 
 // ParsedFiles is a parsed-file cache that analyzers built one after another
-// share: each file's parse and its converted native tree, keyed by path and
+// share: each file's parse and its native tree, keyed by path and
 // dropped when the file's mtime or size changes, as an analyzer's own cache
 // is (see parseFileEntry). The language server builds an analyzer per
-// keystroke; sharing one ParsedFiles keeps it from parsing and converting
+// keystroke; sharing one ParsedFiles keeps it from parsing
 // every sibling and imported file again each time. The entries are read, not
 // written, after they are cached, so analyses running at once share them.
 type ParsedFiles struct {
@@ -599,7 +599,7 @@ func (a *galaAnalyzer) analyze(docs galaparser.Docs, handle *galaparser.Native, 
 	return a.analyzeFile(docs, handle, nf, filePath)
 }
 
-// analyzeFile is analyze of the file whose handle converted to nf.
+// analyzeFile is analyze of the file whose native tree is nf.
 func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Native, nf nativeFile, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
@@ -4022,7 +4022,7 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // calls. It is nil for a file that cannot be read or has no package clause,
 // an entry with syntaxErr set for one that does not parse, syntaxErr being
 // its syntax error stamped with the file's path, and an entry with
-// internalErr set for one whose clean parse did not convert to a native tree.
+// internalErr set for one whose clean parse has no native tree.
 // The caller decides whether a syntax error is fatal (see Analyze's
 // siblingSyntaxErrs); an internal error always is.
 //
@@ -4056,18 +4056,16 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	if err := parsed.Err(); err != nil {
 		return a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: galaerr.WithFilePath(err, path), mtime: info.ModTime(), size: info.Size()})
 	}
-	// Converted here, on the goroutine that parsed it (parseFilesConcurrent),
-	// rather than by its first reader: every reader takes the native tree,
-	// and a converted handle no longer holds the token stream (see
-	// parser.Parsed.Native). A clean parse that does not convert is a bug in
-	// galop's converter, which no reader can work around: every reader fails
-	// with it, as an internal error (not as the file's syntax error). The
-	// entry keeps the native tree alone (Native.TreeOnly), not a parse's
-	// ANTLR tree (ANTLR's engine's), trimmed before the cache shares it, as
+	// Trimmed here, on the goroutine that parsed it (parseFilesConcurrent),
+	// rather than by its first reader: every reader takes the native tree
+	// (see parser.Parsed.Native). A clean parse without one is a parser bug,
+	// which no reader can work around: every reader fails with it, as an
+	// internal error (not as the file's syntax error). The entry keeps the
+	// native tree, trimmed (Native.TreeOnly) before the cache shares it, as
 	// the cache keeps the entry for the life of a build worker.
 	kept := parsed.CleanNative().TreeOnly()
-	// The handle, not kept, which is nil when the conversion failed: its
-	// error says why.
+	// The handle, not kept, which is nil when there is no tree: its error
+	// says why.
 	nf, err := nativeFileOf(parsed.CleanNative())
 	if err != nil {
 		return a.cacheParsedFile(canonPath, &parsedFileEntry{internalErr: &InternalError{File: path, Err: err}, mtime: info.ModTime(), size: info.Size()})
@@ -4128,7 +4126,7 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 }
 
 // parseFile is the parse of path (parseFileEntry), or its syntax error or
-// InternalError: no entry for a file that does not parse or convert, nor for
+// InternalError: no entry for a file that does not parse or has no native tree, nor for
 // one that cannot be read or has no package clause.
 func (a *galaAnalyzer) parseFile(path string) (*parsedFileEntry, error) {
 	entry := a.parseFileEntry(path)
@@ -4152,16 +4150,9 @@ func (a *galaAnalyzer) parseFile(path string) (*parsedFileEntry, error) {
 // result holds, at the same index, the syntax error of a file that did
 // not parse.
 //
-// Concurrency: ANTLR's antlr4-go/v4 runtime is NOT thread-safe out of the
-// box, and this function is only safe because the parser layer works
-// around that. Each Parse call constructs its own InputStream / Lexer /
-// Parser, but the generated constructors hand every instance the same
-// package-global PredictionContextCache, whose Put is an unsynchronised
-// map write. parser.ParseFile therefore rebinds each parse's ATN
-// simulator to a private cache (see isolateLexerCaches /
-// isolateParserCaches in internal/parser/parser.go) — do not remove that
-// isolation on the strength of the mutexes in the antlr module's
-// mutex.go, which guard only the ATN's DFA state and edge maps.
+// Concurrency: every parse builds its own tokens and tree, but galop's
+// generated parser shares its prediction DFA caches across all parses, on
+// whatever goroutine, through package-level state it synchronises itself.
 // parsedFileCache reads and writes go through parsedFileCacheMu, taken
 // inside parseFileEntry and cacheParsedFile.
 //
