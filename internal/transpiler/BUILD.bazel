@@ -24,7 +24,7 @@ go_library(
 )
 
 # The no-retain allow-list is checked against the pinned Go compiler's escape
-# analysis (docs/OWNERSHIP_DESIGN.MD, 3.5.2).
+# analysis (docs/OWNERSHIP.MD#gala-calls-go).
 go_test(
     name = "noretain_escape_test",
     srcs = ["noretain_escape_test.go"],

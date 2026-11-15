@@ -5304,8 +5304,7 @@ running the fix again changes nothing.
 
 [OWNERSHIP.MD](OWNERSHIP.MD) is the guide to the feature: runnable examples,
 each rule with its fix, Go interop, interfaces, and what hover and `gala doc`
-show. The design, with its rationale and prior art, is in
-[OWNERSHIP_DESIGN.MD](OWNERSHIP_DESIGN.MD).
+show.
 
 ### val vs var with Go Functions
 

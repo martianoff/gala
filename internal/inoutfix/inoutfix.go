@@ -1,6 +1,6 @@
 // Package inoutfix is `gala fix inout`: it rewrites the `Ptr[T]` receivers
 // and parameters that ownership phase 1 finds borrowed to `inout T`
-// (docs/OWNERSHIP_DESIGN.MD, section 4, "A safe codemod").
+// (docs/OWNERSHIP.MD#moving-ptr-code-to-inout).
 //
 // The plan comes from ownership.PlanInout. The rewritten package is then
 // transpiled, and every function the compiler rejects a use of is left as

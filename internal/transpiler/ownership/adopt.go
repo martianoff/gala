@@ -9,8 +9,8 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// Adoption of `inout` (docs/OWNERSHIP_DESIGN.MD, section 4, "A safe
-// codemod"): the plan of a rewrite of `Ptr[T]` receivers and parameters to
+// Adoption of `inout` (docs/OWNERSHIP.MD#moving-ptr-code-to-inout):
+// the plan of a rewrite of `Ptr[T]` receivers and parameters to
 // `inout T`, for the ones phase 1 finds borrowed. `gala fix inout` applies
 // it (internal/inoutfix).
 //

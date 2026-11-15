@@ -11,7 +11,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// `inout` parameters and receivers (docs/OWNERSHIP_DESIGN.MD, 3.2)
+// `inout` parameters and receivers (docs/OWNERSHIP.MD#inout-basics)
 //
 // `func f(inout x T)` lends the caller's place to f for the call. In Go it is
 // the parameter `x *T`, and the caller passes `&place`: the Go a programmer

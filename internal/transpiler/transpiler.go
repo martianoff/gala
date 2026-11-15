@@ -754,7 +754,7 @@ type MethodMetadata struct {
 	// a value that cannot be nil (GALA-E0080).
 	PtrReceiver bool
 	// InoutReceiver is true for `func (inout r T) M()`: the receiver lends the
-	// caller's place for the call (docs/OWNERSHIP_DESIGN.MD, 3.2). It lowers
+	// caller's place for the call (docs/OWNERSHIP.MD#inout-basics). It lowers
 	// to the never-nil `*T` of a Ptr receiver, so PointerReceiver and
 	// PtrReceiver are true as well.
 	InoutReceiver bool
@@ -856,7 +856,7 @@ type FunctionMetadata struct {
 }
 
 // BorrowSummary is what the ownership analysis (internal/transpiler/ownership,
-// docs/OWNERSHIP_DESIGN.MD section 3.1) infers about a GALA function or method
+// inferred uniqueness) infers about a GALA function or method
 // that takes or returns a pointer (`Ptr[T]` or `*T`). A borrowed pointer is
 // only lent downward for the duration of the call: the callee never stores
 // it, returns it, captures it in a closure, aliases it into a binding, or
@@ -872,9 +872,10 @@ type BorrowSummary struct {
 	// allocation no other binding refers to.
 	ReturnsFresh bool
 
-	// The fields below are ownership phase 3's (docs/OWNERSHIP_DESIGN.MD
-	// section 3.3). The analysis reads them; the compiler's checks do not
-	// yet, so they change no diagnostic.
+	// The fields below are ownership phase 3's: a closure passed to a
+	// non-escaping parameter borrows, rather than captures, what it uses.
+	// The analysis reads them; the compiler's checks do not yet, so they
+	// change no diagnostic.
 
 	// NonEscapingParams is index-aligned with the parameters: true for a
 	// function-typed or by-name parameter that the callee only calls during

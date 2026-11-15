@@ -11,7 +11,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// The ownership checks of `inout` places (docs/OWNERSHIP_DESIGN.MD, 3.2.3)
+// The ownership checks of `inout` places (docs/OWNERSHIP.MD#the-rules-and-how-to-fix-each-error)
 //
 // An `inout` binding lends the caller's place for one call. Nothing may keep
 // a reference to it past the call (no escape, GALA-E0113), no call may lend
