@@ -90,16 +90,15 @@ jobs:
     # changes on top of it), so the override matches what gala_team is
     # written against.
     env:
-      # gala_tui main after it moved to rules_gala 0.6.11
-      # (martianoff/gala-tui#96): 0.16.0, the release gala_team's MODULE.bazel
-      # requires at GALA_TEAM_REF, plus that bump. Move the two pins together:
+      # gala_tui 0.16.2 (martianoff/gala-tui#98 plus the version bump), the
+      # release gala_team's MODULE.bazel requires at GALA_TEAM_REF, both built
+      # with GALA 0.101.0. Move the two pins together:
       # older gala_tui releases contain code that newer GALA checks correctly
       # reject (0.15.2 still has a `val _ =`, GALA-E0060).
-      GALA_TUI_REF: 41217a9113a41d95d6514462460623d501fe906b
-      # gala_team master after it moved to rules_gala 0.6.11
-      # (martianoff/gala-team#151), so generated Go may name types of packages
-      # a file reaches only through another one.
-      GALA_TEAM_REF: "2ac265d7aeb078ab5faa9424210f4420cf7a9499"
+      GALA_TUI_REF: c3052bf9f959d0c4c558eec616151526b68fe3f1
+      # gala_team 0.15.1, its GALA 0.101.0 build (martianoff/gala-team#152
+      # plus the version bump).
+      GALA_TEAM_REF: "057232e1bcc4feb3aa8fe5db85e8d714a3aca139"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 
