@@ -78,6 +78,12 @@ func withCopy(inout x int, was int) int {
     was
 }
 
+// Generic, with the type argument inferred from a named argument.
+func tagged[T any](tag T, inout c Counter) T {
+    c.N = c.N + 1
+    tag
+}
+
 func main() {
     var c = Counter(0)
     bump(&c, 5)
@@ -119,4 +125,7 @@ func main() {
 
     c.Reset()
     Println(c.N)
+
+    val tag = tagged(c = &c, tag = "t")
+    Println(tag, c.N)
 }

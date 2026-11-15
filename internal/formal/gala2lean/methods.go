@@ -456,6 +456,12 @@ func (g *gen) receiverUses(f *coreexport.Func, name string, whole bool) {
 		walkChildren(n, func(c coreexport.Node) { visit(c, inLambda) })
 	}
 	visit(f.Body, false)
+	// A parameter's default sees the receiver and the parameters before it.
+	for _, pn := range f.Params {
+		if p, ok := pn.(*coreexport.Param); ok {
+			visit(p.Default, false)
+		}
+	}
 }
 
 // methodOf is method m of the type of value e, and that type's name, or

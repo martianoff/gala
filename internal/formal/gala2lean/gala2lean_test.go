@@ -112,6 +112,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"inout parameter captured", "package main\nstruct C(var N int)\nfunc later(inout c C) int { val f = () => c.N\n f() }\nfunc main() { var c = C(1)\n Println(later(&c)) }\n", "ptr-escape"},
 		{"a package-level var lent", "package main\nstruct C(var N int)\nfunc bump(inout c C) { c.N = c.N + 1 }\nvar g = C(0)\nfunc main() { bump(&g)\n Println(g.N) }\n", "ptr-escape"},
 		{"a captured var lent", "package main\nstruct C(var N int)\nfunc bump(inout c C) { c.N = c.N + 1 }\nfunc main() { var c = C(0)\n val f = () => c.N\n bump(&c)\n Println(f()) }\n", "ptr-escape"},
+		{"an inout parameter captured by a later default", "package main\nstruct C(var N int)\nfunc f(inout c C, get func() int = () => c.N) int { c.N = 5\n get() }\nfunc main() { var c = C(1)\n Println(f(&c)) }\n", "ptr-escape"},
+		{"an inout parameter with a default", "package main\nfunc inc(inout n int = 0) { n = n + 1 }\nfunc main() { inc()\n Println(1) }\n", "param-default"},
 		{"one place lent twice", "package main\nfunc both(inout a int, inout b int) { a = a + b }\nfunc main() { var n = 1\n both(&n, &n)\n Println(n) }\n", "ptr-escape"},
 		{"a place and its field lent", "package main\nstruct C(var N int)\nfunc both(inout c C, inout n int) { n = c.N }\nfunc main() { var c = C(1)\n both(&c, &c.N)\n Println(c.N) }\n", "ptr-escape"},
 		{"an inout argument without &", "package main\nfunc inc(inout n int) { n = n + 1 }\nfunc main() { var n = 0\n inc(n)\n Println(n) }\n", "inout-arg"},

@@ -52,7 +52,10 @@ func (g *gen) lendSig(x string, s *sig, e *coreexport.Call, sc *scope) ([]string
 		if !s.inout[k] {
 			continue
 		}
-		// An inout parameter has no default, so a is an argument.
+		if a < 0 {
+			// A default lends no place of the caller (GALA rejects one).
+			unsup(e.Pos, "inout-arg")
+		}
 		ad, ok := argNode(e.Args[a]).(*coreexport.AddressOf)
 		if !ok {
 			unsup(posOf(e.Args[a]), "inout-arg")
@@ -72,7 +75,13 @@ func (g *gen) lendSig(x string, s *sig, e *coreexport.Call, sc *scope) ([]string
 		plain := *e
 		plain.Args = slices.Clone(e.Args)
 		for a, q := range s.lent {
-			plain.Args[a] = q
+			if na, ok := e.Args[a].(*coreexport.NamedArg); ok {
+				named := *na
+				named.Value = q
+				plain.Args[a] = &named
+			} else {
+				plain.Args[a] = q
+			}
 		}
 		g.instSig(f, s, &plain, sc)
 	}
@@ -123,6 +132,9 @@ func (g *gen) funcParams(f *coreexport.Func, sc *scope) ([]string, []cell) {
 		if !p.Inout {
 			ps = append(ps, g.param(p, sc))
 			continue
+		}
+		if p.Default != nil {
+			unsup(p.Pos, "param-default")
 		}
 		g.receiverUses(f, p.Name, true)
 		c := g.bindCell(p.Name, p.Type, g.leanType(p.Type), fmt.Sprintf("_gala_in%d", len(cells)), p.Pos, sc)
