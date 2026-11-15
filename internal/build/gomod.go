@@ -70,6 +70,11 @@ func resolveEffectiveDepDir(config *Config, galaMod *mod.File, projectDir string
 	return config.GalaModulePath(req.Path, req.Version)
 }
 
+// GalaModulePrefix starts the import path of every package of the GALA
+// module, the stdlib's among them. A build workspace requires the ones it
+// needs itself, so a Go requirement under this prefix is left out.
+const GalaModulePrefix = "martianoff/gala/"
+
 // StdlibPackages lists all GALA stdlib packages.
 var StdlibPackages = []string{
 	"std",
@@ -318,7 +323,7 @@ func (g *GoModGenerator) collectTransitiveDepsRecursive(galaMod *mod.File, req m
 		parsedDeps := ParseGoModRequires(string(content))
 		for path, version := range parsedDeps {
 			// Skip GALA stdlib
-			if strings.HasPrefix(path, "martianoff/gala/") {
+			if strings.HasPrefix(path, GalaModulePrefix) {
 				continue
 			}
 			goDeps[path] = version

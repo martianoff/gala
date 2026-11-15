@@ -52,7 +52,7 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 			want: []mod.Require{{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true}},
 			wantSkipped: []string{
 				"example.com/shared v0.0.0-00010101000000-000000000000 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
-				"martianoff/gala/std v0.0.0 (part of the GALA standard library, which gala build provides)",
+				"martianoff/gala/std v0.0.0 (a package of the GALA module, which gala build provides itself)",
 			},
 		},
 		{
@@ -202,9 +202,9 @@ func TestEnsureGalaGitignoredRespectsGitRules(t *testing.T) {
 	assert.False(t, added)
 	assert.NoFileExists(t, filepath.Join(sub, ".gitignore"))
 
-	// A later negation re-includes .gala/, so the line is added after all.
-	negated := ".gala/\n!.gala/\n"
-	require.NoError(t, os.WriteFile(filepath.Join(sub, ".gitignore"), []byte(negated), 0644))
+	// The subdirectory's own .gitignore re-includes .gala/, so the line is
+	// added after all.
+	require.NoError(t, os.WriteFile(filepath.Join(sub, ".gitignore"), []byte("!.gala/\n"), 0644))
 	added, err = ensureGalaGitignored(filepath.Join(sub, ".gitignore"))
 	require.NoError(t, err)
 	assert.True(t, added)

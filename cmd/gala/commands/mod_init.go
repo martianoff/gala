@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +12,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 
+	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
 )
 
@@ -169,10 +169,10 @@ func goRequirementsOf(goMod *modfile.File) (reqs []mod.Require, skipped []string
 		switch {
 		case replaced(path, ver):
 			skipped = append(skipped, fmt.Sprintf("%s %s (go.mod replaces it; gala build does not apply replace directives to Go dependencies)", path, ver))
-		// The prefix the build workspace's go.mod generator leaves out of
-		// Go requirements, since it requires the stdlib itself.
-		case strings.HasPrefix(path, "martianoff/gala/"):
-			skipped = append(skipped, fmt.Sprintf("%s %s (part of the GALA standard library, which gala build provides)", path, ver))
+		// The build workspace's go.mod generator leaves these out of Go
+		// requirements: it requires the GALA module's packages itself.
+		case strings.HasPrefix(path, build.GalaModulePrefix):
+			skipped = append(skipped, fmt.Sprintf("%s %s (a package of the GALA module, which gala build provides itself)", path, ver))
 		default:
 			reqs = append(reqs, mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true})
 		}
@@ -251,26 +251,22 @@ const (
 
 // ensureGalaGitignored adds galaCacheDirIgnore to the .gitignore at path,
 // creating the file if there is none, and reports whether it changed the file.
-// Nothing is changed when the directory is already ignored: by a line of the
-// file (with or without a leading or trailing slash), or, in a Git work tree,
-// by any rule Git applies there, such as one in a parent directory's
-// .gitignore. The file's line endings are kept.
+// Nothing is changed when the file already has a .gala line (with or without
+// a leading or trailing slash), or, in a Git work tree, when a .gitignore rule
+// Git applies there ignores the directory, such as one in a parent
+// directory's .gitignore. The file's line endings are kept.
 func ensureGalaGitignored(path string) (added bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
 	content := string(data)
-	ignored, known := gitIgnores(filepath.Dir(path), galaCacheDirIgnore)
-	if !known {
-		for _, l := range strings.Split(content, "\n") {
-			if strings.Trim(strings.TrimSpace(l), "/") == ".gala" {
-				ignored = true
-				break
-			}
+	for _, l := range strings.Split(content, "\n") {
+		if strings.Trim(strings.TrimSpace(l), "/") == ".gala" {
+			return false, nil
 		}
 	}
-	if ignored {
+	if gitIgnores(filepath.Dir(path), galaCacheDirIgnore) {
 		return false, nil
 	}
 	eol := "\n"
@@ -287,20 +283,14 @@ func ensureGalaGitignored(path string) (added bool, err error) {
 // gitIgnores asks Git whether a .gitignore file of the work tree around dir
 // (in dir or a parent directory) ignores rel. A rule only this user has (in
 // core.excludesFile or .git/info/exclude) does not count, since the
-// repository's other users do not share it. known is false outside a work
-// tree or without git on PATH; the caller then reads .gitignore itself.
-func gitIgnores(dir, rel string) (ignored, known bool) {
+// repository's other users do not share it, and neither does a negated rule.
+// Outside a work tree, or without git on PATH, it reports false.
+func gitIgnores(dir, rel string) bool {
 	// -n lists the rule that decides rel, ignoring or not.
 	cmd := exec.Command("git", "check-ignore", "-v", "-n", rel)
 	cmd.Dir = dir
-	out, err := cmd.Output()
-	// Exit status 1 means "not ignored", which -n still describes; anything
-	// else but success means git could not answer.
-	var exit *exec.ExitError
-	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
-		return false, false
-	}
-	return sharedIgnoreRule(string(out)), true
+	out, _ := cmd.Output()
+	return sharedIgnoreRule(string(out))
 }
 
 // sharedIgnoreRule reports whether a `git check-ignore -v -n` line,
@@ -312,15 +302,12 @@ func sharedIgnoreRule(line string) bool {
 	match, _, _ := strings.Cut(strings.TrimSpace(line), "\t")
 	var source, rest string
 	if strings.HasPrefix(match, `"`) {
-		end := closingQuote(match)
-		if end < 0 {
-			return false
-		}
-		unquoted, err := strconv.Unquote(match[:end+1])
+		quoted, err := strconv.QuotedPrefix(match)
 		if err != nil {
 			return false
 		}
-		source, rest = unquoted, strings.TrimPrefix(match[end+1:], ":")
+		source, _ = strconv.Unquote(quoted)
+		rest = strings.TrimPrefix(match[len(quoted):], ":")
 	} else {
 		// The source may hold a colon (C:/...), so it ends at the first
 		// ".gitignore:"; any other source is not a .gitignore file.
@@ -334,18 +321,4 @@ func sharedIgnoreRule(line string) bool {
 	absolute := filepath.IsAbs(source) || strings.HasPrefix(source, "/") ||
 		(len(source) > 1 && source[1] == ':') // a Windows drive, on any OS
 	return filepath.Base(source) == ".gitignore" && !absolute && !strings.HasPrefix(pattern, "!")
-}
-
-// closingQuote returns the index of the quote that closes the C-quoted string
-// s starts with, or -1.
-func closingQuote(s string) int {
-	for i := 1; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case '"':
-			return i
-		}
-	}
-	return -1
 }
