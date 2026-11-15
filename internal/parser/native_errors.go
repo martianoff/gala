@@ -60,7 +60,9 @@ func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs 
 		found = goFuncLiterals(tree)
 	}
 	for _, h := range habits {
-		found = append(found, h.err)
+		if h.err != nil { // nil: cut without a diagnostic of its own
+			found = append(found, h.err)
+		}
 	}
 	if len(habits) > 0 {
 		slices.SortStableFunc(found, func(a, b *galaerr.SemanticError) int {

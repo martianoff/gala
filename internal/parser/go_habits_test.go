@@ -35,9 +35,9 @@ func TestGoHabitsAreCoded(t *testing.T) {
 			// A local `const n = 3` alone parses (as the name `const` and an
 			// assignment) and is GALA-E0055; the scan runs only on a parse
 			// that failed, as here, where the switch below fails it.
-			name: "local_const",
+			name:  "local_const",
 			input: "package main\n\nfunc main() {\n    const n = 3\n    switch n {\n    case 3:\n        Println(n)\n    }\n}\n",
-			code: galaerr.CodeGoConst, line: 4, col: 4,
+			code:  galaerr.CodeGoConst, line: 4, col: 4,
 			hint: "`val n = 3`",
 		},
 		{
@@ -461,6 +461,38 @@ func TestGoHabitsReviewFindings(t *testing.T) {
 			want:  []galaerr.ErrorCode{"", galaerr.CodeGoSliceExpr},
 		},
 	}
+	cases = append(cases, []struct {
+		name  string
+		input string
+		want  []galaerr.ErrorCode
+		hint  string
+	}{
+		{
+			// An unclosed group is not reported: cutting it to the end of
+			// the file would hide the error in main.
+			name:  "unclosed_group_hides_nothing",
+			input: "package main\n\nvar (\n    a = 1\n\nfunc main() {\n    val x = \n}\n",
+			want:  []galaerr.ErrorCode{""},
+		},
+		{
+			// A `~` outside a constraint keeps the lexer's error.
+			name:  "tilde_outside_a_constraint",
+			input: "package main\n\nfunc main() {\n    val y = ~x\n}\n",
+			want:  []galaerr.ErrorCode{""},
+		},
+		{
+			// A func literal with named results is one GALA-E0117.
+			name:  "func_literal_with_named_results",
+			input: "package main\n\nfunc main() {\n    val f = func(a int) (n int) { n = a }\n}\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoFuncLiteral},
+		},
+		{
+			// The error at EOF of the last declaration is that declaration's.
+			name:  "error_at_eof_belongs_to_the_last_declaration",
+			input: "package main\n\nfunc main() {\n    const n = 3\n    Println(n)\n",
+			want:  []galaerr.ErrorCode{galaerr.CodeGoConst, ""},
+		},
+	}...)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			codes, hints := codesOf(t, tc.input)
@@ -484,6 +516,28 @@ func TestUnterminatedCharIsNoTilde(t *testing.T) {
 	codes, _ := codesOf(t, "package main\n\nval c = '~")
 	assert.NotContains(t, codes, galaerr.CodeGoTypeSetConstraint)
 	assert.Contains(t, codes, galaerr.ErrorCode(""))
+}
+
+// TestTildeAloneDoesNotPanic: a `~` with no token before the end, in a file
+// or in an expression parsed on its own, is the lexer's error.
+func TestTildeAloneDoesNotPanic(t *testing.T) {
+	codes, _ := codesOf(t, "~")
+	assert.NotContains(t, codes, galaerr.CodeGoTypeSetConstraint)
+	_, errs := parseExpressionAt("~", 1, 0)
+	require.NotEmpty(t, errs)
+}
+
+// TestCommentsKeptInTheRetriedParse: an error after a Go construct quotes the
+// input across a comment as the parse without the construct does.
+func TestCommentsKeptInTheRetriedParse(t *testing.T) {
+	rest := "func main() {\n    val x = a /* c */ b ?\n}\n"
+	plain := parseGalop(t, "package main\n\nval N = 1\n\n"+rest).Errors
+	withGo := parseGalop(t, "package main\n\nconst N = 1\n\n"+rest).Errors
+	require.NotEmpty(t, plain)
+	require.Len(t, withGo, len(plain)+1)
+	for k := range plain {
+		assert.Equal(t, plain[k].Error(), withGo[k+1].Error())
+	}
 }
 
 // TestEmbeddedAfterMethodWithoutResultIsGALA: `Close()` then `io.Reader` is

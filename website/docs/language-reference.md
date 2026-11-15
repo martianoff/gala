@@ -1671,6 +1671,8 @@ Bare Go builtins are **not** part of GALA's surface: calling one is a transpile 
 | `min(a, b)`, `max(a, b)` | `if (a < b) a else b`; `math.Min` / `math.Max` for float64; `slices.Min` / `slices.Max` on a Go slice |
 | `clear(c)` | `.Clear()` on a `collection_mutable` collection; a new Go map from `go_interop.MapEmpty` |
 
+A `make` of a Go type, `make([]T, n)` or `make(map[K]V)`, is reported by the parser, before the call is read, with the exact `go_interop` call for the type and arguments written.
+
 ### Go Declaration and Statement Forms
 
 Go forms GALA has no syntax for are each a coded error whose hint spells the GALA form for the code written:
