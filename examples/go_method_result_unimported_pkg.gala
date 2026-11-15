@@ -1,0 +1,35 @@
+package main
+
+import (
+    "net/http"
+    "net/http/httptest"
+    "net/mail"
+)
+
+// Each Go value below has a type from a package this file does not import:
+// *bytes.Buffer, *mime.WordDecoder, *multipart.Reader, *multipart.Part. Their
+// methods returning (T, error) still lower to Try.
+
+// A field of an imported type, then a (T, error) method of the field's type.
+func firstWord(rec *httptest.ResponseRecorder) Try[string] = rec.Body.ReadString(' ')
+
+func decode(p *mail.AddressParser, word string) Try[string] = p.WordDecoder.Decode(word)
+
+// The same through a val binding.
+func secondWord(rec *httptest.ResponseRecorder) Try[string] {
+    val body = rec.Body
+    body.ReadString(' ')
+}
+
+// A chain of method calls, each result's type from the unimported package.
+func firstPart(req *http.Request) Try[string] =
+    req.MultipartReader().FlatMap(_.NextPart()).Map(_.FormName())
+
+func main() {
+    val rec = httptest.NewRecorder()
+    rec.WriteString("hello big world")
+    Println(firstWord(rec))
+    Println(secondWord(rec))
+    Println(decode(&mail.AddressParser(), "=?UTF-8?q?caf=C3=A9?="))
+    Println(http.NewRequest("GET", "http://example.com/", nil).FlatMap(firstPart))
+}

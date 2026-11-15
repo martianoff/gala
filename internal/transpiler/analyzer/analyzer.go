@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +90,47 @@ func (a *galaAnalyzer) checkInternalImport(importerPath string, imp fileImport, 
 	)
 	violation.FilePath = filePath
 	return violation
+}
+
+// checkGoModuleRequired rejects an import of a Go package outside the
+// standard library that no module the build requires provides (see
+// galaAnalyzer.requiredModules). Its types are unknown without the module's
+// source, so the transpiler would emit Go that calls into it blindly — a
+// method on a value of an unknown type, a (T, error) result left unlowered —
+// and `go build` would fail on that generated code instead.
+func (a *galaAnalyzer) checkGoModuleRequired(imp fileImport, filePath string) error {
+	if a.requiredModules == nil || transpiler.IsGoStdlibPath(imp.Path) {
+		return nil
+	}
+	if slices.ContainsFunc(a.requiredModules, func(m string) bool { return moduleProvides(m, imp.Path) }) {
+		return nil
+	}
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodePackageNotFound,
+		imp.PathAt.Line,
+		imp.PathAt.Column,
+		fmt.Sprintf("package not found: no module required in gala.mod provides Go package %q", imp.Path),
+		fmt.Sprintf("require its module in gala.mod; run `gala mod add %s@<version> --go` "+
+			"(for a package in a subdirectory of its module, name the module's path)", imp.Path),
+	)
+	err.FilePath = filePath
+	return err
+}
+
+// moduleProvides reports whether the module at path module can provide the
+// package at importPath: the module's root or a directory below it, except
+// below a major-version suffix (`module/v2/...` is the module `module/v2`).
+func moduleProvides(module, importPath string) bool {
+	rest, ok := strings.CutPrefix(importPath, module)
+	if !ok || rest != "" && rest[0] != '/' {
+		return false
+	}
+	first, _, _ := strings.Cut(strings.TrimPrefix(rest, "/"), "/")
+	major, isMajor := strings.CutPrefix(first, "v")
+	if n, err := strconv.Atoi(major); isMajor && err == nil && n >= 2 && strconv.Itoa(n) == major {
+		return false
+	}
+	return true
 }
 
 // CheckStdConflict returns an error if the given name conflicts with std library exports.
@@ -217,6 +259,15 @@ type galaAnalyzer struct {
 	// + GOMODCACHE) and by the worker's --go-src flag (from the Bazel rule).
 	// Nil when no Go module sources are wired in (stdlib-only projects).
 	goSrcDirs map[string]string
+
+	// requiredModules, when not nil, holds the path of every module the build
+	// requires: the main module, the GALA modules it requires transitively,
+	// and the Go modules all of them require, with those Go modules' own
+	// requirements. A Go import no module of it provides is GALA-E0020: none
+	// of its types are known, and the transpiler cannot lower calls into it.
+	// Set by the CLI builder from gala.mod; nil (under Bazel, which states Go
+	// dependencies in BUILD files, and in the LSP) skips the check.
+	requiredModules []string
 
 	// localGoNames caches, per package directory, the names every top-level
 	// declaration in that directory's hand-written .go files introduces —
@@ -459,6 +510,13 @@ func (b *BatchAnalyzer) SetGoSrcDirs(dirs map[string]string) {
 	b.inner.goSrcDirs = dirs
 }
 
+// SetRequiredModules records the paths of every module the build requires
+// (see galaAnalyzer.requiredModules). Invariant for a build, like
+// SetGoSrcDirs.
+func (b *BatchAnalyzer) SetRequiredModules(paths []string) {
+	b.inner.requiredModules = paths
+}
+
 var _ transpiler.Analyzer = (*BatchAnalyzer)(nil)
 
 // AnalyzeParsed delegates to the inner analyzer, sharing the package cache.
@@ -530,7 +588,7 @@ func (a *galaAnalyzer) analyzeGoImport(path string) *transpiler.GoTypeInfo {
 	goInfo := AnalyzeGoPackage(path)
 	if !goTypeInfoNonEmpty(goInfo) {
 		if dir, ok := a.resolveGoSrcDir(path); ok {
-			if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
+			if srcInfo := analyzeGoFilesMemo(dir, path, "", a.goSrcDirs).info; goTypeInfoNonEmpty(srcInfo) {
 				goInfo = srcInfo
 			}
 		}
@@ -962,6 +1020,9 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	var goImports []string
 	for _, imp := range fileImports {
 		if !a.isGalaImport(imp.Path) {
+			if err := a.checkGoModuleRequired(imp, filePath); err != nil {
+				return nil, err
+			}
 			goImports = append(goImports, imp.Path)
 		}
 	}
@@ -1022,7 +1083,8 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 			ownImportPath = a.resolver.PackageImportPath(filePath)
 		}
 		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
-		goInfo, ownTypes, goImports := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
+		own := analyzeGoFilesMemo(dirPath, richAST.OwnImportPath, pkgName, a.goSrcDirs)
+		goInfo, ownTypes, goImports := own.info, own.ownTypes, own.imports
 		if !goInfo.IsEmpty() {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
@@ -1038,7 +1100,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 		// GALA-E0107: hand-written Go cannot reach a declaration named like
 		// a Go builtin, which the transpiler renames.
 		if isTopLevel {
-			if err := checkBuiltinNamesReachedFromGo(root, OwnGoBuiltinRefs(dirPath, richAST.OwnImportPath, pkgName)); err != nil {
+			if err := checkBuiltinNamesReachedFromGo(root, own.builtinRefs); err != nil {
 				return nil, err
 			}
 		}
@@ -2746,7 +2808,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
-	goInfo := AnalyzeGoFiles(dirPath, importPath)
+	goInfo := analyzeGoFilesMemo(dirPath, importPath, "", a.goSrcDirs).info
 	if !goInfo.IsEmpty() {
 		if pkgAST.GoTypeInfo == nil {
 			pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()

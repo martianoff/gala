@@ -13,7 +13,7 @@ import (
 // checkBuiltinNamesReachedFromGo reports GALA-E0107 for the first top-level
 // function, val, var or embed val of root, a file's native tree, named like a
 // Go predeclared identifier that the package's hand-written Go refers to:
-// goRefs, from OwnGoBuiltinRefs.
+// goRefs, the builtinRefs of the package's own .go files (see analyzeGoFiles).
 //
 // The transpiler emits such a declaration under a reserved name, so the
 // generated Go that calls Go's builtin (`len`, `print`, …) still reaches it.

@@ -1,0 +1,11 @@
+package main
+
+import "github.com/spf13/cobra"
+
+// gala.mod does not require github.com/spf13/cobra, so `gala build` must stop
+// at this import with GALA-E0020 rather than emit Go that calls into a package
+// whose types it never read.
+func main() {
+    val cmd = &cobra.Command(Use = "app")
+    Println(cmd.Use.Size())
+}

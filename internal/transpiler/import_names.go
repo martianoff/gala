@@ -6,6 +6,13 @@ import (
 	"unicode"
 )
 
+// IsGoStdlibPath reports whether a Go import path names a standard library
+// package: its first element has no dot, as every module path's does.
+func IsGoStdlibPath(path string) bool {
+	first, _, _ := strings.Cut(path, "/")
+	return !strings.Contains(first, ".")
+}
+
 // IsValidGoImportPath reports whether p can be written in a Go import
 // declaration: non-empty slash-separated elements of ASCII letters, digits and
 // `-._~+`, none beginning or ending with a dot (so none is `.` or `..`), and
