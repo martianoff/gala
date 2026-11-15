@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 8
+def supportedCore : Nat := 9
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -165,6 +165,8 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "int" | "bool" | "string" => return .lit (← decodeLit j)
   | "name" => return .name (← str j "name")
   | "unary" => return .unary (← str j "op") (← decodeExpr (← field j "operand"))
+  -- `&x`, a lend or a pointer: not in the subset.
+  | "address-of" => return .unsupported "address-of"
   | "binary" =>
     return .binary (← str j "op") (← decodeExpr (← field j "left")) (← decodeExpr (← field j "right"))
   | "call" => return .call (← decodeExpr (← field j "callee")) (← (← arr j "args").mapM decodeExpr)
@@ -228,6 +230,10 @@ partial def optExpr (j : Json) (k : String) : D (Option Expr) := do
 partial def decodeParams (params : List Json) :
     D (Except String (List Param × List (Option Expr))) := do
   if let some k ← firstUnsupported params then return .error k
+  -- An `inout` parameter lends the caller's place: not in the subset.
+  for p in params do
+    -- The field is left out when false.
+    if p.getObjVal? "inout" matches .ok (.bool true) then return .error "inout-param"
   let ps ← params.mapM fun p => do
     unless (← kindOf p) == "param" do throw "expected a param"
     return (({ name := ← str p "name", type := ← optTy p "type" } : Param), ← optExpr p "default")

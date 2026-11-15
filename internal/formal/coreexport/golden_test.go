@@ -190,9 +190,17 @@ func (c *Counter) Inc(by int) {
 
 func (c Ptr[Counter]) Reset() { c.N = 0 }
 
+func (inout c Counter) Dec() { c.N = c.N - 1 }
+
+func bump(inout c Counter, by int) {
+    c.N = c.N + by
+}
+
 func main() {
     var c = Counter(0)
     c.Inc(2)
+    bump(&c, 1)
+    c.Dec()
     Println(c.Get())
 }
 `},

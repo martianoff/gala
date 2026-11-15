@@ -357,23 +357,16 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 		g.fn = &fnCtx{result: res}
 		body = indentLines(g.bodyItems(f, sc, res), 2)
 	} else {
-		g.receiverUses(f, r.Name)
+		g.receiverUses(f, r.Name, r.Inout)
 		self := "_gala_self"
 		ps = append(ps, fmt.Sprintf("(%s : %s)", self, lt))
 		ps = append(ps, g.params(f, sc)...)
 		// The receiver in a cell, so that the body writes it at any depth.
-		h := g.heap(lt, r.Pos)
-		l := sc.bind(r.Name, true, lt)
-		l.box, l.gtype, l.receiver = h, r.Type, true
+		c := g.bindCell(r.Name, r.Type, lt, self, r.Pos, sc)
 		g.fn = &fnCtx{result: res}
-		inner := newScope(sc, 0)
-		items := []string{
-			fmt.Sprintf("let %s ← _gala_new%d %s", ident(r.Name), h, self),
-			"let _gala_res ← " + doTerm(g.bodyItems(f, inner, res)),
-			fmt.Sprintf("pure (_gala_res, ← _gala_get%d %s)", h, ident(r.Name)),
-		}
+		var items []string
+		items, res = lendBody(g.bodyItems(f, newScope(sc, 0), res), []cell{c}, res)
 		body = indentLines(items, 2)
-		res = "(" + res + " × " + lt + ")"
 	}
 	s := fmt.Sprintf("def %s %s : _gala_M %s := do\n%s", methodHead(t, f.Name), strings.Join(ps, " "), res, body)
 	if recursive {
@@ -382,21 +375,38 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 	return s
 }
 
-// params are a function's parameters in Lean, bound in sc.
+// params are a method's parameters in Lean, bound in sc. An `inout`
+// parameter of a method is outside the subset; a function's are translated
+// (funcParams).
 func (g *gen) params(f *coreexport.Func, sc *scope) []string {
 	var ps []string
 	for _, pn := range f.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok {
-			unsupAt(pn)
+		p := g.paramOf(pn)
+		if p.Inout {
+			unsup(p.Pos, "inout-method-param")
 		}
-		if p.Type == nil {
-			unsup(p.Pos, "untyped-param")
-		}
-		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
-		sc.bind(p.Name, false, g.leanType(p.Type)).gtype = p.Type
+		ps = append(ps, g.param(p, sc))
 	}
 	return ps
+}
+
+// paramOf is parameter node pn, which must have a written type.
+func (g *gen) paramOf(pn coreexport.Node) *coreexport.Param {
+	p, ok := pn.(*coreexport.Param)
+	if !ok {
+		unsupAt(pn)
+	}
+	if p.Type == nil {
+		unsup(p.Pos, "untyped-param")
+	}
+	return p
+}
+
+// param is value parameter p in Lean, bound in sc.
+func (g *gen) param(p *coreexport.Param, sc *scope) string {
+	lt := g.leanType(p.Type)
+	sc.bind(p.Name, false, lt).gtype = p.Type
+	return fmt.Sprintf("(%s : %s)", ident(p.Name), lt)
 }
 
 // bodyItems are a function's body as do-items, for result type res.
@@ -416,8 +426,11 @@ func (g *gen) bodyItems(f *coreexport.Func, sc *scope, res string) []string {
 // it: reading or writing a field, or calling a method on it, and never in a
 // lambda. Anything else (passing it on, binding it to another name,
 // comparing it, capturing it) would let another path reach the value, which
-// state passing does not model.
-func (g *gen) receiverUses(f *coreexport.Func, name string) {
+// state passing does not model. With whole, the name itself is a value too
+// (an `inout` place: reading it copies the value, assigning it replaces
+// it), but still never in a lambda, which could keep the place past the
+// call.
+func (g *gen) receiverUses(f *coreexport.Func, name string, whole bool) {
 	var visit func(n coreexport.Node, inLambda bool)
 	visit = func(n coreexport.Node, inLambda bool) {
 		switch n := n.(type) {
@@ -435,7 +448,7 @@ func (g *gen) receiverUses(f *coreexport.Func, name string) {
 				return
 			}
 		case *coreexport.Name:
-			if n.Name == name {
+			if n.Name == name && (inLambda || !whole) {
 				unsup(n.Pos, "ptr-escape")
 			}
 			return
@@ -443,6 +456,12 @@ func (g *gen) receiverUses(f *coreexport.Func, name string) {
 		walkChildren(n, func(c coreexport.Node) { visit(c, inLambda) })
 	}
 	visit(f.Body, false)
+	// A parameter's default sees the receiver and the parameters before it.
+	for _, pn := range f.Params {
+		if p, ok := pn.(*coreexport.Param); ok {
+			visit(p.Default, false)
+		}
+	}
 }
 
 // methodOf is method m of the type of value e, and that type's name, or
@@ -459,8 +478,13 @@ func (g *gen) methodOf(e coreexport.Node, m string, sc *scope, seen map[string]b
 	return nil, ""
 }
 
-// methodSig is the signature of method f of type t, its receiver aside.
-func (g *gen) methodSig(f *coreexport.Func, t string) *sig {
+// methodSig is the signature of method f of type t, its receiver aside,
+// for the call at pos. A method with an `inout` parameter is outside the
+// subset (params).
+func (g *gen) methodSig(f *coreexport.Func, t string, pos coreexport.Pos) *sig {
+	if hasInout(f.Params) {
+		unsup(pos, "inout-method-param")
+	}
 	r := f.Receiver.(*coreexport.Receiver)
 	s := funcSig(f, methodHead(t, f.Name))
 	s.recvName, s.recvType = r.Name, g.optTypeSafe(r.Type)
@@ -481,9 +505,9 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 		if items == nil {
 			return term{}, false
 		}
-		return term{code: doTerm(append(items, "pure "+res)), unit: f.Result == nil}, true
+		return callTerm(items, res, f.Result == nil), true
 	}
-	sg := g.methodSig(f, t)
+	sg := g.methodSig(f, t, s.Pos)
 	recv := g.expr(s.Target, sc)
 	sg.recv = &recv
 	return g.callSig(sg, e, sc), true
@@ -494,6 +518,9 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 // value written back. It returns the do-items and the name holding the
 // call's result, or nil items when e is not such a call.
 func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
+	if items, res := g.lendCall(e, sc); items != nil {
+		return items, res
+	}
 	s, ok := e.Callee.(*coreexport.Select)
 	if !ok {
 		return nil, ""
@@ -502,25 +529,52 @@ func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
 	if f == nil || !statePassed(f.Receiver.(*coreexport.Receiver)) {
 		return nil, ""
 	}
-	switch g.placeKind(s.Target, sc) {
-	case placeNone:
-		unsup(s.Pos, "pointer-method-on-value")
-	case placeShared:
-		// Another path reaches this variable while the method runs (any
-		// function reads a package-level var; a lambda shares a captured
-		// one), and would see Go's writes in place, which state passing
-		// does not model.
-		unsup(s.Pos, "ptr-escape")
-	}
-	sg := g.methodSig(f, t)
+	g.uniquePlace(s.Target, sc, s.Pos, "pointer-method-on-value")
+	sg := g.methodSig(f, t, s.Pos)
 	recv := g.expr(s.Target, sc)
 	sg.recv = &recv
 	sg.recvLast = true
-	items, call := g.callItems(sg, e, sc, true)
-	res, upd := g.freshName("r"), g.freshName("u")
-	items = append(items, fmt.Sprintf("let (%s, %s) ← %s", res, upd, call.mon()))
-	items = append(items, g.assignTo(s.Target, func(string) string { return upd }, sc, s.Pos)...)
+	return g.writeBack(sg, e, []coreexport.Node{s.Target}, sc)
+}
+
+// uniquePlace stops the translation unless place e, written back after a
+// call, is one only this code reaches (placeKind): none is reported as
+// none, a shared one as ptr-escape, since another path reaching the
+// variable while the callee runs (any function reads a package-level var;
+// a lambda shares a captured one) would see Go's writes in place, which
+// state passing does not model.
+func (g *gen) uniquePlace(e coreexport.Node, sc *scope, pos coreexport.Pos, none string) {
+	switch g.placeKind(e, sc) {
+	case placeNone:
+		unsup(pos, "%s", none)
+	case placeShared:
+		unsup(pos, "ptr-escape")
+	}
+}
+
+// writeBack runs the state-passing call e of s, whose result is its own
+// result and then the final values of places, in order, and writes each
+// back to its place. It returns the do-items and the name holding the
+// result.
+func (g *gen) writeBack(s *sig, e *coreexport.Call, places []coreexport.Node, sc *scope) ([]string, string) {
+	items, call := g.callItems(s, e, sc, true)
+	res := g.freshName("r")
+	ups := make([]string, len(places))
+	for i := range ups {
+		ups[i] = g.freshName("u")
+	}
+	items = append(items, fmt.Sprintf("let (%s, %s) ← %s", res, strings.Join(ups, ", "), call.mon()))
+	for i, q := range places {
+		items = append(items, g.assignTo(q, func(string) string { return ups[i] }, sc, posOf(q))...)
+	}
 	return items, res
+}
+
+// callTerm is a state-passing call's do-items and result name as a term:
+// a do block of its own, so the places it writes back must be ones a
+// nested block can write (cells, package-level variables).
+func callTerm(items []string, res string, unit bool) term {
+	return term{code: doTerm(append(items, "pure "+res)), unit: unit}
 }
 
 // placeKind is what e, a pointer method's receiver, is rooted in: a

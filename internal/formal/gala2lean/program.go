@@ -427,13 +427,18 @@ func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
 // the Lean parameters they take.
 func (g *gen) funcDeclIn(f *coreexport.Func, recursive bool, tparams []string) string {
 	sc := newScope(nil, 0)
-	ps := append(tparams, g.params(f, sc)...)
+	fps, cells := g.funcParams(f, sc)
+	ps := append(tparams, fps...)
 	res := "Unit"
 	if f.Result != nil {
 		res = g.leanType(f.Result)
 	}
 	g.fn = &fnCtx{result: res}
-	body := indentLines(g.bodyItems(f, sc, res), 2)
+	items := g.bodyItems(f, sc, res)
+	if len(cells) > 0 {
+		items, res = lendBody(items, cells, res)
+	}
+	body := indentLines(items, 2)
 	head := "def " + ident(f.Name)
 	if len(ps) > 0 {
 		head += " " + strings.Join(ps, " ")

@@ -309,14 +309,14 @@ func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 }
 
 func (e *exporter) param(p native.ParameterNode) Node {
-	if p.VAL().Ok() || p.VAR().Ok() || p.INOUT().Ok() {
+	if p.VAL().Ok() || p.VAR().Ok() {
 		return e.unsupported(UnsupportedParamModifier, p.GalaNodeRef)
 	}
 	if bad := e.unsupportedParam(p); bad != nil {
 		return bad
 	}
-	return of(e, &Param{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Default: e.paramDefault(p.ParamDefault())},
-		p.GalaNodeRef)
+	return of(e, &Param{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Default: e.paramDefault(p.ParamDefault()),
+		Inout: p.INOUT().Ok()}, p.GalaNodeRef)
 }
 
 // paramDefault is the default value d declares, or nil (JSON null) for none.
@@ -541,7 +541,7 @@ func (e *exporter) unary(u native.UnaryExprNode) Node {
 	case "*":
 		return e.unsupported(UnsupportedDeref, u.GalaNodeRef)
 	case "&":
-		return e.unsupported(UnsupportedAddressOf, u.GalaNodeRef)
+		return of(e, &AddressOf{Operand: e.expr(u.UnaryExpr().GalaNodeRef)}, u.GalaNodeRef)
 	default: // "<-"
 		return e.unsupported(UnsupportedReceive, u.GalaNodeRef)
 	}

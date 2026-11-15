@@ -153,6 +153,13 @@ galaspec models them, except as listed below):
   returns (a method that panics writes nothing back; no output is lost, since a panic
   ends the run); the `Copy` (with named arguments) and `Equal` GALA generates for a
   struct;
+- `inout` receivers `(inout c T)`, as pointer receivers (they lower to one), whose
+  body may also read and replace the receiver whole; and `inout` parameters of
+  top-level functions, by the same state passing: a function with `inout` parameters
+  returns their final values beside its result, and a call evaluates the other
+  arguments in the order written, then reads each lent place (`&x`, `&x.f`, or an
+  `inout` parameter of the caller), so the callee sees what the arguments wrote
+  (`f(&x, g(&x))`), and after the call writes each final value back;
 - generic functions, structs and sealed types, as Lean definitions and types with their
   type parameters as parameters, whose type arguments Lean infers. A type parameter's
   values print as their type prints (`GShow`), and under `comparable` compare with the
@@ -195,8 +202,14 @@ what Core JSON leaves out, it does not translate yet:
 - a call of a pointer method on a place another path can reach while the method runs
   (a package-level `var`, a `var` a lambda captures), or a pointer method that uses its
   receiver other than through a field or a method call (`ptr-escape`); a pointer method
-  on a value that is not a `var` (`pointer-method-on-value`); printing or comparing a
-  value of a type with its own `String`, `Error`, `Format`, `GoString` or `Equal`, seen
+  on a value that is not a `var` (`pointer-method-on-value`); likewise for `inout`:
+  lending such a place, lending overlapping places in one call, or an `inout`
+  parameter or receiver a lambda refers to (`ptr-escape`), an `inout` argument that
+  is not `&` of a `var` (`inout-arg`); `inout` parameters of methods
+  (`inout-method-param`) and lambdas (`inout-lambda-param`) and in function types
+  (`param-modifier`), a function with `inout` parameters as a value
+  (`inout-func-value`), and `&x` anywhere but an `inout` argument (`address-of`);
+  printing or comparing a value of a type with its own `String`, `Error`, `Format`, `GoString` or `Equal`, seen
   or not (a method with a generic receiver), or holding one
   (`custom-string`, `custom-equal`); in a program with a method whose receiver type is
   not plain to see, printing or comparing anything but `int`, `string` and `bool`
@@ -252,7 +265,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 45 | 1 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 460 | 34 | 443 | 34 |
+| UNSUPPORTED | 463 | 34 | 446 | 34 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -271,7 +284,7 @@ when run as Lean and compared with Go.
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
 | `file` | yes | yes: 29 agree | no | translated: 46 agree |
-| `import` | yes | no: 2 agree | no | translated: 6 agree |
+| `import` | yes | no: 1 agree | no | translated: 5 agree |
 | `val` | yes | yes: 11 agree | no | translated: 26 agree |
 | `var` | yes | yes: 4 agree | no | translated: 6 agree |
 | `func` | yes | yes: 29 agree | no | translated: 46 agree |
@@ -293,6 +306,7 @@ when run as Lean and compared with Go.
 | `string` | yes | yes: 21 agree | no | translated: 34 agree |
 | `name` | yes | yes: 29 agree | no | translated: 46 agree |
 | `unary` | yes | yes: 5 agree | no | translated: 7 agree |
+| `address-of` | not seen | no | no | not translated |
 | `binary` | yes | yes: 22 agree | no | translated: 31 agree |
 | `call` | yes | yes: 29 agree | no | translated: 46 agree |
 | `select` | yes | yes: 4 agree | no | translated: 12 agree |
@@ -314,34 +328,34 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (42 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (35 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 132 |
-| `method-call` | 126 |
-| `index` | 74 |
-| `generic-type` | 51 |
-| `address-of` | 14 |
-| `generic-decl` | 14 |
+| `import` | 335 |
+| `method-call` | 37 |
+| `generic-type` | 26 |
+| `index` | 16 |
+| `generic-decl` | 15 |
 | `unresolved-name` | 9 |
-| `composite-literal` | 8 |
-| `float-literal` | 8 |
+| `composite-literal` | 7 |
+| `address-of` | 6 |
+| `float-literal` | 6 |
 | `method` | 6 |
-| `local-struct` | 4 |
-| `qualified-type` | 4 |
 | `stuck` | 4 |
-| `by-name-arg` | 3 |
-| `slice-type` | 3 |
+| `by-name-arg` | 2 |
 | `char-literal` | 2 |
-| `expression-pattern` | 2 |
-| `for` | 2 |
 | `format-string` | 2 |
 | `type-Value` | 2 |
+| `type-any` | 2 |
+| `typed-pattern` | 2 |
+| `blank-import` | 1 |
+| `defined-type` | 1 |
+| `expression-pattern` | 1 |
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (85 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (87 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
@@ -349,7 +363,7 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `index` | 69 |
 | `generic-type` | 35 |
 | `method-call` | 24 |
-| `qualified-type` | 21 |
+| `qualified-type` | 22 |
 | `pointer-type` | 14 |
 | `type-float64` | 14 |
 | `type-error` | 10 |
@@ -361,10 +375,10 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `untyped-global` | 5 |
 | `for` | 4 |
 | `local-struct` | 4 |
-| `param-modifier` | 4 |
 | `type-any` | 4 |
 | `type-uint32` | 4 |
 | `bind` | 3 |
+| `expression-pattern` | 3 |
 
 ### Known disagreements
 

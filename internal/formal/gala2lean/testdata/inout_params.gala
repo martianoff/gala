@@ -1,0 +1,131 @@
+package main
+
+// Functions with `inout` parameters translate by state passing: the
+// function returns its result with the final values of its places, and
+// the call writes them back.
+
+struct Counter(var N int)
+
+func (inout c Counter) Inc() int {
+    c.N = c.N + 1
+    c.N
+}
+
+// An inout receiver read and replaced as a whole.
+func (inout c Counter) Reset() {
+    val old = c
+    c = Counter(old.N * 0)
+}
+
+func bump(inout c Counter, by int) {
+    c.N = c.N + by
+}
+
+// Lending on, and an inout receiver method called on the parameter.
+func bumpTwice(inout c Counter) int {
+    bump(&c, 1)
+    c.Inc()
+}
+
+func swap(inout a int, inout b int) {
+    val tmp = a
+    a = b
+    b = tmp
+}
+
+struct Point(X int, Y int)
+
+// A place whose fields are all val changes by replacing the value.
+func moveRight(inout p Point) {
+    p = p.Copy(X = p.X + 1)
+}
+
+type Pair struct {
+    var Left Counter
+    var Right Counter
+}
+
+func transfer(inout from Counter, inout to Counter) {
+    to.N = to.N + from.N
+    from.N = 0
+}
+
+// Recursion, and a return before the end.
+func countdown(inout c Counter, k int) int {
+    if k == 0 {
+        return c.N
+    }
+    c.N = c.N + k
+    countdown(&c, k - 1)
+}
+
+// A call inside an expression, on a place that is a cell.
+func twice(inout c Counter) int = add(&c, 1) * 100 + add(&c, 10)
+
+func add(inout c Counter, by int) int {
+    c.N = c.N + by
+    c.N
+}
+
+func note(s string, v int) int {
+    Println(s)
+    v
+}
+
+// The copy of x is taken when the argument is evaluated, before the call.
+func withCopy(inout x int, was int) int {
+    x = x + 100
+    was
+}
+
+// Generic, with the type argument inferred from a named argument.
+func tagged[T any](tag T, inout c Counter) T {
+    c.N = c.N + 1
+    tag
+}
+
+func main() {
+    var c = Counter(0)
+    bump(&c, 5)
+    Println(c.N)
+    val r = bumpTwice(&c)
+    Println(r, c.N)
+
+    var x = 1
+    var y = 2
+    swap(&x, &y)
+    Println(x, y)
+
+    var p = Point(1, 2)
+    moveRight(&p)
+    moveRight(&p)
+    Println(p.X, p.Y)
+
+    var q = Pair(Left = Counter(3), Right = Counter(4))
+    transfer(&q.Left, &q.Right)
+    Println(q.Left.N, q.Right.N)
+
+    val n = countdown(&c, 3)
+    Println(n, c.N)
+
+    val t = twice(&c)
+    Println(t, c.N)
+
+    // The arguments run in the order written; the lent place is read when
+    // the call starts, after them.
+    var d = Counter(10)
+    bump(&d, add(&d, 5))
+    Println(d.N)
+    bump(by = note("named", 2), c = &d)
+    Println(d.N)
+
+    var w = 7
+    val was = withCopy(&w, w)
+    Println(was, w)
+
+    c.Reset()
+    Println(c.N)
+
+    val tag = tagged(c = &c, tag = "t")
+    Println(tag, c.N)
+}

@@ -48,10 +48,11 @@ func funcResult(t string) string {
 }
 
 // funcDeclType is the Lean type of top-level function f as a value, "" when
-// a type is outside the subset.
+// a type is outside the subset or f has inout parameters (its definition
+// returns their final values too).
 func (g *gen) funcDeclType(f *coreexport.Func) string {
 	t := paramsType(f.Params, f.Result)
-	if t == nil || len(f.TypeParams) > 0 {
+	if t == nil || len(f.TypeParams) > 0 || hasInout(f.Params) {
 		return ""
 	}
 	return g.safeType(func() string { return g.funcTypeLean(t) })
@@ -141,6 +142,9 @@ func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFun
 		}
 		if p.Default != nil {
 			unsup(p.Pos, "param-default")
+		}
+		if p.Inout {
+			unsup(p.Pos, "inout-lambda-param")
 		}
 		t := p.Type
 		if t == nil && expect != nil && i < len(expect.Params) {
