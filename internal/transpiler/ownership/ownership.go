@@ -180,6 +180,10 @@ type Binding struct {
 	Pointee string // the pointee type, "" when unknown
 	Unique  bool
 	Reasons []Reason // empty when Unique
+	// ClosureLent (phase 3 only): a closure passed to a non-escaping
+	// parameter uses the binding, which phase 3 counts as a borrow and phase
+	// 1 as a capture.
+	ClosureLent bool `json:",omitempty"`
 }
 
 // Func is the analysis of one function or method.
@@ -190,13 +194,32 @@ type Func struct {
 	Name string
 	// Summary is the function's borrow summary; nil when it has no pointer
 	// receiver, parameter or result.
-	Summary  *transpiler.BorrowSummary
+	Summary *transpiler.BorrowSummary
+	// Bindings are phase 1's verdicts, the ones the compiler's checks rely
+	// on.
 	Bindings []Binding
+	// Phase3 are the verdicts when a closure passed to a non-escaping
+	// parameter is counted as borrowing the pointers it uses (ownership
+	// phase 3, docs/OWNERSHIP_DESIGN.MD section 3.3). Analysis only: no check
+	// enforces them yet. The phase-3 walk knows more types, so it may bind
+	// pointers phase 1 does not.
+	Phase3 []Binding `json:",omitempty"`
 }
 
 // Unique reports whether every pointer binding of f is unique.
 func (f Func) Unique() bool {
 	for _, b := range f.Bindings {
+		if !b.Unique {
+			return false
+		}
+	}
+	return true
+}
+
+// Phase3Unique reports whether every pointer binding of f is unique in
+// phase 3's view (Func.Phase3).
+func (f Func) Phase3Unique() bool {
+	for _, b := range f.Phase3 {
 		if !b.Unique {
 			return false
 		}
@@ -229,20 +252,24 @@ func Analyze(pkg string, files []File, rich *transpiler.RichAST, opts Options) *
 	a := newPackage(pkg, files, rich, opts)
 	a.fixpoint()
 	rep := &Report{Package: pkg, decls: a.decls}
-	// Walk every declaration before judging any: a later one may use an
-	// earlier one as a function value.
+	// Walk every declaration, in both views, before judging any: a later one
+	// may use an earlier one as a function value.
 	walks := make([]*walker, len(a.decls))
+	walks3 := make([]*walker, len(a.decls))
 	for i, d := range a.decls {
-		walks[i] = a.walk(d)
+		walks[i] = a.walk(d, false)
+		walks3[i] = a.walk(d, true)
 	}
 	for i, d := range a.decls {
-		w := walks[i]
 		f := Func{File: d.file.path, Line: d.line, Name: d.name}
 		if d.relevant {
 			f.Summary = d.summary
 		}
-		for _, b := range w.order {
+		for _, b := range walks[i].order {
 			f.Bindings = append(f.Bindings, a.verdict(d, b))
+		}
+		for _, b := range walks3[i].order {
+			f.Phase3 = append(f.Phase3, a.verdict(d, b))
 		}
 		rep.Funcs = append(rep.Funcs, f)
 	}
@@ -290,7 +317,7 @@ func applySummaries(decls []*decl) {
 
 // verdict is the Binding for b, a binding of d, after the final walk.
 func (a *pkg) verdict(d *decl, b *binding) Binding {
-	out := Binding{Name: b.name, Role: b.role, Pointee: typeText(b.pointee)}
+	out := Binding{Name: b.name, Role: b.role, Pointee: typeText(b.pointee), ClosureLent: b.closureLent}
 	reasons := append([]Reason(nil), b.reasons...)
 	if b.role != RoleLocal {
 		// A parameter or receiver is unique only when every caller lends

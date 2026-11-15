@@ -856,11 +856,50 @@ type BorrowSummary struct {
 	// ReturnsFresh is true for a pointer result that is always a new
 	// allocation no other binding refers to.
 	ReturnsFresh bool
+
+	// The fields below are ownership phase 3's (docs/OWNERSHIP_DESIGN.MD
+	// section 3.3). The analysis reads them; the compiler's checks do not
+	// yet, so they change no diagnostic.
+
+	// NonEscapingParams is index-aligned with the parameters: true for a
+	// function-typed or by-name parameter that the callee only calls during
+	// the call (or passes to another such parameter, or captures in a
+	// closure passed to one), never storing, returning or sending it.
+	NonEscapingParams []bool
+	// ClosureReceiverBorrowed, ClosureBorrowedParams and ClosureReturnsFresh
+	// are ReceiverBorrowed, BorrowedParams and ReturnsFresh with a capture
+	// by a closure passed directly to a non-escaping parameter counted as a
+	// lend rather than an escape.
+	ClosureReceiverBorrowed bool
+	ClosureBorrowedParams   []bool
+	ClosureReturnsFresh     bool
 }
 
+// bit is bits[i], false out of range.
+func bit(bits []bool, i int) bool { return i >= 0 && i < len(bits) && bits[i] }
+
 // ParamBorrowed reports whether parameter i is a borrowed pointer.
-func (s *BorrowSummary) ParamBorrowed(i int) bool {
-	return s != nil && i >= 0 && i < len(s.BorrowedParams) && s.BorrowedParams[i]
+func (s *BorrowSummary) ParamBorrowed(i int) bool { return s != nil && bit(s.BorrowedParams, i) }
+
+// ParamNonEscaping reports whether parameter i is a function the callee
+// only calls during the call (NonEscapingParams).
+func (s *BorrowSummary) ParamNonEscaping(i int) bool { return s != nil && bit(s.NonEscapingParams, i) }
+
+// ParamClosureBorrowed is ParamBorrowed for ClosureBorrowedParams.
+func (s *BorrowSummary) ParamClosureBorrowed(i int) bool {
+	return s != nil && bit(s.ClosureBorrowedParams, i)
+}
+
+// NonEscapingNames is the names, of names (the parameters'), of the
+// non-escaping parameters; nil for none.
+func (s *BorrowSummary) NonEscapingNames(names []string) []string {
+	var out []string
+	for i, n := range names {
+		if s.ParamNonEscaping(i) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // Equal reports whether s and o are the same summary.
@@ -869,7 +908,10 @@ func (s *BorrowSummary) Equal(o *BorrowSummary) bool {
 		return s == o
 	}
 	return s.ReceiverBorrowed == o.ReceiverBorrowed && s.ReturnsFresh == o.ReturnsFresh &&
-		slices.Equal(s.BorrowedParams, o.BorrowedParams)
+		slices.Equal(s.BorrowedParams, o.BorrowedParams) &&
+		slices.Equal(s.NonEscapingParams, o.NonEscapingParams) &&
+		s.ClosureReceiverBorrowed == o.ClosureReceiverBorrowed && s.ClosureReturnsFresh == o.ClosureReturnsFresh &&
+		slices.Equal(s.ClosureBorrowedParams, o.ClosureBorrowedParams)
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

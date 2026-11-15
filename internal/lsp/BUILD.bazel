@@ -57,6 +57,8 @@ go_test(
         "go_keyword_name_test.go",
         "go_result_list_hover_test.go",
         "inout_hover_test.go",
+        "nonescaping_hover_test.go",
+        "nonescaping_note_test.go",
         "go_results_test.go",
         "hover_chain_test.go",
         "hover_coverage_test.go",

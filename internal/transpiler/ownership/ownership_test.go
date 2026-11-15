@@ -101,6 +101,18 @@ func bindingOf(t *testing.T, r *ownership.Report, fn, name string) ownership.Bin
 	return ownership.Binding{}
 }
 
+// phase3Of is binding name of fn in phase 3's view (Func.Phase3).
+func phase3Of(t *testing.T, r *ownership.Report, fn, name string) ownership.Binding {
+	t.Helper()
+	for _, b := range funcOf(t, r, fn).Phase3 {
+		if b.Name == name {
+			return b
+		}
+	}
+	t.Fatalf("%s has no phase-3 pointer binding %s", fn, name)
+	return ownership.Binding{}
+}
+
 // kinds is the reason kinds of b, sorted and without duplicates.
 func kinds(b ownership.Binding) []string {
 	seen := map[string]bool{}
@@ -116,6 +128,8 @@ func kinds(b ownership.Binding) []string {
 }
 
 const counterSrc = `package own
+
+import "strings"
 
 type counter struct {
     var n int
@@ -216,9 +230,11 @@ func localInLambda() int = applyOne((k) => {
     c.inc()
     c.n + k
 })
+struct fnBox(F func(int) int)
+func storeOne(f func(int) int) fnBox = fnBox(f)
 func localCapturedInner() int = applyOne((k) => {
     val c = newCounter()
-    applyOne((j) => c.get() + j + k)
+    storeOne((j) => c.get() + j + k).F(1)
 })
 func applyPtr(f func(int) Ptr[counter]) Ptr[counter] = f(1)
 func localResultOfLambda() Ptr[counter] = applyPtr((k) => {
@@ -230,10 +246,50 @@ func localReturnedFromLambda() Ptr[counter] = applyPtr((k) => {
     return c
 })
 func lazyInt(f func() int) int = f()
-func localInByName() int = lazyInt(if (true) {
+func lazyKeep(f func() int) func() int = f
+func localInByName() int = lazyKeep(if (true) {
+    val c = newCounter()
+    c.n
+} else 0)()
+func localInBorrowedByName() int = lazyInt(if (true) {
     val c = newCounter()
     c.n
 } else 0)
+func forwards(f func(int) int) int = applyOne(f)
+func forwardsToStore(f func(int) int) fnBox = storeOne(f)
+func capturesInEscaping(f func(int) int) fnBox = storeOne((k) => f(k))
+func capturesInBorrowed(f func(int) int) int = applyOne((k) => f(k) + 1)
+func recursive(f func(int) int, n int) int = if (n == 0) f(0) else recursive(f, n - 1)
+func (c Ptr[counter]) bumpVia() int = applyOne((k) => {
+    c.inc()
+    k
+})
+func (c Ptr[counter]) keepVia() fnBox = storeOne((k) => {
+    c.inc()
+    k
+})
+func applyWith(c Ptr[counter], f func(int) int) int = f(c.n)
+func (c Ptr[counter]) overlap() int = applyWith(c, (k) => {
+    c.inc()
+    k
+})
+func freshVia() Ptr[counter] {
+    val c = newCounter()
+    applyOne((k) => {
+        c.inc()
+        k
+    })
+    c
+}
+func goCycleA(f func(rune) rune, n int) string = if (n == 0) strings.Map(f, "x") else goCycleB(f, n - 1)
+func goCycleB(f func(rune) rune, n int) string = goCycleA(f, n)
+func pureCycleA(f func(int) int, n int) int = if (n == 0) f(0) else pureCycleB(f, n - 1)
+func pureCycleB(f func(int) int, n int) int = pureCycleA(f, n)
+func viaFuncValue(f func(int) int, h func(func(int) int) int) int = h(f)
+type runner interface {
+    Run(f func(int) int) int
+}
+func viaInterface(r runner, f func(int) int) int = r.Run(f)
 `
 
 func TestSummariesAndReasons(t *testing.T) {
@@ -290,9 +346,17 @@ func TestSummariesAndReasons(t *testing.T) {
 		// A pointer declared in a lambda escapes through its result.
 		{"localResultOfLambda", "c", []string{"returned"}},
 		{"localReturnedFromLambda", "c", []string{"returned"}},
-		// A by-name argument is not a lambda body: its thunk may outlive the
-		// call, so every pointer use in it is a capture.
+		// A by-name argument of an escaping parameter is not a lambda body:
+		// its thunk may outlive the call, so every pointer use in it is a
+		// capture.
 		{"localInByName", "c", []string{"captured"}},
+		{"counter.keepVia", "c", []string{"captured"}},
+		// Phase 1 counts every capture, a closure passed to a non-escaping
+		// parameter included.
+		{"counter.overlap", "c", []string{"captured"}},
+		{"counter.bumpVia", "c", []string{"captured"}},
+		{"freshVia", "c", []string{"captured"}},
+		{"localInBorrowedByName", "c", []string{"captured"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.fn+"/"+tc.binding, func(t *testing.T) {
@@ -304,6 +368,60 @@ func TestSummariesAndReasons(t *testing.T) {
 	// A pointer bound inside a lambda is not captured by that lambda.
 	local := bindingOf(t, r, "localInLambda", "c")
 	require.True(t, local.Unique, "localInLambda's c: %v", local.Reasons)
+
+	// Phase 3 (analysis only): a closure passed to a non-escaping parameter
+	// is counted as borrowing the pointers it uses.
+	phase3 := []struct {
+		fn, binding string
+		want        []string // nil: unique
+	}{
+		{"localInBorrowedByName", "c", nil},
+		{"counter.bumpVia", "c", nil},
+		{"freshVia", "c", nil},
+		{"localInLambda", "c", nil},
+		// A closure passed to an escaping parameter still captures.
+		{"counter.keepVia", "c", []string{"captured"}},
+		{"localCapturedInner", "c", []string{"captured"}},
+		// A call may not both lend c and pass a closure that uses it.
+		{"counter.overlap", "c", []string{"passed-twice"}},
+	}
+	for _, tc := range phase3 {
+		t.Run("phase3/"+tc.fn+"/"+tc.binding, func(t *testing.T) {
+			b := phase3Of(t, r, tc.fn, tc.binding)
+			require.Equal(t, tc.want == nil, b.Unique, "%v", b.Reasons)
+			require.Equal(t, tc.want, kinds(b), "%v", b.Reasons)
+		})
+	}
+	require.True(t, phase3Of(t, r, "counter.bumpVia", "c").ClosureLent)
+	require.False(t, bindingOf(t, r, "counter.bumpVia", "c").ClosureLent)
+
+	// Non-escaping function parameters: a greatest fixed point, in which
+	// only the package's own GALA functions start optimistic. A parameter
+	// passed to Go, to a function value or to an interface method escapes,
+	// even through a forwarding cycle.
+	nonEscaping := []struct {
+		fn    string
+		param int
+		want  bool
+	}{
+		{"applyOne", 0, true}, {"lazyInt", 0, true}, {"forwards", 0, true},
+		{"capturesInBorrowed", 0, true}, {"recursive", 0, true},
+		{"pureCycleA", 0, true}, {"pureCycleB", 0, true},
+		{"storeOne", 0, false}, {"lazyKeep", 0, false}, {"forwardsToStore", 0, false},
+		{"capturesInEscaping", 0, false},
+		{"goCycleA", 0, false}, {"goCycleB", 0, false},
+		{"viaFuncValue", 0, false}, {"viaInterface", 1, false},
+	}
+	for _, tc := range nonEscaping {
+		require.Equal(t, tc.want, funcOf(t, r, tc.fn).Summary.ParamNonEscaping(tc.param), "%s's parameter %d", tc.fn, tc.param)
+	}
+	// Phase 3's bits sit beside phase 1's, which the compiler's checks read.
+	bump := funcOf(t, r, "counter.bumpVia")
+	require.True(t, bump.Summary.ClosureReceiverBorrowed)
+	require.False(t, bump.Summary.ReceiverBorrowed)
+	fresh := funcOf(t, r, "freshVia")
+	require.True(t, fresh.Summary.ClosureReturnsFresh)
+	require.False(t, fresh.Summary.ReturnsFresh)
 	// Reading a field into a call of a function value lends nothing.
 	require.True(t, bindingOf(t, r, "readsIntoValue", "c").Unique)
 	// A nullable parameter is still borrowed: only its uniqueness needs a

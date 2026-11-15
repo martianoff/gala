@@ -25,7 +25,7 @@ var collectionPackages = map[string]bool{"collection_immutable": true, "collecti
 // builtin.
 func (a *pkg) bareCallee(w *walker, name string) *callee {
 	if d := a.funcs[qualified(a.name, name)]; d != nil {
-		return ownCallee(d)
+		return ownCallee(a, d)
 	}
 	if goBuiltins[name] || valueBasics[name] {
 		// A builtin, or a conversion to a basic type.
@@ -199,9 +199,9 @@ func knownType(pv *transpiler.PackageValMetadata) transpiler.Type {
 	return pv.Type
 }
 
-func ownCallee(d *decl) *callee {
+func ownCallee(a *pkg, d *decl) *callee {
 	return &callee{kind: calleeGala, name: d.name, params: d.params, pnames: d.pnames, variadic: d.variadic,
-		result: d.result, own: d, method: d.mmeta != nil, recvPtr: d.recvPtr}
+		result: d.result, own: d, method: d.mmeta != nil, recvPtr: d.recvPtr, tparams: d.tparams(a)}
 }
 
 // constructorCallee is a call of type key, tm its metadata: a case's
@@ -225,7 +225,7 @@ func constructorCallee(key string, tm *transpiler.TypeMetadata, collection bool)
 
 func funcCallee(key string, fm *transpiler.FunctionMetadata, collection bool) *callee {
 	return &callee{kind: calleeGala, name: key, params: fm.ParamTypes, pnames: fm.ParamNames, variadic: fm.Variadic,
-		result: notTypeParam(fm.ReturnType, fm.TypeParams), meta: fm.Borrow, collection: collection}
+		result: notTypeParam(fm.ReturnType, fm.TypeParams), meta: fm.Borrow, collection: collection, tparams: fm.TypeParams}
 }
 
 // methodCallee resolves method name of a value of type t (or of the pointee
@@ -241,7 +241,7 @@ func (a *pkg) methodCallee(t transpiler.Type, name string) *callee {
 			c := &callee{kind: calleeGala, name: strings.TrimPrefix(key, a.name+".") + "." + name,
 				params: substituteAll(m.ParamTypes, sub), pnames: m.ParamNames, variadic: m.Variadic,
 				result: notTypeParam(substitute(m.ReturnType, sub), m.TypeParams), meta: m.Borrow, method: true, recvPtr: m.PointerReceiver,
-				collection: collectionPackages[tm.Package]}
+				collection: collectionPackages[tm.Package], tparams: append(slices.Clone(m.TypeParams), tm.TypeParams...)}
 			if d := a.methods[key+"#"+name]; d != nil {
 				c.own = d
 			}
@@ -339,13 +339,13 @@ func (w *walker) peekCallee(p native.PostfixExprNode) *callee {
 			return unknown
 		}
 		m := sufs[0].Identifier().GetText()
-		switch b := w.binds[name]; {
+		switch b, t := w.binds[name], w.typeOf(name); {
 		case b != nil:
 			if c := w.a.methodCallee(b.pointee, m); c != nil {
 				return c
 			}
-		case w.typed(name) != nil:
-			if c := w.a.methodCallee(w.typed(name), m); c != nil {
+		case t != nil:
+			if c := w.a.methodCallee(t, m); c != nil {
 				return c
 			}
 		case !w.local[name]:

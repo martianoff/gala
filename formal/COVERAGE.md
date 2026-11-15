@@ -342,17 +342,25 @@ It is the output of phase 1 of [the ownership design](../docs/OWNERSHIP_DESIGN.M
 uniqueness, `internal/transpiler/ownership`) over the repository's GALA code. A pointer
 binding (a `Ptr`/`*T` receiver or parameter, or a local `val` bound to a pointer) is
 **unique** when it is of fresh origin, only ever lent downward, never reaches Go, and points
-at an owned-shaped value. These are analysis results, not proofs.
+at an owned-shaped value. Phase 1 is what the compiler's checks rely on.
+
+The rows marked *phase 3* are analysis only, not enforced: there the analysis treats a
+closure passed to a non-escaping parameter (one the callee only calls during the call) as
+borrowing the pointers it uses, where phase 1 counts a capture. These are analysis
+results, not proofs.
 
 | | Libraries | Examples | 
 |---|---|---|
-| Functions and methods | 1758 | 1734 | 
+| Functions and methods | 1758 | 1736 | 
 | …with a pointer binding | 584 | 160 | 
 | …whose pointer bindings are all unique | 0 (0.0%) | 9 (5.6%) | 
 | Pointer bindings | 834 | 229 | 
 | …receivers unique | 0 of 467 | 1 of 55 | 
 | …params unique | 0 of 90 | 7 of 63 | 
 | …locals unique | 0 of 277 | 6 of 111 | 
+| *Phase 3* (analysis only, not enforced): functions whose pointer bindings are all unique | 0 of 584 (0.0%) | 9 of 160 (5.6%) | 
+| *Phase 3*: pointer bindings unique | 0 of 834 | 14 of 229 | 
+| *Phase 3*: …of which a closure passed to a non-escaping parameter uses | 0 | 0 | 
 | Packages that did not analyze | 0 | 2 | 
 
 ### Reasons

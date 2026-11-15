@@ -1,6 +1,7 @@
 package ownership
 
 import (
+	"maps"
 	"regexp"
 	"strings"
 
@@ -24,6 +25,11 @@ type binding struct {
 	// depth is len(w.overrides) where b was bound: a scope override below it
 	// is the body b is declared in (see overridden).
 	depth int
+	// seq is b's index in walker.order.
+	seq int
+	// closureLent: a closure passed to a non-escaping parameter uses b
+	// (phase 3), which phase 1 counts as a capture.
+	closureLent bool
 }
 
 // escapes reports whether b has a reason that lets it escape.
@@ -88,6 +94,9 @@ type callee struct {
 	// method: a method callee; recvPtr, its receiver is a pointer.
 	method  bool
 	recvPtr bool
+	// tparams are the type parameters params may still name: the callee's
+	// own, and its receiver type's.
+	tparams []string
 }
 
 func (c *callee) summary() *transpiler.BorrowSummary {
@@ -97,13 +106,48 @@ func (c *callee) summary() *transpiler.BorrowSummary {
 	return c.meta
 }
 
-// returnsFresh reports whether a call of c returns a fresh pointer.
-func (c *callee) returnsFresh() bool {
+// returnsFresh reports whether a call of c returns a fresh pointer, in
+// phase 3's view when p3 (BorrowSummary.ClosureReturnsFresh).
+func (c *callee) returnsFresh(p3 bool) bool {
 	if c == nil || c.kind != calleeGala || !isPointer(c.result) {
 		return false
 	}
 	s := c.summary()
-	return s != nil && s.ReturnsFresh
+	if s == nil {
+		return false
+	}
+	if p3 {
+		return s.ClosureReturnsFresh
+	}
+	return s.ReturnsFresh
+}
+
+// paramBorrowed reports whether c borrows pointer parameter i, in phase 3's
+// view when p3.
+func (c *callee) paramBorrowed(i int, p3 bool) bool {
+	if p3 {
+		return c.summary().ParamClosureBorrowed(i)
+	}
+	return c.summary().ParamBorrowed(i)
+}
+
+// receiverBorrowed reports whether c borrows its pointer receiver, in phase
+// 3's view when p3.
+func (c *callee) receiverBorrowed(p3 bool) bool {
+	s := c.summary()
+	if s == nil {
+		return false
+	}
+	if p3 {
+		return s.ClosureReceiverBorrowed
+	}
+	return s.ReceiverBorrowed
+}
+
+// paramNonEscaping reports whether c only calls its function parameter i
+// during the call: a GALA callee whose summary says so.
+func (c *callee) paramNonEscaping(i int) bool {
+	return c != nil && c.kind == calleeGala && c.summary().ParamNonEscaping(i)
 }
 
 // paramType is the type of argument i, nil when unknown.
@@ -133,6 +177,25 @@ func (c *callee) paramIndex(name string) int {
 type callState struct {
 	callee *callee
 	whole  map[*binding]bool
+	// captured holds the pointer bindings that closures passed to the
+	// call's non-escaping parameters use (phase 3): the call may not also
+	// lend them.
+	captured map[*binding]native.GalaNodeRef
+}
+
+// fbinding is a function-typed (or by-name) parameter of the function being
+// walked, in phase 3: whether it escapes decides its NonEscapingParams bit.
+type fbinding struct {
+	index   int
+	escapes bool
+}
+
+// capFrame is a closure passed to a non-escaping parameter, being walked
+// (phase 3): the pointer bindings declared before it (index below start)
+// that it uses.
+type capFrame struct {
+	start int
+	used  map[*binding]native.GalaNodeRef
 }
 
 // walker walks one function's body.
@@ -161,11 +224,50 @@ type walker struct {
 	// are the local bindings returned.
 	fresh     bool
 	retLocals []*binding
+	// p3 walks as ownership phase 3 sees the body (docs/OWNERSHIP_DESIGN.MD
+	// section 3.3): a closure passed directly to a non-escaping parameter
+	// borrows the pointers it uses instead of capturing them, and callee
+	// summaries are read in their Closure* view.
+	p3 bool
+	// fbinds holds the function's function-typed parameters (p3 only);
+	// frames the non-escaping closures being walked.
+	fbinds map[string]*fbinding
+	frames []*capFrame
+	// scoped holds the types of the lambda parameters and pattern variables
+	// in scope, nil when unknown; otherBound the names some other binder
+	// binds, whose types scoped never gives (see typeOf).
+	scoped     map[string]transpiler.Type
+	otherBound map[string]bool
 }
 
-func (a *pkg) walk(d *decl) *walker {
+// typeOf is the type of the local name: in phase 3, a lambda parameter's or
+// pattern variable's in scope when only those bind it; else typed's. Phase
+// 1's walk, whose bits the compiler's checks read, keeps its own precision.
+func (w *walker) typeOf(name string) transpiler.Type {
+	if w.p3 && w.local[name] && !w.otherBound[name] {
+		return w.scoped[name]
+	}
+	return w.typed(name)
+}
+
+// withScoped binds the scoped types in ts while body runs, shadowing any
+// outer binding of the same names, and restores them after.
+func (w *walker) withScoped(ts map[string]transpiler.Type, body func()) {
+	if len(ts) == 0 {
+		body()
+		return
+	}
+	old := maps.Clone(w.scoped)
+	maps.Copy(w.scoped, ts)
+	body()
+	w.scoped = old
+}
+
+// walk walks d's body, as phase 3 sees it when p3.
+func (a *pkg) walk(d *decl, p3 bool) *walker {
 	w := &walker{a: a, d: d, binds: map[string]*binding{}, local: map[string]bool{}, bindCount: map[string]int{},
-		types: map[string]transpiler.Type{}, fresh: true}
+		types: map[string]transpiler.Type{}, fresh: true, p3: p3, fbinds: map[string]*fbinding{},
+		scoped: map[string]transpiler.Type{}, otherBound: map[string]bool{}}
 	w.countBinders(d.node.GalaNodeRef)
 	fn := d.node
 	if d.mmeta != nil {
@@ -190,6 +292,11 @@ func (a *pkg) walk(d *decl) *walker {
 			if p.VAR().Ok() {
 				w.reason(b, Origin, "a var parameter", p.GalaNodeRef)
 			}
+		}
+		if p3 && a.funcParam(d, i) && w.bindCount[name] == 1 && !p.VAR().Ok() {
+			// A parameter bound once, that the body cannot reassign: every
+			// use of its name is a use of the argument.
+			w.fbinds[name] = &fbinding{index: i}
 		}
 	}
 	for _, p := range params {
@@ -245,7 +352,10 @@ func hasBindDecl(stmts []native.StatementNode) bool {
 // summary is the borrow summary the walk found.
 func (w *walker) summary() *transpiler.BorrowSummary {
 	d := w.d
-	s := &transpiler.BorrowSummary{BorrowedParams: make([]bool, len(d.params))}
+	s := &transpiler.BorrowSummary{BorrowedParams: make([]bool, len(d.params)), NonEscapingParams: make([]bool, len(d.params))}
+	for _, fb := range w.fbinds {
+		s.NonEscapingParams[fb.index] = !fb.escapes
+	}
 	for _, b := range w.order {
 		switch b.role {
 		case RoleReceiver:
@@ -278,7 +388,7 @@ func (w *walker) typed(name string) transpiler.Type {
 func (w *walker) newBinding(name string, role Role, index int, pointee transpiler.Type, fresh bool, at native.GalaNodeRef, nullable bool) *binding {
 	tok := at.Start()
 	b := &binding{name: name, role: role, index: index, pointee: pointee, fresh: fresh,
-		file: w.d.file.path, line: int(tok.Line), col: int(tok.Column) + 1, depth: len(w.overrides)}
+		file: w.d.file.path, line: int(tok.Line), col: int(tok.Column) + 1, depth: len(w.overrides), seq: len(w.order)}
 	if nullable {
 		w.reason(b, Nullable, "", at)
 	}
@@ -343,15 +453,68 @@ func (w *walker) pushScope(detail string) {
 }
 func (w *walker) pop() { w.overrides = w.overrides[:len(w.overrides)-1] }
 
+// touch records a use of b in every non-escaping closure being walked that
+// b was declared outside of: the closure borrows b for its call.
+func (w *walker) touch(b *binding, at native.GalaNodeRef) {
+	for _, f := range w.frames {
+		if b.seq < f.start {
+			if _, ok := f.used[b]; !ok {
+				f.used[b] = at
+			}
+			b.closureLent = true
+		}
+	}
+}
+
+// funcUse is a use of fb, a function parameter, by its name with suffixes
+// sufs and use u (phase 3). It stays non-escaping when the use is a call,
+// or the bare name passed to a non-escaping parameter, outside any override
+// (an escaping closure, an argument the analysis cannot follow).
+func (w *walker) funcUse(fb *fbinding, sufs []native.PostfixSuffixNode, u use) {
+	switch {
+	case len(w.overrides) > 0:
+		fb.escapes = true
+	case len(sufs) > 0 && isCall(sufs[0]):
+	case len(sufs) == 0 && u.kind == useArg && u.call.callee.paramNonEscaping(u.param):
+	default:
+		fb.escapes = true
+	}
+}
+
+// borrowedClosure walks body, a closure passed to a non-escaping parameter
+// of call cs (phase 3): it runs only during the call, so the pointers it
+// uses are lent to it rather than captured, and the call may not also lend
+// them (exclusivity, checked by args).
+func (w *walker) borrowedClosure(cs *callState, body func()) {
+	if cs.captured == nil {
+		cs.captured = map[*binding]native.GalaNodeRef{}
+	}
+	w.frames = append(w.frames, &capFrame{start: len(w.order), used: cs.captured})
+	w.closures++
+	body()
+	w.closures--
+	w.frames = w.frames[:len(w.frames)-1]
+}
+
 // countBinders finds every name the function binds: parameters, the
 // receiver, vals and vars, lambda parameters, pattern variables, loop
 // variables, local functions, bind/also/use names.
+//
+// It also records in otherBound the names some binder other than a lambda
+// parameter or a case pattern binds: only the rest have scoped types.
 func (w *walker) countBinders(root native.GalaNodeRef) {
-	add := func(id native.IdentifierNode) {
+	lambdaParams := map[int]bool{}
+	scopedAdd := func(id native.IdentifierNode) {
 		if id.Ok() {
 			n := id.GetText()
 			w.bindCount[n]++
 			w.local[n] = true
+		}
+	}
+	add := func(id native.IdentifierNode) {
+		scopedAdd(id)
+		if id.Ok() {
+			w.otherBound[id.GetText()] = true
 		}
 	}
 	addList := func(l native.IdentifierListNode) {
@@ -361,10 +524,18 @@ func (w *walker) countBinders(root native.GalaNodeRef) {
 	}
 	root.Walk(func(n native.GalaNodeRef) bool {
 		switch n.Kind() {
+		case native.GalaKIND_lambdaExpression:
+			for _, p := range (native.LambdaExpressionNode{GalaNodeRef: n}).Parameters().ParameterList().AllParameter() {
+				lambdaParams[p.GalaNodeRef.StartIndex()] = true
+			}
 		case native.GalaKIND_receiver:
 			add(native.ReceiverNode{GalaNodeRef: n}.Identifier())
 		case native.GalaKIND_parameter:
-			add(native.ParameterNode{GalaNodeRef: n}.Identifier())
+			if lambdaParams[n.StartIndex()] {
+				scopedAdd(native.ParameterNode{GalaNodeRef: n}.Identifier())
+			} else {
+				add(native.ParameterNode{GalaNodeRef: n}.Identifier())
+			}
 		case native.GalaKIND_valDeclaration:
 			v := native.ValDeclarationNode{GalaNodeRef: n}
 			addList(v.IdentifierList())
@@ -393,7 +564,7 @@ func (w *walker) countBinders(root native.GalaNodeRef) {
 			// Any name in a pattern may bind: count them all.
 			native.CaseClauseNode{GalaNodeRef: n}.Pattern().GalaNodeRef.Walk(func(p native.GalaNodeRef) bool {
 				if p.Kind() == native.GalaKIND_primary {
-					add(native.PrimaryNode{GalaNodeRef: p}.Identifier())
+					scopedAdd(native.PrimaryNode{GalaNodeRef: p}.Identifier())
 				}
 				return true
 			})
@@ -590,7 +761,7 @@ func (w *walker) origin(vals []native.ExpressionNode, res chainResult, typ nativ
 		}
 		if res.callee != nil {
 			if pt, ok := res.callee.result.(transpiler.PointerType); ok {
-				return pt.Elem, res.callee.returnsFresh(), pt.NonNull, true
+				return pt.Elem, res.callee.returnsFresh(w.p3), pt.NonNull, true
 			}
 		}
 		if pt, ok := res.typ.(transpiler.PointerType); ok {
@@ -658,7 +829,7 @@ func (w *walker) isFresh(e native.GalaNodeRef) bool {
 		return false
 	}
 	c := w.peekCallee(p)
-	return c.returnsFresh()
+	return c.returnsFresh(w.p3)
 }
 
 // freshBody is isFresh for a block's last statement or a case's statement.
@@ -856,6 +1027,7 @@ func (w *walker) unary(x native.UnaryExprNode, u use) chainResult {
 		// A deref read yields a copy: a lend.
 		if name, ok := bareName(operand); ok {
 			if b := w.binds[name]; b != nil {
+				w.touch(b, operand)
 				if !w.overridden(b, operand) {
 					switch {
 					case u.kind == useAddr:
@@ -919,7 +1091,7 @@ func (w *walker) lend(b *binding, cs *callState, i int, at native.GalaNodeRef) {
 	case calleeGala:
 		pt := c.paramType(i)
 		switch {
-		case isPointer(pt) && c.summary().ParamBorrowed(i):
+		case isPointer(pt) && c.paramBorrowed(i, w.p3):
 		case c.collection:
 			w.reason(b, Collection, c.name, at)
 		case isPointer(pt) && c.summary() == nil:
@@ -988,7 +1160,7 @@ func (w *walker) postfix(p native.PostfixExprNode, u use) chainResult {
 	res := w.chain(p, sufs, vu)
 	if p.MATCH().Ok() {
 		for _, c := range p.AllCaseClause() {
-			w.caseClause(c, u)
+			w.caseClause(c, u, res.typ)
 		}
 		return chainResult{}
 	}
@@ -1017,8 +1189,12 @@ func (w *walker) chain(p native.PostfixExprNode, sufs []native.PostfixSuffixNode
 	var st chainState
 	if name, ok := primIdent(prim); ok {
 		at := prim.GalaNodeRef
-		switch b := w.binds[name]; {
+		if fb := w.fbinds[name]; fb != nil {
+			w.funcUse(fb, sufs, u)
+		}
+		switch b, t := w.binds[name], w.typeOf(name); {
 		case b != nil:
+			w.touch(b, at)
 			if len(sufs) == 0 {
 				w.bareUse(b, u, at)
 				return chainResult{typ: transpiler.PointerType{Elem: b.pointee}}
@@ -1028,8 +1204,8 @@ func (w *walker) chain(p native.PostfixExprNode, sufs []native.PostfixSuffixNode
 				return chainResult{}
 			}
 			st = chainState{typ: b.pointee, interior: b, whole: true}
-		case w.typed(name) != nil:
-			st.typ = w.typed(name)
+		case t != nil:
+			st.typ = t
 			if ft, ok := st.typ.(transpiler.FuncType); ok {
 				// A parameter of a function type: its call has a signature
 				// but no summary.
@@ -1109,7 +1285,9 @@ func (w *walker) chain(p native.PostfixExprNode, sufs []native.PostfixSuffixNode
 			w.reason(b, PassedToGo, what, p.GalaNodeRef)
 		}
 	}
-	if len(sufs) > 0 && !isCall(sufs[len(sufs)-1]) {
+	// A bare name's type is the result too in phase 3, so a match on it
+	// types its patterns.
+	if len(sufs) == 0 && w.p3 || len(sufs) > 0 && !isCall(sufs[len(sufs)-1]) {
 		return chainResult{typ: st.typ, fromGo: st.fromGo}
 	}
 	last.fromGo = last.fromGo || st.fromGo
@@ -1232,7 +1410,7 @@ func (w *walker) callSuffix(st *chainState, s native.PostfixSuffixNode) chainRes
 				w.reason(b, PassedToGo, what, s.GalaNodeRef)
 			case sum == nil:
 				w.reason(b, UnknownCallee, what+" has no summary", s.GalaNodeRef)
-			case !sum.ReceiverBorrowed:
+			case !c.receiverBorrowed(w.p3):
 				w.reason(b, EscapingCallee, what, s.GalaNodeRef)
 			}
 		case c.method && c.kind == calleeGo && w.a.shape(st.recvTyp) != "":
@@ -1259,8 +1437,20 @@ func (w *walker) args(cs *callState, l native.ArgumentListNode) {
 		if a.Identifier().Ok() {
 			idx = c.paramIndex(a.Identifier().GetText())
 		}
+		borrowed := w.p3 && c.paramNonEscaping(idx)
 		if lam := a.LambdaExpression(); lam.Ok() {
-			w.lambda(lam)
+			// The parameter's function type types the lambda's parameters,
+			// for a GALA callee: the only kind whose type parameters
+			// (c.tparams) are known.
+			var ft transpiler.Type
+			if c.kind == calleeGala {
+				ft = c.paramType(idx)
+			}
+			if borrowed {
+				w.borrowedClosure(cs, func() { w.lambdaBody(lam, ft, c.tparams) })
+			} else {
+				w.lambda(lam, ft, c.tparams)
+			}
 			continue
 		}
 		pat := a.Pattern()
@@ -1288,6 +1478,11 @@ func (w *walker) args(cs *callState, l native.ArgumentListNode) {
 			w.push(PassedToGo, "an argument of "+c.name)
 			w.expr(e, valueUse(PassedToGo, c.name))
 			w.pop()
+		case borrowed && w.a.byName(c.paramType(idx)):
+			// A by-name argument of a non-escaping parameter: a thunk the
+			// callee only calls during the call. Its value is the thunk's
+			// result, which the callee receives.
+			w.borrowedClosure(cs, func() { w.expr(e, closureResult) })
 		case !c.noThunks && w.a.byName(c.paramType(idx)):
 			w.push(Captured, "a by-name argument of "+c.name)
 			w.expr(e, valueUse(Captured, c.name))
@@ -1296,26 +1491,43 @@ func (w *walker) args(cs *callState, l native.ArgumentListNode) {
 			w.expr(e, use{kind: useArg, call: cs, param: idx})
 		}
 	}
+	// Exclusivity: a pointer a borrowed closure uses may not also be lent
+	// to the same call (as an argument, or as its receiver).
+	for b, at := range cs.captured {
+		if cs.whole[b] {
+			w.reason(b, PassedTwice, "lent to "+c.name+" and used by a closure passed to it", at)
+		}
+	}
 }
 
 // byName reports whether an argument for a parameter of type t is a
 // by-name thunk: t is a function type without parameters (or an alias of
 // one). An unknown type might be one.
 func (a *pkg) byName(t transpiler.Type) bool {
-	switch tt := t.(type) {
+	switch tt := a.unalias(t).(type) {
 	case nil:
 		return true
 	case transpiler.FuncType:
 		return len(tt.Params) == 0
-	case transpiler.NamedType:
-		if alias, ok := a.rich.TypeAliases[a.typeKey(tt)]; ok {
-			return a.byName(alias)
-		}
-		if alias, ok := a.rich.TypeAliases[tt.Name]; ok {
-			return a.byName(alias)
-		}
 	}
 	return false
+}
+
+// unalias is t with its type aliases followed to what they name.
+func (a *pkg) unalias(t transpiler.Type) transpiler.Type {
+	for {
+		tt, ok := t.(transpiler.NamedType)
+		if !ok {
+			return t
+		}
+		alias, ok := a.rich.TypeAliases[a.typeKey(tt)]
+		if !ok {
+			if alias, ok = a.rich.TypeAliases[tt.Name]; !ok {
+				return t
+			}
+		}
+		t = alias
+	}
 }
 
 // closureResult is the use of a lambda's or partial function's result: it
@@ -1324,19 +1536,64 @@ var closureResult = valueUse(Returned, "returned from a closure")
 
 // lambda walks a lambda: every use inside of a pointer binding declared
 // outside it is a capture.
-func (w *walker) lambda(l native.LambdaExpressionNode) {
-	w.closure("a lambda", true, func() {
-		for _, p := range l.Parameters().ParameterList().AllParameter() {
-			if def := p.ParamDefault(); def.Ok() {
-				w.expr(def.Expression().GalaNodeRef, use{kind: useDiscard})
-			}
+func (w *walker) lambda(l native.LambdaExpressionNode, ft transpiler.Type, tparams []string) {
+	w.closure("a lambda", true, func() { w.lambdaBody(l, ft, tparams) })
+}
+
+// lambdaBody walks a lambda's parameter defaults and body; its result is a
+// closureResult. ft is the function type of the parameter it is passed to
+// (nil when it is not an argument, or unknown), which gives its untyped
+// parameters their types unless they name one of tparams.
+func (w *walker) lambdaBody(l native.LambdaExpressionNode, ft transpiler.Type, tparams []string) {
+	params := l.Parameters().ParameterList().AllParameter()
+	for _, p := range params {
+		if def := p.ParamDefault(); def.Ok() {
+			w.expr(def.Expression().GalaNodeRef, use{kind: useDiscard})
 		}
+	}
+	body := func() {
 		if l.Block().Ok() {
 			w.block(l.Block(), closureResult)
 		} else if l.Expression().Ok() {
 			w.expr(l.Expression().GalaNodeRef, closureResult)
 		}
-	})
+	}
+	if !w.p3 {
+		// Only phase 3 reads scoped types (typeOf).
+		body()
+		return
+	}
+	fn, _ := ft.(transpiler.FuncType)
+	ts := map[string]transpiler.Type{}
+	for i, p := range params {
+		if !p.Identifier().Ok() {
+			continue
+		}
+		var t transpiler.Type
+		if !p.Type_().Ok() && i < len(fn.Params) && !mentionsAny(fn.Params[i], tparams) {
+			t = fn.Params[i]
+		}
+		ts[p.Identifier().GetText()] = t
+	}
+	w.withScoped(ts, body)
+}
+
+// mentionsAny reports whether t names any of the type parameters names, or
+// is unknown: substituting a marker for them, as instantiation would,
+// changes it.
+func mentionsAny(t transpiler.Type, names []string) bool {
+	if t == nil || t.IsNil() || transpiler.IsUnusable(t) {
+		return true
+	}
+	if len(names) == 0 {
+		return false
+	}
+	marker := transpiler.NamedType{Name: "\x00"}
+	sub := make(map[string]transpiler.Type, len(names))
+	for _, n := range names {
+		sub[n] = marker
+	}
+	return strings.Contains(transpiler.SubstituteTypeParams(t, sub).String(), "\x00")
 }
 
 // closure walks a closure's body: every use of a pointer binding there is a
@@ -1354,29 +1611,139 @@ func (w *walker) closure(what string, scope bool, body func()) {
 	w.pop()
 }
 
-func (w *walker) caseClause(c native.CaseClauseNode, u use) {
+// caseClause walks a case of a match on a value of type subj (nil when
+// unknown): its pattern variables have the types subj's extractors give
+// them, in its guard and body.
+func (w *walker) caseClause(c native.CaseClauseNode, u use, subj transpiler.Type) {
 	w.push(Compared, "in a pattern")
 	w.generic(c.Pattern().GalaNodeRef)
 	w.pop()
-	if g := c.GetGuard(); g.Ok() {
-		w.expr(g.GalaNodeRef, valueUse(Other, "a guard"))
+	ts := map[string]transpiler.Type{}
+	if w.p3 {
+		// Only phase 3 reads scoped types (typeOf).
+		w.patternTypes(c.Pattern(), subj, ts)
 	}
-	if b := c.GetBodyBlock(); b.Ok() {
-		w.block(b, u)
-	} else if s := c.GetBodyStmt(); s.Ok() {
-		w.simple(s, u)
+	w.withScoped(ts, func() {
+		if g := c.GetGuard(); g.Ok() {
+			w.expr(g.GalaNodeRef, valueUse(Other, "a guard"))
+		}
+		if b := c.GetBodyBlock(); b.Ok() {
+			w.block(b, u)
+		} else if s := c.GetBodyStmt(); s.Ok() {
+			w.simple(s, u)
+		}
+	})
+}
+
+// patternTypes adds to ts the names pattern p binds, matched against a value
+// of type t: a variable gets t, an extractor's arguments the types of the
+// fields it extracts, nil where unknown. Every name the pattern holds gets
+// an entry, so it shadows an outer one.
+func (w *walker) patternTypes(p native.PatternNode, t transpiler.Type, ts map[string]transpiler.Type) {
+	ep, ok := p.AsExpressionPattern()
+	if !ok {
+		unknownNames(p.GalaNodeRef, ts)
+		return
 	}
+	e := unwrapExpr(ep.Expression().GalaNodeRef)
+	if e.Kind() != native.GalaKIND_postfixExpr {
+		unknownNames(p.GalaNodeRef, ts)
+		return
+	}
+	px := native.PostfixExprNode{GalaNodeRef: e}
+	name, isIdent := primIdent(px.PrimaryExpr())
+	sufs := px.AllPostfixSuffix()
+	var extractor string
+	var call native.PostfixSuffixNode
+	switch {
+	case isIdent && len(sufs) == 0 && !px.MATCH().Ok():
+		ts[name] = t
+		return
+	case isIdent && len(sufs) == 1 && isCall(sufs[0]):
+		extractor, call = name, sufs[0]
+	case isIdent && len(sufs) == 2 && sufs[0].Identifier().Ok() && isCall(sufs[1]):
+		extractor, call = sufs[0].Identifier().GetText(), sufs[1]
+	}
+	if extractor == "" {
+		// A literal, a tuple, a stable identifier path.
+		unknownNames(p.GalaNodeRef, ts)
+		return
+	}
+	args := call.ArgumentList().AllArgument()
+	fields := w.a.extractorFields(extractor, t, len(args))
+	for i, a := range args {
+		var ft transpiler.Type
+		if i < len(fields) {
+			ft = fields[i]
+		}
+		if a.Pattern().Ok() {
+			w.patternTypes(a.Pattern(), ft, ts)
+		} else {
+			unknownNames(a.GalaNodeRef, ts)
+		}
+	}
+}
+
+// unknownNames adds every name under n to ts with an unknown type.
+func unknownNames(n native.GalaNodeRef, ts map[string]transpiler.Type) {
+	n.Walk(func(c native.GalaNodeRef) bool {
+		if c.Kind() == native.GalaKIND_primary {
+			if id := (native.PrimaryNode{GalaNodeRef: c}).Identifier(); id.Ok() {
+				ts[id.GetText()] = nil
+			}
+		}
+		return true
+	})
+}
+
+// extractorFields is the types of the n values extractor name takes out of
+// a value of type t: a case of t's sealed type, or a companion (Some, Right,
+// …) of t's generic type; nil when unknown.
+func (a *pkg) extractorFields(name string, t transpiler.Type, n int) []transpiler.Type {
+	if t == nil {
+		return nil
+	}
+	if co := a.rich.CompanionObjects[name]; co != nil && len(co.ExtractIndices) == n {
+		if g, ok := t.(transpiler.GenericType); ok {
+			if base := g.Base.String(); base == co.TargetType || strings.HasSuffix(base, "."+co.TargetType) {
+				out := make([]transpiler.Type, n)
+				for i, idx := range co.ExtractIndices {
+					if idx < 0 || idx >= len(g.Params) {
+						return nil
+					}
+					out[i] = g.Params[idx]
+				}
+				return out
+			}
+		}
+	}
+	tm, sub := a.typeMeta(t)
+	if tm == nil || !tm.IsSealed || len(tm.TypeParams) > 0 && sub == nil {
+		// Not a sealed type, or a generic one whose type arguments are not
+		// known: its fields' types would name its type parameters.
+		return nil
+	}
+	for _, v := range tm.SealedVariants {
+		if v.Name == name && len(v.FieldTypes) == n {
+			out := make([]transpiler.Type, n)
+			for i, ft := range v.FieldTypes {
+				out[i] = unwrapImmutable(substitute(ft, sub))
+			}
+			return out
+		}
+	}
+	return nil
 }
 
 // primaryExpr walks a primary expression that is not an identifier.
 func (w *walker) primaryExpr(p native.PrimaryExprNode, u use) {
 	switch {
 	case p.LambdaExpression().Ok():
-		w.lambda(p.LambdaExpression())
+		w.lambda(p.LambdaExpression(), nil, nil)
 	case p.PartialFunctionLiteral().Ok():
 		w.closure("a partial function", true, func() {
 			for _, c := range p.PartialFunctionLiteral().AllCaseClause() {
-				w.caseClause(c, closureResult)
+				w.caseClause(c, closureResult, nil)
 			}
 		})
 	case p.IfExpression().Ok():
@@ -1489,7 +1856,7 @@ func (w *walker) generic(n native.GalaNodeRef) {
 		case native.GalaKIND_statement:
 			w.statement(native.StatementNode{GalaNodeRef: k}, use{kind: useDiscard})
 		case native.GalaKIND_lambdaExpression:
-			w.lambda(native.LambdaExpressionNode{GalaNodeRef: k})
+			w.lambda(native.LambdaExpressionNode{GalaNodeRef: k}, nil, nil)
 		case native.GalaKIND_literal:
 			w.literal(native.LiteralNode{GalaNodeRef: k})
 		default:
