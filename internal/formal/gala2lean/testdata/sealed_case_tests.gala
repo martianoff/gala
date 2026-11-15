@@ -22,6 +22,9 @@ sealed type Coin {
 
 func (c Coin) isHeads() bool = false
 
+// A package-level value whose type is not written.
+val top = Circle(5)
+
 func build(tag string, s Shape) Shape {
     Println("build", tag)
     s
@@ -44,4 +47,5 @@ func main() {
     Println(build("a", Circle(2)).isCircle())
     Println(Only(4).isOnly())
     Println(Heads().isHeads(), Tails().isTails())
+    Println(top.isCircle(), top.isDot())
 }

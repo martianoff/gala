@@ -633,6 +633,15 @@ func (g *gen) fieldByType(t, name string) *coreexport.Field {
 	return nil
 }
 
+// cloneSeen is a copy of exprType's cycle guard seen, for a second look
+// that must not see the first one's marks.
+func cloneSeen(seen map[string]bool) map[string]bool {
+	if seen == nil {
+		return map[string]bool{}
+	}
+	return maps.Clone(seen)
+}
+
 // exprType is the Lean type of expression e in scope sc (nil for a
 // package-level initializer), "" when it is not plain to see from the
 // declarations: literals, operators, locals and globals of a known type,
@@ -691,6 +700,11 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		return g.lambdaType(e, sc)
 	case *coreexport.Call:
 		if s, isSel := e.Callee.(*coreexport.Select); isSel {
+			// A generated case test, isC (caseTest). The target's type is
+			// read with seen as it is now: methodOf marks the globals it
+			// passes, after which they read as not plain to see.
+			isCase := strings.HasPrefix(s.Name, "is") &&
+				g.caseTest(g.typeByLean(g.exprType(s.Target, sc, cloneSeen(seen))), s.Name) != nil
 			// A method: its declared result, or a generated Copy or Equal.
 			if f, _ := g.methodOf(s.Target, s.Name, sc, seen); f != nil {
 				return g.safeType(func() string { return g.leanType(f.Result) })
@@ -704,7 +718,7 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			case "Equal":
 				return "Bool"
 			}
-			if g.caseTest(g.typeByLean(g.exprType(s.Target, sc, seen)), s.Name) != nil {
+			if isCase {
 				return "Bool"
 			}
 		}

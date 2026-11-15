@@ -609,11 +609,13 @@ func (g *gen) placeKind(e coreexport.Node, sc *scope) placeKind {
 }
 
 // caseTest is case C of sealed type name when m is `isC`, the test GALA
-// generates for it (GALA-E0083), and nil otherwise. GALA does not generate
-// it when the type has a method or a field of that name (the caller checks
-// methods; a field of any case counts here). A generic sealed type is left
-// out: a method it declares is outside the subset (outsideSubset), so an
-// `isC` of its own would not be seen, and would win over the generated one.
+// generates for each case (docs/errors/GALA-E0083.md), and nil otherwise.
+// A method of that name the type declares replaces it (the caller checks
+// that). A field of that name in any case is left to the report: the
+// type's Go struct holds every case's fields, so the field and the
+// generated method would clash. A generic sealed type is left out too: a
+// method it declares is outside the subset (outsideSubset), so an `isC` of
+// its own would not be seen, and would win over the generated one.
 func (g *gen) caseTest(name, m string) *variantInfo {
 	c, ok := strings.CutPrefix(m, "is")
 	if !ok || g.sealeds[name] == nil || g.isGenericDecl(name) {
@@ -623,9 +625,11 @@ func (g *gen) caseTest(name, m string) *variantInfo {
 	if v == nil || v.sealed.Name != name {
 		return nil
 	}
-	for _, f := range g.typeFields(name) {
-		if f.Name == m {
-			return nil
+	for _, vn := range g.sealeds[name].Variants {
+		for _, f := range vn.(*coreexport.Variant).Fields {
+			if f, ok := f.(*coreexport.Field); ok && f.Name == m {
+				return nil
+			}
 		}
 	}
 	return v
