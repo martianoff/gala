@@ -1,0 +1,116 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// `gala fix inout` rewrites Ptr receivers and parameters that are only lent
+// downward to inout. inout_fix_before.gala is its input and
+// inout_fix_after.gala its output, byte for byte (internal/inoutfix's test
+// checks it). Both print the same.
+
+struct Counter(var n int, label string)
+
+// A borrowed receiver: converted.
+func (c Ptr[Counter]) inc() int {
+    c.n = c.n + 1
+    c.n
+}
+
+// A value receiver: not a pointer, left alone.
+func (c Counter) show() string = s"${c.label}=${c.n}"
+
+// A borrowed parameter, lent on to a borrowed receiver: converted.
+func bump(c Ptr[Counter], by int) {
+    c.n = c.n + by
+    c.inc()
+}
+
+// Lent whole to another converted parameter: `c` becomes `&c`.
+func bumpTwice(c Ptr[Counter]) {
+    bump(c, 1)
+    bump(c, 2)
+}
+
+// Read and written as a whole: `*c` becomes `c`.
+func reset(c Ptr[Counter]) {
+    val old = *c
+    *c = Counter(0, old.label + "'")
+}
+
+// Recursive: lends itself on.
+func countdown(c Ptr[Counter], k int) {
+    if k > 0 {
+        c.inc()
+        countdown(c, k - 1)
+    }
+}
+
+// Generic pointee.
+struct Box[T any](var value T, var writes int)
+
+func put[T any](b Ptr[Box[T]], v T) {
+    b.value = v
+    b.writes = b.writes + 1
+}
+
+// Kept: stored in an Option, so it escapes.
+var last = None[Ptr[Counter]]()
+
+func remember(c Ptr[Counter]) {
+    last = Some(c)
+}
+
+// A Ptr returned by a call lends its pointee too: converted.
+func fresh(label string) Ptr[Counter] = &Counter(0, label)
+
+func bumpFresh(c Ptr[Counter]) int {
+    c.n = c.n + 10
+    c.n
+}
+
+// Kept: main lends it a slice element, which is not a place an inout
+// parameter can take. The analysis cannot see that; the fix finds it by
+// compiling the rewrite.
+func addHundred(c Ptr[Counter]) int {
+    c.n = c.n + 100
+    c.n
+}
+
+// Kept: used as a function value.
+func double(c Ptr[Counter]) {
+    c.n = c.n * 2
+}
+
+func applyTo(c Ptr[Counter], f func(Ptr[Counter])) {
+    f(c)
+}
+
+func main() {
+    var c = Counter(0, "c")
+    c.inc()
+    bump(&c, 5)
+    bumpTwice(&c)
+    Println(c.show())
+
+    reset(&c)
+    countdown(&c, 3)
+    Println(c.show())
+
+    // A Ptr the caller holds lends its pointee.
+    val p = &Counter(1, "p")
+    bump(p, 1)
+    p.inc()
+    Println(p.show())
+
+    var b = Box(value = "", writes = 0)
+    put(&b, "x")
+    put(&b, "y")
+    Println(s"${b.value} ${b.writes}")
+
+    remember(&c)
+    Println(bumpFresh(fresh("f")))
+    var cs = SliceOf(Counter(1, "s0"), Counter(2, "s1"))
+    Println(addHundred(&cs[1]))
+    Println(cs[1].show())
+    applyTo(&c, double)
+    Println(c.show())
+}

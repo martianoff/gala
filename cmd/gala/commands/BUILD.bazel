@@ -10,6 +10,7 @@ go_library(
         "doc.go",
         "export.go",
         "explain.go",
+        "fix.go",
         "imports.go",
         "lsp.go",
         "mod.go",
@@ -48,6 +49,7 @@ go_library(
         "//internal/depman/sum",
         "//internal/depman/version",
         "//internal/goexport",
+        "//internal/inoutfix",
         "//internal/lsp",
         "//internal/parser",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it

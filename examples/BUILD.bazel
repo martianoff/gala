@@ -5486,3 +5486,42 @@ gala_exec_test(
     src = "struct_literal_std_named_fields.gala",
     expected = "struct_literal_std_named_fields.out",
 )
+
+# `gala fix inout` (internal/inoutfix): inout_fix_after.gala is the fix's
+# output for inout_fix_before.gala, byte for byte, and both print the same.
+gala_exec_test(
+    name = "inout_fix_before",
+    src = "inout_fix_before.gala",
+    expected = "inout_fix_before.out",
+    deps = ["//go_interop"],
+)
+
+gala_exec_test(
+    name = "inout_fix_after",
+    src = "inout_fix_after.gala",
+    expected = "inout_fix_after.out",
+    deps = ["//go_interop"],
+)
+
+exports_files([
+    "inout_fix_after.gala",
+    "inout_fix_before.gala",
+])
+
+# A method of another package whose Ptr receiver is lent on to inout
+# callees (which lend it on with `&`) is borrowed, so it may be called on an
+# inout place. Ownership phase 1 used to count `&t` of an inout binding as an
+# address taken, and the call was rejected with GALA-E0113.
+gala_library(
+    name = "inout_lend_receiver",
+    srcs = ["inout_lend_receiver/tally.gala"],
+    importpath = "martianoff/gala/examples/inout_lend_receiver",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "inout_lend_receiver_test",
+    src = "inout_lend_receiver_test.gala",
+    expected = "inout_lend_receiver_test.out",
+    deps = [":inout_lend_receiver"],
+)

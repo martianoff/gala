@@ -2,7 +2,8 @@
 
 Status: phase 1 (inferred uniqueness) and phase 2 (`inout`) are implemented. Phase 4 is a
 proposal decided in section 7. Phase 3 is designed in 3.3 and decided in section 9;
-its analysis part is being built.
+its analysis part is being built. Adoption (section 10): the `gala fix inout` codemod is
+implemented; its public API changes and the builder redesign await the maintainer.
 Discussion: [#961](https://github.com/martianoff/gala/discussions/961).
 Related: [FORMAL_SEMANTICS.MD](FORMAL_SEMANTICS.MD), [CONCURRENCY_SAFETY.MD](CONCURRENCY_SAFETY.MD).
 
@@ -1374,3 +1375,162 @@ The maintainer answered Q19–Q26 on 2026-11-14 and took every recommendation.
 | Q24 | `Try`: should a read-only capture of an `inout` place be allowed in a `Try` thunk? | (a) No: E0115 stays as it is (Q5). (b) Allow reads, and forbid only writes. | **(a).** Nothing measured needs it. |
 | Q25 | Where does gala2lean get the non-escaping fact? | (a) It decides it itself, from vetted std models or from the callee it translates. (b) It reads the transformer's summary, which then becomes a listed trust point. | **(a).** Otherwise a wrong inference would make the Lean run agree with wrong Go, and no differential run could catch it (the math expert's condition). |
 | Q26 | Go callbacks: should the no-retain allow-list gain function-parameter entries (`sort.Slice`, `slices.SortFunc` and others) in phase 3? The corpus has 4 such calls: 1 `slices.SortFunc` and 3 `slices.SortStableFunc`. | (a) No: a closure passed to Go escapes. (b) Yes, starting with the callees that appear in the corpus, each verified with `-gcflags=-m`. | **(a) for now.** 4 calls do not pay for the entries and their Lean models. Use (b) when phase 1 reports show demand. |
+
+## 10. Adoption
+
+### 10.1 The codemod
+
+`gala fix inout` (`internal/inoutfix`, planned by `ownership.PlanInout`) rewrites a
+`Ptr[T]` receiver or parameter to `inout T` when:
+
+- phase 1 finds it borrowed: only read through, written through, dereferenced, or lent
+  to a borrowed parameter or receiver;
+- it is a plain `p Ptr[T]`: not `*T`, not a `var` parameter, variadic or defaulted;
+- its function is not used as a function value, and its package has no hand-written Go;
+- every same-package parameter or receiver it is lent to is converted too, since an
+  `inout` place may only be lent on to an `inout` parameter;
+- it is not public API (an exported function or method of a package other than main),
+  unless `--public` is given.
+
+The rewrite is `p Ptr[T]` → `inout p T`, `*p` → `p`, and `p` passed whole → `&p`.
+Call sites need no change: `&x` and a `Ptr` both fill an `inout` parameter. The fix then
+transpiles the rewritten package and keeps the `Ptr` of every function the compiler
+rejects a use of, such as a slice element lent to it (`&cs[1]`), until the package
+transpiles. It does not build the generated Go. A second run changes nothing.
+`examples/inout_fix_before.gala` and `inout_fix_after.gala` are its input and output;
+both print the same. A directory of standalone programs, as `examples/` is, is one
+package per file, and a dereference or lend inside an interpolated string blocks the
+conversion, since its expression has no offsets in the file.
+
+Phase 1 now reads an `inout` binding as the place it is: its name alone is a copy of the
+pointee, and `&x` lends it. Before, `&x` counted as an address taken and a bare `x` as an
+alias, so converting code lowered the measure. An `inout` binding of a function Go can
+call stays `from-go`: Go can call the exported `GALA_` body directly, not only the
+copy-in/copy-out wrapper (3.5.1).
+
+### 10.2 Measured
+
+Dry runs on 2026-11-14, on master, galop `main` and gala-team `master`:
+
+| Tree | Functions with a `Ptr`/`*T` receiver or parameter | Converted, private | Converted, public (needs approval) | Kept: the rewrite did not compile |
+|---|---|---|---|---|
+| std (19 packages) | 507 | 30 | 68 | 0 |
+| examples (472 programs) | 97 | 16 | 0 | 0 |
+| galop (16 packages) | 98 | 43 | 0 | 2 (`sepBy1`, `parser.expectId`: E0112, the case in 2.1) |
+| gala-team | 0 | 0 | 0 | 0 |
+
+The other bindings are kept because they escape. In std, 184 are lent to a parameter that
+escapes, 150 reach Go and 81 are captured. galop's `builder` and `parser` wait for phase
+3's closure rule, as 3.3.1 predicted. std's `json` converts nothing: its encoder's
+`bytes.Buffer` field reaches Go.
+
+What the conversion moves:
+
+| Measure | Before | After |
+|---|---|---|
+| Phase 1, examples: functions whose pointer bindings are all unique | 15 of 165 (9.1%) | 15 of 165 (9.1%) |
+| Phase 1, std: the same | 0 of 584 | 0 of 584 |
+| Phase 1, galop: the same | 40 of 122 | 40 of 122 |
+| gala2lean `-stats`, the 8 examples the fix changes: functions translated | 2 of 66 | 12 of 66 |
+
+- std gains nothing: every library binding also fails the shape rule, mostly as a
+  generic type with unknown type arguments (784 reasons) or a field holding a type
+  parameter or a Go slice. Adoption in std waits for a shape rule for type parameters.
+- The examples and galop gain nothing in phase 1: inference already proves their
+  borrowed bindings unique, and the rest stay `from-go` or fail the shape rule.
+  The conversion adds the checked contract there, and gala2lean's state-passing
+  translation of `inout` receivers, which `Ptr[T]` receivers do not get.
+- The rewrite is not byte-identical in Go. A converted function of a package other
+  than main gets a copy-in/copy-out wrapper and a `GALA_` body, and some reads next to
+  calls gain `std.EvalOperand`. Behaviour is unchanged, which the example pair checks.
+
+The examples are not migrated: most of the 16 functions are in examples that test `Ptr`
+itself (`ptr_receiver`, `ptr_checked`, `option_ptr`). std's 30 private functions are not
+migrated either. They are `collection_mutable` internals and two `collection_immutable`
+tree helpers, whose nodes are shared by structural sharing (section 2), and converting
+them moves no measure.
+
+### 10.3 Public API changes awaiting approval
+
+`--public` would change these 68 std methods, each from `func (x Ptr[T]) M(…)` to
+`func (inout x T) M(…)`. Go keeps the `*T` signature through the wrapper. GALA callers
+that hold a `Ptr` or a `var` are unaffected, but a method value `x.M` no longer fills a
+`func` slot that takes the pointer.
+
+| Type | Methods |
+|---|---|
+| `collection_mutable.Array` | `Clear`, `EnsureCapacity`, `IsEmpty`, `Length`, `NonEmpty`, `Size` |
+| `collection_mutable.HashMap` | `Clear`, `IsEmpty`, `Length`, `NonEmpty`, `Size` |
+| `collection_mutable.HashSet` | `Clear`, `IsEmpty`, `Length`, `NonEmpty`, `Size` |
+| `collection_mutable.List` | `Clear`, `Head`, `HeadOption`, `IsEmpty`, `Last`, `LastOption`, `Length`, `NonEmpty`, `Reduce`, `ReduceOption`, `RemoveFirst`, `RemoveLast`, `Size`, `Slice` |
+| `collection_mutable.TreeMap` | `Clear`, `Head`, `HeadOption`, `IsEmpty`, `Last`, `LastOption`, `Length`, `MaxEntry`, `MaxEntryOption`, `MaxKey`, `MaxKeyOption`, `MinEntry`, `MinEntryOption`, `MinKey`, `MinKeyOption`, `NonEmpty`, `Put`, `Size` |
+| `collection_mutable.TreeSet` | `Add`, `AddAll`, `Clear`, `Head`, `HeadOption`, `IsEmpty`, `Last`, `LastOption`, `Length`, `Max`, `MaxOption`, `Min`, `MinOption`, `NonEmpty`, `Size` |
+| `crypto.Hasher` | `Algorithm` |
+| `lazy.Lazy` | `IsEvaluated` |
+| `strings.StringBuilder` | `IsEmpty`, `NonEmpty`, `Reset` |
+
+None of them moves phase 1's std measure (10.2). They would let gala2lean translate their
+callers once it translates `collection_mutable`.
+
+### 10.4 Builder redesign (Q9), draft
+
+Q9 decided that std's fluent builders move to the `inout` style. In std only
+`strings.StringBuilder` is one: its five `Append*` methods return the receiver, which an
+`inout` receiver cannot do, because a second-class borrow is never returned. The
+collections' methods that return a `Ptr` return a new collection, not the receiver.
+
+The proposed API, for review. Nothing is implemented.
+
+```gala
+// A value. The zero value is an empty builder.
+struct StringBuilder(var parts Array[string])  // collection_immutable
+
+func NewStringBuilder() StringBuilder                   // was Ptr[StringBuilder]
+func NewStringBuilderFrom(s Str) StringBuilder
+func NewStringBuilderFromString(s string) StringBuilder
+
+func (inout sb StringBuilder) Append(s Str)             // was ... Ptr[StringBuilder]
+func (inout sb StringBuilder) AppendRune(r rune)
+func (inout sb StringBuilder) AppendLine(s Str)
+func (inout sb StringBuilder) AppendString(s string)
+func (inout sb StringBuilder) AppendStringLine(s string)
+func (inout sb StringBuilder) Reset()
+
+func (sb StringBuilder) ToStr() Str                     // readers take a copy
+func (sb StringBuilder) ToString() string
+func (sb StringBuilder) String() string
+func (sb StringBuilder) Length() int
+func (sb StringBuilder) ByteSize() int
+func (sb StringBuilder) IsEmpty() bool
+func (sb StringBuilder) NonEmpty() bool
+```
+
+```gala
+// Before
+val sb = NewStringBuilder()
+sb.AppendString("a").AppendString("b")
+
+// After
+var sb = NewStringBuilder()
+sb.AppendString("a")
+sb.AppendString("b")
+```
+
+- **Storage.** `parts` becomes `collection_immutable`'s `Array`, so a copy of a builder
+  (`val b = a`) is a separate builder: an append to one never shows in the other. A Go
+  slice would share its backing array between copies, and two appends after a copy
+  would write the same element. `collection_mutable.Array` is a `Ptr` and fails the
+  shape rule. Go's `strings.Builder` panics when copied after a write, and the
+  copy-in/copy-out wrapper copies. An immutable `Array` is an owned-shaped value, so
+  the builder translates, as gala2lean's `GArray`.
+- **Cost.** An append to the immutable `Array`, a persistent vector, is effectively
+  constant time but slower than a Go slice append. `strings/perf_test.gala` must
+  measure it before this ships.
+- **Readers** take a value receiver, a small copy, so they also work on a `val`,
+  which an `inout` reader would reject (E0114).
+- **Chaining** goes. The alternative, a value-returning `Appended(s) StringBuilder`, is
+  not proposed: chained value updates read like the old API but copy on every call.
+- **Breaking.** 31 constructions in 4 files of this repository, none in galop or
+  gala-team. `val sb = NewStringBuilder()` becomes `var`, and every chained call a
+  statement of its own. The compiler reports both: E0114 for a mutator on a `val`, and a
+  type error for a call on the `Unit` an `Append` returns. The migration is mechanical.

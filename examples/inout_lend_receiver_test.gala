@@ -1,0 +1,19 @@
+package main
+
+import "martianoff/gala/examples/inout_lend_receiver"
+
+// Calls a method of another package on an inout place: the method lends its
+// receiver on to inout callees only, so the place is borrowed, not kept.
+func play(inout t inout_lend_receiver.Tally) {
+    t.Step("a")
+    t.Step("b")
+    t.Step("c")
+}
+
+func main() {
+    var t = inout_lend_receiver.Tally(0, "")
+    play(&t)
+    Println(t.Count, t.Log)
+    play(&t)
+    Println(t.Count, t.Log)
+}

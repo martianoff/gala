@@ -1,0 +1,36 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "inoutfix",
+    srcs = ["inoutfix.go"],
+    importpath = "martianoff/gala/internal/inoutfix",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//galaerr",
+        "//internal/parser",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/ownership",
+        "//internal/transpiler/transformer",
+    ],
+)
+
+go_test(
+    name = "inoutfix_test",
+    srcs = ["inoutfix_test.go"],
+    data = [
+        "//collection_immutable:gala_sources",
+        "//examples:inout_fix_after.gala",
+        "//examples:inout_fix_before.gala",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//std:gala_sources",
+    ],
+    deps = [
+        ":inoutfix",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)

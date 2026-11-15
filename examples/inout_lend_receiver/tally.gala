@@ -1,0 +1,20 @@
+package inout_lend_receiver
+
+// A Ptr-receiver method that lends its receiver on to an inout callee,
+// which lends it on again with `&`. Ownership phase 1 finds the receiver
+// borrowed, so another package may call Step on an inout place.
+
+struct Tally(var Count int, var Log string)
+
+func note(inout t Tally, step string) {
+    t.Log = t.Log + step
+}
+
+func record(inout t Tally, step string) {
+    t.Count = t.Count + 1
+    note(&t, step)
+}
+
+func (t Ptr[Tally]) Step(step string) {
+    record(t, step)
+}
