@@ -275,10 +275,10 @@ func derefType(typ transpiler.Type) transpiler.Type {
 // type does not implement each with an `inout` receiver (GALA-E0116,
 // docs/OWNERSHIP.MD#interfaces-with-inout-methods): a GALA method with
 // another receiver, or a
-// Go method, unless it is on the no-retain allow-list. An interface value
-// that is already an interface, built in GALA or arriving from Go, is
-// trusted: GALA cannot check a Go implementation, so a value of foreign
-// origin is accepted as it is.
+// Go method, unless it is on the no-retain allow-list. A value whose static
+// type is a Go-declared interface is trusted, whatever its dynamic type:
+// GALA cannot see what implements a Go interface, so it accepts such values
+// as they are.
 func (t *galaASTTransformer) checkInoutInterfaceSlot(valTypeOf func() transpiler.Type, slotType transpiler.Type, at srcNode) error {
 	valType, why, hint := t.inoutImplMismatch(valTypeOf, slotType)
 	if why == "" {

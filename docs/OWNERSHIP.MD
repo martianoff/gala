@@ -847,14 +847,17 @@ are distinct function types for the same reason, though both are Go's
 `gala fix inout` rewrites a `Ptr[T]` receiver or parameter to `inout T` when
 the ownership analysis finds it **borrowed**. A borrowed pointer is only read
 through, written through, dereferenced, or lent on to another borrowed
-parameter. It is never stored, compared, captured or passed to Go. The fix
-rewrites its uses too: `*p` becomes `p`, and `p` passed on whole becomes `&p`.
-Call sites need no change, because `&x` and a `Ptr` both fill an `inout`
-parameter.
+parameter or receiver. It is never stored, returned, aliased, compared,
+captured or passed to Go. The fix rewrites its uses too: `*p` becomes `p`,
+and `p` passed on whole becomes `&p`. Callers usually need no change, because
+`&x` and a `Ptr` both fill an `inout` parameter. When the compiler rejects a
+caller, for example one that lends a slice element, the fix keeps that
+function's `Ptr` (see below).
 
 Before:
 
 <!-- doc-source: examples/inout_fix_before.gala -->
+<!-- doc-check: fragment -->
 ```gala
 // Lent whole to another converted parameter: `c` becomes `&c`.
 func bumpTwice(c Ptr[Counter]) {
@@ -872,6 +875,7 @@ func reset(c Ptr[Counter]) {
 After:
 
 <!-- doc-source: examples/inout_fix_after.gala -->
+<!-- doc-check: fragment -->
 ```gala
 // Lent whole to another converted parameter: `c` becomes `&c`.
 func bumpTwice(inout c Counter) {
@@ -890,16 +894,19 @@ Both programs print the same.
 
 - **It leaves some pointers alone.** A `Ptr` stays when its function is used as
   a function value, when its package has hand-written Go, or when it is `*T`, a
-  `var` parameter, variadic or has a default.
-- **It converts lends together.** An `inout` place can only be lent on to an
-  `inout` parameter, so a pointer is converted only if every same-package
-  parameter it is lent to is converted too.
+  `var` parameter, variadic or has a default. It also stays when it is lent to
+  another package's parameter that isn't `inout`, or used inside an
+  interpolated string.
+- **It converts lends together.** A pointer is converted only if every
+  same-package parameter it is lent to is converted too, since an `inout`
+  place can only be lent on to an `inout` parameter.
 - **Public API keeps its `Ptr` by default.** That covers an exported function
   or method of a package other than `main`. Pass `--public` to convert those
   too, since the change alters the package's API.
 - **It checks its rewrite.** It transpiles the rewritten package, and a
   function whose rewrite the compiler rejects keeps its `Ptr`. It does not
-  build the generated Go, so run `gala build` afterwards.
+  build the generated Go, so run `gala build` afterwards. `--no-verify` skips
+  this check and writes the rewrite as it is.
 - **The flags.** `--dry-run` prints the diff, and `--report` lists every
   pointer with its verdict.
 - **Running it twice is safe.** A second run changes nothing.

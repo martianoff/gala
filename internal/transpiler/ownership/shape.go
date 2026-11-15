@@ -21,9 +21,11 @@ var valueBasics = map[string]bool{
 }
 
 // shape is "" when t is owned-shaped: every field is a value (a primitive,
-// a GALA value type, an immutable collection or a fresh Go slice), so it
-// holds no reference another binding could share, and a pointer to it can
-// be translated as the value itself. Otherwise it says why not.
+// an owned-shaped GALA value type, an immutable collection or a fixed-size
+// array of such values; never a pointer, Go slice, map, channel, function
+// or interface), so it holds no reference another binding could share, and
+// a pointer to it can be translated as the value itself. Otherwise it says
+// why not.
 func (a *pkg) shape(t transpiler.Type) string {
 	if t == nil {
 		return a.shapeOf(t, nil)
