@@ -500,8 +500,8 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 // transitive Go-stdlib graph reachable via go/importer) on every visit.
 var goFilesCache = struct {
 	mu    sync.Mutex
-	cache map[string]goFilesResult
-}{cache: make(map[string]goFilesResult)}
+	cache map[string][]goFilesResult
+}{cache: make(map[string][]goFilesResult)}
 
 // goFilesResult is what one scan of a directory's .go files yields: their type
 // info, and the bare names of the types they declare themselves. Type info
@@ -514,6 +514,8 @@ type goFilesResult struct {
 	// builtinRefs are the Go predeclared identifiers (`len`, `print`, …)
 	// the files refer to.
 	builtinRefs map[string]bool
+	// dirsUsed records how the type check resolved the imports it read.
+	dirsUsed moduleDirs
 }
 
 // AnalyzeGoFiles parses and type-checks local .go files and extracts type info.
@@ -534,7 +536,7 @@ type goFilesResult struct {
 // change, so the parse + type-check work happens at most once per directory
 // per worker.
 func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
-	return analyzeGoFilesMemo(dirPath, importPath, "").info
+	return analyzeGoFilesMemo(dirPath, importPath, "", nil).info
 }
 
 // AnalyzeOwnGoFiles is AnalyzeGoFiles for the hand-written .go files of the
@@ -543,31 +545,31 @@ func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 // declarations are recorded too. It also returns the bare names of the types
 // those files declare, and the paths they import.
 func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) (*transpiler.GoTypeInfo, map[string]bool, []string) {
-	r := analyzeGoFilesMemo(dirPath, importPath, pkgName)
+	r := analyzeGoFilesMemo(dirPath, importPath, pkgName, nil)
 	return r.info, r.ownTypes, r.imports
 }
 
-// OwnGoBuiltinRefs is the set of Go predeclared identifiers (`len`, `print`,
-// `string`, …) that the hand-written .go files of the package named pkgName
-// in dirPath refer to (see AnalyzeOwnGoFiles); nil when there are none.
-func OwnGoBuiltinRefs(dirPath, importPath, pkgName string) map[string]bool {
-	return analyzeGoFilesMemo(dirPath, importPath, pkgName).builtinRefs
-}
-
-func analyzeGoFilesMemo(dirPath, importPath, pkgName string) goFilesResult {
+// analyzeGoFilesMemo is analyzeGoFiles, memoized. goSrcDirs is the table of Go
+// module source directories (see galaAnalyzer.goSrcDirs) that the files'
+// imports of module packages are type-checked from; nil when none is wired.
+// A result is reused under another table that resolves the imports it read
+// the same way (see moduleDirs).
+func analyzeGoFilesMemo(dirPath, importPath, pkgName string, goSrcDirs map[string]string) goFilesResult {
 	importPath = goFilesImportPath(dirPath, importPath)
 	cacheKey := dirPath + "\x00" + importPath + "\x00" + pkgName
 
 	goFilesCache.mu.Lock()
-	cached, ok := goFilesCache.cache[cacheKey]
-	goFilesCache.mu.Unlock()
-	if ok {
-		return cached
+	for _, cached := range goFilesCache.cache[cacheKey] {
+		if cached.dirsUsed.holdIn(goSrcDirs) {
+			goFilesCache.mu.Unlock()
+			return cached
+		}
 	}
+	goFilesCache.mu.Unlock()
 
-	r := analyzeGoFiles(dirPath, importPath, pkgName)
+	r := analyzeGoFiles(dirPath, importPath, pkgName, goSrcDirs)
 	goFilesCache.mu.Lock()
-	goFilesCache.cache[cacheKey] = r
+	goFilesCache.cache[cacheKey] = append(goFilesCache.cache[cacheKey], r)
 	goFilesCache.mu.Unlock()
 	return r
 }
@@ -579,7 +581,7 @@ func analyzeGoFilesMemo(dirPath, importPath, pkgName string) goFilesResult {
 // ignore`, say, on a generator) and a file the GALA transpiler wrote (an old
 // `gala transpile -o main.go`) are left out: neither is hand-written source of
 // the package.
-func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
+func analyzeGoFiles(dirPath, importPath, pkgName string, goSrcDirs map[string]string) goFilesResult {
 	info := transpiler.NewGoTypeInfo()
 	result := goFilesResult{info: info}
 
@@ -622,10 +624,15 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 		return result
 	}
 
-	// Type-check the parsed files, their imports resolved in one batch first.
-	prefetchGoPackages(result.imports)
+	// Type-check the parsed files, the imports the shared importer serves
+	// resolved in one batch first (a wired module's are read from source).
+	prefetchGoPackages(slices.DeleteFunc(slices.Clone(result.imports), func(p string) bool {
+		_, fromSource := ResolveGoSrcDir(goSrcDirs, p)
+		return fromSource
+	}))
+	imp := newModuleSourceImporter(goSrcDirs)
 	conf := types.Config{
-		Importer: getGoImporter(),
+		Importer: imp,
 		Error:    func(err error) {}, // Ignore type-check errors (partial analysis is fine)
 	}
 	typesInfo := &types.Info{
@@ -635,6 +642,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	}
 
 	pkg, _ := conf.Check(importPath, fset, files, typesInfo)
+	result.dirsUsed = imp.used
 	for id, obj := range typesInfo.Uses {
 		if obj != nil && types.Universe.Lookup(id.Name) == obj {
 			if result.builtinRefs == nil {
@@ -1154,12 +1162,6 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 		case *types.Func:
 			sig := obj.Type().(*types.Signature)
 			info.Functions[qualName] = convertSignature(sig)
-			// A function often returns a named type defined in another package
-			// (e.g. sha256.New() returns hash.Hash). Record that type's method
-			// set under its canonical "pkg.Name" key so a value bound to the
-			// call has completions even though the defining package (hash) was
-			// never directly imported.
-			registerReturnNamedTypes(sig, info)
 
 		case *types.TypeName:
 			if obj.IsAlias() {
@@ -1171,15 +1173,12 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 				// name (e.g. "os.DirEntry").
 				info.Types[qualName] = extractTypeData(obj, "alias", own)
 				// When the alias re-exports a *named* type from another package
-				// (e.g. `os.DirEntry = io/fs.DirEntry`), also register the target
-				// under its own canonical "pkgName.TypeName" key. Go signatures
-				// resolve such aliases to the canonical name (a return of
-				// `[]os.DirEntry` surfaces as `[]fs.DirEntry`), so a method call
-				// on a value of that type (`entries[i].Info()`) looks the method
-				// set up under `fs.DirEntry`. Without this, methods on a
-				// re-exported type are invisible whenever only the aliasing
-				// package — not the defining one — is imported.
-				registerAliasTargetType(obj.Type(), qualName, info)
+				// (e.g. `os.DirEntry = io/fs.DirEntry`), the walk below also
+				// registers the target under its own canonical key. Go
+				// signatures resolve such aliases to the canonical name (a
+				// return of `[]os.DirEntry` surfaces as `[]fs.DirEntry`), so a
+				// method call on a value of that type (`entries[i].Info()`)
+				// looks the method set up under `fs.DirEntry`.
 			} else {
 				// Go type definition: type X struct{...} or type X int
 				info.Types[qualName] = extractTypeData(obj, "", own)
@@ -1198,81 +1197,105 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 			}
 		}
 	}
-}
 
-// registerAliasTargetType records the method set / fields of the named type an
-// alias points at under that target's own canonical "pkgName.TypeName" key.
-// aliasType is the alias TypeName's Type(); aliasQualName is the alias's own
-// qualified name (used to avoid registering a self-referential entry). It is a
-// no-op when the target is not a named type from a real package, or when a
-// (real, non-alias) entry for the canonical name already exists. This lets type
-// inference that has resolved an alias to its canonical name find the target's
-// methods even though the defining package was never directly imported.
-func registerAliasTargetType(aliasType types.Type, aliasQualName string, info *transpiler.GoTypeInfo) {
-	named, ok := types.Unalias(aliasType).(*types.Named)
-	if !ok {
-		return
-	}
-	tn := named.Obj()
-	if tn == nil || tn.Pkg() == nil {
-		return
-	}
-	canonical := tn.Pkg().Name() + "." + tn.Name()
-	if canonical == aliasQualName {
-		return
-	}
-	if _, exists := info.Types[canonical]; exists {
-		return
-	}
-	info.Types[canonical] = extractTypeData(tn, "", false)
-}
-
-// registerReturnNamedTypes records, for each of a function's return values, the
-// method set of any named type reached (unwrapping pointer/slice/array layers)
-// that is defined in another package. This mirrors
-// registerAliasTargetType but for return positions, so completion and type
-// inference can find methods on values produced by a call into an imported
-// package even when the value's own type lives in a package that was never
-// directly imported (the classic case: a constructor returning an interface,
-// like sha256.New() -> hash.Hash).
-func registerReturnNamedTypes(sig *types.Signature, info *transpiler.GoTypeInfo) {
-	if sig == nil {
-		return
-	}
-	res := sig.Results()
-	for i := 0; i < res.Len(); i++ {
-		registerNamedTypeClosure(res.At(i).Type(), info)
+	// A value of the package's API often has a named type defined in another
+	// package: sha256.New() returns hash.Hash, and cobra's Command.Flags()
+	// returns *pflag.FlagSet, whose Lookup returns *pflag.Flag in turn. Record
+	// the method set of every type a value can be reached through, under its
+	// canonical "pkg.Name" key, so a call on such a value finds its Go
+	// signature (and a (T, error) result lowers to Try) although the defining
+	// package was never directly imported. It runs after the loop above so
+	// the package's own types keep the entries that loop made for them.
+	reach := reachableTypes{info: info, seen: make(map[*types.TypeName]bool)}
+	for _, name := range scope.Names() {
+		if obj := scope.Lookup(name); obj.Exported() || own {
+			switch obj.(type) {
+			case *types.Func, *types.Var, *types.TypeName:
+				reach.walk(obj.Type())
+			}
+		}
 	}
 }
 
-// registerNamedTypeClosure unwraps common type constructors (pointer, slice,
-// array, map, chan) to find a named type and records its GoTypeData under the
-// canonical "pkgName.TypeName" key. It is a no-op when the type is not a
-// package-scoped named type or when an entry already exists (which also bounds
-// the recursion).
-func registerNamedTypeClosure(t types.Type, info *transpiler.GoTypeInfo) {
+// reachableTypes records in info.Types, under the canonical "pkgName.TypeName"
+// key, each named type a value of a Go package's API can have, unless an entry
+// exists already. A value comes from a function's or method's results, from a
+// field or variable, or as an argument handed to a callback, so from a named
+// type the walk follows its exported fields and its exported methods. Each
+// named type is visited once, which bounds the walk.
+type reachableTypes struct {
+	info *transpiler.GoTypeInfo
+	seen map[*types.TypeName]bool
+}
+
+// walk visits the named types reachable from a value of type t.
+func (r reachableTypes) walk(t types.Type) {
 	switch tt := t.(type) {
+	case *types.Alias:
+		r.walk(types.Unalias(tt))
 	case *types.Pointer:
-		registerNamedTypeClosure(tt.Elem(), info)
+		r.walk(tt.Elem())
 	case *types.Slice:
-		registerNamedTypeClosure(tt.Elem(), info)
+		r.walk(tt.Elem())
 	case *types.Array:
-		registerNamedTypeClosure(tt.Elem(), info)
+		r.walk(tt.Elem())
 	case *types.Chan:
-		registerNamedTypeClosure(tt.Elem(), info)
+		r.walk(tt.Elem())
 	case *types.Map:
-		registerNamedTypeClosure(tt.Key(), info)
-		registerNamedTypeClosure(tt.Elem(), info)
+		r.walk(tt.Key())
+		r.walk(tt.Elem())
+	case *types.Signature:
+		r.walkFunc(tt)
+	case *types.Struct:
+		for i := 0; i < tt.NumFields(); i++ {
+			if f := tt.Field(i); f.Exported() {
+				r.walk(f.Type())
+			}
+		}
 	case *types.Named:
-		tn := tt.Obj()
-		if tn == nil || tn.Pkg() == nil {
+		if args := tt.TypeArgs(); args != nil {
+			for i := 0; i < args.Len(); i++ {
+				r.walk(args.At(i))
+			}
+		}
+		named := tt.Origin()
+		tn := named.Obj()
+		if tn == nil || tn.Pkg() == nil || r.seen[tn] {
 			return
 		}
+		r.seen[tn] = true
 		canonical := tn.Pkg().Name() + "." + tn.Name()
-		if _, exists := info.Types[canonical]; exists {
-			return
+		if _, exists := r.info.Types[canonical]; !exists {
+			r.info.Types[canonical] = extractTypeData(tn, "", false)
 		}
-		info.Types[canonical] = extractTypeData(tn, "", false)
+		// An interface's methods are in its own method set (a pointer to an
+		// interface has none); any other type's are in its pointer's.
+		var recv types.Type = named
+		if _, isIface := named.Underlying().(*types.Interface); !isIface {
+			r.walk(named.Underlying())
+			recv = types.NewPointer(named)
+		}
+		mset := types.NewMethodSet(recv)
+		for i := 0; i < mset.Len(); i++ {
+			if fn := mset.At(i).Obj(); fn.Exported() {
+				r.walkFunc(fn.Type().(*types.Signature))
+			}
+		}
+	}
+}
+
+// walkFunc visits the named types a call of sig yields, and those of the
+// arguments a callback parameter of sig is handed.
+func (r reachableTypes) walkFunc(sig *types.Signature) {
+	for i := 0; i < sig.Results().Len(); i++ {
+		r.walk(sig.Results().At(i).Type())
+	}
+	for i := 0; i < sig.Params().Len(); i++ {
+		if cb, ok := types.Unalias(sig.Params().At(i).Type()).Underlying().(*types.Signature); ok {
+			for j := 0; j < cb.Params().Len(); j++ {
+				r.walk(cb.Params().At(j).Type())
+			}
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -23,6 +24,8 @@ import (
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/transformer"
+
+	"golang.org/x/mod/modfile"
 )
 
 // Builder orchestrates the build process for GALA projects.
@@ -45,6 +48,8 @@ type Builder struct {
 	goSrcDirs         map[string]string
 	goSrcDirsResolved bool
 	goSrcDirsComplete bool
+	// requiredModules memoizes requiredModulePaths.
+	requiredModules []string
 }
 
 // SetSourceDir sets an override source directory for compilation.
@@ -420,20 +425,21 @@ func (b *Builder) goSourcesComplete() bool {
 // the directory depDir gives for each. A module required at several versions
 // keeps the highest, the one `go build` selects.
 func goRequiresWithDeps(f *mod.File, depDir func(mod.Require) string) []mod.Require {
-	var out []mod.Require
-	index := make(map[string]int)
+	goReqs, _ := moduleGraph(f, depDir)
+	return goReqs
+}
+
+// moduleGraph walks f and the GALA modules it requires, directly or
+// transitively, reading each one's gala.mod from the directory depDir gives.
+// It returns their Go requirements as goRequiresWithDeps describes, and the
+// paths of the GALA modules it visited.
+func moduleGraph(f *mod.File, depDir func(mod.Require) string) (goReqs []mod.Require, galaPaths []string) {
+	var highest highestVersions
 	visited := make(map[string]bool)
 	var walk func(*mod.File)
 	walk = func(f *mod.File) {
 		for _, req := range f.GoRequires() {
-			i, seen := index[req.Path]
-			switch {
-			case !seen:
-				index[req.Path] = len(out)
-				out = append(out, req)
-			case newerVersion(req.Version, out[i].Version):
-				out[i] = req
-			}
+			highest.add(req)
 		}
 		for _, req := range f.GalaRequires() {
 			key := req.Path + "@" + req.Version
@@ -441,7 +447,13 @@ func goRequiresWithDeps(f *mod.File, depDir func(mod.Require) string) []mod.Requ
 				continue
 			}
 			visited[key] = true
+			galaPaths = append(galaPaths, req.Path)
 			if dep, err := mod.ParseFile(filepath.Join(depDir(req), "gala.mod")); err == nil {
+				// The path the module declares may differ from the one it is
+				// required by (see resolveInternalModulePaths).
+				if dep.Module.Path != "" && dep.Module.Path != req.Path {
+					galaPaths = append(galaPaths, dep.Module.Path)
+				}
 				walk(dep)
 			}
 		}
@@ -449,7 +461,27 @@ func goRequiresWithDeps(f *mod.File, depDir func(mod.Require) string) []mod.Requ
 	if f != nil {
 		walk(f)
 	}
-	return out
+	return highest.reqs, galaPaths
+}
+
+// highestVersions collects requirements in the order modules are first met,
+// keeping for a module required at several versions the highest, the one
+// `go build` selects.
+type highestVersions struct {
+	reqs  []mod.Require
+	index map[string]int
+}
+
+func (h *highestVersions) add(req mod.Require) {
+	if h.index == nil {
+		h.index = make(map[string]int)
+	}
+	if i, seen := h.index[req.Path]; !seen {
+		h.index[req.Path] = len(h.reqs)
+		h.reqs = append(h.reqs, req)
+	} else if newerVersion(req.Version, h.reqs[i].Version) {
+		h.reqs[i] = req
+	}
 }
 
 // newerVersion reports whether semantic version a is above b; false when
@@ -468,15 +500,7 @@ func GoModuleSrcDirs(galaMod *mod.File, config *Config) map[string]string {
 		return nil
 	}
 	reqs := goRequiresWithDeps(galaMod, func(req mod.Require) string { return config.GalaModulePath(req.Path, req.Version) })
-	dirs := make(map[string]string, len(reqs))
-	for _, req := range reqs {
-		if dir, ok := goModuleSrcDir(config, req); ok {
-			dirs[req.Path] = dir
-		}
-	}
-	if len(dirs) == 0 {
-		return nil
-	}
+	dirs, _ := goModuleSrcDirClosure(config, reqs, nil)
 	return dirs
 }
 
@@ -498,35 +522,92 @@ func goModuleSrcDir(config *Config, req mod.Require) (string, bool) {
 	return "", false
 }
 
-// resolveGoModuleSrcDirs maps each module in reqs to its cached source
-// directory, first downloading into the Go module cache the ones neither cache
-// holds: the transpile runs before the `go mod tidy` that would otherwise fetch
-// them. The download is best effort; a module it cannot fetch (offline, a
-// private module without credentials) stays unresolved, complete is false, and
-// the transpile reports what it then cannot type (GALA-E0067).
+// resolveGoModuleSrcDirs maps each module in reqs, and each module those
+// require (see goModuleSrcDirClosure), to its cached source directory,
+// first downloading into the Go module cache the ones neither cache holds: the
+// transpile runs before the `go mod tidy` that would otherwise fetch them. The
+// download is best effort; a module it cannot fetch (offline, a private module
+// without credentials) stays unresolved, complete is false, and the transpile
+// reports what it then cannot type (GALA-E0067).
 func resolveGoModuleSrcDirs(config *Config, reqs []mod.Require, verbose bool) (dirs map[string]string, complete bool) {
+	return goModuleSrcDirClosure(config, reqs, func(missing []mod.Require) { downloadGoModules(config, missing, verbose) })
+}
+
+// goModuleSrcDirClosure maps each module in reqs to its cached source
+// directory, and with them the modules their go.mod files require: a module's
+// packages import those (cobra imports pflag), and the analyzer type-checks a
+// package's imports from their source. One level is enough: since Go 1.17 a
+// module's go.mod lists every module its packages need (module graph
+// pruning). A module required at several versions keeps the highest, as Go's
+// minimal version selection does. download, when not nil, fetches the modules
+// neither cache holds before they are looked up again. complete reports that
+// every module of reqs resolved; one their go.mod files add is best effort
+// (it may serve only a test of the module), so it is not counted.
+func goModuleSrcDirClosure(config *Config, reqs []mod.Require, download func([]mod.Require)) (dirs map[string]string, complete bool) {
 	dirs = make(map[string]string, len(reqs))
-	var missing []mod.Require
-	for _, req := range reqs {
-		if dir, ok := goModuleSrcDir(config, req); ok {
-			dirs[req.Path] = dir
-		} else {
-			missing = append(missing, req)
+	versions := make(map[string]string, len(reqs))
+	resolve := func(reqs []mod.Require) bool {
+		var missing []mod.Require
+		for _, req := range reqs {
+			versions[req.Path] = req.Version
+			if dir, ok := goModuleSrcDir(config, req); ok {
+				dirs[req.Path] = dir
+			} else {
+				missing = append(missing, req)
+			}
 		}
-	}
-	if len(missing) > 0 {
-		downloadGoModules(config, missing, verbose)
+		if len(missing) == 0 {
+			return true
+		}
+		if download == nil {
+			return false
+		}
+		download(missing)
+		all := true
 		for _, req := range missing {
 			if dir, ok := goModuleSrcDir(config, req); ok {
 				dirs[req.Path] = dir
+			} else {
+				all = false
 			}
 		}
+		return all
 	}
-	complete = len(dirs) == len(reqs)
+	complete = resolve(reqs)
+	resolve(goModRequires(reqs, dirs, versions))
 	if len(dirs) == 0 {
 		return nil, complete
 	}
 	return dirs, complete
+}
+
+// goModRequires returns the requirements of the go.mod files of the modules
+// in reqs that resolved to a directory in dirs, leaving out a module versions
+// records at the same or a higher version.
+func goModRequires(reqs []mod.Require, dirs, versions map[string]string) []mod.Require {
+	var next highestVersions
+	for _, req := range reqs {
+		dir, ok := dirs[req.Path]
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if err != nil {
+			continue
+		}
+		f, err := modfile.ParseLax("go.mod", data, nil)
+		if err != nil {
+			continue
+		}
+		for _, r := range f.Require {
+			path, v := r.Mod.Path, r.Mod.Version
+			if cur, known := versions[path]; known && !newerVersion(v, cur) {
+				continue
+			}
+			next.add(mod.Require{Path: path, Version: v, Indirect: true, Go: true})
+		}
+	}
+	return next.reqs
 }
 
 // downloadGoModules runs `go mod download` for reqs into the Go module cache.
@@ -2112,7 +2193,42 @@ func (b *Builder) newTranspilePipeline() (transpiler.GalaParser, *analyzer.Batch
 	p := transpiler.NewAntlrGalaParser()
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
 	batchAnalyzer.SetGoSrcDirs(b.goModuleSrcDirs())
+	batchAnalyzer.SetRequiredModules(b.requiredModulePaths())
 	return p, batchAnalyzer
+}
+
+// requiredModulePaths is the path of every module the project's build
+// requires: the project's own, the GALA modules gala.mod requires directly or
+// transitively, and the Go modules those require with the modules the Go ones
+// require in turn (see goModuleSrcDirs). A Go import of the project that none
+// of them provides is an error (see analyzer.BatchAnalyzer.SetRequiredModules).
+func (b *Builder) requiredModulePaths() []string {
+	if b.requiredModules != nil {
+		return b.requiredModules
+	}
+	goReqs, galaPaths := moduleGraph(b.galaMod, b.effectiveDepDir)
+	seen := map[string]bool{}
+	add := func(path string) {
+		if path != "" && !seen[path] {
+			seen[path] = true
+			b.requiredModules = append(b.requiredModules, path)
+		}
+	}
+	// The project's own module, under both the path gala.mod declares and the
+	// one its Go code is compiled under (go.mod's, when one says otherwise).
+	add(b.galaMod.Module.Path)
+	add(b.projectGoModulePath())
+	for _, path := range galaPaths {
+		add(path)
+	}
+	// A Go module that could not be downloaded is required all the same.
+	for _, req := range goReqs {
+		add(req.Path)
+	}
+	for _, path := range slices.Sorted(maps.Keys(b.goModuleSrcDirs())) {
+		add(path)
+	}
+	return b.requiredModules
 }
 
 // transpileToGen transpiles the given files into the workspace gen directory

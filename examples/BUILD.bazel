@@ -699,6 +699,15 @@ gala_exec_test(
     expected = "apply_method.out",
 )
 
+# A Go method returning (T, error) on a type from a package the file does not
+# import (reached through a field, a val binding or a chain of calls) lowers to
+# Try like any other Go call.
+gala_exec_test(
+    name = "go_method_result_unimported_pkg",
+    src = "go_method_result_unimported_pkg.gala",
+    expected = "go_method_result_unimported_pkg.out",
+)
+
 # A generic sealed type declared in `main` must be recognized as sealed when the
 # match subject's type is inferred from a variant constructor. Asserts runtime
 # output, not just compilation: the exhaustive-sealed lowering emits a synthetic

@@ -3,9 +3,11 @@
 **When it fires.** The analyzer was asked to resolve a GALA package by its
 import path, but no matching directory exists on any configured search path.
 Triggered both by explicit `import` statements and by the directory-walk passes
-that follow them.
+that follow them. `gala build`, `gala run` and `gala test` also report it for a
+Go package that no module in `gala.mod` provides (see **A Go module missing
+from gala.mod** below).
 
-**E0020 has no framed `error[GALA-E0020]:` form of its own.** It is raised
+**A missing GALA package has no framed `error[GALA-E0020]:` form.** It is raised
 without a source position (line 0, column 0) deep in the analyzer, formatted
 into a warning string, and collected. Transformation then fails with a separate,
 **uncoded** unresolved-imports error, framed at the file's `package` clause,
@@ -80,6 +82,47 @@ with no usable source position — the analyzer knows the import *path* that
 failed, not a span in the file being compiled — so there is nothing to frame.
 Wrapping many per-import failures into one diagnostic also keeps a file with
 five bad imports to a single error instead of five disconnected ones.
+
+**A Go module missing from gala.mod.** A file imports a Go package from outside
+the standard library, and no module
+the build requires provides it: not the project's own module, not a GALA
+module it requires, and not a Go module (`// go`) required in `gala.mod` or by
+one of those modules. GALA reads a Go package's types from its module's
+source, so without the module it knows none of them, and the code calling into
+the package could not be lowered.
+
+```gala
+package main
+
+import "github.com/spf13/cobra"
+
+func main() {
+    val cmd = &cobra.Command(Use = "app")
+    Println(cmd.Use)
+}
+```
+
+```
+error[GALA-E0020]: package not found: no module required in gala.mod provides Go package "github.com/spf13/cobra"
+  --> main.gala:3:8
+  |
+3 | import "github.com/spf13/cobra"
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^ require its module in gala.mod
+  |
+  = hint: require its module in gala.mod; run `gala mod add github.com/spf13/cobra@<version> --go` (for a package in a subdirectory of its module, name the module's path)
+```
+
+**Fix.** Require the module, with the version you want:
+
+```
+gala mod add github.com/spf13/cobra@v1.10.2 --go
+```
+
+For a package in a subdirectory of its module (`github.com/spf13/cobra/doc`),
+require the module (`github.com/spf13/cobra`). The modules a required Go
+module requires itself (cobra requires `github.com/spf13/pflag`) need no line
+of their own. Under Bazel, Go dependencies are the `deps` of the GALA target,
+and this check does not run.
 
 **Scope.** Only the analyzer's package-resolution failures, not Go-level import
 errors that surface from `go build` after transpilation. Those still appear as

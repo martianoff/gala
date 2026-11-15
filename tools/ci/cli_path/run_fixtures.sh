@@ -5,6 +5,7 @@
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
 # nested, lib_only, go_subpkg, go_cmd_main, go_interop, add_gala_to_go, cobra_cli,
+# go_transitive_module, go_module_missing,
 # gala_dep, dep_go_subpkg, dep_generic_alias, sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
@@ -206,6 +207,37 @@ fixture_cobra_cli() {
   expect_tests_ran "command tests ran" test.log
 }
 
+# go_transitive_module: gala.mod requires github.com/spf13/cobra only, and the
+# program calls methods of pflag's FlagSet, which it reaches through cobra's
+# Command.Flags(). pflag's types are read from the module cobra's go.mod
+# requires, so its (T, error) methods lower to Try. Needs network access.
+fixture_go_transitive_module() {
+  local dir
+  dir=$(stage go_transitive_module)
+  cd "$dir"
+  gala_ok run.log run || return 0
+  expect_output "gala run" expected.out run.log
+}
+
+# go_module_missing: the program imports github.com/spf13/cobra, which gala.mod
+# does not require; the build stops at the import with GALA-E0020 naming the
+# package and the `gala mod add` that fixes it.
+fixture_go_module_missing() {
+  local dir
+  dir=$(stage go_module_missing)
+  cd "$dir"
+  echo "+ gala build (expected to fail)"
+  if "$GALA" build >build.log 2>&1; then
+    cat build.log
+    fail "gala build succeeded although gala.mod does not require cobra"
+    return 0
+  fi
+  cat build.log
+  expect_line "the error names the package" build.log \
+    '^error\[GALA-E0020\]: package not found: no module required in gala\.mod provides Go package "github\.com/spf13/cobra"$'
+  expect_line "the hint names the fix" build.log 'gala mod add github\.com/spf13/cobra@<version> --go'
+}
+
 # go_interop: GALA and Go calling each other in one module, as the Go interop
 # guide (docs/GO_INTEROP.MD) lays it out: a GALA main with a sibling .go file,
 # a package mixing .gala and hand-written .go, a plain Go package importing a
@@ -366,7 +398,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop add_gala_to_go cobra_cli gala_dep dep_go_subpkg dep_generic_alias sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop add_gala_to_go cobra_cli go_transitive_module go_module_missing gala_dep dep_go_subpkg dep_generic_alias sequence)
 fi
 
 for name in "${fixtures[@]}"; do

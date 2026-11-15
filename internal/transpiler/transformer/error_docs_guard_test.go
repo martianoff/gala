@@ -2010,6 +2010,11 @@ func main() {
 `)
 			},
 		},
+		{
+			name:   "Go package of a module gala.mod does not require",
+			code:   galaerr.CodePackageNotFound, // GALA-E0020
+			render: renderGoModuleNotRequiredRepro,
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
@@ -2072,6 +2077,29 @@ func renderRepro(t *testing.T, path, src string) string {
 		FallbackSource: src,
 		Color:          false,
 	})
+}
+
+// renderGoModuleNotRequiredRepro drives GALA-E0020 for a Go import that no
+// module the build requires provides. The CLI builder tells the analyzer which
+// modules gala.mod requires; here the main module alone is required.
+func renderGoModuleNotRequiredRepro(t *testing.T) string {
+	t.Helper()
+	const path = "main.gala"
+	src := `package main
+
+import "github.com/spf13/cobra"
+
+func main() {
+    val cmd = &cobra.Command(Use = "app")
+    Println(cmd.Use)
+}
+`
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewBatchAnalyzer(p, getStdSearchPath(), t.TempDir())
+	a.SetRequiredModules([]string{"example.com/app"})
+	_, err := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).Transpile(src, path)
+	require.Error(t, err, "repro was expected to fail to compile")
+	return galaerr.RenderRich(err, galaerr.Options{FallbackPath: path, FallbackSource: src, Color: false})
 }
 
 // renderQualifiedVariantRepro drives GALA-E0018 at a call site that names the

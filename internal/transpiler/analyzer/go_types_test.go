@@ -382,7 +382,7 @@ func TestAnalyzeGoPackage_ResolveTypeAlias(t *testing.T) {
 // `io/fs.DirEntry`; `os.ReadDir` returns `[]os.DirEntry`, which Go resolves to
 // `[]fs.DirEntry`. So calling a method on an element (`entries[i].Info()`) must
 // find the method set under "fs.DirEntry" even though only "os" was analyzed —
-// io/fs is never directly imported. Without registerAliasTargetType,
+// io/fs is never directly imported. Without registering alias targets,
 // info.Types["fs.DirEntry"] is nil and the method lookup misses, which in turn
 // breaks `Try(entries[i].Info())` (the Try type param can't be inferred and the
 // (T, error) return can't be thunked). Analyzing only "os" here mirrors the

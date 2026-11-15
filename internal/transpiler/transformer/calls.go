@@ -3916,7 +3916,7 @@ func (t *galaASTTransformer) unloadedGoPackageCall(expr ast.Expr) (callee, path 
 	}
 	// A standard-library package (no dot in its first element) is never
 	// required in gala.mod; its types are missing only without a Go SDK.
-	if first, _, _ := strings.Cut(path, "/"); !strings.Contains(first, ".") {
+	if transpiler.IsGoStdlibPath(path) {
 		return "", "", false
 	}
 	if typ := t.getExprTypeName(call); typ != nil && !typ.IsNil() && !transpiler.IsUnusable(typ) {
