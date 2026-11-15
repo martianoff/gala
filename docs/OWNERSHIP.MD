@@ -608,6 +608,11 @@ that could fill the interface, whether the type argument is written or
 inferred. A type parameter used as one is judged by its own constraint, which
 must declare the method `inout` too.
 
+A typed pattern, `case s: Stepper =>`, is accepted only on a value whose
+static type already guarantees the `inout` methods: Go's dynamic type test
+can't tell an `inout` receiver from a `Ptr` receiver. On an `any`, match the
+concrete type instead (`case c: Ptr[Counter]`).
+
 A Go type fills an `inout` interface method only when its method is on the
 [no-retain allow-list](#gala-calls-go), as `bytes.Buffer`'s `WriteString` is
 above. To use another Go type, wrap it in a GALA type whose method has an

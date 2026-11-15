@@ -22,6 +22,13 @@ the interface, whether the type argument is written or inferred. A type
 parameter used as one is judged by its own constraint: `T Plain` fills
 `Stepper` only when `Plain` declares `Step` inout too.
 
+A typed pattern, `case s: Stepper =>`, tests the value's dynamic type, and
+Go's test cannot tell an `inout` receiver from a `Ptr` receiver. So the
+pattern is accepted only on a value whose static type already guarantees the
+`inout` methods: an interface that declares them `inout` too, or a type that
+implements them with `inout` receivers. On an `any`, or an interface without
+them, match the concrete type instead (`case c: Ptr[Counter]`).
+
 An interface value that is already an interface, built in GALA or received
 from Go, fills it as it is: its methods are trusted, not checked.
 

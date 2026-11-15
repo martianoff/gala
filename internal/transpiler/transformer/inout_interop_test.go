@@ -233,7 +233,7 @@ func main() {
 			"the type argument for T of runG, does not satisfy its constraint Stepper"},
 		{"a type parameter constrained by a Go interface", "func viaGo[T fmt.Stringer](s T) string = show(s)", "Println(1)",
 			"the type argument for T of show, does not satisfy its constraint Shower"},
-		{"a type parameter constrained without inout","func viaPlain[T Plain](s T) int = runG(s)", "Println(1)",
+		{"a type parameter constrained without inout", "func viaPlain[T Plain](s T) int = runG(s)", "Println(1)",
 			"Stepper declares Step inout, and Plain.Step has no inout receiver"},
 		{"a type parameter filling an inout interface slot", "func toSlot[T Plain](s T) int = run(s)", "Println(1)",
 			"Stepper declares Step inout, and Plain.Step has no inout receiver"},
@@ -257,4 +257,72 @@ func TestInoutGoWrapperNoCopy(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GALA-E0111")
 	assert.Contains(t, err.Error(), "exported Fill cannot lend b to Go code through a copy")
+}
+
+// TestInoutTypePattern pins GALA-E0116 at a typed pattern: Go's dynamic
+// type test cannot tell an inout receiver from a Ptr receiver, so a pattern
+// may test for an interface declaring inout methods only on a value whose
+// static type already guarantees them.
+func TestInoutTypePattern(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	src := func(body string) string {
+		return `package main
+
+type Stepper interface {
+    inout Step() int
+}
+
+type Walker interface {
+    inout Step() int
+    Name() string
+}
+
+type Plain interface {
+    Step() int
+}
+
+struct Good(var n int)
+
+func (inout g Good) Step() int {
+    g.n = g.n + 1
+    g.n
+}
+
+func (g Good) Name() string = "good"
+
+struct Leaky(var n int)
+
+func (l Ptr[Leaky]) Step() int = l.n
+
+func main() {
+    ` + body + `
+}
+`
+	}
+	accepted := []string{
+		"val w Walker = &Good(0)\n    w match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+		"val g = &Good(0)\n    g match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+		"val x any = &Leaky(0)\n    x match {\n        case p: Plain => Println(p.Step())\n        case _ => Println(0)\n    }",
+	}
+	for _, body := range accepted {
+		_, err := trans.Transpile(src(body), "inout_pattern_test.gala")
+		require.NoError(t, err, body)
+	}
+
+	rejected := []struct{ name, body, want string }{
+		{"a value of type any", "val x any = &Leaky(3)\n    x match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+			"a typed pattern cannot test an any for Stepper"},
+		{"an interface without inout", "val p Plain = &Good(0)\n    p match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+			"a typed pattern cannot test a Plain for Stepper"},
+		{"a concrete type without inout", "val l = &Leaky(1)\n    l match {\n        case s: Stepper => Println(s.Step())\n        case _ => Println(0)\n    }",
+			"Stepper declares Step inout, and Leaky.Step has no inout receiver"},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(src(tc.body), "inout_pattern_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0116")
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }

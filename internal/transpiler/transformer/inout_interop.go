@@ -487,3 +487,75 @@ func (t *galaASTTransformer) inoutBodyClash(body, name, typeName string) string 
 	}
 	return ""
 }
+
+// checkInoutTypePattern rejects a typed pattern (`case s: Stepper`) whose
+// type, target, is an interface declaring `inout` methods, testing a value
+// of the type operand (nil when unknown) whose static type does not already
+// guarantee them (GALA-E0116, docs/OWNERSHIP_DESIGN.MD 3.5.3). Go's dynamic
+// type test cannot tell an `inout` receiver from a Ptr receiver, so the test
+// would accept a value whose method may keep its receiver. An operand of an
+// interface type passes only when that interface declares each method
+// `inout` itself; one of a concrete type is judged as a value filling the
+// interface is (inoutImplMismatch).
+func (t *galaASTTransformer) checkInoutTypePattern(target, operand transpiler.Type, at srcNode) error {
+	if target == nil || !t.inoutConstraints {
+		return nil
+	}
+	target = t.followAliasChain(target)
+	iface := t.getTypeMeta(target.BaseName())
+	if iface == nil || !iface.IsInterface || !declaresInout(iface) {
+		return nil
+	}
+	var inout []string
+	for name, m := range iface.Methods {
+		if m.InoutReceiver {
+			inout = append(inout, name)
+		}
+	}
+	slices.Sort(inout)
+	reject := func(what string) error {
+		return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
+			fmt.Sprintf("a typed pattern cannot test %s for %s: %s declares %s inout, and a dynamic type test cannot tell an inout receiver from a Ptr receiver",
+				what, displayType(target), displayType(target), strings.Join(inout, ", ")),
+			fmt.Sprintf("match a value whose type already declares %s inout (a %s), or match its concrete type (`case c: Ptr[T]`) and use that", inout[0], displayType(target)))
+	}
+	if operand != nil {
+		operand = t.followAliasChain(operand)
+		if ptr, isPtr := operand.(transpiler.PointerType); isPtr {
+			operand = t.followAliasChain(ptr.Elem)
+		}
+	}
+	if operand == nil || transpiler.IsUnusable(operand) {
+		return reject("a value of unknown type")
+	}
+	if transpiler.IsUnusableOrAny(operand) {
+		return reject("an any")
+	}
+	if meta := t.getTypeMeta(operand.BaseName()); meta != nil && meta.IsInterface {
+		for _, name := range inout {
+			if m := meta.Methods[name]; m == nil || !m.InoutReceiver || goDeclared(meta) {
+				return reject("a " + displayType(operand))
+			}
+		}
+		return nil
+	}
+	if _, isTypeParam := t.typeParamConstraint(operand); isTypeParam {
+		_, why, hint := t.inoutImplMismatch(func() transpiler.Type { return operand }, target)
+		if why != "" {
+			return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
+				fmt.Sprintf("a typed pattern cannot test a %s for %s: %s", displayType(operand), displayType(target), why), hint)
+		}
+		return nil
+	}
+	if t.goTypeInfo != nil {
+		if gd := t.goTypeInfo.GetTypeData(t.goTypeLookupName(operand)); gd != nil && gd.Kind == "interface" {
+			return reject("a " + displayType(operand))
+		}
+	}
+	_, why, hint := t.inoutImplMismatch(func() transpiler.Type { return operand }, target)
+	if why != "" {
+		return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
+			fmt.Sprintf("a typed pattern cannot test a %s for %s: %s", displayType(operand), displayType(target), why), hint)
+	}
+	return nil
+}

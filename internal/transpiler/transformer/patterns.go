@@ -747,6 +747,15 @@ func (t *galaASTTransformer) transformTypedPattern(pat patSrc, objExpr ast.Expr,
 	if err := t.checkLoweredInterfacePattern(typeName, pat.at()); err != nil {
 		return nil, nil, err
 	}
+	if t.inoutConstraints {
+		operand := matchedType
+		if transpiler.IsUnusable(operand) {
+			operand = t.getExprTypeName(objExpr)
+		}
+		if err := t.checkInoutTypePattern(typeName, operand, pat.at()); err != nil {
+			return nil, nil, err
+		}
+	}
 	// If the type expression is a pointer (*T), wrap the resolved type
 	// in PointerType so the pattern variable has the correct pointer type.
 	if _, isPtr := typeExpr.(*ast.StarExpr); isPtr {
