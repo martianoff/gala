@@ -103,6 +103,8 @@ func lendsToSave(a Ptr[Acc]) {
     save(a)
 }
 
+func show(a Ptr[Acc]) string = s"${*a}"
+
 func Public(a Ptr[Acc]) {
     a.add(2)
 }
@@ -129,6 +131,7 @@ func TestPlanInout(t *testing.T) {
 	require.Contains(t, v["save"], "escapes: stored")
 	require.Contains(t, v["lendsToSave"], "escapes")
 	require.Contains(t, v["Public"], "public API")
+	require.Contains(t, v["show"], "interpolated string")
 
 	// Public converts the public function too; Exclude keeps a function
 	// and, through the closure, what lends to it.
@@ -178,4 +181,18 @@ func outer(inout a Acc) int {
     copy.total
 }
 `, out)
+}
+
+// A package named test is a library like any other: its exported functions
+// are public API.
+func TestPlanInoutPackageNamedTest(t *testing.T) {
+	root := module(t, map[string]string{"own/own.gala": `package test
+
+struct Acc(var total int)
+
+func Reset(a Ptr[Acc]) {
+    a.total = 0
+}
+`})
+	require.Contains(t, verdicts(planOf(t, root, "own", ownership.AdoptConfig{}))["Reset"], "public API")
 }

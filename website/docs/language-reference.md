@@ -1927,9 +1927,10 @@ the call:
 **Moving existing code to `inout`.** `gala fix inout` rewrites the `Ptr[T]`
 receivers and parameters that are only read, written and lent on (never
 stored, compared, captured or passed to Go) to `inout T`: `*p` becomes `p`, and
-`p` passed on to another converted parameter becomes `&p`. It compiles the
+`p` passed on to another converted parameter becomes `&p`. It transpiles the
 rewritten package and leaves alone any function whose rewrite the compiler
-rejects. Public functions keep their `Ptr` unless `--public` is given, since
+rejects (it does not build the Go: run `gala build` after it). Public
+functions keep their `Ptr` unless `--public` is given, since
 converting them changes the package's API. `--dry-run` prints the diff, and
 running the fix again changes nothing.
 

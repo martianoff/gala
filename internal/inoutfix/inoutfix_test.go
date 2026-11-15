@@ -101,7 +101,9 @@ func Fill(a Ptr[Acc]) {
 	path := filepath.Join(dir, "lib.gala")
 	require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
 
-	res, err := inoutfix.Package(dir, inoutfix.Config{SearchPaths: []string{root}})
+	results, err := inoutfix.Package(dir, inoutfix.Config{SearchPaths: []string{root}})
+	require.Len(t, results, 1)
+	res := results[0]
 	require.NoError(t, err)
 	require.Equal(t, "--- a/lib.gala\n+++ b/lib.gala\n@@ -5 +5 @@\n-func add(a Ptr[Acc], n int) {\n+func add(inout a Acc, n int) {\n",
 		res.Diff(dir))
@@ -110,11 +112,29 @@ func Fill(a Ptr[Acc]) {
 	require.Len(t, sigs, 1)
 	require.False(t, sigs[0].Func.Public)
 
-	pub, err := inoutfix.Package(dir, inoutfix.Config{SearchPaths: []string{root}, Public: true})
+	pubs, err := inoutfix.Package(dir, inoutfix.Config{SearchPaths: []string{root}, Public: true})
+	pub := pubs[0]
 	require.NoError(t, err)
 	sigs = pub.Signatures(true)
 	require.Len(t, sigs, 1)
 	require.Equal(t, "func Fill(a Ptr[Acc])", sigs[0].Before)
 	require.Equal(t, "func Fill(inout a Acc)", sigs[0].After)
 	require.Contains(t, pub.Diff(dir), "+    add(&a, 1)")
+}
+
+// TestPackageOfPrograms: a directory of standalone programs, as examples/
+// is, is one package per file.
+func TestPackageOfPrograms(t *testing.T) {
+	root := repoRoot(t)
+	dir := t.TempDir()
+	src := "package main\n\nstruct C(var n int)\n\nfunc inc(c Ptr[C]) {\n    c.n = c.n + 1\n}\n\nfunc main() {\n    var c = C(0)\n    inc(&c)\n    Println(c.n)\n}\n"
+	for _, name := range []string{"a.gala", "b.gala"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644))
+	}
+	results, err := inoutfix.Package(dir, inoutfix.Config{SearchPaths: []string{root}})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	for _, res := range results {
+		require.Len(t, res.Changes, 1)
+	}
 }

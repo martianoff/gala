@@ -106,7 +106,15 @@ type bindingUses struct {
 	derefs    []native.GalaNodeRef // the unary expressions `*p`
 	lends     []lendUse
 	receivers []lendUse
+	// foreign: a dereference or a lend lies in a tree of its own, such as an
+	// expression inside an interpolated string, whose offsets are not the
+	// file's, so the rewrite cannot edit it.
+	foreign bool
 }
+
+// foreign reports whether n lies outside the tree of the declaration being
+// walked.
+func (w *walker) foreign(n native.GalaNodeRef) bool { return n.Tree() != w.d.node.Tree() }
 
 // lendUse is a binding lent whole to a GALA callee: argument index of it,
 // or its receiver (index -1). own is the callee's declaration when the
@@ -176,7 +184,7 @@ func PlanInout(pkg string, files []File, rich *transpiler.RichAST, opts Options,
 				c.uses = &bindingUses{}
 			}
 			c.typ, c.at = a.declaredPointer(d, b)
-			c.blocked = a.blocked(d, b, c.typ, cfg)
+			c.blocked = a.blocked(d, b, c.uses, c.typ, cfg)
 			byDecl[d] = append(byDecl[d], c)
 			slots[slot{d, b.index}] = c
 		}
@@ -227,7 +235,7 @@ func PlanInout(pkg string, files []File, rich *transpiler.RichAST, opts Options,
 // public reports whether d is part of its package's API: callable from
 // another package or from Go. A main package has no importers.
 func (a *pkg) public(d *decl) bool {
-	return a.name != "main" && a.name != "test" && d.goCallable(a.name)
+	return a.name != "main" && d.goCallable(a.name)
 }
 
 // declaredPointer is the `Ptr[T]` type node b is declared with, and the
@@ -262,9 +270,9 @@ func ptrType(t native.TypeNode) native.TypeNode {
 	return t
 }
 
-// blocked is why b, a receiver or parameter of d declared with typ, cannot
-// be converted on its own; "" when it can.
-func (a *pkg) blocked(d *decl, b *binding, typ native.TypeNode, cfg AdoptConfig) string {
+// blocked is why b, a receiver or parameter of d declared with typ and used
+// as uses says, cannot be converted on its own; "" when it can.
+func (a *pkg) blocked(d *decl, b *binding, uses *bindingUses, typ native.TypeNode, cfg AdoptConfig) string {
 	for _, r := range b.reasons {
 		if r.Kind == Nullable {
 			return "a *T that may be nil"
@@ -278,6 +286,8 @@ func (a *pkg) blocked(d *decl, b *binding, typ native.TypeNode, cfg AdoptConfig)
 	switch why, excluded := cfg.Exclude[d.name]; {
 	case excluded:
 		return why
+	case uses.foreign:
+		return "dereferenced or lent inside an interpolated string, which the fix does not rewrite"
 	case !typ.Ok():
 		return "not declared as a plain `Ptr[T]` (a var, val, variadic or defaulted parameter)"
 	case a.opts.HandWrittenGo:

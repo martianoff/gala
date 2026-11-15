@@ -37,16 +37,19 @@ compared, captured or passed to Go) to inout T, together with their uses:
 *p becomes p, and p passed on to another converted parameter becomes &p.
 Call sites need no change: &x and a Ptr both fill an inout parameter.
 
-The rewritten package is compiled, and a function whose rewrite the compiler
-rejects keeps its Ptr. Running the fix again changes nothing.
+The rewritten package is transpiled, and a function whose rewrite the GALA
+compiler rejects keeps its Ptr. The generated Go is not built: run gala build
+after the fix. Test files and other packages are not rewritten or checked.
+Running the fix again changes nothing.
 
 A public function (an exported function, or an exported method, of a package
 other than main) keeps its Ptr unless --public is given: converting it changes
 the package's API. So does a function used as a function value, or one of a
 package with hand-written Go.
 
-A dir ending in /... includes its subdirectories, and a .gala file is a
-program of its own (as each of the examples is). The default is ".".
+A dir ending in /... includes its subdirectories. A directory of standalone
+programs (as examples/ is) is one package per file, and so is a .gala file
+given on its own. The default is ".".
 
 Examples:
   gala fix inout --dry-run ./...     # print the diff, change nothing
@@ -58,7 +61,7 @@ Examples:
 func init() {
 	fixInoutCmd.Flags().BoolVar(&fixDryRun, "dry-run", false, "Print the diff instead of writing the files")
 	fixInoutCmd.Flags().BoolVar(&fixPublic, "public", false, "Convert public functions and methods too (changes the package's API)")
-	fixInoutCmd.Flags().BoolVar(&fixNoVerify, "no-verify", false, "Do not compile the rewritten package")
+	fixInoutCmd.Flags().BoolVar(&fixNoVerify, "no-verify", false, "Do not transpile the rewritten package to check it")
 	fixInoutCmd.Flags().BoolVar(&fixReport, "report", false, "List every Ptr receiver and parameter with its verdict, and the converted signatures")
 	fixInoutCmd.Flags().StringVarP(&fixSearch, "search", "s", "", "Comma-separated extra search paths")
 	fixCmd.AddCommand(fixInoutCmd)
@@ -83,31 +86,36 @@ func runFixInout(cmd *cobra.Command, args []string) {
 			pkgDir = filepath.Dir(dir)
 		}
 		cfg := inoutfix.Config{SearchPaths: fixSearchPaths(pkgDir, cwd), Public: fixPublic, NoVerify: fixNoVerify}
-		var res *inoutfix.Result
+		var results []*inoutfix.Result
 		if file {
+			var res *inoutfix.Result
 			res, err = inoutfix.Files([]string{dir}, cfg)
+			results = []*inoutfix.Result{res}
 		} else {
-			res, err = inoutfix.Package(dir, cfg)
+			results, err = inoutfix.Package(dir, cfg)
 		}
 		if err != nil {
+			// Package reports the packages it could not rewrite; the others
+			// are still in results.
 			fmt.Fprintf(os.Stderr, "%s: %v\n", dir, err)
 			failed++
-			continue
 		}
-		if res == nil {
-			continue
-		}
-		total.add(res)
-		out := cmd.OutOrStdout()
-		if fixDryRun {
-			fmt.Fprint(out, res.Diff(cwd))
-		} else if err := res.Write(); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", dir, err)
-			failed++
-			continue
-		}
-		if fixReport {
-			printFixReport(out, res, cwd)
+		for _, res := range results {
+			if res == nil {
+				continue
+			}
+			total.add(res)
+			out := cmd.OutOrStdout()
+			if fixDryRun {
+				fmt.Fprint(out, res.Diff(cwd))
+			} else if err := res.Write(); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", dir, err)
+				failed++
+				continue
+			}
+			if fixReport {
+				printFixReport(out, res, cwd)
+			}
 		}
 	}
 	fmt.Fprintln(cmd.ErrOrStderr(), total.String())

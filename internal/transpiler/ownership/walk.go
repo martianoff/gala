@@ -1041,7 +1041,7 @@ func (w *walker) unary(x native.UnaryExprNode, u use) chainResult {
 			if b := w.binds[name]; b != nil {
 				w.touch(b, operand)
 				if !w.overridden(b, operand) {
-					w.recordUse(b, func(r *bindingUses) { r.derefs = append(r.derefs, x.GalaNodeRef) })
+					w.recordUse(b, func(r *bindingUses) { r.derefs, r.foreign = append(r.derefs, x.GalaNodeRef), r.foreign || w.foreign(x.GalaNodeRef) })
 					w.copyUse(b, u, operand)
 				}
 				return chainResult{}
@@ -1122,7 +1122,9 @@ func (w *walker) lend(b *binding, cs *callState, i int, at native.GalaNodeRef) {
 		pt := c.paramType(i)
 		switch {
 		case isPointer(pt) && c.paramBorrowed(i, w.p3):
-			w.recordUse(b, func(r *bindingUses) { r.lends = append(r.lends, lendUse{at: at, own: c.own, index: i, callee: c.name}) })
+			w.recordUse(b, func(r *bindingUses) {
+				r.lends, r.foreign = append(r.lends, lendUse{at: at, own: c.own, index: i, callee: c.name}), r.foreign || w.foreign(at)
+			})
 		case c.collection:
 			w.reason(b, Collection, c.name, at)
 		case isPointer(pt) && c.summary() == nil:
@@ -1443,9 +1445,11 @@ func (w *walker) callSuffix(st *chainState, s native.PostfixSuffixNode) chainRes
 			if !st.whole {
 				what += ", on a field"
 			}
-			w.recordUse(b, func(r *bindingUses) {
-				r.receivers = append(r.receivers, lendUse{at: s.GalaNodeRef, own: c.own, index: -1, callee: c.name})
-			})
+			if st.whole {
+				w.recordUse(b, func(r *bindingUses) {
+					r.receivers = append(r.receivers, lendUse{at: s.GalaNodeRef, own: c.own, index: -1, callee: c.name})
+				})
+			}
 			switch sum := c.summary(); {
 			case c.kind == calleeGo:
 				w.reason(b, PassedToGo, what, s.GalaNodeRef)

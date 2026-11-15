@@ -1394,10 +1394,13 @@ The maintainer answered Q19–Q26 on 2026-11-14 and took every recommendation.
 
 The rewrite is `p Ptr[T]` → `inout p T`, `*p` → `p`, and `p` passed whole → `&p`.
 Call sites need no change: `&x` and a `Ptr` both fill an `inout` parameter. The fix then
-compiles the rewritten package and keeps the `Ptr` of every function the compiler
+transpiles the rewritten package and keeps the `Ptr` of every function the compiler
 rejects a use of, such as a slice element lent to it (`&cs[1]`), until the package
-compiles. A second run changes nothing. `examples/inout_fix_before.gala` and
-`inout_fix_after.gala` are its input and output; both print the same.
+transpiles. It does not build the generated Go. A second run changes nothing.
+`examples/inout_fix_before.gala` and `inout_fix_after.gala` are its input and output;
+both print the same. A directory of standalone programs, as `examples/` is, is one
+package per file, and a dereference or lend inside an interpolated string blocks the
+conversion, since its expression has no offsets in the file.
 
 Phase 1 now reads an `inout` binding as the place it is: its name alone is a copy of the
 pointee, and `&x` lends it. Before, `&x` counted as an address taken and a bare `x` as an

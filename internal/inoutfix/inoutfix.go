@@ -13,6 +13,7 @@
 package inoutfix
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -76,15 +77,44 @@ type sourceFile struct {
 	bom  string
 }
 
-// Package rewrites the package in dir: its .gala files, tests excluded. It
-// reads them and computes the rewrite; it writes nothing (see Write). A
-// directory without .gala files gives a nil Result.
-func Package(dir string, cfg Config) (*Result, error) {
+// Package rewrites the packages in dir: its .gala files, tests excluded,
+// grouped into packages as the compiler groups them. It reads them and
+// computes each rewrite; it writes nothing (see Write).
+func Package(dir string, cfg Config) ([]*Result, error) {
 	paths, err := packageFiles(dir)
-	if err != nil || len(paths) == 0 {
+	if err != nil {
 		return nil, err
 	}
-	return Files(paths, cfg)
+	// Group the files as the compiler does (analyzer.PackageSiblings): a
+	// directory of standalone programs, such as examples/, is one package
+	// per file.
+	seen := map[string]bool{}
+	var out []*Result
+	var errs []error
+	for _, path := range paths {
+		if seen[path] {
+			continue
+		}
+		src, _ := analyzer.ReadSource(path)
+		group := []string{path}
+		for _, s := range analyzer.PackageSiblings(path, src, analyzer.ReadSource) {
+			if !strings.HasSuffix(s, "_test.gala") {
+				group = append(group, s)
+			}
+		}
+		sort.Strings(group)
+		for _, g := range group {
+			seen[g] = true
+		}
+		res, err := Files(group, cfg)
+		switch {
+		case err != nil:
+			errs = append(errs, err)
+		case res != nil:
+			out = append(out, res)
+		}
+	}
+	return out, errors.Join(errs...)
 }
 
 // Files rewrites the package of the given .gala files, all in one
@@ -128,7 +158,10 @@ func Files(paths []string, cfg Config) (*Result, error) {
 	for round := 0; ; round++ {
 		res.Plan = ownership.PlanInout(rich.PackageName, srcs, rich, opts,
 			ownership.AdoptConfig{Public: cfg.Public, Exclude: res.Excluded})
-		after := apply(files, res.Plan.Edits)
+		after, err := apply(files, res.Plan.Edits)
+		if err != nil {
+			return nil, err
+		}
 		if len(res.Plan.Edits) == 0 || cfg.NoVerify {
 			res.Changes = changes(files, after)
 			return res, nil
@@ -173,8 +206,9 @@ func packageFiles(dir string) ([]string, error) {
 	return out, nil
 }
 
-// apply is each file's source with the edits applied, by path.
-func apply(files []sourceFile, edits []ownership.Edit) map[string]string {
+// apply is each file's source with the edits applied, by path. The edits
+// must be sorted and must not overlap.
+func apply(files []sourceFile, edits []ownership.Edit) (map[string]string, error) {
 	out := map[string]string{}
 	for _, f := range files {
 		var b strings.Builder
@@ -183,6 +217,9 @@ func apply(files []sourceFile, edits []ownership.Edit) map[string]string {
 			if e.File != f.path {
 				continue
 			}
+			if e.Start < at || e.End < e.Start || e.End > len(f.src) {
+				return nil, fmt.Errorf("%s: overlapping or out-of-range edit at byte %d: the plan is wrong", f.path, e.Start)
+			}
 			b.WriteString(f.src[at:e.Start])
 			b.WriteString(e.Text)
 			at = e.End
@@ -190,7 +227,7 @@ func apply(files []sourceFile, edits []ownership.Edit) map[string]string {
 		b.WriteString(f.src[at:])
 		out[f.path] = b.String()
 	}
-	return out
+	return out, nil
 }
 
 func changes(files []sourceFile, after map[string]string) []FileChange {
@@ -323,15 +360,30 @@ func (r *Result) exclude(diags []diagnostic, after map[string]string) bool {
 	return excluded
 }
 
-// Write writes the rewritten files, keeping a leading byte order mark.
+// Write writes the rewritten files, keeping a leading byte order mark. It
+// writes every file beside its original first and renames them over the
+// originals only once all are written, so a failed write leaves the package
+// as it was.
 func (r *Result) Write() error {
+	var temps []string
+	defer func() {
+		for _, t := range temps {
+			os.Remove(t)
+		}
+	}()
 	for _, c := range r.Changes {
-		out := c.bom + c.After
 		info, err := os.Stat(c.Path)
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(c.Path, []byte(out), info.Mode()); err != nil {
+		tmp := c.Path + ".inoutfix"
+		if err := os.WriteFile(tmp, []byte(c.bom+c.After), info.Mode()); err != nil {
+			return err
+		}
+		temps = append(temps, tmp)
+	}
+	for i, c := range r.Changes {
+		if err := os.Rename(temps[i], c.Path); err != nil {
 			return err
 		}
 	}
@@ -389,7 +441,9 @@ func (r *Result) Signatures(public bool) []Signature {
 				edits = append(edits, e)
 			}
 		}
-		header := apply([]sourceFile{{path: f.File, src: src[:f.SigEnd]}}, edits)[f.File]
+		// The plan's edits applied already, so these cannot fail.
+		headers, _ := apply([]sourceFile{{path: f.File, src: src[:f.SigEnd]}}, edits)
+		header := headers[f.File]
 		out = append(out, Signature{Func: f, Before: oneLine(src[f.SigStart:f.SigEnd]), After: oneLine(header[f.SigStart:])})
 	}
 	return out
