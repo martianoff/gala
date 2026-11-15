@@ -91,6 +91,46 @@ eachSystem (
         touch "$out"
       '';
 
+    # The combined `gala-lean` executable: one binary, every component.
+    gala-lean-main =
+      let
+        galaLean = self.legacyPackages.${system}.gala-lean.main;
+      in
+      pkgs.runCommand "gala-lean-main-test" { nativeBuildInputs = [ pkgs.diffutils ]; } ''
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME" work
+        cd work
+
+        ${galaLean}/bin/gala-lean version | grep -F 'gala-lean '
+
+        # `run` is the reference interpreter (galaspec) behind one command.
+        ${galaLean}/bin/gala-lean run ${../formal/tests/ex_hex_literals.json} > run.out
+        diff -u ${../formal/tests/ex_hex_literals.out} run.out
+
+        # `interp` is the interpolation port.
+        printf '%s' 'a $name b' | ${galaLean}/bin/gala-lean interp > interp.out
+        printf '%s\n' 'L 0 0 2 6120' 'E 3 2 7  6e616d65 1' 'L 7 7 9 2062' > interp.expected
+        diff -u interp.expected interp.out
+
+        # `diag` is the diagnostics port.
+        printf '%s\n' \
+          'r|0|6e6f2d737563682d66696c652d376133662e67616c61|7061636b616765206d61696e0a||d:47414c412d4530303031:626164:646f20626574746572::1:0:0' \
+          | ${galaLean}/bin/gala-lean diag --batch > diag.out
+        grep -q '^R ' diag.out
+        grep -q '^J ' diag.out
+        grep -q '^--$' diag.out
+
+        # `mod` is the gala.mod port, plus a small `init`/`show`/`format` CLI.
+        ${galaLean}/bin/gala-lean mod init example.com/draft > init.out
+        grep -F 'module example.com/draft' gala.mod
+        grep -F 'gala 0.101.0' gala.mod
+        ${galaLean}/bin/gala-lean mod show > show.out
+        printf '%s\n' 'module example.com/draft' 'gala 0.101.0' > show.expected
+        diff -u show.expected show.out
+
+        touch "$out"
+      '';
+
     # End-to-end smoke test: scaffold a project, build it with the
     # embedded stdlib, and run it. Works offline (GOPROXY=off).
     smoke =

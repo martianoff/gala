@@ -41,11 +41,14 @@ stdenv.mkDerivation {
 
     # Imported modules need their .olean before Lean can emit C.
     lean -R . -o build/Manifest.olean Manifest.lean
+    lean -R . -o build/ManifestCli.olean ManifestCli.lean
     lean -R . -o build/Main.olean Main.lean
     lean -R . --c=build/c/Manifest.c Manifest.lean
+    lean -R . --c=build/c/ManifestCli.c ManifestCli.lean
     lean -R . --c=build/c/Main.c Main.lean
 
-    leanc -O2 -o build/manifest build/c/Main.c build/c/Manifest.c
+    leanc -O2 -o build/manifest \
+      build/c/Main.c build/c/ManifestCli.c build/c/Manifest.c
     runHook postBuild
   '';
 

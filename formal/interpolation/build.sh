@@ -39,16 +39,18 @@ mkdir -p "$build_dir/c"
 export LEAN_PATH="$build_dir"
 
 "$LEAN" -R "$here" -o "$build_dir/Interpolation.olean" "$here/Interpolation.lean"
+"$LEAN" -R "$here" -o "$build_dir/InterpolationCli.olean" "$here/InterpolationCli.lean"
 "$LEAN" -R "$here" -o "$build_dir/Main.olean" "$here/Main.lean"
 
 # Lean 4's C backend: one C translation unit per module.
 "$LEAN" -R "$here" --c="$build_dir/c/Interpolation.c" "$here/Interpolation.lean"
+"$LEAN" -R "$here" --c="$build_dir/c/InterpolationCli.c" "$here/InterpolationCli.lean"
 "$LEAN" -R "$here" --c="$build_dir/c/Main.c" "$here/Main.lean"
 
 # leanc links the generated C against the Lean runtime using the host C
 # toolchain, producing a normal native executable.
 "$LEANC" -O2 -o "$build_dir/interpolation" \
-  "$build_dir/c/Main.c" "$build_dir/c/Interpolation.c"
+  "$build_dir/c/Main.c" "$build_dir/c/InterpolationCli.c" "$build_dir/c/Interpolation.c"
 
 echo "built $build_dir/interpolation"
-echo "generated C: $build_dir/c/Interpolation.c $build_dir/c/Main.c"
+echo "generated C: $build_dir/c/Interpolation.c $build_dir/c/InterpolationCli.c $build_dir/c/Main.c"

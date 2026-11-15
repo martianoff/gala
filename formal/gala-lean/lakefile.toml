@@ -1,0 +1,36 @@
+# The draft combined `gala-lean` executable. It links the reference
+# interpreter (`galaspec`) with the staged ports for interpolation,
+# diagnostics and the gala.mod manifest; see README.md.
+#
+# This is a separate Lake package because the staged ports are standalone and
+# keep their own (nixpkgs) Lean; the package borrows them by source directory,
+# so they do not move into the `formal/` library.
+name = "gala-lean"
+version = "0.1.0-draft"
+defaultTargets = ["gala-lean"]
+
+# galaspec's interpreter modules (the same list as GALASPEC_SRCS in
+# formal/BUILD.bazel), excluding its `Gala.Main` executable root.
+[[lean_lib]]
+name = "GalaSpec"
+srcDir = ".."
+globs = ["Gala.Syntax", "Gala.Json", "Gala.Scope", "Gala.Print", "Gala.Eval", "Gala.Cli"]
+
+[[lean_lib]]
+name = "GalaInterpolation"
+srcDir = "../interpolation"
+globs = ["Interpolation", "InterpolationCli"]
+
+[[lean_lib]]
+name = "GalaDiagnostics"
+srcDir = "../diagnostics"
+globs = ["Diagnostics", "DiagnosticsCli"]
+
+[[lean_lib]]
+name = "GalaManifest"
+srcDir = "../manifest"
+globs = ["Manifest", "ManifestCli"]
+
+[[lean_exe]]
+name = "gala-lean"
+root = "Main"

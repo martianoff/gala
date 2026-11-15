@@ -39,16 +39,18 @@ mkdir -p "$build_dir/c"
 export LEAN_PATH="$build_dir"
 
 "$LEAN" -R "$here" -o "$build_dir/Manifest.olean" "$here/Manifest.lean"
+"$LEAN" -R "$here" -o "$build_dir/ManifestCli.olean" "$here/ManifestCli.lean"
 "$LEAN" -R "$here" -o "$build_dir/Main.olean" "$here/Main.lean"
 
 # Lean 4's C backend: one C translation unit per module.
 "$LEAN" -R "$here" --c="$build_dir/c/Manifest.c" "$here/Manifest.lean"
+"$LEAN" -R "$here" --c="$build_dir/c/ManifestCli.c" "$here/ManifestCli.lean"
 "$LEAN" -R "$here" --c="$build_dir/c/Main.c" "$here/Main.lean"
 
 # leanc links the generated C against the Lean runtime using the host C
 # toolchain, producing a normal native executable.
 "$LEANC" -O2 -o "$build_dir/manifest" \
-  "$build_dir/c/Main.c" "$build_dir/c/Manifest.c"
+  "$build_dir/c/Main.c" "$build_dir/c/ManifestCli.c" "$build_dir/c/Manifest.c"
 
 echo "built $build_dir/manifest"
-echo "generated C: $build_dir/c/Manifest.c $build_dir/c/Main.c"
+echo "generated C: $build_dir/c/Manifest.c $build_dir/c/ManifestCli.c $build_dir/c/Main.c"

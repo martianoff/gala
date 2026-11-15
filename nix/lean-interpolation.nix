@@ -41,11 +41,14 @@ stdenv.mkDerivation {
 
     # Imported modules need their .olean before Lean can emit C.
     lean -R . -o build/Interpolation.olean Interpolation.lean
+    lean -R . -o build/InterpolationCli.olean InterpolationCli.lean
     lean -R . -o build/Main.olean Main.lean
     lean -R . --c=build/c/Interpolation.c Interpolation.lean
+    lean -R . --c=build/c/InterpolationCli.c InterpolationCli.lean
     lean -R . --c=build/c/Main.c Main.lean
 
-    leanc -O2 -o build/interpolation build/c/Main.c build/c/Interpolation.c
+    leanc -O2 -o build/interpolation \
+      build/c/Main.c build/c/InterpolationCli.c build/c/Interpolation.c
     runHook postBuild
   '';
 

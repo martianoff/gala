@@ -39,16 +39,18 @@ mkdir -p "$build_dir/c"
 export LEAN_PATH="$build_dir"
 
 "$LEAN" -R "$here" -o "$build_dir/Diagnostics.olean" "$here/Diagnostics.lean"
+"$LEAN" -R "$here" -o "$build_dir/DiagnosticsCli.olean" "$here/DiagnosticsCli.lean"
 "$LEAN" -R "$here" -o "$build_dir/Main.olean" "$here/Main.lean"
 
 # Lean 4's C backend: one C translation unit per module.
 "$LEAN" -R "$here" --c="$build_dir/c/Diagnostics.c" "$here/Diagnostics.lean"
+"$LEAN" -R "$here" --c="$build_dir/c/DiagnosticsCli.c" "$here/DiagnosticsCli.lean"
 "$LEAN" -R "$here" --c="$build_dir/c/Main.c" "$here/Main.lean"
 
 # leanc links the generated C against the Lean runtime using the host C
 # toolchain, producing a normal native executable.
 "$LEANC" -O2 -o "$build_dir/diagnostics" \
-  "$build_dir/c/Main.c" "$build_dir/c/Diagnostics.c"
+  "$build_dir/c/Main.c" "$build_dir/c/DiagnosticsCli.c" "$build_dir/c/Diagnostics.c"
 
 echo "built $build_dir/diagnostics"
-echo "generated C: $build_dir/c/Diagnostics.c $build_dir/c/Main.c"
+echo "generated C: $build_dir/c/Diagnostics.c $build_dir/c/DiagnosticsCli.c $build_dir/c/Main.c"

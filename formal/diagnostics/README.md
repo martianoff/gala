@@ -54,9 +54,10 @@ local toolchain at `tmp/lean-4.34.1` is found automatically.
 This runs Lean's C backend, then links the generated C with the Lean runtime:
 
 ```text
-lean --c=build/c/Diagnostics.c Diagnostics.lean
-lean --c=build/c/Main.c         Main.lean
-leanc -O2 -o build/diagnostics build/c/Main.c build/c/Diagnostics.c
+lean --c=build/c/Diagnostics.c    Diagnostics.lean
+lean --c=build/c/DiagnosticsCli.c DiagnosticsCli.lean
+lean --c=build/c/Main.c           Main.lean
+leanc -O2 -o build/diagnostics build/c/Main.c build/c/DiagnosticsCli.c build/c/Diagnostics.c
 ```
 
 ### Nix
@@ -135,7 +136,8 @@ against the code the CLI actually uses.
 | Path | Purpose |
 | --- | --- |
 | `Diagnostics.lean` | the port: terminal rendering, JSON, `DocsURL`, `StripBOM` |
-| `Main.lean` | native CLI / batch protocol |
+| `DiagnosticsCli.lean` | native CLI / batch protocol, shared with `formal/gala-lean` |
+| `Main.lean` | the standalone executable; calls `DiagnosticsCli.main` |
 | `Tests.lean` | curated tests compiled into a native test binary (expectations taken from Go) |
 | `go_ref/main.go` | Go differential oracle and case generator |
 | `build.sh` | Lean → C → native ELF |

@@ -41,11 +41,14 @@ stdenv.mkDerivation {
 
     # Imported modules need their .olean before Lean can emit C.
     lean -R . -o build/Diagnostics.olean Diagnostics.lean
+    lean -R . -o build/DiagnosticsCli.olean DiagnosticsCli.lean
     lean -R . -o build/Main.olean Main.lean
     lean -R . --c=build/c/Diagnostics.c Diagnostics.lean
+    lean -R . --c=build/c/DiagnosticsCli.c DiagnosticsCli.lean
     lean -R . --c=build/c/Main.c Main.lean
 
-    leanc -O2 -o build/diagnostics build/c/Main.c build/c/Diagnostics.c
+    leanc -O2 -o build/diagnostics \
+      build/c/Main.c build/c/DiagnosticsCli.c build/c/Diagnostics.c
     runHook postBuild
   '';
 

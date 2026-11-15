@@ -9,9 +9,11 @@
 #   * legacyPackages.<system>.gala-lean.<component> - the staged Lean 4
 #     ports, as native executables (development tools): `interpolation`
 #     (GALA's interpolation splitter), `diagnostics` (galaerr's terminal and
-#     JSON renderers) and `manifest` (the gala.mod reader and writer). They
-#     are referenced as `nix build .#gala-lean.<component>`. The group lives
-#     under legacyPackages because flake `packages` must be a flat set of
+#     JSON renderers) and `manifest` (the gala.mod reader and writer), plus
+#     `main` — one draft `gala-lean` executable combining those ports with
+#     the reference interpreter. They are referenced as
+#     `nix build .#gala-lean.<component>`. The group lives under
+#     legacyPackages because flake `packages` must be a flat set of
 #     derivations; the plain `gala-lean` package name stays reserved for the
 #     complete Lean implementation.
 #   * overlays.default                   - adds pkgs.gala to nixpkgs
@@ -60,6 +62,7 @@
             interpolation = pkgs.callPackage ./nix/lean-interpolation.nix { };
             diagnostics = pkgs.callPackage ./nix/lean-diagnostics.nix { };
             manifest = pkgs.callPackage ./nix/lean-manifest.nix { };
+            main = pkgs.callPackage ./nix/lean-gala.nix { };
           };
         }
       );

@@ -79,10 +79,15 @@ local toolchain at `tmp/lean-4.34.1` is found automatically.
 This runs Lean's C backend, then links the generated C with the Lean runtime:
 
 ```text
-lean --c=build/c/Manifest.c Manifest.lean
-lean --c=build/c/Main.c     Main.lean
-leanc -O2 -o build/manifest build/c/Main.c build/c/Manifest.c
+lean --c=build/c/Manifest.c    Manifest.lean
+lean --c=build/c/ManifestCli.c ManifestCli.lean
+lean --c=build/c/Main.c        Main.lean
+leanc -O2 -o build/manifest build/c/Main.c build/c/ManifestCli.c build/c/Manifest.c
 ```
+
+`ManifestCli.lean` also holds the command logic `formal/gala-lean` imports for
+its `mod` subcommand; `Main.lean` is the standalone executable and only calls
+`ManifestCli.main`.
 
 ### Nix
 

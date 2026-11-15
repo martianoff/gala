@@ -60,9 +60,10 @@ local toolchain at `tmp/lean-4.34.1` is found automatically.
 This runs Lean's C backend, then links the generated C with the Lean runtime:
 
 ```text
-lean --c=build/c/Interpolation.c Interpolation.lean
-lean --c=build/c/Main.c         Main.lean
-leanc -O2 -o build/interpolation build/c/Main.c build/c/Interpolation.c
+lean --c=build/c/Interpolation.c    Interpolation.lean
+lean --c=build/c/InterpolationCli.c InterpolationCli.lean
+lean --c=build/c/Main.c             Main.lean
+leanc -O2 -o build/interpolation build/c/Main.c build/c/InterpolationCli.c build/c/Interpolation.c
 ```
 
 `build/interpolation` is a normal native Linux ELF executable (x86-64,
@@ -137,7 +138,8 @@ comparison is against the code the compiler actually uses.
 | Path | Purpose |
 | --- | --- |
 | `Interpolation.lean` | the port |
-| `Main.lean` | native CLI / batch protocol |
+| `InterpolationCli.lean` | native CLI / batch protocol, shared with `formal/gala-lean` |
+| `Main.lean` | the standalone executable; calls `InterpolationCli.main` |
 | `Tests.lean` | curated tests compiled into a native test binary |
 | `go_ref/main.go` | Go differential oracle and case generator |
 | `build.sh` | Lean → C → native ELF |
