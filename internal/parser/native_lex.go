@@ -2,7 +2,6 @@ package parser
 
 import (
 	"fmt"
-	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/native"
@@ -28,9 +27,9 @@ func retypeNewlines(ts *native.GalaTokens) {
 		if tok.Type == native.GalaEOF {
 			break
 		}
-		start, end := int(tok.Start), int(tok.End)
+		end := int(tok.End)
 		tok.Type = int32(rule.next(int(tok.Type), int(tok.Line),
-			func() string { return src[start:end] },
+			func() string { return ts.Text(i) },
 			func() bool { return standsApartBefore(byteAt(src, end), byteAt(src, end+1)) }))
 	}
 }
@@ -48,9 +47,11 @@ func byteAt(src string, i int) int {
 // (line 1-based, col 0-based, counted in code points; line <= 0 starts at
 // 1:0) and applies the line-break rule. A leading UTF-8 BOM is the caller's
 // to drop, as ParseFile and VisitNativeTokens drop it; an expression's text
-// keeps it. Each byte that is not valid UTF-8 reads as U+FFFD
-// (antlrText), one character of token text, doc comments and columns. ts.Src
-// is then that decoded text.
+// keeps it. ts.Src is src, and token spans are byte offsets into it. Where src
+// is not valid UTF-8, each byte that is not part of a valid encoding is one
+// character, read as U+FFFD as ANTLR reads it: one column, and U+FFFD in
+// ts.Text and ts.HiddenText (so also in doc comments), while
+// ts.Src[tok.Start:tok.End] keeps the raw bytes.
 func lexNative(src string, line, col int) *native.GalaTokens {
 	ts := lexGalop(src, line, col)
 	retypeNewlines(ts)
@@ -62,21 +63,7 @@ func lexGalop(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
-	return native.GalaLexAt(antlrText(src), line, col)
-}
-
-// antlrText is src as ANTLR's input stream reads it: each byte that is not
-// part of a valid UTF-8 encoding is U+FFFD. The native trees index it, so
-// their byte offsets and token texts agree with ANTLR's code-point offsets
-// and texts. galop's native lexer and converter keep the raw byte
-// (martianoff/galop#45), so both are given this text.
-func antlrText(src string) string {
-	if utf8.ValidString(src) {
-		return src
-	}
-	// A Go string-to-rune conversion turns each invalid byte into U+FFFD,
-	// as ANTLR's NewInputStream does.
-	return string([]rune(src))
+	return native.GalaLexAt(src, line, col)
 }
 
 // VisitNativeTokens lexes input with galop's native lexer and calls visit
@@ -92,11 +79,11 @@ func VisitNativeTokens(input string, visit func(text string)) {
 	if ts == nil {
 		return
 	}
-	for _, tok := range ts.Tokens {
+	for i, tok := range ts.Tokens {
 		if tok.Type == native.GalaEOF {
 			return
 		}
-		visit(tok.Text(ts.Src))
+		visit(ts.Text(i))
 	}
 }
 
@@ -143,7 +130,7 @@ func ParseExpressionCheckedAt(input string, line, col int, what string) (native.
 	tree := expr.Tree()
 	if next := tree.Tokens[tree.Next]; next.Type != native.GalaEOF {
 		return native.ExpressionNode{}, galaerr.NewSyntaxError(int(next.Line), int(next.Column),
-			fmt.Sprintf("unexpected %q in %s", next.Text(tree.Src), what))
+			fmt.Sprintf("unexpected %q in %s", tree.Text(tree.Next), what))
 	}
 	return expr, nil
 }

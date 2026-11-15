@@ -240,7 +240,7 @@ var mutations = []mutation{
 	}},
 	{"cut a multi-byte character, then a token edit", func(r *rand.Rand, src string, toks []native.GalaToken) string {
 		// Invalid UTF-8, which the lexer reads as U+FFFD, with a syntax error
-		// after it: the recovered tree's offsets index the decoded text.
+		// after it: the recovered tree's offsets index the source's own bytes.
 		i, ok := pickIndex(r, len(src), func(i int) bool { return src[i] >= 0xC0 })
 		if !ok {
 			return ""
