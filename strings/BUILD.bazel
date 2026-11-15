@@ -1,6 +1,6 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_gala//gala:defs.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_test")
-load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_gala_package", "stdlib_shipped_sources")
 
 exports_files([
     "strings.gala",
@@ -24,6 +24,7 @@ gala_bootstrap_transpile(
 
 go_library(
     name = "strings",
+    embed = [":gala_package"],
     srcs = ["strings.gen.go"],
     importpath = "martianoff/gala/strings",
     visibility = ["//visibility:public"],
@@ -60,3 +61,5 @@ go_binary(
 
 # Declares :shipped_sources for the stdlib embed completeness test.
 stdlib_shipped_sources()
+
+stdlib_gala_package()

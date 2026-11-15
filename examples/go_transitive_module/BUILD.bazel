@@ -1,0 +1,12 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test")
+
+# Depends on cobra only: pflag, which main.gala reaches through cobra, must be
+# typed from what the build hands the transpiler for cobra's own Go deps. The
+# CLI-path fixture tools/ci/cli_path (go_transitive_module) runs the same
+# program with `gala run`.
+gala_exec_test(
+    name = "go_transitive_module",
+    src = "main.gala",
+    expected = "main.out",
+    deps = ["@com_github_spf13_cobra//:cobra"],
+)

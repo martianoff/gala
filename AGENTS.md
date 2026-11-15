@@ -134,6 +134,10 @@ Two things to know:
 - Packages that mix hand-written `.go` with `.gala` sources are intentionally
   left to manual `gala_bootstrap_transpile` + `go_library` wiring — gazelle
   detects the mix and backs off rather than generating a `gala_library`.
+  Such a `go_library` must embed a `gala_package_marker` (in the stdlib:
+  `stdlib_gala_package()` from `//internal/stdlib:shipped_sources.bzl`), or
+  transpiles that depend on it read its types from its compiled Go instead of
+  its `.gala` source.
 
 ### Prerequisites
 

@@ -23,6 +23,7 @@ gala_toolchain(
     test_gen = "//cmd/gala_test_gen",
     all_gala_sources = "//:all_gala_sources",
     go_mod = "//:go.mod",
+    go_export_data = True,
     visibility = ["//visibility:public"],
 )
 
