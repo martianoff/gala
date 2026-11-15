@@ -62,14 +62,14 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 
 ### Recent highlights
 
-- **A faster parser: [galop](https://github.com/martianoff/galop)** (0.95) — GALA now parses with galop, a parser generator written in GALA. It builds the same trees as ANTLR without ANTLR's warm-up, and roughly halves transpile time (warm `gala build` 31% faster, `gala test` 23% faster on a 67-file project). Error messages are unchanged.
+- **Faster builds in a fifth of the memory** (0.95–0.100) — GALA now parses with [galop](https://github.com/martianoff/galop), a parser generator written in GALA, and the whole compiler reads galop's tree directly. Against 0.93.2, the last release before galop, `gala build` is 40% faster (10.0 s → 6.03 s) and peaks at 178 MB instead of 859 MB; `gala test` runs in 9.14 s instead of 15.4 s at 180 MB instead of 880 MB; and an editor keystroke is re-checked in 24 ms instead of 82 ms. Measured on [gala-tui](https://github.com/martianoff/gala-tui), medians ([0.100.0 notes](https://github.com/martianoff/gala/releases/tag/0.100.0)). Generated Go and error messages are unchanged.
 - **Composite map keys** (0.94–0.95) — `Tuple`, `Option`, `Either`, `List` and `HashSet` work as `HashMap` keys and `HashSet` elements, compared by value. A key made of several values no longer needs a wrapper type or a string encoding.
 - **Errors in your code, not in the generated Go** (0.93–0.95) — a wrong argument count, `==` on a value Go can't compare, a field and method with one name, and Go struct tags are now reported by GALA at the line that causes them ([GALA-E0082](docs/errors/GALA-E0082.md), [GALA-E0084](docs/errors/GALA-E0084.md), [GALA-E0081](docs/errors/GALA-E0081.md), [GALA-E0085](docs/errors/GALA-E0085.md)).
 - **[Non-null pointers](docs/GALA.MD#non-null-pointers-ptrt-and-optionptrt)** (0.92) — `&x` is a `Ptr[T]` that can never be nil; `OptionPtr[T]` is the form that may be empty, matched as `Some(p)` / `None()`.
 - **[Go can call GALA](#using-gala-from-go)** (0.86–0.90) — `gala export` turns a GALA project into a plain Go module that Go programs `go get` and build with `go build`.
 - **[Interface literals](docs/GALA.MD#interface-literals)** (0.89) — `UserRepo(Find = (id) => None(), Count = () => 0)` builds an interface value inline, so test doubles need no fake struct.
 
-Also: richer pattern matching with `case 1 | 2` and named sub-patterns (0.88, 0.91), explicit default values instead of implicit zero values (0.88), [opaque types](docs/GALA.MD#opaque-types) (0.85), and faster loading of imported Go packages (0.95). Every change is in the [release notes](https://github.com/martianoff/gala/releases).
+Also: opt-in `inout` parameters and receivers (0.101), richer pattern matching with `case 1 | 2` and named sub-patterns (0.88, 0.91), explicit default values instead of implicit zero values (0.88), [opaque types](docs/GALA.MD#opaque-types) (0.85), and faster loading of imported Go packages (0.95). Every change is in the [release notes](https://github.com/martianoff/gala/releases).
 
 ---
 
