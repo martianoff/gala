@@ -1400,8 +1400,10 @@ compiles. A second run changes nothing. `examples/inout_fix_before.gala` and
 `inout_fix_after.gala` are its input and output; both print the same.
 
 Phase 1 now reads an `inout` binding as the place it is: its name alone is a copy of the
-pointee, and `&x` lends it. Go reaches an `inout` binding only through the copy-in/copy-out
-wrapper (3.5.1), so an exported `inout` function's binding is no longer `from-go`.
+pointee, and `&x` lends it. Before, `&x` counted as an address taken and a bare `x` as an
+alias, so converting code lowered the measure. An `inout` binding of a function Go can
+call stays `from-go`: Go can call the exported `GALA_` body directly, not only the
+copy-in/copy-out wrapper (3.5.1).
 
 ### 10.2 Measured
 
@@ -1423,16 +1425,16 @@ What the conversion moves:
 
 | Measure | Before | After |
 |---|---|---|
-| Phase 1, examples: functions whose pointer bindings are all unique | 17 of 165 (10.3%) | 27 of 165 (16.4%) |
+| Phase 1, examples: functions whose pointer bindings are all unique | 15 of 165 (9.1%) | 15 of 165 (9.1%) |
 | Phase 1, std: the same | 0 of 584 | 0 of 584 |
 | Phase 1, galop: the same | 40 of 122 | 40 of 122 |
 | gala2lean `-stats`, the 8 examples the fix changes: functions translated | 2 of 66 | 12 of 66 |
 
-- The examples gain because exported methods of main (`String`, …) were `from-go`.
 - std gains nothing: every library binding also fails the shape rule, mostly as a
   generic type with unknown type arguments (784 reasons) or a field holding a type
   parameter or a Go slice. Adoption in std waits for a shape rule for type parameters.
-- galop gains nothing in phase 1: inference already proves its private types unique.
+- The examples and galop gain nothing in phase 1: inference already proves their
+  borrowed bindings unique, and the rest stay `from-go` or fail the shape rule.
   The conversion adds the checked contract there, and gala2lean's state-passing
   translation of `inout` receivers, which `Ptr[T]` receivers do not get.
 - The rewrite is not byte-identical in Go. A converted function of a package other

@@ -14,9 +14,7 @@ import (
 )
 
 // An `inout` binding is read as a value by its name and lent by `&name`:
-// lent on to another `inout` parameter it stays unique, and an exported
-// function's `inout` binding is not reached by Go (the copy-in/copy-out
-// wrapper), so it is not from-go.
+// lent on to another `inout` parameter it stays unique.
 func TestInoutBindings(t *testing.T) {
 	root := module(t, map[string]string{"own/own.gala": `package own
 
@@ -41,10 +39,14 @@ func Fill(inout a Acc) {
 }
 `})
 	r, _ := analyze(t, root, "own")
-	for _, fn := range []string{"Acc.add", "addTwice", "add2", "Fill"} {
+	for _, fn := range []string{"Acc.add", "addTwice", "add2"} {
 		b := bindingOf(t, r, fn, "a")
 		require.True(t, b.Unique, "%s: %v", fn, b.Reasons)
 	}
+	// Exported: Go may call its GALA_ body directly, with a pointer it
+	// shares, so it stays from-go, and that is its only reason.
+	require.Equal(t, []string{"from-go"}, kinds(bindingOf(t, r, "Fill", "a")))
+	require.True(t, funcOf(t, r, "Fill").Summary.ParamBorrowed(0))
 }
 
 // planOf is PlanInout over the one-file package dir/own.gala of module

@@ -1067,7 +1067,9 @@ func (w *walker) unary(x native.UnaryExprNode, u use) chainResult {
 
 // copyUse is a read of b's pointee as a whole, `*p` (or an `inout` binding
 // by its name alone), used as u: a copy, so a lend, unless its address is
-// taken or the copy carries references out of the pointee.
+// taken or the copy carries references out of the pointee: a pointer, slice,
+// map or other reference anywhere inside the value, which the shallow copy
+// shares (leaksReference asks the shape rule, which looks through fields).
 func (w *walker) copyUse(b *binding, u use, at native.GalaNodeRef) {
 	switch {
 	case u.kind == useAddr:

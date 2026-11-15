@@ -365,13 +365,13 @@ results, not proofs.
 |---|---|---|
 | Functions and methods | 1758 | 1772 | 
 | …with a pointer binding | 584 | 189 | 
-| …whose pointer bindings are all unique | 0 (0.0%) | 33 (17.5%) | 
+| …whose pointer bindings are all unique | 0 (0.0%) | 31 (16.4%) | 
 | Pointer bindings | 834 | 256 | 
-| …receivers unique | 0 of 467 | 5 of 62 | 
+| …receivers unique | 0 of 467 | 3 of 62 | 
 | …params unique | 0 of 90 | 26 of 83 | 
 | …locals unique | 0 of 277 | 8 of 111 | 
-| *Phase 3* (analysis only, not enforced): functions whose pointer bindings are all unique | 0 of 584 (0.0%) | 33 of 189 (17.5%) | 
-| *Phase 3*: pointer bindings unique | 0 of 834 | 39 of 256 | 
+| *Phase 3* (analysis only, not enforced): functions whose pointer bindings are all unique | 0 of 584 (0.0%) | 31 of 189 (16.4%) | 
+| *Phase 3*: pointer bindings unique | 0 of 834 | 37 of 256 | 
 | *Phase 3*: …of which a closure passed to a non-escaping parameter uses | 0 | 0 | 
 | Packages that did not analyze | 0 | 2 | 
 
@@ -395,7 +395,7 @@ location is where the analysis first met the reason.
 | `rebound` | its name is bound more than once | 20 | 0 | `collection_immutable/treemap.gala:329` |
 | `other` | another use (reassigned, indexed, address taken, an operand) | 26 | 2 | `collection_immutable/array.gala:332` |
 | `origin` | not of fresh origin | 282 | 67 | `collection_immutable/array.gala:96` |
-| `from-go` | received from Go | 497 | 73 | `collection_immutable/array.gala:183` |
+| `from-go` | received from Go | 497 | 75 | `collection_immutable/array.gala:183` |
 | `shape` | the pointee is not owned-shaped | 834 | 147 | `collection_immutable/array.gala:96` |
 | `nullable` | a `*T` that may be nil | 11 | 81 | `collection_immutable/array.gala:422` |
 
