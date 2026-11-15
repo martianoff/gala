@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/inoutfix"
 )
 
@@ -75,13 +76,17 @@ func runFixInout(cmd *cobra.Command, args []string) {
 	var total fixTotals
 	failed := 0
 	for _, dir := range dirs {
-		cfg := inoutfix.Config{SearchPaths: fixSearchPaths(filepath.Dir(dir), cwd), Public: fixPublic, NoVerify: fixNoVerify}
+		// A file is a program of its own, as each of the examples is.
+		file := strings.HasSuffix(dir, ".gala")
+		pkgDir := dir
+		if file {
+			pkgDir = filepath.Dir(dir)
+		}
+		cfg := inoutfix.Config{SearchPaths: fixSearchPaths(pkgDir, cwd), Public: fixPublic, NoVerify: fixNoVerify}
 		var res *inoutfix.Result
-		if strings.HasSuffix(dir, ".gala") {
-			// A file is a program of its own, as each of the examples is.
+		if file {
 			res, err = inoutfix.Files([]string{dir}, cfg)
 		} else {
-			cfg.SearchPaths = fixSearchPaths(dir, cwd)
 			res, err = inoutfix.Package(dir, cfg)
 		}
 		if err != nil {
@@ -112,7 +117,8 @@ func runFixInout(cmd *cobra.Command, args []string) {
 }
 
 // fixDirs expands the arguments to package directories: dir/... is dir and
-// every directory below it, except hidden ones, testdata and bazel-*.
+// every directory below it that a build reads GALA sources from
+// (build.SkipGalaSourceDir).
 func fixDirs(args []string) ([]string, error) {
 	if len(args) == 0 {
 		args = []string{"."}
@@ -131,8 +137,7 @@ func fixDirs(args []string) ([]string, error) {
 			if err != nil || !d.IsDir() {
 				return err
 			}
-			name := d.Name()
-			if path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "bazel-") || name == "testdata") {
+			if build.SkipGalaSourceDir(root, path) {
 				return filepath.SkipDir
 			}
 			out = append(out, filepath.Clean(path))
@@ -192,25 +197,19 @@ func (t fixTotals) String() string {
 
 // printFixReport lists r's verdicts and converted signatures.
 func printFixReport(out io.Writer, r *inoutfix.Result, cwd string) {
-	rel := func(p string) string {
-		if q, err := filepath.Rel(cwd, p); err == nil && !strings.HasPrefix(q, "..") {
-			return filepath.ToSlash(q)
-		}
-		return p
-	}
-	fmt.Fprintf(out, "== %s (package %s)\n", rel(r.Dir), r.Package)
+	fmt.Fprintf(out, "== %s (package %s)\n", inoutfix.DisplayPath(cwd, r.Dir), r.Package)
 	for _, s := range r.Signatures(false) {
 		tag := ""
 		if s.Func.Public {
 			tag = " [public]"
 		}
-		fmt.Fprintf(out, "converted%s %s:%d\n  - %s\n  + %s\n", tag, rel(s.Func.File), s.Func.Line, s.Before, s.After)
+		fmt.Fprintf(out, "converted%s %s:%d\n  - %s\n  + %s\n", tag, inoutfix.DisplayPath(cwd, s.Func.File), s.Func.Line, s.Before, s.After)
 	}
 	var kept []string
 	for _, f := range r.Plan.Funcs {
 		for _, b := range f.Bindings {
 			if !b.Converted {
-				kept = append(kept, fmt.Sprintf("kept %s:%d %s %s %s: %s", rel(f.File), f.Line, f.Name, b.Role, b.Name, b.Blocked))
+				kept = append(kept, fmt.Sprintf("kept %s:%d %s %s %s: %s", inoutfix.DisplayPath(cwd, f.File), f.Line, f.Name, b.Role, b.Name, b.Blocked))
 			}
 		}
 	}

@@ -5507,3 +5507,21 @@ exports_files([
     "inout_fix_after.gala",
     "inout_fix_before.gala",
 ])
+
+# A method of another package whose Ptr receiver is lent on to inout
+# callees (which lend it on with `&`) is borrowed, so it may be called on an
+# inout place. Ownership phase 1 used to count `&t` of an inout binding as an
+# address taken, and the call was rejected with GALA-E0113.
+gala_library(
+    name = "inout_lend_receiver",
+    srcs = ["inout_lend_receiver/tally.gala"],
+    importpath = "martianoff/gala/examples/inout_lend_receiver",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "inout_lend_receiver_test",
+    src = "inout_lend_receiver_test.gala",
+    expected = "inout_lend_receiver_test.out",
+    deps = [":inout_lend_receiver"],
+)

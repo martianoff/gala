@@ -2,6 +2,7 @@ package ownership
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"martianoff/gala/internal/parser/native"
@@ -157,10 +158,8 @@ func PlanInout(pkg string, files []File, rich *transpiler.RichAST, opts Options,
 	// Walk every declaration before judging: a later one may use an
 	// earlier one as a function value.
 	walks := make([]*walker, len(a.decls))
-	uses := make([]map[*binding]*bindingUses, len(a.decls))
 	for i, d := range a.decls {
-		uses[i] = map[*binding]*bindingUses{}
-		walks[i] = a.walkWith(d, false, uses[i])
+		walks[i] = a.walkWith(d, false, map[*binding]*bindingUses{})
 	}
 	for i, d := range a.decls {
 		for _, b := range walks[i].order {
@@ -172,7 +171,7 @@ func PlanInout(pkg string, files []File, rich *transpiler.RichAST, opts Options,
 				slots[slot{d, b.index}] = &candidate{d: d, b: b}
 				continue
 			}
-			c := &candidate{d: d, b: b, uses: uses[i][b]}
+			c := &candidate{d: d, b: b, uses: walks[i].uses[b]}
 			if c.uses == nil {
 				c.uses = &bindingUses{}
 			}
@@ -232,12 +231,12 @@ func (a *pkg) public(d *decl) bool {
 }
 
 // declaredPointer is the `Ptr[T]` type node b is declared with, and the
-// node of its declaration (the receiver or the parameter); a zero type when
-// it is declared some other way.
+// node `inout ` goes in front of (the receiver's name, or the parameter); a
+// zero type when it is declared some other way.
 func (a *pkg) declaredPointer(d *decl, b *binding) (native.TypeNode, native.GalaNodeRef) {
 	if b.role == RoleReceiver {
 		r := d.node.Receiver()
-		return ptrType(r.Type_()), r.GalaNodeRef
+		return ptrType(r.Type_()), r.Identifier().GalaNodeRef
 	}
 	params := d.node.Signature().Parameters().ParameterList().AllParameter()
 	if b.index < 0 || b.index >= len(params) {
@@ -250,9 +249,11 @@ func (a *pkg) declaredPointer(d *decl, b *binding) (native.TypeNode, native.Gala
 	return ptrType(p.Type_()), p.GalaNodeRef
 }
 
-// ptrType is t when it is written `Ptr[T]`, else the zero node.
+// ptrType is t when it is written `Ptr[T]` on one line, else the zero node:
+// the rewrite never moves a line.
 func ptrType(t native.TypeNode) native.TypeNode {
-	if !t.Ok() || !t.QualifiedIdentifier().Ok() || t.QualifiedIdentifier().GetText() != "Ptr" || !t.TypeArguments().Ok() {
+	if !t.Ok() || !t.QualifiedIdentifier().Ok() || t.QualifiedIdentifier().GetText() != "Ptr" || !t.TypeArguments().Ok() ||
+		t.Start().Line != t.Stop().Line {
 		return native.TypeNode{}
 	}
 	if args := t.TypeArguments().TypeList().AllType_(); len(args) != 1 {
@@ -292,7 +293,11 @@ func (a *pkg) blocked(d *decl, b *binding, typ native.TypeNode, cfg AdoptConfig)
 // lendBlocked is why c cannot be converted given the slots converted so
 // far; "" when it can.
 func lendBlocked(c *candidate, slots map[slot]*candidate) string {
-	check := func(l lendUse, what string) string {
+	check := func(l lendUse) string {
+		what := "the receiver"
+		if l.index >= 0 {
+			what = fmt.Sprintf("parameter %d", l.index+1)
+		}
 		if l.own == nil {
 			if l.index < 0 {
 				return "" // another package's borrowed receiver
@@ -304,13 +309,8 @@ func lendBlocked(c *candidate, slots map[slot]*candidate) string {
 		}
 		return ""
 	}
-	for _, l := range c.uses.lends {
-		if why := check(l, fmt.Sprintf("parameter %d", l.index+1)); why != "" {
-			return why
-		}
-	}
-	for _, l := range c.uses.receivers {
-		if why := check(l, "the receiver"); why != "" {
+	for _, l := range slices.Concat(c.uses.lends, c.uses.receivers) {
+		if why := check(l); why != "" {
 			return why
 		}
 	}
@@ -319,15 +319,9 @@ func lendBlocked(c *candidate, slots map[slot]*candidate) string {
 
 // edits are the rewrite of c in file.
 func (c *candidate) edits(file string) []Edit {
-	var out []Edit
 	// `p Ptr[T]` becomes `inout p T`; the receiver's parentheses stay.
-	var id native.GalaNodeRef
-	if c.b.role == RoleReceiver {
-		id = c.d.node.Receiver().Identifier().GalaNodeRef
-	} else {
-		id = c.at
-	}
-	out = append(out, Edit{File: file, Start: int(id.Start().Start), End: int(id.Start().Start), Text: "inout "})
+	at := int(c.at.Start().Start)
+	out := []Edit{{File: file, Start: at, End: at, Text: "inout "}}
 	elem := c.typ.TypeArguments().TypeList().AllType_()[0]
 	out = append(out, Edit{File: file, Start: int(c.typ.Start().Start), End: int(c.typ.Stop().End), Text: elem.SourceText()})
 	for _, u := range c.uses.derefs {

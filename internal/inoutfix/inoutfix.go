@@ -51,6 +51,7 @@ const maxRounds = 50
 type FileChange struct {
 	Path          string
 	Before, After string
+	bom           string // the file's leading byte order mark, if any, which Write keeps
 }
 
 // Result is the rewrite of one package.
@@ -72,6 +73,7 @@ type Result struct {
 type sourceFile struct {
 	path string
 	src  string
+	bom  string
 }
 
 // Package rewrites the package in dir: its .gala files, tests excluded. It
@@ -102,7 +104,7 @@ func Files(paths []string, cfg Config) (*Result, error) {
 			return nil, err
 		}
 		text := galaerr.StripBOM(string(raw))
-		files = append(files, sourceFile{path: path, src: text})
+		files = append(files, sourceFile{path: path, src: text, bom: string(raw[:len(raw)-len(text)])})
 		parsed := p.ParseFile(text)
 		if err := parsed.Err(); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
@@ -195,7 +197,7 @@ func changes(files []sourceFile, after map[string]string) []FileChange {
 	var out []FileChange
 	for _, f := range files {
 		if after[f.path] != f.src {
-			out = append(out, FileChange{Path: f.path, Before: f.src, After: after[f.path]})
+			out = append(out, FileChange{Path: f.path, Before: f.src, After: after[f.path], bom: f.bom})
 		}
 	}
 	return out
@@ -226,7 +228,7 @@ func verify(files []sourceFile, after map[string]string, cfg Config) []diagnosti
 		return []diagnostic{{Diagnostic: galaerr.Diagnostic{Message: err.Error()}}}
 	}
 	defer os.RemoveAll(tmp)
-	var paths []string
+	var paths, srcs []string
 	for _, f := range files {
 		src := f.src
 		if after != nil {
@@ -236,7 +238,7 @@ func verify(files []sourceFile, after map[string]string, cfg Config) []diagnosti
 		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 			return []diagnostic{{Diagnostic: galaerr.Diagnostic{Message: err.Error()}}}
 		}
-		paths = append(paths, path)
+		paths, srcs = append(paths, path), append(srcs, src)
 	}
 	p := parser.NewAntlrGalaParser()
 	a := analyzer.NewBatchAnalyzer(p, cfg.SearchPaths, cfg.ProjectRoot)
@@ -249,9 +251,8 @@ func verify(files []sourceFile, after map[string]string, cfg Config) []diagnosti
 			}
 		}
 		a.SetPackageFiles(siblings)
-		src, _ := os.ReadFile(path)
 		t := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-		if _, err := t.Transpile(string(src), path); err != nil {
+		if _, err := t.Transpile(srcs[i], path); err != nil {
 			for _, d := range galaerr.Diagnostics(err) {
 				out = append(out, diagnostic{file: files[i].path, Diagnostic: d})
 			}
@@ -272,68 +273,60 @@ func (r *Result) exclude(diags []diagnostic, after map[string]string) bool {
 			excluded = true
 		}
 	}
+	// The converted functions: the lines they span, and a pattern matching a
+	// call of them.
+	type span struct {
+		f           ownership.AdoptFunc
+		first, last int
+		call        *regexp.Regexp
+	}
+	var spans []span
+	for _, f := range r.Plan.Funcs {
+		if !f.Converted() {
+			continue
+		}
+		src := r.sources[f.File]
+		name := f.Name[strings.LastIndex(f.Name, ".")+1:]
+		spans = append(spans, span{f: f,
+			first: strings.Count(src[:f.SigStart], "\n") + 1, last: strings.Count(src[:f.End], "\n") + 1,
+			call: regexp.MustCompile(`(^|[^\w])` + regexp.QuoteMeta(name) + `\s*[\[(]`)})
+	}
+	lines := map[string][]string{}
 	for _, d := range diags {
 		if d.Line <= 0 {
 			continue
 		}
-		line := lineText(after[d.file], d.Line)
+		if lines[d.file] == nil {
+			lines[d.file] = strings.Split(after[d.file], "\n")
+		}
+		var line string
+		if d.Line <= len(lines[d.file]) {
+			line = lines[d.file][d.Line-1]
+		}
+		inside := func(s span) bool { return s.f.File == d.file && d.Line >= s.first && d.Line <= s.last }
 		var hit bool
-		for _, f := range r.Plan.Funcs {
-			if f.Converted() && !r.inside(f, d) && callsName(line, f.Name) {
-				blame(f.Name, d)
+		for _, s := range spans {
+			if !inside(s) && s.call.MatchString(line) {
+				blame(s.f.Name, d)
 				hit = true
 			}
 		}
 		if hit {
 			continue
 		}
-		for _, f := range r.Plan.Funcs {
-			if f.Converted() && r.inside(f, d) {
-				blame(f.Name, d)
+		for _, s := range spans {
+			if inside(s) {
+				blame(s.f.Name, d)
 			}
 		}
 	}
 	return excluded
 }
 
-// inside reports whether diagnostic d lies in f's declaration.
-func (r *Result) inside(f ownership.AdoptFunc, d diagnostic) bool {
-	if f.File != d.file {
-		return false
-	}
-	src := r.sources[f.File]
-	first := strings.Count(src[:f.SigStart], "\n") + 1
-	last := strings.Count(src[:f.End], "\n") + 1
-	return d.Line >= first && d.Line <= last
-}
-
-// callsName reports whether line calls the function or method name
-// (`Type.method` calls method).
-func callsName(line, name string) bool {
-	name = name[strings.LastIndex(name, ".")+1:]
-	return regexp.MustCompile(`(^|[^\w])` + regexp.QuoteMeta(name) + `\s*[\[(]`).MatchString(line)
-}
-
-// lineText is line n (1-based) of src.
-func lineText(src string, n int) string {
-	lines := strings.Split(src, "\n")
-	if n < 1 || n > len(lines) {
-		return ""
-	}
-	return lines[n-1]
-}
-
 // Write writes the rewritten files, keeping a leading byte order mark.
 func (r *Result) Write() error {
 	for _, c := range r.Changes {
-		raw, err := os.ReadFile(c.Path)
-		if err != nil {
-			return err
-		}
-		out := c.After
-		if text := string(raw); galaerr.StripBOM(text) != text {
-			out = text[:len(text)-len(galaerr.StripBOM(text))] + out
-		}
+		out := c.bom + c.After
 		info, err := os.Stat(c.Path)
 		if err != nil {
 			return err
@@ -345,22 +338,29 @@ func (r *Result) Write() error {
 	return nil
 }
 
-// Diff is a unified diff of the rewrite, with paths relative to base. The
-// rewrite never adds or removes a line, so each hunk is one changed line.
+// DisplayPath is path relative to base, with forward slashes, when it lies
+// under base; else path as it is.
+func DisplayPath(base, path string) string {
+	if rel, err := filepath.Rel(base, path); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return path
+}
+
+// Diff is a unified diff of the rewrite, with paths relative to base. No
+// edit spans a line break, so the rewrite keeps every line where it was and
+// each hunk is one changed line.
 func (r *Result) Diff(base string) string {
 	var b strings.Builder
 	for _, c := range r.Changes {
-		rel := c.Path
-		if base != "" {
-			if p, err := filepath.Rel(base, c.Path); err == nil && !strings.HasPrefix(p, "..") {
-				rel = p
-			}
-		}
-		rel = filepath.ToSlash(rel)
+		rel := DisplayPath(base, c.Path)
 		fmt.Fprintf(&b, "--- a/%s\n+++ b/%s\n", rel, rel)
 		before, after := strings.Split(c.Before, "\n"), strings.Split(c.After, "\n")
+		if len(before) != len(after) {
+			panic("inoutfix: a rewrite moved a line of " + rel)
+		}
 		for i := range before {
-			if i < len(after) && before[i] != after[i] {
+			if before[i] != after[i] {
 				fmt.Fprintf(&b, "@@ -%d +%d @@\n-%s\n+%s\n", i+1, i+1, before[i], after[i])
 			}
 		}
