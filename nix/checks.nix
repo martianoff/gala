@@ -10,7 +10,7 @@ eachSystem (
     # per line and `--` out.
     gala-lean-interpolation =
       let
-        interpolation = self.packages.${system}.gala-lean-interpolation;
+        interpolation = self.legacyPackages.${system}.gala-lean.interpolation;
       in
       pkgs.runCommand "gala-lean-interpolation-test" { } ''
         printf 's 6120246e616d652062\nf 247825303464\np 9 3 7 68c3a96c6c6f20247bcf807d\n' \
@@ -37,7 +37,7 @@ eachSystem (
     # case in, the terminal rendering and the JSON envelope out, as hex.
     gala-lean-diagnostics =
       let
-        diagnostics = self.packages.${system}.gala-lean-diagnostics;
+        diagnostics = self.legacyPackages.${system}.gala-lean.diagnostics;
       in
       pkgs.runCommand "gala-lean-diagnostics-test" { } ''
         printf '%s\n' \
@@ -61,7 +61,7 @@ eachSystem (
     # and `--` out. A parse error is `E <hex of the Go error>` and `--`.
     gala-lean-manifest =
       let
-        manifest = self.packages.${system}.gala-lean-manifest;
+        manifest = self.legacyPackages.${system}.gala-lean.manifest;
       in
       pkgs.runCommand "gala-lean-manifest-test" { } ''
         printf '%s\n' \

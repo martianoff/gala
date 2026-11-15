@@ -6,14 +6,14 @@
 #   * packages.<system>.gala-local        - escape hatch for grammar or
 #     codegen work the release cannot handle yet: transpiles with
 #     cmd/gala_bootstrap built from this tree
-#   * packages.<system>.gala-lean-interpolation - the Lean 4 port of GALA's
-#     interpolation splitter, as a native executable (a development tool).
-#   * packages.<system>.gala-lean-diagnostics    - the Lean 4 port of galaerr's
-#     terminal and JSON diagnostics renderers, as a native executable.
-#   * packages.<system>.gala-lean-manifest       - the Lean 4 port of the
-#     gala.mod reader and writer, as a native executable.
-#     Ported pieces are named gala-lean-<component>; bare gala-lean is
-#     reserved for the complete Lean implementation.
+#   * legacyPackages.<system>.gala-lean.<component> - the staged Lean 4
+#     ports, as native executables (development tools): `interpolation`
+#     (GALA's interpolation splitter), `diagnostics` (galaerr's terminal and
+#     JSON renderers) and `manifest` (the gala.mod reader and writer). They
+#     are referenced as `nix build .#gala-lean.<component>`. The group lives
+#     under legacyPackages because flake `packages` must be a flat set of
+#     derivations; the plain `gala-lean` package name stays reserved for the
+#     complete Lean implementation.
 #   * overlays.default                   - adds pkgs.gala to nixpkgs
 #   * devShells.default                  - Bazelisk, Go, JDK for this repo
 #   * checks.<system>.smoke              - offline build-and-run smoke test
@@ -44,11 +44,23 @@
         system: pkgs: {
           gala = pkgs.callPackage ./nix/gala.nix { };
           gala-local = pkgs.callPackage ./nix/gala.nix { useLocalBootstrap = true; };
-          gala-lean-interpolation = pkgs.callPackage ./nix/lean-interpolation.nix { };
-          gala-lean-diagnostics = pkgs.callPackage ./nix/lean-diagnostics.nix { };
-          gala-lean-manifest = pkgs.callPackage ./nix/lean-manifest.nix { };
           gala-stdlib = self.packages.${system}.gala.passthru.localTranspiled;
           default = self.packages.${system}.gala;
+        }
+      );
+
+      # Flake `packages` must be flat, so the staged Lean ports live in a
+      # nested set here. `nix build .#gala-lean.<component>` resolves through
+      # the `legacyPackages.<system>` fallback.
+      legacyPackages = eachSystem (
+        _: pkgs: {
+          gala-lean = {
+            # Let `nix flake show --legacy` list the ports.
+            recurseForDerivations = true;
+            interpolation = pkgs.callPackage ./nix/lean-interpolation.nix { };
+            diagnostics = pkgs.callPackage ./nix/lean-diagnostics.nix { };
+            manifest = pkgs.callPackage ./nix/lean-manifest.nix { };
+          };
         }
       );
 

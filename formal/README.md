@@ -200,9 +200,14 @@ code:
 
 | Port | Go component | Nix package |
 |---|---|---|
-| [`interpolation/`](interpolation) | `internal/interpolation`, the `s"..."`/`f"..."` splitter | `.#gala-lean-interpolation` |
-| [`diagnostics/`](diagnostics) | `galaerr`, the terminal and JSON diagnostic renderers | `.#gala-lean-diagnostics` |
-| [`manifest/`](manifest) | `internal/depman/mod`, the `gala.mod` reader and writer | `.#gala-lean-manifest` |
+| [`interpolation/`](interpolation) | `internal/interpolation`, the `s"..."`/`f"..."` splitter | `.#gala-lean.interpolation` |
+| [`diagnostics/`](diagnostics) | `galaerr`, the terminal and JSON diagnostic renderers | `.#gala-lean.diagnostics` |
+| [`manifest/`](manifest) | `internal/depman/mod`, the `gala.mod` reader and writer | `.#gala-lean.manifest` |
+
+They are grouped as `gala-lean.<component>` in the flake's `legacyPackages`
+(flake `packages` must be flat), so `nix build .#gala-lean.<component>` works;
+the plain `gala-lean` package name stays reserved for the complete Lean
+implementation.
 
 They are deliberately not part of the Lake library: they are executable ports
 under differential test, not additions to the semantics, and they use the Lean
@@ -219,7 +224,7 @@ Where a new piece goes depends on what it is:
   build does not discover files.
 - **A compiler-plumbing step** (a lexer, a renderer, a manifest parser) belongs
   in `formal/<component>/` as a staged port, packaged as
-  `nix build .#gala-lean-<component>`, with curated native tests and a Go
+  `nix build .#gala-lean.<component>`, with curated native tests and a Go
   differential oracle. It should not import the Lake library; if it later needs
   the semantics, it moves into the Lake project.
 - **What can be reused:** for a semantic model, the definitions in `Gala/`

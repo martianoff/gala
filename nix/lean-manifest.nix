@@ -1,6 +1,6 @@
 # The Lean 4 port of internal/depman/mod's gala.mod reader and writer as a
-# native executable, packaged as `.#gala-lean-manifest` (the `gala-lean-`
-# prefix marks a piece of the staged Lean port; see flake.nix).
+# native executable, packaged as `.#gala-lean.manifest` (the `gala-lean`
+# group marks the staged Lean port; see flake.nix).
 #
 # A development tool, like galaspec and the other staged ports: it is not part
 # of a GALA release (docs/FORMAL_SEMANTICS.MD, "Licensing"). The port is

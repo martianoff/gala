@@ -74,16 +74,16 @@ From the repository root, the same executable builds without a local Lean
 installation:
 
 ```bash
-nix build .#gala-lean-interpolation
+nix build .#gala-lean.interpolation
 printf 'a $name b' | ./result/bin/interpolation
 ```
 
-`nix run .#gala-lean-interpolation -- --batch < build/cases.txt` runs it without
+`nix run .#gala-lean.interpolation -- --batch < build/cases.txt` runs it without
 the intermediate `result` symlink. The flake uses the Lean packaged by its
 pinned nixpkgs and runs `Tests.lean` in the derivation's check phase. The
-`gala-lean-` prefix marks a piece of the staged Lean port; bare `gala-lean` is
-reserved for the complete Lean implementation. The derivation is a development
-tool and is not part of a GALA release;
+`gala-lean` group marks the staged Lean port; the plain `gala-lean` package
+name stays reserved for the complete Lean implementation. The derivation is a
+development tool and is not part of a GALA release;
 the port is not part of the Lake project, so `formal/lean-toolchain` does not
 apply to it.
 

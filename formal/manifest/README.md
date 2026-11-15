@@ -90,12 +90,12 @@ From the repository root, the same executable builds without a local Lean
 installation:
 
 ```bash
-nix build .#gala-lean-manifest
+nix build .#gala-lean.manifest
 ```
 
 The flake also checks the batch protocol below (`checks.<system>.gala-lean-manifest`).
-The `gala-lean-` prefix marks a piece of the staged Lean port; bare `gala-lean`
-is reserved for the complete Lean implementation. The derivation is a
+The `gala-lean` group marks the staged Lean port; the plain `gala-lean` package
+name stays reserved for the complete Lean implementation. The derivation is a
 development tool and is not part of a GALA release; the port is not part of the
 Lake project, so `formal/lean-toolchain` does not apply to it.
 

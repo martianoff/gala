@@ -82,13 +82,14 @@ nix build .#gala-local
 ```
 
 The standalone Lean ports under `formal/` build as
-`nix build .#gala-lean-interpolation` (the interpolated-string splitter),
-`nix build .#gala-lean-diagnostics` (the terminal and JSON diagnostic
-renderers) and `nix build .#gala-lean-manifest` (the `gala.mod` reader and
-writer). The `gala-lean-` prefix marks a piece of the staged Lean port of
-the compiler; bare `gala-lean` is reserved for the complete Lean
-implementation. Like the Lake build, these are development tools and are not
-part of a GALA release. New ports follow the same layout:
+`nix build .#gala-lean.interpolation` (the interpolated-string splitter),
+`nix build .#gala-lean.diagnostics` (the terminal and JSON diagnostic
+renderers) and `nix build .#gala-lean.manifest` (the `gala.mod` reader and
+writer). They are grouped as `gala-lean.<component>` in the flake's
+`legacyPackages`, because flake `packages` must be flat; the plain
+`gala-lean` package name stays reserved for the complete Lean implementation.
+Like the Lake build, these are development tools and are not part of a GALA
+release. New ports follow the same layout:
 `formal/<component>/` with its own `build.sh`, `test.sh`, native curated
 tests, a Go differential oracle, and a `nix/lean-<component>.nix` derivation.
 

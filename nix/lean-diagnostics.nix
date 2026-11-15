@@ -1,8 +1,8 @@
 # The Lean 4 port of galaerr's diagnostics renderers as a native executable,
-# packaged as `.#gala-lean-diagnostics` (the `gala-lean-` prefix marks a piece
-# of the staged Lean port; see flake.nix).
+# packaged as `.#gala-lean.diagnostics` (the `gala-lean` group marks the
+# staged Lean port; see flake.nix).
 #
-# A development tool, like galaspec and gala-lean-interpolation: it is not part
+# A development tool, like galaspec and the other staged ports: it is not part
 # of a GALA release (docs/FORMAL_SEMANTICS.MD, "Licensing"). The port is
 # standalone rather than part of the Lake project, so it uses the Lean that
 # nixpkgs packages instead of formal/lean-toolchain.

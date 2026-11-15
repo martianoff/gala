@@ -1,6 +1,6 @@
 # The Lean 4 port of internal/interpolation as a native executable, packaged
-# as `.#gala-lean-interpolation` (the `gala-lean-` prefix marks a piece of the
-# staged Lean port; see flake.nix).
+# as `.#gala-lean.interpolation` (the `gala-lean` group marks the staged Lean
+# port; see flake.nix).
 #
 # A development tool, like galaspec: it is not part of a GALA release
 # (docs/FORMAL_SEMANTICS.MD, "Licensing"). The port is standalone rather than
