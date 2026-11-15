@@ -30,6 +30,9 @@ type sig struct {
 	// inout marks the `inout` parameters, whose arguments are lent places
 	// (`&x`); nil when there are none.
 	inout []bool
+	// lent is, for a call of it, the place each argument given to an inout
+	// parameter lends, by argument index (lendCall).
+	lent map[int]coreexport.Node
 }
 
 // stdCtors are the standard library's Option and Either constructors, which
@@ -83,16 +86,6 @@ func hasInout(params []coreexport.Node) bool {
 		p, ok := pn.(*coreexport.Param)
 		return ok && p.Inout
 	})
-}
-
-// lentPlace is the place argument a lends to an `inout` parameter: the
-// operand of `&place`. Any other argument is reported.
-func lentPlace(a coreexport.Node) coreexport.Node {
-	ad, ok := argNode(a).(*coreexport.AddressOf)
-	if !ok {
-		unsup(posOf(a), "inout-arg")
-	}
-	return ad.Operand
 }
 
 // sigOfSafe is sigOf, or nil for a callee the translation will report.
@@ -198,12 +191,9 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	vals := make([]term, len(e.Args))
 	pre := make([][]string, len(e.Args))
 	hoisted := false
-	isLent := func(i int) bool { return s.inout != nil && s.inout[paramOf[i]] }
 	for i, a := range e.Args {
-		if isLent(i) {
-			// Read after the other arguments, below.
-			hoisted = true
-			continue
+		if s.lent[i] != nil {
+			continue // read after the other arguments, below
 		}
 		if c, ok := argNode(a).(*coreexport.Call); ok && hoist {
 			if items, res := g.ptrCall(c, sc); items != nil {
@@ -222,7 +212,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	// A method's receiver comes first; a pointer method's place is read
 	// after the arguments (recvLast), which may change it.
 	recvFirst := s.recv != nil && !s.recvLast
-	if !defaults && inOrder && !hoisted && (s.recv == nil || s.recv.pure || recvFirst || allPure(vals...)) {
+	if !defaults && inOrder && !hoisted && len(s.lent) == 0 && (s.recv == nil || s.recv.pure || recvFirst || allPure(vals...)) {
 		var vs []string
 		subs := vals
 		if s.recv != nil {
@@ -246,7 +236,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	}
 	tmps := make([]string, len(e.Args))
 	for i, v := range vals {
-		if isLent(i) {
+		if s.lent[i] != nil {
 			continue
 		}
 		tmps[i] = g.freshName("a")
@@ -256,10 +246,10 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	// A lent place is passed as its value when the callee starts, after
 	// the other arguments, which may write it (`f(&x, g(&x))`): Go passes
 	// its address, so the callee sees every earlier write.
-	for i, a := range e.Args {
-		if isLent(i) {
+	for i := range e.Args {
+		if q := s.lent[i]; q != nil {
 			tmps[i] = g.freshName("a")
-			items = append(items, "let "+tmps[i]+" := "+g.expr(lentPlace(a), sc).val())
+			items = append(items, "let "+tmps[i]+" := "+g.expr(q, sc).val())
 		}
 	}
 	if s.recv != nil && s.recvLast {
@@ -349,8 +339,8 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 			if s.inout != nil {
 				// Its write-backs run in a do block of their own, so the
 				// places must be ones it can write (cells).
-				items, res := g.lendCall(e, sc.term())
-				return term{code: doTerm(append(items, "pure "+res)), unit: g.funcs[x].Result == nil}
+				items, res := g.lendSig(x, s, e, sc.term())
+				return callTerm(items, res, g.funcs[x].Result == nil)
 			}
 			if f := g.funcs[x]; f != nil && len(f.TypeParams) > 0 {
 				g.instSig(f, s, e, sc)

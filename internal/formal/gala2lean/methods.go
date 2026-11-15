@@ -362,18 +362,11 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 		ps = append(ps, fmt.Sprintf("(%s : %s)", self, lt))
 		ps = append(ps, g.params(f, sc)...)
 		// The receiver in a cell, so that the body writes it at any depth.
-		h := g.heap(lt, r.Pos)
-		l := sc.bind(r.Name, true, lt)
-		l.box, l.gtype, l.receiver = h, r.Type, true
+		c := g.bindCell(r.Name, r.Type, lt, self, r.Pos, sc)
 		g.fn = &fnCtx{result: res}
-		inner := newScope(sc, 0)
-		items := []string{
-			fmt.Sprintf("let %s ← _gala_new%d %s", ident(r.Name), h, self),
-			"let _gala_res ← " + doTerm(g.bodyItems(f, inner, res)),
-			fmt.Sprintf("pure (_gala_res, ← _gala_get%d %s)", h, ident(r.Name)),
-		}
+		var items []string
+		items, res = lendBody(g.bodyItems(f, newScope(sc, 0), res), []cell{c}, res)
 		body = indentLines(items, 2)
-		res = "(" + res + " × " + lt + ")"
 	}
 	s := fmt.Sprintf("def %s %s : _gala_M %s := do\n%s", methodHead(t, f.Name), strings.Join(ps, " "), res, body)
 	if recursive {
@@ -506,7 +499,7 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 		if items == nil {
 			return term{}, false
 		}
-		return term{code: doTerm(append(items, "pure "+res)), unit: f.Result == nil}, true
+		return callTerm(items, res, f.Result == nil), true
 	}
 	sg := g.methodSig(f, t, s.Pos)
 	recv := g.expr(s.Target, sc)
@@ -530,25 +523,52 @@ func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
 	if f == nil || !statePassed(f.Receiver.(*coreexport.Receiver)) {
 		return nil, ""
 	}
-	switch g.placeKind(s.Target, sc) {
-	case placeNone:
-		unsup(s.Pos, "pointer-method-on-value")
-	case placeShared:
-		// Another path reaches this variable while the method runs (any
-		// function reads a package-level var; a lambda shares a captured
-		// one), and would see Go's writes in place, which state passing
-		// does not model.
-		unsup(s.Pos, "ptr-escape")
-	}
+	g.uniquePlace(s.Target, sc, s.Pos, "pointer-method-on-value")
 	sg := g.methodSig(f, t, s.Pos)
 	recv := g.expr(s.Target, sc)
 	sg.recv = &recv
 	sg.recvLast = true
-	items, call := g.callItems(sg, e, sc, true)
-	res, upd := g.freshName("r"), g.freshName("u")
-	items = append(items, fmt.Sprintf("let (%s, %s) ← %s", res, upd, call.mon()))
-	items = append(items, g.assignTo(s.Target, func(string) string { return upd }, sc, s.Pos)...)
+	return g.writeBack(sg, e, []coreexport.Node{s.Target}, sc)
+}
+
+// uniquePlace stops the translation unless place e, written back after a
+// call, is one only this code reaches (placeKind): none is reported as
+// none, a shared one as ptr-escape, since another path reaching the
+// variable while the callee runs (any function reads a package-level var;
+// a lambda shares a captured one) would see Go's writes in place, which
+// state passing does not model.
+func (g *gen) uniquePlace(e coreexport.Node, sc *scope, pos coreexport.Pos, none string) {
+	switch g.placeKind(e, sc) {
+	case placeNone:
+		unsup(pos, "%s", none)
+	case placeShared:
+		unsup(pos, "ptr-escape")
+	}
+}
+
+// writeBack runs the state-passing call e of s, whose result is its own
+// result and then the final values of places, in order, and writes each
+// back to its place. It returns the do-items and the name holding the
+// result.
+func (g *gen) writeBack(s *sig, e *coreexport.Call, places []coreexport.Node, sc *scope) ([]string, string) {
+	items, call := g.callItems(s, e, sc, true)
+	res := g.freshName("r")
+	ups := make([]string, len(places))
+	for i := range ups {
+		ups[i] = g.freshName("u")
+	}
+	items = append(items, fmt.Sprintf("let (%s, %s) ← %s", res, strings.Join(ups, ", "), call.mon()))
+	for i, q := range places {
+		items = append(items, g.assignTo(q, func(string) string { return ups[i] }, sc, posOf(q))...)
+	}
 	return items, res
+}
+
+// callTerm is a state-passing call's do-items and result name as a term:
+// a do block of its own, so the places it writes back must be ones a
+// nested block can write (cells, package-level variables).
+func callTerm(items []string, res string, unit bool) term {
+	return term{code: doTerm(append(items, "pure "+res)), unit: unit}
 }
 
 // placeKind is what e, a pointer method's receiver, is rooted in: a
