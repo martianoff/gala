@@ -197,6 +197,10 @@ func (t *galaASTTransformer) checkInoutReceiverUse(base ast.Expr, xType transpil
 	}
 	goMethod := m == nil && goData != nil && goData.PointerMethods[method] || m != nil && m.GoDeclared && m.PointerReceiver
 	pointer := m != nil && m.PointerReceiver || goMethod
+	if called && pointer && m != nil && !goMethod && m.Borrow == nil && t.richAST != nil && t.richAST.OwnBorrowSummaries != nil {
+		// A method of this package: its summary is computed on demand.
+		t.richAST.OwnBorrowSummaries()
+	}
 	switch {
 	case !pointer:
 		return nil

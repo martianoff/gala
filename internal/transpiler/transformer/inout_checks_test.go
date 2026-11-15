@@ -28,6 +28,13 @@ func (c Ptr[Counter]) bumpPtr() {
     c.n = c.n + 1
 }
 
+func (c Ptr[Counter]) bumpTwice() {
+    c.bumpPtr()
+    c.bumpPtr()
+}
+
+func (c Ptr[Counter]) keepVia() int = c.keep().n
+
 func (inout p Pair) settle(inout c Counter) {
     p.left.n = c.n
 }
@@ -88,8 +95,8 @@ func TestInoutEscapeRejected(t *testing.T) {
 			"&p escapes: p is lent to a parameter that is not inout"},
 		{"an inout lambda in a Ptr slot", "func run(f func(Ptr[Counter])) = f(&Counter(0))\n\nfunc f() = run((inout k) => k.inc())",
 			"its parameter 1 is inout, but the slot's callers may pass a pointer they share"},
-		{"a Ptr method of this package", "func f(inout c Counter) = c.bumpPtr()",
-			"calling bumpPtr on the inout place c lends its address"},
+		{"a Ptr method of this package that lends its receiver to one that keeps it", "func f(inout c Counter) = Println(c.keepVia())",
+			"calling keepVia on the inout place c lends its address"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,7 +179,12 @@ func split(inout p Pair) {
     both(&p.left, &p.right)
 }
 
-func viaFn(inout c Counter) = each(&c, (inout k) => k.inc())`
+func viaFn(inout c Counter) = each(&c, (inout k) => k.inc())
+
+func viaPtr(inout c Counter) {
+    c.bumpPtr()
+    c.bumpTwice()
+}`
 	body := `var c = Counter(0)
     lend(&c)
     var p = Pair(Counter(1), Counter(2))
@@ -180,6 +192,7 @@ func viaFn(inout c Counter) = each(&c, (inout k) => k.inc())`
     var d = Counter(5)
     p.settle(&d)
     viaFn(&c)
+    viaPtr(&c)
     var other = Counter(1)
     Println(withFn(&c, () => other.n))
     Println(c.n, p.left.n, withFn(&c, () => 1))`

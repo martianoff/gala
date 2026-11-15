@@ -191,6 +191,14 @@ type RichAST struct {
 	// walkSource), and drops it after; it is per-file and never merged or
 	// cached.
 	Native *galaparser.Native
+
+	// OwnBorrowSummaries records the borrow summaries (BorrowSummary) of
+	// the analyzed package's own functions and methods in their metadata,
+	// on its first call; later calls do nothing. An imported package's
+	// metadata carries them already. The analyzed package's are computed
+	// only when a check needs them (an `inout` place lent to a method of
+	// the package). Nil when the analysis did not set it.
+	OwnBorrowSummaries func()
 }
 
 // ReportSiblingSyntaxErrors returns what to report for err, a failure of a

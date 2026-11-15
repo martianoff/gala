@@ -1377,6 +1377,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
 		richAST.ReceiverDotImports = a.receiverDotImports(methodReceiverTypesNative(nf), richAST, filePath, fileDotImportPaths)
+		richAST.OwnBorrowSummaries = ownBorrowSummaries(richAST, absFilePath, nf, siblings)
 	}
 	if profiler.Enabled && isTopLevel {
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
