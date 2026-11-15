@@ -34,21 +34,30 @@ interpreter and the three ports by source directory (`srcDir` in
 `lakefile.toml`), so there is one build graph and the ports keep their
 standalone executables.
 
+The supported local environment is the flake's `gala-lean` dev shell, which
+provides the nixpkgs Lean that `flake.lock` pins (currently 4.30.0) and Go:
+
 ```bash
+nix develop .#gala-lean
 cd formal/gala-lean
 lake build gala-lean
 ./.lake/build/bin/gala-lean version
+./test.sh
 ```
 
-`lake` is the one from `formal/lean-toolchain` (through elan), or any Lean 4.30+
-`lake`; the code compiles with the Lean nixpkgs packages too. The
-`test.sh` script builds the binary and drives every subcommand end to end.
+A Lake build outside the dev shell needs Lean 4.30+ on `PATH`; `test.sh`
+uses `lake` from `PATH`, or `LAKE=/path/to/lake`. The Nix build and the dev
+shell use the Lean that nixpkgs packages, not `formal/lean-toolchain`
+(4.35.0), which pins the formal semantics.
 
-With Nix, the same binary is `.#gala-lean.main`:
+With Nix, the same binary is `.#gala-lean.main`. Run these from the repository
+root, not from `formal/gala-lean`:
 
 ```bash
 nix build .#gala-lean.main
 nix run .#gala-lean.main -- version
+nix run .#gala-lean.main -- run formal/tests/ex_hex_literals.json
+nix build .#checks.x86_64-linux.gala-lean-main
 ```
 
 The group `gala-lean` lives in `legacyPackages` because flake `packages` must
@@ -96,7 +105,7 @@ error, render it with the diagnostics port.
 | `lakefile.toml` | the Lake package: one library per borrowed component, plus the `gala-lean` executable |
 | `Main.lean` | the command line and the `mod init`/`show`/`format` commands |
 | `test.sh` | builds and exercises every subcommand end to end |
-| `.lake/`, `lake-manifest.json` | Lake's build output and generated (empty) manifest; both gitignored, so the package builds with any Lean 4.30+ Lake |
+| `.lake/`, `lake-manifest.json` | Lake's build output and generated (empty) manifest; both gitignored, so they do not pin a toolchain |
 | `../interpolation/InterpolationCli.lean`, `../diagnostics/DiagnosticsCli.lean`, `../manifest/ManifestCli.lean` | the ports' command logic, shared by their standalone executables and this one |
 
 The port `Main.lean` files are now thin wrappers: they call the `*Cli`

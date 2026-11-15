@@ -94,7 +94,10 @@ reserved for the complete Lean implementation. Like the Lake build, these are
 development tools and are not part of a GALA release. New ports follow the
 same layout: `formal/<component>/` with its own `build.sh`, `test.sh`, native
 curated tests, a Go differential oracle, and a `nix/lean-<component>.nix`
-derivation.
+derivation. The flake's `gala-lean` dev shell provides the nixpkgs Lean
+that `flake.lock` pins (currently 4.30.0) and Go for those `./test.sh`
+scripts: from the repository root, run `nix develop .#gala-lean`. CI builds
+`.#gala-lean.main` and the `gala-lean-*` Nix checks.
 
 The flake covers `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, and
 `aarch64-darwin`.

@@ -219,7 +219,12 @@ implementation.
 They are deliberately not part of the Lake library: they are executable ports
 under differential test, not additions to the semantics, and they use the Lean
 that nixpkgs packages instead of `lean-toolchain`. Their tests need the Go code
-they port, so they run with `./test.sh` rather than `lake test`.
+they port, so they run with `./test.sh` rather than `lake test`. The flake's
+`gala-lean` dev shell provides that Lean (the nixpkgs Lean pinned by
+`flake.lock`, currently 4.30.0) and Go, so from the repository root run
+`nix develop .#gala-lean`, then each port's `./test.sh` from that port's
+directory. The Nix builds use the same Lean; they do not use
+`formal/lean-toolchain` (4.35.0).
 
 ### The combined `gala-lean` executable
 
@@ -240,23 +245,29 @@ file. Each port keeps its standalone executable and its own differential test;
 its command logic moved to a `*Cli.lean` module so both binaries share it.
 
 ```shell
+nix develop .#gala-lean
 cd formal/gala-lean
 lake build gala-lean
 ./.lake/build/bin/gala-lean version
 ./test.sh                                  # every subcommand, end to end
-
-# or, with Nix:
-nix build .#gala-lean.main
-nix run .#gala-lean.main -- run prog.json
 ```
 
-The package uses the Lean that nixpkgs provides for Nix builds (4.30 is enough);
-the Lake build uses whichever `lean`/`lake` you run it with. It has no Bazel
-target: `bazel test --config=formal //formal/...` builds the semantics modules,
-their proofs and galaspec, not this combined executable. Development tool
-only, like the ports; nothing here ships. What it may claim is bounded by
-[COVERAGE.md](COVERAGE.md): the interpreter models S1 and part of S2, and each
-port is compared with its Go original.
+From the repository root, with Nix:
+
+```shell
+nix build .#gala-lean.main
+nix run .#gala-lean.main -- version
+nix run .#gala-lean.main -- run formal/tests/ex_hex_literals.json
+nix build .#checks.x86_64-linux.gala-lean-main
+```
+
+The Nix package and the dev shell use the Lean that nixpkgs packages (4.30.0
+through `flake.lock`); a Lake build outside them uses whichever `lean`/`lake`
+you run it with. It has no Bazel target: `bazel test --config=formal
+//formal/...` builds the semantics modules, their proofs and galaspec, not this
+combined executable. Development tool only, like the ports; nothing here ships.
+What it may claim is bounded by [COVERAGE.md](COVERAGE.md): the interpreter
+models S1 and part of S2, and each port is compared with its Go original.
 
 Where a new piece goes depends on what it is:
 

@@ -50,8 +50,11 @@ which keeps the generated C non-dependent on termination proofs.
 
 ## Build
 
-Requires Lean 4 and `leanc` on `PATH`, or `LEAN=/path/to/lean`. The repo's
-local toolchain at `tmp/lean-4.34.1` is found automatically.
+Requires Lean 4.30+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
+differential test also needs `go`. The flake's `gala-lean` dev shell provides
+the nixpkgs Lean that `flake.lock` pins (currently 4.30.0) and Go: from
+the repository root, run
+`nix develop .#gala-lean` and then the commands below.
 
 ```bash
 ./build.sh

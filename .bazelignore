@@ -4,5 +4,9 @@
 docs/private
 .direnv
 formal/.lake
+formal/gala-lean/.lake
+formal/interpolation/build
+formal/diagnostics/build
+formal/manifest/build
 ide/vscode/node_modules
 ide/vscode/.vscode-test

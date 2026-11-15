@@ -8,7 +8,6 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$here/../.." && pwd)"
 build_dir="${BUILD_DIR:-$here/build}"
 
 "$here/build.sh"
@@ -16,10 +15,9 @@ build_dir="${BUILD_DIR:-$here/build}"
 if [[ -z "${LEAN:-}" ]]; then
   if command -v lean >/dev/null 2>&1; then
     LEAN="$(command -v lean)"
-  elif [[ -x "$repo_root/tmp/lean-4.34.1/bin/lean" ]]; then
-    LEAN="$repo_root/tmp/lean-4.34.1/bin/lean"
   else
-    echo "error: lean not found; set LEAN=/path/to/lean" >&2
+    echo "error: lean not found; run this in 'nix develop .#gala-lean'" >&2
+    echo "       from the repository root, or set LEAN=/path/to/lean" >&2
     exit 1
   fi
 fi

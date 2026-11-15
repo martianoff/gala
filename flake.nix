@@ -18,6 +18,8 @@
 #     complete Lean implementation.
 #   * overlays.default                   - adds pkgs.gala to nixpkgs
 #   * devShells.default                  - Bazelisk, Go, JDK for this repo
+#   * devShells.gala-lean                - Lean and Go for the staged ports
+#     and the combined executable
 #   * checks.<system>.smoke              - offline build-and-run smoke test
 #
 # Downstream flakes:
@@ -93,6 +95,24 @@
             # transpiler can use go/importer for type inference.
             shellHook = ''
               export GOROOT="$(go env GOROOT)"
+            '';
+          };
+
+          # The combined gala-lean executable and the staged ports use the
+          # Lean that nixpkgs packages, not the elan/lean-toolchain pin of the
+          # formal semantics. This shell supplies exactly that toolchain (Lean
+          # 4.30.0 through the locked nixpkgs), plus the Go toolchain their
+          # differential test.sh scripts need. It is separate from the default
+          # shell so that a `lake` on PATH there cannot shadow the formal
+          # project's pinned toolchain.
+          gala-lean = pkgs.mkShell {
+            packages = [
+              pkgs.lean4
+              pkgs.go
+              pkgs.diffutils
+            ];
+            shellHook = ''
+              echo "gala-lean dev shell: $(lean --version | head -n 1)"
             '';
           };
         }

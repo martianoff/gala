@@ -1,0 +1,78 @@
+name: Gala-lean — Nix build and checks
+
+# Builds the draft combined `gala-lean` executable and runs the Nix checks for
+# it and the three staged ports (interpolation, diagnostics, manifest). See
+# formal/gala-lean/README.md. This is a development artifact, not a GALA
+# compiler: it has no GALA source parser and no Go emitter.
+#
+# The Lean version is the one nixpkgs packages through flake.lock (4.30.0),
+# not the elan/lean-toolchain pin of the formal semantics (4.35.0).
+#
+# This is not a required check, so path filtering is safe: PRs that cannot
+# affect the Lean ports do not pay for a Lean build.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'formal/**'
+      - 'nix/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.github/workflows/gala-lean.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'formal/**'
+      - 'nix/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.github/workflows/gala-lean.yml'
+
+# Checkouts and builds only; the token never needs to write.
+permissions:
+  contents: read
+
+concurrency:
+  group: gala-lean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gala-lean:
+    name: gala-lean builds and passes its Nix checks
+    runs-on: ubuntu-latest
+    # Cold Nix builds fetch nixpkgs and the Lean toolchain; a warm one is a
+    # few minutes. The artifact itself is small.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build the combined executable
+        # `doCheck` runs a Core JSON fixture through the binary, so this is
+        # more than a link check.
+        run: nix build .#gala-lean.main --print-build-logs
+
+      - name: Run the gala-lean checks
+        run: |
+          set -euo pipefail
+          for check in \
+            gala-lean-main \
+            gala-lean-interpolation \
+            gala-lean-diagnostics \
+            gala-lean-manifest; do
+            echo "::group::$check"
+            nix build ".#checks.x86_64-linux.$check" --no-link --print-build-logs
+            echo "::endgroup::"
+          done
+
+      - name: Smoke-run the binary
+        run: |
+          nix run .#gala-lean.main -- version
+          nix run .#gala-lean.main -- run formal/tests/ex_hex_literals.json

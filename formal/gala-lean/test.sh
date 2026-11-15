@@ -14,12 +14,9 @@ repo_root="$(cd "$here/../.." && pwd)"
 if [[ -z "${LAKE:-}" ]]; then
   if command -v lake >/dev/null 2>&1; then
     LAKE="$(command -v lake)"
-  elif [[ -x "$repo_root/tmp/lean-4.34.1/bin/lake" ]]; then
-    LAKE="$repo_root/tmp/lean-4.34.1/bin/lake"
-  elif [[ -x "$repo_root/tmp/lean4-4.30/bin/lake" ]]; then
-    LAKE="$repo_root/tmp/lean4-4.30/bin/lake"
   else
-    echo "error: lake not found; set LAKE=/path/to/lake" >&2
+    echo "error: lake not found; run this in 'nix develop .#gala-lean'" >&2
+    echo "       from the repository root, or set LAKE=/path/to/lake" >&2
     exit 1
   fi
 fi
