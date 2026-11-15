@@ -210,10 +210,14 @@ fixture_cobra_cli() {
 # go_transitive_module: gala.mod requires github.com/spf13/cobra only, and the
 # program calls methods of pflag's FlagSet, which it reaches through cobra's
 # Command.Flags(). pflag's types are read from the module cobra's go.mod
-# requires, so its (T, error) methods lower to Try. Needs network access.
+# requires, so its (T, error) methods lower to Try. The program is staged from
+# examples/go_transitive_module, which Bazel builds from the repository's
+# go_deps. Needs network access.
 fixture_go_transitive_module() {
   local dir
   dir=$(stage go_transitive_module)
+  cp "$repo/examples/go_transitive_module/main.gala" "$dir/main.gala"
+  cp "$repo/examples/go_transitive_module/main.out" "$dir/expected.out"
   cd "$dir"
   gala_ok run.log run || return 0
   expect_output "gala run" expected.out run.log

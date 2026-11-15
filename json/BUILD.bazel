@@ -1,6 +1,6 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
-load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_gala_package", "stdlib_shipped_sources")
 
 exports_files([
     "json.gala",
@@ -45,6 +45,7 @@ gala_bootstrap_transpile(
 
 go_library(
     name = "json",
+    embed = [":gala_package"],
     srcs = [
         "byte_utils.go",
         "codec.gen.go",
@@ -103,3 +104,5 @@ gala_test(
 
 # Declares :shipped_sources for the stdlib embed completeness test.
 stdlib_shipped_sources()
+
+stdlib_gala_package()

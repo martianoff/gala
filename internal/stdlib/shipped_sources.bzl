@@ -1,4 +1,6 @@
-"""Declares a stdlib package's shipped sources for the embed completeness test."""
+"""Macros the stdlib packages' BUILD files share."""
+
+load("@rules_gala//gala:defs.bzl", "gala_package_marker")
 
 def stdlib_shipped_sources():
     """Declares :shipped_sources, every non-test source file of this package.
@@ -25,3 +27,13 @@ def stdlib_shipped_sources():
         ),
         visibility = ["//internal/stdlib:__pkg__"],
     )
+
+def stdlib_gala_package():
+    """Declares :gala_package, which a hand-wired stdlib package's go_library embeds.
+
+    A package built with gala_bootstrap_transpile and a plain go_library is a
+    GALA package that no GALA macro marks. Embedding the marker keeps the
+    transpiler reading its types from its .gala source, never from its
+    compiled Go (see rules_gala's gala_package_marker).
+    """
+    gala_package_marker(name = "gala_package")
