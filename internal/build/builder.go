@@ -1196,9 +1196,7 @@ func (b *Builder) generateGoMod() error {
 			fmt.Println("Downloading Go dependencies...")
 		}
 
-		cmd := exec.Command("go", "mod", "tidy")
-		cmd.Dir = b.workspace.Dir
-		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+		cmd := b.workspaceGoCmd("mod", "tidy")
 
 		if b.verbose {
 			cmd.Stdout = os.Stdout
@@ -1292,6 +1290,29 @@ func ensureGoToolchain() error {
 	return nil
 }
 
+// workspaceGoCmd returns `go <args>`, to run in the workspace against the
+// GALA Go module cache, with -trimpath ahead of the user's GOFLAGS.
+//
+// -trimpath is what lets `gala build` and `gala test` share the Go build
+// cache. Without it, cmd/go puts each package's directory into its cache key,
+// and the two commands work in different workspaces, so neither reuses a
+// package the other compiled. With it, the key holds the import path instead.
+// Stack traces still name the GALA source: -trimpath rewrites only paths under
+// the workspace's modules and GOROOT, and the //line directives in the
+// generated Go name each .gala file where it lives.
+//
+// It goes in GOFLAGS rather than on the command line so that the user's
+// GOFLAGS, read after it, can still turn it off with -trimpath=false.
+func (b *Builder) workspaceGoCmd(args ...string) *exec.Cmd {
+	cmd := exec.Command("go", args...)
+	cmd.Dir = b.workspace.Dir
+	cmd.Env = append(os.Environ(),
+		"GOMODCACHE="+b.config.GoPkgDir,
+		"GOFLAGS="+strings.TrimSpace("-trimpath "+analyzer.GoEnvValue("GOFLAGS")),
+	)
+	return cmd
+}
+
 // goCompileCheck runs `go build ./...` in the workspace without producing a binary.
 // This verifies that library packages compile correctly.
 func (b *Builder) goCompileCheck() error {
@@ -1303,11 +1324,7 @@ func (b *Builder) goCompileCheck() error {
 		fmt.Println("Running go build (compile check)...")
 	}
 
-	cmd := exec.Command("go", "build", "./gen/...")
-	cmd.Dir = b.workspace.Dir
-	cmd.Env = append(os.Environ(),
-		"GOMODCACHE="+b.config.GoPkgDir,
-	)
+	cmd := b.workspaceGoCmd("build", "./gen/...")
 
 	if b.verbose {
 		cmd.Stdout = os.Stdout
@@ -1335,20 +1352,12 @@ func (b *Builder) goBuild(outputPath, buildTarget string) (string, error) {
 	// The target is always a single package: `go build -o <path> ./gen/...`
 	// fails with "cannot write multiple packages to non-directory" as soon as
 	// gen/ holds a main package alongside library subpackages.
-	args := []string{"build", "-o", outputPath, buildTarget}
-
-	cmd := exec.Command("go", args...)
-	cmd.Dir = b.workspace.Dir
-
-	// Set GOMODCACHE to our Go cache
-	cmd.Env = append(os.Environ(),
-		"GOMODCACHE="+b.config.GoPkgDir,
-	)
+	cmd := b.workspaceGoCmd("build", "-o", outputPath, buildTarget)
 
 	if b.verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+		fmt.Printf("Running: %s\n", strings.Join(cmd.Args, " "))
 	} else {
 		// Capture stderr for error messages
 		cmd.Stderr = os.Stderr
@@ -1675,15 +1684,12 @@ func (b *Builder) Test(verbose bool) error {
 		// subpackages under gen/<sub>/ are pulled in transitively via
 		// imports; targeting "./gen/..." would ask `go build -o` to write
 		// multiple package outputs, which fails.
-		args := []string{"build", "-o", testBinary, "./gen"}
-		cmd := exec.Command("go", args...)
-		cmd.Dir = b.workspace.Dir
-		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+		cmd := b.workspaceGoCmd("build", "-o", testBinary, "./gen")
 
 		if b.verbose {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+			fmt.Printf("Running: %s\n", strings.Join(cmd.Args, " "))
 		} else {
 			cmd.Stderr = os.Stderr
 		}
@@ -1733,15 +1739,12 @@ func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
 	if verbose {
 		args = append(args, "-v")
 	}
-	args = append(args, pkgs...)
-	cmd := exec.Command("go", args...)
-	cmd.Dir = b.workspace.Dir
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+	cmd := b.workspaceGoCmd(append(args, pkgs...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if b.verbose {
-		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+		fmt.Printf("Running: %s\n", strings.Join(cmd.Args, " "))
 	}
 
 	if err := cmd.Run(); err != nil {

@@ -1,0 +1,8 @@
+pair: 1 2 sum=3
+copy: 10
+results: 3 4 ok err
+misc: 5 6 7 x
+box: l r
+holder: Left(8) Some(9)
+block: 11 eleven
+local: 12 13

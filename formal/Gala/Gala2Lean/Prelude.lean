@@ -109,7 +109,7 @@ inductive GOption (α : Type) where
 inductive GEither (α β : Type) where
   | Left (Value : α)
   | Right (Value : β)
-  deriving BEq
+  deriving BEq, Inhabited
 
 instance [GShow α] : GShow (GOption α) where
   gshow

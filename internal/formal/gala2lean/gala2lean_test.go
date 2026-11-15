@@ -122,6 +122,17 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},
 		{"stable identifier of a type with its own Equal", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
 			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "custom-equal"},
+		{"a function type argument", "package main\nfunc id[T any](x T) T = x\nfunc main() { val f = id((x int) => x)\n Println(f(1)) }\n", "func-type-arg"},
+		{"zero value of a type parameter", "package main\nfunc z[T any](x T) T { var y T\n y }\nfunc main() { Println(z(1)) }\n", "type-param-zero"},
+		{"a generic function as a value", "package main\nfunc id[T any](x T) T = x\nfunc main() { val f = id\n Println(1) }\n", "generic-func-value"},
+		{"a constraint other than any and comparable", "package main\nfunc id[T Hashable](x T) T = x\nfunc main() { Println(id(1)) }\n", "type-constraint"},
+		{"a captured var of a type parameter", "package main\nfunc f[T any](x T) T { var y = x\n val g = () => y\n g() }\nfunc main() { Println(f(1)) }\n", "generic-in-state"},
+		{"printing a type parameter beside a type with its own String", "package main\nstruct C(N int)\nfunc (c C) String() string = \"c\"\nfunc show[T any](x T) { Println(x) }\nfunc main() { show(1) }\n", "custom-string"},
+		{"comparing a type parameter beside a type with its own Equal", "package main\nstruct C(N int)\nfunc (c C) Equal(o C) bool = true\nfunc same[T comparable](a T, b T) bool = a == b\nfunc main() { Println(same(1, 1)) }\n", "custom-equal"},
+		{"printing a type parameter beside a type holding a function", "package main\ntype F struct { G func() int }\nfunc show[T any](x T) { Println(x) }\nfunc main() { show(1) }\n", "print-pointer"},
+		{"an Option printed raw", "package main\ntype S struct { n Option[int] }\nfunc main() { var s S\n Println(s) }\n", "print-raw-generic"},
+		{"a generic type's raw text", "package main\ntype S[T any] struct { n T }\nfunc main() { var s S[int]\n Println(s) }\n", "print-raw-generic"},
+		{"a type nested in itself", "package main\nstruct Node(Next Option[Node])\nfunc main() { Println(1) }\n", "nested-recursive-type"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -139,7 +150,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 // TestCountTranslated checks what -stats counts as translated: not a
 // function or method gala2lean does not translate, whether the report names
 // it (an unsupported construct in its body) or it is outside the subset as a
-// whole (a generic function, a method with a Ptr[T] or generic receiver).
+// whole (a method with a Ptr[T] or generic receiver).
 func TestCountTranslated(t *testing.T) {
 	src := `package main
 
@@ -157,7 +168,7 @@ func id[T any](x T) T = x
 
 func bad() int = println(1)
 
-func takesOption(o Option[int]) int = 1
+func takesTry(o Try[int]) int = 1
 
 func main() {
     Println(Counter(1).Get())
@@ -166,11 +177,11 @@ func main() {
 	p := export(t, "main.gala", src)
 	_, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
 	s := gala2lean.CountTranslated(p, err)
-	// Counted: Get, Inc, Box.Get, id, bad, takesOption, main. Translated:
-	// Counter.Get and main. bad is reported for its body, takesOption for
+	// Counted: Get, Inc, Box.Get, id, bad, takesTry, main. Translated:
+	// Counter.Get, id and main. bad is reported for its body, takesTry for
 	// a type in its signature (its body would translate); Inc and Box.Get
-	// have receivers outside the subset; id is generic.
-	require.Equal(t, gala2lean.Stats{Funcs: 7, Methods: 3, Translated: 2}, s, "%v", err)
+	// have receivers outside the subset.
+	require.Equal(t, gala2lean.Stats{Funcs: 7, Methods: 3, Translated: 3}, s, "%v", err)
 }
 
 // TestRecursion checks how functions are defined: one that calls itself, or

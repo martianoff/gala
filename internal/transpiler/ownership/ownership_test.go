@@ -210,6 +210,30 @@ func parenReceiver(c Ptr[counter]) {
     (*c).inc()
 }
 func (c Ptr[counter]) Exported() int = c.n
+func applyOne(f func(int) int) int = f(1)
+func localInLambda() int = applyOne((k) => {
+    val c = newCounter()
+    c.inc()
+    c.n + k
+})
+func localCapturedInner() int = applyOne((k) => {
+    val c = newCounter()
+    applyOne((j) => c.get() + j + k)
+})
+func applyPtr(f func(int) Ptr[counter]) Ptr[counter] = f(1)
+func localResultOfLambda() Ptr[counter] = applyPtr((k) => {
+    val c = newCounter()
+    c
+})
+func localReturnedFromLambda() Ptr[counter] = applyPtr((k) => {
+    val c = newCounter()
+    return c
+})
+func lazyInt(f func() int) int = f()
+func localInByName() int = lazyInt(if (true) {
+    val c = newCounter()
+    c.n
+} else 0)
 `
 
 func TestSummariesAndReasons(t *testing.T) {
@@ -261,6 +285,14 @@ func TestSummariesAndReasons(t *testing.T) {
 		{"aliasViaBlock", "b", []string{"origin"}},
 		{"parenReceiver", "c", []string{"other"}},
 		{"counter.Exported", "c", []string{"from-go"}},
+		// A lambda nested in the one that binds c captures it.
+		{"localCapturedInner", "c", []string{"captured"}},
+		// A pointer declared in a lambda escapes through its result.
+		{"localResultOfLambda", "c", []string{"returned"}},
+		{"localReturnedFromLambda", "c", []string{"returned"}},
+		// A by-name argument is not a lambda body: its thunk may outlive the
+		// call, so every pointer use in it is a capture.
+		{"localInByName", "c", []string{"captured"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.fn+"/"+tc.binding, func(t *testing.T) {
@@ -269,6 +301,9 @@ func TestSummariesAndReasons(t *testing.T) {
 			require.Equal(t, tc.want, kinds(b), "%v", b.Reasons)
 		})
 	}
+	// A pointer bound inside a lambda is not captured by that lambda.
+	local := bindingOf(t, r, "localInLambda", "c")
+	require.True(t, local.Unique, "localInLambda's c: %v", local.Reasons)
 	// Reading a field into a call of a function value lends nothing.
 	require.True(t, bindingOf(t, r, "readsIntoValue", "c").Unique)
 	// A nullable parameter is still borrowed: only its uniqueness needs a

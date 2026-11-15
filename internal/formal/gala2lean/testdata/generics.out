@@ -1,0 +1,16 @@
+7 seven Box(7)
+true false true
+Pair(one, 1)
+3 1 empty
+Some(1) small 1 big 42 nothing
+45
+Right(3) Left(division by zero)
+(1, a) 1 a
+None() false true
+Pair(0, Box())
+Box(Some(1)) Box((2, b))
+false true false
+true false true
+None() Holder(, None()) true
+Box(s) Box(T(1, End())) Box(Box(2))
+true false

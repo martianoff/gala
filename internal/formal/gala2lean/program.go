@@ -22,8 +22,13 @@ type gen struct {
 	// selected is every field name some select reads, so that a sealed
 	// type's field accessors are written only when used.
 	selected map[string]bool
-	// raw is the types `fmt` can print raw (rawPrinted), once computed.
-	raw map[string]bool
+	// raw is the types `fmt` can print raw (rawPrinted), once computed;
+	// rawGeneric those of them whose raw text reaches a generic type, a type
+	// parameter, Option or a tuple, which is not translated.
+	raw, rawGeneric, rawGenericHolders map[string]bool
+	// tparams maps each type parameter in scope to the Lean type it stands
+	// for (withTypeArgs).
+	tparams map[string]string
 	// outsideDecls are the top-level declarations outside the subset
 	// (imports, generic declarations, ...), in source order.
 	outsideDecls []*coreexport.Unsupported
@@ -118,33 +123,15 @@ func (g *gen) freshName(p string) string {
 	return fmt.Sprintf("_gala_%s%d", p, g.fresh)
 }
 
-// typeParamsOf is a declaration's type parameters (a generic function,
-// struct or sealed type), nil for any other.
-func typeParamsOf(d coreexport.Node) []coreexport.Node {
-	switch d := d.(type) {
-	case *coreexport.Func:
-		return d.TypeParams
-	case *coreexport.Struct:
-		return d.TypeParams
-	case *coreexport.Sealed:
-		return d.TypeParams
-	}
-	return nil
-}
-
 // collect reads the program's declarations. Unsupported top-level
 // declarations (imports, methods, ...) are recorded.
 func (g *gen) collect(p *coreexport.Program) {
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
-			// Imports and generic declarations are outside the translated
-			// subset for now: declarations outside it, as below.
+			// Imports are outside the translated subset for now: a
+			// declaration outside it, as below.
 			if imp, ok := d.(*coreexport.Import); ok {
 				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
-				continue
-			}
-			if f, ok := d.(*coreexport.Func); !(ok && f.Receiver != nil) && len(typeParamsOf(d)) > 0 {
-				g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "generic-decl", Pos: posOf(d)})
 				continue
 			}
 			switch d := d.(type) {
@@ -397,8 +384,15 @@ func (g *gen) initDecl(order []*globalVar) string {
 
 // funcDecl is the definition of one top-level function.
 func (g *gen) funcDecl(f *coreexport.Func, recursive bool) string {
+	tps := g.typeParams(f.TypeParams)
+	return g.inTypeParams(tps, func() string { return g.funcDeclIn(f, recursive, declParams(tps)) })
+}
+
+// funcDeclIn is funcDecl with f's type parameters in scope; tparams are
+// the Lean parameters they take.
+func (g *gen) funcDeclIn(f *coreexport.Func, recursive bool, tparams []string) string {
 	sc := newScope(nil, 0)
-	ps := g.params(f, sc)
+	ps := append(tparams, g.params(f, sc)...)
 	res := "Unit"
 	if f.Result != nil {
 		res = g.leanType(f.Result)

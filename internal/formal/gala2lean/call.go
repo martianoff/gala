@@ -241,7 +241,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 		if s.paramsInDefaults {
 			for j := range k {
 				seen = append(seen, "let "+ident(s.names[j])+" := "+args[j])
-				dsc.bind(s.names[j], false, g.optType(s.types[j]))
+				dsc.bind(s.names[j], false, g.optTypeSafe(s.types[j]))
 			}
 		}
 		saved := g.qualify
@@ -297,6 +297,11 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	if n, ok := e.Callee.(*coreexport.Name); ok && sc.lookup(n.Name) == nil {
 		x := n.Name
 		if s := g.sigOf(x); s != nil {
+			if f := g.funcs[x]; f != nil && len(f.TypeParams) > 0 {
+				g.instSig(f, s, e, sc)
+			} else if n := g.ctorOf(x); n != "" && g.isGenericDecl(n) {
+				g.instCtor(n, s, e, sc)
+			}
 			return g.callSig(s, e, sc)
 		}
 		switch {
@@ -397,11 +402,14 @@ func (g *gen) printable(e coreexport.Node, sc *scope) {
 	if len(g.unprintable) > 0 {
 		// A value of a type whose text holds a function's address; when the
 		// type is not plain to see, any value might be one.
-		if t == "" {
+		if t == "" || g.mentionsTypeParam(t) {
 			unsup(posOf(e), "print-pointer")
 		}
 		g.stateTypeIn(t, g.unprintable, posOf(e), "print-pointer")
 	}
+	// A value whose raw text reaches a generic type (rawPrinted).
+	g.rawPrinted()
+	g.customCheck(t, g.rawGeneric, &g.rawGenericHolders, posOf(e), "print-raw-generic")
 	g.basicType(t, posOf(e))
 }
 
