@@ -165,6 +165,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0115](/docs/errors/gala-e0115/) | An `inout` place used inside `Try` | Ownership |
 | [GALA-E0116](/docs/errors/gala-e0116/) | An `inout` interface method implemented without an `inout` receiver | Ownership |
 | [GALA-E0117](/docs/errors/gala-e0117/) | Go function literal written as a value | Go surface |
+| [GALA-E0118](/docs/errors/gala-e0118/) | `use` of a value with no Close method | Declarations |
+| [GALA-E0119](/docs/errors/gala-e0119/) | Go directive (`//go:embed`, `//go:build`, ...) in a GALA file | Go surface |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 

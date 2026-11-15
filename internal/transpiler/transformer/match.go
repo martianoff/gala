@@ -310,10 +310,31 @@ const goBuiltinsPkgName = "go_builtins"
 //   - For any other expression, return a `return <expr>` statement and
 //     report the expression's inferred type.
 func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, transpiler.Type) {
-	if t.isNoReturnCallExpr(expr) {
-		return &ast.ExprStmt{X: t.lowerPanicWrapperToBuiltin(expr)}, transpiler.NilType{}
+	if stmt, ok := t.divergingStmt(expr); ok {
+		return stmt, transpiler.NilType{}
 	}
 	return t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{expr}}), t.inferResultType(expr)
+}
+
+// divergingStmt is expr as a statement when it is a diverging call
+// (`Panic(...)`, see isNoReturnCallExpr), lowered to Go's `panic`: a value
+// position that would `return` it — a function's or lambda's result, a match
+// arm's — needs no value from it, and `return panic(...)` is not Go. ok is
+// false for any other expression.
+func (t *galaASTTransformer) divergingStmt(expr ast.Expr) (ast.Stmt, bool) {
+	if !t.isNoReturnCallExpr(expr) {
+		return nil, false
+	}
+	return &ast.ExprStmt{X: t.lowerPanicWrapperToBuiltin(expr)}, true
+}
+
+// returnOrDiverge is the statement that makes expr a function's or lambda's
+// result: `return expr`, or the diverging call alone (divergingStmt).
+func (t *galaASTTransformer) returnOrDiverge(expr ast.Expr) ast.Stmt {
+	if stmt, ok := t.divergingStmt(expr); ok {
+		return stmt
+	}
+	return &ast.ReturnStmt{Results: []ast.Expr{expr}}
 }
 
 // yieldsNoValue reports whether stmts, the lowered body of a match or

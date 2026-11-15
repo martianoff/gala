@@ -20,6 +20,8 @@ GALA is close enough to Scala and Kotlin to be readable on sight, and different 
 - **There is no `->` pair arrow.** A map entry is a tuple: `HashMapOf(("a", 1), ("b", 2))`.
 - **No bare `len`, `append`, `make`, `panic`, `recover`.** Use `.Size()` (runes/elements) or `.ByteSize()` (bytes). (`GALA-E0035`)
 - **No `defer`, no bare `go`.** Cleanup is `use` or `Using(res, (r) => ...)`; a goroutine is `go_interop.Spawn(() => f())`. (`GALA-E0036`)
+- **`use` binds the resource, not a `Try`.** `use f = os.Open(p)` is an error, because `os.Open` gives a `Try[*os.File]`; write `use f = os.Open(p).Get()` inside `Try(() => { ... })`. (`GALA-E0118`)
+- **No `//go:` directives in a `.gala` file.** `//go:embed` is `embed val content = "file.txt"`; a `//go:build` constraint stays in a hand-written `.go` file of the package. (`GALA-E0119`)
 - **No slice or map literals**, and Go slice/map *types* are legal only where a type is expected. (`GALA-E0007`, `GALA-E0008`, `GALA-E0040`)
 - **No struct tags.** ``Name string `json:"name"` `` is an error (`GALA-E0085`). JSON and YAML keys are set on the codec: `Codec[User](SnakeCase()).Rename("Name", "full_name").OmitEmpty("Bio")`. A type that a Go library must read through tags goes in a hand-written `.go` file of the same package.
 - **No Go function literals.** A function value is a lambda: `(x int) int => { ... }`, never `func(x int) int { ... }`; an unnamed Go parameter is written `_ T`, and the body carries over. (`GALA-E0117`)

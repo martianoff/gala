@@ -130,6 +130,8 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0115` | An `inout` place used inside `Try` | [GALA-E0115.md](GALA-E0115.md) |
 | `GALA-E0116` | An `inout` interface method implemented without an `inout` receiver | [GALA-E0116.md](GALA-E0116.md) |
 | `GALA-E0117` | Go function literal written as a value | [GALA-E0117.md](GALA-E0117.md) |
+| `GALA-E0118` | `use` of a value with no Close method | [GALA-E0118.md](GALA-E0118.md) |
+| `GALA-E0119` | Go directive (`//go:embed`, `//go:build`, ...) in a GALA file | [GALA-E0119.md](GALA-E0119.md) |
 
 ### Retired codes
 

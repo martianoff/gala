@@ -582,11 +582,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr
 			return thunkBody, retType, nil
 		}
 	}
-	body = &ast.BlockStmt{
-		List: []ast.Stmt{
-			&ast.ReturnStmt{Results: []ast.Expr{expr}},
-		},
-	}
+	body = &ast.BlockStmt{List: []ast.Stmt{t.returnOrDiverge(expr)}}
 	return body, retType, nil
 }
 
@@ -1723,7 +1719,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// A result-less literal evaluates the body for its side effects: `return
 	// body` is invalid Go when the literal declares no results (and when the
 	// body itself yields no value). Only a call may stand alone as a statement.
-	var bodyStmt ast.Stmt = &ast.ReturnStmt{Results: []ast.Expr{body}}
+	bodyStmt := t.returnOrDiverge(body)
 	if resultField == nil {
 		if _, isCall := body.(*ast.CallExpr); isCall {
 			// Same contract as the explicit void lambda: silently dropping an

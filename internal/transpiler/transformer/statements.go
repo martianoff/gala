@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 	"strings"
 )
 
@@ -161,6 +162,10 @@ func (t *galaASTTransformer) lowerStatement(s stmtSrc) (stmt ast.Stmt, pre []ast
 		if err != nil {
 			return nil, nil, err
 		}
+		// `return Panic(...)` diverges: the call is the statement.
+		if diverge, ok := t.divergingStmt(stmt.Results[0]); ok {
+			return diverge, nil, nil
+		}
 		t.recordUserReturn(stmt, line, col)
 		return stmt, nil, nil
 	}
@@ -244,7 +249,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	// its target as a value of its own would.
 	if len(unwrappedRhs) == 1 && len(lhsExprs) > 1 {
 		unwrappedRhs[0] = t.rawGoCall(unwrappedRhs[0])
-		if results := t.resolveGoCallReturnTypes(unwrappedRhs[0]); len(results) == len(lhsExprs) {
+		if results := t.multiValueTypes(unwrappedRhs[0]); len(results) == len(lhsExprs) {
 			at := d.rhs.exprs()[0].at()
 			for i, result := range results {
 				if err := t.checkResultFill(result, t.getExprTypeName(lhsExprs[i]), at); err != nil {
@@ -345,16 +350,18 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 ) (ast.Stmt, error) {
 	idsCtx := d.names
 	callValue := t.rawGoCall(t.unwrapImmutable(rhs))
-	// Only a call yields several values. Anything else — a literal, a name, an
-	// arithmetic expression — is one value, and binding it to several names is
-	// a mismatch Go would otherwise report against the generated temporaries.
-	if _, isCall := callValue.(*ast.CallExpr); !isCall {
+	// Only a call, or a comma-ok form with two names (`v, ok := m[k]`,
+	// `v, ok := <-ch`), yields several values. Anything else — a literal, a
+	// name, an arithmetic expression — is one value, and binding it to
+	// several names is a mismatch Go would otherwise report against the
+	// generated temporaries. Each name takes its type from the callee's
+	// corresponding declared return, so `n, err := strconv.Atoi(s)` types `n`
+	// as int.
+	callReturns := t.multiValueTypes(callValue)
+	if _, isCall := callValue.(*ast.CallExpr); !isCall && (len(idsCtx) != 2 || callReturns == nil) {
 		return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf(
 			"assignment mismatch: %d names but the right-hand side is a single value", len(idsCtx)))
 	}
-	// Each name takes its type from the callee's corresponding declared return,
-	// so `n, err := strconv.Atoi(s)` types `n` as int.
-	callReturns := t.resolveGoCallReturnTypes(callValue)
 	// The callee's return count is known only for a resolved Go signature; a
 	// GALA callee reports none, and the mismatch surfaces later.
 	if len(callReturns) > 0 && len(callReturns) != len(idsCtx) {
@@ -399,6 +406,52 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	}
 	spec := &ast.ValueSpec{Names: names, Values: []ast.Expr{callValue}}
 	return &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{spec}}}, nil
+}
+
+// multiValueTypes returns the types of the values expr yields when several
+// names bind it: a comma-ok form's value and flag, or a Go call's results.
+// It is nil when they are not known.
+func (t *galaASTTransformer) multiValueTypes(expr ast.Expr) []transpiler.Type {
+	if types := t.commaOkTypes(expr); types != nil {
+		return types
+	}
+	return t.resolveGoCallReturnTypes(expr)
+}
+
+// commaOkTypes returns the two results of a comma-ok expression — a Go map
+// index `m[k]` (the value, and whether k is present) or a channel receive
+// `<-ch` (the value, and whether it was sent rather than the zero value of a
+// closed channel) — or nil when expr is not one. The forms read through a GALA
+// alias or a Go type defined over a map or a channel.
+func (t *galaASTTransformer) commaOkTypes(expr ast.Expr) []transpiler.Type {
+	var elem transpiler.Type
+	switch e := expr.(type) {
+	case *ast.IndexExpr:
+		if m, ok := t.underlyingTypeOf(e.X).(transpiler.MapType); ok {
+			elem = m.Elem
+		}
+	case *ast.UnaryExpr:
+		if e.Op != token.ARROW {
+			return nil
+		}
+		if c, ok := t.underlyingTypeOf(e.X).(transpiler.ChanType); ok {
+			elem = c.Elem
+		}
+	}
+	if elem == nil {
+		return nil
+	}
+	return []transpiler.Type{elem, transpiler.BasicType{Name: "bool"}}
+}
+
+// underlyingTypeOf is the type of expr through GALA aliases and a Go named
+// type's definition: a map or a channel, however it is named.
+func (t *galaASTTransformer) underlyingTypeOf(expr ast.Expr) transpiler.Type {
+	typ := t.followAliasChain(t.getExprTypeName(expr))
+	if u, ok := t.goNamedUnderlying(typ); ok {
+		return u
+	}
+	return typ
 }
 
 // blockTail says what a block's trailing statement is for.
@@ -805,6 +858,9 @@ func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
 			resType = gen.Params[0]
 		}
 	}
+	if err := t.useWithoutCloseError(d, resType); err != nil {
+		return nil, err
+	}
 	t.addVar(name, resType)
 
 	assign := &ast.AssignStmt{
@@ -818,6 +874,37 @@ func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
 		},
 	}
 	return []ast.Stmt{assign, deferStmt}, nil
+}
+
+// useWithoutCloseError is GALA-E0118 for `use x = acquire` whose resource,
+// of type resType, is a GALA type with no Close method: the binding's
+// `defer x.Close()` would otherwise fail `go build` against the generated Go.
+// The commonest case is a fallible Go acquire, `use f = os.Open(p)`, whose
+// value is a Try[*os.File]. Like the unknown-method check (unknownMethodError)
+// it judges only a GALA type whose method set is known; a Go type, an
+// interface or an unresolved type is left to Go.
+func (t *galaASTTransformer) useWithoutCloseError(d useDecl, resType transpiler.Type) error {
+	impl, ok := t.implTypeOf(resType)
+	// A member named Close — a method, or a field holding a function — is
+	// what `defer x.Close()` calls; Go checks its signature.
+	if !ok || !t.canJudgeMembers(impl.meta, resType) || t.hasMemberOrGoMethod(impl.meta, "Close") {
+		return nil
+	}
+	acquire := d.expr.text()
+	hint := fmt.Sprintf("give %s a `Close() error` method, or bind the value with `val` if it holds nothing to release", displayType(resType))
+	if impl.meta.Package == registry.StdPackageName && (impl.meta.Name == "Try" || impl.meta.Name == "Option") {
+		hint = fmt.Sprintf("take the resource out of the %s; here, `use %s = %s.Get()` inside a `Try(() => { ... })`, which turns a failed acquire into a Failure, or `match` it and `use` the value in its success arm", impl.meta.Name, d.name, acquire)
+	}
+	line, col := d.expr.at().start()
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeUseWithoutClose, line, col,
+		fmt.Sprintf("`use %s` releases its value with Close(), but `%s` is a %s, which has no Close method", d.name, acquire, displayType(resType)),
+		hint,
+	)
+	if !strings.Contains(acquire, "\n") {
+		err = err.WithSpan(col + len([]rune(acquire)))
+	}
+	return err
 }
 
 // lowerIfExpressionStatement lowers an if-expression whose value is discarded —
@@ -912,8 +999,8 @@ func (t *galaASTTransformer) lowerFunctionTail(e exprSrc) (ast.Stmt, error) {
 		return nil, err
 	}
 	value := ret.Results[0]
-	if t.isNoReturnCallExpr(value) {
-		return &ast.ExprStmt{X: t.lowerPanicWrapperToBuiltin(value)}, nil
+	if stmt, ok := t.divergingStmt(value); ok {
+		return stmt, nil
 	}
 	if _, void := t.getExprTypeName(value).(transpiler.VoidType); void || isVoidIIFE(value) {
 		return nil, t.semanticErrorAtNode(e.at(), fmt.Sprintf(

@@ -2044,7 +2044,7 @@ func main() {
 - **Prefer GALA collections over Go slices** - Use `Array` or `List` from `collection_immutable`
 - **Use `Option[T]`** for nullable values, **`Try[T]`** for operations that may fail
 - **Use an opaque type, not an alias, for a type of its own** - `type UserID int64` is just `int64`; `opaque type UserID int64` is distinct, takes methods, and still encodes as the bare value (see [Alias, opaque type or private-field struct](#alias-opaque-type-or-private-field-struct))
-- **Document exported declarations** with a `//` run directly above them - hover and `gala doc` show it, and it is carried into the generated Go, so `go doc`, gopls, pkg.go.dev and annotation tools such as `swag` read it too. Only declaration docs are carried: comments inside function bodies, trailing comments and `//go:`, `//line` and `// +build` directives are not
+- **Document exported declarations** with a `//` run directly above them - hover and `gala doc` show it, and it is carried into the generated Go, so `go doc`, gopls, pkg.go.dev and annotation tools such as `swag` read it too. Only declaration docs are carried: comments inside function bodies, trailing comments and `//line` directives are not. A Go directive (`//go:embed`, `//go:build`, `// +build`, ...) in a GALA file is [GALA-E0119](/docs/errors/gala-e0119/): embed with `embed val`, and keep code that needs a directive in a `.go` file
 
 ## 17. Dependency Management {#17-dependency-management}
 

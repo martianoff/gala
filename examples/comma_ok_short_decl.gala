@@ -1,0 +1,28 @@
+package main
+
+import "time"
+import "martianoff/gala/go_interop"
+
+// `v, ok := m[k]` on a Go map and `v, ok := <-ch` on a channel are Go's
+// comma-ok forms, as their `val v, ok = ...` spellings are: the value has the
+// element type and ok is a bool. `:=` used to reject them as an assignment
+// mismatch.
+func lookup(m map[string]int, key string) Option[int] {
+    v, ok := m[key]
+    if (ok) Some(v) else None()
+}
+
+func main() {
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), "a", 1)
+    Println(lookup(m, "a"))
+    Println(lookup(m, "b"))
+
+    n, found := m["a"]
+    Println(n + 1, !found)
+
+    val missing, present = m["zzz"]
+    Println(missing, present)
+
+    tick, open := <-time.After(time.Millisecond)
+    Println(open, tick.IsZero())
+}

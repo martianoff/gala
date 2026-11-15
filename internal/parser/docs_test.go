@@ -92,18 +92,6 @@ func TestDocComments(t *testing.T) {
 			want: "Summary line.\n\nDetail paragraph.",
 		},
 		{
-			name: "pragma contributes no prose but does not sever",
-			src:  "package main\n\n// Real documentation.\n//go:noinline\nfunc Pragma() int = 1\n",
-			decl: "func Pragma",
-			want: "Real documentation.",
-		},
-		{
-			name: "+build constraint contributes no prose",
-			src:  "package main\n\n// Real documentation.\n// +build ignore\nfunc Constrained() int = 1\n",
-			decl: "func Constrained",
-			want: "Real documentation.",
-		},
-		{
 			name: "+build line inside a block comment contributes no prose",
 			src:  "package main\n\n/* Real documentation.\n+build ignore */\nfunc BlockConstrained() int = 1\n",
 			decl: "func BlockConstrained",
@@ -176,6 +164,41 @@ func TestDocComments(t *testing.T) {
 			got := docFor(t, tt.src, tt.decl)
 			if got != tt.want {
 				t.Errorf("doc mismatch\n got: %q\nwant: %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A Go directive in a GALA file is GALA-E0119, but the doc harvest, which an
+// editor reads from a file with errors too, still skips it without severing
+// the run around it.
+func TestDocCommentsSkipDirectives(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		decl string
+	}{
+		{
+			name: "pragma contributes no prose but does not sever",
+			src:  "package main\n\n// Real documentation.\n//go:noinline\nfunc Pragma() int = 1\n",
+			decl: "func Pragma",
+		},
+		{
+			name: "+build constraint contributes no prose",
+			src:  "package main\n\n// Real documentation.\n// +build ignore\nfunc Constrained() int = 1\n",
+			decl: "func Constrained",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed := NewAntlrGalaParser().ParseFile(tt.src)
+			if len(parsed.Errors) != 1 || !strings.Contains(parsed.Errors[0].Error(), string(galaerr.CodeGoDirective)) {
+				t.Fatalf("want one GALA-E0119, got %v", parsed.Errors)
+			}
+			off := strings.Index(tt.src, tt.decl)
+			key := DocKey{Line: 1 + strings.Count(tt.src[:off], "\n"), Column: 0}
+			if got := parsed.Docs[key]; got != "Real documentation." {
+				t.Errorf("doc mismatch\n got: %q\nwant: %q", got, "Real documentation.")
 			}
 		})
 	}

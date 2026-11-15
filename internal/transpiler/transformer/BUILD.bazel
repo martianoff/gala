@@ -169,6 +169,7 @@ go_test(
         "codec_value_test.go",
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
+        "comma_ok_test.go",
         "comparable_test.go",
         "companion_keyless_widen_test.go",
         "companion_qualified_case_test.go",

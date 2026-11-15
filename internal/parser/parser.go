@@ -82,7 +82,8 @@ func (p *Parsed) Err() error {
 // recovering parser, once, errors or not: the errors, their hints and the
 // error-recovered tree all come from that parse. The errors are, in order,
 // input's source-text error (checkSourceChars), the lexical and syntax errors
-// (nativeSyntaxErrors), and a missing blank line (checkEmptyLinesNative).
+// (nativeSyntaxErrors) with the Go directives among its comments merged in by
+// position (goDirectives), and a missing blank line (checkEmptyLinesNative).
 //
 // A panic in galop's lexer or parser (a galop bug) is recovered: the parse
 // then has no tree and one error, an internal compiler error for the file
@@ -100,7 +101,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	if panicErr != nil {
 		return &Parsed{Errors: withCharErr(charErr, []error{panicErr})}
 	}
-	errs := withCharErr(charErr, nativeSyntaxErrors(root.Tree(), ts, parseErrs))
+	errs := withCharErr(charErr, mergeByPosition(nativeSyntaxErrors(root.Tree(), ts, parseErrs), goDirectives(ts)))
 	var handle *Native
 	if root.Ok() {
 		handle = nativeHandle(root.Tree())

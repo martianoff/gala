@@ -296,7 +296,7 @@ A few Go constructs have no GALA syntax. Keep the code that needs them in a `.go
 | anonymous struct types, `struct{ X int }` | GALA can use such a value but never write the type ([GALA-E0090](errors/GALA-E0090.md)) |
 | `chan`, `select`, `go`, `defer` | none ([GALA-E0036](errors/GALA-E0036.md)); `Future`, `go_interop.Spawn`, `use` and the [signal helpers](GO_INTEROP.MD#signal-channels-and-anonymous-struct-types) cover most uses |
 | `append`, `make`, `len`, `panic` and the other builtins | `go_interop` helpers and `.Size()` ([GALA-E0035](errors/GALA-E0035.md)) |
-| cgo, `unsafe`, `//go:` directives, code from other generators | Go files |
+| cgo, `unsafe`, `//go:` directives, code from other generators | Go files; a directive in a `.gala` file is [GALA-E0119](errors/GALA-E0119.md) |
 
 The [gotchas](GO_INTEROP.MD#gotchas-and-limitations) of the Go interop guide list the rest.
 

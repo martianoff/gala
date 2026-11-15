@@ -88,6 +88,52 @@ func must(n int) int {
 			contains: []string{`panic("no")`},
 		},
 		{
+			name: "an expression body that is Panic diverges",
+			body: `
+func fail() int = Panic("no")
+`,
+			contains: []string{"func fail() int {\n\tpanic(\"no\")\n}"},
+		},
+		{
+			name: "an expression body that is a qualified go_builtins Panic diverges",
+			body: `
+import "martianoff/gala/go_builtins"
+
+struct Box(n int)
+
+func (b Box) Fail() Option[int] = go_builtins.Panic("no")
+`,
+			contains: []string{"Option[int] {\n\tpanic(\"no\")\n}"},
+		},
+		{
+			name: "an explicit return of Panic diverges",
+			body: `
+func must(n int) int {
+    if (n > 0) {
+        return n
+    }
+    return Panic("no")
+}
+`,
+			contains: []string{"}\n\tpanic(\"no\")\n}"},
+		},
+		{
+			name: "a Panic branch of a tail-recursive body diverges",
+			body: `
+func down(n int) int = if (n < 0) Panic("neg") else if (n == 0) 0 else down(n - 1)
+`,
+			contains: []string{"\t\t\tpanic(\"neg\")\n"},
+		},
+		{
+			name: "a lambda whose body is Panic diverges",
+			body: `
+func apply(f func(int) int) int = f(1)
+
+func g() int = apply((x int) => Panic("no"))
+`,
+			contains: []string{"int {\n\t\tpanic(\"no\")\n\t}"},
+		},
+		{
 			name: "a user method named Panic is an ordinary value",
 			body: `
 struct Engine(code int)

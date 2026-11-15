@@ -4729,6 +4729,12 @@ satisfy `Close() error`. Multiple `use` bindings release **LIFO** (last acquired
 closes first), so nested resources unwind in the right order. No import is
 needed.
 
+The acquire is the resource itself. A fallible Go acquire such as `os.Open`
+gives a `Try[*os.File]`, which has no `Close`, so `use f = os.Open(p)` is
+[GALA-E0118](errors/GALA-E0118.md): take the file out first, with
+`use f = os.Open(p).Get()` inside a `Try(() => { ... })` (a failed open ends
+the block as a `Failure`), or `use` it in the `Success` arm of a `match`.
+
 A `use` in an arm of a `match`, or in a branch of an if-expression whose value
 is used, is released when that match or if-expression ends, not when the
 function returns — also when another arm has a `return`, `break` or `continue`
@@ -5641,6 +5647,7 @@ gala_binary(
 
 ### Rules
 
+- A `//go:embed` line in a GALA file is [GALA-E0119](errors/GALA-E0119.md); `embed val` is the only way to embed
 - `embed val` is **top-level only** — cannot be used inside functions
 - Embedded variables are **immutable** — cannot be reassigned
 - The `embed` import is auto-injected by the transpiler (no explicit `import "embed"` needed)
@@ -6435,8 +6442,9 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
   ```
 - A blank `//` line is a **paragraph break**. Indented lines are preserved, so an
   indented run reads as a code sample.
-- `//go:`, `//line` and `// +build` are **directives**, not prose. They contribute nothing to
-  the text but do not break a run that continues past them.
+- `//line` is a **directive**, not prose. It contributes nothing to the text but
+  does not break a run that continues past it. A Go directive (`//go:` or
+  `// +build`) in a GALA file is [GALA-E0119](errors/GALA-E0119.md).
 - Comment syntax inside a string is not a comment — `val s = "// not a comment"`
   is a string, and the declaration below it is undocumented.
 
@@ -6508,9 +6516,12 @@ is kept in order.
 
 Only declaration documentation is carried. Comments inside function bodies,
 trailing comments, and comments that document nothing (separated from the next
-declaration by a blank line) do not appear in the generated Go. Neither do
-`//go:`, `//line` and `// +build` lines: they are directives, not documentation, so a
-`//go:noinline` written in GALA has no effect on the generated Go.
+declaration by a blank line) do not appear in the generated Go. Neither does a
+`//line` line, which is a directive, not documentation. A Go directive —
+`//go:embed`, `//go:build`, `//go:noinline`, `// +build` — would not reach the
+generated Go either, so a GALA file may not hold one
+([GALA-E0119](errors/GALA-E0119.md)): embed with `embed val`, and keep code that
+needs a directive in a `.go` file of the package.
 
 ## 20. IDE Support
 
