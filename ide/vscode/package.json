@@ -3,7 +3,7 @@
   "displayName": "GALA",
   "description": "GALA language support: syntax highlighting plus the full GALA language server (`gala lsp`) — diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and symbols.",
   "version": "0.81.0",
-  "publisher": "martianoff",
+  "publisher": "GALA",
   "license": "Apache-2.0",
   "icon": "icon.png",
   "homepage": "https://gala.fyi/features/ide-support/",

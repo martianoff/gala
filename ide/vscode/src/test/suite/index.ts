@@ -13,9 +13,9 @@ function fixtureUri(...segments: string[]): vscode.Uri {
   if (root) {
     return vscode.Uri.joinPath(root, ...segments);
   }
-  const extension = vscode.extensions.getExtension('martianoff.gala');
+  const extension = vscode.extensions.getExtension('GALA.gala');
   if (!extension) {
-    throw new Error('the martianoff.gala extension is not installed');
+    throw new Error('the GALA.gala extension is not installed');
   }
   return vscode.Uri.joinPath(
     extension.extensionUri,
@@ -45,8 +45,8 @@ export async function run(): Promise<void> {
       vscode.workspace.workspaceFolders?.map((f) => f.uri.toString()) ?? [],
     )}`,
   );
-  const extension = vscode.extensions.getExtension('martianoff.gala');
-  assert.ok(extension, 'martianoff.gala extension is not installed');
+  const extension = vscode.extensions.getExtension('GALA.gala');
+  assert.ok(extension, 'GALA.gala extension is not installed');
   await extension.activate();
 
   const commands = await vscode.commands.getCommands(true);
