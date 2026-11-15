@@ -290,6 +290,7 @@ func (g *gen) genericType(name string, args []string, pos coreexport.Pos) string
 	switch {
 	case g.declaredType(name):
 		head, want = ident(name), len(g.declTypeParams(name))
+		g.use(name)
 	case isStd:
 		head, want = std.lean, std.arity
 	default:

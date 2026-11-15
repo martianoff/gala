@@ -1,0 +1,10 @@
+package d
+
+// The first file of package d: Go initializes its variable before the
+// second file's, in the order of the files.
+val One = say("init d, first file")
+
+func say(s string) int {
+    Println(s)
+    1
+}

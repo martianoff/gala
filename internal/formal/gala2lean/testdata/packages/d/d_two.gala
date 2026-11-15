@@ -1,0 +1,6 @@
+package d
+
+// The second file of package d: initialized after the first file's.
+val Two = say("init d, second file")
+
+func Sum() int = One + Two

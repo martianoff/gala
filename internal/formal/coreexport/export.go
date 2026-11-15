@@ -382,14 +382,20 @@ func (e *exporter) optType(t native.TypeNode) Node {
 
 func (e *exporter) typ(t native.TypeNode) Node {
 	if q := t.QualifiedIdentifier(); q.Ok() {
+		// `pkg.T`: the qualifier as written, not resolved. A longer path
+		// is not a type GALA can name.
+		pkg, name := "", q.GetText()
 		if q.Identifier(1).Ok() {
-			return e.unsupported(UnsupportedQualifiedType, t.GalaNodeRef)
+			if q.Identifier(2).Ok() {
+				return e.unsupported(UnsupportedQualifiedType, t.GalaNodeRef)
+			}
+			pkg, name = q.Identifier(0).GetText(), q.Identifier(1).GetText()
 		}
 		args := []Node{}
 		if ta := t.TypeArguments(); ta.Ok() {
 			args = mapNodes(ta.TypeList().AllType_(), e.typ)
 		}
-		return of(e, &TypeName{Name: q.GetText(), Args: args}, t.GalaNodeRef)
+		return of(e, &TypeName{Package: pkg, Name: name, Args: args}, t.GalaNodeRef)
 	}
 	if t.FUNC().Ok() {
 		return e.funcType(t)

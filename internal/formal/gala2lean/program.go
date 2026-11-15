@@ -39,6 +39,14 @@ type gen struct {
 	// collections is true when the program dot-imports the immutable
 	// collections (collectionsPath).
 	collections bool
+	// depNS is the namespaces of the packages of the module the program
+	// imports (packages.go).
+	depNS map[string]bool
+	// cur is the declaration being translated (guard), and uses what each
+	// declaration's translation used of the program's declarations, by
+	// their report keys (attributeReach).
+	cur  string
+	uses map[string]map[string]bool
 	// library is Options.Library.
 	library bool
 	// methods are the methods by receiver type and name; byKey every
@@ -167,12 +175,17 @@ func (g *gen) collect(p *coreexport.Program) {
 						g.unsupNode(d.Name, vn)
 						continue
 					}
-					g.variants[v.Name] = &variantInfo{sealed: d, v: v, fields: fieldsOf(v.Fields)}
+					g.variants[pkgPrefix(d.Name)+v.Name] = &variantInfo{sealed: d, v: v, fields: fieldsOf(v.Fields)}
 				}
 			case *coreexport.Func:
 				if d.Receiver != nil {
 					g.addMethod(d)
 					continue
+				}
+				if bareName(d.Name) == "init" {
+					// Go runs a package's init functions after its
+					// variables; that is not modelled.
+					g.unsup = append(g.unsup, Unsupported{Construct: "init-func", Pos: d.Pos})
 				}
 				g.funcs[d.Name] = d
 				g.byKey[d.Name] = d
@@ -282,10 +295,13 @@ func (g *gen) write(s string) {
 func (g *gen) emitProgram(opts Options) {
 	ok := true
 	var typeDecls, fnTypeDecls string
-	ok = g.guard("", func() {
-		g.typeOrder()
-		typeDecls, fnTypeDecls = g.typeDecls()
-	}) && ok
+	if g.guard("", g.typeOrder) {
+		var typesOK bool
+		typeDecls, fnTypeDecls, typesOK = g.typeDecls()
+		ok = typesOK && ok
+	} else {
+		ok = false
+	}
 	// The package-level variables' types and initialization order.
 	var initOrder []*globalVar
 	ok = g.guard("", func() {
@@ -362,7 +378,7 @@ func (g *gen) stateDecl() string {
 	b.WriteString("structure _gala_St where\n  _gala_out : String := \"\"\n")
 	b.WriteString(g.heapFields())
 	for _, gv := range g.globals {
-		fmt.Fprintf(&b, "  %s : %s := default\n", ident(gv.name), gv.leanT)
+		fmt.Fprintf(&b, "  %s : %s := default\n", stateField(gv.name), gv.leanT)
 	}
 	b.WriteString("\ninstance : HasOut _gala_St := ⟨_gala_St._gala_out, fun s o => { s with _gala_out := o }⟩\n\n")
 	b.WriteString("/-- The program's monad. -/\nabbrev _gala_M := Prog _gala_St\n\n")
@@ -383,7 +399,7 @@ func (g *gen) initDecl(order []*globalVar) string {
 		}
 		tmp := g.freshName("i")
 		items = append(items, "let "+tmp+" := "+v,
-			fmt.Sprintf("modify fun _gala_st => { _gala_st with %s := %s }", ident(gv.name), tmp))
+			fmt.Sprintf("modify fun _gala_st => { _gala_st with %s := %s }", stateField(gv.name), tmp))
 	}
 	if g.funcs["main"] != nil {
 		items = append(items, "main")

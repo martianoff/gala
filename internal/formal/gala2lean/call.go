@@ -41,12 +41,15 @@ var stdCtors = map[string]string{
 func (g *gen) sigOf(x string) *sig {
 	switch {
 	case g.funcs[x] != nil:
+		g.use(x)
 		return funcSig(g.funcs[x], g.funcRef(x))
 	case g.structs[x] != nil:
+		g.use(x)
 		return g.fieldSig(ident(x)+".mk", fieldsOf(g.structs[x].Fields))
 	case g.variants[x] != nil:
 		v := g.variants[x]
-		return g.fieldSig(ident(v.sealed.Name)+"."+ident(x), v.fields)
+		g.use(v.sealed.Name)
+		return g.fieldSig(ident(v.sealed.Name)+"."+ident(v.v.Name), v.fields)
 	}
 	return nil
 }

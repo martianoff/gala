@@ -48,7 +48,7 @@ func (g *gen) pattern(p coreexport.Node, sc *scope, typ coreexport.Node) pat {
 			if len(v.fields) != 0 {
 				unsup(p.Pos, "bare-pattern-with-fields")
 			}
-			return pat{lean: ident(v.sealed.Name) + "." + ident(x), refutable: len(v.sealed.Variants) > 1}
+			return pat{lean: ident(v.sealed.Name) + "." + ident(v.v.Name), refutable: len(v.sealed.Variants) > 1}
 		}
 		// An upper-case name that resolves to a value is a stable
 		// identifier: the subject must equal it.
@@ -93,7 +93,7 @@ func (g *gen) pattern(p coreexport.Node, sc *scope, typ coreexport.Node) pat {
 		switch {
 		case g.variants[c.Name] != nil:
 			v := g.variants[c.Name]
-			ctor, nf, fields, owner = ident(v.sealed.Name)+"."+ident(c.Name), len(v.fields), v.fields, v.sealed.Name
+			ctor, nf, fields, owner = ident(v.sealed.Name)+"."+ident(v.v.Name), len(v.fields), v.fields, v.sealed.Name
 			out.refutable = len(v.sealed.Variants) > 1
 		case g.structs[c.Name] != nil:
 			fields = fieldsOf(g.structs[c.Name].Fields)
@@ -148,7 +148,7 @@ func (g *gen) stableValue(x string, sc *scope) string {
 	if sc.lookup(x) != nil {
 		return ident(x)
 	}
-	return "(← get)." + ident(x)
+	return "(← get)." + stateField(x)
 }
 
 // matchItems translates a match to do-items. With value, they end with the

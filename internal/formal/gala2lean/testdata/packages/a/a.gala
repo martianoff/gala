@@ -1,0 +1,30 @@
+package a
+
+// Printed when Go initializes package a.
+val Ready = Say("init a")
+
+func Say(s string) int {
+    Println(s)
+    1
+}
+
+// Named like b.State: the two are different types.
+struct State(N int)
+
+sealed type Shape {
+    case Dot()
+    case Box(W int)
+}
+
+func Area(s Shape) int = s match {
+    case Dot() => 0
+    case Box(w) => w * w
+}
+
+// Printed as Go prints a struct: its unexported fields raw.
+type Holder struct {
+    n int
+    shape Shape
+}
+
+func Hold(n int, s Shape) Holder = Holder(n = n, shape = s)

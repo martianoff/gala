@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -41,6 +41,7 @@
                   "off": 27,
                   "end": 30
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -63,6 +64,7 @@
                   "off": 34,
                   "end": 37
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -109,6 +111,7 @@
               "off": 47,
               "end": 50
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -172,6 +175,7 @@
                   "off": 76,
                   "end": 82
                 },
+                "package": "",
                 "name": "string",
                 "args": []
               },
@@ -195,6 +199,7 @@
                   "off": 90,
                   "end": 93
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -254,6 +259,7 @@
                       "off": 136,
                       "end": 139
                     },
+                    "package": "",
                     "name": "int",
                     "args": []
                   },
@@ -277,6 +283,7 @@
                       "off": 143,
                       "end": 146
                     },
+                    "package": "",
                     "name": "int",
                     "args": []
                   },

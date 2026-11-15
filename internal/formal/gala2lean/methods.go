@@ -80,7 +80,14 @@ func outsideSubset(f *coreexport.Func) string {
 func (g *gen) addMethod(f *coreexport.Func) {
 	if what := outsideSubset(f); what != "" {
 		g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: what, Pos: f.Pos})
-		g.hasMethods = true
+		// A method the translation does not see changes how values print
+		// or compare only through its name, on its receiver's type; when
+		// that type is not plain to see, any value might be affected.
+		if t := receiverTypeName(f); t != "" {
+			g.markCustom(t, f.Name)
+		} else {
+			g.hasMethods = true
+		}
 		return
 	}
 	t := typeName(f.Receiver.(*coreexport.Receiver).Type)
@@ -92,12 +99,37 @@ func (g *gen) addMethod(f *coreexport.Func) {
 	g.byKey[k] = f
 	g.methodsNamed[f.Name] = append(g.methodsNamed[f.Name], k)
 	g.funcOrder = append(g.funcOrder, f)
-	switch f.Name {
-	case "String":
+	g.markCustom(t, f.Name)
+}
+
+// markCustom records that type t has a method named m that decides how its
+// values print (fmt calls Format, else Error, else String: Go's fmt,
+// "Printing"; GoString for %#v) or compare (Equal, docs/GALA.MD,
+// "Equality").
+func (g *gen) markCustom(t, m string) {
+	switch m {
+	case "String", "Error", "Format", "GoString":
 		g.customString[t] = true
 	case "Equal":
 		g.customEqual[t] = true
 	}
+}
+
+// receiverTypeName is the type whose values a method's receiver holds: T
+// for `(c T)`, `(c Ptr[T])` and `(c T[A])`; "" when not plain to see.
+func receiverTypeName(f *coreexport.Func) string {
+	r, ok := f.Receiver.(*coreexport.Receiver)
+	if !ok {
+		return ""
+	}
+	tn, ok := r.Type.(*coreexport.TypeName)
+	if !ok || tn.Package != "" {
+		return ""
+	}
+	if tn.Name == "Ptr" && len(tn.Args) == 1 {
+		return typeHead(tn.Args[0])
+	}
+	return tn.Name
 }
 
 // funcOrMethodDecl is the definition of a function or method.
@@ -181,7 +213,7 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 		unsup(r.Pos, "method-receiver-type")
 	}
 	// Lean puts a sealed type's cases in the type's namespace too.
-	if v := g.variants[f.Name]; v != nil && v.sealed.Name == t {
+	if v := g.variants[pkgPrefix(t)+f.Name]; v != nil && v.sealed.Name == t {
 		unsup(f.Pos, "method-name-clash")
 	}
 	lt := g.leanType(r.Type)
@@ -295,6 +327,7 @@ func (g *gen) methodOf(e coreexport.Node, m string, sc *scope, seen map[string]b
 	}
 	n := g.typeByLean(g.exprType(e, sc, seen))
 	if f := g.methods[n][m]; f != nil {
+		g.use(g.key(f))
 		return f, n
 	}
 	return nil, ""

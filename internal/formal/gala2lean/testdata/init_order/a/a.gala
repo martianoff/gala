@@ -1,0 +1,9 @@
+package a
+
+// a imports nothing.
+val Ready = Say("init a")
+
+func Say(s string) int {
+    Println(s)
+    1
+}

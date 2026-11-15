@@ -1,0 +1,12 @@
+package c
+
+// Printed when Go initializes package c: after b, whose import path sorts
+// first, although c imports nothing.
+val Ready = say("init c")
+
+func say(s string) int {
+    Println(s)
+    0
+}
+
+func Twice(n int) int = n * 2

@@ -1,0 +1,11 @@
+package c
+
+// c imports nothing, and is initialized after b: Go takes the first package
+// in import-path order whose imports are initialized, not every package
+// without imports first.
+val Ready = say("init c")
+
+func say(s string) int {
+    Println(s)
+    1
+}

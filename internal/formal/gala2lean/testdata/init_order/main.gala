@@ -1,0 +1,14 @@
+package main
+
+import (
+    "example.com/order/b"
+    "example.com/order/c"
+    "example.com/order/e"
+)
+
+// Go initializes a, b, c, then main: sorted by import path, each once the
+// packages it imports are. e is imported but not used, so it is not
+// initialized at all.
+func main() {
+    Println("main", b.Ready, c.Ready)
+}

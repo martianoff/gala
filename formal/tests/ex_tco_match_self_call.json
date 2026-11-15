@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -41,6 +41,7 @@
                   "off": 235,
                   "end": 238
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -55,6 +56,7 @@
               "off": 240,
               "end": 243
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -261,6 +263,7 @@
                   "off": 432,
                   "end": 435
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -283,6 +286,7 @@
                   "off": 441,
                   "end": 444
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -297,6 +301,7 @@
               "off": 446,
               "end": 449
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -533,6 +538,7 @@
                   "off": 664,
                   "end": 667
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -547,6 +553,7 @@
               "off": 669,
               "end": 672
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -720,6 +727,7 @@
                   "off": 876,
                   "end": 879
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -734,6 +742,7 @@
               "off": 881,
               "end": 884
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -951,6 +960,7 @@
                   "off": 1084,
                   "end": 1087
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -973,6 +983,7 @@
                   "off": 1093,
                   "end": 1096
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -987,6 +998,7 @@
               "off": 1098,
               "end": 1101
             },
+            "package": "",
             "name": "int",
             "args": []
           },

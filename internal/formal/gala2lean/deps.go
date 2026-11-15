@@ -178,6 +178,37 @@ func walkChildren(n coreexport.Node, f func(coreexport.Node)) {
 	}
 }
 
+// mapChildren is a copy of n with each direct child c replaced by f(c).
+func mapChildren(n coreexport.Node, f func(coreexport.Node) coreexport.Node) coreexport.Node {
+	v := reflect.ValueOf(n)
+	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		return n
+	}
+	c := reflect.New(v.Elem().Type())
+	c.Elem().Set(v.Elem())
+	cv := c.Elem()
+	for i := range cv.NumField() {
+		fv := cv.Field(i)
+		switch {
+		case fv.Type() == nodeType:
+			if !fv.IsNil() {
+				if r := f(fv.Interface().(coreexport.Node)); r != nil {
+					fv.Set(reflect.ValueOf(r))
+				} else {
+					fv.Set(reflect.Zero(nodeType))
+				}
+			}
+		case fv.Kind() == reflect.Slice && fv.Type().Elem() == nodeType:
+			s := reflect.MakeSlice(fv.Type(), fv.Len(), fv.Len())
+			for j := range fv.Len() {
+				s.Index(j).Set(reflect.ValueOf(f(fv.Index(j).Interface().(coreexport.Node))))
+			}
+			fv.Set(s)
+		}
+	}
+	return c.Interface().(coreexport.Node)
+}
+
 func bindAll(m map[string]bool, names []string) {
 	for _, n := range names {
 		m[n] = true

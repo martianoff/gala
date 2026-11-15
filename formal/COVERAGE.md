@@ -158,7 +158,16 @@ galaspec models them, except as listed below):
   std code it cites: the functions a call passes run in the order std runs them, with
   the same early exits, and where std panics (`Get` out of range, `Reduce` of an empty
   sequence) the model panics with the same class, `other`. Each function has a case in
-  `internal/formal/gala2lean/testdata` whose output the gala CLI printed.
+  `internal/formal/gala2lean/testdata` whose output the gala CLI printed;
+- the packages of the program's module it imports (`gala2lean -module`): each one's
+  declarations under a Lean namespace of its own, `atn.State`, translated where the
+  program uses them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`.
+  Every package-level variable of every package it imports is initialized, used or
+  not, in Go's order: packages sorted by import path, each once the packages it
+  imports are, and within a package as Go orders it. An import a file does not use
+  is not one: GALA drops it from the Go it writes, so Go does not initialize that
+  package for it. A function counts as translated (`-stats`) only when what it uses
+  of other packages translates.
 
 It translates a whole program or nothing: one construct outside its subset anywhere in
 the program, even in a function `main` never calls, stops it, and is reported. Beyond
@@ -179,9 +188,10 @@ what Core JSON leaves out, it does not translate yet:
   (a package-level `var`, a `var` a lambda captures), or a pointer method that uses its
   receiver other than through a field or a method call (`ptr-escape`); a pointer method
   on a value that is not a `var` (`pointer-method-on-value`); printing or comparing a
-  value of a type with its own `String` or `Equal`, or holding one (`custom-string`,
-  `custom-equal`); in a program with a method gala2lean does not see (a `Ptr[T]` or
-  generic receiver), printing or comparing anything but `int`, `string` and `bool`
+  value of a type with its own `String`, `Error`, `Format`, `GoString` or `Equal`, seen
+  or not (a method with a `Ptr[T]` or generic receiver), or holding one
+  (`custom-string`, `custom-equal`); in a program with a method whose receiver type is
+  not plain to see, printing or comparing anything but `int`, `string` and `bool`
   (`method`);
 - a type argument that is or holds a function (`func-type-arg`), which Go prints as an
   address; printing or comparing a value of a type parameter in a program where some
@@ -198,7 +208,9 @@ what Core JSON leaves out, it does not translate yet:
 - `HashMap` and `HashSet` (`hash-order`), whose printing, iteration and folding follow
   their hash trie's order, which the prelude does not model; a function of `Array` or
   `List` the prelude does not model (`collection-method`); comparing values that hold
-  a function (`func-in-equal`); any other import (`import`).
+  a function (`func-in-equal`); any other import (`import`), a type of a package
+  outside the module (`qualified-type`), a dot import of a package of the module
+  (`dot-import-module`), an `init` function (`init-func`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 
@@ -227,7 +239,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 45 | 1 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 454 | 34 | 437 | 34 |
+| UNSUPPORTED | 460 | 34 | 443 | 34 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -294,16 +306,16 @@ The constructs galaspec stopped at, by how many programs it stopped at each (42 
 | Construct | Programs |
 |---|---|
 | `import` | 132 |
-| `method-call` | 124 |
-| `index` | 72 |
+| `method-call` | 126 |
+| `index` | 74 |
 | `generic-type` | 51 |
 | `address-of` | 14 |
 | `generic-decl` | 14 |
 | `unresolved-name` | 9 |
 | `composite-literal` | 8 |
 | `float-literal` | 8 |
+| `method` | 6 |
 | `local-struct` | 4 |
-| `method` | 4 |
 | `qualified-type` | 4 |
 | `stuck` | 4 |
 | `by-name-arg` | 3 |
@@ -320,26 +332,26 @@ The first construct gala2lean did not translate in each program, by how many pro
 
 | Construct | Programs |
 |---|---|
-| `import` | 125 |
+| `import` | 124 |
 | `index` | 69 |
 | `generic-type` | 35 |
-| `method-call` | 21 |
-| `qualified-type` | 20 |
+| `method-call` | 24 |
+| `qualified-type` | 21 |
+| `pointer-type` | 14 |
 | `type-float64` | 14 |
-| `pointer-type` | 13 |
 | `type-error` | 10 |
 | `slice-type` | 8 |
 | `composite-literal` | 7 |
 | `return-inside-expression` | 7 |
 | `collection-method` | 6 |
 | `variadic-param` | 6 |
+| `untyped-global` | 5 |
 | `for` | 4 |
 | `local-struct` | 4 |
+| `param-modifier` | 4 |
 | `type-any` | 4 |
 | `type-uint32` | 4 |
 | `bind` | 3 |
-| `expression-pattern` | 3 |
-| `extractor` | 3 |
 
 ### Known disagreements
 

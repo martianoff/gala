@@ -478,7 +478,7 @@ func (g *gen) assignTo(t coreexport.Node, f func(cur string) string, sc *scope, 
 	}
 	if gv := g.globalBy[n.Name]; gv != nil {
 		tmp := g.freshName("g")
-		x := ident(n.Name)
+		x := stateField(n.Name)
 		return []string{
 			"let " + tmp + " := " + update("(← get)."+x, path),
 			fmt.Sprintf("modify fun _gala_st => { _gala_st with %s := %s }", x, tmp),

@@ -90,8 +90,14 @@ func (c *posChecker) node(v map[string]any, outer pos) error {
 	text := c.src[p.off:p.end]
 	want := ""
 	switch kind {
-	case "name", "pat-name", "type-name":
+	case "name", "pat-name":
 		want = v["name"].(string)
+	case "type-name":
+		// A type of another package spans its qualifier, `lib.Box`.
+		want = v["name"].(string)
+		if pkg, _ := v["package"].(string); pkg != "" {
+			want = pkg + "." + want
+		}
 	case "int", "string":
 		want = v["text"].(string)
 	case "bool":

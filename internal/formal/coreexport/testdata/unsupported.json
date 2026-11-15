@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -51,6 +51,7 @@
                   "off": 38,
                   "end": 41
                 },
+                "package": "",
                 "name": "any",
                 "args": []
               }
@@ -74,6 +75,7 @@
                   "off": 45,
                   "end": 46
                 },
+                "package": "",
                 "name": "T",
                 "args": []
               },
@@ -88,6 +90,7 @@
               "off": 48,
               "end": 49
             },
+            "package": "",
             "name": "T",
             "args": []
           },
@@ -128,6 +131,7 @@
                 "off": 63,
                 "end": 68
               },
+              "package": "",
               "name": "Point",
               "args": []
             },
@@ -143,6 +147,7 @@
               "off": 77,
               "end": 80
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -265,6 +270,7 @@
                       "off": 144,
                       "end": 147
                     },
+                    "package": "",
                     "name": "int",
                     "args": []
                   }
@@ -277,6 +283,7 @@
                     "off": 149,
                     "end": 152
                   },
+                  "package": "",
                   "name": "int",
                   "args": []
                 }
@@ -300,6 +307,7 @@
                   "off": 156,
                   "end": 167
                 },
+                "package": "",
                 "name": "Option",
                 "args": [
                   {
@@ -310,6 +318,7 @@
                       "off": 163,
                       "end": 166
                     },
+                    "package": "",
                     "name": "int",
                     "args": []
                   }
@@ -327,13 +336,16 @@
               },
               "name": "q",
               "type": {
-                "unsupported": "qualified-type",
+                "kind": "type-name",
                 "pos": {
                   "line": 9,
                   "col": 84,
                   "off": 171,
                   "end": 183
-                }
+                },
+                "package": "fmt",
+                "name": "Stringer",
+                "args": []
               },
               "default": null
             },
@@ -354,6 +366,7 @@
                   "off": 187,
                   "end": 190
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -380,6 +393,7 @@
               "off": 196,
               "end": 199
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -464,6 +478,7 @@
                   "off": 305,
                   "end": 308
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -534,6 +549,7 @@
                             "off": 341,
                             "end": 344
                           },
+                          "package": "",
                           "name": "int",
                           "args": []
                         },
