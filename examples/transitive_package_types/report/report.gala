@@ -1,7 +1,6 @@
 package report
 
 import (
-    . "martianoff/gala/collection_immutable"
     "martianoff/gala/examples/transitive_package_types/geo"
 )
 

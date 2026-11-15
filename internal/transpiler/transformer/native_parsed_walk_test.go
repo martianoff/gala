@@ -179,7 +179,7 @@ func Qualified(s string = Thing match {
 		name, using, call string
 		line, col         int // where the diagnostic is, in lib/borrowed.gala; 0 for none
 	}{
-		{"a default that lowers", `"example.com/parsed/pb"`, "lib.Matched()", 0, 0},
+		{"a default that lowers", `_ "example.com/parsed/pb"`, "lib.Matched()", 0, 0},
 		{"a bare constructor only the using file's dot import declares", `. "example.com/parsed/pb"`, "lib.Bare()", 6, 17},
 		{"a qualifier only the using file binds", `"example.com/parsed/pb"`, "lib.Qualified()", 11, 17},
 	}

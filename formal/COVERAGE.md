@@ -74,6 +74,13 @@ A run ends `unsupported:<kind>` when it reaches:
   one (`positional-after-named`); a type outside S1 (`type-<name>`); an
   integer constant outside int64 (`int-constant-overflow`); a cycle in package-level
   initialization (`init-cycle`); a program without `main` (`no-main`);
+- an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
+  runs the package's initializers whether or not the run reaches a name of it, and
+  galaspec does not model them. A named import of one of a fixed list of Go
+  standard-library packages (`fmt`, `strings`, … in `Json.goStdImports`, exact paths)
+  does not stop the run: Go standard-library packages print nothing during
+  initialization, and galaspec relies on this for the listed paths. A name of such a
+  package still stops the run when it is reached (`import`);
 - printing a struct or sealed value in a program that declares methods (a `String`
   method would change the text): `method`; a layout `fmt` would print as a pointer
   address: `print-pointer`;
@@ -209,9 +216,12 @@ what Core JSON leaves out, it does not translate yet:
   `List` the prelude does not model (`collection-method`); comparing values that hold
   a function (`func-in-equal`); any other import (`import`), a type of a package
   outside the module (`qualified-type`), a dot import of a package of the module
-  (`dot-import-module`), an `init` function (`init-func`), an import a file does not
-  use of a package whose initialization runs something (`unused-import-init`, an open
-  question in [FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#decisions-the-spec-forces)).
+  (`dot-import-module`), an `init` function (`init-func`), an import gala2lean sees no
+  use of, of a package whose initialization runs something (`unused-import-init`). The
+  language rejects an import its source does not use (GALA-E0120, see
+  [FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#decisions-the-spec-forces)), so in a
+  compiled program this is a use gala2lean does not read; a blank import of a package
+  it is not given (`blank-import`), whose initializers it cannot run.
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 

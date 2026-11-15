@@ -1,8 +1,6 @@
 package report
 
 import (
-    "strings"
-
     . "martianoff/gala/collection_immutable"
     "example.com/inventory/stock"
 )

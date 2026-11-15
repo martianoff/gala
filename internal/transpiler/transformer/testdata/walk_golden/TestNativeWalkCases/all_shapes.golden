@@ -6,6 +6,8 @@ package main
 import "martianoff/gala/std"
 import (
 	"fmt"
+	_ "go/ast"
+	_ "go/token"
 	. "martianoff/gala/collection_immutable"
 	s "strings"
 )

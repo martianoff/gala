@@ -66,6 +66,11 @@ import (
 
 func apply[T any](o Option[T], f func(T) string) string = o.Map(f).GetOrElse("none")
 
+// size and seed use both imports, which not every case does.
+func size(xs Array[int]) int = xs.Size()
+
+func seed() []int = go_interop.SliceOf(1)
+
 func main() {
     ` + tc.main + `
 }

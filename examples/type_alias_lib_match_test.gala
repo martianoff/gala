@@ -1,6 +1,5 @@
 package main
 
-import . "martianoff/gala/std"
 import . "martianoff/gala/concurrent"
 import "martianoff/gala/examples/type_alias_lib_match"
 

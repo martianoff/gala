@@ -1,9 +1,5 @@
 package main
 
-import (
-    . "martianoff/gala/collection_immutable"
-)
-
 // Repro: `if (cond) sStr1 else sStr2` previously produced a
 // `func() any { ... }()` IIFE instead of `func() string { ... }()`, because
 // the lowered `fmt.Sprintf` CallExpr was not tagged with its return type.

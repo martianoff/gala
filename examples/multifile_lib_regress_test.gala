@@ -9,7 +9,6 @@ import (
     . "martianoff/gala/examples/multifile_lib_regress/variant_pkg"
     "martianoff/gala/examples/go_struct_bridge"
     . "martianoff/gala/collection_immutable"
-    "time"
 )
 
 func main() {

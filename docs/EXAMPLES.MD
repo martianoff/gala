@@ -1556,7 +1556,6 @@ a UserID 5 an int64 5
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/json"
     . "martianoff/gala/collection_immutable"
 )
@@ -1631,7 +1630,6 @@ true
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/yaml"
     . "martianoff/gala/collection_immutable"
 )
@@ -1668,7 +1666,6 @@ first tag: urgent/red
 package main
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     "martianoff/gala/regex"
 )

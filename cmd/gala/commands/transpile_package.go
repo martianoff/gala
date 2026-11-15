@@ -150,7 +150,7 @@ func transpilePackage(inputs, outputs []string, search, goroot string, scan bool
 			batchAnalyzer.SetPackageFiles(packageFiles)
 		}
 
-		tr := transformer.NewGalaASTTransformer()
+		tr := transformer.NewGalaASTTransformer(bazelSourceOptions(inputPath)...)
 		g := generator.NewGoCodeGenerator()
 		t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
 

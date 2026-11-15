@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "unicode"
-    . "martianoff/gala/std"
     . "martianoff/gala/strings"
 )
 

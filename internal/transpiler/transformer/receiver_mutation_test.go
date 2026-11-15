@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,18 +70,21 @@ func (q *Quiet) String() string = s"quiet ${q.n}"
 `
 
 // receiverMutationSource is a program with receiverMutationDecls and body
-// as main's body.
+// as main's body. It imports the packages body refers to, and no other: an
+// import nothing refers to is GALA-E0120.
 func receiverMutationSource(body string) string {
+	var imports []string
+	for _, path := range []string{"net/url", "strings", "time", "martianoff/gala/go_interop"} {
+		if strings.Contains(body, path[strings.LastIndex(path, "/")+1:]+".") {
+			imports = append(imports, "    \""+path+"\"\n")
+		}
+	}
+	header := ""
+	if len(imports) > 0 {
+		header = "\nimport (\n" + strings.Join(imports, "") + ")\n"
+	}
 	return `package main
-
-import (
-    "net/url"
-    "strings"
-    "time"
-
-    "martianoff/gala/go_interop"
-)
-` + receiverMutationDecls + `
+` + header + receiverMutationDecls + `
 func main() {
     ` + body + `
 }

@@ -28,7 +28,6 @@ func TestFunctions(t *testing.T) {
 			input: `package main
 
 import . "martianoff/gala/collection_immutable"
-import . "martianoff/gala/std"
 
 func test() {
     var arr = EmptyArray[int]()
@@ -37,8 +36,6 @@ func test() {
         return nil
     })
 }`,
-			// Nothing from std is referenced, so its dot import is dropped:
-			// Go rejects an unused import.
 			expected: `package main
 
 import . "martianoff/gala/collection_immutable"

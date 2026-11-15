@@ -81,6 +81,7 @@ func main() {
 
 An alias works too when you want both short:
 
+<!-- doc-check: fragment -->
 ```gala
 import (
     . "example.com/demo/pkg_a"

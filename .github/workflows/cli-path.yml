@@ -239,21 +239,21 @@ jobs:
         # measured on Linux with 4 CPUs, gala-tui's largest compile drops from
         # ~17 GB to ~12.7 GB for ~7% more time.
         include:
-          # gala-tui 0.16.2, its GALA 0.101.0 build (martianoff/gala-tui#98
-          # plus the version bump). Floors: no `val _ =`
-          # (GALA-E0060 rejects it) and every file imports the time_utils
-          # names it uses (GALA-E0023).
+          # gala-tui 0.16.2 with its unused imports removed
+          # (martianoff/gala-tui#100). Floors: no `val _ =` (GALA-E0060
+          # rejects it), every file imports the time_utils names it uses
+          # (GALA-E0023), and none imports what it does not use (GALA-E0120).
           - name: gala-tui
             repo: martianoff/gala-tui
-            ref: c3052bf9f959d0c4c558eec616151526b68fe3f1
+            ref: 27411ed20befdc76f0b8100fead8c230ac4b901e
             commands: test
             goflags: -p=1
             gomemlimit: 12GiB
           - name: gala-server
             repo: martianoff/gala-server
-            # v2.1.2, its GALA 0.101.0 build on gala-tui 0.16.2
-            # (martianoff/gala-server#23).
-            ref: 6d677f2db3f22cac0809fcb3786c1bb161210353
+            # v2.1.2 on gala-tui 0.16.2, with its unused imports removed
+            # (martianoff/gala-server#24, GALA-E0120).
+            ref: 4d466095d9e21f19d2c2b6d279ab77202cbd2102
             commands: |
               build
               test
@@ -262,9 +262,8 @@ jobs:
             gomemlimit: 12GiB
           - name: gala-acp
             repo: martianoff/gala-acp
-            # 0.5.2, its GALA 0.101.0 build (martianoff/gala-acp#12 plus the
-            # version bump).
-            ref: 7fe680424e287f751ee7cb4276c2f377649f1cfe
+            # 0.5.2 with its unused imports removed (martianoff/gala-acp#14).
+            ref: 3b3cc57b63a4361037bd467d159ede86a06263a2
             commands: test
             goflags: ""
           # galop, the parser generator GALA's own parser comes from. Its

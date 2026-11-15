@@ -53,6 +53,7 @@ go_test(
         "contention_perf_test.go",
         "default_lexical_scope_test.go",
         "dep_go_types_test.go",
+        "dep_unused_import_test.go",
         "deptranspiler_test.go",
         "embed_testdata_test.go",
         "foreign_gen_go_test.go",

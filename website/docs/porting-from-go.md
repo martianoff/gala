@@ -196,7 +196,7 @@ The table above covers each builtin; [the worked section](#slices-and-maps-go_in
 |----|------|--------------------------|
 | `package`, `import`, `import x "pkg"`, `import _ "pkg"`, `import . "pkg"` | Same | Works |
 | `go.mod` only | Add `gala.mod` with `gala mod init`; list Go dependencies with `gala mod add <module>@<version> --go` | `gala build` stops: "gala.mod not found"; a Go package no `gala.mod` module provides is [GALA-E0020](/docs/errors/gala-e0020/) |
-| an unused import | Allowed | Works |
+| an unused import | Remove it, or write `import _ "pkg"` for its initialization | [GALA-E0120](/docs/errors/gala-e0120/) (as in Go, an error) |
 | an unused local variable | Remove it | [GALA-E0102](/docs/errors/gala-e0102/) (as in Go, an error) |
 | `//go:embed file` | `embed val content = "file"` ([Embedding Files](/docs/language-reference/#14-embedding-files)) | — |
 | `//go:build linux`, `//go:generate` | Put the platform-specific or generated code in a `.go` file of the package, which keeps its directives | — |

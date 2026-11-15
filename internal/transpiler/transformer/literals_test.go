@@ -227,7 +227,6 @@ func main() {
 			input: `package mywrapper
 
 import (
-    . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     cm "martianoff/gala/collection_mutable"
 )

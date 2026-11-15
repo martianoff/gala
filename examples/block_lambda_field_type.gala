@@ -1,7 +1,5 @@
 package main
 
-import . "martianoff/gala/std"
-
 // Repro: block lambda return type should be inferred from struct field type
 // Bug: when a block lambda is assigned to a struct field with a known function type,
 // the transpiler should infer the return type from the field type.

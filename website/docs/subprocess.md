@@ -19,6 +19,7 @@ wraps `os/exec` behind a small, functional API: you describe a command with
 stdin, wait for it to exit, or kill it — all through a value-type `Process`
 handle that returns `Try`/`Option` results instead of naked error pairs.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/subprocess"
 ```

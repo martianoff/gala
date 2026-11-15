@@ -1,15 +1,18 @@
 package transformer_test
 
 import (
+	"errors"
 	"testing"
+
+	"martianoff/gala/galaerr"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// A dot import the generated file does not use must be dropped — Go rejects
-// it ("imported and not used") — and one it does use must stay. The rule is
-// the same for every package: std, another GALA package, and a Go package.
+// A dot import none of whose names the file uses is GALA-E0120, and one it
+// does use stays in the generated file. The rule is the same for every
+// package: std, another GALA package, and a Go package.
 func TestDotImportPruning(t *testing.T) {
 	tests := []struct {
 		name string
@@ -45,6 +48,8 @@ func main() {
     Println(Some(1).Map((x) => x + 1).GetOrElse(0))
 }
 `, true},
+		// Use is read from the source: the std code the lowering emits does
+		// not use the import, and std is imported for it without one.
 		{"std used only by generated code", "martianoff/gala/std", `
 type Point struct {
     X int
@@ -54,7 +59,7 @@ func main() {
     val p = Point(X = 1)
     Println(p.X)
 }
-`, true},
+`, false},
 		{"GALA package unused", "martianoff/gala/collection_immutable", `
 func main() {
     Println(1)
@@ -89,14 +94,14 @@ func size(r Reader) int64 = r.Size()
 		t.Run(tt.name, func(t *testing.T) {
 			input := "package main\n\nimport . \"" + tt.path + "\"\n" + tt.body
 			got, err := trans.Transpile(input, "")
-			require.NoError(t, err)
-
-			dotImport := `. "` + tt.path + `"`
-			if tt.used {
-				assert.Contains(t, got, dotImport, "a used dot import must be kept")
-			} else {
-				assert.NotContains(t, got, dotImport, "an unused dot import must be dropped")
+			if !tt.used {
+				var se *galaerr.SemanticError
+				require.True(t, errors.As(err, &se), "an unused dot import is an error, got %v", err)
+				assert.Equal(t, galaerr.CodeUnusedImport, se.Code, "%v", err)
+				return
 			}
+			require.NoError(t, err)
+			assert.Contains(t, got, `. "`+tt.path+`"`, "a used dot import must be kept")
 
 			// The generated file must be valid Go, with no unused import:
 			// soft errors count here.

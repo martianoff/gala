@@ -293,6 +293,7 @@ val res = arr match {
 
 GALA also provides mutable collection variants in the `collection_mutable` package for performance-critical code that needs in-place mutation. Import them separately:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/collection_mutable"
 ```

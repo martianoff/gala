@@ -35,6 +35,8 @@ func (e NotFound) Error() string = e.Key
 struct Box[T any](V T)
 
 func (b Box[T]) Error() string = "box"
+
+func show(v any) string = fmt.Sprint(v)
 `
 
 	cases := []struct {

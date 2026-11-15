@@ -295,6 +295,8 @@ import . "martianoff/gala/collection_immutable"
 func apply[T any](f func() T) T = f()
 
 struct Box[T any](V T)
+
+func noInts() Array[int] = EmptyArray[int]()
 `
 	tests := []struct {
 		name     string

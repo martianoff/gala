@@ -1,6 +1,5 @@
 package typealiaslib
 
-import . "martianoff/gala/std"
 import . "martianoff/gala/concurrent"
 
 // BridgeResult is a simple output type (mirrors httpcore.BridgeResponse)

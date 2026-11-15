@@ -30,6 +30,10 @@ func (h Hex) Parse(s string) (int, error) = strconv.Atoi(s)
 
 func run(f func() (int, error)) int = f().GetOrElse(-1)
 
+func failWith(msg string) error = errors.New(msg)
+
+func lockOn(m *sync.Mutex) = m.Lock()
+
 ` + body + `
 
 func main() {}
@@ -313,7 +317,7 @@ func TestGoCallbackReturnsGoResults(t *testing.T) {
 			"go.mod":               "module example.com/callbacks\n\ngo 1.25\n",
 			"gala.mod":             "module example.com/callbacks\n",
 			"callback/callback.go": callbackGo,
-			"main.gala":            "package main\n\nimport (\n    \"strconv\"\n    \"example.com/callbacks/callback\"\n)\n\n" + body + "\n\nfunc main() {}\n",
+			"main.gala":            "package main\n\nimport (\n    \"strconv\"\n    \"example.com/callbacks/callback\"\n)\n\nfunc itoa(n int) string = strconv.Itoa(n)\n\n" + body + "\n\nfunc main() {}\n",
 		}, "main.gala"
 	})
 }

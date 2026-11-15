@@ -7,7 +7,6 @@ package multifile_lib_regress
 // not compile ("redeclared in this block").
 
 import (
-    . "martianoff/gala/collection_immutable"
     "martianoff/gala/json"
 )
 

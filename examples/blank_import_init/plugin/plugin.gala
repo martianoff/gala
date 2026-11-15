@@ -1,0 +1,14 @@
+package plugin
+
+// A package imported only for its initialization. Its package-level vals are
+// initialized before main runs, whether or not the importer names anything
+// from it.
+
+func announce(name string) string {
+    Println(s"plugin: registered $name")
+    name
+}
+
+val Codec = announce("codec")
+
+val Handler = announce("handler")

@@ -101,6 +101,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		name, src, want string
 	}{
 		{"import", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(1) }\n", "import"},
+		{"a blank import of a package it is not given", "package main\nimport _ \"example.com/m/lib\"\n\nfunc main() { Println(1) }\n", "blank-import"},
 		{"lambda without parameter types", "package main\nfunc main() { val f = (x) => x\n Println(1) }\n", "untyped-lambda-param"},
 		{"method call", "package main\nfunc main() { Println(\"abc\".Size()) }\n", "method-call"},
 		{"pointer method on a package-level var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nvar g = C(0)\nfunc main() { g.Inc()\n Println(g.N) }\n", "ptr-escape"},

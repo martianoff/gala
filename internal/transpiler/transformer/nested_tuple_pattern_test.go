@@ -28,12 +28,16 @@ struct Holder(Pair Tuple[string, int], Tag string)
 
 `
 
+// nestedTupleImportUse uses the prelude's collection import, which not every
+// case does. It goes after the case, so no position in the case moves.
+const nestedTupleImportUse = "\nfunc noInts() Array[int] = EmptyArray[int]()\n"
+
 func transpileNestedTuple(t *testing.T, body string) (string, error) {
 	t.Helper()
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-	return trans.Transpile(nestedTuplePrelude+body+"\n", "")
+	return trans.Transpile(nestedTuplePrelude+body+"\n"+nestedTupleImportUse, "")
 }
 
 // A parenthesized tuple pattern is ONE argument of the pattern it sits in.

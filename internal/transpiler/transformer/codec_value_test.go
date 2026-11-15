@@ -83,7 +83,6 @@ func TestCodecMeta_NamesArePerFile(t *testing.T) {
 	src := `package main
 
 import (
-    . "martianoff/gala/collection_immutable"
     "martianoff/gala/json"
 )
 

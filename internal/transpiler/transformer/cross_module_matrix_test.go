@@ -158,10 +158,10 @@ type Box struct {
 
 func MakeBox(v Int) Box = Box { Value: v }
 
-func answer() Int = 42
+func Answer() Int = 42
 `,
 			},
-			exportedFunc:    "answer",
+			exportedFunc:    "Answer",
 			exportedType:    "Box",
 			constructorCall: func(q string) string { return q + "MakeBox(7)" },
 		},
@@ -178,10 +178,10 @@ sealed type Cmd[T any] {
     case RunCmd(arg T)
 }
 
-func answer() Int = 42
+func Answer() Int = 42
 `,
 			},
-			exportedFunc:    "answer",
+			exportedFunc:    "Answer",
 			exportedType:    "Cmd",
 			constructorCall: func(q string) string { return q + "NoCmd[Int]()" },
 		},
@@ -194,10 +194,10 @@ func answer() Int = 42
 
 func helper() Int = 11
 
-func answer() Int = 42
+func Answer() Int = 42
 `,
 			},
-			exportedFunc:    "answer",
+			exportedFunc:    "Answer",
 			exportedType:    "",
 			constructorCall: nil,
 		},
@@ -209,14 +209,14 @@ func answer() Int = 42
 			files: map[string]string{
 				"dep.gala": `package mixedgo
 
-func answer() Int = 42
+func Answer() Int = 42
 `,
 				"facade.go": `package mixedgo
 
 func Helper() int { return 11 }
 `,
 			},
-			exportedFunc:    "answer",
+			exportedFunc:    "Answer",
 			exportedType:    "",
 			constructorCall: nil,
 		},

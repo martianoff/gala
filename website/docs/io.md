@@ -13,6 +13,7 @@ last_modified_at: 2026-04-19
 
 `IO[T]` is a lazy, composable effect type for separating pure and impure code. An `IO[T]` value **describes** a computation that produces `T` or fails — but does not execute it. Effects only run when you call `.Run()`. This makes side-effecting code referentially transparent: you can pass IO values around, compose them, and reason about them without triggering any effects.
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/io"
 ```

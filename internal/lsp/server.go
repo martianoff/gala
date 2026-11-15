@@ -809,11 +809,14 @@ func errorsToDiagnostics(err error, x lineIndex, filePath string) []lsp.Diagnost
 // UTF-16 units — so the column is converted before it goes on the wire, against
 // the text of the document x indexes. An error found in another file (a sibling
 // or an imported package) is not on that text, so its column is passed through
-// rather than converted against — and clamped to — an unrelated line.
+// rather than converted against — and clamped to — an unrelated line. The
+// range covers the span a semantic error records (EndColumn), and one
+// character otherwise.
 func errorToDiagnostic(err error, x lineIndex, filePath string) lsp.Diagnostic {
 	msg := err.Error()
 	line := 0
 	char := 0
+	width := 1 // in code points: the error's span when it records one
 
 	// Try to extract line info from typed errors
 	var semErr *galaerr.SemanticError
@@ -825,6 +828,9 @@ func errorToDiagnostic(err error, x lineIndex, filePath string) lsp.Diagnostic {
 	if semErr != nil && semErr.Line > 0 {
 		line = semErr.Line - 1 // LSP is 0-indexed
 		char = semErr.Column
+		if semErr.HasSpan() {
+			width = semErr.EndColumn - semErr.Column
+		}
 	} else if errors.As(err, &synErr) && synErr.Line > 0 {
 		line = synErr.Line - 1
 		char = synErr.Column
@@ -856,12 +862,12 @@ func errorToDiagnostic(err error, x lineIndex, filePath string) lsp.Diagnostic {
 
 	rng := lsp.Range{
 		Start: lsp.Position{Line: line, Character: char},
-		End:   lsp.Position{Line: line, Character: char + 1},
+		End:   lsp.Position{Line: line, Character: char + width},
 	}
 	if errFile == "" || filePath == "" || sameFilePath(errFile, filePath) {
 		rng = x.rangeToWire(lsp.Range{
 			Start: lsp.Position{Line: line, Character: x.runeToByte(line, char)},
-			End:   lsp.Position{Line: line, Character: x.runeToByte(line, char+1)},
+			End:   lsp.Position{Line: line, Character: x.runeToByte(line, char+width)},
 		})
 	}
 	return lsp.Diagnostic{

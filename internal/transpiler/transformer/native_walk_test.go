@@ -62,8 +62,8 @@ var walkCases = []struct{ name, src string }{
 package main
 
 import (
-	"go/ast"
-	"go/token"
+	_ "go/ast"
+	_ "go/token"
 	"fmt"
 	s "strings"
 	. "martianoff/gala/collection_immutable"

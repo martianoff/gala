@@ -169,5 +169,9 @@ import (
 func main() {
     ` + body + `
 }
+
+func bytesOf(s string) *bytes.Buffer = bytes.NewBufferString(go_interop.ToString(go_interop.ToBytes(s)))
+
+func useImports(r *http.Request, u *url.URL, b *strings.Builder, m *sync.Mutex, n *atomic.Int64, d time.Duration) {}
 `
 }

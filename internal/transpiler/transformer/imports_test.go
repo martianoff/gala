@@ -231,7 +231,7 @@ func main() {
 		},
 	}
 
-	m.PruneUnused(file, richAST)
+	transformer.PruneUnused(file, m.ReferencedImports(file, richAST), nil)
 
 	// The dot import must survive pruning.
 	dotImportFound := false

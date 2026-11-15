@@ -425,8 +425,9 @@ func viaNone[None any](v None) None = pick(v)`,
 	}
 }
 
-// typeParamHeader opens each typeParamCase input.
-const typeParamHeader = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\n"
+// typeParamHeader opens each typeParamCase input. Its function uses the
+// import, so an input that names no collection compiles.
+const typeParamHeader = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc seqOf(xs Array[int]) Array[int] = xs\n\n"
 
 // typeParamCase is a GALA source and the strings its generated Go must, and
 // must not, contain.

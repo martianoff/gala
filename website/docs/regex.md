@@ -13,6 +13,7 @@ last_modified_at: 2026-04-19
 
 GALA's `regex` package wraps Go's `regexp` with a functional API and pattern matching extractors. Capture groups destructure directly into variables inside `match` expressions — no manual group indexing.
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/regex"
 import . "martianoff/gala/std"

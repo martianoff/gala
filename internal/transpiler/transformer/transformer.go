@@ -96,6 +96,7 @@ type galaASTTransformer struct {
 	variantNames           map[string]bool                                // bare name of every sealed variant in typeMetas (GALA-E0061 pre-filter)
 	companionObjects       map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
 	importManager          *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
+	dependency             bool                                           // the file is a dependency module's (see ForDependency)
 	cachedTypeResolver     *resolver.TypeResolver
 	cachedTypeResolverRev  uint64 // import-manager revision cachedTypeResolver was built at
 	tempVarCount           int
@@ -237,8 +238,8 @@ type galaASTTransformer struct {
 // at 8, 16, 32, ... entries. CPU profile of an apex-shaped transpile
 // flagged growing these maps as a contributor to allocation pressure
 // (gcDrain / scanobject 18% of cumulative samples).
-func NewGalaASTTransformer() transpiler.ASTTransformer {
-	return &galaASTTransformer{
+func NewGalaASTTransformer(opts ...Option) transpiler.ASTTransformer {
+	t := &galaASTTransformer{
 		immutFields:       make(map[string]bool, 64),
 		structImmutFields: make(map[string][]bool, 32),
 		activeTypeParams:  make(map[string]bool, 16),
@@ -255,6 +256,22 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		structMetas:       make(map[string]*structMetaConfig, 16),
 		valueMetas:        make(map[string]*valueMetaConfig, 4),
 	}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
+}
+
+// Option configures a transformer made by NewGalaASTTransformer.
+type Option func(*galaASTTransformer)
+
+// ForDependency transforms the sources of a dependency module rather than of
+// the module being built: an import nothing in the file refers to is not
+// GALA-E0120 there, and is dropped from the generated Go as it was before
+// that check, so its package is not initialized. Dependencies are not checked
+// yet: a released library with a stray import must keep building.
+func ForDependency() Option {
+	return func(t *galaASTTransformer) { t.dependency = true }
 }
 
 func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*transpiler.TransformResult, error) {
@@ -549,8 +566,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 
 	// Imports
 	imports := src.imports()
+	var written []writtenImport
 	for _, imp := range imports {
-		file.Decls = append(file.Decls, t.lowerImportDecl(imp.specs))
+		decl, specs := t.lowerImportDecl(imp.specs)
+		file.Decls = append(file.Decls, decl)
+		written = append(written, specs...)
 	}
 
 	// Update actual package names from richAST.Packages for better type resolution
@@ -756,6 +776,18 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Add import "embed" when embed val declarations with EmbeddedFS type are present.
 	// For string embeds, Go requires import _ "embed" (blank import).
 	if t.needsEmbedImport {
+		// Determine if we need a blank import or a named import.
+		// EmbeddedFS uses embed.FS directly, so we need the named import.
+		// string/[]byte embeds only need _ "embed".
+		hasEmbeddedFS := false
+		for _, ed := range richAST.EmbedDirectives {
+			if ed.TypeName == transpiler.TypeEmbeddedFS || ed.TypeName == "std.EmbeddedFS" {
+				hasEmbeddedFS = true
+				break
+			}
+		}
+		// An import of embed the source wrote serves, unless EmbeddedFS needs
+		// it named and it is blank (`import _ "embed"`).
 		hasEmbedImport := false
 		for _, decl := range file.Decls {
 			genDecl, ok := decl.(*ast.GenDecl)
@@ -767,7 +799,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 				if !ok {
 					continue
 				}
-				if strings.Trim(importSpec.Path.Value, "\"") == "embed" {
+				blank := importSpec.Name != nil && importSpec.Name.Name == "_"
+				if strings.Trim(importSpec.Path.Value, "\"") == "embed" && (!hasEmbeddedFS || !blank) {
 					hasEmbedImport = true
 					break
 				}
@@ -777,16 +810,6 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			}
 		}
 		if !hasEmbedImport {
-			// Determine if we need a blank import or a named import.
-			// EmbeddedFS uses embed.FS directly, so we need the named import.
-			// string/[]byte embeds only need _ "embed".
-			hasEmbeddedFS := false
-			for _, ed := range richAST.EmbedDirectives {
-				if ed.TypeName == transpiler.TypeEmbeddedFS || ed.TypeName == "std.EmbeddedFS" {
-					hasEmbeddedFS = true
-					break
-				}
-			}
 			spec := &ast.ImportSpec{
 				Path: &ast.BasicLit{
 					Kind:  token.STRING,
@@ -840,9 +863,23 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		return nil, nil, err
 	}
 
-	// Remove unused imports from the generated AST. PruneUnused rewrites the
-	// file without touching the import manager, so no cache is invalidated.
-	t.importManager.PruneUnused(file, richAST)
+	// An import written in the source that nothing refers to is an error, in
+	// the module being built (see ForDependency).
+	var keepWritten map[*ast.ImportSpec]bool
+	if !t.dependency {
+		if err := t.checkUnusedImports(written, src, imports); err != nil {
+			return nil, nil, err
+		}
+		keepWritten = writtenSpecs(written)
+	}
+
+	// Settle the imports the generated Go does not refer to: one the source
+	// writes, which it uses in a way that lowers away (a type the Go leaves
+	// out), stays as a blank import, so its package is still initialized; an
+	// injected one nothing ended up needing goes, and so does any of a
+	// dependency's. PruneUnused rewrites the file without touching the import
+	// manager, so no cache is invalidated.
+	PruneUnused(file, t.importManager.ReferencedImports(file, richAST), keepWritten)
 	if err := CheckImportPaths(file); err != nil {
 		return nil, nil, err
 	}

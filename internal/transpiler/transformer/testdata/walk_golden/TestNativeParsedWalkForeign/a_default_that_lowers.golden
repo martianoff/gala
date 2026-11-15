@@ -5,7 +5,10 @@ package main
 import "example.com/parsed/pa"
 import "fmt"
 import "martianoff/gala/std"
-import "example.com/parsed/lib"
+import (
+	"example.com/parsed/lib"
+	_ "example.com/parsed/pb"
+)
 
 //line $DIR/main.gala:8
 func main() {

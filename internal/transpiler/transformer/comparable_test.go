@@ -13,6 +13,19 @@ import (
 
 const equalityHeader = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\n"
 
+// collectionName matches a bare use of a collection_immutable name: a
+// collection type, its constructor or its empty value, not selected by `.`.
+var collectionName = regexp.MustCompile(`(^|[^.\w])(Empty)?(List|Array|HashMap|HashSet|TreeSet|TreeMap)(Of)?\b`)
+
+// equalitySource is the program of src: equalityHeader's import comes with it
+// only when src uses a collection, since an import nothing uses is an error.
+func equalitySource(src string) string {
+	if collectionName.MatchString(src) {
+		return equalityHeader + src
+	}
+	return "package main\n\n" + src
+}
+
 // equalCall matches a call of an Equal method in generated Go.
 var equalCall = regexp.MustCompile(`\.Equal\(`)
 
@@ -206,7 +219,7 @@ func main() { Println(W(ListOf(1)) == W(ListOf(1))) }`, want: []string{"w.xs.Get
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := newDocGuardTranspiler().Transpile(equalityHeader+tc.src, "main.gala")
+			out, err := newDocGuardTranspiler().Transpile(equalitySource(tc.src), "main.gala")
 			require.NoError(t, err)
 			for _, w := range tc.want {
 				assert.Contains(t, out, w)
@@ -328,7 +341,7 @@ func main() { Println(describe(Pt(0, 0))) }`, want: "== Origin.Get()"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := newDocGuardTranspiler().Transpile(equalityHeader+tc.src, "main.gala")
+			out, err := newDocGuardTranspiler().Transpile(equalitySource(tc.src), "main.gala")
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
 			for _, line := range strings.Split(out, "\n") {

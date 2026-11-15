@@ -155,8 +155,6 @@ A new directory with only `.gala` files is a GALA package. [`report/report.gala`
 package report
 
 import (
-    "strings"
-
     . "martianoff/gala/collection_immutable"
     "example.com/inventory/stock"
 )

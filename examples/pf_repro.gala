@@ -1,7 +1,6 @@
 package main
 
 import "fmt"
-import . "martianoff/gala/std"
 import . "martianoff/gala/collection_immutable"
 
 func main() {

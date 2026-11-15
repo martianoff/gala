@@ -39,8 +39,6 @@ func TestThunkSugar_UnannotatedGenericCompanionApply(t *testing.T) {
 
 	input := `package main
 
-import . "martianoff/gala/std"
-
 sealed type Box[T any] {
     case box(value T)
 }
@@ -73,8 +71,6 @@ func TestThunkSugar_AnnotatedGenericCompanionApply(t *testing.T) {
 
 	input := `package main
 
-import . "martianoff/gala/std"
-
 sealed type Box[T any] {
     case box(value T)
 }
@@ -104,8 +100,6 @@ func TestThunkSugar_NonGenericFuncParam(t *testing.T) {
 
 	input := `package main
 
-import . "martianoff/gala/std"
-
 func runTwice(body func() int) int = body() + body()
 
 func compute() int = 21
@@ -128,8 +122,6 @@ func TestThunkSugar_ExistingThunkPassThrough(t *testing.T) {
 	trans := newThunkSugarTranspiler()
 
 	input := `package main
-
-import . "martianoff/gala/std"
 
 func runTwice(body func() int) int = body() + body()
 
@@ -155,8 +147,6 @@ func TestThunkSugar_ExplicitLambdaStillWorks(t *testing.T) {
 	trans := newThunkSugarTranspiler()
 
 	input := `package main
-
-import . "martianoff/gala/std"
 
 sealed type Box[T any] {
     case box(value T)

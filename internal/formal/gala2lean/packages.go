@@ -37,10 +37,12 @@ import (
 // each package's variables, in Go's order within the package, before the
 // next package's. A package is imported where a file names it, in a value
 // or a type (importsOf). An import a file does not use, of a package whose
-// initialization would run something, is reported (unused-import-init):
-// GALA drops the import from the Go it writes, so Go does not run those
-// initializers, but whether they run is a question the language docs leave
-// open.
+// initialization would run something, is reported (unused-import-init). The
+// language rejects an import its file's source does not use (GALA-E0120),
+// and the generated Go imports every one the source uses, so its package is
+// initialized; an import this translation sees no use of is therefore one
+// used in a way it does not read, and it reports the program rather than
+// guess whether those initializers run.
 // A dot import of a package of the module is not translated
 // (dot-import-module).
 
@@ -211,10 +213,9 @@ func depOrder(p *coreexport.Program, byPath map[string]*Package) ([]string, erro
 	return order, nil
 }
 
-// importsOf is the module packages program p imports and uses, sorted. GALA
-// drops an import its file does not use from the Go it generates (the
-// transpiler's PruneUnused: an import whose name no selector `name.X` names),
-// so Go neither imports nor initializes that package for it.
+// importsOf is the module packages program p imports and uses, sorted: the
+// ones whose initialization the translation orders. An import it sees no use
+// of is reported instead (unusedImportInit).
 func importsOf(p *coreexport.Program, byPath map[string]*Package) []string {
 	set := map[string]bool{}
 	for _, imp := range moduleImports(p, byPath, true) {
@@ -248,10 +249,11 @@ func moduleImports(p *coreexport.Program, byPath map[string]*Package, used bool)
 
 // unusedImportInit reports each import of a module package that its file
 // does not use, where that package or one it imports has package-level
-// variables (unused-import-init). GALA drops such an import from the Go it
-// writes, so Go does not run those initializers; whether they run is a
-// question of the language the docs leave open (docs/FORMAL_SEMANTICS.MD,
-// "Decisions the spec forces"), so the translation does not decide it.
+// variables (unused-import-init). The language decides the question
+// (docs/FORMAL_SEMANTICS.MD, "Decisions the spec forces"): an import the
+// source does not use is rejected (GALA-E0120), and one it uses is
+// initialized. So a compiled program reaches this only through a use the
+// translation does not read, and it reports the program rather than guess.
 func unusedImportInit(progs []*coreexport.Program, byPath map[string]*Package) []Unsupported {
 	var out []Unsupported
 	for _, p := range progs {

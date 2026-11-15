@@ -19,6 +19,8 @@ type Shape interface {
     Area() float64
 }
 
+func entryName(d fs.DirEntry) string = d.Name()
+
 type Marker interface {}
 
 struct Square(Side float64)

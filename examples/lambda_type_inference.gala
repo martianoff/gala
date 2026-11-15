@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     . "martianoff/gala/go_interop"
-    . "martianoff/gala/std"
 )
 
 // Minimal reproduction for lambda return type inference issue

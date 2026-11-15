@@ -13,6 +13,7 @@ last_modified_at: 2026-10-03
 
 GALA's `yaml` package provides compile-time YAML serialization powered by `StructMeta[T]`. No reflection, no struct tags, fully typed. All operations return `Try[T]` — no unchecked errors. The API mirrors `json.Codec[T]` exactly; the only difference is the emitted format: block-style YAML.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/yaml"
 ```

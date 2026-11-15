@@ -21,6 +21,8 @@ func TestBareCaseTestsInterfaceSubject(t *testing.T) {
 	const decls = `
 import "fmt"
 
+func show(v any) string = fmt.Sprint(v)
+
 sealed type Shape {
     case Circle(R int)
     case Square()

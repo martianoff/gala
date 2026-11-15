@@ -3564,6 +3564,22 @@ gala_exec_test(
     ],
 )
 
+# A blank import runs the imported package's initialization: its package-level
+# vals are initialized before main, though main names nothing from it.
+gala_library(
+    name = "blank_import_init_plugin",
+    srcs = ["blank_import_init/plugin/plugin.gala"],
+    importpath = "martianoff/gala/examples/blank_import_init/plugin",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "blank_import_init",
+    src = "blank_import_init.gala",
+    expected = "blank_import_init.out",
+    deps = [":blank_import_init_plugin"],
+)
+
 # An importer types another package's vals by that package's recorded
 # element types: an initializer that only looks numeric (`E + 1`), a trailing
 # match, and signed literals in every base.
