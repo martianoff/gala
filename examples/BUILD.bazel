@@ -626,6 +626,27 @@ gala_exec_test(
     deps = ["//go_builtins"],
 )
 
+# A Panic where a function or lambda returns its value — an expression body,
+# a `return`, a tail-recursive branch, a lambda body — lowers to `panic(...)`
+# as a statement. It used to lower to `return panic(...)`, which Go rejects
+# as "(no value) used as value".
+gala_exec_test(
+    name = "panic_in_value_position",
+    src = "panic_in_value_position.gala",
+    expected = "panic_in_value_position.out",
+    deps = ["//go_builtins"],
+)
+
+# `v, ok := m[k]` and `v, ok := <-ch` are Go's comma-ok forms, as their
+# `val v, ok = ...` spellings are. `:=` used to reject them as an
+# assignment mismatch.
+gala_exec_test(
+    name = "comma_ok_short_decl",
+    src = "comma_ok_short_decl.gala",
+    expected = "comma_ok_short_decl.out",
+    deps = ["//go_interop"],
+)
+
 # A struct pattern over `var` fields reads them as plain Go fields; only
 # non-`var` (Immutable) fields are unwrapped with `.Get()`. Covers mixed
 # structs, nested, generic, literal sub-patterns, guards and typed patterns.

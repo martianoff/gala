@@ -1,0 +1,53 @@
+package main
+
+import "martianoff/gala/go_builtins"
+
+// A Panic where a function or lambda returns its value diverges: it has no
+// value to return, so it lowers to Go's `panic(...)` as a statement. Each
+// position below used to lower to `return panic(...)`, which Go rejects as
+// "(no value) used as value".
+
+// An expression body.
+func fail(msg string) int = go_builtins.Panic(msg)
+
+func unreachable[T any]() T = go_builtins.Panic("unreachable")
+
+struct Gate(open bool)
+
+func (g Gate) Pass() string = go_builtins.Panic(s"gate open=${g.open}")
+
+// An explicit return.
+func positive(n int) int {
+    if (n > 0) {
+        return n
+    }
+    return go_builtins.Panic(s"not positive: $n")
+}
+
+// A branch of a tail-recursive body.
+func countdown(n int) int = if (n < 0) go_builtins.Panic(s"negative: $n") else if (n == 0) 0 else countdown(n - 1)
+
+func apply(f func(int) int, x int) int = f(x)
+
+func main() {
+    Println(countdown(3))
+    Println(positive(2))
+    Println(Try(() => countdown(-1)))
+    Println(Try(() => positive(0)))
+    Println(Try(() => fail("boom")))
+    Println(Try(() => unreachable[string]()))
+    Println(Try(() => Gate(true).Pass()))
+    // Lambda bodies.
+    Println(Try(() => apply((x int) => go_builtins.Panic(s"lambda $x"), 2)))
+    val typed func(int) int = (x) => go_builtins.Panic(s"typed $x")
+    Println(Try(() => typed(1)))
+    // A return in a lambda whose result type is inferred from its body.
+    val next = (n int) => Some(n).Map((x) => {
+        if (x < 0) {
+            return go_builtins.Panic(s"inferred $x")
+        }
+        x + 1
+    })
+    Println(next(1))
+    Println(Try(() => next(-1)))
+}

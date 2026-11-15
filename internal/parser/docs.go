@@ -193,12 +193,14 @@ func dedentBlock(lines []string) {
 // rather than prose. Covers the forms the transpiler itself emits (see
 // insertLineDirectives and insertEmbedDirectives), Go's own `//go:` family,
 // which GALA source may carry through to the generated output, and the legacy
-// `// +build` constraint. A `+build` line is never prose: carried into the
-// generated Go as documentation, gofmt would turn it into a `//go:build` header
-// and silently drop the whole file from the build.
+// `// +build` constraint (a GALA file that holds a directive, as
+// isGoDirectiveBody reads one, is GALA-E0119, but an editor still reads its
+// docs; any other `//go:` line is kept out of the docs too). A `+build` line is never
+// prose: carried into the generated Go as documentation, gofmt would turn it
+// into a `//go:build` header and silently drop the whole file from the build.
 func isPragmaBody(body string) bool {
 	return strings.HasPrefix(body, "go:") ||
+		isGoDirectiveBody(body) ||
 		body == "line" ||
-		strings.HasPrefix(body, "line ") ||
-		constraint.IsPlusBuild("//"+body)
+		strings.HasPrefix(body, "line ")
 }

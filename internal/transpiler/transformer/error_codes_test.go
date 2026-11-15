@@ -2300,6 +2300,63 @@ func main() {
 			expectContains: "Go function literal: a function value in GALA is a lambda",
 		},
 		{
+			// `use` lowers to `defer f.Close()`, which used to fail go build:
+			// "std.Try[*os.File] has no field or method Close".
+			name: "GALA-E0118 use of a fallible Go acquire",
+			input: `package main
+
+import "os"
+
+func main() {
+    use f = os.Open("main.gala")
+    Println(f)
+}`,
+			expectCode:     galaerr.CodeUseWithoutClose,
+			expectContains: "here, `use f = os.Open(\"main.gala\").Get()` inside a `Try(() => { ... })`",
+		},
+		{
+			name: "GALA-E0118 use of a GALA struct with no Close method",
+			input: `package main
+
+struct Conn(addr string)
+
+func main() {
+    use c = Conn("localhost")
+    Println(c.addr)
+}`,
+			expectCode:     galaerr.CodeUseWithoutClose,
+			expectContains: "`use c` releases its value with Close(), but `Conn(\"localhost\")` is a Conn, which has no Close method",
+		},
+		{
+			// Raised during PARSING. The directive used to be dropped from
+			// the generated Go, so the variable stayed empty.
+			name: "GALA-E0119 go:embed above a var",
+			input: `package main
+
+//go:embed hello.txt
+var content string
+
+func main() {
+    Println(content)
+}`,
+			expectCode:     galaerr.CodeGoDirective,
+			expectContains: "here, `embed val content = \"hello.txt\"`",
+		},
+		{
+			// The constraint used to be dropped: the file built and ran on
+			// every platform.
+			name: "GALA-E0119 build constraint",
+			input: `//go:build linux
+
+package main
+
+func main() {
+    Println("linux only")
+}`,
+			expectCode:     galaerr.CodeGoDirective,
+			expectContains: "a GALA file has no build constraint",
+		},
+		{
 			// The spec used to be copied into the Go interface as written,
 			// and the generated Go did not parse (GALA-E0017).
 			name: "GALA-E0086 type parameter on an interface method",

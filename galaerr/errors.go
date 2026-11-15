@@ -1049,6 +1049,20 @@ const (
 	// function type of E0103 followed by a block, only so that the parser
 	// reports it with this code.
 	CodeGoFuncLiteral ErrorCode = "GALA-E0117"
+
+	// E0118: a `use` binding whose resource is a GALA type with no Close
+	// method, most often a fallible acquire such as `use f = os.Open(p)`,
+	// whose value is a Try[*os.File]. `use` lowers to `defer f.Close()`,
+	// which used to reach `go build` and fail there against the generated
+	// Go ("std.Try[*os.File] has no field or method Close").
+	CodeUseWithoutClose ErrorCode = "GALA-E0118"
+
+	// E0119: a Go compiler directive — `//go:embed`, `//go:build`,
+	// `// +build`, `//go:noinline`, ... — in a GALA file. GALA does not
+	// carry comments into the generated Go, so the directive used to be
+	// dropped silently: an embedded variable stayed empty and a
+	// constrained file built on every platform.
+	CodeGoDirective ErrorCode = "GALA-E0119"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

@@ -133,6 +133,11 @@ func dedupeUnresolved(in []UnresolvedType) []UnresolvedType {
 // the transformer has a good reason to fail on it, because "we have a reason"
 // is how a real gap gets filtered out and stops being counted.
 func (t *galaASTTransformer) hasNoTypeByConstruction(expr ast.Expr) bool {
+	// A diverging call (`panic(...)`) yields no value, so it has no type to
+	// find.
+	if t.isNoReturnCallExpr(expr) {
+		return true
+	}
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
 		return false

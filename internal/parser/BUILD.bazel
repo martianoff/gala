@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "docs.go",
         "expr_native.go",
+        "go_directive.go",
         "go_func_literal.go",
         "native_errors.go",
         "native_lex.go",

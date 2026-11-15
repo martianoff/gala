@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -281,20 +282,25 @@ func funcDeclName(d *ast.FuncDecl) string {
 // TestDocComments_BuildConstraintNotEmitted pins that a `+build` line in a doc
 // comment never reaches the generated Go. gofmt collects a `// +build` line
 // from anywhere in a file and writes a matching `//go:build` header, so one in
-// a doc would silently drop the whole generated file from the build.
+// a doc would silently drop the whole generated file from the build. A `//`
+// line is a Go directive, which a GALA file may not hold (GALA-E0119); one in
+// a block comment is prose to Go, and is left out of the doc.
 func TestDocComments_BuildConstraintNotEmitted(t *testing.T) {
-	const src = `// Package constrained is documented.
-// +build ignore
+	_, err := newLineDirectiveTranspiler().Transpile("// Package constrained is documented.\n// +build ignore\npackage constrained\n", "")
+	require.ErrorContains(t, err, string(galaerr.CodeGoDirective))
+
+	const src = `/* Package constrained is documented.
++build ignore */
 package constrained
 
-// Run runs.
-// +build ignore
+/* Run runs.
++build ignore */
 func Run() int = 1
 
 // Opts holds options.
 type Opts struct {
-	// Level is a level.
-	// +build ignore
+	/* Level is a level.
+	+build ignore */
 	Level int
 	/* Mode is a mode.
 	+build ignore */

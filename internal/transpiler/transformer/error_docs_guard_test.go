@@ -1915,6 +1915,50 @@ func main() {
 			},
 		},
 		{
+			name: "use of a fallible Go acquire",
+			code: galaerr.CodeUseWithoutClose, // GALA-E0118
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "os"
+
+func main() {
+    use f = os.Open("config.json")
+    Println(f.Name())
+}
+`)
+			},
+		},
+		{
+			name: "go:embed above a var",
+			code: galaerr.CodeGoDirective, // GALA-E0119
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+//go:embed hello.txt
+var greeting string
+
+func main() {
+    Println(greeting)
+}
+`)
+			},
+		},
+		{
+			name: "build constraint",
+			code: galaerr.CodeGoDirective, // GALA-E0119
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `//go:build linux
+
+package main
+
+func main() {
+    Println("linux only")
+}
+`)
+			},
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {

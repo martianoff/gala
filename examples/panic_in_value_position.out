@@ -1,0 +1,11 @@
+0
+2
+Failure(negative: -1)
+Failure(not positive: 0)
+Failure(boom)
+Failure(unreachable)
+Failure(gate open=true)
+Failure(lambda 2)
+Failure(typed 1)
+Some(2)
+Failure(inferred -1)

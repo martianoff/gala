@@ -292,7 +292,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 		// used in a position that needs a concrete type.
 		var callReturns []transpiler.Type
 		if annotType == nil {
-			callReturns = t.resolveGoCallReturnTypes(callValue)
+			callReturns = t.multiValueTypes(callValue)
 		}
 		bind := func(i int, name string) {
 			typeName := annotType
@@ -730,7 +730,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 	// `var a, err = goCall()`: each name takes the matching result's type.
 	var callReturns []transpiler.Type
 	if len(rhsExprs) == 1 && len(namesCtx) > 1 && !d.typ.ok() {
-		callReturns = t.resolveGoCallReturnTypes(t.rawGoCall(t.unwrapImmutable(rhsExprs[0])))
+		callReturns = t.multiValueTypes(t.rawGoCall(t.unwrapImmutable(rhsExprs[0])))
 	}
 
 	var idents []*ast.Ident
@@ -1225,6 +1225,9 @@ func (t *galaASTTransformer) transformExpressionBodiedFunction(e exprSrc, retTyp
 	expr, err := t.lowerResultAgainst(e, typedSlot(t.astTypeToTranspilerType(retType)), false)
 	if err != nil {
 		return nil, err
+	}
+	if stmt, ok := t.divergingStmt(expr); ok {
+		return &ast.BlockStmt{List: []ast.Stmt{stmt}}, nil
 	}
 	expr = t.wrapWithAssertion(expr, retType)
 	return &ast.BlockStmt{

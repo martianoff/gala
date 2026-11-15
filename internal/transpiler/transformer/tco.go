@@ -244,6 +244,9 @@ func (t *galaASTTransformer) buildTailBranch(
 		if err != nil {
 			return nil, false, err
 		}
+		if stmt, ok := t.divergingStmt(value); ok {
+			return []ast.Stmt{stmt}, false, nil
+		}
 		value = t.wrapWithAssertion(value, tc.retType)
 		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{value}}}, false, nil
 	}

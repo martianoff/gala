@@ -189,7 +189,9 @@ func (t *galaASTTransformer) lowerFillingValue(e exprSrc, deferUnsettled bool) a
 	expr, err := t.lowerExpr(e)
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
-		if t.tryFillReturnSlot(t.getExprTypeName(expr)) || !deferUnsettled {
+		// A diverging call (`Panic(...)`) yields no value to type the slot
+		// with, and none to settle later: it lowers to a statement.
+		if t.isNoReturnCallExpr(expr) || t.tryFillReturnSlot(t.getExprTypeName(expr)) || !deferUnsettled {
 			return expr
 		}
 	} else {
