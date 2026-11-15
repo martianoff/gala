@@ -178,8 +178,11 @@ galaspec models them, except as listed below):
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
   them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every
-  package-level variable of every package it imports (naming it in a value or a type)
-  is initialized, used or not, in Go's order: packages sorted by import path, each
+  package-level variable of every package it imports, directly or not, is
+  initialized, used or not, in Go's order (every import of a compiled program
+  initializes its package: an import its source does not use is rejected,
+  GALA-E0120, and a blank import `import _ "pkg"` is there for its
+  initialization): packages sorted by import path, each
   once the packages it imports are, and within a package as Go orders it. A function
   counts as translated (`-stats`) only when what it uses of other packages
   translates.
@@ -231,12 +234,8 @@ what Core JSON leaves out, it does not translate yet:
   `List` the prelude does not model (`collection-method`); comparing values that hold
   a function (`func-in-equal`); any other import (`import`), a type of a package
   outside the module (`qualified-type`), a dot import of a package of the module
-  (`dot-import-module`), an `init` function (`init-func`), an import gala2lean sees no
-  use of, of a package whose initialization runs something (`unused-import-init`). The
-  language rejects an import its source does not use (GALA-E0120, see
-  [FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#decisions-the-spec-forces)), so in a
-  compiled program this is a use gala2lean does not read; a blank import of a package
-  it is not given (`blank-import`), whose initializers it cannot run.
+  (`dot-import-module`), an `init` function (`init-func`), a blank import of a
+  package it is not given (`blank-import`), whose initializers it cannot run.
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 

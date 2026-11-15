@@ -35,14 +35,11 @@ import (
 // imports are (depOrder); their files come before the program's in that
 // order, so that initOrder, which follows declaration order, initializes
 // each package's variables, in Go's order within the package, before the
-// next package's. A package is imported where a file names it, in a value
-// or a type (importsOf). An import a file does not use, of a package whose
-// initialization would run something, is reported (unused-import-init). The
-// language rejects an import its file's source does not use (GALA-E0120),
-// and the generated Go imports every one the source uses, so its package is
-// initialized; an import this translation sees no use of is therefore one
-// used in a way it does not read, and it reports the program rather than
-// guess whether those initializers run.
+// next package's. Every import of a module package initializes it
+// (importsOf): the language rejects an import its file's source does not
+// use (GALA-E0120), the generated Go keeps every import the source uses
+// (as a blank import when the use lowers away), and a blank import
+// `import _ "pkg"` is there to run the package's initialization.
 // A dot import of a package of the module is not translated
 // (dot-import-module).
 
@@ -136,11 +133,6 @@ func mergePackages(p *coreexport.Program, deps []Package) (*coreexport.Program, 
 	if err != nil {
 		return p, []Unsupported{{Construct: "import-cycle"}}, nil
 	}
-	progs := []*coreexport.Program{p}
-	for _, path := range order {
-		progs = append(progs, byPath[path].Program)
-	}
-	unsup = append(unsup, unusedImportInit(progs, byPath)...)
 	// Namespaces: a package's name, numbered when two packages share one,
 	// in the translation's reserved namespace: Lean reads `x.F` as a field
 	// of x when a local x is in scope, and no GALA local starts with _gala_.
@@ -213,97 +205,19 @@ func depOrder(p *coreexport.Program, byPath map[string]*Package) ([]string, erro
 	return order, nil
 }
 
-// importsOf is the module packages program p imports and uses, sorted: the
-// ones whose initialization the translation orders. An import it sees no use
-// of is reported instead (unusedImportInit).
+// importsOf is the module packages program p imports, sorted: each one is
+// initialized (the package comment), a blank import's included. A dot
+// import is reported elsewhere (dot-import-module).
 func importsOf(p *coreexport.Program, byPath map[string]*Package) []string {
 	set := map[string]bool{}
-	for _, imp := range moduleImports(p, byPath, true) {
-		set[imp.Path] = true
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			if imp, ok := d.(*coreexport.Import); ok && byPath[imp.Path] != nil && imp.Alias != "." {
+				set[imp.Path] = true
+			}
+		}
 	}
 	return slices.Sorted(maps.Keys(set))
-}
-
-// moduleImports is the imports of module packages in p that its files use
-// (used), or that they do not (!used), dot imports aside.
-func moduleImports(p *coreexport.Program, byPath map[string]*Package, used bool) []*coreexport.Import {
-	var out []*coreexport.Import
-	for _, f := range p.Files {
-		names := selectorNames(f)
-		for _, d := range f.Decls {
-			imp, ok := d.(*coreexport.Import)
-			if !ok || byPath[imp.Path] == nil || imp.Alias == "." {
-				continue
-			}
-			name := imp.Alias
-			if name == "" {
-				name = packageName(byPath[imp.Path].Program, imp.Path)
-			}
-			if (names[name] || name == "_") == used {
-				out = append(out, imp)
-			}
-		}
-	}
-	return out
-}
-
-// unusedImportInit reports each import of a module package that its file
-// does not use, where that package or one it imports has package-level
-// variables (unused-import-init). The language decides the question
-// (docs/FORMAL_SEMANTICS.MD, "Decisions the spec forces"): an import the
-// source does not use is rejected (GALA-E0120), and one it uses is
-// initialized. So a compiled program reaches this only through a use the
-// translation does not read, and it reports the program rather than guess.
-func unusedImportInit(progs []*coreexport.Program, byPath map[string]*Package) []Unsupported {
-	var out []Unsupported
-	for _, p := range progs {
-		for _, imp := range moduleImports(p, byPath, false) {
-			if hasInit(imp.Path, byPath, map[string]bool{}) {
-				out = append(out, Unsupported{Construct: "unused-import-init", Pos: imp.Pos})
-			}
-		}
-	}
-	return out
-}
-
-// hasInit reports whether package path, or a module package it imports,
-// used or not, has package-level variables.
-func hasInit(path string, byPath map[string]*Package, seen map[string]bool) bool {
-	if seen[path] {
-		return false
-	}
-	seen[path] = true
-	for _, f := range byPath[path].Program.Files {
-		for _, d := range f.Decls {
-			if len(globalNames(d)) > 0 {
-				return true
-			}
-			if imp, ok := d.(*coreexport.Import); ok && byPath[imp.Path] != nil && hasInit(imp.Path, byPath, seen) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// selectorNames is every name file f qualifies something with: the target
-// of a select `name.X`, and the package of a type `name.T`. Like the
-// transpiler's check, it does not ask whether a local hides the name.
-func selectorNames(f *coreexport.File) map[string]bool {
-	used := map[string]bool{}
-	walk(f, func(n coreexport.Node) {
-		switch n := n.(type) {
-		case *coreexport.Select:
-			if t, ok := n.Target.(*coreexport.Name); ok {
-				used[t.Name] = true
-			}
-		case *coreexport.TypeName:
-			if n.Package != "" {
-				used[n.Package] = true
-			}
-		}
-	})
-	return used
 }
 
 // packageName is the name a package's files declare, or the last element

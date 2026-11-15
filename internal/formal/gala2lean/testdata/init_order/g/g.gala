@@ -1,0 +1,10 @@
+package g
+
+// main imports g blank: only to run its initialization, which Go runs
+// after f's, in import-path order.
+val Ready = say("init g")
+
+func say(s string) int {
+    Println(s)
+    1
+}
