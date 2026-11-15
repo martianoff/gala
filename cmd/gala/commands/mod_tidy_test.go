@@ -207,3 +207,28 @@ func TestScanImports_SkipsNestedModules(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]bool{"example.com/used": true}, imports)
 }
+
+// gala mod tidy marks a module it adds as Go when the module has no GALA
+// sources, as gala mod add does; unmarked, gala build would transpile it as a
+// GALA module.
+func TestTidyRequireMissingMarksGoModules(t *testing.T) {
+	goDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(goDir, "uuid.go"), []byte("package uuid\n"), 0644))
+	galaDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(galaDir, "gala.mod"), []byte("module example.com/lib\n"), 0644))
+	dirs := map[string]string{"github.com/google/uuid": goDir, "example.com/lib": galaDir}
+	fetchLatest := func(path string) (string, string, string, error) {
+		dir, ok := dirs[path]
+		if !ok {
+			return "", "", "", os.ErrNotExist
+		}
+		return "v1.6.0", dir, "h1:x", nil
+	}
+
+	f := mod.NewFile("example.com/app")
+	requireMissing(f, []string{"github.com/google/uuid", "example.com/lib", "example.com/missing"}, fetchLatest)
+	assert.Equal(t, []mod.Require{
+		{Path: "github.com/google/uuid", Version: "v1.6.0", Go: true},
+		{Path: "example.com/lib", Version: "v1.6.0"},
+	}, f.Require)
+}

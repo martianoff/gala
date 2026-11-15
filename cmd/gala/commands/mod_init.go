@@ -79,7 +79,11 @@ func runModInit(cmd *cobra.Command, args []string) {
 	// Create gala.mod file
 	f := mod.NewFile(modulePath)
 	f.Gala = Version // Use current GALA version
-	f.Require = goRequirementsOf(goMod)
+	replaces := 0
+	if goMod != nil {
+		f.Require = goRequirementsOf(goMod)
+		replaces = len(goMod.Replace)
+	}
 
 	if err := mod.WriteFile(f, "gala.mod"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to write gala.mod: %v\n", err)
@@ -87,7 +91,7 @@ func runModInit(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("Initialized gala.mod for module %s\n", modulePath)
-	reportCopiedGoRequirements(f.Require, goMod)
+	reportCopiedGoRequirements(f.Require, replaces)
 
 	// Create empty gala.sum if it doesn't exist
 	if _, err := os.Stat("gala.sum"); os.IsNotExist(err) {
@@ -121,8 +125,8 @@ func readGoMod(path string) (*modfile.File, error) {
 	return f, nil
 }
 
-// goRequirementsOf returns the requirements of goMod (nil allowed) as gala.mod
-// Go requirements, in go.mod's order and at its versions. `gala build` takes
+// goRequirementsOf returns the requirements of goMod as gala.mod Go
+// requirements, in go.mod's order and at its versions. `gala build` takes
 // the version of a Go module from gala.mod, never from go.mod, so a module
 // left out would build at whatever version the build workspace's `go mod
 // tidy` picks: its latest when nothing else requires it.
@@ -132,9 +136,6 @@ func readGoMod(path string) (*modfile.File, error) {
 // raises a dependency's dependency above the version that dependency asks for;
 // without it, the build would select the lower version go build does not.
 func goRequirementsOf(goMod *modfile.File) []mod.Require {
-	if goMod == nil {
-		return nil
-	}
 	reqs := make([]mod.Require, 0, len(goMod.Require))
 	for _, r := range goMod.Require {
 		reqs = append(reqs, mod.Require{Path: r.Mod.Path, Version: r.Mod.Version, Indirect: r.Indirect, Go: true})
@@ -143,17 +144,17 @@ func goRequirementsOf(goMod *modfile.File) []mod.Require {
 }
 
 // reportCopiedGoRequirements prints the requirements gala mod init copied from
-// go.mod, and names what of go.mod it did not copy.
-func reportCopiedGoRequirements(reqs []mod.Require, goMod *modfile.File) {
+// go.mod, and the number of its replace directives, which it does not copy.
+func reportCopiedGoRequirements(reqs []mod.Require, replaces int) {
 	if len(reqs) > 0 {
 		fmt.Printf("Copied %d requirement(s) from go.mod as Go dependencies:\n", len(reqs))
 		for _, r := range reqs {
 			fmt.Printf("  %s\n", mod.FormatRequireEntry(r))
 		}
 	}
-	if goMod != nil && len(goMod.Replace) > 0 {
+	if replaces > 0 {
 		fmt.Printf("Note: go.mod has %d replace directive(s), which were not copied; "+
-			"gala build does not apply replace directives to Go dependencies.\n", len(goMod.Replace))
+			"gala build does not apply replace directives to Go dependencies.\n", replaces)
 	}
 }
 

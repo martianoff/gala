@@ -15,22 +15,14 @@ import (
 // as a Go requirement, at go.mod's version and keeping its indirect mark.
 func TestGoRequirementsOfGoMod(t *testing.T) {
 	tests := []struct {
-		name   string
-		goMod  string // "" = no go.mod
-		want   []mod.Require
-		module string
+		name  string
+		goMod string
+		want  []mod.Require
 	}{
 		{
-			name:   "no go.mod",
-			goMod:  "",
-			want:   nil,
-			module: "",
-		},
-		{
-			name:   "no requirements",
-			goMod:  "module example.com/app\n\ngo 1.25\n",
-			want:   []mod.Require{},
-			module: "example.com/app",
+			name:  "no requirements",
+			goMod: "module example.com/app\n\ngo 1.25\n",
+			want:  []mod.Require{},
 		},
 		{
 			name: "direct and indirect requirements, a pseudo-version, a replace",
@@ -46,21 +38,16 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 				{Path: "github.com/spf13/pflag", Version: "v1.0.10", Indirect: true, Go: true},
 				{Path: "golang.org/x/text", Version: "v0.0.0-20240101000000-abcdefabcdef", Indirect: true, Go: true},
 			},
-			module: "example.com/app",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go.mod")
-			if tt.goMod != "" {
-				require.NoError(t, os.WriteFile(path, []byte(tt.goMod), 0644))
-			}
+			require.NoError(t, os.WriteFile(path, []byte(tt.goMod), 0644))
 			goMod, err := readGoMod(path)
 			require.NoError(t, err)
+			assert.Equal(t, "example.com/app", goMod.Module.Mod.Path)
 			assert.Equal(t, tt.want, goRequirementsOf(goMod))
-			if tt.module != "" {
-				assert.Equal(t, tt.module, goMod.Module.Mod.Path)
-			}
 
 			// The requirements survive a round trip through gala.mod.
 			f := mod.NewFile("example.com/app")
@@ -72,10 +59,15 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 	}
 }
 
-func TestReadGoModRejectsAnUnparsableFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "go.mod")
+func TestReadGoMod(t *testing.T) {
+	dir := t.TempDir()
+	missing, err := readGoMod(filepath.Join(dir, "go.mod"))
+	require.NoError(t, err)
+	assert.Nil(t, missing, "no go.mod reads as nil")
+
+	path := filepath.Join(dir, "go.mod")
 	require.NoError(t, os.WriteFile(path, []byte("module example.com/app\nrequire (\n"), 0644))
-	_, err := readGoMod(path)
+	_, err = readGoMod(path)
 	assert.ErrorContains(t, err, "cannot parse")
 }
 
@@ -134,28 +126,3 @@ func TestEnsureGalaGitignored(t *testing.T) {
 }
 
 func stringPtr(s string) *string { return &s }
-
-// gala mod tidy marks a module it adds as Go when the module has no GALA
-// sources, as gala mod add does; unmarked, gala build would transpile it as a
-// GALA module.
-func TestTidyRequireMissingMarksGoModules(t *testing.T) {
-	goDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(goDir, "uuid.go"), []byte("package uuid\n"), 0644))
-	galaDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(galaDir, "gala.mod"), []byte("module example.com/lib\n"), 0644))
-	dirs := map[string]string{"github.com/google/uuid": goDir, "example.com/lib": galaDir}
-	fetchLatest := func(path string) (string, string, string, error) {
-		dir, ok := dirs[path]
-		if !ok {
-			return "", "", "", os.ErrNotExist
-		}
-		return "v1.6.0", dir, "h1:x", nil
-	}
-
-	f := mod.NewFile("example.com/app")
-	requireMissing(f, []string{"github.com/google/uuid", "example.com/lib", "example.com/missing"}, fetchLatest)
-	assert.Equal(t, []mod.Require{
-		{Path: "github.com/google/uuid", Version: "v1.6.0", Go: true},
-		{Path: "example.com/lib", Version: "v1.6.0"},
-	}, f.Require)
-}
