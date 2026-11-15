@@ -609,18 +609,26 @@ func (g *gen) placeKind(e coreexport.Node, sc *scope) placeKind {
 }
 
 // caseTest is case C of sealed type name when m is `isC`, the test GALA
-// generates for it, and nil otherwise. A generic sealed type is left out:
-// a method it declares is outside the subset (outsideSubset), so an `isC`
-// of its own would not be seen, and would win over the generated one.
+// generates for it (GALA-E0083), and nil otherwise. GALA does not generate
+// it when the type has a method or a field of that name (the caller checks
+// methods; a field of any case counts here). A generic sealed type is left
+// out: a method it declares is outside the subset (outsideSubset), so an
+// `isC` of its own would not be seen, and would win over the generated one.
 func (g *gen) caseTest(name, m string) *variantInfo {
 	c, ok := strings.CutPrefix(m, "is")
 	if !ok || g.sealeds[name] == nil || g.isGenericDecl(name) {
 		return nil
 	}
-	if v := g.variants[pkgPrefix(name)+c]; v != nil && v.sealed.Name == name {
-		return v
+	v := g.variants[pkgPrefix(name)+c]
+	if v == nil || v.sealed.Name != name {
+		return nil
 	}
-	return nil
+	for _, f := range g.typeFields(name) {
+		if f.Name == m {
+			return nil
+		}
+	}
+	return v
 }
 
 // generatedMethod translates a call of a method GALA generates, when the
