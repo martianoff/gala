@@ -69,3 +69,30 @@ func NewCookieBuilder() *CookieBuilder {
 		return Cookie{Name: s, Value: s, Path: "/"}
 	}}
 }
+
+// Formatter is a named function type, the type of Pipeline.Format.
+type Formatter func(int) string
+
+// Stage is a Go struct with a function-typed field, nested in Pipeline.
+type Stage struct {
+	Apply func(n int) int
+}
+
+// Pipeline has function-typed fields of a plain func type, of a named
+// function type and of a nested struct, for lambdas written for them in a
+// GALA struct literal.
+type Pipeline struct {
+	Label  string
+	Check  func(n int, label string) error
+	Format Formatter
+	First  Stage
+}
+
+// Run applies p's stage to n, checks the result and formats it.
+func (p *Pipeline) Run(n int) string {
+	m := p.First.Apply(n)
+	if err := p.Check(m, p.Label); err != nil {
+		return "error: " + err.Error()
+	}
+	return p.Format(m)
+}

@@ -2171,14 +2171,8 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	// named function type), so a lambda passed for it gets its parameter
 	// types. Only for a non-generic struct, whose field types need no type
 	// arguments substituted.
-	if td := callCtx.goStruct; td != nil && len(td.TypeParams) == 0 {
-		ft := td.Fields[argName]
-		if u, named := t.goNamedUnderlying(ft); named {
-			ft = u
-		}
-		if fn, isFunc := ft.(transpiler.FuncType); isFunc {
-			return fn, nil
-		}
+	if fn, ok := t.goStructFuncField(callCtx.goStruct, argName); ok {
+		return fn, nil
 	}
 
 	// Step 2: function metadata lookup — handles lambdas passed as named
@@ -4019,6 +4013,22 @@ func (t *galaASTTransformer) goStructTypeData(fun ast.Expr) *transpiler.GoTypeDa
 		return td
 	}
 	return nil
+}
+
+// goStructFuncField is the function type of td's field name, directly or
+// through a Go named function type (`type Handler func(int) string`), so a
+// lambda filling the field gets its parameter types. Only a non-generic
+// struct qualifies: its field types need no type arguments substituted.
+func (t *galaASTTransformer) goStructFuncField(td *transpiler.GoTypeData, name string) (transpiler.FuncType, bool) {
+	if td == nil || len(td.TypeParams) > 0 {
+		return transpiler.FuncType{}, false
+	}
+	ft := td.Fields[name]
+	if u, named := t.goNamedUnderlying(ft); named {
+		ft = u
+	}
+	fn, isFunc := ft.(transpiler.FuncType)
+	return fn, isFunc
 }
 
 // goStructTypeArgsError reports a construction of a generic Go struct that

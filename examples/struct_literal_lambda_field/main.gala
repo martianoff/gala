@@ -1,0 +1,56 @@
+package main
+
+import (
+    "fmt"
+
+    "github.com/spf13/cobra"
+    "martianoff/gala/examples/go_struct_bridge"
+    "martianoff/gala/go_interop"
+)
+
+// Rule is a GALA struct with a function-typed field.
+struct Rule(Name string, Test func(int) bool)
+
+// Mapper is a generic GALA struct with a function-typed field.
+struct Mapper[A any, B any](F func(A) B)
+
+// A lambda written for a function-typed field of a `T{Field: value}` literal
+// takes its parameter types from the field, as it does for the same field
+// passed as a named argument (`T(Field = value)`).
+func main() {
+    // A GALA struct, and a generic one with its type arguments written.
+    val even = Rule{Name: "even", Test: (n) => n % 2 == 0}
+    Println(s"${even.Name}: ${even.Test(4)} ${even.Test(5)}")
+    val show = Mapper[int, string]{F: (n) => s"#$n"}
+    Println(show.F(7))
+
+    // A Go struct behind `&`: a plain func field, a named func type field and
+    // a nested Go struct literal with a func field of its own.
+    val pipe = &go_struct_bridge.Pipeline{
+        Label: "double",
+        Check: (n, label) => if (n > 100) fmt.Errorf("%s: %d is over 100", label, n) else nil,
+        Format: (n) => s"result $n",
+        First: go_struct_bridge.Stage{Apply: (n) => n * 2},
+    }
+    Println(pipe.Run(21))
+    Println(pipe.Run(60))
+
+    // A Go struct literal without `&`, and a field set after construction.
+    var stage = go_struct_bridge.Stage{Apply: (n) => n + 1}
+    Println(stage.Apply(1))
+    stage.Apply = (n) => n - 1
+    Println(stage.Apply(1))
+
+    // A cobra command: RunE is a plain func field, Args a named func type
+    // (cobra.PositionalArgs).
+    val cmd = &cobra.Command{
+        Use: "hello",
+        Args: (c, args) => if (args.Size() == 1) nil else fmt.Errorf("want one name, got %d", args.Size()),
+        RunE: (c, args) => {
+            fmt.Fprintln(c.OutOrStdout(), s"hello, ${args[0]}")
+            nil
+        },
+    }
+    cmd.SetArgs(go_interop.SliceOf("gala"))
+    Println(FromError(cmd.Execute()).IsSuccess())
+}

@@ -602,19 +602,96 @@ func (c compositeSrc) elems() []keyedElem {
 	return out
 }
 
-// compositeKeysAreFields reports whether a bare-name key in a literal of
-// typeExpr is a field name, in the struct's own namespace: `Pair{Left: 1}`
-// names the field Left, though a bare `Left` elsewhere is std's Either
-// constructor. The type must be known to be a struct: a GALA struct, or a Go
-// struct directly, through an alias or a dot import. Any other literal, such
-// as a named Go map with expression keys (`url.Values{k: v}`), lowers its keys
-// as expressions.
-func (t *galaASTTransformer) compositeKeysAreFields(typeExpr ast.Expr, meta *transpiler.TypeMetadata, fields []string) bool {
-	if len(fields) > 0 || (meta != nil && len(meta.Fields) > 0) {
-		return true
+// compositeStruct is what a composite literal knows of the struct it builds:
+// a GALA struct's fields, their declared types and the type parameters the
+// literal leaves unbound, or the Go struct its type names, directly, through
+// an alias or a dot import.
+type compositeStruct struct {
+	// isStruct: the type is known to be a struct, so a bare-name key is a
+	// field name, in the struct's own namespace: `Pair{Left: 1}` names the
+	// field Left, though a bare `Left` elsewhere is std's Either constructor.
+	// Any other literal, such as a named Go map with expression keys
+	// (`url.Values{k: v}`), lowers its keys as expressions.
+	isStruct   bool
+	fields     []string
+	fieldTypes map[string]transpiler.Type
+	unbound    []string
+	typeArgSub map[string]ast.Expr
+	typeArgs   map[string]transpiler.Type // typeArgSub as types, on first use
+	goStruct   *transpiler.GoTypeData
+}
+
+// compositeStructOf is what a literal of typeExpr knows of its struct. The Go
+// type info is consulted only for a type GALA declares no fields for.
+func (t *galaASTTransformer) compositeStructOf(typeExpr ast.Expr, resolvedTypeName string, meta *transpiler.TypeMetadata, typeArgSubst map[string]ast.Expr) *compositeStruct {
+	s := &compositeStruct{
+		fields:     t.structFields[resolvedTypeName],
+		fieldTypes: t.structFieldTypes[resolvedTypeName],
+		typeArgSub: typeArgSubst,
 	}
-	td, _ := t.goTypeDataThroughAliases(t.astTypeToTranspilerType(typeExpr))
-	return td != nil && td.Kind == "struct"
+	if meta != nil {
+		for _, tp := range meta.TypeParams {
+			if _, bound := typeArgSubst[tp]; !bound {
+				s.unbound = append(s.unbound, tp)
+			}
+		}
+	}
+	s.isStruct = len(s.fields) > 0 || (meta != nil && len(meta.Fields) > 0)
+	if !s.isStruct {
+		if td, _ := t.goTypeDataThroughAliases(t.astTypeToTranspilerType(typeExpr)); td != nil && td.Kind == "struct" {
+			s.goStruct, s.isStruct = td, true
+		}
+	}
+	return s
+}
+
+// positionalField is the field the i-th element of a literal written without
+// keys fills, "" when it is not known.
+func (s *compositeStruct) positionalField(i int) string {
+	order := s.fields
+	if s.goStruct != nil {
+		order = s.goStruct.FieldOrder
+	}
+	if i < len(order) {
+		return order[i]
+	}
+	return ""
+}
+
+// fieldSlot is the type the value of field name fills in the literal: a
+// lambda (or an if-expression, match or partial function) written there takes
+// its parameter types from it, as it does for the same field passed as a
+// named argument (resolveNamedArgExpectedFuncType). A GALA struct's field has
+// its declared type, with the literal's type arguments substituted; one still
+// naming a type parameter the literal leaves unbound gives no slot, since a Go
+// composite literal binds no type argument from its fields. A Go struct's
+// field gives its function type (goStructFuncField). Nil when there is none.
+func (t *galaASTTransformer) fieldSlot(s *compositeStruct, name string) transpiler.Type {
+	if ft := s.fieldTypes[name]; !transpiler.IsUnusable(ft) {
+		if s.typeArgs == nil && len(s.typeArgSub) > 0 {
+			s.typeArgs = t.typeArgTypes(s.typeArgSub)
+		}
+		ft = t.substituteTranspilerTypeParams(ft, s.typeArgs)
+		if typeMentionsTypeParam(ft, s.unbound) {
+			return nil
+		}
+		return ft
+	}
+	if fn, ok := t.goStructFuncField(s.goStruct, name); ok {
+		return fn
+	}
+	return nil
+}
+
+// lowerFieldValue lowers value, the value of field name ("" when unknown) of
+// a literal of s: a lambda or other value that needs a type from its slot is
+// lowered against the field's (see fieldSlot).
+func (t *galaASTTransformer) lowerFieldValue(s *compositeStruct, name string, value exprSrc) (ast.Expr, error) {
+	var fieldType transpiler.Type
+	if name != "" && t.needsExpectedType(value) {
+		fieldType = t.fieldSlot(s, name)
+	}
+	return t.lowerAgainst(value, typedSlot(fieldType), false)
 }
 
 // transformCompositeLiteral lowers the composite literal c.
@@ -653,7 +730,6 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 	resolvedTypeName := t.resolveStructTypeName(typeName)
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fields := t.structFields[resolvedTypeName]
-	fieldTypes := t.structFieldTypes[resolvedTypeName]
 	typeArgSubst := t.structTypeArgSubst(typeExpr, resolvedTypeName)
 	// Build a map from field name to its index for quick lookup
 	fieldIndex := make(map[string]int, len(fields))
@@ -662,17 +738,17 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 	}
 
 	meta := t.getTypeMeta(resolvedTypeName)
-	fieldKeys := t.compositeKeysAreFields(typeExpr, meta, fields)
+	target := t.compositeStructOf(typeExpr, resolvedTypeName, meta, typeArgSubst)
 
 	// Transform the elements
 	var elts []ast.Expr
 	given := make(map[string]bool) // the fields a keyed literal names
 	keyed := false
-	for _, el := range c.elems() {
+	for i, el := range c.elems() {
 		if el.key.ok() {
 			// Key-value pair
 			name := ""
-			if fieldKeys {
+			if target.isStruct {
 				name = el.key.bareIdent()
 			}
 			var key ast.Expr
@@ -681,7 +757,7 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 			} else if key, err = t.lowerExpr(el.key); err != nil {
 				return nil, err
 			}
-			value, err := t.lowerExpr(el.value)
+			value, err := t.lowerFieldValue(target, name, el.value)
 			if err != nil {
 				return nil, err
 			}
@@ -696,13 +772,17 @@ func (t *galaASTTransformer) transformCompositeLiteral(c compositeSrc) (ast.Expr
 							"cannot assign nil to immutable field '%s' — use Option[T] with None() for optional values, or 'var %s' to make it mutable",
 							name, name))
 					}
-					value = t.wrapImmutableFieldValue(value, fieldTypes[name], typeArgSubst)
+					value = t.wrapImmutableFieldValue(value, target.fieldTypes[name], typeArgSubst)
 				}
 			}
 			elts = append(elts, &ast.KeyValueExpr{Key: key, Value: value})
 		} else {
-			// Value only
-			value, err := t.lowerExpr(el.value)
+			// Value only: it fills the i-th field.
+			name := ""
+			if target.isStruct {
+				name = target.positionalField(i)
+			}
+			value, err := t.lowerFieldValue(target, name, el.value)
 			if err != nil {
 				return nil, err
 			}

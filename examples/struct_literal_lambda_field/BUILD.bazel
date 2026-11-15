@@ -1,0 +1,16 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test")
+
+# A lambda filling a function-typed field of a `T{Field: value}` literal
+# (GALA struct, Go struct, named Go func type, nested, cobra) takes its
+# parameter types from the field. It imports a Go bridge package, so it lives
+# in its own package rather than among the single-file examples.
+gala_exec_test(
+    name = "struct_literal_lambda_field",
+    src = "main.gala",
+    expected = "main.out",
+    deps = [
+        "//examples/go_struct_bridge",
+        "//go_interop",
+        "@com_github_spf13_cobra//:cobra",
+    ],
+)
