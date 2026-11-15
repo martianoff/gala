@@ -283,20 +283,19 @@ func (q *qualifier) file(pkg *pkgInfo, f *coreexport.File, unsup *[]Unsupported)
 	out.Decls = nil
 	for _, d := range f.Decls {
 		if imp, ok := d.(*coreexport.Import); ok && q.module[imp.Path] != nil {
-			// An import of a package of the module, used or not (an unused
-			// one is not in pkgs: Go does not import it).
+			// An import of a package of the module: in pkgs, since every
+			// one but a dot import is initialized (importsOf).
 			if imp.Alias == "." {
 				*unsup = append(*unsup, Unsupported{Construct: "dot-import-module", Pos: imp.Pos})
 				continue
 			}
-			if dep := q.pkgs[imp.Path]; dep != nil {
-				switch imp.Alias {
-				case "_":
-				case "":
-					q.aliases[packageName(dep.prog, dep.path)] = dep
-				default:
-					q.aliases[imp.Alias] = dep
-				}
+			dep := q.pkgs[imp.Path]
+			switch imp.Alias {
+			case "_":
+			case "":
+				q.aliases[packageName(dep.prog, dep.path)] = dep
+			default:
+				q.aliases[imp.Alias] = dep
 			}
 			continue
 		}
