@@ -327,8 +327,8 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 			continue
 		}
 		out.Functions = append(out.Functions, docSignat{
-			Name:       bare,
-			Doc:        meta.Doc,
+			Name:        bare,
+			Doc:         meta.Doc,
 			TypeParams:  meta.TypeParams,
 			Params:      inoutParams(meta.ParamNames, meta.ParamTypes, meta.InoutParams),
 			Returns:     typeString(meta.ReturnType),
@@ -384,9 +384,9 @@ func buildDocType(name string, meta *transpiler.TypeMetadata, rich *transpiler.R
 			continue
 		}
 		dt.Methods = append(dt.Methods, docSignat{
-			Name:        methodName,
-			Doc:         m.Doc,
-			TypeParams:  m.TypeParams,
+			Name:          methodName,
+			Doc:           m.Doc,
+			TypeParams:    m.TypeParams,
 			Params:        inoutParams(m.ParamNames, m.ParamTypes, m.InoutParams),
 			Returns:       typeString(m.ReturnType),
 			NonEscaping:   m.Borrow.NonEscapingNames(m.ParamNames),
@@ -440,18 +440,21 @@ func inoutParams(names []string, types []transpiler.Type, inout []bool) []docFie
 		if i >= len(inout) || !inout[i] {
 			continue
 		}
+		out[i].Inout = true
 		if ptr, isPtr := types[i].(transpiler.PointerType); isPtr {
-			out[i].Type, out[i].Inout = typeString(ptr.Elem), true
+			out[i].Type = typeString(ptr.Elem)
 		}
 	}
 	return out
 }
 
+// typeString is ty as GALA source spells it (transpiler.DisplayType): a
+// `Ptr[T]`, a `func(inout T)`, not the Go types they lower to.
 func typeString(ty transpiler.Type) string {
 	if !transpiler.HasResult(ty) {
 		return ""
 	}
-	return ty.String()
+	return transpiler.DisplayType(ty)
 }
 
 // narrowToType reduces the package to a single type.
