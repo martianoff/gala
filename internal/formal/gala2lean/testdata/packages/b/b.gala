@@ -1,0 +1,16 @@
+package b
+
+import "example.com/pk/a"
+
+// Printed when Go initializes package b, after a, which b imports.
+val Ready = a.Say("init b")
+
+// Named like a.State.
+struct State(Name string, Inner a.State)
+
+func Make(name string, n int) State = State(name, a.State(n))
+
+func Grow(s a.Shape) a.Shape = s match {
+    case a.Dot() => a.Box(1)
+    case a.Box(w) => a.Box(w + 1)
+}

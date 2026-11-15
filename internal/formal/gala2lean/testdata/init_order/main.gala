@@ -1,0 +1,15 @@
+package main
+
+import (
+    "example.com/order/b"
+    "example.com/order/c"
+    "example.com/order/f"
+)
+
+// Go initializes a, b, c, f, then main: sorted by import path, each once the
+// packages it imports are. f is used only in a type.
+func size(box f.Box) int = 1
+
+func main() {
+    Println("main", b.Ready, c.Ready)
+}

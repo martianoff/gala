@@ -1,0 +1,6 @@
+package b
+
+import "example.com/order/a"
+
+// b imports a.
+val Ready = a.Say("init b")

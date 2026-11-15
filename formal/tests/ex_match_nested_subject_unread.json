@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -41,6 +41,7 @@
                   "off": 252,
                   "end": 255
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -78,6 +79,7 @@
                   "off": 270,
                   "end": 273
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -100,6 +102,7 @@
                   "off": 277,
                   "end": 280
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -122,6 +125,7 @@
                   "off": 287,
                   "end": 291
                 },
+                "package": "",
                 "name": "bool",
                 "args": []
               },
@@ -136,6 +140,7 @@
               "off": 293,
               "end": 299
             },
+            "package": "",
             "name": "string",
             "args": []
           },
@@ -345,6 +350,7 @@
                   "off": 434,
                   "end": 437
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -367,6 +373,7 @@
                   "off": 441,
                   "end": 444
                 },
+                "package": "",
                 "name": "Box",
                 "args": []
               },
@@ -381,6 +388,7 @@
               "off": 446,
               "end": 449
             },
+            "package": "",
             "name": "int",
             "args": []
           },

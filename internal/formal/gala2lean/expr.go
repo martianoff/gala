@@ -221,12 +221,15 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 		return term{code: ident(x), pure: true}
 	}
 	if g.globalBy[x] != nil {
-		return term{code: fmt.Sprintf("((·.%s) <$> get)", ident(x))}
+		g.use(x)
+		return term{code: fmt.Sprintf("((·.%s) <$> get)", stateField(x))}
 	}
 	if v := g.variants[x]; v != nil && len(v.fields) == 0 {
-		return term{code: ident(v.sealed.Name) + "." + ident(x), pure: true}
+		g.use(v.sealed.Name)
+		return term{code: ident(v.sealed.Name) + "." + ident(v.v.Name), pure: true}
 	}
 	if f := g.funcs[x]; f != nil {
+		g.use(x)
 		if len(f.TypeParams) > 0 {
 			// Its type arguments would be left to Lean, from the context.
 			unsup(e.Pos, "generic-func-value")

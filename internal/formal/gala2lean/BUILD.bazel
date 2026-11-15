@@ -16,6 +16,7 @@ go_library(
         "methods.go",
         "match.go",
         "names.go",
+        "packages.go",
         "program.go",
         "run.go",
         "stats.go",
@@ -25,6 +26,7 @@ go_library(
     importpath = "martianoff/gala/internal/formal/gala2lean",
     visibility = ["//internal/formal:__subpackages__"],
     deps = [
+        "//internal/depman/mod",
         "//internal/formal/coreexport",
         "@rules_go//go/runfiles",
     ],
@@ -34,6 +36,7 @@ go_test(
     name = "gala2lean_test",
     srcs = [
         "gala2lean_test.go",
+        "packages_test.go",
         "helpers_test.go",
     ],
     data = [
@@ -76,6 +79,9 @@ go_test(
         "testdata/*.gala",
         "testdata/*.out",
         "testdata/*.outcome",
+        "testdata/*/**/*.gala",
+        "testdata/*/gala.mod",
+        "testdata/*/main.out",
     ]) + select({
         "//formal:lean_enabled": ["//formal:lean_runtime"],
         "//conditions:default": [],

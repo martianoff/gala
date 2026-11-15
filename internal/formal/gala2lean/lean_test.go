@@ -12,6 +12,8 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/formal/coreexport"
+	"martianoff/gala/internal/formal/coreexport/analyzerhints"
 	"martianoff/gala/internal/formal/gala2lean"
 )
 
@@ -100,4 +102,51 @@ func TestFixturesRunInLean(t *testing.T) {
 		})
 	}
 	require.Greater(t, ran, 10, "too few fixtures translated")
+
+	// gala2lean's multi-package cases: a directory with a gala.mod, its
+	// main package's files, the packages of the module below it, and the
+	// main.out the gala CLI prints for it.
+	for _, mod := range slices.Sorted(maps.Keys(files)) {
+		if path.Base(mod) != "gala.mod" || path.Dir(path.Dir(mod)) != testdata {
+			continue
+		}
+		dir := path.Dir(mod)
+		t.Run(path.Base(dir), func(t *testing.T) {
+			p, deps := exportModule(t, files, dir)
+			res, err := gala2lean.Translate(p, gala2lean.Options{Namespace: "GalaProgram", Main: true, Deps: deps})
+			require.NoError(t, err)
+			r, err := runner.Run(res, 2*time.Minute)
+			require.NoError(t, err)
+			require.Equal(t, gala2lean.RanOK, r.Kind, "%+v", r)
+			require.Equal(t, "ok", r.Outcome)
+			require.Equal(t, files[dir+"/main.out"], r.Stdout)
+		})
+	}
+}
+
+// exportModule exports the program of the module in staged directory dir:
+// its main package (the .gala files directly in dir) and the packages of the
+// module it imports, each a directory below dir, files in path order.
+func exportModule(t *testing.T, files map[string]string, dir string) (*coreexport.Program, []gala2lean.Package) {
+	t.Helper()
+	pkg := func(d string) *coreexport.Program {
+		var srcs []coreexport.Source
+		for _, f := range slices.Sorted(maps.Keys(files)) {
+			if path.Dir(f) == d && strings.HasSuffix(f, ".gala") && !strings.HasSuffix(f, "_test.gala") {
+				srcs = append(srcs, coreexport.Source{Path: strings.TrimPrefix(f, dir+"/"), Text: files[f]})
+			}
+		}
+		require.NotEmpty(t, srcs, "no .gala files in %s", d)
+		p, err := coreexport.Export(srcs, coreexport.Options{LiteralType: analyzerhints.LiteralType})
+		require.NoError(t, err, d)
+		return p
+	}
+	modPath := gala2lean.ModulePath(files[dir+"/gala.mod"])
+	require.NotEmpty(t, modPath)
+	p := pkg(dir)
+	deps, err := gala2lean.ModuleDeps(p, modPath, func(imp string) (*coreexport.Program, error) {
+		return pkg(dir + "/" + strings.TrimPrefix(imp, modPath+"/")), nil
+	})
+	require.NoError(t, err)
+	return p, deps
 }

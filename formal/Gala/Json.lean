@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 7
+def supportedCore : Nat := 8
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -89,6 +89,8 @@ partial def decodeTy (j : Json) : D Ty := do
   -- A generic type (`Option[int]`, Core JSON version 6) is outside the subset, as it was
   -- before version 6 exported its arguments.
   | "type-name" =>
+    -- A type of another package (`package` set) is outside the subset.
+    if !(← str j "package").isEmpty then return .unsupported "qualified-type"
     if (← arr j "args").isEmpty then return .name (← str j "name")
     else return .unsupported "generic-type"
   | "type-func" =>

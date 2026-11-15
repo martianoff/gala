@@ -16,6 +16,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
 	"martianoff/gala/internal/formal/coreexport/analyzerhints"
@@ -27,24 +30,23 @@ func main() {
 	withMain := flag.Bool("main", false, "end the module with a main that runs the program")
 	library := flag.Bool("library", false, "translate a package without a main")
 	stats := flag.Bool("stats", false, "print how many functions translate instead of the Lean")
+	module := flag.String("module", "", "the root of the program's module (its gala.mod): the packages of the module it imports are translated with it")
 	flag.Parse()
 	if flag.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "usage: gala2lean [-namespace N] [-main] <file.gala>...")
+		fmt.Fprintln(os.Stderr, "usage: gala2lean [-namespace N] [-main] [-module DIR] <file.gala>...")
 		os.Exit(2)
 	}
-	srcs := make([]coreexport.Source, 0, flag.NArg())
-	for _, p := range flag.Args() {
-		text, err := os.ReadFile(p)
-		if err != nil {
-			fail(err)
-		}
-		srcs = append(srcs, coreexport.Source{Path: p, Text: string(text)})
-	}
-	doc, err := coreexport.Export(srcs, coreexport.Options{LiteralType: analyzerhints.LiteralType})
+	doc, err := export(flag.Args())
 	if err != nil {
 		fail(err)
 	}
-	res, err := gala2lean.Translate(doc, gala2lean.Options{Namespace: *ns, Main: *withMain, Library: *library})
+	var deps []gala2lean.Package
+	if *module != "" {
+		if deps, err = moduleDeps(doc, *module); err != nil {
+			fail(err)
+		}
+	}
+	res, err := gala2lean.Translate(doc, gala2lean.Options{Namespace: *ns, Main: *withMain, Library: *library, Deps: deps})
 	var u *gala2lean.UnsupportedError
 	if *stats {
 		failed := errors.As(err, &u)
@@ -69,6 +71,48 @@ func main() {
 	}
 }
 
+
+// export reads and exports the .gala files paths.
+func export(paths []string) (*coreexport.Program, error) {
+	srcs := make([]coreexport.Source, 0, len(paths))
+	for _, p := range paths {
+		text, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		srcs = append(srcs, coreexport.Source{Path: p, Text: string(text)})
+	}
+	return coreexport.Export(srcs, coreexport.Options{LiteralType: analyzerhints.LiteralType})
+}
+
+// moduleDeps is the packages of the module rooted at root that p imports,
+// directly or through each other: an import path under the module's path
+// (gala.mod's `module` line) is the directory below root, without its
+// _test.gala files.
+func moduleDeps(p *coreexport.Program, root string) ([]gala2lean.Package, error) {
+	mod, err := os.ReadFile(filepath.Join(root, "gala.mod"))
+	if err != nil {
+		return nil, err
+	}
+	modPath := gala2lean.ModulePath(string(mod))
+	if modPath == "" {
+		return nil, fmt.Errorf("%s: no module line", filepath.Join(root, "gala.mod"))
+	}
+	return gala2lean.ModuleDeps(p, modPath, func(path string) (*coreexport.Program, error) {
+		dir := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(path, modPath+"/")))
+		// filepath.Glob sorts, the order the gala CLI builds a package's
+		// files in, and so Go initializes their variables in.
+		files, err := filepath.Glob(filepath.Join(dir, "*.gala"))
+		if err != nil {
+			return nil, err
+		}
+		files = slices.DeleteFunc(files, func(f string) bool { return strings.HasSuffix(f, "_test.gala") })
+		if len(files) == 0 {
+			return nil, fmt.Errorf("%s: no .gala files for %s", dir, path)
+		}
+		return export(files)
+	})
+}
 
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "gala2lean:", err)

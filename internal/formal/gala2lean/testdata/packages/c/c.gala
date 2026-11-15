@@ -1,0 +1,31 @@
+package c
+
+// Printed when Go initializes package c: after b, whose import path sorts
+// first, although c imports nothing.
+val Ready = say("init c")
+
+// An upper-case package-level value: a stable identifier in a pattern.
+val Max = 10
+
+func say(s string) int {
+    Println(s)
+    0
+}
+
+func Twice(n int) int = n * 2
+
+func value() int = 3
+
+// A pattern binder named like a function of the package binds.
+func Pick(o Option[int]) int = o match {
+    case Some(value) => value
+    case _ => value()
+}
+
+func IsMax(n int) string = n match {
+    case Max => "max"
+    case _ => "other"
+}
+
+// A parameter named like the package: c below is the parameter.
+func Plus(c int) int = c + Twice(c)

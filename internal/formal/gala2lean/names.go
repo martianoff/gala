@@ -1,5 +1,7 @@
 package gala2lean
 
+import "strings"
+
 // Names. A GALA identifier keeps its spelling in Lean unless Lean would read
 // it differently: a Lean keyword is written «x», and a name the generated
 // code or Lean itself relies on (pure, get, Int64, a constructor's rec, ...)
@@ -62,8 +64,23 @@ var leanReserved = map[string]bool{
 	"sizeOf_spec": true, "ext": true, "ext_iff": true, "eta": true,
 }
 
-// ident is GALA identifier x as a Lean identifier.
+// stateField is the name of package-level variable x's field in the program
+// state. A field name is one identifier, so a variable of another package,
+// `atn.Ready`, is the one identifier «atn.Ready».
+func stateField(x string) string {
+	if strings.Contains(x, ".") {
+		return "«" + x + "»"
+	}
+	return ident(x)
+}
+
+// ident is GALA identifier x as a Lean identifier. A declaration of another
+// package of the module is named `pkg.X` (packages.go), each part an
+// identifier of its own: the package's namespace, then the name.
 func ident(x string) string {
+	if pkg, name, ok := strings.Cut(x, "."); ok {
+		return ident(pkg) + "." + ident(name)
+	}
 	switch {
 	case leanKeywords[x]:
 		return "«" + x + "»"

@@ -15,6 +15,11 @@ func (g *gen) leanType(t coreexport.Node) string {
 	case nil:
 		return "Unit"
 	case *coreexport.TypeName:
+		if t.Package != "" {
+			// A type of a package outside the module, or one the
+			// translation was not given (Options.Deps).
+			unsup(t.Pos, "qualified-type")
+		}
 		if len(t.Args) == 0 {
 			if lt, ok := g.typeArg(t.Name, t.Pos); ok {
 				return lt
@@ -46,6 +51,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 			return "Bool"
 		}
 		if g.declaredType(t.Name) {
+			g.use(t.Name)
 			return ident(t.Name)
 		}
 		unsup(t.Pos, "type-%s", t.Name)
@@ -60,7 +66,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 
 // typeName is the name of a plain type, "" for any other.
 func typeName(t coreexport.Node) string {
-	if n, ok := t.(*coreexport.TypeName); ok && len(n.Args) == 0 {
+	if n, ok := t.(*coreexport.TypeName); ok && len(n.Args) == 0 && n.Package == "" {
 		return n.Name
 	}
 	return ""
@@ -181,7 +187,11 @@ func funcTypeNames(t *coreexport.TypeFunc) []string {
 func typeNamesIn(t coreexport.Node) []string {
 	switch t := t.(type) {
 	case *coreexport.TypeName:
-		out := []string{t.Name}
+		var out []string
+		if t.Package == "" {
+			// A type of another package is no type of the program's.
+			out = append(out, t.Name)
+		}
 		for _, a := range t.Args {
 			out = append(out, typeNamesIn(a)...)
 		}
@@ -208,7 +218,7 @@ func (g *gen) typeOrder() {
 			nested := "nested-recursive-type"
 			switch t := f.Type.(type) {
 			case *coreexport.TypeName:
-				if t.Name != n && !g.isTypeParamOf(n, t.Name) {
+				if t.Package == "" && t.Name != n && !g.isTypeParamOf(n, t.Name) {
 					deps[n] = append(deps[n], t.Name)
 				}
 				for _, a := range t.Args {
@@ -275,22 +285,27 @@ func (g *gen) typeFields(n string) []*coreexport.Field {
 // The types holding a function come apart (fnTypes): a function is an action
 // over the program state, so they follow the state, which may hold only the
 // others.
-func (g *gen) typeDecls() (plain, fnTypes string) {
+func (g *gen) typeDecls() (plain, fnTypes string, ok bool) {
 	var b, f strings.Builder
+	ok = true
 	for _, n := range g.typeNames {
 		var d string
-		if s := g.structs[n]; s != nil {
-			d = g.structDecl(s)
-		} else {
-			d = g.sealedDecl(g.sealeds[n])
-		}
+		// Each type is reported as a declaration of its own, so that what
+		// uses it can be told apart from what does not (reach).
+		ok = g.guard(n, func() {
+			if s := g.structs[n]; s != nil {
+				d = g.structDecl(s)
+			} else {
+				d = g.sealedDecl(g.sealeds[n])
+			}
+		}) && ok
 		if g.noBEq[n] {
 			f.WriteString(d)
 		} else {
 			b.WriteString(d)
 		}
 	}
-	return b.String(), f.String()
+	return b.String(), f.String(), ok
 }
 
 // stateType checks that a value of Lean type t, a package-level variable or
@@ -386,7 +401,7 @@ func (g *gen) structDeclIn(s *coreexport.Struct, tps []typeParam) string {
 	show := `"{" ++ " ".intercalate [` + strings.Join(plain, ", ") + `] ++ "}"`
 	generated := s.Shorthand && !hasString
 	if generated {
-		show = fmt.Sprintf(`"%s(" ++ ", ".intercalate [%s] ++ ")"`, s.Name, strings.Join(shows, ", "))
+		show = fmt.Sprintf(`"%s(" ++ ", ".intercalate [%s] ++ ")"`, bareName(s.Name), strings.Join(shows, ", "))
 	}
 	if g.directFn(fields) && (!generated || g.rawPrinted()[s.Name]) || unprintable {
 		g.unprintable[s.Name] = true

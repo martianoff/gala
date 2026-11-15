@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -41,6 +41,7 @@
                   "off": 27,
                   "end": 30
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -72,6 +73,7 @@
                       "off": 39,
                       "end": 42
                     },
+                    "package": "",
                     "name": "int",
                     "args": []
                   }
@@ -84,6 +86,7 @@
                     "off": 44,
                     "end": 47
                   },
+                  "package": "",
                   "name": "int",
                   "args": []
                 }
@@ -99,6 +102,7 @@
               "off": 49,
               "end": 52
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -163,6 +167,7 @@
                   "off": 74,
                   "end": 77
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -186,6 +191,7 @@
                   "off": 86,
                   "end": 89
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               }
@@ -207,6 +213,7 @@
                   "off": 98,
                   "end": 101
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               }
@@ -238,6 +245,7 @@
                     "off": 107,
                     "end": 110
                   },
+                  "package": "",
                   "name": "int",
                   "args": []
                 },
@@ -350,6 +358,7 @@
                             "off": 158,
                             "end": 161
                           },
+                          "package": "",
                           "name": "int",
                           "args": []
                         },
@@ -430,6 +439,7 @@
                             "off": 189,
                             "end": 192
                           },
+                          "package": "",
                           "name": "int",
                           "args": []
                         },
@@ -452,6 +462,7 @@
                             "off": 196,
                             "end": 199
                           },
+                          "package": "",
                           "name": "int",
                           "args": []
                         },
@@ -466,6 +477,7 @@
                         "off": 201,
                         "end": 204
                       },
+                      "package": "",
                       "name": "int",
                       "args": []
                     },

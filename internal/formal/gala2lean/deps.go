@@ -43,7 +43,7 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 		}
 		return
 	case *coreexport.PatName:
-		if !bound[n.Name] && g.globalBy[n.Name] != nil && isUpper(n.Name) {
+		if !bound[n.Name] && g.globalBy[n.Name] != nil && isUpper(bareName(n.Name)) {
 			out[n.Name] = true
 		}
 		return
@@ -178,6 +178,43 @@ func walkChildren(n coreexport.Node, f func(coreexport.Node)) {
 	}
 }
 
+// mapChildren is a copy of n with each direct child c replaced by f(c).
+func mapChildren(n coreexport.Node, f func(coreexport.Node) coreexport.Node) coreexport.Node {
+	v := reflect.ValueOf(n)
+	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		return n
+	}
+	c := reflect.New(v.Elem().Type())
+	c.Elem().Set(v.Elem())
+	cv := c.Elem()
+	for i := range cv.NumField() {
+		fv := cv.Field(i)
+		switch {
+		case fv.Type() == nodeType:
+			if !fv.IsNil() {
+				if r := f(fv.Interface().(coreexport.Node)); r != nil {
+					fv.Set(reflect.ValueOf(r))
+				} else {
+					fv.Set(reflect.Zero(nodeType))
+				}
+			}
+		case fv.Kind() == reflect.Slice && fv.Type().Elem() == nodeType:
+			s := reflect.MakeSlice(fv.Type(), fv.Len(), fv.Len())
+			for j := range fv.Len() {
+				el := fv.Index(j)
+				if el.IsNil() {
+					continue
+				}
+				if r := f(el.Interface().(coreexport.Node)); r != nil {
+					s.Index(j).Set(reflect.ValueOf(r))
+				}
+			}
+			fv.Set(s)
+		}
+	}
+	return c.Interface().(coreexport.Node)
+}
+
 func bindAll(m map[string]bool, names []string) {
 	for _, n := range names {
 		m[n] = true
@@ -188,7 +225,7 @@ func bindAll(m map[string]bool, names []string) {
 func (g *gen) patBinders(p coreexport.Node, m map[string]bool) {
 	switch p := p.(type) {
 	case *coreexport.PatName:
-		if g.variants[p.Name] == nil && !(isUpper(p.Name) && g.globalBy[p.Name] != nil) {
+		if g.variants[p.Name] == nil && !(isUpper(bareName(p.Name)) && g.globalBy[p.Name] != nil) {
 			m[p.Name] = true
 		}
 	case *coreexport.PatTuple:

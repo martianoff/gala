@@ -1,0 +1,29 @@
+package main
+
+import (
+    "example.com/pk/a"
+    "example.com/pk/b"
+    "example.com/pk/c"
+    "example.com/pk/d"
+)
+
+// Packages of the module: their types and functions, the order Go
+// initializes them in (a, b, c, d: sorted by import path, each after what it
+// imports), and printing that shows no package name.
+
+val mine = a.Say("init main")
+
+func area(a int) int = a * a // a parameter named like package a hides it
+
+func main() {
+    val s1 = a.State(1)
+    val s2 = b.Make("x", 1)
+    Println(s1, s2, s1 == s2.Inner, s2 == b.Make("x", 2))
+    val shapes = (a.Dot(), b.Grow(a.Dot()), b.Grow(a.Box(2)))
+    Println(shapes, a.Area(shapes.V3))
+    Println(a.Hold(3, a.Box(4)), a.Hold(0, a.Dot()))
+    Println(area(5), c.Twice(4), d.Sum())
+    Println(c.Pick(Some(5)), c.Pick(None()), c.IsMax(10), c.IsMax(9), c.Plus(2))
+    val c = 7 // a local named like package c hides it
+    Println(c + 1)
+}

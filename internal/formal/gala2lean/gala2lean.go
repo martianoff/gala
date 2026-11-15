@@ -62,6 +62,9 @@ type Options struct {
 	// initialization then runs no main. For measuring how much of a library
 	// translates.
 	Library bool
+	// Deps are the packages of the program's module that it imports,
+	// directly or through each other (packages.go).
+	Deps []Package
 }
 
 // Unsupported is one construct the translation does not cover.
@@ -149,14 +152,23 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	if p.Core != coreexport.Version {
 		return nil, fmt.Errorf("gala2lean: Core JSON version %d, want %d", p.Core, coreexport.Version)
 	}
+	for _, d := range opts.Deps {
+		if d.Program.Core != coreexport.Version {
+			return nil, fmt.Errorf("gala2lean: Core JSON version %d of %s, want %d", d.Program.Core, d.Path, coreexport.Version)
+		}
+	}
+	p, depUnsup, depNS := mergePackages(p, opts.Deps)
 	g := newGen()
+	g.depNS = depNS
 	g.library = opts.Library
 	g.ns = opts.Namespace
+	g.unsup = depUnsup
 	g.collect(p)
 	g.findBoxes(p)
 	// Every declaration is translated even after one failed, so that every
 	// construct outside the subset is reported.
 	g.emitProgram(opts)
+	g.attributeReach(p)
 	if len(g.unsup) > 0 {
 		return nil, &UnsupportedError{Items: g.unsup}
 	}
@@ -179,6 +191,7 @@ func unsup(pos coreexport.Pos, format string, a ...any) {
 func (g *gen) guard(decl string, f func()) bool {
 	// A translation stopped midway leaves no state behind for the next.
 	g.qualify, g.inDefault, g.tparams, g.cmpParams = false, map[string]bool{}, nil, nil
+	g.cur = decl
 	_, u := attempt(func() struct{} { f(); return struct{}{} })
 	if u != nil {
 		g.unsup = append(g.unsup, Unsupported{Decl: decl, Construct: u.construct, Pos: u.pos})

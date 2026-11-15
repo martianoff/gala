@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -120,6 +120,7 @@
                   "off": 63,
                   "end": 66
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -134,6 +135,7 @@
               "off": 68,
               "end": 74
             },
+            "package": "",
             "name": "string",
             "args": []
           },
@@ -314,6 +316,7 @@
               "off": 181,
               "end": 184
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -421,6 +424,7 @@
               "off": 241,
               "end": 244
             },
+            "package": "",
             "name": "int",
             "args": []
           },

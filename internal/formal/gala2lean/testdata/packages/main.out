@@ -1,0 +1,12 @@
+init a
+init b
+init c
+init d, first file
+init d, second file
+init main
+State(1) State(x, State(1)) true false
+(Dot(), Box(1), Box(3)) 9
+{{3} {{{4} 2}}} {{0} {{{0} 1}}}
+25 8 2
+5 3 max other 6
+8

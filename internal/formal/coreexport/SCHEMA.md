@@ -1,4 +1,4 @@
-# Core JSON, version 7
+# Core JSON, version 8
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 7,
+  "core": 8,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -155,7 +155,7 @@ line of an `import ( ... )` block.
 
 ```json
 { "kind": "var", "pos": "…", "names": ["d"], "destructure": false,
-  "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] }, "values": [] }
+  "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] }, "values": [] }
 ```
 
 ### `func`
@@ -173,8 +173,8 @@ A function declaration, at top level or in a block, or a method.
 
 ```json
 { "kind": "func", "pos": "…", "name": "id", "receiver": null, "type-params": [], "params": [ { "kind": "param", "pos": "…", "name": "n",
-  "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] } } ],
-  "result": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
+  "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] } } ],
+  "result": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
   "body": { "kind": "name", "pos": "…", "name": "n" } }
 ```
 
@@ -190,7 +190,7 @@ A method's receiver, `(c Counter)`, `(c *Counter)` or `(inout c Counter)`. A rec
 - `inout` (bool, omitted when false): true for an `inout` receiver, `(inout c Counter)`.
 
 ```json
-{ "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "name": "Counter", "args": [] },
+{ "kind": "receiver", "pos": "…", "name": "c", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "Counter", "args": [] },
   "pointer": true }
 ```
 
@@ -203,7 +203,7 @@ type.
 - `constraint` (type): the constraint as written; `any` is a `type-name`.
 
 ```json
-{ "kind": "type-param", "pos": "…", "name": "T", "constraint": { "kind": "type-name", "pos": "…", "name": "any", "args": [] } }
+{ "kind": "type-param", "pos": "…", "name": "T", "constraint": { "kind": "type-name", "pos": "…", "package": "", "name": "any", "args": [] } }
 ```
 
 ### `param`
@@ -217,7 +217,7 @@ unsupported.
   the spec decides where and when it is evaluated.
 
 ```json
-{ "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
+{ "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
   "default": null }
 ```
 
@@ -233,7 +233,7 @@ unsupported.
 
 ```json
 { "kind": "struct", "pos": "…", "name": "Pair", "type-params": [], "shorthand": true, "fields": [
-  { "kind": "field", "pos": "…", "name": "Left", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
+  { "kind": "field", "pos": "…", "name": "Left", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
     "mutable": false, "default": null } ] }
 ```
 
@@ -248,7 +248,7 @@ A field of a struct or of a sealed variant.
   variant's field, `Tries int = 3`.
 
 ```json
-{ "kind": "field", "pos": "…", "name": "Y", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
+{ "kind": "field", "pos": "…", "name": "Y", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
   "mutable": true, "default": null }
 ```
 
@@ -275,23 +275,26 @@ One `case` of a sealed type. `case Empty` and `case Empty()` are the same varian
 
 ```json
 { "kind": "variant", "pos": "…", "name": "Circle", "default": false, "fields": [
-  { "kind": "field", "pos": "…", "name": "Radius", "type": { "kind": "type-name", "pos": "…", "name": "int", "args": [] },
+  { "kind": "field", "pos": "…", "name": "Radius", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
     "mutable": false, "default": null } ] }
 ```
 
 ### `type-name`
 
 A type written as a name, with type arguments when generic: `int`, `Point`,
-`Option[int]`, `Array[T]`. Qualified types (generic ones too, `lib.Box[int]`), slice,
-pointer and map types are unsupported; a
-function type is a [`type-func`](#type-func).
+`Option[int]`, `Array[T]`, and a type of another package, `lib.Box[int]`. A longer
+qualified name, slice, pointer and map types are unsupported; a function type is a
+[`type-func`](#type-func).
 
+- `package` (string): the qualifier as written, `lib` in `lib.Box`, `""` for none. It is
+  the import's alias as the source spells it, not resolved to a package: a consumer
+  resolves it with the file's imports.
 - `name` (string).
 - `args` (list of types): the type arguments, `[]` for none. Not resolved or inferred:
   only what is written.
 
 ```json
-{ "kind": "type-name", "pos": "…", "name": "Option", "args": [ { "kind": "type-name", "pos": "…", "name": "int", "args": [] } ] }
+{ "kind": "type-name", "pos": "…", "package": "", "name": "Option", "args": [ { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] } ] }
 ```
 
 ### `block`
@@ -603,8 +606,8 @@ A function type, `func(int, string) bool` (S2). A parameter written with a name,
 - `result` (type or null): null for a function without a result.
 
 ```json
-{ "kind": "type-func", "pos": "…", "params": [ { "kind": "type-name", "pos": "…", "name": "int", "args": [] } ],
-  "result": { "kind": "type-name", "pos": "…", "name": "bool", "args": [] } }
+{ "kind": "type-func", "pos": "…", "params": [ { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] } ],
+  "result": { "kind": "type-name", "pos": "…", "package": "", "name": "bool", "args": [] } }
 ```
 
 ### `interp`
@@ -674,7 +677,7 @@ Every name an `unsupported` node can carry.
 | `format-string` | `f"..."` |
 | `interpolated-escape` | an embedded expression written with a backslash, such as an escaped quote, `s"${f(\"a\")}"` |
 | `string-escape` | a string literal whose escapes Go does not accept |
-| `qualified-type` | a type from another package, `pkg.T` |
+| `qualified-type` | a type named by a qualified name of more than two parts, `a.b.T` |
 | `slice-type` | `[]T` |
 | `pointer-type` | `*T` |
 | `map-type` | `map[K]V` |

@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 7
+const Version = 8
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -175,7 +175,10 @@ type Variant struct {
 // TypeName is a type written as a plain name, such as `int` or `Point`.
 type TypeName struct {
 	Meta
-	Name string `json:"name"`
+	// Package is the qualifier as written, `lib` in `lib.Box`, "" for none.
+	// It is the import's alias as the source spells it, not resolved.
+	Package string `json:"package"`
+	Name    string `json:"name"`
 	// Args are the type arguments, `Option[int]`; empty for none.
 	Args []Node `json:"args"`
 }

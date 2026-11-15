@@ -1,5 +1,5 @@
 {
-  "core": 7,
+  "core": 8,
   "files": [
     {
       "kind": "file",
@@ -41,6 +41,7 @@
                   "off": 35,
                   "end": 38
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -75,6 +76,7 @@
                 "off": 49,
                 "end": 56
               },
+              "package": "",
               "name": "Counter",
               "args": []
             },
@@ -90,6 +92,7 @@
               "off": 64,
               "end": 67
             },
+            "package": "",
             "name": "int",
             "args": []
           },
@@ -140,6 +143,7 @@
                 "off": 84,
                 "end": 91
               },
+              "package": "",
               "name": "Counter",
               "args": []
             },
@@ -164,6 +168,7 @@
                   "off": 100,
                   "end": 103
                 },
+                "package": "",
                 "name": "int",
                 "args": []
               },
@@ -283,6 +288,7 @@
                 "off": 137,
                 "end": 149
               },
+              "package": "",
               "name": "Ptr",
               "args": [
                 {
@@ -293,6 +299,7 @@
                     "off": 141,
                     "end": 148
                   },
+                  "package": "",
                   "name": "Counter",
                   "args": []
                 }
