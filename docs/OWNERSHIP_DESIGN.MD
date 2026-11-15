@@ -872,15 +872,15 @@ build.
 #### 3.3.7 Diagnostics
 
 Phase 3 mostly relaxes existing checks, so it needs few new codes. The codes from
-`GALA-E0117` on are free: master and the open pull requests stop at E0116.
+`GALA-E0118` on are free: E0117 is taken by Go function literals.
 
 | Code | Change |
 |---|---|
 | [GALA-E0113](errors/GALA-E0113.md) | Accepts a capture by a non-escaping closure. Its message says why a parameter escapes ("`f` of `Cache.OnMiss` escapes: it is stored at cache.gala:41"). |
 | [GALA-E0112](errors/GALA-E0112.md) | Unchanged. It already covers a lambda argument that reads a place lent by the same call. Its page gains a phase 3 example. |
 | [GALA-E0115](errors/GALA-E0115.md) | Unchanged. |
-| E0117 (only if Q20 chooses a declaration) | A parameter declared non-escaping escapes in the body: it is stored, returned, or passed to an escaping parameter. |
-| E0118 (only if Q21 chooses option b) | A local function value that captures a lent place is used other than by a call or a non-escaping argument. |
+| E0118 (only if Q20 chooses a declaration) | A parameter declared non-escaping escapes in the body: it is stored, returned, or passed to an escaping parameter. |
+| E0119 (only if Q21 chooses option b) | A local function value that captures a lent place is used other than by a call or a non-escaping argument. |
 
 If Q20 and Q21 keep the recommended answers, no new code is needed.
 
@@ -1367,8 +1367,8 @@ The maintainer answered Q19–Q26 on 2026-11-14 and took every recommendation.
 | # | Question | Options | Recommendation |
 |---|---|---|---|
 | Q19 | When should phase 3 be built? The measured gain in `gala2lean -stats` is 0 until gala2lean translates immutable collections, `Option`, types from other packages and `Ptr[T]` receivers. | (a) Build all of it now. (b) Wait for those prerequisites. (c) Build the analysis now (PRs 3a and 3b: no language change), and build the language change (3c) and the translation (3e) after the prerequisites. | **(c).** 3a and 3b are cheap, and they make `COVERAGE.md` show the real phase 3 reasons. The language relaxation has no user asking for it yet. |
-| Q20 | Exported functions: should non-escaping parameters stay inferred (decision Q6), or be declared? With inference, a library that starts storing a callback breaks callers that capture `inout` places, and the signature does not change. | (a) Inferred everywhere, as Q6 decided. (b) Inferred, and shown in hover and `gala doc`, so a change is visible. (c) A declared marker on parameters of exported functions, checked by E0117. | **(b).** It keeps Q6 and adds no syntax. Revisit if a downstream library breaks. |
-| Q21 | Is a closure bound to a local `val` (`val visit = (c) => …`) non-escaping when it is only called or passed to non-escaping parameters? galop has 6 such closures. All 6 are also blocked by mutable collections. | (a) No: such a closure escapes, as in Swift. (b) Yes, with E0118 when it is used otherwise. (c) Decide later. | **(a).** No measured function needs it. |
+| Q20 | Exported functions: should non-escaping parameters stay inferred (decision Q6), or be declared? With inference, a library that starts storing a callback breaks callers that capture `inout` places, and the signature does not change. | (a) Inferred everywhere, as Q6 decided. (b) Inferred, and shown in hover and `gala doc`, so a change is visible. (c) A declared marker on parameters of exported functions, checked by E0118. | **(b).** It keeps Q6 and adds no syntax. Revisit if a downstream library breaks. |
+| Q21 | Is a closure bound to a local `val` (`val visit = (c) => …`) non-escaping when it is only called or passed to non-escaping parameters? galop has 6 such closures. All 6 are also blocked by mutable collections. | (a) No: such a closure escapes, as in Swift. (b) Yes, with E0119 when it is used otherwise. (c) Decide later. | **(a).** No measured function needs it. |
 | Q22 | May a function type, or an interface method, declare a non-escaping parameter, so that calls through function values can lend places? | (a) No: a call with no summary escapes. (b) Yes, with a modifier on function types. | **(a).** No measured case needs it, and it adds a type-level concept. |
 | Q23 | Which Lean shape should gala2lean use for a lent place captured by a closure? | (A) `StateT` with monad-generic std models. (B) A scoped cell: copy in, translate the closure against the cell, read back, under the seven conditions of 3.3.6. (C) Explicit state threading with accumulating std models. | **B.** It reuses gala2lean's captured-`var` cells and needs no new std models. The math expert agreed, on condition that the doc state B as argued and tested, not proved. A theorem "B agrees with C" waits for galaspec's `Ptr` heap model. |
 | Q24 | `Try`: should a read-only capture of an `inout` place be allowed in a `Try` thunk? | (a) No: E0115 stays as it is (Q5). (b) Allow reads, and forbid only writes. | **(a).** Nothing measured needs it. |

@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "docs.go",
         "expr_native.go",
+        "go_func_literal.go",
         "native_errors.go",
         "native_lex.go",
         "native_tree.go",
@@ -35,6 +36,7 @@ go_test(
         "docs_test.go",
         "empty_line_unicode_test.go",
         "fuzz_test.go",
+        "go_func_literal_test.go",
         "go_type_in_expression_test.go",
         "golden_test.go",
         "grammar_test.go",

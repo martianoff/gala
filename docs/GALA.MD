@@ -2556,7 +2556,7 @@ Supported unary operators: `+`, `-`, `!`, `^`, `*` (dereference), `&` (address-o
 ## 7. Functional Features
 
 ### Lambda Expressions
-Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods, or to a val, var or parameter of function type). The parameter list is always parenthesized, including for a single parameter — a bare `x => e` is [GALA-E0042](errors/GALA-E0042.md).
+Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods, or to a val, var or parameter of function type). The parameter list is always parenthesized, including for a single parameter — a bare `x => e` is [GALA-E0042](errors/GALA-E0042.md). A lambda is the only function value: Go's function literal, `func(x int) int { ... }`, is [GALA-E0117](errors/GALA-E0117.md), and is written `(x int) int => { ... }`.
 
 ```gala
 // Explicit parameter types

@@ -1892,6 +1892,29 @@ func main() {
 			},
 		},
 		{
+			name: "Go function literal as a struct literal field",
+			code: galaerr.CodeGoFuncLiteral, // GALA-E0117
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Command struct {
+    Use string
+    RunE func(*Command, []string) error
+}
+
+func main() {
+    val cmd = &Command{
+        Use: "checksum",
+        RunE: func(*Command, []string) error {
+            return nil
+        },
+    }
+    Println(cmd.Use)
+}
+`)
+			},
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {
