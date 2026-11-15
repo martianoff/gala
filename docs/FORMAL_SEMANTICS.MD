@@ -213,7 +213,7 @@ guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
 
 | # | Statement (informal) | Guards against | Milestone |
 |---|---|---|---|
-| T1 | **Fuel adequacy and monotonicity:** if a run with fuel `n` ends in anything but `fuel`, every run with more fuel ends the same way and prints the same output. (Plain determinism holds of any Lean function and says nothing.) | an `AGREE` or `INCONCLUSIVE` verdict that means something else | M1 |
+| T1 | **Fuel adequacy and monotonicity:** if a run with fuel `n` ends in anything but `fuel`, every run with more fuel ends the same way and prints the same output. (Plain determinism holds of any Lean function and says nothing.) | an `AGREE` or `DISAGREE` verdict that changes with more fuel | M1 |
 | T2 | **Alpha-invariance:** a capture-avoiding renaming of bound variables does not change the output or the outcome (see M2 for the side conditions). | #996, #997, #999, #1002 | M2 |
 | T3 | **Left-to-right**, stated on what a program does, not on the evaluator's definition: the output and effects of an operand list, a call (named arguments included), a compound assignment and a pattern are those of its parts, in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 | M2 |
 | T4 | **Default arguments** are evaluated in the callee's scope, with earlier parameters bound. | #999 | M2 |
@@ -248,8 +248,8 @@ column lists what each milestone's claim rests on beyond them.
 - **Statement:** for every program `p` and fuels `n ≤ m`, if `(run p n).1` is not
   `.fuel` then `run p m = run p n`. `run` passes the same number to `runM` as the
   recursion depth of `eval` and as its step count, so the lemma for each function of
-  `eval`'s mutual block says: more depth and more steps give the same result and the
-  same final state, except for the steps left.
+  `eval`'s mutual block says: unless the smaller budget ran out, more depth and more
+  steps give the same result and the same final state, except for the steps left.
 - **What it gives:** an `AGREE` or `DISAGREE` verdict is about the program's meaning, not
   about the budget the harness chose. It says nothing about a run that ends in `fuel`:
   `INCONCLUSIVE` stays inconclusive, since more fuel might end it any way.
@@ -631,7 +631,7 @@ gantt
     dateFormat  YYYY-MM-DD
     axisFormat  %b %Y
     section Trust the oracle
-    M1 fuel adequacy                         :m1, 2026-11-23, 21d
+    M1 fuel adequacy                         :done, m1, 2026-11-15, 1d
     M2 alpha-invariance, T3, T4              :m2, after m1, 49d
     section Link to the transformer
     M3 match lowering against galaspec       :m3, after m2, 28d

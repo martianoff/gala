@@ -7,8 +7,12 @@
   * **Outcomes.** A run ends `ok`, in a `panic` of a class (`match`, `divide`, `index`,
     `other`), or out of `fuel`. Errors are values (`Stop`), never crashes. A construct
     outside S1 ends the run as `unsupported`, when execution reaches it.
-  * **Fuel.** Every evaluation step costs one unit; a run that uses them all ends `fuel`,
-    which says nothing about the program.
+  * **Fuel.** Every evaluation step costs one unit (`tick`), and `eval`'s nesting is
+    bounded by the same number; a run that uses either up ends `fuel`, which says
+    nothing about the program. Any other ending does not depend on the fuel
+    (`run_fuel_adequate`, Gala/Fuel.lean). That proof needs `tick` to be the only code
+    that reads or spends steps (the rest runs in `H`, below) and every handler of a
+    `Stop` to pass `fuel` on.
   * **Evaluation order** (docs/GALA.MD, "Evaluation Order"; docs/FORMAL_SEMANTICS.MD,
     "Decisions the spec forces"): strictly left to right. Operands, call arguments,
     tuple elements, constructor arguments and the parts of an interpolated string `s"..."`
@@ -86,7 +90,7 @@ abbrev M := ExceptT Stop (StateM St)
 abbrev H := ExceptT Stop (StateM Core)
 
 /-- Run a step that does not count steps on the state's `Core`. -/
-def liftH (x : H α) : M α := ExceptT.mk fun s =>
+@[inline] def liftH (x : H α) : M α := ExceptT.mk fun s =>
   -- Take `s` apart first, so that `x` holds the only reference to the heap and the
   -- output and updates them in place.
   let n := s.steps
@@ -96,10 +100,10 @@ def liftH (x : H α) : M α := ExceptT.mk fun s =>
 instance : MonadLift H M := ⟨liftH⟩
 
 /-- The state a program sees. -/
-def getCore : H Core := get
+@[inline] def getCore : H Core := get
 
 /-- Change the state a program sees. -/
-def modifyCore (f : Core → Core) : H Unit := modify f
+@[inline] def modifyCore (f : Core → Core) : H Unit := modify f
 
 /-- How a run ends. -/
 inductive Outcome
