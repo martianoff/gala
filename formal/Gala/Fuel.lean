@@ -140,7 +140,11 @@ theorem sim_tryCatch {k : Nat} {x y : M α} {h h' : Stop → M α} (hx : Sim k x
 Each function's `Sim` follows from its definition part by part: the lemmas above, and the
 induction hypotheses `ihE`, `ihL`, ... (one per function the definition calls, at the
 depth it calls it). `sim_step` takes one such step; `split` follows an `if` or `match`,
-which is the same on both sides. -/
+which is the same on both sides.
+
+The hypotheses are named, and `sim_step` applies them by name, rather than through
+`apply_assumption`: that also tries every hypothesis ending in `False` (a negated `if`
+condition) and unfolds whole definitions while unifying, and does not finish. -/
 
 set_option hygiene false in
 /-- One step of relating two runs of the same code: `Sim` of a part, by the lemmas above
@@ -185,7 +189,6 @@ theorem eval_sim (ds : Decls) (k : Nat) :
     have h : d ≤ d' := by omega
     have ihE := fun e => eval_sim ds k d d' e h
     have ihL := fun es => evalList_sim ds k d d' es h
-    have ihB := fun ns ts dfs fs as => bindArgs_sim ds k d d' ns ts dfs fs as h
     have ihFA := fun f as => funcArgs_sim ds k d d' f as h
     have ihFi := fun fs as => fieldArgs_sim ds k d d' fs as h
     have ihCV := fun v as => callValue_sim ds k d d' v as h
@@ -193,7 +196,6 @@ theorem eval_sim (ds : Decls) (k : Nat) :
     have ihC := fun v cs => evalCases_sim ds k d d' v cs h
     have ihD := fun ns b t vs => declare_sim ds k d d' ns b t vs h
     have ihCF := fun f vs => callFunc_sim ds k d d' f vs h
-    have ihR := fun fr b => runIn_sim ds k d d' fr b h
     rw [eval.eq_def ds (d + 1) e, eval.eq_def ds (d' + 1) e]
     refine sim_bind sim_tick fun _ => ?_
     split

@@ -616,8 +616,9 @@ To keep our obligations at zero:
 
 ## Plan
 
-Done so far: M1 (T1, fuel adequacy), the metamorphic generators, the Core JSON exporter, galaspec for S1 and part
-of S2, the differential harness over `examples/`, gala2lean, and the match lowering model.
+Done so far: M1 (T1, fuel adequacy), the metamorphic generators, the Core JSON exporter,
+galaspec for S1 and part of S2, the differential harness over `examples/`, gala2lean, and
+the match lowering model.
 The estimates are in weeks of one maintainer working with AI agents, and the chart runs
 the proof milestones one after another (M3 needs only M1, so M2 and M3 could overlap with
 a second person). The spec-coverage lane, the rest of S2 and S3 in galaspec and

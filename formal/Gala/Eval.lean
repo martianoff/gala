@@ -87,8 +87,11 @@ abbrev H := ExceptT Stop (StateM Core)
 
 /-- Run a step that does not count steps on the state's `Core`. -/
 def liftH (x : H α) : M α := ExceptT.mk fun s =>
+  -- Take `s` apart first, so that `x` holds the only reference to the heap and the
+  -- output and updates them in place.
+  let n := s.steps
   let (r, c) := x.run.run s.toCore
-  (r, { s with toCore := c })
+  (r, { toCore := c, steps := n })
 
 instance : MonadLift H M := ⟨liftH⟩
 
