@@ -1213,6 +1213,8 @@ They must reach a loop written around them in the same function. Outside any loo
 
 ### Lambda Expressions
 
+A lambda is the only function value: Go's function literal, `func(x int) int { ... }`, is [GALA-E0117](/docs/errors/gala-e0117/), and is written `(x int) int => { ... }`.
+
 <!-- doc-check: fragment -->
 ```gala
 val f = (x int) => x * x

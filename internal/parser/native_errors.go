@@ -26,7 +26,18 @@ import (
 // After the last parse error, those the parse read up to come (tree.Read);
 // the rest the parse never reaches, as when an expression's parse stops
 // before them, and they are not reported.
+//
+// The Go function literals of the tree (GALA-E0117, goFuncLiterals) are
+// merged in by position, so a literal leads the syntax errors of its body.
 func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError) []error {
+	if tree == nil {
+		return nativeParseErrors(tree, ts, parseErrs)
+	}
+	return mergeByPosition(nativeParseErrors(tree, ts, parseErrs), goFuncLiterals(tree))
+}
+
+// nativeParseErrors is the lexical and parse errors of nativeSyntaxErrors.
+func nativeParseErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError) []error {
 	if len(parseErrs) == 0 && len(ts.Errors) == 0 {
 		return nil
 	}

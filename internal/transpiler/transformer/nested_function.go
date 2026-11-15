@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 )
 
 // nestedFunc is a function declaration in a body: its name, where it starts,
@@ -73,16 +74,11 @@ func lambdaSignatureOf(sig sigSrc) lambdaSignature {
 	for _, p := range sig.params() {
 		out.hasDefault = out.hasDefault || p.hasDefault
 		out.partial = out.partial || !p.nameAt.ok() || !p.typ.ok()
-		params = append(params, oneLine(p.at.sourceText()))
+		params = append(params, galaparser.OneLine(p.at.sourceText()))
 	}
 	out.text = "(" + strings.Join(params, ", ") + ")"
 	if typ := sig.resultType(); typ.ok() {
-		out.text += " " + oneLine(typ.sourceText())
+		out.text += " " + galaparser.OneLine(typ.sourceText())
 	}
 	return out
-}
-
-// oneLine collapses every run of whitespace, newlines included, to one space.
-func oneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
 }

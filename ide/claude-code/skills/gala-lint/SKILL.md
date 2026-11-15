@@ -137,6 +137,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | `GALA-E0045` | Struct constructed without a required field | Pass the field, or give it a default in the struct declaration |
 | `GALA-E0047` | `if` with an initializer: `if v, err := f(); err == nil { ... }` | `Try(f()) match { case Success(v) => ...; case Failure(_) => ... }` |
 | `GALA-E0052` | Named `func` declared inside a function body: `func main() { func helper(x int) int = x + 1 }` | A lambda bound to a `val`: `val helper = (x int) int => x + 1`; generic helpers stay at the top level |
+| `GALA-E0117` | Go function literal as a value: `RunE: func(*cobra.Command, []string) error { ... }` | A lambda with the same body: `RunE: (_ *cobra.Command, _ []string) error => { ... }` |
 
 ### 1. Immutability (HIGH priority)
 

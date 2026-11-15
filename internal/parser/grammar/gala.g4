@@ -224,12 +224,18 @@ argument: (identifier '=')? (lambdaExpression | pattern);
 // A function type is no value: `'func' signature` is here so that it can be
 // written as an explicit type argument (`EmptyArray[func() int]()`), whose
 // list parses as expressions. Anywhere else the transformer rejects it.
+//
+// With a block it is a Go function literal, `func(x int) int { ... }`, which
+// GALA writes as a lambda: it is here only so that the parser reports it as
+// GALA-E0117, whatever its body holds, instead of failing inside the body.
+// It comes before compositeLiteral, which would otherwise take a body that
+// happens to parse as an element list (`func() { Println("hi") }`).
 primary
     : identifier
     | literal
     | ('(' | NL_LPAREN) tupleExpressionList? ')'
+    | 'func' signature block?
     | compositeLiteral
-    | 'func' signature
     ;
 
 // Parenthesized tuple/grouping expressions allow an optional trailing comma so

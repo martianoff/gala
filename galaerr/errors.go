@@ -1038,6 +1038,17 @@ const (
 	// GALA method with another receiver, or a Go method not on the no-retain
 	// allow-list, which may keep or share its receiver.
 	CodeInoutForeignImpl ErrorCode = "GALA-E0116"
+
+	// E0117: a Go function literal, `func(x int) int { return x * 2 }`,
+	// written as a value. GALA writes a function value as a lambda,
+	// `(x int) int => { ... }`. The parser used to fail inside the body with
+	// raw messages such as "no viable alternative at input '{return'", none
+	// of them naming the lambda, or, for a body that parsed as a composite
+	// literal's element list (`func() { Println("hi") }`), leave it to be
+	// rejected for its body. The grammar now parses the literal, as the
+	// function type of E0103 followed by a block, only so that the parser
+	// reports it with this code.
+	CodeGoFuncLiteral ErrorCode = "GALA-E0117"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

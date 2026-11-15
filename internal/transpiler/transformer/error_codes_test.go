@@ -2249,6 +2249,57 @@ func main() {
 			expectContains: "set JSON and YAML keys on Codec[T] with .Rename(field, key)",
 		},
 		{
+			// Raised during PARSING, like E0040. The parser used to fail in
+			// the body, with the raw "mismatched input '{' expecting
+			// {',', '}'}" and a cascade of "extraneous input" errors.
+			name: "GALA-E0117 Go function literal as a struct literal field",
+			input: `package main
+
+type Cmd struct {
+    Use string
+    RunE func(string, []string) error
+}
+
+func main() {
+    val c = &Cmd{
+        Use: "checksum",
+        RunE: func(*Cmd, []string) error {
+            return nil
+        },
+    }
+    Println(c.Use)
+}`,
+			expectCode:     galaerr.CodeGoFuncLiteral,
+			expectContains: "here, `(_ *Cmd, _ []string) error => { ... }`",
+		},
+		{
+			// A body that is one call used to parse as a composite literal of
+			// a function type, and the transformer rejected it for its body
+			// ("undefined: s").
+			name: "GALA-E0117 Go function literal whose body parses as an element list",
+			input: `package main
+
+func run(f func(string)) {
+    f("a")
+}
+
+func main() {
+    run(func(s string) { Println(s) })
+}`,
+			expectCode:     galaerr.CodeGoFuncLiteral,
+			expectContains: "here, `(s string) => { ... }`",
+		},
+		{
+			name: "GALA-E0117 Go function literal called in place",
+			input: `package main
+
+func main() {
+    func() { Println("hi") }()
+}`,
+			expectCode:     galaerr.CodeGoFuncLiteral,
+			expectContains: "Go function literal: a function value in GALA is a lambda",
+		},
+		{
 			// The spec used to be copied into the Go interface as written,
 			// and the generated Go did not parse (GALA-E0017).
 			name: "GALA-E0086 type parameter on an interface method",
