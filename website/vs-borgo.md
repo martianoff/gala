@@ -33,7 +33,7 @@ We want to be fair to Borgo: it was an influential proof of concept, and the dem
 | License | Apache 2.0 | None published |
 | Dependency management | `gala mod` (Go + GALA deps, incl. third-party Go) | None |
 | Standard library | `Option`/`Either`/`Try`/`Future`/`IO`, immutable collections, JSON/YAML codecs, regex, crypto, fs | Basics |
-| Editor tooling | GoLand/IntelliJ plugin + LSP (VS Code, Neovim) | None |
+| Editor tooling | GoLand/IntelliJ plugin, VS Code extension (Marketplace) + LSP (Neovim and others) | None |
 | Go interop | Full — any Go module, types inferred from the Go SDK | Limited |
 | Monadic do-notation | `bind` / `also` | No |
 | Self-hosting path | Transpiler written in Go | Compiler written in Rust |
@@ -70,7 +70,7 @@ GALA's standard library goes well past the basics: `Option`/`Either`/`Try`/`Futu
 
 ### 5. Tooling you'll actually feel
 
-GALA ships a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim: real-time diagnostics including match-exhaustiveness, hover types, go-to-definition across files, and inlay hints. A language without an editor story is a hard sell for daily work.
+GALA ships a GoLand/IntelliJ plugin, a [VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala) and an LSP server (`gala lsp`) for Neovim and other editors: real-time diagnostics including match-exhaustiveness, hover types, go-to-definition across files, and inlay hints. A language without an editor story is a hard sell for daily work.
 
 ---
 

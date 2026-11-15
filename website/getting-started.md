@@ -388,7 +388,7 @@ See the [Dependency Management documentation](https://github.com/martianoff/gala
 
 ## IDE Support
 
-GALA ships with a **GoLand/IntelliJ plugin**, a **VS Code extension** and an **LSP server** for editor-agnostic support.
+GALA ships with a **GoLand/IntelliJ plugin**, a **[VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala)** and an **LSP server** for editor-agnostic support.
 
 <img src="{{ '/assets/images/ide/syntax-highlighting.png' | relative_url }}" alt="GALA syntax highlighting in IntelliJ" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 6px; margin: 1rem 0;">
 

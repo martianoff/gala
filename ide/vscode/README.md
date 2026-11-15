@@ -1,7 +1,8 @@
 # GALA for VS Code
 
 VS Code support for the [GALA programming language](https://gala.fyi): syntax
-highlighting plus the complete GALA language server.
+highlighting plus the complete GALA language server. Install it from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala).
 
 The extension is a thin client. All analysis runs in `gala lsp`, the language
 server built into the GALA CLI, so the editor sees exactly what the transpiler

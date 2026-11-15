@@ -15,7 +15,7 @@ last_modified_at: 2026-11-14
 
 # IDE Support
 
-GALA ships with a **GoLand/IntelliJ plugin**, a **VS Code extension** and an **LSP server** that work together to provide a full development experience. The editor integrations handle local features instantly (syntax highlighting and bracket matching in both, plus code folding and live templates in IntelliJ), while the LSP server (`gala lsp`) adds type-aware intelligence (diagnostics, completion, inlay hints, go-to-definition).
+GALA ships with a **GoLand/IntelliJ plugin**, a **[VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala)** and an **LSP server** that work together to provide a full development experience. The editor integrations handle local features instantly (syntax highlighting and bracket matching in both, plus code folding and live templates in IntelliJ), while the LSP server (`gala lsp`) adds type-aware intelligence (diagnostics, completion, inlay hints, go-to-definition).
 
 ---
 

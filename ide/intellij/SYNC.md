@@ -240,10 +240,10 @@ installing `gala` on PATH is all that is required.
 
 The LSP server works with any LSP-capable editor:
 
-**VS Code:** install the GALA extension from [releases](https://github.com/martianoff/gala/releases):
+**VS Code:** install the GALA extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala):
 
 ```bash
-code --install-extension gala-vscode-<version>.vsix
+code --install-extension GALA.gala
 ```
 
 The extension registers the `gala` language for `.gala` files and starts `gala lsp`. It requires the `gala` binary on `PATH` (or `gala.serverPath` / `GALA_PATH`).

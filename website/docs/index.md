@@ -61,7 +61,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 | [Dependency Injection]({{ '/docs/dependency-injection/' | relative_url }}) | Explicit wiring: interfaces as ports, constructor parameters, a composition root, and fakes built with interface literals |
 | [Dependency Management]({{ '/docs/dependency-management/' | relative_url }}) | `gala.mod`, GALA and Go dependencies, and Bazel integration |
 | [Error Codes]({{ '/docs/errors/' | relative_url }}) | Every `GALA-Exxxx` diagnostic — when it fires and how to fix it |
-| [IDE Support]({{ '/features/ide-support/' | relative_url }}) | IntelliJ/GoLand plugin, VS Code extension, and the `gala lsp` server (Neovim and other LSP clients) |
+| [IDE Support]({{ '/features/ide-support/' | relative_url }}) | IntelliJ/GoLand plugin, [VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala), and the `gala lsp` server (Neovim and other LSP clients) |
 | [Playground](https://gala-playground.fly.dev) | Try GALA in your browser -- no installation required |
 | [GitHub Repository](https://github.com/martianoff/gala) | Source code, issue tracker, and release downloads |
 

@@ -7,6 +7,7 @@ Inspired by Scala: sum types, exhaustive pattern matching, and `Option`/`Try` �
 [![Build](https://github.com/martianoff/gala/actions/workflows/test.yml/badge.svg)](https://github.com/martianoff/gala/actions/workflows/test.yml)
 [![Release](https://github.com/martianoff/gala/actions/workflows/release.yml/badge.svg)](https://github.com/martianoff/gala/releases)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/martianoff/gala?sort=semver)](https://github.com/martianoff/gala/releases/latest)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/GALA.gala?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=GALA.gala)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Bazel](https://img.shields.io/badge/Built%20with-Bazel-43A047)](https://bazel.build)
@@ -58,7 +59,7 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 **Compatible — every Go library, no bindings, native binaries.**
 - **Full Go third-party module interop.** Any Go package works — not just stdlib. Return types are inferred **directly from the Go SDK** (no declaration files), and `(T, error)` returns are wrapped into `Try[T]` automatically.
 - **Go can call GALA, too.** `gala export` writes a GALA library as a plain Go module over [`go.gala.fyi/stdlib`](docs/GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module); Go programs `go get` it and build it with `go build`, no GALA toolchain needed.
-- **Shipped IDE tooling.** GoLand/IntelliJ plugin, an LSP server (`gala lsp`) for VS Code and Neovim, and a Claude Code plugin — diagnostics, hover with docs, go-to-definition, inlay hints, completion, across GALA *and* Go stdlib/third-party types. Batched transpilation and analysis caching keep multi-file rebuilds fast.
+- **Shipped IDE tooling.** GoLand/IntelliJ plugin, a [VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala), an LSP server (`gala lsp`) for Neovim and other editors, and a Claude Code plugin — diagnostics, hover with docs, go-to-definition, inlay hints, completion, across GALA *and* Go stdlib/third-party types. Batched transpilation and analysis caching keep multi-file rebuilds fast.
 
 ### Recent highlights
 
@@ -729,7 +730,7 @@ Publishing, versions, and the current limits (an exported project cannot yet imp
 
 ## IDE Support
 
-GALA ships with a GoLand/IntelliJ plugin, a VS Code extension, and an LSP server (`gala lsp`) for editor-agnostic support.
+GALA ships with a GoLand/IntelliJ plugin, a [VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala), and an LSP server (`gala lsp`) for editor-agnostic support.
 
 ### GoLand / IntelliJ IDEA
 

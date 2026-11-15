@@ -253,7 +253,7 @@ fmt.Println(d.IsPercent())  // true</code></pre>
 
 <div class="feature-card">
 <h3>IDE Support with LSP</h3>
-<p>GoLand/IntelliJ plugin with syntax highlighting, type-aware dot completion, inlay type hints, and structure view. The LSP server adds diagnostics, hover, and go-to-definition — including into Go stdlib and third-party Go module sources.</p>
+<p>GoLand/IntelliJ plugin with syntax highlighting, type-aware dot completion, inlay type hints, and structure view, and a <a href="https://marketplace.visualstudio.com/items?itemName=GALA.gala">VS Code extension</a>. The LSP server adds diagnostics, hover, and go-to-definition — including into Go stdlib and third-party Go module sources.</p>
 <img src="{{ '/assets/images/ide/dot-completion.png' | relative_url }}" alt="GALA code completion in IntelliJ" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 4px; margin: 0.5rem 0;">
 <p><a href="{{ '/features/ide-support/' | relative_url }}">See IDE features</a></p>
 </div>
