@@ -91,22 +91,7 @@ func runModTidy(cmd *cobra.Command, args []string) {
 	cache := fetch.NewCache(config)
 	fetcher := fetch.NewGitFetcher(cache)
 
-	// Add missing dependencies
-	for _, path := range missing {
-		fmt.Printf("Adding %s...\n", path)
-
-		// Fetch latest version
-		ver, _, _, err := fetcher.FetchLatest(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to fetch %s: %v\n", path, err)
-			continue
-		}
-
-		galaMod.Require = append(galaMod.Require, mod.Require{
-			Path:    path,
-			Version: ver,
-		})
-	}
+	requireMissing(galaMod, missing, fetcher.FetchLatest)
 
 	// Remove unused dependencies
 	if len(unused) > 0 {
@@ -169,6 +154,23 @@ func runModTidy(cmd *cobra.Command, args []string) {
 		fmt.Println("Done.")
 	}
 	fmt.Println("Run 'gala build' to compile your project.")
+}
+
+// requireMissing adds each module of missing to galaMod at its latest version,
+// which fetchLatest (GitFetcher.FetchLatest) fetches into the cache. A module
+// without .gala files or a gala.mod is a Go module and is marked `// go`, as
+// `gala mod add` marks it: unmarked, the build would take it for a GALA module
+// and transpile it. A module that cannot be fetched is reported and left out.
+func requireMissing(galaMod *mod.File, missing []string, fetchLatest func(path string) (ver, dir, hash string, err error)) {
+	for _, path := range missing {
+		fmt.Printf("Adding %s...\n", path)
+		ver, dir, _, err := fetchLatest(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to fetch %s: %v\n", path, err)
+			continue
+		}
+		galaMod.Require = append(galaMod.Require, mod.Require{Path: path, Version: ver, Go: !hasGalaFiles(dir)})
+	}
 }
 
 // syncGoModForBazel creates a minimal go.mod and go.sum for Bazel projects.

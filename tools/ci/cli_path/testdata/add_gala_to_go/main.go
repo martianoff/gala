@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"example.com/inventory/report"
 	"example.com/inventory/stock"
 )
@@ -31,4 +33,7 @@ func main() {
 		summary := result.Get()
 		fmt.Println(summary.Units.Get(), summary.Reorder.Get().MkString("+"))
 	}
+
+	// A Go dependency that go.mod requires.
+	fmt.Println(uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").Version())
 }

@@ -286,6 +286,9 @@ gala mod init github.com/user/project
 Creates:
 - `gala.mod` with module declaration
 - Empty `gala.sum` file
+- A `.gala/` line in `.gitignore` (the file is created if there is none)
+
+In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The command prints each requirement it copied. `replace` directives of `go.mod` are not copied; it says so when there are any.
 
 ### gala mod add
 
