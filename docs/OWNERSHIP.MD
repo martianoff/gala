@@ -794,8 +794,8 @@ The ownership checks above need no annotations beyond `inout`. The compiler
 also infers facts about every function, and the tools show the ones that
 matter to a caller.
 
-- **`inout` in signatures.** Hover, completion and signature help in
-  [`gala lsp`](https://gala.fyi/features/ide-support/) show an `inout`
+- **`inout` in signatures.** Hover, completion, signature help in
+  [`gala lsp`](https://gala.fyi/features/ide-support/) and `gala doc` show an `inout`
   parameter as `inout c Counter` and an `inout` receiver as
   `func (inout Counter) inc()`, not as the `*Counter` Go sees.
 - **Non-escaping function parameters.** A function parameter that the callee
