@@ -249,11 +249,17 @@ jobs:
             commands: test
             goflags: -p=1
             gomemlimit: 12GiB
-          # gala-server (martianoff/gala-server, `commands: build test`) is not
-          # listed yet: it requires gala-tui v0.11.0, which fails GALA-E0045
-          # (missing struct-field defaults) against GALA >= 0.81. Re-add it
-          # once gala-tui publishes a release with that fix and gala-server
-          # requires it, pinned to that gala-server commit.
+          - name: gala-server
+            repo: martianoff/gala-server
+            # v2.1.2, its GALA 0.101.0 build on gala-tui 0.16.2
+            # (martianoff/gala-server#23).
+            ref: 6d677f2db3f22cac0809fcb3786c1bb161210353
+            commands: |
+              build
+              test
+            goflags: ""
+            # It compiles gala-tui as a dependency; see gomemlimit above.
+            gomemlimit: 12GiB
           - name: gala-acp
             repo: martianoff/gala-acp
             # 0.5.2, its GALA 0.101.0 build (martianoff/gala-acp#12 plus the
