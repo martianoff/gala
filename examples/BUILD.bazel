@@ -2291,6 +2291,14 @@ gala_exec_test(
     expected = "pointer_string_mutating_field.out",
 )
 
+# A value prints by the method fmt chooses: Format, then Error, then String,
+# a pointer-receiver Format or Error before a pointer-receiver String
+gala_exec_test(
+    name = "print_method_choice",
+    src = "print_method_choice.gala",
+    expected = "print_method_choice.out",
+)
+
 # An element with a pointer-receiver String prints with it in collections,
 # tuples, generic functions and values of type any
 gala_exec_test(

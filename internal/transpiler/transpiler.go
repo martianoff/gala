@@ -802,6 +802,11 @@ const (
 	// ReceiverEscape uses the receiver pointer itself as a value: passes,
 	// returns, stores or captures it. Path is empty.
 	ReceiverEscape
+	// ReceiverPrint prints the place, as an argument of Println or Print or
+	// an expression a string interpolates: GALA prints a value that has a
+	// String on its pointer receiver only through its address, so the method
+	// it prints by runs on the receiver's own memory.
+	ReceiverPrint
 )
 
 // ReceiverIndex is the Path element of an index expression (`r.items[i]`).

@@ -631,7 +631,7 @@ func printsByPointerString(t reflect.Type) bool {
 }
 
 // pointerString is the text of v, a value whose type declares String on a
-// pointer receiver only, as that String gives it for a copy of v (see
+// pointer receiver only, as a pointer to a copy of v prints (see
 // PtrString); ok is false for any other value, which fmt prints itself, and
 // for one whose String panics on the copy (a Go type that refuses to be
 // copied, such as strings.Builder), which fmt then prints as it would have.
@@ -646,7 +646,20 @@ func pointerString(v reflect.Value) (s string, ok bool) {
 	}()
 	p := reflect.New(v.Type())
 	p.Elem().Set(v)
-	return p.Interface().(fmt.Stringer).String(), true
+	return pointerText(p.Interface().(fmt.Stringer)), true
+}
+
+// pointerText is the text fmt prints p, a pointer with a String, as: by its
+// Format or its Error, which fmt calls before String, when p has one, and
+// otherwise by its String. String is called directly, so a panic in it
+// reaches pointerString's recover; fmt reports one in Format or Error in the
+// text, as it does when it prints the pointer itself.
+func pointerText(p fmt.Stringer) string {
+	switch p.(type) {
+	case fmt.Formatter, error:
+		return fmt.Sprint(p)
+	}
+	return p.String()
 }
 
 // Printed is v as GALA prints a value whose type is known only at run time:
@@ -705,24 +718,25 @@ type shown struct{ text string }
 func (s shown) String() string { return s.text }
 
 // PtrString is the text of v, whose type declares `String() string` on a
-// pointer receiver: GALA prints such a value by calling that String on a
-// copy of it. Println, Print and interpolation call it for a value of a GALA
-// type with such a String that a pointer-receiver method would get a copy of
-// too (a val, a call's result); an addressable one is printed by StringAt.
-// FormatStruct does the same for a field.
+// pointer receiver: GALA prints such a value as fmt prints a pointer to a
+// copy of it, by that String, or by a pointer-receiver Format or Error, which
+// fmt calls first. Println, Print and interpolation call it for a value of a
+// GALA type with such a String that a pointer-receiver method would get a
+// copy of too (a val, a call's result); an addressable one is printed by
+// StringAt. FormatStruct does the same for a field.
 func PtrString[T any, P interface {
 	*T
 	String() string
 }](v T) shown {
-	return shown{P(&v).String()}
+	return shown{pointerText(P(&v))}
 }
 
-// StringAt is the text p's String gives, as PtrString's is for a copy.
-// Println, Print and interpolation call it with the address of an
-// addressable value whose String is declared on a pointer receiver only, so
-// String runs on the value itself.
+// StringAt is the text p prints as, as PtrString's is for a copy. Println,
+// Print and interpolation call it with the address of an addressable value
+// whose String is declared on a pointer receiver only, so the method runs on
+// the value itself.
 func StringAt[P interface{ String() string }](p P) shown {
-	return shown{p.String()}
+	return shown{pointerText(p)}
 }
 
 // printingKey names a pointer one goroutine is printing. The type tells a

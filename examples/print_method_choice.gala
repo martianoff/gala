@@ -1,0 +1,75 @@
+package main
+
+import "fmt"
+
+// GALA prints a value by the method fmt would choose: Format, then Error,
+// then String. A value whose own methods include none of them, but whose
+// pointer has a String, prints as a pointer to it prints, so a
+// pointer-receiver Format or Error still comes before that String.
+
+// Fault prints by its Error; its pointer-receiver String never runs, so
+// the count it keeps stays 0.
+struct Fault(var n int)
+
+func (f Ptr[Fault]) String() string {
+    f.n = f.n + 1
+    "fault"
+}
+
+func (f Fault) Error() string = "faulted"
+
+// Fancy prints by its Format.
+struct Fancy(var n int)
+
+func (f Ptr[Fancy]) String() string {
+    f.n = f.n + 1
+    "plain"
+}
+
+func (f Fancy) Format(st fmt.State, verb rune) {
+    fmt.Fprint(st, "fancy")
+}
+
+// Pointed has every method on its pointer: it prints by its Error.
+struct Pointed(var n int)
+
+func (p Ptr[Pointed]) String() string = s"pointed ${p.n}"
+
+func (p Ptr[Pointed]) Error() string = s"pointed error ${p.n}"
+
+// Plain has only a pointer-receiver String, which it prints by.
+struct Plain(var n int)
+
+func (p Ptr[Plain]) String() string = s"plain ${p.n}"
+
+struct Holder(var f Fault, var p Pointed)
+
+func main() {
+    var f = Fault(0)
+    Println(f)
+    Println(s"f=$f")
+    Println(Some(f))
+    Println(f.n)
+
+    val g = Fault(0)
+    Println(g)
+    Println(g.n)
+
+    var fy = Fancy(0)
+    Println(fy)
+    Println(s"fy=$fy")
+    Println(Some(fy))
+    Println(fy.n)
+
+    var p = Pointed(3)
+    Println(p)
+    Println(s"p=$p")
+    Println(Some(p))
+    Println(&p)
+    val q = Pointed(4)
+    Println(q)
+
+    Println(Holder(Fault(0), Pointed(5)))
+    Println(Plain(6))
+    Println(Some(Plain(7)))
+}

@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+	"slices"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -15,7 +16,9 @@ import (
 //
 //   - a GALA method: its ReceiverEffects, judged here against the types of
 //     the fields they reach; a call it makes on its receiver, or on a field
-//     stored in it, counts when that method mutates;
+//     stored in it, counts when that method mutates, and so does printing
+//     such a place by a pointer-receiver method that mutates (see
+//     pointerPrinted), which a print runs on the place itself;
 //   - a Go method (one of a Go type, or one hand-written Go declares on a GALA
 //     type): the read-only methods the analyzer works out from the Go source
 //     (see goReadOnlyMethods).
@@ -103,6 +106,20 @@ func (t *galaASTTransformer) effectsMutate(recvType transpiler.Type, effects []t
 			return true
 		}
 		place, inReceiver, known := t.receiverPlace(recvType, eff)
+		if eff.Kind == transpiler.ReceiverPrint {
+			// Printed through its address when it prints through a pointer
+			// by a String declared in GALA (see printedValue); fmt prints any
+			// other value without a pointer method of it. A path that is no
+			// field (a method value, `r.M`) is judged by the ReceiverCall
+			// recorded for it, and a field of a type parameter prints
+			// through std.Printed, on a copy.
+			if known && inReceiver && !t.printsTypeParam(recvType, eff.Path) {
+				if method, galaString := t.pointerPrinted(place); method != "" && galaString && t.methodMutates(place, method, seen) {
+					return true
+				}
+			}
+			continue
+		}
 		switch {
 		case !known:
 			return true
@@ -117,6 +134,41 @@ func (t *galaASTTransformer) effectsMutate(recvType transpiler.Type, effects []t
 		if t.methodMutates(place, eff.Method, seen) {
 			return true
 		}
+	}
+	return false
+}
+
+// printsTypeParam reports whether path, from a receiver of recvType, ends in
+// a field declared with a type parameter of the struct that holds it: the
+// method's body prints such a field by std.Printed, through a copy, whatever
+// type it is instantiated with.
+func (t *galaASTTransformer) printsTypeParam(recvType transpiler.Type, path []string) bool {
+	meta := t.getTypeMeta(receiverBase(recvType).BaseName())
+	for _, name := range path {
+		if meta == nil {
+			return false
+		}
+		declared, ok := meta.Fields[name]
+		if !ok {
+			return false // an index, or no field
+		}
+		if isTypeParamNamed(declared, meta.TypeParams) {
+			return true
+		}
+		meta = t.getTypeMeta(receiverBase(declared).BaseName())
+	}
+	return false
+}
+
+// isTypeParamNamed reports whether typ, a field type as declared, is one of
+// the type parameters params names (recorded as a bare name, BasicType or
+// NamedType).
+func isTypeParamNamed(typ transpiler.Type, params []string) bool {
+	switch typ := typ.(type) {
+	case transpiler.BasicType:
+		return slices.Contains(params, typ.Name)
+	case transpiler.NamedType:
+		return typ.Package == "" && slices.Contains(params, typ.Name)
 	}
 	return false
 }
