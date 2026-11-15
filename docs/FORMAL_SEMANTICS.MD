@@ -118,6 +118,7 @@ formal/
   Gala/Std/*.lean           models of Option, Either, Try, Println formatting
   Gala/Main.lean            `galaspec run prog.json` → stdout + outcome line
   Gala/Theorems.lean        proofs about the semantics
+  Gala/Fuel.lean            T1, fuel adequacy
   Gala/Statements.lean      the pinned statements of the theorems COVERAGE.md calls proved
   Gala/*Lowering.lean       models of individual lowerings; they become the reference lowering (M3, M5)
   COVERAGE.md               hand-written now, generated later; see "Coverage"
@@ -206,7 +207,8 @@ flowchart LR
 #### The theorems
 
 These are the properties of the spec the milestones prove (T1–T7), with the bugs each
-guards against. Only T4 is proved so far, and only for the scope a default value sees;
+guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
+`formal/Gala/Fuel.lean`), and T4 only for the scope a default value sees;
 [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) lists what is proved.
 
 | # | Statement (informal) | Guards against | Milestone |
@@ -249,9 +251,14 @@ column lists what each milestone's claim rests on beyond them.
   `eval`'s mutual block says: more depth and more steps give the same result and the
   same final state, except for the steps left.
 - **What it gives:** an `AGREE` or `DISAGREE` verdict is about the program's meaning, not
-  about the budget the harness chose.
-- **Risk:** the mutual well-founded recursion makes equation lemmas heavy; `tryCatch` and
-  the heap need their own monotonicity facts.
+  about the budget the harness chose. It says nothing about a run that ends in `fuel`:
+  `INCONCLUSIVE` stays inconclusive, since more fuel might end it any way.
+- **Status: done.** `run_fuel_adequate` in `formal/Gala/Fuel.lean`, pinned in
+  `Statements.lean`, covers all of `run`: `eval`'s mutual block, `initGlobals` and
+  `runM`. The code that cannot spend steps runs in a monad without them (`H` in
+  `Eval.lean`), so it acts the same whatever the fuel by its type, the heap included;
+  `tick` is the only code that spends steps; and `runIn`'s `return` handler is shown to
+  pass `fuel` on, which catching needs.
 
 #### M2: alpha-invariance, left-to-right and defaults
 
@@ -609,7 +616,7 @@ To keep our obligations at zero:
 
 ## Plan
 
-Done so far: the metamorphic generators, the Core JSON exporter, galaspec for S1 and part
+Done so far: M1 (T1, fuel adequacy), the metamorphic generators, the Core JSON exporter, galaspec for S1 and part
 of S2, the differential harness over `examples/`, gala2lean, and the match lowering model.
 The estimates are in weeks of one maintainer working with AI agents, and the chart runs
 the proof milestones one after another (M3 needs only M1, so M2 and M3 could overlap with
@@ -638,7 +645,7 @@ gantt
 
 | Milestone | Size | Done when |
 |---|---|---|
-| M1 | 2–3 weeks | T1 is proved, pinned in `Statements.lean` and listed in COVERAGE.md. |
+| M1 | 2–3 weeks | Done: T1 is proved, pinned in `Statements.lean` and listed in COVERAGE.md. |
 | M2 | 6–8 weeks | T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator is checked against T2's conditions. |
 | M3 | 3–4 weeks | `MatchLowering.lean`'s separate source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form. |
 | M4 | 5–8 weeks | GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |

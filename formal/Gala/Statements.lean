@@ -15,6 +15,7 @@
 import Gala.MatchLowering
 import Gala.Theorems
 import Gala.Gala2Lean.Theorems
+import Gala.Fuel
 
 namespace Gala.Statements
 
@@ -50,5 +51,10 @@ open Gala.Gala2Lean.Examples.Match Gala.Gen in
 theorem eval_total : ∀ (e : Expr) (s : _gala_St),
     (eval e).run.run s = some (.ok (denote e), s) :=
   Gala.Gala2Lean.Examples.Match.eval_total
+
+open Gala.Spec in
+theorem run_fuel_adequate : ∀ (p : Program) (n m : Nat), n ≤ m → (run p n).1 ≠ .fuel →
+    run p m = run p n :=
+  Gala.Spec.run_fuel_adequate
 
 end Gala.Statements
