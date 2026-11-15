@@ -416,18 +416,19 @@ func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeAr
 // typeArgMisuse returns the error code, message and hint when typeArg cannot
 // be the type argument of o's tp, and an empty code when it can:
 //
+//   - GALA-E0116 when it does not implement an `inout` method of tp's
+//     constraint with an `inout` receiver (inoutTypeArgMisuse). It comes
+//     first: no pointer to such a type fills tp, nullable or not;
 //   - GALA-E0080 when it is a pointer that may be nil and tp's constraint
 //     has a method its type declares on a `Ptr` receiver: the generic code
 //     calls that method on whatever pointer the type argument holds
-//     (ptrTypeArgMisuse);
-//   - GALA-E0116 when it does not implement an `inout` method of tp's
-//     constraint with an `inout` receiver (inoutTypeArgMisuse).
+//     (ptrTypeArgMisuse).
 func (t *galaASTTransformer) typeArgMisuse(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource) (code galaerr.ErrorCode, msg, hint string) {
-	if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
-		return galaerr.CodePtrNullability, msg, hint
-	}
 	if msg, hint, bad := t.inoutTypeArgMisuse(o, tp, typeArg); bad {
 		return galaerr.CodeInoutForeignImpl, msg, hint
+	}
+	if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
+		return galaerr.CodePtrNullability, msg, hint
 	}
 	return "", "", ""
 }

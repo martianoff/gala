@@ -372,7 +372,8 @@ func (t *galaASTTransformer) inoutImplMismatch(valTypeOf func() transpiler.Type,
 		valType = t.followAliasChain(ptr.Elem)
 	}
 	impl := valType
-	if c, isTypeParam := t.typeParamConstraint(valType); isTypeParam {
+	c, isTypeParam := t.typeParamConstraint(valType)
+	if isTypeParam {
 		impl = t.followAliasChain(c)
 	}
 	base := impl
@@ -394,8 +395,10 @@ func (t *galaASTTransformer) inoutImplMismatch(valTypeOf func() transpiler.Type,
 			m = meta.Methods[name]
 		}
 		switch {
-		case meta != nil && meta.IsInterface && goDeclared(meta):
-			return nil, "", "" // an interface value of a Go interface: trusted (Q16)
+		case !isTypeParam && meta != nil && meta.IsInterface && goDeclared(meta):
+			// An interface value of a Go interface: trusted (Q16). Not a
+			// type parameter's value, which GALA instantiates.
+			return nil, "", ""
 		case meta != nil && meta.IsInterface && m != nil && m.InoutReceiver:
 			continue
 		case goType && goData != nil && !goData.PointerMethods[name] && goData.Methods[name] == nil:

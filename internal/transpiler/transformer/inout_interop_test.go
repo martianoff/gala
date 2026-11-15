@@ -159,9 +159,23 @@ func TestInoutInterfaceConstraint(t *testing.T) {
 	src := func(decl, body string) string {
 		return `package main
 
+import "fmt"
+
 type Stepper interface {
     inout Step() int
 }
+
+type Shower interface {
+    inout String() string
+}
+
+func show[T Shower](s T) string = s.String()
+
+func describe(s fmt.Stringer) string = s.String()
+
+struct Slack(var n int)
+
+func (s Slack) Step() int = s.n
 
 type Plain interface {
     Step() int
@@ -213,7 +227,13 @@ func main() {
 			"the type argument for T of apply, does not satisfy its constraint Stepper"},
 		{"an explicit type argument without inout", "", "Println(runG[Ptr[Leaky]](&Leaky(0)))",
 			"the type argument for T of runG, does not satisfy its constraint Stepper"},
-		{"a type parameter constrained without inout", "func viaPlain[T Plain](s T) int = runG(s)", "Println(1)",
+		{"a value-receiver method through a written type argument", "", "Println(runG[Ptr[Slack]](&Slack(0)))",
+			"Stepper declares Step inout, and Slack.Step has no inout receiver"},
+		{"a generic function filling a function-typed parameter", "func apply(f func(Ptr[Leaky]) int, p Ptr[Leaky]) int = f(p)", "Println(apply(runG, &Leaky(0)))",
+			"the type argument for T of runG, does not satisfy its constraint Stepper"},
+		{"a type parameter constrained by a Go interface", "func viaGo[T fmt.Stringer](s T) string = show(s)", "Println(1)",
+			"the type argument for T of show, does not satisfy its constraint Shower"},
+		{"a type parameter constrained without inout","func viaPlain[T Plain](s T) int = runG(s)", "Println(1)",
 			"Stepper declares Step inout, and Plain.Step has no inout receiver"},
 		{"a type parameter filling an inout interface slot", "func toSlot[T Plain](s T) int = run(s)", "Println(1)",
 			"Stepper declares Step inout, and Plain.Step has no inout receiver"},
