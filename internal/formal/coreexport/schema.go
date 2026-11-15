@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 8
+const Version = 9
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -133,6 +133,8 @@ type Param struct {
 	Type Node   `json:"type"`
 	// Default is the default value, null for none.
 	Default Node `json:"default"`
+	// Inout is true for an `inout` parameter, `inout name Type`.
+	Inout bool `json:"inout,omitempty"`
 }
 
 // Struct is `type Name struct { fields }`, or with Shorthand
@@ -258,6 +260,13 @@ type Unary struct {
 	Meta
 	Op      string `json:"op"`
 	Operand Node   `json:"operand"`
+}
+
+// AddressOf is `&operand`: an argument lent to an `inout` parameter, or a
+// pointer to its operand. Which one is the consumer's to decide.
+type AddressOf struct {
+	Meta
+	Operand Node `json:"operand"`
 }
 
 // Binary is `left op right`. Chains are nested left-associatively, as the
@@ -423,6 +432,7 @@ func (*Bool) Kind() string        { return "bool" }
 func (*String) Kind() string      { return "string" }
 func (*Name) Kind() string        { return "name" }
 func (*Unary) Kind() string       { return "unary" }
+func (*AddressOf) Kind() string   { return "address-of" }
 func (*Binary) Kind() string      { return "binary" }
 func (*Call) Kind() string        { return "call" }
 func (*Select) Kind() string      { return "select" }
@@ -447,7 +457,7 @@ func (*Unsupported) Kind() string { return "" }
 var nodeTypes = []Node{
 	&File{}, &Import{}, &Val{}, &Var{}, &Func{}, &Receiver{}, &TypeParam{}, &Param{}, &Struct{}, &Field{}, &Sealed{}, &Variant{}, &TypeName{},
 	&Block{}, &If{}, &Return{}, &Assign{}, &IncDec{},
-	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
+	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &AddressOf{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
 	&PatWild{}, &PatName{}, &PatLit{}, &PatTuple{}, &PatExtract{},
 	&NamedArg{}, &Lambda{}, &TypeFunc{},
@@ -506,7 +516,6 @@ const (
 	UnsupportedFuncType         = "func-type"
 	UnsupportedOtherType        = "other-type"
 	UnsupportedDeref            = "deref"
-	UnsupportedAddressOf        = "address-of"
 	UnsupportedReceive          = "receive"
 	UnsupportedTypedPattern     = "typed-pattern"
 	UnsupportedRestPattern      = "rest-pattern"
@@ -527,7 +536,7 @@ var unsupportedKinds = []string{
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,
 	UnsupportedStringEscape,
 	UnsupportedQualifiedType, UnsupportedSliceType, UnsupportedPointerType, UnsupportedMapType,
-	UnsupportedFuncType, UnsupportedOtherType, UnsupportedDeref, UnsupportedAddressOf, UnsupportedReceive,
+	UnsupportedFuncType, UnsupportedOtherType, UnsupportedDeref, UnsupportedReceive,
 	UnsupportedTypedPattern, UnsupportedRestPattern, UnsupportedSelectPattern,
 	UnsupportedExprPattern, UnsupportedParenPattern,
 }

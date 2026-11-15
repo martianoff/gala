@@ -1,4 +1,4 @@
-# Core JSON, version 8
+# Core JSON, version 9
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 8,
+  "core": 9,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -215,6 +215,8 @@ unsupported.
 - `type` (type or null): null when left out.
 - `default` (expression or null): the default value, `n int = 1`. It is not filled in:
   the spec decides where and when it is evaluated.
+- `inout` (bool, left out when false): an `inout` parameter, `inout c Counter`. The
+  caller lends it a place with an [`address-of`](#address-of) argument.
 
 ```json
 { "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
@@ -406,13 +408,25 @@ parameter, a function, a struct, a variant or a builtin such as `Println`.
 
 ### `unary`
 
-`op operand`. Pointer dereference, address-of and channel receive are unsupported.
+`op operand`. Pointer dereference and channel receive are unsupported; `&x` is an
+[`address-of`](#address-of).
 
 - `op` (string): one of `-`, `+`, `!`, `^`.
 - `operand` (expression).
 
 ```json
 { "kind": "unary", "pos": "…", "op": "!", "operand": { "kind": "bool", "pos": "…", "value": false } }
+```
+
+### `address-of`
+
+`&operand`: an argument lent to an `inout` parameter, `bump(&c)`, or a pointer to the
+operand. Which one is not resolved: a consumer decides from the callee.
+
+- `operand` (expression).
+
+```json
+{ "kind": "address-of", "pos": "…", "operand": { "kind": "name", "pos": "…", "name": "c" } }
 ```
 
 ### `binary`
@@ -651,7 +665,7 @@ Every name an `unsupported` node can carry.
 | `defined-type` | a `type` declaration that is neither a struct nor an interface, `type ID int` |
 | `interface` | an interface type declaration |
 | `go-results` | a Go-style multiple result list `(T1, T2)` |
-| `param-modifier` | a function parameter marked `val` or `var` |
+| `param-modifier` | a function parameter marked `val` or `var`, or a parameter of a function type marked `inout` |
 | `param-default` | a parameter of a function type with a default value, `func(x int = 1)` |
 | `variadic-param` | a variadic parameter or field, `xs ...T` |
 | `unnamed-param` | a parameter or field with a type and no name |
@@ -684,7 +698,6 @@ Every name an `unsupported` node can carry.
 | `func-type` | a function type written as an expression, `EmptyArray[func() int]()` |
 | `other-type` | a form of type the grammar gained after this exporter was written |
 | `deref` | `*p` |
-| `address-of` | `&x` |
 | `receive` | `<-ch` |
 | `typed-pattern` | a type pattern `x: T`, or one used as a call argument |
 | `rest-pattern` | a rest pattern `xs...` |

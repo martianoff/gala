@@ -357,7 +357,7 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 		g.fn = &fnCtx{result: res}
 		body = indentLines(g.bodyItems(f, sc, res), 2)
 	} else {
-		g.receiverUses(f, r.Name)
+		g.receiverUses(f, r.Name, r.Inout)
 		self := "_gala_self"
 		ps = append(ps, fmt.Sprintf("(%s : %s)", self, lt))
 		ps = append(ps, g.params(f, sc)...)
@@ -382,21 +382,38 @@ func (g *gen) methodDecl(f *coreexport.Func, recursive bool) string {
 	return s
 }
 
-// params are a function's parameters in Lean, bound in sc.
+// params are a method's parameters in Lean, bound in sc. An `inout`
+// parameter of a method is outside the subset; a function's are translated
+// (funcParams).
 func (g *gen) params(f *coreexport.Func, sc *scope) []string {
 	var ps []string
 	for _, pn := range f.Params {
-		p, ok := pn.(*coreexport.Param)
-		if !ok {
-			unsupAt(pn)
+		p := g.paramOf(pn)
+		if p.Inout {
+			unsup(p.Pos, "inout-method-param")
 		}
-		if p.Type == nil {
-			unsup(p.Pos, "untyped-param")
-		}
-		ps = append(ps, fmt.Sprintf("(%s : %s)", ident(p.Name), g.leanType(p.Type)))
-		sc.bind(p.Name, false, g.leanType(p.Type)).gtype = p.Type
+		ps = append(ps, g.param(p, sc))
 	}
 	return ps
+}
+
+// paramOf is parameter node pn, which must have a written type.
+func (g *gen) paramOf(pn coreexport.Node) *coreexport.Param {
+	p, ok := pn.(*coreexport.Param)
+	if !ok {
+		unsupAt(pn)
+	}
+	if p.Type == nil {
+		unsup(p.Pos, "untyped-param")
+	}
+	return p
+}
+
+// param is value parameter p in Lean, bound in sc.
+func (g *gen) param(p *coreexport.Param, sc *scope) string {
+	lt := g.leanType(p.Type)
+	sc.bind(p.Name, false, lt).gtype = p.Type
+	return fmt.Sprintf("(%s : %s)", ident(p.Name), lt)
 }
 
 // bodyItems are a function's body as do-items, for result type res.
@@ -416,8 +433,11 @@ func (g *gen) bodyItems(f *coreexport.Func, sc *scope, res string) []string {
 // it: reading or writing a field, or calling a method on it, and never in a
 // lambda. Anything else (passing it on, binding it to another name,
 // comparing it, capturing it) would let another path reach the value, which
-// state passing does not model.
-func (g *gen) receiverUses(f *coreexport.Func, name string) {
+// state passing does not model. With whole, the name itself is a value too
+// (an `inout` place: reading it copies the value, assigning it replaces
+// it), but still never in a lambda, which could keep the place past the
+// call.
+func (g *gen) receiverUses(f *coreexport.Func, name string, whole bool) {
 	var visit func(n coreexport.Node, inLambda bool)
 	visit = func(n coreexport.Node, inLambda bool) {
 		switch n := n.(type) {
@@ -435,7 +455,7 @@ func (g *gen) receiverUses(f *coreexport.Func, name string) {
 				return
 			}
 		case *coreexport.Name:
-			if n.Name == name {
+			if n.Name == name && (inLambda || !whole) {
 				unsup(n.Pos, "ptr-escape")
 			}
 			return
@@ -459,8 +479,13 @@ func (g *gen) methodOf(e coreexport.Node, m string, sc *scope, seen map[string]b
 	return nil, ""
 }
 
-// methodSig is the signature of method f of type t, its receiver aside.
-func (g *gen) methodSig(f *coreexport.Func, t string) *sig {
+// methodSig is the signature of method f of type t, its receiver aside,
+// for the call at pos. A method with an `inout` parameter is outside the
+// subset (params).
+func (g *gen) methodSig(f *coreexport.Func, t string, pos coreexport.Pos) *sig {
+	if hasInout(f.Params) {
+		unsup(pos, "inout-method-param")
+	}
 	r := f.Receiver.(*coreexport.Receiver)
 	s := funcSig(f, methodHead(t, f.Name))
 	s.recvName, s.recvType = r.Name, g.optTypeSafe(r.Type)
@@ -483,7 +508,7 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 		}
 		return term{code: doTerm(append(items, "pure "+res)), unit: f.Result == nil}, true
 	}
-	sg := g.methodSig(f, t)
+	sg := g.methodSig(f, t, s.Pos)
 	recv := g.expr(s.Target, sc)
 	sg.recv = &recv
 	return g.callSig(sg, e, sc), true
@@ -494,6 +519,9 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 // value written back. It returns the do-items and the name holding the
 // call's result, or nil items when e is not such a call.
 func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
+	if items, res := g.lendCall(e, sc); items != nil {
+		return items, res
+	}
 	s, ok := e.Callee.(*coreexport.Select)
 	if !ok {
 		return nil, ""
@@ -512,7 +540,7 @@ func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
 		// does not model.
 		unsup(s.Pos, "ptr-escape")
 	}
-	sg := g.methodSig(f, t)
+	sg := g.methodSig(f, t, s.Pos)
 	recv := g.expr(s.Target, sc)
 	sg.recv = &recv
 	sg.recvLast = true

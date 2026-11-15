@@ -27,6 +27,9 @@ type sig struct {
 	// recvName and recvType are the method's receiver name and Lean type,
 	// which its parameters' defaults may use.
 	recvName, recvType string
+	// inout marks the `inout` parameters, whose arguments are lent places
+	// (`&x`); nil when there are none.
+	inout []bool
 }
 
 // stdCtors are the standard library's Option and Either constructors, which
@@ -56,15 +59,40 @@ func (g *gen) sigOf(x string) *sig {
 
 // funcSig is the signature of function or method f called as head.
 func funcSig(f *coreexport.Func, head string) *sig {
-	s := &sig{head: head, paramsInDefaults: true, unit: f.Result == nil}
+	s := &sig{head: head, paramsInDefaults: true}
+	lends := hasInout(f.Params)
 	for _, pn := range f.Params {
 		p, ok := pn.(*coreexport.Param)
 		if !ok {
 			unsupAt(pn)
 		}
 		s.names, s.types, s.defaults = append(s.names, p.Name), append(s.types, p.Type), append(s.defaults, p.Default)
+		if lends {
+			s.inout = append(s.inout, p.Inout)
+		}
 	}
+	// A function with inout parameters returns their final values beside
+	// its result (lendCall), so its call is never just Unit.
+	s.unit = f.Result == nil && !lends
 	return s
+}
+
+// hasInout reports whether any of params is an `inout` parameter.
+func hasInout(params []coreexport.Node) bool {
+	return slices.ContainsFunc(params, func(pn coreexport.Node) bool {
+		p, ok := pn.(*coreexport.Param)
+		return ok && p.Inout
+	})
+}
+
+// lentPlace is the place argument a lends to an `inout` parameter: the
+// operand of `&place`. Any other argument is reported.
+func lentPlace(a coreexport.Node) coreexport.Node {
+	ad, ok := argNode(a).(*coreexport.AddressOf)
+	if !ok {
+		unsup(posOf(a), "inout-arg")
+	}
+	return ad.Operand
 }
 
 // sigOfSafe is sigOf, or nil for a callee the translation will report.
@@ -170,7 +198,13 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	vals := make([]term, len(e.Args))
 	pre := make([][]string, len(e.Args))
 	hoisted := false
+	isLent := func(i int) bool { return s.inout != nil && s.inout[paramOf[i]] }
 	for i, a := range e.Args {
+		if isLent(i) {
+			// Read after the other arguments, below.
+			hoisted = true
+			continue
+		}
 		if c, ok := argNode(a).(*coreexport.Call); ok && hoist {
 			if items, res := g.ptrCall(c, sc); items != nil {
 				pre[i], vals[i], hoisted = items, term{code: res, pure: true}, true
@@ -212,9 +246,21 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	}
 	tmps := make([]string, len(e.Args))
 	for i, v := range vals {
+		if isLent(i) {
+			continue
+		}
 		tmps[i] = g.freshName("a")
 		items = append(items, pre[i]...)
 		items = append(items, "let "+tmps[i]+" := "+v.val())
+	}
+	// A lent place is passed as its value when the callee starts, after
+	// the other arguments, which may write it (`f(&x, g(&x))`): Go passes
+	// its address, so the callee sees every earlier write.
+	for i, a := range e.Args {
+		if isLent(i) {
+			tmps[i] = g.freshName("a")
+			items = append(items, "let "+tmps[i]+" := "+g.expr(lentPlace(a), sc).val())
+		}
 	}
 	if s.recv != nil && s.recvLast {
 		// A pointer method's place, after the arguments and before the
@@ -300,6 +346,12 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	if n, ok := e.Callee.(*coreexport.Name); ok && sc.lookup(n.Name) == nil {
 		x := n.Name
 		if s := g.sigOf(x); s != nil {
+			if s.inout != nil {
+				// Its write-backs run in a do block of their own, so the
+				// places must be ones it can write (cells).
+				items, res := g.lendCall(e, sc.term())
+				return term{code: doTerm(append(items, "pure "+res)), unit: g.funcs[x].Result == nil}
+			}
 			if f := g.funcs[x]; f != nil && len(f.TypeParams) > 0 {
 				g.instSig(f, s, e, sc)
 			} else if n := g.ctorOf(x); n != "" && g.isGenericDecl(n) {

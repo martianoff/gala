@@ -234,6 +234,10 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 			// Its type arguments would be left to Lean, from the context.
 			unsup(e.Pos, "generic-func-value")
 		}
+		if hasInout(f.Params) {
+			// Its values are of type func(inout T), outside the subset.
+			unsup(e.Pos, "inout-func-value")
+		}
 		// A top-level function as a value.
 		if len(f.Params) == 0 {
 			return term{code: "(fun (_ : Unit) => " + g.funcRef(x) + ")", pure: true}

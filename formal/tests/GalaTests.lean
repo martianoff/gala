@@ -40,14 +40,15 @@ private def noDecls : Decls := { funcs := [], structs := [], shorthands := [], s
 
 -- The decoder rejects an unknown version and malformed documents.
 private def decodes (s : String) : Bool := (Json.parse s).toBool
-#guard decodes "{\"core\": 8, \"files\": []}"
+#guard decodes "{\"core\": 9, \"files\": []}"
+#guard !decodes "{\"core\": 8, \"files\": []}"
 #guard !decodes "{\"core\": 7, \"files\": []}"
 #guard !decodes "{\"core\": 6, \"files\": []}"
 #guard !decodes "{\"core\": 5, \"files\": []}"
 #guard !decodes "{\"core\": 4, \"files\": []}"
 #guard !decodes "{\"core\": 3, \"files\": []}"
 #guard !decodes "{\"files\": []}"
-#guard !decodes "{\"core\": 8, \"files\": [{\"kind\": \"nope\"}]}"
+#guard !decodes "{\"core\": 9, \"files\": [{\"kind\": \"nope\"}]}"
 #guard !decodes "not json"
 
 -- An import runs its package's initializers, which galaspec does not model, whether
