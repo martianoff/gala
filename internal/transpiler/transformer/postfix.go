@@ -417,8 +417,9 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 	// tuple of its arity, `Tuple3[A, B, C]`, as in a type position.
 	base = t.rewriteStdTupleIdent(base, len(indices))
 	// A pointer that may be nil is no type argument of a type parameter
-	// whose constraint needs a Ptr receiver.
-	if len(t.ptrReceiverMethods) > 0 {
+	// whose constraint needs a Ptr receiver, nor a type that implements an
+	// inout method of its constraint without an inout receiver.
+	if t.checksTypeArgs() {
 		if o, ok := t.writtenTypeArgOwner(base, genericMethod); ok {
 			at := func(i int) srcNode { return ix.expr(i).at() }
 			if err := t.checkPtrWrittenTypeArgsAt(o, indices, at); err != nil {

@@ -602,6 +602,18 @@ func main() {
 
 **Fix:** declare it `func (inout c Counter) Step() int`.
 
+The same rule holds for a type argument. A type parameter that an `inout`
+interface constrains, as in `func run[T Stepper](s T) int`, accepts only a type
+that could fill the interface, whether the type argument is written or
+inferred. A type parameter used as one is judged by its own constraint, which
+must declare the method `inout` too.
+
+A typed pattern, `case s: Stepper =>`, is accepted only on a value whose
+static type already guarantees the `inout` methods: Go's dynamic type test
+can't tell an `inout` receiver from a `Ptr` receiver. On an `any`, match the
+concrete type instead (`case p: *Counter`) and call the method on
+`RequirePtr(p)`.
+
 A Go type fills an `inout` interface method only when its method is on the
 [no-retain allow-list](#gala-calls-go), as `bytes.Buffer`'s `WriteString` is
 above. To use another Go type, wrap it in a GALA type whose method has an

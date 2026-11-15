@@ -1888,8 +1888,9 @@ func main() {
   (`type Stepper interface { inout Step() int }`). A value fills it only when
   its type implements that method with an `inout` receiver; a Go type only
   when its method is on the no-retain allow-list below
-  ([GALA-E0116](/docs/errors/gala-e0116/)). An interface value received from Go
-  is trusted as it is.
+  ([GALA-E0116](/docs/errors/gala-e0116/)). A type argument for a type
+  parameter the interface constrains is held to the same rule. An interface
+  value received from Go is trusted as it is.
 - **Function types.** `func(inout Counter)` and `func(Ptr[Counter])` are
   distinct GALA types with the same Go type, `func(*Counter)`. A call through
   a value of a `func(inout T)` type is checked like a call of a declared

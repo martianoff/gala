@@ -113,6 +113,7 @@ type galaASTTransformer struct {
 	hasOpaque              bool                                          // some known type is an opaque type; gates every opaque-type check
 	ptrReceiverMethods     map[string]bool                               // names of the known methods on a Ptr receiver; gates the receiver nullability checks
 	ptrConstraintMethods   map[string][]string                           // memo of ptrConstraint: a type-parameter constraint to its methods on a Ptr receiver
+	inoutConstraints       bool                                          // some interface declares an inout method; gates GALA-E0116 on type arguments
 	goTypeInfo             *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
 	lookupGoReadOnly       func(importPath, typeName string) map[string]bool // RichAST.GoReadOnlyMethods
 	filePath               string                                        // source file path (for error reporting)
@@ -425,6 +426,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.hasOpaque = anyOpaque(richAST.Types)
 	t.ptrReceiverMethods = ptrReceiverMethodNames(richAST.Types)
 	t.ptrConstraintMethods = nil
+	t.inoutConstraints = declaresInoutMethod(richAST.Types)
 	t.companionObjects = richAST.CompanionObjects
 	if t.companionObjects == nil {
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)

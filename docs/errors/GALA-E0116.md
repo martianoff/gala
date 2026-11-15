@@ -16,6 +16,21 @@ when its method is on the compiler's no-retain allow-list (`bytes.Buffer`'s
 `WriteString`, for example), whose entries are checked against the Go
 compiler's escape analysis.
 
+The same holds for a type argument. A type parameter such an interface
+constrains, `func run[T Stepper](s T)`, accepts only a type that could fill
+the interface, whether the type argument is written or inferred. A type
+parameter used as one is judged by its own constraint: `T Plain` fills
+`Stepper` only when `Plain` declares `Step` inout too.
+
+A typed pattern, `case s: Stepper =>`, tests the value's dynamic type, and
+Go's test cannot tell an `inout` receiver from a `Ptr` receiver. So the
+pattern is accepted only on a value whose static type already guarantees the
+`inout` methods: an interface that declares them `inout` too, or a type that
+implements them with `inout` receivers. On an `any`, or an interface without
+them, match the concrete type instead (`case p: *Counter`) and call the
+method on `RequirePtr(p)`. A value of a type parameter is judged by its
+constraint; one constrained by `any` may hold any type.
+
 An interface value that is already an interface, built in GALA or received
 from Go, fills it as it is: its methods are trusted, not checked.
 

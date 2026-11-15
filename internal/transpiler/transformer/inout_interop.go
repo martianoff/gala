@@ -279,34 +279,107 @@ func derefType(typ transpiler.Type) transpiler.Type {
 // that is already an interface, built in GALA or arriving from Go, is
 // trusted (decision Q16).
 func (t *galaASTTransformer) checkInoutInterfaceSlot(valTypeOf func() transpiler.Type, slotType transpiler.Type, at srcNode) error {
-	iface := t.getTypeMeta(slotType.BaseName())
-	if iface == nil || !iface.IsInterface {
+	valType, why, hint := t.inoutImplMismatch(valTypeOf, slotType)
+	if why == "" {
 		return nil
 	}
-	var inout []string
-	for name, m := range iface.Methods {
-		if m.InoutReceiver {
-			inout = append(inout, name)
+	return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
+		fmt.Sprintf("%s cannot fill %s: %s", displayType(valType), displayType(slotType), why), hint)
+}
+
+// inoutTypeArgMisuse returns the GALA-E0116 message and hint for typeArg as
+// the type argument of o's type parameter tp, when tp's constraint is an
+// interface that declares `inout` methods typeArg does not implement with
+// `inout` receivers: the rule of checkInoutInterfaceSlot, which Go's
+// constraint check cannot tell from a Ptr receiver's.
+func (t *galaASTTransformer) inoutTypeArgMisuse(o typeParamOwner, tp string, typeArg transpiler.Type) (msg, hint string, bad bool) {
+	if !t.inoutConstraints {
+		return "", "", false
+	}
+	constraint := o.constraints[tp]
+	if !transpiler.IsInterfaceConstraint(constraint) {
+		return "", "", false
+	}
+	constraint = t.followAliasChain(constraint)
+	_, why, hint := t.inoutImplMismatch(func() transpiler.Type { return typeArg }, constraint)
+	if why == "" {
+		return "", "", false
+	}
+	return fmt.Sprintf("%s, the type argument for %s of %s, does not satisfy its constraint %s: %s",
+		displayType(typeArg), tp, o.name, displayType(constraint), why), hint, true
+}
+
+// hasInoutConstraint reports whether a type parameter of o is constrained
+// by an interface that declares an `inout` method.
+func (t *galaASTTransformer) hasInoutConstraint(o typeParamOwner) bool {
+	if !t.inoutConstraints {
+		return false
+	}
+	for _, tp := range o.params {
+		if c := o.constraints[tp]; transpiler.IsInterfaceConstraint(c) {
+			if meta := t.getTypeMeta(t.followAliasChain(c).BaseName()); meta != nil && declaresInout(meta) {
+				return true
+			}
 		}
 	}
-	if len(inout) == 0 {
-		return nil
+	return false
+}
+
+// declaresInoutMethod reports whether an interface of types declares an
+// `inout` method.
+func declaresInoutMethod(types map[string]*transpiler.TypeMetadata) bool {
+	for _, meta := range types {
+		if meta != nil && meta.IsInterface && declaresInout(meta) {
+			return true
+		}
 	}
-	slices.Sort(inout)
-	valType := t.followAliasChain(valTypeOf())
+	return false
+}
+
+// declaresInout reports whether meta has a method with an `inout` receiver.
+func declaresInout(meta *transpiler.TypeMetadata) bool {
+	for _, m := range meta.Methods {
+		if m != nil && m.InoutReceiver {
+			return true
+		}
+	}
+	return false
+}
+
+// inoutImplMismatch says why a value of the type valTypeOf returns does not
+// implement the `inout` methods slotType declares with `inout` receivers,
+// and how to fix it; why is "" when it does, when slotType declares none, or
+// when that cannot be told. valType is the value's type as the message
+// names it: a pointer's pointee. A type parameter is judged by its
+// constraint, an interface whose values may be of any type implementing it.
+func (t *galaASTTransformer) inoutImplMismatch(valTypeOf func() transpiler.Type, slotType transpiler.Type) (valType transpiler.Type, why, hint string) {
+	iface := t.getTypeMeta(slotType.BaseName())
+	if iface == nil || !iface.IsInterface {
+		return nil, "", ""
+	}
+	inout := inoutMethods(iface)
+	if len(inout) == 0 {
+		return nil, "", ""
+	}
+	valType = t.followAliasChain(valTypeOf())
 	if ptr, isPtr := valType.(transpiler.PointerType); isPtr {
 		valType = t.followAliasChain(ptr.Elem)
 	}
-	base := valType
-	if g, isGeneric := valType.(transpiler.GenericType); isGeneric {
+	impl := valType
+	c, isTypeParam := t.typeParamConstraint(valType)
+	if isTypeParam {
+		impl = t.followAliasChain(c)
+	}
+	base := impl
+	if g, isGeneric := impl.(transpiler.GenericType); isGeneric {
 		base = g.Base
 	}
 	if transpiler.IsUnusable(base) {
-		return nil
+		return nil, "", ""
 	}
 	base, meta, goData, ok := t.receiverTypeInfo(base)
 	if !ok || meta == nil && goData == nil {
-		return nil // a type nothing here describes: a type parameter, say
+		return nil, "", "" // a type nothing here describes
 	}
 	named, isNamed := base.(transpiler.NamedType)
 	goType := isNamed && t.isGoTyped(named) || meta == nil && goData != nil
@@ -316,28 +389,31 @@ func (t *galaASTTransformer) checkInoutInterfaceSlot(valTypeOf func() transpiler
 			m = meta.Methods[name]
 		}
 		switch {
-		case meta != nil && meta.IsInterface && goDeclared(meta):
-			return nil // an interface value of a Go interface: trusted (Q16)
+		case !isTypeParam && meta != nil && meta.IsInterface && goDeclared(meta):
+			// An interface value of a Go interface: trusted (Q16). Not a
+			// type parameter's value, which GALA instantiates.
+			return nil, "", ""
 		case meta != nil && meta.IsInterface && m != nil && m.InoutReceiver:
 			continue
 		case goType && goData != nil && !goData.PointerMethods[name] && goData.Methods[name] == nil:
-			return nil // no such method: GALA-E0100 reports it
+			return nil, "", "" // no such method: GALA-E0100 reports it
 		case goType && t.isNoRetainGoMethod(base, name):
 			continue
 		case goType || m != nil && m.GoDeclared:
-			return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
-				fmt.Sprintf("%s cannot fill %s: its method %s is Go code, which may keep or share the receiver %s lends", displayType(valType), displayType(slotType), name, displayType(slotType)),
-				fmt.Sprintf("wrap it in a GALA type whose %s has an inout receiver", name))
+			return valType, fmt.Sprintf("its method %s is Go code, which may keep or share the receiver %s lends", name, displayType(slotType)),
+				fmt.Sprintf("wrap it in a GALA type whose %s has an inout receiver", name)
 		case m == nil || !m.InoutReceiver:
 			// A GALA type, or a GALA interface: its method must be declared
 			// inout (a method it gets from an embedded or hand-written Go type
 			// is not).
-			return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
-				fmt.Sprintf("%s cannot fill %s: %s declares %s inout, and %s.%s has no inout receiver", displayType(valType), displayType(slotType), displayType(slotType), name, displayType(valType), name),
-				fmt.Sprintf("declare it `func (inout r %s) %s(...)`", displayType(valType), name))
+			hint := fmt.Sprintf("declare it `func (inout r %s) %s(...)`", displayType(impl), name)
+			if meta != nil && meta.IsInterface {
+				hint = fmt.Sprintf("declare %s's method `inout %s(...)`", displayType(impl), name)
+			}
+			return valType, fmt.Sprintf("%s declares %s inout, and %s.%s has no inout receiver", displayType(slotType), name, displayType(impl), name), hint
 		}
 	}
-	return nil
+	return nil, "", ""
 }
 
 // renameCallee renames the function call calls, `F`, `pkg.F` or `F[T]`, to
@@ -404,4 +480,95 @@ func (t *galaASTTransformer) inoutBodyClash(body, name, typeName string) string 
 		}
 	}
 	return ""
+}
+
+// checkInoutTypePattern rejects a typed pattern (`case s: Stepper`) whose
+// type, target, is an interface declaring `inout` methods, testing a value
+// of the type operand (nil when unknown) whose static type does not already
+// guarantee them (GALA-E0116, docs/OWNERSHIP_DESIGN.MD 3.5.3). Go's dynamic
+// type test cannot tell an `inout` receiver from a Ptr receiver, so the test
+// would accept a value whose method may keep its receiver.
+//
+// A value of an interface type (`any`, `error`, a Go or GALA interface)
+// passes only when the interface is a GALA one declaring each such method
+// `inout` itself. A value of a type parameter is judged by its constraint,
+// as such an interface; one constrained by `any` or `comparable` may hold
+// any type. A value of a concrete type is judged as a value filling the
+// interface is (inoutImplMismatch). An unknown type is rejected.
+func (t *galaASTTransformer) checkInoutTypePattern(target, operand transpiler.Type, at srcNode) error {
+	if target == nil {
+		return nil
+	}
+	target = t.followAliasChain(target)
+	iface := t.getTypeMeta(target.BaseName())
+	if iface == nil || !iface.IsInterface || !declaresInout(iface) {
+		return nil
+	}
+	inout := inoutMethods(iface)
+	reject := func(what string) error {
+		return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
+			fmt.Sprintf("a typed pattern cannot test %s for %s: %s declares %s inout, and a dynamic type test cannot tell an inout receiver from a Ptr receiver",
+				what, displayType(target), displayType(target), strings.Join(inout, ", ")),
+			fmt.Sprintf("match a value whose type already declares %s inout (a %s), or match its concrete type (`case p: *Counter`) and call %s on RequirePtr(p)",
+				inout[0], displayType(target), inout[0]))
+	}
+	if operand != nil {
+		operand = t.followAliasChain(operand)
+		for {
+			if inner, ok := transpiler.UnwrapSendable(operand); ok {
+				operand = t.followAliasChain(inner)
+			} else if inner, ok := transpiler.ImmutableElem(operand); ok {
+				operand = t.followAliasChain(inner)
+			} else {
+				break
+			}
+		}
+		if ptr, isPtr := operand.(transpiler.PointerType); isPtr {
+			operand = t.followAliasChain(ptr.Elem)
+		}
+	}
+	if operand == nil || transpiler.IsUnusable(operand) {
+		return reject("a value of unknown type")
+	}
+	shown := displayType(operand)
+	if name, c, ok := t.constrainedTypeParam(operand); ok || t.activeTypeParams[name] {
+		if !transpiler.IsInterfaceConstraint(c) {
+			return reject("a " + shown + " (a type parameter that may hold any type)")
+		}
+		operand = t.followAliasChain(c)
+	}
+	if transpiler.IsUnusableOrAny(operand) {
+		return reject("an " + shown)
+	}
+	if t.isInterfaceType(operand) {
+		meta := t.getTypeMeta(operand.BaseName())
+		if meta == nil || !meta.IsInterface || goDeclared(meta) {
+			return reject("a " + shown)
+		}
+		for _, name := range inout {
+			if m := meta.Methods[name]; m == nil || !m.InoutReceiver {
+				return reject("a " + shown)
+			}
+		}
+		return nil
+	}
+	_, why, hint := t.inoutImplMismatch(func() transpiler.Type { return operand }, target)
+	if why != "" {
+		return inoutCodedError(galaerr.CodeInoutForeignImpl, at,
+			fmt.Sprintf("a typed pattern cannot test a %s for %s: %s", shown, displayType(target), why), hint)
+	}
+	return nil
+}
+
+// inoutMethods is the names of meta's methods with an `inout` receiver,
+// sorted.
+func inoutMethods(meta *transpiler.TypeMetadata) []string {
+	var names []string
+	for name, m := range meta.Methods {
+		if m != nil && m.InoutReceiver {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
 }
