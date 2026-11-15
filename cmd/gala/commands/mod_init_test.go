@@ -2,6 +2,7 @@ package commands
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -11,13 +12,16 @@ import (
 	"martianoff/gala/internal/depman/mod"
 )
 
-// gala mod init in a Go module copies every requirement of go.mod into gala.mod
-// as a Go requirement, at go.mod's version and keeping its indirect mark.
+// gala mod init in a Go module copies the requirements of go.mod into gala.mod
+// as Go requirements, at go.mod's version and keeping its indirect mark. A
+// requirement go.mod replaces, and a GALA standard library package, are not
+// copied, and are named with the reason.
 func TestGoRequirementsOfGoMod(t *testing.T) {
 	tests := []struct {
-		name  string
-		goMod string
-		want  []mod.Require
+		name        string
+		goMod       string
+		want        []mod.Require
+		wantSkipped []string
 	}{
 		{
 			name:  "no requirements",
@@ -25,18 +29,30 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 			want:  []mod.Require{},
 		},
 		{
-			name: "direct and indirect requirements, a pseudo-version, a replace",
+			name: "direct and indirect requirements, a pseudo-version",
 			goMod: "module example.com/app\n\ngo 1.25\n\ntoolchain go1.25.5\n\n" +
 				"require github.com/google/uuid v1.3.0\n\n" +
 				"require (\n\tgithub.com/spf13/cobra v1.10.2\n" +
 				"\tgithub.com/spf13/pflag v1.0.10 // indirect\n" +
-				"\tgolang.org/x/text v0.0.0-20240101000000-abcdefabcdef // indirect\n)\n\n" +
-				"replace github.com/google/uuid => ../uuid\n",
+				"\tgolang.org/x/text v0.0.0-20240101000000-abcdefabcdef // indirect\n)\n",
 			want: []mod.Require{
 				{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true},
 				{Path: "github.com/spf13/cobra", Version: "v1.10.2", Go: true},
 				{Path: "github.com/spf13/pflag", Version: "v1.0.10", Indirect: true, Go: true},
 				{Path: "golang.org/x/text", Version: "v0.0.0-20240101000000-abcdefabcdef", Indirect: true, Go: true},
+			},
+		},
+		{
+			name: "a replaced module and a standard library package are not copied",
+			goMod: "module example.com/app\n\ngo 1.25\n\n" +
+				"require (\n\tgithub.com/google/uuid v1.3.0\n" +
+				"\texample.com/shared v0.0.0-00010101000000-000000000000\n" +
+				"\tmartianoff/gala/std v0.0.0\n)\n\n" +
+				"replace example.com/shared => ../shared\n",
+			want: []mod.Require{{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true}},
+			wantSkipped: []string{
+				"example.com/shared v0.0.0-00010101000000-000000000000 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
+				"martianoff/gala/std v0.0.0 (part of the GALA standard library, which gala build provides)",
 			},
 		},
 	}
@@ -47,11 +63,13 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 			goMod, err := readGoMod(path)
 			require.NoError(t, err)
 			assert.Equal(t, "example.com/app", goMod.Module.Mod.Path)
-			assert.Equal(t, tt.want, goRequirementsOf(goMod))
+			reqs, skipped := goRequirementsOf(goMod)
+			assert.Equal(t, tt.want, reqs)
+			assert.Equal(t, tt.wantSkipped, skipped)
 
 			// The requirements survive a round trip through gala.mod.
 			f := mod.NewFile("example.com/app")
-			f.Require = goRequirementsOf(goMod)
+			f.Require = reqs
 			parsed, err := mod.Parse(mod.Format(f))
 			require.NoError(t, err)
 			assert.ElementsMatch(t, f.Require, parsed.Require)
@@ -126,3 +144,21 @@ func TestEnsureGalaGitignored(t *testing.T) {
 }
 
 func stringPtr(s string) *string { return &s }
+
+// In a Git work tree whose parent directory's .gitignore already ignores .gala/,
+// gala mod init in a subdirectory leaves .gitignore alone.
+func TestEnsureGalaGitignoredRespectsGitRules(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	root := t.TempDir()
+	require.NoError(t, exec.Command("git", "init", "-q", root).Run())
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".gala/\n"), 0644))
+	sub := filepath.Join(root, "services", "app")
+	require.NoError(t, os.MkdirAll(sub, 0755))
+
+	added, err := ensureGalaGitignored(filepath.Join(sub, ".gitignore"))
+	require.NoError(t, err)
+	assert.False(t, added)
+	assert.NoFileExists(t, filepath.Join(sub, ".gitignore"))
+}

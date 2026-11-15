@@ -103,7 +103,7 @@ gala <version>
 require github.com/google/uuid v1.3.0 // go
 ```
 
-`gala build` takes the versions of Go modules from `gala.mod`, not from `go.mod`, so `gala mod init` copies every `require` of `go.mod` into it, at the same version and marked `// go` (an indirect one stays indirect: `// indirect, go`). That keeps `gala build` on the versions `go build` uses, and lets the transpiler find the source of a Go package your `.gala` files import, which it reads to learn its types: that is how a `(T, error)` result becomes a `Try[T]`. A Go dependency you add later goes in with `gala mod add path@version --go`; see [Go Dependencies](/docs/dependency-management/#6-go-dependencies).
+`gala build` takes the versions of Go modules from `gala.mod`, not from `go.mod`, so `gala mod init` copies every `require` of `go.mod` into it, at the same version and marked `// go` (an indirect one stays indirect: `// indirect, go`). That keeps `gala build` on the versions `go build` uses, and lets the transpiler find the source of a Go package your `.gala` files import, which it reads to learn its types: that is how a `(T, error)` result becomes a `Try[T]`. The copy is made once: a Go dependency you add or upgrade later goes into `gala.mod` with `gala mod add path@version --go`, at the version `go.mod` names. A requirement `go.mod` replaces is not copied, since `gala build` does not apply replace directives to Go dependencies; `gala mod init` lists it. See [Go Dependencies](/docs/dependency-management/#6-go-dependencies).
 
 It also adds `.gala/`, the cache directory the first build creates in the module, to `.gitignore`. `go.mod` is not changed. Commit `gala.mod` and `gala.sum`.
 

@@ -3,12 +3,14 @@ package commands
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/modfile"
 
+	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
 )
 
@@ -24,7 +26,10 @@ If a module path is not provided, gala will attempt to detect it from:
 In a Go module (a directory with a go.mod), every requirement of go.mod is
 copied into gala.mod as a Go dependency (marked // go), at the version go.mod
 names, so gala build uses the same versions as go build. Indirect requirements
-stay marked // indirect.
+stay marked // indirect. A requirement go.mod replaces is not copied (gala
+build does not apply replace directives to Go dependencies), nor is a GALA
+standard library package; both are listed. The copy is made once: after
+changing a version in go.mod, run gala mod add <path>@<version> --go.
 
 gala mod init also adds .gala/, the directory gala build keeps its cache in,
 to .gitignore, creating the file if there is none.
@@ -79,10 +84,9 @@ func runModInit(cmd *cobra.Command, args []string) {
 	// Create gala.mod file
 	f := mod.NewFile(modulePath)
 	f.Gala = Version // Use current GALA version
-	replaces := 0
+	var skipped []string
 	if goMod != nil {
-		f.Require = goRequirementsOf(goMod)
-		replaces = len(goMod.Replace)
+		f.Require, skipped = goRequirementsOf(goMod)
 	}
 
 	if err := mod.WriteFile(f, "gala.mod"); err != nil {
@@ -91,7 +95,7 @@ func runModInit(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("Initialized gala.mod for module %s\n", modulePath)
-	reportCopiedGoRequirements(f.Require, replaces)
+	reportCopiedGoRequirements(f.Require, skipped)
 
 	// Create empty gala.sum if it doesn't exist
 	if _, err := os.Stat("gala.sum"); os.IsNotExist(err) {
@@ -109,7 +113,8 @@ func runModInit(cmd *cobra.Command, args []string) {
 }
 
 // readGoMod parses the go.mod at path; nil, without an error, when there is
-// none.
+// none. It is the main module's go.mod, so it is parsed as the go command
+// parses one, replace directives included (a lax parse drops them).
 func readGoMod(path string) (*modfile.File, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -118,7 +123,7 @@ func readGoMod(path string) (*modfile.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
-	f, err := modfile.ParseLax(path, data, nil)
+	f, err := modfile.Parse(path, data, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse %s: %w", path, err)
 	}
@@ -135,26 +140,50 @@ func readGoMod(path string) (*modfile.File, error) {
 // lists every module the build needs, and an indirect requirement is how it
 // raises a dependency's dependency above the version that dependency asks for;
 // without it, the build would select the lower version go build does not.
-func goRequirementsOf(goMod *modfile.File) []mod.Require {
-	reqs := make([]mod.Require, 0, len(goMod.Require))
-	for _, r := range goMod.Require {
-		reqs = append(reqs, mod.Require{Path: r.Mod.Path, Version: r.Mod.Version, Indirect: r.Indirect, Go: true})
+//
+// Two kinds are not copied, and are returned in skipped with the reason:
+// a module go.mod replaces, whose version (often a v0.0.0 placeholder for a
+// local directory) means nothing without the replace directive, which gala
+// build does not apply to Go dependencies; and a GALA standard library
+// package, which gala build always provides itself.
+func goRequirementsOf(goMod *modfile.File) (reqs []mod.Require, skipped []string) {
+	replaced := make(map[string]bool, len(goMod.Replace))
+	for _, r := range goMod.Replace {
+		replaced[r.Old.Path] = true
 	}
-	return reqs
+	stdlib := make(map[string]bool, len(build.StdlibImportPaths))
+	for _, p := range build.StdlibImportPaths {
+		stdlib[p] = true
+	}
+	reqs = make([]mod.Require, 0, len(goMod.Require))
+	for _, r := range goMod.Require {
+		path, ver := r.Mod.Path, r.Mod.Version
+		switch {
+		case replaced[path]:
+			skipped = append(skipped, fmt.Sprintf("%s %s (go.mod replaces it; gala build does not apply replace directives to Go dependencies)", path, ver))
+		case stdlib[path]:
+			skipped = append(skipped, fmt.Sprintf("%s %s (part of the GALA standard library, which gala build provides)", path, ver))
+		default:
+			reqs = append(reqs, mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true})
+		}
+	}
+	return reqs, skipped
 }
 
 // reportCopiedGoRequirements prints the requirements gala mod init copied from
-// go.mod, and the number of its replace directives, which it does not copy.
-func reportCopiedGoRequirements(reqs []mod.Require, replaces int) {
+// go.mod and those it did not copy, with the reason.
+func reportCopiedGoRequirements(reqs []mod.Require, skipped []string) {
 	if len(reqs) > 0 {
 		fmt.Printf("Copied %d requirement(s) from go.mod as Go dependencies:\n", len(reqs))
 		for _, r := range reqs {
 			fmt.Printf("  %s\n", mod.FormatRequireEntry(r))
 		}
 	}
-	if replaces > 0 {
-		fmt.Printf("Note: go.mod has %d replace directive(s), which were not copied; "+
-			"gala build does not apply replace directives to Go dependencies.\n", replaces)
+	if len(skipped) > 0 {
+		fmt.Printf("Did not copy %d requirement(s) of go.mod:\n", len(skipped))
+		for _, s := range skipped {
+			fmt.Printf("  %s\n", s)
+		}
 	}
 }
 
@@ -167,8 +196,10 @@ const (
 
 // ensureGalaGitignored adds galaCacheDirIgnore to the .gitignore at path,
 // creating the file if there is none, and reports whether it changed the file.
-// A file that already ignores the directory (with or without a leading or
-// trailing slash) is left as it is. The file's line endings are kept.
+// Nothing is changed when the directory is already ignored: by a line of the
+// file (with or without a leading or trailing slash), or, in a Git work tree,
+// by any rule Git applies there, such as one in a parent directory's
+// .gitignore. The file's line endings are kept.
 func ensureGalaGitignored(path string) (added bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -180,6 +211,9 @@ func ensureGalaGitignored(path string) (added bool, err error) {
 			return false, nil
 		}
 	}
+	if gitIgnores(filepath.Dir(path), galaCacheDirIgnore) {
+		return false, nil
+	}
 	eol := "\n"
 	if strings.Contains(content, "\r\n") {
 		eol = "\r\n"
@@ -189,4 +223,12 @@ func ensureGalaGitignored(path string) (added bool, err error) {
 	}
 	content += galaGitignoreComment + eol + galaCacheDirIgnore + eol
 	return true, os.WriteFile(path, []byte(content), 0644)
+}
+
+// gitIgnores reports whether Git ignores rel in dir. Outside a work tree, or
+// without git on PATH, it reports false.
+func gitIgnores(dir, rel string) bool {
+	cmd := exec.Command("git", "check-ignore", "-q", rel)
+	cmd.Dir = dir
+	return cmd.Run() == nil
 }
