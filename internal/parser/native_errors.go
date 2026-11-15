@@ -40,7 +40,12 @@ import (
 // reparse is nil for no retry; a galop panic in it keeps the first parse.
 func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError,
 	reparse func(*native.GalaTokens) (*native.GalaTree, []native.GalaParseError)) []error {
-	habits := goHabits(ts)
+	// Each construct fails to parse or to lex, so a clean parse has none:
+	// the scan never judges a program the grammar accepts.
+	var habits []goHabit
+	if len(parseErrs) > 0 || len(ts.Errors) > 0 {
+		habits = goHabits(ts)
+	}
 	if len(habits) > 0 && reparse != nil {
 		retry := withoutHabits(ts, habits)
 		var retryTree *native.GalaTree

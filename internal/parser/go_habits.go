@@ -20,7 +20,9 @@ import (
 // errors for the tokens the recovery skipped. Each is found from its tokens
 // alone, with shapes valid GALA never has (a Go keyword that GALA reserves as
 // a name, `.(` after an operand, a `:` inside an index), so the grammar does
-// not change and no program that parses today parses differently.
+// not change and no program that parses today parses differently. The scan
+// runs only on a parse with errors (nativeSyntaxErrors), so it never judges a
+// program the grammar accepts.
 //
 // A construct's syntax errors, and the cascade of the recovery after it, are
 // replaced: the tokens are parsed again with each construct cut out, or
@@ -73,7 +75,7 @@ func goHabits(ts *native.GalaTokens) []goHabit {
 		s.n--
 	}
 	for _, e := range ts.Errors {
-		if strings.HasSuffix(e.Msg, "'~'") {
+		if isTildeError(e) {
 			if s.tildeLines == nil {
 				s.tildeLines = map[int32]bool{}
 			}
@@ -84,12 +86,16 @@ func goHabits(ts *native.GalaTokens) []goHabit {
 		s.at(i)
 	}
 	s.tildes()
-	// A construct reported from its operand (`x.(T)`, `s[i:j]`) or from a
-	// `~` starts before the token it was found at.
-	slices.SortStableFunc(s.habits, func(a, b goHabit) int {
-		return cmp.Or(cmp.Compare(a.err.Line, b.err.Line), cmp.Compare(a.err.Column, b.err.Column))
-	})
+	// Not in source order: a construct reported from its operand (`x.(T)`,
+	// `s[i:j]`) or from a `~` starts before the token it was found at;
+	// nativeSyntaxErrors sorts the diagnostics.
 	return s.habits
+}
+
+// isTildeError reports whether e, a lexical error, is the lexer's for a `~`,
+// which GALA has no token for: Go's approximation constraint, `~int`.
+func isTildeError(e native.GalaSyntaxError) bool {
+	return strings.HasSuffix(e.Msg, "'~'")
 }
 
 // at looks for a Go construct that starts at token i.
@@ -500,7 +506,7 @@ func (s *habitScanner) goSwitch(i int) {
 		}
 	}
 	firstCase := s.firstCaseLabel(brace, end)
-	var msg, hint string
+	msg, hint := "Go `switch` statement: GALA branches with `match` or `if`", ""
 	switch {
 	case s.text(brace-1) == ")" && s.text(brace-2) == "type" && s.text(brace-3) == "(" && s.text(brace-4) == ".":
 		subject := s.src(tagFrom, brace-5)
@@ -509,21 +515,11 @@ func (s *habitScanner) goSwitch(i int) {
 			bind = s.text(tagFrom)
 			subject = s.src(tagFrom+2, brace-5)
 		}
-		typ := "int"
-		if firstCase != "" {
-			typ = firstCase
-		}
 		msg = "Go type switch: GALA matches on type patterns"
-		hint = fmt.Sprintf("write it as a match on type patterns; here, `%s match { case %s: %s => ... case _ => ... }`", short(subject), bind, typ)
+		hint = fmt.Sprintf("write it as a match on type patterns; here, `%s match { case %s: %s => ... case _ => ... }`", short(subject), bind, cmp.Or(firstCase, "int"))
 	case tagFrom == brace:
-		cond := "x < 0"
-		if firstCase != "" {
-			cond = firstCase
-		}
-		msg = "Go `switch` statement: GALA branches with `match` or `if`"
-		hint = fmt.Sprintf("write a tagless switch as an `if` / `else if` chain; here, `if %s { ... } else { ... }`", short(cond))
+		hint = fmt.Sprintf("write a tagless switch as an `if` / `else if` chain; here, `if %s { ... } else { ... }`", short(cmp.Or(firstCase, "x < 0")))
 	default:
-		msg = "Go `switch` statement: GALA branches with `match` or `if`"
 		hint = fmt.Sprintf("write it as a match; here, `%s match { case ... => ... case _ => ... }`, where `case a, b:` is `case a | b =>` and `default:` is `case _ =>`", short(s.src(tagFrom, brace-1)))
 	}
 	s.add(galaerr.CodeGoSwitch, i, end, brace, msg, hint)
@@ -754,7 +750,7 @@ func typeSetMessage(text string) string {
 // been reported for: `[T ~int]`, whose constraint otherwise parses as `int`.
 func (s *habitScanner) tildes() {
 	for e, l := range s.ts.Errors {
-		if !strings.HasSuffix(l.Msg, "'~'") || !s.tildeLines[int32(l.Line)] {
+		if !isTildeError(l) || !s.tildeLines[int32(l.Line)] {
 			continue
 		}
 		at := min(int(s.ts.ErrorAt[e]), s.n-1)
@@ -773,7 +769,7 @@ func (s *habitScanner) tildes() {
 // interface.
 func isGoPredeclaredType(name string) bool {
 	switch name {
-	case "bool", "string", "error", "any", "byte", "rune", "uintptr",
+	case "bool", "string", "error", "any", "comparable", "byte", "rune", "uintptr",
 		"int", "int8", "int16", "int32", "int64",
 		"uint", "uint8", "uint16", "uint32", "uint64",
 		"float32", "float64", "complex64", "complex128":
@@ -1219,7 +1215,7 @@ func withoutHabits(ts *native.GalaTokens, habits []goHabit) *native.GalaTokens {
 	}
 	at[len(tokens)] = int32(len(out.Tokens))
 	for e, l := range ts.Errors {
-		if !strings.HasSuffix(l.Msg, "'~'") {
+		if !isTildeError(l) {
 			out.Errors = append(out.Errors, l)
 			out.ErrorAt = append(out.ErrorAt, at[min(int(ts.ErrorAt[e]), len(tokens))])
 		}

@@ -61,11 +61,13 @@ block in a `.go` file of the same package
 
 **Rationale.** `const` is not a GALA keyword; it is reserved as a name
 ([GALA-E0055](/docs/errors/gala-e0055/)). A top-level `const` used to stop the parser
-with `mismatched input 'const' expecting {<EOF>, 'val', ...}`, and one inside
-a function was reported as a use of the name `const`. Both are now this one
-error, at the `const`.
+with `mismatched input 'const' expecting {<EOF>, 'val', ...}`; it is now this
+one error, at the `const`, as is a top-level `const ( ... )` block.
 
-**Scope.** A name spelled `const`, such as `val const = 1`, is still
+**Scope.** The constructs are found only in a file that does not parse.
+A `const` inside a function body that is the file's only error parses, as the name `const`
+followed by an assignment, so it is still reported as a use of that name.
+A name spelled `const`, such as `val const = 1`, is still
 [GALA-E0055](/docs/errors/gala-e0055/).
 
 ---

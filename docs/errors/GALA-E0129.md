@@ -63,7 +63,9 @@ func main() {
 
 **Rationale.** A label used to stop the parser with `extraneous input ':'`,
 and a labeled `break outer` was read as a `break` followed by the name
-`outer`, reported as undefined ([GALA-E0023](GALA-E0023.md)). Both are now
-this error: the label, and each jump that names it.
+`outer`, reported as undefined ([GALA-E0023](GALA-E0023.md)). In a file
+with a label, both are now this error: the label, and each jump that names
+it. A `break outer` alone, with no label written, parses, and is still
+GALA-E0023 for the name `outer`.
 
 **Scope.** `goto` is [GALA-E0036](GALA-E0036.md).

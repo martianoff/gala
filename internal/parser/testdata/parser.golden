@@ -19,7 +19,7 @@ expr/examples/alias_expected_type/checks/checks.gala	9ffb97a6be5d65ff	9a37ecb87e
 expr/examples/alias_expected_type_test.gala	bf847e357eb49f34	c6b520f07eff3313
 expr/examples/alternative_patterns.gala	8966fe0004dc6219	19842e8fd0f512f2
 expr/examples/anonymous_struct_type.gala	a310ad8740a778e7	6f54e9ba351c95dc
-expr/examples/apply_method.gala	5b68355ab46a154d	81aaf232bb76133e
+expr/examples/apply_method.gala	5b68355ab46a154d	9bb9a82fc5358829
 expr/examples/array_large_access.gala	e51d0e92a68d67c3	44c454ecf08a2c59
 expr/examples/array_tabulate_lambda_inference.gala	b61fbdaf6a3af90c	79280d57ed9f53ff
 expr/examples/bare_funcref_map.gala	197c3bc9f6f18eaa	a40140281db56eda
@@ -361,7 +361,7 @@ expr/examples/multifile_lib_regress/opaque_a.gala	1c92c332282509e9	5ca745205fa88
 expr/examples/multifile_lib_regress/opaque_b.gala	cbc7ece7dc3eeeea	2aae94cfd5dc21d2
 expr/examples/multifile_lib_regress/pkg_name_collision.gala	e8dfba4dfe0399fc	3900eff19192bfe2
 expr/examples/multifile_lib_regress/pkg_name_collision_go.gala	39da8681bd866f29	1069b5538992b26d
-expr/examples/multifile_lib_regress/pointer_method_field.gala	7df70e248f0f6c0c	1d831e39b769b90f
+expr/examples/multifile_lib_regress/pointer_method_field.gala	7df70e248f0f6c0c	39b5b181d88702b4
 expr/examples/multifile_lib_regress/proc_pkg/events.gala	98690022f09d9fba	aa238688f7b3cd04
 expr/examples/multifile_lib_regress/proc_pkg/proc.gala	20ad577abd74229f	5919f30a72fa7cc3
 expr/examples/multifile_lib_regress/proc_session.gala	0551c6b545c7abf5	e337aa97091b03d2
@@ -561,7 +561,7 @@ expr/examples/tuple_call_field_unwrap.gala	c8e0b7f2a415afdb	34fd3d9bcddfc8b9
 expr/examples/tuple_destructuring.gala	cec92d5b7a53abd2	a8a3a70f9188d230
 expr/examples/tuple_field_access.gala	e64d74037114a2b9	1b5c3ccaa3f890a7
 expr/examples/tuple_field_unwrap.gala	0acf2a50bf729bad	b1c4b919911eab31
-expr/examples/tuple_interface_element.gala	c4d1d121e9bc1053	44523a59a82aaf96
+expr/examples/tuple_interface_element.gala	c4d1d121e9bc1053	2996478a00b1470a
 expr/examples/tuple_match_irrefutable.gala	b2f62e03c5f3bbd1	802b4fa6da311aef
 expr/examples/tuple_multi_return.gala	4b55f46f17dd163c	ff163bb2f2beb673
 expr/examples/tuple_return_type.gala	0aeea8008e578a6a	01088d67fbb491e8
@@ -621,7 +621,7 @@ expr/examples/variadic_tail_args.gala	46b5218ee9126f43	aff4bf705b14d957
 expr/examples/void_expression_function.gala	8866ff3ba9ca41be	7955782fcf65e0cb
 expr/examples/void_match.gala	a7f1fb2863084839	4c1eb6619d90286f
 expr/examples/when_flatmap_regress/logic.gala	06c151a810377c77	a6d89ab5b7f9b908
-expr/examples/when_flatmap_regress/types.gala	ea3bdfe0dd0b315f	f6fb0b6f2c25ef01
+expr/examples/when_flatmap_regress/types.gala	ea3bdfe0dd0b315f	d3f3639a6d098365
 expr/examples/when_flatmap_regress_test.gala	1f8d85e94913a950	87ef79b9f17c93d2
 expr/examples/when_generic_lambda.gala	81bf37e5661521a2	bdbd5210958f0304
 expr/examples/when_generic_lib/session.gala	771631b421f01373	96936edf8e708ea1

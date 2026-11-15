@@ -31,9 +31,12 @@ func TestGoHabitsAreCoded(t *testing.T) {
 			hint: "`val N = 10`",
 		},
 		{
-			name:  "local_const",
-			input: "package main\n\nfunc main() {\n    const n = 3\n    Println(n)\n}\n",
-			code:  galaerr.CodeGoConst, line: 4, col: 4,
+			// A local `const n = 3` alone parses (as the name `const` and an
+			// assignment) and is GALA-E0055; the scan runs only on a parse
+			// that failed, as here, where the switch below fails it.
+			name: "local_const",
+			input: "package main\n\nfunc main() {\n    const n = 3\n    switch n {\n    case 3:\n        Println(n)\n    }\n}\n",
+			code: galaerr.CodeGoConst, line: 4, col: 4,
 			hint: "`val n = 3`",
 		},
 		{
@@ -202,8 +205,8 @@ func TestGoHabitsAreCoded(t *testing.T) {
 		},
 		{
 			name:  "labeled_break",
-			input: "package main\n\nfunc main() {\n    for i := 0; i < 3; i++ {\n        if i == 1 {\n            break outer\n        }\n    }\n}\n",
-			code:  galaerr.CodeGoLabel, line: 6, col: 12,
+			input: "package main\n\nfunc main() {\nouter:\n    for i := 0; i < 3; i++ {\n        if i == 1 {\n            break outer\n        }\n    }\n}\n",
+			code:  galaerr.CodeGoLabel, line: 4, col: 0,
 			hint: "flag `var`",
 		},
 		{
