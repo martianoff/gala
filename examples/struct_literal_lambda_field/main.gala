@@ -14,6 +14,9 @@ struct Rule(Name string, Test func(int) bool)
 // Mapper is a generic GALA struct with a function-typed field.
 struct Mapper[A any, B any](F func(A) B)
 
+// Span has a tuple field and an optional one.
+struct Span(Range Tuple[int64, int64], Note Option[string])
+
 // A lambda written for a function-typed field of a `T{Field: value}` literal
 // takes its parameter types from the field, as it does for the same field
 // passed as a named argument (`T(Field = value)`).
@@ -23,6 +26,16 @@ func main() {
     Println(s"${even.Name}: ${even.Test(4)} ${even.Test(5)}")
     val show = Mapper[int, string]{F: (n) => s"#$n"}
     Println(show.F(7))
+
+    // The same `val` fields given by position: each value is still wrapped
+    // as an immutable field, and the lambda still typed by its field.
+    val big = Rule{"big", (n) => n > 2}
+    Println(s"${big.Name}: ${big.Test(3)} ${big.Test(1)}")
+
+    // A field of another type gives its type to the value, as a named
+    // argument does: a tuple literal and a bare None().
+    val span = Span{Range: (1, 2), Note: None()}
+    Println(s"${span.Range.V1 + span.Range.V2} ${span.Note.IsEmpty()}")
 
     // A Go struct behind `&`: a plain func field, a named func type field and
     // a nested Go struct literal with a func field of its own.

@@ -42,9 +42,14 @@ func TestCompositeLiteralLambdaFieldTypes(t *testing.T) {
 			want: "func(n int) bool {",
 		},
 		{
-			name: "a Go struct's field given by position",
-			gala: "func run() Stage = Stage{(n) => n * 2}\n",
-			want: "func(n int) int {",
+			name: "a tuple literal for a GALA struct's field",
+			gala: "struct Span(R Tuple[int64, int64])\n\nfunc run() Span = Span{R: (1, 2)}\n",
+			want: "std.Tuple[int64, int64]",
+		},
+		{
+			name: "None() for a GALA struct's field",
+			gala: "struct Holder(V Option[string])\n\nfunc run() Holder = Holder{V: None()}\n",
+			want: "std.None[string]",
 		},
 		{
 			name: "a Go struct's plain func field",
@@ -82,6 +87,22 @@ func TestCompositeLiteralLambdaFieldTypes(t *testing.T) {
 	}
 }
 
+// TestCompositeLiteralLambdaFieldOtherPackage pins a literal of a GALA struct
+// another package declares: its field types come from that package's
+// metadata, so the lambda is typed as for a struct of the file's own.
+func TestCompositeLiteralLambdaFieldOtherPackage(t *testing.T) {
+	files := map[string]string{
+		"go.mod":       "module example.com/sibs\n\ngo 1.25\n",
+		"gala.mod":     "module example.com/sibs\n",
+		"rules/r.gala": "package rules\n\nstruct Rule(Name string, Test func(int) bool)\n",
+		"main.gala": "package main\n\nimport \"example.com/sibs/rules\"\n\n" +
+			"func run() rules.Rule = rules.Rule{Name: \"big\", Test: (n) => n > 2}\n",
+	}
+	out, err := transpileInModule(t, files, "main.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "func(n int) bool {")
+}
+
 // TestCompositeLiteralLambdaFieldUnboundTypeParam pins a generic GALA struct
 // literal that does not write its type arguments: the field's type names a
 // type parameter nothing binds, so it gives the lambda no parameter types and
@@ -92,4 +113,41 @@ func TestCompositeLiteralLambdaFieldUnboundTypeParam(t *testing.T) {
 	_, err := transpileInModule(t, files, galaFile)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GALA-E0033")
+}
+
+// TestCompositeLiteralGoPositional pins a Go struct literal written without
+// keys: each element is typed by the field at its position, the Go type data
+// listing every field — an unexported one too, for a struct of the package's
+// own .go files. (It omits another package's unexported fields, so its list
+// is shorter than any valid literal of such a struct, which then gets no
+// position-based slot; Go rejects that literal in any case.)
+func TestCompositeLiteralGoPositional(t *testing.T) {
+	cases := []struct{ name, gala, want string }{
+		{
+			name: "a struct of the package's own .go files",
+			gala: "func run() Stage = Stage{\"x\", (n) => n * 2}\n",
+			want: "func(n int) int {",
+		},
+		{
+			name: "a struct of the package's own .go files with an unexported field",
+			gala: "func run() Inner = Inner{\"x\", (n) => n + 1}\n",
+			want: "func(n int) int {",
+		},
+		{
+			name: "an imported struct",
+			gala: "import \"net/http\"\n\nfunc run() *http.Client = &http.Client{nil, (req, via) => nil, nil, 0}\n",
+			want: "func(req *http.Request, via []*http.Request) error {",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".",
+				"package main\n\ntype Stage struct {\n\tLabel string\n\tApply func(n int) int\n}\n\n"+
+					"type Inner struct {\n\tlabel string\n\tApply func(n int) int\n}\n",
+				"package main\n\n"+tc.gala)
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want)
+		})
+	}
 }

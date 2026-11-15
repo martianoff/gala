@@ -2150,14 +2150,10 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 				resolved := t.resolveStructTypeName(resolvedTypeName)
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
 					if rawType, ok := fieldTypes[argName]; ok && rawType != nil && !rawType.IsNil() {
-						// Generic struct: substitute the known type arguments.
-						// As for a positional argument (resolveExpectedFuncArgType),
-						// a field type still naming a type parameter the call
-						// has not bound is passed down only for a lambda or
-						// tuple literal; any other value lowered against it
-						// would spell that parameter's bare name.
-						slotType := t.substituteTranspilerTypeParams(rawType, callCtx.structTypeSubst)
-						if t.isFuncOrTupleType(slotType) || !typeMentionsTypeParam(slotType, callCtx.unboundStructTypeParams()) {
+						// The construction call infers the type arguments it
+						// leaves unbound (structCtorTypeSubst), so a function or
+						// tuple field still naming one keeps its slot.
+						if slotType := t.structFieldSlot(rawType, callCtx.structTypeSubst, callCtx.unboundStructTypeParams(), true); slotType != nil {
 							return slotType, nil
 						}
 						return transpiler.NilType{}, nil
@@ -4011,6 +4007,24 @@ func (t *galaASTTransformer) goStructTypeData(fun ast.Expr) *transpiler.GoTypeDa
 	}
 	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(qualifiedName)); td != nil && td.Kind == "struct" {
 		return td
+	}
+	return nil
+}
+
+// structFieldSlot is the type a value given for a GALA struct field of
+// declared type fieldType fills: fieldType with the construction's type
+// arguments subst substituted. A type still naming one of the type parameters
+// in unbound would spell that parameter's bare name in the value lowered
+// against it, so it is no slot (nil) — unless inferred is set and it is a
+// function or tuple type: a construction that infers its type arguments
+// passes it to a lambda or tuple literal, which masks those parameters (see
+// genericCtorLambdaExpectation) and so binds them from the value. Both forms
+// of construction, named arguments and a `T{Field: value}` literal, take a
+// field's slot from here.
+func (t *galaASTTransformer) structFieldSlot(fieldType transpiler.Type, subst typeSubstMap, unbound []string, inferred bool) transpiler.Type {
+	slotType := t.substituteTranspilerTypeParams(fieldType, subst)
+	if !typeMentionsTypeParam(slotType, unbound) || (inferred && t.isFuncOrTupleType(slotType)) {
+		return slotType
 	}
 	return nil
 }
