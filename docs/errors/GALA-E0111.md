@@ -15,6 +15,11 @@ a `val` field is already [GALA-E0076](GALA-E0076.md).) It also fires on an
 `inout` parameter declared variadic or with a default, and on a struct field
 declared `inout`: none of them would lend one place of the caller.
 
+It also fires on `&p` where `p` holds a pointer (a `Ptr[T]`, such as a
+mutable collection, or a `*T`): that lends the variable holding the pointer,
+not a `T`. Pass `p` itself, which lends its pointee (`RequirePtr(p)` for a
+`*T` that may be nil).
+
 **Minimal repro.**
 
 ```gala

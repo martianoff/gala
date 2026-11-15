@@ -292,7 +292,7 @@ smallest programs that trigger it.
 
 | Code | Rule | Usual fix |
 |---|---|---|
-| [GALA-E0111](errors/GALA-E0111.md) | An `inout` argument is `&` of a mutable place | Add the `&`, or copy the value into a `var` |
+| [GALA-E0111](errors/GALA-E0111.md) | An `inout` argument is `&` of a mutable place | Add the `&`, or copy the value into a `var`; drop it for a place that holds a `Ptr` |
 | [GALA-E0112](errors/GALA-E0112.md) | One call never lends overlapping places | Lend disjoint places, or copy one into a `var` |
 | [GALA-E0113](errors/GALA-E0113.md) | An `inout` place doesn't outlive its call | Copy the value out, or make the callee `inout` |
 | [GALA-E0114](errors/GALA-E0114.md) | An `inout`-receiver method runs on a place | Call it on a `var`, an `inout` parameter or a `Ptr` |

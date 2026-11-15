@@ -49,6 +49,22 @@ func both(inout a Counter, inout b Counter) {
 func each(inout c Counter, f func(inout Counter)) = f(&c)
 
 func mk() Counter = Counter(0, "mk")
+
+struct Holder(var c Ptr[Counter])
+
+func (c Counter) give(inout d Counter) {
+    d.n = c.n
+}
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+struct Box[T any](var v T)
+
+func setBox[T any](inout b Box[T], v T) {
+    b.v = v
+}
 `
 
 func inoutSource(body string) string {
@@ -119,6 +135,17 @@ func TestInoutArgumentRejected(t *testing.T) {
 		{"a method argument", `var a = Counter(0, "a")
     var b = Counter(0, "b")
     both(&a, b)`, "the argument b of both is passed to an inout parameter without `&`"},
+		{"a var holding a Ptr", `var p = &Counter(0, "p")
+    bump(&p, 1)`, "cannot lend &p to the inout parameter of bump: p holds a Ptr[Counter], and the parameter takes the Counter it points to"},
+		{"a field holding a Ptr", `var h = Holder(&Counter(0, "h"))
+    bump(&h.c, 1)`, "cannot lend &h.c to the inout parameter of bump: h.c holds a Ptr[Counter]"},
+		{"a method's parameter", `val c = Counter(0, "c")
+    var p = &Counter(1, "p")
+    c.give(&p)`, "cannot lend &p to the inout parameter of give: p holds a Ptr[Counter]"},
+		{"a generic type's parameter", `var b = &Box(1)
+    setBox(&b, 2)`, "cannot lend &b to the inout parameter of setBox: b holds a Ptr[Box[int]], and the parameter takes the Box[T] it points to"},
+		{"a pointer to another type", `var p = &Point(1, 2)
+    bump(&p, 1)`, "cannot lend &p to the inout parameter of bump: p holds a Ptr[Point], and the parameter takes a Counter"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -189,4 +216,40 @@ func TestInoutIsReserved(t *testing.T) {
 	trans := newDefaultsTranspiler()
 	_, err := trans.Transpile("package main\n\nfunc main() {\n    val inout = 1\n    Println(inout)\n}\n", "inout_test.gala")
 	require.Error(t, err)
+}
+
+// TestInoutLendPtrVar pins the lend of a variable holding a pointer: `&xs`
+// for a `var xs` of a Ptr type (a mutable collection) would lend the
+// variable, a `**T` in Go where the inout parameter takes a `*T`, and fail
+// in go build. It is GALA-E0111; passing xs itself lends its pointee.
+func TestInoutLendPtrVar(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	src := func(arg string) string {
+		return `package main
+
+import "martianoff/gala/collection_mutable"
+
+func total(inout xs collection_mutable.Array[int]) int = xs.Size()
+
+func main() {
+    var xs = collection_mutable.ArrayOf(1, 2, 3)
+    Println(total(` + arg + `))
+}
+`
+	}
+	_, err := trans.Transpile(src("&xs"), "inout_ptr_var_test.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0111")
+	assert.Contains(t, err.Error(), "cannot lend &xs to the inout parameter of total: xs holds a Ptr[collection_mutable.Array[int]]")
+	assert.Contains(t, err.Error(), "pass `xs` without `&`")
+
+	out, err := trans.Transpile(src("xs"), "inout_ptr_var_test.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "GALA_total(xs)")
+
+	// A bare type parameter takes the pointer itself.
+	_, err = trans.Transpile(inoutSource(`var p = &Counter(1, "p")
+    put(&p, &Counter(2, "q"))
+    Println(p.n)`), "inout_ptr_var_test.gala")
+	require.NoError(t, err)
 }
