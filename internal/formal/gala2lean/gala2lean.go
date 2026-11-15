@@ -41,6 +41,7 @@ package gala2lean
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -164,26 +165,49 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	g.ownPtrs = ownPtr(p)
 	g.library = opts.Library
 	g.ns = opts.Namespace
-	g.unsup = append(depUnsup, blankImportsOutside(p, opts.Deps)...)
+	g.unsup = depUnsup
 	g.collect(p)
 	g.findBoxes(p)
 	// Every declaration is translated even after one failed, so that every
 	// construct outside the subset is reported.
 	g.emitProgram(opts)
 	g.attributeReach(p)
+	// After the constructs in declarations, which name what stops a program
+	// more precisely than its imports do.
+	g.unsup = append(g.unsup, importsOutside(p, opts.Deps)...)
 	if len(g.unsup) > 0 {
 		return nil, &UnsupportedError{Items: g.unsup}
 	}
 	return &Result{Lean: g.out.String(), Decls: g.decls, Generic: g.genericNames()}, nil
 }
 
-// blankImportsOutside reports each blank import (`import _ "pkg"`) of p whose
-// package is not among deps (blank-import). A blank import is there only to
-// run its package's initializers before the program's; without the package
-// the translation cannot run them, and would print without their output. The
-// blank import of a package in deps is translated: its initialization is
-// ordered like any other import's (importsOf).
-func blankImportsOutside(p *coreexport.Program, deps []Package) []Unsupported {
+// noOutputInitImports are the packages whose import alone stops nothing: Go
+// standard-library packages, and GALA's std and collection_immutable, which
+// the Go of any program using Option or Array imports whether or not the
+// source does, so both models already run such programs without their
+// initializers. Assumption, not modelled: none of them prints while it
+// initializes, so leaving their initializers out prints what Go prints
+// (for the two GALA packages, TestQuietInitPackages checks it). A name of
+// one is still reported where the program uses it outside what is modelled
+// (import). Exact paths only: a module package's path carries its module.
+// galaspec makes the same assumption for the same list
+// (Json.noOutputInitImports in formal/Gala/Json.lean;
+// TestNoOutputInitImportsInStep keeps them equal).
+var noOutputInitImports = []string{
+	"bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+	"unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable",
+}
+
+// importsOutside reports each import of the merged program p, a dependency
+// file's included, of a package the translation is not given (not among
+// deps): a blank import (blank-import), and a named one unless its package
+// is one of noOutputInitImports (import). Go initializes every imported
+// package, before the importer, whether or not a declaration the program
+// reaches uses the import; without the package the translation cannot run
+// its initializers, and would print without their output. An import of a
+// package in deps is translated: its initialization is ordered like any
+// other import's (importsOf).
+func importsOutside(p *coreexport.Program, deps []Package) []Unsupported {
 	known := map[string]bool{}
 	for _, d := range deps {
 		known[d.Path] = true
@@ -191,8 +215,13 @@ func blankImportsOutside(p *coreexport.Program, deps []Package) []Unsupported {
 	var out []Unsupported
 	for _, f := range p.Files {
 		for _, d := range f.Decls {
-			if imp, ok := d.(*coreexport.Import); ok && imp.Alias == "_" && !known[imp.Path] {
+			imp, ok := d.(*coreexport.Import)
+			switch {
+			case !ok || known[imp.Path]:
+			case imp.Alias == "_":
 				out = append(out, Unsupported{Construct: "blank-import", Pos: imp.Pos})
+			case !slices.Contains(noOutputInitImports, imp.Path):
+				out = append(out, Unsupported{Construct: "import", Pos: imp.Pos})
 			}
 		}
 	}

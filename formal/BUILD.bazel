@@ -162,11 +162,14 @@ sh_test(
 
 # gala2lean (internal/formal/gala2lean): the prelude every translated program
 # imports, and the translation Gala/Gala2Lean/Theorems.lean proves things
-# about, which a test there keeps equal to the translator's output.
+# about, which a test there keeps equal to the translator's output; and the
+# decoder, whose Go standard-library import list a test keeps equal to
+# gala2lean's.
 exports_files(
     [
         "Gala/Gala2Lean/Prelude.lean",
         "Gala/Gala2Lean/Examples/Match.lean",
+        "Gala/Json.lean",
     ],
     visibility = ["//internal/formal:__subpackages__"],
 )

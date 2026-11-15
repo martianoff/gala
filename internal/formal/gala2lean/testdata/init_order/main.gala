@@ -4,10 +4,12 @@ import (
     "example.com/order/b"
     "example.com/order/c"
     "example.com/order/f"
+    _ "example.com/order/g"
 )
 
-// Go initializes a, b, c, f, then main: sorted by import path, each once the
-// packages it imports are. f is used only in a type.
+// Go initializes a, b, c, f, g, then main: sorted by import path, each once the
+// packages it imports are. f is used only in a type; g is imported blank,
+// for its initialization only.
 func size(box f.Box) int = 1
 
 func main() {

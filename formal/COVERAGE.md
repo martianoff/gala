@@ -76,11 +76,13 @@ A run ends `unsupported:<kind>` when it reaches:
   initialization (`init-cycle`); a program without `main` (`no-main`);
 - an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
   runs the package's initializers whether or not the run reaches a name of it, and
-  galaspec does not model them. A named import of one of a fixed list of Go
-  standard-library packages (`fmt`, `strings`, … in `Json.goStdImports`, exact paths)
-  does not stop the run: Go standard-library packages print nothing during
-  initialization, and galaspec relies on this for the listed paths. A name of such a
-  package still stops the run when it is reached (`import`);
+  galaspec does not model them. A named import of one of a fixed list of packages
+  (`Json.noOutputInitImports`, exact paths: Go standard-library packages such as `fmt`
+  and `strings`, and GALA's `std` and `collection_immutable`, which the generated Go
+  imports for any program using `Option` or `Array`) does not stop the run: they print
+  nothing during initialization, which galaspec relies on for the listed paths (for
+  the two GALA packages, a gala2lean test checks their package-level initializers). A
+  name of such a package still stops the run when it is reached (`import`);
 - printing a struct or sealed value in a program that declares methods (a `String`
   method would change the text): `method`; a layout `fmt` would print as a pointer
   address: `print-pointer`;
@@ -178,8 +180,11 @@ galaspec models them, except as listed below):
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
   them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every
-  package-level variable of every package it imports (naming it in a value or a type)
-  is initialized, used or not, in Go's order: packages sorted by import path, each
+  package-level variable of every package it imports, directly or not, is
+  initialized, used or not, in Go's order (every import of a compiled program
+  initializes its package: an import its source does not use is rejected,
+  GALA-E0120, and a blank import `import _ "pkg"` is there for its
+  initialization): packages sorted by import path, each
   once the packages it imports are, and within a package as Go orders it. A function
   counts as translated (`-stats`) only when what it uses of other packages
   translates.
@@ -229,14 +234,14 @@ what Core JSON leaves out, it does not translate yet:
 - `HashMap` and `HashSet` (`hash-order`), whose printing, iteration and folding follow
   their hash trie's order, which the prelude does not model; a function of `Array` or
   `List` the prelude does not model (`collection-method`); comparing values that hold
-  a function (`func-in-equal`); any other import (`import`), a type of a package
-  outside the module (`qualified-type`), a dot import of a package of the module
-  (`dot-import-module`), an `init` function (`init-func`), an import gala2lean sees no
-  use of, of a package whose initialization runs something (`unused-import-init`). The
-  language rejects an import its source does not use (GALA-E0120, see
-  [FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#decisions-the-spec-forces)), so in a
-  compiled program this is a use gala2lean does not read; a blank import of a package
-  it is not given (`blank-import`), whose initializers it cannot run.
+  a function (`func-in-equal`); an import, in any file it translates, reached or
+  not, of a package it is not given (`import`; `blank-import` for `import _ "pkg"`),
+  whose initializers Go runs and it cannot, except an import of one of the packages
+  galaspec lists (`Json.noOutputInitImports`, exact paths, the same list and the same
+  assumption: they print nothing while they initialize), which is reported only where
+  the program uses a name of it outside what gala2lean models; a type of a package
+  outside the module (`qualified-type`), a dot import of a package of the module (`dot-import-module`),
+  an `init` function (`init-func`).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 
@@ -328,30 +333,30 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (35 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (37 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 335 |
-| `method-call` | 37 |
-| `generic-type` | 26 |
-| `index` | 16 |
+| `import` | 275 |
+| `method-call` | 51 |
+| `generic-type` | 41 |
+| `index` | 38 |
 | `generic-decl` | 15 |
+| `address-of` | 10 |
 | `unresolved-name` | 9 |
-| `composite-literal` | 7 |
-| `address-of` | 6 |
-| `float-literal` | 6 |
+| `composite-literal` | 8 |
+| `float-literal` | 7 |
 | `method` | 6 |
 | `stuck` | 4 |
 | `by-name-arg` | 2 |
 | `char-literal` | 2 |
+| `for` | 2 |
 | `format-string` | 2 |
 | `type-Value` | 2 |
 | `type-any` | 2 |
 | `typed-pattern` | 2 |
 | `blank-import` | 1 |
 | `defined-type` | 1 |
-| `expression-pattern` | 1 |
 
 ### Outside what gala2lean translates
 
