@@ -704,6 +704,9 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			case "Equal":
 				return "Bool"
 			}
+			if g.caseTest(g.typeByLean(g.exprType(s.Target, sc, seen)), s.Name) != nil {
+				return "Bool"
+			}
 		}
 		n, ok := e.Callee.(*coreexport.Name)
 		if !ok || sc != nil && sc.lookup(n.Name) != nil {
