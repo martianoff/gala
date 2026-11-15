@@ -1,8 +1,8 @@
 # GALA-E0035 — Bare Go builtin is not part of GALA's surface
 
 **When it fires.** A Go builtin (`len`, `append`, `make`, `new`, `cap`, `copy`,
-`delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`) is called as a
-bare function.
+`delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, `min`, `max`,
+`clear`) is called as a bare function.
 
 These were the last symbols that resolved with **no import and no GALA
 declaration** — an implicit Go leakage the language removes. Each one has a
@@ -56,6 +56,38 @@ suggests, verbatim from the suggestion table in
 | `imag` | use `go_interop.Imag(...)` |
 | `panic` | use `go_builtins.Panic(...)` — or prefer `Option` / `Try` / `Either` for recoverable failure |
 | `recover` | `recover` is not available on the GALA surface; `Try` captures panics — use `Try(() => ...)` / `TryApply` |
+| `min` | use `if (a < b) a else b`, `math.Min` for float64, or `slices.Min` on a Go slice |
+| `max` | use `if (a > b) a else b`, `math.Max` for float64, or `slices.Max` on a Go slice |
+| `clear` | use `.Clear()` on a collection_mutable collection; for a Go map, start a new one with `go_interop.MapEmpty` |
+
+**`make` of a Go type.** `make([]T, n)`, `make(map[K]V)` and `make(chan T)`
+take a type no GALA expression can spell, so the parser reports them, from
+their tokens, before the call is read. The hint then names the exact
+replacement for the type and arguments written:
+
+```gala
+package main
+
+func main() {
+    val buf = make([]byte, 64)
+    Println(buf)
+}
+```
+
+```
+error[GALA-E0035]: bare Go builtin "make(...)" is not part of GALA's surface
+  --> main.gala:4:15
+  |
+4 |     val buf = make([]byte, 64)
+  |               ^^^^^^^^^^^^^^^^ use `go_interop.SliceWithSize[byte](64)`
+  |
+  = hint: use `go_interop.SliceWithSize[byte](64)`; an `Array` from collection_immutable needs no size
+```
+
+`make([]T, 0, c)` is `go_interop.SliceWithCapacity[T](c)`, `make([]T, n, c)`
+is `go_interop.SliceWithSizeAndCapacity[T](n, c)`, and `make(map[K]V)` is
+`go_interop.MapEmpty[K, V]()`. GALA has no channels of its own: a `chan T`
+becomes a `Future` or `Promise`, or an `EventBus` from `concurrent`.
 
 **Fix.** Use the GALA-native form. For `len`, that is `.Size()` or
 `.ByteSize()`:

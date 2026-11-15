@@ -101,7 +101,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	if panicErr != nil {
 		return &Parsed{Errors: withCharErr(charErr, []error{panicErr})}
 	}
-	errs := withCharErr(charErr, mergeByPosition(nativeSyntaxErrors(root.Tree(), ts, parseErrs), goDirectives(ts)))
+	errs := withCharErr(charErr, mergeByPosition(nativeSyntaxErrors(root.Tree(), ts, parseErrs, reparseWith(parseSourceFile)), goDirectives(ts)))
 	var handle *Native
 	if root.Ok() {
 		handle = nativeHandle(root.Tree())

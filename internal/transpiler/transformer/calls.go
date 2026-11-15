@@ -37,6 +37,9 @@ var forbiddenGoBuiltinSuggestions = map[string]string{
 	"imag":    "use `go_interop.Imag(...)`",
 	"panic":   "use `go_builtins.Panic(...)` — or prefer `Option` / `Try` / `Either` for recoverable failure",
 	"recover": "`recover` is not available on the GALA surface; `Try` captures panics — use `Try(() => ...)` / `TryApply`",
+	"min":     "use `if (a < b) a else b`, `math.Min` for float64, or `slices.Min` on a Go slice",
+	"max":     "use `if (a > b) a else b`, `math.Max` for float64, or `slices.Max` on a Go slice",
+	"clear":   "use `.Clear()` on a collection_mutable collection; for a Go map, start a new one with `go_interop.MapEmpty`",
 }
 
 // ForbiddenGoBuiltins returns the set of bare Go builtins that GALA forbids on

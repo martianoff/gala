@@ -133,6 +133,18 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0118` | `use` of a value with no Close method | [GALA-E0118.md](GALA-E0118.md) |
 | `GALA-E0119` | Go directive (`//go:embed`, `//go:build`, ...) in a GALA file | [GALA-E0119.md](GALA-E0119.md) |
 | `GALA-E0120` | Import that nothing in the file refers to | [GALA-E0120.md](GALA-E0120.md) |
+| `GALA-E0121` | Go `const` declaration | [GALA-E0121.md](GALA-E0121.md) |
+| `GALA-E0122` | Go declaration group (`var ( ... )`, `type ( ... )`) | [GALA-E0122.md](GALA-E0122.md) |
+| `GALA-E0123` | Go `switch` statement | [GALA-E0123.md](GALA-E0123.md) |
+| `GALA-E0124` | Go type assertion `x.(T)` | [GALA-E0124.md](GALA-E0124.md) |
+| `GALA-E0125` | Go type with no GALA spelling (`interface{}`, `[N]T`) | [GALA-E0125.md](GALA-E0125.md) |
+| `GALA-E0126` | Go embedded struct field or interface | [GALA-E0126.md](GALA-E0126.md) |
+| `GALA-E0127` | Go type-set constraint (`int \| float64`, `~int`) | [GALA-E0127.md](GALA-E0127.md) |
+| `GALA-E0128` | Go slice expression `s[i:j]` | [GALA-E0128.md](GALA-E0128.md) |
+| `GALA-E0129` | Go label, or labeled `break` / `continue` | [GALA-E0129.md](GALA-E0129.md) |
+| `GALA-E0130` | Go named results | [GALA-E0130.md](GALA-E0130.md) |
+| `GALA-E0131` | Go grouped type parameters `[K, V any]` | [GALA-E0131.md](GALA-E0131.md) |
+| `GALA-E0132` | Go multiple return `return a, b` | [GALA-E0132.md](GALA-E0132.md) |
 
 ### Retired codes
 

@@ -111,7 +111,16 @@ func parseExpressionAt(input string, line, col int) (native.ExpressionNode, []er
 	if panicErr != nil {
 		return native.ExpressionNode{}, []error{panicErr}
 	}
-	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs)
+	return expr, nativeSyntaxErrors(expr.Tree(), ts, parseErrs, reparseWith(parseExpression))
+}
+
+// reparseWith is parse, one of galop's recovering parsers, as the retry of
+// nativeSyntaxErrors: the tree and the errors of a parse of the tokens.
+func reparseWith[N interface{ Tree() *native.GalaTree }](parse func(*native.GalaTokens) (N, []native.GalaParseError)) func(*native.GalaTokens) (*native.GalaTree, []native.GalaParseError) {
+	return func(ts *native.GalaTokens) (*native.GalaTree, []native.GalaParseError) {
+		root, errs := parse(ts)
+		return root.Tree(), errs
+	}
 }
 
 // ParseExpressionCheckedAt is input's native tree as exactly one GALA

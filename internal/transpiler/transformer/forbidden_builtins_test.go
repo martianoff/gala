@@ -41,6 +41,9 @@ func TestForbiddenGoBuiltinsAreHardErrors(t *testing.T) {
 		{"imag", "package main\n\nfunc f(c complex128) float64 = imag(c)"},
 		{"panic", "package main\n\nfunc f() int {\n    panic(\"boom\")\n}"},
 		{"recover", "package main\n\nfunc f() {\n    recover()\n}"},
+		{"min", "package main\n\nfunc f(a int, b int) int = min(a, b)"},
+		{"max", "package main\n\nfunc f(a int, b int) int = max(a, b)"},
+		{"clear", "package main\n\nfunc f(m map[string]int) {\n    clear(m)\n}"},
 	}
 	for _, tc := range rejected {
 		tc := tc
@@ -66,6 +69,7 @@ func TestUserFunctionsShadowingBuiltinsAreLegal(t *testing.T) {
 	}{
 		{"delete", "package main\n\nfunc delete(x int) int = x + 1\n\nfunc main() {\n    Println(delete(41))\n}"},
 		{"copy", "package main\n\nfunc copy(x int) int = x * 2\n\nfunc main() {\n    Println(copy(21))\n}"},
+		{"min", "package main\n\nfunc min(a int, b int) int = if (a < b) a else b\n\nfunc main() {\n    Println(min(2, 1))\n}"},
 	}
 	for _, tc := range cases {
 		tc := tc

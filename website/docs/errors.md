@@ -168,6 +168,18 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0118](/docs/errors/gala-e0118/) | `use` of a value with no Close method | Declarations |
 | [GALA-E0119](/docs/errors/gala-e0119/) | Go directive (`//go:embed`, `//go:build`, ...) in a GALA file | Go surface |
 | [GALA-E0120](/docs/errors/gala-e0120/) | Import that nothing in the file refers to | Packages |
+| [GALA-E0121](/docs/errors/gala-e0121/) | Go `const` declaration | Go surface |
+| [GALA-E0122](/docs/errors/gala-e0122/) | Go declaration group (`var ( ... )`, `type ( ... )`) | Go surface |
+| [GALA-E0123](/docs/errors/gala-e0123/) | Go `switch` statement | Go surface |
+| [GALA-E0124](/docs/errors/gala-e0124/) | Go type assertion `x.(T)` | Go surface |
+| [GALA-E0125](/docs/errors/gala-e0125/) | Go type with no GALA spelling (`interface{}`, `[N]T`) | Go surface |
+| [GALA-E0126](/docs/errors/gala-e0126/) | Go embedded struct field or interface | Go surface |
+| [GALA-E0127](/docs/errors/gala-e0127/) | Go type-set constraint (`int \| float64`, `~int`) | Go surface |
+| [GALA-E0128](/docs/errors/gala-e0128/) | Go slice expression `s[i:j]` | Go surface |
+| [GALA-E0129](/docs/errors/gala-e0129/) | Go label, or labeled `break` / `continue` | Go surface |
+| [GALA-E0130](/docs/errors/gala-e0130/) | Go named results | Go surface |
+| [GALA-E0131](/docs/errors/gala-e0131/) | Go grouped type parameters `[K, V any]` | Go surface |
+| [GALA-E0132](/docs/errors/gala-e0132/) | Go multiple return `return a, b` | Go surface |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -205,7 +217,7 @@ Everyday type mismatches transpile cleanly and surface from the **Go compiler** 
 
 **Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import, [E0087](/docs/errors/gala-e0087/) a name that is both a std type and a dot-imported value, [E0120](/docs/errors/gala-e0120/) an import nothing refers to. See [Dependency Management](/docs/dependency-management/).
 
-**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression · [E0047](/docs/errors/gala-e0047/) the `if` initializer statement · [E0055](/docs/errors/gala-e0055/) a Go keyword used as a name · [E0085](/docs/errors/gala-e0085/) a struct tag on a field · [E0117](/docs/errors/gala-e0117/) a Go function literal (`func(x int) int { ... }`) where a lambda goes · [E0090](/docs/errors/gala-e0090/) an anonymous struct type such as `chan struct{}` that would have to be written. Each names its GALA replacement or the fix.
+**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression · [E0047](/docs/errors/gala-e0047/) the `if` initializer statement · [E0055](/docs/errors/gala-e0055/) a Go keyword used as a name · [E0085](/docs/errors/gala-e0085/) a struct tag on a field · [E0117](/docs/errors/gala-e0117/) a Go function literal (`func(x int) int { ... }`) where a lambda goes · [E0090](/docs/errors/gala-e0090/) an anonymous struct type such as `chan struct{}` that would have to be written · [E0121](/docs/errors/gala-e0121/) `const` · [E0122](/docs/errors/gala-e0122/) `var ( ... )` groups · [E0123](/docs/errors/gala-e0123/) `switch` · [E0124](/docs/errors/gala-e0124/) `x.(T)` · [E0125](/docs/errors/gala-e0125/) `interface{}` and `[N]T` · [E0126](/docs/errors/gala-e0126/) embedding · [E0127](/docs/errors/gala-e0127/) `~int | float64` constraints · [E0128](/docs/errors/gala-e0128/) `s[i:j]` · [E0129](/docs/errors/gala-e0129/) labels · [E0130](/docs/errors/gala-e0130/) named results · [E0131](/docs/errors/gala-e0131/) `[K, V any]` · [E0132](/docs/errors/gala-e0132/) `return a, b`. Each names its GALA replacement or the fix.
 
 **Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0051](/docs/errors/gala-e0051/) illegal source character · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
 

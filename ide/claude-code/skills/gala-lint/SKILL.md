@@ -141,6 +141,18 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | `GALA-E0118` | `use` of a fallible acquire: `use f = os.Open(p)` (a `Try[*os.File]`) | `use f = os.Open(p).Get()` inside `Try(() => { ... })`, or `use` it in the `Success` arm of a `match` |
 | `GALA-E0119` | Go directive in a `.gala` file: `//go:embed hello.txt`, `//go:build linux` | `embed val content = "hello.txt"`; build constraints and other directives go in a `.go` file of the package |
 | `GALA-E0120` | An import nothing in the file refers to, often a leftover `import . "martianoff/gala/std"` | Remove it; to run only the package's initialization, `import _ "path"` |
+| `GALA-E0121` | Go `const N = 10`, or a `const ( ... )` block | `val N = 10`; an `iota` enumeration is a `sealed type` |
+| `GALA-E0122` | Go declaration group: `var ( a = 1; b = 2 )`, `type ( ... )` | One declaration per name: `val a = 1`, `val b = 2` |
+| `GALA-E0123` | Go `switch x { case 1, 2: ... default: ... }`, tagless or type switch | `x match { case 1 \| 2 => ... case _ => ... }`; a tagless switch is an `if` / `else if` chain |
+| `GALA-E0124` | Go type assertion `v.(int)`, `n, ok := v.(int)` | `v match { case n: int => ...; case _ => ... }` |
+| `GALA-E0125` | `interface{}`, an inline interface type, a fixed-size array `[16]byte` | `any`; a declared interface; a slice or an `Array` |
+| `GALA-E0126` | Embedded struct field `Base` / `*Base`, embedded interface `io.Reader` | A named field `Base Base`; list the interface's methods |
+| `GALA-E0127` | Type-set constraint `~int \| ~float64`, `[T int \| float64]` | `cmp.Ordered`, or a constraint declared in a `.go` file |
+| `GALA-E0128` | Slice expression `s[1:3]`, `s[1:]`, `s[:2]` | `.Slice(1, 3)` / `.Drop(1)` / `.Take(2)`; `go_interop.Slice` / `SliceDrop` / `SliceTake` on a Go slice |
+| `GALA-E0129` | Label `outer:`, `break outer`, `continue outer` | A flag `var` the outer loop tests, or a function and `return` |
+| `GALA-E0130` | Named results `func f() (n int, err error)` | Result types alone, `(int, error)`; the body gives a `Try` |
+| `GALA-E0131` | Grouped type parameters `[K, V any]` | `[K any, V any]` |
+| `GALA-E0132` | Multiple return `return a, b` | `return (a, b)`; `return Success(v)` / `Failure(err)` for `(T, error)` |
 
 ### 1. Immutability (HIGH priority)
 
