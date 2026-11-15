@@ -75,6 +75,7 @@ go_library(
 go_test(
     name = "commands_test",
     srcs = [
+        "doc_inout_test.go",
         "doc_nonescaping_test.go",
         "doc_opaque_test.go",
         "doc_prose_test.go",

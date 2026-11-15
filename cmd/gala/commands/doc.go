@@ -70,6 +70,9 @@ type docField struct {
 	Name string `json:"name"`
 	Doc  string `json:"doc,omitempty"`
 	Type string `json:"type"`
+	// Inout marks an `inout` parameter; Type is then the type it lends,
+	// not the pointer it lowers to.
+	Inout bool `json:"inout,omitempty"`
 }
 
 // docSignat is a callable: a method or a package-level function.
@@ -86,6 +89,8 @@ type docSignat struct {
 	// during the call, as the ownership analysis infers them
 	// (docs/OWNERSHIP_DESIGN.MD section 3.3).
 	NonEscaping []string `json:"nonEscaping,omitempty"`
+	// InoutReceiver marks a method whose receiver is `inout`.
+	InoutReceiver bool `json:"inoutReceiver,omitempty"`
 }
 
 type docPackage struct {
@@ -325,7 +330,7 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 			Name:       bare,
 			Doc:        meta.Doc,
 			TypeParams:  meta.TypeParams,
-			Params:      namedTypes(meta.ParamNames, meta.ParamTypes),
+			Params:      inoutParams(meta.ParamNames, meta.ParamTypes, meta.InoutParams),
 			Returns:     typeString(meta.ReturnType),
 			NonEscaping: meta.Borrow.NonEscapingNames(meta.ParamNames),
 		})
@@ -382,9 +387,10 @@ func buildDocType(name string, meta *transpiler.TypeMetadata, rich *transpiler.R
 			Name:        methodName,
 			Doc:         m.Doc,
 			TypeParams:  m.TypeParams,
-			Params:      namedTypes(m.ParamNames, m.ParamTypes),
-			Returns:     typeString(m.ReturnType),
-			NonEscaping: m.Borrow.NonEscapingNames(m.ParamNames),
+			Params:        inoutParams(m.ParamNames, m.ParamTypes, m.InoutParams),
+			Returns:       typeString(m.ReturnType),
+			NonEscaping:   m.Borrow.NonEscapingNames(m.ParamNames),
+			InoutReceiver: m.InoutReceiver,
 		})
 	}
 	for _, m := range meta.SynthesizedOpaqueMethods(rich) {
@@ -421,6 +427,22 @@ func namedTypes(names []string, types []transpiler.Type) []docField {
 			name = names[i]
 		}
 		out = append(out, docField{Name: name, Type: typeString(ty)})
+	}
+	return out
+}
+
+// inoutParams is namedTypes for a callable's parameters, whose `inout`
+// flags are inout: an `inout` parameter is recorded as the Ptr[T] it lowers
+// to, and documented as it is written, `inout name T`.
+func inoutParams(names []string, types []transpiler.Type, inout []bool) []docField {
+	out := namedTypes(names, types)
+	for i := range out {
+		if i >= len(inout) || !inout[i] {
+			continue
+		}
+		if ptr, isPtr := types[i].(transpiler.PointerType); isPtr {
+			out[i].Type, out[i].Inout = typeString(ptr.Elem), true
+		}
 	}
 	return out
 }
@@ -546,6 +568,10 @@ func renderProse(w io.Writer, doc, indent string) {
 
 func formatSignature(s docSignat) string {
 	var b strings.Builder
+	if s.InoutReceiver {
+		// As an interface writes an inout method: `inout Step() int`.
+		b.WriteString("inout ")
+	}
 	b.WriteString(s.Name)
 	if len(s.TypeParams) > 0 {
 		b.WriteString("[" + strings.Join(s.TypeParams, ", ") + "]")
@@ -554,6 +580,9 @@ func formatSignature(s docSignat) string {
 	for i, p := range s.Params {
 		if i > 0 {
 			b.WriteString(", ")
+		}
+		if p.Inout {
+			b.WriteString("inout ")
 		}
 		if p.Name != "" {
 			b.WriteString(p.Name + " ")
