@@ -55,6 +55,18 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 				"martianoff/gala/std v0.0.0 (part of the GALA standard library, which gala build provides)",
 			},
 		},
+		{
+			name: "a replace block, a version-limited replace, and a directive newer than x/mod",
+			goMod: "module example.com/app\n\ngo 1.25\n\nignore ./node_modules\n\n" +
+				"require (\n\texample.com/old v1.2.0\n\t\"example.com/quoted\" v1.0.0\n\texample.com/pinned v1.0.0\n)\n\n" +
+				"replace (\n\texample.com/old v1.0.0 => ../old\n\t\"example.com/quoted\" => example.com/fork v1.1.0\n)\n\n" +
+				"replace example.com/pinned v1.0.0 => ../pinned\n",
+			want: []mod.Require{{Path: "example.com/old", Version: "v1.2.0", Go: true}},
+			wantSkipped: []string{
+				"example.com/quoted v1.0.0 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
+				"example.com/pinned v1.0.0 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -144,6 +156,28 @@ func TestEnsureGalaGitignored(t *testing.T) {
 }
 
 func stringPtr(s string) *string { return &s }
+
+// Only a rule of the work tree's own .gitignore files counts: a personal one
+// (core.excludesFile, .git/info/exclude) is not shared with other users.
+func TestSharedIgnoreRule(t *testing.T) {
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{".gitignore:3:.gala/\t.gala/\n", true},
+		{"../../.gitignore:1:.gala/\t.gala/\n", true},
+		{"services/.gitignore:7:**/.gala/\t.gala/\n", true},
+		{".git/info/exclude:2:.gala/\t.gala/\n", false},
+		{"C:/Users/me/.gitignore:1:.gala/\t.gala/\n", false},
+		{"/home/me/.gitignore:1:.gala/\t.gala/\n", false},
+		{"/home/me/.config/git/ignore:1:.gala/\t.gala/\n", false},
+		{".gitignore:4:!.gala/\t.gala/\n", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, sharedIgnoreRule(tt.line), "%q", tt.line)
+	}
+}
 
 // In a Git work tree whose parent directory's .gitignore already ignores .gala/,
 // gala mod init in a subdirectory leaves .gitignore alone.

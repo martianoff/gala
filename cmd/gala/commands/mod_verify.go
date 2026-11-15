@@ -49,13 +49,14 @@ func runModVerify(cmd *cobra.Command, args []string) {
 	// Verify each required module
 	for _, req := range galaMod.Require {
 		entry := galaSum.Get(req.Path, req.Version, "")
-		if entry == nil && req.Go {
-			// gala mod tidy does not fetch a Go module for gala.sum: go.sum
-			// holds its checksum (see galaSumFor).
-			fmt.Printf("SKIPPED: %s@%s (Go module, not in gala.sum; go.sum holds its checksum)\n", req.Path, req.Version)
-			continue
-		}
 		if entry == nil {
+			if req.Go && !cache.Config().IsCached(req.Path, req.Version) {
+				// gala mod tidy records a Go module in gala.sum only when it is
+				// cached, and never fetches one for it: go.sum holds its
+				// checksum (see galaSumFor). Tidy cannot add this entry.
+				fmt.Printf("SKIPPED: %s@%s (Go module, not cached, so not in gala.sum; go.sum holds its checksum)\n", req.Path, req.Version)
+				continue
+			}
 			fmt.Printf("MISSING: %s@%s (not in gala.sum)\n", req.Path, req.Version)
 			missing++
 			continue

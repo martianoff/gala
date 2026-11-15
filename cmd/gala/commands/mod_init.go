@@ -5,10 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 
 	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
@@ -70,7 +72,11 @@ func runModInit(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		modulePath = filepath.Base(cwd)
-		fmt.Printf("Warning: No go.mod found, using directory name: %s\n", modulePath)
+		if goMod != nil {
+			fmt.Printf("Warning: go.mod has no module directive, using directory name: %s\n", modulePath)
+		} else {
+			fmt.Printf("Warning: No go.mod found, using directory name: %s\n", modulePath)
+		}
 		fmt.Println("Consider providing an explicit module path: gala mod init <module-path>")
 	}
 
@@ -113,8 +119,9 @@ func runModInit(cmd *cobra.Command, args []string) {
 }
 
 // readGoMod parses the go.mod at path; nil, without an error, when there is
-// none. It is the main module's go.mod, so it is parsed as the go command
-// parses one, replace directives included (a lax parse drops them).
+// none. The parse is lax, so a directive newer than this gala's x/mod (such as
+// Go 1.25's ignore) is skipped rather than an error; it also leaves out the
+// replace directives, which goModReplaces reads from the syntax tree.
 func readGoMod(path string) (*modfile.File, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -123,7 +130,7 @@ func readGoMod(path string) (*modfile.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
-	f, err := modfile.Parse(path, data, nil)
+	f, err := modfile.ParseLax(path, data, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse %s: %w", path, err)
 	}
@@ -142,32 +149,78 @@ func readGoMod(path string) (*modfile.File, error) {
 // without it, the build would select the lower version go build does not.
 //
 // Two kinds are not copied, and are returned in skipped with the reason:
-// a module go.mod replaces, whose version (often a v0.0.0 placeholder for a
-// local directory) means nothing without the replace directive, which gala
-// build does not apply to Go dependencies; and a GALA standard library
-// package, which gala build always provides itself.
+// a module go.mod replaces at the version it requires, whose version (often a
+// v0.0.0 placeholder for a local directory) means nothing without the replace
+// directive, which gala build does not apply to Go dependencies; and a GALA
+// standard library package, which gala build always provides itself.
 func goRequirementsOf(goMod *modfile.File) (reqs []mod.Require, skipped []string) {
-	replaced := make(map[string]bool, len(goMod.Replace))
-	for _, r := range goMod.Replace {
-		replaced[r.Old.Path] = true
-	}
-	stdlib := make(map[string]bool, len(build.StdlibImportPaths))
-	for _, p := range build.StdlibImportPaths {
-		stdlib[p] = true
+	replaces := goModReplaces(goMod)
+	replaced := func(path, ver string) bool {
+		for _, old := range replaces {
+			if old.Path == path && (old.Version == "" || old.Version == ver) {
+				return true
+			}
+		}
+		return false
 	}
 	reqs = make([]mod.Require, 0, len(goMod.Require))
 	for _, r := range goMod.Require {
 		path, ver := r.Mod.Path, r.Mod.Version
 		switch {
-		case replaced[path]:
+		case replaced(path, ver):
 			skipped = append(skipped, fmt.Sprintf("%s %s (go.mod replaces it; gala build does not apply replace directives to Go dependencies)", path, ver))
-		case stdlib[path]:
+		case build.IsStdlibImport(path):
 			skipped = append(skipped, fmt.Sprintf("%s %s (part of the GALA standard library, which gala build provides)", path, ver))
 		default:
 			reqs = append(reqs, mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true})
 		}
 	}
 	return reqs, skipped
+}
+
+// goModReplaces returns the left-hand side of each replace directive of f:
+// the module path, and the version the directive is limited to ("" for every
+// version). It reads f's syntax tree, since a lax parse leaves f.Replace
+// empty.
+func goModReplaces(f *modfile.File) []module.Version {
+	var olds []module.Version
+	add := func(tokens []string) {
+		if len(tokens) == 0 {
+			return
+		}
+		old := module.Version{Path: unquoteGoModToken(tokens[0])}
+		if len(tokens) > 1 && tokens[1] != "=>" {
+			old.Version = unquoteGoModToken(tokens[1])
+		}
+		olds = append(olds, old)
+	}
+	if f.Syntax == nil {
+		return nil
+	}
+	for _, stmt := range f.Syntax.Stmt {
+		switch s := stmt.(type) {
+		case *modfile.Line:
+			if len(s.Token) > 0 && s.Token[0] == "replace" {
+				add(s.Token[1:])
+			}
+		case *modfile.LineBlock:
+			if len(s.Token) > 0 && s.Token[0] == "replace" {
+				for _, l := range s.Line {
+					add(l.Token)
+				}
+			}
+		}
+	}
+	return olds
+}
+
+// unquoteGoModToken returns a go.mod token without its quotes, when it has
+// them.
+func unquoteGoModToken(tok string) string {
+	if s, err := strconv.Unquote(tok); err == nil {
+		return s
+	}
+	return tok
 }
 
 // reportCopiedGoRequirements prints the requirements gala mod init copied from
@@ -225,10 +278,31 @@ func ensureGalaGitignored(path string) (added bool, err error) {
 	return true, os.WriteFile(path, []byte(content), 0644)
 }
 
-// gitIgnores reports whether Git ignores rel in dir. Outside a work tree, or
-// without git on PATH, it reports false.
+// gitIgnores reports whether a .gitignore file of the work tree around dir
+// ignores rel: one in dir or a parent directory. A rule only this user has (in
+// core.excludesFile or .git/info/exclude) does not count, since the
+// repository's other users do not share it. Outside a work tree, or without
+// git on PATH, it reports false.
 func gitIgnores(dir, rel string) bool {
-	cmd := exec.Command("git", "check-ignore", "-q", rel)
+	cmd := exec.Command("git", "check-ignore", "-v", rel)
 	cmd.Dir = dir
-	return cmd.Run() == nil
+	out, err := cmd.Output()
+	return err == nil && sharedIgnoreRule(string(out))
+}
+
+// sharedIgnoreRule reports whether a `git check-ignore -v` line,
+// "<source>:<line>:<pattern>\t<path>", names an ignoring (not negated) rule
+// of a .gitignore file of the work tree, which git names by a relative path.
+func sharedIgnoreRule(line string) bool {
+	match, _, _ := strings.Cut(strings.TrimSpace(line), "\t")
+	end := strings.Index(match, ".gitignore:")
+	if end < 0 {
+		return false
+	}
+	source := match[:end+len(".gitignore")]
+	rest := match[end+len(".gitignore:"):]
+	_, pattern, _ := strings.Cut(rest, ":")
+	absolute := filepath.IsAbs(source) || strings.HasPrefix(source, "/") ||
+		(len(source) > 1 && source[1] == ':') // a Windows drive, on any OS
+	return filepath.Base(source) == ".gitignore" && !absolute && !strings.HasPrefix(pattern, "!")
 }
