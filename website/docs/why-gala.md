@@ -413,7 +413,7 @@ Be honest with yourself about these trade-offs:
 - **Performance-critical inner loops.** GALA's immutable wrappers add a layer of indirection. For tight numerical computation, raw Go may be faster. Profile before assuming this matters -- for most application code, it does not.
 - **Large existing Go codebases.** GALA interoperates with Go libraries, but rewriting an existing Go project in GALA is rarely justified. Use GALA for new modules where the expressiveness pays off.
 - **Teams unfamiliar with functional programming.** If your team does not know what `FlatMap` does, GALA will slow them down before it speeds them up. The concepts are learnable, but they require investment.
-- **Ecosystem maturity.** GALA has an IntelliJ plugin, a VS Code extension, an LSP server, and documented diagnostics, but its tooling is younger than Go's: the VS Code extension is new and distributed as a release `.vsix` rather than through the Marketplace, and debugger integration is basic. You will occasionally hit rough edges that a mainstream language has long since smoothed out.
+- **Ecosystem maturity.** GALA has an IntelliJ plugin, a VS Code extension, an LSP server, and documented diagnostics, but its tooling is younger than Go's: the VS Code extension is new, and debugger integration is basic. You will occasionally hit rough edges that a mainstream language has long since smoothed out.
 - **You need the absolute latest Go features immediately.** Since GALA transpiles to Go, new Go features appear in GALA only after the transpiler is updated.
 
 ---

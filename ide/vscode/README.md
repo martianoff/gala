@@ -39,13 +39,13 @@ and put it on your `PATH`, or point the extension at it with the
 
 ## Installation
 
-Install the `.vsix` from the [releases page](https://github.com/martianoff/gala/releases):
+Install the extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run
 
 ```bash
-code --install-extension gala-vscode-<version>.vsix
+code --install-extension GALA.gala
 ```
 
-Or in VS Code: **Extensions** → `...` → **Install from VSIX...**.
+Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** → `...` → **Install from VSIX...**).
 
 ## Settings
 

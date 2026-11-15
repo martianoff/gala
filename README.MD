@@ -743,13 +743,13 @@ Go interop is wired end to end: completion and go-to-definition resolve Go stdli
 
 ### VS Code
 
-Install the **GALA extension** from the [releases page](https://github.com/martianoff/gala/releases):
+Install the **GALA extension** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run
 
 ```bash
-code --install-extension gala-vscode-<version>.vsix
+code --install-extension GALA.gala
 ```
 
-Or in VS Code: **Extensions** > `...` > **Install from VSIX...**. The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); override the binary with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
+Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** > `...` > **Install from VSIX...**). The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); override the binary with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
 
 ### Neovim
 

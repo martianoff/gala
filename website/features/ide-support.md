@@ -123,13 +123,13 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 
 ### VS Code
 
-Install the GALA extension from the [releases](https://github.com/martianoff/gala/releases) page:
+Install the GALA extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run
 
 ```bash
-code --install-extension gala-vscode-<version>.vsix
+code --install-extension GALA.gala
 ```
 
-Or in VS Code: **Extensions** > `...` > **Install from VSIX...**. The extension is a thin client: it registers the `gala` language for `.gala` files (syntax highlighting, comments, brackets) and starts `gala lsp` for every feature listed above — diagnostics, completion, inlay hints, go-to-definition and symbols. It requires the GALA CLI on `PATH` (check `gala version`); point it elsewhere with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
+Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** > `...` > **Install from VSIX...**). The extension is a thin client: it registers the `gala` language for `.gala` files (syntax highlighting, comments, brackets) and starts `gala lsp` for every feature listed above — diagnostics, completion, inlay hints, go-to-definition and symbols. It requires the GALA CLI on `PATH` (check `gala version`); point it elsewhere with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
 
 ### Neovim
 

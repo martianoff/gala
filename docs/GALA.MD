@@ -6611,7 +6611,7 @@ The LSP server leverages the full transpiler pipeline for deep, type-aware analy
 
 ### VS Code
 
-Install the GALA extension from the [releases page](https://github.com/martianoff/gala/releases) — `code --install-extension gala-vscode-<version>.vsix`, or **Extensions** > `...` > **Install from VSIX...**. The extension registers the `gala` language for `.gala` files and starts `gala lsp`; it requires the GALA CLI on `PATH`, or `gala.serverPath` / `GALA_PATH` pointing at it.
+Install the GALA extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala) — search for **GALA** in the Extensions view or run `code --install-extension GALA.gala`. Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs. The extension registers the `gala` language for `.gala` files and starts `gala lsp`; it requires the GALA CLI on `PATH`, or `gala.serverPath` / `GALA_PATH` pointing at it.
 
 This gives you syntax highlighting plus diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints, and document/workspace symbols — all the LSP features listed above.
 

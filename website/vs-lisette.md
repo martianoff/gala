@@ -39,7 +39,7 @@ We'll say up front: Lisette is a strong, actively maintained project with real m
 | Third-party Go modules | Yes — types inferred **directly from the Go SDK**, no declaration files | Yes — `lis add` fetches the module and the compiler generates typedefs (`.d.lis`) |
 | Monadic do-notation | `bind` / `also` | `try` blocks, `?` propagation and a pipeline operator |
 | Standard library | `Option`/`Either`/`Try`/`Future`/`IO`, immutable collections, JSON + YAML codecs, regex, crypto, fs | A prelude (`Option`, `Result`, `Slice`, `Map`, channels, ranges, …) plus the Go standard library through typedefs built into the compiler |
-| Editor tooling | GoLand/IntelliJ plugin, VS Code extension (a .vsix attached to each release; not yet on the Marketplace), and LSP for Neovim and other editors | LSP with extensions for VS Code, Zed, JetBrains, Neovim, Helix and Emacs |
+| Editor tooling | GoLand/IntelliJ plugin, VS Code extension (on the Visual Studio Marketplace), and LSP for Neovim and other editors | LSP with extensions for VS Code, Zed, JetBrains, Neovim, Helix and Emacs |
 | Build performance | Published with recent releases: build time, compiler memory and Go cache size — see [Performance]({{ '/performance/' | relative_url }}) | Describes its compiler as fast and incremental; we found no published benchmark numbers |
 
 ---
@@ -96,7 +96,7 @@ Intellectual honesty is the point of this page:
 
 - **You prefer Rust's syntax.** If Rust is your reference point, Lisette will feel more at home than GALA's Scala flavor.
 - **You want Hindley-Milner inference specifically.** Lisette leans on a classic HM type system; if that's a deliberate preference, it's front and center there.
-- **Broader editor coverage today.** Lisette ships editor extensions for Zed, VS Code, JetBrains IDEs, Neovim, Helix and Emacs. GALA has a GoLand/IntelliJ plugin and a VS Code extension (installed from a release .vsix, not yet on the Marketplace), and works in other editors through a generic LSP client.
+- **Broader editor coverage today.** Lisette ships editor extensions for Zed, VS Code, JetBrains IDEs, Neovim, Helix and Emacs. GALA has a GoLand/IntelliJ plugin and a VS Code extension, and works in other editors through a generic LSP client.
 - **A built-in linter and formatter.** Lisette's tooling advertises 500+ diagnostics.
 
 Both projects are moving quickly. The best way to decide is to write a small program in each.

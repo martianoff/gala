@@ -400,13 +400,13 @@ GALA ships with a **GoLand/IntelliJ plugin**, a **VS Code extension** and an **L
 2. Install plugin: **Settings > Plugins > Install from Disk** > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
 3. Restart the IDE — the LSP server starts automatically when a `.gala` file is opened
 
-**VS Code** — install the GALA extension from the [releases](https://github.com/martianoff/gala/releases) page:
+**VS Code** — install the GALA extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run
 
 ```bash
-code --install-extension gala-vscode-<version>.vsix
+code --install-extension GALA.gala
 ```
 
-Or use **Extensions** > `...` > **Install from VSIX...**. It adds syntax highlighting and starts `gala lsp` for diagnostics, hover, go-to-definition, completion, signature help and inlay hints. The GALA CLI must be on `PATH`; override with `gala.serverPath` or `GALA_PATH`.
+Offline, install the `gala-vscode-<version>.vsix` attached to each [release](https://github.com/martianoff/gala/releases) with **Extensions** > `...` > **Install from VSIX...**. It adds syntax highlighting and starts `gala lsp` for diagnostics, hover, go-to-definition, completion, signature help and inlay hints. The GALA CLI must be on `PATH`; override with `gala.serverPath` or `GALA_PATH`.
 
 **Neovim:**
 
