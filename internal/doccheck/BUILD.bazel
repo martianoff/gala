@@ -24,6 +24,7 @@ go_test(
         "//examples:all_go_bridge_sources",
         "//examples/cobra_cli:sources",
         "//examples/go_interop:sources",
+        "//examples/porting_from_go:sources",
         "//fs:gala_sources",
         "//go_builtins:builtins.go",
         "//go_interop:types.go",

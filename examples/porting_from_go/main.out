@@ -1,0 +1,23 @@
+new in progress unknown
+10 1 0
+small medium bulk
+small medium bulk
+text hi number 3 something else
+Success(Line(A-1, 12)) Failure(line "A-1": want SKU,QTY)
+7 <nil>
+Success(5) true
+Success(4) Failure(negative quantity -1)
+Success(2) Success(A-1,2)
+true
+5
+[A-1 B-2 C-3]
+Some(3) None()
+Array(A-1)
+Success({"id":"o-1","line_count":2})
+Success(Order(o-2, 1, rush))
+Success({"id":"o-3","line_count":4})
+100 100 $7.50
+true
+Success(Array(2, 1, 0))
+true
+false

@@ -1,0 +1,55 @@
+package orders
+
+// The switch shapes of Go, written as GALA match expressions and if-chains.
+// docs/PORTING_FROM_GO.MD quotes this file.
+
+// StatusName names an order status code. A switch on literal values is a
+// match with literal patterns: Go's `case "P", "S":` is the alternative
+// pattern `"P" | "S"`, and `default:` is `case _`.
+func StatusName(code string) string = code match {
+    case "N" => "new"
+    case "P" | "S" => "in progress"
+    case "D" => "delivered"
+    case _ => "unknown"
+}
+
+// Priority is an alias of string; its values play the part of Go constants.
+type Priority string
+
+// Urgent is the priority of an order that ships first.
+val Urgent Priority = "urgent"
+
+// Normal is the priority of every other order.
+val Normal Priority = "normal"
+
+// Weight ranks a priority. A capitalized name in a pattern that names a value
+// in scope compares with it, as a Go case on a constant does; a lowercase name
+// would bind instead.
+func Weight(p Priority) int = p match {
+    case Urgent => 10
+    case Normal => 1
+    case _ => 0
+}
+
+// SizeClass classifies a quantity. A switch with no tag
+// (`switch { case qty < 10: ... }`) is an if-chain...
+func SizeClass(qty int) string =
+    if (qty < 10) "small"
+    else if (qty < 100) "medium"
+    else "bulk"
+
+// SizeClassMatch is SizeClass as a match with guards, which reads well when
+// every case tests the same value.
+func SizeClassMatch(qty int) string = qty match {
+    case n if n < 10 => "small"
+    case n if n < 100 => "medium"
+    case _ => "bulk"
+}
+
+// Describe is a type switch (`switch v := x.(type)`): a match with type
+// patterns.
+func Describe(v any) string = v match {
+    case s: string => s"text ${s}"
+    case n: int => s"number ${n}"
+    case _ => "something else"
+}

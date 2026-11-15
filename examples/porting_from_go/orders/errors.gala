@@ -1,0 +1,45 @@
+package orders
+
+import (
+    "fmt"
+    "strconv"
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_builtins"
+)
+
+// Go's `(T, error)` results and `if err != nil`, panic and recover, in GALA.
+// docs/PORTING_FROM_GO.MD quotes this file.
+
+// Line is one "SKU,QTY" line of an order.
+struct Line(SKU string, Qty int)
+
+// ParseLine is GALA-shaped: one Try value in place of (Line, error).
+// strings.Cut returns three results, so it is a Tuple3; strconv.Atoi returns
+// (int, error), so it is a Try[int].
+func ParseLine(text string) Try[Line] = strings.Cut(text, ",") match {
+    case (sku, qty, true) => strconv.Atoi(strings.TrimSpace(qty)).Map((n) => Line(sku, n))
+    case _ => Failure(fmt.Errorf("line %q: want SKU,QTY", text))
+}
+
+// ParseQty is Go-shaped: it declares Go's result list, so a Go caller gets
+// (int, error). The body gives the Try that the list stands for.
+func ParseQty(text string) (int, error) = strconv.Atoi(strings.TrimSpace(text))
+
+// Total adds the quantities of several lines; the first bad line fails it.
+func Total(lines ...string) Try[int] = ArrayOf(lines...).FoldLeft(Success(0), (acc, line) =>
+    acc.FlatMap((sum) => ParseLine(line).Map((l) => sum + l.Qty)))
+
+// checkedQty guards an invariant that only a bug can break: that is what
+// go_builtins.Panic is for. A failure the caller can act on is a Try.
+func checkedQty(n int) int {
+    if (n < 0) {
+        go_builtins.Panic(s"negative quantity ${n}")
+    }
+    n
+}
+
+// Recovered is Go's recover(): Try runs its argument, which it takes by name,
+// and turns a panic in it into a Failure that holds the panic's error.
+func Recovered(n int) Try[int] = Try(checkedQty(n))

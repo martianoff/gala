@@ -79,6 +79,7 @@ func main() {
 - [Ownership](https://gala.fyi/docs/ownership/): `inout` parameters, which lend a caller's place for one call; the rules the compiler checks (`GALA-E0111` to `GALA-E0116`) and their fixes, Go interop, interfaces
 - [Go interop guide](https://gala.fyi/docs/go-interop/): mixing GALA and Go in both directions, mixed packages, building, using GALA from plain Go modules (`go.gala.fyi/stdlib`, `gala export`, `gala transpile --stdlib-module`), gotchas
 - [Add GALA to a Go repository](https://gala.fyi/docs/add-gala-to-go-repo/): `gala mod init` in an existing Go module, `.gala` files beside `.go` files in one package, calls both ways, Go dependencies in `gala.mod`, and a cobra CLI written in GALA
+- [Porting from Go](https://gala.fyi/docs/porting-from-go/): every Go construct mapped to its GALA form, or to `go_interop`, `Codec[T]` or a hand-written `.go` file, with the error code the Go form gets: `switch`, `(T, error)`, `defer`, `panic`, slices and maps, struct tags, `const`, goroutines, channels and `select`
 - [Dependency injection](https://gala.fyi/docs/dependency-injection/): explicit wiring through constructor parameters, and test fakes built with interface literals
 - [Pattern matching](https://gala.fyi/features/pattern-matching/) · [Sealed types](https://gala.fyi/features/sealed-types/)
 - [For AI agents](https://gala.fyi/for-ai/): why the compiler suits a generate-check-fix loop

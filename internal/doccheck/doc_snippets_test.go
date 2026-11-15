@@ -194,6 +194,7 @@ var docGlobs = []string{
 	"docs/GALA_BEST_PRACTICES.MD",
 	"docs/GO_INTEROP.MD",
 	"docs/OWNERSHIP.MD",
+	"docs/PORTING_FROM_GO.MD",
 	"docs/TYPE_INFERENCE.MD",
 	"docs/errors/GALA-E*.md",
 	"website/*.md",

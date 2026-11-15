@@ -298,7 +298,7 @@ A few Go constructs have no GALA syntax. Keep the code that needs them in a `.go
 | `append`, `make`, `len`, `panic` and the other builtins | `go_interop` helpers and `.Size()` ([GALA-E0035](errors/GALA-E0035.md)) |
 | cgo, `unsafe`, `//go:` directives, code from other generators | Go files |
 
-The [gotchas](GO_INTEROP.MD#gotchas-and-limitations) of the Go interop guide list the rest.
+The [gotchas](GO_INTEROP.MD#gotchas-and-limitations) of the Go interop guide list the rest, and [From Go to GALA](PORTING_FROM_GO.MD) maps each Go construct to its GALA form, or to what stays in Go.
 
 ---
 

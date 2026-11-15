@@ -1,0 +1,22 @@
+package orders
+
+// Go's const, package-level var, and methods on a named scalar type, in GALA.
+// docs/PORTING_FROM_GO.MD quotes this file.
+
+// MaxLines was `const MaxLines = 100`. GALA has no const: a package-level
+// val cannot be reassigned. Go code reads it as MaxLines.Get() (see wire.go).
+val MaxLines = 100
+
+// Verbose was `var Verbose = false`. A package-level var stays a plain Go
+// variable that Go code reads and sets directly.
+var Verbose = false
+
+// Cents was `type Cents int64` with methods. `type Cents int64` is an alias in
+// GALA, so a distinct type with its own methods is an opaque type.
+opaque type Cents int64
+
+// String formats an amount in dollars, such as $7.50 or $-2.50.
+func (c Cents) String() string = f"$$${float64(int64(c)) / 100}%.2f"
+
+// Price converts explicitly, as Go does.
+func Price(units int, each Cents) Cents = Cents(int64(units) * int64(each))

@@ -1,0 +1,48 @@
+package orders
+
+import (
+    "strings"
+    "time"
+
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/concurrent"
+    "martianoff/gala/go_interop"
+)
+
+// Goroutines, channels and select, in GALA. docs/PORTING_FROM_GO.MD quotes
+// this file.
+
+// WordCounts is the fan-out/fan-in of Go's
+//
+//	results := make(chan int, len(texts))
+//	for _, t := range texts { go func() { results <- count(t) }() }
+//	counts := make([]int, 0, len(texts))
+//	for range texts { counts = append(counts, <-results) }
+//
+// Each text is counted in a Future; Traverse collects the results in the
+// order of the texts (the Go loop gets them in completion order),
+// and Await waits for them. A panic in a body fails the Try instead of
+// crashing the program.
+func WordCounts(texts Array[string]) Try[Array[int]] =
+    Traverse(texts, (t) => Future(strings.Fields(t).Size())).Await()
+
+// FinishesWithin is Go's
+//
+//	done := make(chan struct{})
+//	go func() { work(); close(done) }()
+//	select {
+//	case <-done:
+//	    return true
+//	case <-time.After(d):
+//	    return false
+//	}
+//
+// with a go_interop Signal, which is a chan struct{} that GALA can name.
+func FinishesWithin(work func(), d time.Duration) bool {
+    val done = go_interop.NewSignal()
+    go_interop.Spawn(() => {
+        work()
+        go_interop.CloseSignal(done)
+    })
+    go_interop.WaitClosedTimeout(done, d)
+}

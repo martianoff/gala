@@ -303,7 +303,7 @@ A few Go constructs have no GALA syntax. Keep the code that needs them in a `.go
 | `append`, `make`, `len`, `panic` and the other builtins | `go_interop` helpers and `.Size()` ([GALA-E0035](/docs/errors/gala-e0035/)) |
 | cgo, `unsafe`, `//go:` directives, code from other generators | Go files |
 
-The [gotchas](/docs/go-interop/#gotchas-and-limitations) of the Go interop guide list the rest.
+The [gotchas](/docs/go-interop/#gotchas-and-limitations) of the Go interop guide list the rest, and [From Go to GALA](/docs/porting-from-go/) maps each Go construct to its GALA form, or to what stays in Go.
 
 ---
 
