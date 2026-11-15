@@ -1415,7 +1415,7 @@ Dry runs on 2026-11-14, on master, galop `main` and gala-team `master`:
 | Tree | Functions with a `Ptr`/`*T` receiver or parameter | Converted, private | Converted, public (needs approval) | Kept: the rewrite did not compile |
 |---|---|---|---|---|
 | std (19 packages) | 507 | 30 | 68 | 0 |
-| examples (472 programs) | 116 | 16 | 0 | 0 |
+| examples (472 programs) | 97 | 16 | 0 | 0 |
 | galop (16 packages) | 98 | 43 | 0 | 2 (`sepBy1`, `parser.expectId`: E0112, the case in 2.1) |
 | gala-team | 0 | 0 | 0 | 0 |
 
