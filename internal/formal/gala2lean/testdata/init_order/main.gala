@@ -3,12 +3,13 @@ package main
 import (
     "example.com/order/b"
     "example.com/order/c"
-    "example.com/order/e"
+    "example.com/order/f"
 )
 
-// Go initializes a, b, c, then main: sorted by import path, each once the
-// packages it imports are. e is imported but not used, so it is not
-// initialized at all.
+// Go initializes a, b, c, f, then main: sorted by import path, each once the
+// packages it imports are. f is used only in a type.
+func size(box f.Box) int = 1
+
 func main() {
     Println("main", b.Ready, c.Ready)
 }

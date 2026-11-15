@@ -1,0 +1,12 @@
+package f
+
+// main uses f only in a type: an import used that way is used, so Go
+// initializes f.
+val Ready = say("init f")
+
+func say(s string) int {
+    Println(s)
+    1
+}
+
+struct Box(N int)

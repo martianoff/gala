@@ -160,14 +160,13 @@ galaspec models them, except as listed below):
   sequence) the model panics with the same class, `other`. Each function has a case in
   `internal/formal/gala2lean/testdata` whose output the gala CLI printed;
 - the packages of the program's module it imports (`gala2lean -module`): each one's
-  declarations under a Lean namespace of its own, `atn.State`, translated where the
-  program uses them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`.
-  Every package-level variable of every package it imports is initialized, used or
-  not, in Go's order: packages sorted by import path, each once the packages it
-  imports are, and within a package as Go orders it. An import a file does not use
-  is not one: GALA drops it from the Go it writes, so Go does not initialize that
-  package for it. A function counts as translated (`-stats`) only when what it uses
-  of other packages translates.
+  declarations under a Lean namespace of its own, translated where the program uses
+  them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every
+  package-level variable of every package it imports (naming it in a value or a type)
+  is initialized, used or not, in Go's order: packages sorted by import path, each
+  once the packages it imports are, and within a package as Go orders it. A function
+  counts as translated (`-stats`) only when what it uses of other packages
+  translates.
 
 It translates a whole program or nothing: one construct outside its subset anywhere in
 the program, even in a function `main` never calls, stops it, and is reported. Beyond
@@ -210,7 +209,9 @@ what Core JSON leaves out, it does not translate yet:
   `List` the prelude does not model (`collection-method`); comparing values that hold
   a function (`func-in-equal`); any other import (`import`), a type of a package
   outside the module (`qualified-type`), a dot import of a package of the module
-  (`dot-import-module`), an `init` function (`init-func`).
+  (`dot-import-module`), an `init` function (`init-func`), an import a file does not
+  use of a package whose initialization runs something (`unused-import-init`, an open
+  question in [FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#decisions-the-spec-forces)).
 
 The section below gives each example's gala2lean verdict next to galaspec's.
 
