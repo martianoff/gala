@@ -1,0 +1,205 @@
+name: Installers
+
+# Runs the one-line installers (tools/install), the Scoop bucket and the
+# package-manifest renderer against real published releases, on the three
+# OSes they target. They download release assets, so they run when these
+# files change rather than on every pull request.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - tools/install/**
+      - bucket/**
+      - packaging/**
+      - .github/workflows/installers.yml
+      # Sets the asset names and the checksums format the installers rely on.
+      - .github/workflows/release.yml
+
+permissions:
+  contents: read
+
+env:
+  # GITHUB_TOKEN for the installers (latest-release lookup), GH_TOKEN for gh.
+  GITHUB_TOKEN: ${{ github.token }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  lint:
+    name: Lint installers and check manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck -s sh tools/install/install.sh tools/install/render_packaging.sh
+
+      # bucket/gala.json and packaging/homebrew/gala.rb must be exactly what
+      # the renderer produces for the release they name, so the release
+      # workflow's output and the committed files never drift apart.
+      - name: Committed manifests match the renderer
+        run: |
+          version="$(jq -r .version bucket/gala.json)"
+          gh release download "$version" --pattern checksums-sha256.txt --dir "$RUNNER_TEMP"
+          sh tools/install/render_packaging.sh "$version" "$RUNNER_TEMP/checksums-sha256.txt" \
+            "$RUNNER_TEMP/gala.json" "$RUNNER_TEMP/gala.rb"
+          diff -u bucket/gala.json "$RUNNER_TEMP/gala.json"
+          diff -u packaging/homebrew/gala.rb "$RUNNER_TEMP/gala.rb"
+
+      - name: Formula is valid Ruby
+        run: ruby -c packaging/homebrew/gala.rb
+
+  install-sh:
+    name: install.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-latest runs it under Git Bash.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the latest release
+        run: |
+          sh tools/install/install.sh --dir "$RUNNER_TEMP/gala-bin"
+          "$RUNNER_TEMP/gala-bin/gala" version | grep '^GALA version '
+
+      - name: Piped install with a pinned version
+        run: |
+          version="$(jq -r .version bucket/gala.json)"
+          sh -s -- --version "$version" --dir "$RUNNER_TEMP/gala-pinned" < tools/install/install.sh
+          "$RUNNER_TEMP/gala-pinned/gala" version | grep -x "GALA version $version"
+
+      # A mirror holding the real checksums file next to a binary that is not
+      # the release's: the installer must refuse it.
+      - name: A checksum mismatch installs nothing
+        if: runner.os != 'Windows'
+        run: |
+          version="$(jq -r .version bucket/gala.json)"
+          mirror="$RUNNER_TEMP/mirror/$version"
+          mkdir -p "$mirror"
+          gh release download "$version" --pattern checksums-sha256.txt --dir "$mirror"
+          for asset in gala-linux-amd64 gala-linux-arm64 gala-darwin-amd64 gala-darwin-arm64; do
+            echo "not the release binary" > "$mirror/$asset"
+          done
+          if GALA_DOWNLOAD_BASE="file://$RUNNER_TEMP/mirror" \
+              sh tools/install/install.sh --version "$version" --dir "$RUNNER_TEMP/gala-bad" 2> "$RUNNER_TEMP/err.txt"; then
+            echo "::error::install.sh accepted a binary whose checksum does not match"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/err.txt"
+          # It must fail for the right reason, not on a download or path problem.
+          if ! grep -q "SHA-256 mismatch" "$RUNNER_TEMP/err.txt"; then
+            echo "::error::install.sh failed, but not on the checksum check"
+            exit 1
+          fi
+          if [ -e "$RUNNER_TEMP/gala-bad/gala" ]; then
+            echo "::error::install.sh failed but left a binary behind"
+            exit 1
+          fi
+
+  install-ps1:
+    name: install.ps1 (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        # Windows PowerShell 5.1, the one every Windows machine has.
+        shell: powershell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: PSScriptAnalyzer
+        run: |
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          }
+          # Write-Host is deliberate: an installer talks to the person running
+          # it, and under `irm | iex` output-stream text would be pipeline output.
+          $findings = Invoke-ScriptAnalyzer -Path tools\install\install.ps1 -ExcludeRule PSAvoidUsingWriteHost
+          $findings | Format-Table -AutoSize -Wrap RuleName,Line,Message
+          if ($findings) { throw "PSScriptAnalyzer reported $($findings.Count) finding(s)" }
+
+      # The runner is thrown away afterwards, so this run edits the real user
+      # PATH and checks it.
+      - name: Install the latest release (irm | iex form)
+        env:
+          GALA_INSTALL_DIR: ${{ runner.temp }}\gala-bin
+        run: |
+          Get-Content -Raw tools\install\install.ps1 | Invoke-Expression
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($userPath -split ';') -notcontains $env:GALA_INSTALL_DIR) { throw "install dir was not added to the user PATH: $userPath" }
+          $out = & "$env:GALA_INSTALL_DIR\gala.exe" version
+          if ("$out" -notmatch '^GALA version ') { throw "unexpected 'gala version' output: $out" }
+
+      - name: Pinned version, no PATH change
+        run: |
+          $version = (Get-Content -Raw bucket\gala.json | ConvertFrom-Json).version
+          $dir = "$env:RUNNER_TEMP\gala-pinned"
+          $before = [Environment]::GetEnvironmentVariable('Path', 'User')
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\install\install.ps1 -Version $version -InstallDir $dir -NoModifyPath
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed" }
+          if ([Environment]::GetEnvironmentVariable('Path', 'User') -ne $before) { throw "-NoModifyPath changed the user PATH" }
+          $out = & "$dir\gala.exe" version
+          if ("$out" -notmatch "^GALA version $([regex]::Escape($version))") { throw "unexpected 'gala version' output: $out" }
+
+      - name: A checksum mismatch installs nothing
+        run: |
+          # The installer is expected to fail here; its error output must not
+          # stop this step.
+          $ErrorActionPreference = 'Continue'
+          $version = (Get-Content -Raw bucket\gala.json | ConvertFrom-Json).version
+          $mirror = "$env:RUNNER_TEMP\mirror\$version"
+          New-Item -ItemType Directory -Force $mirror | Out-Null
+          gh release download $version --pattern checksums-sha256.txt --dir $mirror
+          Set-Content -Path "$mirror\gala-windows-amd64.exe" -Value 'not the release binary'
+          $env:GALA_DOWNLOAD_BASE = ([Uri]"$env:RUNNER_TEMP\mirror").AbsoluteUri
+          $dir = "$env:RUNNER_TEMP\gala-bad"
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File tools\install\install.ps1 -Version $version -InstallDir $dir -NoModifyPath 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          $out
+          if ($code -eq 0) { throw "install.ps1 accepted a binary whose checksum does not match" }
+          # It must fail for the right reason, not on a download or path problem.
+          if ($out -notmatch 'SHA-256 mismatch') { throw "install.ps1 failed, but not on the checksum check" }
+          if (Test-Path "$dir\gala.exe") { throw "install.ps1 failed but left a binary behind" }
+          Write-Host "install.ps1 refused the mismatched binary, as it should."
+          $global:LASTEXITCODE = 0
+
+  scoop:
+    name: Scoop bucket (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Scoop
+        run: |
+          # The runner's user is an administrator, which Scoop's installer
+          # refuses unless told otherwise.
+          Invoke-Expression "& {$(Invoke-RestMethod https://get.scoop.sh)} -RunAsAdmin"
+          "$env:USERPROFILE\scoop\shims" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      # The bucket is this checkout: Scoop clones it like any bucket repository.
+      - name: scoop install gala from this bucket
+        run: |
+          # Scoop takes only Git URLs, so the checkout is passed as a file://
+          # one, and git must trust a repository the runner user did not create.
+          git config --global --add safe.directory '*'
+          scoop bucket add gala ([Uri]$env:GITHUB_WORKSPACE).AbsoluteUri
+          if ($LASTEXITCODE -ne 0) { throw "scoop bucket add failed" }
+          scoop install gala/gala
+          if ($LASTEXITCODE -ne 0) { throw "scoop install failed" }
+          $version = (Get-Content -Raw bucket\gala.json | ConvertFrom-Json).version
+          $out = gala version
+          if ("$out" -notmatch "^GALA version $([regex]::Escape($version))") { throw "unexpected 'gala version' output: $out" }
+          $out

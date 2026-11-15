@@ -117,7 +117,7 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 
 ### GoLand / IntelliJ IDEA
 
-1. Install the GALA CLI from [releases](https://github.com/martianoff/gala/releases) and add it to your PATH
+1. Install the GALA CLI (see [Getting Started]({{ '/getting-started/' | relative_url }}#installation))
 2. Install the plugin: **Settings > Plugins > Install from Disk** > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
 3. Restart the IDE — the LSP server starts automatically when you open a `.gala` file
 

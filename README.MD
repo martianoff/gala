@@ -78,9 +78,25 @@ Also: opt-in `inout` parameters and receivers (0.101), richer pattern matching w
 
 ### 1. Install
 
-Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases), rename it to `gala` (or `gala.exe` on Windows), and put it on your `PATH`.
+Linux and macOS:
 
-GALA transpiles to Go, so it needs [Go 1.25+](https://go.dev/dl/) on your `PATH` to compile programs.
+```bash
+curl -fsSL https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.ps1 | iex
+```
+
+Or with [Scoop](https://scoop.sh): `scoop bucket add gala https://github.com/martianoff/gala` then `scoop install gala/gala`.
+
+The installers download the latest release for your OS and CPU, check its SHA-256 against the release's `checksums-sha256.txt`, and install `gala` into `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\gala\bin`, added to your user `PATH`). To pick a release or directory, end the Linux/macOS command with `| sh -s -- --version 0.101.0 --dir ~/bin`, or on Windows set `$env:GALA_VERSION` / `$env:GALA_INSTALL_DIR` first; all options are listed at the top of [install.sh](tools/install/install.sh) and [install.ps1](tools/install/install.ps1).
+
+GALA transpiles to Go, so it needs [Go 1.25+](https://go.dev/dl/) on your `PATH` to compile programs. The installers check for it and tell you if it is missing; they do not install it.
+
+Manual install: download the binary for your platform from [Releases](https://github.com/martianoff/gala/releases), rename it to `gala` (or `gala.exe` on Windows), and put it on your `PATH`.
 
 Or build from source (needs [Bazelisk](https://github.com/bazelbuild/bazelisk)):
 
@@ -715,7 +731,7 @@ GALA ships with a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for edit
 
 ### GoLand / IntelliJ IDEA
 
-1. Install GALA CLI: download from [releases](https://github.com/martianoff/gala/releases) and add to PATH.
+1. Install the GALA CLI (see [Install](#1-install)).
 2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases).
 3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened.
 

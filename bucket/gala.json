@@ -1,0 +1,30 @@
+{
+    "version": "0.101.0",
+    "description": "GALA: a functional programming language that transpiles to Go",
+    "homepage": "https://gala.fyi",
+    "license": "Apache-2.0",
+    "notes": "GALA compiles programs through Go 1.25+, which must be on your PATH (scoop install go).",
+    "suggest": {
+        "Go": "main/go"
+    },
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/martianoff/gala/releases/download/0.101.0/gala-windows-amd64.exe#/gala.exe",
+            "hash": "975d7a48ecdbf571ceae135ab1e9fa8fa7303f7030853d7235a973fea7689ce7"
+        }
+    },
+    "bin": "gala.exe",
+    "checkver": {
+        "github": "https://github.com/martianoff/gala"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/martianoff/gala/releases/download/$version/gala-windows-amd64.exe#/gala.exe",
+                "hash": {
+                    "url": "$baseurl/checksums-sha256.txt"
+                }
+            }
+        }
+    }
+}

@@ -6507,7 +6507,7 @@ GALA provides a full-featured GoLand/IntelliJ plugin and a Language Server Proto
 
 #### Installation
 
-1. Install GALA CLI: Download from [releases](https://github.com/martianoff/gala/releases) and add to PATH
+1. Install GALA CLI: run the one-line installer from the [README's Quick Start](../README.MD#1-install), or download a binary from [releases](https://github.com/martianoff/gala/releases) and add it to PATH
 2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
 3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
 
