@@ -555,8 +555,10 @@ in place (see Prior art). The translated Lean is efficient as well as faithful.
 
 ### 3.3 Phase 3: non-escaping closures may capture `inout` places
 
-Status: designed and decided ([§9](#9-phase-3-decisions)). The analysis (3a, 3b) is
-being built; the language change and the Lean translation wait for gala2lean (Q19).
+Status: designed and decided ([§9](#9-phase-3-decisions)). The analysis is implemented:
+3a ([#1126](https://github.com/martianoff/gala/pull/1126)) and 3b
+([#1132](https://github.com/martianoff/gala/pull/1132)). The language change and the Lean
+translation wait for gala2lean (Q19).
 
 Phase 3 lets a closure capture a place that is lent: an `inout` binding, or a pointer that
 phase 1 proves unique. The closure may do this only if it cannot outlive the call it is
@@ -707,7 +709,11 @@ The analysis extends phase 1:
 - **Summaries:** one bit per function-typed parameter, *calls only* or *escapes*,
   computed per strongly connected component of the call graph as a greatest fixed point.
 - **Storage:** written to package metadata next to `Borrow` (decision Q6), so a caller in
-  another package reads them. The analysis cache version is bumped.
+  another package reads them. The analysis cache version is bumped. The fixed point is
+  per package: only the package's own GALA functions start optimistic, and a callee in
+  another package is read from the summary its own package's fixed point converged to,
+  never from an optimistic bit. Go functions, function values, interface methods and
+  callees without a summary escape.
 - **std, measured with a textual check:**
   - `collection_immutable`, `std` and `stream` have 198 function-typed parameters;
   - 122 are only ever called;
@@ -885,7 +891,7 @@ Each PR keeps the generated Go byte-identical.
 | PR | Content | Done when |
 |---|---|---|
 | 3a | Phase 1 precision: no `captured` reason for a binding declared inside a lambda or partial function, whose result is walked as an escape (the false positive in `Parse`) | `Parse`'s `p` shows its real reason; galop bindings with `captured` go from 49 to 47 |
-| 3b | Non-escaping summaries for function-typed and by-name parameters; package metadata and an analysis cache bump; phase 1 treats a capture in a non-escaping closure as a lend; `COVERAGE.md` counts those lends; LSP hover and `gala doc` show non-escaping parameters (Q20) | `ownershipcov` reports the 17 galop functions as unique |
+| 3b (done) | Non-escaping summaries for function-typed and by-name parameters (analysis cache v48); a parallel phase-3 view (`BorrowSummary.Closure*`, `ownership.Func.Phase3`) in which a closure passed to a non-escaping parameter is counted as a lend, while phase 1's bits, which the compiler reads, stay unchanged; `COVERAGE.md` lists phase 3 as analysis only; LSP hover and `gala doc` show non-escaping parameters (Q20) | Measured with the scanner, phase 3: galop 85.8% (60 functions), all trees 66.3%; phase-1 bits byte-identical to before |
 | 3c | Language: E0113 relaxed as in 3.3.2, with reasons in its message; error pages and website mirror; an `examples/` program with a `.out` (an `inout` place mutated through `ForEach`, `Map` and `FoldLeft`) | The example runs; the E0112, E0113 and E0115 negatives still fire |
 | 3d | Go callback allow-list entries (`sort.Slice`, `slices.SortFunc`, `strings.Map`), each verified with `-gcflags=-m` in CI | The escape test passes for every entry |
 | 3e | gala2lean: the scoped-cell translation (B), lifting `ptr-escape` for lent places; gala2lean decides non-escaping itself (Q25); fixtures for two closures sharing one cell; reviewed by the math expert | A fixture and an example with an `inout` capture agree with Go in `lean_test` and difftest |
@@ -893,6 +899,12 @@ Each PR keeps the generated Go byte-identical.
 
 Downstream: phase 3 only accepts more programs, so the gala_team, galop and gala-acp lanes
 cannot break. 3b changes package metadata, so they rebuild their analysis caches once.
+
+**Known debt.** The phase-3 walk types lambda parameters and case-pattern variables itself
+(from a GALA callee's parameter types and the matched value's extractors), which partly
+repeats the transformer's typing. A table of binder types computed before the ownership
+pass, read by both, would remove the repetition; it reorders the pipeline, so it is not
+part of phase 3.
 
 ### 3.4 Phase 4: transfer across `Sendable` boundaries
 
