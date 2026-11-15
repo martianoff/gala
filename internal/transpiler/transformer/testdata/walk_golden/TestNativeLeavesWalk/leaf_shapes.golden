@@ -339,7 +339,7 @@ func composites() int {
 //line $DIR/main.gala:50
 	var q = Point{}
 //line $DIR/main.gala:51
-	var pos = Point{1, 2}
+	var pos = Point{std.NewImmutable(1), std.NewImmutable(2)}
 //line $DIR/main.gala:52
 	return b.size + p.X.Get() + q.Y.Get() + pos.Y.Get()
 }

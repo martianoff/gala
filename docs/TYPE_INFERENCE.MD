@@ -369,6 +369,19 @@ val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred a
    results, and a variadic method's last parameter is a slice. See
    [Interface Literals](GALA.MD#interface-literals).
 
+10. **A struct field of function type** — a lambda given for a field is typed
+    by the field's type, whether the struct is constructed with named
+    arguments (`Rule(Test = (n) => n > 2)`) or a `T{Field: value}` literal
+    (`Rule{Test: (n) => n > 2}`, `&cobra.Command{RunE: (c, args) => …}`).
+    The struct may be a GALA struct or a non-generic Go struct, whose field
+    may also be of a Go named function type (`type Handler func(int) string`).
+    The fields may be keyed or given by position (`Rule{"big", (n) => n > 2}`).
+    A generic GALA
+    struct's literal writes its type arguments
+    (`Mapper[int, string]{F: (n) => s"$n"}`), as Go requires of a `T{…}`
+    literal: a field naming a type argument left out types no lambda, so an
+    untyped parameter there is GALA-E0033.
+
 When a lambda parameter has no annotation **and** no expected type can be
 inferred — e.g. a bare `val f = (x) => x + 1` with no declared type — the
 transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than

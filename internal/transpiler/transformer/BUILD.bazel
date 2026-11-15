@@ -175,6 +175,7 @@ go_test(
         "companion_keyless_widen_test.go",
         "companion_qualified_case_test.go",
         "compilation_gate_test.go",
+        "composite_literal_lambda_field_test.go",
         "concurrency_check_cross_pkg_test.go",
         "concurrency_check_message_test.go",
         "concurrency_check_test.go",
