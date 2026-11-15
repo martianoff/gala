@@ -16,6 +16,12 @@ when its method is on the compiler's no-retain allow-list (`bytes.Buffer`'s
 `WriteString`, for example), whose entries are checked against the Go
 compiler's escape analysis.
 
+The same holds for a type argument. A type parameter such an interface
+constrains, `func run[T Stepper](s T)`, accepts only a type that could fill
+the interface, whether the type argument is written or inferred. A type
+parameter used as one is judged by its own constraint: `T Plain` fills
+`Stepper` only when `Plain` declares `Step` inout too.
+
 An interface value that is already an interface, built in GALA or received
 from Go, fills it as it is: its methods are trusted, not checked.
 

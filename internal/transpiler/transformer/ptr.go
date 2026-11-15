@@ -363,12 +363,21 @@ func (t *galaASTTransformer) ptrConstraint(o typeParamOwner, tp string) (transpi
 	return iface, methods
 }
 
+// checksTypeArgs reports whether a type argument may be rejected at all:
+// some method is declared on a `Ptr` receiver (GALA-E0080), or some
+// interface declares an `inout` method (GALA-E0116). The type-argument
+// checks below skip everything when neither holds.
+func (t *galaASTTransformer) checksTypeArgs() bool {
+	return len(t.ptrReceiverMethods) > 0 || t.inoutConstraints
+}
+
 // hasPtrConstraint reports whether a type parameter of o has a constraint
-// with a method some type declares on a `Ptr` receiver: only then can a type
-// argument of o be rejected, so the checks below skip every other owner
-// before looking at a type argument.
+// with a method some type declares on a `Ptr` receiver, or one that
+// declares an `inout` method: only then can a type argument of o be
+// rejected, so the checks below skip every other owner before looking at a
+// type argument.
 func (t *galaASTTransformer) hasPtrConstraint(o typeParamOwner) bool {
-	if len(t.ptrReceiverMethods) == 0 {
+	if !t.checksTypeArgs() {
 		return false
 	}
 	for _, tp := range o.params {
@@ -376,7 +385,7 @@ func (t *galaASTTransformer) hasPtrConstraint(o typeParamOwner) bool {
 			return true
 		}
 	}
-	return false
+	return t.hasInoutConstraint(o)
 }
 
 // typeArgSource tells where a type argument comes from: written when text is
@@ -397,14 +406,18 @@ func argSource(at srcNode, argType transpiler.Type) typeArgSource {
 // checkPtrTypeArg rejects typeArg as the type argument of o's type parameter
 // tp when it is a pointer that may be nil and tp's constraint has a method
 // its type declares on a `Ptr` receiver (GALA-E0080): the generic code calls
-// that method on whatever pointer the type argument holds. at locates the
-// type argument, or what it is inferred from (src).
+// that method on whatever pointer the type argument holds. It also rejects
+// a type argument that does not implement an `inout` method of tp's
+// constraint with an `inout` receiver (GALA-E0116, inoutTypeArgMisuse). at
+// locates the type argument, or what it is inferred from (src).
 func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at srcNode) error {
-	msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src)
-	if !bad {
-		return nil
+	if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
+		return ptrErrorAt(at, msg, hint)
 	}
-	return ptrErrorAt(at, msg, hint)
+	if msg, hint, bad := t.inoutTypeArgMisuse(o, tp, typeArg); bad {
+		return inoutCodedError(galaerr.CodeInoutForeignImpl, at, msg, hint)
+	}
+	return nil
 }
 
 // ptrTypeArgMisuse returns the GALA-E0080 message and hint of checkPtrTypeArg
@@ -451,6 +464,9 @@ func (t *galaASTTransformer) checkPtrSlotTypeArgs(name string, funcMeta *transpi
 		if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
 			return galaerr.NewCodedSemanticError(galaerr.CodePtrNullability, line, col, msg, hint)
 		}
+		if msg, hint, bad := t.inoutTypeArgMisuse(o, tp, typeArg); bad {
+			return galaerr.NewCodedSemanticError(galaerr.CodeInoutForeignImpl, line, col, msg, hint)
+		}
 	}
 	return nil
 }
@@ -461,7 +477,7 @@ func (t *galaASTTransformer) checkPtrSlotTypeArgs(name string, funcMeta *transpi
 // receiver's method on whatever pointer it is called with.
 func (t *galaASTTransformer) checkPtrFuncRefSlot(expr ast.Expr, expected transpiler.Type, at srcNode) error {
 	expectedFT, isFT := expected.(transpiler.FuncType)
-	if !isFT || len(t.ptrReceiverMethods) == 0 {
+	if !isFT || !t.checksTypeArgs() {
 		return nil
 	}
 	fm := t.lookupBareFuncRefMeta(expr)
@@ -527,7 +543,7 @@ func (t *galaASTTransformer) checkPtrBoundTypeArgs(o typeParamOwner, written int
 // checkPtrTypeArgsOfType checks the type arguments args, written as written,
 // of the generic type s names (`Holder[*Counter]`) with checkPtrTypeArg.
 func (t *galaASTTransformer) checkPtrTypeArgsOfType(s typeSrc, args []ast.Expr, written []typeSrc) error {
-	if len(t.ptrReceiverMethods) == 0 {
+	if !t.checksTypeArgs() {
 		return nil
 	}
 	name := s.nameText()
@@ -548,7 +564,7 @@ func (t *galaASTTransformer) checkPtrTypeArgsOfType(s typeSrc, args []ast.Expr, 
 // refers to. args are its positional arguments and named its named ones,
 // lowered.
 func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, list argsSrc, args []ast.Expr, named map[string]ast.Expr, callCtx functionCallContext) error {
-	if len(t.ptrReceiverMethods) == 0 {
+	if !t.checksTypeArgs() {
 		return nil
 	}
 	base, written := splitCallFunTypeArgs(fun)

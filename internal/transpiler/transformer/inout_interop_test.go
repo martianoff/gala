@@ -147,6 +147,87 @@ func main() {
 	}
 }
 
+// TestInoutInterfaceConstraint pins GALA-E0116 at a type argument: a type
+// parameter constrained by an interface that declares an inout method is
+// instantiated only with a type implementing it with an inout receiver, as
+// a value filling the interface must: a generic function's, struct's or
+// method's, written or inferred. Go's own constraint check cannot tell
+// an inout receiver from a Ptr receiver. A type parameter is judged by its
+// constraint.
+func TestInoutInterfaceConstraint(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	src := func(decl, body string) string {
+		return `package main
+
+type Stepper interface {
+    inout Step() int
+}
+
+type Plain interface {
+    Step() int
+}
+
+struct Good(var n int)
+
+func (inout g Good) Step() int {
+    g.n = g.n + 1
+    g.n
+}
+
+struct Leaky(var n int)
+
+func (l Ptr[Leaky]) Step() int = l.n
+
+func run(s Stepper) int = s.Step()
+
+func runG[T Stepper](s T) int = s.Step()
+
+func viaStepper[T Stepper](s T) int = runG(s)
+
+struct Box[T Stepper](s T)
+
+func (b Box[T]) run() int = b.s.Step()
+
+struct Holder(n int)
+
+func (h Holder) apply[T Stepper](s T) int = s.Step() + h.n
+
+` + decl + `
+
+func main() {
+    ` + body + `
+}
+`
+	}
+	_, err := trans.Transpile(src("", "Println(runG(&Good(0)), viaStepper(&Good(1)), runG[Ptr[Good]](&Good(2)), Box(&Good(3)).run(), Holder(1).apply(&Good(4)))"), "inout_constraint_test.gala")
+	require.NoError(t, err)
+
+	rejected := []struct{ name, decl, body, want string }{
+		{"an inferred type argument without inout", "", "Println(runG(&Leaky(0)))",
+			"Ptr[Leaky], the type argument for T of runG, does not satisfy its constraint Stepper: Stepper declares Step inout, and Leaky.Step has no inout receiver"},
+		{"a generic struct built with a type argument without inout", "", "Println(Box(&Leaky(0)).run())",
+			"Ptr[Leaky], the type argument for T of Box, does not satisfy its constraint Stepper"},
+		{"a written type argument of a generic type", "func keep(b Box[Ptr[Leaky]]) int = b.run()", "Println(1)",
+			"the type argument for T of Box, does not satisfy its constraint Stepper"},
+		{"a generic method's type argument without inout", "", "Println(Holder(1).apply(&Leaky(0)))",
+			"the type argument for T of apply, does not satisfy its constraint Stepper"},
+		{"an explicit type argument without inout", "", "Println(runG[Ptr[Leaky]](&Leaky(0)))",
+			"the type argument for T of runG, does not satisfy its constraint Stepper"},
+		{"a type parameter constrained without inout", "func viaPlain[T Plain](s T) int = runG(s)", "Println(1)",
+			"Stepper declares Step inout, and Plain.Step has no inout receiver"},
+		{"a type parameter filling an inout interface slot", "func toSlot[T Plain](s T) int = run(s)", "Println(1)",
+			"Stepper declares Step inout, and Plain.Step has no inout receiver"},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(src(tc.decl, tc.body), "inout_constraint_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0116")
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
 // TestInoutGoWrapperNoCopy pins that an exported inout parameter of a type
 // that must not be copied is GALA-E0111: Go reaches it through a copy.
 func TestInoutGoWrapperNoCopy(t *testing.T) {
