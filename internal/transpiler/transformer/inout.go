@@ -159,9 +159,8 @@ type inoutCallee struct {
 	// fm is the declared function called; nil for a method or a function value.
 	fm *transpiler.FunctionMetadata
 	// paramTypes are the declared parameter types, an `inout` one as the
-	// Ptr[T] it lowers to; typeParams the type parameters they may name.
+	// Ptr[T] it lowers to (inoutCalleeTypeParams names their type parameters).
 	paramTypes []transpiler.Type
-	typeParams []string
 }
 
 // lends reports whether the callee lends a place: an `inout` parameter or
@@ -180,7 +179,7 @@ func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c
 			if meta := t.getTypeMeta(key); meta != nil && meta.Methods[method] != nil {
 				m := meta.Methods[method]
 				c = inoutCallee{inout: m.InoutParams, params: m.ParamNames, name: method, recvInout: m.InoutReceiver, method: m, recvType: recvType, declared: true,
-					paramTypes: m.ParamTypes, typeParams: append(slices.Clone(m.TypeParams), meta.TypeParams...)}
+					paramTypes: m.ParamTypes}
 				if sel, isSel := call.Fun.(*ast.SelectorExpr); !isSel || sel.Sel.Name != method {
 					c.shift = 1
 				}
@@ -194,7 +193,7 @@ func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c
 		if t.inoutNames[name[strings.LastIndex(name, ".")+1:]] {
 			if fm := t.getFunction(name); fm != nil {
 				c = inoutCallee{inout: fm.InoutParams, params: fm.ParamNames, name: fm.Name, declared: true, fm: fm,
-					paramTypes: fm.ParamTypes, typeParams: fm.TypeParams}
+					paramTypes: fm.ParamTypes}
 				return c, c.lends()
 			}
 		}
@@ -333,29 +332,51 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 
 // checkInoutLentPointer rejects `&place` for the `inout` parameter i of
 // callee when place holds a pointer (a Ptr[T] or a *T) and the parameter
-// takes the value it points to, T (GALA-E0111): `&place` lends the variable
-// holding the pointer, a `**T` in Go where the parameter is a `*T`. A Ptr
-// the caller holds lends its pointee when passed as it is. A parameter
-// whose type is a type parameter, or itself a pointer, takes the pointer.
+// does not take one (GALA-E0111): `&place` lends the variable holding the
+// pointer, a `**T` in Go, where the parameter is a `*U` for a U that is no
+// pointer (an inout parameter cannot be one, GALA-E0111). Only a parameter
+// typed by a bare type parameter may take the pointer. When the pointer
+// points to the parameter's type, passing it without `&` lends its pointee.
 func (t *galaASTTransformer) checkInoutLentPointer(place ast.Expr, callee inoutCallee, i int, c callSrc) error {
 	if i >= len(callee.paramTypes) || callee.paramTypes[i] == nil {
 		return nil
 	}
-	want := t.followAliasChain(callee.paramTypes[i])
-	if ptr, isPtr := want.(transpiler.PointerType); isPtr {
-		want = t.followAliasChain(ptr.Elem) // the type an inout parameter lends
-	}
-	if _, isPtr := want.(transpiler.PointerType); isPtr || transpiler.IsUnusableOrAny(want) || typeMentionsTypeParam(want, callee.typeParams) {
+	want := t.followAliasChain(derefType(callee.paramTypes[i])) // the type an inout parameter lends
+	if transpiler.IsUnusable(want) || isTypeParamNamed(want, t.inoutCalleeTypeParams(callee)) {
 		return nil
 	}
 	have, isPtr := t.followAliasChain(t.getExprTypeName(place)).(transpiler.PointerType)
-	if !isPtr || t.followAliasChain(have.Elem).BaseName() != want.BaseName() {
+	if !isPtr {
 		return nil
 	}
 	at := t.inoutArgAt(c, callee, i)
 	operand := strings.TrimSpace(strings.TrimPrefix(at.sourceText(), "&"))
-	return inoutError(at, fmt.Sprintf("cannot lend &%s to the inout parameter of %s: %s holds a %s, and the parameter takes the %s it points to", operand, callee.name, operand, displayType(have), displayType(want)),
-		fmt.Sprintf("pass `%s` without `&`: a pointer lends its pointee (a *T that may be nil: RequirePtr(%s))", operand, operand))
+	msg := fmt.Sprintf("cannot lend &%s to the inout parameter of %s: %s holds a %s", operand, callee.name, operand, displayType(have))
+	if t.followAliasChain(have.Elem).BaseName() != want.BaseName() {
+		return inoutError(at, fmt.Sprintf("%s, and the parameter takes a %s", msg, displayType(want)),
+			fmt.Sprintf("lend a place of type %s", displayType(want)))
+	}
+	hint := fmt.Sprintf("pass `%s` without `&`: a Ptr lends its pointee", operand)
+	if !have.NonNull {
+		hint = fmt.Sprintf("pass `RequirePtr(%s)` without `&`: a Ptr lends its pointee (RequirePtr panics on nil)", operand)
+	}
+	return inoutError(at, fmt.Sprintf("%s, and the parameter takes the %s it points to", msg, displayType(want)), hint)
+}
+
+// inoutCalleeTypeParams is the type parameters callee's parameter types may
+// name: a function's, or a method's own and its receiver type's.
+func (t *galaASTTransformer) inoutCalleeTypeParams(callee inoutCallee) []string {
+	switch {
+	case callee.fm != nil:
+		return callee.fm.TypeParams
+	case callee.method != nil:
+		params := callee.method.TypeParams
+		if meta := t.getTypeMeta(receiverBase(derefType(callee.recvType)).BaseName()); meta != nil && len(meta.TypeParams) > 0 {
+			params = append(slices.Clone(params), meta.TypeParams...)
+		}
+		return params
+	}
+	return nil
 }
 
 // inoutArgAt is where the value for parameter i of callee is written in the

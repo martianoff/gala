@@ -51,6 +51,20 @@ func each(inout c Counter, f func(inout Counter)) = f(&c)
 func mk() Counter = Counter(0, "mk")
 
 struct Holder(var c Ptr[Counter])
+
+func (c Counter) give(inout d Counter) {
+    d.n = c.n
+}
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+struct Box[T any](var v T)
+
+func setBox[T any](inout b Box[T], v T) {
+    b.v = v
+}
 `
 
 func inoutSource(body string) string {
@@ -125,6 +139,13 @@ func TestInoutArgumentRejected(t *testing.T) {
     bump(&p, 1)`, "cannot lend &p to the inout parameter of bump: p holds a Ptr[Counter], and the parameter takes the Counter it points to"},
 		{"a field holding a Ptr", `var h = Holder(&Counter(0, "h"))
     bump(&h.c, 1)`, "cannot lend &h.c to the inout parameter of bump: h.c holds a Ptr[Counter]"},
+		{"a method's parameter", `val c = Counter(0, "c")
+    var p = &Counter(1, "p")
+    c.give(&p)`, "cannot lend &p to the inout parameter of give: p holds a Ptr[Counter]"},
+		{"a generic type's parameter", `var b = &Box(1)
+    setBox(&b, 2)`, "cannot lend &b to the inout parameter of setBox: b holds a Ptr[Box[int]], and the parameter takes the Box[T] it points to"},
+		{"a pointer to another type", `var p = &Point(1, 2)
+    bump(&p, 1)`, "cannot lend &p to the inout parameter of bump: p holds a Ptr[Point], and the parameter takes a Counter"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -225,4 +246,10 @@ func main() {
 	out, err := trans.Transpile(src("xs"), "inout_ptr_var_test.gala")
 	require.NoError(t, err)
 	assert.Contains(t, out, "GALA_total(xs)")
+
+	// A bare type parameter takes the pointer itself.
+	_, err = trans.Transpile(inoutSource(`var p = &Counter(1, "p")
+    put(&p, &Counter(2, "q"))
+    Println(p.n)`), "inout_ptr_var_test.gala")
+	require.NoError(t, err)
 }
