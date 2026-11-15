@@ -1,6 +1,6 @@
 package transpiler
 
-// The no-retain allow-list (docs/OWNERSHIP_DESIGN.MD, 3.5.2)
+// The no-retain allow-list (docs/OWNERSHIP.MD#gala-calls-go)
 //
 // An `inout` place may be lent to Go only where Go provably keeps no
 // reference to it: a Go method that neither retains its receiver pointer, or
@@ -8,9 +8,10 @@ package transpiler
 // from it. Every other Go call that would receive the place's address is an
 // escape (GALA-E0113).
 //
-// The list is built into the compiler and cannot be extended by a program
-// (decision Q15). Every entry is verified in CI against the escape analysis
-// of the pinned Go compiler (noretain_escape_test.go): a Go upgrade that
+// The list is built into the compiler and cannot be extended by a program:
+// an entry a program supplied would be an unchecked trust point. Every
+// entry is verified in CI against the escape analysis of the pinned Go
+// compiler (noretain_escape_test.go): a Go upgrade that
 // changes a verdict fails the build, not a user program.
 
 // NoRetainMethod is one Go pointer method on the allow-list.

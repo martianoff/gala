@@ -12,7 +12,7 @@ import (
 )
 
 // TestDocShowsNonEscapingParameters covers ownership phase 3's non-escaping
-// function parameters (docs/OWNERSHIP_DESIGN.MD, Q20): `gala doc` names
+// function parameters (docs/OWNERSHIP.MD#what-the-ide-and-gala-doc-show): `gala doc` names
 // them after the signature and in --json, for functions and methods.
 func TestDocShowsNonEscapingParameters(t *testing.T) {
 	fn := transpiler.FuncType{Params: []transpiler.Type{transpiler.BasicType{Name: "int"}}}

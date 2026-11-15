@@ -87,7 +87,7 @@ type docSignat struct {
 	Synthesized bool `json:"synthesized,omitempty"`
 	// NonEscaping names the function parameters the callable only calls
 	// during the call, as the ownership analysis infers them
-	// (docs/OWNERSHIP_DESIGN.MD section 3.3).
+	// (docs/OWNERSHIP.MD#what-the-ide-and-gala-doc-show).
 	NonEscaping []string `json:"nonEscaping,omitempty"`
 	// InoutReceiver marks a method whose receiver is `inout`.
 	InoutReceiver bool `json:"inoutReceiver,omitempty"`

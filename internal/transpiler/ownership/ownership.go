@@ -1,5 +1,5 @@
 // Package ownership is phase 1 of GALA's ownership design: inferred
-// uniqueness (docs/OWNERSHIP_DESIGN.MD, section 3.1). It adds no syntax and
+// uniqueness. It adds no syntax and
 // reports no errors. For every function and method of a package it infers
 //
 //   - a borrow summary (transpiler.BorrowSummary): which pointer receivers and
@@ -199,9 +199,9 @@ type Func struct {
 	// on.
 	Bindings []Binding
 	// Phase3 are the verdicts when a closure passed to a non-escaping
-	// parameter is counted as borrowing the pointers it uses (ownership
-	// phase 3, docs/OWNERSHIP_DESIGN.MD section 3.3). Analysis only: no check
-	// enforces them yet. The phase-3 walk knows more types, so it may bind
+	// parameter is counted as borrowing the pointers it uses for the call,
+	// rather than capturing them (ownership phase 3). Analysis only: no
+	// check enforces them yet. The phase-3 walk knows more types, so it may bind
 	// pointers phase 1 does not.
 	Phase3 []Binding `json:",omitempty"`
 }

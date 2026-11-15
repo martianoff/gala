@@ -5,7 +5,7 @@ import (
 )
 
 // TestHoverShowsNonEscapingParameters covers ownership phase 3's
-// non-escaping function parameters (docs/OWNERSHIP_DESIGN.MD, Q20): hovering
+// non-escaping function parameters (docs/OWNERSHIP.MD#what-the-ide-and-gala-doc-show): hovering
 // a function of an imported package names the function parameters it only
 // calls during the call, as the ownership analysis inferred them.
 func TestHoverShowsNonEscapingParameters(t *testing.T) {

@@ -76,7 +76,7 @@ structField: (VAL | VAR)? identifier type;
 
 interfaceType: 'interface' '{' methodSpec* '}';
 // An `inout` method requirement is met by a method with an `inout` receiver
-// (docs/OWNERSHIP_DESIGN.MD, 3.5.3).
+// (docs/OWNERSHIP.MD#interfaces-with-inout-methods).
 methodSpec: INOUT? identifier (typeParameters)? signature;
 
 valDeclaration: 'val' (tuplePattern | identifierList) (type)? '=' expressionList;
@@ -101,7 +101,7 @@ tuplePattern: '(' identifierList ')';
 functionDeclaration: 'func' (receiver)? identifier (typeParameters)? signature (block | '=' expression);
 
 // An `inout` receiver or parameter lends the caller's place for the call
-// (docs/OWNERSHIP_DESIGN.MD, 3.2). It lowers to a Go `*T`.
+// (docs/OWNERSHIP.MD#inout-basics). It lowers to a Go `*T`.
 receiver: '(' (VAL | VAR | INOUT)? identifier type ')';
 
 // A signature has one result type, or a Go result list of two or more types,

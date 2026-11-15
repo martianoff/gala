@@ -16,8 +16,8 @@ import (
 //   - A pointer receiver `(c *T)` mutates the caller's value. The receiver is
 //     unique while the call runs (the method may only read and write its
 //     fields and call methods on it; any other use is reported as
-//     ptr-escape), so it is translated by state passing, as
-//     docs/OWNERSHIP_DESIGN.MD (3.2.5) describes for `inout`: the method takes
+//     ptr-escape), so no other path can observe its updates, and it is
+//     translated by state passing: the method takes
 //     the value and returns its result with the updated value,
 //     `def T.m (c : T) (args) : M (R × T)`, and the caller writes the value
 //     back to the place it called the method on. Inside, the receiver lives
@@ -441,5 +441,5 @@ func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scop
 // statePassed reports whether the method of receiver r is translated by
 // state passing: a `*T` receiver, and an `inout` receiver, which lends the
 // caller's place as a `*T` receiver does and lowers to one
-// (docs/OWNERSHIP_DESIGN.MD, 3.2.5).
+// (docs/OWNERSHIP.MD#inout-basics).
 func statePassed(r *coreexport.Receiver) bool { return r.Pointer || r.Inout }

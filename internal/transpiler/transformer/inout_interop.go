@@ -11,8 +11,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// Go calls an `inout` function through a copy (docs/OWNERSHIP_DESIGN.MD,
-// 3.5.1)
+// Go calls an `inout` function through a copy (docs/OWNERSHIP.MD#go-calls-gala)
 //
 // An exported function or method with an `inout` parameter or receiver is
 // a Go declaration too, with its Go signature: `func Step(p *Parser)`,
@@ -274,10 +273,12 @@ func derefType(typ transpiler.Type) transpiler.Type {
 // checkInoutInterfaceSlot rejects a value of the type valTypeOf returns
 // filling slotType, an interface that declares `inout` methods, when its
 // type does not implement each with an `inout` receiver (GALA-E0116,
-// docs/OWNERSHIP_DESIGN.MD 3.5.3): a GALA method with another receiver, or a
-// Go method, unless it is on the no-retain allow-list. An interface value
-// that is already an interface, built in GALA or arriving from Go, is
-// trusted (decision Q16).
+// docs/OWNERSHIP.MD#interfaces-with-inout-methods): a GALA method with
+// another receiver, or a
+// Go method, unless it is on the no-retain allow-list. A value whose static
+// type is a Go-declared interface is trusted, whatever its dynamic type:
+// GALA cannot see what implements a Go interface, so it accepts such values
+// as they are.
 func (t *galaASTTransformer) checkInoutInterfaceSlot(valTypeOf func() transpiler.Type, slotType transpiler.Type, at srcNode) error {
 	valType, why, hint := t.inoutImplMismatch(valTypeOf, slotType)
 	if why == "" {
@@ -390,7 +391,7 @@ func (t *galaASTTransformer) inoutImplMismatch(valTypeOf func() transpiler.Type,
 		}
 		switch {
 		case !isTypeParam && meta != nil && meta.IsInterface && goDeclared(meta):
-			// An interface value of a Go interface: trusted (Q16). Not a
+			// An interface value of a Go interface is trusted. Not a
 			// type parameter's value, which GALA instantiates.
 			return nil, "", ""
 		case meta != nil && meta.IsInterface && m != nil && m.InoutReceiver:
@@ -485,7 +486,8 @@ func (t *galaASTTransformer) inoutBodyClash(body, name, typeName string) string 
 // checkInoutTypePattern rejects a typed pattern (`case s: Stepper`) whose
 // type, target, is an interface declaring `inout` methods, testing a value
 // of the type operand (nil when unknown) whose static type does not already
-// guarantee them (GALA-E0116, docs/OWNERSHIP_DESIGN.MD 3.5.3). Go's dynamic
+// guarantee them (GALA-E0116,
+// docs/OWNERSHIP.MD#interfaces-with-inout-methods). Go's dynamic
 // type test cannot tell an `inout` receiver from a Ptr receiver, so the test
 // would accept a value whose method may keep its receiver.
 //

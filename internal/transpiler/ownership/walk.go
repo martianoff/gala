@@ -227,8 +227,8 @@ type walker struct {
 	// are the local bindings returned.
 	fresh     bool
 	retLocals []*binding
-	// p3 walks as ownership phase 3 sees the body (docs/OWNERSHIP_DESIGN.MD
-	// section 3.3): a closure passed directly to a non-escaping parameter
+	// p3 walks as ownership phase 3 sees the body:
+	// a closure passed directly to a non-escaping parameter
 	// borrows the pointers it uses instead of capturing them, and callee
 	// summaries are read in their Closure* view.
 	p3 bool

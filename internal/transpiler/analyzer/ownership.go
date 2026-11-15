@@ -10,7 +10,7 @@ import (
 
 // ownershipSummaries records in pkgAST, the metadata of an imported package,
 // the borrow summary of each of its functions and methods (ownership phase
-// 1, docs/OWNERSHIP_DESIGN.MD). A caller in an importing package reads them
+// 1, inferred uniqueness). A caller in an importing package reads them
 // when it lends a pointer to one. paths and entries are the package's files
 // and their parses; a file that did not parse is left out.
 func ownershipSummaries(pkgAST *transpiler.RichAST, paths []string, entries []*parsedFileEntry) {

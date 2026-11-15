@@ -38,8 +38,9 @@ documentation check compiles.
 6. [Go interop](#go-interop)
 7. [What the IDE and `gala doc` show](#what-the-ide-and-gala-doc-show)
 8. [`inout`, `Ptr` or a value?](#inout-ptr-or-a-value)
-9. [Limitations](#limitations)
-10. [See also](#see-also)
+9. [Moving `Ptr` code to `inout`](#moving-ptr-code-to-inout)
+10. [Limitations](#limitations)
+11. [See also](#see-also)
 
 ---
 
@@ -850,6 +851,75 @@ functions. The reverse does not hold: an `inout` place can't be passed to a
 are distinct function types for the same reason, though both are Go's
 `func(*T)`.
 
+## Moving `Ptr` code to `inout`
+
+`gala fix inout` rewrites a `Ptr[T]` receiver or parameter to `inout T` when
+the ownership analysis finds it **borrowed**. A borrowed pointer is only read
+through, written through, dereferenced, or lent on to another borrowed
+parameter or receiver. It is never stored, returned, aliased, compared,
+captured or passed to Go. The fix rewrites its uses too: `*p` becomes `p`,
+and `p` passed on whole becomes `&p`. Callers usually need no change, because
+`&x` and a `Ptr` both fill an `inout` parameter. When the compiler rejects a
+caller, for example one that lends a slice element, the fix keeps that
+function's `Ptr` (see below).
+
+Before:
+
+<!-- doc-source: examples/inout_fix_before.gala -->
+<!-- doc-check: fragment -->
+```gala
+// Lent whole to another converted parameter: `c` becomes `&c`.
+func bumpTwice(c Ptr[Counter]) {
+    bump(c, 1)
+    bump(c, 2)
+}
+
+// Read and written as a whole: `*c` becomes `c`.
+func reset(c Ptr[Counter]) {
+    val old = *c
+    *c = Counter(0, old.label + "'")
+}
+```
+
+After:
+
+<!-- doc-source: examples/inout_fix_after.gala -->
+<!-- doc-check: fragment -->
+```gala
+// Lent whole to another converted parameter: `c` becomes `&c`.
+func bumpTwice(inout c Counter) {
+    bump(&c, 1)
+    bump(&c, 2)
+}
+
+// Read and written as a whole: `*c` becomes `c`.
+func reset(inout c Counter) {
+    val old = c
+    c = Counter(0, old.label + "'")
+}
+```
+
+Both programs print the same.
+
+- **It leaves some pointers alone.** A `Ptr` stays when its function is used as
+  a function value, when its package has hand-written Go, or when it is `*T`, a
+  `var` parameter, variadic or has a default. It also stays when it is lent to
+  another package's parameter that isn't `inout`, or used inside an
+  interpolated string.
+- **It converts lends together.** A pointer is converted only if every
+  same-package parameter it is lent to is converted too, since an `inout`
+  place can only be lent on to an `inout` parameter.
+- **Public API keeps its `Ptr` by default.** That covers an exported function
+  or method of a package other than `main`. Pass `--public` to convert those
+  too, since the change alters the package's API.
+- **It checks its rewrite.** It transpiles the rewritten package, and a
+  function whose rewrite the compiler rejects keeps its `Ptr`. It does not
+  build the generated Go, so run `gala build` afterwards. `--no-verify` skips
+  this check and writes the rewrite as it is.
+- **The flags.** `--dry-run` prints the diff, and `--report` lists every
+  pointer with its verdict.
+- **Running it twice is safe.** A second run changes nothing.
+
 ## Limitations
 
 These are deliberate limits of the design, not missing checks:
@@ -886,7 +956,5 @@ These are deliberate limits of the design, not missing checks:
   [E0112](/docs/errors/gala-e0112/), [E0113](/docs/errors/gala-e0113/),
   [E0114](/docs/errors/gala-e0114/), [E0115](/docs/errors/gala-e0115/),
   [E0116](/docs/errors/gala-e0116/)
-- [OWNERSHIP_DESIGN.MD](https://github.com/martianoff/gala/blob/master/docs/OWNERSHIP_DESIGN.MD): the design, its rationale and
-  prior art
 
 {% endraw %}
