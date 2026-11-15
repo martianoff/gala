@@ -9,7 +9,8 @@ import (
 
 // The functions here turn the errors of galop's recovering parse
 // (native.GalaParseWithRecovery) into GALA's diagnostics: the coded hints
-// (GALA-E0040, GALA-E0042, GALA-E0085), read off the recovered native tree and
+// (GALA-E0040, GALA-E0042, GALA-E0085, and GALA-E0117 in go_func_literal.go),
+// read off the recovered native tree and
 // its tokens, their cascade suppression, and the plain syntax errors. galop's
 // recovery reports its errors as ANTLR's does (galop's repository holds it to
 // ANTLR's): the same messages, in the same order, each with the rule node the
@@ -30,10 +31,11 @@ import (
 // The Go function literals of the tree (GALA-E0117, goFuncLiterals) are
 // merged in by position, so a literal leads the syntax errors of its body.
 func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError) []error {
+	errs := nativeParseErrors(tree, ts, parseErrs)
 	if tree == nil {
-		return nativeParseErrors(tree, ts, parseErrs)
+		return errs
 	}
-	return mergeByPosition(nativeParseErrors(tree, ts, parseErrs), goFuncLiterals(tree))
+	return mergeByPosition(errs, goFuncLiterals(tree))
 }
 
 // nativeParseErrors is the lexical and parse errors of nativeSyntaxErrors.

@@ -96,8 +96,9 @@ own message.
 `func` declared inside a function body is [GALA-E0052](/docs/errors/gala-e0052/).
 In Go's `go func() { ... }()` and `defer func() { ... }()` the literal is
 reported first; once it is a lambda, [GALA-E0036](/docs/errors/gala-e0036/)
-names the GALA form of the whole statement. A function type is still written as a type: a parameter's or a field's type, a
-`val`'s annotation, a result type.
+names the GALA form of the whole statement. A function type is still written
+as a type: a parameter's or a field's type, a `val`'s annotation, a result
+type.
 
 ---
 

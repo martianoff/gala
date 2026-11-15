@@ -84,6 +84,5 @@ reported, and a syntax error inside a literal's body keeps its own message.
 declared inside a function body is [GALA-E0052](GALA-E0052.md). In Go's
 `go func() { ... }()` and `defer func() { ... }()` the literal is reported
 first; once it is a lambda, [GALA-E0036](GALA-E0036.md) names the GALA form of
-the whole statement. A function
-type is still written as a type: a parameter's or a field's type, a `val`'s
-annotation, a result type.
+the whole statement. A function type is still written as a type: a
+parameter's or a field's type, a `val`'s annotation, a result type.

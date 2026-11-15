@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -1362,7 +1361,7 @@ func (t *galaASTTransformer) lowerCaseGuard(cc caseSrc) (ast.Expr, error) {
 	}
 	at := g.at().rng()
 	return nil, spanErrorAt(galaerr.CodeNonBoolGuard, at, at,
-		fmt.Sprintf("case guard `%s` has type %s, not bool", galaparser.OneLine(g.text()), t.sourceTypeName(typ)),
+		fmt.Sprintf("case guard `%s` has type %s, not bool", oneLine(g.text()), t.sourceTypeName(typ)),
 		"a guard must be a bool condition, such as a comparison")
 }
 

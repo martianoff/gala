@@ -92,6 +92,14 @@ func TestGoFuncLiteralIsCoded(t *testing.T) {
 			lambda: "(x int, y int)",
 		},
 		{
+			// Each name takes the type of its own group.
+			name:   "several_groups",
+			input:  "package main\n\nfunc main() {\n    a(func(x, y int, s, t string) { Println(s) })\n}\n",
+			line:   4,
+			col:    6,
+			lambda: "(x int, y int, s string, t string)",
+		},
+		{
 			name: "function_typed_and_variadic_parameters",
 			input: "package main\n\nfunc main() {\n" +
 				"    run(func(f func(int) int, xs ...string) Option[int] {\n        val y = 2\n        return y\n    })\n}\n",

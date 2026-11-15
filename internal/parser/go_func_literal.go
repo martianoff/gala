@@ -29,7 +29,9 @@ func goFuncLiterals(tree *native.GalaTree) []*galaerr.SemanticError {
 	// Nodes are stored children first, so a literal nested in another's body
 	// comes before it; source order is the order of their `func` tokens.
 	for i, n := range tree.Nodes {
-		if n.Rule != native.GalaRULE_primary {
+		// A literal's primary starts with `func`; checking the token first
+		// keeps the pass to two integer compares for every other node.
+		if n.Rule != native.GalaRULE_primary || int(n.Start) >= len(tree.Tokens) || tree.Tokens[n.Start].Type != native.GalaFUNC {
 			continue
 		}
 		p := native.PrimaryNode{GalaNodeRef: tree.Node(i)}
@@ -99,17 +101,17 @@ func goFuncLiteralDiagnostic(fn native.GalaTerminal, sig native.SignatureNode) *
 	start := fn.Token()
 	// The caret annotation keeps only the hint's first clause, up to "; ",
 	// and a signature is too long for it, so the clause is short.
-	hint := fmt.Sprintf("write it as a lambda; here, `%s => { ... }` with the body unchanged", lambdaSignature(sig))
+	body := " with the body unchanged"
 	if sig.GoResults().Ok() {
 		// The body's `return a, b` does not carry over.
-		hint = fmt.Sprintf("write it as a lambda; here, `%s => { ... }`, whose body gives the Go results as a Try or a tuple", lambdaSignature(sig))
+		body = ", whose body gives the Go results as a Try or a tuple"
 	}
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeGoFuncLiteral,
 		int(start.Line),
 		int(start.Column),
 		"Go function literal: a function value in GALA is a lambda",
-		hint,
+		fmt.Sprintf("write it as a lambda; here, `%s => { ... }`%s", lambdaSignature(sig), body),
 	)
 	if sig.Ok() {
 		if stop := sig.Stop(); stop.Line == start.Line {
@@ -120,9 +122,6 @@ func goFuncLiteralDiagnostic(fn native.GalaTerminal, sig native.SignatureNode) *
 	return err
 }
 
-// lambdaParam is a parameter of a lambda: its name and its type.
-type lambdaParam struct{ name, typ string }
-
 // lambdaSignature is sig respelled as a lambda's signature,
 // `(x int, y int) int`. A lambda names and types every parameter, so Go's
 // other parameter forms are respelled: an unnamed parameter (`func(int,
@@ -130,53 +129,48 @@ type lambdaParam struct{ name, typ string }
 // of its group. A Go result list (`(int, error)`) has no lambda form and is
 // left out: a lambda gives it as a Try or a tuple.
 func lambdaSignature(sig native.SignatureNode) string {
-	var params []lambdaParam
+	// Each parameter's name and type, either one empty when not written. A
+	// lone name is the type of an unnamed parameter, unless some parameter
+	// has both: Go's parameters are all named or all unnamed.
+	params := sig.Parameters().ParameterList().AllParameter()
+	names, types := make([]string, len(params)), make([]string, len(params))
 	named := false
-	for _, p := range sig.Parameters().ParameterList().AllParameter() {
-		id, typ := p.Identifier(), ""
+	for i, p := range params {
+		if id := p.Identifier(); id.Ok() {
+			names[i] = id.GetText()
+		}
 		if t := p.Type_(); t.Ok() {
-			typ = OneLine(t.SourceText())
+			types[i] = oneLine(t.SourceText())
 			if p.ELLIPSIS().Ok() {
-				typ = "..." + typ
+				types[i] = "..." + types[i]
 			}
 		}
-		switch {
-		case id.Ok() && typ != "":
-			params = append(params, lambdaParam{id.GetText(), typ})
-			named = true
-		case id.Ok():
-			// A grouped name, or an unnamed parameter of a named type.
-			params = append(params, lambdaParam{typ: id.GetText()})
-		default:
-			params = append(params, lambdaParam{typ: typ})
-		}
+		named = named || names[i] != "" && types[i] != ""
 	}
 	parts := make([]string, len(params))
-	for i, p := range params {
+	group := "" // the type of the group the parameters after i belong to
+	for i := len(params) - 1; i >= 0; i-- {
+		name, typ := names[i], types[i]
 		switch {
-		case !named:
-			p.name = "_"
-		case p.name == "":
-			// Grouped: `a` in `a, b int` is a name, of the next type given.
-			p.name, p.typ = p.typ, ""
-			for _, q := range params[i+1:] {
-				if q.name != "" {
-					p.typ = q.typ
-					break
-				}
-			}
+		case !named && typ == "":
+			name, typ = "_", name
+		case !named || name == "":
+			name = "_"
+		case typ == "":
+			typ = group
 		}
-		parts[i] = strings.TrimSpace(p.name + " " + p.typ)
+		group = typ
+		parts[i] = name + " " + typ
 	}
 	out := "(" + strings.Join(parts, ", ") + ")"
 	if res := sig.Type_(); res.Ok() {
-		out += " " + OneLine(res.SourceText())
+		out += " " + oneLine(res.SourceText())
 	}
 	return out
 }
 
-// OneLine collapses every run of whitespace in s, newlines included, to one
+// oneLine collapses every run of whitespace in s, newlines included, to one
 // space: source text respelled on one line for a hint.
-func OneLine(s string) string {
+func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }

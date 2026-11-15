@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -1990,7 +1989,7 @@ func paramScopeType(typ transpiler.Type, variadic bool) transpiler.Type {
 // namelessParamError is GALA-E0088 for p, a declared parameter written as a
 // type alone (`...int`, `val ...int`). The hint names it after its keyword.
 func (t *galaASTTransformer) namelessParamError(p paramDecl) *galaerr.SemanticError {
-	src := galaparser.OneLine(p.at.sourceText())
+	src := oneLine(p.at.sourceText())
 	named := "x " + src
 	if p.isVal || p.isVar {
 		kw := "val"
