@@ -404,20 +404,32 @@ func argSource(at srcNode, argType transpiler.Type) typeArgSource {
 }
 
 // checkPtrTypeArg rejects typeArg as the type argument of o's type parameter
-// tp when it is a pointer that may be nil and tp's constraint has a method
-// its type declares on a `Ptr` receiver (GALA-E0080): the generic code calls
-// that method on whatever pointer the type argument holds. It also rejects
-// a type argument that does not implement an `inout` method of tp's
-// constraint with an `inout` receiver (GALA-E0116, inoutTypeArgMisuse). at
-// locates the type argument, or what it is inferred from (src).
+// tp when typeArgMisuse finds it cannot be one. at locates the type
+// argument, or what it is inferred from (src).
 func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at srcNode) error {
-	if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
-		return ptrErrorAt(at, msg, hint)
-	}
-	if msg, hint, bad := t.inoutTypeArgMisuse(o, tp, typeArg); bad {
-		return inoutCodedError(galaerr.CodeInoutForeignImpl, at, msg, hint)
+	if code, msg, hint := t.typeArgMisuse(o, tp, typeArg, src); code != "" {
+		return inoutCodedError(code, at, msg, hint)
 	}
 	return nil
+}
+
+// typeArgMisuse returns the error code, message and hint when typeArg cannot
+// be the type argument of o's tp, and an empty code when it can:
+//
+//   - GALA-E0080 when it is a pointer that may be nil and tp's constraint
+//     has a method its type declares on a `Ptr` receiver: the generic code
+//     calls that method on whatever pointer the type argument holds
+//     (ptrTypeArgMisuse);
+//   - GALA-E0116 when it does not implement an `inout` method of tp's
+//     constraint with an `inout` receiver (inoutTypeArgMisuse).
+func (t *galaASTTransformer) typeArgMisuse(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource) (code galaerr.ErrorCode, msg, hint string) {
+	if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
+		return galaerr.CodePtrNullability, msg, hint
+	}
+	if msg, hint, bad := t.inoutTypeArgMisuse(o, tp, typeArg); bad {
+		return galaerr.CodeInoutForeignImpl, msg, hint
+	}
+	return "", "", ""
 }
 
 // ptrTypeArgMisuse returns the GALA-E0080 message and hint of checkPtrTypeArg
@@ -461,11 +473,8 @@ func (t *galaASTTransformer) checkPtrSlotTypeArgs(name string, funcMeta *transpi
 		if !ok || argBound[tp] {
 			continue
 		}
-		if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
-			return galaerr.NewCodedSemanticError(galaerr.CodePtrNullability, line, col, msg, hint)
-		}
-		if msg, hint, bad := t.inoutTypeArgMisuse(o, tp, typeArg); bad {
-			return galaerr.NewCodedSemanticError(galaerr.CodeInoutForeignImpl, line, col, msg, hint)
+		if code, msg, hint := t.typeArgMisuse(o, tp, typeArg, src); code != "" {
+			return galaerr.NewCodedSemanticError(code, line, col, msg, hint)
 		}
 	}
 	return nil
