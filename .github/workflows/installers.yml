@@ -203,3 +203,17 @@ jobs:
           $out = gala version
           if ("$out" -notmatch "^GALA version $([regex]::Escape($version))") { throw "unexpected 'gala version' output: $out" }
           $out
+
+      # The exact commands the README and getting-started page give users:
+      # the published bucket on GitHub, not this checkout.
+      - name: scoop install gala from the published bucket
+        run: |
+          scoop uninstall gala
+          scoop bucket rm gala
+          scoop bucket add gala https://github.com/martianoff/gala
+          if ($LASTEXITCODE -ne 0) { throw "scoop bucket add failed" }
+          scoop install gala/gala
+          if ($LASTEXITCODE -ne 0) { throw "scoop install failed" }
+          $out = gala version
+          if ("$out" -notmatch "^GALA version ") { throw "unexpected 'gala version' output: $out" }
+          $out
