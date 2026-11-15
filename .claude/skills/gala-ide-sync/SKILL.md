@@ -52,6 +52,7 @@ Read these files and compare:
 | `ide/intellij/.../GalaCompletionContributor.kt` | DOT_METHODS | std/*.gala public methods |
 | `ide/intellij/.../GalaAnnotator.kt` | BUILTIN_TYPE_NAMES | types.go IsPrimitiveType |
 | `ide/intellij/.../GalaSyntaxHighlighter.kt` | keyword token list | gala.g4 named lexer tokens |
+| `ide/vscode/syntaxes/gala.tmLanguage.json` | `keywords` patterns | gala.g4 word tokens; enforced by `//ide/vscode:vscode_test` (SYNC.md #6d) |
 
 **LSP Server:**
 

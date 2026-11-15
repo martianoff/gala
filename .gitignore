@@ -103,6 +103,12 @@ ide/intellij/src/main/gen/
 ide/intellij/.intellijPlatform/
 ide/intellij/.kotlin/
 
+# VS Code extension build artifacts
+ide/vscode/node_modules/
+ide/vscode/dist/
+ide/vscode/.vscode-test/
+ide/vscode/*.vsix
+
 ### Gradle template
 .gradle
 **/build/

@@ -1,10 +1,10 @@
 ---
 layout: default
-title: "IDE Support — IntelliJ Plugin, LSP Server & Claude Code"
-description: "GALA's GoLand/IntelliJ plugin and LSP server provide syntax highlighting, type-aware code completion, inlay hints, and real-time diagnostics — including go-to-definition and completion into Go stdlib and third-party Go modules."
-keywords: "gala ide support, gala intellij plugin, gala goland plugin, gala lsp server, gala code completion, gala inlay hints, gala syntax highlighting, gala go to definition, gala go interop completion, gala vscode neovim lsp, gala claude code plugin"
+title: "IDE Support — IntelliJ Plugin, VS Code, LSP Server & Claude Code"
+description: "GALA's GoLand/IntelliJ plugin, VS Code extension and LSP server provide syntax highlighting, type-aware code completion, inlay hints, and real-time diagnostics — including go-to-definition and completion into Go stdlib and third-party Go modules."
+keywords: "gala ide support, gala intellij plugin, gala goland plugin, gala lsp server, gala code completion, gala inlay hints, gala syntax highlighting, gala go to definition, gala go interop completion, gala vscode extension, gala vscode neovim lsp, gala claude code plugin"
 permalink: /features/ide-support/
-last_modified_at: 2026-09-13
+last_modified_at: 2026-11-14
 ---
 
 <div class="breadcrumb">
@@ -15,7 +15,7 @@ last_modified_at: 2026-09-13
 
 # IDE Support
 
-GALA ships with a **GoLand/IntelliJ plugin** and an **LSP server** that work together to provide a full development experience. The plugin handles local features instantly (syntax highlighting, code folding, live templates), while the LSP server (`gala lsp`) adds type-aware intelligence (diagnostics, completion, inlay hints, go-to-definition).
+GALA ships with a **GoLand/IntelliJ plugin**, a **VS Code extension** and an **LSP server** that work together to provide a full development experience. The editor integrations handle local features instantly (syntax highlighting and bracket matching in both, plus code folding and live templates in IntelliJ), while the LSP server (`gala lsp`) adds type-aware intelligence (diagnostics, completion, inlay hints, go-to-definition).
 
 ---
 
@@ -123,19 +123,13 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 
 ### VS Code
 
-There is no dedicated GALA extension yet. Use a generic LSP-client extension and register `gala lsp` for `.gala` files; the exact settings key depends on the extension you pick, for example:
+Install the GALA extension from the [releases](https://github.com/martianoff/gala/releases) page:
 
-```json
-{
-  "lsp.servers": {
-    "gala": {
-      "command": "gala",
-      "args": ["lsp"],
-      "filetypes": ["gala"]
-    }
-  }
-}
+```bash
+code --install-extension gala-vscode-<version>.vsix
 ```
+
+Or in VS Code: **Extensions** > `...` > **Install from VSIX...**. The extension is a thin client: it registers the `gala` language for `.gala` files (syntax highlighting, comments, brackets) and starts `gala lsp` for every feature listed above — diagnostics, completion, inlay hints, go-to-definition and symbols. It requires the GALA CLI on `PATH` (check `gala version`); point it elsewhere with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
 
 ### Neovim
 

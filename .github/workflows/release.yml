@@ -242,9 +242,44 @@ jobs:
           name: gala-intellij-plugin
           path: bazel-bin/ide/intellij/gala-intellij-plugin.zip
 
+  vscode-extension:
+    name: Build VS Code Extension
+    needs: verify-version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide/vscode
+    env:
+      # Bare version (no "v"), as verify-version enforces.
+      GALA_VERSION: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ide/vscode/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package extension
+        run: |
+          npm pkg set "version=$GALA_VERSION"
+          npm run package -- -o "gala-vscode-$GALA_VERSION.vsix"
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gala-vscode-extension
+          path: ide/vscode/gala-vscode-*.vsix
+
   upload-release:
     name: Upload Release Assets
-    needs: [build, intellij-plugin]
+    needs: [build, intellij-plugin, vscode-extension]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # attach assets to the release
@@ -265,11 +300,11 @@ jobs:
         run: |
           cd artifacts
           mkdir -p release
-          find . -mindepth 2 -type f \( -name 'gala-*' -o -name '*.zip' \) -exec mv {} release/ \;
+          find . -mindepth 2 -type f \( -name 'gala-*' -o -name '*.zip' -o -name '*.vsix' \) -exec mv {} release/ \;
           rm -rf gala-*/ gala-intellij-plugin/
           mv release/* .
           rmdir release
-          sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip > checksums-sha256.txt
+          sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip *.vsix > checksums-sha256.txt
 
       # The Scoop manifest and Homebrew formula for this release, with its
       # hashes. Attached to the release so they can be copied into
@@ -290,6 +325,7 @@ jobs:
             artifacts/gala-darwin-*
             artifacts/gala-windows-*
             artifacts/*.zip
+            artifacts/*.vsix
             artifacts/checksums-sha256.txt
             artifacts/gala.json
             artifacts/gala.rb

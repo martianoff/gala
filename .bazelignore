@@ -4,3 +4,5 @@
 docs/private
 .direnv
 formal/.lake
+ide/vscode/node_modules
+ide/vscode/.vscode-test

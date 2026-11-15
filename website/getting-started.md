@@ -388,7 +388,7 @@ See the [Dependency Management documentation](https://github.com/martianoff/gala
 
 ## IDE Support
 
-GALA ships with a **GoLand/IntelliJ plugin** and an **LSP server** for editor-agnostic support.
+GALA ships with a **GoLand/IntelliJ plugin**, a **VS Code extension** and an **LSP server** for editor-agnostic support.
 
 <img src="{{ '/assets/images/ide/syntax-highlighting.png' | relative_url }}" alt="GALA syntax highlighting in IntelliJ" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 6px; margin: 1rem 0;">
 
@@ -400,19 +400,13 @@ GALA ships with a **GoLand/IntelliJ plugin** and an **LSP server** for editor-ag
 2. Install plugin: **Settings > Plugins > Install from Disk** > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
 3. Restart the IDE — the LSP server starts automatically when a `.gala` file is opened
 
-**VS Code** — add to `.vscode/settings.json`:
+**VS Code** — install the GALA extension from the [releases](https://github.com/martianoff/gala/releases) page:
 
-```json
-{
-  "lsp.servers": {
-    "gala": {
-      "command": "gala",
-      "args": ["lsp"],
-      "filetypes": ["gala"]
-    }
-  }
-}
+```bash
+code --install-extension gala-vscode-<version>.vsix
 ```
+
+Or use **Extensions** > `...` > **Install from VSIX...**. It adds syntax highlighting and starts `gala lsp` for diagnostics, hover, go-to-definition, completion, signature help and inlay hints. The GALA CLI must be on `PATH`; override with `gala.serverPath` or `GALA_PATH`.
 
 **Neovim:**
 
