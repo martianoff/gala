@@ -13,12 +13,13 @@ sees.
   `f"..."` interpolation), comments, numbers and operators.
 - **Diagnostics** — parse errors, transpilation errors, unused variables and
   match exhaustiveness, updated as you type.
-- **Hover** — type signatures with fields, methods and sealed cases.
+- **Hover** — inferred types and signatures with fields, methods and sealed
+  cases, plus the declaration's doc comment.
 - **Go to definition** — across files, into the standard library and into Go
   modules, including `go_interop`.
 - **Find references** across all files of a package.
 - **Completion** — type-aware dot completion for GALA and Go types, named
-  arguments, sealed case patterns and keywords.
+  arguments, sealed case patterns and keywords, with each item's documentation.
 - **Signature help** while typing call arguments.
 - **Inlay hints** — inferred types on `val` / `var` declarations.
 - **Document and workspace symbols**, including sealed variants and
@@ -88,7 +89,7 @@ skips the language server assertions. The test workspace is
 | Path | Purpose |
 |------|---------|
 | `src/extension.ts` | Language client: spawns `gala lsp` over stdio and wires the document selector. |
-| `syntaxes/gala.tmLanguage.json` | TextMate grammar (mirrors the token classes of the ANTLR lexer in `internal/parser/grammar/gala.g4`). |
+| `syntaxes/gala.tmLanguage.json` | TextMate grammar (mirrors the keyword tokens of `internal/parser/grammar/gala.g4`; kept in sync per `ide/intellij/SYNC.md` #6d). |
 | `language-configuration.json` | Comments, brackets, auto-closing and indentation rules. |
 | `src/test/` | `@vscode/test-electron` end-to-end tests. |
 

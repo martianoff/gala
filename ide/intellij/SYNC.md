@@ -126,6 +126,14 @@ above handle next to its siblings (an `opaque type` sits beside `sealed type`),
 a live template in `liveTemplates/GALA.xml`, and a parser test-data pair
 (`src/test/testData/<Name>.gala` + `.txt`) run by `GalaParsingTest`.
 
+### 6d. VS Code TextMate Grammar
+
+**Extension file:** `ide/vscode/syntaxes/gala.tmLanguage.json` — the `keywords` patterns
+
+**Source of truth:** `internal/parser/grammar/gala.g4` — the named lexer tokens and the inline keyword literals (`'true'`, `'false'`, `'nil'`, `'map'`)
+
+**How to verify:** every named keyword token (`grep -E "^[A-Z_]+: '[a-z]+';" internal/parser/grammar/gala.g4`) and each of `true`, `false`, `nil`, `map` appears in a `keywords` pattern. Contextual keywords keep their context: `default` is matched only before `case`, `map` only before `[`.
+
 ## When to Sync
 
 Sync the plugin after any of these changes:

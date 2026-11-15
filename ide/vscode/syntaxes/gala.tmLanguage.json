@@ -171,7 +171,21 @@
         },
         {
           "name": "keyword.declaration.gala",
-          "match": "\\b(?:val|var|bind|also|use|func|type|struct|interface|sealed|package|import|embed)\\b"
+          "match": "\\b(?:val|var|bind|also|use|func|type|struct|interface|sealed|opaque|package|import|embed)\\b"
+        },
+        {
+          "name": "storage.modifier.gala",
+          "match": "\\binout\\b"
+        },
+        {
+          "name": "keyword.declaration.gala",
+          "comment": "`default` is a keyword only before `case` in a sealed type; elsewhere it is an identifier",
+          "match": "\\bdefault\\b(?=\\s+case\\b)"
+        },
+        {
+          "name": "storage.type.map.gala",
+          "comment": "the `map[K]V` type",
+          "match": "\\bmap\\b(?=\\s*\\[)"
         },
         {
           "name": "constant.language.gala",
