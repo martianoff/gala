@@ -30,6 +30,9 @@ type binding struct {
 	// closureLent: a closure passed to a non-escaping parameter uses b
 	// (phase 3), which phase 1 counts as a capture.
 	closureLent bool
+	// inout: an `inout` receiver or parameter. Its name alone reads the
+	// pointee (a copy), and `&name` is the pointer, lent.
+	inout bool
 }
 
 // escapes reports whether b has a reason that lets it escape.
@@ -238,6 +241,10 @@ type walker struct {
 	// binds, whose types scoped never gives (see typeOf).
 	scoped     map[string]transpiler.Type
 	otherBound map[string]bool
+	// uses, when not nil, records where each binding is dereferenced, lent
+	// as a whole argument, or lent as a receiver, for the `inout` adoption
+	// plan (adopt.go).
+	uses map[*binding]*bindingUses
 }
 
 // typeOf is the type of the local name: in phase 3, a lambda parameter's or
@@ -264,10 +271,13 @@ func (w *walker) withScoped(ts map[string]transpiler.Type, body func()) {
 }
 
 // walk walks d's body, as phase 3 sees it when p3.
-func (a *pkg) walk(d *decl, p3 bool) *walker {
+func (a *pkg) walk(d *decl, p3 bool) *walker { return a.walkWith(d, p3, nil) }
+
+// walkWith is walk, recording the bindings' uses in uses when it is not nil.
+func (a *pkg) walkWith(d *decl, p3 bool, uses map[*binding]*bindingUses) *walker {
 	w := &walker{a: a, d: d, binds: map[string]*binding{}, local: map[string]bool{}, bindCount: map[string]int{},
 		types: map[string]transpiler.Type{}, fresh: true, p3: p3, fbinds: map[string]*fbinding{},
-		scoped: map[string]transpiler.Type{}, otherBound: map[string]bool{}}
+		scoped: map[string]transpiler.Type{}, otherBound: map[string]bool{}, uses: uses}
 	w.countBinders(d.node.GalaNodeRef)
 	fn := d.node
 	if d.mmeta != nil {
@@ -275,7 +285,8 @@ func (a *pkg) walk(d *decl, p3 bool) *walker {
 		var recvType transpiler.Type = d.recvType
 		if d.recvPtr {
 			recvType = transpiler.PointerType{Elem: d.recvType, NonNull: d.recvNN}
-			w.newBinding(d.recvName, RoleReceiver, -1, d.recvType, true, recv.Identifier().GalaNodeRef, !d.recvNN)
+			b := w.newBinding(d.recvName, RoleReceiver, -1, d.recvType, true, recv.Identifier().GalaNodeRef, !d.recvNN)
+			b.inout = d.mmeta.InoutReceiver
 		}
 		w.types[d.recvName] = recvType
 	}
@@ -289,6 +300,7 @@ func (a *pkg) walk(d *decl, p3 bool) *walker {
 		if a.pointerParam(d, i) {
 			pt := d.params[i].(transpiler.PointerType)
 			b := w.newBinding(name, RoleParam, i, pt.Elem, true, p.Identifier().GalaNodeRef, !pt.NonNull)
+			b.inout = p.INOUT().Ok()
 			if p.VAR().Ok() {
 				w.reason(b, Origin, "a var parameter", p.GalaNodeRef)
 			}
@@ -1029,25 +1041,41 @@ func (w *walker) unary(x native.UnaryExprNode, u use) chainResult {
 			if b := w.binds[name]; b != nil {
 				w.touch(b, operand)
 				if !w.overridden(b, operand) {
-					switch {
-					case u.kind == useAddr:
-						w.reason(b, Other, "address of its pointee", operand)
-					case w.leaksReference(b.pointee, u):
-						// The copy still holds the references the pointee
-						// does.
-						w.reason(b, PassedToGo, "a copy of its pointee, holding a reference", operand)
-					}
+					w.recordUse(b, func(r *bindingUses) { r.derefs = append(r.derefs, x.GalaNodeRef) })
+					w.copyUse(b, u, operand)
 				}
 				return chainResult{}
 			}
 		}
 		w.expr(operand, valueUse(Other, "dereferenced"))
 	case "&":
+		// `&x` of an `inout` binding x is the pointer x lowers to: a lend
+		// to an `inout` parameter, the only place the compiler accepts it.
+		if name, ok := bareName(operand); ok {
+			if b := w.binds[name]; b != nil && b.inout {
+				w.touch(b, operand)
+				w.bareUse(b, u, operand)
+				return chainResult{typ: transpiler.PointerType{Elem: b.pointee, NonNull: true}}
+			}
+		}
 		w.expr(operand, use{kind: useAddr})
 	default:
 		w.expr(operand, valueUse(Other, "an operand"))
 	}
 	return chainResult{}
+}
+
+// copyUse is a read of b's pointee as a whole, `*p` (or an `inout` binding
+// by its name alone), used as u: a copy, so a lend, unless its address is
+// taken or the copy carries references out of the pointee.
+func (w *walker) copyUse(b *binding, u use, at native.GalaNodeRef) {
+	switch {
+	case u.kind == useAddr:
+		w.reason(b, Other, "address of its pointee", at)
+	case w.leaksReference(b.pointee, u):
+		// The copy still holds the references the pointee does.
+		w.reason(b, PassedToGo, "a copy of its pointee, holding a reference", at)
+	}
 }
 
 // bareUse is a use of binding b by its name alone.
@@ -1092,6 +1120,7 @@ func (w *walker) lend(b *binding, cs *callState, i int, at native.GalaNodeRef) {
 		pt := c.paramType(i)
 		switch {
 		case isPointer(pt) && c.paramBorrowed(i, w.p3):
+			w.recordUse(b, func(r *bindingUses) { r.lends = append(r.lends, lendUse{at: at, own: c.own, index: i, callee: c.name}) })
 		case c.collection:
 			w.reason(b, Collection, c.name, at)
 		case isPointer(pt) && c.summary() == nil:
@@ -1195,6 +1224,13 @@ func (w *walker) chain(p native.PostfixExprNode, sufs []native.PostfixSuffixNode
 		switch b, t := w.binds[name], w.typeOf(name); {
 		case b != nil:
 			w.touch(b, at)
+			if len(sufs) == 0 && b.inout {
+				// An `inout` binding by its name is its value: a copy.
+				if !w.overridden(b, at) {
+					w.copyUse(b, u, at)
+				}
+				return chainResult{typ: b.pointee}
+			}
 			if len(sufs) == 0 {
 				w.bareUse(b, u, at)
 				return chainResult{typ: transpiler.PointerType{Elem: b.pointee}}
@@ -1405,6 +1441,9 @@ func (w *walker) callSuffix(st *chainState, s native.PostfixSuffixNode) chainRes
 			if !st.whole {
 				what += ", on a field"
 			}
+			w.recordUse(b, func(r *bindingUses) {
+				r.receivers = append(r.receivers, lendUse{at: s.GalaNodeRef, own: c.own, index: -1, callee: c.name})
+			})
 			switch sum := c.summary(); {
 			case c.kind == calleeGo:
 				w.reason(b, PassedToGo, what, s.GalaNodeRef)

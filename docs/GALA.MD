@@ -5291,6 +5291,15 @@ the call:
   leave the caller's place half updated. Work on a copy and assign the place
   once `Try` has succeeded.
 
+**Moving existing code to `inout`.** `gala fix inout` rewrites the `Ptr[T]`
+receivers and parameters that are only read, written and lent on (never
+stored, compared, captured or passed to Go) to `inout T`: `*p` becomes `p`, and
+`p` passed on to another converted parameter becomes `&p`. It compiles the
+rewritten package and leaves alone any function whose rewrite the compiler
+rejects. Public functions keep their `Ptr` unless `--public` is given, since
+converting them changes the package's API. `--dry-run` prints the diff, and
+running the fix again changes nothing.
+
 [OWNERSHIP.MD](OWNERSHIP.MD) is the guide to the feature: runnable examples,
 each rule with its fix, Go interop, interfaces, and what hover and `gala doc`
 show. The design, with its rationale and prior art, is in

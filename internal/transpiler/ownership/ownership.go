@@ -327,6 +327,11 @@ func (a *pkg) verdict(d *decl, b *binding) Binding {
 		case a.opts.HandWrittenGo:
 			at.Detail = "the package's hand-written Go may call " + d.name
 			reasons = append(reasons, at)
+		case b.inout:
+			// Go reaches an `inout` binding only through the generated
+			// copy-in/copy-out wrapper (docs/OWNERSHIP_DESIGN.MD, 3.5.1), and
+			// a function value only through a `func(inout T)` slot or the
+			// same wrapper: the body's place is exclusive either way.
 		case d.asValue:
 			at.Detail = d.name + " is used as a function value, which Go may call"
 			reasons = append(reasons, at)

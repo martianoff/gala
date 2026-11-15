@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "ownership",
     srcs = [
+        "adopt.go",
         "gofiles.go",
         "ownership.go",
         "package.go",
@@ -23,7 +24,10 @@ go_library(
 
 go_test(
     name = "ownership_test",
-    srcs = ["ownership_test.go"],
+    srcs = [
+        "adopt_test.go",
+        "ownership_test.go",
+    ],
     data = [
         "//collection_immutable:gala_sources",
         "//go_builtins:builtins.go",

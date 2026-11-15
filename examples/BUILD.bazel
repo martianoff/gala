@@ -5486,3 +5486,24 @@ gala_exec_test(
     src = "struct_literal_std_named_fields.gala",
     expected = "struct_literal_std_named_fields.out",
 )
+
+# `gala fix inout` (internal/inoutfix): inout_fix_after.gala is the fix's
+# output for inout_fix_before.gala, byte for byte, and both print the same.
+gala_exec_test(
+    name = "inout_fix_before",
+    src = "inout_fix_before.gala",
+    expected = "inout_fix_before.out",
+    deps = ["//go_interop"],
+)
+
+gala_exec_test(
+    name = "inout_fix_after",
+    src = "inout_fix_after.gala",
+    expected = "inout_fix_after.out",
+    deps = ["//go_interop"],
+)
+
+exports_files([
+    "inout_fix_after.gala",
+    "inout_fix_before.gala",
+])
