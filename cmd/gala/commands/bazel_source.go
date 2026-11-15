@@ -26,5 +26,15 @@ func inExternalRepository(path string) bool {
 		return false
 	}
 	p := filepath.ToSlash(filepath.Clean(path))
-	return strings.HasPrefix(p, "external/") || strings.HasPrefix(p, "../")
+	if strings.HasPrefix(p, "external/") || strings.HasPrefix(p, "../") {
+		return true
+	}
+	// A source another rule generated or copied for an external repository:
+	// bazel-out/<configuration>/bin/external/<repository>/...
+	if rest, ok := strings.CutPrefix(p, "bazel-out/"); ok {
+		if _, under, ok := strings.Cut(rest, "/bin/"); ok {
+			return strings.HasPrefix(under, "external/")
+		}
+	}
+	return false
 }

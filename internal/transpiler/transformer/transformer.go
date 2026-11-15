@@ -786,8 +786,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 				break
 			}
 		}
-		// An import of embed the source wrote serves, unless EmbeddedFS needs
-		// it named and it is blank (`import _ "embed"`).
+		// An import of embed the source wrote serves; a blank one
+		// (`import _ "embed"`) is named when EmbeddedFS refers to embed.FS.
 		hasEmbedImport := false
 		for _, decl := range file.Decls {
 			genDecl, ok := decl.(*ast.GenDecl)
@@ -799,8 +799,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 				if !ok {
 					continue
 				}
-				blank := importSpec.Name != nil && importSpec.Name.Name == "_"
-				if strings.Trim(importSpec.Path.Value, "\"") == "embed" && (!hasEmbeddedFS || !blank) {
+				if strings.Trim(importSpec.Path.Value, "\"") == "embed" {
+					if hasEmbeddedFS && importSpec.Name != nil && importSpec.Name.Name == "_" {
+						importSpec.Name = nil
+					}
 					hasEmbedImport = true
 					break
 				}

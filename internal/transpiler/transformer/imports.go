@@ -773,10 +773,11 @@ func readDotImportExports(path, pkgName string, richAST *transpiler.RichAST) map
 	if richAST == nil {
 		return nil
 	}
-	// Metadata names a keyed package (transpiler.PackageKey) by its key.
+	// Metadata names a keyed package (transpiler.PackageKey) by its key; its
+	// plain name then belongs to another package of that name.
 	ofPkg := func(pkg string) bool { return pkg == pkgName }
 	if key := richAST.PackageKeys[path]; key != "" {
-		ofPkg = func(pkg string) bool { return pkg == pkgName || pkg == key }
+		ofPkg = func(pkg string) bool { return pkg == key }
 	}
 	exports := make(map[string]bool)
 	for _, meta := range richAST.Types {

@@ -16,6 +16,8 @@ func TestInExternalRepository(t *testing.T) {
 		{"external/gala_tui+/runtime.gala", true},
 		{"external/gala_tui+/harness/fluent.gala", true},
 		{"../gala_tui+/runtime.gala", true},
+		{"bazel-out/k8-fastbuild/bin/external/gala_tui+/gen.gala", true},
+		{"bazel-out/k8-fastbuild/bin/app/gen.gala", false},
 		{"app/main.gala", false},
 		{"main.gala", false},
 		{"externals/x.gala", false},
