@@ -247,10 +247,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
@@ -274,7 +274,7 @@ jobs:
         run: mv ide/vscode/gala-*.vsix "ide/vscode/gala-vscode-${{ github.event.release.tag_name }}.vsix"
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: gala-vscode-extension
           path: ide/vscode/gala-vscode-*.vsix
@@ -287,7 +287,7 @@ jobs:
       contents: write  # attach assets to the release
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
@@ -299,7 +299,7 @@ jobs:
           rm -rf gala-*/ gala-intellij-plugin/ gala-vscode-extension/
           mv release/* .
           rmdir release
-          sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip > checksums-sha256.txt
+          sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip *.vsix > checksums-sha256.txt
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
