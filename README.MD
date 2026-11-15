@@ -710,7 +710,7 @@ Publishing, versions, and the current limits (an exported project cannot yet imp
 
 ## IDE Support
 
-GALA ships with a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for editor-agnostic support.
+GALA ships with a GoLand/IntelliJ plugin, a VS Code extension, and an LSP server (`gala lsp`) for editor-agnostic support.
 
 ### GoLand / IntelliJ IDEA
 
@@ -730,7 +730,7 @@ Install the **GALA extension** from the [releases page](https://github.com/marti
 code --install-extension gala-vscode-<version>.vsix
 ```
 
-Or in VS Code: **Extensions** > `...` > **Install from VSIX...**. The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion and inlay hints. It requires the GALA CLI on `PATH` (check `gala version`); override the binary with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
+Or in VS Code: **Extensions** > `...` > **Install from VSIX...**. The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); override the binary with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
 
 ### Neovim
 

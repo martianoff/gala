@@ -70,7 +70,7 @@ func area(s Shape) float64 = s match {
 |---------|-------------------|
 | [Go Interop](/features/go-interop/) | Import any Go package and call it directly; return types are read from the Go SDK, so there is nothing to declare. In the other direction, Go code calls GALA through generated constructors, and `gala export` publishes a GALA library as a plain Go module. |
 | [Compiler DX](/features/compiler-dx/) | Framed diagnostics with a caret and a hint, runtime panics that point at `.gala` source positions, and guaranteed tail-call optimisation. |
-| [IDE Support](/features/ide-support/) | IntelliJ/GoLand plugin and a `gala lsp` server for VS Code and Neovim — completion, inlay hints, go-to-definition, and live diagnostics. |
+| [IDE Support](/features/ide-support/) | IntelliJ/GoLand plugin, a VS Code extension, and a `gala lsp` server for Neovim and other LSP clients — completion, inlay hints, go-to-definition, and live diagnostics. |
 
 ---
 

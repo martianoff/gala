@@ -1,10 +1,10 @@
 ---
 layout: default
-title: "IDE Support — IntelliJ Plugin, LSP Server & Claude Code"
-description: "GALA's GoLand/IntelliJ plugin and LSP server provide syntax highlighting, type-aware code completion, inlay hints, and real-time diagnostics — including go-to-definition and completion into Go stdlib and third-party Go modules."
-keywords: "gala ide support, gala intellij plugin, gala goland plugin, gala lsp server, gala code completion, gala inlay hints, gala syntax highlighting, gala go to definition, gala go interop completion, gala vscode neovim lsp, gala claude code plugin"
+title: "IDE Support — IntelliJ Plugin, VS Code, LSP Server & Claude Code"
+description: "GALA's GoLand/IntelliJ plugin, VS Code extension and LSP server provide syntax highlighting, type-aware code completion, inlay hints, and real-time diagnostics — including go-to-definition and completion into Go stdlib and third-party Go modules."
+keywords: "gala ide support, gala intellij plugin, gala goland plugin, gala lsp server, gala code completion, gala inlay hints, gala syntax highlighting, gala go to definition, gala go interop completion, gala vscode extension, gala vscode neovim lsp, gala claude code plugin"
 permalink: /features/ide-support/
-last_modified_at: 2026-09-13
+last_modified_at: 2026-11-14
 ---
 
 <div class="breadcrumb">
