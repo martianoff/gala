@@ -1,0 +1,26 @@
+package orders
+
+import (
+    gojson "encoding/json"
+
+    "martianoff/gala/json"
+)
+
+// Struct tags, two ways. docs/PORTING_FROM_GO.MD quotes this file.
+
+// Order is a GALA struct. Its JSON keys are set on the codec, not in tags:
+// snake_case by default, "id" for ID, and Note left out when it is empty.
+struct Order(ID string, LineCount int, Note string)
+
+val orderCodec = json.Codec[Order](json.SnakeCase()).Rename("ID", "id").OmitEmpty("Note")
+
+// EncodeOrder writes an order as JSON.
+func EncodeOrder(o Order) Try[string] = orderCodec.Encode(o)
+
+// DecodeOrder reads an order from JSON.
+func DecodeOrder(text string) Try[Order] = orderCodec.Decode(text)
+
+// EncodeWire hands the Go type WireOrder from wire.go to encoding/json,
+// which reads its tags. json.Marshal returns ([]byte, error): a Try.
+func EncodeWire(id string, lines int) Try[string] =
+    gojson.Marshal(WireOrder(ID = id, Lines = lines)).Map((b) => string(b))

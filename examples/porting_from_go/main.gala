@@ -1,0 +1,60 @@
+package main
+
+import (
+    "os"
+    "path/filepath"
+    "time"
+
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/porting_from_go/orders"
+    "martianoff/gala/go_interop"
+)
+
+// Runs each worked example of docs/PORTING_FROM_GO.MD and prints what it
+// gives; main.out holds the expected output.
+func main() {
+    // switch
+    Println(orders.StatusName("N"), orders.StatusName("S"), orders.StatusName("X"))
+    Println(orders.Weight(orders.Urgent), orders.Weight(orders.Normal), orders.Weight("other"))
+    Println(orders.SizeClass(5), orders.SizeClass(50), orders.SizeClass(500))
+    Println(orders.SizeClassMatch(5), orders.SizeClassMatch(50), orders.SizeClassMatch(500))
+    Println(orders.Describe("hi"), orders.Describe(3), orders.Describe(1.5))
+
+    // (T, error), panic and recover
+    Println(orders.ParseLine("A-1, 12"), orders.ParseLine("A-1"))
+    val qty, err = orders.ParseQty(" 7 ")
+    Println(qty, err)
+    Println(orders.Total("A-1,2", "B-2,3"), orders.Total("A-1,2", "B-2,x").IsFailure())
+    Println(orders.Recovered(4), orders.Recovered(-1))
+
+    // defer
+    val dir = os.MkdirTemp("", "porting_from_go").Get()
+    val path = filepath.Join(dir, "order.txt")
+    FromError(os.WriteFile(path, go_interop.ToBytes("A-1,2\nB-2,3\n"), 0o600)).Get()
+    Println(orders.CountLines(path), orders.FirstLine(path))
+    Println(orders.CountLines(filepath.Join(dir, "missing")).IsFailure())
+    FromError(os.RemoveAll(dir)).Get()
+    val tally = orders.NewTally()
+    tally.Add(2)
+    Println(tally.Add(3))
+
+    // slices and maps
+    val skus = orders.SKUs(go_interop.SliceOf("sku,qty", "A-1,2", "B-2,3", "bad", "C-3,1"))
+    Println(skus)
+    val stock = orders.Stock(go_interop.SliceOf("A-1", "B-2", "C-3"))
+    Println(orders.Lookup(stock, "C-3"), orders.Lookup(stock, "B-2"))
+    Println(orders.Reorder(stock, 3))
+
+    // struct tags, const and exported val
+    Println(orders.EncodeOrder(orders.Order("o-1", 2, "")))
+    Println(orders.DecodeOrder("{\"id\":\"o-2\",\"line_count\":1,\"note\":\"rush\"}"))
+    Println(orders.EncodeWire("o-3", 4))
+    Println(orders.MaxLines, orders.LineLimit(), orders.Price(3, orders.Cents(250)))
+    orders.EnableVerbose()
+    Println(orders.Verbose)
+
+    // goroutines, channels and select
+    Println(orders.WordCounts(ArrayOf("a b", "c", "")))
+    Println(orders.FinishesWithin(() => {}, time.Second))
+    Println(orders.FinishesWithin(() => time.Sleep(100 * time.Millisecond), time.Millisecond))
+}

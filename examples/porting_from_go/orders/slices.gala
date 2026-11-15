@@ -1,0 +1,47 @@
+package orders
+
+import (
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+)
+
+// Go slices and maps in GALA: the go_interop helpers where a Go API wants a
+// Go value, and the immutable collections everywhere else.
+// docs/PORTING_FROM_GO.MD quotes this file.
+
+// SKUs takes and returns Go slices, for a Go caller: the SKUs of a CSV whose
+// first line is a header. Each Go builtin and slice expression has a
+// go_interop function.
+func SKUs(lines []string) []string {
+    var out = go_interop.SliceWithCapacity[string](lines.Size())  // make([]string, 0, len(lines))
+    for _, line := range go_interop.SliceDrop(lines, 1) {         // lines[1:]
+        val (sku, _, found) = strings.Cut(line, ",")
+        if (found) {
+            out = go_interop.SliceAppend(out, sku)                 // append(out, sku)
+        }
+    }
+    out
+}
+
+// Stock builds a Go map, for a Go caller.
+func Stock(skus []string) map[string]int {
+    val m = go_interop.MapEmpty[string, int]()                      // map[string]int{}
+    for i, sku := range skus {
+        go_interop.MapPut(m, sku, i + 1)                            // m[sku] = i + 1
+    }
+    go_interop.MapDelete(m, "B-2")                                  // delete(m, "B-2")
+    m
+}
+
+// Lookup is the comma-ok read `v, ok := m[k]`, as an Option.
+func Lookup(m map[string]int, sku string) Option[int] = go_interop.OptionFromMap(m, sku)
+
+// Reorder is the same work in GALA collections: convert at the boundary,
+// and Filter, Map and friends in between.
+func Reorder(stock map[string]int, threshold int) Array[string] =
+    HashMapFromGoMap(stock)
+        .Filter((_, qty) => qty < threshold)
+        .Keys()
+        .Sorted()

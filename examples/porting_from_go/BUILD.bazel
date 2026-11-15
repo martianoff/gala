@@ -1,0 +1,50 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test", "gala_library")
+
+# The worked examples of docs/PORTING_FROM_GO.MD: Go constructs (switch,
+# (T, error), defer, slices and maps, struct tags, const, goroutines and
+# select) written in GALA. orders mixes .gala files with a hand-written Go
+# file that keeps a tagged struct; main runs every example.
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**/*.gala",
+        "**/*.go",
+        "**/*.out",
+    ]),
+    visibility = ["//internal/doccheck:__pkg__"],
+)
+
+gala_library(
+    name = "orders",
+    srcs = [
+        "orders/cleanup.gala",
+        "orders/codec.gala",
+        "orders/config.gala",
+        "orders/errors.gala",
+        "orders/slices.gala",
+        "orders/switch.gala",
+        "orders/workers.gala",
+    ],
+    go_srcs = ["orders/wire.go"],
+    importpath = "martianoff/gala/examples/porting_from_go/orders",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+        "//go_builtins",
+        "//go_interop",
+        "//json",
+        "//resource",
+    ],
+)
+
+gala_exec_test(
+    name = "porting_from_go",
+    src = "main.gala",
+    expected = "main.out",
+    gala_deps = [":orders"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)

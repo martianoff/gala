@@ -10,6 +10,7 @@ filegroup(
         "GALA_BEST_PRACTICES.MD",
         "GO_INTEROP.MD",
         "OWNERSHIP.MD",
+        "PORTING_FROM_GO.MD",
         "TYPE_INFERENCE.MD",
     ],
     visibility = ["//visibility:public"],

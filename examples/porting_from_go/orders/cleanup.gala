@@ -1,0 +1,54 @@
+package orders
+
+import (
+    "bufio"
+    "os"
+
+    "martianoff/gala/go_interop"
+    . "martianoff/gala/resource"
+)
+
+// Go's `defer`, in GALA: a `use` binding, or a combinator of the resource
+// package. docs/PORTING_FROM_GO.MD quotes this file.
+
+// CountLines is Go's
+//
+//	f, err := os.Open(path)
+//	if err != nil { return 0, err }
+//	defer f.Close()
+//
+// os.Open is a Try[*os.File], and Map runs the lambda only when the open
+// worked. `use` closes the file when the lambda returns, on every path.
+func CountLines(path string) Try[int] = os.Open(path).Map((f) => {
+    use file = f
+    val scanner = bufio.NewScanner(file)
+    var n = 0
+    for scanner.Scan() {
+        n++
+    }
+    n
+})
+
+// FirstLine does the same with Using, which closes the file when its body
+// returns.
+func FirstLine(path string) Try[string] = os.Open(path).Map((f) => Using(f, (file) => {
+    val scanner = bufio.NewScanner(file)
+    if (scanner.Scan()) scanner.Text() else ""
+}))
+
+// Tally is a counter that several goroutines may bump. Go's
+//
+//	mu.Lock()
+//	defer mu.Unlock()
+//
+// is WithLock, which unlocks when the body returns or panics.
+struct Tally(mu *go_interop.Mutex, var count int)
+
+// NewTally returns a Tally at zero.
+func NewTally() *Tally = &Tally(go_interop.NewMutex(), 0)
+
+// Add adds n under the lock and returns the new count.
+func (t *Tally) Add(n int) int = WithLock(t.mu, () => {
+    t.count = t.count + n
+    t.count
+})
