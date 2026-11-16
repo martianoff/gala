@@ -158,6 +158,7 @@ macro "sim_step" : tactic => `(tactic| (first
   | with_reducible apply ihE
   | with_reducible apply ihL
   | with_reducible apply ihB
+  | with_reducible apply ihBD
   | with_reducible apply ihCV
   | with_reducible apply ihBl
   | with_reducible apply ihC
@@ -218,10 +219,20 @@ theorem bindArgs_sim (ds : Decls) (k : Nat) :
       Sim k (bindArgs ds d ns ts dfs fs as) (bindArgs ds d' ns ts dfs fs as)
   | d, d', ns, ts, dfs, fs, as, h => by
     have ihL := fun es => evalList_sim ds k d d' es h
-    have ihR := fun fr b => runIn_sim ds k d d' fr b h
+    have ihBD := fun ns ts dfs fs g => bindDefaults_sim ds k d d' ns ts dfs fs g h
     rw [bindArgs.eq_1, bindArgs.eq_1]
     sim_auto
   termination_by d _ _ _ _ _ _ => (d, 2, 0)
+
+theorem bindDefaults_sim (ds : Decls) (k : Nat) :
+    ∀ (d d' : Nat) (ns : List String) (ts : List (Option Ty)) (dfs : List (Option Expr))
+      (fs : Bool) (g : List (Nat × Val)), d ≤ d' →
+      Sim k (bindDefaults ds d ns ts dfs fs g) (bindDefaults ds d' ns ts dfs fs g)
+  | d, d', ns, ts, dfs, fs, g, h => by
+    have ihR := fun fr b => runIn_sim ds k d d' fr b h
+    rw [bindDefaults.eq_1, bindDefaults.eq_1]
+    sim_auto
+  termination_by d _ _ _ _ _ _ => (d, 1, 1)
 
 theorem funcArgs_sim (ds : Decls) (k : Nat) :
     ∀ (d d' : Nat) (f : Func) (as : List Expr), d ≤ d' →

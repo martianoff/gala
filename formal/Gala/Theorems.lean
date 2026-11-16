@@ -7,10 +7,11 @@
     was written in, each `var` by the same cell. It assumes every binding of the scope is
     mutable exactly when it holds a cell (`cellsMutable`); that evaluation keeps this
     invariant is not proved.
-  * **T4, the scope of a default value.** `defaultFrame_other`, `defaultFrame_last`: the
-    frame a default value is evaluated in holds only the parameters before it, the last
-    one bound to the value the call gave it, and no local of the caller's. That `bindArgs`
-    evaluates defaults in this frame is its definition, not a theorem.
+  * **T4, the frame of a default value.** `defaultFrame_lookup` (with its special cases
+    `defaultFrame_other`, `defaultFrame_last`): the frame a default value is evaluated in
+    binds exactly the parameters before it, and no local of the caller's. That
+    `bindDefaults` evaluates defaults in this frame is its definition; that doing so never
+    reads the caller's locals is `bindDefaults_callerLocals` (Gala/Defaults.lean).
 
   `lookup_bind_self` and `lookup_bind_other` are lemmas for those proofs.
 
@@ -83,5 +84,35 @@ theorem defaultFrame_last (earlier : List (String × Val)) (x : String) (v : Val
     (hx : x ≠ "_") : lookup (defaultFrame (earlier ++ [(x, v)])) x = some ⟨v, false⟩ := by
   simp only [defaultFrame, List.foldl_append, List.foldl]
   exact lookup_bind_self _ x _ hx
+
+/-- **T4, the frame of a default.** The scope a default value is evaluated in binds exactly
+    the parameters before it: a name is bound to the value of the latest earlier parameter
+    of that name, as an immutable binding, and is unbound if no earlier parameter has it
+    (or if it is `_`, which binds nothing). `defaultFrame_other` and `defaultFrame_last` are
+    special cases. -/
+theorem defaultFrame_lookup (earlier : List (String × Val)) (x : String) :
+    lookup (defaultFrame earlier) x =
+      if x = "_" then none else (earlier.reverse.lookup x).map (⟨·, false⟩) := by
+  unfold defaultFrame
+  rw [← List.reverse_reverse earlier]
+  generalize earlier.reverse = r
+  rw [List.reverse_reverse]
+  induction r with
+  | nil => split <;> rfl
+  | cons yv rest ih =>
+    obtain ⟨y, v⟩ := yv
+    rw [List.reverse_cons, List.foldl_append, List.foldl_cons, List.foldl_nil]
+    dsimp only
+    by_cases hxy : y = x
+    · subst hxy
+      by_cases hx : y = "_"
+      · subst hx
+        rw [show ∀ ρ b, bind ρ "_" b = ρ from fun _ _ => by simp [bind], ih]
+        simp
+      · rw [lookup_bind_self _ _ _ hx]
+        simp [hx]
+    · rw [lookup_bind_other _ _ _ _ hxy, ih]
+      have : (x == y) = false := by simp [Ne.symm hxy]
+      simp [List.lookup_cons, this]
 
 end Gala.Spec

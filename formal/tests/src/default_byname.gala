@@ -1,0 +1,15 @@
+package main
+
+// A by-name default that is a bare name is resolved where the default is
+// evaluated, in the callee's scope: a local of the caller's with the same name
+// does not hide the function it names.
+func one() int = 1
+
+func run(f func() int = one) int = f()
+
+func plain() int = run()
+
+func main() {
+    val one = 5
+    Println(run(), plain(), one)
+}

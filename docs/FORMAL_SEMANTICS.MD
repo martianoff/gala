@@ -208,7 +208,8 @@ flowchart LR
 
 These are the properties of the spec the milestones prove (T1–T7), with the bugs each
 guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
-`formal/Gala/Fuel.lean`), and T4 only for the scope a default value sees;
+`formal/Gala/Fuel.lean`), and T4 for the defaults phase of a call
+(`bindDefaults_callerLocals` and `defaultFrame_lookup`, see M2);
 [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) lists what is proved.
 
 | # | Statement (informal) | Guards against | Milestone |
@@ -291,9 +292,18 @@ column lists what each milestone's claim rests on beyond them.
   reference still resolves to its own binder, which is capture avoidance; M2 also checks
   its renamings against the remaining conditions above. A renaming that changes Go's
   output is then a transpiler bug, never a spec artefact.
-- **Statements (T3, T4):** T3 relates the output and state of each compound construct to
-  those of its parts in source order; T4 extends today's lemmas about the default frame
-  to `bindArgs` itself.
+- **Statement (T3):** T3 relates the output and state of each compound construct to
+  those of its parts in source order.
+- **T4: done.** `bindArgs` evaluates the arguments a call writes, in the caller's scope,
+  and then passes their values to `bindDefaults`, which fills each left-out parameter
+  with its default. `bindDefaults_callerLocals` (`formal/Gala/Defaults.lean`): the
+  defaults phase does not read the caller's locals. Run with any other locals, it gives
+  the same values or `Stop` and the same output, heap, package-level variables and
+  steps, and when it succeeds the caller's locals are back. `defaultFrame_lookup`: each
+  default's frame binds exactly the earlier parameters, a name to the latest of them.
+  The first theorem was false until a by-name default's bare name was resolved in the
+  default's frame rather than among the caller's locals. That the written arguments come
+  before the defaults is `bindArgs`'s definition; an ordering claim is T3's.
 - **Risk:** the renaming must commute with `resolve`, pattern classification, closures'
   captured scopes and default frames. A state relation (environments renamed, heap equal)
   carries the induction. Needs M1's lemmas.
