@@ -28,24 +28,25 @@ are frequency-independent and are the controlled comparison.
 
 `ratio` is median(Lean) / median(Go); below 1.0 means Lean is faster. The
 start column is the staged ports before this round (`leanc -O2` and the
-original scanner code). The final column is `formal/bench/run.sh --quick
---runs 9` on the optimized tree.
+original scanner code). The final column is the median of three
+`formal/bench/run.sh --quick --runs 9` runs on the tree after both scanner
+passes; the range is the spread of those three runs.
 
 | Scenario | Start ratio | Final ratio | Final range over three runs |
 | --- | ---: | ---: | ---: |
-| `interp s` | 0.75x | 0.49x | 0.48–0.49x |
-| `interp f` | 0.79x | 0.63x | 0.63–0.64x |
-| `mod 40` | 1.74x | 0.55x | 0.55–0.76x |
-| `mod 400` | 1.56x | 0.63x | 0.52–0.65x |
-| `mod 4000` | 1.67x | 0.53x | 0.50–0.55x |
+| `interp s` | 0.75x | 0.48x | 0.48–0.54x |
+| `interp f` | 0.79x | 0.64x | 0.62–0.74x |
+| `mod 40` | 1.74x | 0.19x | 0.17–0.25x |
+| `mod 400` | 1.56x | 0.18x | 0.17–0.25x |
+| `mod 4000` | 1.67x | 0.18x | 0.16–0.20x |
 
 The manifest numbers moved the most: the parser went from roughly 1.6x slower
-than Go to roughly twice as fast on these corpora. `mod 40` is the noisiest
+than Go to about five times faster on these corpora. `mod 40` is the noisiest
 row because one iteration is tens of microseconds; prefer `mod 400`/`mod 4000`
 and the instruction counts for it.
 
-A `--full --runs 5` run gave 0.53x, 0.80x, 0.76x, 0.65x and 0.55x on the same
-scenarios: same direction, more spread from host load.
+A `--full --runs 5` run gave 0.45x, 0.61x, 0.25x, 0.23x and 0.16x on the same
+scenarios: same direction, with the spread coming from host load.
 
 ## Instruction counts
 
@@ -53,11 +54,11 @@ Callgrind, same calls as `callgrind.sh`. Lower is better.
 
 | Workload | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| interpolation `s`, 20k-line subset, 2 reps | 403.05M | 341.97M | −15.2% |
-| manifest, 10×1000-entry parse+format | 208.13M | 115.76M | −44.4% |
+| interpolation `s`, 20k-line subset, 2 reps | 403.05M | 342.51M | −15.0% |
+| manifest, 10×1000-entry parse+format | 208.13M | 46.74M | −77.5% |
 
 The manifest "before" figure already uses the final `-O3 -flto -DNDEBUG`
-flags, so the source changes account for the whole 44%; the interpolation
+flags, so the source changes account for the whole 77%; the interpolation
 "before" figure is the original build (`leanc -O2`), so its 15% combines the
 scanner rewrite and the flag change.
 
@@ -76,35 +77,35 @@ ratio of the overall high-water marks.
 
 | Scenario | Lean load/peak/work | Go load/peak/work | Peak ratio |
 | --- | ---: | ---: | ---: |
-| `startup` (empty corpus) | 12,960 / 13,000 / 40 | 2,376 / 2,408 / 32 | 5.40x |
-| `interp s` | 49,832 / 49,844 / 12 | 19,808 / 40,064 / 20,256 | 1.24x |
-| `interp f` | 23,144 / 23,208 / 64 | 7,856 / 15,628 / 7,772 | 1.49x |
-| `mod 40` | 12,972 / 13,012 / 40 | 2,376 / 2,800 / 424 | 4.65x |
-| `mod 400` | 12,972 / 15,036 / 2,064 | 2,416 / 6,184 / 3,768 | 2.43x |
-| `mod 4000` | 14,988 / 21,168 / 6,180 | 2,700 / 8,080 / 5,380 | 2.62x |
+| `startup` (empty corpus) | 12,976 / 12,976 / 0 | 2,364 / 2,392 / 28 | 5.42x |
+| `interp s` | 49,848 / 49,848 / 0 | 19,780 / 37,228 / 17,448 | 1.34x |
+| `interp f` | 23,220 / 23,220 / 0 | 7,816 / 15,448 / 7,632 | 1.50x |
+| `mod 40` | 13,084 / 13,148 / 64 | 2,368 / 2,780 / 412 | 4.73x |
+| `mod 400` | 12,984 / 15,096 / 2,112 | 2,400 / 6,160 / 3,760 | 2.45x |
+| `mod 4000` | 15,032 / 21,240 / 6,208 | 2,688 / 7,944 / 5,256 | 2.67x |
 
-The fixed cost is the largest difference. An empty run peaks at 13,000 KiB of
-Lean and 2,408 KiB of Go, so every measured Lean process starts roughly 5.4x
+The fixed cost is the largest difference. An empty run peaks at 12,976 KiB of
+Lean and 2,392 KiB of Go, so every measured Lean process starts roughly 5.4x
 higher. That dominates small workloads: `mod 40` has almost no work memory
-(40 KiB Lean, 424 KiB Go) yet its total peak is 4.65x; the ratio falls toward
-2.5x as the manifest grows.
+(64 KiB Lean, 412 KiB Go) yet its total peak is 4.73x; the ratio falls toward
+2.7x as the manifest grows.
 
-For interpolation the total peaks are close (1.24x and 1.49x), but the
+For interpolation the total peaks are close (1.34x and 1.50x), but the
 composition differs. The Lean driver's corpus representation is a much larger
-baseline (49,832 vs 19,808 KiB for `s`; 23,144 vs 7,856 KiB for `f`), while
-the split loop adds only 12–64 KiB above that baseline. Go's loop grows the
-heap by roughly 7.6–19.8 MiB before the GC collects, so much of Go's peak is
-garbage allowed to accumulate. Go's `interp s` peak moved between 37.0 and
-41.2 MiB across three seven-process runs, which moves that ratio between
-1.21x and 1.35x; the table above is one of those runs, and the other rows are
-steadier. The total peak is still what a process pays; the `load` column
-shows that Lean's larger baseline comes from the driver's corpus, and `work`
-shows that `split` adds little above it.
+baseline (49,848 vs 19,780 KiB for `s`; 23,220 vs 7,816 KiB for `f`), while
+the split loop adds nothing measurable above that baseline in this run (its
+peak equals its load figure). Go's loop grows the heap by roughly 7.5–17.0 MiB
+before the GC collects, so much of Go's peak is garbage allowed to accumulate.
+Go's `interp s` peak moved between 36.4 and 41.2 MiB across seven-process runs,
+which moves that ratio between 1.18x and 1.37x; the table above is one of those
+runs, and the other rows are steadier. The total peak is still what a
+process pays; the `load` column shows that Lean's larger baseline comes from
+the driver's corpus, and `work` shows that `split` adds little above it.
 
-For manifests the incremental memory is comparable: `mod 400` is 2,064 KiB
-Lean vs 3,768 KiB Go and `mod 4000` is 6,180 vs 5,380 KiB (the manifest
+For manifests the incremental memory is comparable: `mod 400` is 2,112 KiB
+Lean vs 3,760 KiB Go and `mod 4000` is 6,208 vs 5,256 KiB (the manifest
 driver's setup parse is included in `work` on both sides). The total peak
-ratio of 2.4–2.6x for those rows is mostly the 13 MiB Lean runtime baseline.
+ratio of 2.4–2.7x for those rows is mostly the 13 MiB Lean runtime baseline.
 A five-pass run did not materially raise the Lean manifest peaks above the
 one-pass figures, so the ports do not accumulate memory between calls.
 
@@ -126,13 +127,17 @@ does for interpolation.
   as the original slice. The parts array is preallocated from the input size.
   A rewrite that searched for `$` and split at it was measurably worse and was
   dropped.
-- **Manifest.** The parser's string machinery was replaced with narrow byte
-  scans where the semantics are byte-clean: the newline split, the first `//`
-  comment split, `ScanWords`-style field extraction, and `TrimSpace`. The
-  whitespace scanners keep the full Go `unicode.IsSpace` set (ASCII fast path,
-  UTF-8 decode for wider characters). `fields` now copies only real words, and
-  `trimSpace` returns the original string object when there is nothing to
-  trim. The parse/format code paths are otherwise unchanged.
+- **Manifest.** The parser no longer materializes line and field strings: it
+  scans `[start, stop)` spans in place, finds the line end and the first `//`
+  in one fused pass, and copies a string only for a path or version that ends
+  up in the parsed file, or for an error message. The scanners carry the input
+  byte length once and walk `USize` offsets with
+  `String.Internal.ugetUTF8Byte`, which removes the `Nat` boxing and the
+  checked `get` from the inner loops. The marker mask is computed only for
+  `require` lines and `require` blocks, and the byte tests take ASCII fast
+  paths; the whitespace scanners keep the full Go `unicode.IsSpace` set (ASCII
+  fast path, UTF-8 decode for wider characters). The parse/format code paths
+  are otherwise unchanged.
 - **Memory measurement.** The benchmark drivers now report their own `VmHWM`,
   and `mem.sh` compares peak RSS for the same scenarios; no measured call
   changed. The numbers are in "Memory: peak RSS" above.
