@@ -934,6 +934,7 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(e ifExprSrc) (ast.Stmt, 
 			stmt, err = t.lowerBlock(b, tailDiscarded, slot{})
 		} else {
 			stmt, err = t.lowerExprStatement(branch.expr(), functionDiscardHint)
+			stmt = t.markIfExprStatementBranch(branch.expr(), stmt, i > 0)
 		}
 		if err != nil {
 			return nil, err
@@ -955,6 +956,28 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(e ifExprSrc) (ast.Stmt, 
 		}
 	}
 	return ifStmt, nil
+}
+
+// markIfExprStatementBranch is stmt, the statement an expression branch e of
+// a discarded if-expression lowers to, led by e's line marker: it sits on its
+// own Go line below the `if`. An else branch that is itself an if stays an
+// `else if`, unmarked; its own branches are marked. A nil stmt (an error) is
+// returned as it is.
+func (t *galaASTTransformer) markIfExprStatementBranch(e exprSrc, stmt ast.Stmt, isElse bool) ast.Stmt {
+	switch s := stmt.(type) {
+	case nil:
+		return stmt
+	case *ast.BlockStmt:
+		return t.exprFuncBody(e, s)
+	case *ast.IfStmt:
+		if isElse {
+			return stmt
+		}
+	}
+	if marked := t.markExprStmts(e, []ast.Stmt{stmt}); len(marked) > 1 {
+		return &ast.BlockStmt{List: marked}
+	}
+	return stmt
 }
 
 // lowerExprStatement lowers an expression whose value nothing reads the way a
