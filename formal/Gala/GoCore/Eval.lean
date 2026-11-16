@@ -54,12 +54,15 @@ def Env.bind (env : Env) (x : String) (cell : Nat) : Env :=
 
 def Env.push (env : Env) : Env := { env with scopes := [] :: env.scopes }
 
+/-- The predeclared interface `error` (Go spec, "Errors"). -/
+def errorTy : Ty := .iface [("Error", .func_ [] [.string] false)]
+
 /-- The predeclared types (Go spec, "Predeclared identifiers"). -/
 def universeType? : String → Option Ty
   | "bool" => some .bool
   | "string" => some .string
   | "any" => some (.iface [])
-  | "error" => some (.iface [("Error", .func_ [] [.string] false)])
+  | "error" => some errorTy
   | "float32" => some (.float 32)
   | "float64" => some (.float 64)
   | n => (IntKind.ofName? n).map .int
@@ -117,7 +120,7 @@ def methodSet (c : Ctx) (t : Ty) (m : String) : Option (String × String × List
 def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand"]
 
 /-- The `fmt` functions modelled (see `Fmt` below). -/
-def fmtFuncs : List String := ["Println", "Print", "Sprintf", "Sprint"]
+def fmtFuncs : List String := ["Println", "Print", "Printf", "Sprintf", "Sprint"]
 
 /-- The names a field list declares: parameters, type parameters, interface methods. -/
 def fieldListNames (fs : List Field) : List String := fs.flatMap fun | .mk ns _ => ns
@@ -235,6 +238,82 @@ def boolType (a b : Val) : Ty :=
   match a.ty with
   | .untyped _ => b.ty
   | t => t
+
+/-- A `Printf` verb's flags, width and precision (fmt package documentation,
+    "Printing"; `fmt/print.go`, `doPrintf`). -/
+structure FmtSpec where
+  minus : Bool := false
+  plus : Bool := false
+  space : Bool := false
+  zero : Bool := false
+  sharp : Bool := false
+  wid : Option Nat := none
+  prec : Option Nat := none
+
+/-- No flag, width or precision. -/
+def FmtSpec.plain (s : FmtSpec) : Bool :=
+  !s.minus && !s.plus && !s.space && !s.zero && !s.sharp && s.wid.isNone && s.prec.isNone
+
+/-- A decimal number at the head of `cs`, and the rest. -/
+def parseNum (cs : List Char) : Option Nat × List Char :=
+  let ds := cs.takeWhile Char.isDigit
+  if ds.isEmpty then (none, cs)
+  else (some (ds.foldl (fun n d => n * 10 + (d.toNat - '0'.toNat)) 0), cs.drop ds.length)
+
+/-- The flags, width and precision after a `%`, and the rest, from the verb on
+    (`doPrintf`). An argument index or a `*` width is left in the rest, where the verb
+    is, for the caller to report. -/
+def parseSpec (cs : List Char) : FmtSpec × List Char :=
+  let rec flags : Nat → FmtSpec → List Char → FmtSpec × List Char
+    | 0, s, cs => (s, cs)
+    | k + 1, s, c :: cs =>
+      match c with
+      | '-' => flags k { s with minus := true } cs
+      | '+' => flags k { s with plus := true } cs
+      | ' ' => flags k { s with space := true } cs
+      | '0' => flags k { s with zero := true } cs
+      | '#' => flags k { s with sharp := true } cs
+      | _ => (s, c :: cs)
+    | _, s, [] => (s, [])
+  let (s, cs) := flags (cs.takeWhile ("-+ 0#".contains ·)).length {} cs
+  let (wid, cs) := parseNum cs
+  match cs with
+  | '.' :: cs =>
+    let (prec, cs) := parseNum cs
+    ({ s with wid, prec := some (prec.getD 0) }, cs)
+  | cs => ({ s with wid }, cs)
+
+/-- `s` padded to the width with spaces, or zeros under the `0` flag, on the left, or
+    on the right under `-` (`fmt.pad`, `writePadding`). -/
+def FmtSpec.pad (spec : FmtSpec) (s : String) : String :=
+  match spec.wid with
+  | none => s
+  | some w =>
+    let p := String.ofList (List.replicate (w - s.length) (if spec.zero && !spec.minus then '0' else ' '))
+    if spec.minus then s ++ p else p ++ s
+
+/-- An integer in base 10 or 16, with its sign, precision (at least that many digits),
+    `0x` under `#`, and padding: `fmt.fmtInteger`, step by step. -/
+def FmtSpec.integer (spec : FmtSpec) (x : Int) (base : Nat) (upper : Bool) : String :=
+  let neg := x < 0
+  let u := x.natAbs
+  if spec.prec == some 0 && u == 0 then { spec with zero := false }.pad ""
+  else
+    let prec := match spec.prec with
+      | some p => p
+      | none =>
+        match spec.wid with
+        | some w => if spec.zero && !spec.minus then w - (if neg || spec.plus || spec.space then 1 else 0) else 0
+        | none => 0
+    let digits := (Nat.toDigits base u).map fun d => if upper then d.toUpper else d
+    let digits := List.replicate (prec - digits.length) '0' ++ digits
+    let pre := if spec.sharp && base == 16 then (if upper then "0X" else "0x") else ""
+    let sign := if neg then "-" else if spec.plus then "+" else if spec.space then " " else ""
+    { spec with zero := false }.pad (sign ++ pre ++ String.ofList digits)
+
+/-- A string truncated to the precision, in runes, and padded (`fmt.fmtS`). -/
+def FmtSpec.string (spec : FmtSpec) (s : String) : String :=
+  spec.pad (match spec.prec with | some p => String.ofList (s.toList.take p) | none => s)
 
 /-- The largest slice capacity GoCore allocates; a larger one is a question of memory,
     which the comparison leaves out (`unsupported`). -/
@@ -1448,11 +1527,10 @@ def callMethod? (c : Ctx) : Nat → Val → String → GM (Option Val)
   | 0, _, _ => throw .fuel
   | n + 1, v, m => do
     let v := v.dyn
-    match methodSet c v.ty m with
-    | some (p, _, args, me) =>
-      match me.sig with
-      | .mk [] [_] _ => return some (← Val.single (← callMethod c n p args me v [] false))
-      | _ => return none
+    -- `Error() string` or `String() string` exactly: the `error` and `fmt.Stringer`
+    -- interfaces.
+    match ← methodOfType c n v.ty m (.func_ [] [.string] false) with
+    | some (p, args, me) => return some (← Val.single (← callMethod c n p args me v [] false))
     | none => return none
 
 /-- Call a function value with argument values. -/
@@ -1951,13 +2029,24 @@ def fmtCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     match f with
     | "Println" =>
       let parts ← vs.mapM fun v => fmtArg c n v 'v'
-      emit (" ".intercalate parts ++ "\n")
-      pure []
-    | "Print" => emit (← sprint c n vs); pure []
+      let s := " ".intercalate parts ++ "\n"
+      emit s
+      pure [.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
+    | "Print" =>
+      let s ← sprint c n vs
+      emit s
+      pure [.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
     | "Sprint" => pure [.str .string (← sprint c n vs)]
     | "Sprintf" =>
       let fmtStr :: args := vs | stuck "Sprintf without a format"
       pure [.str .string (← sprintf c n (← asStr fmtStr).toList args)]
+    -- `Printf` writes `Sprintf`'s text and returns its length in bytes and a nil
+    -- error.
+    | "Printf" =>
+      let fmtStr :: args := vs | stuck "Printf without a format"
+      let s ← sprintf c n (← asStr fmtStr).toList args
+      emit s
+      pure [.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
     | _ => unsupported s!"fmt.{f}"
 
 /-- `Print`'s text: a space between operands when neither is a string (`fmt/print.go`,
@@ -1985,11 +2074,59 @@ def sprintf (c : Ctx) : Nat → List Char → List Val → GM String
     match fmtStr with
     | [] => if args.isEmpty then pure "" else unsupported "fmt-extra-args"
     | '%' :: '%' :: rest => pure ("%" ++ (← sprintf c n rest args))
-    | '%' :: verb :: rest =>
-      if !['v', 'd', 's', 't'].contains verb then unsupported s!"fmt-verb-{verb}"
+    | '%' :: rest =>
+      let (spec, rest) := parseSpec rest
+      -- Go refuses a width or precision over 10^6 (`parsenum`'s `tooLarge`).
+      if spec.wid.any (· > 1000000) || spec.prec.any (· > 1000000) then unsupported "fmt-large-width"
+      let verb :: rest := rest | unsupported "fmt-no-verb"
+      if !['v', 'd', 's', 't', 'x', 'X'].contains verb then unsupported s!"fmt-verb-{verb}"
       let a :: args := args | unsupported "fmt-missing-arg"
-      pure ((← fmtArg c n a verb) ++ (← sprintf c n rest args))
+      pure ((← fmtSpec c n a verb spec) ++ (← sprintf c n rest args))
     | ch :: rest => pure (String.singleton ch ++ (← sprintf c n rest args))
+
+/-- One operand printed with `verb` under a flags, width and precision `spec`
+    (`fmt/print.go`, `printArg`, `handleMethods`; `fmt/format.go`). Without any, as
+    `fmtArg`. A formatter (`Immutable.Format`, which passes the whole spec on) comes
+    first; an `Error` or `String` method gives the text for `%v` and `%s`, which is
+    then formatted as a string; integers, booleans and strings are formatted as
+    `fmtInteger`, `fmtBoolean` and `fmtS` do. A flag on a composite value, `%+v`
+    and `%#v`, and `%x` of anything but an integer are not modelled. -/
+def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
+  | 0, _, _, _ => throw .fuel
+  | n + 1, v, verb, spec => do
+    if spec.plain && ['v', 's', 'd', 't'].contains verb then return ← fmtArg c n v verb
+    if verb == 'v' && (spec.sharp || spec.plus) then unsupported "fmt-flag-v"
+    -- A nil operand: `padString("<nil>")`, padded, never truncated.
+    if let .nilIface _ := v then
+      return ← if verb == 'v' then pure (spec.pad "<nil>") else unsupported "fmt-nil-verb"
+    let d := v.dyn
+    if let some (p, tn, _, _) := methodSet c d.ty "Format" then
+      if p == stdPath && tn == "Immutable" then
+        let .struct_ _ [inner] := d | unsupported "fmt-formatter-pointer"
+        return ← fmtSpec c n inner verb spec
+      unsupported "fmt-formatter"
+    -- `handleMethods`: an `error` or `fmt.Stringer` gives the text for `%v %s %x %X`.
+    let stringMethod := fun m => do
+      pure (← methodOfType c n d.ty m (.func_ [] [.string] false)).isSome
+    if (← stringMethod "Error") || (← stringMethod "String") then
+      if verb == 'x' || verb == 'X' then unsupported "fmt-verb-x-string"
+      if verb == 'v' || verb == 's' then
+        -- A nil pointer whose method panics prints a bare `<nil>` (`catchPanic`).
+        if let .ptr _ none := d then unsupported "fmt-nil-method"
+        return spec.string (← fmtArg c n d verb)
+    match d with
+    | .int _ x =>
+      match verb with
+      | 'd' | 'v' => pure (spec.integer x 10 false)
+      | 'x' => pure (spec.integer x 16 false)
+      | 'X' => pure (spec.integer x 16 true)
+      | _ => unsupported s!"fmt-verb-{verb}-int"
+    | .bool _ b =>
+      if verb == 'v' || verb == 't' then pure (spec.pad (if b then "true" else "false"))
+      else unsupported "fmt-verb-bool"
+    | .str _ s =>
+      if verb == 'v' || verb == 's' then pure (spec.string s) else unsupported s!"fmt-verb-{verb}-string"
+    | _ => unsupported "fmt-spec-composite"
 
 /-- One operand printed with `verb` (`fmt/print.go`, `printArg`). -/
 def fmtArg (c : Ctx) : Nat → Val → Char → GM String
@@ -2011,7 +2148,7 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
       -- (std/types.go, `Immutable.Format`, lines 97-101).
       if let some (p, tn, _, _) := methodSet c v.ty "Format" then
         if p == stdPath && tn == "Immutable" then
-          let .struct_ _ [inner] := v | stuck "Immutable without its value"
+          let .struct_ _ [inner] := v | unsupported "fmt-formatter-pointer"
           return ← fmtArg c n inner verb
         unsupported "fmt-formatter"
       if ['v', 's'].contains verb then

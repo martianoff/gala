@@ -10,7 +10,8 @@
 # fuel) and the unsupported_* ones, where GoCore stops: at a map
 # (unsupported_map), at a capacity that depends on gc's escape analysis
 # (unsupported_escape), at constraint type inference (unsupported_inference)
-# at a float operation (unsupported_float*) and at panic(nil) (unsupported_panic_nil).
+# at a float operation (unsupported_float*), at panic(nil) (unsupported_panic_nil)
+# and at %x of a Stringer (unsupported_printf_x).
 # Their files are written by hand.
 #
 # Run from formal/tests/gocore with GOCOREJSON naming the exporter binary.
