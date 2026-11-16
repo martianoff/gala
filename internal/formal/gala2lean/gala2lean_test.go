@@ -102,7 +102,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 	cases := []struct {
 		name, src, want string
 	}{
-		{"import", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(1) }\n", "import"},
+		{"import", "package main\nimport \"strings\"\n\nfunc main() { Println(strings.ToUpper(\"a\")) }\n", "import"},
 		{"a blank import of a package it is not given", "package main\nimport _ \"example.com/m/lib\"\n\nfunc main() { Println(1) }\n", "blank-import"},
 		{"lambda without parameter types", "package main\nfunc main() { val f = (x) => x\n Println(1) }\n", "untyped-lambda-param"},
 		{"method call", "package main\nfunc main() { Println(\"abc\".Size()) }\n", "method-call"},
@@ -161,6 +161,11 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a bracket that is not a type", "package main\nfunc id[T any](x T) T = x\nfunc main() { Println(id[1 + 1](1)) }\n", "index"},
 		{"a bracket on a function that is not generic", "package main\nfunc inc(x int) int = x + 1\nfunc main() { Println(inc[int](1)) }\n", "index"},
 		{"a generic function with a bracket, as a value", "package main\nfunc id[T any](x T) T = x\nfunc main() { val f = id[int]\n Println(f(1)) }\n", "index"},
+		{"fmt.Println of an Option", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(Some(1)) }\n", "fmt-operand"},
+		{"fmt.Println as a value", "package main\nimport \"fmt\"\n\nfunc main() { val r = fmt.Println(1)\n Println(r.IsSuccess()) }\n", "fmt-value"},
+		{"fmt.Println through an alias of another package", "package main\nimport fmt \"strings\"\n\nfunc main() { fmt.Println(1) }\n", "import"},
+		{"fmt hidden by a local", "package main\nimport \"fmt\"\n\nstruct P(N int)\nfunc main() { val fmt = P(1)\n fmt.Println(1) }\n", "method-call"},
+		{"fmt.Printf", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Printf(\"%d\", 1) }\n", "import"},
 		{"a variadic parameter printed", "package main\nfunc f(xs ...int) { Println(xs) }\nfunc main() { f(1) }\n", "slice-value"},
 		{"a variadic parameter passed whole", "package main\nfunc g(n int) int = n\nfunc f(xs ...int) int = g(xs)\nfunc main() { Println(f(1)) }\n", "slice-value"},
 		{"a variadic parameter captured", "package main\nfunc f(xs ...int) int { val h = () => xs\n 1 }\nfunc main() { Println(f(1)) }\n", "slice-value"},

@@ -10,8 +10,26 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/formal/coreexport"
 	"martianoff/gala/internal/stdlib"
 )
+
+// TestImportNames checks the names a file may refer to an import by.
+func TestImportNames(t *testing.T) {
+	for _, c := range []struct {
+		path, alias string
+		want        []string
+	}{
+		{"fmt", "", []string{"fmt"}},
+		{"math/rand/v2", "", []string{"v2", "rand"}},
+		{"gopkg.in/yaml.v3", "", []string{"yaml.v3", "yaml"}},
+		{"strings", "s", []string{"s"}},
+		{"strings", ".", nil},
+		{"strings", "_", nil},
+	} {
+		require.Equal(t, c.want, importNames(&coreexport.Import{Path: c.path, Alias: c.alias}), c.path)
+	}
+}
 
 // TestStdNamesOnlyInStd checks the fact the translation's rule for std's
 // Some, None, Left, Right and its Option, Either and tuple types rests on:

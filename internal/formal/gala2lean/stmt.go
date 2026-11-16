@@ -199,6 +199,11 @@ func (g *gen) stmt(st coreexport.Node, sc *scope, value bool) []string {
 	case *coreexport.Paren:
 		return g.stmt(st.Expr, sc, value)
 	}
+	if !value {
+		if items, ok := g.goPrintStmt(st, sc); ok {
+			return items
+		}
+	}
 	if c, ok := st.(*coreexport.Call); ok {
 		// A pointer method called as a statement writes its receiver back
 		// at this level, so the place may be a local var.
