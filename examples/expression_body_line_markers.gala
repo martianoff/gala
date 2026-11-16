@@ -1,0 +1,64 @@
+package main
+
+import "regexp"
+
+// A panic in an expression body (a function's, method's or lambda's, or an
+// argument lifted into a thunk) reports its expression's GALA line.
+
+struct Counter(x int)
+
+func div(n int) int = 100 / n
+
+func (c Counter) Div(n int) int = c.x / n
+
+func divTwoLines(n int) int =
+    100 / n
+
+func report(n int) = Println(100 / n)
+
+func divider() func(int) int = (n) => 100 / n
+
+func applyTo(f func(int) int, n int) int = f(n)
+
+// panicsAt reports whether the first GALA frame of the stack of the panic
+// err came from, the one that panicked, is at the given .gala line. The file
+// name is not matched, so the example can be run under any name.
+func panicsAt(err error, line int) bool = PanicStack(err).Exists((stack) =>
+    regexp.MustCompile(s"^(runtime\\.[^\\n]*\\n\\t[^\\n]*\\n)*main\\.[^\\n]*\\n\\t[^\\n]*\\.gala:$line\\n").MatchString(stack))
+
+func main() {
+    val lambda = (n int) => 100 / n
+    Println(s"function: ${panicsAt(Try(div(0)).GetError(), 10)}")
+    Println(s"method: ${panicsAt(Try(Counter(1).Div(0)).GetError(), 12)}")
+    Println(s"expression on the next line: ${panicsAt(Try(divTwoLines(0)).GetError(), 15)}")
+    Println(s"function returning nothing: ${panicsAt(TryApply(() => { report(0); 0 }).GetError(), 17)}")
+    Println(s"returned lambda: ${panicsAt(Try(divider()(0)).GetError(), 19)}")
+    Println(s"lambda: ${panicsAt(Try(lambda(0)).GetError(), 30)}")
+    Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 37)}")
+    Println(s"argument of Try: ${panicsAt(Try(100 / zero()).GetError(), 38)}")
+    Println(s"by-name argument: ${panicsAt(Try(later(100 / zero())).GetError(), 39)}")
+    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 52)}")
+    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 56)}")
+    var z = 0
+    Println(s"lambda with a Ptr parameter: ${panicsAt(Try(each((p Ptr[int]) => 100 / *p, &z)).GetError(), 43)}")
+    Println(s"self-tail-call loop on several lines: ${panicsAt(Try(countdownLines(3, 0)).GetError(), 62)}")
+}
+
+func zero() int = 0
+
+func later(f func() int) int = f()
+
+func firstStatement() (int, error) {
+    val q = 100 / zero()
+    Success(q)
+}
+
+func countdown(n int, acc int) int = if (n == 0) 100 / acc else countdown(n - 1, acc)
+
+func each(f func(*int) int, x *int) int = f(x)
+
+func countdownLines(n int, acc int) int =
+    if (n == 0)
+        100 / acc
+    else
+        countdownLines(n - 1, acc)

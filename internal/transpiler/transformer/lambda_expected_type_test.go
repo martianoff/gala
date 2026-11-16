@@ -473,7 +473,7 @@ func pickMap(c bool) map[string]any = if (c) nil else nil
 func main() {
     Println(pickMap(true) == nil)
 }`,
-			contains: "func pickMap(c bool) map[string]any {\n\t{\n\t\tif c {",
+			contains: "func pickMap(c bool) map[string]any {\n//line user_any_test.gala:3\n\t{\n\t\tif c {",
 		},
 		{
 			name: "returned as a []any, they are lowered against it",
@@ -484,7 +484,7 @@ func pickList(c bool) []any = if (c) nil else nil
 func main() {
     Println(pickList(true) == nil)
 }`,
-			contains: "func pickList(c bool) []any {\n\t{\n\t\tif c {",
+			contains: "func pickList(c bool) []any {\n//line user_any_test.gala:3\n\t{\n\t\tif c {",
 		},
 	}
 	for _, tc := range cases {

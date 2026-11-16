@@ -241,16 +241,19 @@ func (s Meters) Compare(other Meters) int {
 
 // Area is a method.
 func (s Shape) Area() int {
+//line $DIR/main.gala:67
 	return s.Sides * 2
 }
 
 //line $DIR/main.gala:69
 func Pair_Swap[A any, B any](p Pair[A, B]) Pair[B, A] {
+//line $DIR/main.gala:69
 	return Pair[B, A]{first: std.NewImmutable(p.second.Get()), second: std.NewImmutable(p.first.Get())}
 }
 
 //line $DIR/main.gala:71
 func Generic[T any](x T) T {
+//line $DIR/main.gala:71
 	return x
 }
 
@@ -264,15 +267,19 @@ func Block(x int) int {
 
 //line $DIR/main.gala:78
 func Show() {
+//line $DIR/main.gala:78
 	fmt.Println(s.ToUpper(Greeting.Get()))
 }
 
 //line $DIR/main.gala:80
 func Fact(n int, acc int) int {
 	for {
+//line $DIR/main.gala:80
 		if n <= 1 {
+//line $DIR/main.gala:80
 			return acc
 		} else {
+//line $DIR/main.gala:80
 			_tmp_1 := n - 1
 			_tmp_2 := acc * n
 			n, acc = _tmp_1, _tmp_2

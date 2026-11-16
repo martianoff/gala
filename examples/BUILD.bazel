@@ -5300,6 +5300,22 @@ gala_exec_test(
     expected = "block_end_line_markers.out",
 )
 
+# A panic in an expression-bodied function, method or lambda reports the GALA
+# line of its expression.
+gala_exec_test(
+    name = "expression_body_line_markers",
+    src = "expression_body_line_markers.gala",
+    expected = "expression_body_line_markers.out",
+)
+
+# A block body giving a Go call's results as a Try spreads it: on a failure
+# Go receives the zero value with the error.
+gala_exec_test(
+    name = "go_results_block_body_zero_value",
+    src = "go_results_block_body_zero_value.gala",
+    expected = "go_results_block_body_zero_value.out",
+)
+
 gala_exec_test(
     name = "try_combinator_panics",
     src = "try_combinator_panics.gala",

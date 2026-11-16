@@ -137,7 +137,11 @@ func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
 // `any` in it is that type (`func() any`, `func() Array[any]`); otherwise an
 // `any` there stands for a type not inferred yet, and the body's own result
 // type is used.
-func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
+//
+// It returns the func literal without the nil checks of its Ptr parameters
+// (entryChecks): finishLambda puts them first in the body, above the line
+// marker of an expression body.
+func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (lit *ast.FuncLit, entryChecks []ast.Stmt, err error) {
 	if t.onNativeLambda != nil && l.node.Ok() {
 		t.onNativeLambda(l.node.GalaNodeRef)
 	}
@@ -162,12 +166,12 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 		}
 		if hasExplicitType && hasWildcardType {
 			line, col := l.at().start()
-			return nil, galaerr.NewSemanticErrorAt(line, col, "cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
+			return nil, nil, galaerr.NewSemanticErrorAt(line, col, "cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
 		}
 		for i, p := range params {
 			field, _, err := t.lowerParam(p, false)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			// If param has no type annotation and we have an expected type, use it
 			var expType transpiler.Type
@@ -189,7 +193,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 						t.markOperand(typeExpr, operandInoutParam)
 						t.addInout(p.name, expType)
 					case p.isInout:
-						return nil, inoutError(p.at, fmt.Sprintf("lambda parameter %s is inout, but the function it fills takes a %s, not an inout parameter", p.name, displayType(expType)),
+						return nil, nil, inoutError(p.at, fmt.Sprintf("lambda parameter %s is inout, but the function it fills takes a %s, not an inout parameter", p.name, displayType(expType)),
 							"drop `inout`: the lambda gets a copy of the value")
 					default:
 						t.addParam(p.name, expType, p.isVar)
@@ -238,7 +242,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 					hint = fmt.Sprintf("check that the package declaring %s type-checks — every package it imports must resolve — or annotate the parameter (e.g. `(%s T) => …`)", callee, name)
 				}
 				line, col := p.at.start()
-				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col, msg, hint)
+				return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col, msg, hint)
 			}
 			// A parameter filling a slot typed `any` has that type.
 			if !p.typ.ok() && !typeApplied && anySlot {
@@ -272,7 +276,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	if resultType.ok() {
 		rt, err := t.lowerType(resultType)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		explicitRetType = rt
 	}
@@ -319,7 +323,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	if block.ok() {
 		b, inferredRet, err := t.transformBlockLambdaBody(l, block, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		body = b
 		if inferredRet != nil {
@@ -334,12 +338,12 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			} else {
 				result = t.astTypeToTranspilerType(retType).String()
 			}
-			return nil, t.missingReturnError(block, "this lambda", result)
+			return nil, nil, t.missingReturnError(block, "this lambda", result)
 		}
 	} else if expr := l.expression(); expr.ok() {
 		b, inferredRet, err := t.transformExpressionLambdaBody(l, expr, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		body = b
 		if inferredRet != nil {
@@ -363,15 +367,15 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 
 	// A lambda whose Ptr parameter fills a nullable `*T` parameter of its slot
 	// (a Go function type) can be called with nil.
-	body = withPtrEntryChecks(body, t.ptrEntryChecks(fieldList, "lambda", func(pos int) bool {
+	entryChecks = t.ptrEntryChecks(fieldList, "lambda", func(pos int) bool {
 		return pos < len(expectedParamTypes) && !transpiler.IsUnusable(expectedParamTypes[pos]) &&
 			transpiler.IsNullablePtr(t.followAliasChain(expectedParamTypes[pos]))
-	}))
+	})
 
 	return &ast.FuncLit{
 		Type: funcType,
 		Body: body,
-	}, nil
+	}, entryChecks, nil
 }
 
 // transformBlockLambdaBody handles the `{ ... }` form of a lambda body.

@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -185,6 +186,9 @@ type liftCase struct {
 	unlifted bool
 }
 
+// lineDirectiveDir matches the directory part of a //line directive's path.
+var lineDirectiveDir = regexp.MustCompile(`(?m)^//line [^\n]*/`)
+
 // runLiftCases transpiles each case's body inside the module files that
 // module returns, with the GALA file to transpile.
 func runLiftCases(t *testing.T, cases []liftCase, module func(body string) (map[string]string, string)) {
@@ -194,6 +198,9 @@ func runLiftCases(t *testing.T, cases []liftCase, module func(body string) (map[
 			files, entry := module(tc.body)
 			goCode, err := transpileInModule(t, files, entry)
 			require.NoError(t, err)
+			// The module sits in a temporary directory: a //line directive
+			// names its file relative to it, so a case can match one.
+			goCode = lineDirectiveDir.ReplaceAllString(goCode, "//line ")
 			assert.Contains(t, goCode, tc.want, "generated Go:\n%s", goCode)
 			if tc.unlifted {
 				assert.False(t, strings.Contains(goCode, "GoTry(") || strings.Contains(goCode, "GoTuple(") || strings.Contains(goCode, "_err"),

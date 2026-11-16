@@ -13,5 +13,6 @@ var n, m int
 
 //line $DIR/main.gala:7
 func main() {
+//line $DIR/main.gala:7
 	fmt.Println(o, n, m)
 }

@@ -8,6 +8,17 @@ import (
 	"strings"
 )
 
+// prependStmts is body with stmts before its statements, keeping its braces;
+// body itself when there are none.
+func prependStmts(body *ast.BlockStmt, stmts ...ast.Stmt) *ast.BlockStmt {
+	if len(stmts) == 0 {
+		return body
+	}
+	list := make([]ast.Stmt, 0, len(stmts)+len(body.List))
+	list = append(list, stmts...)
+	return &ast.BlockStmt{Lbrace: body.Lbrace, List: append(list, body.List...), Rbrace: body.Rbrace}
+}
+
 // stripStdPrefix removes the "std." prefix from a type/package name if present.
 func stripStdPrefix(name string) string {
 	return strings.TrimPrefix(name, registry.StdPackageName+".")

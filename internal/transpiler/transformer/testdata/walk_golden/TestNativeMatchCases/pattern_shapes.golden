@@ -295,6 +295,7 @@ func (s MaybeInt) String() string {
 
 //line $DIR/main.gala:30
 func (m MaybeInt) MatchView() std.Option[int] {
+//line $DIR/main.gala:30
 	return std.When(m.raw.Get() >= 0, m.raw.Get())
 }
 
@@ -314,6 +315,7 @@ func (s Even) String() string {
 
 //line $DIR/main.gala:34
 func (e Even) Unapply(n int) bool {
+//line $DIR/main.gala:34
 	return n%2 == 0
 }
 
@@ -333,6 +335,7 @@ func (s Half) String() string {
 
 //line $DIR/main.gala:38
 func (h Half) Unapply(n int) std.Option[int] {
+//line $DIR/main.gala:38
 	{
 		if n%2 == 0 {
 			return std.Some[int]{}.Apply(n / 2)
@@ -347,6 +350,7 @@ var Limit = std.NewImmutable(10)
 
 //line $DIR/main.gala:42
 func literals(x int) string {
+//line $DIR/main.gala:42
 	{
 		_subj := x
 		if _subj == 0 {
@@ -373,6 +377,7 @@ func literals(x int) string {
 
 //line $DIR/main.gala:50
 func strs(s string) int {
+//line $DIR/main.gala:50
 	{
 		_subj := s
 		if _subj == "ä" {
@@ -388,6 +393,7 @@ func strs(s string) int {
 
 //line $DIR/main.gala:56
 func shapes(s Shape) int {
+//line $DIR/main.gala:56
 	{
 		_subj := s
 		{
@@ -440,6 +446,7 @@ func shapes(s Shape) int {
 
 //line $DIR/main.gala:63
 func colors(c Color) string {
+//line $DIR/main.gala:63
 	{
 		_subj := c
 		{
@@ -468,6 +475,7 @@ func colors(c Color) string {
 
 //line $DIR/main.gala:68
 func tuples(p std.Tuple[int, string]) string {
+//line $DIR/main.gala:68
 	{
 		_subj := p
 		{
@@ -496,6 +504,7 @@ func tuples(p std.Tuple[int, string]) string {
 
 //line $DIR/main.gala:74
 func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
+//line $DIR/main.gala:74
 	{
 		_subj := o
 		{
@@ -546,6 +555,7 @@ func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
 
 //line $DIR/main.gala:80
 func people(p Person) string {
+//line $DIR/main.gala:80
 	{
 		_subj := p
 		{
@@ -573,6 +583,7 @@ func people(p Person) string {
 
 //line $DIR/main.gala:86
 func boxes(x any) string {
+//line $DIR/main.gala:86
 	return func(_subj any) string {
 		{
 			_tmp_30, _tmp_31 := std.As[Box[int]](_subj)
@@ -603,6 +614,7 @@ func boxes(x any) string {
 
 //line $DIR/main.gala:93
 func seqs(a Array[int]) int {
+//line $DIR/main.gala:93
 	{
 		_subj := a
 		{
@@ -650,6 +662,7 @@ func seqs(a Array[int]) int {
 
 //line $DIR/main.gala:100
 func lists(l List[std.Option[int]]) int {
+//line $DIR/main.gala:100
 	{
 		_subj := l
 		{
@@ -679,6 +692,7 @@ func lists(l List[std.Option[int]]) int {
 
 //line $DIR/main.gala:105
 func users(u UserID) string {
+//line $DIR/main.gala:105
 	{
 		_subj := u
 		if int64(_subj) == 0 {
@@ -702,6 +716,7 @@ func users(u UserID) string {
 
 //line $DIR/main.gala:111
 func views(m MaybeInt) string {
+//line $DIR/main.gala:111
 	{
 		_subj := m.MatchView()
 		{
@@ -727,6 +742,7 @@ func views(m MaybeInt) string {
 
 //line $DIR/main.gala:116
 func extractors(n int) string {
+//line $DIR/main.gala:116
 	{
 		_subj := n
 		{
@@ -756,6 +772,7 @@ func extractors(n int) string {
 
 //line $DIR/main.gala:122
 func bools(b bool) int {
+//line $DIR/main.gala:122
 	{
 		_subj := b
 		if _subj == true {
@@ -846,6 +863,7 @@ func blocks(x std.Option[int]) int {
 
 //line $DIR/main.gala:160
 func parens(x int) string {
+//line $DIR/main.gala:160
 	{
 		_subj := x
 		if _subj == 1 || _subj == 2 {
@@ -860,6 +878,7 @@ func parens(x int) string {
 
 //line $DIR/main.gala:166
 func qualified(s string) string {
+//line $DIR/main.gala:166
 	{
 		_subj := strings.ToUpper(s)
 		if _subj == "A" {

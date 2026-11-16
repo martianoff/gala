@@ -907,8 +907,8 @@ func ptrNilCheck(name, msg string) ast.Stmt {
 
 // withPtrEntryChecks prepends checks to body.
 func withPtrEntryChecks(body *ast.BlockStmt, checks []ast.Stmt) *ast.BlockStmt {
-	if body == nil || len(checks) == 0 {
+	if body == nil {
 		return body
 	}
-	return &ast.BlockStmt{Lbrace: body.Lbrace, List: append(checks, body.List...), Rbrace: body.Rbrace}
+	return prependStmts(body, checks...)
 }

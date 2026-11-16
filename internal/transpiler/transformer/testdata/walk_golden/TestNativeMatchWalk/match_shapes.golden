@@ -53,6 +53,7 @@ var Limit = std.NewImmutable(10)
 
 //line $DIR/main.gala:16
 func literals(x int) string {
+//line $DIR/main.gala:16
 	{
 		_subj := x
 		if _subj == 0 {
@@ -148,6 +149,7 @@ func hoisted(x int) int {
 
 //line $DIR/main.gala:55
 func nested(o std.Option[std.Option[string]]) string {
+//line $DIR/main.gala:55
 	{
 		_subj := o
 		{

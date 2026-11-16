@@ -45,6 +45,7 @@ func (r Res) Close() {
 
 //line $DIR/main.gala:13
 func lookup(k string) std.Option[int] {
+//line $DIR/main.gala:13
 	{
 		if k == "ä" {
 			return std.Some[int]{}.Apply(1)

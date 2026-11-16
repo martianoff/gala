@@ -39,21 +39,25 @@ var counter int = 0
 
 //line $DIR/main.gala:19
 func (r Radix) Parse(s string) (int, error) {
+//line $DIR/main.gala:19
 	return strconv.Atoi(s)
 }
 
 //line $DIR/main.gala:21
 func (r Radix) Name() string {
+//line $DIR/main.gala:21
 	return strings.Repeat("ö", r.base.Get())
 }
 
 //line $DIR/main.gala:23
 func run(body func() int) int {
+//line $DIR/main.gala:23
 	return body()
 }
 
 //line $DIR/main.gala:25
 func forward(f func() int) int {
+//line $DIR/main.gala:25
 	return run(f)
 }
 
@@ -67,6 +71,7 @@ func sum(acc int, xs ...int) int {
 
 //line $DIR/main.gala:32
 func pair() std.Tuple[int, string] {
+//line $DIR/main.gala:32
 	return std.Tuple[int, string]{V1: std.NewImmutable(1), V2: std.NewImmutable("ü")}
 }
 
@@ -96,6 +101,7 @@ func destructure() int {
 
 //line $DIR/main.gala:43
 func say() {
+//line $DIR/main.gala:43
 	fmt.Println(greeting.Get())
 }
 
@@ -105,6 +111,7 @@ func main() {
 	say()
 //line $DIR/main.gala:47
 	fmt.Println(Radix{base: std.NewImmutable(10)}.Name(), forward(func() int {
+//line $DIR/main.gala:47
 		return 1
 	}), sum(1, 2, 3), destructure(), counter)
 }

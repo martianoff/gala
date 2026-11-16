@@ -4678,14 +4678,14 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		// it is: each parameter is `any`, as the callee declares.
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
-	lit, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
+	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
 	if err != nil {
 		return nil, err
 	}
 	if err := t.checkInoutFuncSlot(lit, s.typ, l.at()); err != nil {
 		return nil, err
 	}
-	return t.spreadLambdaGoResults(lit, s.typ, l.at())
+	return t.finishLambda(lit, checks, s.typ, l.at(), l.expression())
 }
 
 // declaresAnyResult reports whether slot s is a function type whose results the
@@ -4871,7 +4871,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(e, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
-		return t.spreadLambdaGoResults(expr, funcSlot, e.at())
+		return t.finishLambda(expr, nil, funcSlot, e.at(), e)
 	}
 
 	// Check mode: an if-expression or match lowers its branches against the
@@ -4901,7 +4901,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 				return nil, err
 			}
 		}
-		expr = wrapped
+		expr = t.exprFuncLit(e, wrapped)
 	}
 
 	return expr, nil
