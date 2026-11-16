@@ -265,3 +265,47 @@ func ReadRequest(r io.Reader) (*WorkRequest, error) {
 func WriteResponse(w io.Writer, resp *WorkResponse) error {
 	return writeDelimited(w, EncodeWorkResponse(resp))
 }
+
+// WriteRequest frames and writes req's arguments and request ID to w: the
+// side of the protocol Bazel plays, for tests that drive the worker as Bazel
+// does.
+func WriteRequest(w io.Writer, req *WorkRequest) error {
+	var buf []byte
+	for _, a := range req.Arguments {
+		buf = writeVarint(buf, fieldKey(1, wireBytes))
+		buf = writeVarint(buf, uint64(len(a)))
+		buf = append(buf, a...)
+	}
+	if req.RequestID != 0 {
+		buf = writeVarint(buf, fieldKey(3, wireVarint))
+		buf = writeVarint(buf, uint64(int64(req.RequestID)))
+	}
+	return writeDelimited(w, buf)
+}
+
+// ReadResponse pulls one WorkResponse off r, Bazel's side of WriteResponse.
+func ReadResponse(r io.Reader) (*WorkResponse, error) {
+	buf, err := readDelimited(r)
+	if err != nil {
+		return nil, err
+	}
+	resp := &WorkResponse{}
+	for len(buf) > 0 {
+		df, rest, err := decodeField(buf)
+		if err != nil {
+			return nil, err
+		}
+		switch df.field {
+		case 1:
+			resp.ExitCode = int32(df.payloadVarint)
+		case 2:
+			resp.Output = string(df.payloadBytes)
+		case 3:
+			resp.RequestID = int32(df.payloadVarint)
+		case 4:
+			resp.WasCancelled = df.payloadVarint != 0
+		}
+		buf = rest
+	}
+	return resp, nil
+}

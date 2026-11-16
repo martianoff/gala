@@ -75,6 +75,36 @@ func TestDecodeWorkRequest(t *testing.T) {
 	}
 }
 
+// TestClientRoundTrip checks Bazel's side against the worker's: a request
+// WriteRequest frames reads back with ReadRequest, and a response
+// WriteResponse frames reads back with ReadResponse.
+func TestClientRoundTrip(t *testing.T) {
+	req := &WorkRequest{Arguments: []string{"transpile-package", "--inputs=a.gala"}, RequestID: 9}
+	var buf bytes.Buffer
+	if err := WriteRequest(&buf, req); err != nil {
+		t.Fatalf("WriteRequest: %v", err)
+	}
+	gotReq, err := ReadRequest(&buf)
+	if err != nil {
+		t.Fatalf("ReadRequest: %v", err)
+	}
+	if len(gotReq.Arguments) != 2 || gotReq.Arguments[1] != "--inputs=a.gala" || gotReq.RequestID != 9 {
+		t.Fatalf("request round-trip: got %+v want %+v", gotReq, req)
+	}
+
+	resp := WorkResponse{ExitCode: 1, Output: "error\n", RequestID: 9, WasCancelled: true}
+	if err := WriteResponse(&buf, &resp); err != nil {
+		t.Fatalf("WriteResponse: %v", err)
+	}
+	gotResp, err := ReadResponse(&buf)
+	if err != nil {
+		t.Fatalf("ReadResponse: %v", err)
+	}
+	if *gotResp != resp {
+		t.Fatalf("response round-trip: got %+v want %+v", *gotResp, resp)
+	}
+}
+
 // TestReadDelimitedEOF confirms a clean stdin close surfaces as io.EOF so
 // the worker loop can exit gracefully (Bazel signals worker shutdown by
 // closing stdin).

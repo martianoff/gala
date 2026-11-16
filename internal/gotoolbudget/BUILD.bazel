@@ -36,5 +36,8 @@ go_test(
         "GOSHIM_BIN": "$(rlocationpath //internal/gotoolbudget/goshim)",
         "TOOLCHAIN_MANIFEST": "$(rlocationpath :toolchain_manifest)",
     },
-    deps = ["@rules_go//go/runfiles"],
+    deps = [
+        "//cmd/gala/commands/worker",
+        "@rules_go//go/runfiles",
+    ],
 )

@@ -11,7 +11,7 @@ Lines:
     goroot <the SDK's root marker file; the test resolves it to the SDK on disk>
     stdlib <runtime.a in the compiled standard library's archive directory>
     pkg <importpath> <export file> <direct|transitive>
-    src <importpath> <source file>
+    src <source file of the pkg line above>
 """
 
 load("@rules_go//go:def.bzl", "GoArchive", "go_context")
@@ -36,17 +36,17 @@ def _go_toolchain_manifest_impl(ctx):
     files.append(stdlib)
 
     direct = {dep[GoArchive].data.importpath: True for dep in ctx.attr.deps}
-    for dep in ctx.attr.deps:
-        for data in dep[GoArchive].transitive.to_list():
-            lines.append("pkg %s %s %s" % (
-                data.importpath,
-                _rlocationpath(ctx, data.export_file),
-                "direct" if data.importpath in direct else "transitive",
-            ))
-            files.append(data.export_file)
-            for src in data.srcs:
-                lines.append("src %s %s" % (data.importpath, _rlocationpath(ctx, src)))
-                files.append(src)
+    archives = depset(transitive = [dep[GoArchive].transitive for dep in ctx.attr.deps])
+    for data in archives.to_list():
+        lines.append("pkg %s %s %s" % (
+            data.importpath,
+            _rlocationpath(ctx, data.export_file),
+            "direct" if data.importpath in direct else "transitive",
+        ))
+        files.append(data.export_file)
+        for src in data.srcs:
+            lines.append("src " + _rlocationpath(ctx, src))
+            files.append(src)
 
     manifest = ctx.actions.declare_file(ctx.label.name + ".txt")
     ctx.actions.write(manifest, "\n".join(lines) + "\n")

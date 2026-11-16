@@ -10,11 +10,8 @@
 package gotoolbudget
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -25,6 +22,8 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+
+	"martianoff/gala/cmd/gala/commands/worker"
 )
 
 // budgetCase is one transpile and the most go commands it may run.
@@ -40,6 +39,9 @@ type budgetCase struct {
 	// worker transpiles in the Bazel persistent worker with the export
 	// data rules-gala hands it, instead of with the CLI.
 	worker bool
+	// noExport leaves the Go libraries' export data out of the worker
+	// request, so the worker reads them from source.
+	noExport bool
 	// wantGo is Go the transpile writes only when it has the Go types it
 	// reads through the measured calls: a cheap transpile that lost them
 	// does not pass.
@@ -47,9 +49,9 @@ type budgetCase struct {
 	// budget is the most go commands the transpile may run: the count
 	// measured when it was set, plus a small margin.
 	budget int
-	// minCalls is the fewest it must run. A CLI transpile reads Go types
-	// through `go list -export`, so a count of 0 there means the logging
-	// go command was bypassed, not that the transpile got cheaper.
+	// minCalls is the fewest it must run. A transpile that reads Go types
+	// with `go list` and runs none bypassed the logging go command: its
+	// count measures nothing, rather than a cheaper transpile.
 	minCalls int
 }
 
@@ -110,6 +112,19 @@ var cases = []budgetCase{
 		wantGo:  `return std.GoTry(flags.GetInt("count"))`,
 		budget:  0,
 	},
+	{
+		// The control of the two above: without export data the worker
+		// looks the libraries up with `go list`, so a 0 there is the
+		// logging go command's count, not a bypassed one.
+		name:     "worker/third_party_from_source",
+		program:  "third_party",
+		inputs:   []string{"main.gala"},
+		worker:   true,
+		noExport: true,
+		wantGo:   "cobra.Command",
+		budget:   5, // measured 3
+		minCalls: 1,
+	},
 }
 
 func TestGoToolchainCallBudget(t *testing.T) {
@@ -149,6 +164,8 @@ type harness struct {
 	// installed on the host.
 	base string
 	env  []string
+	// goMod is the go.mod of the CLI cases' module (see writeModules).
+	goMod string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -160,9 +177,10 @@ func newHarness(t *testing.T) *harness {
 	}
 	shim := rlocation(t, os.Getenv("GOSHIM_BIN"))
 	copySDK(t, h.toolchain.goroot, filepath.Join(h.base, "external", "go_sdk"), shim)
+	h.goMod = h.writeModules(t)
 
 	// Nothing from the host's Go or GALA setup, and nothing from the
-	// network: modules come from local directories (see writeGoMod).
+	// network: modules come from local directories (see writeModules).
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "GO") && !strings.HasPrefix(kv, "GALA_") && !strings.HasPrefix(kv, "CGO_") {
 			h.env = append(h.env, kv)
@@ -170,6 +188,9 @@ func newHarness(t *testing.T) *harness {
 	}
 	h.env = append(h.env,
 		"GOSHIM_GOROOT="+h.toolchain.goroot,
+		// Shared by the cases on purpose: the first one compiles the
+		// standard library into it, which is most of the test's time. A
+		// warm cache does not change how many go commands run.
 		"GOCACHE="+filepath.Join(h.base, "gocache"),
 		"GOPATH="+filepath.Join(h.base, "gopath"),
 		"GOPROXY=off",
@@ -201,7 +222,7 @@ func (h *harness) transpile(t *testing.T, c budgetCase) (calls []string, generat
 	if c.worker {
 		h.runWorker(t, dir, env, c, outputs)
 	} else {
-		h.writeGoMod(t, prog)
+		writeFile(t, filepath.Join(prog, "go.mod"), h.goMod, 0o644)
 		cmd := exec.Command(h.gala, "transpile-package",
 			"--inputs="+strings.Join(c.inputs, ","),
 			"--outputs="+strings.Join(outputs, ","))
@@ -236,30 +257,31 @@ func writeChain(t *testing.T, prog string, n int) {
 		if i > 0 {
 			body = fmt.Sprintf("import prev \"example.com/budget/chain/p%d\"\n\nfunc Depth() int { return prev.Depth() + 1 }\n", i-1)
 		}
-		writeFile(t, filepath.Join(prog, "chain", fmt.Sprintf("p%d", i), "p.go"), fmt.Sprintf("package p%d\n\n%s", i, body))
+		writeFile(t, filepath.Join(prog, "chain", fmt.Sprintf("p%d", i), "p.go"), fmt.Sprintf("package p%d\n\n%s", i, body), 0o644)
 		fmt.Fprintf(&imports, "\t_ \"example.com/budget/chain/p%d\"\n", i)
 	}
 	writeFile(t, filepath.Join(prog, "chain.go"), fmt.Sprintf(
 		"package main\n\nimport (\n%s\n\tlast \"example.com/budget/chain/p%d\"\n)\n\n// ChainDepth is the depth of the last package of the chain.\nfunc ChainDepth() int { return last.Depth() }\n",
-		imports.String(), n-1))
+		imports.String(), n-1), 0o644)
 }
 
-// writeGoMod makes prog the Go module its imports resolve in, as a user's
-// project is: example.com/budget, requiring each Go library of the manifest
-// from a local copy of its sources.
-func (h *harness) writeGoMod(t *testing.T, prog string) {
+// writeModules writes a Go module of each third-party library of the
+// manifest, from its sources, and returns the go.mod that makes a CLI case's
+// program the module example.com/budget, its imports resolving as in a
+// user's project: it requires each library, replaced by its module.
+func (h *harness) writeModules(t *testing.T) string {
 	t.Helper()
 	var mod strings.Builder
 	mod.WriteString("module example.com/budget\n\ngo 1.24\n")
 	for _, p := range h.toolchain.thirdParty() {
-		dir := filepath.Join(prog, "mods", filepath.FromSlash(p.importPath))
+		dir := filepath.Join(h.base, "mods", filepath.FromSlash(p.importPath))
 		for _, src := range p.srcs {
 			copyFile(t, src, filepath.Join(dir, filepath.Base(src)))
 		}
-		writeFile(t, filepath.Join(dir, "go.mod"), fmt.Sprintf("module %s\n\ngo 1.21\n", p.importPath))
-		fmt.Fprintf(&mod, "\nrequire %s v1.0.0\nreplace %s => ./mods/%s\n", p.importPath, p.importPath, p.importPath)
+		writeFile(t, filepath.Join(dir, "go.mod"), fmt.Sprintf("module %s\n\ngo 1.21\n", p.importPath), 0o644)
+		fmt.Fprintf(&mod, "\nrequire %s v1.0.0\nreplace %s => %s\n", p.importPath, p.importPath, filepath.ToSlash(dir))
 	}
-	writeFile(t, filepath.Join(prog, "go.mod"), mod.String())
+	return mod.String()
 }
 
 // runWorker sends c's transpile to `gala --persistent_worker` as rules-gala's
@@ -270,19 +292,21 @@ func (h *harness) writeGoMod(t *testing.T, prog string) {
 // would be looked up with `go list` there.
 func (h *harness) runWorker(t *testing.T, dir string, env []string, c budgetCase, outputs []string) {
 	t.Helper()
-	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/repo\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/repo\n\ngo 1.24\n", 0o644)
 	var inputs, outs, exports, srcs []string
 	for i := range c.inputs {
 		inputs = append(inputs, filepath.Join("prog", c.inputs[i]))
 		outs = append(outs, filepath.Join("prog", outputs[i]))
 	}
 	for _, p := range h.toolchain.pkgs {
-		exports = append(exports, p.importPath+"="+p.export)
+		if !c.noExport {
+			exports = append(exports, p.importPath+"="+p.export)
+		}
 		if p.direct {
 			srcs = append(srcs, p.importPath+"="+filepath.Dir(p.srcs[0]))
 		}
 	}
-	args := []string{
+	req := &worker.WorkRequest{Arguments: []string{
 		"transpile-package",
 		"--inputs=" + strings.Join(inputs, ","),
 		"--outputs=" + strings.Join(outs, ","),
@@ -290,7 +314,7 @@ func (h *harness) runWorker(t *testing.T, dir string, env []string, c budgetCase
 		"--go-src=" + strings.Join(srcs, ","),
 		"--go-export=" + strings.Join(exports, ","),
 		"--go-stdlib-export=" + h.toolchain.stdlibDir,
-	}
+	}}
 
 	cmd := exec.Command(h.gala, "--persistent_worker")
 	cmd.Dir, cmd.Env = dir, env
@@ -307,10 +331,10 @@ func (h *harness) runWorker(t *testing.T, dir string, env []string, c budgetCase
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stdin.Write(encodeWorkRequest(args)); err != nil {
+	if err := worker.WriteRequest(stdin, req); err != nil {
 		t.Fatalf("writing the work request: %v", err)
 	}
-	exitCode, output, err := readWorkResponse(bufio.NewReader(stdout))
+	resp, err := worker.ReadResponse(stdout)
 	stdin.Close()
 	if werr := cmd.Wait(); err == nil && werr != nil {
 		err = werr
@@ -318,67 +342,8 @@ func (h *harness) runWorker(t *testing.T, dir string, env []string, c budgetCase
 	if err != nil {
 		t.Fatalf("gala worker: %v\n%s", err, stderr.Bytes())
 	}
-	if exitCode != 0 {
-		t.Fatalf("gala worker: transpile-package exited with %d:\n%s%s", exitCode, output, stderr.Bytes())
-	}
-}
-
-// encodeWorkRequest is a length-delimited blaze.worker.WorkRequest with
-// args as its arguments (field 1).
-func encodeWorkRequest(args []string) []byte {
-	var msg []byte
-	for _, a := range args {
-		msg = append(msg, 1<<3|2)
-		msg = binary.AppendUvarint(msg, uint64(len(a)))
-		msg = append(msg, a...)
-	}
-	return append(binary.AppendUvarint(nil, uint64(len(msg))), msg...)
-}
-
-// readWorkResponse reads a length-delimited blaze.worker.WorkResponse and
-// returns its exit_code (field 1) and output (field 2).
-func readWorkResponse(r *bufio.Reader) (exitCode int, output string, err error) {
-	size, err := binary.ReadUvarint(r)
-	if err != nil {
-		return 0, "", fmt.Errorf("reading the work response: %w", err)
-	}
-	msg := make([]byte, size)
-	if _, err := io.ReadFull(r, msg); err != nil {
-		return 0, "", fmt.Errorf("reading the work response: %w", err)
-	}
-	m := bufio.NewReader(bytes.NewReader(msg))
-	for {
-		key, err := binary.ReadUvarint(m)
-		if err == io.EOF {
-			return exitCode, output, nil
-		}
-		if err != nil {
-			return 0, "", fmt.Errorf("decoding the work response: %w", err)
-		}
-		switch key & 7 {
-		case 0:
-			v, err := binary.ReadUvarint(m)
-			if err != nil {
-				return 0, "", fmt.Errorf("decoding the work response: %w", err)
-			}
-			if key>>3 == 1 {
-				exitCode = int(int32(v))
-			}
-		case 2:
-			n, err := binary.ReadUvarint(m)
-			if err != nil {
-				return 0, "", fmt.Errorf("decoding the work response: %w", err)
-			}
-			b := make([]byte, n)
-			if _, err := io.ReadFull(m, b); err != nil {
-				return 0, "", fmt.Errorf("decoding the work response: %w", err)
-			}
-			if key>>3 == 2 {
-				output = string(b)
-			}
-		default:
-			return 0, "", fmt.Errorf("decoding the work response: unexpected wire type %d", key&7)
-		}
+	if resp.ExitCode != 0 {
+		t.Fatalf("gala worker: transpile-package exited with %d:\n%s%s", resp.ExitCode, resp.Output, stderr.Bytes())
 	}
 }
 
@@ -418,7 +383,6 @@ func readManifest(t *testing.T, path string) toolchain {
 		t.Fatal(err)
 	}
 	var tc toolchain
-	byPath := map[string]int{}
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		f := strings.Fields(line)
 		switch {
@@ -427,19 +391,10 @@ func readManifest(t *testing.T, path string) toolchain {
 		case len(f) == 2 && f[0] == "stdlib":
 			tc.stdlibDir = filepath.Dir(rlocation(t, f[1]))
 		case len(f) == 4 && f[0] == "pkg":
-			if _, ok := byPath[f[1]]; ok {
-				continue // reached from more than one dep
-			}
-			byPath[f[1]] = len(tc.pkgs)
 			tc.pkgs = append(tc.pkgs, goPackage{importPath: f[1], export: rlocation(t, f[2]), direct: f[3] == "direct"})
-		case len(f) == 3 && f[0] == "src":
-			i, ok := byPath[f[1]]
-			if !ok {
-				t.Fatalf("manifest: sources of %s before its pkg line", f[1])
-			}
-			if src := rlocation(t, f[2]); !slices.Contains(tc.pkgs[i].srcs, src) {
-				tc.pkgs[i].srcs = append(tc.pkgs[i].srcs, src)
-			}
+		case len(f) == 2 && f[0] == "src" && len(tc.pkgs) > 0:
+			last := &tc.pkgs[len(tc.pkgs)-1]
+			last.srcs = append(last.srcs, rlocation(t, f[1]))
 		default:
 			t.Fatalf("manifest: unexpected line %q", line)
 		}
@@ -504,11 +459,11 @@ func copySDK(t *testing.T, goroot, dst, shim string) {
 func link(t *testing.T, oldname, newname string) {
 	t.Helper()
 	err := os.Symlink(oldname, newname)
-	if err == nil || runtime.GOOS != "windows" {
-		if err != nil {
-			t.Fatal(err)
-		}
+	if err == nil {
 		return
+	}
+	if runtime.GOOS != "windows" {
+		t.Fatal(err)
 	}
 	info, statErr := os.Stat(oldname)
 	if statErr != nil {
@@ -575,26 +530,23 @@ func copyDir(t *testing.T, src, dst string) {
 	}
 }
 
+// copyFile copies src to dst, executable: the shim is the one file that
+// needs to be, and the rest do not mind.
 func copyFile(t *testing.T, src, dst string) {
 	t.Helper()
 	data, err := os.ReadFile(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(dst, data, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, dst, string(data), 0o755)
 }
 
-func writeFile(t *testing.T, path, content string) {
+func writeFile(t *testing.T, path, content string, perm os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), perm); err != nil {
 		t.Fatal(err)
 	}
 }
