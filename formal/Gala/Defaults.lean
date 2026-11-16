@@ -41,10 +41,12 @@ def Oblivious (x : M α) : Prop :=
       ∀ v, (x.run.run s).1 = .ok v →
         (x.run.run s).2.locals = s.locals ∧ (x.run.run s').2.locals = s'.locals
 
+/-- A state without its locals. -/
+def readPart (c : Core) : Core := { c with locals := [] }
+
 /-- An `H` step that only reads the state, and not its locals. -/
 def ReadsNoLocals (x : H α) : Prop :=
-  ∀ c c' : Core, { c with locals := [] } = { c' with locals := [] } →
-    ∃ r, x.run.run c = (r, c) ∧ x.run.run c' = (r, c')
+  ∀ c c' : Core, readPart c = readPart c' → ∃ r, x.run.run c = (r, c) ∧ x.run.run c' = (r, c')
 
 theorem eraseL_setLocals {s s' : St} (h : eraseL s = eraseL s') (l : Env) :
     ({ s with locals := l } : St) = { s' with locals := l } := by
@@ -142,9 +144,6 @@ theorem obl_runIn (ds : Decls) (d : Nat) (fr : Env) (b : Expr) : Oblivious (runI
 `byNameOk` resolves a name in the locals it is given (for a default, its frame), and reads
 only the package-level variables and the heap of the state. -/
 
-/-- A state without its locals, all that `deref` and `byNameOk` may read. -/
-def readPart (c : Core) : Core := { c with locals := [] }
-
 theorem run_get_bind (f : Core → H α) (c : Core) :
     ((get : H Core) >>= f).run.run c = (f c).run.run c := rfl
 
@@ -168,8 +167,7 @@ theorem byNameOk_run (ds : Decls) (fr : Env) (ty : Option Ty) (e : Expr) (c : Co
 theorem readsNoLocals_byNameOk (ds : Decls) (fr : Env) (ty : Option Ty) (e : Expr) :
     ReadsNoLocals (byNameOk ds fr ty e) := by
   intro c c' h
-  have hp : readPart c = readPart c' := h
-  exact ⟨_, byNameOk_run ds fr ty e c, by rw [byNameOk_run, hp]⟩
+  exact ⟨_, byNameOk_run ds fr ty e c, by rw [byNameOk_run, h]⟩
 
 /-! ## The defaults phase -/
 

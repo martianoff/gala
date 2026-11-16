@@ -60,7 +60,7 @@ theorem capturedEnv_captured (ρ : Env) (h : cellsMutable ρ) : capturedEnv (cap
     simp only at hm
     cases v <;> simp_all
 
-/-! ## T4: the scope of a default value -/
+/-! ## T4: the frame of a default value -/
 
 /-- **T4, the frame of a default.** The scope a default value is evaluated in binds exactly
     the parameters before it: a name is bound to the value of the latest earlier parameter

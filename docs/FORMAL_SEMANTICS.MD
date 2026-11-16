@@ -295,9 +295,11 @@ column lists what each milestone's claim rests on beyond them.
 - **Statement (T3):** T3 relates the output and state of each compound construct to
   those of its parts in source order.
 - **T4: done.** The defaults phase of a call (`bindDefaults`) does not read the caller's
-  locals (`bindDefaults_callerLocals`), and each default's frame binds exactly the earlier
-  parameters (`defaultFrame_lookup`). That the written arguments come before the
-  defaults is `bindArgs`'s definition; an ordering claim is T3's.
+  locals (`bindDefaults_callerLocals`), and the frame `defaultFrame` binds exactly the
+  parameters it is given (`defaultFrame_lookup`). That `bindDefaults` gives it the earlier
+  parameters, with the values the call gave them, is `bindDefaults`'s definition, not a
+  theorem; so is that the written arguments come before the defaults, and an ordering
+  claim is T3's.
   [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states both in full.
 - **Risk:** the renaming must commute with `resolve`, pattern classification, closures'
   captured scopes and default frames. A state relation (environments renamed, heap equal)

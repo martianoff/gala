@@ -2,14 +2,24 @@ package main
 
 // A by-name default that is a bare name is resolved where the default is
 // evaluated, in the callee's scope: a local of the caller's with the same name
-// does not hide the function it names.
+// does not hide what it names there. That scope is the function's earlier
+// parameters for a function's default, and no local at all for a field's.
 func one() int = 1
 
+func two() int = 22
+
 func run(f func() int = one) int = f()
+
+func pick(g func() int, f func() int = g) int = f()
+
+struct Box(F func() int = one)
 
 func plain() int = run()
 
 func main() {
     val one = 5
+    val g = 7
     Println(run(), plain(), one)
+    Println(pick(two), g)
+    Println(Box().F(), one)
 }
