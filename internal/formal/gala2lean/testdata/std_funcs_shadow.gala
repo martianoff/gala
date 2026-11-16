@@ -1,0 +1,9 @@
+package main
+
+// A program that declares When itself calls its own.
+
+func When(c bool, v int) int = if (c) v + 100 else v
+
+func main() {
+    Println(When(true, 1), When(false, 2))
+}

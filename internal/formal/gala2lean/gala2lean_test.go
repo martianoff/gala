@@ -150,6 +150,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "custom-equal"},
 		{"a function type argument", "package main\nfunc id[T any](x T) T = x\nfunc main() { val f = id((x int) => x)\n Println(f(1)) }\n", "func-type-arg"},
 		{"zero value of a type parameter", "package main\nfunc z[T any](x T) T { var y T\n y }\nfunc main() { Println(z(1)) }\n", "type-param-zero"},
+		{"ArrayTabulate with the mutable collections dot-imported", "package main\nimport . \"martianoff/gala/collection_immutable\"\nimport . \"martianoff/gala/collection_mutable\"\n\nfunc main() { Println(ArrayTabulate(2, (i int) => i)) }\n", "import"},
+		{"a conversion of a value that is not an int", "package main\nfunc main() { Println(int64(true)) }\n", "conversion"},
 		{"a bracket on a HashSet builder", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(HashSetOf[int](1).Size()) }\n", "hash-order"},
 		{"a bracket in a default", "package main\nfunc pick[T any](x T, d Option[T] = None[T]()) T = x\nfunc main() { Println(pick(1)) }\n", "index"},
 		{"a bracket on a package-level value", "package main\nval fs = 1\nfunc main() { Println(fs[0](1)) }\n", "index"},

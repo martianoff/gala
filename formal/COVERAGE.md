@@ -268,6 +268,12 @@ galaspec models them, except as listed below):
   by field, and case then fields for a sealed value. `Option`, `Either`, `Tuple`,
   `Tuple3` and `Tuple4` in types are the prelude's `GOption`, `GEither` and `T2` to
   `T4`;
+- std's `When`, `Unless`, `Tuple`, `Tuple3` and `Tuple4`, `collection_immutable`'s
+  `ArrayTabulate` and `ArrayFill`, and Go's `int(x)` and `int64(x)` of a value that is
+  already an `int` or `int64` (the same value: both are 64 bits, as galaspec takes Go's
+  `int` to be; any other conversion is reported, `conversion`), each only where the name
+  resolves to it: the program declares no such name and dot-imports nothing but std and
+  `collection_immutable` (the mutable collections have their own `ArrayTabulate`);
 - `Array` and `List` from the dot-imported `collection_immutable`, as the prelude's
   `GArray` and `GList`, with the functions the prelude models (`ArrayOf`, `ListOf`,
   `EmptyArray`, `EmptyList`, `Size`, `Get`, `Map`, `Filter`, `FoldLeft`, `FoldRight`,
@@ -370,13 +376,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 28 | 1 | 56 | 3 |
+| AGREE | 28 | 1 | 58 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 468 | 34 | 440 | 32 |
+| UNSUPPORTED | 468 | 34 | 438 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
-Examples gala2lean translates whose Lean run agrees with Go: **56** (ratchet baseline 56).
+Examples gala2lean translates whose Lean run agrees with Go: **58** (ratchet baseline 58).
 
 ### Constructs
 

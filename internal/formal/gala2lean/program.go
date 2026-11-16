@@ -39,6 +39,10 @@ type gen struct {
 	// collections is true when the program dot-imports the immutable
 	// collections (collectionsPath).
 	collections bool
+	// otherDots is true when the program dot-imports a package other than
+	// the immutable collections and std, whose names a bare name might
+	// mean (stdFunc).
+	otherDots bool
 	// depNS is the namespaces of the packages of the module the program
 	// imports (packages.go).
 	depNS map[string]bool
@@ -149,6 +153,9 @@ func (g *gen) collect(p *coreexport.Program) {
 			if imp, ok := d.(*coreexport.Import); ok {
 				// The immutable collections, dot-imported, are modelled
 				// (collections.go); any other import is outside the subset.
+				if imp.Alias == "." && imp.Path != collectionsPath && imp.Path != stdPath {
+					g.otherDots = true
+				}
 				if imp.Path == collectionsPath && imp.Alias == "." {
 					g.collections = true
 				} else {
