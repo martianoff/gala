@@ -1,0 +1,298 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 2,
+            "col": 1
+          },
+          "name": "panic_stringer.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "type-decl",
+              "pos": {
+                "line": 6,
+                "col": 1
+              },
+              "specs": [
+                {
+                  "name": "E",
+                  "typeParams": [],
+                  "alias": false,
+                  "type": {
+                    "kind": "struct-type",
+                    "pos": {
+                      "line": 6,
+                      "col": 8
+                    },
+                    "fields": [
+                      {
+                        "names": [
+                          "code"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 6,
+                            "col": 21
+                          },
+                          "name": "int"
+                        },
+                        "tag": ""
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 8,
+                "col": 1
+              },
+              "name": "String",
+              "recv": {
+                "names": [
+                  "e"
+                ],
+                "type": {
+                  "kind": "ident",
+                  "pos": {
+                    "line": 8,
+                    "col": 9
+                  },
+                  "name": "E"
+                },
+                "tag": ""
+              },
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 8,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 8,
+                        "col": 21
+                      },
+                      "name": "string"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 8,
+                  "col": 28
+                },
+                "stmts": [
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 8,
+                      "col": 30
+                    },
+                    "results": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 8,
+                          "col": 37
+                        },
+                        "fun": {
+                          "kind": "selector",
+                          "pos": {
+                            "line": 8,
+                            "col": 37
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 8,
+                              "col": 37
+                            },
+                            "name": "fmt"
+                          },
+                          "sel": "Sprintf"
+                        },
+                        "args": [
+                          {
+                            "kind": "string-lit",
+                            "pos": {
+                              "line": 8,
+                              "col": 49
+                            },
+                            "value": "code %d"
+                          },
+                          {
+                            "kind": "selector",
+                            "pos": {
+                              "line": 8,
+                              "col": 60
+                            },
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 8,
+                                "col": 60
+                              },
+                              "name": "e"
+                            },
+                            "sel": "code"
+                          }
+                        ],
+                        "ellipsis": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 10,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 10,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 10,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 11,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 11,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 11,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 11,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 11,
+                            "col": 14
+                          },
+                          "value": "start"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 12,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 12,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 12,
+                          "col": 2
+                        },
+                        "name": "panic"
+                      },
+                      "args": [
+                        {
+                          "kind": "composite-lit",
+                          "pos": {
+                            "line": 12,
+                            "col": 8
+                          },
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 12,
+                              "col": 8
+                            },
+                            "name": "E"
+                          },
+                          "elts": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 12,
+                                "col": 10
+                              },
+                              "value": "7"
+                            }
+                          ]
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

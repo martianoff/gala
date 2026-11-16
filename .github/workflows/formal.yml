@@ -180,6 +180,13 @@ jobs:
           out="$(lake exe galaspec run --fuel 100000000 tests/ex_tco_deep_sum.json)"
           test "$out" = "500000500000"
 
+      - name: Test gocore
+        # GoCore's fixtures (tests/gocore): Go programs whose output, outcome and panic
+        # text come from a real `go run`, run through the Lake-built gocore.
+        run: |
+          lake build --wfail gocore
+          bash gocore_tests.sh .lake/build/bin/gocore tests/gocore/*.json
+
   # The differential run (docs/FORMAL_SEMANTICS.MD, "Differential harness"): every
   # example with a .out file and a sample of FuzzPrograms' programs, run through
   # galaspec and through the transpiler and Go. A DISAGREE not listed in

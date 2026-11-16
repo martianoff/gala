@@ -2,6 +2,7 @@
   Root module of the Lean semantics of GALA (see README.md), for `import Gala`.
 -/
 import Gala.GoCore
+import Gala.GoCore.Cli
 import Gala.Syntax
 import Gala.Json
 import Gala.Scope

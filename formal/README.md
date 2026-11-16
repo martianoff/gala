@@ -63,7 +63,8 @@ Each definition's doc comment says what it models, and each file's header names 
 | Path | Purpose |
 |---|---|
 | `lean-toolchain` | The pinned Lean version. elan reads it locally; CI also needs its SHA-256 in `formal.yml` (see below). |
-| `lakefile.toml` | The Lake project: the library `Gala`, built from `Gala.lean` and every file under `Gala/`, and the executables `galaspec` and `galaspec-tests`. |
+| `lakefile.toml` | The Lake project: the library `Gala`, built from `Gala.lean` and every file under `Gala/`, and the executables `galaspec`, `galaspec-tests` and `gocore`. |
+| `Gala/GoCore/`, `GoCoreMain.lean` | GoCore for whole programs (M4): the Lean model of the Go the transpiler emits, and `gocore run [--fuel N] prog.json`, which runs a GoCore JSON document (`internal/formal/gocoreexport`) and reports like galaspec: stdout, then on stderr `gocore: panic: <text>` for a panic and `gocore: outcome=ok|panic|fuel|unsupported:X|stuck|malformed` (exit 0, 1, 2, 3, 5, 4). Its fixtures are `tests/gocore/` (`gocore_tests.sh`; regenerate them with `tests/gocore/regen.sh`). See [COVERAGE.md](COVERAGE.md#gocore-the-go-the-transpiler-emits-m4-in-progress). |
 | `lake-manifest.json` | Lake's lock file; empty while there are no dependencies. |
 | `BUILD.bazel` | The Bazel build of the same modules, with rules_lean. Hand-written; gazelle skips `formal/`. |
 | `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
@@ -184,6 +185,7 @@ show up in the declarations that use them.
 | `//formal:galaspec` | `lean_binary` of `Gala.Main`: the same `galaspec` as `lake exe galaspec` (`bazel run --config=formal //formal:galaspec -- run "$PWD/prog.json"`; `bazel run` starts it in its runfiles, so pass an absolute path). |
 | `//formal:galaspec_tests` | Runs the fixtures in `tests/`, like `lake exe galaspec-tests`. |
 | `//formal:galaspec_cli_test` | Checks the command-line contract the differential harness relies on (exit code and outcome line on a panic, deep recursion with `--fuel`), like the smoke steps of the Lake job. |
+| `//formal:gocore`, `//formal:gocore_tests` | `lean_binary` of `GoCoreMain`, the same `gocore` as `lake exe gocore`, and its fixtures in `tests/gocore/`. |
 
 The differential run uses `//formal:galaspec` under the config, so it too needs nothing
 but Bazel:

@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "gocorejson_lib",
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/internal/formal/gocoreexport/gocorejson",
+    visibility = ["//visibility:private"],
+    deps = ["//internal/formal/gocoreexport"],
+)
+
+# Exports Go files to GoCore JSON, for the fixtures in formal/tests. A
+# development tool only, never part of the gala CLI.
+go_binary(
+    name = "gocorejson",
+    embed = [":gocorejson_lib"],
+    visibility = ["//internal/formal:__subpackages__"],
+)

@@ -19,3 +19,9 @@ root = "Gala.Main"
 name = "galaspec-tests"
 srcDir = "tests"
 root = "GalaTests"
+
+# GoCore, the Lean model of the Go the transpiler emits: `lake exe gocore run prog.json`
+# runs a GoCore JSON document (docs/FORMAL_SEMANTICS.MD, M4). A development and CI tool only.
+[[lean_exe]]
+name = "gocore"
+root = "GoCoreMain"

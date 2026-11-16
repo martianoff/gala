@@ -19,6 +19,7 @@ go_test(
     size = "medium",
     srcs = [
         "export_test.go",
+        "fixtures_test.go",
         "golden_test.go",
         "roundtrip_test.go",
         "schema_test.go",
@@ -27,6 +28,7 @@ go_test(
         "SCHEMA.md",
         "testdata/shapes.json",
         "//examples:all_gala_sources",
+        "//formal:gocore_fixtures",
         "//internal/formal/difftest:stdlib_sources",
     ],
     embed = [":gocoreexport"],

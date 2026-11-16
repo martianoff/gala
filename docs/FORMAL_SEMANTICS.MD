@@ -110,7 +110,9 @@ formal/
   lakefile.toml             no Mathlib dependency at the start
   Gala.lean                 root module
   scripts/ProofCheck.lean   fails on sorry and non-standard axioms
-  Gala/GoCore.lean          the Go subset the transpiler emits (first fragment exists)
+  Gala/GoCore.lean          the Go fragment M3's match lowering targets
+  Gala/GoCore/*.lean        GoCore for whole programs (M4): the Go subset the transpiler emits
+  GoCoreMain.lean           `gocore run prog.json` → stdout + outcome line
   Gala/MatchLower.lean      M3: the match lowering into GoCore, proved against galaspec
   Gala/Syntax.lean          surface AST (mirrors Core JSON)
   Gala/Json.lean            decoder, rejects unknown schema versions
@@ -380,9 +382,29 @@ column lists what each milestone's claim rests on beyond them.
     and `:=`; function calls; structs; the sealed parent struct with its variant tag;
     `Unapply` returning an `Option`; `panic`; package-level initialization; and `fmt`'s
     printing of the values S1 has.
-  - An exporter from the generated Go's `go/ast` to GoCore JSON. A construct outside
-    GoCore is reported, never dropped, as Core JSON does.
+  - An exporter from the generated Go's `go/ast` to GoCore JSON. Nothing is dropped; a
+    construct outside GoCore is reported by GoCore when a run reaches it.
 - **What it changes:** the link to the real transformer exists; until M6 it is tested.
+- **Status: in progress.**
+  - **The exporter is built:** `internal/formal/gocoreexport`. It is a syntax dump in
+    which every Go construct has its own kind. Which of them GoCore runs is decided on
+    the Lean side alone.
+  - **GoCore for whole programs is built:** `formal/Gala/GoCore/*.lean`, in the namespace
+    `Gala.GoCore.Full`, run by the `gocore` binary.
+    - It runs the exported Go as Go: the program's sealed types, `Unapply`, `Equal` and
+      `String` methods, and the standard library's generated Go (`Option`, `Immutable`,
+      tuples).
+    - Each construct cites the Go spec section it follows.
+    - Its evaluator is total, by structural fuel.
+    - Only `fmt` and the hand-written, reflective standard-library functions it names
+      are models.
+  - **What remains:** the differential lane, which compares GoCore with galaspec and
+    `go run` on the corpus.
+  - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
+    `match` lowering targets, with abstract sealed values and pattern primitives, and
+    this one, with the flat layout. M5's reference lowering targets this one, and M3's
+    fragment is retired then, as the toy match model was. No theorem links the two
+    before that.
 - **Risk:** the transformer emits incidental shapes (helper calls, immutability wrappers,
   generated `String` methods) that GoCore must cover; `fmt` is the largest single model.
   GoCore has no stack limit, while Go aborts a deep recursion with a fatal stack
@@ -530,8 +552,9 @@ The table is honest about what the guarantees rest on.
 | Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; golden and schema tests (a round-trip test, export → print → parse → export, is planned) |
 | Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
 | gala2lean's translator and prelude | They decide what its Lean definitions mean | Mechanical rules; independent of galaspec; compared with galaspec and Go on every translated program |
-| Go toolchain and runtime | GoCore (`formal/Gala/GoCore.lean`) models the subset the transpiler emits, so far the fragment `match` lowers to (M3), and that real Go behaves as GoCore says is assumed | GoCore runs next to `go run` on the transformer's output for every program in the corpus; runs Go aborts for lack of stack or memory are outside every claim |
-| GoCore's layout of a sealed value | GoCore holds a sealed value as its type, its active case and that case's fields; the generated Go holds every case's fields in one struct with a tag | M4 either models the flat struct or proves that `Unapply` on it reads the tag and only the active case's fields |
+| Go toolchain and runtime | GoCore models the subset the transpiler emits: M3's fragment (`formal/Gala/GoCore.lean`) and, from M4, whole programs (`formal/Gala/GoCore/*.lean`). That real Go behaves as GoCore says is assumed | GoCore runs next to `go run` on the transformer's output for every program in the corpus, and on fixtures whose expectations come from `go run` (`formal/tests/gocore`); runs Go aborts for lack of stack or memory are outside every claim |
+| GoCore's models of `fmt` and of the standard library's hand-written functions | GoCore runs the exported Go, but not Go's own standard library, nor the reflective functions of GALA's (`std/types.go`). `fmt`'s `Println`, `Print`, `Sprint` and `Sprintf` (with `%v %d %s %t %%`) are modelled, and so are `FormatStruct`, `Copy`, `Equal`, `EvalOperand` and `Immutable.Format`, replaced by name (`libFuncs` in `formal/Gala/GoCore/Eval.lean`). Anything `fmt` would print as `%!verb(...)` or as an address is unsupported, never imitated | Each model cites the code it follows; the differential run against `go run` tests them |
+| GoCore's layout of a sealed value | M3's fragment holds a sealed value as its type, its active case and that case's fields; the generated Go holds every case's fields in one struct with a tag | From M4, GoCore for whole programs runs the flat struct, `_variant` included, through the generated `Unapply`, `Equal` and `String` bodies, so the layout is tested against `go run`. M3's abstract layout against the flat one: a proof is owed by M5, whose reference lowering targets the flat layout |
 | Go AST exporter (`internal/formal/gocoreexport`, M4) | It decides which GoCore program the emitted Go is | A plain syntax dump of `go/ast`: every Go construct has a kind of its own and GoCore alone decides which it runs; literals are read as the Go type checker reads them; nothing but comments is dropped. A round-trip test prints every exported file back as Go and checks that it parses to the source's syntax tree, over the Go output of every example and of the GALA packages they import |
 | The validator's run (planned, M6) | Evaluated by Lean's kernel, or by compiled Lean when the kernel is too slow | The kernel needs no mitigation; compiled Lean is named as trusted where it is used |
 | The transformer | **Not trusted.** It is what we test, and from M6 what we validate per program | — |
@@ -745,6 +768,8 @@ gantt
   change without the others. Mitigation: the differential run compares galaspec and
   GoCore with `go run` on every formal-relevant PR; the validator rejects output that no
   longer fits the reference lowering, naming the construct, instead of passing it.
+  Until M5 there are two GoCore semantics, M3's fragment and M4's whole-program one,
+  with no theorem relating them; M5 retires the fragment.
 - **GoCore's fidelity to Go is assumed, not proved.** Mitigation: GoCore runs next to
   `go run` on the transformer's output for every program in the corpus, and the
   assumption is listed in [What is trusted](#what-is-trusted).

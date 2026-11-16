@@ -66,6 +66,7 @@ go_test(
     data = [
         "//collection_immutable:gala_sources",
         "//formal:Gala/Gala2Lean/Prelude.lean",
+        "//formal:Gala/GoCore/Run.lean",
         "//formal:Gala/Json.lean",
         "//std:gala_sources",
         "//std:go_sources",
@@ -74,6 +75,7 @@ go_test(
     env = {
         "COLLECTIONS_GALA": "$(rlocationpaths //collection_immutable:gala_sources)",
         "GALASPEC_JSON_LEAN": "$(rlocationpath //formal:Gala/Json.lean)",
+        "GOCORE_RUN_LEAN": "$(rlocationpath //formal:Gala/GoCore/Run.lean)",
         "PRELUDE_LEAN": "$(rlocationpath //formal:Gala/Gala2Lean/Prelude.lean)",
         "STD_GALA": "$(rlocationpaths //std:gala_sources)",
         "STD_GO": "$(rlocationpaths //std:go_sources)",
