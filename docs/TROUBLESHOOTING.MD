@@ -108,7 +108,7 @@ A project with both files has two lists of Go dependencies: `gala build` takes G
 
 - a module the two require at different versions;
 - a Go dependency in `gala.mod` that `go.mod` does not require;
-- a requirement of `go.mod` that `gala.mod` does not have, indirect ones included: an indirect requirement can raise the version of a dependency's dependency, and `gala build` does not see it otherwise.
+- a direct requirement of `go.mod` that `gala.mod` does not have. An indirect one (`// indirect`) missing from `gala.mod` is not counted: `go mod tidy` adds one for every module the build reaches.
 
 The requirements `gala mod init` leaves out are left out here too: a module `go.mod` replaces, and the packages of GALA itself.
 

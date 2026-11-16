@@ -229,7 +229,8 @@ func (c *Config) StaleStdlibDirs(version string) ([]string, error) {
 }
 
 // RemoveStaleStdlibDirs deletes what StaleStdlibDirs lists and returns the
-// directories it removed. It holds the stdlib cache lock, so it never deletes
+// directories it removed; one it cannot remove is reported in the error and
+// does not stop the rest. It holds the stdlib cache lock, so it never deletes
 // a tree another gala is extracting. A gala of another version that is still
 // installed re-extracts its directory the next time it runs.
 func (c *Config) RemoveStaleStdlibDirs(version string) ([]string, error) {
@@ -247,11 +248,20 @@ func (c *Config) RemoveStaleStdlibDirs(version string) ([]string, error) {
 		return nil, err
 	}
 	var removed []string
+	var errs []error
 	for _, dir := range stale {
+		// The marker goes first: a removal that fails partway, say on a file
+		// another process holds open, must not leave a tree whose marker still
+		// vouches for it, or its gala would build against the remains.
+		if err := os.Remove(filepath.Join(dir, stdlibMarkerName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("removing stale stdlib directory: %w", err))
+			continue
+		}
 		if err := c.removeStdlibVersionDir(dir); err != nil {
-			return removed, err
+			errs = append(errs, err)
+			continue
 		}
 		removed = append(removed, dir)
 	}
-	return removed, nil
+	return removed, errors.Join(errs...)
 }

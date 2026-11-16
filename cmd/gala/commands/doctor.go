@@ -55,9 +55,14 @@ func runDoctor(cmd *cobra.Command, args []string) {
 	// Outside a project the project checks are skipped, but a directory named
 	// on the command line is meant to be one: skipping it silently would let
 	// a mistyped path pass.
+	// findProjectRoot walks up from a path that does not exist, so the path is
+	// checked first: a typo inside a project would find the enclosing one.
 	projectDir, err := findProjectRoot(".")
 	if len(args) > 0 {
-		if projectDir, err = findProjectRoot(args[0]); err != nil {
+		if _, err = os.Stat(args[0]); err == nil {
+			projectDir, err = findProjectRoot(args[0])
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -122,7 +127,7 @@ func defaultDoctorEnv(projectDir string) doctor.Env {
 		DirSize:          doctor.DirSize,
 		Config:           build.DefaultConfig(),
 		ProjectDir:       projectDir,
-		LongPathsEnabled: doctor.LongPathsEnabled,
+		LongPathsEnabled: doctor.LongPathsCheck(),
 		GoCacheWarnBytes: doctor.DefaultGoCacheWarnBytes,
 	}
 }

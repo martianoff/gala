@@ -107,6 +107,27 @@ func TestRun(t *testing.T) {
 			check: "gala", want: Warn,
 		},
 		{
+			name: "own path unknown, an older gala on PATH",
+			mutate: func(_ *testing.T, env *Env) {
+				env.Executable = ""
+			},
+			check: "gala", want: Warn,
+		},
+		{
+			name: "unreadable go build cache",
+			mutate: func(_ *testing.T, env *Env) {
+				env.DirSize = func(string) (int64, error) { return 0, os.ErrPermission }
+			},
+			check: "go build cache", want: Warn,
+		},
+		{
+			name: "go build cache not created yet",
+			mutate: func(_ *testing.T, env *Env) {
+				env.DirSize = func(string) (int64, error) { return 0, os.ErrNotExist }
+			},
+			check: "go build cache", want: OK,
+		},
+		{
 			name: "a gala on PATH whose version cannot be read",
 			mutate: func(_ *testing.T, env *Env) {
 				env.Executable = "/home/u/bin/gala"
@@ -372,7 +393,17 @@ func TestModDrift(t *testing.T) {
 			name:    "indirect go.mod requirement missing from gala.mod",
 			galaMod: "",
 			goMod:   "require a.com/x v1.0.0 // indirect",
-			want:    []string{"a.com/x v1.0.0 (go.mod only)"},
+		},
+		{
+			name:    "indirect go.mod requirement at another version",
+			galaMod: "require a.com/x v1.0.0 // indirect, go",
+			goMod:   "require a.com/x v1.2.0 // indirect",
+			want:    []string{"a.com/x (gala.mod v1.0.0, go.mod v1.2.0)"},
+		},
+		{
+			name:    "a GALA dependency go.mod also requires",
+			galaMod: "require a.com/galalib v1.0.0",
+			goMod:   "require a.com/galalib v1.0.0",
 		},
 		{
 			name:    "a module go.mod replaces is not copied, so not drift",

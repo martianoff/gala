@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"go/version"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,7 +171,7 @@ func checkGala(env Env) Check {
 		return problem(Warn, "gala", msg+"; no gala on PATH",
 			"add the directory holding gala to PATH", anchorGalaOnPath)
 	}
-	if env.Executable == "" || env.SameFile(onPath, env.Executable) {
+	if env.Executable != "" && env.SameFile(onPath, env.Executable) {
 		return ok("gala", msg)
 	}
 	switch v, err := env.GalaVersion(onPath); {
@@ -235,7 +236,7 @@ func checkGoroot(env Env, goEnv *goEnvValues) Check {
 
 // checkGalaHome reports where gala keeps its data and how much space it takes.
 func checkGalaHome(env Env) Check {
-	return ok("gala home", sizedDir(env, env.Config.GalaHome))
+	return sizedDir(env, "gala home", env.Config.GalaHome)
 }
 
 // checkModuleCache reports the GALA module cache when GALA_CACHE moved it out
@@ -244,7 +245,7 @@ func checkModuleCache(env Env) (Check, bool) {
 	if within(env.Config.GalaPkgDir, env.Config.GalaHome) {
 		return Check{}, false
 	}
-	return ok("module cache", sizedDir(env, env.Config.GalaPkgDir)), true
+	return sizedDir(env, "module cache", env.Config.GalaPkgDir), true
 }
 
 // checkStdlibCache warns about stdlib cache directories that other gala
@@ -283,9 +284,9 @@ func checkGoBuildCache(env Env, gocache string) Check {
 	if gocache == "" || gocache == "off" {
 		return ok(name, "disabled (GOCACHE="+gocache+")")
 	}
-	size, err := env.DirSize(gocache)
-	if err != nil {
-		return ok(name, gocache+" (not created yet)")
+	size, c, done := dirSize(env, name, gocache, anchorGoBuildCache)
+	if done {
+		return c
 	}
 	msg := fmt.Sprintf("%s, %s", gocache, formatBytes(size))
 	if size > env.GoCacheWarnBytes {
@@ -345,22 +346,25 @@ func checkProject(env Env) []Check {
 // modDrift lists the Go dependencies gala.mod and go.mod disagree on. gala
 // build takes Go module versions from gala.mod and go build from go.mod, so
 // each difference is a dependency the two builds resolve differently. go.mod's
-// side is what `gala mod init` would copy from it (build.GoRequirementsOf),
-// indirect requirements included and replaced modules and GALA's own packages
-// left out; drift is a module that set has at another version or that
-// gala.mod lacks, and a Go dependency of gala.mod that go.mod does not require.
+// side is what `gala mod init` copies from it (build.GoRequirementsOf), which
+// leaves out replaced modules and GALA's own packages. Drift is a module both
+// require at different versions, a direct go.mod requirement gala.mod lacks,
+// and a Go dependency of gala.mod that go.mod does not require.
+//
+// An indirect requirement gala.mod lacks is not drift: `go mod tidy` adds one
+// for every module the build reaches, and gala.mod need not list them all.
 func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 	inGala := make(map[string]string)
-	for _, r := range galaMod.GoRequires() {
+	for _, r := range galaMod.Require { // GALA dependencies too: go.mod may require them for Go tooling
 		inGala[r.Path] = r.Version
 	}
 	var drift []string
 	wanted, _ := build.GoRequirementsOf(goMod)
 	for _, r := range wanted {
 		switch galaVer, found := inGala[r.Path]; {
-		case !found:
+		case !found && !r.Indirect:
 			drift = append(drift, fmt.Sprintf("%s %s (go.mod only)", r.Path, r.Version))
-		case galaVer != r.Version:
+		case found && galaVer != r.Version:
 			drift = append(drift, fmt.Sprintf("%s (gala.mod %s, go.mod %s)", r.Path, galaVer, r.Version))
 		}
 	}
@@ -368,9 +372,9 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 	for _, r := range goMod.Require {
 		inGo[r.Mod.Path] = true
 	}
-	for path, ver := range inGala {
-		if !inGo[path] {
-			drift = append(drift, fmt.Sprintf("%s %s (gala.mod only)", path, ver))
+	for _, r := range galaMod.GoRequires() {
+		if !inGo[r.Path] {
+			drift = append(drift, fmt.Sprintf("%s %s (gala.mod only)", r.Path, r.Version))
 		}
 	}
 	sort.Strings(drift)
@@ -386,12 +390,26 @@ func summarize(items []string, max int) string {
 }
 
 // sizedDir describes dir and its size.
-func sizedDir(env Env, dir string) string {
-	size, err := env.DirSize(dir)
-	if err != nil {
-		return dir + " (not created yet)"
+func sizedDir(env Env, name, dir string) Check {
+	size, c, done := dirSize(env, name, dir, anchorStdlibCache)
+	if done {
+		return c
 	}
-	return fmt.Sprintf("%s, %s", dir, formatBytes(size))
+	return ok(name, fmt.Sprintf("%s, %s", dir, formatBytes(size)))
+}
+
+// dirSize measures dir. When it cannot (done), c is the check to report: OK
+// for a directory not created yet, a warning for one that cannot be read.
+func dirSize(env Env, name, dir, anchor string) (size int64, c Check, done bool) {
+	size, err := env.DirSize(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return 0, ok(name, dir+" (not created yet)"), true
+	case err != nil:
+		return 0, problem(Warn, name, fmt.Sprintf("cannot read %s: %v", dir, err),
+			"check that you can read "+dir, anchor), true
+	}
+	return size, Check{}, false
 }
 
 // within reports whether path is dir or lies below it.

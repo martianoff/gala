@@ -2,6 +2,6 @@
 
 package doctor
 
-// LongPathsEnabled is nil outside Windows, which has no path length setting
-// to check.
-var LongPathsEnabled func() (bool, error)
+// LongPathsCheck returns nil outside Windows, which has no path length
+// setting to check.
+func LongPathsCheck() func() (bool, error) { return nil }
