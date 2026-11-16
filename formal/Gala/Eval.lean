@@ -402,6 +402,9 @@ def matchPat (ds : Decls) (locals globals : Env) : Pat → Val → H (Option (Li
       | none => outsideS1 ds s!"{c} is not a case of {ty}"
       | some cv =>
         if c' != c then pure none
+        -- `fs.length != ps.length` is unreachable from evaluation (`construct` and `zero`
+        -- build exactly the case's fields); it makes `matchPats` total over field lists of
+        -- the case's arity, as the struct case below.
         else if cv.fields.length != ps.length || fs.length != ps.length then stuck s!"pattern {c} has the wrong arity"
         else matchPats ds locals globals ps fs
     | .struct_ ty fs =>

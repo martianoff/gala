@@ -569,12 +569,6 @@ def subjCases (ds : Decls) : Val → List Variant
   | .sealed ty _ _ => (ds.sealeds.lookup ty).getD []
   | _ => []
 
-theorem subjCases_eq (ds : Decls) (v : Val) :
-    (match v with
-      | .sealed ty _ _ => (ds.sealeds.lookup ty).getD []
-      | _ => []) = subjCases ds v := by
-  cases v <;> rfl
-
 theorem mem_of_lookup {β : Type} : ∀ {l : List (String × β)} {k : String} {b : β},
     l.lookup k = some b → (k, b) ∈ l
   | (k', b') :: l, k, b, h => by
@@ -665,9 +659,6 @@ theorem classify_same {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
       · exact hb
   · rw [h1, h2]; exact hr
 
-/-- Matching a pattern commutes with the renaming: related patterns on related values, in
-    related states, give the same verdict and related bindings, one of the ways the slots
-    go (a renamed binder always binds, one kept the same binds on both sides or neither). -/
 theorem hpkg_left {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     (hD : DeclsR pkg pm ds ds') : ∀ y, (ds.variant? y).isSome → y ∈ pkg :=
   fun y h => hD.inPkg y (Or.inr (Or.inr h))
@@ -752,6 +743,9 @@ theorem nameMatch_rel {pkg : List String} {pm : String → Ren} {c c' : Core} {x
   · exact ⟨rfl, by simp [Slot.outs], .cons hv .nil⟩
 
 mutual
+/-- Matching a pattern commutes with the renaming: related patterns on related values, in
+    related states, give the same verdict and related bindings, one of the ways the slots
+    go (a renamed binder always binds, one kept the same binds on both sides or neither). -/
 theorem matchPat_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
     {c c' : Core} {p p' : Pat} {ss : List Slot} {v v' : Val}
     (hD : DeclsR pkg pm ds ds') (hc : CoreR pkg pm Γ c c') (hp : PatR pkg Γ p p' ss)
@@ -866,8 +860,6 @@ theorem matchPats_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
           exact outs_append _ _ _ _ hbn hn2
 end
 
-/-- Binding arguments to parameters commutes with renaming the parameters: a named
-    argument follows its parameter's new name, so each argument gets the same slot. -/
 theorem alphaE_not_named {pkg : List String} {pm : String → Ren} {Γ : Ren} {e e' : Expr}
     (h : AlphaE pkg pm Γ e e') : isNamed e' = false := by
   cases h <;> rfl
@@ -931,6 +923,8 @@ theorem argSlots_go_rel {pkg : List String} {pm : String → Ren} {Γ : Ren}
     · exact argSlots_go_rel hn hnd true _ ha
     · exact .stuck _ _
 
+/-- Binding arguments to parameters commutes with renaming the parameters: a named
+    argument follows its parameter's new name, so each argument gets the same slot. -/
 theorem argSlots_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {names names' : List String}
     {args args' : List Expr} (hn : names.length = names'.length)
     (hnd : names.Nodup ∧ names'.Nodup) (ha : ArgsR pkg pm (pairsOf names names') Γ args args') :
