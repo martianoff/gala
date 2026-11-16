@@ -40,4 +40,9 @@ func main() {
 
     val none Array[int] = EmptyArray()
     Println(a.Grouped(2), a.Grouped(5), a.Grouped(9), none.Grouped(3))
+
+    // Results used in further calls, which need their types.
+    val c = a.Collect((x) => if (x > 2) Some(x) else None())
+    Println(c.Size(), a.Grouped(2).Map((g) => g.Size()), a.Map((x) => x * 2).Filter((x) => x > 4))
+    Println(l.FlatMap((x) => ListOf(x, x)).Distinct().Size(), a.Zip(l.ToArray()).Map((p) => p.V1 + p.V2))
 }

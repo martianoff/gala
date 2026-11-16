@@ -106,13 +106,13 @@ type seqMethod struct {
 	result string
 	// compares and prints say that the call compares or prints elements.
 	compares, prints bool
-	// arrayOnly is true for a function only Array has.
-	arrayOnly bool
+	// only is the collection kind that alone has the function (GArray or
+	// GList), "" when both have it.
+	only string
 }
 
 // seqMethods are the functions of Array and List the prelude models, by
-// name. Both types have each, except ToList (Array), ToArray (List) and
-// those marked arrayOnly.
+// name. Both types have each, except those marked only.
 var seqMethods = map[string]seqMethod{
 	"Size":       {code: "(seqSize {r})", pure: true, result: "I"},
 	"Length":     {code: "(seqSize {r})", pure: true, result: "I"},
@@ -148,22 +148,22 @@ var seqMethods = map[string]seqMethod{
 	"Partition": {params: []string{"T->B"}, code: "(fun (yes, no) => T2.mk ({k} yes) ({k} no)) <$> seqPartition {r} {0}",
 		result: "P"},
 	"ZipWithIndex": {code: "({k} (seqZipWithIndex {r}))", pure: true, result: "Z"},
-	"ToList":       {code: "(GList.mk {r})", pure: true, result: "L"},
-	"ToArray":      {code: "(GArray.mk {r})", pure: true, result: "A"},
+	"ToList":       {code: "(GList.mk {r})", pure: true, result: "L", only: "GArray"},
+	"ToArray":      {code: "(GArray.mk {r})", pure: true, result: "A", only: "GList"},
 	"FlatMap":      {params: []string{"T->S_"}, code: "{k} <$> seqFlatMap {r} {0} (·.data)", result: "F"},
 	"Collect":      {params: []string{"T->O_"}, code: "{k} <$> seqCollect {r} {0}", result: "C"},
 	"Zip":          {params: []string{"S_"}, code: "({k} (seqZip {r} ({0}).data))", pure: true, result: "Y"},
 	"TakeWhile":    {params: []string{"T->B"}, code: "{k} <$> seqTakeWhile {r} {0}", result: "S"},
 	"DropWhile":    {params: []string{"T->B"}, code: "{k} <$> seqDropWhile {r} {0}", result: "S"},
-	"Distinct":     {code: "({k} {r}.eraseDups)", pure: true, result: "S", compares: true},
-	"FindLast":     {params: []string{"T->B"}, code: "seqFindLast {r} {0}", result: "O", arrayOnly: true},
-	"Grouped":      {params: []string{"I"}, code: "GArray.mk <$> seqGrouped {r} {0}", result: "G", arrayOnly: true},
+	"Distinct":     {code: "({k} (seqDistinct {r}))", pure: true, result: "S", compares: true},
+	"FindLast":     {params: []string{"T->B"}, code: "seqFindLast {r} {0}", result: "O", only: "GArray"},
+	"Grouped":      {params: []string{"I"}, code: "GArray.mk <$> seqGrouped {r} {0}", result: "G", only: "GArray"},
 }
 
 // seqMethodOf is function name of a collection of kind, when modelled.
 func seqMethodOf(kind, name string) (seqMethod, bool) {
 	m, ok := seqMethods[name]
-	if !ok || name == "ToList" && kind != "GArray" || name == "ToArray" && kind != "GList" || m.arrayOnly && kind != "GArray" {
+	if !ok || m.only != "" && m.only != kind {
 		return seqMethod{}, false
 	}
 	return m, true
@@ -244,10 +244,9 @@ func (g *gen) seqParamType(p, elem, kind string, u coreexport.Node) coreexport.N
 		case "_":
 			return &coreexport.TypeName{Name: inferTypeArg}
 		case "S_":
-			return &coreexport.TypeName{Name: map[string]string{"GArray": "Array", "GList": "List"}[kind],
-				Args: []coreexport.Node{&coreexport.TypeName{Name: inferTypeArg}}}
+			return &coreexport.TypeName{Name: seqGalaName[kind], Args: []coreexport.Node{&coreexport.TypeName{Name: inferTypeArg}}}
 		case "O_":
-			return &coreexport.TypeName{Name: "Option", Args: []coreexport.Node{&coreexport.TypeName{Name: inferTypeArg}}}
+			return optionOfInferred()
 		}
 		return nil
 	}
@@ -264,6 +263,9 @@ func (g *gen) seqParamType(p, elem, kind string, u coreexport.Node) coreexport.N
 	}
 	return f
 }
+
+// seqGalaName is the GALA name of each collection kind.
+var seqGalaName = map[string]string{"GArray": "Array", "GList": "List"}
 
 // seqCallType is exprType of a call of a function of an Array or a List
 // whose receiver has Lean type rt.
@@ -309,14 +311,8 @@ func (g *gen) seqCallType(e *coreexport.Call, rt string, s *coreexport.Select, s
 			return "(" + kind + " (T2 " + elem + " " + u + "))"
 		}
 	case "M", "F", "C":
-		// The function argument's result, its parameter typed as the call
-		// types it (typedLambda).
-		a := argNode(e.Args[0])
-		if l, ok := a.(*coreexport.Lambda); ok {
-			a = g.typedLambda(l, g.seqParamType(m.params[0], elem, kind, nil))
-		}
-		r := funcResult(g.exprType(a, sc, seen))
-		if r == "" || r == "_" {
+		r := g.funcArgResult(e.Args[0], g.seqParamType(m.params[0], elem, kind, nil), sc, seen)
+		if r == "" {
 			return ""
 		}
 		switch m.result {

@@ -36,3 +36,5 @@ see fl 5
 see fl 4
 Some(4) None()
 Array(Array(1, 2), Array(3, 4), Array(5)) Array(Array(1, 2, 3, 4, 5)) Array(Array(1, 2, 3, 4, 5)) Array()
+3 Array(2, 2, 1) Array(6, 8, 10)
+5 Array(2, 4, 6, 8, 10)
