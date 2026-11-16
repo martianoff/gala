@@ -1,6 +1,7 @@
 package fuzz_test
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -97,7 +98,7 @@ func TestGeneratedRenamingsAreCoveredByT2(t *testing.T) {
 		if p.src != p.plain {
 			renamed++
 		}
-		name := "seed" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+		name := fmt.Sprintf("seed%02d", i)
 		a := exportCore(t, dir, name+"_plain", p.plain)
 		b := exportCore(t, dir, name+"_renamed", p.src)
 		if v := alphaVerdict(t, bin, a, b); v != "related" {

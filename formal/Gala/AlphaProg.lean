@@ -56,8 +56,8 @@ theorem mem_of_bound : ∀ {Γ : Ren} {x x' : String}, Γ.bound x x' → (x, x')
     · exact List.mem_cons_self
     · exact List.mem_cons_of_mem _ (mem_of_bound h)
 
-theorem contains_iff (b : List String) (x : String) : b.contains x = true ↔ x ∈ b := by
-  simp
+theorem contains_iff (b : List String) (x : String) : b.contains x = true ↔ x ∈ b :=
+  List.contains_iff_mem
 
 /-- A name's mention, when it refers to the same thing on both sides. -/
 theorem menR_name {pkg : List String} {Γ : Ren} {b b' : List String} {x x' : String}
@@ -424,14 +424,20 @@ theorem givenSlots_eq {pkg : List String} {pm : String → Ren} {m Γ : Ren} {ns
     (fun n n' v v' h => by simp only [omittedDefaults.namedSlot]; exact hnamed n n' h) ha
   rw [g1, g2]
 
+/-- A function name on both sides: no function, or related functions. -/
+theorem funcs_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
+    (hD : DeclsR pkg pm ds ds') (x : String) :
+    (ds.funcs.lookup x = none ∧ ds'.funcs.lookup x = none) ∨
+      ∃ f f', ds.funcs.lookup x = some f ∧ ds'.funcs.lookup x = some f' ∧ FuncR pkg pm f f' :=
+  lookup_fall2 (fun _ _ h => ⟨h.1, h.2.2⟩) x hD.funcs
+
 /-- The defaults a call of `x` leaves out are related on both sides. -/
 theorem omitted_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     (hD : DeclsR pkg pm ds ds') (x : String) {Γ : Ren} {as as' : List Expr}
     (ha : ArgsR pkg pm (pm x) Γ as as') :
     Fall2 (OmitR pkg pm) (omittedDefaults ds x as) (omittedDefaults ds' x as') := by
   unfold omittedDefaults
-  rcases lookup_fall2 (S := fun (a : String × Func) (b : String × Func) => a.1 = b.1 ∧ a.2.name = a.1 ∧
-      FuncR pkg pm a.2 b.2) (R := FuncR pkg pm) (fun _ _ h => ⟨h.1, h.2.2⟩) x hD.funcs with
+  rcases funcs_rel hD x with
     ⟨h1, h2⟩ | ⟨f, f', h1, h2, hf⟩
   · -- Not a function: a struct or a case, the same on both sides.
     rw [h1, h2]
@@ -504,8 +510,7 @@ theorem omitted_nil {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     | none => rfl
     | some _ => exact absurd (hD.inPkg x (Or.inr (Or.inr (by simp [h])))) hx
   have hf' : ds'.funcs.lookup x = none := by
-    rcases lookup_fall2 (S := fun (a : String × Func) (b : String × Func) => a.1 = b.1 ∧ a.2.name = a.1 ∧
-        FuncR pkg pm a.2 b.2) (R := FuncR pkg pm) (fun _ _ h => ⟨h.1, h.2.2⟩) x hD.funcs with
+    rcases funcs_rel hD x with
       ⟨_, h2⟩ | ⟨_, _, h1, _, _⟩
     · exact h2
     · rw [hf] at h1; cases h1
@@ -835,8 +840,7 @@ theorem funcs_none (hD : DeclsR pkg pm ds ds') {x : String} (hx : x ∉ pkg) :
     | none => rfl
     | some _ => exact absurd (hD.inPkg x (Or.inl (by simp [h]))) hx
   refine ⟨hf, ?_⟩
-  rcases lookup_fall2 (S := fun (a : String × Func) (b : String × Func) => a.1 = b.1 ∧ a.2.name = a.1 ∧
-      FuncR pkg pm a.2 b.2) (R := FuncR pkg pm) (fun _ _ h => ⟨h.1, h.2.2⟩) x hD.funcs with
+  rcases funcs_rel hD x with
     ⟨_, h2⟩ | ⟨_, _, h1, _, _⟩
   · exact h2
   · rw [hf] at h1; cases h1
@@ -847,8 +851,7 @@ theorem expand_rel (hD : DeclsR pkg pm ds ds') (x : String) :
     (x ∉ pkg → reach.expand ds x = none ∧ reach.expand ds' x = none) ∧
     ((reach.expand ds x).map (inPkg pkg) = (reach.expand ds' x).map (inPkg pkg)) := by
   unfold reach.expand
-  rcases lookup_fall2 (S := fun (a : String × Func) (b : String × Func) => a.1 = b.1 ∧ a.2.name = a.1 ∧
-      FuncR pkg pm a.2 b.2) (R := FuncR pkg pm) (fun _ _ h => ⟨h.1, h.2.2⟩) x hD.funcs with
+  rcases funcs_rel hD x with
     ⟨h1, h2⟩ | ⟨f, f', h1, h2, hf⟩
   · simp [h1, h2]
   · refine ⟨fun hx => ?_, ?_⟩
@@ -1196,8 +1199,7 @@ theorem runM_alpha {p p' : Program} (h : AlphaProgram pkg pm p p') (n : Nat) :
   · dsimp only
     refine relM_bind_gen (initGlobals_alpha hD n hg hin) fun Γ _ _ hΓ _ => ?_
     subst hΓ
-    rcases lookup_fall2 (S := fun (a : String × Func) (b : String × Func) => a.1 = b.1 ∧ a.2.name = a.1 ∧
-        FuncR pkg pm a.2 b.2) (R := FuncR pkg pm) (fun _ _ h => ⟨h.1, h.2.2⟩) "main" hD.funcs with
+    rcases funcs_rel hD "main" with
       ⟨h1, h2⟩ | ⟨f, f', h1, h2, hf⟩
     · rw [h1, h2]
       exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .unsupported _ _ _⟩
@@ -1345,10 +1347,7 @@ theorem boundB_sound : ∀ {Γ : Ren} {x x' : String}, boundB Γ x x' = true →
     · exact Or.inr ⟨h1, h2, boundB_sound h3⟩
 
 theorem not_mem_of_contains {l : List String} {x : String} (h : l.contains x = false) : x ∉ l := by
-  intro hm
-  have := (contains_iff l x).2 hm
-  rw [h] at this
-  cases this
+  simpa using h
 
 theorem freeB_sound {Γ : Ren} {x : String} (h : freeB Γ x = true) : Γ.free x := by
   simp only [freeB, Bool.and_eq_true, Bool.not_eq_true'] at h
@@ -1446,16 +1445,7 @@ theorem patsB_sound {pkg : List String} {Γ : Ren} :
 end
 
 theorem freeB_complete {Γ : Ren} {x : String} (h : Γ.free x) : freeB Γ x = true := by
-  unfold freeB
-  have h1 : (Γ.map (·.1)).contains x = false := by
-    cases hc : (Γ.map (·.1)).contains x
-    · rfl
-    · exact absurd ((contains_iff _ x).1 hc) h.1
-  have h2 : (Γ.map (·.2)).contains x = false := by
-    cases hc : (Γ.map (·.2)).contains x
-    · rfl
-    · exact absurd ((contains_iff _ x).1 hc) h.2
-  rw [h1, h2]; rfl
+  simp [freeB, h.1, h.2]
 
 theorem namedB_sound {m : Ren} {n n' : String} (h : namedB m n n' = true) :
     m.lookup n = some n' ∨ (n = n' ∧ n ∉ m.map (·.1) ∧ n ∉ m.map (·.2)) := by
