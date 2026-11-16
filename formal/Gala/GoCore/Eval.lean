@@ -1186,19 +1186,8 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
     | _ => pure ()
     -- A declared function called by name: a generic one gets its type arguments by
     -- inference from the arguments (Go spec, "Type inference").
-    -- Called with some of its type arguments, `f[T](...)`, it infers the rest.
-    let named : Expr → Option (String × String) := fun
-      | .ident f => if (env.lookup f).isSome then none else (nameOwner c env f).map (·, f)
-      | .selector (.ident q) f => if (env.lookup q).isSome then none else (importOf c env q).map (·, f)
-      | _ => none
-    let (declared, targExprs) := match fn with
-      | .index g ts => (named g, ts)
-      | g => (named g, [])
-    if let some (path, f) := declared then
-      if let some (.func ..) := (c.pkgs.get? path).bind (·.objs.get? f) then
-        let targs ← targExprs.mapM (evalType c n env)
-        let vs ← evalArgs c n env args
-        return ← callValue c n (.func_ (.func_ [] [] false) (some (.decl path f targs))) vs spread
+    if let some fv ← declaredFunc? c n env fn then
+      return ← callValue c n fv (← evalArgs c n env args) spread
     let fv ← evalExpr c n env fn
     let vs ← evalArgs c n env args
     callValue c n fv vs spread
@@ -1270,6 +1259,48 @@ def layout (c : Ctx) : Nat → Ty → GM GcRuntime.Layout
     | .struct_ fs => pure (.struct_ (← fs.mapM fun (_, ft) => layout c n ft))
     | u => unsupported s!"layout-{u}"
 
+/-- A declared function named by `fn` (`f`, `pkg.F`, or with some of its type
+    arguments, `f[T]`), as a value whose remaining type arguments a call infers from
+    its arguments (Go spec, "Type inference"); `none` if `fn` names none. -/
+def declaredFunc? (c : Ctx) : Nat → Env → Expr → GM (Option Val)
+  | 0, _, _ => throw .fuel
+  | n + 1, env, fn => do
+    let named : Expr → Option (String × String) := fun
+      | .ident f => if (env.lookup f).isSome then none else (nameOwner c env f).map (·, f)
+      | .selector (.ident q) f => if (env.lookup q).isSome then none else (importOf c env q).map (·, f)
+      | _ => none
+    let (declared, targExprs) := match fn with
+      | .index g ts => (named g, ts)
+      | g => (named g, [])
+    let some (path, f) := declared | return none
+    let some (.func ..) := (c.pkgs.get? path).bind (·.objs.get? f) | return none
+    let targs ← targExprs.mapM (evalType c n env)
+    return some (.func_ (.func_ [] [] false) (some (.decl path f targs)))
+
+/-- `defer fn(args)`: the function value and the arguments are evaluated now and the
+    call is saved, to run when the surrounding function returns (Go spec, "Defer
+    statements"). Deferred builtins, conversions and functions of packages the
+    document does not hold are not modelled. -/
+def deferCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM Unit
+  | 0, _, _, _, _ => throw .fuel
+  | n + 1, env, fn, args, spread => do
+    if (← typeOf? c n env fn).isSome then unsupported "defer-conversion"
+    match fn with
+    | .ident b =>
+      if (env.lookup b).isNone && (nameOwner c env b).isNone then unsupported s!"defer-{b}"
+    | .selector (.ident q) f =>
+      if (env.lookup q).isNone then
+        if let some path := importOf c env q then
+          if !c.pkgs.contains path then unsupported s!"{path}.{f}"
+    | _ => pure ()
+    let fv ← match ← declaredFunc? c n env fn with
+      | some fv => pure fv
+      | none => evalExpr c n env fn
+    let vs ← evalArgs c n env args
+    match (← get).defers with
+    | d :: ds => modify fun s => { s with defers := ((fv, vs, spread) :: d) :: ds }
+    | [] => stuck "defer outside a function"
+
 /-- Arguments, left to right; `f(g())` passes `g`'s results (Go spec, "Calls"). -/
 def evalArgs (c : Ctx) : Nat → Env → List Expr → GM (List Val)
   | 0, _, _ => throw .fuel
@@ -1287,7 +1318,10 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
     match b, args with
     | "panic", [a] =>
       let v ← evalExpr c n env a
-      throw (.panic v (← panicText c n v))
+      -- `panic(nil)` panics with a `*runtime.PanicNilError` (Go 1.21), a runtime
+      -- error GoCore does not model.
+      if let .nilIface _ := v then unsupported "panic-nil"
+      throw (.panic v false)
     | "new", [te] =>
       let t ← evalType c n env te
       let cell ← allocAs t (← zero c n t)
@@ -1360,6 +1394,27 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
           store (r.loc i) (← convert c n et v)
         pure [.int (.int .int) k]
       | _ => stuck "copy to a non-slice"
+    -- (Go spec, "Handling panics".) A panic is recovered only by a deferred call
+    -- calling `recover` itself, while its function panics; else nil. A runtime
+    -- error's value is a `runtime.Error`, which GoCore does not model.
+    --
+    -- "Called directly by a deferred function" is an exact call depth: `callBody`
+    -- runs the panicking function's deferred calls one call deeper than it, and
+    -- records that depth with the panic (`recoverable`). Every call GoCore makes, of
+    -- a function, method, method value or closure, adds one level, and nothing else
+    -- does, so `recover` is at that depth exactly when the deferred function itself
+    -- calls it. A deferred function's own deferred calls run when it returns,
+    -- outside the panic, with nothing recoverable: their `recover` is nil, as `go
+    -- run` shows (fixture `defer`, `nestedDefer`).
+    | "recover", [] =>
+      let s ← get
+      match s.recoverable with
+      | some (d, v, runtime) =>
+        if s.defers.length != d then return [.nilIface (.iface [])]
+        if runtime then unsupported "recover-runtime-error"
+        modify fun s => { s with recoverable := none }
+        pure [← convert c n (.iface []) v]
+      | none => pure [.nilIface (.iface [])]
     | "print", _ | "println", _ =>
       -- They write to standard error, which the comparison leaves out (Go spec,
       -- "Bootstrapping").
@@ -1410,7 +1465,13 @@ def callValue (c : Ctx) : Nat → Val → List Val → Bool → GM (List Val)
       -- A function a model replaces runs as the model, however it is reached:
       -- qualified, from inside its own package, instantiated or as a value.
       if path == stdPath && libFuncs.contains x then
-        return ← libCall c n x (← spreadArgs spread vs)
+        -- The modelled function is a call of its own: what it calls runs one level
+        -- deeper, as `recover`'s depth check needs.
+        modify fun s => { s with defers := [] :: s.defers }
+        let pop : GM Unit := modify fun s => { s with defers := s.defers.tail }
+        let r ← tryCatch (libCall c n x (← spreadArgs spread vs)) fun e => do pop; throw e
+        pop
+        return r
       let p ← pkgCtx c path
       match p.objs.get? x with
       | some (.func fi tps sig body) =>
@@ -1533,20 +1594,50 @@ def callBody (c : Ctx) : Nat → Env → Sig → Option (List Stmt) → Option (
         let cell ← allocAs t (← zero c n t)
         env := env.bind x cell
         named := named ++ [cell]
-    let r ← tryCatch (do let _ ← execStmts c n env body; pure none) fun
-      | .ret ws => pure (some ws)
+    -- The body runs with a list of deferred calls of its own.
+    let depth := (← get).defers.length + 1
+    modify fun s => { s with defers := [] :: s.defers }
+    let outcome ← tryCatch (do let _ ← execStmts c n env body; pure (Except.ok none)) fun
+      | .ret ws => pure (.ok (some ws))
+      | .panic v rt => pure (.error (v, rt))
       | e => throw e
-    match r with
-    | none =>
-      if results.isEmpty then pure []
-      else if named.isEmpty then stuck "missing return"
-      else named.mapM loadCell
-    | some [] =>
-      if results.isEmpty then pure [] else named.mapM loadCell
-    | some ws =>
+    -- A `return`'s values become the results (named ones in their cells) before the
+    -- deferred calls run (Go spec, "Return statements", "Defer statements").
+    let mut values : List Val := []
+    match outcome with
+    | .ok none => if !results.isEmpty && named.isEmpty then stuck "missing return"
+    | .ok (some []) => pure ()
+    | .ok (some ws) =>
       let ws := if ws.length == 1 && rtys.length > 1 then (ws.head!).results else ws
       if ws.length != rtys.length then stuck "wrong number of results"
-      (rtys.zip ws).mapM fun (t, w) => convert c n t w
+      let ws ← (rtys.zip ws).mapM fun (t, w) => convert c n t w
+      if named.isEmpty then values := ws
+      else for (cell, w) in named.zip ws do storeCell cell w
+    | .error _ => pure ()
+    -- The deferred calls, newest first. While the function panics, each runs with the
+    -- panic recoverable by a `recover` it calls directly; a panic in one replaces the
+    -- current one (Go spec, "Defer statements", "Handling panics").
+    let deferred := ((← get).defers.headD [])
+    let mut panic : Option (Val × Bool) := match outcome with | .error p => some p | _ => none
+    if !deferred.isEmpty then
+      let saved := (← get).recoverable
+      for (fv, args, spread) in deferred do
+        modify fun s => { s with recoverable := panic.map fun (v, t) => (depth + 1, v, t) }
+        let raised ← tryCatch (do let _ ← callValue c n fv args spread; pure none) fun
+          | .panic v rt => pure (some (v, rt))
+          | e => throw e
+        -- `recover` took the panic.
+        if panic.isSome && (← get).recoverable.isNone then panic := none
+        if let some p := raised then panic := some p
+      modify fun s => { s with recoverable := saved }
+    modify fun s => { s with defers := s.defers.tail }
+    if let some (v, rt) := panic then throw (.panic v rt)
+    -- A function that recovered from a panic returns its results as they are: named
+    -- ones from their cells, unnamed ones zero.
+    if results.isEmpty then pure []
+    else if !named.isEmpty then named.mapM loadCell
+    else if values.isEmpty then rtys.mapM (zero c n)
+    else pure values
 
 -- Statements
 
@@ -1626,6 +1717,8 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
         | e => throw e
       pure env
     | .range k v tok x body => do rangeLoop c n env k v tok x body; pure env
+    | .defer_ (.call fn args spread) => do deferCall c n env fn args spread; pure env
+    | .defer_ _ => stuck "defer of a non-call"
     | .unsupported k => unsupported k
 
 /-- The value a declared variable starts with: the initializer's value converted to the

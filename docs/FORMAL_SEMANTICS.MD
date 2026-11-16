@@ -419,7 +419,7 @@ column lists what each milestone's claim rests on beyond them.
     `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
     [COVERAGE.md](../formal/COVERAGE.md#differential-testing).
   - **What remains:** widening GoCore where the corpus stops it (float operations, `fmt.Printf`,
-    `defer`, generic functions used as values), each a construct the run names.
+    `utf8.RuneCountInString`, maps, generic functions used as values), each a construct the run names.
   - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
     `match` lowering targets, with abstract sealed values and pattern primitives, and
     this one, with the flat layout. M5's reference lowering targets this one, and M3's

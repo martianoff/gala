@@ -250,8 +250,11 @@ def Val.dyn : Val → Val
 
 /-- Why execution stopped early. -/
 inductive Stop
-  /-- A panic: its value, and the text Go's runtime prints after `panic: `. -/
-  | panic (v : Val) (text : String)
+  /-- A panic: its value, and whether it is a runtime error (Go spec, "Run-time
+      panics"), whose value is a `runtime.Error` GoCore does not model. The text Go
+      prints is made only when the panic ends the run (`runProgram`), as Go makes it
+      after the deferred calls ran. -/
+  | panic (v : Val) (runtime : Bool)
   | ret (vs : List Val)
   | brk
   | cont
@@ -287,6 +290,14 @@ structure St where
   printing : List Loc := []
   /-- The cells of package-level variables, keyed `path.name`. -/
   globals : Std.HashMap String Nat := {}
+  /-- The deferred calls of each running function, the innermost call's first; each
+      list newest first: a function value, its arguments, and whether they end in
+      `xs...` (Go spec, "Defer statements"). -/
+  defers : List (List (Val × List Val × Bool)) := []
+  /-- While a deferred call of a panicking function runs: the depth of that call and
+      the panic, which `recover` called by it directly stops (Go spec, "Handling
+      panics"). -/
+  recoverable : Option (Nat × Val × Bool) := none
 
 abbrev GM := ExceptT Stop (StateM St)
 

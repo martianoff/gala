@@ -13,7 +13,7 @@ namespace Gala.GoCore.Full
 
 /-- A runtime panic, with the text Go's runtime prints (Go spec, "Run-time panics"). -/
 def runtimePanic (text : String) : GM α :=
-  throw (.panic (.str .string ("runtime error: " ++ text)) ("runtime error: " ++ text))
+  throw (.panic (.str .string ("runtime error: " ++ text)) true)
 
 /-- A nil pointer dereferenced: through `*p`, a field, a method's value receiver or a
     nil function or interface (Go spec, "Address operators", "Run-time panics"). -/

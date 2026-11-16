@@ -69,6 +69,8 @@ inductive Stmt
   | typeSwitch (init : Option Stmt) (bind : Option String) (x : Expr) (clauses : List Clause)
   | for_ (init : Option Stmt) (cond : Option Expr) (post : Option Stmt) (body : List Stmt)
   | range (key value : Option Expr) (tok : String) (x : Expr) (body : List Stmt)
+  /-- `defer call`. -/
+  | defer_ (call : Expr)
   | empty
   | unsupported (what : String)
 /-- `case list: body`, or `default:`. -/
