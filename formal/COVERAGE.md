@@ -129,7 +129,11 @@ pinned that way.
 These are theorems about the *spec* (and a model of one lowering, and one program's
 translation under gala2lean's prelude), not about the transpiler.
 
-Not proved: T2 and T5–T7.
+| `Gala.Spec.lookup_rel`, `resolve_rel`, `matchPat_rel`, `argSlots_rel`, `byNameOk_rel` | **Lemmas toward T2, not T2.** `Gala/Alpha.lean` defines when one program is another with its binders renamed (`AlphaE`, with `NameR`, `PatR`, `ValR`, `EnvR`, `DeclsR`): a renamed binder is lowercase on both sides, never `_` and never a package-level name; a free name (a builtin included) is bound on neither side; a function's parameters stay distinct and a named argument follows its parameter's new name. Only the shapes the parser produces are related: a declaration as a block statement, a named argument as a call's argument. These lemmas show that name lookup, name resolution, pattern matching, binding arguments to parameters and the by-name check give related results on related programs and states, with `stuck` and `unsupported` text the only difference allowed. |
+
+Not proved: T2 and T5–T7. T2 is in progress: the renaming relations and their commuting
+lemmas (resolve, matchPat, argSlots, byNameOk) are proved; the induction over `eval` and
+the statement for whole programs are not.
 [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems-the-road-to-an-end-to-end-proof) gives the statement
 T2 needs: alpha-invariance with its side conditions.
 

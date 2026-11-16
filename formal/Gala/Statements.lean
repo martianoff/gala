@@ -18,6 +18,7 @@ import Gala.Gala2Lean.Theorems
 import Gala.Fuel
 import Gala.Defaults
 import Gala.Order
+import Gala.Alpha
 
 namespace Gala.Statements
 
@@ -240,5 +241,41 @@ theorem matchPats_append : ∀ (ds : Decls) (locals globals : Env) (ps₁ ps₂ 
     matchPats ds locals globals (ps₁ ++ ps₂) (vs₁ ++ vs₂) =
       matchThen ds locals globals ps₁ ps₂ vs₁ vs₂ :=
   Gala.Spec.matchPats_append
+
+open Gala.Spec in
+theorem lookup_rel : ∀ {pkg : List String} {pm : String → Ren} {Γ : Ren} {ρ ρ' : Env}
+    {x x' : String}, EnvR pkg pm Γ ρ ρ' → NameR Γ x x' →
+    OptBindR pkg pm (lookup ρ x) (lookup ρ' x') :=
+  Gala.Spec.lookup_rel
+
+open Gala.Spec in
+theorem resolve_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    {l l' g g' : Env} {x x' : String}, DeclsR pkg pm ds ds' → EnvR pkg pm Γ l l' →
+    GlobR pkg pm g g' → NameR Γ x x' →
+    RefR pkg pm (resolve ds l g x) (resolve ds' l' g' x') :=
+  Gala.Spec.resolve_rel
+
+open Gala.Spec in
+theorem matchPat_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    {c c' : Core} {p p' : Pat} {ss : List Slot} {v v' : Val},
+    DeclsR pkg pm ds ds' → CoreR pkg pm Γ c c' → PatR pkg Γ p p' ss → ValR pkg pm v v' →
+    ResR pkg pm (MatchR pkg pm ss) ((matchPat ds c.locals c.globals p v).run.run c).1
+      ((matchPat ds' c'.locals c'.globals p' v').run.run c').1 :=
+  Gala.Spec.matchPat_rel
+
+open Gala.Spec in
+theorem argSlots_rel : ∀ {pkg : List String} {pm : String → Ren} {Γ : Ren}
+    {names names' : List String} {args args' : List Expr}, names.length = names'.length →
+    names.Nodup ∧ names'.Nodup → ArgsR pkg pm (pairsOf names names') Γ args args' →
+    ResR pkg pm Eq (argSlots names args) (argSlots names' args') :=
+  Gala.Spec.argSlots_rel
+
+open Gala.Spec in
+theorem byNameOk_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    {l l' : Env} {c c' : Core} {ty : Option Ty} {a a' : Expr},
+    DeclsR pkg pm ds ds' → EnvR pkg pm Γ l l' → GlobR pkg pm c.globals c'.globals →
+    HeapR pkg pm c.heap c'.heap → AlphaE pkg pm Γ a a' →
+    ResR pkg pm Eq ((byNameOk ds l ty a).run.run c).1 ((byNameOk ds' l' ty a').run.run c').1 :=
+  Gala.Spec.byNameOk_rel
 
 end Gala.Statements

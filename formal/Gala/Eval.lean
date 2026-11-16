@@ -402,7 +402,7 @@ def matchPat (ds : Decls) (locals globals : Env) : Pat → Val → H (Option (Li
       | none => outsideS1 ds s!"{c} is not a case of {ty}"
       | some cv =>
         if c' != c then pure none
-        else if cv.fields.length != ps.length then stuck s!"pattern {c} has the wrong arity"
+        else if cv.fields.length != ps.length || fs.length != ps.length then stuck s!"pattern {c} has the wrong arity"
         else matchPats ds locals globals ps fs
     | .struct_ ty fs =>
       if c != ty then outsideS1 ds s!"extractor {c} on a {ty}"
