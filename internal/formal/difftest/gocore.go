@@ -225,11 +225,9 @@ func exportGoCore(dir, id string, prog GoProgram) (string, error) {
 		}
 		pkgs = append(pkgs, ps)
 	}
-	if prog.GoRoot != "" {
-		var err error
-		if pkgs, err = gocoreexport.AddStdlib(prog.GoRoot, pkgs); err != nil {
-			return "", err
-		}
+	pkgs, err := gocoreexport.AddStdlib(prog.GoRoot, pkgs)
+	if err != nil {
+		return "", err
 	}
 	doc, err := gocoreexport.Export(pkgs)
 	if err != nil {

@@ -12,8 +12,9 @@ import (
 	"martianoff/gala/internal/formal/gocoreexport"
 )
 
-// TestAddStdlib: a runnable standard-library package is added from GOROOT when
-// the program imports it and uses only names its files declare.
+// TestAddStdlib: a runnable standard-library package the program imports is
+// added from GOROOT, marked partial; the guards refuse a file GoCore could run
+// differently from Go, and a sibling file that could change it.
 func TestAddStdlib(t *testing.T) {
 	goroot := t.TempDir()
 	dir := filepath.Join(goroot, "src", "errors")
@@ -35,9 +36,10 @@ func TestAddStdlib(t *testing.T) {
 		name, src string
 		want      []string
 	}{
-		{"declared names", "package main\nimport \"errors\"\nvar e = errors.New(\"x\")\n", []string{"main", "errors"}},
+		{"imported", "package main\nimport \"errors\"\nvar e = errors.New(\"x\")\n", []string{"main", "errors"}},
 		{"an alias", "package main\nimport e \"errors\"\nvar x = e.New(\"x\")\n", []string{"main", "errors"}},
-		{"a name the file lacks", "package main\nimport \"errors\"\nvar e = errors.Is(nil, nil)\n", []string{"main"}},
+		// GoCore reports errors.Is, which the file lacks, when a run reaches it.
+		{"a name the file lacks", "package main\nimport \"errors\"\nvar e = errors.Is(nil, nil)\n", []string{"main", "errors"}},
 		{"a dot import", "package main\nimport . \"errors\"\nvar e = New(\"x\")\n", []string{"main"}},
 		{"not imported", "package main\nvar e = 1\n", []string{"main"}},
 	} {
@@ -45,10 +47,30 @@ func TestAddStdlib(t *testing.T) {
 			got, err := gocoreexport.AddStdlib(goroot, main(tc.src))
 			require.NoError(t, err)
 			require.Equal(t, tc.want, paths(got))
+			for _, p := range got[1:] {
+				require.True(t, p.Partial)
+			}
+		})
+	}
+	src := main("package main\nimport \"errors\"\nvar e = errors.New(\"x\")\n")
+	// A sibling file that adds a method to a listed type, or names a listed
+	// variable, fails the export.
+	listed, err := os.ReadFile(filepath.Join(dir, "errors.go"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "errors.go"), append(listed, []byte("\nvar Sentinel = New(\"s\")\n")...), 0o644))
+	for name, text := range map[string]string{
+		"a method":   "package errors\n\nfunc (e *errorString) Unwrap() error { return nil }\n",
+		"a variable": "package errors\n\nfunc init() { Sentinel = nil }\n",
+	} {
+		t.Run("sibling with "+name, func(t *testing.T) {
+			sib := filepath.Join(dir, "wrap.go")
+			require.NoError(t, os.WriteFile(sib, []byte(text), 0o644))
+			defer os.Remove(sib)
+			_, err := gocoreexport.AddStdlib(goroot, src)
+			require.Error(t, err)
 		})
 	}
 	// A listed file GoCore could run differently from Go fails the export.
-	src := main("package main\nimport \"errors\"\nvar e = errors.New(\"x\")\n")
 	for name, text := range map[string]string{
 		"a build constraint": "//go:build linux\n\npackage errors\n\nfunc New(s string) error { return nil }\n",
 		"a linkname":         "package errors\n\nimport _ \"unsafe\"\n\n//go:linkname x y\nfunc New(s string) error { return nil }\n",

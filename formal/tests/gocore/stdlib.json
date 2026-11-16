@@ -768,6 +768,7 @@
     {
       "path": "errors",
       "name": "errors",
+      "partial": true,
       "files": [
         {
           "kind": "file",
@@ -1052,6 +1053,7 @@
     {
       "path": "unicode/utf8",
       "name": "utf8",
+      "partial": true,
       "files": [
         {
           "kind": "file",

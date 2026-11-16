@@ -53,7 +53,10 @@ print: those with an [unrepresentable node](#unrepresentable-nodes).
 
 - `gocore` is the schema version. A consumer rejects a version it does not know.
 - `packages` holds the packages in the order they were given, each with its import
-  path, its package name and its files, sorted by file name.
+  path, its package name and its files, sorted by file name. `partial: true` marks a
+  package of which only some files are given (Go's standard library's runnable
+  files, `RunnableStdlib`): a name it lacks is in a file left out, which a consumer
+  reports as outside what it runs, not as an error.
 
 ## Common fields
 

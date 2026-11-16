@@ -111,6 +111,9 @@ structure File where
 structure Package where
   path : String
   name : String
+  /-- Only some of the package's files are given (Go's standard library's runnable files):
+      a name it lacks is in a file left out. -/
+  isPartial : Bool := false
   files : List File
 
 /-- A program: the main package and the packages it imports. -/
