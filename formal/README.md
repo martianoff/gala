@@ -48,12 +48,11 @@ GALA release.
 
 ```mermaid
 flowchart LR
-    S[galaspec<br/>eval of a match] -->|lowerMatch| T[GoCore<br/>geval]
+    S[galaspec<br/>eval of a match] -->|lowerMatch| T[GoCore<br/>scoped lowering]
     P[subject, guards, bodies<br/>lowered correctly: Part] --> T
-    S --> E{forward simulation}
-    T --> E
-    E -->|scoped lowering| OK[proved: lowerMatch_correct]
-    E -->|leaky lowering, #996| C[fails: leaky_not_correct]
+    T --> OK[forward simulation for every match<br/>lowerMatch_correct]
+    S -->|lowerMatchLeaky| L[GoCore<br/>leaky lowering, #996]
+    L --> C[no simulation: fails on one program<br/>leaky_not_correct]
 ```
 
 Each definition's doc comment says what it models, and each file's header names the
