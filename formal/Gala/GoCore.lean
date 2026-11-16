@@ -37,7 +37,11 @@
     `Unapply`, which runs arbitrary code, is not one of them.
   * **Zero values.** `Value.Get()` of a `None` is Go's zero value of the `Option`'s
     element type. GoCore has no types yet, so every such zero value is one placeholder,
-    `zero` (Go spec, "The zero value").
+    `zero` (Go spec, "The zero value"). Two `zero`s do not compare equal (`geq`), while
+    two of Go's zero values of one type do, so this is sound only where no comparison
+    involving `zero` decides anything. In the `match` lowering, every read of a
+    `Value.Get()` result sits under its `IsDefined()` in an `&&`, so none does; the
+    lowering's correctness proof relies on this and shows it.
   * **Function values** are not modelled: a value GoCore cannot represent is `opaque`.
   * **Panics** carry the class the differential harness gives Go's panic message; the
     message itself is not compared.
@@ -56,10 +60,6 @@ inductive GVar
   | tmp (n : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Is a variable a compiler temporary? -/
-def GVar.isTmp : GVar → Bool
-  | .tmp _ => true
-  | .user _ => false
 
 /-- A GoCore value. -/
 inductive GVal
@@ -101,6 +101,31 @@ inductive GStop
   | stuck (msg : String)
   deriving Repr
 
+/-- A binary operator whose operands are both evaluated, left to right. -/
+inductive BinOp
+  /-- `a == b` (Go spec, "Comparison operators"), and for sealed values the generated
+      `a.Equal(b)`. -/
+  | eq
+  /-- `a + b` on `int`, wrapping (Go spec, "Arithmetic operators", "Integer overflow"). -/
+  | add
+  /-- `a > b` on `int` (Go spec, "Comparison operators"). -/
+  | gt
+  deriving Repr, DecidableEq
+
+/-- A pattern primitive: pure and total, on the value of its one operand. -/
+inductive Prim
+  /-- `C{}.Unapply(e)` of case `C` of a sealed type, which has `n` fields: a `bool` when
+      `n = 0`, an `Option` of the field when `n = 1`, an `Option` of a `std.TupleN` of
+      them otherwise. -/
+  | unapply (c : String) (n : Nat)
+  /-- `e.IsDefined()` of an `Option`. -/
+  | isDefined
+  /-- `e.Value.Get()` of an `Option`. -/
+  | get
+  /-- Field `i` (from 0) of a tuple (`e.V{i+1}.Get()`) or a struct (Go spec, "Selectors"). -/
+  | field (i : Nat)
+  deriving Repr, DecidableEq
+
 mutual
 /-- GoCore expressions. -/
 inductive GExpr
@@ -108,28 +133,15 @@ inductive GExpr
   | lit (v : GVal)
   /-- A variable (Go spec, "Operands"). -/
   | var (x : GVar)
-  /-- `a == b` (Go spec, "Comparison operators"), and for sealed values the generated
-      `a.Equal(b)`. -/
-  | eq (a b : GExpr)
+  /-- `a op b`. -/
+  | bin (op : BinOp) (a b : GExpr)
   /-- `a && b`: `b` is evaluated only when `a` is true (Go spec, "Logical operators"). -/
   | and (a b : GExpr)
-  /-- `a + b` on `int`, wrapping (Go spec, "Arithmetic operators", "Integer overflow"). -/
-  | add (a b : GExpr)
-  /-- `a > b` on `int` (Go spec, "Comparison operators"). -/
-  | gt (a b : GExpr)
-  /-- `C{}.Unapply(e)` of case `C` of a sealed type, which has `n` fields: a `bool` when
-      `n = 0`, an `Option` of the field when `n = 1`, an `Option` of a `std.TupleN` of
-      them otherwise. -/
-  | unapply (c : String) (n : Nat) (e : GExpr)
-  /-- `e.IsDefined()` of an `Option`. -/
-  | isDefined (e : GExpr)
-  /-- `e.Value.Get()` of an `Option`. -/
-  | get (e : GExpr)
-  /-- Field `i` (from 0) of a tuple (`e.V{i+1}.Get()`) or a struct (Go spec, "Selectors"). -/
-  | field (i : Nat) (e : GExpr)
+  /-- A pattern primitive applied to `e`. -/
+  | prim (p : Prim) (e : GExpr)
   /-- `func() T { body }()`: a function literal called at once (Go spec, "Function
       literals", "Calls"). Its value is the one its `return` gives. -/
-  | call (body : List GStmt)
+  | funcLit (body : List GStmt)
   /-- A hole: code this fragment does not model (see the module doc). -/
   | ext (i : Nat)
 /-- GoCore statements. -/
@@ -148,6 +160,8 @@ inductive GStmt
   | ret (e : GExpr)
   /-- `panic(msg)` (Go spec, "Handling panics"), with the class of its message. -/
   | panic (c : PanicClass) (msg : String)
+  /-- An expression statement, its value discarded (Go spec, "Expression statements"). -/
+  | expr (e : GExpr)
 end
 
 instance : Inhabited GExpr := ⟨.lit .unit⟩
@@ -189,55 +203,53 @@ where
     | a :: as, b :: bs => geq a b && geqs as bs
     | _, _ => false
 
-/-- `C{}.Unapply(v)` of a generated sealed case with `n` fields. -/
-def unapplyVal (c : String) (n : Nat) (v : GVal) : GVal :=
-  match n, v with
-  | 0, .sealed _ c' _ => .bool (c' == c)
-  | 0, _ => .bool false
-  | 1, .sealed _ c' fs => .opt (if c' == c then some (fs.headD .zero) else none)
-  | _ + 2, .sealed _ c' fs => .opt (if c' == c then some (.tuple fs) else none)
-  | _, _ => .opt none
+/-- A pattern primitive on a value. On a value of a shape Go's types rule out it gives a
+    placeholder (see the module doc). -/
+def primVal : Prim → GVal → GVal
+  -- `C{}.Unapply(v)` of a generated sealed case with `n` fields.
+  | .unapply c 0, .sealed _ c' _ => .bool (c' == c)
+  | .unapply _ 0, _ => .bool false
+  | .unapply c 1, .sealed _ c' fs => .opt (if c' == c then some (fs.headD .zero) else none)
+  | .unapply c (_ + 2), .sealed _ c' fs => .opt (if c' == c then some (.tuple fs) else none)
+  | .unapply _ _, _ => .opt none
+  | .isDefined, .opt o => .bool o.isSome
+  | .isDefined, _ => .bool false
+  -- `Value.Get()` of a `None` is the zero value.
+  | .get, .opt (some v) => v
+  | .get, _ => .zero
+  | .field i, .tuple vs | .field i, .struct_ _ vs => vs.getD i .zero
+  | .field _, _ => .zero
 
-/-- `o.IsDefined()`. -/
-def isDefinedVal : GVal → GVal
-  | .opt o => .bool o.isSome
-  | _ => .bool false
-
-/-- `o.Value.Get()`: the value, or the zero value of a `None`. -/
-def getVal : GVal → GVal
-  | .opt (some v) => v
-  | _ => .zero
-
-/-- Field `i` of a tuple or struct. -/
-def fieldVal (i : Nat) : GVal → GVal
-  | .tuple vs | .struct_ _ vs => vs.getD i .zero
-  | _ => .zero
+/-- A binary operator on its operands' values. -/
+def binVal : BinOp → GVal → GVal → Except GStop GVal
+  | .eq, a, b => .ok (.bool (geq a b))
+  | .add, .int x, .int y => .ok (.int (wrap64 (x + y)))
+  | .gt, .int x, .int y => .ok (.bool (decide (x > y)))
+  | _, _, _ => .error (.stuck "operator on operands of the wrong type")
 
 /-! ## Variables -/
 
-/-- The newest local binding of `x`. -/
-def lookupL : List (GVar × GVal) → GVar → Option GVal
-  | [], _ => none
-  | (k, v) :: r, x => if k = x then some v else lookupL r x
-
 /-- A variable's value: the newest local of that name, else a package-level one. -/
 def lookupVar (s : GSt) (x : GVar) : Option GVal :=
-  match lookupL s.locals x, x with
+  match s.locals.lookup x, x with
   | some v, _ => some v
   | none, .user n => s.globals.lookup n
   | none, .tmp _ => none
 
-/-- Set the newest local binding of `x`; `none` if there is none. -/
-def updateL : List (GVar × GVal) → GVar → GVal → Option (List (GVar × GVal))
+/-- Set the newest binding of `x` in an association list, in its place; `none` if there
+    is none. -/
+def update {α : Type} [DecidableEq α] : List (α × GVal) → α → GVal → Option (List (α × GVal))
   | [], _, _ => none
   | (k, w) :: r, x, v =>
-    if k = x then some ((k, v) :: r) else (updateL r x v).map ((k, w) :: ·)
+    if k = x then some ((k, v) :: r) else (update r x v).map ((k, w) :: ·)
 
-/-- Set a package-level variable; `none` if there is none. -/
-def updateG : List (String × GVal) → String → GVal → Option (List (String × GVal))
-  | [], _, _ => none
-  | (k, w) :: r, x, v =>
-    if k = x then some ((k, v) :: r) else (updateG r x v).map ((k, w) :: ·)
+/-- Assign a variable: the newest local of that name, else a package-level one; `none`
+    if there is neither. -/
+def updateVar (s : GSt) (x : GVar) (v : GVal) : Option GSt :=
+  match update s.locals x v, x with
+  | some l, _ => some { s with locals := l }
+  | none, .user n => (update s.globals n v).map fun g => { s with globals := g }
+  | none, .tmp _ => none
 
 /-! ## Execution -/
 
@@ -246,20 +258,21 @@ def updateG : List (String × GVal) → String → GVal → Option (List (String
 def truncate (s : GSt) (n : Nat) : GSt :=
   { s with locals := s.locals.drop (s.locals.length - n) }
 
-/-- Run `m` in a scope of its own (a block, an `if` branch): its variables are dropped
-    when it ends normally. -/
-def withScope (m : GM Unit) : GM Unit := do
+/-- Run `m` in a scope of its own (a block, an `if` branch, a function literal's body):
+    its variables are dropped when it ends normally. -/
+def withScope (m : GM α) : GM α := do
   let n := (← get).locals.length
-  m
+  let r ← m
   modify (truncate · n)
+  pure r
 
 def asBool : GVal → GM Bool
   | .bool b => pure b
   | _ => throw (.stuck "not a bool")
 
-def asInt : GVal → GM Int
-  | .int n => pure n
-  | _ => throw (.stuck "not an int")
+def liftExcept : Except GStop α → GM α
+  | .ok a => pure a
+  | .error e => throw e
 
 mutual
 /-- Evaluate an expression; `X i` is what hole `i` does. -/
@@ -269,31 +282,18 @@ def geval (X : Nat → GM GVal) : GExpr → GM GVal
     match lookupVar (← get) x with
     | some v => pure v
     | none => throw (.stuck "undeclared variable")
-  | .eq a b => do
+  | .bin op a b => do
     let va ← geval X a
     let vb ← geval X b
-    pure (.bool (geq va vb))
+    liftExcept (binVal op va vb)
   | .and a b => do
     if ← asBool (← geval X a) then pure (.bool (← asBool (← geval X b)))
     else pure (.bool false)
-  | .add a b => do
-    let x ← asInt (← geval X a)
-    let y ← asInt (← geval X b)
-    pure (.int (wrap64 (x + y)))
-  | .gt a b => do
-    let x ← asInt (← geval X a)
-    let y ← asInt (← geval X b)
-    pure (.bool (decide (x > y)))
-  | .unapply c n e => do pure (unapplyVal c n (← geval X e))
-  | .isDefined e => do pure (isDefinedVal (← geval X e))
-  | .get e => do pure (getVal (← geval X e))
-  | .field i e => do pure (fieldVal i (← geval X e))
-  | .call body => do
-    let n := (← get).locals.length
-    let r ← tryCatch (do gexecs X body; pure none) fun
+  | .prim p e => do pure (primVal p (← geval X e))
+  | .funcLit body => do
+    let r ← withScope (tryCatch (do gexecs X body; pure none) fun
       | .ret v => pure (some v)
-      | e => throw e
-    modify (truncate · n)
+      | e => throw e)
     match r with
     | some v => pure v
     | none => throw (.stuck "function literal ended without a return")
@@ -306,13 +306,10 @@ def gexec (X : Nat → GM GVal) : GStmt → GM Unit
   | .varDecl x z => modify fun s => { s with locals := (x, z) :: s.locals }
   | .assign x e => do
     let v ← geval X e
-    let s ← get
-    match updateL s.locals x v, x with
-    | some l, _ => set { s with locals := l }
-    | none, .user n => match updateG s.globals n v with
-      | some g => set { s with globals := g }
-      | none => throw (.stuck "assignment to an undeclared variable")
-    | none, .tmp _ => throw (.stuck "assignment to an undeclared variable")
+    match updateVar (← get) x v with
+    | some s => set s
+    | none => throw (.stuck "assignment to an undeclared variable")
+  | .expr e => discard (geval X e)
   | .ifElse c t f => do
     if ← asBool (← geval X c) then withScope (gexecs X t) else withScope (gexecs X f)
   | .block ss => withScope (gexecs X ss)
@@ -340,7 +337,7 @@ private def isOk (r : Except GStop GVal × GSt) (p : GVal → Bool) : Bool :=
 
 -- A variable declared in an `if` branch is gone after it; the outer one is seen again,
 -- and an assignment to it in the branch survives.
-#guard isOk (evalClosed (.call [
+#guard isOk (evalClosed (.funcLit [
     .define (.user "x") (.lit (.int 1)),
     .ifElse (.lit (.bool true))
       [.assign (.user "x") (.lit (.int 2)), .define (.user "x") (.lit (.int 5))] [],
@@ -352,19 +349,19 @@ private def isOk (r : Except GStop GVal × GSt) (p : GVal → Bool) : Bool :=
   fun | .bool false => true | _ => false
 
 -- int64 wraps around.
-#guard isOk (evalClosed (.add (.lit (.int 9223372036854775807)) (.lit (.int 1))))
+#guard isOk (evalClosed (.bin .add (.lit (.int 9223372036854775807)) (.lit (.int 1))))
   fun | .int (-9223372036854775808) => true | _ => false
 
 -- `Rect{}.Unapply` of a `Rect(1, 2)` is `Some((1, 2))`; of a `Circle(5)` it is `None`,
 -- whose `Value.Get()` is the zero placeholder.
-#guard isOk (evalClosed (.field 1 (.get (.unapply "Rect" 2
+#guard isOk (evalClosed (.prim (.field 1) (.prim .get (.prim (.unapply "Rect" 2)
     (.lit (.sealed "Shape" "Rect" [.int 1, .int 2]))))))
   fun | .int 2 => true | _ => false
-#guard isOk (evalClosed (.get (.unapply "Rect" 2 (.lit (.sealed "Shape" "Circle" [.int 5])))))
+#guard isOk (evalClosed (.prim .get (.prim (.unapply "Rect" 2) (.lit (.sealed "Shape" "Circle" [.int 5])))))
   fun | .zero => true | _ => false
 
 -- A function literal that ends without `return` is stuck.
-#guard match (evalClosed (.call [])).1 with
+#guard match (evalClosed (.funcLit [])).1 with
   | .error (.stuck _) => true
   | _ => false
 
