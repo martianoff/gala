@@ -611,8 +611,10 @@ puts it into the file and leaves the hand-written rest alone.
 - A `DISAGREE` fails the build, unless that exact program appears in
   `internal/formal/difftest/known_disagreements.json` with an **open** issue number. When the issue is
   closed, the CI job requires the entry to be removed.
-- The number of examples that agree three ways, GoCore with `go run` and galaspec with
-  `go run`, may not go down (`gocore_agreeing_examples` in `baseline.json`).
+- The number of programs GoCore agrees with `go run` on may not go down
+  (`gocore_fidelity_agreeing` in `baseline.json`), so GoCore cannot quietly turn agreeing
+  programs into unsupported ones. Nor may the number of examples that agree three ways,
+  GoCore with `go run` and galaspec with `go run` (`gocore_agreeing_examples`).
 - A GoCore `DISAGREE` always fails the build: it is a GoCore or exporter bug, and the
   known-disagreements list is only for transpiler bugs.
 

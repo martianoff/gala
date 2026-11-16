@@ -54,6 +54,21 @@ type Baseline struct {
 	// run of the emitted Go agrees with `go run` of it, and galaspec agrees
 	// with `go run` (docs/FORMAL_SEMANTICS.MD, M4).
 	GoCoreAgreeingExamples int `json:"gocore_agreeing_examples"`
+	// GoCoreFidelityAgreeing is how many programs, examples and generated,
+	// GoCore runs with the same stdout and ending as `go run`: so GoCore cannot
+	// quietly turn agreeing programs into unsupported ones.
+	GoCoreFidelityAgreeing int `json:"gocore_fidelity_agreeing"`
+}
+
+// GoCoreFidelityAgreeing is how many records GoCore agrees with `go run` on.
+func GoCoreFidelityAgreeing(records []Record) int {
+	n := 0
+	for _, r := range records {
+		if r.GoCore != nil && r.GoCore.Verdict == Agree {
+			n++
+		}
+	}
+	return n
 }
 
 // GoCoreAgreeingExamples is how many example records agree three ways: GoCore
@@ -137,6 +152,8 @@ func CheckBaseline(b Baseline, records []Record) (problem, note string) {
 	if usesGoCore(records) {
 		check(GoCoreAgreeingExamples(records), b.GoCoreAgreeingExamples,
 			"examples agree three ways (GoCore, galaspec and go run)", "gocore_agreeing_examples")
+		check(GoCoreFidelityAgreeing(records), b.GoCoreFidelityAgreeing,
+			"programs GoCore agrees with go run on", "gocore_fidelity_agreeing")
 	}
 	return strings.Join(problems, "; "), strings.Join(notes, "; ")
 }
@@ -234,7 +251,9 @@ func renderGoCore(b *strings.Builder, c Coverage) {
 	for _, v := range GoCoreVerdicts {
 		fmt.Fprintf(b, "| %s | %d | %d |\n", v, counts[FromExample][v], counts[FromGenerator][v])
 	}
-	fmt.Fprintf(b, "\nExamples where GoCore agrees with go run and galaspec agrees with go run: **%d** (ratchet baseline %d).\n\n",
+	fmt.Fprintf(b, "\nPrograms GoCore agrees with go run on: **%d** (ratchet baseline %d).\n",
+		GoCoreFidelityAgreeing(c.Records), c.Baseline.GoCoreFidelityAgreeing)
+	fmt.Fprintf(b, "Examples where GoCore agrees with go run and galaspec agrees with go run: **%d** (ratchet baseline %d).\n\n",
 		GoCoreAgreeingExamples(c.Records), c.Baseline.GoCoreAgreeingExamples)
 	var agree []string
 	for _, r := range c.Records {
