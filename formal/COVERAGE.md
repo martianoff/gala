@@ -168,7 +168,7 @@ Go is tested, not proved.
 | `if`, expression `switch`, type `switch`, `for` with `break`/`continue` and per-iteration loop variables ("If statements", "Switch statements", "For statements") | yes |
 | Functions, methods with value and pointer receivers, method sets, method values, closures, named results ("Function declarations", "Method sets", "Function literals") | yes |
 | Structs, composite literals, interface values (their interface type and dynamic value; a nil pointer inside one is not nil), type assertions ("Struct types", "Composite literals", "Interface types", "Type assertions") | yes |
-| Generic functions and types, type arguments explicit or inferred from the arguments ("Instantiations", "Type inference") | yes |
+| Generic functions and types, type arguments explicit (in part too) or inferred from the arguments, through pointer, slice, array, generic and function types, typed arguments before untyped constants ("Instantiations", "Type inference"); a generic function used as a value without its type arguments, which come from its context, is not modelled (`type-inference`) | yes |
 | Package-level variables in dependency order, then `init` functions; packages in import order ("Package initialization") | yes |
 | `panic` with Go's printed text: a string, an error's `Error()`, a Stringer's `String()` ("Handling panics") | yes |
 | `fmt.Println`, `Print`, `Sprint`, `Sprintf` with `%v %d %s %t %%`; `String`, `Error` and `Format` by method set; `&{...}` for a top-level pointer to a struct; no methods through unexported fields | yes (a model) |

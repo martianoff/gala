@@ -156,23 +156,34 @@ def asStr : Val → GM String
   | .str _ s => pure s
   | _ => stuck "not a string"
 
+/-- The types a field list declares, one per name. -/
+def fieldTypes (fs : List Field) : List Expr :=
+  fs.flatMap fun | .mk ns t => if ns.isEmpty then [t] else ns.map fun _ => t
+
 mutual
 /-- Type parameters bound by matching a parameter's type expression against an
     argument's type, for function argument type inference (Go spec, "Type inference":
-    the type equations of the call's typed arguments). -/
-def unify (tps : List String) : Expr → Ty → List (String × Ty)
-  | .ident x, t => if tps.contains x then [(x, t)] else []
-  | .star e, .ptr t => unify tps e t
-  | .index (.ident _) es, .named _ _ args => unifyAll tps es args
-  | .index (.selector _ _) es, .named _ _ args => unifyAll tps es args
-  | .paren e, t => unify tps e t
-  | .arrayType none e, .slice t => unify tps e t
-  | .arrayType (some _) e, .array _ t => unify tps e t
-  | _, _ => []
+    the type equations of the call's typed arguments). `k` bounds the depth of the
+    types matched; past it nothing is bound, and inference reports what it lacks. -/
+def unify (tps : List String) : Nat → Expr → Ty → List (String × Ty)
+  | 0, _, _ => []
+  | k + 1, e, t =>
+    match e, t with
+    | .ident x, t => if tps.contains x then [(x, t)] else []
+    | .star e, .ptr t => unify tps k e t
+    | .index (.ident _) es, .named _ _ args => unifyAll tps k es args
+    | .index (.selector _ _) es, .named _ _ args => unifyAll tps k es args
+    | .paren e, t => unify tps k e t
+    | .arrayType none e, .slice t => unify tps k e t
+    | .arrayType (some _) e, .array _ t => unify tps k e t
+    -- A function type, parameter by parameter and result by result.
+    | .funcType (.mk ps rs _), .func_ pts rts _ =>
+      unifyAll tps k (fieldTypes ps) pts ++ unifyAll tps k (fieldTypes rs) rts
+    | _, _ => []
 /-- `unify` on type arguments, pairwise. -/
-def unifyAll (tps : List String) : List Expr → List Ty → List (String × Ty)
-  | e :: es, t :: ts => unify tps e t ++ unifyAll tps es ts
-  | _, _ => []
+def unifyAll (tps : List String) : Nat → List Expr → List Ty → List (String × Ty)
+  | 0, _, _ => []
+  | k + 1, es, ts => (es.zip ts).flatMap fun (e, t) => unify tps k e t
 end
 
 /-- Run `body` until it returns `none`, at most `k` times: a loop's iterations. Each
@@ -198,10 +209,6 @@ def boolType (a b : Val) : Ty :=
   match a.ty with
   | .untyped _ => b.ty
   | t => t
-
-/-- The types a field list declares, one per name. -/
-def fieldTypes (fs : List Field) : List Expr :=
-  fs.flatMap fun | .mk ns t => if ns.isEmpty then [t] else ns.map fun _ => t
 
 /-- The largest slice capacity GoCore allocates; a larger one is a question of memory,
     which the comparison leaves out (`unsupported`). -/
@@ -1399,12 +1406,24 @@ def inferTArgs (tps : List Field) (sig : Sig) (explicit : List Ty) (vs : List Va
       let lastTy := if spread then Expr.arrayType none last else last
       (ptys.take k).zip vs ++ (vs.drop k).map (lastTy, ·)
     else ptys.zip vs
-  let eqs := pairs.flatMap fun (t, v) => unify names t (defaultVal v).ty
+  -- Typed arguments first; an untyped constant only binds a type parameter no typed
+  -- argument did, to its default type, an untyped rune's if one of them is a rune
+  -- (Go spec, "Type inference"). Untyped `nil` binds nothing.
+  let isUntyped := fun (v : Val) => match v.ty with | .untyped _ => true | _ => false
+  let eqs := (pairs.filter (!isUntyped ·.2)).flatMap fun (t, v) => unify names 64 t v.ty
+  let untypedKinds := fun (x : String) => pairs.filterMap fun (t, v) => match t, v.ty with
+    | .ident y, .untyped k => if y == x && k != .nil then some k else none
+    | _, _ => none
   -- The type arguments given explicitly come first (Go spec, "Instantiations": a
   -- partial type argument list leaves the rest to inference).
   names.zipIdx.mapM fun (x, i) => match explicit[i]?, eqs.lookup x with
     | some t, _ | none, some t => pure t
-    | none, none => unsupported "type-inference"
+    | none, none =>
+      let ks := untypedKinds x
+      let k := if ks.contains .rune then some UKind.rune else ks.head?
+      match k.bind UKind.default with
+      | some t => pure t
+      | none => unsupported "type-inference"
 
 /-- Run a function body: parameters (and the receiver) in new cells, converted to
     their types; named results in cells holding zero values; the results of its
