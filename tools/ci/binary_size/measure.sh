@@ -35,7 +35,9 @@ case $margin in
   '' | *[!0-9]*) echo "MARGIN_PERCENT must be a whole number, got '$margin'" >&2; exit 2 ;;
 esac
 
-export GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOTOOLCHAIN=local
+# GOENV=off ignores settings saved with `go env -w` (GOFLAGS, GOAMD64, ...),
+# which would otherwise make the sizes depend on the machine.
+export GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOTOOLCHAIN=local GOENV=off
 # A private GALA_HOME keeps the stdlib snapshot and build workspaces of the
 # binary under test apart from any other gala on the machine.
 export GALA_HOME="$work/gala-home"
@@ -82,9 +84,12 @@ done
 echo
 echo "Checking GALA sizes against $BASELINE (margin ${margin}%)"
 failed=0
-while read -r prog flags base; do
+while read -r prog flags base || [ -n "$prog" ]; do
   base=${base%$'\r'} # a CRLF checkout on Windows
   case $prog in '' | '#'*) continue ;; esac
+  case $base in
+    '' | *[!0-9]*) echo "::error::baseline line '$prog $flags $base' is not 'program flags bytes'"; failed=1; continue ;;
+  esac
   case " $programs " in *" $prog "*) ;; *) continue ;; esac
   now=$(awk -v p="$prog" -v f="$flags" '$1 == p && $2 == f { print $3 }' "$work/sizes.tsv")
   if [ -z "$now" ]; then
@@ -99,6 +104,11 @@ while read -r prog flags base; do
     failed=1
   else
     echo "ok   $prog ($flags): $now bytes, $delta against the baseline $base (limit $limit)"
+    # Unless the baseline comes down after a shrink, a later regression could
+    # grow back by the shrink plus the margin before this check noticed.
+    if [ "$now" -lt $((base - base / 100)) ]; then
+      echo "::warning::GALA $prog ($flags) shrank by more than 1%; lower its line in $BASELINE to $now"
+    fi
   fi
 done <"$BASELINE"
 exit "$failed"

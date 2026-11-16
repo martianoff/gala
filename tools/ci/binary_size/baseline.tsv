@@ -3,7 +3,7 @@
 # job builds with), using a CLI built from master just after the 0.103.0
 # release. Unstripped binaries embed the absolute path of their .gala source,
 # so these lines can differ from a run in another directory, or from the
-# release-CLI numbers on the website, by a few dozen bytes.
+# release-CLI numbers on the website, by up to a few hundred bytes.
 # CI fails when a GALA binary is more than MARGIN_PERCENT (10) above its line.
 #
 # When a change grows a binary on purpose, or a Go upgrade moves every size,

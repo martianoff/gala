@@ -31,7 +31,7 @@ The build numbers below are copied from the release notes. Wall times are noisy,
 
 The sources are in [`tools/ci/binary_size/testdata`](https://github.com/martianoff/gala/tree/master/tools/ci/binary_size/testdata).
 
-**Method.** GALA 0.103.0 release CLI and Go 1.25.5. Every binary is linux/amd64 with `CGO_ENABLED=0`, cross-compiled on Windows. `gala build` always passes `-trimpath`, so the Go side passes it too. "Stripped" adds `-ldflags="-s -w"`, which drops the symbol table and DWARF debug info. Each build ran twice, each time with an empty Go build cache and GALA home, and every binary came out the same size both times. Unstripped GALA binaries embed the absolute path of the `.gala` source file, so building from a directory with a longer or shorter path moves their size by a few bytes.
+**Method.** GALA 0.103.0 release CLI and Go 1.25.5. Every binary is linux/amd64 with `CGO_ENABLED=0`, cross-compiled on Windows. `gala build` always passes `-trimpath`, so the Go side passes it too. "Stripped" adds `-ldflags="-s -w"`, which drops the symbol table and DWARF debug info. Each build ran twice, each time with an empty Go build cache and GALA home, and every binary came out the same size both times. Unstripped GALA binaries embed the absolute path of the `.gala` source file, so building from a directory with a longer or shorter path moves their size by a few bytes. The stripped sizes don't move.
 
 | Program | Flags | GALA 0.103.0 | Go | GALA / Go |
 |---|---|---:|---:|---:|
