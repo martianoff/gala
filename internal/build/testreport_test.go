@@ -3,6 +3,8 @@ package build
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -359,6 +361,7 @@ func TestTestReport_SummaryOfUnfinishedAndCrashedPackages(t *testing.T) {
 	var buf bytes.Buffer
 	report.WriteSummary(&buf)
 	assert.Contains(t, buf.String(), "FAIL  example.com/proj/cut  0 passed, 1 failed, 0 skipped\n")
+	assert.Contains(t, buf.String(), "  example.com/proj/cut: TestSlow\n      the test did not finish\n")
 	assert.Contains(t, buf.String(), "  example.com/proj: [package failed]\n"+
 		"      the test binary failed outside of any test\n"+
 		"      panic: init failed\n")
@@ -402,4 +405,32 @@ func TestTestEventPrinter(t *testing.T) {
 			"    ERROR: expected 4, got 3\nFAIL\tgala-build-workspace/gen\t0.067s\n"+
 			"not an event\n", stdout)
 	})
+}
+
+func TestWithoutReported(t *testing.T) {
+	failed := reportedError{errors.New("tests failed (exit code 1)")}
+	other := errors.New("reading test events: broken pipe")
+	tests := []struct {
+		name string
+		err  error
+		want string // "" for nil
+	}{
+		{name: "no error", err: nil},
+		{name: "only a reported test failure", err: failed},
+		{name: "a wrapped reported failure", err: fmt.Errorf("root: %w", failed)},
+		{name: "an unreported error", err: other, want: other.Error()},
+		{name: "a reported failure joined with an unreported error", err: errors.Join(failed, other), want: other.Error()},
+		{name: "two reported failures", err: errors.Join(failed, failed)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := withoutReported(tc.err)
+			if tc.want == "" {
+				assert.NoError(t, got)
+				return
+			}
+			require.Error(t, got)
+			assert.Equal(t, tc.want, got.Error())
+		})
+	}
 }

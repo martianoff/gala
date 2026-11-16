@@ -219,14 +219,13 @@ func (r *TestReport) Empty() bool {
 	return true
 }
 
-// hasFailure reports whether any package failed.
-func (r *TestReport) hasFailure() bool {
-	for _, p := range r.packages {
-		if p.action == "fail" {
-			return true
-		}
-	}
-	return false
+// WriteBuildFailureReport writes a JUnit report holding only a failed
+// build of the named project: for a run that could not get as far as
+// building it, so CI never reads a stale report from an earlier run.
+func WriteBuildFailureReport(path, name string, err error) error {
+	report := NewTestReport(nil)
+	report.AddBuildFailure(name, err.Error())
+	return report.WriteJUnitFile(path)
 }
 
 // hasResult reports whether the package has something to report. A package
@@ -299,6 +298,9 @@ func failureMessage(t *testResult, p *packageResult) string {
 	}
 	if t.name == packageFailedCase {
 		return "the test binary failed outside of any test"
+	}
+	if t.action == "" {
+		return "the test did not finish"
 	}
 	if failedOnlyThroughSubtest(t, p) {
 		return "a subtest failed"
@@ -495,7 +497,7 @@ func (r *TestReport) WriteSummary(w io.Writer) {
 			continue
 		}
 		for _, t := range p.tests {
-			if t.action != "fail" && t.action != "error" {
+			if t.action == "pass" || t.action == "skip" {
 				continue
 			}
 			// A test that failed only because a subtest did is listed

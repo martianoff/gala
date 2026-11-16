@@ -76,9 +76,11 @@ func runTest(cmd *cobra.Command, args []string) {
 		if junitPath == "" {
 			return
 		}
-		report := build.NewTestReport(nil)
-		report.AddBuildFailure(projectDir, err.Error())
-		if werr := report.WriteJUnitFile(junitPath); werr != nil {
+		name := projectDir
+		if abs, absErr := filepath.Abs(projectDir); absErr == nil {
+			name = abs
+		}
+		if werr := build.WriteBuildFailureReport(junitPath, name, err); werr != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
 		}
 	}

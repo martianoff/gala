@@ -1624,17 +1624,49 @@ func (b *Builder) RunTests(opts TestOptions) (err error) {
 		if opts.JUnitPath == "" {
 			return
 		}
-		// A run that failed without a package failing (a GALA compile
-		// error, or a `go` command that could not run) is still a failed
-		// build in the report.
-		if err != nil && !report.hasFailure() {
-			report.AddBuildFailure(b.moduleLabel(), err.Error())
+		// An error the report does not hold yet (a GALA compile error, or a
+		// `go` command that could not run) goes in as a failed build: under
+		// the module when nothing else ran, else as the run's own suite.
+		if unreported := withoutReported(err); unreported != nil {
+			name := b.moduleLabel()
+			if !report.Empty() {
+				name = runFailureSuite
+			}
+			report.AddBuildFailure(name, unreported.Error())
 		}
 		if werr := report.WriteJUnitFile(opts.JUnitPath); werr != nil {
 			err = errors.Join(err, werr)
 		}
 	}()
 	return b.runTests(opts.Verbose, report)
+}
+
+// runFailureSuite names the report suite for a failure of the run itself,
+// not of one package.
+const runFailureSuite = "gala test"
+
+// reportedError marks an error the test report already records, so it is
+// not added again as a failed build.
+type reportedError struct{ error }
+
+func (e reportedError) Unwrap() error { return e.error }
+
+// withoutReported returns err without its reportedError parts; nil when
+// nothing else is left.
+func withoutReported(err error) error {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var rest []error
+		for _, e := range joined.Unwrap() {
+			if r := withoutReported(e); r != nil {
+				rest = append(rest, r)
+			}
+		}
+		return errors.Join(rest...)
+	}
+	if errors.As(err, new(reportedError)) {
+		return nil
+	}
+	return err
 }
 
 // moduleLabel names the project under test: its module path, or its
@@ -1828,7 +1860,7 @@ func (b *Builder) runTests(verbose bool, report *TestReport) error {
 
 		if err := cmd.Run(); err != nil {
 			report.AddBuildFailure(WorkspaceGenModule, buildOutput.String())
-			return fmt.Errorf("go build (test): %w", err)
+			return reportedError{fmt.Errorf("go build (test): %w", err)}
 		}
 
 		// Step 10: Execute the test binary
@@ -1899,12 +1931,17 @@ func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr,
 	printer := &testEventPrinter{stdout: os.Stdout, stderr: os.Stderr, stream: true}
 	consumeErr := consumeTestEvents(events, report, printer)
 	convErr := conv.Wait()
-	if err := <-exited; err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+	err = <-exited
+	if errors.Is(err, exec.ErrWaitDelay) {
+		fmt.Fprintln(os.Stderr, "warning: the test binary exited, but a process it started still holds its output")
+		err = nil
+	}
+	if err != nil {
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok {
 			return nil, fmt.Errorf("running test binary: %w", err)
 		}
-		testErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		testErr = reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
 		// test2json reading a stream judges the package by its last line;
 		// a binary that died without printing FAIL failed all the same.
 		if !printer.failed {
@@ -1944,9 +1981,9 @@ func (b *Builder) runGoTest(verbose bool, pkgs []string, report *TestReport) err
 			} else {
 				// `go test` failed before any package could report, on a
 				// module or package-loading error: one failure for the run.
-				report.AddBuildFailure(b.moduleLabel(), stderr.String())
+				report.AddBuildFailure(runFailureSuite, stderr.String())
 			}
-			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+			return reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
 		}
 		return fmt.Errorf("go test: %w", err)
 	}
