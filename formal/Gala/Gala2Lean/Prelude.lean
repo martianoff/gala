@@ -375,6 +375,20 @@ def seqGrouped (xs : List α) (n : Int64) : Prog σ (List (GArray α)) :=
     before this runs (`compares`). -/
 def seqDistinct [BEq α] (xs : List α) : List α := xs.eraseDups
 
+/-- `ArrayTabulate(n, f)`: `f(0)` to `f(n - 1)` in order, nothing for `n ≤ 0`
+    (collection_immutable/array.gala:95's loop `i := 0; i < n`). -/
+def seqTabulate (n : Int64) (f : Int64 → Prog σ α) : Prog σ (List α) :=
+  (List.range n.toInt.toNat).mapM fun i => f (Int64.ofNat i)
+
+/-- `ArrayFill(n, v)`: `v` `n` times, nothing for `n ≤ 0`
+    (collection_immutable/array.gala:106). -/
+def seqFill (n : Int64) (v : α) : List α := List.replicate n.toInt.toNat v
+
+/-- `When(c, v)`: `Some(v)` when `c`, else `None` (std/option.gala:127); `Unless(c, v)`
+    (std/option.gala:130) is `When(!c, v)`. Both arguments are evaluated before the call,
+    as Go evaluates them. -/
+def optWhen (c : Bool) (v : α) : GOption α := if c then .Some v else .None
+
 /-! Methods of `Option` (std/option.gala) and `Either` (std/either.gala), each after the
     std code it cites. A function argument runs only where std calls it; where std panics
     the model throws `Panic.std`. -/

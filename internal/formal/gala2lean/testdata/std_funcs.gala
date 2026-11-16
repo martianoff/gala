@@ -1,0 +1,28 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Functions of std and of the immutable collections called by name, and
+// Go's int conversions of an int.
+
+func see(s string, v int) int {
+    Println("see", s, v)
+    v
+}
+
+func main() {
+    Println(ArrayTabulate(3, (i) => see("t", i * 10)))
+    Println(ArrayTabulate(0, (i) => see("never", i)), ArrayTabulate(0 - 1, (i) => see("never", i)))
+    Println(ArrayFill(3, "x"), ArrayFill(0, "x"), ArrayFill(0 - 2, see("filled once", 1)))
+
+    // Both arguments run, whatever the result.
+    Println(When(see("c", 1) > 0, see("v", 2)), When(see("c", 0) > 0, see("v", 3)))
+    Println(Unless(true, see("u", 4)), Unless(false, see("u", 5)))
+
+    Println(Tuple(1, "a"), Tuple3(1, "b", true), Tuple4(1, 2, 3, 4))
+    Println(Tuple(1, "a") == (1, "a"), Tuple3(1, 2, 3) == Tuple3(1, 2, 4))
+
+    val big = 9223372036854775807
+    val small = 0 - 9223372036854775807 - 1
+    Println(int(big), int64(small), int64(see("conv", 7)) + int64(1))
+}

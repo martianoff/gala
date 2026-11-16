@@ -359,6 +359,8 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 			return g.stdCtor(x, e, sc)
 		case g.collections && seqCtors[x] != "":
 			return g.seqCtor(x, e, sc)
+		case g.stdFunc(x):
+			return g.stdFuncCall(x, e, sc)
 		case g.collections && hashTypes[x]:
 			unsup(e.Pos, "hash-order")
 		case g.globalBy[x] == nil:

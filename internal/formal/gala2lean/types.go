@@ -731,6 +731,8 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		switch {
 		case g.collections && seqCtors[n.Name] != "" && !g.declared(n.Name):
 			return g.seqCtorType(n.Name, e, sc, seen)
+		case g.stdFunc(n.Name):
+			return g.stdFuncType(n.Name, e, sc, seen)
 		case n.Name == "Some" && !g.declared("Some") && len(e.Args) == 1:
 			if t := g.exprType(argNode(e.Args[0]), sc, seen); t != "" {
 				return "(GOption " + t + ")"

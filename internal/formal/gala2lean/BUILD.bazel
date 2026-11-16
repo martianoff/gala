@@ -23,6 +23,7 @@ go_library(
         "program.go",
         "run.go",
         "stats.go",
+        "stdfuncs.go",
         "stmt.go",
         "types.go",
     ],
