@@ -86,9 +86,10 @@ inductive Ty
   /-- A struct type: its fields' names (an embedded field's is its type's name) and
       types, in order. -/
   | struct_ (fields : List (String × Ty))
-  /-- An interface type, by its methods' names (Go spec, "Interface types"). Method
-      sets decide assertions; signatures are Go's type checker's business. -/
-  | iface (methods : List String)
+  /-- An interface type, by its methods: each one's name and function type, sorted by
+      name (Go spec, "Interface types"). A type implements it when its method set has
+      each method with that name and an identical type ("Implementing an interface"). -/
+  | iface (methods : List (String × Ty))
   | func_ (params results : List Ty) (variadic : Bool)
   /-- The results of a call with several, `(T1, T2)`. -/
   | tuple (ts : List Ty)
@@ -96,6 +97,8 @@ inductive Ty
   | slice (elem : Ty)
   /-- `[n]elem` (Go spec, "Array types"). -/
   | array (n : Nat) (elem : Ty)
+  /-- `float32` or `float64`, by its width (Go spec, "Numeric types"). -/
+  | float (bits : Nat)
 end
 
 instance : Inhabited Ty := ⟨.bool⟩
@@ -108,11 +111,12 @@ def Ty.beq : Ty → Ty → Bool
   | .named p n as, .named q m bs => p == q && n == m && Ty.beqs as bs
   | .ptr a, .ptr b => a.beq b
   | .struct_ fs, .struct_ gs => Ty.beqFields fs gs
-  | .iface ms, .iface ns => ms == ns
+  | .iface ms, .iface ns => Ty.beqFields ms ns
   | .func_ ps rs v, .func_ qs ss w => Ty.beqs ps qs && Ty.beqs rs ss && v == w
   | .tuple as, .tuple bs => Ty.beqs as bs
   | .slice a, .slice b => a.beq b
   | .array n a, .array m b => n == m && a.beq b
+  | .float a, .float b => a == b
   | _, _ => false
 def Ty.beqs : List Ty → List Ty → Bool
   | [], [] => true
@@ -145,12 +149,13 @@ def Ty.text : Ty → String
   | .ptr t => "*" ++ t.text
   | .struct_ fs => "struct { " ++ "; ".intercalate (Ty.fieldTexts fs) ++ " }"
   | .iface [] => "interface {}"
-  | .iface ms => "interface { " ++ "; ".intercalate ms ++ " }"
+  | .iface ms => "interface { " ++ "; ".intercalate (ms.map (·.1)) ++ " }"
   | .func_ ps rs _ => "func(" ++ ", ".intercalate (Ty.texts ps) ++ ")" ++
       (if rs.isEmpty then "" else " " ++ ", ".intercalate (Ty.texts rs))
   | .tuple ts => "(" ++ ", ".intercalate (Ty.texts ts) ++ ")"
   | .slice t => "[]" ++ t.text
   | .array n t => s!"[{n}]" ++ t.text
+  | .float b => s!"float{b}"
 def Ty.texts : List Ty → List String
   | [] => []
   | t :: ts => t.text :: Ty.texts ts
@@ -214,6 +219,12 @@ inductive Val
   | array (t : Ty) (es : Array Val)
   /-- A slice; `none` is nil. -/
   | slice (t : Ty) (s : Option SliceRep)
+  /-- A floating-point value. GoCore so far only stores, moves and boxes them, and
+      retypes them between types of one width (their types decide type assertions
+      and switches); any other operation on one (arithmetic, comparison, conversion
+      between widths, printing) stops the run `unsupported`. The only one GoCore
+      makes is a zero value, `+0.0`. -/
+  | float (t : Ty) (x : Float)
   /-- A value GoCore cannot know, reading or writing into it stopping the run with
       `what`: a package-level variable of an imported package whose initializer GoCore
       could not run (it reached `what`), or the array an append left behind when gc
@@ -223,9 +234,14 @@ inductive Val
 
 def Val.ty : Val → Ty
   | .int t _ | .bool t _ | .str t _ | .struct_ t _ | .ptr t _ | .func_ t _ | .nilIface t
-  | .boxed t _ | .array t _ | .slice t _ => t
+  | .boxed t _ | .array t _ | .slice t _ | .float t _ => t
   | .tuple vs => .tuple (vs.map fun _ => .bool)
   | .poison _ => .tuple []
+
+/-- Whether `v` is a floating-point value. -/
+def Val.isFloat : Val → Bool
+  | .float .. => true
+  | _ => false
 
 /-- The dynamic value of an interface value; any other value itself. -/
 def Val.dyn : Val → Val

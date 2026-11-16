@@ -59,7 +59,9 @@ def universeType? : String → Option Ty
   | "bool" => some .bool
   | "string" => some .string
   | "any" => some (.iface [])
-  | "error" => some (.iface ["Error"])
+  | "error" => some (.iface [("Error", .func_ [] [.string] false)])
+  | "float32" => some (.float 32)
+  | "float64" => some (.float 64)
   | n => (IntKind.ofName? n).map .int
 
 /-- The standard library is the package with this import path; `Lib` replaces some of
@@ -361,8 +363,11 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
       -- An embedded element (`error`, a constraint's type union) would add to the
       -- method set, which GoCore does not compute; only methods it lists itself.
       if es.any (fun | .mk ns _ => ns.isEmpty) then unsupported "embedded-interface"
+      let ms ← es.flatMapM fun (.mk ns te) => do
+        let t ← evalType c n env te
+        pure (ns.map (·, t))
       -- Sorted, so an interface type does not depend on the order it lists them in.
-      return .iface ((fieldListNames es).mergeSort (fun a b => decide (a ≤ b)))
+      return .iface (ms.mergeSort (fun a b => decide (a.1 ≤ b.1)))
     | .funcType (.mk ps rs v) =>
       let pts ← (fieldTypes ps).mapM (evalType c n env)
       -- A final `...T` parameter has type `[]T` (Go spec, "Function types").
@@ -390,7 +395,7 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
             if !c.pkgs.contains path then unsupported s!"{path}.{sel}"
           stuck "not a type"
         | .ident x =>
-          if ["comparable", "float32", "float64", "complex64", "complex128"].contains x then
+          if ["comparable", "complex64", "complex128"].contains x then
             unsupported s!"type-{x}"
           if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
           stuck s!"{x} is not a type"
@@ -423,6 +428,7 @@ def zero (c : Ctx) : Nat → Ty → GM Val
     | .func_ .. => pure (.func_ t none)
     | .iface _ => pure (.nilIface t)
     | .slice _ => pure (.slice t none)
+    | .float _ => pure (.float t 0.0)
     | .array k et =>
       if k > maxSliceCap then unsupported "array-large"
       pure (.array t (Array.replicate k (← zero c n et)))
@@ -452,12 +458,14 @@ def convert (c : Ctx) : Nat → Ty → Val → GM Val
     | .slice _, .nilIface (.untyped .nil) => pure (.slice t none)
     | _, .slice vt r => if (← underlying c n vt) == u then pure (.slice t r) else stuck s!"cannot use {vt} as {t}"
     | _, .array vt es => if (← underlying c n vt) == u then pure (.array t es) else stuck s!"cannot use {vt} as {t}"
+    | .float _, .int (.untyped _) _ => unsupported "float-constant"
+    | _, .float vt x => if (← underlying c n vt) == u then pure (.float t x) else stuck s!"cannot use {vt} as {t}"
     | _, .int vt x => if (← underlying c n vt) == u then pure (.int t x) else stuck s!"cannot use {vt} as {t}"
     | _, .bool _ b => if u == .bool then pure (.bool t b) else stuck s!"cannot use bool as {t}"
     | _, .str _ s => if u == .string then pure (.str t s) else stuck s!"cannot use string as {t}"
     | _, .struct_ vt fs => if (← underlying c n vt) == u then pure (.struct_ t fs) else stuck s!"cannot use {vt} as {t}"
-    | _, .ptr _ l => pure (.ptr t l)
-    | _, .func_ _ f => pure (.func_ t f)
+    | .ptr _, .ptr _ l => pure (.ptr t l)
+    | .func_ .., .func_ _ f => pure (.func_ t f)
     | _, v => stuck s!"cannot use {v.ty} as {t}"
 
 /-- An explicit conversion `T(x)` (Go spec, "Conversions"): between integer types it
@@ -472,6 +480,11 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       if k.represents x then pure (.int t x) else stuck s!"constant {x} overflows {k.name}"
     | .int k, .int _ x => pure (.int t (k.wrap x))
     | .string, .int _ _ => unsupported "string-of-int"
+    | .float _, .int .. | .int _, .float .. => unsupported "float-conversion"
+    -- Between float types of one width (a defined type and its underlying type), a
+    -- retype; between widths a rounding, not modelled.
+    | .float _, .float vt x =>
+      if (← underlying c n vt) == u then pure (.float t x) else unsupported "float-conversion"
     | .slice _, .str .. => unsupported "slice-of-string"
     | .string, .slice .. => unsupported "string-of-slice"
     | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
@@ -1002,8 +1015,21 @@ def assertType (c : Ctx) : Nat → Val → Ty → GM (Option Val)
       let d := v.dyn
       match ← underlying c n t with
       | .iface ms =>
-        return if ms.all (fun m => (methodSet c d.ty m).isSome) then some (.boxed t d) else none
+        for (m, mt) in ms do
+          if (← methodOfType c n d.ty m mt).isNone then return none
+        return some (.boxed t d)
       | _ => return if d.ty == t then some d else none
+
+/-- Method `m` of the method set of type `t`, if it has one of function type `mt`
+    exactly (Go spec, "Method sets", "Implementing an interface", "Type identity"). -/
+def methodOfType (c : Ctx) : Nat → Ty → String → Ty → GM (Option (String × List Ty × Method))
+  | 0, _, _, _ => throw .fuel
+  | n + 1, t, m, mt => do
+    match methodSet c t m with
+    | some (p, _, args, me) =>
+      let ft ← evalType c n { pkg := p, file := me.file, tenv := me.recvTParams.zip args } (.funcType me.sig)
+      return if ft == mt then some (p, args, me) else none
+    | none => return none
 
 /-- A unary operator (Go spec, "Arithmetic operators", "Logical operators"). -/
 def unary (c : Ctx) : Nat → String → Val → GM Val
@@ -1021,6 +1047,7 @@ def unary (c : Ctx) : Nat → String → Val → GM Val
       pure (.int t (k.wrap (bitNot x)))
     | "!", .bool t b => pure (.bool t !b)
     | "<-", _ => unsupported "receive"
+    | _, .float .. => unsupported "float-operation"
     | _, _ => stuck s!"unary {op} on {v.ty}"
 
 /-- A binary operator other than `&&` and `||` (Go spec, "Operators"). An untyped
@@ -1028,6 +1055,7 @@ def unary (c : Ctx) : Nat → String → Val → GM Val
 def binary (c : Ctx) : Nat → String → Val → Val → GM Val
   | 0, _, _, _ => throw .fuel
   | n + 1, op, a, b => do
+    if a.isFloat || b.isFloat then unsupported "float-operation"
     if op == "<<" || op == ">>" then
       -- The left operand's type is the result's; the count is any integer.
       let s ← asInt b
@@ -1085,6 +1113,7 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     | .boxed _ (.slice ..), _ | _, .boxed _ (.slice ..) => unsupported "uncomparable"
     | _, _ => pure ()
     let (a, b) := (a.dyn, b.dyn)
+    if a.isFloat || b.isFloat then unsupported "float-comparison"
     -- Values of different dynamic types are unequal: by the precondition (see the
     -- module doc), only two interface operands can differ in type.
     let same := a.ty == b.ty || a.ty.isUntyped || b.ty.isUntyped
@@ -1236,6 +1265,7 @@ def layout (c : Ctx) : Nat → Ty → GM GcRuntime.Layout
     | .ptr _ | .func_ .. => pure .word
     | .iface _ => pure .iface
     | .slice _ => pure .slice
+    | .float b => pure (.ofFloat b)
     | .array k e => pure (.array k (← layout c n e))
     | .struct_ fs => pure (.struct_ (← fs.mapM fun (_, ft) => layout c n ft))
     | u => unsupported s!"layout-{u}"
@@ -1915,6 +1945,7 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
       pure ("{" ++ " ".intercalate parts ++ "}")
     -- A slice or array prints its elements in brackets (`printValue`'s
     -- `reflect.Array, reflect.Slice`).
+    | .float .. => unsupported "fmt-float"
     | .slice .. | .array .. =>
       if verb != 'v' then unsupported "fmt-verb-slice"
       let es ← match v with
@@ -1962,23 +1993,32 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
       match a.ty with
       | .int _ | .bool | .string => pure [.bool .bool (← equal c n a b)]
       | _ =>
-        match methodSet c a.ty "Equal" with
-        | some (p, _, args, me) => callMethod c n p args me a [b] false
+        -- `Equatable[T]`: `Equal(T) bool` exactly.
+        match ← methodOfType c n a.ty "Equal" (.func_ [a.ty] [.bool] false) with
+        | some (p, args, me) => callMethod c n p args me a [b] false
         | none => unsupported "std.Equal-reflective"
-    -- `Copy[T](v T) T` (std/types.go, lines 122-145 and 200-203): a nil pointer is returned as it is, a value with its own
-    -- `Copy() T` is copied by it; the reflective rest is unsupported.
+    -- `Copy[T](v T) T` (std/types.go, `Copy`, `copiesAsIs`, `copiesPointee`): a nil
+    -- pointer is returned as it is, and so is a pointer whose pointee's (value-receiver)
+    -- `Copy` does not return the pointer type; else a `Copyable[T]`, with `Copy() T`
+    -- exactly, is copied by it; a predeclared scalar is returned as it is (`copyAny`);
+    -- the reflective rest is unsupported.
     | "Copy", [v] =>
       match v with
       | .ptr _ none | .nilIface _ => pure [v]
       | _ =>
-        match methodSet c v.ty "Copy" with
-        | some (p, _, args, me) =>
-          match v, me.ptr with
-          | .ptr _ _, false => pure [v]  -- copiesPointee: the pointee's Copy, returned as is
-          | _, _ => callMethod c n p args me v [] false
+        let copiesPointee ← match v with
+          | .ptr t _ => do
+            let .ptr pt ← underlying c n t | stuck "a pointer of a non-pointer type"
+            match methodSet c pt "Copy" with
+            | some _ => pure (← methodOfType c n v.ty "Copy" (.func_ [] [v.ty] false)).isNone
+            | none => pure false
+          | _ => pure false
+        if copiesPointee then return [v]
+        match ← methodOfType c n v.ty "Copy" (.func_ [] [v.ty] false) with
+        | some (p, args, me) => callMethod c n p args me v [] false
         | none =>
           match v with
-          | .int (.int _) _ | .bool .bool _ | .str .string _ => pure [v]
+          | .int (.int _) _ | .bool .bool _ | .str .string _ | .float (.float _) _ => pure [v]
           | _ => unsupported "std.Copy-reflective"
     | _, _ => unsupported s!"std.{f}"
 

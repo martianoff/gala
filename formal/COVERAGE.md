@@ -177,7 +177,9 @@ Go is tested, not proved.
 | The capacity `append` gives a growing slice, which the spec leaves open | yes: gc's (Go 1.25.5, amd64), `Gala/GoCore/GcRuntime.lean`; where gc's choice depends on escape analysis, a run that would tell the two apart ends `unsupported` (`cap-escape-dependent`, `append-escape-dependent`, `slice-escape-dependent`) |
 | `range` over slices, arrays (through a pointer too), strings and integers; variadic functions, `f(xs...)` ("For statements with range clause", "Passing arguments to ... parameters") | yes |
 | `slices.Clip` | yes (a model) |
-| Maps, channels, floats, `defer`, `go`, `select`, labels, `goto`, `fallthrough`, conversions between strings and slices, Go's standard library beyond `fmt`'s four functions and `slices.Clip` | no: a run that reaches one ends `unsupported:<construct>` |
+| `float32` and `float64` types: values of them stored and moved, type assertions and switches on them ("Numeric types") | yes |
+| Operations on floating-point values (arithmetic, comparison, conversion, printing) and float literals; complex numbers | no: `unsupported:float-*`, `fmt-float`, `float-lit` |
+| Maps, channels, `defer`, `go`, `select`, labels, `goto`, `fallthrough`, conversions between strings and slices, Go's standard library beyond `fmt`'s four functions and `slices.Clip` | no: a run that reaches one ends `unsupported:<construct>` |
 
 A run ends `ok`, `panic` (with Go's text), `fuel` (out of steps or depth: inconclusive),
 `unsupported:<construct>`, or `stuck`, which no program Go compiles reaches: a GoCore or

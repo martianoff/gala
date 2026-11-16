@@ -8,8 +8,8 @@
 # not regenerated from Go: fuel (Go aborts with a stack overflow, GoCore ends in
 # fuel) and the unsupported_* ones, where GoCore stops: at a map
 # (unsupported_map), at a capacity that depends on gc's escape analysis
-# (unsupported_escape), and at constraint type inference
-# (unsupported_inference). Their files are written by hand.
+# (unsupported_escape), at constraint type inference (unsupported_inference)
+# and at a float operation (unsupported_float*). Their files are written by hand.
 #
 # Run from formal/tests/gocore with GOCOREJSON naming the exporter binary.
 set -euo pipefail
