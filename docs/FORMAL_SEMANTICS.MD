@@ -407,12 +407,13 @@ column lists what each milestone's claim rests on beyond them.
     - Only `fmt` and the hand-written, reflective standard-library functions it names
       are models.
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
-    every compiled program's Go runs through GoCore and is compared with `go run`. GoCore
-    agrees with `go run` on the programs the "GoCore" part of
-    [COVERAGE.md](../formal/COVERAGE.md#differential-testing) lists, and stops
-    `unsupported` on the rest, naming the construct; none disagrees. Tested, not proved.
-    The examples that agree three ways (GoCore with `go run`, galaspec with `go run`) are
-    the ratchet `gocore_agreeing_examples`.
+    every compiled program's Go runs through GoCore and is compared with `go run`. In the
+    CI run that set the baselines, GoCore agrees with `go run` on 179 programs that
+    compile (151 examples, 28 generated), and on 28 examples galaspec agrees with
+    `go run` too. It stops `unsupported` on the rest, naming the construct, and none
+    disagrees. Tested, not proved. Both counts are ratchets (`gocore_fidelity_agreeing`,
+    `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
+    [COVERAGE.md](../formal/COVERAGE.md#differential-testing).
   - **What remains:** widening GoCore where the corpus stops it (variadic functions and
     the slices behind them, `fmt.Printf`, floats, `defer`), each a construct the run names.
   - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
