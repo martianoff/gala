@@ -57,6 +57,14 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.argSlots_rel",
     "Gala.Spec.argSlots_same_rel",
     "Gala.Spec.byNameOk_rel",
+    "Gala.Spec.binop_rel",
+    "Gala.Spec.unop_rel",
+    "Gala.Spec.fmtVs_rel",
+    "Gala.Spec.getField_rel",
+    "Gala.Spec.readPlace_rel",
+    "Gala.Spec.assignTo_rel",
+    "Gala.Spec.pushAll_rel",
+    "Gala.Spec.construct_rel",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -87,6 +95,7 @@ GALA_SRCS = [
     "Gala/Defaults.lean",
     "Gala/Order.lean",
     "Gala/Alpha.lean",
+    "Gala/AlphaStep.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

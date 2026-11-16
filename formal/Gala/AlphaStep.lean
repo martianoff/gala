@@ -107,31 +107,6 @@ theorem valsR_of_fall2 {pkg : List String} {pm : String → Ren} :
 
 /-! ## Types and zero values -/
 
-mutual
-theorem readOnly_checkTy (ds : Decls) : ∀ t, ReadOnly (checkTy ds t)
-  | .unsupported _ => readOnly_throw _
-  | .name n => by unfold checkTy; split <;> first | exact readOnly_pure _ | exact readOnly_throw _
-  | .func ps none => by
-    unfold checkTy; exact readOnly_bind (readOnly_checkTys ds ps) fun _ => readOnly_pure _
-  | .func ps (some r) => by
-    unfold checkTy
-    exact readOnly_bind (readOnly_checkTys ds ps) fun _ =>
-      readOnly_bind (readOnly_bind (readOnly_checkTy ds r) fun _ => readOnly_pure _) fun _ =>
-        readOnly_pure _
-theorem readOnly_checkTys (ds : Decls) : ∀ ts, ReadOnly (checkTys ds ts)
-  | [] => readOnly_pure _
-  | t :: ts => by
-    unfold checkTys
-    exact readOnly_bind (readOnly_bind (readOnly_checkTy ds t) fun _ => readOnly_pure _) fun _ =>
-      readOnly_checkTys ds ts
-end
-
-theorem readOnly_checkOptTy (ds : Decls) (w : String) (t : Option Ty) :
-    ReadOnly (checkOptTy ds w t) := by
-  cases t
-  · exact readOnly_throw _
-  · exact readOnly_checkTy ds _
-
 /-- An `H` step that neither reads nor changes the state. -/
 def PureH (x : H α) : Prop :=
   ∀ c c', (x.run.run c).1 = (x.run.run c').1 ∧ (x.run.run c).2 = c
@@ -826,5 +801,141 @@ theorem assignTo_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} 
   | _, _, _, _, c, c', hc, .ret _, _ | _, _, _, _, c, c', hc, .assign .., _
   | _, _, _, _, c, c', hc, .incdec .., _ | _, _, _, _, c, c', hc, .lambda .., _ => by
     unfold assignTo; exact ⟨.stuck _ _, hc⟩
+
+/-! ## Printing steps, conditions, construction -/
+
+theorem printed_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
+    (hs : SameLayout ds ds') (r : Print.P String) (c c' : Core) :
+    ResR pkg pm Eq ((printed r ds).run.run c).1 ((printed r ds').run.run c').1 := by
+  unfold printed
+  rw [← hs.unsupported]
+  cases r with
+  | ok t => rfl
+  | error k => dsimp only; split <;> exact .unsupported _ _ _
+
+theorem emit_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    (hs : SameLayout ds ds') (r : Print.P String) {c c' : Core} (hc : CoreR pkg pm Γ c c') :
+    ResR pkg pm Eq ((emit r ds).run.run c).1 ((emit r ds').run.run c').1 ∧
+      CoreR pkg pm Γ ((emit r ds).run.run c).2 ((emit r ds').run.run c').2 := by
+  unfold emit printed
+  rw [← hs.unsupported]
+  cases r with
+  | ok t =>
+    refine ⟨rfl, hc.1, hc.2.1, hc.2.2.1, ?_⟩
+    show c.out ++ t = c'.out ++ t
+    rw [hc.2.2.2]
+  | error k => dsimp only; split <;> exact ⟨.unsupported _ _ _, hc⟩
+
+theorem pureH_forIn {f : α → PUnit → H (ForInStep PUnit)} :
+    ∀ (l : List α), (∀ x, PureH (f x PUnit.unit)) → PureH (forIn l PUnit.unit f)
+  | [], _ => pureH_pure _
+  | a :: as, hf => by
+    rw [List.forIn_cons]
+    exact pureH_bind (hf a) fun r => by
+      cases r
+      · exact pureH_pure _
+      · exact pureH_forIn as hf
+
+theorem noRet_forIn {f : α → PUnit → H (ForInStep PUnit)} :
+    ∀ (l : List α), (∀ x, NoRetH (f x PUnit.unit)) → NoRetH (forIn l PUnit.unit f)
+  | [], _ => noRet_pure _
+  | a :: as, hf => by
+    rw [List.forIn_cons]
+    exact noRet_bind (hf a) fun r => by
+      cases r
+      · exact noRet_pure _
+      · exact noRet_forIn as hf
+
+theorem any_rel {pkg : List String} {pm : String → Ren} (p : Val → Bool)
+    (hp : ∀ v v', ValR pkg pm v v' → p v = p v') :
+    ∀ {vs vs' : List Val}, ValsR pkg pm vs vs' → vs.any p = vs'.any p
+  | _, _, .nil => rfl
+  | _, _, .cons h t => by simp only [List.any_cons, hp _ _ h, any_rel p hp t]
+
+theorem printable_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
+    (hs : SameLayout ds ds') {vs vs' : List Val} (hv : ValsR pkg pm vs vs') (c c' : Core) :
+    ResR pkg pm Eq ((printable ds vs).run.run c).1 ((printable ds' vs').run.run c').1 := by
+  unfold printable
+  rw [← hs.unsupported, any_rel _ (fun _ _ h => by cases h <;> rfl) hv]
+  split
+  · exact .unsupported _ _ _
+  · rfl
+
+theorem asBool_rel {pkg : List String} {pm : String → Ren} {v v' : Val} (hv : ValR pkg pm v v')
+    (c c' : Core) : ResR pkg pm Eq ((asBool v).run.run c).1 ((asBool v').run.run c').1 := by
+  cases hv <;> first | rfl | exact .stuck _ _
+
+theorem construct_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
+    (hs : SameLayout ds ds') (name : String) (fs : List Field) {vs vs' : List Val}
+    (hv : ValsR pkg pm vs vs') (c c' : Core) :
+    ResR pkg pm (ValsR pkg pm) ((construct ds name fs vs).run.run c).1
+      ((construct ds' name fs vs').run.run c').1 := by
+  unfold construct
+  simp only [← checkOptTy_congr hs]
+  have hloop : PureH (forIn fs PUnit.unit fun (f : Field) (_ : PUnit) => do
+      discard (checkOptTy ds s!"field {f.name}" f.type)
+      pure (ForInStep.yield PUnit.unit)) :=
+    pureH_forIn fs fun f => pureH_bind (pureH_bind (pureH_checkOptTy ds _ _) fun _ =>
+      pureH_pure _) fun _ => pureH_pure _
+  have hnr : NoRetH (forIn fs PUnit.unit fun (f : Field) (_ : PUnit) => do
+      discard (checkOptTy ds s!"field {f.name}" f.type)
+      pure (ForInStep.yield PUnit.unit)) :=
+    noRet_forIn fs fun f => noRet_bind (noRet_bind (noRet_checkOptTy ds _ _) fun _ =>
+      noRet_pure _) fun _ => noRet_pure _
+  refine resR_bind (R := Eq) ?_ hloop.readOnly hloop.readOnly fun _ _ _ => ?_
+  · rw [(hloop c' c).1]; exact resR_self (fun _ _ => rfl) (hnr c)
+  · rw [← valsR_length hv]
+    split
+    · exact .stuck _ _
+    · exact hv
+
+/-! ## Binding names -/
+
+theorem envR_push {pkg : List String} {pm : String → Ren} {Γ : Ren} {ρ ρ' : Env} {x x' : String}
+    {b b' : Binding} (h : EnvR pkg pm Γ ρ ρ') (hb : BindR pkg pm b b')
+    (hu : x = "_" ↔ x' = "_") : EnvR pkg pm (Γ.push (x, x')) (bind ρ x b) (bind ρ' x' b') := by
+  unfold Ren.push bind
+  by_cases hx : x = "_"
+  · have hx' : x' = "_" := hu.mp hx
+    simp only [hx, hx', ite_true]; exact h
+  · have hx' : x' ≠ "_" := fun e => hx (hu.mpr e)
+    simp only [hx, hx', ite_false]; exact .cons hb.1 hb.2 h
+
+/-- One binding of `pushAll`. -/
+def pushStep (m : Bool) (x : String) (v : Val) (c : Core) : Core :=
+  if m then { c with locals := bind c.locals x ⟨.ref c.heap.size, true⟩, heap := c.heap.push v }
+  else { c with locals := bind c.locals x ⟨v, false⟩ }
+
+theorem pushAll_cons_run (m : Bool) (x : String) (v : Val) (bs : List (String × Val)) (c : Core) :
+    (pushAll ((x, v) :: bs) m).run.run c = (pushAll bs m).run.run (pushStep m x v c) := by
+  unfold pushAll
+  simp only [List.forIn_cons, bind_assoc]
+  rw [run_bind_eq]
+  cases m <;> rfl
+
+/-- Binding related names to related values keeps the states related, in the scope with
+    the new binders pushed. -/
+theorem pushAll_rel {pkg : List String} {pm : String → Ren} (m : Bool) :
+    ∀ {bs bs' : List (String × Val)} {Γ : Ren} {c c' : Core},
+      Fall2 (fun (a b : String × Val) => (a.1 = "_" ↔ b.1 = "_") ∧ ValR pkg pm a.2 b.2) bs bs' →
+      CoreR pkg pm Γ c c' →
+      ResR pkg pm Eq ((pushAll bs m).run.run c).1 ((pushAll bs' m).run.run c').1 ∧
+        CoreR pkg pm (Γ.pushAll ((bs.map (·.1)).zip (bs'.map (·.1))))
+          ((pushAll bs m).run.run c).2 ((pushAll bs' m).run.run c').2
+  | _, _, Γ, c, c', .nil, hc => ⟨rfl, hc⟩
+  | (x, v) :: bs, (x', v') :: bs', Γ, c, c', .cons ⟨hu, hv⟩ t, hc => by
+    have ih := @pushAll_rel pkg pm m bs bs'
+    rw [pushAll_cons_run, pushAll_cons_run]
+    cases m
+    · have hc2 : CoreR pkg pm (Γ.push (x, x')) { c with locals := bind c.locals x ⟨v, false⟩ }
+          { c' with locals := bind c'.locals x' ⟨v', false⟩ } :=
+        ⟨envR_push hc.1 ⟨rfl, hv⟩ hu, hc.2.1, hc.2.2.1, hc.2.2.2⟩
+      exact ih t hc2
+    · have hc2 : CoreR pkg pm (Γ.push (x, x'))
+          { c with locals := bind c.locals x ⟨.ref c.heap.size, true⟩, heap := c.heap.push v }
+          { c' with locals := bind c'.locals x' ⟨.ref c'.heap.size, true⟩, heap := c'.heap.push v' } :=
+        ⟨envR_push hc.1 ⟨rfl, by rw [hc.2.2.1.1]; exact .ref _⟩ hu, hc.2.1,
+          heapR_push hc.2.2.1 hv, hc.2.2.2⟩
+      exact ih t hc2
 
 end Gala.Spec

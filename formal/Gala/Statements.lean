@@ -19,6 +19,7 @@ import Gala.Fuel
 import Gala.Defaults
 import Gala.Order
 import Gala.Alpha
+import Gala.AlphaStep
 
 namespace Gala.Statements
 
@@ -283,5 +284,62 @@ theorem byNameOk_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : D
     HeapR pkg pm c.heap c'.heap → AlphaE pkg pm Γ a a' →
     ResR pkg pm Eq ((byNameOk ds l ty a).run.run c).1 ((byNameOk ds' l' ty a').run.run c').1 :=
   Gala.Spec.byNameOk_rel
+
+open Gala.Spec in
+theorem binop_rel : ∀ {pkg : List String} {pm : String → Ren} (op : String) {a a' b b' : Val}
+    (c c' : Core), ValR pkg pm a a' → ValR pkg pm b b' →
+    ResR pkg pm (ValR pkg pm) ((binop op a b).run.run c).1 ((binop op a' b').run.run c').1 :=
+  Gala.Spec.binop_rel
+
+open Gala.Spec in
+theorem unop_rel : ∀ {pkg : List String} {pm : String → Ren} (op : String) {a a' : Val}
+    (c c' : Core), ValR pkg pm a a' →
+    ResR pkg pm (ValR pkg pm) ((unop op a).run.run c).1 ((unop op a').run.run c').1 :=
+  Gala.Spec.unop_rel
+
+open Gala.Spec in
+theorem fmtVs_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls},
+    SameLayout ds ds' → ∀ (m : Bool) {vs vs' : List Val}, ValsR pkg pm vs vs' →
+    Print.fmtVs ds m vs = Print.fmtVs ds' m vs' :=
+  Gala.Spec.fmtVs_rel
+
+open Gala.Spec in
+theorem getField_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {c c' : Core},
+    SameLayout ds ds' → ∀ {v v' : Val} (f : String), ValR pkg pm v v' →
+    ResR pkg pm (ValR pkg pm) ((getField ds v f).run.run c).1 ((getField ds' v' f).run.run c').1 :=
+  Gala.Spec.getField_rel
+
+open Gala.Spec in
+theorem readPlace_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    {c c' : Core}, SameLayout ds ds' → CoreR pkg pm Γ c c' → ∀ {t t' : Expr},
+    AlphaE pkg pm Γ t t' →
+    ResR pkg pm (ValR pkg pm) ((readPlace ds t).run.run c).1 ((readPlace ds' t').run.run c').1 :=
+  Gala.Spec.readPlace_rel
+
+open Gala.Spec in
+theorem assignTo_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren},
+    SameLayout ds ds' → ∀ {t t' : Expr} {v v' : Val} {c c' : Core}, CoreR pkg pm Γ c c' →
+    AlphaE pkg pm Γ t t' → ValR pkg pm v v' →
+    ResR pkg pm Eq ((assignTo ds t v).run.run c).1 ((assignTo ds' t' v').run.run c').1 ∧
+      CoreR pkg pm Γ ((assignTo ds t v).run.run c).2 ((assignTo ds' t' v').run.run c').2 :=
+  Gala.Spec.assignTo_rel
+
+open Gala.Spec in
+theorem pushAll_rel : ∀ {pkg : List String} {pm : String → Ren} (m : Bool)
+    {bs bs' : List (String × Val)} {Γ : Ren} {c c' : Core},
+    Fall2 (fun (a b : String × Val) => (a.1 = "_" ↔ b.1 = "_") ∧ ValR pkg pm a.2 b.2) bs bs' →
+    CoreR pkg pm Γ c c' →
+    ResR pkg pm Eq ((pushAll bs m).run.run c).1 ((pushAll bs' m).run.run c').1 ∧
+      CoreR pkg pm (Γ.pushAll ((bs.map (·.1)).zip (bs'.map (·.1))))
+        ((pushAll bs m).run.run c).2 ((pushAll bs' m).run.run c').2 :=
+  Gala.Spec.pushAll_rel
+
+open Gala.Spec in
+theorem construct_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls},
+    SameLayout ds ds' → ∀ (name : String) (fs : List Field) {vs vs' : List Val},
+    ValsR pkg pm vs vs' → ∀ (c c' : Core),
+    ResR pkg pm (ValsR pkg pm) ((construct ds name fs vs).run.run c).1
+      ((construct ds' name fs vs').run.run c').1 :=
+  Gala.Spec.construct_rel
 
 end Gala.Statements
