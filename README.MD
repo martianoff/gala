@@ -29,6 +29,30 @@ func area(s Shape) string = s match {
 
 **[Try it in your browser](https://gala-playground.fly.dev)** — no install.
 
+**For Go developers:** keep your Go modules, Go libraries and native binaries; write the code that benefits from sum types, exhaustive `match`, `Option`/`Try` and immutable collections in `.gala` files beside your `.go` files.
+
+### Five-minute start
+
+1. **Install** (GALA compiles through Go, so it needs [Go 1.25+](https://go.dev/dl/) on `PATH`):
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.sh | sh
+   ```
+
+   On Windows: `irm https://raw.githubusercontent.com/martianoff/gala/master/tools/install/install.ps1 | iex`. Homebrew, Scoop, Nix and manual downloads: [all install options](#1-install).
+2. **Create a project:** `gala new hello && cd hello`
+3. **Run it:** `gala run main.gala` prints `Hello, GALA!`; `gala build` makes a native binary.
+
+Already have a Go module? `gala mod init` in it, then [add `.gala` files beside your `.go` files](docs/ADD_GALA_TO_GO_REPO.MD). Porting Go code: [From Go to GALA](docs/PORTING_FROM_GO.MD) maps each Go construct to its GALA form, and [examples/cobra_cli](examples/cobra_cli/main.gala) is a cobra CLI written in GALA. Editors: the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala), the GoLand/IntelliJ plugin, and `gala lsp` for Neovim and others ([IDE Support](#ide-support)).
+
+### Limits, by design
+
+- **Go 1.25+ must be on `PATH`.** GALA emits Go and builds it with your Go toolchain, which also supplies the types of the Go packages you import ([Go interop gotchas](docs/GO_INTEROP.MD#gotchas-and-limitations)).
+- **No Go slice syntax.** No `s[a:b]`, slice or map literals, or bare `append`/`len`/`make`. Go slices and maps are interop types; GALA code uses `Array`, `List` and `HashMap`, and `go_interop` at the Go boundary ([slices and maps](docs/PORTING_FROM_GO.MD#slices-and-maps-go_interop-at-the-boundary), [forbidden builtins](docs/GALA.MD#11-go-built-in-functions-are-forbidden)).
+- **No `go`, `chan`, `select` or `defer` statements.** Concurrency is `Future`, cleanup is `use` ([goroutines and channels](docs/PORTING_FROM_GO.MD#goroutines-channels-and-select), [`defer`](docs/PORTING_FROM_GO.MD#defer-use-and-the-resource-package)).
+- **Generics follow Go's.** Each type parameter names its own constraint (`[K any, V any]`), type-set constraints such as `~int | ~float64` come from Go (`cmp.Ordered`) or a `.go` file, and an interface method takes no type parameters of its own ([Generics](docs/GALA.MD#8-generics), [Go forms without GALA syntax](docs/GALA.MD#go-declaration-and-statement-forms), [Interfaces](docs/GALA.MD#5-interfaces)).
+- **`.gala` files build with `gala` or Bazel**, not a plain `go build`. A Go module that must build without GALA uses a library written out with `gala export` ([Using GALA from a plain Go module](docs/GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module)).
+
 ---
 
 ## What is GALA?
@@ -75,7 +99,7 @@ Also: opt-in `inout` parameters and receivers (0.101), richer pattern matching w
 
 ---
 
-## Quick Start
+## Install and First Program
 
 ### 1. Install
 
@@ -735,8 +759,8 @@ GALA ships with a GoLand/IntelliJ plugin, a [VS Code extension](https://marketpl
 ### GoLand / IntelliJ IDEA
 
 1. Install the GALA CLI (see [Install](#1-install)).
-2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases).
-3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened.
+2. Install the plugin: **Settings > Plugins > Marketplace**, search for **GALA** ([plugin page](https://plugins.jetbrains.com/plugin/31256-gala); GoLand or IntelliJ IDEA 2025.2+). Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-intellij-plugin.zip` for **Install Plugin from Disk**.
+3. Restart the IDE — the LSP server starts automatically when a `.gala` file is opened.
 
 The plugin works locally (ANTLR parser, semantic highlighting, structure view, 13 live templates). The LSP server (`gala lsp`) adds real-time diagnostics including match-exhaustiveness, hover with inferred types and doc comments, type-aware completion with documentation, signature help, cross-file go-to-definition, find references, and inlay hints — for VS Code and Neovim too.
 
@@ -750,19 +774,21 @@ Install the **GALA extension** from the [Visual Studio Marketplace](https://mark
 code --install-extension GALA.gala
 ```
 
-Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** > `...` > **Install from VSIX...**). The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); override the binary with the `gala.serverPath` setting or the `GALA_PATH` environment variable.
+Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** > `...` > **Install from VSIX...**). The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); to run another binary, set `gala.serverPath`, or the `GALA_PATH` environment variable when that setting is not set.
 
 ### Neovim
 
+Neovim 0.11 and later, in `init.lua` (Helix, other LSP clients and older Neovim: [Editor Setup](https://gala.fyi/features/ide-support/#editor-setup)):
+
 ```lua
-require('lspconfig.configs').gala = {
-  default_config = {
-    cmd = { 'gala', 'lsp' },
-    filetypes = { 'gala' },
-    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
-  },
-}
-require('lspconfig').gala.setup({})
+vim.filetype.add({ extension = { gala = 'gala' } })
+
+vim.lsp.config('gala', {
+  cmd = { 'gala', 'lsp' },
+  filetypes = { 'gala' },
+  root_markers = { 'gala.mod', '.git' },
+})
+vim.lsp.enable('gala')
 ```
 
 ### Claude Code

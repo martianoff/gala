@@ -6573,15 +6573,23 @@ needs a directive in a `.go` file of the package.
 
 ## 20. IDE Support
 
-GALA provides a full-featured GoLand/IntelliJ plugin and a Language Server Protocol (LSP) server for editor-agnostic IDE support. The plugin runs a local ANTLR parser for instant feedback, while the LSP server (`gala lsp`) connects to the transpiler for type-aware features.
+GALA provides a VS Code extension, a full-featured GoLand/IntelliJ plugin and a Language Server Protocol (LSP) server for editor-agnostic IDE support. The IntelliJ plugin runs a local ANTLR parser for instant feedback, while the LSP server (`gala lsp`, part of the `gala` binary) connects to the transpiler for type-aware features. Every editor below starts `gala lsp`, so install the GALA CLI first (the one-line installer in the [README](../README.MD#1-install), or a binary from [releases](https://github.com/martianoff/gala/releases) on your `PATH`) and check that `gala version` works.
+
+### VS Code
+
+1. Install **GALA** (`GALA.gala`) from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run `code --install-extension GALA.gala`.
+2. Open a `.gala` file. The extension starts `gala lsp`.
+
+The extension registers the `gala` language for `.gala` files and starts `gala lsp`, which gives syntax highlighting plus diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints, and document/workspace symbols — all the [LSP features](#lsp-features-via-gala-lsp) listed below. It runs `gala` from `PATH`. To run another binary, set `gala.serverPath` to its path; when that setting is not set, the `GALA_PATH` environment variable is used before `PATH`. Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs.
 
 ### GoLand / IntelliJ IDEA
 
 #### Installation
 
-1. Install GALA CLI: run the one-line installer from the [README's Quick Start](../README.MD#1-install), or download a binary from [releases](https://github.com/martianoff/gala/releases) and add it to PATH
-2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
-3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened
+1. Open **Settings > Plugins > Marketplace**, search for **GALA** ([plugin page](https://plugins.jetbrains.com/plugin/31256-gala)), install it and restart the IDE.
+2. Open a `.gala` file. The plugin starts `gala lsp`.
+
+The plugin needs GoLand or IntelliJ IDEA 2025.2 or later. It runs the binary named by the `GALA_PATH` environment variable, or `gala` from `PATH`. Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-intellij-plugin.zip`, which installs with **Settings > Plugins** > gear icon > **Install Plugin from Disk...**.
 
 Alternatively, build the plugin from source:
 
@@ -6638,34 +6646,59 @@ The LSP server leverages the full transpiler pipeline for deep, type-aware analy
 - **Workspace symbols** — declarations matching a name across every `.gala` file under the project root (hidden directories and Bazel output skipped)
 - **Cancel-and-restart analysis** — each edit starts a fresh analysis and abandons the one in flight, so results always reflect the current buffer
 
-### VS Code
-
-Install the GALA extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala) — search for **GALA** in the Extensions view or run `code --install-extension GALA.gala`. Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs. The extension registers the `gala` language for `.gala` files and starts `gala lsp`; it requires the GALA CLI on `PATH`, or `gala.serverPath` / `GALA_PATH` pointing at it.
-
-This gives you syntax highlighting plus diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints, and document/workspace symbols — all the LSP features listed above.
-
 ### Neovim
 
-Using [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig):
+Neovim 0.11 and later configure a language server without plugins. In `init.lua`:
 
 ```lua
-require('lspconfig.configs').gala = {
-  default_config = {
-    cmd = { 'gala', 'lsp' },
-    filetypes = { 'gala' },
-    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
-  },
-}
-require('lspconfig').gala.setup({})
+vim.filetype.add({ extension = { gala = 'gala' } })
+
+vim.lsp.config('gala', {
+  cmd = { 'gala', 'lsp' },
+  filetypes = { 'gala' },
+  root_markers = { 'gala.mod', '.git' },
+})
+vim.lsp.enable('gala')
 ```
 
-### Other Editors
+Neovim has no GALA syntax file, so this gives diagnostics, hover, completion and navigation but no syntax highlighting. On Neovim 0.10, register the same command, file type and root markers as a custom server in [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig).
 
-Any editor with LSP support can use the GALA language server. Point your editor's LSP client at:
+### Claude Code
+
+The GALA plugin for [Claude Code](https://code.claude.com) connects Claude to `gala lsp`: diagnostics are pushed into Claude's context after every edit, and Claude can look up hover types, definitions and references. The plugin starts the `gala` binary but does not include it. In Claude Code:
+
+```
+/plugin marketplace add martianoff/gala
+/plugin install gala@gala
+```
+
+Projects created with `gala new` include a `.claude/settings.json`, so Claude Code installs and enables the plugin once you trust the project folder. Details and troubleshooting: [ide/claude-code](../ide/claude-code/README.md).
+
+### Helix and Other Editors
+
+Any editor with LSP support can use the GALA language server, which speaks JSON-RPC over stdin and stdout. Point your editor's LSP client at:
 
 - **Command:** `gala lsp`
 - **File types:** `gala`
 - **Root markers:** `gala.mod`, `.git`
+
+For [Helix](https://helix-editor.com), add to `languages.toml`:
+
+```toml
+[language-server.gala]
+command = "gala"
+args = ["lsp"]
+
+[[language]]
+name = "gala"
+scope = "source.gala"
+file-types = ["gala"]
+roots = ["gala.mod"]
+comment-token = "//"
+language-servers = ["gala"]
+```
+
+As in Neovim, there is no GALA grammar for Helix, so the language server gives diagnostics, hover, completion and navigation without syntax highlighting.
 
 ## 21. Performance Profiling
 

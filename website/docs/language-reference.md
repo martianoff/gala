@@ -4,7 +4,7 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
-last_modified_at: 2026-10-10
+last_modified_at: 2026-11-15
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
@@ -2106,13 +2106,14 @@ gala mod tidy
 
 ## 19. IDE Support {#19-ide-support}
 
-### IntelliJ IDEA
-A basic IntelliJ IDEA plugin is available in `ide/intellij`.
+Every editor integration starts the language server `gala lsp`, which is part of the `gala` binary:
 
-1. Build: `bazel build //ide/intellij:plugin`
-2. Install: Settings > Plugins > Install Plugin from Disk...
+- **VS Code:** the [GALA extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala) (`GALA.gala`) from the Visual Studio Marketplace.
+- **GoLand / IntelliJ IDEA 2025.2+:** the [GALA plugin](https://plugins.jetbrains.com/plugin/31256-gala) from the JetBrains Marketplace.
+- **Neovim, Helix and other LSP clients:** run `gala lsp` over stdio for `.gala` files, with `gala.mod` as the root marker.
+- **Claude Code:** `/plugin marketplace add martianoff/gala`, then `/plugin install gala@gala`.
 
-The plugin provides syntax highlighting, file type recognition (`.gala`), and basic code structure support.
+Setup for each editor, with snippets: [IDE Support](/features/ide-support/#editor-setup).
 
 ---
 

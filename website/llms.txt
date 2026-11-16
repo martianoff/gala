@@ -52,6 +52,20 @@ GALA is close enough to Scala and Kotlin to be readable on sight, and different 
 - **An interface method takes no type parameters of its own.** Scala's `def map[U](f: T => U): U` in a trait has no GALA interface form: `Map[U any](...)` in an `interface` is `GALA-E0086`. Put the type parameter on the interface (`type Box[T any] interface { ... }`), or write a generic function that takes the interface value. Methods of a struct may declare type parameters.
 - **`case UserID(n)` unwraps exactly one value.** `n` is the underlying `int64`; `case UserID(a, b)` or `case UserID()` is `GALA-E0065`. An opaque type is not sealed, so a match on one ends in `case _`; a phantom-typed one matched on `any` spells its type arguments, `case Id[User](n)`.
 
+## Go habits, and their GALA form
+
+Some Go forms compile in a `.gala` file, so the build will not stop you; write the GALA form anyway. The others are the compile errors named.
+
+- **`x := v` → `val x = v`.** `:=` compiles, but it declares an immutable binding (reassigning it is an error); write `val`, or `var x = v` when it must change.
+- **C-style `for i := 0; i < n; i++` and `for _, x := range xs` → collection methods.** Both compile. Write `xs.Map(f)`, `xs.Filter(p)`, `xs.ForEach(f)`, `xs.FoldLeft(z, f)`, and `xs.ZipWithIndex()` when the index matters. `range` works on Go slices, maps, strings and integers, not on a GALA `Array` or `List`.
+- **`if v, err := f(); err != nil` → `match` on the `Try`.** `if` takes no initializer (`GALA-E0047`).
+- **`v, err := f()` then `if err != nil` → the `Try`.** It compiles and gives Go's raw values, but a Go `(T, error)` call already is a `Try[T]`: `f() match { case Success(v) => ... case Failure(e) => ... }`, `.Map(...)`, `.GetOrElse(d)`, or a `bind` block. A call that returns only `error` is `FromError(call)`, a `Try[Void]`.
+- **`fmt.Println(a, b)` → `Println(a, b)`; `fmt.Sprintf("%d items", n)` → `s"$n items"`**, and `f"$price%.2f"` for a format verb. Both `fmt` forms compile; the GALA forms are built in and need no import. Keep `fmt` for `fmt.Errorf` and `fmt.Fprintf`.
+- **`if p == nil` and `return nil` → `Option[T]`.** Go pointers and `nil` compile, but a GALA function returns `Some(v)` / `None()` and the caller `match`es on it; a Go pointer that may be nil becomes `OptionPtrOf(p)` at the boundary.
+- **`defer f.Close()` → `use f = ...`.** (`GALA-E0036`)
+- **Goroutines and channels → `Future`.** `go f()` is `GALA-E0036` and `chan T` is `GALA-E0055`. Fan-out and collect is `Traverse(items, (x) => Future(work(x))).Await()` from `concurrent`, a `Try[Array[R]]`; `go_interop.Spawn` is only for fire-and-forget work.
+- **`append` → collection operations.** Bare `append` is `GALA-E0035`. Build with `xs.Append(x)`, `Map`, `Filter` or `FoldLeft` on an `Array`/`List`; `go_interop.SliceAppend` is for a Go slice at the boundary.
+
 ## Shape of a program
 
 ```gala
