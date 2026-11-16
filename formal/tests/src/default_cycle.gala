@@ -1,0 +1,14 @@
+package main
+
+// A default that calls its own function and leaves itself out: expanding it to
+// order the package-level variables never ends. galaspec stops as unsupported
+// (default-cycle) before initializing anything.
+func f(a int, b int = f(1)) int = a + b
+
+val x = f(0, 2)
+
+val y = f(0)
+
+func main() {
+    Println(x)
+}

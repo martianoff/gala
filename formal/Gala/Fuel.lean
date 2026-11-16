@@ -321,8 +321,8 @@ end
 
 /-! ## Programs
 
-`initGlobals` uses `reach` and `mentions` only to order the declarations; they take no
-fuel, so both runs order them the same way. -/
+`initGlobals` uses `reach` and `mentions` only to order the declarations (or to stop at a
+cycle of defaults); they take no fuel, so both runs order them the same way. -/
 
 theorem initGlobals_sim (ds : Decls) (k d d' : Nat) (gs : List GlobalDecl) (h : d ≤ d') :
     Sim k (initGlobals ds d gs) (initGlobals ds d' gs) := by

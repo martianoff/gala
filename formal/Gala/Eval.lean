@@ -811,7 +811,7 @@ end
 
 /-- The bare names a pattern mentions: each may bind, or (capitalized) compare with a
     package-level value. -/
-partial def patNames : Pat → List String
+def patNames : Pat → List String
   | .name x => [x]
   | .tuple ps | .extract _ ps => ps.flatMap patNames
   | _ => []
@@ -819,54 +819,105 @@ partial def patNames : Pat → List String
 /-- The default values a call of `x` with arguments `as` leaves out, each with the names
     in its scope: a function's earlier parameters, or none for a field's default. -/
 def omittedDefaults (ds : Decls) (x : String) (as : List Expr) : List (List String × Expr) :=
-  let given (names : List String) : List Nat :=
-    (List.range (as.filter (!isNamed ·)).length) ++
-      as.filterMap fun | .named n _ => names.idxOf? n | _ => none
-  let omitted (names : List String) (dflts : List (Option Expr)) (scope : Nat → List String) :=
-    (dflts.zipIdx).filterMap fun (e, j) =>
-      if (given names).contains j then none else e.map (scope j, ·)
   match ds.funcs.lookup x with
   | some f =>
     let ps := f.params.map (·.name)
-    omitted ps f.defaults (ps.take ·)
+    omittedSlots (givenSlots ps as) f.defaults (ps.take ·)
   | none =>
     let fields : Option (List Field) := match ds.structs.lookup x with
       | some fs => some fs
       | none => (ds.variant? x).map (·.2.fields)
     match fields with
-    | some fs => omitted (fs.map (·.name)) (fs.map (·.default)) fun _ => []
+    | some fs => omittedSlots (givenSlots (fs.map (·.name)) as) (fs.map (·.default)) fun _ => []
     | none => []
+where
+  /-- The slot a named argument names, among parameters or fields `names`. -/
+  namedSlot (names : List String) : Expr → Option Nat
+    | .named n _ => names.idxOf? n
+    | _ => none
+  /-- The slots arguments `as` give: the positional ones first, then the named ones. -/
+  givenSlots (names : List String) (as : List Expr) : List Nat :=
+    (List.range (as.filter (!isNamed ·)).length) ++ as.filterMap (namedSlot names)
+  /-- The defaults of the slots not `given`, each with its scope. -/
+  omittedSlots (given : List Nat) (dflts : List (Option Expr)) (scope : Nat → List String) :
+      List (List String × Expr) :=
+    (dflts.zipIdx).filterMap fun (e, j) => if given.contains j then none else e.map (scope j, ·)
+
+/-- The number of default slots of a program's declarations: every parameter of a
+    function and every field of a struct or sealed case. -/
+def defaultSlots (ds : Decls) : Nat :=
+  (ds.funcs.map (·.2.defaults.length)).sum + (ds.structs.map (·.2.length)).sum +
+    (ds.sealeds.map fun (_, vs) => (vs.map (·.fields.length)).sum).sum
+
+/-- What `mentionsUpTo` finds: names, and whether it left an omitted default unexpanded. -/
+abbrev Mentions := List String × Bool
+
+/-- Two `Mentions`, one after the other. -/
+@[inline] def Mentions.cat (a b : Mentions) : Mentions := (a.1 ++ b.1, a.2 || b.2)
+
+/-- The `Mentions` of a list, in order. -/
+@[inline] def Mentions.all (rs : List Mentions) : Mentions := (rs.flatMap (·.1), rs.any (·.2))
 
 /-- The free names an expression mentions, for the initialization order of package-level
     variables: names bound by an enclosing declaration, parameter or pattern in `bound`
     are left out, as Go's order follows references only. A pattern name counts as a
-    mention too, since it may be a stable identifier. -/
-partial def mentions (ds : Decls) (bound : List String) : Expr → List String
-  | .lit _ | .unsupported _ | .ret none => []
-  | .name x => if bound.contains x then [] else [x]
-  | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) => mentions ds bound e
-  | .binary _ l r => mentions ds bound l ++ mentions ds bound r
-  | .call c as => mentions ds bound c ++ as.flatMap (mentions ds bound) ++
+    mention too, since it may be a stable identifier.
+
+    The default values a call leaves out are mentions of the call, and so are theirs in
+    turn, expanded at most `k` deep. Each is expanded in a scope fixed by its callee and
+    slot, so a chain of expansions that reopens a slot inside itself never ends: one that
+    ends visits each slot at most once, and `defaultSlots` deep (`mentions`) cuts off only
+    such cycles. The flag says whether it cut one off. -/
+def mentionsUpTo (ds : Decls) (k : Nat) (bound : List String) : Expr → Mentions
+  | .lit _ | .unsupported _ | .ret none => ([], false)
+  | .name x => (if bound.contains x then [] else [x], false)
+  | .unary _ e | .paren e | .select e _ | .incdec _ e | .ret (some e) =>
+    mentionsUpTo ds k bound e
+  | .binary _ l r => (mentionsUpTo ds k bound l).cat (mentionsUpTo ds k bound r)
+  | .call c as => ((mentionsUpTo ds k bound c).cat (.all (as.map (mentionsUpTo ds k bound)))).cat <|
     -- The defaults a call leaves out are evaluated there (each in its callee's scope).
     match c with
-    | .name x => if bound.contains x then [] else
-      (omittedDefaults ds x as).flatMap fun (scope, e) => mentions ds scope e
-    | _ => []
-  | .tuple es | .interp es => es.flatMap (mentions ds bound)
-  | .lambda ps _ b => mentions ds (ps.map (·.name) ++ bound) b
-  | .named _ e => mentions ds bound e
+    | .name x => if bound.contains x then ([], false) else
+      match k with
+      | 0 => ([], !(omittedDefaults ds x as).isEmpty)
+      | k + 1 => .all ((omittedDefaults ds x as).map fun (scope, e) => mentionsUpTo ds k scope e)
+    | _ => ([], false)
+  | .tuple es | .interp es => .all (es.map (mentionsUpTo ds k bound))
+  | .lambda ps _ b => mentionsUpTo ds k (ps.map (·.name) ++ bound) b
+  | .named _ e => mentionsUpTo ds k bound e
   | .block es =>
-    (es.foldl (init := (bound, [])) fun (b, acc) e =>
+    (es.foldl (init := (bound, ([], false))) fun (b, acc) e =>
       let b' := match e with | .decl _ ns _ _ _ => ns ++ b | _ => b
-      (b', acc ++ mentions ds b e)).2
-  | .ifExpr c a b => mentions ds bound c ++ mentions ds bound a ++ mentions ds bound b
-  | .ifStmt c a b => mentions ds bound c ++ mentions ds bound a ++ (b.map (mentions ds bound)).getD []
-  | .mtch s cs => mentions ds bound s ++ cs.flatMap fun (p, g, b) =>
-    let ns := patNames p
-    ns.filter (!bound.contains ·) ++ (g.map (mentions ds (ns ++ bound))).getD []
-      ++ mentions ds (ns ++ bound) b
-  | .assign _ ts vs => ts.flatMap (mentions ds bound) ++ vs.flatMap (mentions ds bound)
-  | .decl _ _ _ _ vs => vs.flatMap (mentions ds bound)
+      (b', Mentions.cat acc (mentionsUpTo ds k b e))).2
+  | .ifExpr c a b =>
+    ((mentionsUpTo ds k bound c).cat (mentionsUpTo ds k bound a)).cat (mentionsUpTo ds k bound b)
+  | .ifStmt c a b => ((mentionsUpTo ds k bound c).cat (mentionsUpTo ds k bound a)).cat <|
+    match b with
+    | some b => mentionsUpTo ds k bound b
+    | none => ([], false)
+  | .mtch s cs => (mentionsUpTo ds k bound s).cat <| .all <| cs.map fun c =>
+    let ns := patNames c.1
+    let mg : Mentions := match _hg : c.2.1 with
+      | some g => mentionsUpTo ds k (ns ++ bound) g
+      | none => ([], false)
+    Mentions.cat (Mentions.cat (ns.filter (!bound.contains ·), false) mg)
+      (mentionsUpTo ds k (ns ++ bound) c.2.2)
+  | .assign _ ts vs =>
+    (Mentions.all (ts.map (mentionsUpTo ds k bound))).cat (.all (vs.map (mentionsUpTo ds k bound)))
+  | .decl _ _ _ _ vs => .all (vs.map (mentionsUpTo ds k bound))
+termination_by e => (k, sizeOf e)
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (apply Prod.Lex.right
+       have := List.sizeOf_lt_of_mem ‹_ ∈ cs›
+       obtain ⟨p, g, b⟩ := c
+       simp_all
+       omega)
+
+/-- `mentionsUpTo`, expanding omitted defaults `defaultSlots` deep. -/
+def mentions (ds : Decls) (bound : List String) (e : Expr) : Mentions :=
+  mentionsUpTo ds (defaultSlots ds) bound e
 
 /-- Everything a list of names reaches: the names, and through every function among them,
     the free names of its body, transitively. -/
@@ -876,7 +927,7 @@ where
   /-- The names a function's body mentions. The defaults a call leaves out are
       mentions of the call (`mentions`). -/
   expand (x : String) : Option (List String) :=
-    (ds.funcs.lookup x).map fun f => mentions ds (f.params.map (·.name)) f.body
+    (ds.funcs.lookup x).map fun f => (mentions ds (f.params.map (·.name)) f.body).1
   go : Nat → List String → List String → List String
     | 0, _, seen => seen
     | _, [], seen => seen
@@ -895,12 +946,26 @@ structure GlobalDecl where
   type : Option Ty
   values : List Expr
 
-/-- Initialize the package-level variables in Go's order (see the module doc). -/
+/-- Whether ordering a declaration with initializers `vs` cut off a cycle of defaults
+    (`mentionsUpTo`): in `vs`, or in the body of a function among the names they reach. -/
+def cutsOff (ds : Decls) (vs : List Expr) (reached : List String) : Bool :=
+  vs.any (fun v => (mentions ds [] v).2) || reached.any fun x =>
+    match ds.funcs.lookup x with
+    | some f => (mentions ds (f.params.map (·.name)) f.body).2
+    | none => false
+
+/-- Initialize the package-level variables in Go's order (see the module doc). A default
+    value whose expansion reopens itself (`mentionsUpTo`) leaves no order to follow: the
+    run stops as unsupported (`default-cycle`) before initializing anything. -/
 def initGlobals (ds : Decls) (d : Nat) (gs : List GlobalDecl) : M Unit := do
   let all := gs.flatMap (·.names)
+  -- Each declaration's package-level dependencies, and whether ordering it cut anything off.
+  let deps := gs.map fun g =>
+    let reached := reach ds (g.values.flatMap fun v => (mentions ds [] v).1)
+    (reached.filter (all.contains ·), cutsOff ds g.values reached)
+  if deps.any (·.2) then unsup "default-cycle"
   -- Each declaration with its position and the package-level variables it depends on.
-  let mut pending := (List.range gs.length).zip (gs.zip (gs.map fun g =>
-    (reach ds (g.values.flatMap (mentions ds []))).filter (all.contains ·)))
+  let mut pending := (List.range gs.length).zip (gs.zip (deps.map (·.1)))
   let mut done : List String := []
   for _ in gs do
     match pending.find? (fun (_, _, deps) => deps.all done.contains) with

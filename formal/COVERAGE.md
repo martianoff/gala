@@ -73,7 +73,10 @@ A run ends `unsupported:<kind>` when it reaches:
   named argument to a function value (`named-arg`); a positional argument after a named
   one (`positional-after-named`); a type outside S1 (`type-<name>`); an
   integer constant outside int64 (`int-constant-overflow`); a cycle in package-level
-  initialization (`init-cycle`); a program without `main` (`no-main`);
+  initialization (`init-cycle`); a default value whose expansion reopens itself, such as
+  `func f(a int, b int = f(1))` called as `f(0)` from what a package-level initializer
+  reaches, which leaves the initialization order undefined (`default-cycle`, before
+  anything is initialized); a program without `main` (`no-main`);
 - an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
   runs the package's initializers whether or not the run reaches a name of it, and
   galaspec does not model them. A named import of one of a fixed list of packages
