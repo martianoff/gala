@@ -423,12 +423,12 @@ end
 
 /-! ## Expressions and statements -/
 
-private def asBool : Val → H Bool
+def asBool : Val → H Bool
   | .bool b => pure b
   | v => stuck s!"condition is not a bool: {repr v}"
 
 /-- Bind names in the current scope. A `var` gets a cell of its own (S2: closures share it). -/
-private def pushAll (bs : List (String × Val)) (mutable : Bool) : H Unit := do
+def pushAll (bs : List (String × Val)) (mutable : Bool) : H Unit := do
   for (x, v) in bs do
     let b ← if mutable then do pure ⟨← alloc v, true⟩ else pure ⟨v, false⟩
     modify fun s => { s with locals := bind s.locals x b }
@@ -449,6 +449,32 @@ def isNamed : Expr → Bool
 def unnamed : Expr → Expr
   | .named _ v => v
   | e => e
+
+/-- The operator of a compound assignment: `+` for `+=`, and so on. -/
+def compoundOp (op : String) : String :=
+  match op with
+  | "+=" => "+" | "-=" => "-" | "*=" => "*" | "/=" => "/" | o => o
+
+/-- Each argument's parameter, in the order the arguments are written: a positional
+    argument's is its position, a named one's the parameter it names. A positional argument
+    after a named one is outside the subset (constructors reject it; a function call passes
+    it to the next free position, which docs/GALA.MD does not specify). No parameter may be
+    given twice, and there may be no more arguments than parameters. -/
+def argSlots (names : List String) (args : List Expr) : Except Stop (List Nat) :=
+  go args false []
+where
+  go : List Expr → Bool → List Nat → Except Stop (List Nat)
+    | [], _, slots =>
+      if slots.eraseDups.length != slots.length || slots.any (· ≥ names.length) then
+        .error (.stuck "an argument given twice, or too many")
+      else .ok slots
+    | .named n _ :: as, _, slots =>
+      match names.idxOf? n with
+      | some j => go as true (slots ++ [j])
+      | none => .error (.stuck s!"no parameter {n}")
+    | _ :: as, named, slots =>
+      if named then .error (.unsupported "positional-after-named" "")
+      else go as named (slots ++ [slots.length])
 
 /-- The scope a function's default value is evaluated in: the parameters before it, bound
     to their values, and nothing of the caller's (docs/GALA.MD, "Default Parameter Values"). -/
@@ -477,11 +503,11 @@ def byNameOk (ds : Decls) (locals : Env) (paramTy : Option Ty) (arg : Expr) : H 
   | none, _ => pure false
   | some _, _ => pure true
 
-private def popTo (depth : Nat) : H Unit :=
+def popTo (depth : Nat) : H Unit :=
   modify fun s => { s with locals := exitScope s.locals depth }
 
 /-- The text of a value printed, or why it cannot be. -/
-private def printed (r : Print.P String) (ds : Decls) : H String := do
+def printed (r : Print.P String) (ds : Decls) : H String := do
   match r with
   | .ok text => pure text
   | .error k => match ds.unsupported.find? (· == "method") with
@@ -494,7 +520,7 @@ private def emit (r : Print.P String) (ds : Decls) : H Unit := do
 
 /-- A program's own `String` method changes how its values print, so with methods
     outside S1 only basic values are printed. -/
-private def printable (ds : Decls) (vs : List Val) : H Unit :=
+def printable (ds : Decls) (vs : List Val) : H Unit :=
   if ds.unsupported.contains "method" &&
       vs.any (fun | .int _ | .bool _ | .str _ => false | _ => true) then
     unsup "method" "printing a value whose type may have methods"
@@ -608,9 +634,7 @@ def eval (ds : Decls) : Nat → Expr → M Val
     | .assign op [t] [x] => do
       let cur ← readPlace ds t
       let v ← eval ds d x
-      let bop := match op with
-        | "+=" => "+" | "-=" => "-" | "*=" => "*" | "/=" => "/" | o => o
-      assignTo ds t (← binop bop cur v)
+      assignTo ds t (← binop (compoundOp op) cur v)
       pure .unit
     | .assign _ _ _ => stuck "compound assignment to several targets"
     | .incdec op t => do
@@ -641,23 +665,9 @@ def evalList (ds : Decls) : Nat → List Expr → M (List Val)
 def bindArgs (ds : Decls) : Nat → List String → List (Option Ty) → List (Option Expr) → Bool →
     List Expr → M (List Val)
   | d, names, tys, dflts, fieldScope, args => do
-    -- Each argument's parameter: its position, or the one it names.
-    let mut slots : List Nat := []
-    let mut named := false
-    for a in args do
-      match a with
-      | .named n _ =>
-        named := true
-        match names.idxOf? n with
-        | some j => slots := slots ++ [j]
-        | none => stuck s!"no parameter {n}"
-      | _ =>
-        -- Constructors reject it; a function call passes it to the next free position.
-        -- docs/GALA.MD does not say which, so the subset leaves it out.
-        if named then unsup "positional-after-named"
-        slots := slots ++ [slots.length]
-    if slots.eraseDups.length != slots.length || slots.any (· ≥ names.length) then
-      stuck "an argument given twice, or too many"
+    let slots ← match argSlots names args with
+      | .ok slots => pure slots
+      | .error e => throw e
     let locals := (← getCore).locals
     for (a, j) in args.zip slots do
       unless ← byNameOk ds locals (tys.getD j none) (unnamed a) do
