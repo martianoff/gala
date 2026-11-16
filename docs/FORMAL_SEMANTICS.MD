@@ -112,6 +112,7 @@ formal/
   scripts/ProofCheck.lean   fails on sorry and non-standard axioms
   Gala/MatchLowering.lean   the match lowering model (exists today)
   Gala/GoCore.lean          the Go subset the transpiler emits (first fragment exists)
+  Gala/MatchLower.lean      M3: the match lowering into GoCore, proved against galaspec
   Gala/Syntax.lean          surface AST (mirrors Core JSON)
   Gala/Json.lean            decoder, rejects unknown schema versions
   Gala/Scope.lean           name resolution: binders, shadowing, defaults
@@ -212,7 +213,8 @@ These are the properties of the spec the milestones prove (T1–T7), with the bu
 guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
 `formal/Gala/Fuel.lean`), T3 given what each part does (`formal/Gala/Order.lean`, see M2),
 and T4 for the defaults phase of a call (`bindDefaults_callerLocals` and
-`defaultFrame_lookup`, see M2);
+`defaultFrame_lookup`, see M2). M3's `match` lowering is proved against galaspec
+(`lowerMatch_correct` in `formal/Gala/MatchLower.lean`);
 [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) lists what is proved.
 
 | # | Statement (informal) | Guards against | Milestone |
@@ -331,6 +333,29 @@ column lists what each milestone's claim rests on beyond them.
   their pinned statements in `Statements.lean` change with them.
 - **Risk:** galaspec's match runs in a monad with state, fuel and a heap; the simulation
   needs M1's fuel lemmas.
+- **Status: proved** (`formal/Gala/MatchLower.lean`), as a statement relative to the
+  match's parts, the shape T3 has: *given that the subject, guards and bodies are lowered
+  correctly*, the scoped lowering of `match` into GoCore (`formal/Gala/GoCore.lean`) is
+  correct with respect to galaspec (`lowerMatch_correct`). "Correct" is forward
+  simulation from galaspec's results (`Part`): from related states, wherever galaspec's
+  run ends with a value or a panic, GoCore's ends with the encoded value or a panic of the
+  same class, in related states. Runs galaspec ends out of fuel, `stuck` or
+  `unsupported`, and a `return` inside an arm (which the transformer lowers inline, M5),
+  are not covered; by M1, "not out of fuel" is a property of the program, so no fuel
+  corollary is needed. It covers every S1 pattern form and guards. The subject, guards and
+  bodies are holes in GoCore; the `Part` hypotheses on them are also what keep the
+  evaluation order of a call in them relative to a variable read unobservable (Go fixes the
+  order only among calls), and M5 has to establish them for its lowering. `Part` holds of
+  literals, variables and int `+` and `>` (`part_lit_int`, `part_var`, `part_add`,
+  `part_gt`), so the hypotheses can be met. The #996 counterexample is restated against
+  galaspec (`leaky_not_correct`): with a failing guard, galaspec gives 10, the leaky
+  lowering 6.
+- **Stated gap:** the subject has the static type the transformer inferred (`HasTy`).
+  galaspec decides what a bare pattern name means at run time, from the value's sealed
+  type; the transformer decides it statically. They agree exactly when the value has that
+  type; discharging it needs a typing judgment (T7).
+- **Still trusted:** that the lowering describes what the transformer emits. It does up to
+  five normalizations, which M6 has to prove (see M6).
 
 #### M4: GoCore and the Go AST exporter
 
@@ -385,6 +410,25 @@ column lists what each milestone's claim rests on beyond them.
   with the construct named. Its soundness needs alpha-invariance of GoCore for
   temporaries and a correctness lemma for each normalization rule; both are part of
   M6's size.
+- **Normalizations M3 left to prove.** M3's reference lowering of `match` differs from what
+  the transformer emits in five deliberate ways. Each is a normalization lemma M6 has to
+  prove against the transformer's actual code; they are where #996- and #998-class bugs
+  would hide.
+  1. *Temporaries inlined.* The transformer names an arm's intermediate results
+     (`_tmp_1 := C{}.Unapply(_subj)`, `_tmp_2 := _tmp_1.IsDefined()`); M3 writes them inline.
+  2. *Nested extractors evaluated eagerly.* The transformer runs a nested extractor's
+     statements under the conditions before it (`if ok { ... }`, with `var` hoists); M3
+     runs them unconditionally. This is valid only because generated extractors are pure
+     and total; a user-defined `Unapply` (the #998 class) is outside it.
+  3. *All pattern variables rebound.* The transformer binds, in a branch, only the pattern
+     variables that branch reads (Go rejects unused variables); M3 binds all of them.
+  4. *The general guard form.* When a guard reads no pattern variable, the transformer
+     emits `if cond && guard`; M3 always evaluates the guard in a block of its own into a
+     flag. The transformer decides this with a syntactic check ("the guard reads no
+     binder"); if that check got scoping wrong it would be a #996 bug, so M6 must prove the
+     rule against the real check.
+  5. *A function literal or a direct return.* In a function's tail position the transformer
+     returns from the function directly; M3 always uses a function literal called at once.
 - **What it removes:** the transformer from the trusted base, for each validated program.
 - **Risk:** the transformer's output must be normalized before comparison; a validator
   that is too strict rejects correct output and stalls coverage.
