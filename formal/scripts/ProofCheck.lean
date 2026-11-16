@@ -50,7 +50,13 @@ def requiredTheorems : List Name := [
   `Gala.Spec.eval_tuple_acts,
   `Gala.Spec.eval_interp_acts,
   `Gala.Spec.bindDefaults_acts,
-  `Gala.Spec.matchPats_append
+  `Gala.Spec.matchPats_append,
+  `Gala.Spec.lookup_rel,
+  `Gala.Spec.resolve_rel,
+  `Gala.Spec.matchPat_rel,
+  `Gala.Spec.argSlots_rel,
+  `Gala.Spec.argSlots_same_rel,
+  `Gala.Spec.byNameOk_rel
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/
