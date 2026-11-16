@@ -388,6 +388,9 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 			// are outside the subset; as a statement, goPrintStmt.
 			unsup(e.Pos, "fmt-value")
 		}
+		if t, ok := g.goCall(e, s, sc); ok {
+			return t
+		}
 		if t, ok := g.sliceSize(e, s, sc); ok {
 			return t
 		}

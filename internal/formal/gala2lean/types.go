@@ -701,6 +701,9 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			if _, ok := g.sliceSize(e, s, sc); ok {
 				return "Int64"
 			}
+			if t := g.goCallType(e, s, sc); t != "" {
+				return t
+			}
 			// The receiver's type, read once for every kind of method below
 			// (a chain of calls would otherwise read each receiver again per
 			// kind).

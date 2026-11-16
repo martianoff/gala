@@ -1,0 +1,24 @@
+package main
+
+import "strconv"
+import "strings"
+
+// Go's strings and strconv functions the prelude models, on edge cases:
+// empty strings, a match at either end or the whole string, overlapping and
+// repeated matches, an empty old string (which matches before and after
+// every character), and multi-byte characters.
+
+func main() {
+    Println(strings.HasPrefix("golang", "go"), strings.HasPrefix("go", "golang"), strings.HasPrefix("x", ""))
+    Println(strings.HasSuffix("golang", "lang"), strings.HasSuffix("", ""), strings.HasSuffix("日本語", "語"))
+    Println(strings.TrimPrefix("prefix-body", "prefix-"), strings.TrimPrefix("body", "x"), strings.TrimPrefix("aaa", "a"))
+    Println(strings.TrimSuffix("file.gala", ".gala"), strings.TrimSuffix("abab", "ab"), strings.TrimSuffix("é", "é") == "")
+    Println(strings.Contains("seafood", "foo"), strings.Contains("seafood", "bar"), strings.Contains("", ""), strings.Contains("日本語", "本"))
+    Println(strings.ReplaceAll("oink oink oink", "k", "ky"), strings.ReplaceAll("aaaa", "aa", "b"), strings.ReplaceAll("aaa", "aa", "b"))
+    Println(strings.ReplaceAll("abc", "", "-"), strings.ReplaceAll("", "", "-"), strings.ReplaceAll("日本", "", "|"))
+    Println(strings.ReplaceAll("same", "m", "m"), strings.ReplaceAll("none", "x", "y"), strings.ReplaceAll("ééé", "é", "e"))
+    Println(strings.Repeat("ab", 3), strings.Repeat("x", 0), strings.Repeat("y", 1), strings.Repeat("", 5), strings.Repeat("語", 2))
+    Println(strconv.Itoa(0), strconv.Itoa(-42), strconv.Itoa(9223372036854775807), strconv.Itoa(-9223372036854775807 - 1))
+    val joined = strings.TrimSuffix(strings.Repeat("a,", 3), ",")
+    Println(joined, strings.Contains(joined, "a,a"))
+}

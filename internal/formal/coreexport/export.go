@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
@@ -770,11 +771,18 @@ func (e *exporter) literal(l native.LiteralNode) Node {
 			// none to export.
 			return e.unsupported(UnsupportedStringEscape, l.GalaNodeRef)
 		}
+		if !utf8.ValidString(value) {
+			// `"\xff"`: JSON would carry U+FFFD for the bytes, another string.
+			return e.unsupported(UnsupportedInvalidUTF8, l.GalaNodeRef)
+		}
 		return of(e, &String{Text: text, Value: value}, l.GalaNodeRef)
 	case l.RAW_STRING().Ok():
 		text := l.GetText()
 		// As in Go, a raw string holds no carriage returns.
 		value := strings.ReplaceAll(text[1:len(text)-1], "\r", "")
+		if !utf8.ValidString(value) {
+			return e.unsupported(UnsupportedInvalidUTF8, l.GalaNodeRef)
+		}
 		return of(e, &String{Text: text, Value: value, Raw: true}, l.GalaNodeRef)
 	case l.FLOAT_LIT().Ok():
 		return e.unsupported(UnsupportedFloatLiteral, l.GalaNodeRef)

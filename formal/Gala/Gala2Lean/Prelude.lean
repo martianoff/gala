@@ -514,6 +514,73 @@ def seqGetOption (xs : List α) (i : Int64) : GOption α :=
 /-- The integer GALA's `Size`, `Length`, `IndexOf` and `Count` give. -/
 def seqSize (xs : List α) : Int64 := Int64.ofNat xs.length
 
+/-! ### Trusted Go models: `strings` and `strconv`
+
+Each is written after the Go 1.25.5 source it cites, over Lean's `String`, a sequence
+of Unicode scalar values. A Go string is bytes; the two agree because every string a
+translated program holds is valid UTF-8 (the exporter reports a literal that is not,
+`invalid-utf8`, and nothing in the subset builds one from bytes), and on valid UTF-8,
+whose encoding is self-synchronizing, a byte-level match starts only where a character
+does, so matching characters finds the matches Go's byte search finds. Tested against
+`go run`, never proved. -/
+
+/-- `strings.HasPrefix` (strings.go:520, stringslite.HasPrefix). -/
+def goHasPrefix (s p : String) : Bool := p.toList.isPrefixOf s.toList
+
+/-- `strings.HasSuffix` (strings.go:525, stringslite.HasSuffix). -/
+def goHasSuffix (s p : String) : Bool := p.toList.reverse.isPrefixOf s.toList.reverse
+
+/-- `strings.TrimPrefix` (strings.go:1129): `s` without `p` when it starts with it. -/
+def goTrimPrefix (s p : String) : String :=
+  if goHasPrefix s p then String.ofList (s.toList.drop p.length) else s
+
+/-- `strings.TrimSuffix` (strings.go:1135): `s` without `p` when it ends with it. -/
+def goTrimSuffix (s p : String) : String :=
+  if goHasSuffix s p then String.ofList (s.toList.take (s.length - p.length)) else s
+
+/-- `strings.Contains` (strings.go:62): `sub` occurs in `s`; the empty string always
+    does. -/
+def goContains (s sub : String) : Bool := go s.toList
+where
+  go : List Char → Bool
+    | [] => sub.isEmpty
+    | l@(_ :: r) => sub.toList.isPrefixOf l || go r
+
+/-- The replacement loop of `strings.Replace` for a non-empty `old` (strings.go:1159):
+    the leftmost occurrence of `old` from here is replaced by `new`, and the search goes
+    on after it, so occurrences never overlap. `k` is how many characters of the
+    occurrence just replaced are still to skip. -/
+def goReplaceRest (old new : List Char) : Nat → List Char → List Char
+  | _, [] => []
+  | k + 1, _ :: r => goReplaceRest old new k r
+  | 0, l@(c :: r) =>
+    if old.isPrefixOf l then new ++ goReplaceRest old new (old.length - 1) r
+    else c :: goReplaceRest old new 0 r
+
+/-- `strings.ReplaceAll` (strings.go:1187, `Replace` with n = -1, strings.go:1145): every
+    non-overlapping occurrence of `old`, leftmost first, replaced by `new`. An empty `old`
+    matches at the start and after each character (each UTF-8 sequence). `old == new`
+    and no occurrence return `s`, which the replacement also gives. -/
+def goReplaceAll (s old new : String) : String :=
+  if old.isEmpty then String.ofList (new.toList ++ s.toList.flatMap (fun c => c :: new.toList))
+  else String.ofList (goReplaceRest old.toList new.toList 0 s.toList)
+
+/-- `strings.Repeat` (strings.go:616): a count of 0 gives `""` and 1 gives `s`; a negative
+    count panics ("strings: negative Repeat count"), and so does a result longer than
+    Go's largest int in bytes ("strings: Repeat output length overflow"); both are
+    string panics, class `other` (`Panic.std`). Otherwise `s`, `count` times. -/
+def goRepeat {σ : Type} (s : String) (count : Int64) : Prog σ String :=
+  if count == 0 then pure ""
+  else if count == 1 then pure s
+  else if count < 0 then throw .std
+  else if s.utf8ByteSize * count.toInt.toNat > 9223372036854775807 then throw .std
+  else if s.isEmpty then pure ""
+  else pure (String.join (List.replicate count.toInt.toNat s))
+
+/-- `strconv.Itoa` (itoa.go:34, `FormatInt(i, 10)`): the decimal digits, with a minus
+    sign when negative. -/
+def goItoa (i : Int64) : String := toString i.toInt
+
 /-- The outcome line a run ends with on stderr, in galaspec's spelling. -/
 def outcomeLine (o : String) : String := "gala2lean: outcome=" ++ o
 
