@@ -772,6 +772,8 @@ type Same = GoCounter
 
 type A[T any] = *T
 
+type B[T any] = T
+
 type T = *GoCounter
 
 func NewP() *GoCounter { return &GoCounter{N: 1} }
@@ -823,7 +825,7 @@ func tick(inout n int) {
 		{"&g for a Go alias of a pointer", `func main() {
     var g GP = NewP()
     bumpG(&g)
-}`, "cannot lend &g to the inout parameter of bumpG: g holds a *main.GoCounter, and the parameter takes the GoCounter it points to",
+}`, "cannot lend &g to the inout parameter of bumpG: g holds a *GoCounter, and the parameter takes the GoCounter it points to",
 			"pass `RequirePtr(g)` without `&`"},
 		{"g, a Go alias of a pointer that may be nil", `func main() {
     var g GP = NewP()
@@ -841,6 +843,36 @@ func main() {
     var n = 1
     g2(&n, 2)
 }`, "cannot lend &p to the inout parameter of put: p holds a Ptr[T], and the parameter takes the T it points to", "pass `p` without `&`"},
+		{"&p for a generic Go alias of a Go pointee", `func main() {
+    var p = &GoCounter(N = 1)
+    put[B[GoCounter]](&p, GoCounter(N = 2))
+}`, "cannot lend &p to the inout parameter of put: p holds a Ptr[GoCounter]", "pass `p` without `&`"},
+		{"&p for a generic Go alias of a GALA pointee", `func main() {
+    var p = &Counter(1)
+    put[B[Counter]](&p, Counter(2))
+}`, "cannot lend &p to the inout parameter of put: p holds a Ptr[Counter]", "pass `p` without `&`"},
+		{"&p for a generic Go alias of a pointer too deep", `func main() {
+    var p = &GoCounter(N = 1)
+    var q = &GoCounter(N = 2)
+    put[A[Ptr[GoCounter]]](&p, &q)
+}`, "cannot lend &p to the inout parameter of put: p holds a Ptr[GoCounter]", ""},
+		{"&pp for a generic Go alias of a pointer", `func main() {
+    var c = &Counter(1)
+    var pp = &c
+    put[A[Counter]](&pp, &Counter(2))
+}`, "cannot lend &pp to the inout parameter of put: pp holds a Ptr[Ptr[Counter]]", ""},
+		{"g for a parameter of its own Go pointer type", `func main() {
+    var g GP = NewP()
+    bumpGP(g)
+}`, "the argument g of bumpGP is passed to an inout parameter without `&`", "lend the place with `&g`"},
+		{"an inout parameter of a Go pointer type passed on without &", `func f(inout x GP) {
+    bumpGP(x)
+}
+
+func main() {
+    var g GP = NewP()
+    f(&g)
+}`, "the argument x of bumpGP is passed to an inout parameter without `&`", "lend the place with `&x`"},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
@@ -902,6 +934,18 @@ func main() {
     var pp = &p
     bumpGP(pp)
     Println(p.N)
+}`},
+		{"generic Go aliases as deep as the place", `func main() {
+    var p = &GoCounter(N = 1)
+    var q = &GoCounter(N = 2)
+    put[B[Ptr[GoCounter]]](&p, q)
+    put[A[GoCounter]](&p, q)
+    Println(p.N)
+}`},
+		{"a field of a val of a generic Go alias of a pointer", `func main() {
+    val a A[GoCounter] = NewP()
+    tick(&a.N)
+    Println(a.N)
 }`},
 		{"a type parameter Go infers named like a Go alias", `func main() {
     var p = &Counter(1)
