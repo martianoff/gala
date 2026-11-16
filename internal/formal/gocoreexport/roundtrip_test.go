@@ -1,4 +1,4 @@
-package goexport_test
+package gocoreexport_test
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"martianoff/gala/internal/formal/goexport"
+	"martianoff/gala/internal/formal/gocoreexport"
 )
 
 // The round trip is the exporter's main test: a document printed back as Go
@@ -30,7 +30,7 @@ type obj = map[string]any
 // the document and whether it was round-tripped.
 func roundTrip(t *testing.T, name, src string) (obj, bool) {
 	t.Helper()
-	prog, err := goexport.Export([]goexport.PackageSource{{Path: "main", Files: []goexport.Source{{Name: name, Text: src}}}})
+	prog, err := gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: name, Text: src}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,10 +1,11 @@
-package goexport_test
+package gocoreexport_test
 
 import (
 	"encoding/json"
 	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/require"
 
-	"martianoff/gala/internal/formal/goexport"
+	"martianoff/gala/internal/formal/gocoreexport"
 	"martianoff/gala/internal/transpiler/fuzz/progrun"
 )
 
@@ -59,7 +60,7 @@ type T struct {
 // are exported as unsupported nodes where they are, never dropped, and that
 // the statements around them are kept.
 func TestUnsupportedIsReportedInPlace(t *testing.T) {
-	prog, err := goexport.Export([]goexport.PackageSource{{Path: "main", Files: []goexport.Source{{Name: "u.go", Text: `package main
+	prog, err := gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "u.go", Text: `package main
 
 func f(ch chan int, m map[string]int, xs []int) float64 {
 	defer println("x")
@@ -76,34 +77,49 @@ L:
 	case int:
 		_ = v
 	}
+	goto M
+	switch 1 {
+	case 1:
+		fallthrough
+	default:
+	}
 	return 1.5
+}
+
+func () g() {}
+
+type T struct {
+	F int "\xff"
 }
 `}}}})
 	require.NoError(t, err)
-	counts, err := goexport.ConstructCounts(prog)
+	counts, err := gocoreexport.ConstructCounts(prog)
 	require.NoError(t, err)
+	require.Equal(t, 1, counts["labeled-stmt"], "a labeled statement is reported whole, its break L inside")
+	require.Equal(t, 1, counts["bad-node"], "a method without a receiver")
+	require.Equal(t, 2, counts["invalid-utf8-string"], "a string and a struct with a tag that is not UTF-8")
 	for _, name := range []string{"chan-type", "map-type", "array-type", "defer", "go", "send", "receive",
-		"slice-expr", "invalid-utf8-string", "labeled-stmt", "type-switch", "float-literal"} {
+		"slice-expr", "goto", "fallthrough", "type-switch", "float-literal"} {
 		require.Equal(t, 1, counts[name], "%s is reported once", name)
-		require.Contains(t, goexport.UnsupportedKinds(), name)
+		require.Contains(t, gocoreexport.UnsupportedKinds(), name)
 	}
 	require.Equal(t, 3, counts["assign"], "the statements around the unsupported ones are kept")
 }
 
 func TestVersionAndOrder(t *testing.T) {
-	prog, err := goexport.Export([]goexport.PackageSource{
-		{Path: "main", Files: []goexport.Source{{Name: "b.go", Text: "package main\n"}, {Name: "a.go", Text: "package main\n"}}},
-		{Path: "martianoff/gala/std", Files: []goexport.Source{{Name: "s.go", Text: "package std\n"}}},
+	prog, err := gocoreexport.Export([]gocoreexport.PackageSource{
+		{Path: "main", Files: []gocoreexport.Source{{Name: "b.go", Text: "package main\n"}, {Name: "a.go", Text: "package main\n"}}},
+		{Path: "martianoff/gala/std", Files: []gocoreexport.Source{{Name: "s.go", Text: "package std\n"}}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, goexport.Version, prog.GoCore)
+	require.Equal(t, gocoreexport.Version, prog.GoCore)
 	require.Equal(t, "main", prog.Packages[0].Name)
 	require.Equal(t, "std", prog.Packages[1].Name)
 	require.Equal(t, []string{"a.go", "b.go"}, []string{prog.Packages[0].Files[0].Name, prog.Packages[0].Files[1].Name})
 
-	_, err = goexport.Export([]goexport.PackageSource{{Path: "main", Files: []goexport.Source{{Name: "x.go", Text: "package main\nfunc {"}}}})
+	_, err = gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "x.go", Text: "package main\nfunc {"}}}})
 	require.Error(t, err, "Go that does not parse is an error")
-	_, err = goexport.Export([]goexport.PackageSource{{Path: "main", Files: []goexport.Source{{Name: "a.go", Text: "package main\n"}, {Name: "b.go", Text: "package other\n"}}}})
+	_, err = gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "a.go", Text: "package main\n"}, {Name: "b.go", Text: "package other\n"}}}})
 	require.Error(t, err, "files of two packages under one path are an error")
 }
 
@@ -124,12 +140,14 @@ func TestExamplesRoundTrip(t *testing.T) {
 	slices.Sort(examples)
 	require.Greater(t, len(examples), 200, "//examples:all_gala_sources is not staged")
 
-	kinds, unsupported := set(goexport.Kinds()), set(goexport.UnsupportedKinds())
+	kinds, unsupported := set(gocoreexport.Kinds()), set(gocoreexport.UnsupportedKinds())
 	imp := progrun.OracleImporter(t)
-	seen := map[string]bool{}
-	var exported, roundTripped, transpiled int
-	// check exports one file and returns the packages it imports.
-	check := func(name, text string) []string {
+	seen, exportedPkgs := map[string]bool{}, map[string]bool{}
+	var exported, roundTripped, transpiled, mainsRoundTripped int
+	var untranspiled, unloaded []string
+	// check exports one file, says whether it round-tripped, and returns the
+	// packages it imports.
+	check := func(name, text string) (bool, []string) {
 		exported++
 		doc, ok := roundTrip(t, name, text)
 		if ok {
@@ -148,17 +166,22 @@ func TestExamplesRoundTrip(t *testing.T) {
 		for _, i := range list(file["imports"]) {
 			imports = append(imports, str(i.(obj)["path"]))
 		}
-		return imports
+		return ok, imports
 	}
 	for _, ex := range examples {
 		src, err := os.ReadFile(ex)
 		require.NoError(t, err)
-		res := progrun.Transpile(t, string(src), path.Base(ex))
+		res := progrun.Transpile(t, string(src), filepath.Base(ex))
 		if res.Err != nil || res.Panic != nil {
+			// Examples of rejected programs, and packages of multi-file ones.
+			untranspiled = append(untranspiled, filepath.Base(ex))
 			continue
 		}
 		transpiled++
-		queue := check(path.Base(ex)+".go", res.Go)
+		ok, queue := check(filepath.Base(ex)+".go", res.Go)
+		if ok {
+			mainsRoundTripped++
+		}
 		for len(queue) > 0 {
 			p := queue[0]
 			queue = queue[1:]
@@ -168,22 +191,30 @@ func TestExamplesRoundTrip(t *testing.T) {
 			seen[p] = true
 			// Importing loads the package into the importer, whose sources
 			// are then the Go it generated for it.
-			if _, err := imp.Import(p); err != nil {
+			_, err := imp.Import(p)
+			sources, loaded := imp.Sources(p)
+			if err != nil || !loaded {
+				unloaded = append(unloaded, p)
 				continue
 			}
-			sources, ok := imp.Sources(p)
-			if !ok {
-				continue
-			}
+			exportedPkgs[p] = true
 			for _, n := range slices.Sorted(maps.Keys(sources)) {
-				queue = append(queue, check(p+"/"+n, sources[n])...)
+				_, imports := check(p+"/"+n, sources[n])
+				queue = append(queue, imports...)
 			}
 		}
 	}
-	t.Logf("%d examples transpiled; %d files exported, %d of them wholly inside GoCore and round-tripped", transpiled, exported, roundTripped)
-	require.Greater(t, transpiled, 200)
-	require.Greater(t, roundTripped, transpiled/2)
-	require.True(t, seen["martianoff/gala/std"], "the std package was exported")
+	t.Logf("%d examples transpiled, %d not (%v); the Go output of %d of them round-tripped", transpiled, len(untranspiled), untranspiled, mainsRoundTripped)
+	t.Logf("%d packages exported; %d did not load (%v)", len(exportedPkgs), len(unloaded), unloaded)
+	t.Logf("%d files exported, %d of them wholly inside GoCore and round-tripped", exported, roundTripped)
+	require.Greater(t, transpiled, 400)
+	// Most examples' Go output is wholly inside GoCore's syntax (it lacks
+	// slices, maps and channels); a drop below half means the exporter or
+	// the transpiler changed.
+	require.Greater(t, mainsRoundTripped, transpiled/2)
+	for _, p := range []string{"martianoff/gala/std", "martianoff/gala/collection_immutable"} {
+		require.True(t, exportedPkgs[p], "%s was exported", p)
+	}
 }
 
 func set(xs []string) map[string]bool {

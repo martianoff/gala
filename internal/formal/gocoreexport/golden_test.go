@@ -1,4 +1,4 @@
-package goexport_test
+package gocoreexport_test
 
 import (
 	"bytes"
@@ -8,20 +8,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"martianoff/gala/internal/formal/goexport"
+	"martianoff/gala/internal/formal/gocoreexport"
 )
 
-// goldenDirEnv, when set (bazel test --test_env=GOEXPORT_GOLDEN_DIR=<the
+// goldenDirEnv, when set (bazel test --test_env=GOCOREEXPORT_GOLDEN_DIR=<the
 // absolute path of testdata>), makes the golden test write its output there
 // instead of comparing it.
-const goldenDirEnv = "GOEXPORT_GOLDEN_DIR"
+const goldenDirEnv = "GOCOREEXPORT_GOLDEN_DIR"
 
 // TestGolden pins the document the S1 shapes export to, the format the Lean
 // decoder reads.
 func TestGolden(t *testing.T) {
-	prog, err := goexport.Export([]goexport.PackageSource{{Path: "main", Files: []goexport.Source{{Name: "shapes.go", Text: s1Shapes}}}})
+	prog, err := gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "shapes.go", Text: s1Shapes}}}})
 	require.NoError(t, err)
-	got, err := goexport.Marshal(prog)
+	got, err := gocoreexport.Marshal(prog)
 	require.NoError(t, err)
 	if dir := os.Getenv(goldenDirEnv); dir != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "shapes.json"), got, 0o644))

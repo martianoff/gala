@@ -13,7 +13,7 @@ every kind, field and unsupported construct there is documented here.
 flowchart LR
     G["generated Go<br/>+ imported GALA packages' Go"] --> P["go/parser"]
     P --> A["go/ast"]
-    A --> X["goexport"]
+    A --> X["gocoreexport"]
     X --> J["GoCore JSON"]
     J --> L["GoCore (Lean)"]
 ```
@@ -164,7 +164,7 @@ type arguments: `x` and `indices`.
 
 ### `type-assert`
 
-`x.(type)`: `x` and `type`.
+`x.(T)`: `x` and `type`.
 
 ### `call`
 
@@ -244,7 +244,6 @@ The empty statement; no fields.
 | `array-type` | `[n]T` and `[]T` |
 | `map-type` | `map[K]V` |
 | `chan-type` | `chan T` |
-| `ellipsis` | `...` anywhere but a last parameter (`[...]T`) |
 | `tilde` | `~T` in a constraint |
 | `invalid-utf8-string` | a string literal whose value is not valid UTF-8 |
 | `labeled-stmt` | a labeled statement |

@@ -1,4 +1,4 @@
-package goexport
+package gocoreexport
 
 import (
 	"os"

@@ -4,17 +4,17 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 # reads the transpiler's Go output into GoCore JSON. A test-support library;
 # its visibility keeps it out of the gala CLI and every other shipped binary.
 go_library(
-    name = "goexport",
+    name = "gocoreexport",
     srcs = [
         "export.go",
         "schema.go",
     ],
-    importpath = "martianoff/gala/internal/formal/goexport",
+    importpath = "martianoff/gala/internal/formal/gocoreexport",
     visibility = ["//internal/formal:__subpackages__"],
 )
 
 go_test(
-    name = "goexport_test",
+    name = "gocoreexport_test",
     # TestExamplesRoundTrip transpiles every example: about two minutes.
     size = "medium",
     srcs = [
@@ -29,7 +29,7 @@ go_test(
         "//examples:all_gala_sources",
         "//internal/formal/difftest:stdlib_sources",
     ],
-    embed = [":goexport"],
+    embed = [":gocoreexport"],
     deps = [
         "//internal/transpiler/fuzz/progrun",
         "@com_github_stretchr_testify//require",

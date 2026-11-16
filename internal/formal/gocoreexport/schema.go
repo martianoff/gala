@@ -1,4 +1,4 @@
-package goexport
+package gocoreexport
 
 import "slices"
 
@@ -420,7 +420,6 @@ const (
 	UnsupportedArrayType     = "array-type"
 	UnsupportedMapType       = "map-type"
 	UnsupportedChanType      = "chan-type"
-	UnsupportedEllipsis      = "ellipsis"
 	UnsupportedTilde         = "tilde"
 	UnsupportedReceive       = "receive"
 	UnsupportedLabeledStmt   = "labeled-stmt"
@@ -437,7 +436,7 @@ const (
 
 var unsupportedKinds = []string{
 	UnsupportedFloatLiteral, UnsupportedImagLiteral, UnsupportedInvalidUTF8, UnsupportedSliceExpr,
-	UnsupportedArrayType, UnsupportedMapType, UnsupportedChanType, UnsupportedEllipsis,
+	UnsupportedArrayType, UnsupportedMapType, UnsupportedChanType,
 	UnsupportedTilde, UnsupportedReceive, UnsupportedLabeledStmt, UnsupportedLabeledBranch,
 	UnsupportedGoto, UnsupportedFallthrough, UnsupportedSend, UnsupportedGo, UnsupportedDefer,
 	UnsupportedSelect, UnsupportedTypeSwitch, UnsupportedBadNode,

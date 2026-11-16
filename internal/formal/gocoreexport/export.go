@@ -1,4 +1,4 @@
-// Package goexport reads Go source, the transpiler's output and the Go of the
+// Package gocoreexport reads Go source, the transpiler's output and the Go of the
 // GALA packages it imports, into GoCore JSON: the syntax of the Go subset
 // that the Lean model GoCore runs (docs/FORMAL_SEMANTICS.MD, "M4: GoCore and
 // the Go AST exporter"). SCHEMA.md documents the format.
@@ -10,7 +10,7 @@
 // Literals are read as the Go type checker reads them (go/constant).
 //
 // It is a test-support library: no part of the gala CLI links it.
-package goexport
+package gocoreexport
 
 import (
 	"bytes"
@@ -129,12 +129,16 @@ func (x *exporter) file(name string, f *ast.File) *File {
 func (x *exporter) decl(d ast.Decl) Node {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
+		if d.Recv != nil && len(d.Recv.List) != 1 {
+			// go/parser accepts `func () M()`; Go's type checker does not.
+			return x.unsupported(UnsupportedBadNode, d.Pos())
+		}
 		fd := at(x, &FuncDecl{
 			Name:       d.Name.Name,
 			TypeParams: x.fields(d.Type.TypeParams),
 			Type:       x.funcType(d.Type),
 		}, d.Pos())
-		if d.Recv != nil && len(d.Recv.List) == 1 {
+		if d.Recv != nil {
 			fd.Recv = x.fields(d.Recv)[0]
 		}
 		if d.Body != nil {
@@ -175,13 +179,19 @@ func names(ids []*ast.Ident) []string {
 	return out
 }
 
+// fields exports a field list. The parser allows `...T` only as the type of
+// a function's last parameter; it exports as T, and funcType sets the flag.
 func (x *exporter) fields(fl *ast.FieldList) []*Field {
 	out := []*Field{}
 	if fl == nil {
 		return out
 	}
 	for _, f := range fl.List {
-		field := &Field{Names: names(f.Names), Type: x.expr(f.Type)}
+		t := f.Type
+		if e, ok := t.(*ast.Ellipsis); ok {
+			t = e.Elt
+		}
+		field := &Field{Names: names(f.Names), Type: x.expr(t)}
 		if f.Tag != nil {
 			field.Tag, _ = strconv.Unquote(f.Tag.Value)
 		}
@@ -192,15 +202,23 @@ func (x *exporter) fields(fl *ast.FieldList) []*Field {
 
 func (x *exporter) funcType(t *ast.FuncType) *FuncType {
 	ft := at(x, &FuncType{Params: x.fields(t.Params), Results: x.fields(t.Results)}, t.Pos())
-	// `...T` is allowed only as the last parameter: its field gets type T
-	// and the signature the flag.
 	if t.Params != nil && len(t.Params.List) > 0 {
-		if e, ok := t.Params.List[len(t.Params.List)-1].Type.(*ast.Ellipsis); ok {
-			ft.Params[len(ft.Params)-1].Type = x.expr(e.Elt)
-			ft.Variadic = true
-		}
+		_, ft.Variadic = t.Params.List[len(t.Params.List)-1].Type.(*ast.Ellipsis)
 	}
 	return ft
+}
+
+// validTags reports whether every tag in fl is valid UTF-8, which a JSON
+// string can carry exactly.
+func validTags(fl *ast.FieldList) bool {
+	for _, f := range fl.List {
+		if f.Tag != nil {
+			if tag, err := strconv.Unquote(f.Tag.Value); err != nil || !utf8.ValidString(tag) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (x *exporter) exprs(es []ast.Expr) []Node {
@@ -259,6 +277,9 @@ func (x *exporter) expr(e ast.Expr) Node {
 	case *ast.BinaryExpr:
 		return at(x, &Binary{Op: e.Op.String(), X: x.expr(e.X), Y: x.expr(e.Y)}, e.Pos())
 	case *ast.StructType:
+		if !validTags(e.Fields) {
+			return x.unsupported(UnsupportedInvalidUTF8, e.Pos())
+		}
 		return at(x, &StructType{Fields: x.fields(e.Fields)}, e.Pos())
 	case *ast.InterfaceType:
 		return at(x, &InterfaceType{Elems: x.fields(e.Methods)}, e.Pos())
@@ -272,8 +293,6 @@ func (x *exporter) expr(e ast.Expr) Node {
 		return x.unsupported(UnsupportedMapType, e.Pos())
 	case *ast.ChanType:
 		return x.unsupported(UnsupportedChanType, e.Pos())
-	case *ast.Ellipsis:
-		return x.unsupported(UnsupportedEllipsis, e.Pos())
 	}
 	return x.unsupported(UnsupportedBadNode, e.Pos())
 }
@@ -340,14 +359,14 @@ func (x *exporter) stmt(s ast.Stmt) Node {
 		return at(x, &Return{Results: x.exprs(s.Results)}, s.Pos())
 	case *ast.BranchStmt:
 		switch {
-		case s.Label != nil:
-			return x.unsupported(UnsupportedLabeledBranch, s.Pos())
-		case s.Tok == token.BREAK || s.Tok == token.CONTINUE:
-			return at(x, &Branch{Tok: s.Tok.String()}, s.Pos())
 		case s.Tok == token.GOTO:
 			return x.unsupported(UnsupportedGoto, s.Pos())
 		case s.Tok == token.FALLTHROUGH:
 			return x.unsupported(UnsupportedFallthrough, s.Pos())
+		case s.Label != nil:
+			return x.unsupported(UnsupportedLabeledBranch, s.Pos())
+		default:
+			return at(x, &Branch{Tok: s.Tok.String()}, s.Pos())
 		}
 	case *ast.IfStmt:
 		return at(x, &If{Init: x.optStmt(s.Init), Cond: x.expr(s.Cond), Body: x.block(s.Body), Else: x.optStmt(s.Else)}, s.Pos())
