@@ -4,7 +4,11 @@ go_library(
     name = "analyzerhints",
     srcs = ["analyzerhints.go"],
     importpath = "martianoff/gala/internal/formal/coreexport/analyzerhints",
-    visibility = ["//internal/formal:__subpackages__"],
+    visibility = [
+        "//internal/formal:__subpackages__",
+        # The metamorphic renaming generator's check against T2 (alpha_check_test.go).
+        "//internal/transpiler/fuzz:__pkg__",
+    ],
     deps = [
         "//internal/formal/coreexport",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it

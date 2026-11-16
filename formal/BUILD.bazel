@@ -16,8 +16,11 @@ config_setting(
     name = "lean_enabled",
     flag_values = {":lean": "True"},
     # For targets outside formal/ that use a Lean target only under the config
-    # (the differential test's data).
-    visibility = ["//internal/formal:__subpackages__"],
+    # (the differential test's data, and the generator's check against T2).
+    visibility = [
+        "//internal/formal:__subpackages__",
+        "//internal/transpiler/fuzz:__pkg__",
+    ],
 )
 
 # The theorems COVERAGE.md calls proved: the same list as requiredTheorems in
@@ -168,7 +171,10 @@ lean_proof_test(
 # harness. A development and CI tool only; it never ships.
 lean_binary(
     name = "galaspec",
-    visibility = ["//internal/formal:__subpackages__"],
+    visibility = [
+        "//internal/formal:__subpackages__",
+        "//internal/transpiler/fuzz:__pkg__",
+    ],
     deps = [":galaspec_main"],
 )
 
