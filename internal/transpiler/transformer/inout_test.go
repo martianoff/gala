@@ -312,9 +312,6 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
     var p = &Counter(1, "p")
     h.fill(&p)`,
 			"cannot lend &p to the inout parameter of fill: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
-		{"an argument binding the type parameter", `var p = &Counter(1, "p")
-    put(&p, Counter(2, "q"))`,
-			"cannot lend &p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
 		{"an Option type argument", `var p = &Some(1)
     put[Option[int]](&p, None[int]())`,
 			"cannot lend &p to the inout parameter of put: p holds a Ptr[Option[int]], and the parameter takes the Option[int] it points to", "pass `p` without `&`"},
@@ -324,6 +321,9 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 		{"a Ptr without & for a pointer type argument", `var p = &Counter(1, "p")
     put[Ptr[Counter]](p, &Counter(2, "q"))`,
 			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend the variable holding the Ptr with `&p`"},
+		{"a val Ptr without & for a pointer type argument", `val p = &Counter(1, "p")
+    put[Ptr[Counter]](p, &Counter(2, "q"))`,
+			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend a `var` holding the Ptr: `var q = p`, then pass `&q`"},
 		{"a Ptr without & to another type argument", `var p = &Counter(1, "p")
     put[Point](p, Point(1, 2))`,
 			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Point", "lend a place of type Point"},
@@ -368,6 +368,91 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 			out, err := trans.Transpile(src(tc.body), "inout_explicit_test.gala")
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
+		})
+	}
+
+	// A type parameter the call leaves to Go is not compared: Go infers it
+	// from every argument, a literal taking the pointee's type.
+	acceptedPrograms := []struct{ name, src string }{
+		{"a literal for an inferred type parameter", `package main
+
+type Named interface {
+    Name() string
+}
+
+struct Counter(var n int)
+
+func (c Counter) Name() string = s"c${c.n}"
+
+func set[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var n int64 = 1
+    val p = &n
+    set(p, 0)
+    var f float64 = 1.5
+    val q = &f
+    set(q, 2)
+    var s Named = Counter(1)
+    val r = &s
+    val c2 Named = Counter(2)
+    set(r, c2)
+    Println(n, f, s.Name())
+}
+`},
+		{"a slice of an inferred type parameter", `package main
+
+import . "martianoff/gala/go_interop"
+
+func appendTo[T any](inout xs []T, v T) {
+    xs = SliceAppend(xs, v)
+}
+
+func main() {
+    var s = SliceOf(1, 2)
+    val p = &s
+    appendTo(p, 3)
+    Println(s)
+}
+`},
+		{"a type argument named like a free type parameter", `package main
+
+struct U(var n int)
+
+func put[T any, U any](inout x T, v U) {
+    Println(v)
+}
+
+func main() {
+    var p = &U(1)
+    put[U](p, 5)
+    Println(p.n)
+}
+`},
+		{"a receiver's type argument named like a free type parameter", `package main
+
+struct U(var n int)
+
+struct Holds[T any](v T)
+
+func (h Holds[T]) fillWith[U any](inout x T, u U) {
+    x = h.v
+}
+
+func main() {
+    val h = Holds(U(2))
+    var p = &U(1)
+    h.fillWith(p, 5)
+    Println(p.n)
+}
+`},
+	}
+	for _, tc := range acceptedPrograms {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(tc.src, "inout_explicit_test.gala")
+			require.NoError(t, err)
 		})
 	}
 
