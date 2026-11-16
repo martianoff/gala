@@ -38,6 +38,7 @@ go_test(
     },
     deps = [
         "//cmd/gala/commands/worker",
+        "@com_github_stretchr_testify//assert",
         "@rules_go//go/runfiles",
     ],
 )

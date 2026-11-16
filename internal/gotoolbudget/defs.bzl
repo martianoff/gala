@@ -25,14 +25,24 @@ def _go_toolchain_manifest_impl(ctx):
     go = go_context(ctx, include_deprecated_properties = False)
     sdk = go.sdk
     lines = ["goroot " + _rlocationpath(ctx, sdk.root_file)]
-    files = [sdk.root_file]
 
-    # rules_go's installsuffix(mode), which it does not export; the test runs
-    # in the default mode.
+    # The SDK's files, so that a change to the SDK reruns the test. The test
+    # runs the SDK where the marker links to, which has the internal and
+    # vendored packages sdk.srcs leaves out.
+    files = [sdk.root_file, sdk.go]
+    sdk_files = [sdk.srcs, sdk.tools, sdk.headers, sdk.libs]
+
+    # rules_go's installsuffix(mode), which it does not export (rules-gala's
+    # transpile rule computes it the same way).
+    suffix = go.mode.goos + "_" + go.mode.goarch
+    if go.mode.race:
+        suffix += "_race"
+    elif go.mode.msan:
+        suffix += "_msan"
     stdlib = go.stdlib.root_file
     if not stdlib.is_directory:
         fail("the standard library is not compiled by rules_go, so it has no archives")
-    lines.append("stdlib %s/%s_%s/runtime.a" % (_rlocationpath(ctx, stdlib), go.mode.goos, go.mode.goarch))
+    lines.append("stdlib %s/%s/runtime.a" % (_rlocationpath(ctx, stdlib), suffix))
     files.append(stdlib)
 
     direct = {dep[GoArchive].data.importpath: True for dep in ctx.attr.deps}
@@ -52,7 +62,7 @@ def _go_toolchain_manifest_impl(ctx):
     ctx.actions.write(manifest, "\n".join(lines) + "\n")
     return [DefaultInfo(
         files = depset([manifest]),
-        runfiles = ctx.runfiles(files = [manifest] + files),
+        runfiles = ctx.runfiles(files = [manifest] + files, transitive_files = depset(transitive = sdk_files)),
     )]
 
 go_toolchain_manifest = rule(

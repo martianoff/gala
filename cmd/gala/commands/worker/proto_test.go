@@ -79,7 +79,7 @@ func TestDecodeWorkRequest(t *testing.T) {
 // WriteRequest frames reads back with ReadRequest, and a response
 // WriteResponse frames reads back with ReadResponse.
 func TestClientRoundTrip(t *testing.T) {
-	req := &WorkRequest{Arguments: []string{"transpile-package", "--inputs=a.gala"}, RequestID: 9}
+	req := &WorkRequest{Arguments: []string{"transpile-package", "--inputs=a.gala"}, RequestID: 9, Cancel: true}
 	var buf bytes.Buffer
 	if err := WriteRequest(&buf, req); err != nil {
 		t.Fatalf("WriteRequest: %v", err)
@@ -88,7 +88,7 @@ func TestClientRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadRequest: %v", err)
 	}
-	if len(gotReq.Arguments) != 2 || gotReq.Arguments[1] != "--inputs=a.gala" || gotReq.RequestID != 9 {
+	if len(gotReq.Arguments) != 2 || gotReq.Arguments[1] != "--inputs=a.gala" || gotReq.RequestID != 9 || !gotReq.Cancel {
 		t.Fatalf("request round-trip: got %+v want %+v", gotReq, req)
 	}
 

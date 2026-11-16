@@ -266,9 +266,8 @@ func WriteResponse(w io.Writer, resp *WorkResponse) error {
 	return writeDelimited(w, EncodeWorkResponse(resp))
 }
 
-// WriteRequest frames and writes req's arguments and request ID to w: the
-// side of the protocol Bazel plays, for tests that drive the worker as Bazel
-// does.
+// WriteRequest frames and writes req to w: the side of the protocol Bazel
+// plays, for tests that drive the worker as Bazel does.
 func WriteRequest(w io.Writer, req *WorkRequest) error {
 	var buf []byte
 	for _, a := range req.Arguments {
@@ -279,6 +278,10 @@ func WriteRequest(w io.Writer, req *WorkRequest) error {
 	if req.RequestID != 0 {
 		buf = writeVarint(buf, fieldKey(3, wireVarint))
 		buf = writeVarint(buf, uint64(int64(req.RequestID)))
+	}
+	if req.Cancel {
+		buf = writeVarint(buf, fieldKey(4, wireVarint))
+		buf = writeVarint(buf, 1)
 	}
 	return writeDelimited(w, buf)
 }
@@ -295,14 +298,21 @@ func ReadResponse(r io.Reader) (*WorkResponse, error) {
 		if err != nil {
 			return nil, err
 		}
+		want := uint64(wireVarint)
+		if df.field == 2 {
+			want = wireBytes
+		}
+		if df.field <= 4 && df.wire != want {
+			return nil, fmt.Errorf("worker: bad wire on response field %d: %d", df.field, df.wire)
+		}
 		switch df.field {
-		case 1:
+		case 1: // exit_code
 			resp.ExitCode = int32(df.payloadVarint)
-		case 2:
+		case 2: // output
 			resp.Output = string(df.payloadBytes)
-		case 3:
+		case 3: // request_id
 			resp.RequestID = int32(df.payloadVarint)
-		case 4:
+		case 4: // was_cancelled
 			resp.WasCancelled = df.payloadVarint != 0
 		}
 		buf = rest
