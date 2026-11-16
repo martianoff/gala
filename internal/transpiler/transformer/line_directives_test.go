@@ -459,6 +459,24 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			wants: map[string]string{"100 / *p": "7"},
 		},
 		{
+			// Its value is spread over Go's results: the marker sits right
+			// above the statement holding the expression, not above code the
+			// spread adds.
+			name:  "expression body spread over Go results",
+			src:   "package main\n\nfunc f(n int) (int, error) = Success(100 / n)\n\nfunc main() {\n    println(Try(f(1)).GetOrElse(0))\n}\n",
+			wants: map[string]string{"100 / n": "3"},
+		},
+		{
+			name:  "expression lambda spread over Go results",
+			src:   "package main\n\nfunc run(f func(int) (int, error)) int = Try(f(1)).GetOrElse(0)\n\nfunc main() {\n    println(run((n) => Success(100 / n)))\n}\n",
+			wants: map[string]string{"100 / n": "6"},
+		},
+		{
+			name:  "lambda with a Ptr parameter spread over Go results",
+			src:   "package main\n\nstruct In(n int)\n\nfunc each(f func(*In) (int, error), in *In) int = Try(f(in)).GetOrElse(0)\n\nfunc main() {\n    var in = In(1)\n    println(each((p Ptr[In]) => Success(100 / p.n), &in))\n}\n",
+			wants: map[string]string{"100 / p.n": "9"},
+		},
+		{
 			name:  "if-expression body with its branches on separate lines",
 			src:   "package main\n\nfunc f(n int) int =\n    if (n == 0)\n        100 / n\n    else\n        n + 1\n\nfunc main() {\n    println(f(1))\n}\n",
 			wants: map[string]string{"return 100 / n": "5", "return n + 1": "7"},
@@ -489,21 +507,22 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 }
 
 // TestLineDirectives_PtrLambdaInGoResultsSlot pins finishLambda's ordering
-// for a lambda with both Ptr nil checks and Go results: the Go results
-// rewrite moves its body into a thunk, where the checks come first and the
-// expression's marker sits right above the statement holding it.
+// for a lambda with both Ptr nil checks and Go results whose expression is a
+// Go call with those results: the call's results are returned as they are,
+// the checks come first and the expression's marker sits right above the
+// `return`.
 func TestLineDirectives_PtrLambdaInGoResultsSlot(t *testing.T) {
 	const src = "package main\n\nimport \"strconv\"\n\nfunc each(f func(*int) (int, error), x *int) int = f(x).GetOrElse(0)\n\nfunc main() {\n    var x = 1\n    println(each((p Ptr[int]) => strconv.Atoi(strconv.Itoa(*p)), &x))\n}\n"
 	goCode, err := newLineDirectiveTranspiler().Transpile(src, exprBodyDemoFile)
 	require.NoError(t, err)
 
-	const ret = "return std.GoTry(strconv.Atoi(strconv.Itoa(*p)))"
+	const ret = "return strconv.Atoi(strconv.Itoa(*p))"
 	assert.Equal(t, "//line "+exprBodyDemoFile+":9", lineAbove(t, goCode, ret),
 		"the marker must sit right above the expression's statement; generated:\n%s", goCode)
-	thunk, check, stmt := strings.Index(goCode, "var _goResult"), strings.Index(goCode, "if p == nil"), strings.Index(goCode, ret)
-	require.True(t, thunk >= 0 && check >= 0, "generated:\n%s", goCode)
-	assert.True(t, thunk < check && check < stmt,
-		"the nil check must come first inside the thunk, then the expression; generated:\n%s", goCode)
+	assert.NotContains(t, goCode, "_goResult", "a Go call's results are returned as they are; generated:\n%s", goCode)
+	check, stmt := strings.Index(goCode, "if p == nil"), strings.Index(goCode, ret)
+	require.True(t, check >= 0, "generated:\n%s", goCode)
+	assert.True(t, check < stmt, "the nil check must come first, then the expression; generated:\n%s", goCode)
 }
 
 // lineAbove is the line directly above the one line of goCode that contains

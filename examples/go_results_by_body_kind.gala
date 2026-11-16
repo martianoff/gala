@@ -1,0 +1,56 @@
+package main
+
+import "strconv"
+
+// A function or lambda that Go calls with `(int, error)` results returns
+// them by what its body is:
+//   - an expression body that is a single Go call with those results returns
+//     the call's results as they are (strconv.Atoi returns the largest int,
+//     not zero, with its range error);
+//   - any other body, a block body or an if choosing between Go calls among
+//     them, gives one GALA value, a Try, that is spread over the results: on
+//     a failure Go receives the zero value with the error.
+// A lambda's Ptr parameter, which adds a nil check to its body, changes
+// neither.
+
+struct Input(text string)
+
+func parseBlock(s string) (int, error) {
+    strconv.Atoi(s)
+}
+
+func parseExpr(s string) (int, error) = strconv.Atoi(s)
+
+func parseEither(s string, hex bool) (int, error) =
+    if (hex) strconv.Atoi("0x" + s) else strconv.Atoi(s)
+
+func describe(n int, err error) string =
+    if (err != nil) s"failed, zero value: ${n == 0}" else s"$n"
+
+func callText(f func(string) (int, error), s string) string {
+    val n, err = f(s)
+    describe(n, err)
+}
+
+func callInput(f func(*Input) (int, error), in *Input) string {
+    val n, err = f(in)
+    describe(n, err)
+}
+
+func main() {
+    val tooBig = "99999999999999999999"
+    var in = Input(tooBig)
+
+    val b, bErr = parseBlock(tooBig)
+    Println(s"block function: ${describe(b, bErr)}")
+    val e, eErr = parseExpr(tooBig)
+    Println(s"expression function: ${describe(e, eErr)}")
+    val i, iErr = parseEither(tooBig, false)
+    Println(s"if-expression function: ${describe(i, iErr)}")
+
+    Println(s"block lambda: ${callText((s) => { strconv.Atoi(s) }, tooBig)}")
+    Println(s"expression lambda: ${callText((s) => strconv.Atoi(s), tooBig)}")
+    Println(s"Ptr block lambda: ${callInput((p Ptr[Input]) => { strconv.Atoi(p.text) }, &in)}")
+    Println(s"Ptr expression lambda: ${callInput((p Ptr[Input]) => strconv.Atoi(p.text), &in)}")
+    Println(s"expression lambda, success: ${callText((s) => strconv.Atoi(s), "42")}")
+}

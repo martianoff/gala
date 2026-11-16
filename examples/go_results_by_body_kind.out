@@ -1,0 +1,8 @@
+block function: failed, zero value: true
+expression function: failed, zero value: false
+if-expression function: failed, zero value: true
+block lambda: failed, zero value: true
+expression lambda: failed, zero value: false
+Ptr block lambda: failed, zero value: true
+Ptr expression lambda: failed, zero value: false
+expression lambda, success: 42
