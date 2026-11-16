@@ -54,7 +54,8 @@ def _go_toolchain_manifest_impl(ctx):
             "direct" if data.importpath in direct else "transitive",
         ))
         files.append(data.export_file)
-        for src in data.srcs:
+        # The checked-in files, not ones coverage or cgo generated from them.
+        for src in [s for s in data.srcs if s.is_source]:
             lines.append("src " + _rlocationpath(ctx, src))
             files.append(src)
 

@@ -141,7 +141,8 @@ func TestGoToolchainCallBudget(t *testing.T) {
 			calls, generated := h.transpile(t, c)
 			t.Logf("%s ran the go command %d times (budget %d):\n%s", c.name, len(calls), c.budget, indent(calls))
 			assert.Contains(t, generated, c.wantGo,
-				"%s: the generated Go lacks this, so the transpile did not get the Go types it reads", c.name)
+				"%s: the generated Go lacks this. Either the transpile lost the Go types it reads, "+
+					"or code generation changed and wantGo needs updating", c.name)
 			assert.LessOrEqual(t, len(calls), c.budget,
 				"%s ran the go command %d times; its budget is %d. The calls:\n%s\n"+
 					"A transpile reads Go package types through these calls; #891 took a regression of about "+
@@ -277,14 +278,24 @@ func writeChain(t *testing.T, prog string, n int) {
 // user's project: it requires each library, replaced by its module.
 func (h *harness) writeModules(t *testing.T) string {
 	t.Helper()
+	// Every module at the SDK's language version, so a library may use
+	// whatever the pinned Go supports.
+	version, err := os.ReadFile(filepath.Join(h.toolchain.goroot, "VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// VERSION starts "go1.25.5": the language version is "1.25".
+	parts := strings.SplitN(strings.TrimPrefix(strings.Fields(string(version))[0], "go"), ".", 3)
+	goLine := fmt.Sprintf("go %s.%s\n", parts[0], parts[1])
+
 	var mod strings.Builder
-	mod.WriteString("module example.com/budget\n\ngo 1.24\n")
+	mod.WriteString("module example.com/budget\n\n" + goLine)
 	for _, p := range h.toolchain.thirdParty() {
 		dir := filepath.Join(h.base, "mods", filepath.FromSlash(p.importPath))
 		for _, src := range p.srcs {
 			copyFile(t, src, filepath.Join(dir, filepath.Base(src)))
 		}
-		writeFile(t, filepath.Join(dir, "go.mod"), fmt.Sprintf("module %s\n\ngo 1.21\n", p.importPath), 0o644)
+		writeFile(t, filepath.Join(dir, "go.mod"), fmt.Sprintf("module %s\n\n%s", p.importPath, goLine), 0o644)
 		fmt.Fprintf(&mod, "\nrequire %s v1.0.0\nreplace %s => %s\n", p.importPath, p.importPath, filepath.ToSlash(dir))
 	}
 	return mod.String()
@@ -309,6 +320,9 @@ func (h *harness) runWorker(t *testing.T, dir string, env []string, c budgetCase
 			exports = append(exports, p.importPath+"="+p.export)
 		}
 		if p.direct {
+			if len(p.srcs) == 0 {
+				t.Fatalf("manifest: direct dep %s has no source files", p.importPath)
+			}
 			srcs = append(srcs, p.importPath+"="+filepath.Dir(p.srcs[0]))
 		}
 	}
@@ -337,6 +351,9 @@ func (h *harness) runWorker(t *testing.T, dir string, env []string, c budgetCase
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	// A failure below leaves the worker running; stop it before its
+	// directory is removed. After Wait, Kill does nothing.
+	t.Cleanup(func() { cmd.Process.Kill() })
 	if err := worker.WriteRequest(stdin, req); err != nil {
 		t.Fatalf("writing the work request: %v", err)
 	}
@@ -496,6 +513,9 @@ func readCalls(t *testing.T, log string) []string {
 	}
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(data) == 0 {
+		return nil
 	}
 	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 }

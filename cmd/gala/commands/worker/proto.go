@@ -266,9 +266,12 @@ func WriteResponse(w io.Writer, resp *WorkResponse) error {
 	return writeDelimited(w, EncodeWorkResponse(resp))
 }
 
-// WriteRequest frames and writes req to w: the side of the protocol Bazel
-// plays, for tests that drive the worker as Bazel does.
-func WriteRequest(w io.Writer, req *WorkRequest) error {
+// The side of the protocol Bazel plays, for tests that drive the worker as
+// Bazel does.
+
+// EncodeWorkRequest serializes req to a protobuf wire-format payload (no
+// length prefix — pair with writeDelimited).
+func EncodeWorkRequest(req *WorkRequest) []byte {
 	var buf []byte
 	for _, a := range req.Arguments {
 		buf = writeVarint(buf, fieldKey(1, wireBytes))
@@ -283,39 +286,55 @@ func WriteRequest(w io.Writer, req *WorkRequest) error {
 		buf = writeVarint(buf, fieldKey(4, wireVarint))
 		buf = writeVarint(buf, 1)
 	}
-	return writeDelimited(w, buf)
+	return buf
 }
 
-// ReadResponse pulls one WorkResponse off r, Bazel's side of WriteResponse.
-func ReadResponse(r io.Reader) (*WorkResponse, error) {
-	buf, err := readDelimited(r)
-	if err != nil {
-		return nil, err
-	}
+// DecodeWorkResponse parses a serialized WorkResponse payload (no length
+// prefix — pair with readDelimited).
+func DecodeWorkResponse(buf []byte) (*WorkResponse, error) {
 	resp := &WorkResponse{}
 	for len(buf) > 0 {
 		df, rest, err := decodeField(buf)
 		if err != nil {
 			return nil, err
 		}
-		want := uint64(wireVarint)
-		if df.field == 2 {
-			want = wireBytes
-		}
-		if df.field <= 4 && df.wire != want {
-			return nil, fmt.Errorf("worker: bad wire on response field %d: %d", df.field, df.wire)
-		}
 		switch df.field {
 		case 1: // exit_code
+			if df.wire != wireVarint {
+				return nil, fmt.Errorf("worker: bad wire on exit_code: %d", df.wire)
+			}
 			resp.ExitCode = int32(df.payloadVarint)
 		case 2: // output
+			if df.wire != wireBytes {
+				return nil, fmt.Errorf("worker: bad wire on output: %d", df.wire)
+			}
 			resp.Output = string(df.payloadBytes)
 		case 3: // request_id
+			if df.wire != wireVarint {
+				return nil, fmt.Errorf("worker: bad wire on request_id: %d", df.wire)
+			}
 			resp.RequestID = int32(df.payloadVarint)
 		case 4: // was_cancelled
+			if df.wire != wireVarint {
+				return nil, fmt.Errorf("worker: bad wire on was_cancelled: %d", df.wire)
+			}
 			resp.WasCancelled = df.payloadVarint != 0
 		}
 		buf = rest
 	}
 	return resp, nil
+}
+
+// WriteRequest frames and writes req to w.
+func WriteRequest(w io.Writer, req *WorkRequest) error {
+	return writeDelimited(w, EncodeWorkRequest(req))
+}
+
+// ReadResponse pulls one WorkResponse off r.
+func ReadResponse(r io.Reader) (*WorkResponse, error) {
+	payload, err := readDelimited(r)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeWorkResponse(payload)
 }
