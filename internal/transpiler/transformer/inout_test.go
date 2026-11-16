@@ -301,10 +301,35 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
     var p = &Counter(1, "p")
     c.putIn[Counter](&p, Counter(2, "q"))`,
 			"cannot lend &p to the inout parameter of putIn: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
+		{"a std type argument", `var p = &Tuple(1, 2)
+    put[Tuple[int, int]](&p, Tuple(3, 4))`,
+			"cannot lend &p to the inout parameter of put: p holds a Ptr[Tuple[int, int]], and the parameter takes the Tuple[int, int] it points to", "pass `p` without `&`"},
+		{"a method's std type argument", `val c = Counter(0, "c")
+    var p = &Tuple(1, 2)
+    c.putIn[Tuple[int, int]](&p, Tuple(3, 4))`,
+			"cannot lend &p to the inout parameter of putIn: p holds a Ptr[Tuple[int, int]], and the parameter takes the Tuple[int, int] it points to", "pass `p` without `&`"},
 		{"a receiver's type argument", `val h = Holds(Counter(2, "h"))
     var p = &Counter(1, "p")
     h.fill(&p)`,
 			"cannot lend &p to the inout parameter of fill: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
+		{"an argument binding the type parameter", `var p = &Counter(1, "p")
+    put(&p, Counter(2, "q"))`,
+			"cannot lend &p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
+		{"an Option type argument", `var p = &Some(1)
+    put[Option[int]](&p, None[int]())`,
+			"cannot lend &p to the inout parameter of put: p holds a Ptr[Option[int]], and the parameter takes the Option[int] it points to", "pass `p` without `&`"},
+		{"a pointer type argument to another type", `var p = &Counter(1, "p")
+    put[Ptr[Point]](&p, &Point(1, 2))`,
+			"cannot lend &p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Point]", "lend a place of type Ptr[Point]"},
+		{"a Ptr without & for a pointer type argument", `var p = &Counter(1, "p")
+    put[Ptr[Counter]](p, &Counter(2, "q"))`,
+			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend the variable holding the Ptr with `&p`"},
+		{"a Ptr without & to another type argument", `var p = &Counter(1, "p")
+    put[Point](p, Point(1, 2))`,
+			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Point", "lend a place of type Point"},
+		{"a Ptr without & to another type", `var q = &Point(1, 2)
+    bump(q, 1)`,
+			"cannot lend q to the inout parameter of bump: q holds a Ptr[Point], and the parameter takes a Counter", "lend a place of type Counter"},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
@@ -334,6 +359,9 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 		{"a value", `var c = Counter(1, "c")
     put[Counter](&c, Counter(2, "q"))
     Println(c.n)`, "put[Counter](&c, "},
+		{"an argument binding the type parameter, the pointer itself", `var p = &Counter(1, "p")
+    put(p, Counter(2, "q"))
+    Println(p.n)`, "put(p, "},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
@@ -342,6 +370,27 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 			assert.Contains(t, out, tc.want)
 		})
 	}
+
+	// A type argument is the type it names, even when a type parameter of
+	// the callee has the same name.
+	t.Run("a type argument named like the type parameter", func(t *testing.T) {
+		_, err := trans.Transpile(`package main
+
+struct T(var n int)
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var p = &T(1)
+    put[T](&p, T(2))
+}
+`, "inout_explicit_test.gala")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0111")
+		assert.Contains(t, err.Error(), "cannot lend &p to the inout parameter of put: p holds a Ptr[T], and the parameter takes the T it points to")
+	})
 }
 
 // TestInoutLendPtrVarQualifiedGeneric pins the same check for a generic
@@ -355,6 +404,8 @@ func TestInoutLendPtrVarQualifiedGeneric(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "lend", "lend.gala"), []byte(`package lend
 
 struct Counter(var N int)
+
+type PC Ptr[Counter]
 
 func Put[T any](inout x T, v T) {
     x = v
@@ -381,4 +432,18 @@ func main() {
 	out, err := transpileCrossPkg(t, root, src("p"))
 	require.NoError(t, err)
 	assert.Contains(t, out, "lend.GALA_Put[lend.Counter](p, ")
+
+	// A type argument naming, under an import alias, an alias of the
+	// pointer's type takes the pointer itself.
+	_, err = transpileCrossPkg(t, root, `package main
+
+import z "example.com/lendx/lend"
+
+func main() {
+    var p z.PC = &z.Counter(1)
+    z.Put[z.PC](&p, &z.Counter(2))
+    Println(p.N)
+}
+`)
+	require.NoError(t, err)
 }
