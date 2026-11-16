@@ -1,0 +1,14 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Library names resolve by each file's own dot imports: this file has the
+// immutable collections, and calls a function of the other file, which has
+// only std.
+
+func squares(n int) Array[int] = ArrayTabulate(n, (i) => i * i)
+
+func main() {
+    Println(squares(4), ArrayOf(1, 2).Size())
+    Println(described(3), described(-1))
+}

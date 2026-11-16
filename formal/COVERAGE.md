@@ -275,8 +275,11 @@ galaspec models them, except as listed below):
   `ArrayTabulate` and `ArrayFill`, and Go's `int(x)` and `int64(x)` of a value that is
   already an `int` or `int64` (the same value: both are 64 bits, as galaspec takes Go's
   `int` to be; any other conversion is reported, `conversion`), each only where the name
-  resolves to it: the program declares no such name and dot-imports nothing but std and
-  `collection_immutable` (the mutable collections have their own `ArrayTabulate`);
+  resolves to it: the program declares no such name, and the file the name is in
+  dot-imports nothing but std and `collection_immutable` (the mutable collections have
+  their own `ArrayTabulate`), and `collection_immutable` for its own names. A dot import
+  counts only in its own file, as in the Go the transpiler writes; a name a file's
+  imports rule out is reported;
 - `Array` and `List` from the dot-imported `collection_immutable`, as the prelude's
   `GArray` and `GList`, with the functions the prelude models (`ArrayOf`, `ListOf`,
   `EmptyArray`, `EmptyList`, `Size`, `Get`, `Map`, `Filter`, `FoldLeft`, `FoldRight`,

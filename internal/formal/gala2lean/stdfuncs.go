@@ -9,11 +9,12 @@ import (
 
 // Functions of std and of the immutable collections, and Go's int
 // conversions, called by name. A name is taken as one of these only when
-// it resolves to it: the program declares no such name, it dot-imports no
-// package but std and the immutable collections (another, such as the
-// mutable collections with their own ArrayTabulate, might be the one it
-// means), and, for ArrayTabulate and ArrayFill, it dot-imports the
-// immutable collections. Each is translated after the code it cites.
+// it resolves to it: the program declares no such name, the file the name is
+// in dot-imports no package but std and the immutable collections (another,
+// such as the mutable collections with their own ArrayTabulate, might be
+// the one it means), and, for ArrayOf, ArrayTabulate and the other names of
+// the immutable collections, that file dot-imports them (hideLibNames).
+// Each is translated after the code it cites.
 
 // stdPath is the import path of GALA's standard library.
 const stdPath = "martianoff/gala/std"
@@ -34,13 +35,70 @@ var stdFuncs = map[string]stdFunc{
 }
 
 // libName reports whether bare name x means the library's x: the program
-// declares nothing named x (a function, type or package-level value) and
-// dot-imports no package but std and the immutable collections, which
-// another package's x could be; seq names need the immutable collections
-// dot-imported.
+// declares nothing named x (a function, type or package-level value; one
+// declared in any file of a package is seen in all of them), and seq names
+// need the immutable collections dot-imported. Where the file the name is in
+// rules the library out, hideLibNames has already renamed it.
 func (g *gen) libName(x string, seq bool) bool {
 	return (!seq || g.collections) && !g.declared(x) && !g.declaredType(x) &&
-		g.globalBy[x] == nil && !g.otherDots
+		g.globalBy[x] == nil
+}
+
+// Names resolve per file, as in the Go the transpiler writes, which keeps
+// each file's imports: a dot import makes its package's names visible in
+// its own file only. hiddenPrefix renames a reference to a modelled library
+// name in a file where the name might not mean the library's; GALA reserves
+// the _gala_ prefix, so no declaration has the renamed name, which resolves
+// to nothing and is reported as before.
+const hiddenPrefix = "_gala_hidden_"
+
+// hideLibNames is p with, in each file that dot-imports a package other than
+// std and the immutable collections, every reference to a name of stdFuncs
+// or seqCtors renamed (hiddenPrefix): that package might declare the name.
+// In a file that does not dot-import the immutable collections, their names
+// are renamed too. Only references are renamed, never a binder, so a
+// renaming can only stop a translation, never change what a translated name
+// means.
+func hideLibNames(p *coreexport.Program) *coreexport.Program {
+	out := *p
+	out.Files = make([]*coreexport.File, len(p.Files))
+	for i, f := range p.Files {
+		other, collections := fileDotImports(f)
+		hide := func(x string) bool {
+			std, isStd := stdFuncs[x]
+			seq := seqCtors[x] != "" || isStd && std.seq
+			return other && (isStd || seq) || !collections && seq
+		}
+		var rename func(n coreexport.Node) coreexport.Node
+		rename = func(n coreexport.Node) coreexport.Node {
+			if nm, ok := n.(*coreexport.Name); ok && hide(nm.Name) {
+				c := *nm
+				c.Name = hiddenPrefix + nm.Name
+				return &c
+			}
+			return mapChildren(n, rename)
+		}
+		out.Files[i] = rename(f).(*coreexport.File)
+	}
+	return &out
+}
+
+// fileDotImports reports whether file f dot-imports a package other than std
+// and the immutable collections, and whether it dot-imports the immutable
+// collections.
+func fileDotImports(f *coreexport.File) (other, collections bool) {
+	for _, d := range f.Decls {
+		if imp, ok := d.(*coreexport.Import); ok && imp.Alias == "." {
+			switch imp.Path {
+			case collectionsPath:
+				collections = true
+			case stdPath:
+			default:
+				other = true
+			}
+		}
+	}
+	return other, collections
 }
 
 // isStdFunc reports whether name x, called, is one of stdFuncs as it

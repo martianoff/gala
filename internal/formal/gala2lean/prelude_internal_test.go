@@ -3,6 +3,7 @@ package gala2lean
 import (
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,5 +19,21 @@ func TestPreludeNamesReserved(t *testing.T) {
 	require.NotEmpty(t, defs)
 	for _, d := range defs {
 		require.True(t, leanReserved[d[1]], "prelude definition %s is not in leanReserved", d[1])
+	}
+}
+
+// TestHiddenNamesNeverResolve checks that a name hideLibNames renames can
+// resolve to nothing: GALA rejects a declaration whose name starts with
+// _gala_ (GALA-E0097), and the renamed name is no library name either.
+func TestHiddenNamesNeverResolve(t *testing.T) {
+	require.True(t, strings.HasPrefix(hiddenPrefix, "_gala_"))
+	g := newGen()
+	g.collections = true
+	for x := range stdFuncs {
+		require.False(t, g.isStdFunc(hiddenPrefix+x), x)
+	}
+	for x := range seqCtors {
+		require.Empty(t, seqCtors[hiddenPrefix+x], x)
+		require.False(t, g.libName(hiddenPrefix+x, true) && seqCtors[hiddenPrefix+x] != "", x)
 	}
 }
