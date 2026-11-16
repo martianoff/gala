@@ -20,6 +20,7 @@ import Gala.Defaults
 import Gala.Order
 import Gala.Alpha
 import Gala.AlphaStep
+import Gala.MatchLower
 
 namespace Gala.Statements
 
@@ -362,5 +363,70 @@ theorem alloc_rel : ∀ {pkg : List String} {pm : String → Ren} {Γ : Ren} {c 
     ResR pkg pm (ValR pkg pm) ((alloc v).run.run c).1 ((alloc v').run.run c').1 ∧
       CoreR pkg pm Γ ((alloc v).run.run c).2 ((alloc v').run.run c').2 :=
   Gala.Spec.alloc_rel
+
+open Gala Gala.M3 in
+theorem valEq_enc : ∀ a b : Spec.Val, Spec.valEq a b = GoCore.geq (enc a) (enc b) :=
+  Gala.M3.valEq_enc
+
+open Gala Gala.M3 in
+theorem lowerPat_correct : ∀ (ds : Spec.Decls) (inScope : String → Bool) (c : Spec.Core)
+    (look : GoCore.GVar → Option GoCore.GVal), ReadsOk c look → ScopeOk inScope c →
+    ∀ (t : STy) (p : Spec.Pat) (e : GoCore.GExpr) (v : Spec.Val) (r : Option (List (String × Spec.Val))),
+      HasTy ds t v → peval look e = some (enc v) →
+      ((Spec.matchPat ds c.locals c.globals p v).run.run c).1 = .ok r →
+      PatOk look (lowerPat ds inScope t p e) r :=
+  Gala.M3.lowerPat_correct
+
+open Gala Gala.M3 in
+theorem lowerMatch_correct : ∀ (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t : STy)
+    (X : Nat → GoCore.GM GoCore.GVal) (subj : Spec.Expr) (subj' : GoCore.GExpr) (arms : List Arm),
+    Part (ScopeOk inScope) (HasTy ds t) (Spec.eval ds d subj) (GoCore.geval X subj') →
+    (∀ a ∈ arms, ArmOk ds d inScope t X a) →
+    Part (ScopeOk inScope) (fun _ => True) (Spec.eval ds (d + 1) (.mtch subj (arms.map Arm.src)))
+      (GoCore.geval X (lowerMatch ds inScope t subj' arms)) :=
+  Gala.M3.lowerMatch_correct
+
+open Gala Gala.M3 Gala.M3.Counterexample in
+theorem match_leaky_not_correct :
+    ¬ Part (ScopeOk inScope) (fun _ => True) (Spec.eval ds 10 (.mtch (.name "s") (arms.map Arm.src)))
+      (GoCore.geval X (lowerMatchLeaky ds inScope (.sealed "Shape") (.var (.user "s")) arms)) :=
+  Gala.M3.leaky_not_correct
+
+open Gala Gala.M3 in
+theorem part_lit_int : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
+    (pre : Spec.Core → Prop) (n : Int), Spec.minInt ≤ n ∧ n ≤ Spec.maxInt →
+    Part pre (fun v => v = .int n) (Spec.eval ds d (.lit (.int n))) (GoCore.geval X (.lit (.int n))) :=
+  Gala.M3.part_lit_int
+
+open Gala Gala.M3 in
+theorem part_var : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal) (x : String),
+    Part (fun c => (Spec.lookupVar c.locals c.globals x).isSome) (fun _ => True)
+      (Spec.eval ds d (.name x)) (GoCore.geval X (.var (.user x))) :=
+  Gala.M3.part_var
+
+open Gala Gala.M3 in
+theorem part_add : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
+    (pre : Spec.Core → Prop), (∀ c c', pre c → FrameS c c' → pre c') →
+    ∀ (l r : Spec.Expr) (l' r' : GoCore.GExpr),
+    Part pre IsInt (Spec.eval ds d l) (GoCore.geval X l') →
+    Part pre IsInt (Spec.eval ds d r) (GoCore.geval X r') →
+    Part pre IsInt (Spec.eval ds (d + 1) (.binary "+" l r)) (GoCore.geval X (.bin .add l' r')) :=
+  Gala.M3.part_add
+
+open Gala Gala.M3 in
+theorem part_gt : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
+    (pre : Spec.Core → Prop), (∀ c c', pre c → FrameS c c' → pre c') →
+    ∀ (l r : Spec.Expr) (l' r' : GoCore.GExpr),
+    Part pre IsInt (Spec.eval ds d l) (GoCore.geval X l') →
+    Part pre IsInt (Spec.eval ds d r) (GoCore.geval X r') →
+    Part pre (fun _ => True) (Spec.eval ds (d + 1) (.binary ">" l r)) (GoCore.geval X (.bin .gt l' r')) :=
+  Gala.M3.part_gt
+
+open Gala Gala.M3 in
+theorem lowerMatch_instance : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal),
+    Part (ScopeOk fun _ => false) (fun _ => True)
+      (Spec.eval ds (d + 1) (.mtch (.lit (.int 3)) (instanceArms.map Arm.src)))
+      (GoCore.geval X (lowerMatch ds (fun _ => false) .other (.lit (.int 3)) instanceArms)) :=
+  Gala.M3.lowerMatch_instance
 
 end Gala.Statements

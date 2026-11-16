@@ -13,6 +13,7 @@ import Gala.Theorems
 import Gala.Fuel
 import Gala.Defaults
 import Gala.Order
+import Gala.MatchLower
 import Gala.Alpha
 import Gala.AlphaStep
 import Gala.Gala2Lean.Prelude

@@ -67,7 +67,16 @@ def requiredTheorems : List Name := [
   `Gala.Spec.construct_rel,
   `Gala.Spec.emit_rel,
   `Gala.Spec.setField_rel,
-  `Gala.Spec.alloc_rel
+  `Gala.Spec.alloc_rel,
+  `Gala.M3.valEq_enc,
+  `Gala.M3.lowerPat_correct,
+  `Gala.M3.lowerMatch_correct,
+  `Gala.M3.leaky_not_correct,
+  `Gala.M3.part_lit_int,
+  `Gala.M3.part_var,
+  `Gala.M3.part_add,
+  `Gala.M3.part_gt,
+  `Gala.M3.lowerMatch_instance
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

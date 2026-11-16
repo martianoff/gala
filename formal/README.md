@@ -38,6 +38,12 @@ GALA release.
   the `Unapply` / `IsDefined` / `Value.Get()` / field-read primitives). It does not
   import galaspec. The file lists its modelling choices.
 
+- **The `match` lowering against galaspec (M3)**, `Gala/MatchLower.lean`: the scoped
+  lowering of `match` into GoCore, in the transformer's shape, proved correct with respect
+  to galaspec given correctly lowered subject, guards and bodies (`lowerMatch_correct`),
+  and the #996 lowering shown wrong against it (`leaky_not_correct`).
+  [COVERAGE.md](COVERAGE.md#what-is-proved) states both and the assumption they rest on.
+
 - **gala2lean's prelude and proofs**, `Gala/Gala2Lean/`: the runtime model that the Lean
   `internal/formal/gala2lean` writes for a GALA program imports, and theorems about one
   such translation (see [gala2lean](#gala2lean-a-third-oracle)).
