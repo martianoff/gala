@@ -11,7 +11,10 @@ become those results. Its body gives one of two values:
   an error included.
 
 Any other value is this error, and so is a body that gives a `Try` in one
-place and the `Tuple` in another.
+place and the `Tuple` in another. Each value is checked where it is written
+(a `return`, the trailing value, each `if` branch and `match` arm), and the
+same holds for a lambda or an argument passed where Go expects a
+`func() (T, error)`.
 
 **Minimal repro.**
 
@@ -33,7 +36,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0134]: function parse gives Go the results (int, error), so its body gives a Try[int] (on a failure Go receives the zero value with the error) or a Tuple[int, error] of the results as they are; this value is of type int
+error[GALA-E0134]: function parse gives Go the results (int, error), so its value is a Try[int] (on a failure Go receives the zero value with the error) or a Tuple[int, error] of the results as they are; this value is of type int
   --> main.gala:7:5
   |
 7 |     n * 2

@@ -1002,6 +1002,20 @@ used as a value, is inferred as one GALA type built from the Go signature:
   generic Go callee (`sync.OnceValues(f func() (T1, T2))`) is taken from the
   lambda's body: a body of type `Try[V]` gives `(V, error)`, a `TupleN` its N
   components, and Go infers the callee's type arguments from them.
+- The body of a function, lambda or by-name argument Go calls with results
+  ending in `error` is lowered against their `Try`, but each of its values (a
+  `return`, the trailing value, each `if` branch and `match` arm, through any
+  alias) may instead be the Tuple of every result, `Tuple[T, error]`
+  (go_interop's `ResultsOf`): the body then gives Go each component as it is.
+  A tuple literal of one element per result is inferred against that Tuple, so
+  `(n, nil)` is a `Tuple[int, error]`. One body gives one kind; any other value
+  is GALA-E0134.
+- A Go call passed as the sole argument of a Go function whose parameters take
+  its results one for one (`f(g())`, `ResultsOf(r.Read(p))`) passes them as
+  they are, and each result binds the callee's type parameter at its position:
+  `ResultsOf2(r.ReadLine())` infers `Tuple3[[]byte, bool, error]`. The rule
+  applies to non-variadic Go callees with two or more parameters; a GALA
+  function does not take a Go call's results this way.
 
 Go type inference is optional — if the Go SDK is not found, transpilation still succeeds but Go type resolution is disabled (a warning is printed to stderr).
 

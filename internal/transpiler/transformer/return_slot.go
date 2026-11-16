@@ -32,7 +32,7 @@ type returnSlot struct {
 	// to (see sourceFunctionName), for diagnostics; "" for a lambda.
 	funcName string
 	// goResults follows the result values of a body Go calls with results
-	// ending in `error` (see noteGoResultsValue); nil for any other body.
+	// ending in `error` (see resultSlot); nil for any other body.
 	goResults *goResultsBody
 }
 
@@ -166,15 +166,18 @@ func (t *galaASTTransformer) lowerReturnValue(e exprSrc) (*ast.ReturnStmt, error
 	if t.returnSlotPending() {
 		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(e, true)}}, nil
 	}
-	expr, err := t.lowerResultAgainst(e, typedSlot(t.returnSlot.typ), false)
+	expr, err := t.lowerResultAgainst(e, t.resultSlot(t.returnSlot.typ), false)
 	if err != nil {
 		return nil, err
 	}
-	expr = t.unwrapImmutable(expr)
-	if err := t.noteGoResultsValue(expr, e.at()); err != nil {
-		return nil, err
-	}
-	return &ast.ReturnStmt{Results: []ast.Expr{expr}}, nil
+	return &ast.ReturnStmt{Results: []ast.Expr{t.unwrapImmutable(expr)}}, nil
+}
+
+// resultSlot is the slot of type typ a result value of the current function
+// or lambda fills: it carries the body's goResultsBody, so each value is
+// checked as the Go results it becomes (see lowerGoResultsValue).
+func (t *galaASTTransformer) resultSlot(typ transpiler.Type) slot {
+	return slot{typ: typ, goResults: t.returnSlot.goResults}
 }
 
 // returnSlotPending reports whether the current slot is fillable and still

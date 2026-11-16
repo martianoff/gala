@@ -1054,6 +1054,49 @@ Success(5)
 Success(8080)
 ```
 
+### Keeping a value returned with an error: `ResultsOf`
+
+A failed `Try` gives Go the zero value. Where the value matters with its error
+(an `io.Reader` returning its last bytes with `io.EOF`), give the Tuple of
+both results, which `ResultsOf` from `go_interop` makes from a Go call:
+
+```gala
+package main
+
+import (
+    "io"
+    "strings"
+    "testing/iotest"
+    . "martianoff/gala/go_interop"
+)
+
+struct KeepReader(inner io.Reader)
+
+func (r KeepReader) Read(p []byte) (int, error) {
+    ResultsOf(r.inner.Read(p))
+}
+
+struct TryReader(inner io.Reader)
+
+// The default Try: the bytes read with io.EOF are dropped.
+func (r TryReader) Read(p []byte) (int, error) {
+    r.inner.Read(p)
+}
+
+func source() io.Reader = iotest.DataErrReader(strings.NewReader("hello"))
+
+func main() {
+    Println(io.ReadAll(KeepReader(source())).Map((b) => string(b)))
+    Println(io.ReadAll(TryReader(source())).Map((b) => string(b)))
+}
+```
+
+Output:
+```
+Success(hello)
+Success()
+```
+
 See also: [Language Reference - Returning several results to Go](/docs/language-reference/#returning-several-results-to-go)
 
 ## MkString - Joining Collection Elements

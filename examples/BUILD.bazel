@@ -5335,6 +5335,16 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Every form of a Go-results body gives Go its results: an alias of the Try
+# or the Tuple, `(n, nil)`, an only-assignable component, a by-name argument,
+# an if-expression and a self-tail-call loop.
+gala_exec_test(
+    name = "go_results_kept_whole_forms",
+    src = "go_results_kept_whole_forms.gala",
+    expected = "go_results_kept_whole_forms.out",
+    deps = ["//go_interop"],
+)
+
 gala_exec_test(
     name = "try_combinator_panics",
     src = "try_combinator_panics.gala",

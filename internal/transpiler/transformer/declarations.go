@@ -1042,7 +1042,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}
 	if goResults != nil {
-		funcSlot.goResults = t.newGoResultsBody(goResults, funcSlot.typ, "function "+funcSlot.funcName)
+		funcSlot.goResults = newGoResultsBody(t.fieldListTypes(goResults), funcSlot.typ, "function "+funcSlot.funcName)
 	}
 	defer t.enterReturnSlot(funcSlot)()
 
@@ -1104,14 +1104,9 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		body = exprBody
 	}
 	if goResults != nil {
-		// A body giving the Tuple of the results (ResultsOf) returns them
-		// as they are.
-		if whole := funcSlot.goResults.wholeType(); whole != nil {
-			funcType.Results.List[0].Type = t.typeToExpr(whole)
-		}
 		// The rewrite puts the expression's marker right above the
 		// statement holding its value.
-		body = t.returnGoResults(body, d.expr.ok(), funcType.Results.List[0].Type, goResults, t.exprMark(markedExpr))
+		body = t.returnGoResults(body, d.expr.ok(), funcType.Results.List[0].Type, goResults, funcSlot.goResults, t.exprMark(markedExpr))
 		funcType.Results = goResults
 	} else {
 		body = t.exprFuncBody(markedExpr, body)
@@ -1239,11 +1234,8 @@ func (t *galaASTTransformer) isUnwrittenValRead(e exprSrc) bool {
 // transformVoidExpressionBody's.
 func (t *galaASTTransformer) transformExpressionBodiedFunction(e exprSrc, retType ast.Expr) (*ast.BlockStmt, error) {
 	t.noteNativeShape(e.at(), "body")
-	expr, err := t.lowerResultAgainst(e, typedSlot(t.astTypeToTranspilerType(retType)), false)
+	expr, err := t.lowerResultAgainst(e, t.resultSlot(t.astTypeToTranspilerType(retType)), false)
 	if err != nil {
-		return nil, err
-	}
-	if err := t.noteGoResultsValue(expr, e.at()); err != nil {
 		return nil, err
 	}
 	if stmt, ok := t.divergingStmt(expr); ok {

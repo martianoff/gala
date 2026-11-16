@@ -1,0 +1,11 @@
+Try alias, expression: true false
+Try alias, block: true false
+Tuple alias: true true
+tuple with nil: 5 true
+early tuple with nil: 2 true
+after the early return: true true
+io.Reader from *os.File: error true
+io.Reader from *os.File: reader true
+by-name argument: true true
+if-expression: true true
+self-tail-call loop: true true

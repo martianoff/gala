@@ -944,15 +944,9 @@ func SliceFromNil[T any](slice []T) []T {
 
 // ResultsOf keeps both results of a Go call returning `(T, error)`:
 // `ResultsOf(r.Read(p))` is the Tuple of the value and the error, as Go
-// returned them.
-//
-// A Go call used as a value is a Try, which drops the value when the error is
-// not nil. That follows Go's usual convention, but some Go APIs return a
-// meaningful value with an error: io.Reader's Read (n > 0 with io.EOF),
-// io.Writer's short write, bufio.Reader's ReadString (the last line with
-// io.EOF), strconv's clamped value on a range error. ResultsOf keeps it. A
-// function or method lowered to a Go `(T, error)` signature whose body's
-// value is this Tuple gives Go both values as they are.
+// returned them, where a Try would drop the value on an error. A body Go
+// calls with `(T, error)` results that gives this Tuple gives Go both. See
+// "Keeping a value returned with an error" in docs/GALA.MD.
 func ResultsOf[T any](value T, err error) std.Tuple[T, error] {
 	return std.Tuple[T, error]{V1: std.NewImmutable(value), V2: std.NewImmutable(err)}
 }

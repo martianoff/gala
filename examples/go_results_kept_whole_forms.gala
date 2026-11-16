@@ -1,0 +1,83 @@
+package main
+
+import (
+    "io"
+    "os"
+    "strconv"
+    . "martianoff/gala/go_interop"
+)
+
+// Every form a Go-results body takes gives Go its results: through an alias
+// of the Try or of the Tuple, a tuple with nil for the error, a component only
+// assignable to its result, a by-name argument, an if-expression and a
+// self-tail-call loop.
+
+val tooBig = "99999999999999999999"
+
+type IntTry Try[int]
+
+type Pair Tuple[int, error]
+
+func viaAlias(s string) IntTry = Success(s.Size())
+
+// A Try through an alias.
+func parseAlias(s string) (int, error) = viaAlias(s)
+
+func parseAliasBlock(s string) (int, error) {
+    viaAlias(s)
+}
+
+func pairOf(s string) Pair = ResultsOf(strconv.Atoi(s))
+
+// A Tuple through an alias: both results as they are.
+func parsePair(s string) (int, error) = pairOf(s)
+
+// `(n, nil)`: the nil is the error.
+func size(s string) (int, error) = (s.Size(), nil)
+
+func sizeOrParse(s string) (int, error) {
+    if (s.Size() < 3) {
+        return (s.Size(), nil)
+    }
+    ResultsOf(strconv.Atoi(s))
+}
+
+// An *os.File for the io.Reader result.
+func open(p string) (io.Reader, error) = ResultsOf(os.Open(p))
+
+func pick(s string, hex bool) (int, error) =
+    if (hex) ResultsOf(strconv.Atoi("0x" + s)) else ResultsOf(strconv.Atoi(s))
+
+// A self-tail call is a loop step; its base value is kept whole.
+func countDown(n int) (int, error) = if (n <= 0) ResultsOf(strconv.Atoi(tooBig)) else countDown(n - 1)
+
+func callBack(f func() (int, error)) string {
+    val n, err = f()
+    s"${n > 0} ${err != nil}"
+}
+
+func show(n int, err error) string = s"${n > 0} ${err != nil}"
+
+func main() {
+    val a, aErr = parseAlias(tooBig)
+    Println(s"Try alias, expression: ${show(a, aErr)}")
+    val b, bErr = parseAliasBlock(tooBig)
+    Println(s"Try alias, block: ${show(b, bErr)}")
+    val p, pErr = parsePair(tooBig)
+    Println(s"Tuple alias: ${show(p, pErr)}")
+    val n, nErr = size("hello")
+    Println(s"tuple with nil: $n ${nErr == nil}")
+    val m, mErr = sizeOrParse("ab")
+    Println(s"early tuple with nil: $m ${mErr == nil}")
+    val k, kErr = sizeOrParse(tooBig)
+    Println(s"after the early return: ${show(k, kErr)}")
+    val _, openErr = open("no-such-file.gala-test")
+    Println(s"io.Reader from *os.File: error ${openErr != nil}")
+    val r, _ = open(os.Args[0])
+    Println(s"io.Reader from *os.File: reader ${r != nil}")
+    Println(s"by-name argument: ${callBack(ResultsOf(strconv.Atoi(tooBig)))}")
+    val i, iErr = pick(tooBig, false)
+    Println(s"if-expression: ${show(i, iErr)}")
+    val c, cErr = countDown(3)
+    Println(s"self-tail-call loop: ${show(c, cErr)}")
+}

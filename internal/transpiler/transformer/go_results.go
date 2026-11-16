@@ -49,9 +49,10 @@ import (
 // goResult records one Go call converted to a GALA value.
 type goResult struct {
 	transpiler.GoResultValue
-	raw  *ast.CallExpr // the Go call itself, yielding every result
-	site callSrc       // the call, for quoting the callee in a diagnostic
-	via  string        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
+	raw     *ast.CallExpr     // the Go call itself, yielding every result
+	results []transpiler.Type // the types of its results, as instantiated at the call
+	site    callSrc           // the call, for quoting the callee in a diagnostic
+	via     string            // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
 }
 
 // count is the number of the call's results, a trailing error included.
@@ -105,7 +106,7 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	returns := t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
 	value, _ := transpiler.GoResultValueOf(returns)
 	// The diagnostics quote the callee only: the arguments are not kept.
-	res := &goResult{GoResultValue: value, raw: call, site: callSrc{post: c.post, suffix: c.suffix}}
+	res := &goResult{GoResultValue: value, raw: call, results: returns, site: callSrc{post: c.post, suffix: c.suffix}}
 	if value.Values > transpiler.MaxGoResultValues {
 		line, col := c.start()
 		return nil, galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, line, col,
@@ -117,28 +118,35 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 		t.goResults = make(map[*ast.CallExpr]*goResult)
 	}
 	t.goResults[wrapper] = res
+	if t.goResultCalls == nil {
+		t.goResultCalls = make(map[*ast.CallExpr]*goResult)
+	}
+	t.goResultCalls[call] = res
 	if !res.Type.IsNil() {
 		t.exprTypeCache[wrapper] = res.Type
 	}
 	return wrapper, nil
 }
 
-// goCallResults are the result types of expr when it is a call of a Go
-// function (or of a GALA one declaring a Go result list) with two or more
-// results, as liftGoResults finds them; nil otherwise.
+// goCallResults are the result types of expr when it is a Go call that
+// liftGoResults converted, passed on as its raw results (see
+// spreadGoResultArg); nil otherwise.
 func (t *galaASTTransformer) goCallResults(expr ast.Expr) []transpiler.Type {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok {
-		return nil
+	if res := t.goResultCalls[asCall(expr)]; res != nil {
+		return res.results
 	}
-	sig := t.resolveGoCallSignature(call)
-	if sig == nil || t.isGalaCallee(call) {
-		sig = t.declaredGoResultsSignature(call)
-	}
-	if sig == nil || len(sig.Returns) < 2 {
-		return nil
-	}
-	return t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
+	return nil
+}
+
+// spreadsSoleArg is Go's `f(g())` rule: a call of a function with params
+// parameters (variadic: the last one is variadic) whose arguments are
+// argCount passes a sole argument that Go spreads over the parameters, one
+// result each, when there is one argument and two or more parameters and the
+// function is not variadic. Every place that reads such a call — the argument
+// check, the raw results passed through, the type arguments inferred from
+// them — goes through it.
+func spreadsSoleArg(argCount, params int, variadic bool) bool {
+	return argCount == 1 && params > 1 && !variadic
 }
 
 // goResultHelper names the std function that converts n values (plus an error
@@ -444,7 +452,7 @@ func (t *galaASTTransformer) dropDiscardedGoResults(file *ast.File) {
 // results one for one — `template.Must(tmpl.Parse(text))`, which Go spreads —
 // and arg itself otherwise. sig may be nil.
 func (t *galaASTTransformer) spreadGoResultArg(sig *transpiler.GoFuncSignature, argCount int, arg ast.Expr) ast.Expr {
-	if sig == nil || sig.IsVariadic || argCount != 1 || len(sig.Params) < 2 {
+	if sig == nil || !spreadsSoleArg(argCount, len(sig.Params), sig.IsVariadic) {
 		return arg
 	}
 	if res := t.goResults[asCall(arg)]; res != nil && res.count() == len(sig.Params) {
@@ -678,15 +686,12 @@ func isTryThunkParam(callCtx callContext, argIdx int) bool {
 	if argIdx >= len(params) || ret == nil {
 		return false
 	}
-	gen, ok := ret.(transpiler.GenericType)
-	if !ok || len(gen.Params) != 1 {
-		return false
-	}
-	if base, ok := gen.Base.(transpiler.NamedType); !ok || base.Name != transpiler.TypeTry {
+	elem, ok := transpiler.TryElem(ret)
+	if !ok {
 		return false
 	}
 	ft, ok := params[argIdx].(transpiler.FuncType)
-	return ok && len(ft.Params) == 0 && len(ft.Results) == 1 && ft.Results[0].String() == gen.Params[0].String()
+	return ok && len(ft.Params) == 0 && len(ft.Results) == 1 && ft.Results[0].String() == elem.String()
 }
 
 // thunkReturnsError reports whether the thunk slot's result is already fixed

@@ -3127,7 +3127,13 @@ parameters take a call's results one for one receives them this way.
 One body gives one kind of value, the `Try` or the `Tuple` of the results. A
 body that gives another value, or both kinds, is
 [GALA-E0134](errors/GALA-E0134.md). A lambda passed where Go expects a
-`func(...) (T, error)` follows the same rule.
+`func(...) (T, error)` follows the same rule, and so does an argument passed
+where Go expects a `func() (T, error)` (`run(ResultsOf(strconv.Atoi(s)))`).
+Each value is checked where it is written: a `return`, the trailing value,
+each branch of an `if` and each arm of a `match`. A tuple of the results
+(`(n, nil)`) is a `Tuple[T, error]` too, its `nil` the error. Each component
+needs only to be assignable to its result, so `ResultsOf(os.Open(p))` fills
+`(io.Reader, error)`.
 
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 
