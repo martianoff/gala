@@ -121,14 +121,15 @@ pinned that way.
 | `Gala.Spec.capturedEnv_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in, a `var` by the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells; that evaluation keeps this invariant is not proved. |
 | `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, the scope only.** The frame a default value is evaluated in holds only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That `bindArgs` uses this frame, and evaluates arguments as written and then defaults in parameter order, is its definition, not a theorem. |
 | `Gala.Gala2Lean.Examples.Match.eval_total` | About one program: gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it, under gala2lean's prelude. Its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
+| `Gala.Spec.run_fuel_adequate` | **T1, fuel adequacy.** For every program and fuels `n ≤ m`: if galaspec's run with fuel `n` does not end in `fuel`, the run with fuel `m` ends the same way (`ok`, the same panic, `unsupported` or `stuck`) and prints the same output. So an `AGREE` or `DISAGREE` verdict stays the same with any larger fuel budget (a smaller one can turn it into `INCONCLUSIVE`). It says nothing about a run that ends in `fuel`: `INCONCLUSIVE` stays inconclusive. Covers all of `run` (`Gala/Fuel.lean`). |
 
 These are theorems about the *spec* (and a model of one lowering, and one program's
 translation under gala2lean's prelude), not about the transpiler.
 
-Not proved: T1, T2, T3 and T5–T7, and T4 beyond the scope of a default value.
+Not proved: T2, T3 and T5–T7, and T4 beyond the scope of a default value.
 [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems-the-road-to-an-end-to-end-proof) gives the statements
-they need: fuel adequacy and monotonicity for T1, alpha-invariance with its side
-conditions for T2, and an observational statement about the order of effects for T3.
+they need: alpha-invariance with its side conditions for T2, and an observational
+statement about the order of effects for T3.
 
 ## gala2lean
 
