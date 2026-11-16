@@ -1544,7 +1544,7 @@ func blockEndsWithReturn(block *ast.BlockStmt) bool {
 func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	e exprSrc,
 	expectedType transpiler.Type,
-) (ast.Expr, bool, error) {
+) (*ast.FuncLit, bool, error) {
 	ft, ok := expectedType.(transpiler.FuncType)
 	if !ok {
 		return nil, false, nil

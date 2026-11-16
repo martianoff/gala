@@ -49,8 +49,10 @@ func pick(b bool) int {
 //line $DIR/main.gala:16
 	{
 		if b {
+//line $DIR/main.gala:16
 			return 1
 		} else {
+//line $DIR/main.gala:16
 			return 2
 		}
 	}
@@ -114,6 +116,7 @@ func args(p P) int {
 			return 0
 		} else {
 			n := _subj
+//line $DIR/main.gala:36
 			_tmp_1 = n
 		}
 	}

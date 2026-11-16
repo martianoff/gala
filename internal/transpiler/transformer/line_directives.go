@@ -23,29 +23,35 @@ import (
 // (see transpiler.insertEmbedDirectives). Markers survive gofmt re-parsing and
 // are rewritten to column-0 `//line` directives, which the Go compiler honors.
 //
-// Granularity: one marker before each statement in a block, one before the body
-// of a Go function whose source is an expression (exprFuncBody), and one before each
-// top-level declaration. A directive maps the first physical Go line of the
-// statement's generated code back to its GALA line.
+// Granularity: a marker goes before
+//   - each statement in a block (walkBlock),
+//   - the body of a Go function whose source is an expression: an
+//     expression-bodied function or method, an expression or placeholder
+//     lambda, an argument lifted into a thunk (exprFuncBody),
+//   - the statement holding each expression branch of an if-expression and
+//     each expression arm of a match (exprMark, markExprStmts),
+//   - the body and each expression branch of a self-tail-call loop (tco.go),
+//   - each top-level declaration.
+// A directive maps the first physical Go line of the statement's generated
+// code back to its GALA line.
 //
 // Precision:
-//   - Exact for a GALA statement that lowers to a single Go statement (one
-//     physical line, or a multi-line expression whose panic originates on its
-//     first line): the panic reports the GALA line.
+//   - Exact for a GALA statement, branch or arm that lowers to a single Go
+//     statement (one physical line, or a multi-line expression whose panic
+//     originates on its first line): the panic reports the GALA line.
 //   - Approximate for a GALA statement that expands to MULTIPLE Go statements
 //     (e.g. `use x = acquire` → `x := acquire` plus `defer x.Close()`): only the
 //     first Go line carries the directive, so later Go lines auto-increment and
 //     attribute to the following GALA source line.
-//   - Approximate for IIFE-lowered constructs (match / if-expression / bind
-//     synthesize relocated blocks): they still receive per-statement markers
-//     inside their generated blocks, but because those blocks are moved relative
-//     to the GALA source, a panic inside a match arm reports a line near, not
-//     necessarily exactly at, the arm.
+//   - Approximate for the generated lines of a match or if-expression that no
+//     marker leads: its subject (`_subj := ...`), its tests and conditions,
+//     and a `bind` chain's plumbing count on from the marker above them, so a
+//     panic there reports a line near, not necessarily at, the GALA code.
 //   - Approximate after a lambda or thunk inside a statement: the markers in
 //     its body reset Go's line counter in the middle of the enclosing
 //     statement, so the Go lines of that statement after the func literal
 //     count on from the lambda's line, not the statement's. Block lambdas
-//     have always done this; expression lambdas and thunks now do too.
+//     have always done this; expression lambdas and thunks do too.
 //
 // These approximations are accepted limitations of this slice.
 
@@ -118,21 +124,38 @@ func (t *galaASTTransformer) checkReservedName(name string, at srcNode) error {
 //
 // A zero e (a block lambda's expression) leaves body as it is.
 func (t *galaASTTransformer) exprFuncBody(e exprSrc, body *ast.BlockStmt) *ast.BlockStmt {
-	if body == nil {
+	if body == nil || len(body.List) == 0 {
 		return body
 	}
-	return &ast.BlockStmt{Lbrace: body.Lbrace, List: t.markExprStmts(e, body.List), Rbrace: body.Rbrace}
+	mark := t.exprMark(e)
+	if mark == nil {
+		return body
+	}
+	return prependStmts(body, mark)
 }
 
 // markExprStmts is stmts, the lowering of the expression e, led by the line
-// marker of e; stmts as they are when markers are off, e is zero or there are
-// none. The self-tail-call loop marks its body and branches with it (tco.go).
+// marker of e (exprMark); stmts as they are when there is no marker or no
+// statement. Expression arms of a match mark their statements with it, and
+// the self-tail-call loop its body and branches (tco.go).
 func (t *galaASTTransformer) markExprStmts(e exprSrc, stmts []ast.Stmt) []ast.Stmt {
-	if len(stmts) == 0 || !t.emitLineMarkers() || !e.ok() {
+	mark := t.exprMark(e)
+	if len(stmts) == 0 || mark == nil {
 		return stmts
 	}
+	return append([]ast.Stmt{mark}, stmts...)
+}
+
+// exprMark is the line marker of the expression e, or nil when markers are
+// off or e is zero. An if-expression branch that is an expression carries it
+// as its mark (lowerIfExprBranchValue), which withValue puts right above the
+// statement that returns, stores or runs the branch's value.
+func (t *galaASTTransformer) exprMark(e exprSrc) ast.Stmt {
+	if !t.emitLineMarkers() || !e.ok() {
+		return nil
+	}
 	line, _ := e.at().start()
-	return append([]ast.Stmt{lineMarkerStmt(line)}, stmts...)
+	return lineMarkerStmt(line)
 }
 
 // exprFuncLit is expr with its body led by e's line marker (exprFuncBody)

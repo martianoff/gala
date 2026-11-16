@@ -100,7 +100,7 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 		// An if-expression whose value is discarded is an if statement: its
 		// branches are statements, not the value of a func literal.
 		{"statement-position if-expression", "    if (true) fmt.Println(\"a\") else fmt.Println(\"b\")",
-			[]string{"if true {\n\t\tfmt.Println(\"a\")\n\t} else {\n\t\tfmt.Println(\"b\")\n\t}"}, []string{"GoTry", "func() std.Try"}},
+			[]string{"if true {\n//line go_results_test.gala:32\n\t\tfmt.Println(\"a\")\n\t} else {\n//line go_results_test.gala:32\n\t\tfmt.Println(\"b\")\n\t}"}, []string{"GoTry", "func() std.Try"}},
 		{"statement-position if-expression before another statement", "    if (true) fmt.Println(\"a\") else os.Stdout.WriteString(\"b\")\n    Println(\"c\")",
 			[]string{`fmt.Println("a")`, `os.Stdout.WriteString("b")`}, []string{"GoTry", "func() std.Try"}},
 		{"statement-position if-expression with a block branch", `    if (true) fmt.Println("a") else {

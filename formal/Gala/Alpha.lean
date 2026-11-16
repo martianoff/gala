@@ -21,8 +21,9 @@
   follows its parameter's new name.
 
   The relation covers the shapes the parser produces: a declaration only as a statement of a
-  block, and a named argument only as a call's argument. A program of another shape is not
-  related, so T2 says nothing about it.
+  block, and a named argument only as a call's argument. Binders inside a struct or case
+  field's default are not renamed: struct and sealed declarations are the same on both
+  sides. A program of another shape is not related, so T2 says nothing about it.
 -/
 import Gala.Order
 
@@ -214,22 +215,23 @@ structure FuncR (pkg : List String) (pm : String → Ren) (f f' : Func) : Prop w
   body : AlphaE pkg pm (Ren.pushAll [] (pairsOf (f.params.map (·.name)) (f'.params.map (·.name))))
     f.body f'.body
 
-/-- A field, the same but for its default, related in no scope (a field's default sees no
-    local). -/
-def FieldR (pkg : List String) (pm : String → Ren) (a b : Field) : Prop :=
-  a.name = b.name ∧ a.type = b.type ∧ a.mutable = b.mutable ∧ OptR pkg pm [] a.default b.default
+/-- A struct or case field: the same on both sides, its default included. Binders inside a
+    field's default are not renamed (a restriction of the relation; a function parameter's
+    default is renamed, by `FuncR`). -/
+def FieldR (_pkg : List String) (_pm : String → Ren) (a b : Field) : Prop := a = b
 
 /-- Two lists related elementwise. -/
 inductive Fall2 (R : α → β → Prop) : List α → List β → Prop
   | nil : Fall2 R [] []
   | cons {a b as bs} : R a b → Fall2 R as bs → Fall2 R (a :: as) (b :: bs)
 
-/-- A sealed case related by the renaming: the same but for its fields' defaults. -/
+/-- A sealed case related by the renaming: the same case (`VarR.eq`). -/
 def VarR (pkg : List String) (pm : String → Ren) (v w : Variant) : Prop :=
   v.name = w.name ∧ v.isDefault = w.isDefault ∧ Fall2 (FieldR pkg pm) v.fields w.fields
 
 /-- The declarations of two programs: the same, but for renamed binders inside function
-    bodies, defaults and field defaults. `pkg` holds every function, struct and sealed case
+    bodies and parameter defaults (structs and sealed types are the same, `DeclsR.structs_eq`,
+    `DeclsR.sealeds_eq`). `pkg` holds every function, struct and sealed case
     name (`inPkg`); the names of package-level variables, which `Decls` does not carry, are
     required to be in it by the relation on whole programs (T2, part c). -/
 structure DeclsR (pkg : List String) (pm : String → Ren) (ds ds' : Decls) : Prop where
@@ -619,12 +621,16 @@ def PatNameR (pkg : List String) (pm : String → Ren) : PatName → PatName →
   | _, _ => False
 
 theorem lookupVar_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {l l' g g' : Env}
-    {x : String} (hl : EnvR pkg pm Γ l l') (hg : GlobR pkg pm g g') (hx : NameR Γ x x) :
-    OptBindR pkg pm (lookupVar l g x) (lookupVar l' g' x) := by
+    {x x' : String} (hl : EnvR pkg pm Γ l l') (hg : GlobR pkg pm g g') (hx : NameR Γ x x') :
+    OptBindR pkg pm (lookupVar l g x) (lookupVar l' g' x') := by
   have hloc := lookup_rel hl hx
   unfold lookupVar
-  cases h1 : lookup l x <;> cases h1' : lookup l' x <;> rw [h1, h1'] at hloc
-  · exact lookup_rel hg (nameR_self g x)
+  cases h1 : lookup l x <;> cases h1' : lookup l' x' <;> rw [h1, h1'] at hloc
+  · obtain rfl : x = x' := by
+      rcases hx with hb | ⟨h, _⟩
+      · have := bound_lookup_isSome hl hb; rw [h1] at this; exact absurd this (by simp)
+      · exact h
+    exact lookup_rel hg (nameR_self g x)
   · exact absurd hloc id
   · exact absurd hloc id
   · exact hloc

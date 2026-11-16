@@ -111,6 +111,7 @@ formal/
   Gala.lean                 root module
   scripts/ProofCheck.lean   fails on sorry and non-standard axioms
   Gala/MatchLowering.lean   the match lowering model (exists today)
+  Gala/GoCore.lean          the Go subset the transpiler emits (first fragment exists)
   Gala/Syntax.lean          surface AST (mirrors Core JSON)
   Gala/Json.lean            decoder, rejects unknown schema versions
   Gala/Scope.lean           name resolution: binders, shadowing, defaults
@@ -184,7 +185,8 @@ Three semantics are involved:
 - **galaspec** (`Gala/Eval.lean`): what a GALA program means. It is the definition, so
   it is trusted by construction; it is checked against `docs/GALA.MD` by review and
   against Go by the differential run.
-- **GoCore** (planned): a Lean semantics of the *subset of Go the transpiler emits* for
+- **GoCore** (`formal/Gala/GoCore.lean`; M3 adds the fragment `match` lowers to, M4 and
+  M5 the rest): a Lean semantics of the *subset of Go the transpiler emits* for
   the covered GALA subset. It is not a semantics of Go. That real Go behaves as GoCore
   says is an assumption, tested by running GoCore on the transpiler's output next to
   `go run` (a fourth oracle).
@@ -285,7 +287,10 @@ column lists what each milestone's claim rests on beyond them.
     so a lowercase binder renamed to a capitalized one could turn a later pattern
     binder into a comparison;
   - renaming a function's parameter renames the named arguments at its call sites too,
-    since `bindArgs` resolves `name = value` by parameter name.
+    since `bindArgs` resolves `name = value` by parameter name;
+  - binders inside a struct or sealed case field's default value are not renamed, and only
+    the shapes the parser produces are related: a declaration as a block statement, a
+    named argument as a call's argument.
 
   Renaming top-level declarations consistently is a separate, simpler lemma.
 - **What it gives:** a proof that the metamorphic renaming generator is sound. It gives a
@@ -318,7 +323,7 @@ column lists what each milestone's claim rests on beyond them.
   wildcard, tuple and extractor patterns, bare case names, stable identifiers, and
   guards.
 - **Statement:** a lowering `lowerMatch` from galaspec's syntax to a first fragment of
-  GoCore, and `GoCore.eval (lowerMatch e) ≈ Spec.eval e` under an environment relation,
+  GoCore, and `GoCore.geval (lowerMatch e) ≈ Spec.eval e` under an environment relation,
   as `compile_correct` does today for a separate toy language.
 - **What it removes:** the separate source semantics `seval` in `MatchLowering.lean`,
   which no theorem ties to galaspec today. `compile_correct`, `program_correct` and the
@@ -459,7 +464,8 @@ The table is honest about what the guarantees rest on.
 | Core JSON exporter | Shared by both sides | A plain syntax dump with no logic; golden and schema tests (a round-trip test, export → print → parse → export, is planned) |
 | Type annotations from the analyzer | Meaning depends on them | Limited to numeric literal kinds; the spec checks they are consistent |
 | gala2lean's translator and prelude | They decide what its Lean definitions mean | Mechanical rules; independent of galaspec; compared with galaspec and Go on every translated program |
-| Go toolchain and runtime | Today we run it, not model it. From M4, GoCore models the subset the transpiler emits, and that real Go behaves as GoCore says is assumed | GoCore runs next to `go run` on the transformer's output for every program in the corpus; runs Go aborts for lack of stack or memory are outside every claim |
+| Go toolchain and runtime | GoCore (`formal/Gala/GoCore.lean`) models the subset the transpiler emits, so far the fragment `match` lowers to (M3), and that real Go behaves as GoCore says is assumed | GoCore runs next to `go run` on the transformer's output for every program in the corpus; runs Go aborts for lack of stack or memory are outside every claim |
+| GoCore's layout of a sealed value | GoCore holds a sealed value as its type, its active case and that case's fields; the generated Go holds every case's fields in one struct with a tag | M4 either models the flat struct or proves that `Unapply` on it reads the tag and only the active case's fields |
 | Go AST exporter (planned, M4) | It decides which GoCore program the emitted Go is | A plain syntax dump; constructs outside GoCore are reported, never dropped |
 | The validator's run (planned, M6) | Evaluated by Lean's kernel, or by compiled Lean when the kernel is too slow | The kernel needs no mitigation; compiled Lean is named as trusted where it is used |
 | The transformer | **Not trusted.** It is what we test, and from M6 what we validate per program | — |

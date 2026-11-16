@@ -517,7 +517,7 @@ def printed (r : Print.P String) (ds : Decls) : H String := do
     | some k' => unsup k' "printing"
     | none => unsup k
 
-private def emit (r : Print.P String) (ds : Decls) : H Unit := do
+def emit (r : Print.P String) (ds : Decls) : H Unit := do
   let text ← printed r ds
   modify fun s => { s with out := s.out ++ text }
 
@@ -530,7 +530,7 @@ def printable (ds : Decls) (vs : List Val) : H Unit :=
   else pure ()
 
 /-- The fields of a struct or case built from evaluated arguments, one per field. -/
-private def construct (ds : Decls) (name : String) (fs : List Field) (vs : List Val) :
+def construct (ds : Decls) (name : String) (fs : List Field) (vs : List Val) :
     H (List Val) := do
   for f in fs do discard (checkOptTy ds s!"field {f.name}" f.type)
   if vs.length != fs.length then stuck s!"{name} takes {fs.length} fields"

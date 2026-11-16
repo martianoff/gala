@@ -57,12 +57,16 @@ func literals(x int) string {
 	{
 		_subj := x
 		if _subj == 0 {
+//line $DIR/main.gala:17
 			return "zéro"
 		} else if _subj == 1 || _subj == 2 || _subj == 3 {
+//line $DIR/main.gala:18
 			return "small"
 		} else if _subj == Limit.Get() {
+//line $DIR/main.gala:19
 			return "limit"
 		} else {
+//line $DIR/main.gala:20
 			return "other"
 		}
 	}
@@ -74,9 +78,11 @@ func subjects(b Bag, s string) int {
 	var n = func() int {
 		_subj := b.items.Get().Size()
 		if _subj == 0 {
+//line $DIR/main.gala:25
 			return 0
 		} else {
 			k := _subj
+//line $DIR/main.gala:26
 			return k
 		}
 	}()
@@ -84,8 +90,10 @@ func subjects(b Bag, s string) int {
 	func() {
 		_subj := strings.ToUpper(s)
 		if _subj == "ü" || _subj == "Ä" {
+//line $DIR/main.gala:29
 			fmt.Println("umlaut")
 		} else {
+//line $DIR/main.gala:30
 			fmt.Println(s)
 		}
 	}()
@@ -106,8 +114,10 @@ func heads(o std.Option[int], x any) int {
 			_tmp_v := _tmp_3
 			if _tmp_2 {
 				v := _tmp_v
+//line $DIR/main.gala:37
 				return v
 			} else {
+//line $DIR/main.gala:38
 				return 0
 			}
 		}
@@ -119,8 +129,10 @@ func heads(o std.Option[int], x any) int {
 			_tmp_v := _tmp_4.v.Get()
 			if _tmp_5 {
 				v := _tmp_v
+//line $DIR/main.gala:41
 				return v
 			} else {
+//line $DIR/main.gala:42
 				return 0
 			}
 		}
@@ -139,6 +151,7 @@ func hoisted(x int) int {
 //line $DIR/main.gala:49
 			return 10
 		} else {
+//line $DIR/main.gala:50
 			_tmp_6 = x + 1
 		}
 	}
@@ -160,6 +173,7 @@ func nested(o std.Option[std.Option[string]]) string {
 			_tmp_inner := _tmp_9
 			if _tmp_8 {
 				inner := _tmp_inner
+//line $DIR/main.gala:56
 				{
 					_subj := inner
 					{
@@ -168,13 +182,16 @@ func nested(o std.Option[std.Option[string]]) string {
 						_tmp_12 := _tmp_10.Value.Get()
 						_ = _tmp_12
 						if _tmp_11 && _tmp_12 == "ö" {
+//line $DIR/main.gala:57
 							return "ö"
 						} else {
+//line $DIR/main.gala:58
 							return "other"
 						}
 					}
 				}
 			} else {
+//line $DIR/main.gala:60
 				return "none"
 			}
 		}

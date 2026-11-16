@@ -4,7 +4,7 @@ title: "Getting Started with GALA — Install and Write Your First Program"
 description: "Install GALA and write your first program in minutes. Pre-built binaries for Linux, macOS, and Windows. Get sum types, pattern matching, and Option types for Go in 3 steps."
 keywords: "install gala, gala getting started, gala tutorial, gala hello world, gala setup, gala quickstart, transpile gala to go, golang sum types install, go pattern matching setup"
 permalink: /getting-started/
-last_modified_at: 2026-11-14
+last_modified_at: 2026-11-15
 ---
 
 <div class="breadcrumb">
@@ -394,11 +394,7 @@ GALA ships with a **GoLand/IntelliJ plugin**, a **[VS Code extension](https://ma
 
 ### Quick setup
 
-**GoLand / IntelliJ IDEA:**
-
-1. Install the GALA CLI (see [Installation](#installation))
-2. Install plugin: **Settings > Plugins > Install from Disk** > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases)
-3. Restart the IDE — the LSP server starts automatically when a `.gala` file is opened
+Every editor starts `gala lsp`, so the GALA CLI must be on `PATH` (see [Installation](#installation)).
 
 **VS Code** — install the GALA extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run
 
@@ -406,22 +402,24 @@ GALA ships with a **GoLand/IntelliJ plugin**, a **[VS Code extension](https://ma
 code --install-extension GALA.gala
 ```
 
-Offline, install the `gala-vscode-<version>.vsix` attached to each [release](https://github.com/martianoff/gala/releases) with **Extensions** > `...` > **Install from VSIX...**. It adds syntax highlighting and starts `gala lsp` for diagnostics, hover, go-to-definition, completion, signature help and inlay hints. The GALA CLI must be on `PATH`; override with `gala.serverPath` or `GALA_PATH`.
+It adds syntax highlighting and starts `gala lsp` for diagnostics, hover, go-to-definition, completion, signature help and inlay hints. To run another binary, set `gala.serverPath`, or `GALA_PATH` when that setting is not set.
 
-**Neovim:**
+**GoLand / IntelliJ IDEA 2025.2+** — **Settings > Plugins > Marketplace**, search for **GALA** ([plugin page](https://plugins.jetbrains.com/plugin/31256-gala)), install it and restart the IDE. The LSP server starts when a `.gala` file is opened.
+
+**Neovim 0.11+** — in `init.lua`:
 
 ```lua
-require('lspconfig.configs').gala = {
-  default_config = {
-    cmd = { 'gala', 'lsp' },
-    filetypes = { 'gala' },
-    root_dir = require('lspconfig.util').root_pattern('gala.mod', '.git'),
-  },
-}
-require('lspconfig').gala.setup({})
+vim.filetype.add({ extension = { gala = 'gala' } })
+
+vim.lsp.config('gala', {
+  cmd = { 'gala', 'lsp' },
+  filetypes = { 'gala' },
+  root_markers = { 'gala.mod', '.git' },
+})
+vim.lsp.enable('gala')
 ```
 
-See the full [IDE Support page]({{ '/features/ide-support/' | relative_url }}) for screenshots of syntax highlighting, type-aware code completion, inlay type hints, structure view, and more.
+Claude Code, Helix, other LSP clients and offline installs are covered in [Editor Setup]({{ '/features/ide-support/' | relative_url }}#editor-setup), with screenshots of syntax highlighting, type-aware code completion, inlay type hints, structure view, and more.
 
 ---
 

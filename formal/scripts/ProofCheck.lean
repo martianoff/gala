@@ -56,7 +56,18 @@ def requiredTheorems : List Name := [
   `Gala.Spec.matchPat_rel,
   `Gala.Spec.argSlots_rel,
   `Gala.Spec.argSlots_same_rel,
-  `Gala.Spec.byNameOk_rel
+  `Gala.Spec.byNameOk_rel,
+  `Gala.Spec.binop_rel,
+  `Gala.Spec.unop_rel,
+  `Gala.Spec.fmtVs_rel,
+  `Gala.Spec.getField_rel,
+  `Gala.Spec.readPlace_rel,
+  `Gala.Spec.assignTo_rel,
+  `Gala.Spec.pushAll_rel,
+  `Gala.Spec.construct_rel,
+  `Gala.Spec.emit_rel,
+  `Gala.Spec.setField_rel,
+  `Gala.Spec.alloc_rel
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

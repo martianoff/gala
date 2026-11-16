@@ -72,7 +72,7 @@ resolver-aware — a symbol the program itself declared is left alone.
 | `defer x.Close()` | a `use x = acquire` binding (closes at block exit, LIFO), or a `resource` combinator — `Using` / `Bracket` / `WithLock` from `martianoff/gala/resource` |
 | `go f()` | prefer `concurrent.Future` (its captures are checked, see `GALA-E0037`); `go_interop.Spawn(() => f())` is the unchecked escape hatch |
 | `goto`, `fallthrough` | structured control flow — pattern matching (`match`), recursion, or a `for` loop |
-| `select`, `chan` | the `go_interop` channel helpers |
+| `select`, `chan` | a `Future` from `concurrent` for a computed value; the `go_interop` channel helpers (`NewSignal`, `WaitClosedTimeout`) for a done signal. A `chan T` type or a `select` block is reported as `GALA-E0055` (a Go keyword used where GALA expects a name) |
 
 #### `use` — the RAII scoped-resource idiom (preferred defer replacement)
 
@@ -159,6 +159,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
 | Unnecessary `var` | `var x = <literal>` where x is never reassigned | Use `val x = <literal>` |
+| Go short declaration (LOW) | `x := v` inside a function — it compiles and is already immutable (reassigning it is an error), but reads as Go | `val x = v`; `var x = v` when it is reassigned |
 | Mutable loop counter | `var i = 0; for { i++ }` when FoldLeft works | Use `FoldLeft` or `ForEach` |
 | Mutation instead of copy | `person.age = 31` | Use `person.Copy(age = 31)` |
 | Nil for optional fields | `var next *Node = nil` (mutable just to allow nil) | Use `val next Option[Node]` or `val next func() Option[Node]` |

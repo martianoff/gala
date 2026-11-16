@@ -115,8 +115,10 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:57
 	var a = func() int {
 		if c {
+//line $DIR/main.gala:57
 			return 1
 		} else {
+//line $DIR/main.gala:57
 			return 2
 		}
 	}()
@@ -135,15 +137,19 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:64
 	var o = func() std.Option[int] {
 		if c {
+//line $DIR/main.gala:64
 			return std.Some[int]{}.Apply(n)
 		} else {
+//line $DIR/main.gala:64
 			return std.None[int]{}.Apply()
 		}
 	}()
 //line $DIR/main.gala:65
 	if c {
+//line $DIR/main.gala:65
 		fmt.Println("ü")
 	} else {
+//line $DIR/main.gala:65
 		fmt.Println("ö")
 	}
 //line $DIR/main.gala:66
@@ -156,6 +162,7 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:70
 		var _tmp_1 int
 		if i > 3 {
+//line $DIR/main.gala:70
 			_tmp_1 = i
 		} else {
 //line $DIR/main.gala:71

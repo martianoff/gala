@@ -338,8 +338,10 @@ func (h Half) Unapply(n int) std.Option[int] {
 //line $DIR/main.gala:38
 	{
 		if n%2 == 0 {
+//line $DIR/main.gala:38
 			return std.Some[int]{}.Apply(n / 2)
 		} else {
+//line $DIR/main.gala:38
 			return std.None[int]{}.Apply()
 		}
 	}
@@ -354,10 +356,13 @@ func literals(x int) string {
 	{
 		_subj := x
 		if _subj == 0 {
+//line $DIR/main.gala:43
 			return "zéro"
 		} else if _subj == 1 || _subj == 2 || _subj == 3 {
+//line $DIR/main.gala:44
 			return "small"
 		} else if _subj == Limit.Get() {
+//line $DIR/main.gala:45
 			return "limit"
 		} else {
 			_tmp_n := _subj
@@ -367,8 +372,10 @@ func literals(x int) string {
 				_tmp_1 = n < 0
 			}
 			if _tmp_1 {
+//line $DIR/main.gala:46
 				return "negative"
 			} else {
+//line $DIR/main.gala:47
 				return "other"
 			}
 		}
@@ -381,11 +388,14 @@ func strs(s string) int {
 	{
 		_subj := s
 		if _subj == "ä" {
+//line $DIR/main.gala:51
 			return 1
 		} else if _subj == "b" || _subj == "c" {
+//line $DIR/main.gala:52
 			return 2
 		} else {
 			other := _subj
+//line $DIR/main.gala:53
 			return utf8.RuneCountInString(other)
 		}
 	}
@@ -409,6 +419,7 @@ func shapes(s Shape) int {
 			}
 			if _tmp_5 {
 				r := _tmp_r
+//line $DIR/main.gala:57
 				return r
 			} else {
 				_tmp_6 := Circle{}.Unapply(_subj)
@@ -418,6 +429,7 @@ func shapes(s Shape) int {
 				_tmp_r := _tmp_8
 				if _tmp_7 {
 					r := _tmp_r
+//line $DIR/main.gala:58
 					return r * 2
 				} else {
 					_tmp_9 := Rect{}.Unapply(_subj)
@@ -429,10 +441,12 @@ func shapes(s Shape) int {
 					if _tmp_10 {
 						w := _tmp_w
 						h := _tmp_h
+//line $DIR/main.gala:59
 						return w * h
 					} else {
 						_tmp_12 := Dot{}.Unapply(_subj)
 						if _tmp_12 {
+//line $DIR/main.gala:60
 							return 0
 						} else {
 							panic("gala: a Shape matched none of its cases: it is a zero value, which a sealed type without a default case does not have")
@@ -460,10 +474,12 @@ func colors(c Color) string {
 				_tmp_15 = _tmp_14
 			}
 			if _tmp_15 {
+//line $DIR/main.gala:64
 				return "warm"
 			} else {
 				_tmp_16 := Blue{}.Unapply(_subj)
 				if _tmp_16 {
+//line $DIR/main.gala:65
 					return "cold"
 				} else {
 					panic("gala: a Color matched none of its cases: it is a zero value, which a sealed type without a default case does not have")
@@ -482,6 +498,7 @@ func tuples(p std.Tuple[int, string]) string {
 			_tmp_s := _subj.V2.Get()
 			if _subj.V1.Get() == 0 {
 				s := _tmp_s
+//line $DIR/main.gala:69
 				return s
 			} else {
 				_tmp_n := _subj.V1.Get()
@@ -491,8 +508,10 @@ func tuples(p std.Tuple[int, string]) string {
 					_tmp_17 = n > 1
 				}
 				if _tmp_17 {
+//line $DIR/main.gala:70
 					return "x"
 				} else if true {
+//line $DIR/main.gala:71
 					return "any"
 				} else {
 					panic("unreachable")
@@ -528,6 +547,7 @@ func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
 			if _tmp_19 && _tmp_22 {
 				n := _tmp_n
 				s := _tmp_s
+//line $DIR/main.gala:75
 				return fmt.Sprintf("%d %s", n, s)
 			} else {
 				_tmp_24 := _unapply_std_Some_e5564f09(_subj)
@@ -539,10 +559,12 @@ func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
 				}
 				_ = _tmp_26
 				if _tmp_25 && _tmp_27 {
+//line $DIR/main.gala:76
 					return "none inside"
 				} else {
 					_tmp_28 := _unapply_std_None_e5564f09(_subj)
 					if _tmp_28 {
+//line $DIR/main.gala:77
 						return "none"
 					} else {
 						panic("unreachable")
@@ -562,6 +584,7 @@ func people(p Person) string {
 			_tmp_a := _subj.age.Get()
 			if _subj.name.Get() == "ann" {
 				a := _tmp_a
+//line $DIR/main.gala:81
 				return fmt.Sprintf("ann %d", a)
 			} else {
 				_tmp_n := _subj.name.Get()
@@ -572,8 +595,10 @@ func people(p Person) string {
 				}
 				if _tmp_29 {
 					n := _tmp_n
+//line $DIR/main.gala:82
 					return n
 				} else {
+//line $DIR/main.gala:83
 					return p.name.Get()
 				}
 			}
@@ -592,18 +617,22 @@ func boxes(x any) string {
 			if _tmp_31 {
 				v := _tmp_v
 				tag := _tmp_tag
+//line $DIR/main.gala:87
 				return fmt.Sprintf("%d %s", v, tag)
 			} else {
 				_tmp_b, _tmp_32 := std.As[Person](_subj)
 				if _tmp_32 {
 					b := _tmp_b
+//line $DIR/main.gala:88
 					return b.name.Get()
 				} else {
 					_tmp_n, _tmp_33 := std.As[int](_subj)
 					if _tmp_33 {
 						n := _tmp_n
+//line $DIR/main.gala:89
 						return fmt.Sprintf("int %d", n)
 					} else {
+//line $DIR/main.gala:90
 						return "?"
 					}
 				}
@@ -620,6 +649,7 @@ func seqs(a Array[int]) int {
 		{
 			_tmp_34 := _subj.Size() == 0
 			if _tmp_34 {
+//line $DIR/main.gala:94
 				return 0
 			} else {
 				_tmp_35 := _subj.Size() == 1
@@ -631,6 +661,7 @@ func seqs(a Array[int]) int {
 				}
 				if _tmp_35 {
 					only := _tmp_only
+//line $DIR/main.gala:95
 					return only
 				} else {
 					_tmp_37 := _subj.Size() >= 2
@@ -650,8 +681,10 @@ func seqs(a Array[int]) int {
 						first := _tmp_first
 						second := _tmp_second
 						rest := _tmp_rest
+//line $DIR/main.gala:96
 						return first + second + rest.Size()
 					} else {
+//line $DIR/main.gala:97
 						return -1
 					}
 				}
@@ -682,8 +715,10 @@ func lists(l List[std.Option[int]]) int {
 			}
 			if _tmp_40 && _tmp_43 {
 				n := _tmp_n
+//line $DIR/main.gala:101
 				return n
 			} else {
+//line $DIR/main.gala:102
 				return -1
 			}
 		}
@@ -696,6 +731,7 @@ func users(u UserID) string {
 	{
 		_subj := u
 		if int64(_subj) == 0 {
+//line $DIR/main.gala:106
 			return "zero"
 		} else {
 			_tmp_n := int64(_subj)
@@ -706,8 +742,10 @@ func users(u UserID) string {
 			}
 			if _tmp_45 {
 				n := _tmp_n
+//line $DIR/main.gala:107
 				return fmt.Sprintf("%d", n)
 			} else {
+//line $DIR/main.gala:108
 				return "negative"
 			}
 		}
@@ -727,10 +765,12 @@ func views(m MaybeInt) string {
 			_tmp_n := _tmp_48
 			if _tmp_47 {
 				n := _tmp_n
+//line $DIR/main.gala:112
 				return fmt.Sprintf("some %d", n)
 			} else {
 				_tmp_49 := _unapply_std_None_e5564f09(_subj)
 				if _tmp_49 {
+//line $DIR/main.gala:113
 					return "none"
 				} else {
 					panic("unreachable")
@@ -757,12 +797,15 @@ func extractors(n int) string {
 				_tmp_53 = h > 10
 			}
 			if _tmp_53 {
+//line $DIR/main.gala:117
 				return "big half"
 			} else {
 				_tmp_54 := Even{}.Unapply(_subj)
 				if _tmp_54 {
+//line $DIR/main.gala:118
 					return "even"
 				} else {
+//line $DIR/main.gala:119
 					return "odd"
 				}
 			}
@@ -776,8 +819,10 @@ func bools(b bool) int {
 	{
 		_subj := b
 		if _subj == true {
+//line $DIR/main.gala:123
 			return 1
 		} else if _subj == false {
+//line $DIR/main.gala:124
 			return 0
 		} else {
 			panic("unreachable")
@@ -838,6 +883,7 @@ func blocks(x std.Option[int]) int {
 					return
 				}
 			} else {
+//line $DIR/main.gala:146
 				fmt.Println("none")
 			}
 		}
@@ -853,6 +899,7 @@ func blocks(x std.Option[int]) int {
 //line $DIR/main.gala:152
 				break
 			} else {
+//line $DIR/main.gala:154
 				fmt.Println(i)
 			}
 		}
@@ -867,10 +914,13 @@ func parens(x int) string {
 	{
 		_subj := x
 		if _subj == 1 || _subj == 2 {
+//line $DIR/main.gala:161
 			return "one or two"
 		} else if _subj == (3) {
+//line $DIR/main.gala:162
 			return "three"
 		} else {
+//line $DIR/main.gala:163
 			return "other"
 		}
 	}
@@ -882,8 +932,10 @@ func qualified(s string) string {
 	{
 		_subj := strings.ToUpper(s)
 		if _subj == "A" {
+//line $DIR/main.gala:167
 			return fmt.Sprint("a")
 		} else {
+//line $DIR/main.gala:168
 			return s
 		}
 	}

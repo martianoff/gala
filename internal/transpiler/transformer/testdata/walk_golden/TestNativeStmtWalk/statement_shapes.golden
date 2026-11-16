@@ -48,8 +48,10 @@ func lookup(k string) std.Option[int] {
 //line $DIR/main.gala:13
 	{
 		if k == "ä" {
+//line $DIR/main.gala:13
 			return std.Some[int]{}.Apply(1)
 		} else {
+//line $DIR/main.gala:13
 			return std.None[int]{}.Apply()
 		}
 	}
@@ -109,6 +111,7 @@ func branches(c bool, n int) int {
 	}()
 //line $DIR/main.gala:43
 	if c {
+//line $DIR/main.gala:43
 		fmt.Println("a")
 	} else {
 //line $DIR/main.gala:44
@@ -123,6 +126,7 @@ func branches(c bool, n int) int {
 				return std.Some[int]{}.Apply(q + n)
 			})
 		} else {
+//line $DIR/main.gala:49
 			return std.None[int]{}.Apply()
 		}
 	}()

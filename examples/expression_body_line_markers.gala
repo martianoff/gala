@@ -37,11 +37,18 @@ func main() {
     Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 37)}")
     Println(s"argument of Try: ${panicsAt(Try(100 / zero()).GetError(), 38)}")
     Println(s"by-name argument: ${panicsAt(Try(later(100 / zero())).GetError(), 39)}")
-    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 52)}")
-    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 56)}")
+    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 59)}")
+    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 63)}")
     var z = 0
     Println(s"lambda with a Ptr parameter: ${panicsAt(Try(each((p Ptr[int]) => 100 / *p, &z)).GetError(), 43)}")
-    Println(s"self-tail-call loop on several lines: ${panicsAt(Try(countdownLines(3, 0)).GetError(), 62)}")
+    Println(s"self-tail-call loop on several lines: ${panicsAt(Try(countdownLines(3, 0)).GetError(), 69)}")
+    val ifLambda = (n int) => if (n == 0) 100 / n else 1
+    Println(s"lambda with an if-expression body: ${panicsAt(Try(ifLambda(0)).GetError(), 45)}")
+    Println(s"if-expression body: ${panicsAt(Try(ifBody(0)).GetError(), 73)}")
+    Println(s"if-expression body on several lines: ${panicsAt(Try(ifLines(0)).GetError(), 77)}")
+    Println(s"match body: ${panicsAt(Try(matchBody(0)).GetError(), 83)}")
+    Println(s"function returning nothing with an if-expression body: ${panicsAt(TryApply(() => { ifVoid(0); 0 }).GetError(), 86)}")
+    Println(s"recursion that is not a tail call: ${panicsAt(Try(countdownNonTail(3, 0)).GetError(), 88)}")
 }
 
 func zero() int = 0
@@ -62,3 +69,20 @@ func countdownLines(n int, acc int) int =
         100 / acc
     else
         countdownLines(n - 1, acc)
+
+func ifBody(n int) int = if (n == 0) 100 / n else 1
+
+func ifLines(n int) int =
+    if (n == 0)
+        100 / n
+    else
+        1
+
+func matchBody(n int) int = n match {
+    case 1 => 1
+    case _ => 100 / n
+}
+
+func ifVoid(n int) = if (n == 0) Println(100 / n) else Println(1)
+
+func countdownNonTail(n int, acc int) int = if (n == 0) 100 / acc else 0 + countdownNonTail(n - 1, acc)

@@ -59,7 +59,7 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 
 | Go | GALA | If you write the Go form |
 |----|------|--------------------------|
-| `x := 5` | Same; `val x = 5` is the usual GALA form | Works |
+| `x := 5` | Same, but the binding is immutable, as with `val`; `val x = 5` is the usual GALA form, and `var x = 5` one that is reassigned | Works; reassigning `x` is an error |
 | `var x = 5`, `var x int` | Same: `var` declares a variable that can be reassigned | Works |
 | `n, err := strconv.Atoi(s)` | Same, and gives Go's raw values; in GALA code prefer the `Try`: `val n = strconv.Atoi(s)` ([below](#t-error-try-or-gos-result-list)) | Works |
 | `v, ok := m[k]` on a Go map | Same, or `val v, ok = m[k]`; `go_interop.OptionFromMap(m, k)` gives an `Option` | Works |
@@ -118,7 +118,7 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `fallthrough` | Combine the cases with `\|`, or call a shared function | [GALA-E0036](/docs/errors/gala-e0036/) |
 | `goto` | Structured control flow | [GALA-E0036](/docs/errors/gala-e0036/) (with a label: [GALA-E0023](/docs/errors/gala-e0023/), undefined label) |
 | `for i := 0; i < n; i++`, `for cond`, `for` | Same | Works |
-| `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same | Works |
+| `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same, over a Go slice, map, string or integer; over a GALA `Array` or `List`, use `ForEach`, `Map`, `Filter`, `FoldLeft`, or `ZipWithIndex()` for the index | Works |
 | `break`, `continue` | Same | Works |
 | `break outer` / `continue outer` (labels) | None: a flag `var`, or a function and `return` | [GALA-E0129](/docs/errors/gala-e0129/) |
 
@@ -147,10 +147,12 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `s[a:b]`, `s[a:]`, `s[:b]` | `go_interop.Slice(s, a, b)`, `SliceDrop(s, a)`, `SliceTake(s, b)`; on a string, `strings` or a GALA string method | [GALA-E0128](/docs/errors/gala-e0128/) |
 | `s[i]`, `m[k]`, `m[k] = v` | Same | Works |
 | `fmt.Sprintf("%d items", n)` | Works; `s"${n} items"` and `f"${x}%.2f"` are the GALA forms | Works |
+| `fmt.Println(a, b)`, `fmt.Print(a)` | `Println(a, b)`, `Print(a)`: built in, no import | Works |
 | `&Point{X: 1}` | Same, or `&Point(X = 1)` | Works |
 | `a == b` on structs | Same, and compares with the generated `Equal` | Works |
 | `x &^ y`, `<<`, `^` | Same | Works |
 | `err != nil` | Same | Works |
+| `func find(id int) *User` that returns `nil` when absent, `if u == nil` | `func find(id int) Option[User]` returning `Some(u)` / `None()`, and `match` on it; a Go pointer that may be nil becomes `OptionPtrOf(p)` | Works |
 
 ## Slices and maps
 

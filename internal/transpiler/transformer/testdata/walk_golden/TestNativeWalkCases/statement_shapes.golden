@@ -51,8 +51,10 @@ func look(x int) std.Option[int] {
 //line $DIR/main.gala:17
 	{
 		if x > 0 {
+//line $DIR/main.gala:17
 			return std.Some[int]{}.Apply(x)
 		} else {
+//line $DIR/main.gala:17
 			return std.None[int]{}.Apply()
 		}
 	}
@@ -185,15 +187,19 @@ func locals() {
 	func() {
 		_subj := x
 		if _subj == 3 {
+//line $DIR/main.gala:86
 			fmt.Println("three")
 		} else {
+//line $DIR/main.gala:87
 			fmt.Println("other")
 		}
 	}()
 //line $DIR/main.gala:89
 	if x > 2 {
+//line $DIR/main.gala:89
 		fmt.Println("big")
 	} else {
+//line $DIR/main.gala:89
 		fmt.Println("small")
 	}
 //line $DIR/main.gala:90

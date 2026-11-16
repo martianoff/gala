@@ -11,3 +11,9 @@ block body with Go results: true
 self-tail-call loop: true
 lambda with a Ptr parameter: true
 self-tail-call loop on several lines: true
+lambda with an if-expression body: true
+if-expression body: true
+if-expression body on several lines: true
+match body: true
+function returning nothing with an if-expression body: true
+recursion that is not a tail call: true
