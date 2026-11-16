@@ -316,6 +316,124 @@ def seqMkString [GShow α] (xs : List α) (sep : String) : String := sep.interca
     478; list.gala:92, 236). -/
 def seqHead (xs : List α) : Prog σ α := orStd xs.head?
 def seqLast (xs : List α) : Prog σ α := orStd xs.getLast?
+
+/-! Methods of `Option` (std/option.gala) and `Either` (std/either.gala), each after the
+    std code it cites. A function argument runs only where std calls it; where std panics
+    the model throws `Panic.std`. -/
+
+/-- `IsDefined()` (option.gala:33); `IsEmpty()` (option.gala:36) is its negation. -/
+def optIsDefined : GOption α → Bool
+  | .Some _ => true
+  | .None => false
+
+/-- `Get()`: `Panic.std` on `None` (option.gala:39). -/
+def optGet : GOption α → Prog σ α
+  | .Some v => pure v
+  | .None => throw .std
+
+/-- `GetOrElse(d)` (option.gala:48). -/
+def optGetOrElse : GOption α → α → α
+  | .Some v, _ => v
+  | .None, d => d
+
+/-- `OrElse(alt)` (option.gala:56). -/
+def optOrElse : GOption α → GOption α → GOption α
+  | .Some v, _ => .Some v
+  | .None, alt => alt
+
+/-- `OnSome(f)`: `f` on the value, the option unchanged (option.gala:65). -/
+def optOnSome (o : GOption α) (f : α → Prog σ Unit) : Prog σ (GOption α) := do
+  if let .Some v := o then f v
+  pure o
+
+/-- `OnNone(f)`: `f` on `None`, the option unchanged (option.gala:74). -/
+def optOnNone (o : GOption α) (f : Unit → Prog σ Unit) : Prog σ (GOption α) := do
+  if let .None := o then f ()
+  pure o
+
+/-- `ForEach(f)` (option.gala:83). -/
+def optForEach (o : GOption α) (f : α → Prog σ Unit) : Prog σ Unit :=
+  match o with
+  | .Some v => f v
+  | .None => pure ()
+
+/-- `Map(f)` (option.gala:92). -/
+def optMap (o : GOption α) (f : α → Prog σ β) : Prog σ (GOption β) :=
+  match o with
+  | .Some v => .Some <$> f v
+  | .None => pure .None
+
+/-- `FlatMap(f)` (option.gala:102). -/
+def optFlatMap (o : GOption α) (f : α → Prog σ (GOption β)) : Prog σ (GOption β) :=
+  match o with
+  | .Some v => f v
+  | .None => pure .None
+
+/-- `Filter(p)`: `p` on the value of `Some` only (option.gala:111). -/
+def optFilter (o : GOption α) (p : α → Prog σ Bool) : Prog σ (GOption α) :=
+  match o with
+  | .Some v => do pure (if ← p v then o else .None)
+  | .None => pure .None
+
+/-- `Exists(p)`: `isSome() && p(Value)`, so `p` runs on `Some` only (option.gala:120). -/
+def optExists (o : GOption α) (p : α → Prog σ Bool) : Prog σ Bool :=
+  match o with
+  | .Some v => p v
+  | .None => pure false
+
+/-- `ForAll(p)`: `isNone() || p(Value)` (option.gala:124). -/
+def optForAll (o : GOption α) (p : α → Prog σ Bool) : Prog σ Bool :=
+  match o with
+  | .Some v => p v
+  | .None => pure true
+
+/-- `IsLeft()` (either.gala:19); `IsRight()` (either.gala:22) is its negation. -/
+def eitherIsLeft : GEither α β → Bool
+  | .Left _ => true
+  | .Right _ => false
+
+/-- `GetLeft()`: `Panic.std` on a `Right` (either.gala:49). -/
+def eitherGetLeft : GEither α β → Prog σ α
+  | .Left a => pure a
+  | .Right _ => throw .std
+
+/-- `GetRight()`: `Panic.std` on a `Left` (either.gala:57). -/
+def eitherGetRight : GEither α β → Prog σ β
+  | .Right b => pure b
+  | .Left _ => throw .std
+
+/-- `Swap()` (either.gala:65). -/
+def eitherSwap : GEither α β → GEither β α
+  | .Left a => .Right a
+  | .Right b => .Left b
+
+/-- `OnRight(f)` (either.gala:74). -/
+def eitherOnRight (e : GEither α β) (f : β → Prog σ Unit) : Prog σ (GEither α β) := do
+  if let .Right b := e then f b
+  pure e
+
+/-- `OnLeft(f)` (either.gala:83). -/
+def eitherOnLeft (e : GEither α β) (f : α → Prog σ Unit) : Prog σ (GEither α β) := do
+  if let .Left a := e then f a
+  pure e
+
+/-- `Fold(f1, f2)`: `f1` on a `Left`, `f2` on a `Right` (either.gala:91). -/
+def eitherFold (e : GEither α β) (f1 : α → Prog σ γ) (f2 : β → Prog σ γ) : Prog σ γ :=
+  match e with
+  | .Left a => f1 a
+  | .Right b => f2 b
+
+/-- `Map(f)`: `f` on a `Right` (either.gala:99). -/
+def eitherMap (e : GEither α β) (f : β → Prog σ γ) : Prog σ (GEither α γ) :=
+  match e with
+  | .Left a => pure (.Left a)
+  | .Right b => .Right <$> f b
+
+/-- `FlatMap(f)`: `f` on a `Right` (either.gala:107). -/
+def eitherFlatMap (e : GEither α β) (f : β → Prog σ (GEither α γ)) : Prog σ (GEither α γ) :=
+  match e with
+  | .Left a => pure (.Left a)
+  | .Right b => f b
 end
 
 def seqGetOption (xs : List α) (i : Int64) : GOption α :=

@@ -245,12 +245,13 @@ func (g *gen) seqParamType(p, elem, kind string, u coreexport.Node) coreexport.N
 	return f
 }
 
-// seqCallType is exprType of a call of a function of an Array or a List.
-func (g *gen) seqCallType(e *coreexport.Call, s *coreexport.Select, sc *scope, seen map[string]bool) string {
+// seqCallType is exprType of a call of a function of an Array or a List
+// whose receiver has Lean type rt.
+func (g *gen) seqCallType(e *coreexport.Call, rt string, s *coreexport.Select, sc *scope, seen map[string]bool) string {
 	if !g.collections {
 		return ""
 	}
-	kind, elem, ok := seqOf(g.exprType(s.Target, sc, seen))
+	kind, elem, ok := seqOf(rt)
 	if !ok {
 		return ""
 	}

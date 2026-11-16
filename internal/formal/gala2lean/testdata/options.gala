@@ -1,0 +1,63 @@
+package main
+
+// The methods of std's Option and Either, each run as std runs it: the
+// receiver, then the arguments in the order written, then the method,
+// which calls a function argument only where std does.
+
+func note(s string, v int) int {
+    Println("note", s)
+    v
+}
+
+func opt(s string, o Option[int]) Option[int] {
+    Println("opt", s)
+    o
+}
+
+func half(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None()
+
+func parse(n int) Either[string, int] = if (n < 0) Left("negative") else Right(n)
+
+func check(v int) Either[string, int] = if (v > 2) Right(v) else Left("small")
+
+// A package-level value whose type is not written.
+val top = Some(4)
+
+func main() {
+    val some = Some(4)
+    val none Option[int] = None()
+
+    Println(some.IsDefined(), some.IsEmpty(), none.IsDefined(), none.IsEmpty())
+    Println(some.Get())
+    // The default is evaluated whether it is used or not.
+    Println(some.GetOrElse(note("d1", 0)), none.GetOrElse(note("d2", 7)))
+    Println(opt("r", some).GetOrElse(note("a", 1)))
+    Println(some.OrElse(Some(9)), none.OrElse(Some(9)))
+
+    val s2 = some.OnSome((v) => Println("on some", v))
+    val n2 = none.OnSome((v) => Println("never", v))
+    Println(s2, n2)
+    Println(none.OnNone(() => Println("on none")), some.OnNone(() => Println("never")))
+    some.ForEach((v) => Println("each", v))
+    none.ForEach((v) => Println("never", v))
+
+    Println(some.Map((v) => v * 10), none.Map((v) => v * 10))
+    Println(some.Map((v) => s"v=${v}"))
+    Println(some.FlatMap((v) => half(v)), Some(3).FlatMap((v) => half(v)), none.FlatMap((v) => half(v)))
+    Println(some.Filter((v) => v > 3), some.Filter((v) => v > 5), none.Filter((v) => note("f", 1) > 0))
+    Println(some.Exists((v) => v == 4), none.Exists((v) => note("e", 1) > 0))
+    Println(some.ForAll((v) => v == 5), none.ForAll((v) => note("a", 1) > 0))
+    Println(some.Map((v) => v + 1).GetOrElse(0), top.Map((v) => v + 1).GetOrElse(0))
+
+    val l = parse(0 - 1)
+    val r = parse(3)
+    Println(l.IsLeft(), l.IsRight(), r.IsLeft(), r.IsRight())
+    Println(l.GetLeft(), r.GetRight())
+    Println(l.Swap(), r.Swap())
+    Println(r.OnRight((v) => Println("on right", v)))
+    l.OnRight((v) => Println("never", v))
+    Println(l.OnLeft((v) => Println("on left", v)), r.OnLeft((v) => Println("never", v)))
+    Println(l.Fold((e) => 0 - 1, (v) => v), r.Fold((e) => 0 - 1, (v) => v))
+    Println(l.Map((v) => v * 2), r.Map((v) => v * 2))
+    Println(r.FlatMap((v) => check(v)), parse(1).FlatMap((v) => check(v)), l.FlatMap((v) => check(v)))
+}

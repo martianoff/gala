@@ -57,6 +57,11 @@ var leanReserved = map[string]bool{
 	"seqExists": true, "seqForAll": true, "seqFind": true, "seqCount": true, "seqPartition": true,
 	"seqZipWithIndex": true, "seqMkString": true, "seqHead": true, "seqLast": true, "seqSize": true,
 	"seqPrepend": true, "toGOption": true, "orStd": true,
+	"optIsDefined": true, "optGet": true, "optGetOrElse": true, "optOrElse": true, "optOnSome": true,
+	"optOnNone": true, "optForEach": true, "optMap": true, "optFlatMap": true, "optFilter": true,
+	"optExists": true, "optForAll": true, "eitherIsLeft": true, "eitherGetLeft": true,
+	"eitherGetRight": true, "eitherSwap": true, "eitherOnRight": true, "eitherOnLeft": true,
+	"eitherFold": true, "eitherMap": true, "eitherFlatMap": true,
 	// Declarations Lean adds to every structure and inductive.
 	"mk": true, "rec": true, "casesOn": true, "recOn": true, "noConfusion": true,
 	"noConfusionType": true, "below": true, "brecOn": true, "binductionOn": true,

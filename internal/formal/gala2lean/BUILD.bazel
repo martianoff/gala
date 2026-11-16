@@ -17,6 +17,7 @@ go_library(
         "methods.go",
         "match.go",
         "names.go",
+        "options.go",
         "packages.go",
         "program.go",
         "run.go",
@@ -58,10 +59,12 @@ go_test(
     name = "gala2lean_internal_test",
     srcs = [
         "imports_internal_test.go",
+        "prelude_internal_test.go",
         "run_internal_test.go",
     ],
     data = [
         "//collection_immutable:gala_sources",
+        "//formal:Gala/Gala2Lean/Prelude.lean",
         "//formal:Gala/Json.lean",
         "//std:gala_sources",
         "//std:go_sources",
@@ -70,6 +73,7 @@ go_test(
     env = {
         "COLLECTIONS_GALA": "$(rlocationpaths //collection_immutable:gala_sources)",
         "GALASPEC_JSON_LEAN": "$(rlocationpath //formal:Gala/Json.lean)",
+        "PRELUDE_LEAN": "$(rlocationpath //formal:Gala/Gala2Lean/Prelude.lean)",
         "STD_GALA": "$(rlocationpaths //std:gala_sources)",
         "STD_GO": "$(rlocationpaths //std:go_sources)",
     },

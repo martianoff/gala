@@ -633,15 +633,6 @@ func (g *gen) fieldByType(t, name string) *coreexport.Field {
 	return nil
 }
 
-// cloneSeen is a copy of exprType's cycle guard seen, for a second look
-// that must not see the first one's marks.
-func cloneSeen(seen map[string]bool) map[string]bool {
-	if seen == nil {
-		return map[string]bool{}
-	}
-	return maps.Clone(seen)
-}
-
 // exprType is the Lean type of expression e in scope sc (nil for a
 // package-level initializer), "" when it is not plain to see from the
 // declarations: literals, operators, locals and globals of a known type,
@@ -700,25 +691,29 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		return g.lambdaType(e, sc)
 	case *coreexport.Call:
 		if s, isSel := e.Callee.(*coreexport.Select); isSel {
-			// A generated case test, isC (caseTest). The target's type is
-			// read with seen as it is now: methodOf marks the globals it
-			// passes, after which they read as not plain to see.
-			isCase := strings.HasPrefix(s.Name, "is") &&
-				g.caseTest(g.typeByLean(g.exprType(s.Target, sc, cloneSeen(seen))), s.Name) != nil
+			// The receiver's type, read once for every kind of method below
+			// (a chain of calls would otherwise read each receiver again per
+			// kind).
+			rt := g.exprType(s.Target, sc, seen)
 			// A method: its declared result, or a generated Copy or Equal.
-			if f, _ := g.methodOf(s.Target, s.Name, sc, seen); f != nil {
+			if f := g.methods[g.typeByLean(rt)][s.Name]; f != nil {
+				g.use(g.key(f))
 				return g.safeType(func() string { return g.leanType(f.Result) })
 			}
-			if t := g.seqCallType(e, s, sc, seen); t != "" {
+			if t := g.seqCallType(e, rt, s, sc, seen); t != "" {
+				return t
+			}
+			if t := g.optCallType(e, rt, s, sc, seen); t != "" {
 				return t
 			}
 			switch s.Name {
 			case "Copy":
-				return g.exprType(s.Target, sc, seen)
+				return rt
 			case "Equal":
 				return "Bool"
 			}
-			if isCase {
+			// A generated case test, isC (caseTest).
+			if g.caseTest(g.typeByLean(rt), s.Name) != nil {
 				return "Bool"
 			}
 		}

@@ -373,6 +373,9 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 		if t, ok := g.seqCall(e, s, sc); ok {
 			return t
 		}
+		if t, ok := g.optCall(e, s, sc); ok {
+			return t
+		}
 		// pkg.F(...) names a member of an import; v.M(...) calls a method.
 		if n, isName := s.Target.(*coreexport.Name); isName && sc.lookup(n.Name) == nil &&
 			g.globalBy[n.Name] == nil && g.variants[n.Name] == nil {
