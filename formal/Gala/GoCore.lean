@@ -24,7 +24,10 @@
     "Blocks", "Declarations and scope"). Variables have no addresses: nothing in this
     fragment takes one, and closures that share a variable are S2 (M7).
   * **Values.** `int` is Go's `int` on a 64-bit target. A tuple is the value of a
-    `std.TupleN` struct, a struct the value of a Go struct, by field position. A sealed
+    `std.TupleN` struct (always `tuple`, never `struct_`), a struct the value of a Go
+    struct, by field position. `opt` is the `std.Option` a generated `Unapply` returns;
+    a program's own `Option` values (`Some(x)`, `case Some(v)`) are outside S1 and this
+    fragment. A sealed
     value is its type, its active case and that case's fields: this abstracts the struct
     the transpiler generates, which holds every case's fields and a tag naming the
     active case. M4 must either use the flat layout or prove that `Unapply` on it reads
@@ -39,12 +42,19 @@
     element type. GoCore has no types yet, so every such zero value is one placeholder,
     `zero` (Go spec, "The zero value"). Two `zero`s do not compare equal (`geq`), while
     two of Go's zero values of one type do, so this is sound only where no comparison
-    involving `zero` decides anything. In the `match` lowering, every read of a
-    `Value.Get()` result sits under its `IsDefined()` in an `&&`, so none does; the
-    lowering's correctness proof relies on this and shows it.
+    involving `zero` decides anything. In the `match` lowering, a test that reads a
+    `Value.Get()` result is an `&&` operand after its `IsDefined()`, so it runs only on a
+    `Some`; M3's correctness proof for the lowering has to show this.
+  * **Evaluation order.** Operands are evaluated left to right. The Go spec fixes that
+    order only among calls (and method calls and receives), not between a call and a
+    variable read in one expression. The fragment's operands are variables, constants and
+    pattern primitives, which cannot change a variable, so the order is unobservable here;
+    an expression mixing a call with a read of a variable the call assigns is outside
+    what this fragment models faithfully.
   * **Function values** are not modelled: a value GoCore cannot represent is `opaque`.
   * **Panics** carry the class the differential harness gives Go's panic message; the
-    message itself is not compared.
+    message itself is not compared. After a panic only the output means anything: the
+    scopes a panic leaves are not dropped, as no code runs after it.
   * **Holes.** `ext i` stands for code this fragment does not model yet (a call, `fmt`'s
     printing, ...). Evaluation takes what each hole does as a parameter, `X`, an arbitrary
     computation on the state: it may print, panic, assign variables. A theorem about code
@@ -160,7 +170,8 @@ inductive GStmt
   | ret (e : GExpr)
   /-- `panic(msg)` (Go spec, "Handling panics"), with the class of its message. -/
   | panic (c : PanicClass) (msg : String)
-  /-- An expression statement, its value discarded (Go spec, "Expression statements"). -/
+  /-- An expression statement, its value discarded; also `_ = e` (Go spec, "Expression
+      statements", "Assignment statements"). -/
   | expr (e : GExpr)
 end
 
@@ -179,7 +190,7 @@ abbrev GM := ExceptT GStop (StateM GSt)
 /-! ## Values -/
 
 /-- Reduce to Go's `int` on a 64-bit target, wrapping around. -/
-def wrap64 (x : Int) : Int := x.bmod 18446744073709551616
+def wrap64 (x : Int) : Int := x.bmod Int64.size
 
 /-- Go's `==` (Go spec, "Comparison operators"): `int`, `bool` and `string` by value;
     structs (a `std.TupleN` and the empty struct included) field by field, and only
@@ -195,6 +206,8 @@ def geq : GVal → GVal → Bool
   | .tuple as, .tuple bs => geqs as bs
   | .struct_ t as, .struct_ u bs => t == u && geqs as bs
   | .sealed t c as, .sealed u d bs => t == u && c == d && geqs as bs
+  | .opt none, .opt none => true
+  | .opt (some a), .opt (some b) => geq a b
   | _, _ => false
 where
   /-- Fields pairwise, both lists of the same length. -/
@@ -270,9 +283,6 @@ def asBool : GVal → GM Bool
   | .bool b => pure b
   | _ => throw (.stuck "not a bool")
 
-def liftExcept : Except GStop α → GM α
-  | .ok a => pure a
-  | .error e => throw e
 
 mutual
 /-- Evaluate an expression; `X i` is what hole `i` does. -/
@@ -285,7 +295,7 @@ def geval (X : Nat → GM GVal) : GExpr → GM GVal
   | .bin op a b => do
     let va ← geval X a
     let vb ← geval X b
-    liftExcept (binVal op va vb)
+    MonadExcept.ofExcept (binVal op va vb)
   | .and a b => do
     if ← asBool (← geval X a) then pure (.bool (← asBool (← geval X b)))
     else pure (.bool false)
