@@ -32,8 +32,9 @@
   * T3e, sub-patterns: `matchPats_append`, `matchPats_stops`. In S1 a pattern has no
     effect, so this is only about a later sub-pattern's `stuck` or `unsupported` verdict.
   * T3f, the arms of a `match`: `evalCases_nil`, `evalCases_nomatch`,
-    `evalCases_guard_false`, `evalCases_guard_true`. A failed arm leaves nothing behind but
-    its guard's effects; the first arm whose pattern matches and whose guard holds runs.
+    `evalCases_guard_false`, `evalCases_guard_true`, `evalCases_match`. A failed arm leaves
+    nothing behind but its guard's effects; the first arm whose pattern matches and whose
+    guard holds runs.
 
   `eval_bool_acts` and the example after it show the hypotheses can be met.
 
@@ -263,11 +264,6 @@ example (ds : Decls) : Acts (eval ds 2 (.binary "&&" (.lit (.bool true)) (.lit (
 
 /-! ## T3d: compound assignment -/
 
-/-- The operator of a compound assignment: `+` for `+=`, and so on. -/
-def compoundOp (op : String) : String :=
-  match op with
-  | "+=" => "+" | "-=" => "-" | "*=" => "*" | "/=" => "/" | o => o
-
 /-- `t op= x` given what `x` does: one step, read `t`, then `x`, then the operator, then
     store into `t`. -/
 def compoundEff (ds : Decls) (op : String) (t : Expr) (px : Eff Val) : Eff Val :=
@@ -283,7 +279,7 @@ theorem eval_compound_acts (ds : Decls) (d : Nat) (op : String) (t x : Expr) (px
     Acts (eval ds (d + 1) (.assign op [t] [x])) (compoundEff ds op t px) := by
   unfold compoundEff
   eval_case
-  all_goals unfold compoundOp
+
   all_goals first
     | exact acts_bind (acts_liftM _) fun _ => acts_bind hx fun _ =>
         acts_bind (acts_liftM _) fun _ => acts_bind (acts_liftM _) fun _ => acts_pure _
@@ -567,6 +563,36 @@ theorem evalCases_guard_true (ds : Decls) (d : Nat) (v : Val) (p : Pat) (ge b : 
   generalize pb.res _ = r
   cases r <;> rfl
 
+/-- **T3f, an arm without a guard.** When an arm with no guard matches with bindings `bs`,
+    its body runs with them in scope, and when it ends normally they are dropped again.
+    Given: the body does `pb`. With `evalCases_nomatch`, `evalCases_guard_false` and
+    `evalCases_guard_true`, induction on the arms gives that the first arm whose pattern
+    matches and whose guard holds is the one that runs, and `evalCases_nil` that with none
+    left the match panics. -/
+theorem evalCases_match (ds : Decls) (d : Nat) (v : Val) (p : Pat) (b : Expr)
+    (rest : List (Pat × Option Expr × Expr)) (s : St) (bs : List (String × Val)) (pb : Eff Val)
+    (hm : ((matchPat ds s.locals s.globals p v).run.run s.toCore).1 = .ok (some bs))
+    (hb : Acts (eval ds d b) pb)
+    (hcost : pb.cost { s.toCore with locals := pushed bs s.locals } ≤ s.steps) :
+    let cb := { s.toCore with locals := pushed bs s.locals }
+    let n := s.steps - pb.cost cb
+    (evalCases ds d v ((p, none, b) :: rest)).run.run s =
+      match pb.res cb with
+      | .ok r => (.ok r, ⟨{ pb.eff cb with locals := exitScope (pb.eff cb).locals s.locals.length }, n⟩)
+      | .error e => (.error e, ⟨pb.eff cb, n⟩) := by
+  intro cb n
+  simp only [cb, n]
+  rw [evalCases.eq_2]
+  simp only [run_bind_eq, run_liftM, run_getCore]
+  rw [matchPat_run, hm]
+  simp only [run_bind_eq, run_liftM, pushAll_run]
+  rw [show ∀ st : St, (pure true : M Bool).run.run st = (.ok true, st) from fun _ => rfl]
+  simp only [ite_true, run_bind_eq]
+  rw [hb ⟨{ locals := pushed bs s.locals, globals := s.globals, out := s.out, heap := s.heap }, s.steps⟩ hcost]
+  dsimp only
+  generalize pb.res _ = r
+  cases r <;> rfl
+
 /-! ## T3c: named arguments -/
 
 /-- An `H` step that gives `a` and changes nothing does what `Eff.pure a` does. -/
@@ -702,8 +728,8 @@ theorem acts_forIn_eff {β : Type} (xs : List γ) (b : β) {f : γ → β → M 
       congr 2
       omega
 
-/-- One parameter of the defaults phase: the value the call gave it (`gvn`), or else its default,
-    run in its frame (the earlier parameters' values, or no local for a field's). -/
+/-- One parameter of the defaults phase: the value the call gave it (`gvn`, by parameter index), or else its
+    default, run in its frame (the earlier parameters' values, or no local for a field's). -/
 def defaultStep (names : List String) (fs : Bool) (gvn : List (Nat × Val))
     (pd : Nat → Env → Eff Val) (nj : String × Nat) (vals : List Val) : Eff (List Val) :=
   match gvn.lookup nj.2 with

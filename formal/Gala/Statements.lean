@@ -182,4 +182,63 @@ theorem evalCases_guard_true : ∀ (ds : Decls) (d : Nat) (v : Val) (p : Pat) (g
       | .error e => (.error e, ⟨pb.eff cg, n⟩) :=
   Gala.Spec.evalCases_guard_true
 
+open Gala.Spec in
+theorem evalCases_match : ∀ (ds : Decls) (d : Nat) (v : Val) (p : Pat) (b : Expr)
+    (rest : List (Pat × Option Expr × Expr)) (s : St) (bs : List (String × Val)) (pb : Eff Val),
+    ((matchPat ds s.locals s.globals p v).run.run s.toCore).1 = .ok (some bs) →
+    Acts (eval ds d b) pb →
+    pb.cost { s.toCore with locals := pushed bs s.locals } ≤ s.steps →
+    let cb := { s.toCore with locals := pushed bs s.locals }
+    let n := s.steps - pb.cost cb
+    (evalCases ds d v ((p, none, b) :: rest)).run.run s =
+      match pb.res cb with
+      | .ok r => (.ok r, ⟨{ pb.eff cb with locals := exitScope (pb.eff cb).locals s.locals.length }, n⟩)
+      | .error e => (.error e, ⟨pb.eff cb, n⟩) :=
+  Gala.Spec.evalCases_match
+
+open Gala.Spec in
+theorem evalCases_nil : ∀ (ds : Decls) (d : Nat) (v : Val) (s : St),
+    (evalCases ds d v []).run.run s = (.error (.panic .match_ "no match arm matched"), s) :=
+  Gala.Spec.evalCases_nil
+
+open Gala.Spec in
+theorem eval_binary_acts : ∀ (ds : Decls) (d : Nat) (op : String) (l r : Expr) (pl pr : Eff Val),
+    op ≠ "&&" → op ≠ "||" → Acts (eval ds d l) pl → Acts (eval ds d r) pr →
+    Acts (eval ds (d + 1) (.binary op l r))
+      (Eff.tick.bind fun _ => pl.bind fun a => pr.bind fun b => Eff.ofH (binop op a b)) :=
+  Gala.Spec.eval_binary_acts
+
+open Gala.Spec in
+theorem eval_tuple_acts : ∀ (ds : Decls) (d : Nat) (es : List Expr) (ps : List (Eff Val)),
+    es.length = ps.length → (∀ e p, (e, p) ∈ es.zip ps → Acts (eval ds d e) p) →
+    Acts (eval ds (d + 1) (.tuple es))
+      (Eff.tick.bind fun _ => (Eff.seq ps).bind fun vs => Eff.pure (.tuple vs)) :=
+  Gala.Spec.eval_tuple_acts
+
+open Gala.Spec in
+theorem eval_interp_acts : ∀ (ds : Decls) (d : Nat) (es : List Expr) (ps : List (Eff Val)),
+    es.length = ps.length → (∀ e p, (e, p) ∈ es.zip ps → Acts (eval ds d e) p) →
+    Acts (eval ds (d + 1) (.interp es))
+      (Eff.tick.bind fun _ => (Eff.seq ps).bind fun vs => (Eff.ofH (printable ds vs)).bind
+        fun _ => (Eff.ofH (printed (Print.interp ds vs) ds)).bind fun t => Eff.pure (.str t)) :=
+  Gala.Spec.eval_interp_acts
+
+open Gala.Spec in
+theorem bindDefaults_acts : ∀ (ds : Decls) (d : Nat) (names : List String)
+    (tys : List (Option Ty)) (dflts : List (Option Expr)) (fs : Bool) (gvn : List (Nat × Val))
+    (pd : Nat → Env → Eff Val),
+    (∀ j, j < names.length → gvn.lookup j = none → ∃ e, dflts.getD j none = some e ∧
+      (∀ frame, Acts (runIn ds d frame e) (pd j frame)) ∧
+      (∀ frame (c : Core), (byNameOk ds frame (tys.getD j none) e).run.run c = (.ok true, c))) →
+    Acts (bindDefaults ds d names tys dflts fs gvn)
+      (Eff.foldlM (defaultStep names fs gvn pd) names.zipIdx []) :=
+  Gala.Spec.bindDefaults_acts
+
+open Gala.Spec in
+theorem matchPats_append : ∀ (ds : Decls) (locals globals : Env) (ps₁ ps₂ : List Pat)
+    (vs₁ vs₂ : List Val), ps₁.length = vs₁.length →
+    matchPats ds locals globals (ps₁ ++ ps₂) (vs₁ ++ vs₂) =
+      matchThen ds locals globals ps₁ ps₂ vs₁ vs₂ :=
+  Gala.Spec.matchPats_append
+
 end Gala.Statements

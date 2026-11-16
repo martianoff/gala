@@ -450,6 +450,11 @@ def unnamed : Expr → Expr
   | .named _ v => v
   | e => e
 
+/-- The operator of a compound assignment: `+` for `+=`, and so on. -/
+def compoundOp (op : String) : String :=
+  match op with
+  | "+=" => "+" | "-=" => "-" | "*=" => "*" | "/=" => "/" | o => o
+
 /-- Each argument's parameter, in the order the arguments are written: a positional
     argument's is its position, a named one's the parameter it names. A positional argument
     after a named one is outside the subset (constructors reject it; a function call passes
@@ -629,9 +634,7 @@ def eval (ds : Decls) : Nat → Expr → M Val
     | .assign op [t] [x] => do
       let cur ← readPlace ds t
       let v ← eval ds d x
-      let bop := match op with
-        | "+=" => "+" | "-=" => "-" | "*=" => "*" | "/=" => "/" | o => o
-      assignTo ds t (← binop bop cur v)
+      assignTo ds t (← binop (compoundOp op) cur v)
       pure .unit
     | .assign _ _ _ => stuck "compound assignment to several targets"
     | .incdec op t => do

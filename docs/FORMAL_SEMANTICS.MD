@@ -217,7 +217,7 @@ and T4 for the defaults phase of a call (`bindDefaults_callerLocals` and
 |---|---|---|---|
 | T1 | **Fuel adequacy and monotonicity:** if a run with fuel `n` ends in anything but `fuel`, every run with more fuel ends the same way and prints the same output. (Plain determinism holds of any Lean function and says nothing.) | an `AGREE` or `DISAGREE` verdict that changes with more fuel | M1 |
 | T2 | **Alpha-invariance:** a capture-avoiding renaming of bound variables does not change the output or the outcome (see M2 for the side conditions). | #996, #997, #999, #1002 | M2 |
-| T3 | **Left-to-right**, stated on what a program does, not on the evaluator's definition: the output and effects of an operand list, a call (named arguments included), a compound assignment and a pattern are those of its parts, in source order. A failed sub-pattern stops the ones after it. | #998, #1000, #1001 | M2 |
+| T3 | **Left-to-right**, stated on what a program does, not on the evaluator's definition: the output and effects of an operand list, a call (named arguments included), a compound assignment and a pattern are those of its parts, in source order. A failed sub-pattern stops the ones after it, and a failed `match` arm leaves only its guard's effects. | #996, #998, #1000, #1001 | M2 |
 | T4 | **Default arguments** are evaluated in the callee's scope, with earlier parameters bound. | #999 | M2 |
 | T5 | **Exhaustiveness:** a well-typed exhaustive match on a value built by a constructor never ends in `panic match`. Needs a typing judgment, which the spec does not have. | match lowering | not scheduled |
 | T6 | **Equality:** `Equal` on sealed values is an equivalence that depends only on the active variant's fields. | #1004, #1005 | M7 |
@@ -295,7 +295,8 @@ column lists what each milestone's claim rests on beyond them.
   output is then a transpiler bug, never a spec artefact.
 - **T3: done** (`formal/Gala/Order.lean`): given what each part does, a compound does its
   parts in source order, for operand lists, `&&`/`||`, a call's arguments, compound
-  assignment, sub-patterns and `match` arms (#996).
+  assignment, sub-patterns and `match` arms (#996). `if`, blocks, declarations and calls of
+  function values have no theorem.
   [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each one and what is
   not covered.
 - **T4: done.** The defaults phase of a call (`bindDefaults`) does not read the caller's
