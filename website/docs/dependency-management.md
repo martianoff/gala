@@ -25,6 +25,7 @@ GALA provides a dependency management system similar to Go modules, using `gala.
 3. [CLI Commands](#3-cli-commands)
    - [gala build](#gala-build)
    - [gala run](#gala-run)
+   - [gala test](#gala-test)
    - [gala clean](#gala-clean)
    - [gala export](#gala-export)
    - [gala stdlib export](#gala-stdlib-export)
@@ -219,6 +220,56 @@ gala run -- arg1 arg2
 # Verbose mode
 gala run -v
 ```
+
+### gala test
+
+Run the tests of a GALA project: every `TestXxx(t T) T` function in its `_test.gala` files, in the root package and in every subpackage.
+
+```bash
+# Test the current project
+gala test
+
+# Test another directory
+gala test ./myproject
+
+# Print every test's output, not only that of failing packages
+gala test -v
+
+# Also write a JUnit XML report
+gala test --junit build/test-results/junit.xml
+```
+
+Every run ends with a summary: the passed, failed and skipped tests of each package (subtests count as tests), then each failure with its reason:
+
+```text
+=== SUMMARY ===
+FAIL  example.com/shop           3 passed, 1 failed, 1 skipped
+ok    example.com/shop/pricing   2 passed, 0 failed, 0 skipped
+
+Failures:
+  example.com/shop: TestTotal
+      expected 30, got 25
+
+5 passed, 1 failed, 1 skipped in 2 package(s)
+```
+
+**`--junit <path>`** writes the results as a JUnit XML report, which GitHub Actions, GitLab and Jenkins read natively. The report has one `<testsuite>` per package, named by its import path, and one `<testcase>` per test, subtests included under their full name (`TestTable/large`). A failing test carries a `<failure>` with its first error as the message and its output as the text; a skipped test carries `<skipped>`. A package that does not compile is reported as an `<error>` test case named `[build failed]` with the compiler output, so it is never silently missing from the report. The report is written whether the tests pass or fail, and the directory is created if needed.
+
+In GitHub Actions, upload the report as an artifact, and run the step even when the tests fail:
+
+```yaml
+- name: Test
+  run: gala test --junit test-results/junit.xml
+
+- name: Upload test report
+  if: ${{ !cancelled() }}
+  uses: actions/upload-artifact@v7
+  with:
+    name: junit-report
+    path: test-results/junit.xml
+```
+
+To show the results on the run's page, a JUnit reporter action such as [`mikepenz/action-junit-report@v6`](https://github.com/mikepenz/action-junit-report) can read the same file (`report_paths: test-results/junit.xml`). In GitLab CI, list the file under `artifacts: reports: junit:`.
 
 ### gala clean
 

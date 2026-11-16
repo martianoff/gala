@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -11,7 +12,10 @@ import (
 	"martianoff/gala/internal/build"
 )
 
-var testVerbose bool
+var (
+	testVerbose bool
+	testJUnit   string
+)
 
 var testCmd = &cobra.Command{
 	Use:   "test [directory]",
@@ -35,13 +39,18 @@ the library under test.
 Examples:
   gala test                     # Test current directory
   gala test ./myproject         # Test specific directory
-  gala test -v                  # Verbose output`,
+  gala test -v                  # Verbose output
+  gala test --junit report.xml  # Also write a JUnit XML report
+
+Every run ends with a summary: the passed, failed and skipped tests per
+package, then each failure with its reason.`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runTest,
 }
 
 func init() {
 	testCmd.Flags().BoolVarP(&testVerbose, "verbose", "v", false, "Verbose output")
+	testCmd.Flags().StringVar(&testJUnit, "junit", "", "Write a JUnit XML report of the run to `path`")
 }
 
 func runTest(cmd *cobra.Command, args []string) {
@@ -66,8 +75,17 @@ func runTest(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// The report path is relative to where gala was run, not to the project.
+	junitPath := testJUnit
+	if junitPath != "" {
+		if junitPath, err = filepath.Abs(junitPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// Run tests
-	if err := builder.Test(testVerbose); err != nil {
+	if err := builder.RunTests(build.TestOptions{Verbose: testVerbose, JUnitPath: junitPath}); err != nil {
 		if hasGalaDiagnostic(err) {
 			// A compile error: frame it the way `gala build` does, each
 			// diagnostic at its own file — the wrapping text names the file
