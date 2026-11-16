@@ -79,6 +79,7 @@ GALASPEC_MAIN = "Gala/Main.lean"
 # Models and theorems, and Gala.lean, which imports every module and stays last.
 GALA_SRCS = [
     "Gala/MatchLowering.lean",
+    "Gala/GoCore.lean",
     "Gala/Gala2Lean/Prelude.lean",
     "Gala/Gala2Lean/Examples/Match.lean",
     "Gala/Gala2Lean/Theorems.lean",
