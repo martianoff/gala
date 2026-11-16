@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/formal/coreexport"
+	"martianoff/gala/internal/formal/coreexport/analyzerhints"
 	"martianoff/gala/internal/formal/gala2lean"
 )
 
@@ -321,4 +323,63 @@ func TestInoutReceiver(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, res.Lean, "def C.Add (_gala_self : C) («by» : Int64) : _gala_M (Int64 × C)")
 	require.Contains(t, res.Lean, "← (C.Add c (2 : Int64))")
+}
+
+// TestDotImportsPerFile checks that a library name resolves by the dot
+// imports of its own file, as in the Go the transpiler writes: a file that
+// dot-imports go_interop cannot have std's Tuple or the collections' ArrayOf
+// (go_interop might declare them), but another file of the package can.
+func TestDotImportsPerFile(t *testing.T) {
+	interop := `package main
+
+import . "martianoff/gala/go_interop"
+
+func viaSlice() int = SliceOf(1, 2).Size()
+
+func pair() Tuple[int, int] = Tuple(1, 2)
+
+// widen uses Go's conversion, which no dot import can declare.
+func widen(n int) int64 = int64(n)
+`
+	main := `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func sizes() int = ArrayOf(1, 2).Size() + ArrayTabulate(3, (i) => i).Size()
+
+func both() int = When(true, 1).GetOrElse(0)
+
+func main() {
+    Println(sizes(), both())
+}
+`
+	plain := `package main
+
+func noCollections() int = ArrayOf(1).Size()
+
+func arrayType(a Array[int]) int = 1
+`
+	p, err := coreexport.Export([]coreexport.Source{{Path: "interop.gala", Text: interop}, {Path: "main.gala", Text: main},
+		{Path: "plain.gala", Text: plain}}, coreexport.Options{LiteralType: analyzerhints.LiteralType})
+	require.NoError(t, err)
+	_, err = gala2lean.Translate(p, gala2lean.Options{Namespace: "P", Library: true})
+	var u *gala2lean.UnsupportedError
+	require.ErrorAs(t, err, &u)
+	stopped := map[string]string{}
+	for _, it := range u.Items {
+		if _, seen := stopped[it.Decl]; !seen {
+			stopped[it.Decl] = it.Construct
+		}
+	}
+	// A name another dot import might declare is reported as that import; a
+	// collections name in a file without their import as the call it is.
+	require.Equal(t, "import", stopped["viaSlice"])
+	require.Equal(t, "import", stopped["pair"])
+	require.Equal(t, "call-of-ArrayOf", stopped["noCollections"])
+	require.Equal(t, "type-Array", stopped["arrayType"])
+	require.NotContains(t, stopped, "widen")
+	require.NotContains(t, stopped, "sizes")
+	require.NotContains(t, stopped, "both")
+	require.NotContains(t, err.Error(), "_gala_hidden")
+	require.Equal(t, gala2lean.Stats{Funcs: 8, Translated: 4}, gala2lean.CountTranslated(p, err), "%v", err)
 }

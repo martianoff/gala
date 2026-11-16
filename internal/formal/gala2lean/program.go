@@ -39,10 +39,6 @@ type gen struct {
 	// collections is true when the program dot-imports the immutable
 	// collections (collectionsPath).
 	collections bool
-	// otherDots is true when the program dot-imports a package other than
-	// the immutable collections and std, whose names a bare name might
-	// mean (stdFunc).
-	otherDots bool
 	// depNS is the namespaces of the packages of the module the program
 	// imports (packages.go).
 	depNS map[string]bool
@@ -153,9 +149,6 @@ func (g *gen) collect(p *coreexport.Program) {
 			if imp, ok := d.(*coreexport.Import); ok {
 				// The immutable collections, dot-imported, are modelled
 				// (collections.go); any other import is outside the subset.
-				if imp.Alias == "." && imp.Path != collectionsPath && imp.Path != stdPath {
-					g.otherDots = true
-				}
 				if imp.Path == collectionsPath && imp.Alias == "." {
 					g.collections = true
 				} else {
@@ -222,8 +215,14 @@ func (g *gen) collect(p *coreexport.Program) {
 // unresolved stops the translation at a name it cannot resolve. The name most
 // likely refers to a declaration outside the subset (an import, say), so
 // that declaration's construct is reported if there is one, else fallback.
+// A library name hideLibNames renamed has a known cause: another dot import
+// of its own file (import), or no dot import of the collections in it
+// (fallback).
 func (g *gen) unresolved(pos coreexport.Pos, fallback string) {
-	if len(g.outsideDecls) > 0 {
+	switch {
+	case strings.Contains(fallback, otherDotPrefix):
+		unsup(pos, "import")
+	case len(g.outsideDecls) > 0 && !strings.Contains(fallback, noCollPrefix):
 		unsup(pos, "%s", g.outsideDecls[0].What)
 	}
 	unsup(pos, "%s", fallback)

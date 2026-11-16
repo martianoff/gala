@@ -275,8 +275,12 @@ galaspec models them, except as listed below):
   `ArrayTabulate` and `ArrayFill`, and Go's `int(x)` and `int64(x)` of a value that is
   already an `int` or `int64` (the same value: both are 64 bits, as galaspec takes Go's
   `int` to be; any other conversion is reported, `conversion`), each only where the name
-  resolves to it: the program declares no such name and dot-imports nothing but std and
-  `collection_immutable` (the mutable collections have their own `ArrayTabulate`);
+  resolves to it: the program declares no such name, the file the name is in
+  dot-imports no package but std and `collection_immutable` (the mutable collections
+  have their own `ArrayTabulate`), and, for a name of `collection_immutable`
+  (`ArrayOf`, `ArrayTabulate`, `Array`, ...), that file dot-imports it. A dot import
+  counts only in its own file, as in the Go the transpiler writes; a library name or
+  collections type a file's imports rule out is reported;
 - `Array` and `List` from the dot-imported `collection_immutable`, as the prelude's
   `GArray` and `GList`, with the functions the prelude models (`ArrayOf`, `ListOf`,
   `EmptyArray`, `EmptyList`, `Size`, `Get`, `Map`, `Filter`, `FoldLeft`, `FoldRight`,
@@ -482,12 +486,12 @@ The constructs galaspec stopped at, by how many programs it stopped at each (38 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (87 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (88 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
 | `import` | 137 |
-| `generic-type` | 36 |
+| `generic-type` | 35 |
 | `index` | 29 |
 | `qualified-type` | 24 |
 | `pointer-type` | 14 |

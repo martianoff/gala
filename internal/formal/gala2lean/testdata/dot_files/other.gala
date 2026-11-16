@@ -1,0 +1,4 @@
+package main
+
+// described uses std's When and Tuple, with no dot import in this file.
+func described(n int) Tuple[string, int] = Tuple(When(n > 0, "positive").GetOrElse("other"), n)
