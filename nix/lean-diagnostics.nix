@@ -47,7 +47,7 @@ stdenv.mkDerivation {
     lean -R . --c=build/c/DiagnosticsCli.c DiagnosticsCli.lean
     lean -R . --c=build/c/Main.c Main.lean
 
-    leanc -O2 -o build/diagnostics \
+    leanc -O3 -flto -DNDEBUG -o build/diagnostics \
       build/c/Main.c build/c/DiagnosticsCli.c build/c/Diagnostics.c
     runHook postBuild
   '';
@@ -61,7 +61,7 @@ stdenv.mkDerivation {
 
     lean -R . -o build/Tests.olean Tests.lean
     lean -R . --c=build/c/Tests.c Tests.lean
-    leanc -O2 -o build/diagnostics-tests build/c/Tests.c build/c/Diagnostics.c
+    leanc -O3 -flto -DNDEBUG -o build/diagnostics-tests build/c/Tests.c build/c/Diagnostics.c
     build/diagnostics-tests
     runHook postCheck
   '';

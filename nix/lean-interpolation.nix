@@ -47,7 +47,7 @@ stdenv.mkDerivation {
     lean -R . --c=build/c/InterpolationCli.c InterpolationCli.lean
     lean -R . --c=build/c/Main.c Main.lean
 
-    leanc -O2 -o build/interpolation \
+    leanc -O3 -flto -DNDEBUG -o build/interpolation \
       build/c/Main.c build/c/InterpolationCli.c build/c/Interpolation.c
     runHook postBuild
   '';
@@ -61,7 +61,7 @@ stdenv.mkDerivation {
 
     lean -R . -o build/Tests.olean Tests.lean
     lean -R . --c=build/c/Tests.c Tests.lean
-    leanc -O2 -o build/interpolation-tests build/c/Tests.c build/c/Interpolation.c
+    leanc -O3 -flto -DNDEBUG -o build/interpolation-tests build/c/Tests.c build/c/Interpolation.c
     build/interpolation-tests
     runHook postCheck
   '';

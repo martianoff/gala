@@ -46,30 +46,104 @@ def isGoSpace (c : Char) : Bool :=
     (n >= 0x2000 && n <= 0x200A) ||
     n == 0x2028 || n == 0x2029 || n == 0x202F || n == 0x205F || n == 0x3000
 
-/-- `strings.TrimSpace`. -/
+/-- The byte at `i` of the UTF-8 encoding, or 0 when `i` is past the end. -/
+@[inline] def byteAt (s : String) (i : Nat) : UInt8 :=
+  if h : i < s.utf8ByteSize then s.getUTF8Byte ⟨i⟩ h else 0
+
+/-- UTF-8 length of the character whose lead byte is `b`. -/
+@[inline] def utf8LeadLen (b : UInt8) : Nat :=
+  if b < 0xC0 then 1 else if b < 0xE0 then 2 else if b < 0xF0 then 3 else 4
+
+/-- Decode the code point that starts at byte `i` (the input must be UTF-8). -/
+def decodeCodePoint (s : String) (i : Nat) : Nat :=
+  let b0 := (byteAt s i).toNat
+  if b0 < 0x80 then b0
+  else if b0 < 0xE0 then
+    ((b0 &&& 0x1F) <<< 6) ||| ((byteAt s (i + 1)).toNat &&& 0x3F)
+  else if b0 < 0xF0 then
+    ((b0 &&& 0x0F) <<< 12) ||| (((byteAt s (i + 1)).toNat &&& 0x3F) <<< 6) |||
+      ((byteAt s (i + 2)).toNat &&& 0x3F)
+  else
+    ((b0 &&& 0x07) <<< 18) ||| (((byteAt s (i + 1)).toNat &&& 0x3F) <<< 12) |||
+      (((byteAt s (i + 2)).toNat &&& 0x3F) <<< 6) ||| ((byteAt s (i + 3)).toNat &&& 0x3F)
+
+/-- Byte length of the Go whitespace character at `i`, or 0 when it is not
+whitespace.  ASCII takes a branch-only fast path; the wider
+`unicode.IsSpace` characters are decoded. -/
+def wsLenAt (s : String) (i : Nat) : Nat :=
+  let b := byteAt s i
+  if b < 0x80 then
+    if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0B || b == 0x0C || b == 0x0D then 1 else 0
+  else
+    let l := utf8LeadLen b
+    if isGoSpace (Char.ofNat (decodeCodePoint s i)) then l else 0
+
+/-- `strings.TrimSpace`.  The trimmed bounds are scanned byte-wise and the
+string is copied only when something is actually trimmed; the slice version
+copied every line even when it had no surrounding whitespace. -/
+partial def trimStartGo (s : String) (i : Nat) : Nat :=
+  if i < s.utf8ByteSize then
+    let l := wsLenAt s i
+    if l == 0 then i else trimStartGo s (i + l)
+  else i
+
+/-- Start byte of the character that ends at `e`: step back over UTF-8
+continuation bytes (`0x80`..`0xBF`). -/
+partial def leadStartGo (s : String) (j : Nat) : Nat :=
+  if j > 0 then
+    let b := byteAt s (j - 1)
+    if b >= 0x80 && b < 0xC0 then leadStartGo s (j - 1) else j - 1
+  else 0
+
+partial def trimEndGo (s : String) (e : Nat) : Nat :=
+  if e == 0 then 0
+  else
+    let st := leadStartGo s e
+    let l := wsLenAt s st
+    if l > 0 && st + l == e then trimEndGo s st else e
+
 def trimSpace (s : String) : String :=
-  String.ofList (s.toList.dropWhile isGoSpace |>.reverse.dropWhile isGoSpace |>.reverse)
+  let start := trimStartGo s 0
+  let stop := trimEndGo s s.utf8ByteSize
+  if start == 0 && stop == s.utf8ByteSize then s
+  else String.Pos.Raw.extract s ⟨start⟩ ⟨stop⟩
 
 /-- The UTF-8 byte order mark as a character. -/
 def bomChar : Char := Char.ofNat 0xFEFF
 
-/-- `galaerr.StripBOM`: remove exactly one leading BOM. -/
+/-- `galaerr.StripBOM`: remove exactly one leading BOM.  A `String.Slice`
+avoids turning the whole manifest into a list of characters (the input is
+split into lines right after this anyway). -/
 def stripBOM (s : String) : String :=
-  match s.toList with
-  | c :: rest => if c == bomChar then String.ofList rest else s
-  | [] => s
+  let bom := String.singleton bomChar
+  if s.startsWith bom then (s.drop 1).toString else s
 
-/-- `bufio.Scanner` with `ScanWords`: runs of Go whitespace, no empty words. -/
+/-- `bufio.Scanner` with `ScanWords`, over UTF-8 bytes: runs of Go whitespace,
+no empty words.  Avoids the lazy `String.split` iterator and the list of
+slices, and copies only the fields themselves. -/
+partial def fieldsFrom (s : String) (i start : Nat) (inWord : Bool) (acc : List String) : List String :=
+  if i < s.utf8ByteSize then
+    let l := wsLenAt s i
+    if l == 0 then
+      fieldsFrom s (i + utf8LeadLen (byteAt s i)) start true acc
+    else if inWord then
+      fieldsFrom s (i + l) (i + l) false (String.Pos.Raw.extract s ⟨start⟩ ⟨i⟩ :: acc)
+    else
+      fieldsFrom s (i + l) (i + l) false acc
+  else if inWord then
+    String.Pos.Raw.extract s ⟨start⟩ ⟨i⟩ :: acc
+  else acc
+
 def fields (s : String) : List String :=
-  (s.split isGoSpace).toList.map (fun w => w.toString) |>.filter (fun w => !w.isEmpty)
+  (fieldsFrom s 0 0 false []).reverse
 
 /-- Drop the last character of a string (used for a block header's `(`). -/
 def dropLastChar (s : String) : String :=
-  String.ofList s.toList.dropLast
+  (s.dropEnd 1).toString
 
 /-- `strings.TrimRight(s, "\n")`: drop every trailing newline. -/
 def trimRightNewlines (s : String) : String :=
-  String.ofList (s.toList.reverse.dropWhile (fun c => c == '\n')).reverse
+  (s.dropEndWhile (fun c => c == '\n')).toString
 
 /-! ## The manifest -/
 
@@ -134,13 +208,25 @@ inductive Block where
   | exclude
   deriving Repr, BEq
 
+/-- Index of the first `//` in the line, or the line's byte length if there
+is none.  A byte scan avoids the table `String.find?` builds for a pattern. -/
+partial def commentIndexGo (s : String) (i : Nat) : Nat :=
+  if i + 1 < s.utf8ByteSize then
+    if byteAt s i == 0x2F && byteAt s (i + 1) == 0x2F then i
+    else commentIndexGo s (i + 1)
+  else s.utf8ByteSize
+
+def commentIndex (s : String) : Nat :=
+  commentIndexGo s 0
+
 /-- Split a line at the first `//`, returning the code before it and the
 comment (without the `//`), as `strings.Index` does. -/
 def splitComment (line : String) : String × Option String :=
-  match line.splitOn "//" with
-  | [] => (line, none)
-  | [_] => (line, none)
-  | pre :: rest => (pre, some (String.intercalate "//" rest))
+  let i := commentIndex line
+  if i < line.utf8ByteSize then
+    (String.Pos.Raw.extract line ⟨0⟩ ⟨i⟩,
+     some (String.Pos.Raw.extract line ⟨i + 2⟩ ⟨line.utf8ByteSize⟩))
+  else (line, none)
 
 /-- The comma-separated markers of a comment, trimmed. -/
 def commentMarkers (comment : String) : List String :=
@@ -187,7 +273,10 @@ def parseLines (lines : List String) : Except ParseError File :=
   let rec go (lineNum : Nat) (lines : List String) (f : File) (inBlock : Option Block)
       (blockIndirect blockGo : Bool) : Except ParseError File :=
     match lines with
-    | [] => .ok f
+    | [] => .ok { f with
+        requires := f.requires.reverse
+        replaces := f.replaces.reverse
+        excludes := f.excludes.reverse }
     | rawLine :: rest =>
       let n := lineNum + 1
       let (code, comment) := splitComment rawLine
@@ -223,17 +312,17 @@ def parseLines (lines : List String) : Except ParseError File :=
           | some .require =>
             match parseRequire (directive :: args) (blockIndirect || lineIndirect)
                 (blockGo || lineGo) with
-            | .ok req => go n rest { f with requires := f.requires ++ [req] }
+            | .ok req => go n rest { f with requires := req :: f.requires }
                 inBlock blockIndirect blockGo
             | .error message => .error { line := n, message }
           | some .replace =>
             match parseReplace (directive :: args) with
-            | .ok rep => go n rest { f with replaces := f.replaces ++ [rep] }
+            | .ok rep => go n rest { f with replaces := rep :: f.replaces }
                 inBlock blockIndirect blockGo
             | .error message => .error { line := n, message }
           | some .exclude =>
             match parseExclude (directive :: args) with
-            | .ok exc => go n rest { f with excludes := f.excludes ++ [exc] }
+            | .ok exc => go n rest { f with excludes := exc :: f.excludes }
                 inBlock blockIndirect blockGo
             | .error message => .error { line := n, message }
           | none =>
@@ -250,17 +339,17 @@ def parseLines (lines : List String) : Except ParseError File :=
               | [] => .error { line := n, message := "gala directive requires a version" }
             | "require" =>
               match parseRequire args lineIndirect lineGo with
-              | .ok req => go n rest { f with requires := f.requires ++ [req] }
+              | .ok req => go n rest { f with requires := req :: f.requires }
                   inBlock blockIndirect blockGo
               | .error message => .error { line := n, message }
             | "replace" =>
               match parseReplace args with
-              | .ok rep => go n rest { f with replaces := f.replaces ++ [rep] }
+              | .ok rep => go n rest { f with replaces := rep :: f.replaces }
                   inBlock blockIndirect blockGo
               | .error message => .error { line := n, message }
             | "exclude" =>
               match parseExclude args with
-              | .ok exc => go n rest { f with excludes := f.excludes ++ [exc] }
+              | .ok exc => go n rest { f with excludes := exc :: f.excludes }
                   inBlock blockIndirect blockGo
               | .error message => .error { line := n, message }
             | _ => .error { line := n, message := s!"unknown directive: {directive}" }
@@ -268,7 +357,7 @@ def parseLines (lines : List String) : Except ParseError File :=
 
 /-- `mod.Parse`: split on newlines after dropping a leading BOM. -/
 def parse (content : String) : Except ParseError File :=
-  parseLines ((stripBOM content).splitOn "\n")
+  parseLines (((stripBOM content).split '\n').toList.map (fun s => s.toString))
 
 /-! ## Formatting -/
 

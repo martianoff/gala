@@ -13,8 +13,9 @@
   * `PrintedByString`, and `Position` (line and rune column of a byte offset).
 
   It is deliberately self-contained: no parser or transpiler state.  The
-  recursive scanners carry fuel so their termination is structural and the
-  generated C stays straightforward.
+  small scanners carry fuel so their termination is structural.  The
+  top-level byte loop is `partial`: its bound is the input size, and avoiding
+  a per-byte fuel argument is what keeps the native port competitive.
 -/
 
 set_option autoImplicit false
@@ -39,20 +40,20 @@ structure Part where
 
 namespace Bytes
 
-/-- Byte comparison against a small numeric literal, avoiding `UInt8` literal
-inference noise in guards. -/
-def is (b : UInt8) (n : Nat) : Bool := b.toNat == n
+/-- Byte comparison against a small numeric literal.  Keeping both operands
+`UInt8` avoids boxing them as `Nat` on every test. -/
+def is (b : UInt8) (n : UInt8) : Bool := b == n
 
 def isIdentStart (b : UInt8) : Bool :=
   is b 0x5F ||
-  (b.toNat >= 0x61 && b.toNat <= 0x7A) ||
-  (b.toNat >= 0x41 && b.toNat <= 0x5A)
+  (b >= 0x61 && b <= 0x7A) ||
+  (b >= 0x41 && b <= 0x5A)
 
 def isIdentPart (b : UInt8) : Bool :=
-  isIdentStart b || (b.toNat >= 0x30 && b.toNat <= 0x39)
+  isIdentStart b || (b >= 0x30 && b <= 0x39)
 
 def isDigit (b : UInt8) : Bool :=
-  b.toNat >= 0x30 && b.toNat <= 0x39
+  b >= 0x30 && b <= 0x39
 
 def isFormatFlag (b : UInt8) : Bool :=
   is b 0x2B || is b 0x2D || is b 0x23 || is b 0x20 || is b 0x30
@@ -158,52 +159,123 @@ end Bytes
 
 open Bytes
 
-/-- Append one byte to the pending literal run, recording the run's first
-byte offset the first time the run becomes non-empty. -/
-def writeLit (lit : ByteArray) (litStart : Nat) (pos : Nat) (b : UInt8) :
-    ByteArray × Nat :=
-  if lit.isEmpty then (lit.push b, pos) else (lit.push b, litStart)
+/-- Collapse every `$$` in `content[start:stop)` to a single `$`, which is the
+literal text that run stands for. -/
+partial def collapseDoubleDollars (content : ByteArray) (start stop : Nat)
+    (out : ByteArray) : ByteArray :=
+  if start < stop then
+    match Bytes.get? content start with
+    | some 0x5C =>
+      -- An escape inside a literal run was copied as-is, so its second byte
+      -- must not take part in `$$` collapsing.
+      if start + 1 < stop then
+        match Bytes.get? content (start + 1) with
+        | some c => collapseDoubleDollars content (start + 2) stop ((out.push 0x5C).push c)
+        | none => out.push 0x5C
+      else out.push 0x5C
+    | some 0x24 =>
+      if start + 1 < stop then
+        match Bytes.get? content (start + 1) with
+        | some 0x24 => collapseDoubleDollars content (start + 2) stop (out.push 0x24)
+        | _ => collapseDoubleDollars content (start + 1) stop (out.push 0x24)
+      else out.push 0x24
+    | some c => collapseDoubleDollars content (start + 1) stop (out.push c)
+    | none => out
+  else out
 
-/-- Flush the pending literal run as a part ending at `stop`. -/
-def flushLiteral (parts : Array Part) (lit : ByteArray) (litStart stop : Nat) :
-    Array Part :=
-  if lit.isEmpty then parts
-  else parts.push
-    { isLiteral := true, text := lit, byteOffset := litStart,
-      start := litStart, endPos := stop }
+/-- The literal text of the run `content[start:stop)`.  A run without `$$` is
+the source slice itself; one with `$$` needs the doubled dollars collapsed.
+Literal runs are kept as source offsets while scanning, so a run costs one
+slice, not one array push per byte. -/
+def literalText (content : ByteArray) (start stop : Nat)
+    (hasDoubleDollar : Bool) : ByteArray :=
+  if hasDoubleDollar then collapseDoubleDollars content start stop ByteArray.empty
+  else content.extract start stop
+
+/-- Flush the pending literal run (the `litLen` source bytes ending at `stop`)
+as a part. -/
+def flushLiteral (parts : Array Part) (content : ByteArray) (stop litLen : Nat)
+    (hasDoubleDollar : Bool) : Array Part :=
+  if litLen == 0 then parts
+  else
+    let start := stop - litLen
+    parts.push
+      { isLiteral := true, text := literalText content start stop hasDoubleDollar,
+        byteOffset := start, start := start, endPos := stop }
 
 /-- Scan an identifier after `$`.  Returns the index one past its last byte. -/
 def scanIdent (a : ByteArray) (fuel : Nat) (j : Nat) : Nat :=
   match fuel with
   | 0 => j
   | fuel + 1 =>
-    match get? a j with
-    | none => j
-    | some c => if isIdentPart c then scanIdent a fuel (j + 1) else j
+    if h : j < a.size then
+      if isIdentPart (a.get j h) then scanIdent a fuel (j + 1) else j
+    else j
+
+/-- The result of scanning an embedded expression: the index of the closing
+`}`, and whether the slice contains a `\"` that `unescapeExpr` must rewrite.
+
+Recording the escape while the braces are scanned avoids a second pass over
+every expression; the expression is only rebuilt when it actually contains
+one. -/
+structure ExprScan where
+  stop : Nat
+  escaped : Bool
 
 /-- Locate the `}` closing the `${` at `content[dollar]`.
 
 This mirrors `EndOfEmbeddedExpr`: brace nesting is counted, `\` skips the
-following byte, and an unterminated block returns `content.size`. -/
-def endOfEmbeddedExprAux (a : ByteArray) (fuel : Nat) (j depth : Nat) : Nat :=
+following byte, and an unterminated block returns `content.size`.
+
+`escaped` is sticky.  A `\"` can start at a byte the brace scanner skips (the
+second backslash of `\\\"`), so each visited backslash also looks one byte
+further: the pair at the skipped position starts with that next byte.  This
+still visits each expression once. -/
+def endOfEmbeddedExprAux (a : ByteArray) (fuel : Nat) (j depth : Nat)
+    (escaped : Bool) : ExprScan :=
   match fuel with
-  | 0 => j
+  | 0 => { stop := j, escaped }
   | fuel + 1 =>
-    if h : j < a.size ∧ depth > 0 then
-      let c := a.get j h.left
+    if h : j < a.size then
+      let c := a.get j h
       if is c 0x7B then
-        endOfEmbeddedExprAux a fuel (j + 1) (depth + 1)
+        endOfEmbeddedExprAux a fuel (j + 1) (depth + 1) escaped
       else if is c 0x7D then
-        if depth == 1 then j
-        else endOfEmbeddedExprAux a fuel (j + 1) (depth - 1)
-      else if is c 0x5C ∧ j + 1 < a.size then
-        endOfEmbeddedExprAux a fuel (j + 2) depth
+        if depth == 1 then { stop := j, escaped }
+        else endOfEmbeddedExprAux a fuel (j + 1) (depth - 1) escaped
+      else if is c 0x5C then
+        if h2 : j + 1 < a.size then
+          let escaped :=
+            escaped || is (a.get (j + 1) h2) 0x22 ||
+              (is (a.get (j + 1) h2) 0x5C &&
+                match Bytes.get? a (j + 2) with
+                | some 0x22 => true
+                | _ => false)
+          endOfEmbeddedExprAux a fuel (j + 2) depth escaped
+        else
+          endOfEmbeddedExprAux a fuel (j + 1) depth escaped
       else
-        endOfEmbeddedExprAux a fuel (j + 1) depth
-    else j
+        endOfEmbeddedExprAux a fuel (j + 1) depth escaped
+    else { stop := j, escaped }
+
+def endOfEmbeddedExprScan (a : ByteArray) (dollar : Nat) : ExprScan :=
+  endOfEmbeddedExprAux a (a.size + 1) (dollar + 2) 1 false
 
 def endOfEmbeddedExpr (a : ByteArray) (dollar : Nat) : Nat :=
-  endOfEmbeddedExprAux a (a.size + 1) (dollar + 2) 1
+  (endOfEmbeddedExprScan a dollar).stop
+
+/-- Whether `a` contains a `\"` pair.  Expressions rarely do, and a plain
+slice is cheaper than rebuilding the array byte by byte. -/
+def hasQuoteEscape (a : ByteArray) (fuel : Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel + 1 =>
+    if h : i < a.size then
+      if h2 : i + 1 < a.size then
+        if is (a.get i h) 0x5C && is (a.get (i + 1) h2) 0x22 then true
+        else hasQuoteEscape a fuel (i + 1)
+      else false
+    else false
 
 /-- Replace `\"` with `"` inside an embedded expression. -/
 def unescapeExprAux (a : ByteArray) (fuel : Nat) (i : Nat) (out : ByteArray) :
@@ -211,36 +283,40 @@ def unescapeExprAux (a : ByteArray) (fuel : Nat) (i : Nat) (out : ByteArray) :
   match fuel with
   | 0 => out
   | fuel + 1 =>
-    match get? a i with
-    | none => out
-    | some c =>
-      match get? a (i + 1) with
-      | some c2 =>
+    if h : i < a.size then
+      let c := a.get i h
+      if h2 : i + 1 < a.size then
+        let c2 := a.get (i + 1) h2
         if is c 0x5C && is c2 0x22 then
           unescapeExprAux a fuel (i + 2) (out.push 0x22)
         else
           unescapeExprAux a fuel (i + 1) (out.push c)
-      | none =>
+      else
         unescapeExprAux a fuel (i + 1) (out.push c)
+    else out
+
+def unescapeExprIf (a : ByteArray) (escaped : Bool) : ByteArray :=
+  if escaped then unescapeExprAux a (a.size + 1) 0 ByteArray.empty
+  else a
 
 def unescapeExpr (a : ByteArray) : ByteArray :=
-  unescapeExprAux a (a.size + 1) 0 ByteArray.empty
+  unescapeExprIf a (hasQuoteEscape a (a.size + 1) 0)
 
 def skipFlags (a : ByteArray) (fuel : Nat) (j : Nat) : Nat :=
   match fuel with
   | 0 => j
   | fuel + 1 =>
-    match get? a j with
-    | none => j
-    | some c => if isFormatFlag c then skipFlags a fuel (j + 1) else j
+    if h : j < a.size then
+      if isFormatFlag (a.get j h) then skipFlags a fuel (j + 1) else j
+    else j
 
 def skipDigits (a : ByteArray) (fuel : Nat) (j : Nat) : Nat :=
   match fuel with
   | 0 => j
   | fuel + 1 =>
-    match get? a j with
-    | none => j
-    | some c => if isDigit c then skipDigits a fuel (j + 1) else j
+    if h : j < a.size then
+      if isDigit (a.get j h) then skipDigits a fuel (j + 1) else j
+    else j
 
 /-- Extract a Go printf spec starting at `%`; on failure return `("", i)` so
 the caller treats the `%` as literal text. -/
@@ -250,26 +326,24 @@ def extractFormatSpec (a : ByteArray) (i : Nat) : ByteArray × Nat :=
       let fuel := a.size + 1
       let j1 := skipFlags a fuel (i + 1)
       let j2 :=
-        match get? a j1 with
-        | some c => if is c 0x2A then j1 + 1 else skipDigits a fuel j1
-        | none => j1
+        if h1 : j1 < a.size then
+          if is (a.get j1 h1) 0x2A then j1 + 1 else skipDigits a fuel j1
+        else j1
       let j3 :=
-        match get? a j2 with
-        | some c =>
-          if is c 0x2E then
+        if h2 : j2 < a.size then
+          if is (a.get j2 h2) 0x2E then
             let k := j2 + 1
-            match get? a k with
-            | some c2 => if is c2 0x2A then k + 1 else skipDigits a fuel k
-            | none => k
+            if h3 : k < a.size then
+              if is (a.get k h3) 0x2A then k + 1 else skipDigits a fuel k
+            else k
           else j2
-        | none => j2
-      match get? a j3 with
-      | some c =>
-        if isFormatVerb c then
+        else j2
+      if h4 : j3 < a.size then
+        if isFormatVerb (a.get j3 h4) then
           (a.extract i (j3 + 1), j3 + 1)
         else
           (ByteArray.empty, i)
-      | none => (ByteArray.empty, i)
+      else (ByteArray.empty, i)
     else
       (ByteArray.empty, i)
   else
@@ -280,74 +354,77 @@ opening `s"`/`f"` and its closing quote).
 
 With `formatSpecs`, as for an `f"..."` string, a `%spec` following an embedded
 expression is captured; in an `s"..."` string a `%` is literal text. -/
-def splitAux (content : ByteArray) (formatSpecs : Bool) :
-    Nat → Nat → ByteArray → Nat → Array Part → Array Part
-  | 0, i, lit, litStart, parts => flushLiteral parts lit litStart i
-  | fuel + 1, i, lit, litStart, parts =>
-    match get? content i with
-    | none => flushLiteral parts lit litStart i
-    | some c =>
-      if is c 0x5C then
-        match get? content (i + 1) with
-        | some c2 =>
-          let (lit1, ls1) := writeLit lit litStart i c
-          let (lit2, ls2) := writeLit lit1 ls1 (i + 1) c2
-          splitAux content formatSpecs fuel (i + 2) lit2 ls2 parts
-        | none =>
-          let (lit1, ls1) := writeLit lit litStart i c
-          splitAux content formatSpecs fuel (i + 1) lit1 ls1 parts
-      else if !is c 0x24 then
-        let (lit1, ls1) := writeLit lit litStart i c
-        splitAux content formatSpecs fuel (i + 1) lit1 ls1 parts
+partial def splitAux (content : ByteArray) (formatSpecs : Bool)
+    (i litLen : Nat) (hasDoubleDollar : Bool) (parts : Array Part) :
+    Array Part :=
+  if h : i < content.size then
+    let c := content.get i h
+    if is c 0x5C then
+      if i + 1 < content.size then
+        splitAux content formatSpecs (i + 2) (litLen + 2) hasDoubleDollar parts
       else
-        match get? content (i + 1) with
-        | none =>
-          let (lit1, ls1) := writeLit lit litStart i c
-          splitAux content formatSpecs fuel (i + 1) lit1 ls1 parts
-        | some next =>
-          if is next 0x24 then
-            let (lit1, ls1) := writeLit lit litStart i c
-            splitAux content formatSpecs fuel (i + 2) lit1 ls1 parts
-          else if is next 0x7B then
-            let parts1 := flushLiteral parts lit litStart i
-            let j0 := endOfEmbeddedExpr content i
-            let exprStart := i + 2
-            let exprText := unescapeExpr (content.extract exprStart j0)
-            let j1 := min (j0 + 1) content.size
-            let (fmtSpec, j2) :=
-              if formatSpecs && j1 < content.size && is (content.get! j1) 0x25
-              then extractFormatSpec content j1
+        splitAux content formatSpecs (i + 1) (litLen + 1) hasDoubleDollar parts
+    else if !is c 0x24 then
+      splitAux content formatSpecs (i + 1) (litLen + 1) hasDoubleDollar parts
+    else
+      if h2 : i + 1 < content.size then
+        let next := content.get (i + 1) h2
+        if is next 0x24 then
+          splitAux content formatSpecs (i + 2) (litLen + 2) true parts
+        else if is next 0x7B then
+          let parts1 := flushLiteral parts content i litLen hasDoubleDollar
+          let scan := endOfEmbeddedExprScan content i
+          let j0 := scan.stop
+          let exprStart := i + 2
+          let exprText := unescapeExprIf (content.extract exprStart j0) scan.escaped
+          let j1 := min (j0 + 1) content.size
+          let (fmtSpec, j2) :=
+            if formatSpecs then
+              if h1 : j1 < content.size then
+                if is (content.get j1 h1) 0x25 then extractFormatSpec content j1
+                else (ByteArray.empty, j1)
               else (ByteArray.empty, j1)
-            let part : Part :=
-              { isLiteral := false, text := exprText,
-                formatSpec := fmtSpec, byteOffset := exprStart,
-                start := i, endPos := j1 }
-            splitAux content formatSpecs fuel j2 ByteArray.empty 0
-              (parts1.push part)
-          else if isIdentStart next then
-            let parts1 := flushLiteral parts lit litStart i
-            let identStart := i + 1
-            let j0 := scanIdent content (content.size + 1) identStart
-            let identName := content.extract identStart j0
-            let (fmtSpec, j2) :=
-              if formatSpecs && j0 < content.size && is (content.get! j0) 0x25
-              then extractFormatSpec content j0
+            else (ByteArray.empty, j1)
+          let part : Part :=
+            { isLiteral := false, text := exprText,
+              formatSpec := fmtSpec, byteOffset := exprStart,
+              start := i, endPos := j1 }
+          splitAux content formatSpecs j2 0 false
+            (parts1.push part)
+        else if isIdentStart next then
+          let parts1 := flushLiteral parts content i litLen hasDoubleDollar
+          let identStart := i + 1
+          let j0 := scanIdent content (content.size + 1) identStart
+          let identName := content.extract identStart j0
+          let (fmtSpec, j2) :=
+            if formatSpecs then
+              if h1 : j0 < content.size then
+                if is (content.get j0 h1) 0x25 then extractFormatSpec content j0
+                else (ByteArray.empty, j0)
               else (ByteArray.empty, j0)
-            let part : Part :=
-              { isLiteral := false, text := identName,
-                formatSpec := fmtSpec, byteOffset := identStart,
-                start := i, endPos := j0 }
-            splitAux content formatSpecs fuel j2 ByteArray.empty 0
-              (parts1.push part)
-          else
-            let (lit1, ls1) := writeLit lit litStart i c
-            splitAux content formatSpecs fuel (i + 1) lit1 ls1 parts
+            else (ByteArray.empty, j0)
+          let part : Part :=
+            { isLiteral := false, text := identName,
+              formatSpec := fmtSpec, byteOffset := identStart,
+              start := i, endPos := j0 }
+          splitAux content formatSpecs j2 0 false
+            (parts1.push part)
+        else
+          splitAux content formatSpecs (i + 1) (litLen + 1) hasDoubleDollar parts
+      else
+        splitAux content formatSpecs (i + 1) (litLen + 1) hasDoubleDollar parts
+  else
+    flushLiteral parts content i litLen hasDoubleDollar
 
 /-- `split content formatSpecs` parses the body of an interpolated (`s"..."`,
 `formatSpecs = false`) or format (`f"..."`, `formatSpecs = true`) string into
 ordered literal and expression parts. -/
 def split (content : ByteArray) (formatSpecs : Bool := false) : Array Part :=
-  splitAux content formatSpecs (content.size + 1) 0 ByteArray.empty 0 #[]
+  -- Most interpolation bodies have a handful of parts; reserving a small
+  -- proportional capacity avoids the first few reallocations of `push`
+  -- without over-allocating for a long literal-only string.
+  splitAux content formatSpecs 0 0 false
+    (Array.emptyWithCapacity (min 32 (2 + content.size / 8)))
 
 /-- `printedByString part` reports whether `fmt` prints the embedded expression
 as it prints an operand of `Println`, by a `String` it has: with no spec, or

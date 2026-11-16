@@ -47,7 +47,7 @@ stdenv.mkDerivation {
     lean -R . --c=build/c/ManifestCli.c ManifestCli.lean
     lean -R . --c=build/c/Main.c Main.lean
 
-    leanc -O2 -o build/manifest \
+    leanc -O3 -flto -DNDEBUG -o build/manifest \
       build/c/Main.c build/c/ManifestCli.c build/c/Manifest.c
     runHook postBuild
   '';
@@ -61,7 +61,7 @@ stdenv.mkDerivation {
 
     lean -R . -o build/Tests.olean Tests.lean
     lean -R . --c=build/c/Tests.c Tests.lean
-    leanc -O2 -o build/manifest-tests build/c/Tests.c build/c/Manifest.c
+    leanc -O3 -flto -DNDEBUG -o build/manifest-tests build/c/Tests.c build/c/Manifest.c
     build/manifest-tests
     runHook postCheck
   '';

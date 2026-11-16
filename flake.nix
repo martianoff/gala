@@ -101,7 +101,7 @@
           # The combined gala-lean executable and the staged ports use the
           # Lean that nixpkgs packages, not the elan/lean-toolchain pin of the
           # formal semantics. This shell supplies exactly that toolchain (Lean
-          # 4.30.0 through the locked nixpkgs), plus the Go toolchain their
+          # 4.35.0 through the locked nixpkgs), plus the Go toolchain their
           # differential test.sh scripts need. It is separate from the default
           # shell so that a `lake` on PATH there cannot shadow the formal
           # project's pinned toolchain.
@@ -110,6 +110,8 @@
               pkgs.lean4
               pkgs.go
               pkgs.diffutils
+              pkgs.hyperfine
+              pkgs.valgrind
             ];
             shellHook = ''
               echo "gala-lean dev shell: $(lean --version | head -n 1)"

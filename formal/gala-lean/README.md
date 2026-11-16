@@ -35,7 +35,7 @@ interpreter and the three ports by source directory (`srcDir` in
 standalone executables.
 
 The supported local environment is the flake's `gala-lean` dev shell, which
-provides the nixpkgs Lean that `flake.lock` pins (currently 4.30.0) and Go:
+provides the nixpkgs Lean that `flake.lock` pins (currently 4.35.0) and Go:
 
 ```bash
 nix develop .#gala-lean
@@ -45,10 +45,10 @@ lake build gala-lean
 ./test.sh
 ```
 
-A Lake build outside the dev shell needs Lean 4.30+ on `PATH`; `test.sh`
+A Lake build outside the dev shell needs Lean 4.35+ on `PATH`; `test.sh`
 uses `lake` from `PATH`, or `LAKE=/path/to/lake`. The Nix build and the dev
 shell use the Lean that nixpkgs packages, not `formal/lean-toolchain`
-(4.35.0), which pins the formal semantics.
+(currently also 4.35.0), which pins the formal semantics.
 
 With Nix, the same binary is `.#gala-lean.main`. Run these from the repository
 root, not from `formal/gala-lean`:

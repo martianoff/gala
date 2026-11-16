@@ -45,14 +45,16 @@ line and rune column of a byte offset; it counts an invalid UTF-8 byte as one
 rune, as Go's `utf8.RuneCount` does.
 
 The port uses `ByteArray` throughout, not `String`, so non-UTF-8 bytes and
-offsets are handled exactly like the Go version. Recursive scanners carry fuel,
-which keeps the generated C non-dependent on termination proofs.
+offsets are handled exactly like the Go version. The small scanners carry fuel
+so their termination is structural; the top-level byte loop is `partial`
+because its bound is the input size, and skipping a per-byte fuel argument is
+what keeps the native port competitive.
 
 ## Build
 
-Requires Lean 4.30+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
+Requires Lean 4.35+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
 differential test also needs `go`. The flake's `gala-lean` dev shell provides
-the nixpkgs Lean that `flake.lock` pins (currently 4.30.0) and Go: from
+the nixpkgs Lean that `flake.lock` pins (currently 4.35.0) and Go: from
 the repository root, run
 `nix develop .#gala-lean` and then the commands below.
 
@@ -66,8 +68,10 @@ This runs Lean's C backend, then links the generated C with the Lean runtime:
 lean --c=build/c/Interpolation.c    Interpolation.lean
 lean --c=build/c/InterpolationCli.c InterpolationCli.lean
 lean --c=build/c/Main.c             Main.lean
-leanc -O2 -o build/interpolation build/c/Main.c build/c/InterpolationCli.c build/c/Interpolation.c
+leanc -O3 -flto -DNDEBUG -o build/interpolation build/c/Main.c build/c/InterpolationCli.c build/c/Interpolation.c
 ```
+
+`build.sh` uses these flags by default; set `LEANC_FLAGS` to override them.
 
 `build/interpolation` is a normal native Linux ELF executable (x86-64,
 dynamically linked against the host glibc; the Lean runtime is linked in).

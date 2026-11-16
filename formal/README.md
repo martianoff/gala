@@ -221,10 +221,10 @@ under differential test, not additions to the semantics, and they use the Lean
 that nixpkgs packages instead of `lean-toolchain`. Their tests need the Go code
 they port, so they run with `./test.sh` rather than `lake test`. The flake's
 `gala-lean` dev shell provides that Lean (the nixpkgs Lean pinned by
-`flake.lock`, currently 4.30.0) and Go, so from the repository root run
+`flake.lock`, currently 4.35.0) and Go, so from the repository root run
 `nix develop .#gala-lean`, then each port's `./test.sh` from that port's
 directory. The Nix builds use the same Lean; they do not use
-`formal/lean-toolchain` (4.35.0).
+`formal/lean-toolchain` (currently also 4.35.0).
 
 ### The combined `gala-lean` executable
 
@@ -261,7 +261,7 @@ nix run .#gala-lean.main -- run formal/tests/ex_hex_literals.json
 nix build .#checks.x86_64-linux.gala-lean-main
 ```
 
-The Nix package and the dev shell use the Lean that nixpkgs packages (4.30.0
+The Nix package and the dev shell use the Lean that nixpkgs packages (4.35.0
 through `flake.lock`); a Lake build outside them uses whichever `lean`/`lake`
 you run it with. It has no Bazel target: `bazel test --config=formal
 //formal/...` builds the semantics modules, their proofs and galaspec, not this

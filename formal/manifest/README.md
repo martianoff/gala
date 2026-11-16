@@ -69,9 +69,9 @@ Not modelled, because they are IO or outside the accepted input:
 
 ## Build
 
-Requires Lean 4.30+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
+Requires Lean 4.35+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
 differential test also needs `go`. The flake's `gala-lean` dev shell provides
-the nixpkgs Lean that `flake.lock` pins (currently 4.30.0) and Go: from
+the nixpkgs Lean that `flake.lock` pins (currently 4.35.0) and Go: from
 the repository root, run
 `nix develop .#gala-lean` and then the commands below.
 
@@ -85,8 +85,10 @@ This runs Lean's C backend, then links the generated C with the Lean runtime:
 lean --c=build/c/Manifest.c    Manifest.lean
 lean --c=build/c/ManifestCli.c ManifestCli.lean
 lean --c=build/c/Main.c        Main.lean
-leanc -O2 -o build/manifest build/c/Main.c build/c/ManifestCli.c build/c/Manifest.c
+leanc -O3 -flto -DNDEBUG -o build/manifest build/c/Main.c build/c/ManifestCli.c build/c/Manifest.c
 ```
+
+`build.sh` uses these flags by default; set `LEANC_FLAGS` to override them.
 
 `ManifestCli.lean` also holds the command logic `formal/gala-lean` imports for
 its `mod` subcommand; `Main.lean` is the standalone executable and only calls

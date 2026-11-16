@@ -5,6 +5,15 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 build_dir="${BUILD_DIR:-$here/build}"
 
+# C flags for the generated code. -DNDEBUG drops the Lean runtime assertions
+# that the generated C otherwise keeps (the largest flag win); -O3 -flto is a
+# small further gain on the formal/bench corpora. Override with LEANC_FLAGS
+# (space-separated).
+leanc_flags=(-O3 -flto -DNDEBUG)
+if [[ -n "${LEANC_FLAGS:-}" ]]; then
+  read -r -a leanc_flags <<<"$LEANC_FLAGS"
+fi
+
 if [[ -z "${LEAN:-}" ]]; then
   if command -v lean >/dev/null 2>&1; then
     LEAN="$(command -v lean)"
@@ -47,7 +56,7 @@ export LEAN_PATH="$build_dir"
 
 # leanc links the generated C against the Lean runtime using the host C
 # toolchain, producing a normal native executable.
-"$LEANC" -O2 -o "$build_dir/interpolation" \
+"$LEANC" "${leanc_flags[@]}" -o "$build_dir/interpolation" \
   "$build_dir/c/Main.c" "$build_dir/c/InterpolationCli.c" "$build_dir/c/Interpolation.c"
 
 echo "built $build_dir/interpolation"

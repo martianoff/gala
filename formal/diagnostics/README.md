@@ -44,9 +44,9 @@ Not modelled, because it is IO rather than rendering:
 
 ## Build
 
-Requires Lean 4.30+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
+Requires Lean 4.35+ and `leanc` on `PATH`, or `LEAN=/path/to/lean`; the Go
 differential test also needs `go`. The flake's `gala-lean` dev shell provides
-the nixpkgs Lean that `flake.lock` pins (currently 4.30.0) and Go: from
+the nixpkgs Lean that `flake.lock` pins (currently 4.35.0) and Go: from
 the repository root, run
 `nix develop .#gala-lean` and then the commands below.
 
@@ -60,8 +60,10 @@ This runs Lean's C backend, then links the generated C with the Lean runtime:
 lean --c=build/c/Diagnostics.c    Diagnostics.lean
 lean --c=build/c/DiagnosticsCli.c DiagnosticsCli.lean
 lean --c=build/c/Main.c           Main.lean
-leanc -O2 -o build/diagnostics build/c/Main.c build/c/DiagnosticsCli.c build/c/Diagnostics.c
+leanc -O3 -flto -DNDEBUG -o build/diagnostics build/c/Main.c build/c/DiagnosticsCli.c build/c/Diagnostics.c
 ```
+
+`build.sh` uses these flags by default; set `LEANC_FLAGS` to override them.
 
 ### Nix
 

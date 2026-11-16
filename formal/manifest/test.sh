@@ -10,6 +10,13 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 build_dir="${BUILD_DIR:-$here/build}"
 
+# Match build.sh's C flags so the native tests exercise the same generated
+# code as the executable. LEANC_FLAGS overrides both.
+leanc_flags=(-O3 -flto -DNDEBUG)
+if [[ -n "${LEANC_FLAGS:-}" ]]; then
+  read -r -a leanc_flags <<<"$LEANC_FLAGS"
+fi
+
 "$here/build.sh"
 
 if [[ -z "${LEAN:-}" ]]; then
@@ -33,7 +40,7 @@ export LEAN_PATH="$build_dir"
 # Native curated tests.
 "$LEAN" -R "$here" -o "$build_dir/Tests.olean" "$here/Tests.lean"
 "$LEAN" -R "$here" --c="$build_dir/c/Tests.c" "$here/Tests.lean"
-"$LEANC" -O2 -o "$build_dir/manifest-tests" \
+"$LEANC" "${leanc_flags[@]}" -o "$build_dir/manifest-tests" \
   "$build_dir/c/Tests.c" "$build_dir/c/Manifest.c"
 "$build_dir/manifest-tests"
 
