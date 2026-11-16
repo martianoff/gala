@@ -156,24 +156,59 @@ def asStr : Val → GM String
   | .str _ s => pure s
   | _ => stuck "not a string"
 
+/-- The types a field list declares, one per name. -/
+def fieldTypes (fs : List Field) : List Expr :=
+  fs.flatMap fun | .mk ns t => if ns.isEmpty then [t] else ns.map fun _ => t
+
+/-- The depth bound of `unify`: each level of a type, and each list of type arguments,
+    parameters or results, takes one, so it allows types about 32 levels deep. -/
+def maxUnifyDepth : Nat := 64
+
 mutual
 /-- Type parameters bound by matching a parameter's type expression against an
     argument's type, for function argument type inference (Go spec, "Type inference":
-    the type equations of the call's typed arguments). -/
-def unify (tps : List String) : Expr → Ty → List (String × Ty)
-  | .ident x, t => if tps.contains x then [(x, t)] else []
-  | .star e, .ptr t => unify tps e t
-  | .index (.ident _) es, .named _ _ args => unifyAll tps es args
-  | .index (.selector _ _) es, .named _ _ args => unifyAll tps es args
-  | .paren e, t => unify tps e t
-  | .arrayType none e, .slice t => unify tps e t
-  | .arrayType (some _) e, .array _ t => unify tps e t
-  | _, _ => []
+    the type equations of the call's typed arguments). `k` bounds the depth of the
+    types matched; past it nothing is bound, and inference reports what it lacks. -/
+def unify (tps : List String) : Nat → Expr → Ty → List (String × Ty)
+  | 0, _, _ => []
+  | k + 1, e, t =>
+    match e, t with
+    | .ident x, t => if tps.contains x then [(x, t)] else []
+    | .star e, .ptr t => unify tps k e t
+    -- The same generic type's arguments, pairwise; a generic alias, named otherwise,
+    -- binds nothing here.
+    | .index (.ident n) es, .named _ m args | .index (.selector _ n) es, .named _ m args =>
+      if n == m then unifyAll tps k es args else []
+    | .paren e, t => unify tps k e t
+    | .arrayType none e, .slice t => unify tps k e t
+    | .arrayType (some _) e, .array _ t => unify tps k e t
+    -- A function type, parameter by parameter and result by result; a final `...T`
+    -- parameter has type `[]T` (Go spec, "Function types").
+    | .funcType (.mk ps rs v), .func_ pts rts _ =>
+      let pes := fieldTypes ps
+      let pes := if v then pes.dropLast ++ (pes.getLast?.map (Expr.arrayType none)).toList else pes
+      unifyAll tps k pes pts ++ unifyAll tps k (fieldTypes rs) rts
+    | _, _ => []
 /-- `unify` on type arguments, pairwise. -/
-def unifyAll (tps : List String) : List Expr → List Ty → List (String × Ty)
-  | e :: es, t :: ts => unify tps e t ++ unifyAll tps es ts
-  | _, _ => []
+def unifyAll (tps : List String) : Nat → List Expr → List Ty → List (String × Ty)
+  | 0, _, _ => []
+  | k + 1, es, ts => (es.zip ts).flatMap fun (e, t) => unify tps k e t
 end
+
+/-- Whether the type expression `e` may mention the name `x`; past the depth bound `k`,
+    or at a form it does not look into, it answers yes. -/
+def mayMention (x : String) : Nat → Expr → Bool
+  | 0, _ => true
+  | k + 1, e =>
+    match e with
+    | .ident y => y == x
+    | .star e | .paren e | .selector e _ => mayMention x k e
+    | .index e es => mayMention x k e || es.any (mayMention x k)
+    | .arrayType l e => (l.map (mayMention x k)).getD false || mayMention x k e
+    | .funcType (.mk ps rs _) => (fieldTypes ps ++ fieldTypes rs).any (mayMention x k)
+    | .structType fs | .interfaceType fs => (fieldTypes fs).any (mayMention x k)
+    | .intLit _ | .strLit _ | .charLit _ | .ellipsis => false
+    | _ => true
 
 /-- Run `body` until it returns `none`, at most `k` times: a loop's iterations. Each
     iteration of a GoCore loop takes a step (`tick`), so the bound is never what ends
@@ -198,10 +233,6 @@ def boolType (a b : Val) : Ty :=
   match a.ty with
   | .untyped _ => b.ty
   | t => t
-
-/-- The types a field list declares, one per name. -/
-def fieldTypes (fs : List Field) : List Expr :=
-  fs.flatMap fun | .mk ns t => if ns.isEmpty then [t] else ns.map fun _ => t
 
 /-- The largest slice capacity GoCore allocates; a larger one is a question of memory,
     which the comparison leaves out (`unsupported`). -/
@@ -1056,9 +1087,7 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     let (a, b) := (a.dyn, b.dyn)
     -- Values of different dynamic types are unequal: by the precondition (see the
     -- module doc), only two interface operands can differ in type.
-    let same := a.ty == b.ty || (match a.ty, b.ty with
-      | .untyped _, _ | _, .untyped _ => true
-      | _, _ => false)
+    let same := a.ty == b.ty || a.ty.isUntyped || b.ty.isUntyped
     match a, b with
     | .ptr _ l, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .ptr _ l => pure l.isNone
     | .func_ _ f, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .func_ _ f => pure f.isNone
@@ -1399,12 +1428,33 @@ def inferTArgs (tps : List Field) (sig : Sig) (explicit : List Ty) (vs : List Va
       let lastTy := if spread then Expr.arrayType none last else last
       (ptys.take k).zip vs ++ (vs.drop k).map (lastTy, ·)
     else ptys.zip vs
-  let eqs := pairs.flatMap fun (t, v) => unify names t (defaultVal v).ty
+  -- Typed arguments first (Go spec, "Type inference"). GoCore unifies only identical
+  -- shapes: where Go's inexact unification would go through a defined type's
+  -- underlying type, or two equations disagree, it reports `type-inference`.
+  let typed := pairs.filter (!·.2.ty.isUntyped)
+  let eqs := typed.flatMap fun (t, v) => unify names maxUnifyDepth t v.ty
+  -- An untyped constant then binds a type parameter to its default type, an untyped
+  -- rune's if one of them is a rune; untyped `nil` binds nothing. GoCore does so only
+  -- where Go would too: the parameter is in no typed argument's parameter type (which
+  -- unification above may have failed to read) and no constraint has a core type that
+  -- could fix it (every constraint is `any` or `comparable`).
+  let trivial := tps.all fun | .mk _ (.ident "any") | .mk _ (.ident "comparable") => true | _ => false
+  let untypedKinds := fun (x : String) => pairs.filterMap fun (t, v) => match t, v.ty with
+    | .ident y, .untyped k => if y == x && k != .nil then some k else none
+    | _, _ => none
   -- The type arguments given explicitly come first (Go spec, "Instantiations": a
   -- partial type argument list leaves the rest to inference).
-  names.zipIdx.mapM fun (x, i) => match explicit[i]?, eqs.lookup x with
-    | some t, _ | none, some t => pure t
-    | none, none => unsupported "type-inference"
+  names.zipIdx.mapM fun (x, i) => do
+    if let some t := explicit[i]? then return t
+    match (eqs.filter (·.1 == x)).map (·.2) with
+    | t :: ts => if ts.all (· == t) then pure t else unsupported "type-inference"
+    | [] =>
+      if !trivial || typed.any (mayMention x maxUnifyDepth ·.1) then unsupported "type-inference"
+      let ks := untypedKinds x
+      let k := if ks.contains .rune then some UKind.rune else ks.head?
+      match k.bind UKind.default with
+      | some t => pure t
+      | none => unsupported "type-inference"
 
 /-- Run a function body: parameters (and the receiver) in new cells, converted to
     their types; named results in cells holding zero values; the results of its

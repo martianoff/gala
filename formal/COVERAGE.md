@@ -168,7 +168,7 @@ Go is tested, not proved.
 | `if`, expression `switch`, type `switch`, `for` with `break`/`continue` and per-iteration loop variables ("If statements", "Switch statements", "For statements") | yes |
 | Functions, methods with value and pointer receivers, method sets, method values, closures, named results ("Function declarations", "Method sets", "Function literals") | yes |
 | Structs, composite literals, interface values (their interface type and dynamic value; a nil pointer inside one is not nil), type assertions ("Struct types", "Composite literals", "Interface types", "Type assertions") | yes |
-| Generic functions and types, type arguments explicit or inferred from the arguments ("Instantiations", "Type inference") | yes |
+| Generic functions and types, type arguments explicit (in part too) or inferred from the arguments, through pointer, slice, array, generic and function types, typed arguments before untyped constants ("Instantiations", "Type inference"); a generic function used as a value without its type arguments, which come from its context, is not modelled (`type-inference`) | yes |
 | Package-level variables in dependency order, then `init` functions; packages in import order ("Package initialization") | yes |
 | `panic` with Go's printed text: a string, an error's `Error()`, a Stringer's `String()` ("Handling panics") | yes |
 | `fmt.Println`, `Print`, `Sprint`, `Sprintf` with `%v %d %s %t %%`; `String`, `Error` and `Format` by method set; `&{...}` for a top-level pointer to a struct; no methods through unexported fields | yes (a model) |
@@ -501,30 +501,30 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 200 | 31 |
+| AGREE | 237 | 31 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 204 | 4 |
+| UNSUPPORTED | 167 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **231** (ratchet baseline 231).
+Programs GoCore agrees with go run on: **268** (ratchet baseline 268).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **28** (ratchet baseline 28).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
 
-The construct GoCore stopped at in each program it did not run to the end, by how many programs (49 kinds, the top 20 shown):
+The construct GoCore stopped at in each program it did not run to the end, by how many programs (51 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `type-inference` | 60 |
-| `type-float64` | 28 |
+| `type-float64` | 31 |
+| `defer` | 23 |
 | `fmt.Printf` | 20 |
-| `defer` | 17 |
-| `unicode/utf8.RuneCountInString` | 8 |
+| `unicode/utf8.RuneCountInString` | 14 |
+| `map-type` | 8 |
+| `errors.New` | 7 |
 | `float-lit` | 7 |
-| `errors.New` | 6 |
-| `map-type` | 6 |
 | `local-type` | 5 |
+| `slices.SortFunc` | 3 |
 | `strconv.Atoi` | 3 |
 | `type-float32` | 3 |
 | `fmt-verb-0` | 2 |
@@ -532,10 +532,10 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 | `fmt.Errorf` | 2 |
 | `fmt.Stringer` | 2 |
 | `net/url.URL` | 2 |
-| `slices.SortFunc` | 2 |
 | `strings.ToUpper` | 2 |
+| `type-inference` | 2 |
+| `bytes.Buffer` | 1 |
 | `context.Background` | 1 |
-| `crypto/sha256.New` | 1 |
 <!-- difftest:end -->
 
 <!-- ownership:begin -->
