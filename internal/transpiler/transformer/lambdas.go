@@ -138,10 +138,13 @@ func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
 // `any` there stands for a type not inferred yet, and the body's own result
 // type is used.
 //
+// goResults follows the result values of a lambda Go calls with results
+// ending in `error` (see goResultsBodyFor); nil for any other lambda.
+//
 // It returns the func literal without the nil checks of its Ptr parameters
 // (entryChecks): finishLambda puts them first in the body, above the line
 // marker of an expression body.
-func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (lit *ast.FuncLit, entryChecks []ast.Stmt, err error) {
+func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool, goResults *goResultsBody) (lit *ast.FuncLit, entryChecks []ast.Stmt, err error) {
 	if t.onNativeLambda != nil && l.node.Ok() {
 		t.onNativeLambda(l.node.GalaNodeRef)
 	}
@@ -303,6 +306,9 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	} else {
 		lambdaSlot.fillable = !isVoidExpected
 	}
+	// A lambda Go calls with several results checks each of its values (see
+	// lowerGoResultsValue), whether its result type is known or not.
+	lambdaSlot.goResults = goResults
 	block := l.block()
 	if block.ok() && lambdaSlot.fillable {
 		lambdaSlot.body = block
@@ -319,6 +325,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			bodySlot = typedSlot(rt)
 		}
 	}
+	bodySlot.goResults = goResults
 
 	if block.ok() {
 		b, inferredRet, err := t.transformBlockLambdaBody(l, block, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)

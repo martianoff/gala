@@ -235,6 +235,8 @@ func (c *LineCounter) Write(p []byte) (int, error) {
 }
 ```
 
+A failed `Try` gives Go the zero value; for an API whose value matters with its error (an `io.Reader`, a short write), give `ResultsOf(goCall(...))` from `go_interop` instead; in a lambda passed to a generic Go function such as `sync.OnceValues`, give one kind with a single trailing value ([Keeping a value returned with an error](GALA.MD#keeping-a-value-returned-with-an-error-resultsof)).
+
 ### Go slices and maps
 
 Prefer GALA's collections in GALA code, and convert at the boundary:

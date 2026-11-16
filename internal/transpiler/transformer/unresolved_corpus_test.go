@@ -123,7 +123,11 @@ import (
 // probed for an Immutable wrapper, as a generic function's name already was
 // (namesGenericMethod): every such call reported its method selector. See
 // TestUnresolvedInventorySkipsGenericFunctionName.
-const unresolvedBudget = 73
+//
+// Lowered 73 -> 72 when a `nil` tuple element filling a typed tuple slot
+// started taking its element's type (`(n, nil)` filling a Tuple[int, error]
+// holds a nil error; see transformTupleElementExpressions).
+const unresolvedBudget = 72
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

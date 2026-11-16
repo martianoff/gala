@@ -140,6 +140,7 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
 - **Destructure multi-value Go results as a Tuple** — `val (key, value, found) = strings.Cut(line, "=")`.
 - **`val v, err = goCall()` only to hand raw results back to Go** — the multi-name form skips the `Try` and gives Go's plain values; in GALA code prefer the `Try`.
 - **Implement `io.Writer`, `json.Marshaler` and friends in GALA** — declare Go's result list, `func (c *Counter) Write(p []byte) (int, error)`, and give the `Try` (or Tuple) in the body; a lambda passed as a Go `func() (T, error)` callback likewise gives a `Try`. ([Returning several results to Go](GALA.MD#returning-several-results-to-go))
+- **`ResultsOf(goCall(...))` when Go's value matters with its error** — a failed `Try` gives Go the zero value; give `ResultsOf`'s `Tuple[T, error]` instead. ([Keeping a value returned with an error](GALA.MD#keeping-a-value-returned-with-an-error-resultsof))
 
 ---
 

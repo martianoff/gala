@@ -120,7 +120,8 @@ func (t *galaASTTransformer) checkReservedName(name string, at srcNode) error {
 // gets after this call. A body whose value is spread over Go's results is
 // not marked here: returnGoResults takes the marker (and a lambda's checks)
 // and puts it right above the statement that holds the value, inside the
-// spread's thunk when there is one (see finishLambda and lowerFuncDecl).
+// spread's thunk when there is one (see finishLambda, lowerFuncDecl and,
+// for an argument lifted into a thunk, goResultsThunk).
 //
 // A zero e (a block lambda's expression) leaves body as it is.
 func (t *galaASTTransformer) exprFuncBody(e exprSrc, body *ast.BlockStmt) *ast.BlockStmt {
@@ -158,12 +159,13 @@ func (t *galaASTTransformer) exprMark(e exprSrc) ast.Stmt {
 	return lineMarkerStmt(line)
 }
 
-// exprFuncLit is expr with its body led by e's line marker (exprFuncBody)
-// when expr is a func literal whose source is the expression e; any other
-// expr is returned as it is.
-func (t *galaASTTransformer) exprFuncLit(e exprSrc, expr ast.Expr) ast.Expr {
-	if lit, ok := expr.(*ast.FuncLit); ok {
-		lit.Body = t.exprFuncBody(e, lit.Body)
+// withLead is expr with its body led by mark, an expression's line marker
+// (exprMark), when expr is a func literal with a body and mark is not nil;
+// any other expr is returned as it is. It marks a thunk an argument is lifted
+// into (wrapExprAsThunkIfNeeded), as exprFuncBody marks an expression body.
+func withLead(expr ast.Expr, mark ast.Stmt) ast.Expr {
+	if lit, ok := expr.(*ast.FuncLit); ok && mark != nil && lit.Body != nil && len(lit.Body.List) > 0 {
+		lit.Body = prependStmts(lit.Body, mark)
 	}
 	return expr
 }

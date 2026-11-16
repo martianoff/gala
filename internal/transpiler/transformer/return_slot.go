@@ -31,6 +31,9 @@ type returnSlot struct {
 	// funcName is the GALA name of the function declaration the slot belongs
 	// to (see sourceFunctionName), for diagnostics; "" for a lambda.
 	funcName string
+	// goResults follows the result values of a body Go calls with results
+	// ending in `error` (see resultSlot); nil for any other body.
+	goResults *goResultsBody
 }
 
 // deferredReturn is a result value (a `return` value or the body's trailing
@@ -163,11 +166,18 @@ func (t *galaASTTransformer) lowerReturnValue(e exprSrc) (*ast.ReturnStmt, error
 	if t.returnSlotPending() {
 		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(e, true)}}, nil
 	}
-	expr, err := t.lowerResultAgainst(e, typedSlot(t.returnSlot.typ), false)
+	expr, err := t.lowerResultAgainst(e, t.resultSlot(t.returnSlot.typ), false)
 	if err != nil {
 		return nil, err
 	}
 	return &ast.ReturnStmt{Results: []ast.Expr{t.unwrapImmutable(expr)}}, nil
+}
+
+// resultSlot is the slot of type typ a result value of the current function
+// or lambda fills: it carries the body's goResultsBody, so each value is
+// checked as the Go results it becomes (see lowerGoResultsValue).
+func (t *galaASTTransformer) resultSlot(typ transpiler.Type) slot {
+	return slot{typ: typ, goResults: t.returnSlot.goResults}
 }
 
 // returnSlotPending reports whether the current slot is fillable and still
@@ -186,7 +196,9 @@ func (t *galaASTTransformer) returnSlotPending() bool {
 // not, since it may legitimately be void or have a type the transpiler cannot
 // name.
 func (t *galaASTTransformer) lowerFillingValue(e exprSrc, deferUnsettled bool) ast.Expr {
-	expr, err := t.lowerExpr(e)
+	// A value of a lambda Go calls with several results is checked as it is
+	// lowered; its error, too, waits for the body to be lowered.
+	expr, err := t.lowerAgainst(e, slot{goResults: t.returnSlot.goResults}, false)
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
 		// A diverging call (`Panic(...)`) yields no value to type the slot

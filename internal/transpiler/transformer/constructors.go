@@ -197,6 +197,12 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 		if err != nil {
 			return nil, err
 		}
+		// A `nil` element is of its slot element's type: `(n, nil)` filling
+		// a Tuple[int, error] holds a nil error. Its wrapper names that type
+		// all the same (transformTupleLiteralWithExpected).
+		if expected != nil {
+			t.typeNilAs(expr, expected)
+		}
 		out = append(out, expr)
 	}
 	return out, nil

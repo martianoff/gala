@@ -1002,6 +1002,31 @@ used as a value, is inferred as one GALA type built from the Go signature:
   generic Go callee (`sync.OnceValues(f func() (T1, T2))`) is taken from the
   lambda's body: a body of type `Try[V]` gives `(V, error)`, a `TupleN` its N
   components, and Go infers the callee's type arguments from them.
+- The body of a function, lambda or by-name argument Go calls with results
+  ending in `error` is lowered against their `Try`, but each of its values (a
+  `return`, the trailing value, each `if` branch and `match` arm, through any
+  alias) may instead be the Tuple of every result, `Tuple[T, error]`
+  (go_interop's `ResultsOf`): the body then gives Go each component as it is.
+  A tuple literal of one element per result is inferred against that Tuple, so
+  `(n, nil)` is a `Tuple[int, error]`. One body gives one kind; a value whose
+  type the results cannot hold is GALA-E0134 (the value's type is checked:
+  `Success(s)` takes its type argument from the slot, and Go reports its
+  argument). A call of the function itself is its Try. An `(A, B)` result list
+  is checked against its Tuple the same way.
+- A lambda or by-name argument passed to a generic Go function whose results
+  are still open (`sync.OnceValues`, a `func() (T, error)` parameter of a
+  generic callee) gives one kind with a single trailing value: the value's
+  inferred type decides, `sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))`
+  or `runG(() => (4, nil))` (the trailing `error` types the `nil`), and Go
+  infers the type arguments from it. Mixing kinds there, an early
+  `return (0, nil)`, or an if or match whose branches give different kinds is
+  not checked yet and fails in `go build`.
+- A Go call passed as the sole argument of a Go function whose parameters take
+  its results one for one (`f(g())`, `ResultsOf(r.Read(p))`) passes them as
+  they are, and each result binds the callee's type parameter at its position:
+  `ResultsOf2(r.ReadLine())` infers `Tuple3[[]byte, bool, error]`. The rule
+  applies to non-variadic Go callees with two or more parameters; a GALA
+  function does not take a Go call's results this way.
 
 Go type inference is optional — if the Go SDK is not found, transpilation still succeeds but Go type resolution is disabled (a warning is printed to stderr).
 

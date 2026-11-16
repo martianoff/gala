@@ -1,0 +1,6 @@
+block body with ResultsOf: Success(hello world)
+block body, default Try:   Success()
+expression body:           Success(hello world)
+short write: n=5 err=short write wrote=hello
+Atoi out of range: clamped value kept true, error true
+ReadLine: last prefix=false error=false

@@ -1,0 +1,72 @@
+package main
+
+import (
+    "bufio"
+    "bytes"
+    "io"
+    "strconv"
+    "strings"
+    "testing/iotest"
+    . "martianoff/gala/go_interop"
+)
+
+// A Go `(T, error)` call is a Try, and a method that Go calls with
+// `(T, error)` results gives Go `(zero, err)` when its body's Try fails. That
+// is Go's usual convention, but io.Reader, io.Writer, bufio and strconv
+// return a meaningful value WITH an error. go_interop's ResultsOf keeps both
+// results of a Go call as a Tuple[T, error], and a body whose value is that
+// Tuple gives Go both results as they are.
+
+// iotest.DataErrReader returns the last bytes together with io.EOF.
+func source() io.Reader = iotest.DataErrReader(strings.NewReader("hello world"))
+
+// Keeps n with io.EOF: the reader's contract.
+struct KeepReader(inner io.Reader)
+
+func (r KeepReader) Read(p []byte) (int, error) {
+    ResultsOf(r.inner.Read(p))
+}
+
+// The default: a block body's Try drops n when the error is set.
+struct TryReader(inner io.Reader)
+
+func (r TryReader) Read(p []byte) (int, error) {
+    r.inner.Read(p)
+}
+
+// An expression body that is the Go call itself passes its results through.
+struct PassReader(inner io.Reader)
+
+func (r PassReader) Read(p []byte) (int, error) = r.inner.Read(p)
+
+// A writer that takes at most limit bytes and reports the short write.
+struct ShortWriter(out *bytes.Buffer, limit int)
+
+func (w ShortWriter) Write(p []byte) (int, error) {
+    if (p.Size() <= w.limit) {
+        return ResultsOf(w.out.Write(p))
+    }
+    val (n, _) = ResultsOf(w.out.Write(Slice(p, 0, w.limit)))
+    (n, io.ErrShortWrite)
+}
+
+func readAll(r io.Reader) string = io.ReadAll(r) match {
+    case Success(data) => s"Success(${string(data)})"
+    case Failure(err) => s"Failure(${err.Error()})"
+}
+
+func main() {
+    Println(s"block body with ResultsOf: ${readAll(KeepReader(source()))}")
+    Println(s"block body, default Try:   ${readAll(TryReader(source()))}")
+    Println(s"expression body:           ${readAll(PassReader(source()))}")
+
+    var buf = bytes.Buffer{}
+    val n, err = io.WriteString(ShortWriter(&buf, 5), "hello world")
+    Println(s"short write: n=$n err=${err.Error()} wrote=${buf.String()}")
+
+    val (big, rangeErr) = ResultsOf(strconv.Atoi("99999999999999999999"))
+    Println(s"Atoi out of range: clamped value kept ${big > 0}, error ${rangeErr != nil}")
+
+    val (line, prefix, lineErr) = ResultsOf2(bufio.NewReader(strings.NewReader("last")).ReadLine())
+    Println(s"ReadLine: ${string(line)} prefix=$prefix error=${lineErr != nil}")
+}

@@ -1562,6 +1562,22 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		return inferred
 	}
 
+	// A sole argument that is a Go call with one result per parameter is
+	// spread over them by Go (`f(g())`): each result binds its parameter.
+	if spreadsSoleArg(len(args), len(sig.Params), sig.IsVariadic) {
+		if results := t.goCallResults(args[0]); len(results) == len(sig.Params) {
+			for i, r := range results {
+				if !transpiler.IsUnusable(r) {
+					t.unifyForInference(goSigParamType(sig, i), r, sig.TypeParams, inferred)
+				}
+			}
+			if len(inferred) == 0 {
+				return nil
+			}
+			return inferred
+		}
+	}
+
 	for i, arg := range args {
 		paramType := goSigParamType(sig, i)
 		if paramType.IsNil() {

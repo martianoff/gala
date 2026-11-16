@@ -123,6 +123,35 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	return wrapper, nil
 }
 
+// goCallResults are the result types of expr when it is a Go call that
+// liftGoResults converted, passed on as its raw results (see
+// spreadGoResultArg), read from the one value it was converted to; nil
+// otherwise.
+func (t *galaASTTransformer) goCallResults(expr ast.Expr) []transpiler.Type {
+	call := asCall(expr)
+	if call == nil {
+		return nil
+	}
+	for _, res := range t.goResults {
+		if res.raw == call {
+			results, _ := transpiler.GoResultsOf(res.Type, res.count())
+			return results
+		}
+	}
+	return nil
+}
+
+// spreadsSoleArg is Go's `f(g())` rule: a call of a function with params
+// parameters (variadic: the last one is variadic) whose arguments are
+// argCount passes a sole argument that Go spreads over the parameters, one
+// result each, when there is one argument and two or more parameters and the
+// function is not variadic. Every place that reads such a call — the argument
+// check, the raw results passed through, the type arguments inferred from
+// them — goes through it.
+func spreadsSoleArg(argCount, params int, variadic bool) bool {
+	return argCount == 1 && params > 1 && !variadic
+}
+
 // goResultHelper names the std function that converts n values (plus an error
 // when fails) to one GALA value.
 func goResultHelper(n int, fails bool) string {
@@ -426,7 +455,7 @@ func (t *galaASTTransformer) dropDiscardedGoResults(file *ast.File) {
 // results one for one — `template.Must(tmpl.Parse(text))`, which Go spreads —
 // and arg itself otherwise. sig may be nil.
 func (t *galaASTTransformer) spreadGoResultArg(sig *transpiler.GoFuncSignature, argCount int, arg ast.Expr) ast.Expr {
-	if sig == nil || sig.IsVariadic || argCount != 1 || len(sig.Params) < 2 {
+	if sig == nil || !spreadsSoleArg(argCount, len(sig.Params), sig.IsVariadic) {
 		return arg
 	}
 	if res := t.goResults[asCall(arg)]; res != nil && res.count() == len(sig.Params) {
@@ -660,15 +689,12 @@ func isTryThunkParam(callCtx callContext, argIdx int) bool {
 	if argIdx >= len(params) || ret == nil {
 		return false
 	}
-	gen, ok := ret.(transpiler.GenericType)
-	if !ok || len(gen.Params) != 1 {
-		return false
-	}
-	if base, ok := gen.Base.(transpiler.NamedType); !ok || base.Name != transpiler.TypeTry {
+	elem, ok := transpiler.TryElem(ret)
+	if !ok {
 		return false
 	}
 	ft, ok := params[argIdx].(transpiler.FuncType)
-	return ok && len(ft.Params) == 0 && len(ft.Results) == 1 && ft.Results[0].String() == gen.Params[0].String()
+	return ok && len(ft.Params) == 0 && len(ft.Results) == 1 && ft.Results[0].String() == elem.String()
 }
 
 // thunkReturnsError reports whether the thunk slot's result is already fixed

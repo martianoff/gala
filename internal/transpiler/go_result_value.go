@@ -52,21 +52,42 @@ func GoResultValueOf(returns []Type) (r GoResultValue, ok bool) {
 			return r, true
 		}
 	}
-	var inner Type
-	if len(values) == 1 {
-		inner = values[0]
-	} else {
-		name, fits := TupleArityName(len(values))
-		if !fits {
+	inner := values[0]
+	if len(values) > 1 {
+		var fits bool
+		if inner, fits = TupleOf(values); !fits {
 			return r, true
 		}
-		inner = GenericType{Base: NamedType{Package: registry.StdPackageName, Name: name}, Params: values}
 	}
 	r.Type = inner
 	if r.Fails {
 		r.Type = GenericType{Base: NamedType{Package: registry.StdPackageName, Name: TypeTry}, Params: []Type{inner}}
 	}
 	return r, true
+}
+
+// TupleOf is the std Tuple of values: Tuple[A, B] for two, Tuple3 … Tuple10
+// above. ok is false outside 2..10 values.
+func TupleOf(values []Type) (Type, bool) {
+	name, fits := TupleArityName(len(values))
+	if !fits {
+		return nil, false
+	}
+	return GenericType{Base: NamedType{Package: registry.StdPackageName, Name: name}, Params: values}, true
+}
+
+// TryElem is the value type T of typ when typ is the std Try[T] (named
+// without a package inside std itself).
+func TryElem(typ Type) (Type, bool) {
+	gen, isGeneric := typ.(GenericType)
+	if !isGeneric || len(gen.Params) != 1 {
+		return nil, false
+	}
+	base, isNamed := gen.Base.(NamedType)
+	if !isNamed || (base.Package != registry.StdPackageName && base.Package != "") || base.Name != TypeTry {
+		return nil, false
+	}
+	return gen.Params[0], true
 }
 
 // GoResultsOf is the inverse of GoResultValueOf: the n Go results a GALA value
@@ -88,19 +109,19 @@ func GoResultsOf(value Type, n int) (results []Type, ok bool) {
 		if n == 2 {
 			return []Type{gen.Params[0], errorType}, true
 		}
-		values, ok := tupleComponents(gen.Params[0], n-1)
+		values, ok := TupleComponents(gen.Params[0], n-1)
 		if !ok {
 			return nil, false
 		}
 		return append(values, errorType), true
 	default:
-		return tupleComponents(value, n)
+		return TupleComponents(value, n)
 	}
 }
 
-// tupleComponents returns the component types of value when it is the std
+// TupleComponents returns the component types of value when it is the std
 // Tuple of n values.
-func tupleComponents(value Type, n int) ([]Type, bool) {
+func TupleComponents(value Type, n int) ([]Type, bool) {
 	gen, isGeneric := value.(GenericType)
 	if !isGeneric || len(gen.Params) != n {
 		return nil, false

@@ -32,7 +32,7 @@ func (t *galaASTTransformer) tailResultSlot(tc *tailCtx) slot {
 	if tc.retType == nil {
 		return slot{}
 	}
-	return typedSlot(t.astTypeToTranspilerType(tc.retType))
+	return t.resultSlot(t.astTypeToTranspilerType(tc.retType))
 }
 
 // tryTransformSelfTailRecursion rewrites direct self-tail-recursion in an

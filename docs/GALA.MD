@@ -3071,6 +3071,88 @@ val p, err = port()                                     // 8080, nil
 val next = port().Map((n) => n + 1)                     // Success(8081)
 ```
 
+##### Keeping a value returned with an error: `ResultsOf`
+
+The default, a `Try`, follows Go's usual convention: when the error is not
+`nil`, the value does not matter, so a failure gives Go the zero value. Some Go
+APIs break that convention and return a meaningful value **with** an error.
+They have a partial-result contract:
+
+- `io.Reader.Read` returns `n > 0` bytes together with `io.EOF`;
+- `io.Writer.Write` reports a short write as `n < len(p)` with an error;
+- `bufio.Reader.ReadString` and `ReadBytes` return the last line with `io.EOF`;
+- `strconv.ParseInt`, `Atoi` and friends return the clamped value with a range error.
+
+A block body that wraps one of them as a `Try` loses the value: a GALA
+`io.Reader` whose `Read` is `{ inner.Read(p) }` drops the last bytes the inner
+reader returned with `io.EOF`. An expression body that is the Go call itself,
+`= inner.Read(p)`, passes Go's results through as they are. Anywhere else,
+`ResultsOf` from `go_interop` keeps both: `ResultsOf(call)` turns a Go
+`(T, error)` call into a `Tuple[T, error]` holding the value and the error as
+Go returned them, and a body whose value is that Tuple gives Go both results
+as they are. `ResultsOf2` does the same for `(A, B, error)`, as a
+`Tuple3[A, B, error]`:
+
+```gala
+import (
+    "io"
+    "strconv"
+    . "martianoff/gala/go_interop"
+)
+
+struct CountingReader(inner io.Reader, var reads int)
+
+// io.Reader: the bytes read with io.EOF reach the caller.
+func (r *CountingReader) Read(p []byte) (int, error) {
+    r.reads = r.reads + 1
+    ResultsOf(r.inner.Read(p))
+}
+
+// A tuple of the results works too, and an early return gives one as well.
+func (r *CountingReader) ReadNonEmpty(p []byte) (int, error) {
+    if (p.Size() == 0) {
+        return (0, io.ErrShortBuffer)
+    }
+    val (n, err) = ResultsOf(r.inner.Read(p))
+    (n, err)
+}
+
+val (big, rangeErr) = ResultsOf(strconv.Atoi("99999999999999999999"))  // the clamped value and the range error
+```
+
+`ResultsOf(r.inner.Read(p))` passes the call's two results straight to
+`ResultsOf`'s two parameters, as Go passes `f(g())`. Any Go function whose
+parameters take a call's results one for one receives them this way.
+
+One body gives one kind of value, the `Try` or the `Tuple` of the results. A
+body that gives a value of another type, or both kinds, is
+[GALA-E0134](errors/GALA-E0134.md). A lambda passed where Go expects a
+`func(...) (T, error)` whose results are all known follows the same rule, and so
+does an argument passed
+where Go expects a `func() (T, error)` (`run(ResultsOf(strconv.Atoi(s)))`).
+Each value is checked where it is written: a `return`, the trailing value,
+each branch of an `if` and each arm of a `match`. A tuple of the results
+(`(n, nil)`) is a `Tuple[T, error]` too, its `nil` the error. Each component
+needs only to be assignable to its result, so `ResultsOf(os.Open(p))` fills
+`(io.Reader, error)`. On a failure Go then receives a non-nil `io.Reader`
+holding a nil `*os.File`, exactly as Go's own `return os.Open(p)` gives it, so
+callers check `err`, not `r != nil`.
+
+A lambda or by-name argument passed to a **generic** Go function whose results
+are still open (`sync.OnceValues`, a `func() (T, error)` parameter of a generic
+callee) gives one kind of value with a single trailing value:
+`sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))` or `runG(() => (4, nil))`,
+and Go infers the type arguments from it. Mixing kinds there, an early
+`return (0, nil)`, or an if or match whose branches give different kinds is
+not checked yet and fails in `go build`.
+
+A call of the function itself is its `Try`, as any call of it is: in a body
+that gives the Tuple, write a recursive call `ResultsOf(down(k - 1))`. E0134
+checks the type of each value; a constructor takes its type arguments from
+the result it fills, so `Success(s)` giving Go `(int, error)` is a `Try[int]`
+and Go reports its argument. An `(A, B)` result list without an `error` is
+checked the same way against its Tuple.
+
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 
 ### Either

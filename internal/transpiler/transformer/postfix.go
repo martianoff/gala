@@ -939,7 +939,11 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 		if slotElems != nil && slotElems[i] != nil {
 			expected = slotElems[i]
 		}
-		exprType := t.getExprTypeName(expr)
+		// A bare `nil` has no type to look up.
+		var exprType transpiler.Type = transpiler.NilType{}
+		if !isNilIdent(expr) {
+			exprType = t.getExprTypeName(expr)
+		}
 		if exprType.IsNil() || exprType.IsAny() {
 			if !expected.IsNil() && !expected.IsAny() {
 				typeParams = append(typeParams, t.typeToExpr(expected))

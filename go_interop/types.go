@@ -939,3 +939,20 @@ func SliceFromNil[T any](slice []T) []T {
 	}
 	return slice
 }
+
+// === Results Kept Whole ===
+
+// ResultsOf keeps both results of a Go call returning `(T, error)`:
+// `ResultsOf(r.Read(p))` is the Tuple of the value and the error, as Go
+// returned them, where a Try would drop the value on an error. A body Go
+// calls with `(T, error)` results that gives this Tuple gives Go both. See
+// "Keeping a value returned with an error" in docs/GALA.MD.
+func ResultsOf[T any](value T, err error) std.Tuple[T, error] {
+	return std.Tuple[T, error]{V1: std.NewImmutable(value), V2: std.NewImmutable(err)}
+}
+
+// ResultsOf2 keeps all three results of a Go call returning `(A, B, error)`
+// as a Tuple3 (see ResultsOf).
+func ResultsOf2[A any, B any](a A, b B, err error) std.Tuple3[A, B, error] {
+	return std.Tuple3[A, B, error]{V1: std.NewImmutable(a), V2: std.NewImmutable(b), V3: std.NewImmutable(err)}
+}

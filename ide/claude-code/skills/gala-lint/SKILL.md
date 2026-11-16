@@ -154,6 +154,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | `GALA-E0131` | Grouped type parameters `[K, V any]` | `[K any, V any]` |
 | `GALA-E0132` | Multiple return `return a, b` | `return (a, b)`; `return Success(v)` / `Failure(err)` for `(T, error)` |
 | `GALA-E0133` | `for _, x := range xs` over a GALA `Array`, `List`, `HashMap`, `HashSet` or other GALA struct | `xs.ForEach((x) => ...)`, `xs.ZipWithIndex()` for the index, `xs.FoldLeft(init, f)` for an accumulator (`ForEachKV` / `FoldLeftKV` on a map); `range xs.ToGoSlice()` only if a Go loop is really needed |
+| `GALA-E0134` | A method or lambda Go calls with `(T, error)` gives neither a `Try[T]` nor a `Tuple[T, error]`, or both kinds in one body | A `Try` (`Success(v)` / `Failure(err)`, a Go call of the same results); `ResultsOf(goCall(...))` from `go_interop` when the value matters with its error (io.Reader, io.Writer) |
 
 ### 1. Immutability (HIGH priority)
 

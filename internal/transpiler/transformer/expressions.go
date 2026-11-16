@@ -704,6 +704,10 @@ type slot struct {
 	// if-expression whose arms hold a `return`, `break` or `continue` is
 	// lowered as statements storing its value there (see hoisted_value.go).
 	hoist string
+	// goResults: the slot is a result value of a body Go calls with results
+	// ending in `error`, which each value filling it is checked against
+	// (lowerGoResultsValue); an if or match passes it to its branches.
+	goResults *goResultsBody
 }
 
 // typedSlot is the slot of type typ: an argument, a declaration, a function
@@ -749,6 +753,14 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 // it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
 	untyped := transpiler.IsUnusable(s.typ)
+	// A result value of a Go-results body is checked where it is written:
+	// each branch of an if or match lowered against the slot is one. With no
+	// slot type (a generic Go callee's), the whole value is.
+	if s.goResults != nil {
+		if f := t.classifyExpr(e); untyped || (!f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok()) {
+			return t.lowerGoResultsValue(e, s, strict)
+		}
+	}
 	if untyped && s.hoist == "" {
 		return t.lowerExpr(e)
 	}
@@ -768,11 +780,12 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		return &ast.ParenExpr{X: expr}, nil
 	case f.lambda.ok():
 		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(s.typ); ok {
-			lit, checks, err := t.lowerLambda(f.lambda, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
+			b := t.goResultsBodyFor(s.typ, "this lambda")
+			lit, checks, err := t.lowerLambda(f.lambda, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
 			if err != nil {
 				return nil, err
 			}
-			return t.finishLambda(lit, checks, s.typ, f.lambda.at(), f.lambda.expression())
+			return t.finishLambda(lit, checks, s.typ, f.lambda.at(), f.lambda.expression(), b)
 		}
 		return t.lowerExpr(e)
 	case f.partial.ok():

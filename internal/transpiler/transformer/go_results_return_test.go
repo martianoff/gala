@@ -220,7 +220,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a placeholder lambda's Tuple is spread",
 			body:     "func pair(n string) Tuple[string, bool] = (n, true)\n\nfunc look(f func(string) (string, bool)) Try[string] = Success(f(\"x\").V1)\n\nfunc found() Try[string] = look(pair(_))",
-			contains: []string{"look(func(__p0 string) (string, bool) {", "var _goResult std.Tuple[string, bool] = pair(__p0)"},
+			contains: []string{"look(func(__p0 string) (string, bool) {", "_goResult := pair(__p0)"},
 		},
 		{
 			name:     "a generic Go callee's single result is the lambda's",
