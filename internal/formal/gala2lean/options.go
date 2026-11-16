@@ -20,10 +20,10 @@ import (
 // optMethod is one method of Option or Either the prelude models.
 type optMethod struct {
 	// params are the parameter types, over T (Option's value type), A and B
-	// (Either's), O (the Option's own type), and function types of those:
-	// `T->` without a result, `T->B` (bool), `T->_` with a result Lean
+	// (Either's), O (the receiver's own type), Bool, and function types of
+	// those: `T->` without a result, `T->Bool`, `T->_` with a result Lean
 	// infers, `T->O_` returning an Option of one, `B->E_` returning an
-	// Either of A and one, `->` taking nothing.
+	// Either of one, `->` taking nothing.
 	params []string
 	// code is the Lean code of the call, over {r} (the receiver) and {0},
 	// {1} (the arguments).
@@ -31,9 +31,8 @@ type optMethod struct {
 	// pure is true when the code is a value, not an action.
 	pure bool
 	// result is the result's type: T, A, B, O (the receiver's type), Bool,
-	// W (the Either swapped), F (the first argument's result), M (Option
-	// or Either of that result), R (the first argument's result type, an
-	// Option or Either itself), or "" for Unit.
+	// W (the Either swapped), F (a function argument's result), M (Option or
+	// Either of that result), or "" for Unit.
 	result string
 }
 
@@ -49,10 +48,10 @@ var optMethods = map[string]optMethod{
 	"OnNone":    {params: []string{"->"}, code: "optOnNone {r} {0}", result: "O"},
 	"ForEach":   {params: []string{"T->"}, code: "optForEach {r} {0}"},
 	"Map":       {params: []string{"T->_"}, code: "optMap {r} {0}", result: "M"},
-	"FlatMap":   {params: []string{"T->O_"}, code: "optFlatMap {r} {0}", result: "R"},
-	"Filter":    {params: []string{"T->B"}, code: "optFilter {r} {0}", result: "O"},
-	"Exists":    {params: []string{"T->B"}, code: "optExists {r} {0}", result: "Bool"},
-	"ForAll":    {params: []string{"T->B"}, code: "optForAll {r} {0}", result: "Bool"},
+	"FlatMap":   {params: []string{"T->O_"}, code: "optFlatMap {r} {0}", result: "F"},
+	"Filter":    {params: []string{"T->Bool"}, code: "optFilter {r} {0}", result: "O"},
+	"Exists":    {params: []string{"T->Bool"}, code: "optExists {r} {0}", result: "Bool"},
+	"ForAll":    {params: []string{"T->Bool"}, code: "optForAll {r} {0}", result: "Bool"},
 }
 
 // eitherMethods are the Either methods the prelude models, by name
@@ -67,7 +66,7 @@ var eitherMethods = map[string]optMethod{
 	"OnLeft":   {params: []string{"A->"}, code: "eitherOnLeft {r} {0}", result: "O"},
 	"Fold":     {params: []string{"A->_", "B->_"}, code: "eitherFold {r} {0} {1}", result: "F"},
 	"Map":      {params: []string{"B->_"}, code: "eitherMap {r} {0}", result: "M"},
-	"FlatMap":  {params: []string{"B->E_"}, code: "eitherFlatMap {r} {0}", result: "R"},
+	"FlatMap":  {params: []string{"B->E_"}, code: "eitherFlatMap {r} {0}", result: "F"},
 }
 
 // optOf reads Lean type t as std's Option or Either: its prelude type, its
@@ -98,6 +97,9 @@ func (g *gen) optCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 	if !ok {
 		return term{}, false
 	}
+	// The receiver first: a construct outside the subset in it is the one
+	// to report.
+	recv := g.expr(s.Target, sc)
 	m, ok := methods[s.Name]
 	if !ok {
 		unsup(s.Pos, "option-method")
@@ -105,7 +107,6 @@ func (g *gen) optCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 	if len(e.Args) != len(m.params) {
 		unsup(e.Pos, "argument-count")
 	}
-	recv := g.expr(s.Target, sc)
 	subs := []term{recv}
 	repl := []string{"{r}", recv.val()}
 	for i, a := range e.Args {
@@ -137,9 +138,8 @@ func (g *gen) optParamType(p, t string, args []string) coreexport.Node {
 		case "T", "A":
 			return known(g.galaType(args[0]))
 		case "B":
-			if len(args) == 2 {
-				return known(g.galaType(args[1]))
-			}
+			return known(g.galaType(args[1]))
+		case "Bool":
 			return &coreexport.TypeName{Name: "bool"}
 		case "O":
 			return known(g.galaType(t))
@@ -148,7 +148,8 @@ func (g *gen) optParamType(p, t string, args []string) coreexport.Node {
 		case "O_":
 			return &coreexport.TypeName{Name: "Option", Args: []coreexport.Node{infer}}
 		case "E_":
-			return &coreexport.TypeName{Name: "Either", Args: []coreexport.Node{known(g.galaType(args[0])), infer}}
+			// Lean takes the left type from eitherFlatMap's signature.
+			return &coreexport.TypeName{Name: "Either", Args: []coreexport.Node{infer, infer}}
 		}
 		return nil
 	}
@@ -195,9 +196,9 @@ func (g *gen) typedLambda(l *coreexport.Lambda, expect coreexport.Node) *coreexp
 	return &c
 }
 
-// optCallType is exprType of a call of a method of an Option or an Either.
-func (g *gen) optCallType(e *coreexport.Call, s *coreexport.Select, sc *scope, seen map[string]bool) string {
-	t := g.exprType(s.Target, sc, seen)
+// optCallType is exprType of a call of a method of an Option or an Either
+// whose receiver has Lean type t.
+func (g *gen) optCallType(e *coreexport.Call, t string, s *coreexport.Select, sc *scope, seen map[string]bool) string {
 	kind, args, methods, ok := optOf(t)
 	if !ok {
 		return ""
@@ -206,14 +207,17 @@ func (g *gen) optCallType(e *coreexport.Call, s *coreexport.Select, sc *scope, s
 	if !ok || len(e.Args) != len(m.params) {
 		return ""
 	}
+	// fres is the result type of the first function argument whose result
+	// is plain to see (Fold's two give the same type).
 	fres := func() string {
-		a := argNode(e.Args[0])
-		ft := a
-		if l, ok := a.(*coreexport.Lambda); ok {
-			ft = g.typedLambda(l, g.optParamType(m.params[0], t, args))
-		}
-		if r := funcResult(g.exprType(ft, sc, seen)); r != "_" {
-			return r
+		for i, a := range e.Args {
+			a := argNode(a)
+			if l, ok := a.(*coreexport.Lambda); ok {
+				a = g.typedLambda(l, g.optParamType(m.params[i], t, args))
+			}
+			if r := funcResult(g.exprType(a, sc, seen)); r != "_" && r != "" {
+				return r
+			}
 		}
 		return ""
 	}
@@ -228,7 +232,7 @@ func (g *gen) optCallType(e *coreexport.Call, s *coreexport.Select, sc *scope, s
 		return t
 	case "W":
 		return "(GEither " + args[1] + " " + args[0] + ")"
-	case "F", "R":
+	case "F":
 		return fres()
 	case "M":
 		r := fres()
