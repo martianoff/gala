@@ -64,6 +64,7 @@ go_test(
         "imports_internal_test.go",
         "prelude_internal_test.go",
         "run_internal_test.go",
+        "stdnames_internal_test.go",
     ],
     data = [
         "//collection_immutable:gala_sources",
@@ -85,6 +86,7 @@ go_test(
     deps = [
         "//internal/formal/coreexport",
         "//internal/formal/coreexport/analyzerhints",
+        "//internal/stdlib",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/runfiles",
     ],
