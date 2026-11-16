@@ -359,23 +359,20 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 // heldPointer is the pointer type (a Ptr[T] or a *T) expr holds, through
 // GALA and Go aliases (unaliasedType); ok is false when it holds none.
 func (t *galaASTTransformer) heldPointer(expr ast.Expr) (ptr transpiler.PointerType, ok bool) {
-	ptr, ok = t.unaliasedType(t.getExprTypeName(expr)).(transpiler.PointerType)
+	ptr, ok = t.unaliasedType(t.getExprTypeName(expr), nil).(transpiler.PointerType)
 	return ptr, ok
 }
 
 // unaliasedType follows typ through GALA aliases (`type PC Ptr[Counter]`)
-// and Go aliases (`type GP = *GoCounter`) to the type they name. A Go alias
-// whose target does not resolve, and a generic one given type arguments,
-// are left as they are.
-func (t *galaASTTransformer) unaliasedType(typ transpiler.Type) transpiler.Type {
+// and Go aliases (`type GP = *GoCounter`) to the type they name. It stops
+// at a type goAliasTarget does not follow: one that is no Go alias, a Go
+// alias whose target does not resolve, and a generic Go alias given type
+// arguments, which is not instantiated here.
+func (t *galaASTTransformer) unaliasedType(typ transpiler.Type, free []string) transpiler.Type {
 	// The hop bound stops an alias chain that refers back to itself.
 	for hop := 0; hop < 64; hop++ {
 		typ = t.followAliasChain(typ)
-		named, isNamed := typ.(transpiler.NamedType)
-		if !isNamed {
-			return typ
-		}
-		target, isAlias := t.goAliasTarget(named)
+		target, isAlias := t.goAliasTarget(typ, free)
 		if !isAlias || target == nil {
 			return typ
 		}
@@ -465,7 +462,7 @@ func depthMismatch(lent int, lentExact bool, want int, wantExact bool) bool {
 // infers) taking any type. It only picks a hint: one that suggests the
 // place is given only when it fits.
 func (t *galaASTTransformer) lendFits(have, want transpiler.Type, free []string) bool {
-	have, want = t.unaliasedType(have), t.unaliasedType(want)
+	have, want = t.unaliasedType(have, nil), t.unaliasedType(want, free)
 	if isTypeParamNamed(want, free) {
 		return true
 	}
@@ -523,18 +520,17 @@ func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want tran
 }
 
 // pointerDepth counts the pointers typ is, through GALA and Go aliases
-// (`type P = *T` is one). The count is exact when they lead to a type
-// that is no pointer: a GALA type, a type parameter in scope, a type
-// that is no named one, or a Go named type that is no alias (or has no Go
+// (unaliasedType; `type P = *T` is one). The count is exact when they lead
+// to a type that is no pointer: a GALA type, a type parameter in scope, a
+// type that is no named one, or a Go type that is no alias (or has no Go
 // type information, as on master). It is only a lower bound when they
-// lead to a type that may be a pointer: an unknown type, a type
-// parameter of free (one Go infers), a Go alias whose target does not
-// resolve, or a generic Go alias given type arguments, which is not
-// instantiated here.
+// lead to a type that may be a pointer: an unknown type, a type parameter
+// of free (one Go infers), a Go alias whose target does not resolve, or a
+// generic Go alias given type arguments.
 func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (depth int, exact bool) {
-	// The hop bound stops an alias chain that refers back to itself.
+	// The hop bound stops a type that points to itself through aliases.
 	for hop := 0; hop < 64; hop++ {
-		typ = t.followAliasChain(typ)
+		typ = t.unaliasedType(typ, free)
 		if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
 			depth++
 			typ = ptr.Elem
@@ -543,28 +539,35 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (d
 		if transpiler.IsUnusable(typ) || isTypeParamNamed(typ, free) {
 			return depth, false
 		}
-		named, isNamed := receiverBase(typ).(transpiler.NamedType)
-		if !isNamed || t.getTypeMeta(named.BaseName()) != nil || named.Package == "" && t.isActiveTypeParam(named.Name) {
-			return depth, true
-		}
-		target, isAlias := t.goAliasTarget(named)
-		if !isAlias {
-			return depth, true
-		}
-		if _, generic := typ.(transpiler.GenericType); generic || target == nil {
-			return depth, false
-		}
-		typ = target
+		// A Go alias unaliasedType stopped at may name a pointer.
+		_, isAlias := t.goAliasTarget(receiverBase(typ), free)
+		return depth, !isAlias
 	}
 	return depth, false
 }
 
-// goAliasTarget is the type named, a Go type, is an alias of, pointers
-// kept (`type P = *T` is a *T). isAlias is false when Go declares named as
-// other than an alias, or Go type information has no record of it; target
-// is nil for an alias whose target does not resolve.
-func (t *galaASTTransformer) goAliasTarget(named transpiler.NamedType) (target transpiler.Type, isAlias bool) {
-	key, data := t.goTypeDataFor(named)
+// goAliasTarget is the type typ, a Go alias, names, pointers kept (`type
+// P = *T` is a *T). typ is a named type, or the basic type a GALA
+// declaration names a Go type by. isAlias is false when Go declares typ as
+// other than an alias, Go type information has no record of it, or typ is
+// a GALA type or a type parameter (in scope, or of free): those are never
+// looked up as Go aliases. target is nil for an alias whose target does not
+// resolve.
+func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type, free []string) (target transpiler.Type, isAlias bool) {
+	var name string
+	var qualified bool
+	switch v := typ.(type) {
+	case transpiler.NamedType:
+		name, qualified = v.Name, v.Package != ""
+	case transpiler.BasicType:
+		name = v.Name
+	default:
+		return nil, false
+	}
+	if t.getTypeMeta(typ.BaseName()) != nil || !qualified && (slices.Contains(free, name) || t.isActiveTypeParam(name)) {
+		return nil, false
+	}
+	key, data := t.goTypeDataFor(typ)
 	if data == nil || data.Kind != "alias" {
 		return nil, false
 	}

@@ -364,11 +364,15 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
     put[Counter](p, Counter(2, "q"))
     Println(p.n)`, "put[Counter](p, "},
 	}
+	imp := newOracleImporter()
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := trans.Transpile(src(tc.body), "inout_explicit_test.gala")
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
+			res := imp.TypeCheck("main.go", out)
+			require.Empty(t, res.Skipped)
+			assert.Empty(t, res.Errors, "generated Go:\n%s", out)
 		})
 	}
 
@@ -529,11 +533,16 @@ func main() {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := trans.Transpile(tc.src, "inout_explicit_test.gala")
 			require.NoError(t, err)
-			if tc.runs != "" {
-				got, runErr := buildAndRunGeneratedGo(t, out)
-				require.NoError(t, runErr, got)
-				assert.Equal(t, tc.runs, strings.TrimSpace(got))
+			if tc.runs == "" {
+				// GALA's std, which a struct imports, is type-checked from source.
+				res := imp.TypeCheck("main.go", out)
+				require.Empty(t, res.Skipped)
+				assert.Empty(t, res.Errors, "generated Go:\n%s", out)
+				return
 			}
+			got, runErr := buildAndRunGeneratedGo(t, out)
+			require.NoError(t, runErr, got)
+			assert.Equal(t, tc.runs, strings.TrimSpace(got))
 		})
 	}
 
@@ -743,17 +752,16 @@ func main() {
 	assert.Contains(t, err.Error(), "GALA-E0111")
 	assert.Contains(t, err.Error(), "cannot lend &p to the inout parameter of Put: p holds a Ptr[lend.GoCounter]")
 }
-
 // TestInoutLendGoAliases pins the lend check through Go aliases, which a
 // package's own hand-written .go file declares: a Ptr is seen through
-// `type GP = *GoCounter` and an alias chain, `type Same = GoCounter` is no
-// pointer, and a generic `type A[T any] = *T` given type arguments is at
-// least one pointer deep, so it is never reported on.
+// `type GP = *GoCounter`, an alias chain and a GALA alias of one, on
+// either side of the lend; `type Same = GoCounter` is no pointer; a generic
+// `type A[T any] = *T` given type arguments is at least one pointer deep,
+// so it is never reported on; and a type parameter named like a Go alias
+// (`type T = *GoCounter`) is the type parameter. Every accepted program is
+// type-checked as Go, with the Go file's declarations.
 func TestInoutLendGoAliases(t *testing.T) {
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/goalias\n\ngala dev\n"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "goside.go"), []byte(`package main
-
+	const goSide = `
 type GoCounter struct{ N int }
 
 type GP = *GoCounter
@@ -764,12 +772,21 @@ type Same = GoCounter
 
 type A[T any] = *T
 
+type T = *GoCounter
+
 func NewP() *GoCounter { return &GoCounter{N: 1} }
-`), 0644))
+`
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/goalias\n\ngala dev\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "goside.go"), []byte("package main\n"+goSide), 0644))
 	src := func(body string) string {
 		return `package main
 
 struct Counter(var n int)
+
+type MyGP GP
+
+struct HG(g GP)
 
 func put[T any](inout x T, v T) {
     x = v
@@ -779,32 +796,55 @@ func bumpG(inout c GoCounter) {
     c.N = c.N + 1
 }
 
+func bumpGP(inout x GP) {
+    x.N = x.N + 1
+}
+
+func viaVar(var g GP) {
+    bumpGP(&g)
+}
+
+func viaInout(inout x GP) {
+    bumpGP(&x)
+}
+
 func tick(inout n int) {
     n = n + 1
 }
 
-func main() {
-    ` + body + `
-}
+` + body + `
 `
 	}
-	transpile := func(body string) error {
-		_, err := transpileCrossPkgFile(t, root, src(body), filepath.Join(root, "main.gala"))
-		return err
+	transpile := func(body string) (string, error) {
+		return transpileCrossPkgFile(t, root, src(body), filepath.Join(root, "main.gala"))
 	}
 
 	rejected := []struct{ name, body, want, hint string }{
-		{"&g for a Go alias of a pointer", `var g GP = NewP()
-    bumpG(&g)`, "cannot lend &g to the inout parameter of bumpG: g holds a *main.GoCounter, and the parameter takes the GoCounter it points to",
+		{"&g for a Go alias of a pointer", `func main() {
+    var g GP = NewP()
+    bumpG(&g)
+}`, "cannot lend &g to the inout parameter of bumpG: g holds a *main.GoCounter, and the parameter takes the GoCounter it points to",
 			"pass `RequirePtr(g)` without `&`"},
-		{"g, a Go alias of a pointer that may be nil", `var g GP = NewP()
-    bumpG(g)`, "the argument g of bumpG is a pointer that may be nil", "pass `RequirePtr(g)`"},
-		{"&p for a Go alias of the pointee", `var p = &GoCounter(N = 1)
-    put[Same](&p, GoCounter(N = 2))`, "cannot lend &p to the inout parameter of put", "pass `p` without `&`"},
+		{"g, a Go alias of a pointer that may be nil", `func main() {
+    var g GP = NewP()
+    bumpG(g)
+}`, "the argument g of bumpG is a pointer that may be nil", "pass `RequirePtr(g)`"},
+		{"&p for a Go alias of the pointee", `func main() {
+    var p = &GoCounter(N = 1)
+    put[Same](&p, GoCounter(N = 2))
+}`, "cannot lend &p to the inout parameter of put", "pass `p` without `&`"},
+		{"a type parameter named like a Go alias", `func g2[T any](var p Ptr[T], v T) {
+    put[T](&p, v)
+}
+
+func main() {
+    var n = 1
+    g2(&n, 2)
+}`, "cannot lend &p to the inout parameter of put: p holds a Ptr[T], and the parameter takes the T it points to", "pass `p` without `&`"},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
-			err := transpile(tc.body)
+			_, err := transpile(tc.body)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0111")
 			assert.Contains(t, err.Error(), tc.want)
@@ -812,24 +852,71 @@ func main() {
 		})
 	}
 
+	imp := newOracleImporter()
 	accepted := []struct{ name, body string }{
-		{"a field of a val of a Go alias of a pointer", `val g GP = NewP()
+		{"a field of a val of a Go alias of a pointer", `func main() {
+    val g GP = NewP()
     tick(&g.N)
-    Println(g.N)`},
-		{"a Go alias of a pointer and an alias chain as type arguments", `var p = &GoCounter(N = 1)
+    Println(g.N)
+}`},
+		{"a field of a Go alias of a pointer in a val field", `func main() {
+    val h = HG(NewP())
+    tick(&h.g.N)
+    Println(h.g.N)
+}`},
+		{"a Go alias of a pointer and an alias chain as type arguments", `func main() {
+    var p = &GoCounter(N = 1)
     var q = &GoCounter(N = 7)
     put[GP](&p, q)
     put[GP2](&p, q)
-    Println(p.N)`},
-		{"a generic Go alias of a pointer", `var c = &Counter(1)
+    Println(p.N)
+}`},
+		{"a generic Go alias of a pointer", `func main() {
+    var c = &Counter(1)
     var pp = &c
     var q = &Counter(2)
     put[A[Ptr[Counter]]](&pp, &q)
-    Println(c.n)`},
+    Println(c.n)
+}`},
+		{"a parameter of a Go alias of a pointer", `func main() {
+    var g GP = NewP()
+    bumpGP(&g)
+    viaVar(g)
+    viaInout(&g)
+    Println(g.N)
+}`},
+		{"a GALA alias of a Go alias of a pointer", `func main() {
+    var m MyGP = NewP()
+    bumpGP(&m)
+    Println(m.N)
+}`},
+		{"a Ptr to a Go alias of a pointer", `func main() {
+    var g GP = NewP()
+    var q = &g
+    bumpGP(q)
+    Println(g.N)
+}`},
+		{"a Ptr and a Ptr to it for a Go alias of a pointer", `func main() {
+    var p = &GoCounter(N = 1)
+    bumpGP(&p)
+    var pp = &p
+    bumpGP(pp)
+    Println(p.N)
+}`},
+		{"a type parameter Go infers named like a Go alias", `func main() {
+    var p = &Counter(1)
+    var q = &Counter(2)
+    put(&p, q)
+    Println(p.n)
+}`},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
-			require.NoError(t, transpile(tc.body))
+			out, err := transpile(tc.body)
+			require.NoError(t, err)
+			res := imp.TypeCheck("main.go", out+goSide)
+			require.Empty(t, res.Skipped)
+			assert.Empty(t, res.Errors, "generated Go:\n%s", out)
 		})
 	}
 }
