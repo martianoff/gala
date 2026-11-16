@@ -287,7 +287,10 @@ column lists what each milestone's claim rests on beyond them.
     so a lowercase binder renamed to a capitalized one could turn a later pattern
     binder into a comparison;
   - renaming a function's parameter renames the named arguments at its call sites too,
-    since `bindArgs` resolves `name = value` by parameter name.
+    since `bindArgs` resolves `name = value` by parameter name;
+  - binders inside a struct or sealed case field's default value are not renamed, and only
+    the shapes the parser produces are related: a declaration as a block statement, a
+    named argument as a call's argument.
 
   Renaming top-level declarations consistently is a separate, simpler lemma.
 - **What it gives:** a proof that the metamorphic renaming generator is sound. It gives a
