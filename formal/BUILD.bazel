@@ -74,6 +74,7 @@ REQUIRED_THEOREMS = [
     "Gala.M3.part_add",
     "Gala.M3.part_gt",
     "Gala.M3.lowerMatch_instance",
+    "Gala.Spec.eval_alpha",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -106,6 +107,7 @@ GALA_SRCS = [
     "Gala/Alpha.lean",
     "Gala/AlphaStep.lean",
     "Gala/MatchLower.lean",
+    "Gala/AlphaEval.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

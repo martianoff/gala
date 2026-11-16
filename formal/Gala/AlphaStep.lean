@@ -20,13 +20,23 @@ theorem fall2_eq : ∀ {l l' : List α}, Fall2 Eq l l' → l = l'
   | _, _, .nil => rfl
   | _, _, .cons h t => by rw [h, fall2_eq t]
 
+theorem fall2_mono {R S : α → β → Prop} (h : ∀ a b, R a b → S a b) :
+    ∀ {l : List α} {l' : List β}, Fall2 R l l' → Fall2 S l l'
+  | _, _, .nil => .nil
+  | _, _, .cons hr t => .cons (h _ _ hr) (fall2_mono h t)
+
+/-- Fields related by `FieldR` are the same. -/
+theorem fieldsR_eq {pkg : List String} {pm : String → Ren} {fs fs' : List Field}
+    (h : Fall2 (FieldR pkg pm) fs fs') : fs = fs' :=
+  fall2_eq (fall2_mono (fun _ _ h => h.1) h)
+
 theorem VarR.eq {pkg : List String} {pm : String → Ren} {v w : Variant} (h : VarR pkg pm v w) :
     v = w := by
   obtain ⟨n, d, f⟩ := h
   cases v; cases w
   simp only at n d f
   subst n d
-  rw [fall2_eq f]
+  rw [fieldsR_eq f]
 
 theorem fall2_pair_eq {R : α → α → Prop} (hR : ∀ a b, R a b → a = b) :
     ∀ {l l' : List (String × α)}, Fall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) l l' → l = l'
@@ -35,14 +45,9 @@ theorem fall2_pair_eq {R : α → α → Prop} (hR : ∀ a b, R a b → a = b) :
     simp only at hk hr
     rw [hk, hR _ _ hr, fall2_pair_eq hR t]
 
-theorem fall2_mono {R S : α → β → Prop} (h : ∀ a b, R a b → S a b) :
-    ∀ {l : List α} {l' : List β}, Fall2 R l l' → Fall2 S l l'
-  | _, _, .nil => .nil
-  | _, _, .cons hr t => .cons (h _ _ hr) (fall2_mono h t)
-
 theorem DeclsR.structs_eq {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     (hD : DeclsR pkg pm ds ds') : ds.structs = ds'.structs :=
-  fall2_pair_eq (fun _ _ h => fall2_eq h) hD.structs
+  fall2_pair_eq (fun _ _ h => fieldsR_eq h) hD.structs
 
 theorem DeclsR.sealeds_eq {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     (hD : DeclsR pkg pm ds ds') : ds.sealeds = ds'.sealeds :=
