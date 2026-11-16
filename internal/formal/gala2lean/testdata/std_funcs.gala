@@ -18,6 +18,7 @@ func main() {
     // Both arguments run, whatever the result.
     Println(When(see("c", 1) > 0, see("v", 2)), When(see("c", 0) > 0, see("v", 3)))
     Println(Unless(true, see("u", 4)), Unless(false, see("u", 5)))
+    Println(Unless(see("uc", 1) > 0, see("uv", 6)), ArrayTabulate(see("n", 2), (i) => see("f", i)))
 
     Println(Tuple(1, "a"), Tuple3(1, "b", true), Tuple4(1, 2, 3, 4))
     Println(Tuple(1, "a") == (1, "a"), Tuple3(1, 2, 3) == Tuple3(1, 2, 4))

@@ -13,6 +13,12 @@ Some(2) None()
 see u 4
 see u 5
 None() Some(5)
+see uc 1
+see uv 6
+see n 2
+see f 0
+see f 1
+None() Array(0, 1)
 (1, a) (1, b, true) (1, 2, 3, 4)
 true false
 see conv 7

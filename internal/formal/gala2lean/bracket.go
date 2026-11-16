@@ -33,7 +33,7 @@ func (g *gen) bracketKind(e *coreexport.Call, sc *scope) (string, string) {
 	switch {
 	case stdCtors[x] != "" && !g.declared(x):
 		return x, "std"
-	case g.collections && seqCtors[x] != "" && !g.declared(x):
+	case seqCtors[x] != "" && g.libName(x, true):
 		return x, "seq"
 	case g.collections && hashTypes[x] && !g.declared(x):
 		unsup(e.Pos, "hash-order")

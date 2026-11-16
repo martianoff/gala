@@ -250,7 +250,7 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 	if x == "None" {
 		return term{code: stdCtors[x], pure: true}
 	}
-	if stdCtors[x] != "" {
+	if stdCtors[x] != "" || g.isStdFunc(x) {
 		unsup(e.Pos, "func-value")
 	}
 	g.unresolved(e.Pos, "unresolved-name")

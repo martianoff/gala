@@ -18,27 +18,42 @@ import (
 // stdPath is the import path of GALA's standard library.
 const stdPath = "martianoff/gala/std"
 
-// stdFuncs are the functions modelled here, with what each needs: "std"
-// (std, always in scope), "seq" (the immutable collections) or "conv" (a
-// Go conversion).
-var stdFuncs = map[string]string{
-	"When": "std", "Unless": "std", "Tuple": "std", "Tuple3": "std", "Tuple4": "std",
-	"ArrayTabulate": "seq", "ArrayFill": "seq",
-	"int": "conv", "int64": "conv",
+// stdFunc is one function modelled here: how many arguments it takes, and
+// whether it is the immutable collections' (seq) rather than std's or a Go
+// conversion.
+type stdFunc struct {
+	arity int
+	seq   bool
 }
 
-// stdFunc reports whether name x, called, is one of stdFuncs as it resolves
-// in this program.
-func (g *gen) stdFunc(x string) bool {
-	switch stdFuncs[x] {
-	case "":
-		return false
-	case "seq":
-		if !g.collections {
-			return false
-		}
-	}
-	return !g.declared(x) && !g.declaredType(x) && !g.otherDots
+// stdFuncs are the functions modelled here.
+var stdFuncs = map[string]stdFunc{
+	"When": {arity: 2}, "Unless": {arity: 2}, "Tuple": {arity: 2}, "Tuple3": {arity: 3}, "Tuple4": {arity: 4},
+	"ArrayTabulate": {arity: 2, seq: true}, "ArrayFill": {arity: 2, seq: true},
+	"int": {arity: 1}, "int64": {arity: 1},
+}
+
+// libName reports whether bare name x means the library's x: the program
+// declares nothing named x (a function, type or package-level value) and
+// dot-imports no package but std and the immutable collections, which
+// another package's x could be; seq names need the immutable collections
+// dot-imported.
+func (g *gen) libName(x string, seq bool) bool {
+	return (!seq || g.collections) && !g.declared(x) && !g.declaredType(x) &&
+		g.globalBy[x] == nil && !g.otherDots
+}
+
+// isStdFunc reports whether name x, called, is one of stdFuncs as it
+// resolves in this program.
+func (g *gen) isStdFunc(x string) bool {
+	f, ok := stdFuncs[x]
+	return ok && g.libName(x, f.seq)
+}
+
+// tabulateFn is the type ArrayTabulate's function argument wants.
+func tabulateFn() *coreexport.TypeFunc {
+	return &coreexport.TypeFunc{Params: []coreexport.Node{&coreexport.TypeName{Name: "int"}},
+		Result: &coreexport.TypeName{Name: inferTypeArg}}
 }
 
 // stdFuncCall translates a call of stdFunc x.
@@ -46,8 +61,7 @@ func (g *gen) stdFuncCall(x string, e *coreexport.Call, sc *scope) term {
 	for _, a := range e.Args {
 		positional(a)
 	}
-	arity := map[string]int{"When": 2, "Unless": 2, "Tuple": 2, "Tuple3": 3, "Tuple4": 4,
-		"ArrayTabulate": 2, "ArrayFill": 2, "int": 1, "int64": 1}[x]
+	arity := stdFuncs[x].arity
 	if len(e.Args) != arity {
 		unsup(e.Pos, "argument-count")
 	}
@@ -62,9 +76,7 @@ func (g *gen) stdFuncCall(x string, e *coreexport.Call, sc *scope) term {
 		return g.expr(e.Args[0], sc)
 	case "ArrayTabulate":
 		n := g.exprExpect(e.Args[0], sc, &coreexport.TypeName{Name: "int"})
-		f := g.exprExpect(e.Args[1], sc, &coreexport.TypeFunc{
-			Params: []coreexport.Node{&coreexport.TypeName{Name: "int"}},
-			Result: &coreexport.TypeName{Name: inferTypeArg}})
+		f := g.exprExpect(e.Args[1], sc, tabulateFn())
 		return act(fmt.Sprintf("GArray.mk <$> seqTabulate %s %s", n.val(), f.val()))
 	}
 	args := make([]term, len(e.Args))
@@ -108,9 +120,7 @@ func (g *gen) stdFuncType(x string, e *coreexport.Call, sc *scope, seen map[stri
 		}
 	case "ArrayTabulate":
 		if len(e.Args) == 2 {
-			f := &coreexport.TypeFunc{Params: []coreexport.Node{&coreexport.TypeName{Name: "int"}},
-				Result: &coreexport.TypeName{Name: inferTypeArg}}
-			if r := g.funcArgResult(e.Args[1], f, sc, seen); r != "" {
+			if r := g.funcArgResult(e.Args[1], tabulateFn(), sc, seen); r != "" {
 				return "(GArray " + r + ")"
 			}
 		}
