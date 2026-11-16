@@ -268,11 +268,13 @@ sh_test(
 # imports, and the translation Gala/Gala2Lean/Theorems.lean proves things
 # about, which a test there keeps equal to the translator's output; and the
 # decoder, whose Go standard-library import list a test keeps equal to
-# gala2lean's.
+# gala2lean's, and GoCore's initialization, whose list of quiet packages it
+# keeps equal to the same list.
 exports_files(
     [
         "Gala/Gala2Lean/Prelude.lean",
         "Gala/Gala2Lean/Examples/Match.lean",
+        "Gala/GoCore/Run.lean",
         "Gala/Json.lean",
     ],
     visibility = ["//internal/formal:__subpackages__"],

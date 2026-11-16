@@ -51,8 +51,13 @@ structure PkgCtx where
   /-- Methods, keyed `Type.method`. -/
   methods : HashMap String Method
   vars : Array VarDecl
+  /-- The `init` functions, in source order: each one's file and body (Go spec,
+      "Package initialization": a package may declare several, none callable). -/
+  inits : Array (Nat × Option (List Stmt))
+  /-- The methods by name, of whatever type: what a selector `x.m` may refer to. -/
+  methodsByName : HashMap String (List Method)
 
-instance : Inhabited PkgCtx := ⟨⟨"", "", #[], {}, {}, #[]⟩⟩
+instance : Inhabited PkgCtx := ⟨⟨"", "", #[], {}, {}, #[], #[], {}⟩⟩
 
 /-- The program: its packages by import path, and the main package's path. -/
 structure Ctx where
@@ -82,6 +87,7 @@ def buildPkg (pkgNames : HashMap String String) (p : Package) : PkgCtx := Id.run
   let mut objs : HashMap String Obj := {}
   let mut methods : HashMap String Method := {}
   let mut vars : Array VarDecl := #[]
+  let mut inits : Array (Nat × Option (List Stmt)) := #[]
   let mut imports : Array (List (String × String)) := #[]
   let mut fi := 0
   for f in p.files do
@@ -89,7 +95,8 @@ def buildPkg (pkgNames : HashMap String String) (p : Package) : PkgCtx := Id.run
     for d in f.decls do
       match d with
       | .func name none tps sig body =>
-        objs := objs.insert name (.func fi tps sig body)
+        if name == "init" then inits := inits.push (fi, body)
+        else objs := objs.insert name (.func fi tps sig body)
       | .func name (some (.mk rnames rty)) _ sig body =>
         match recvBase rty with
         | some (base, tps, ptr) =>
@@ -126,7 +133,8 @@ def buildPkg (pkgNames : HashMap String String) (p : Package) : PkgCtx := Id.run
             iota := iota + 1
       | .unsupported _ => pure ()
     fi := fi + 1
-  return { path := p.path, name := p.name, imports, objs, methods, vars }
+  let methodsByName := methods.fold (fun m k me => m.insert ((k.splitOn ".").getLast!) (me :: m.getD ((k.splitOn ".").getLast!) [])) {}
+  return { path := p.path, name := p.name, imports, objs, methods, vars, inits, methodsByName }
 
 /-- The program's tables. The main package is the first one, as the exporter writes
     it. -/

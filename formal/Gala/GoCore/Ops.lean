@@ -15,6 +15,10 @@ namespace Gala.GoCore.Full
 def runtimePanic (text : String) : GM α :=
   throw (.panic (.str .string ("runtime error: " ++ text)) ("runtime error: " ++ text))
 
+/-- A nil pointer dereferenced: through `*p`, a field, a method's value receiver or a
+    nil function or interface (Go spec, "Address operators", "Run-time panics"). -/
+def nilDeref : GM α := runtimePanic "invalid memory address or nil pointer dereference"
+
 /-- The default type of an untyped constant (Go spec, "Constants"). -/
 def UKind.default : UKind → Option Ty
   | .int => some (.int .int)
@@ -29,11 +33,6 @@ def defaultVal : Val → Val
   | .bool (.untyped _) b => .bool .bool b
   | .str (.untyped _) s => .str .string s
   | v => v
-
-/-- Integer division truncated toward zero, and its remainder (Go spec, "Integer
-    operators"). -/
-def quoT (x y : Int) : Int := x.tdiv y
-def remT (x y : Int) : Int := x.tmod y
 
 /-- `x << s` and `x >> s` for an integer of kind `k`: `>>` is arithmetic for signed
     integers, logical for unsigned ones; the count may exceed the width (Go spec,
@@ -75,18 +74,15 @@ def bitXor : Int → Int → Int
     which are exact. -/
 def intOp (op : String) (k : Option IntKind) (x y : Int) : GM Int := do
   let w := fun r => match k with | some k => k.wrap r | none => r
+  if (op == "/" || op == "%") && y == 0 then
+    if k.isNone then stuck "constant division by zero" else runtimePanic "integer divide by zero"
   match op with
   | "+" => pure (w (x + y))
   | "-" => pure (w (x - y))
   | "*" => pure (w (x * y))
-  | "/" =>
-    if y == 0 then
-      if k.isNone then stuck "constant division by zero" else runtimePanic "integer divide by zero"
-    else pure (w (quoT x y))
-  | "%" =>
-    if y == 0 then
-      if k.isNone then stuck "constant division by zero" else runtimePanic "integer divide by zero"
-    else pure (w (remT x y))
+  -- Truncated toward zero (Go spec, "Integer operators").
+  | "/" => pure (w (x.tdiv y))
+  | "%" => pure (w (x.tmod y))
   | "&" => pure (w (bitAnd x y))
   | "|" => pure (w (bitOr x y))
   | "^" => pure (w (bitXor x y))

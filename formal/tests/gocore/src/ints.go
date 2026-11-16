@@ -22,5 +22,6 @@ func main() {
 	fmt.Println(12&-5, 12|-5, 12^-5, 12&^5, ^7, ^uint8(7))
 	fmt.Println(small, 'a'+1, 0x1F_FF, 0b101, 0o17)
 	n := 3
-	fmt.Println(1<<n, -5>>n)
+	one, m := 1, -5
+	fmt.Println(one<<n, m>>n)
 }

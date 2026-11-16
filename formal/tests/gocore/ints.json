@@ -1346,27 +1346,79 @@
                     ]
                   },
                   {
-                    "kind": "expr-stmt",
+                    "kind": "assign",
                     "pos": {
                       "line": 25,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 25,
+                          "col": 2
+                        },
+                        "name": "one"
+                      },
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 25,
+                          "col": 7
+                        },
+                        "name": "m"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 25,
+                          "col": 12
+                        },
+                        "value": "1"
+                      },
+                      {
+                        "kind": "unary",
+                        "pos": {
+                          "line": 25,
+                          "col": 15
+                        },
+                        "op": "-",
+                        "x": {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 25,
+                            "col": 16
+                          },
+                          "value": "5"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 26,
                       "col": 2
                     },
                     "x": {
                       "kind": "call",
                       "pos": {
-                        "line": 25,
+                        "line": 26,
                         "col": 2
                       },
                       "fun": {
                         "kind": "selector",
                         "pos": {
-                          "line": 25,
+                          "line": 26,
                           "col": 2
                         },
                         "x": {
                           "kind": "ident",
                           "pos": {
-                            "line": 25,
+                            "line": 26,
                             "col": 2
                           },
                           "name": "fmt"
@@ -1377,23 +1429,23 @@
                         {
                           "kind": "binary",
                           "pos": {
-                            "line": 25,
+                            "line": 26,
                             "col": 14
                           },
                           "op": "<<",
                           "x": {
-                            "kind": "int-lit",
+                            "kind": "ident",
                             "pos": {
-                              "line": 25,
+                              "line": 26,
                               "col": 14
                             },
-                            "value": "1"
+                            "name": "one"
                           },
                           "y": {
                             "kind": "ident",
                             "pos": {
-                              "line": 25,
-                              "col": 17
+                              "line": 26,
+                              "col": 19
                             },
                             "name": "n"
                           }
@@ -1401,31 +1453,23 @@
                         {
                           "kind": "binary",
                           "pos": {
-                            "line": 25,
-                            "col": 20
+                            "line": 26,
+                            "col": 22
                           },
                           "op": ">>",
                           "x": {
-                            "kind": "unary",
+                            "kind": "ident",
                             "pos": {
-                              "line": 25,
-                              "col": 20
+                              "line": 26,
+                              "col": 22
                             },
-                            "op": "-",
-                            "x": {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 25,
-                                "col": 21
-                              },
-                              "value": "5"
-                            }
+                            "name": "m"
                           },
                           "y": {
                             "kind": "ident",
                             "pos": {
-                              "line": 25,
-                              "col": 24
+                              "line": 26,
+                              "col": 25
                             },
                             "name": "n"
                           }

@@ -11,9 +11,10 @@
     have types of their own (`untyped int`, ...), as in the Go spec, "Constants".
   * **Values carry their type.** A value of a non-interface type carries exactly its
     static type, which Go knows at compile time, so carrying it decides nothing Go's
-    static semantics would not. An interface-typed variable holds the dynamic value
-    itself, or `nilIface` (Go spec, "Interface types": a value of interface type holds a
-    dynamic type and value, or is nil).
+    static semantics would not. A value of interface type is `boxed`: the interface
+    type and the dynamic value inside it; or it is `nilIface` (Go spec, "Interface
+    types": a value of interface type holds a dynamic type and value, or is nil). So a
+    nil pointer in an interface is not a nil interface, as in Go.
   * **Variables are cells.** Every variable is a cell of the heap, so `&x` is a pointer
     to `x`'s cell and a closure shares the cells of the variables it refers to (Go spec,
     "Address operators", "Function literals"). A pointer names a cell and a path of
@@ -60,8 +61,7 @@ def IntKind.ofName? : String → Option IntKind
 
 /-- `x` reduced to the width of `k` (Go spec, "Integer overflow"). -/
 def IntKind.wrap (k : IntKind) (x : Int) : Int :=
-  let m : Int := 2 ^ k.bits
-  if k.signed then x.bmod (2 ^ k.bits) else x.emod m
+  if k.signed then x.bmod (2 ^ k.bits) else x.emod (2 ^ k.bits)
 
 /-- Whether `x` is a value of `k`, as a constant converted to `k` must be (Go spec,
     "Representability"). -/
@@ -160,12 +160,11 @@ structure Loc where
   deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A function value: a declared function, a method bound to a receiver (a method
-    value), a function literal's closure (by its index in the state), or a builtin. -/
+    value), or a function literal's closure, by its index in the state. -/
 inductive Fn
   | decl (pkg name : String) (targs : List Ty)
   | method (pkg tyName name : String) (targs : List Ty) (recvCell : Nat)
   | closure (id : Nat)
-  | builtin (name : String)
   deriving Inhabited, BEq
 
 /-- A value; see the module doc. -/
@@ -181,6 +180,9 @@ inductive Val
   | func_ (t : Ty) (f : Option Fn)
   /-- A nil interface value, or the untyped `nil`. -/
   | nilIface (t : Ty)
+  /-- A non-nil value of interface type `t`: its dynamic value, never itself boxed
+      (Go spec, "Interface types"). -/
+  | boxed (t : Ty) (v : Val)
   /-- The results of a call with several. -/
   | tuple (vs : List Val)
   /-- A package-level variable of an imported package whose initializer GoCore could
@@ -189,9 +191,15 @@ inductive Val
   deriving Inhabited
 
 def Val.ty : Val → Ty
-  | .int t _ | .bool t _ | .str t _ | .struct_ t _ | .ptr t _ | .func_ t _ | .nilIface t => t
+  | .int t _ | .bool t _ | .str t _ | .struct_ t _ | .ptr t _ | .func_ t _ | .nilIface t
+  | .boxed t _ => t
   | .tuple vs => .tuple (vs.map fun _ => .bool)
   | .poison _ => .tuple []
+
+/-- The dynamic value of an interface value; any other value itself. -/
+def Val.dyn : Val → Val
+  | .boxed _ v => v
+  | v => v
 
 /-- Why execution stopped early. -/
 inductive Stop
@@ -221,6 +229,9 @@ structure Closure where
 /-- The state of a run. -/
 structure St where
   cells : Array Val
+  /-- Each cell's declared type: the variable's static type, which for an interface
+      variable is not its value's (Go spec, "Variables"). -/
+  types : Array Ty := #[]
   closures : Array Closure
   out : String
   /-- Steps left: each call and loop iteration takes one. -/
@@ -245,10 +256,20 @@ def unsupported (what : String) : GM α := throw (.unsupported what)
 
 -- The state is updated with `modify`, never `get` then `set`: a `get` keeps a second
 -- reference to the cells, and the update would copy them.
-def alloc (v : Val) : GM Nat := do
+def allocAs (t : Ty) (v : Val) : GM Nat := do
   let n := (← get).cells.size
-  modify fun s => { s with cells := s.cells.push v }
+  modify fun s => { s with cells := s.cells.push v, types := s.types.push t }
   pure n
+
+/-- A new variable whose declared type is its value's: one `:=` declares, a receiver, a
+    composite literal `&T{...}` points to. -/
+def alloc (v : Val) : GM Nat := allocAs v.ty v
+
+/-- A variable's declared type. -/
+def cellType (cell : Nat) : GM Ty := do
+  match (← get).types[cell]? with
+  | some t => pure t
+  | none => stuck "no such variable"
 
 /-- The field at `path` inside `v`. -/
 def Val.at : Val → List Nat → Option Val

@@ -69,12 +69,6 @@ def outsideStmts : List String := ["labeled", "select", "send", "go", "defer"]
 
 private def kindOf (j : Json) : D String := str j "kind"
 
-/-- An integer written in decimal, as the exporter writes `int-lit` values. -/
-def parseDecimal (s : String) : Option Int :=
-  match s.toList with
-  | '-' :: ds => (String.ofList ds).toNat?.map fun n => -(n : Int)
-  | _ => s.toNat?.map Int.ofNat
-
 private def int (j : Json) (k : String) : D Int := do
   match (← field j k).getInt? with
   | .ok n => pure n
@@ -87,7 +81,7 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "ident" => return .ident (← str j "name")
   | "int-lit" =>
     let v ← str j "value"
-    match parseDecimal v with
+    match v.toInt? with
     | some n => return .intLit n
     | none => throw s!"int-lit value `{v}` is not a decimal integer"
   | "string-lit" => return .strLit (← str j "value")
@@ -154,14 +148,9 @@ partial def decodeStmt (j : Json) : D Stmt := do
     return .if_ (← optStmt j "init") (← decodeExpr (← field j "cond")) (← decodeBlock (← field j "body"))
       (← optStmt j "else")
   | "switch" =>
-    let clauses ← (← arr j "clauses").mapM fun c => do
-      let list ← (← arr c "list").mapM decodeExpr
-      return Clause.mk list list.isEmpty (← (← arr c "body").mapM decodeStmt)
-    return .switch (← optStmt j "init") (← optExpr j "tag") clauses
+    return .switch (← optStmt j "init") (← optExpr j "tag") (← (← arr j "clauses").mapM decodeClause)
   | "type-switch" =>
-    let clauses ← (← arr j "clauses").mapM fun c => do
-      let list ← (← arr c "list").mapM decodeExpr
-      return Clause.mk list list.isEmpty (← (← arr c "body").mapM decodeStmt)
+    let clauses ← (← arr j "clauses").mapM decodeClause
     -- The guard: `x := y.(type)` or `y.(type)`.
     let a ← field j "assign"
     let (bind, guard) ← match ← kindOf a with
@@ -183,6 +172,10 @@ partial def decodeStmt (j : Json) : D Stmt := do
   | k =>
     if outsideStmts.contains k then return .unsupported k
     throw s!"expected a statement, got kind `{k}`"
+/-- A switch clause: `case list:` or, with an empty list, `default:`. -/
+partial def decodeClause (c : Json) : D Clause := do
+  let list ← (← arr c "list").mapM decodeExpr
+  return Clause.mk list list.isEmpty (← (← arr c "body").mapM decodeStmt)
 partial def decodeDecl (j : Json) : D Decl := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with

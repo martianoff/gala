@@ -13,6 +13,13 @@
   `fuel`. Each call and each loop iteration also takes a step from the state's budget
   (`tick`). Either way, `fuel` is inconclusive.
 
+  **Precondition.** GoCore's semantics is defined for programs `go build` accepts; on a
+  program Go rejects, its answer is unspecified. Values carry their dynamic type, so
+  some answers rest on this: `==` on values of different dynamic types is `false`, as for
+  two interface operands, since a comparison of different static types does not
+  compile. The exporter only ever sees the transpiler's compiled output, and the
+  differential run only runs programs that built.
+
   **What stops a run.** A construct GoCore does not model stops it with
   `unsupported <construct>`. Something no program Go compiles does (a type error) is
   `stuck`: a GoCore or exporter bug, never a verdict.
@@ -90,9 +97,12 @@ def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand"]
 /-- The `fmt` functions modelled (see `Fmt` below). -/
 def fmtFuncs : List String := ["Println", "Print", "Sprintf", "Sprint"]
 
+/-- The names a field list declares: parameters, type parameters, interface methods. -/
+def fieldListNames (fs : List Field) : List String := fs.flatMap fun | .mk ns _ => ns
+
 /-- Bind type parameters to type arguments. -/
 def bindTParams (ps : List Field) (args : List Ty) : GM (List (String × Ty)) := do
-  let names := ps.flatMap fun | .mk ns _ => ns
+  let names := fieldListNames ps
   if names.length != args.length then stuck "wrong number of type arguments"
   pure (names.zip args)
 
@@ -154,14 +164,18 @@ def loopM (k : Nat) (env : Env) (body : Env → GM (Option Env)) : GM Unit :=
     | some env' => loopM k env' body
     | none => pure ()
 
-/-- `List.flatMap` in a monad. -/
-def flatMapM {m : Type → Type} [Monad m] (f : α → m (List β)) (xs : List α) : m (List β) := do
-  pure (← xs.mapM f).flatten
+/-- `unwrapImmutable` (std/types.go, lines 103-108), a model: an `Immutable` value's
+    wrapped value, any other value itself. -/
+def unwrapImmutable : Val → Val
+  | v@(.struct_ (.named p "Immutable" _) [inner]) => if p == stdPath then inner else v
+  | v => v
 
-/-- The dynamic type of an interface value, as a failed assertion names it. -/
-def dynTypeText : Val → String
-  | .nilIface _ => "nil"
-  | v => v.ty.text
+/-- The type of `a && b` and `a || b`: untyped if both operands are (Go spec, "Logical
+    operators"). -/
+def boolType (a b : Val) : Ty :=
+  match a.ty with
+  | .untyped _ => b.ty
+  | t => t
 
 /-- The types a field list declares, one per name. -/
 def fieldTypes (fs : List Field) : List Expr :=
@@ -228,7 +242,11 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
       let tys ← (fieldTypes fs).mapM (evalType c n env)
       return .struct_ ((fieldNames fs).zip tys)
     | .interfaceType es =>
-      return .iface (es.flatMap fun | .mk ns _ => ns)
+      -- An embedded element (`error`, a constraint's type union) would add to the
+      -- method set, which GoCore does not compute; only methods it lists itself.
+      if es.any (fun | .mk ns _ => ns.isEmpty) then unsupported "embedded-interface"
+      -- Sorted, so an interface type does not depend on the order it lists them in.
+      return .iface ((fieldListNames es).mergeSort (fun a b => decide (a ≤ b)))
     | .funcType (.mk ps rs v) =>
       return .func_ (← (fieldTypes ps).mapM (evalType c n env)) (← (fieldTypes rs).mapM (evalType c n env)) v
     | .unsupported k => unsupported k
@@ -286,10 +304,14 @@ def zero (c : Ctx) : Nat → Ty → GM Val
 def convert (c : Ctx) : Nat → Ty → Val → GM Val
   | 0, _, _ => throw .fuel
   | n + 1, t, v => do
+    -- A value already of the variable's type: nothing to do (the common case).
+    if v.ty == t then return v
     let u ← underlying c n t
     match u, v with
     | .iface _, .nilIface _ => pure (.nilIface t)
-    | .iface _, v => pure (defaultVal v)
+    -- Assigned to an interface, a value keeps its dynamic value, an untyped constant
+    -- its default type (Go spec, "Assignability", "Constants").
+    | .iface _, v => pure (.boxed t (defaultVal v.dyn))
     | .int k, .int (.untyped _) x =>
       if k.represents x then pure (.int t x) else stuck s!"constant {x} overflows {k.name}"
     | .bool, .bool (.untyped _) b => pure (.bool t b)
@@ -354,14 +376,16 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       let t ← evalType c n env te
       match ← assertType c n v t with
       | some w => pure w
-      | none => throw (.panic (.str .string "interface conversion") s!"interface conversion: interface is {dynTypeText v}, not {t}")
+      -- Go's text names the operand's static interface type in Go's own spelling;
+      -- the panic is not modelled.
+      | none => unsupported "failed-type-assertion"
     | .call fn args ellipsis => do
       if ellipsis then unsupported "call-ellipsis"
       Val.single (← evalCall c n env fn args)
     | .star x => do
       match ← evalExpr c n env x with
       | .ptr _ (some l) => load l
-      | .ptr _ none => runtimePanic "invalid memory address or nil pointer dereference"
+      | .ptr _ none => nilDeref
       | _ => stuck "* of a non-pointer"
     | .unary "&" x =>
       match x with
@@ -377,7 +401,7 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       let a ← evalExpr c n env x
       if ← asBool a then
         let b ← evalExpr c n env y
-        if ← asBool b then pure (.bool (boolType a b) true) else pure (.bool (boolType a b) false)
+        pure (.bool (boolType a b) (← asBool b))
       else pure a
     | .binary "||" x y => do
       let a ← evalExpr c n env x
@@ -392,12 +416,6 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
     | .unsupported k => unsupported k
     | .keyValue .. => stuck "key: value outside a composite literal"
     | .structType _ | .interfaceType _ | .funcType _ => stuck "a type as a value"
-
-/-- The type of `a && b`: untyped if both are (Go spec, "Logical operators"). -/
-def boolType (a b : Val) : Ty :=
-  match a.ty, b.ty with
-  | .untyped _, t => t
-  | t, _ => t
 
 /-- A package-level name of package `path`: a variable, constant or function (Go
     spec, "Declarations and scope"), else a predeclared one. -/
@@ -521,7 +539,7 @@ def boundMethod (c : Ctx) : Nat → String → String → String → List Ty →
 
 /-- Field `sel` of `v`, through a pointer too (Go spec, "Selectors": `x.f` is `(*x).f`
     for a pointer `x`), with its index. A promoted field is unsupported. -/
-def field? (c : Ctx) : Nat → Val → String → GM (Option (Val × Nat))
+def field? (c : Ctx) : Nat → Val → String → GM (Option (Val × Nat × Ty))
   | 0, _, _ => throw .fuel
   | n + 1, v, sel => do
     match v with
@@ -529,7 +547,7 @@ def field? (c : Ctx) : Nat → Val → String → GM (Option (Val × Nat))
       match ← underlying c n t with
       | .struct_ ftys =>
         match ftys.findIdx? (·.1 == sel) with
-        | some k => return (fs[k]?).map (·, k)
+        | some k => return (fs[k]?).map fun f => (f, k, (ftys[k]?.map (·.2)).getD f.ty)
         | none => return none
       | _ => return none
     | .ptr _ (some l) =>
@@ -541,7 +559,7 @@ def field? (c : Ctx) : Nat → Val → String → GM (Option (Val × Nat))
       | .ptr pt =>
         match ← underlying c n pt with
         | .struct_ ftys =>
-          if ftys.any (·.1 == sel) then runtimePanic "invalid memory address or nil pointer dereference"
+          if ftys.any (·.1 == sel) then nilDeref
           else return none
         | _ => return none
       | _ => return none
@@ -571,11 +589,11 @@ def operand (c : Ctx) : Nat → Env → Expr → GM (Val × Option Loc)
       match v with
       | .ptr _ (some pl) =>
         match ← field? c n (← load pl) sel with
-        | some (f, k) => return (f, some ⟨pl.cell, pl.path ++ [k]⟩)
+        | some (f, k, _) => return (f, some ⟨pl.cell, pl.path ++ [k]⟩)
         | none => return (← selectOn c n v l sel, none)
       | _ =>
         match ← field? c n v sel with
-        | some (f, k) => return (f, l.map fun l => ⟨l.cell, l.path ++ [k]⟩)
+        | some (f, k, _) => return (f, l.map fun l => ⟨l.cell, l.path ++ [k]⟩)
         | none => return (← selectOn c n v l sel, none)
     | _ => return (← evalExpr c n env e, none)
 
@@ -585,16 +603,28 @@ def operand (c : Ctx) : Nat → Env → Expr → GM (Val × Option Loc)
 def selectOn (c : Ctx) : Nat → Val → Option Loc → String → GM Val
   | 0, _, _, _ => throw .fuel
   | n + 1, v, l, sel => do
+    -- A method of an interface value is its dynamic value's (Go spec, "Interface types").
+    if let .boxed _ d := v then return ← selectOn c n d none sel
+    if let .nilIface _ := v then return ← nilDeref
     match ← field? c n v sel with
-    | some (w, _) => pure w
+    | some (w, _, _) => pure w
     | none =>
       match methodSet c v.ty sel, l with
-      | some (p, tn, args, _), _ => boundMethod c n p tn sel args v
+      | some (p, tn, args, me), _ =>
+        -- A value method through a pointer is `(*p).m`, the pointee evaluated and
+        -- saved now (Go spec, "Method values").
+        let recv ← match v, me.ptr with
+          | .ptr _ (some pl), false => load pl
+          | .ptr _ none, false => nilDeref
+          | _, _ => pure v
+        boundMethod c n p tn sel args recv
       | none, some l =>
         match methodSet c (.ptr v.ty) sel with
         | some (p, tn, args, _) => boundMethod c n p tn sel args (.ptr (.ptr v.ty) (some l))
-        | none => stuck s!"no field or method {sel} of {v.ty}"
-      | none, none => stuck s!"no field or method {sel} of {v.ty}"
+        | none => unsupported "promoted-selector"
+      -- Compiled Go selects only fields and methods that exist, so the rest are
+      -- members promoted from an embedded field, which GoCore does not model.
+      | none, none => unsupported "promoted-selector"
 
 /-- Where an addressable expression is, and its type (Go spec, "Address operators"). -/
 def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
@@ -603,28 +633,29 @@ def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
     match e with
     | .ident x =>
       match env.lookup x with
-      | some cell => return (⟨cell, []⟩, (← loadCell cell).ty)
+      | some cell => return (⟨cell, []⟩, ← cellType cell)
       | none =>
         match (← get).globals.get? s!"{env.pkg}.{x}" with
-        | some cell => return (⟨cell, []⟩, (← loadCell cell).ty)
+        | some cell => return (⟨cell, []⟩, ← cellType cell)
         | none => stuck s!"{x} is not addressable"
     | .paren x => evalAddr c n env x
     | .star x =>
       match ← evalExpr c n env x with
+      | .ptr (.ptr elem) (some l) => return (l, elem)
       | .ptr _ (some l) => return (l, (← load l).ty)
-      | .ptr _ none => runtimePanic "invalid memory address or nil pointer dereference"
+      | .ptr _ none => nilDeref
       | _ => stuck "* of a non-pointer"
     | .selector x sel =>
       let (v, l) ← operand c n env x
       match v with
       | .ptr _ (some pl) =>
         match ← field? c n (← load pl) sel with
-        | some (f, k) => return (⟨pl.cell, pl.path ++ [k]⟩, f.ty)
+        | some (_, k, ft) => return (⟨pl.cell, pl.path ++ [k]⟩, ft)
         | none => stuck s!"{sel} is not addressable"
-      | .ptr _ none => runtimePanic "invalid memory address or nil pointer dereference"
+      | .ptr _ none => nilDeref
       | _ =>
         match ← field? c n v sel, l with
-        | some (f, k), some l => return (⟨l.cell, l.path ++ [k]⟩, f.ty)
+        | some (_, k, ft), some l => return (⟨l.cell, l.path ++ [k]⟩, ft)
         | _, _ => stuck s!"{sel} is not addressable"
     | _ => stuck "not addressable"
 
@@ -636,10 +667,11 @@ def assertType (c : Ctx) : Nat → Val → Ty → GM (Option Val)
     match v with
     | .nilIface _ => return none
     | _ =>
+      let d := v.dyn
       match ← underlying c n t with
       | .iface ms =>
-        return if ms.all (fun m => (methodSet c v.ty m).isSome) then some v else none
-      | _ => return if v.ty == t then some v else none
+        return if ms.all (fun m => (methodSet c d.ty m).isSome) then some (.boxed t d) else none
+      | _ => return if d.ty == t then some d else none
 
 /-- A unary operator (Go spec, "Arithmetic operators", "Logical operators"). -/
 def unary (c : Ctx) : Nat → String → Val → GM Val
@@ -667,8 +699,14 @@ def binary (c : Ctx) : Nat → String → Val → Val → GM Val
     if op == "<<" || op == ">>" then
       -- The left operand's type is the result's; the count is any integer.
       let s ← asInt b
+      match a, b.ty with
+      | .int (.untyped k) x, .untyped _ => return .int (.untyped k) (← shiftOp op none x s)
+      -- An untyped constant shifted by a non-constant count first takes the type its
+      -- context gives it (Go spec, "Operators"), which GoCore does not track; and a
+      -- typed constant count cannot be told from a variable here.
+      | .int (.untyped _) _, _ => unsupported "untyped-shift"
+      | _, _ => pure ()
       match a with
-      | .int (.untyped k) x => return .int (.untyped k) (← shiftOp op none x s)
       | .int t x =>
         let .int k ← underlying c n t | stuck "shift of a non-integer"
         return .int t (← shiftOp op (some k) x s)
@@ -706,23 +744,40 @@ def binary (c : Ctx) : Nat → String → Val → Val → GM Val
 def equal (c : Ctx) : Nat → Val → Val → GM Bool
   | 0, _, _ => throw .fuel
   | n + 1, a, b => do
+    -- Interface values compare by their dynamic values (Go spec, "Comparison
+    -- operators"); a nil interface, typed by `binary`'s conversion of `nil`, equals
+    -- only another nil interface, so a nil pointer inside one is not nil.
+    let (a, b) := (a.dyn, b.dyn)
+    -- Values of different dynamic types are unequal: by the precondition (see the
+    -- module doc), only two interface operands can differ in type.
+    let same := a.ty == b.ty || (match a.ty, b.ty with
+      | .untyped _, _ | _, .untyped _ => true
+      | _, _ => false)
     match a, b with
-    | .int _ x, .int _ y => pure (x == y)
-    | .bool _ x, .bool _ y => pure (x == y)
-    | .str _ x, .str _ y => pure (x == y)
-    | .struct_ t xs, .struct_ u ys =>
-      if t != u then return false
-      let rec go : List Val → List Val → GM Bool
-        | x :: xs, y :: ys => do if ← equal c n x y then go xs ys else pure false
-        | _, _ => pure true
-      go xs ys
-    | .ptr _ l, .ptr _ m => pure (l == m)
     | .ptr _ l, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .ptr _ l => pure l.isNone
     | .func_ _ f, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .func_ _ f => pure f.isNone
     | .nilIface _, .nilIface _ => pure true
     | .nilIface _, _ | _, .nilIface _ => pure false
-    | .func_ .., .func_ .. => stuck "== on functions"
-    | _, _ => pure false
+    -- Go compiles `==` on functions only against nil; two functions meet here only as
+    -- the dynamic values of interface operands, where Go panics at run time (not
+    -- modelled).
+    | .func_ .., .func_ .. => unsupported "uncomparable"
+    | _, _ =>
+      if !same then return false
+      match a, b with
+      | .int _ x, .int _ y => pure (x == y)
+      | .bool _ x, .bool _ y => pure (x == y)
+      | .str _ x, .str _ y => pure (x == y)
+      | .ptr _ l, .ptr _ m => pure (l == m)
+      | .struct_ _ xs, .struct_ _ ys =>
+        let rec go : List Val → List Val → GM Bool
+          -- A function field makes the struct type incomparable: Go rejects the
+          -- comparison, or through interfaces panics at run time; not modelled.
+          | .func_ .. :: _, _ :: _ => unsupported "uncomparable"
+          | x :: xs, y :: ys => do if ← equal c n x y then go xs ys else pure false
+          | _, _ => pure true
+        go xs ys
+      | _, _ => pure false
 
 -- Calls
 
@@ -747,8 +802,6 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → GM (List Val)
           if path == "fmt" && fmtFuncs.contains f then
             return ← fmtCall c n f (← evalArgs c n env args)
           if !c.pkgs.contains path then unsupported s!"{path}.{f}"
-          if path == stdPath && libFuncs.contains f then
-            return ← libCall c n f (← evalArgs c n env args)
     | _ => pure ()
     -- A declared function called by name: a generic one gets its type arguments by
     -- inference from the arguments (Go spec, "Type inference").
@@ -783,7 +836,7 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → GM (List Val)
       throw (.panic v (← panicText c n v))
     | "new", [te] =>
       let t ← evalType c n env te
-      let cell ← alloc (← zero c n t)
+      let cell ← allocAs t (← zero c n t)
       pure [.ptr (.ptr t) (some ⟨cell, []⟩)]
     | "len", [a] =>
       match ← evalExpr c n env a with
@@ -801,6 +854,7 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → GM (List Val)
 def panicText (c : Ctx) : Nat → Val → GM String
   | 0, _ => throw .fuel
   | n + 1, v => do
+    let v := v.dyn
     match v with
     | .str (.untyped _) s | .str .string s => pure s
     | _ =>
@@ -815,10 +869,11 @@ def panicText (c : Ctx) : Nat → Val → GM String
 def callMethod? (c : Ctx) : Nat → Val → String → GM (Option Val)
   | 0, _, _ => throw .fuel
   | n + 1, v, m => do
+    let v := v.dyn
     match methodSet c v.ty m with
-    | some (p, tn, args, me) =>
+    | some (p, _, args, me) =>
       match me.sig with
-      | .mk [] [_] _ => return some (← Val.single (← callMethod c n p tn m args me v []))
+      | .mk [] [_] _ => return some (← Val.single (← callMethod c n p args me v []))
       | _ => return none
     | none => return none
 
@@ -827,8 +882,11 @@ def callValue (c : Ctx) : Nat → Val → List Val → GM (List Val)
   | 0, _, _ => throw .fuel
   | n + 1, fv, vs => do
     match fv with
-    | .func_ _ none => runtimePanic "invalid memory address or nil pointer dereference"
+    | .func_ _ none => nilDeref
     | .func_ _ (some (.decl path x targs)) =>
+      -- A function a model replaces runs as the model, however it is reached:
+      -- qualified, from inside its own package, instantiated or as a value.
+      if path == stdPath && libFuncs.contains x then return ← libCall c n x vs
       let p ← pkgCtx c path
       match p.objs.get? x with
       | some (.func fi tps sig body) =>
@@ -838,7 +896,7 @@ def callValue (c : Ctx) : Nat → Val → List Val → GM (List Val)
       | _ => stuck s!"{x} is not a function"
     | .func_ _ (some (.method p tn m args cell)) =>
       match methodOf c p tn m with
-      | some me => callMethod c n p tn m args me (← loadCell cell) vs
+      | some me => callMethod c n p args me (← loadCell cell) vs
       | none => stuck s!"no method {tn}.{m}"
     | .func_ _ (some (.closure id)) =>
       match (← get).closures[id]? with
@@ -846,19 +904,18 @@ def callValue (c : Ctx) : Nat → Val → List Val → GM (List Val)
         callBody c n { pkg := cl.pkg, file := cl.file, scopes := cl.scopes, tenv := cl.tenv }
           cl.sig (some cl.body) none vs
       | none => stuck "no closure"
-    | .func_ _ (some (.builtin b)) => unsupported s!"builtin-value-{b}"
     | _ => stuck "call of a non-function"
 
 /-- Call method `m` of type `p.tn[args]` with receiver `recv` (Go spec, "Method
     declarations"): a pointer receiver gets the pointer, a value receiver a copy of
     the value (through a pointer too, Go spec, "Calls"). -/
-def callMethod (c : Ctx) : Nat → String → String → String → List Ty → Method → Val → List Val → GM (List Val)
-  | 0, _, _, _, _, _, _, _ => throw .fuel
-  | n + 1, p, _tn, _m, args, me, recv, vs => do
+def callMethod (c : Ctx) : Nat → String → List Ty → Method → Val → List Val → GM (List Val)
+  | 0, _, _, _, _, _ => throw .fuel
+  | n + 1, p, args, me, recv, vs => do
     let recv ← if me.ptr then pure recv else
       match recv with
       | .ptr _ (some l) => load l
-      | .ptr _ none => runtimePanic "invalid memory address or nil pointer dereference"
+      | .ptr _ none => nilDeref
       | v => pure v
     let tenv := me.recvTParams.zip args
     callBody c n { pkg := p, file := me.file, tenv } me.sig me.body (some (me.recvName, recv)) vs
@@ -866,9 +923,9 @@ def callMethod (c : Ctx) : Nat → String → String → String → List Ty → 
 /-- Type arguments of a generic function from its arguments' types (Go spec, "Type
     inference"); an untyped constant argument has its default type. -/
 def inferTArgs (tps : List Field) (sig : Sig) (vs : List Val) : GM (List Ty) := do
-  let names := tps.flatMap fun | .mk ns _ => ns
+  let names := fieldListNames tps
   let .mk ps _ _ := sig
-  let ptys := ps.flatMap fun | .mk ns t => if ns.isEmpty then [t] else ns.map fun _ => t
+  let ptys := fieldTypes ps
   let eqs := (ptys.zip vs).flatMap fun (t, v) => unify names t (defaultVal v).ty
   names.mapM fun x => match eqs.lookup x with
     | some t => pure t
@@ -890,13 +947,13 @@ def callBody (c : Ctx) : Nat → Env → Sig → Option (List Stmt) → Option (
     if params.length != vs.length then stuck "wrong number of arguments"
     for ((x, te), v) in params.zip vs do
       let t ← evalType c n env te
-      env := env.bind x (← alloc (← convert c n t (← pure v)))
+      env := env.bind x (← allocAs t (← convert c n t v))
     let results := rs.flatMap fun | .mk ns t => if ns.isEmpty then [("", t)] else ns.map (·, t)
     let rtys ← results.mapM fun (_, te) => evalType c n env te
     let mut named : List Nat := []
     for ((x, _), t) in results.zip rtys do
       if !x.isEmpty then
-        let cell ← alloc (← zero c n t)
+        let cell ← allocAs t (← zero c n t)
         env := env.bind x cell
         named := named ++ [cell]
     let r ← tryCatch (do let _ ← execStmts c n env body; pure none) fun
@@ -945,15 +1002,9 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
         let .mk names te values := spec
         let vs ← if values.isEmpty then pure [] else evalArgs c n env values
         let t? ← te.mapM (evalType c n env)
-        let mut i := 0
-        for x in names do
-          let v ← match vs[i]?, t? with
-            | some v, some t => convert c n t v
-            | some v, none => pure (defaultVal v)
-            | none, some t => zero c n t
-            | none, none => stuck "var without type or value"
-          env := env.bind x (← alloc v)
-          i := i + 1
+        for (x, i) in names.zipIdx do
+          let v ← declValue c n t? vs[i]?
+          env := env.bind x (← allocAs (t?.getD v.ty) v)
       pure env
     | .decl (.value true _) => unsupported "local-const"
     | .decl (.type _) => unsupported "local-type"
@@ -971,18 +1022,14 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
     | .branch "continue" => throw .cont
     | .branch t => unsupported t
     | .if_ init cond body els => do
-      let env' ← match init with
-        | some i => execStmt c n env.push i
-        | none => pure env.push
+      let env' ← execInit c n env init
       if ← asBool (← evalExpr c n env' cond) then execBlock c n env' body
       else match els with
         | some e => let _ ← execStmt c n env' e
         | none => pure ()
       pure env
     | .switch init tag clauses => do
-      let env' ← match init with
-        | some i => execStmt c n env.push i
-        | none => pure env.push
+      let env' ← execInit c n env init
       let tv ← match tag with
         | some t => pure (defaultVal (← evalExpr c n env' t))
         | none => pure (.bool .bool true)
@@ -991,15 +1038,11 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
         | e => throw e
       pure env
     | .for_ init cond post body => do
-      let env' ← match init with
-        | some i => execStmt c n env.push i
-        | none => pure env.push
+      let env' ← execInit c n env init
       forLoop c n env' cond post body
       pure env
     | .typeSwitch init bind x clauses => do
-      let env' ← match init with
-        | some i => execStmt c n env.push i
-        | none => pure env.push
+      let env' ← execInit c n env init
       let v ← evalExpr c n env' x
       tryCatch (typeClauses c n env' bind v clauses) fun
         | .brk => pure ()
@@ -1008,19 +1051,37 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
     | .range .. => unsupported "range"
     | .unsupported k => unsupported k
 
-/-- The clauses of an expression switch: the first whose case equals the tag, else
-    `default` (Go spec, "Expression switches"). -/
+/-- The value a declared variable starts with: the initializer's value converted to the
+    declared type, the value with its default type, or the declared type's zero value
+    (Go spec, "Variable declarations"). Package-level variables start the same way. -/
+def declValue (c : Ctx) : Nat → Option Ty → Option Val → GM Val
+  | 0, _, _ => throw .fuel
+  | n + 1, t?, v? => do
+    match v?, t? with
+    | some v, some t => convert c n t v
+    | some v, none => pure (defaultVal v)
+    | none, some t => zero c n t
+    | none, none => stuck "var without type or value"
+
+/-- An `if`, `switch` or `for` statement's init statement, in a scope of its own that
+    the rest of the statement sees (Go spec, "Blocks": each such statement is in its own
+    implicit block). -/
+def execInit (c : Ctx) : Nat → Env → Option Stmt → GM Env
+  | 0, _, _ => throw .fuel
+  | n + 1, env, init => do
+    match init with
+    | some i => execStmt c n env.push i
+    | none => pure env.push
+
+/-- The clauses of an expression switch: the first whose case satisfies `tag == case`,
+    else `default` (Go spec, "Expression switches"). -/
 def switchClauses (c : Ctx) : Nat → Env → Val → List Clause → GM Unit
   | 0, _, _, _ => throw .fuel
   | n + 1, env, tv, clauses => do
     for clause in clauses do
       let .mk list _ body := clause
       for e in list do
-        let v ← evalExpr c n env e
-        if ← equal c n tv (← (match v.ty, tv.ty with
-            | .untyped _, .untyped _ => pure v
-            | .untyped _, t => convert c n t v
-            | _, _ => pure v)) then
+        if ← asBool (← binary c n "==" tv (← evalExpr c n env e)) then
           execBlock c n env body
           return
     for clause in clauses do
@@ -1037,24 +1098,27 @@ def switchClauses (c : Ctx) : Nat → Env → Val → List Clause → GM Unit
 def typeClauses (c : Ctx) : Nat → Env → Option String → Val → List Clause → GM Unit
   | 0, _, _, _, _ => throw .fuel
   | n + 1, env, bind, v, clauses => do
-    let run := fun (body : List Stmt) => do
+    -- The clause's variable holds `w`, of declared type `t`.
+    let run := fun (body : List Stmt) (t : Ty) (w : Val) => do
       let mut env := env.push
-      if let some x := bind then env := env.bind x (← alloc v)
+      if let some x := bind then env := env.bind x (← allocAs t w)
       execBlock c n env body
     for clause in clauses do
       let .mk list _ body := clause
       for te in list do
         let hit ← match te, v with
-          | .ident "nil", .nilIface _ => pure (env.lookup "nil").isNone
-          | .ident "nil", _ => pure false
-          | te, _ => do pure (← assertType c n v (← evalType c n env te)).isSome
-        if hit then
-          run body
+          | .ident "nil", .nilIface _ => pure (if (env.lookup "nil").isNone then some v else none)
+          | .ident "nil", _ => pure none
+          | te, _ => do assertType c n v (← evalType c n env te)
+        if let some w := hit then
+          -- With one type listed, the variable has that type and the asserted value;
+          -- otherwise the guard's interface type and value.
+          if let [_] := list then run body w.ty w else run body v.ty v
           return
     for clause in clauses do
       let .mk _ isDefault body := clause
       if isDefault then
-        run body
+        run body v.ty v
         return
 
 /-- `for init; cond; post { body }` (Go spec, "For statements with for clause"). Each
@@ -1064,8 +1128,8 @@ def typeClauses (c : Ctx) : Nat → Env → Option String → Val → List Claus
 def forLoop (c : Ctx) : Nat → Env → Option Expr → Option Stmt → List Stmt → GM Unit
   | 0, _, _, _, _ => throw .fuel
   | n + 1, env, cond, post, body => do
-    let loopVars := env.scopes.headD []
     let budget := (← get).steps + 1
+    -- The innermost scope is the init statement's: the loop variables.
     loopM budget env fun env => do
       tick
       if let some cnd := cond then
@@ -1075,11 +1139,11 @@ def forLoop (c : Ctx) : Nat → Env → Option Expr → Option Stmt → List Stm
         | .cont => pure true
         | e => throw e
       if !r then return none
-      -- Fresh copies of the loop variables for the next iteration.
-      let mut env := env
-      for (x, _) in loopVars.reverse do
-        if let some cell := env.lookup x then
-          env := env.bind x (← alloc (← loadCell cell))
+      -- Fresh copies of the loop variables for the next iteration, in place of the
+      -- old ones.
+      let fresh ← (env.scopes.headD []).mapM fun (x, cell) => do
+        pure (x, ← allocAs (← cellType cell) (← loadCell cell))
+      let env := { env with scopes := fresh :: env.scopes.tail }
       if let some p := post then
         let _ ← execStmt c n env p
       return some env
@@ -1099,9 +1163,7 @@ def assign (c : Ctx) : Nat → Env → String → List Expr → List Expr → GM
         | .ident "_" => pure ()
         | .ident y =>
           match current.lookup y with
-          | some cell =>
-            let old ← loadCell cell
-            storeCell cell (← convert c n old.ty v)
+          | some cell => storeCell cell (← convert c n (← cellType cell) v)
           | none => env := env.bind y (← alloc (defaultVal v))
         | _ => stuck ":= of a non-name"
       return env
@@ -1221,8 +1283,16 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
           return ← fmtArg c n inner verb
         unsupported "fmt-formatter"
       if ['v', 's'].contains verb then
-        if let some r ← callMethod? c n v "Error" then return ← asStr r
-        if let some r ← callMethod? c n v "String" then return ← asStr r
+        -- `catchPanic`: a nil pointer whose method panics prints `<nil>`; any other
+        -- panic in the method prints a `%!v(PANIC=...)` text, which is not modelled.
+        let guarded := fun (m : String) =>
+          tryCatch (callMethod? c n v m) fun
+            | .panic .. => match v with
+              | .ptr _ none => pure (some (.str .string "<nil>"))
+              | _ => unsupported "fmt-method-panic"
+            | e => throw e
+        if let some r ← guarded "Error" then return ← asStr r
+        if let some r ← guarded "String" then return ← asStr r
     match v with
     | .int _ x =>
       if ['v', 'd'].contains verb then pure (toString x) else unsupported s!"fmt-verb-{verb}-int"
@@ -1232,7 +1302,7 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
       if verb != 'v' then unsupported "fmt-verb-struct"
       let .struct_ ftys ← underlying c n t | stuck "struct value of a non-struct type"
       let parts ← (fs.zip ftys).mapM fun (f, (name, _)) =>
-        fmtField c n f (depth + 1) (canIface && exported name)
+        fmtValue c n f 'v' (depth + 1) (canIface && exported name)
       pure ("{" ++ " ".intercalate parts ++ "}")
     | .ptr _ none => pure "<nil>"
     | .ptr _ (some l) =>
@@ -1245,15 +1315,9 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
     | .func_ .. => unsupported "print-pointer"
     | .tuple _ => stuck "printing several values"
     | .poison w => unsupported w
-
-/-- A struct field printed by `printValue`: an interface field prints its dynamic
-    value, a nil one `<nil>`. -/
-def fmtField (c : Ctx) : Nat → Val → Nat → Bool → GM String
-  | 0, _, _, _ => throw .fuel
-  | n + 1, v, depth, canIface => do
-    match v with
-    | .nilIface _ => pure "<nil>"
-    | _ => fmtValue c n v 'v' depth canIface
+    -- An interface value prints its dynamic value (`printValue`'s `reflect.Interface`);
+    -- its interface type has no methods of its own, so none were called above.
+    | .boxed _ d => fmtValue c n d verb depth canIface
 
 /-- Models of the standard library's hand-written functions (std/types.go), which use
     reflection and are outside GoCore. Each follows the code it names, by line range at
@@ -1269,7 +1333,7 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     -- `FormatStruct(name, fields...)` (std/types.go, lines 559-572): `Name(f1, f2, ...)`, each field unwrapped from
     -- its `Immutable` and printed by `formatField`.
     | "FormatStruct", name :: fields =>
-      let parts ← fields.mapM fun f => do formatField c n (← unwrapImmutable c n f)
+      let parts ← fields.mapM fun f => formatField c n (unwrapImmutable f)
       pure [.str .string ((← asStr name) ++ "(" ++ ", ".intercalate parts ++ ")")]
     -- `Equal[T](a, b T)` (std/types.go, lines 205-217 and 259-270): a predeclared primitive type compares with `==`; a type with
     -- `Equal(T) bool` uses it (`equalPrimitive`, `Equatable[T]`); the reflective rest is
@@ -1279,7 +1343,7 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
       | .int _ | .bool | .string => pure [.bool .bool (← equal c n a b)]
       | _ =>
         match methodSet c a.ty "Equal" with
-        | some (p, tn, args, me) => callMethod c n p tn "Equal" args me a [b]
+        | some (p, _, args, me) => callMethod c n p args me a [b]
         | none => unsupported "std.Equal-reflective"
     -- `Copy[T](v T) T` (std/types.go, lines 122-145 and 200-203): a nil pointer is returned as it is, a value with its own
     -- `Copy() T` is copied by it; the reflective rest is unsupported.
@@ -1288,23 +1352,15 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
       | .ptr _ none | .nilIface _ => pure [v]
       | _ =>
         match methodSet c v.ty "Copy" with
-        | some (p, tn, args, me) =>
+        | some (p, _, args, me) =>
           match v, me.ptr with
           | .ptr _ _, false => pure [v]  -- copiesPointee: the pointee's Copy, returned as is
-          | _, _ => callMethod c n p tn "Copy" args me v []
+          | _, _ => callMethod c n p args me v []
         | none =>
           match v with
           | .int (.int _) _ | .bool .bool _ | .str .string _ => pure [v]
           | _ => unsupported "std.Copy-reflective"
     | _, _ => unsupported s!"std.{f}"
-
-/-- `unwrapImmutable`: an `Immutable` value's wrapped value (std/types.go, lines 103-108). -/
-def unwrapImmutable (_c : Ctx) : Nat → Val → GM Val
-  | 0, _ => throw .fuel
-  | _ + 1, v => do
-    match v.ty, v with
-    | .named p "Immutable" _, .struct_ _ [inner] => if p == stdPath then pure inner else pure v
-    | _, _ => pure v
 
 /-- `formatField` and `printed` (std/types.go, lines 574-610 and 706-711): a function prints `<fn>`; a non-nil pointer to a
     value that prints itself or to a struct prints as `%v` of the pointer, `<cycle>`

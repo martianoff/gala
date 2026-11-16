@@ -13,21 +13,19 @@
     the variables and functions its initializer refers to, and transitively on what those
     functions refer to; a method is referred to by its name (`x.m` refers to every method
     `m` of the package), which can only add dependencies Go does not count.
-  * **An imported package's variable whose initializer GoCore cannot run** (it reaches
-    a construct outside GoCore, such as reflection in the standard library's hand-written
-    Go) is left *poisoned*: reading it stops the run with that construct. This assumes
-    such an initializer prints nothing and does not panic, the assumption galaspec makes
-    for the packages it lets a program import (`Json.noOutputInitImports`). In the main
-    package the run stops there instead.
+  * **A variable whose initializer GoCore cannot run** (it reaches a construct outside
+    GoCore, such as reflection in the standard library's hand-written Go) is left
+    *poisoned*, reading it stopping the run with that construct, only in a package of
+    `quietInitPackages`: the packages galaspec and gala2lean assume print nothing and
+    do not panic while they initialize, the same list, kept equal by a test. In any
+    other package the run stops there, since that initializer might have printed.
+  * **`init` functions** run after their package's variables, in source order.
 -/
 import Gala.GoCore.Eval
 
 namespace Gala.GoCore.Full
 
 open Std (HashMap)
-
-/-- The names a field list binds. -/
-def boundBy (fs : List Field) : List String := fs.flatMap fun | .mk ns _ => ns
 
 /-- The names `:=` declares. -/
 def declaredBy : List Expr → List String
@@ -44,7 +42,7 @@ def refsE (bound : List String) : Expr → List String
   | .composite t es => refsOE bound t ++ refsEs bound es
   | .keyValue (.ident _) v => refsE bound v
   | .keyValue k v => refsE bound k ++ refsE bound v
-  | .funcLit (.mk ps rs _) body => (refsSs (bound ++ boundBy ps ++ boundBy rs) body).1
+  | .funcLit (.mk ps rs _) body => (refsSs (bound ++ fieldListNames ps ++ fieldListNames rs) body).1
   | .paren x | .star x | .unary _ x => refsE bound x
   | .index x is => refsE bound x ++ refsEs bound is
   | .typeAssert x t => refsE bound x ++ refsE bound t
@@ -109,42 +107,58 @@ def specNames : List Spec → List String
 end
 
 
+
+
+/-- The packages whose initialization prints nothing and does not panic: the list galaspec
+    lets a program import (`noOutputInitImports` in `Gala/Json.lean`) and gala2lean
+    shares, kept equal to them by a test (`TestNoOutputInitImportsInStep`), which also
+    checks the assumption for the GALA packages in it (`TestQuietInitPackages`). -/
+def quietInitPackages : List String :=
+  ["bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+   "unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable"]
+
 /-- The package-level variables of `p` the expressions `es` depend on, transitively
-    through the functions and methods they refer to. -/
-def varDeps (p : PkgCtx) (es : List Expr) : List String := Id.run do
+    through the functions and methods they refer to; `none` if the walk outgrew its
+    bound, which only a program with more than a million references reaches. -/
+def varDeps (p : PkgCtx) (es : List Expr) : Option (List String) := Id.run do
   let body (sig : Sig) (extra : List String) (ss : List Stmt) : List String :=
     let .mk ps rs _ := sig
-    (refsSs (extra ++ boundBy ps ++ boundBy rs) ss).1
-  let mut seen : List String := []
+    (refsSs (extra ++ fieldListNames ps ++ fieldListNames rs) ss).1
+  let mut seen : Std.HashSet String := {}
   let mut todo := es.flatMap (refsE [])
   let mut vars : List String := []
   -- Each declaration's body is added once (`seen`), so the worklist empties; the
   -- bound only makes that structural.
   for _ in [0:1000000] do
     match todo with
-    | [] => break
+    | [] => return some vars
     | x :: rest =>
       todo := rest
       if seen.contains x then continue
-      seen := x :: seen
+      seen := seen.insert x
       match p.objs.get? x with
       | some (.var ..) => vars := x :: vars
       | some (.func _ _ sig (some ss)) => todo := body sig [] ss ++ todo
       | _ => pure ()
       -- `x` may name methods.
-      for (k, m) in p.methods.toList do
-        if k.endsWith s!".{x}" then
-          if let some ss := m.body then todo := body m.sig [m.recvName] ss ++ todo
-  return vars
+      for m in p.methodsByName.getD x [] do
+        if let some ss := m.body then todo := body m.sig [m.recvName] ss ++ todo
+  return if todo.isEmpty then some vars else none
 
-/-- Initialize the package-level variables of package `path`. -/
-def initPkg (c : Ctx) (n : Nat) (path : String) (isMain : Bool) : GM Unit := do
+/-- Initialize the package-level variables of package `path`, then run its `init`
+    functions in source order (Go spec, "Package initialization"). In a package of
+    `quietInitPackages`, a variable whose initializer reaches a construct outside
+    GoCore is poisoned; anywhere else that stops the run. -/
+def initPkg (c : Ctx) (n : Nat) (path : String) : GM Unit := do
   let p ← pkgCtx c path
+  let quiet := quietInitPackages.contains path
   let decls := p.vars.toList.zipIdx
-  let deps := decls.map fun (d, i) => (i, varDeps p (d.values ++ d.ty.toList))
-  let mut done : List Nat := []
+  let deps ← decls.mapM fun (d, i) => match varDeps p (d.values ++ d.ty.toList) with
+    | some vs => pure (i, vs)
+    | none => unsupported "init-dependencies"
+  let mut done : Std.HashSet Nat := {}
+  let mut initialized : Std.HashSet String := {}
   for _ in [0:decls.length] do
-    let initialized := done.flatMap fun i => (p.vars[i]?.map (·.names)).getD []
     let ready := decls.find? fun (d, i) =>
       !done.contains i && ((deps.lookup i).getD []).all fun x => initialized.contains x || d.names.contains x
     let some (d, i) := ready | stuck s!"initialization cycle in {path}"
@@ -152,26 +166,22 @@ def initPkg (c : Ctx) (n : Nat) (path : String) (isMain : Bool) : GM Unit := do
     let r ← tryCatch (do
         let vs ← if d.values.isEmpty then pure [] else evalArgs c n env d.values
         let t? ← d.ty.mapM (evalType c n env)
-        let mut out : List Val := []
-        for k in [0:d.names.length] do
-          let v ← match vs[k]?, t? with
-            | some v, some t => convert c n t v
-            | some v, none => pure (defaultVal v)
-            | none, some t => zero c n t
-            | none, none => stuck "var without type or value"
-          out := out ++ [v]
-        pure (Except.ok out))
+        let vals ← (List.range d.names.length).mapM fun k => declValue c n t? vs[k]?
+        pure (Except.ok (vals.map fun v => (t?.getD v.ty, v))))
       fun
-        | .unsupported what => if isMain then throw (.unsupported what) else pure (.error what)
+        | .unsupported what => if quiet then pure (.error what) else throw (.unsupported what)
         | e => throw e
     let vals := match r with
       | .ok vs => vs
-      | .error what => d.names.map fun _ => .poison what
-    for (x, v) in d.names.zip vals do
+      | .error what => d.names.map fun _ => (Ty.tuple [], Val.poison what)
+    for (x, (t, v)) in d.names.zip vals do
       if x != "_" then
-        let cell ← alloc v
+        let cell ← allocAs t v
         modify fun s => { s with globals := s.globals.insert s!"{path}.{x}" cell }
-    done := i :: done
+      initialized := initialized.insert x
+    done := done.insert i
+  for (fi, body) in p.inits do
+    let _ ← callBody c n { pkg := path, file := fi } (.mk [] [] false) body none []
 
 /-- The order packages are initialized in (Go spec, "Package initialization"). -/
 def pkgOrder (c : Ctx) : List String := Id.run do
@@ -212,7 +222,7 @@ def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
   let depth := min fuel maxDepth
   let go : GM Unit := do
     for path in pkgOrder c do
-      initPkg c depth path (path == c.main)
+      initPkg c depth path
     let mainFn ← funcVal c depth c.main "main" []
     let _ ← callValue c depth mainFn []
   let (r, s) := (go.run).run { cells := #[], closures := #[], out := "", steps := fuel }

@@ -172,9 +172,9 @@ Go is tested, not proved.
 | `:=`, `=` (two phases), `op=`, `++`/`--`, `var`, blocks and shadowing ("Assignment statements", "Blocks") | yes |
 | `if`, expression `switch`, type `switch`, `for` with `break`/`continue` and per-iteration loop variables ("If statements", "Switch statements", "For statements") | yes |
 | Functions, methods with value and pointer receivers, method sets, method values, closures, named results ("Function declarations", "Method sets", "Function literals") | yes |
-| Structs, composite literals, type assertions, interfaces holding a value with its dynamic type ("Struct types", "Composite literals", "Type assertions") | yes |
+| Structs, composite literals, interface values (their interface type and dynamic value; a nil pointer inside one is not nil), type assertions ("Struct types", "Composite literals", "Interface types", "Type assertions") | yes |
 | Generic functions and types, type arguments explicit or inferred from the arguments ("Instantiations", "Type inference") | yes |
-| Package-level variables in dependency order, packages in import order ("Package initialization") | yes |
+| Package-level variables in dependency order, then `init` functions; packages in import order ("Package initialization") | yes |
 | `panic` with Go's printed text: a string, an error's `Error()`, a Stringer's `String()` ("Handling panics") | yes |
 | `fmt.Println`, `Print`, `Sprint`, `Sprintf` with `%v %d %s %t %%`; `String`, `Error` and `Format` by method set; `&{...}` for a top-level pointer to a struct; no methods through unexported fields | yes (a model) |
 | `std.FormatStruct`, `Copy`, `Equal`, `EvalOperand`, `Immutable.Format` (hand-written, reflective) | yes (models, `libFuncs` in `Gala/GoCore/Eval.lean`) |
@@ -182,17 +182,39 @@ Go is tested, not proved.
 
 A run ends `ok`, `panic` (with Go's text), `fuel` (out of steps or depth: inconclusive),
 `unsupported:<construct>`, or `stuck`, which no program Go compiles reaches: a GoCore or
-exporter bug. A variable of an imported package whose initializer reaches a construct
-outside GoCore (reflection in `std/types.go`) is left poisoned: reading it ends the run
-`unsupported`. This assumes the initializer prints nothing and does not panic, as
-galaspec assumes for the packages it lets a program import.
+exporter bug. GoCore's semantics is defined for programs `go build` accepts; on others its
+answer is unspecified.
+
+Besides the constructs in the last row, a run ends `unsupported` at:
+- a failed type assertion (Go's panic text names the static interface type);
+- `==` on values Go cannot compare (`uncomparable`);
+- an untyped constant shifted by a non-constant count (`untyped-shift`), whose type comes
+  from its context;
+- an interface type that embeds another (`embedded-interface`);
+- a member promoted from an embedded field (`promoted-selector`);
+- a `String` or `Error` method that panics while `fmt` prints, except on a nil pointer,
+  which prints `<nil>` as `fmt` does.
+
+In a package of `quietInitPackages` (`Gala/GoCore/Run.lean`, the same list as galaspec's
+`noOutputInitImports`, kept equal by `TestNoOutputInitImportsInStep`), a variable whose
+initializer reaches a construct outside GoCore, such as reflection in `std/types.go`, is
+left poisoned: reading it ends the run `unsupported`. This rests on the assumption galaspec
+and gala2lean share, that these packages print nothing and do not panic while they
+initialize. In any other package such an initializer ends the run `unsupported`.
 
 **Tested:** `formal/tests/gocore` holds Go programs whose output, outcome and panic text
-come from a real `go run` (`tests/gocore/regen.sh`): integer wrapping and shifts, method
-sets and `fmt` (a value-receiver `String` for `T` and `*T`, a pointer-receiver one only for
-`*T`, an unexported field), control flow and loop variables, initialization order,
-generics, two panics, fuel and an unsupported construct. The differential run over the
-corpus is the next part of M4.
+come from a real `go run` (`tests/gocore/regen.sh`). They cover:
+- integer wrapping and shifts;
+- method sets and `fmt`: a value-receiver `String` for `T` and `*T`, a pointer-receiver
+  one only for `*T`, an unexported field;
+- control flow and loop variables;
+- initialization order;
+- interface values: a nil pointer in an `error` that is not nil, comparison by dynamic
+  type, reassignment to another dynamic type, method values, `init` functions, `<nil>` for
+  a nil receiver;
+- generics, two panics, fuel and an unsupported construct.
+
+The differential run over the corpus is the next part of M4.
 
 ## gala2lean
 

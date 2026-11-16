@@ -45,6 +45,17 @@ func TestNoOutputInitImportsInStep(t *testing.T) {
 		lean = append(lean, m[1])
 	}
 	require.Equal(t, lean, noOutputInitImports, "gala2lean's noOutputInitImports differs from galaspec's")
+
+	// GoCore (formal/Gala/GoCore/Run.lean) rests on the same assumption where it
+	// leaves an imported package's variable poisoned instead of stopping the run.
+	gocore := readRunfiles(t, "GOCORE_RUN_LEAN")[os.Getenv("GOCORE_RUN_LEAN")]
+	def = regexp.MustCompile(`(?s)def quietInitPackages : List String :=\s*\[(.*?)\]`).FindStringSubmatch(gocore)
+	require.NotNil(t, def, "no quietInitPackages in formal/Gala/GoCore/Run.lean")
+	var quiet []string
+	for _, m := range regexp.MustCompile(`"([^"]*)"`).FindAllStringSubmatch(def[1], -1) {
+		quiet = append(quiet, m[1])
+	}
+	require.Equal(t, lean, quiet, "GoCore's quietInitPackages differs from galaspec's noOutputInitImports")
 }
 
 // TestQuietInitPackages checks the assumption noOutputInitImports rests on
