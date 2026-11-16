@@ -1620,9 +1620,7 @@ func (b *Builder) Test(verbose bool) error {
 func (b *Builder) RunTests(opts TestOptions) (err error) {
 	report := NewTestReport(b.reportPackageName)
 	defer func() {
-		if !report.Empty() {
-			report.WriteSummary(os.Stdout)
-		}
+		report.WriteSummary(os.Stdout)
 		if opts.JUnitPath == "" {
 			return
 		}
@@ -1651,7 +1649,7 @@ func (b *Builder) moduleLabel() string {
 // reportPackageName maps a workspace package path, as the `go` command
 // reports it, back to the project's own import path.
 func (b *Builder) reportPackageName(pkg string) string {
-	gen := WorkspaceModule + "/gen"
+	gen := WorkspaceGenModule
 	if pkg == gen {
 		return b.moduleLabel()
 	}
@@ -1828,7 +1826,7 @@ func (b *Builder) runTests(verbose bool, report *TestReport) error {
 		}
 
 		if err := cmd.Run(); err != nil {
-			report.AddBuildFailure(rootTestPackage, buildOutput.String())
+			report.AddBuildFailure(WorkspaceGenModule, buildOutput.String())
 			return fmt.Errorf("go build (test): %w", err)
 		}
 
@@ -1856,16 +1854,12 @@ func (b *Builder) runTests(verbose bool, report *TestReport) error {
 	return errors.Join(rootErr, subErr)
 }
 
-// rootTestPackage is the workspace package a package-main root's test
-// binary is built from.
-const rootTestPackage = WorkspaceModule + "/gen"
-
 // runTestBinary runs a package-main root's test binary in the project
 // directory, its output streamed to the terminal as it comes and converted
 // to test events by `go tool test2json` for the report. It returns the
 // binary's test failure as testErr, and err when the binary could not run.
 func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr, err error) {
-	conv := b.workspaceGoCmd("tool", "test2json", "-t", "-p", rootTestPackage)
+	conv := b.workspaceGoCmd("tool", "test2json", "-t", "-p", WorkspaceGenModule)
 	conv.Stderr = os.Stderr
 	in, err := conv.StdinPipe()
 	if err != nil {
@@ -1910,7 +1904,7 @@ func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr,
 		// test2json reading a stream judges the package by its last line;
 		// a binary that died without printing FAIL failed all the same.
 		if !printer.failed {
-			report.Add(TestEvent{Action: "fail", Package: rootTestPackage, Elapsed: time.Since(start).Seconds()})
+			report.Add(TestEvent{Action: "fail", Package: WorkspaceGenModule, Elapsed: time.Since(start).Seconds()})
 		}
 	}
 	if consumeErr != nil || convErr != nil {

@@ -57,9 +57,7 @@ func TestSquare(t T) T = Eq(t, Square(4), 16)
 `,
 	}
 	for name, content := range files {
-		p := filepath.Join(projectDir, filepath.FromSlash(name))
-		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
-		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
 	}
 
 	isolateUserState(t)

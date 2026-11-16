@@ -2,6 +2,7 @@ package build
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -88,10 +89,10 @@ func (r *TestReport) pkg(path string) *packageResult {
 
 // framingLine matches the lines a test runner prints around a test, which
 // are not part of what the test itself logged.
-var framingLine = regexp.MustCompile(`^\s*(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|FAIL|SKIP):)`)
+var framingLine = regexp.MustCompile(`^(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|FAIL|SKIP):)`)
 
 // reportLine matches a test's own result line, "--- PASS: TestX (0.00s)".
-var reportLine = regexp.MustCompile(`^\s*--- (PASS|FAIL|SKIP): (\S+)`)
+var reportLine = regexp.MustCompile(`^--- (PASS|FAIL|SKIP): (\S+)`)
 
 // Add records one event.
 func (r *TestReport) Add(ev TestEvent) {
@@ -138,10 +139,16 @@ func (r *TestReport) Add(ev TestEvent) {
 			p.output.WriteString(ev.Output)
 			return
 		}
-		if m := reportLine.FindStringSubmatch(ev.Output); m != nil && m[2] == ev.Test {
+		// Only a line starting "=== " or "--- " can be framing.
+		line := strings.TrimLeft(ev.Output, " \t")
+		if !strings.HasPrefix(line, "=== ") && !strings.HasPrefix(line, "--- ") {
+			t.output.WriteString(ev.Output)
+			return
+		}
+		if m := reportLine.FindStringSubmatch(line); m != nil && m[2] == ev.Test {
 			t.reported = true
 		}
-		if !framingLine.MatchString(ev.Output) {
+		if !framingLine.MatchString(line) {
 			t.output.WriteString(ev.Output)
 		}
 	case "pass", "fail", "skip":
@@ -158,8 +165,7 @@ func (r *TestReport) finishFailedPackage(p *packageResult, ev TestEvent) {
 			t.action = "fail"
 		}
 	}
-	buildFailed := ev.FailedBuild != "" || strings.Contains(p.output.String(), "[build failed]")
-	if buildFailed {
+	if ev.FailedBuild != "" {
 		out := p.output.String()
 		if b, ok := r.buildOutput[ev.FailedBuild]; ok {
 			out = b.String()
@@ -185,29 +191,28 @@ func (r *TestReport) AddBuildFailure(pkgPath, output string) {
 
 // Empty reports whether no package has a result.
 func (r *TestReport) Empty() bool {
-	return len(r.reportedPackages()) == 0
-}
-
-// HasFailures reports whether any package failed.
-func (r *TestReport) HasFailures() bool {
-	for _, p := range r.reportedPackages() {
-		if p.action == "fail" {
-			return true
+	for _, p := range r.packages {
+		if p.hasResult() {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+// hasResult reports whether the package has something to report. A package
+// with no tests that was skipped ("no test files") has nothing.
+func (p *packageResult) hasResult() bool {
+	return len(p.tests) > 0 || p.buildFailure != nil || p.action == "fail"
 }
 
 // reportedPackages returns the packages that have something to report,
-// sorted by name. A package with no tests that was skipped ("no test files")
-// has nothing.
+// sorted by name.
 func (r *TestReport) reportedPackages() []*packageResult {
 	var pkgs []*packageResult
 	for _, p := range r.packages {
-		if len(p.tests) == 0 && p.buildFailure == nil && p.action != "fail" {
-			continue
+		if p.hasResult() {
+			pkgs = append(pkgs, p)
 		}
-		pkgs = append(pkgs, p)
 	}
 	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].name < pkgs[j].name })
 	return pkgs
@@ -240,10 +245,18 @@ func (p *packageResult) counts() packageCounts {
 	return c
 }
 
+func (c *packageCounts) add(o packageCounts) {
+	c.tests += o.tests
+	c.passed += o.passed
+	c.failures += o.failures
+	c.errors += o.errors
+	c.skipped += o.skipped
+}
+
 // failureMessage is the one-line reason a test failed: the first error the
 // test reported, or a panic.
 func failureMessage(t *testResult, p *packageResult) string {
-	for _, line := range strings.Split(t.output.String(), "\n") {
+	for line := range strings.Lines(t.output.String()) {
 		line = strings.TrimSpace(line)
 		for _, prefix := range []string{"ERROR: ", "FATAL: "} {
 			if strings.HasPrefix(line, prefix) {
@@ -257,13 +270,18 @@ func failureMessage(t *testResult, p *packageResult) string {
 	if t.name == packageFailedCase {
 		return "the test binary failed outside of any test"
 	}
-	if t.action == "fail" && t.output.Len() == 0 && hasFailedSubtest(t, p) {
+	if failedOnlyThroughSubtest(t, p) {
 		return "a subtest failed"
 	}
 	return "test failed"
 }
 
-func hasFailedSubtest(t *testResult, p *packageResult) bool {
+// failedOnlyThroughSubtest reports whether t failed with nothing of its own
+// to say, because a subtest failed.
+func failedOnlyThroughSubtest(t *testResult, p *packageResult) bool {
+	if t.action != "fail" || t.output.Len() > 0 {
+		return false
+	}
 	for _, sub := range p.tests {
 		if strings.HasPrefix(sub.name, t.name+"/") && sub.action == "fail" {
 			return true
@@ -317,7 +335,8 @@ func junitTime(seconds float64) string { return fmt.Sprintf("%.3f", seconds) }
 
 func (r *TestReport) junit() junitTestSuites {
 	all := junitTestSuites{Name: "gala test"}
-	var total float64
+	var total packageCounts
+	var elapsed float64
 	for _, p := range r.reportedPackages() {
 		c := p.counts()
 		suite := junitTestSuite{
@@ -336,34 +355,36 @@ func (r *TestReport) junit() junitTestSuites {
 				Time:      junitTime(0),
 				Error:     &junitMessage{Message: "build failed", Type: "BuildError", Body: *p.buildFailure},
 			}}
+		} else {
+			suite.TestCases = p.junitTestCases()
 		}
-		for _, t := range p.tests {
-			if p.buildFailure != nil {
-				break
-			}
-			tc := junitTestCase{Name: t.name, Classname: p.name, Time: junitTime(t.elapsed)}
-			out := t.output.String()
-			switch t.action {
-			case "pass":
-				tc.SystemOut = out
-			case "skip":
-				tc.Skipped = &junitMessage{Message: "skipped", Body: out}
-			case "error":
-				tc.Error = &junitMessage{Message: failureMessage(t, p), Body: p.output.String()}
-			default:
-				tc.Failure = &junitMessage{Message: failureMessage(t, p), Body: out}
-			}
-			suite.TestCases = append(suite.TestCases, tc)
-		}
-		all.Tests += c.tests
-		all.Failures += c.failures
-		all.Errors += c.errors
-		all.Skipped += c.skipped
-		total += p.elapsed
+		total.add(c)
+		elapsed += p.elapsed
 		all.Suites = append(all.Suites, suite)
 	}
-	all.Time = junitTime(total)
+	all.Tests, all.Failures, all.Errors, all.Skipped = total.tests, total.failures, total.errors, total.skipped
+	all.Time = junitTime(elapsed)
 	return all
+}
+
+func (p *packageResult) junitTestCases() []junitTestCase {
+	var cases []junitTestCase
+	for _, t := range p.tests {
+		tc := junitTestCase{Name: t.name, Classname: p.name, Time: junitTime(t.elapsed)}
+		out := t.output.String()
+		switch t.action {
+		case "pass":
+			tc.SystemOut = out
+		case "skip":
+			tc.Skipped = &junitMessage{Message: "skipped", Body: out}
+		case "error":
+			tc.Error = &junitMessage{Message: failureMessage(t, p), Body: p.output.String()}
+		default:
+			tc.Failure = &junitMessage{Message: failureMessage(t, p), Body: out}
+		}
+		cases = append(cases, tc)
+	}
+	return cases
 }
 
 // WriteJUnit writes the report as JUnit XML.
@@ -383,20 +404,15 @@ func (r *TestReport) WriteJUnit(w io.Writer) error {
 // WriteJUnitFile writes the report as JUnit XML to path, creating its
 // directory if needed.
 func (r *TestReport) WriteJUnitFile(path string) error {
-	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("writing JUnit report: %w", err)
-		}
+	var buf bytes.Buffer
+	err := r.WriteJUnit(&buf)
+	if err == nil {
+		err = os.MkdirAll(filepath.Dir(path), 0o755)
 	}
-	f, err := os.Create(path)
+	if err == nil {
+		err = os.WriteFile(path, buf.Bytes(), 0o644)
+	}
 	if err != nil {
-		return fmt.Errorf("writing JUnit report: %w", err)
-	}
-	if err := r.WriteJUnit(f); err != nil {
-		f.Close()
-		return fmt.Errorf("writing JUnit report: %w", err)
-	}
-	if err := f.Close(); err != nil {
 		return fmt.Errorf("writing JUnit report: %w", err)
 	}
 	return nil
@@ -422,10 +438,7 @@ func (r *TestReport) WriteSummary(w io.Writer) {
 			status = "FAIL"
 		}
 		c := p.counts()
-		total.passed += c.passed
-		total.failures += c.failures
-		total.errors += c.errors
-		total.skipped += c.skipped
+		total.add(c)
 		if p.buildFailure != nil {
 			fmt.Fprintf(w, "%s  %-*s  build failed\n", status, width, p.name)
 			continue
@@ -445,7 +458,7 @@ func (r *TestReport) WriteSummary(w io.Writer) {
 			}
 			// A test that failed only because a subtest did is listed
 			// through that subtest.
-			if t.output.Len() == 0 && hasFailedSubtest(t, p) {
+			if failedOnlyThroughSubtest(t, p) {
 				continue
 			}
 			failures = append(failures, fmt.Sprintf("  %s: %s\n      %s\n", p.name, t.name, failureMessage(t, p)))
