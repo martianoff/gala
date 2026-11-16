@@ -3127,15 +3127,24 @@ parameters take a call's results one for one receives them this way.
 One body gives one kind of value, the `Try` or the `Tuple` of the results. A
 body that gives a value of another type, or both kinds, is
 [GALA-E0134](errors/GALA-E0134.md). A lambda passed where Go expects a
-`func(...) (T, error)` follows the same rule, and so does an argument passed
+`func(...) (T, error)` whose results are all known follows the same rule, and so
+does an argument passed
 where Go expects a `func() (T, error)` (`run(ResultsOf(strconv.Atoi(s)))`).
 Each value is checked where it is written: a `return`, the trailing value,
 each branch of an `if` and each arm of a `match`. A tuple of the results
 (`(n, nil)`) is a `Tuple[T, error]` too, its `nil` the error. Each component
 needs only to be assignable to its result, so `ResultsOf(os.Open(p))` fills
-`(io.Reader, error)`. In the slot of a generic Go callee, as in
-`sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))`, the Tuple works the same
-way, and Go infers the type arguments from it.
+`(io.Reader, error)`. On a failure Go then receives a non-nil `io.Reader`
+holding a nil `*os.File`, exactly as Go's own `return os.Open(p)` gives it, so
+callers check `err`, not `r != nil`.
+
+A lambda or by-name argument passed to a **generic** Go function whose results
+are still open (`sync.OnceValues`, a `func() (T, error)` parameter of a generic
+callee) gives one kind of value with a single trailing value:
+`sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))` or `runG(() => (4, nil))`,
+and Go infers the type arguments from it. Mixing kinds there, an early
+`return (0, nil)`, or an if or match whose branches give different kinds is
+not checked yet and fails in `go build`.
 
 A call of the function itself is its `Try`, as any call of it is: in a body
 that gives the Tuple, write a recursive call `ResultsOf(down(k - 1))`. E0134
