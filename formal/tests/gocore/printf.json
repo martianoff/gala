@@ -762,15 +762,47 @@
                             "line": 23,
                             "col": 13
                           },
-                          "value": "[%.3d] [%8.3d] [%08.3d] [%.0d] [%5.0d]\n"
+                          "value": "[%+ d] [%+ d] [% -5d] [%-+05d]\n"
+                        },
+                        {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 23,
+                            "col": 49
+                          },
+                          "op": "-",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 23,
+                              "col": 50
+                            },
+                            "value": "5"
+                          }
                         },
                         {
                           "kind": "int-lit",
                           "pos": {
                             "line": 23,
-                            "col": 57
+                            "col": 53
                           },
-                          "value": "7"
+                          "value": "5"
+                        },
+                        {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 23,
+                            "col": 56
+                          },
+                          "op": "-",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 23,
+                              "col": 57
+                            },
+                            "value": "3"
+                          }
                         },
                         {
                           "kind": "int-lit",
@@ -778,31 +810,7 @@
                             "line": 23,
                             "col": 60
                           },
-                          "value": "7"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 23,
-                            "col": 63
-                          },
-                          "value": "7"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 23,
-                            "col": 66
-                          },
-                          "value": "0"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 23,
-                            "col": 69
-                          },
-                          "value": "0"
+                          "value": "3"
                         }
                       ],
                       "ellipsis": false
@@ -843,7 +851,31 @@
                             "line": 24,
                             "col": 13
                           },
-                          "value": "[%x] [%X] [%#x] [%#X] [%08x] [%#08x] [%x] [%5x]\n"
+                          "value": "[%.3d] [%8.3d] [%08.3d] [%.0d] [%5.0d]\n"
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 24,
+                            "col": 57
+                          },
+                          "value": "7"
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 24,
+                            "col": 60
+                          },
+                          "value": "7"
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 24,
+                            "col": 63
+                          },
+                          "value": "7"
                         },
                         {
                           "kind": "int-lit",
@@ -851,71 +883,15 @@
                             "line": 24,
                             "col": 66
                           },
-                          "value": "255"
+                          "value": "0"
                         },
                         {
                           "kind": "int-lit",
                           "pos": {
                             "line": 24,
-                            "col": 71
+                            "col": 69
                           },
-                          "value": "255"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 24,
-                            "col": 76
-                          },
-                          "value": "255"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 24,
-                            "col": 81
-                          },
-                          "value": "255"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 24,
-                            "col": 86
-                          },
-                          "value": "255"
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 24,
-                            "col": 91
-                          },
-                          "value": "255"
-                        },
-                        {
-                          "kind": "unary",
-                          "pos": {
-                            "line": 24,
-                            "col": 96
-                          },
-                          "op": "-",
-                          "x": {
-                            "kind": "int-lit",
-                            "pos": {
-                              "line": 24,
-                              "col": 97
-                            },
-                            "value": "255"
-                          }
-                        },
-                        {
-                          "kind": "int-lit",
-                          "pos": {
-                            "line": 24,
-                            "col": 102
-                          },
-                          "value": "10"
+                          "value": "0"
                         }
                       ],
                       "ellipsis": false
@@ -956,55 +932,79 @@
                             "line": 25,
                             "col": 13
                           },
-                          "value": "[%5s] [%-5s] [%.2s] [%5.1s] [%05s] [%s]\n"
+                          "value": "[%x] [%X] [%#x] [%#X] [%08x] [%#08x] [%x] [%5x]\n"
                         },
                         {
-                          "kind": "string-lit",
+                          "kind": "int-lit",
                           "pos": {
                             "line": 25,
-                            "col": 58
+                            "col": 66
                           },
-                          "value": "go"
+                          "value": "255"
                         },
                         {
-                          "kind": "string-lit",
+                          "kind": "int-lit",
                           "pos": {
                             "line": 25,
-                            "col": 64
+                            "col": 71
                           },
-                          "value": "go"
+                          "value": "255"
                         },
                         {
-                          "kind": "string-lit",
+                          "kind": "int-lit",
                           "pos": {
                             "line": 25,
-                            "col": 70
+                            "col": 76
                           },
-                          "value": "héllo"
+                          "value": "255"
                         },
                         {
-                          "kind": "string-lit",
+                          "kind": "int-lit",
                           "pos": {
                             "line": 25,
-                            "col": 80
+                            "col": 81
                           },
-                          "value": "héllo"
+                          "value": "255"
                         },
                         {
-                          "kind": "string-lit",
+                          "kind": "int-lit",
                           "pos": {
                             "line": 25,
-                            "col": 90
+                            "col": 86
                           },
-                          "value": "ab"
+                          "value": "255"
                         },
                         {
-                          "kind": "string-lit",
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 25,
+                            "col": 91
+                          },
+                          "value": "255"
+                        },
+                        {
+                          "kind": "unary",
                           "pos": {
                             "line": 25,
                             "col": 96
                           },
-                          "value": ""
+                          "op": "-",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 25,
+                              "col": 97
+                            },
+                            "value": "255"
+                          }
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 25,
+                            "col": 102
+                          },
+                          "value": "10"
                         }
                       ],
                       "ellipsis": false
@@ -1045,31 +1045,55 @@
                             "line": 26,
                             "col": 13
                           },
-                          "value": "[%6t] [%-6t] [%v]\n"
+                          "value": "[%5s] [%-5s] [%.2s] [%5.1s] [%05s] [%s]\n"
                         },
                         {
-                          "kind": "ident",
+                          "kind": "string-lit",
                           "pos": {
                             "line": 26,
-                            "col": 36
+                            "col": 58
                           },
-                          "name": "true"
+                          "value": "go"
                         },
                         {
-                          "kind": "ident",
+                          "kind": "string-lit",
                           "pos": {
                             "line": 26,
-                            "col": 42
+                            "col": 64
                           },
-                          "name": "false"
+                          "value": "go"
                         },
                         {
-                          "kind": "ident",
+                          "kind": "string-lit",
                           "pos": {
                             "line": 26,
-                            "col": 49
+                            "col": 70
                           },
-                          "name": "nil"
+                          "value": "héllo"
+                        },
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 26,
+                            "col": 80
+                          },
+                          "value": "héllo"
+                        },
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 26,
+                            "col": 90
+                          },
+                          "value": "ab"
+                        },
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 26,
+                            "col": 96
+                          },
+                          "value": ""
                         }
                       ],
                       "ellipsis": false
@@ -1110,136 +1134,31 @@
                             "line": 27,
                             "col": 13
                           },
-                          "value": "[%6v] [%-6v] [%d] [%s] [%8v]\n"
+                          "value": "[%6t] [%-6t] [%v]\n"
                         },
                         {
-                          "kind": "call",
+                          "kind": "ident",
                           "pos": {
                             "line": 27,
-                            "col": 47
+                            "col": 36
                           },
-                          "fun": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 27,
-                              "col": 47
-                            },
-                            "name": "color"
-                          },
-                          "args": [
-                            {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 27,
-                                "col": 53
-                              },
-                              "value": "1"
-                            }
-                          ],
-                          "ellipsis": false
+                          "name": "true"
                         },
                         {
-                          "kind": "call",
+                          "kind": "ident",
                           "pos": {
                             "line": 27,
-                            "col": 57
+                            "col": 42
                           },
-                          "fun": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 27,
-                              "col": 57
-                            },
-                            "name": "color"
-                          },
-                          "args": [
-                            {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 27,
-                                "col": 63
-                              },
-                              "value": "0"
-                            }
-                          ],
-                          "ellipsis": false
+                          "name": "false"
                         },
                         {
-                          "kind": "call",
+                          "kind": "ident",
                           "pos": {
                             "line": 27,
-                            "col": 67
+                            "col": 49
                           },
-                          "fun": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 27,
-                              "col": 67
-                            },
-                            "name": "color"
-                          },
-                          "args": [
-                            {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 27,
-                                "col": 73
-                              },
-                              "value": "1"
-                            }
-                          ],
-                          "ellipsis": false
-                        },
-                        {
-                          "kind": "call",
-                          "pos": {
-                            "line": 27,
-                            "col": 77
-                          },
-                          "fun": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 27,
-                              "col": 77
-                            },
-                            "name": "color"
-                          },
-                          "args": [
-                            {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 27,
-                                "col": 83
-                              },
-                              "value": "0"
-                            }
-                          ],
-                          "ellipsis": false
-                        },
-                        {
-                          "kind": "composite-lit",
-                          "pos": {
-                            "line": 27,
-                            "col": 87
-                          },
-                          "type": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 27,
-                              "col": 87
-                            },
-                            "name": "wrapped"
-                          },
-                          "elts": [
-                            {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 27,
-                                "col": 95
-                              },
-                              "value": "3"
-                            }
-                          ]
+                          "name": "nil"
                         }
                       ],
                       "ellipsis": false
@@ -1280,6 +1199,176 @@
                             "line": 28,
                             "col": 13
                           },
+                          "value": "[%6v] [%-6v] [%d] [%s] [%8v]\n"
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 28,
+                            "col": 47
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 28,
+                              "col": 47
+                            },
+                            "name": "color"
+                          },
+                          "args": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 28,
+                                "col": 53
+                              },
+                              "value": "1"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 28,
+                            "col": 57
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 28,
+                              "col": 57
+                            },
+                            "name": "color"
+                          },
+                          "args": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 28,
+                                "col": 63
+                              },
+                              "value": "0"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 28,
+                            "col": 67
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 28,
+                              "col": 67
+                            },
+                            "name": "color"
+                          },
+                          "args": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 28,
+                                "col": 73
+                              },
+                              "value": "1"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 28,
+                            "col": 77
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 28,
+                              "col": 77
+                            },
+                            "name": "color"
+                          },
+                          "args": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 28,
+                                "col": 83
+                              },
+                              "value": "0"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "composite-lit",
+                          "pos": {
+                            "line": 28,
+                            "col": 87
+                          },
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 28,
+                              "col": 87
+                            },
+                            "name": "wrapped"
+                          },
+                          "elts": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 28,
+                                "col": 95
+                              },
+                              "value": "3"
+                            }
+                          ]
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 29,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 29,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 29,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 29,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Printf"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 29,
+                            "col": 13
+                          },
                           "value": "100%%\n"
                         }
                       ],
@@ -1289,7 +1378,7 @@
                   {
                     "kind": "assign",
                     "pos": {
-                      "line": 29,
+                      "line": 30,
                       "col": 2
                     },
                     "tok": ":=",
@@ -1297,7 +1386,7 @@
                       {
                         "kind": "ident",
                         "pos": {
-                          "line": 29,
+                          "line": 30,
                           "col": 2
                         },
                         "name": "s"
@@ -1307,19 +1396,19 @@
                       {
                         "kind": "call",
                         "pos": {
-                          "line": 29,
+                          "line": 30,
                           "col": 7
                         },
                         "fun": {
                           "kind": "selector",
                           "pos": {
-                            "line": 29,
+                            "line": 30,
                             "col": 7
                           },
                           "x": {
                             "kind": "ident",
                             "pos": {
-                              "line": 29,
+                              "line": 30,
                               "col": 7
                             },
                             "name": "fmt"
@@ -1330,7 +1419,7 @@
                           {
                             "kind": "string-lit",
                             "pos": {
-                              "line": 29,
+                              "line": 30,
                               "col": 19
                             },
                             "value": "%03d|%3d|%-3d|"
@@ -1338,7 +1427,7 @@
                           {
                             "kind": "int-lit",
                             "pos": {
-                              "line": 29,
+                              "line": 30,
                               "col": 37
                             },
                             "value": "5"
@@ -1346,7 +1435,7 @@
                           {
                             "kind": "int-lit",
                             "pos": {
-                              "line": 29,
+                              "line": 30,
                               "col": 40
                             },
                             "value": "5"
@@ -1354,7 +1443,7 @@
                           {
                             "kind": "int-lit",
                             "pos": {
-                              "line": 29,
+                              "line": 30,
                               "col": 43
                             },
                             "value": "5"
@@ -1367,25 +1456,25 @@
                   {
                     "kind": "expr-stmt",
                     "pos": {
-                      "line": 30,
+                      "line": 31,
                       "col": 2
                     },
                     "x": {
                       "kind": "call",
                       "pos": {
-                        "line": 30,
+                        "line": 31,
                         "col": 2
                       },
                       "fun": {
                         "kind": "selector",
                         "pos": {
-                          "line": 30,
+                          "line": 31,
                           "col": 2
                         },
                         "x": {
                           "kind": "ident",
                           "pos": {
-                            "line": 30,
+                            "line": 31,
                             "col": 2
                           },
                           "name": "fmt"
@@ -1396,7 +1485,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 30,
+                            "line": 31,
                             "col": 14
                           },
                           "name": "s"
@@ -1404,13 +1493,13 @@
                         {
                           "kind": "call",
                           "pos": {
-                            "line": 30,
+                            "line": 31,
                             "col": 17
                           },
                           "fun": {
                             "kind": "ident",
                             "pos": {
-                              "line": 30,
+                              "line": 31,
                               "col": 17
                             },
                             "name": "len"
@@ -1419,7 +1508,7 @@
                             {
                               "kind": "ident",
                               "pos": {
-                                "line": 30,
+                                "line": 31,
                                 "col": 21
                               },
                               "name": "s"
@@ -1434,25 +1523,25 @@
                   {
                     "kind": "expr-stmt",
                     "pos": {
-                      "line": 33,
+                      "line": 34,
                       "col": 2
                     },
                     "x": {
                       "kind": "call",
                       "pos": {
-                        "line": 33,
+                        "line": 34,
                         "col": 2
                       },
                       "fun": {
                         "kind": "selector",
                         "pos": {
-                          "line": 33,
+                          "line": 34,
                           "col": 2
                         },
                         "x": {
                           "kind": "ident",
                           "pos": {
-                            "line": 33,
+                            "line": 34,
                             "col": 2
                           },
                           "name": "fmt"
@@ -1463,7 +1552,7 @@
                         {
                           "kind": "string-lit",
                           "pos": {
-                            "line": 33,
+                            "line": 34,
                             "col": 13
                           },
                           "value": "[%.2v][%8v][%.3v][% v]\n"
@@ -1471,7 +1560,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 33,
+                            "line": 34,
                             "col": 41
                           },
                           "name": "nil"
@@ -1479,7 +1568,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 33,
+                            "line": 34,
                             "col": 46
                           },
                           "name": "nil"
@@ -1487,13 +1576,13 @@
                         {
                           "kind": "call",
                           "pos": {
-                            "line": 33,
+                            "line": 34,
                             "col": 51
                           },
                           "fun": {
                             "kind": "ident",
                             "pos": {
-                              "line": 33,
+                              "line": 34,
                               "col": 51
                             },
                             "name": "odd"
@@ -1502,7 +1591,7 @@
                             {
                               "kind": "int-lit",
                               "pos": {
-                                "line": 33,
+                                "line": 34,
                                 "col": 55
                               },
                               "value": "42"
@@ -1513,13 +1602,13 @@
                         {
                           "kind": "call",
                           "pos": {
-                            "line": 33,
+                            "line": 34,
                             "col": 60
                           },
                           "fun": {
                             "kind": "ident",
                             "pos": {
-                              "line": 33,
+                              "line": 34,
                               "col": 60
                             },
                             "name": "odd"
@@ -1528,7 +1617,7 @@
                             {
                               "kind": "int-lit",
                               "pos": {
-                                "line": 33,
+                                "line": 34,
                                 "col": 64
                               },
                               "value": "42"
@@ -1543,7 +1632,7 @@
                   {
                     "kind": "assign",
                     "pos": {
-                      "line": 34,
+                      "line": 35,
                       "col": 2
                     },
                     "tok": ":=",
@@ -1551,7 +1640,7 @@
                       {
                         "kind": "ident",
                         "pos": {
-                          "line": 34,
+                          "line": 35,
                           "col": 2
                         },
                         "name": "k"
@@ -1559,7 +1648,7 @@
                       {
                         "kind": "ident",
                         "pos": {
-                          "line": 34,
+                          "line": 35,
                           "col": 5
                         },
                         "name": "_"
@@ -1569,19 +1658,19 @@
                       {
                         "kind": "call",
                         "pos": {
-                          "line": 34,
+                          "line": 35,
                           "col": 10
                         },
                         "fun": {
                           "kind": "selector",
                           "pos": {
-                            "line": 34,
+                            "line": 35,
                             "col": 10
                           },
                           "x": {
                             "kind": "ident",
                             "pos": {
-                              "line": 34,
+                              "line": 35,
                               "col": 10
                             },
                             "name": "fmt"
@@ -1592,7 +1681,7 @@
                           {
                             "kind": "string-lit",
                             "pos": {
-                              "line": 34,
+                              "line": 35,
                               "col": 22
                             },
                             "value": "hi"
@@ -1605,25 +1694,25 @@
                   {
                     "kind": "expr-stmt",
                     "pos": {
-                      "line": 35,
+                      "line": 36,
                       "col": 2
                     },
                     "x": {
                       "kind": "call",
                       "pos": {
-                        "line": 35,
+                        "line": 36,
                         "col": 2
                       },
                       "fun": {
                         "kind": "selector",
                         "pos": {
-                          "line": 35,
+                          "line": 36,
                           "col": 2
                         },
                         "x": {
                           "kind": "ident",
                           "pos": {
-                            "line": 35,
+                            "line": 36,
                             "col": 2
                           },
                           "name": "fmt"
@@ -1634,53 +1723,13 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 35,
+                            "line": 36,
                             "col": 14
                           },
                           "name": "k"
                         }
                       ],
                       "ellipsis": false
-                    }
-                  },
-                  {
-                    "kind": "decl-stmt",
-                    "pos": {
-                      "line": 36,
-                      "col": 2
-                    },
-                    "decl": {
-                      "kind": "value-decl",
-                      "pos": {
-                        "line": 36,
-                        "col": 2
-                      },
-                      "const": false,
-                      "specs": [
-                        {
-                          "names": [
-                            "u8"
-                          ],
-                          "type": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 36,
-                              "col": 9
-                            },
-                            "name": "uint8"
-                          },
-                          "values": [
-                            {
-                              "kind": "int-lit",
-                              "pos": {
-                                "line": 36,
-                                "col": 17
-                              },
-                              "value": "200"
-                            }
-                          ]
-                        }
-                      ]
                     }
                   },
                   {
@@ -1699,12 +1748,52 @@
                       "specs": [
                         {
                           "names": [
-                            "i64"
+                            "u8"
                           ],
                           "type": {
                             "kind": "ident",
                             "pos": {
                               "line": 37,
+                              "col": 9
+                            },
+                            "name": "uint8"
+                          },
+                          "values": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 37,
+                                "col": 17
+                              },
+                              "value": "200"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 38,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 38,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "i64"
+                          ],
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 38,
                               "col": 10
                             },
                             "name": "int64"
@@ -1713,14 +1802,14 @@
                             {
                               "kind": "unary",
                               "pos": {
-                                "line": 37,
+                                "line": 38,
                                 "col": 18
                               },
                               "op": "-",
                               "x": {
                                 "kind": "int-lit",
                                 "pos": {
-                                  "line": 37,
+                                  "line": 38,
                                   "col": 19
                                 },
                                 "value": "9223372036854775808"
@@ -1734,25 +1823,25 @@
                   {
                     "kind": "expr-stmt",
                     "pos": {
-                      "line": 38,
+                      "line": 39,
                       "col": 2
                     },
                     "x": {
                       "kind": "call",
                       "pos": {
-                        "line": 38,
+                        "line": 39,
                         "col": 2
                       },
                       "fun": {
                         "kind": "selector",
                         "pos": {
-                          "line": 38,
+                          "line": 39,
                           "col": 2
                         },
                         "x": {
                           "kind": "ident",
                           "pos": {
-                            "line": 38,
+                            "line": 39,
                             "col": 2
                           },
                           "name": "fmt"
@@ -1763,7 +1852,7 @@
                         {
                           "kind": "string-lit",
                           "pos": {
-                            "line": 38,
+                            "line": 39,
                             "col": 13
                           },
                           "value": "%d %x %d %X\n"
@@ -1771,7 +1860,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 38,
+                            "line": 39,
                             "col": 30
                           },
                           "name": "u8"
@@ -1779,7 +1868,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 38,
+                            "line": 39,
                             "col": 34
                           },
                           "name": "u8"
@@ -1787,7 +1876,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 38,
+                            "line": 39,
                             "col": 38
                           },
                           "name": "i64"
@@ -1795,7 +1884,7 @@
                         {
                           "kind": "ident",
                           "pos": {
-                            "line": 38,
+                            "line": 39,
                             "col": 43
                           },
                           "name": "i64"

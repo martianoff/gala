@@ -249,10 +249,10 @@ structure FmtSpec where
   sharp : Bool := false
   wid : Option Nat := none
   prec : Option Nat := none
+  deriving BEq
 
 /-- No flag, width or precision. -/
-def FmtSpec.plain (s : FmtSpec) : Bool :=
-  !s.minus && !s.plus && !s.space && !s.zero && !s.sharp && s.wid.isNone && s.prec.isNone
+def FmtSpec.plain (s : FmtSpec) : Bool := s == {}
 
 /-- A decimal number at the head of `cs`, and the rest. -/
 def parseNum (cs : List Char) : Option Nat × List Char :=
@@ -264,18 +264,14 @@ def parseNum (cs : List Char) : Option Nat × List Char :=
     (`doPrintf`). An argument index or a `*` width is left in the rest, where the verb
     is, for the caller to report. -/
 def parseSpec (cs : List Char) : FmtSpec × List Char :=
-  let rec flags : Nat → FmtSpec → List Char → FmtSpec × List Char
-    | 0, s, cs => (s, cs)
-    | k + 1, s, c :: cs =>
-      match c with
-      | '-' => flags k { s with minus := true } cs
-      | '+' => flags k { s with plus := true } cs
-      | ' ' => flags k { s with space := true } cs
-      | '0' => flags k { s with zero := true } cs
-      | '#' => flags k { s with sharp := true } cs
-      | _ => (s, c :: cs)
-    | _, s, [] => (s, [])
-  let (s, cs) := flags (cs.takeWhile ("-+ 0#".contains ·)).length {} cs
+  let rec flags : FmtSpec → List Char → FmtSpec × List Char
+    | s, '-' :: cs => flags { s with minus := true } cs
+    | s, '+' :: cs => flags { s with plus := true } cs
+    | s, ' ' :: cs => flags { s with space := true } cs
+    | s, '0' :: cs => flags { s with zero := true } cs
+    | s, '#' :: cs => flags { s with sharp := true } cs
+    | s, cs => (s, cs)
+  let (s, cs) := flags {} cs
   let (wid, cs) := parseNum cs
   match cs with
   | '.' :: cs =>
@@ -2021,32 +2017,29 @@ def rhsValues (c : Ctx) : Nat → Env → Nat → List Expr → GM (List Val)
 
 /-- `fmt` (fmt package documentation; `fmt/print.go`). `Println` prints its operands
     with `%v`, always separated by spaces, and a newline; `Print` puts a space between
-    two operands when neither is a string; `Sprint` is `Print` into a string; `Sprintf`
-    with the verbs `%v`, `%d`, `%s` and `%%`, no flags, width or precision. -/
+    two operands when neither is a string; `Sprint` is `Print` into a string;
+    `Sprintf` and `Printf` with the verbs `%v %d %s %t %x %X %%` and the flags,
+    width and precision `fmtSpec` models. -/
 def fmtCall (c : Ctx) : Nat → String → List Val → GM (List Val)
   | 0, _, _ => throw .fuel
   | n + 1, f, vs => do
+    -- `Println`, `Print` and `Printf` write their text and return its length in bytes
+    -- and a nil error.
+    let printed := fun (s : String) => do
+      emit s
+      pure [Val.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
     match f with
     | "Println" =>
       let parts ← vs.mapM fun v => fmtArg c n v 'v'
-      let s := " ".intercalate parts ++ "\n"
-      emit s
-      pure [.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
-    | "Print" =>
-      let s ← sprint c n vs
-      emit s
-      pure [.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
+      printed (" ".intercalate parts ++ "\n")
+    | "Print" => printed (← sprint c n vs)
     | "Sprint" => pure [.str .string (← sprint c n vs)]
     | "Sprintf" =>
       let fmtStr :: args := vs | stuck "Sprintf without a format"
       pure [.str .string (← sprintf c n (← asStr fmtStr).toList args)]
-    -- `Printf` writes `Sprintf`'s text and returns its length in bytes and a nil
-    -- error.
     | "Printf" =>
       let fmtStr :: args := vs | stuck "Printf without a format"
-      let s ← sprintf c n (← asStr fmtStr).toList args
-      emit s
-      pure [.int (.int .int) s.utf8ByteSize, .nilIface errorTy]
+      printed (← sprintf c n (← asStr fmtStr).toList args)
     | _ => unsupported s!"fmt.{f}"
 
 /-- `Print`'s text: a space between operands when neither is a string (`fmt/print.go`,

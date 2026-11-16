@@ -20,6 +20,7 @@ func main() {
 	n, err := fmt.Printf("%d %s %v %t\n", 42, "go", -7, true)
 	fmt.Println(n, err == nil)
 	fmt.Printf("[%5d] [%-5d] [%05d] [%+d] [% d] [%+05d] [%-05d]\n", 42, 42, 42, 42, 42, -42, 7)
+	fmt.Printf("[%+ d] [%+ d] [% -5d] [%-+05d]\n", -5, 5, -3, 3)
 	fmt.Printf("[%.3d] [%8.3d] [%08.3d] [%.0d] [%5.0d]\n", 7, 7, 7, 0, 0)
 	fmt.Printf("[%x] [%X] [%#x] [%#X] [%08x] [%#08x] [%x] [%5x]\n", 255, 255, 255, 255, 255, 255, -255, 10)
 	fmt.Printf("[%5s] [%-5s] [%.2s] [%5.1s] [%05s] [%s]\n", "go", "go", "héllo", "héllo", "ab", "")
