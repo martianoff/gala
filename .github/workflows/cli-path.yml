@@ -18,6 +18,7 @@ name: CLI path and downstream
 #   go-export       export the stdlib and a GALA library as Go modules and
 #                   build plain Go programs that import them
 #   downstream      build and test real downstream projects at pinned refs
+#   binary-size     GALA binary sizes against tools/ci/binary_size/baseline.tsv
 #
 # The first two run on Linux AND Windows; the Windows lane is the point for
 # drive-letter paths, .exe names, CRLF checkouts and BOM-prefixed sources.
@@ -168,6 +169,49 @@ jobs:
         env:
           FIXTURE: ${{ matrix.fixture }}
         run: tools/ci/cli_path/run_fixtures.sh "${RUNNER_TEMP}/cli-fixtures" "$FIXTURE"
+
+  # Size budget for the binaries users ship. Builds a hello world, a small
+  # HTTP JSON server and a collections program with this PR's CLI, and the
+  # same programs in plain Go, all for linux/amd64, and fails when a GALA
+  # binary is more than MARGIN_PERCENT above tools/ci/binary_size/baseline.tsv.
+  #
+  # Go comes from go.mod's exact patch release (the version Bazel pins too)
+  # because the runtime is most of every binary: a floating "1.25" would move
+  # all sizes on a Go update and leave the baseline describing a different
+  # toolchain. A Go bump therefore needs a baseline update in the same PR.
+  # Sizes are deterministic, so unlike the wall-time budgets in
+  # perf-real-build.yml the margin is not for runner noise: it is the growth
+  # a change may add before someone has to look at it.
+  binary-size:
+    name: Binary size budget
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MARGIN_PERCENT: "10"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download gala CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gala-cli
+          path: ${{ runner.temp }}/gala-cli
+
+      - name: Measure and check against the baseline
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/gala-cli/gala-linux_amd64"
+          chmod +x "$bin"
+          GALA="$bin" BASELINE=tools/ci/binary_size/baseline.tsv \
+            tools/ci/binary_size/measure.sh "${RUNNER_TEMP}/binary-size"
 
   # The same export and consumer check the release job runs before it
   # publishes the standard library for Go consumers, so a broken export fails

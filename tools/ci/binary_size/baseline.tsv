@@ -1,0 +1,18 @@
+# Size in bytes of each GALA program in testdata/, built by measure.sh for
+# linux/amd64 with Go 1.25.5 (the go.mod version, which the binary-size CI
+# job builds with).
+# CI fails when a GALA binary is more than MARGIN_PERCENT (10) above its line.
+#
+# When a change grows a binary on purpose, or a Go upgrade moves every size,
+# rerun measure.sh with the new CLI and Go, copy the gala_bytes column of
+# sizes.tsv here, and say why in the PR description. When a change shrinks a
+# binary, lower its line here too, so later growth is measured from the new
+# size.
+#
+# program  flags  gala_bytes
+hello	default	2249823
+hello	stripped	1495224
+httpjson	default	9175296
+httpjson	stripped	6357176
+collections	default	3137851
+collections	stripped	2105528

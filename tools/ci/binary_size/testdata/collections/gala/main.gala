@@ -1,0 +1,17 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Order is one customer's purchase.
+struct Order(Customer string, Amount int)
+
+func main() {
+    val orders = ArrayOf(Order("ann", 120), Order("bob", 80), Order("ann", 45), Order("cy", 300), Order("bob", 15))
+    val big = orders.Filter(_.Amount >= 50)
+    val total = big.FoldLeft(0, (acc, o) => acc + o.Amount)
+    val byCustomer = orders.FoldLeft(EmptyHashMap[string, int](), (m, o) => m.Put(o.Customer, m.GetOrElse(o.Customer, 0) + o.Amount))
+    val names = ListOf("ann", "bob", "cy").Map((n) => s"$n=${byCustomer.GetOrElse(n, 0)}")
+    Println(s"big orders: ${big.Map(_.Customer).MkString(", ")}")
+    Println(s"total of big orders: $total")
+    Println(s"per customer: ${names.MkString(", ")}")
+}

@@ -1,0 +1,24 @@
+package main
+
+import (
+    "io"
+    "net/http"
+
+    "martianoff/gala/json"
+)
+
+// Greeting is the JSON body /greet answers with.
+struct Greeting(Message string, Count int)
+
+func main() {
+    val codec = json.Codec[Greeting](json.SnakeCase())
+    http.HandleFunc("/greet", (w, r) => {
+        val name = r.URL.Query().Get("name")
+        w.Header().Set("Content-Type", "application/json")
+        codec.Encode(Greeting(s"Hello, $name!", name.Size())) match {
+            case Success(body) => io.WriteString(w, body)
+            case Failure(err) => http.Error(w, err.Error(), http.StatusInternalServerError)
+        }
+    })
+    FromError(http.ListenAndServe(":8080", nil)).OnFailure((err) => Println(s"error: $err"))
+}

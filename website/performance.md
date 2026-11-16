@@ -1,23 +1,67 @@
 ---
 layout: default
 title: "GALA Performance — Measured Build Speed and Memory"
-description: "Measured build times, compiler memory and Go build cache size for recent GALA releases, with the method, the machine and the caveats from each release's notes."
-keywords: "gala performance, gala build speed, gala compiler memory, compile to go build time, galop parser, go build cache trimpath, gala benchmarks"
+description: "Measured binary size against plain Go, build times, compiler memory and Go build cache size for recent GALA releases, with the method, the machine and the caveats for each."
+keywords: "gala performance, gala binary size, gala build speed, gala compiler memory, compile to go build time, galop parser, go build cache trimpath, gala benchmarks"
 permalink: /performance/
-last_modified_at: 2026-11-14
+last_modified_at: 2026-11-16
 ---
 
 <div class="breadcrumb">
   <a href="{{ '/' | relative_url }}">Home</a> &raquo; Performance
 </div>
 
-*Every number on this page comes from the published release notes. Each table states how it was measured and what it doesn't show.*
+*The binary sizes come from one measurement with a script in the repository. Every other number on this page comes from the published release notes. Each table states how it was measured and what it doesn't show.*
 
 # GALA Performance
 
 GALA compiles to Go, so a GALA build has two parts: GALA turns `.gala` files into Go, and then the Go toolchain compiles that Go. Recent releases made both parts cheaper. 0.100.0 sped up the GALA half with a new parser. 0.101.0 made the Go half cheaper by emitting less generic code and sharing the Go build cache between `gala test` and `gala build`.
 
-The numbers below are copied from the release notes. Wall times are noisy, so the memory and cache figures are the most reliable ones.
+The build numbers below are copied from the release notes. Wall times are noisy, so the memory and cache figures are the most reliable ones.
+
+---
+
+## Binary size
+
+**What was measured.** Three small programs, each written once in GALA and once in plain, idiomatic Go, built with the same Go and the same flags:
+
+- **hello**: `Println("Hello, world!")` against `fmt.Println`.
+- **httpjson**: a `net/http` server with one handler that encodes a struct to JSON. The GALA version uses GALA's `json` codec, which is what a GALA program would use. The Go version uses `encoding/json`.
+- **collections**: an `Array` of structs through `Filter`, `FoldLeft` and `Map`, a `HashMap` built with `FoldLeft` and a `List` through `Map`, against the same logic with Go slices, a map and loops.
+
+The sources are in [`tools/ci/binary_size/testdata`](https://github.com/martianoff/gala/tree/master/tools/ci/binary_size/testdata).
+
+**Method.** GALA 0.103.0 release CLI and Go 1.25.5. Every binary is linux/amd64 with `CGO_ENABLED=0`, cross-compiled on Windows. `gala build` always passes `-trimpath`, so the Go side passes it too. "Stripped" adds `-ldflags="-s -w"`, which drops the symbol table and DWARF debug info. Each build ran twice, each time with an empty Go build cache and GALA home, and every binary came out the same size both times. Unstripped GALA binaries embed the absolute path of the `.gala` source file, so building from a directory with a longer or shorter path moves their size by a few bytes.
+
+| Program | Flags | GALA 0.103.0 | Go | GALA / Go |
+|---|---|---:|---:|---:|
+| hello | default | 2,249,831 | 2,249,628 | 1.00 |
+| hello | stripped | 1,495,224 | 1,495,224 | 1.00 |
+| httpjson | default | 9,175,496 | 8,282,082 | 1.11 |
+| httpjson | stripped | 6,357,176 | 5,738,680 | 1.11 |
+| collections | default | 3,137,987 | 2,269,762 | 1.38 |
+| collections | stripped | 2,105,528 | 1,507,512 | 1.40 |
+
+Sizes are in bytes. The same programs built with the 0.100.0 release CLI, in the same session:
+
+| Program | Flags | GALA 0.100.0 | GALA 0.103.0 | Change |
+|---|---|---:|---:|---:|
+| hello | default | 2,267,319 | 2,249,831 | −0.8% |
+| hello | stripped | 1,511,608 | 1,495,224 | −1.1% |
+| collections | default | 4,136,733 | 3,137,987 | −24% |
+| collections | stripped | 2,838,712 | 2,105,528 | −26% |
+
+The httpjson program doesn't compile with 0.100.0, so it has no row here.
+
+**Where the extra size comes from.** A GALA program that only prints links nothing from GALA's standard library, so it is the size of the Go program. Using GALA's collections, `Option`, `Try` or the JSON codec links in their packages: in the stripped httpjson binary, GALA's `std` package adds 181 KB of machine code, `collection_immutable` 54 KB and `json` 18 KB. GALA's codec replaces most of `encoding/json` (57 KB in the Go binary, 2 KB in the GALA one), but `std` uses reflection (`MethodByName` and `Value.Call`) as the fallback for structural equality and copying, which links 36 KB more of Go's `reflect` package than the Go program uses. Much of the library code is generic, and each type it is used with gets its own copy. Every function in that code also needs its own runtime metadata (stack maps, a name in `.gopclntab`, type descriptors and generic dictionaries in `.rodata`), which adds about as much again as the code. So in stripped httpjson, the extra 618 KB is mostly 188 KB of `.text`, 206 KB of `.rodata` and 225 KB of `.gopclntab`. This cost grows with how much of the library a program uses and with how many types it uses it with, not with the length of the program, so the ratio is probably at its largest for small programs like these. Larger programs haven't been measured yet.
+
+**Reproduce.** With a `gala` and Go 1.25.5 on `PATH`, from a checkout of the repository:
+
+```bash
+GALA=$(command -v gala) tools/ci/binary_size/measure.sh /tmp/binary-size
+```
+
+The script prints the table above and writes it to `sizes.tsv` in the directory you give it. CI runs it on every pull request with the CLI built from that pull request, and fails when a GALA binary grows more than 10% past the checked-in baseline in [`tools/ci/binary_size/baseline.tsv`](https://github.com/martianoff/gala/blob/master/tools/ci/binary_size/baseline.tsv). That file says how to update the baseline when growth is intended.
 
 ---
 
