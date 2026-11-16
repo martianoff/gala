@@ -547,13 +547,85 @@ func (e *exporter) unary(u native.UnaryExprNode) Node {
 	}
 }
 
+// itemsAsTypes is the items of a bracket read as types, nil when one does
+// not read as a type.
+func (e *exporter) itemsAsTypes(l native.ExpressionListNode) []Node {
+	var out []Node
+	for _, x := range l.AllExpression() {
+		t := e.exprAsType(x.GalaNodeRef)
+		if t == nil {
+			return nil
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// exprAsType is expression ref read as a type, nil when it is not one: a
+// name, `pkg.Name`, or such a name applied to `[items]` that read as types.
+func (e *exporter) exprAsType(ref native.GalaNodeRef) Node {
+	switch ref.Kind() {
+	case native.GalaKIND_expression:
+		return e.exprAsType(native.ExpressionNode{GalaNodeRef: ref}.OrExpr().GalaNodeRef)
+	case native.GalaKIND_unaryExpr:
+		u := native.UnaryExprNode{GalaNodeRef: ref}
+		if u.UnaryOp().Ok() {
+			return nil
+		}
+		return e.exprAsType(u.PostfixExpr().GalaNodeRef)
+	case native.GalaKIND_postfixExpr:
+		return e.postfixAsType(native.PostfixExprNode{GalaNodeRef: ref})
+	}
+	// orExpr .. multiplicativeExpr: a type only when it is one operand.
+	if ref.ChildCount() == 1 && !ref.Child(0).IsToken() {
+		return e.exprAsType(ref.Child(0).Node())
+	}
+	return nil
+}
+
+// postfixAsType is exprAsType of a postfix expression.
+func (e *exporter) postfixAsType(p native.PostfixExprNode) Node {
+	pe := p.PrimaryExpr()
+	if p.MATCH().Ok() || !pe.Primary().Ok() || !pe.Primary().Identifier().Ok() {
+		return nil
+	}
+	pkg, name := "", pe.Primary().Identifier().GetText()
+	if name == "_" {
+		return nil
+	}
+	args := []Node{}
+	suffixes := p.AllPostfixSuffix()
+	for i, s := range suffixes {
+		switch {
+		case s.Identifier().Ok() && i == 0:
+			pkg, name = name, s.Identifier().GetText()
+		case s.ExpressionList().Ok() && i == len(suffixes)-1:
+			if args = e.itemsAsTypes(s.ExpressionList()); args == nil {
+				return nil
+			}
+		default:
+			return nil
+		}
+	}
+	return of(e, &TypeName{Package: pkg, Name: name, Args: args}, p.GalaNodeRef)
+}
+
 func (e *exporter) postfix(p native.PostfixExprNode) Node {
 	first := p.StartIndex()
 	cur := e.primaryExpr(p.PrimaryExpr())
-	for _, s := range p.AllPostfixSuffix() {
+	suffixes := p.AllPostfixSuffix()
+	isCall := func(s native.PostfixSuffixNode) bool { return !s.Identifier().Ok() && !s.ExpressionList().Ok() }
+	for i := 0; i < len(suffixes); i++ {
+		s := suffixes[i]
 		switch {
 		case s.Identifier().Ok():
 			cur = at(e, &Select{Target: cur, Name: s.Identifier().GetText()}, first, s.StopIndex())
+		case s.ExpressionList().Ok() && i+1 < len(suffixes) && isCall(suffixes[i+1]):
+			// `callee[items](args)`: the items in both readings (Bracket).
+			b := &Bracket{Exprs: e.exprs(s.ExpressionList()), Types: e.itemsAsTypes(s.ExpressionList())}
+			i++
+			cur = at(e, &Call{Callee: cur, Bracket: b, Args: mapNodes(suffixes[i].ArgumentList().AllArgument(), e.arg)},
+				first, suffixes[i].StopIndex())
 		case s.ExpressionList().Ok():
 			cur = &Unsupported{What: UnsupportedIndex, Pos: e.span(first, s.StopIndex())}
 		default:

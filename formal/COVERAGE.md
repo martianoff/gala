@@ -194,7 +194,10 @@ galaspec models them, except as listed below):
   `inout` parameter of the caller), so the callee sees what the arguments wrote
   (`f(&x, g(&x))`), and after the call writes each final value back;
 - generic functions, structs and sealed types, as Lean definitions and types with their
-  type parameters as parameters, whose type arguments Lean infers. A type parameter's
+  type parameters as parameters, whose type arguments Lean infers, or takes as written
+  where a call gives them (`id[int](x)`, `None[string]()`, `EmptyArray[int]()`: Core
+  JSON's `bracket`, read as types when the callee is a generic function or constructor
+  or a modelled std constructor, else reported as `index`). A type parameter's
   values print as their type prints (`GShow`), and under `comparable` compare with the
   `BEq` derived for their type, which compares as GALA's generated `Equal` does: field
   by field, and case then fields for a sealed value. `Option`, `Either`, `Tuple`,
@@ -259,8 +262,9 @@ what Core JSON leaves out, it does not translate yet:
   argument might be that type; the zero value of a type parameter (`type-param-zero`);
   a value of a type parameter kept in the program state (`generic-in-state`); a
   constraint other than `any` and `comparable` (`type-constraint`); a generic function
-  used as a value (`generic-func-value`); explicit type arguments, `None[int]()`, which
-  Core JSON does not carry (`index`); a type nested in itself through a generic type,
+  used as a value (`generic-func-value`, `index` for `id[int]` without a call); a
+  bracket before a call that is an index (`fs[i](x)`) or whose items are not types
+  (`index`); a type nested in itself through a generic type,
   `Next Option[Node]` (`nested-recursive-type`); printing a value whose raw text (a
   lower-case field `fmt` prints as a Go struct) reaches a generic type, a type
   parameter, `Option` or a tuple (`print-raw-generic`); methods of generic types;

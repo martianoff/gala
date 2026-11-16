@@ -204,6 +204,15 @@ func main() {
     Println(c.Get())
 }
 `},
+		{"brackets", `package main
+
+func id[T any](x T) T = x
+
+func main() {
+    val n = None[Option[int]]()
+    Println(id[int](1), id[pkg.T](n), id[x + 1](2))
+}
+`},
 		{"unsupported", `package main
 
 import "fmt"

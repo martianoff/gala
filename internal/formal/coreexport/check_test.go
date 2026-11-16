@@ -119,6 +119,15 @@ func (c *posChecker) node(v map[string]any, outer pos) error {
 		if key == "pos" || key == "hint" {
 			continue
 		}
+		if b, ok := child.(map[string]any); ok && key == "bracket" {
+			// A call's bracket is not a node: its two readings hold nodes.
+			for _, reading := range []string{"exprs", "types"} {
+				if err := c.value(b[reading], p); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		if err := c.value(child, p); err != nil {
 			return err
 		}

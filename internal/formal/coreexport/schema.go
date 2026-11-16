@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 9
+const Version = 10
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -278,11 +278,24 @@ type Binary struct {
 	Right Node   `json:"right"`
 }
 
-// Call is `callee(args)`, arguments positional and in source order.
+// Call is `callee(args)`, arguments positional and in source order. A call
+// written `callee[items](args)` has Bracket: the items between the brackets,
+// which are type arguments or an index; which one the callee decides, so
+// the export keeps both readings.
 type Call struct {
 	Meta
-	Callee Node   `json:"callee"`
-	Args   []Node `json:"args"`
+	Callee  Node     `json:"callee"`
+	Bracket *Bracket `json:"bracket,omitempty"`
+	Args    []Node   `json:"args"`
+}
+
+// Bracket is the `[items]` written right before a call's arguments, read
+// two ways: Exprs, the items as expressions, always; and Types, the items
+// as types, when every item reads as one (a name, `pkg.Name`, or such a
+// name applied to `[...]` items of the same form), else nil.
+type Bracket struct {
+	Exprs []Node `json:"exprs"`
+	Types []Node `json:"types"`
 }
 
 // Select is `target.name`, unresolved: a field, a method or a package member.

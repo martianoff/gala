@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 9
+def supportedCore : Nat := 10
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -169,7 +169,11 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "address-of" => return .unsupported "address-of"
   | "binary" =>
     return .binary (← str j "op") (← decodeExpr (← field j "left")) (← decodeExpr (← field j "right"))
-  | "call" => return .call (← decodeExpr (← field j "callee")) (← (← arr j "args").mapM decodeExpr)
+  -- A call written `X[...](...)`: type arguments or an index, which galaspec models
+  -- neither of (`index`, as before Core JSON exported the brackets, version 10).
+  | "call" =>
+    if (j.getObjVal? "bracket").isOk then return .unsupported "index"
+    return .call (← decodeExpr (← field j "callee")) (← (← arr j "args").mapM decodeExpr)
   | "select" => return .select (← decodeExpr (← field j "target")) (← str j "name")
   | "paren" => return .paren (← decodeExpr (← field j "expr"))
   | "tuple" => return .tuple (← (← arr j "elems").mapM decodeExpr)

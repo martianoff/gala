@@ -690,6 +690,9 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 	case *coreexport.Lambda:
 		return g.lambdaType(e, sc)
 	case *coreexport.Call:
+		if e.Bracket != nil {
+			return g.bracketCallType(e, sc)
+		}
 		if s, isSel := e.Callee.(*coreexport.Select); isSel {
 			// The receiver's type, read once for every kind of method below
 			// (a chain of calls would otherwise read each receiver again per

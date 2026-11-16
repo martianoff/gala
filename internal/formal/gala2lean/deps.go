@@ -176,6 +176,13 @@ func walkChildren(n coreexport.Node, f func(coreexport.Node)) {
 			}
 		}
 	}
+	// A call's bracket, read as types: the only reading the translation
+	// takes (bracketCall).
+	if c, ok := n.(*coreexport.Call); ok && c.Bracket != nil {
+		for _, t := range c.Bracket.Types {
+			f(t)
+		}
+	}
 }
 
 // mapChildren is a copy of n with each direct child c replaced by f(c).
@@ -212,7 +219,19 @@ func mapChildren(n coreexport.Node, f func(coreexport.Node) coreexport.Node) cor
 			fv.Set(s)
 		}
 	}
-	return c.Interface().(coreexport.Node)
+	out := c.Interface().(coreexport.Node)
+	// A call's bracket: its types mapped as children are (walkChildren).
+	if call, ok := out.(*coreexport.Call); ok && call.Bracket != nil && call.Bracket.Types != nil {
+		b := *call.Bracket
+		b.Types = make([]coreexport.Node, len(call.Bracket.Types))
+		for j, t := range call.Bracket.Types {
+			if b.Types[j] = f(t); b.Types[j] == nil {
+				b.Types[j] = t
+			}
+		}
+		call.Bracket = &b
+	}
+	return out
 }
 
 func bindAll(m map[string]bool, names []string) {

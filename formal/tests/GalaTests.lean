@@ -40,7 +40,8 @@ private def noDecls : Decls := { funcs := [], structs := [], shorthands := [], s
 
 -- The decoder rejects an unknown version and malformed documents.
 private def decodes (s : String) : Bool := (Json.parse s).toBool
-#guard decodes "{\"core\": 9, \"files\": []}"
+#guard decodes "{\"core\": 10, \"files\": []}"
+#guard !decodes "{\"core\": 9, \"files\": []}"
 #guard !decodes "{\"core\": 8, \"files\": []}"
 #guard !decodes "{\"core\": 7, \"files\": []}"
 #guard !decodes "{\"core\": 6, \"files\": []}"
@@ -48,7 +49,7 @@ private def decodes (s : String) : Bool := (Json.parse s).toBool
 #guard !decodes "{\"core\": 4, \"files\": []}"
 #guard !decodes "{\"core\": 3, \"files\": []}"
 #guard !decodes "{\"files\": []}"
-#guard !decodes "{\"core\": 9, \"files\": [{\"kind\": \"nope\"}]}"
+#guard !decodes "{\"core\": 10, \"files\": [{\"kind\": \"nope\"}]}"
 #guard !decodes "not json"
 
 -- An import runs its package's initializers, which galaspec does not model, whether
@@ -58,7 +59,7 @@ private def decodes (s : String) : Bool := (Json.parse s).toBool
 -- run.
 private def withImport (path alias : String) : String :=
   let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
-  "{\"core\": 9, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
+  "{\"core\": 10, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
   "\"package\": \"main\", \"decls\": [" ++
   "{\"kind\": \"import\", " ++ pos ++ ", \"path\": \"" ++ path ++ "\", \"alias\": \"" ++ alias ++ "\"}, " ++
   "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"main\", \"receiver\": null, " ++

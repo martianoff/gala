@@ -333,6 +333,9 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	if u, ok := e.Callee.(*coreexport.Unsupported); ok {
 		unsup(u.Pos, "%s", u.What)
 	}
+	if e.Bracket != nil {
+		return g.bracketCall(e, sc)
+	}
 	if n, ok := e.Callee.(*coreexport.Name); ok && sc.lookup(n.Name) == nil {
 		x := n.Name
 		if s := g.sigOf(x); s != nil {
