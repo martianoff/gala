@@ -758,10 +758,11 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     | .func_ _ f, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .func_ _ f => pure f.isNone
     | .nilIface _, .nilIface _ => pure true
     | .nilIface _, _ | _, .nilIface _ => pure false
-    -- Go compiles `==` on functions only against nil; two functions meet here only as
-    -- the dynamic values of interface operands, where Go panics at run time (not
-    -- modelled).
-    | .func_ .., .func_ .. => unsupported "uncomparable"
+    -- Go compiles `==` on functions only against nil, which `binary` has converted to
+    -- the function's type. Two non-nil functions meet here only as the dynamic values
+    -- of interface operands, where Go panics at run time (not modelled).
+    | .func_ _ f, .func_ _ g =>
+      if f.isNone || g.isNone then pure (f.isNone && g.isNone) else unsupported "uncomparable"
     | _, _ =>
       if !same then return false
       match a, b with

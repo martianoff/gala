@@ -46,6 +46,8 @@ func main() {
 	f := p.Show
 	p.x = 2
 	fmt.Println(f(), p.Show())
+	var g func() int
+	fmt.Println(g == nil, f != nil, nil == g)
 	var np *T
 	fmt.Println(np)
 	var e error

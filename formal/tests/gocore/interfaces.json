@@ -1544,22 +1544,30 @@
                       "specs": [
                         {
                           "names": [
-                            "np"
+                            "g"
                           ],
                           "type": {
-                            "kind": "star",
+                            "kind": "func-type",
                             "pos": {
                               "line": 49,
-                              "col": 9
+                              "col": 8
                             },
-                            "x": {
-                              "kind": "ident",
-                              "pos": {
-                                "line": 49,
-                                "col": 10
-                              },
-                              "name": "T"
-                            }
+                            "params": [],
+                            "results": [
+                              {
+                                "names": [],
+                                "type": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 49,
+                                    "col": 15
+                                  },
+                                  "name": "int"
+                                },
+                                "tag": ""
+                              }
+                            ],
+                            "variadic": false
                           },
                           "values": []
                         }
@@ -1596,12 +1604,76 @@
                       },
                       "args": [
                         {
-                          "kind": "ident",
+                          "kind": "binary",
                           "pos": {
                             "line": 50,
                             "col": 14
                           },
-                          "name": "np"
+                          "op": "==",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 50,
+                              "col": 14
+                            },
+                            "name": "g"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 50,
+                              "col": 19
+                            },
+                            "name": "nil"
+                          }
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 50,
+                            "col": 24
+                          },
+                          "op": "!=",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 50,
+                              "col": 24
+                            },
+                            "name": "f"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 50,
+                              "col": 29
+                            },
+                            "name": "nil"
+                          }
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 50,
+                            "col": 34
+                          },
+                          "op": "==",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 50,
+                              "col": 34
+                            },
+                            "name": "nil"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 50,
+                              "col": 41
+                            },
+                            "name": "g"
+                          }
                         }
                       ],
                       "ellipsis": false
@@ -1623,15 +1695,22 @@
                       "specs": [
                         {
                           "names": [
-                            "e"
+                            "np"
                           ],
                           "type": {
-                            "kind": "ident",
+                            "kind": "star",
                             "pos": {
                               "line": 51,
-                              "col": 8
+                              "col": 9
                             },
-                            "name": "error"
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 51,
+                                "col": 10
+                              },
+                              "name": "T"
+                            }
                           },
                           "values": []
                         }
@@ -1668,28 +1747,12 @@
                       },
                       "args": [
                         {
-                          "kind": "binary",
+                          "kind": "ident",
                           "pos": {
                             "line": 52,
                             "col": 14
                           },
-                          "op": "==",
-                          "x": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 52,
-                              "col": 14
-                            },
-                            "name": "e"
-                          },
-                          "y": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 52,
-                              "col": 19
-                            },
-                            "name": "nil"
-                          }
+                          "name": "np"
                         }
                       ],
                       "ellipsis": false
@@ -1711,22 +1774,15 @@
                       "specs": [
                         {
                           "names": [
-                            "nv"
+                            "e"
                           ],
                           "type": {
-                            "kind": "star",
+                            "kind": "ident",
                             "pos": {
                               "line": 53,
-                              "col": 9
+                              "col": 8
                             },
-                            "x": {
-                              "kind": "ident",
-                              "pos": {
-                                "line": 53,
-                                "col": 10
-                              },
-                              "name": "V"
-                            }
+                            "name": "error"
                           },
                           "values": []
                         }
@@ -1763,9 +1819,104 @@
                       },
                       "args": [
                         {
-                          "kind": "ident",
+                          "kind": "binary",
                           "pos": {
                             "line": 54,
+                            "col": 14
+                          },
+                          "op": "==",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 54,
+                              "col": 14
+                            },
+                            "name": "e"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 54,
+                              "col": 19
+                            },
+                            "name": "nil"
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 55,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 55,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "nv"
+                          ],
+                          "type": {
+                            "kind": "star",
+                            "pos": {
+                              "line": 55,
+                              "col": 9
+                            },
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 55,
+                                "col": 10
+                              },
+                              "name": "V"
+                            }
+                          },
+                          "values": []
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 56,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 56,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 56,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 56,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 56,
                             "col": 14
                           },
                           "name": "nv"
@@ -1773,13 +1924,13 @@
                         {
                           "kind": "composite-lit",
                           "pos": {
-                            "line": 54,
+                            "line": 56,
                             "col": 18
                           },
                           "type": {
                             "kind": "ident",
                             "pos": {
-                              "line": 54,
+                              "line": 56,
                               "col": 18
                             },
                             "name": "V"
@@ -1788,7 +1939,7 @@
                             {
                               "kind": "int-lit",
                               "pos": {
-                                "line": 54,
+                                "line": 56,
                                 "col": 20
                               },
                               "value": "3"
