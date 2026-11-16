@@ -337,6 +337,9 @@ import . "martianoff/gala/go_interop"
 func viaSlice() int = SliceOf(1, 2).Size()
 
 func pair() Tuple[int, int] = Tuple(1, 2)
+
+// widen uses Go's conversion, which no dot import can declare.
+func widen(n int) int64 = int64(n)
 `
 	main := `package main
 
@@ -353,6 +356,8 @@ func main() {
 	plain := `package main
 
 func noCollections() int = ArrayOf(1).Size()
+
+func arrayType(a Array[int]) int = 1
 `
 	p, err := coreexport.Export([]coreexport.Source{{Path: "interop.gala", Text: interop}, {Path: "main.gala", Text: main},
 		{Path: "plain.gala", Text: plain}}, coreexport.Options{LiteralType: analyzerhints.LiteralType})
@@ -371,8 +376,10 @@ func noCollections() int = ArrayOf(1).Size()
 	require.Equal(t, "import", stopped["viaSlice"])
 	require.Equal(t, "import", stopped["pair"])
 	require.Equal(t, "call-of-ArrayOf", stopped["noCollections"])
+	require.Equal(t, "type-Array", stopped["arrayType"])
+	require.NotContains(t, stopped, "widen")
 	require.NotContains(t, stopped, "sizes")
 	require.NotContains(t, stopped, "both")
 	require.NotContains(t, err.Error(), "_gala_hidden")
-	require.Equal(t, gala2lean.Stats{Funcs: 6, Translated: 3}, gala2lean.CountTranslated(p, err), "%v", err)
+	require.Equal(t, gala2lean.Stats{Funcs: 8, Translated: 4}, gala2lean.CountTranslated(p, err), "%v", err)
 }

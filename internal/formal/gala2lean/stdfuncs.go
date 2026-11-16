@@ -96,7 +96,8 @@ func hideLibNames(p *coreexport.Program) *coreexport.Program {
 		switch {
 		case declared[x]:
 			return ""
-		case other && fn:
+		case other && fn && isUpper(x):
+			// A dot import brings in exported names only: never `int64`.
 			return otherDotPrefix
 		case seq && !collections:
 			return noCollPrefix
@@ -111,14 +112,12 @@ func hideLibNames(p *coreexport.Program) *coreexport.Program {
 			out.Files[i] = f // nothing to rename
 			continue
 		}
-		var rename func(n coreexport.Node) coreexport.Node
-		rename = func(n coreexport.Node) coreexport.Node {
+		// newName is the name reference n takes, "" when it keeps its own.
+		newName := func(n coreexport.Node) string {
 			switch n := n.(type) {
 			case *coreexport.Name:
 				if pre := hidden(n.Name, other, collections); pre != "" {
-					c := *n
-					c.Name = pre + n.Name
-					return &c
+					return pre + n.Name
 				}
 			case *coreexport.TypeName:
 				// A collections type (Array, List, HashMap, HashSet): `int`
@@ -126,21 +125,48 @@ func hideLibNames(p *coreexport.Program) *coreexport.Program {
 				_, isType := stdGeneric[n.Name]
 				isType = isType || hashTypes[n.Name]
 				if pre := hidden(n.Name, other, collections); pre == noCollPrefix && isType && n.Package == "" {
-					c := *(mapChildren(n, rename).(*coreexport.TypeName))
-					c.Name = pre + n.Name
-					return &c
+					return pre + n.Name
 				}
 			}
-			return mapChildren(n, rename)
+			return ""
+		}
+		found := false
+		var scan func(n coreexport.Node)
+		scan = func(n coreexport.Node) {
+			found = found || newName(n) != ""
+			if !found {
+				walkChildren(n, scan)
+			}
+		}
+		scan(f)
+		if !found {
+			out.Files[i] = f
+			continue
+		}
+		var rename func(n coreexport.Node) coreexport.Node
+		rename = func(n coreexport.Node) coreexport.Node {
+			c := mapChildren(n, rename)
+			if x := newName(n); x != "" {
+				switch c := c.(type) {
+				case *coreexport.Name:
+					c.Name = x
+				case *coreexport.TypeName:
+					c.Name = x
+				}
+			}
+			return c
 		}
 		out.Files[i] = rename(f).(*coreexport.File)
 	}
 	return &out
 }
 
+// unhider writes a renamed name as the source has it.
+var unhider = strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "")
+
 // unhide is text with every renamed name written as the source has it.
 func unhide(text string) string {
-	return strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "").Replace(text)
+	return unhider.Replace(text)
 }
 
 // fileDotImports reports whether file f dot-imports a package other than std

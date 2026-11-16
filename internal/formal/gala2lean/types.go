@@ -15,7 +15,7 @@ func (g *gen) leanType(t coreexport.Node) string {
 	case nil:
 		return "Unit"
 	case *coreexport.TypeName:
-		if strings.HasPrefix(t.Name, otherDotPrefix) || strings.HasPrefix(t.Name, noCollPrefix) {
+		if strings.HasPrefix(t.Name, noCollPrefix) {
 			// A library type its file's imports rule out (hideLibNames).
 			g.unresolved(t.Pos, "type-"+t.Name)
 		}

@@ -269,8 +269,11 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 	if stdCtors[x] != "" || g.isStdFunc(x) {
 		unsup(e.Pos, "func-value")
 	}
-	if strings.HasPrefix(x, noCollPrefix) {
-		// A collections name in a file without their import (hideLibNames).
+	// A library name its file's imports rule out (hideLibNames).
+	switch {
+	case strings.HasPrefix(x, otherDotPrefix):
+		unsup(e.Pos, "import")
+	case strings.HasPrefix(x, noCollPrefix):
 		unsup(e.Pos, "unresolved-name")
 	}
 	g.unresolved(e.Pos, "unresolved-name")
