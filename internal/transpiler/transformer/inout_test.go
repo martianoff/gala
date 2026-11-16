@@ -1,6 +1,8 @@
 package transformer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -252,4 +254,131 @@ func main() {
     put(&p, &Counter(2, "q"))
     Println(p.n)`), "inout_ptr_var_test.gala")
 	require.NoError(t, err)
+}
+
+// inoutGenericDecls declares generic callees with `inout` parameters whose
+// type parameters a call can fix: explicitly (`put[Counter]`) or through
+// its receiver's type arguments (a Holds[Counter]).
+const inoutGenericDecls = `
+func putBoth[A any, B any](inout a A, inout b B, va A, vb B) {
+    a = va
+    b = vb
+}
+
+func (c Counter) putIn[T any](inout x T, v T) {
+    x = v
+}
+
+struct Holds[T any](v T)
+
+func (h Holds[T]) fill(inout x T) {
+    x = h.v
+}
+`
+
+// TestInoutLendPtrVarExplicitTypeArgs pins that a type argument fixed at
+// the call does not exempt the lend of a variable holding a pointer from
+// GALA-E0111: with T fixed to Counter, an inout x T takes a *Counter, and
+// `&p` for a p holding a Ptr[Counter] is a **Counter that fails go build.
+// Only a type parameter the call leaves to inference may take the pointer.
+func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	src := func(body string) string {
+		return "package main\n" + inoutDecls + inoutGenericDecls + "\nfunc main() {\n    " + body + "\n}\n"
+	}
+	rejected := []struct{ name, body, want, hint string }{
+		{"a function", `var p = &Counter(1, "p")
+    put[Counter](&p, Counter(2, "q"))`,
+			"cannot lend &p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
+		{"a generic type's parameter", `var b = &Box(1)
+    setBox[int](&b, 2)`,
+			"cannot lend &b to the inout parameter of setBox: b holds a Ptr[Box[int]], and the parameter takes the Box[int] it points to", "pass `b` without `&`"},
+		{"several type arguments", `var c = Counter(0, "c")
+    var p = &Point(1, 2)
+    putBoth[Counter, Point](&c, &p, Counter(1, "c"), Point(3, 4))`,
+			"cannot lend &p to the inout parameter of putBoth: p holds a Ptr[Point], and the parameter takes the Point it points to", "pass `p` without `&`"},
+		{"a method", `val c = Counter(0, "c")
+    var p = &Counter(1, "p")
+    c.putIn[Counter](&p, Counter(2, "q"))`,
+			"cannot lend &p to the inout parameter of putIn: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
+		{"a receiver's type argument", `val h = Holds(Counter(2, "h"))
+    var p = &Counter(1, "p")
+    h.fill(&p)`,
+			"cannot lend &p to the inout parameter of fill: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(src(tc.body), "inout_explicit_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0111")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Contains(t, err.Error(), tc.hint)
+		})
+	}
+
+	accepted := []struct{ name, body, want string }{
+		{"the pointer itself", `var p = &Counter(1, "p")
+    put[Counter](p, Counter(2, "q"))
+    Println(p.n)`, "put[Counter](p, "},
+		{"a pointer type argument", `var p = &Counter(1, "p")
+    put[Ptr[Counter]](&p, &Counter(2, "q"))
+    Println(p.n)`, "put[*Counter](&p, "},
+		{"a method, the pointer itself", `val c = Counter(0, "c")
+    var p = &Counter(1, "p")
+    c.putIn[Counter](p, Counter(2, "q"))
+    Println(p.n)`, "](c, p, "},
+		{"a receiver's type argument, the pointer itself", `val h = Holds(Counter(2, "h"))
+    var p = &Counter(1, "p")
+    h.fill(p)
+    Println(p.n)`, "(h, p)"},
+		{"a value", `var c = Counter(1, "c")
+    put[Counter](&c, Counter(2, "q"))
+    Println(c.n)`, "put[Counter](&c, "},
+	}
+	for _, tc := range accepted {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(src(tc.body), "inout_explicit_test.gala")
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want)
+		})
+	}
+}
+
+// TestInoutLendPtrVarQualifiedGeneric pins the same check for a generic
+// function of another package called with explicit type arguments:
+// `lend.Put[lend.Counter](&p)` is GALA-E0111, `lend.Put[lend.Counter](p)`
+// lends p's pointee.
+func TestInoutLendPtrVarQualifiedGeneric(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/lendx\n\ngala dev\n"), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "lend"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "lend", "lend.gala"), []byte(`package lend
+
+struct Counter(var N int)
+
+func Put[T any](inout x T, v T) {
+    x = v
+}
+`), 0644))
+	src := func(arg string) string {
+		return `package main
+
+import "example.com/lendx/lend"
+
+func main() {
+    var p = &lend.Counter(1)
+    lend.Put[lend.Counter](` + arg + `, lend.Counter(2))
+    Println(p.N)
+}
+`
+	}
+	_, err := transpileCrossPkg(t, root, src("&p"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0111")
+	assert.Contains(t, err.Error(), "cannot lend &p to the inout parameter of Put: p holds a Ptr[lend.Counter], and the parameter takes the lend.Counter it points to")
+	assert.Contains(t, err.Error(), "pass `p` without `&`")
+
+	out, err := transpileCrossPkg(t, root, src("p"))
+	require.NoError(t, err)
+	assert.Contains(t, out, "lend.GALA_Put[lend.Counter](p, ")
 }

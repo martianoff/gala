@@ -161,6 +161,11 @@ type inoutCallee struct {
 	// paramTypes are the declared parameter types, an `inout` one as the
 	// Ptr[T] it lowers to (inoutCalleeTypeParams names their type parameters).
 	paramTypes []transpiler.Type
+	// typeArgs are the type arguments the call fixes: written at the call
+	// (`put[Counter]`, `c.m[A, B]`) or carried by the receiver's type (T is
+	// Counter for a method of a Holds[Counter]). A type parameter missing
+	// from it is left to inference.
+	typeArgs typeSubstMap
 }
 
 // lends reports whether the callee lends a place: an `inout` parameter or
@@ -172,14 +177,15 @@ func (c inoutCallee) lends() bool { return c.recvInout || slices.Contains(c.inou
 // receiver, or a function value whose type says `inout` (`f func(inout T)`);
 // ok is false otherwise.
 func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c inoutCallee, ok bool) {
-	receiver, method, _ := t.splitCallTarget(base)
+	receiver, method, typeArgs := t.splitCallTarget(base)
 	if receiver != nil && method != "" && t.inoutNames[method] {
 		recvType, key := t.resolveReceiverTypeAndLookupKey(receiver, method)
 		if !transpiler.IsUnusable(recvType) {
 			if meta := t.getTypeMeta(key); meta != nil && meta.Methods[method] != nil {
 				m := meta.Methods[method]
 				c = inoutCallee{inout: m.InoutParams, params: m.ParamNames, name: method, recvInout: m.InoutReceiver, method: m, recvType: recvType, declared: true,
-					paramTypes: m.ParamTypes}
+					paramTypes: m.ParamTypes,
+					typeArgs:   receiverTypeSubst(meta.TypeParams, derefType(recvType), t.explicitTypeArgs(m.TypeParams, typeArgs))}
 				if sel, isSel := call.Fun.(*ast.SelectorExpr); !isSel || sel.Sel.Name != method {
 					c.shift = 1
 				}
@@ -193,7 +199,7 @@ func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c
 		if t.inoutNames[name[strings.LastIndex(name, ".")+1:]] {
 			if fm := t.getFunction(name); fm != nil {
 				c = inoutCallee{inout: fm.InoutParams, params: fm.ParamNames, name: fm.Name, declared: true, fm: fm,
-					paramTypes: fm.ParamTypes}
+					paramTypes: fm.ParamTypes, typeArgs: explicitTypeArgSubst(fm.TypeParams, t.extractFuncCallTypeArgs(base))}
 				return c, c.lends()
 			}
 		}
@@ -210,6 +216,16 @@ func (t *galaASTTransformer) inoutCalleeOf(base ast.Expr, call *ast.CallExpr) (c
 		return inoutCallee{inout: ft.Inout, name: name, paramTypes: ft.Params}, true
 	}
 	return c, false
+}
+
+// explicitTypeArgs maps typeParams to typeArgs, the type arguments written
+// at a call; nil when there are none.
+func (t *galaASTTransformer) explicitTypeArgs(typeParams []string, typeArgs []ast.Expr) typeSubstMap {
+	written := make([]string, len(typeArgs))
+	for i, arg := range typeArgs {
+		written[i] = t.exprToTypeString(arg)
+	}
+	return explicitTypeArgSubst(typeParams, written)
 }
 
 // mayBeFuncValue reports whether base, a callee, can be a function value: a
@@ -334,15 +350,22 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 // callee when place holds a pointer (a Ptr[T] or a *T) and the parameter
 // does not take one (GALA-E0111): `&place` lends the variable holding the
 // pointer, a `**T` in Go, where the parameter is a `*U` for a U that is no
-// pointer (an inout parameter cannot be one, GALA-E0111). Only a parameter
-// typed by a bare type parameter may take the pointer. When the pointer
-// points to the parameter's type, passing it without `&` lends its pointee.
+// pointer (an inout parameter cannot be one, GALA-E0111). The parameter's
+// type is read with the type arguments the call fixes (callee.typeArgs), so
+// `put[Counter](&p)` is checked as an inout Counter. Only a parameter typed
+// by a type parameter left to inference, or by a pointer type argument, may
+// take the pointer. When the pointer points to the parameter's type, passing
+// it without `&` lends its pointee.
 func (t *galaASTTransformer) checkInoutLentPointer(place ast.Expr, callee inoutCallee, i int, c callSrc) error {
 	if i >= len(callee.paramTypes) || callee.paramTypes[i] == nil {
 		return nil
 	}
-	want := t.followAliasChain(derefType(callee.paramTypes[i])) // the type an inout parameter lends
-	if transpiler.IsUnusable(want) || isTypeParamNamed(want, t.inoutCalleeTypeParams(callee)) {
+	declared := derefType(callee.paramTypes[i])
+	if len(callee.typeArgs) > 0 {
+		declared = t.substituteInType(declared, callee.typeArgs)
+	}
+	want := t.followAliasChain(declared) // the type an inout parameter lends
+	if _, isPtr := want.(transpiler.PointerType); isPtr || transpiler.IsUnusable(want) || isTypeParamNamed(want, t.inoutCalleeTypeParams(callee)) {
 		return nil
 	}
 	have, isPtr := t.followAliasChain(t.getExprTypeName(place)).(transpiler.PointerType)
