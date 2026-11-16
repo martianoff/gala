@@ -9,3 +9,11 @@ io.Reader from *os.File: reader true
 by-name argument: true true
 if-expression: true true
 self-tail-call loop: true true
+recursive call kept whole: true true
+by-name if-expression: true true
+by-name tuple with nil: true false
+sync.OnceValues: true true
+generic lambda: 7 false
+generic by-name: 8 false
+generic tuple with nil: 4 false
+(A, B) results: 3 2

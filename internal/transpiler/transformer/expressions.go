@@ -753,17 +753,20 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 // it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
 	untyped := transpiler.IsUnusable(s.typ)
+	// A result value of a Go-results body is checked where it is written:
+	// each branch of an if or match lowered against the slot is one. With no
+	// slot type (a generic Go callee's), the whole value is.
+	if s.goResults != nil {
+		if f := t.classifyExpr(e); untyped || (!f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok()) {
+			return t.lowerGoResultsValue(e, s, strict)
+		}
+	}
 	if untyped && s.hoist == "" {
 		return t.lowerExpr(e)
 	}
 	f := t.classifyExpr(e)
 	if untyped && !t.hoistableForm(f) {
 		return t.lowerExpr(e)
-	}
-	// A result value of a Go-results body is checked where it is written:
-	// each branch of an if or match is one.
-	if s.goResults != nil && !f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok() {
-		return t.lowerGoResultsValue(e, s, strict)
 	}
 	if e.node.Ok() {
 		t.nativeShape(e.node, "slot")
@@ -777,7 +780,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		return &ast.ParenExpr{X: expr}, nil
 	case f.lambda.ok():
 		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(s.typ); ok {
-			b := t.goResultsBodyFor(s.typ)
+			b := t.goResultsBodyFor(s.typ, "this lambda")
 			lit, checks, err := t.lowerLambda(f.lambda, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
 			if err != nil {
 				return nil, err

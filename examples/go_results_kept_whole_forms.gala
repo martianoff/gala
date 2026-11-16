@@ -4,13 +4,15 @@ import (
     "io"
     "os"
     "strconv"
+    "sync"
     . "martianoff/gala/go_interop"
 )
 
 // Every form a Go-results body takes gives Go its results: through an alias
 // of the Try or of the Tuple, a tuple with nil for the error, a component only
-// assignable to its result, a by-name argument, an if-expression and a
-// self-tail-call loop.
+// assignable to its result, a by-name argument, an if-expression, a
+// self-tail-call loop, a recursive call kept whole with ResultsOf, a generic
+// Go callee's slot and an `(A, B)` result list.
 
 val tooBig = "99999999999999999999"
 
@@ -51,9 +53,23 @@ func pick(s string, hex bool) (int, error) =
 // A self-tail call is a loop step; its base value is kept whole.
 func countDown(n int) (int, error) = if (n <= 0) ResultsOf(strconv.Atoi(tooBig)) else countDown(n - 1)
 
+// A call of the function itself is its Try; ResultsOf keeps its results.
+func down(k int) (int, error) = k match {
+    case 0 => ResultsOf(strconv.Atoi(tooBig))
+    case _ => ResultsOf(down(k - 1))
+}
+
+func divmod(a int, b int) (int, int) = (a / b, a % b)
+
 func callBack(f func() (int, error)) string {
     val n, err = f()
     s"${n > 0} ${err != nil}"
+}
+
+// A generic Go-results slot: T is inferred from the value.
+func callGeneric[T any](f func() (T, error)) string {
+    val v, err = f()
+    s"$v ${err != nil}"
 }
 
 func show(n int, err error) string = s"${n > 0} ${err != nil}"
@@ -80,4 +96,16 @@ func main() {
     Println(s"if-expression: ${show(i, iErr)}")
     val c, cErr = countDown(3)
     Println(s"self-tail-call loop: ${show(c, cErr)}")
+    val d, dErr = down(3)
+    Println(s"recursive call kept whole: ${show(d, dErr)}")
+    Println(s"by-name if-expression: ${callBack(if (d > 0) ResultsOf(strconv.Atoi(tooBig)) else ResultsOf(strconv.Atoi("1")))}")
+    Println(s"by-name tuple with nil: ${callBack((5, nil))}")
+    val once = sync.OnceValues(() => ResultsOf(strconv.Atoi(tooBig)))
+    val o, oErr = once()
+    Println(s"sync.OnceValues: ${show(o, oErr)}")
+    Println(s"generic lambda: ${callGeneric(() => ResultsOf(strconv.Atoi("7")))}")
+    Println(s"generic by-name: ${callGeneric(ResultsOf(strconv.Atoi("8")))}")
+    Println(s"generic tuple with nil: ${callGeneric(() => (4, nil))}")
+    val q, rem = divmod(17, 5)
+    Println(s"(A, B) results: $q $rem")
 }

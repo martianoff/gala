@@ -32,6 +32,8 @@ func failWith(msg string) error = errors.New(msg)
 
 func keepAll(s string) Tuple[int, error] = ResultsOf(strconv.Atoi(s))
 
+func runG[T any](f func() (T, error)) Try[T] = f()
+
 ` + body + `
 
 func main() {}
@@ -40,7 +42,7 @@ func main() {}
 
 // goResultsWholeBodyLine is the line the body of goResultsWholeProgram
 // starts on.
-const goResultsWholeBodyLine = 20
+const goResultsWholeBodyLine = 22
 
 // TestGoResultsKeptWhole covers a body Go calls with `(T, error)` results
 // that gives the Tuple of every result, Tuple[T, error], instead of the
@@ -157,6 +159,47 @@ func TestGoResultsKeptWhole(t *testing.T) {
 			body:     "func flag(r *bufio.Reader) bool = ResultsOf2(r.ReadLine()).V2",
 			contains: []string{"ResultsOf2(r.ReadLine()).V2.Get()"},
 		},
+		{
+			name:     "a lambda in a generic Go callee's slot",
+			body:     `func seven() Try[int] = runG(() => ResultsOf(strconv.Atoi("7")))`,
+			contains: append([]string{"runG(func() (int, error) {"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a by-name argument in a generic Go callee's slot",
+			body:     `func eight() Try[int] = runG(ResultsOf(strconv.Atoi("8")))`,
+			contains: append([]string{"runG(func() (int, error) {"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a tuple with nil in a generic Go callee's slot",
+			body:     `func four() Try[int] = runG(() => (4, nil))`,
+			contains: append([]string{"runG(func() (int, error) {", "std.Tuple[int, error]{"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a by-name if-expression of two ResultsOf",
+			body:     `func one(c bool) int = run(if (c) ResultsOf(strconv.Atoi("1")) else ResultsOf(strconv.Atoi("2")))`,
+			contains: append([]string{"run(func() (int, error) {"}, whole...),
+			absent:   notTry,
+		},
+		{
+			name:     "a by-name tuple with nil",
+			body:     `func five() int = run((5, nil))`,
+			contains: append([]string{"std.Tuple[int, error]{"}, whole...),
+			absent:   notTry,
+		},
+		{
+			name:     "a call of the function itself kept whole",
+			body:     "func down(k int) (int, error) = k match {\n    case 0 => ResultsOf(strconv.Atoi(\"7\"))\n    case _ => ResultsOf(down(k - 1))\n}",
+			contains: []string{"ResultsOf(down(k - 1))", "return _goResult.V1.Get(), _goResult.V2.Get()"},
+			absent:   notTry,
+		},
+		{
+			name:     "an (A, B) result list",
+			body:     "func divmod(a int, b int) (int, int) = (a / b, a % b)",
+			contains: []string{"func divmod(a int, b int) (int, int) {", "return _goResult.V1.Get(), _goResult.V2.Get()"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,22 +215,25 @@ func TestGoResultsKeptWhole(t *testing.T) {
 	}
 }
 
+
 // TestGoResultsBodyValueRejected pins GALA-E0134: a body Go calls with
-// `(T, error)` results gives the Try or the Tuple of the results; any other
-// value, or both kinds in one body, is reported at the value itself rather
-// than left to go build against the generated return. line and col (1-based)
-// are the
-// value's, line counted from the body's first line; mixedAt is the body line
-// of the other kind's value, 0 when the body does not mix them.
+// several results gives their one value — for `(T, error)` the Try or the
+// Tuple of the results, for `(A, B)` their Tuple — and any other value, or
+// both kinds in one body, is reported at the value itself rather than left to
+// go build against the generated return. line and col (1-based) are the
+// value's, line counted from the body's first line. mixedAt is the body line
+// of the other kind's value, and mixedCol its column when it is on the same
+// line; both 0 when the body does not mix them.
 func TestGoResultsBodyValueRejected(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
 	cases := []struct {
-		name    string
-		body    string
-		line    int
-		col     int
-		mixedAt int
-		want    string
+		name     string
+		body     string
+		line     int
+		col      int
+		mixedAt  int
+		mixedCol int
+		want     string
 	}{
 		{
 			name: "a function giving a plain value",
@@ -200,6 +246,12 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			body: "func parse(s string) (int, error) = Some(s.Size())",
 			line: 1, col: 37,
 			want: "this value is of type Option[int]",
+		},
+		{
+			name: "a Try of another type",
+			body: "func echo(s string) Try[string] = Success(s)\n\nfunc parse(s string) (int, error) = echo(s)",
+			line: 3, col: 37,
+			want: "this value is of type Try[string]",
 		},
 		{
 			name: "a Tuple of other types",
@@ -216,7 +268,7 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 		{
 			name: "an if-expression giving a Try and a Tuple",
 			body: "func parse(s string) (int, error) = if (s == \"\") Success(0) else ResultsOf(strconv.Atoi(s))",
-			line: 1, col: 66, mixedAt: 1,
+			line: 1, col: 66, mixedAt: 1, mixedCol: 50,
 			want: "function parse gives a Tuple[int, error] here but a Try[int]",
 		},
 		{
@@ -228,8 +280,14 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 		{
 			name: "a self-tail-call loop giving a Try and a Tuple",
 			body: "func count(n int) (int, error) = if (n < 0) Success(0) else if (n == 0) ResultsOf(strconv.Atoi(\"7\")) else count(n - 1)",
-			line: 1, col: 73, mixedAt: 1,
+			line: 1, col: 73, mixedAt: 1, mixedCol: 45,
 			want: "function count gives a Tuple[int, error] here but a Try[int]",
+		},
+		{
+			name: "a call of the function itself next to a Tuple",
+			body: "func down(k int) (int, error) = k match {\n    case 0 => ResultsOf(strconv.Atoi(\"7\"))\n    case _ => down(k - 1)\n}",
+			line: 3, col: 15, mixedAt: 2,
+			want: "a call of the function itself is its Try: `ResultsOf(down(...))` keeps its results as they are",
 		},
 		{
 			name: "a lambda giving a plain value",
@@ -249,6 +307,24 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			line: 1, col: 23,
 			want: "this argument gives Go the results (int, error)",
 		},
+		{
+			name: "a by-name if-expression giving a Try and a Tuple",
+			body: "func one(c bool) int = run(if (c) Success(1) else ResultsOf(strconv.Atoi(\"2\")))",
+			line: 1, col: 51, mixedAt: 1, mixedCol: 35,
+			want: "this argument gives a Tuple[int, error] here but a Try[int]",
+		},
+		{
+			name: "an (A, B) body giving a Tuple of other types",
+			body: "func label(s string) Tuple[string, int] = (s, 1)\n\nfunc pair(s string) (int, int) = label(s)",
+			line: 3, col: 34,
+			want: "function pair gives Go the results (int, int), so its value is a Tuple[int, int] of the results; this value is of type Tuple[string, int]",
+		},
+		{
+			name: "an (A, B) body giving a Try",
+			body: "func pair(s string) (int, int) = Success(1)",
+			line: 1, col: 34,
+			want: "this value is of type Try[int]",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -258,7 +334,10 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			assert.Contains(t, msg, string(galaerr.CodeGoResultsBodyValue))
 			assert.Contains(t, msg, fmt.Sprintf("go_results_whole_test.gala:%d:%d ", goResultsWholeBodyLine+tc.line-1, tc.col-1))
 			assert.Contains(t, msg, tc.want)
-			if tc.mixedAt > 0 {
+			switch {
+			case tc.mixedCol > 0:
+				assert.Contains(t, msg, fmt.Sprintf("at column %d:", tc.mixedCol))
+			case tc.mixedAt > 0:
 				assert.Contains(t, msg, fmt.Sprintf("at line %d:", goResultsWholeBodyLine+tc.mixedAt-1))
 			}
 		})

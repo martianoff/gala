@@ -1143,13 +1143,14 @@ const (
 	// ranged type is known to be a GALA struct.
 	CodeRangeOverGalaType ErrorCode = "GALA-E0133"
 
-	// E0134: the body of a function, method or lambda that Go calls with a
-	// result list ending in `error`, `(T, error)`, gives a value that cannot
-	// become those results. The body gives a Try[T] (a failure is Go's zero
-	// value with the error) or, through go_interop's ResultsOf, a
-	// Tuple[T, error] that Go receives as it is. Any other value, or both
-	// kinds in one body, used to fail `go build` against the generated
-	// return ("cannot use std.Tuple[int, error]{…} as std.Try[int] value").
+	// E0134: the body of a function, method, lambda or by-name argument that
+	// Go calls with several results gives a value of a type that cannot
+	// become those results. For `(T, error)` the body gives a Try[T] (a
+	// failure is Go's zero value with the error) or, through go_interop's
+	// ResultsOf, a Tuple[T, error] that Go receives as it is; for `(A, B)` it
+	// gives their Tuple. A value of another type, or both kinds in one body,
+	// used to fail `go build` against the generated return ("cannot use
+	// std.Tuple[int, error]{…} as std.Try[int] value").
 	CodeGoResultsBodyValue ErrorCode = "GALA-E0134"
 )
 

@@ -1008,8 +1008,13 @@ used as a value, is inferred as one GALA type built from the Go signature:
   alias) may instead be the Tuple of every result, `Tuple[T, error]`
   (go_interop's `ResultsOf`): the body then gives Go each component as it is.
   A tuple literal of one element per result is inferred against that Tuple, so
-  `(n, nil)` is a `Tuple[int, error]`. One body gives one kind; any other value
-  is GALA-E0134.
+  `(n, nil)` is a `Tuple[int, error]`. In the slot of a generic Go callee
+  (`sync.OnceValues(() => ...)`) a result left open is not checked, and the
+  trailing `error` still types the tuple's `nil`. One body gives one kind; a
+  value whose type the results cannot hold is GALA-E0134 (the value's type is
+  checked: `Success(s)` takes its type argument from the slot, and Go reports
+  its argument). A call of the function itself is its Try. An `(A, B)` result
+  list is checked against its Tuple the same way.
 - A Go call passed as the sole argument of a Go function whose parameters take
   its results one for one (`f(g())`, `ResultsOf(r.Read(p))`) passes them as
   they are, and each result binds the callee's type parameter at its position:

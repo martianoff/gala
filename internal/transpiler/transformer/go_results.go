@@ -49,10 +49,9 @@ import (
 // goResult records one Go call converted to a GALA value.
 type goResult struct {
 	transpiler.GoResultValue
-	raw     *ast.CallExpr     // the Go call itself, yielding every result
-	results []transpiler.Type // the types of its results, as instantiated at the call
-	site    callSrc           // the call, for quoting the callee in a diagnostic
-	via     string            // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
+	raw  *ast.CallExpr // the Go call itself, yielding every result
+	site callSrc       // the call, for quoting the callee in a diagnostic
+	via  string        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
 }
 
 // count is the number of the call's results, a trailing error included.
@@ -106,7 +105,7 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	returns := t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
 	value, _ := transpiler.GoResultValueOf(returns)
 	// The diagnostics quote the callee only: the arguments are not kept.
-	res := &goResult{GoResultValue: value, raw: call, results: returns, site: callSrc{post: c.post, suffix: c.suffix}}
+	res := &goResult{GoResultValue: value, raw: call, site: callSrc{post: c.post, suffix: c.suffix}}
 	if value.Values > transpiler.MaxGoResultValues {
 		line, col := c.start()
 		return nil, galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, line, col,
@@ -118,10 +117,6 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 		t.goResults = make(map[*ast.CallExpr]*goResult)
 	}
 	t.goResults[wrapper] = res
-	if t.goResultCalls == nil {
-		t.goResultCalls = make(map[*ast.CallExpr]*goResult)
-	}
-	t.goResultCalls[call] = res
 	if !res.Type.IsNil() {
 		t.exprTypeCache[wrapper] = res.Type
 	}
@@ -130,10 +125,18 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 
 // goCallResults are the result types of expr when it is a Go call that
 // liftGoResults converted, passed on as its raw results (see
-// spreadGoResultArg); nil otherwise.
+// spreadGoResultArg), read from the one value it was converted to; nil
+// otherwise.
 func (t *galaASTTransformer) goCallResults(expr ast.Expr) []transpiler.Type {
-	if res := t.goResultCalls[asCall(expr)]; res != nil {
-		return res.results
+	call := asCall(expr)
+	if call == nil {
+		return nil
+	}
+	for _, res := range t.goResults {
+		if res.raw == call {
+			results, _ := transpiler.GoResultsOf(res.Type, res.count())
+			return results
+		}
 	}
 	return nil
 }

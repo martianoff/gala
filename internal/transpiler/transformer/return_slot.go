@@ -196,7 +196,9 @@ func (t *galaASTTransformer) returnSlotPending() bool {
 // not, since it may legitimately be void or have a type the transpiler cannot
 // name.
 func (t *galaASTTransformer) lowerFillingValue(e exprSrc, deferUnsettled bool) ast.Expr {
-	expr, err := t.lowerExpr(e)
+	// A value of a lambda Go calls with several results is checked as it is
+	// lowered; its error, too, waits for the body to be lowered.
+	expr, err := t.lowerAgainst(e, slot{goResults: t.returnSlot.goResults}, false)
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
 		// A diverging call (`Panic(...)`) yields no value to type the slot

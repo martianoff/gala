@@ -303,10 +303,12 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	var lambdaSlot returnSlot
 	if isConcreteExpectedType {
 		lambdaSlot.typ = t.astTypeToTranspilerType(retType)
-		lambdaSlot.goResults = goResults
 	} else {
 		lambdaSlot.fillable = !isVoidExpected
 	}
+	// A lambda Go calls with several results checks each of its values (see
+	// lowerGoResultsValue), whether its result type is known or not.
+	lambdaSlot.goResults = goResults
 	block := l.block()
 	if block.ok() && lambdaSlot.fillable {
 		lambdaSlot.body = block
@@ -320,9 +322,10 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	var bodySlot slot
 	if retType != nil && retType != ExpectedVoid {
 		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || declaredResult || explicitRetType != nil || !containsAny(retType) {
-			bodySlot = t.resultSlot(rt)
+			bodySlot = typedSlot(rt)
 		}
 	}
+	bodySlot.goResults = goResults
 
 	if block.ok() {
 		b, inferredRet, err := t.transformBlockLambdaBody(l, block, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)

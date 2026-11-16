@@ -3125,7 +3125,7 @@ val (big, rangeErr) = ResultsOf(strconv.Atoi("99999999999999999999"))  // the cl
 parameters take a call's results one for one receives them this way.
 
 One body gives one kind of value, the `Try` or the `Tuple` of the results. A
-body that gives another value, or both kinds, is
+body that gives a value of another type, or both kinds, is
 [GALA-E0134](errors/GALA-E0134.md). A lambda passed where Go expects a
 `func(...) (T, error)` follows the same rule, and so does an argument passed
 where Go expects a `func() (T, error)` (`run(ResultsOf(strconv.Atoi(s)))`).
@@ -3133,7 +3133,16 @@ Each value is checked where it is written: a `return`, the trailing value,
 each branch of an `if` and each arm of a `match`. A tuple of the results
 (`(n, nil)`) is a `Tuple[T, error]` too, its `nil` the error. Each component
 needs only to be assignable to its result, so `ResultsOf(os.Open(p))` fills
-`(io.Reader, error)`.
+`(io.Reader, error)`. In the slot of a generic Go callee, as in
+`sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))`, the Tuple works the same
+way, and Go infers the type arguments from it.
+
+A call of the function itself is its `Try`, as any call of it is: in a body
+that gives the Tuple, write a recursive call `ResultsOf(down(k - 1))`. E0134
+checks the type of each value; a constructor takes its type arguments from
+the result it fills, so `Success(s)` giving Go `(int, error)` is a `Try[int]`
+and Go reports its argument. An `(A, B)` result list without an `error` is
+checked the same way against its Tuple.
 
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 
