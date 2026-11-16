@@ -1,13 +1,19 @@
 package main
 
-// A default that calls its own function and leaves itself out: expanding it to
-// order the package-level variables never ends. galaspec stops as unsupported
-// (default-cycle) before initializing anything.
+// Defaults that call their own function and leave themselves out: expanding
+// them to order the package-level variables would never end. galaspec stops as
+// unsupported (default-cycle) before initializing anything, at the first slot
+// a chain of expansions reopens, so a default that reopens its slot several
+// times (g) costs no more than one that reopens it once (f).
 func f(a int, b int = f(1)) int = a + b
+
+func g(a int = g() + g() + g() + g()) int = a
 
 val x = f(0, 2)
 
 val y = f(0)
+
+val z = g()
 
 func main() {
     Println(x)
