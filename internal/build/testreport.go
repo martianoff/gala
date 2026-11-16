@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -91,20 +90,24 @@ func (r *TestReport) pkg(path string) *packageResult {
 	return p
 }
 
-// framingLine matches a line the test runner prints around a test, not one
-// the test logged: unindented, as GALA's test framework prints them, and
-// naming the test. Group 2 is "--- " for a test's own result line, group 3
-// the test's name.
-var framingLine = regexp.MustCompile(`^((=== (?:RUN|PAUSE|CONT|NAME) +)|--- (?:PASS|FAIL|SKIP): )(\S+)`)
-
-// framing reports whether line is the runner's framing for the test named
-// name, and whether it is that test's own result line.
+// framing reports whether line is a line the test runner printed around the
+// test named name, not one the test logged, and whether it is the test's
+// own result line ("--- PASS: name (0.00s)"). Framing is unindented, as
+// GALA's test framework prints it, and names the whole test: a name may
+// hold spaces.
 func framing(line, name string) (isFraming, isResult bool) {
-	m := framingLine.FindStringSubmatch(line)
-	if m == nil || m[3] != name {
-		return false, false
+	line = strings.TrimRight(line, "\r\n")
+	for _, prefix := range []string{"=== RUN   ", "=== PAUSE ", "=== CONT  ", "=== NAME  "} {
+		if line == prefix+name {
+			return true, false
+		}
 	}
-	return true, m[2] == ""
+	for _, prefix := range []string{"--- PASS: ", "--- FAIL: ", "--- SKIP: "} {
+		if rest, ok := strings.CutPrefix(line, prefix+name); ok && (rest == "" || strings.HasPrefix(rest, " (")) {
+			return true, true
+		}
+	}
+	return false, false
 }
 
 // Add records one event.
@@ -125,6 +128,7 @@ func (r *TestReport) Add(ev TestEvent) {
 		return
 	}
 	p := r.pkg(ev.Package)
+	p.failedParents = nil // results change: rebuild the cache when asked
 	if ev.Test == "" {
 		switch ev.Action {
 		case "output":
@@ -220,6 +224,10 @@ func (r *TestReport) finishFailedPackage(p *packageResult, ev TestEvent) {
 func (r *TestReport) AddBuildFailure(pkgPath, output string) {
 	p := r.pkg(pkgPath)
 	p.action = "fail"
+	if p.buildFailure != nil {
+		// A second failure under the same name keeps the first.
+		output = strings.TrimRight(*p.buildFailure, "\n") + "\n" + output
+	}
 	p.buildFailure = &output
 }
 

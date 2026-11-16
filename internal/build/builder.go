@@ -1991,7 +1991,12 @@ func (b *Builder) runGoTest(verbose bool, pkgs []string, report *TestReport) err
 				// module or package-loading error: one failure for the run.
 				report.AddBuildFailure(runFailureSuite, stderr.String())
 			}
-			return reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+			failed := reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+			if consumeErr != nil {
+				// Events after the read error are missing from the report.
+				return errors.Join(failed, fmt.Errorf("reading test events: %w", consumeErr))
+			}
+			return failed
 		}
 		return fmt.Errorf("go test: %w", err)
 	}

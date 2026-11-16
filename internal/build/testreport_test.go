@@ -520,3 +520,36 @@ func TestWithoutReported(t *testing.T) {
 		})
 	}
 }
+
+// GALA's table tests name cases freely, spaces included; their framing is
+// still recognized, so a parent's later lines stay with the parent.
+func TestTestReport_SubtestNamesWithSpaces(t *testing.T) {
+	report, _, _ := readReport(t, eventStream(
+		`{"Action":"run",`+pkgMain+`,"Test":"TestT"}`,
+		`{"Action":"run",`+pkgMain+`,"Test":"TestT/count words by default"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/count words by default","Output":"=== RUN   TestT/count words by default\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/count words by default","Output":"--- PASS: TestT/count words by default (0.000s)\n"}`,
+		`{"Action":"pass",`+pkgMain+`,"Test":"TestT/count words by default","Elapsed":0}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/count words by default","Output":"    ERROR: parent check\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT","Output":"--- FAIL: TestT (0.000s)\n"}`,
+		`{"Action":"fail",`+pkgMain+`,"Test":"TestT","Elapsed":0}`,
+		`{"Action":"fail",`+pkgMain+`,"Elapsed":0.1}`,
+	), false)
+	cases := decodeJUnit(t, report).Suites[0].TestCases
+	require.Len(t, cases, 2)
+	require.NotNil(t, cases[0].Failure)
+	assert.Equal(t, "parent check", cases[0].Failure.Message)
+	assert.Equal(t, "TestT/count words by default", cases[1].Name)
+	assert.Empty(t, cases[1].SystemOut, "the subtest's framing is not its output")
+}
+
+// Two failures of the run recorded under one name both stay in the report.
+func TestTestReport_BuildFailuresUnderOneNameAccumulate(t *testing.T) {
+	report := NewTestReport(nil)
+	report.AddBuildFailure(runFailureSuite, "go: cannot load module\n")
+	report.AddBuildFailure(runFailureSuite, "running test binary: exec format error")
+	tc := decodeJUnit(t, report).Suites[0].TestCases[0]
+	require.NotNil(t, tc.Error)
+	assert.Contains(t, tc.Error.Body, "cannot load module")
+	assert.Contains(t, tc.Error.Body, "exec format error")
+}
