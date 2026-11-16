@@ -23,9 +23,6 @@ def allowedAxioms : List Name := [``propext, ``Quot.sound, ``Classical.choice]
 /-- The theorems COVERAGE.md calls proved. Each must exist and be a theorem, so deleting or
     renaming one fails the check instead of leaving COVERAGE.md wrong. -/
 def requiredTheorems : List Name := [
-  `Gala.MatchLowering.compile_correct,
-  `Gala.MatchLowering.program_correct,
-  `Gala.MatchLowering.leaky_not_correct,
   `Gala.Spec.capturedEnv_captured,
   `Gala.Spec.defaultFrame_other,
   `Gala.Spec.defaultFrame_last,

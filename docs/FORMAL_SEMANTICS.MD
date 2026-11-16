@@ -110,7 +110,6 @@ formal/
   lakefile.toml             no Mathlib dependency at the start
   Gala.lean                 root module
   scripts/ProofCheck.lean   fails on sorry and non-standard axioms
-  Gala/MatchLowering.lean   the match lowering model (exists today)
   Gala/GoCore.lean          the Go subset the transpiler emits (first fragment exists)
   Gala/MatchLower.lean      M3: the match lowering into GoCore, proved against galaspec
   Gala/Syntax.lean          surface AST (mirrors Core JSON)
@@ -325,12 +324,10 @@ column lists what each milestone's claim rests on beyond them.
   wildcard, tuple and extractor patterns, bare case names, stable identifiers, and
   guards.
 - **Statement:** a lowering `lowerMatch` from galaspec's syntax to a first fragment of
-  GoCore, and `GoCore.geval (lowerMatch e) ≈ Spec.eval e` under an environment relation,
-  as `compile_correct` does today for a separate toy language.
-- **What it removes:** the separate source semantics `seval` in `MatchLowering.lean`,
-  which no theorem ties to galaspec today. `compile_correct`, `program_correct` and the
-  #996 counterexample `leaky_not_correct` are restated against galaspec and GoCore, and
-  their pinned statements in `Statements.lean` change with them.
+  GoCore, and `GoCore.geval (lowerMatch e) ≈ Spec.eval e` under an environment relation.
+- **What it removed:** the earlier prototype, `MatchLowering.lean`, proved a match
+  lowering correct against a separate toy source semantics that no theorem tied to
+  galaspec. It is gone, with its theorems `compile_correct` and `program_correct`.
 - **Status: proved** (`formal/Gala/MatchLower.lean`, `lowerMatch_correct`), relative to
   the match's parts, as T3 is: *given that the subject, guards and bodies are lowered
   correctly*, the scoped lowering into GoCore is correct with respect to galaspec, as
@@ -484,12 +481,13 @@ flowchart LR
 ### 7. Lowering models and the reference lowering
 
 A lowering model is a Lean model of only the Go that GALA emits for one construct, with a
-proof that the lowering preserves meaning. It is *not* a Go semantics. The existing
-prototype, `formal/Gala/MatchLowering.lean`, does this for sealed `match`. It proves, for a
-small model of `match` and of the Go it lowers to (not for the transpiler's output), that
-a scoped lowering preserves meaning and that the leaky lowering of #996 does not.
+proof that the lowering preserves meaning. It is *not* a Go semantics. The first one,
+`formal/Gala/MatchLower.lean` (M3), does this for `match`: it lowers galaspec's `match`
+into GoCore in the transformer's shape, proves that this scoped lowering preserves
+galaspec's meaning (given correctly lowered parts), and that the leaky lowering of #996
+does not. It is about a model of the transformer's output, not the output itself.
 
-The roadmap above turns these models into the **reference lowering**. M3 restates the
+The roadmap above turns these models into the **reference lowering**. M3 stated the
 `match` model against galaspec, with a first fragment of GoCore as its target; M5 extends
 it to all of S1; M6's validator checks the transformer's actual output against it,
 program by program. Each further construct (closures, default and named arguments,
@@ -680,10 +678,10 @@ To keep our obligations at zero:
 
 Done so far: M1 (T1, fuel adequacy), the metamorphic generators, the Core JSON exporter,
 galaspec for S1 and part of S2, the differential harness over `examples/`, gala2lean, and
-the match lowering model.
+M3 (the `match` lowering proved against galaspec).
 The estimates are in weeks of one maintainer working with AI agents, and the chart runs
-the proof milestones one after another (M3 needs only M1, so M2 and M3 could overlap with
-a second person). The spec-coverage lane, the rest of S2 and S3 in galaspec and
+the proof milestones one after another (M3 needed only M1, so it finished ahead of M2).
+The spec-coverage lane, the rest of S2 and S3 in galaspec and
 switching `FuzzPrograms` to galaspec as its oracle, is separate work run by other agents
 and is drawn alongside. The dates are placeholders that show order and length, not
 commitments.
@@ -696,8 +694,8 @@ gantt
     M1 fuel adequacy                         :done, m1, 2026-11-15, 1d
     M2 alpha-invariance, T3, T4              :m2, after m1, 49d
     section Link to the transformer
-    M3 match lowering against galaspec       :m3, after m2, 28d
-    M4 GoCore and the Go AST exporter        :m4, after m3, 49d
+    M3 match lowering against galaspec       :done, m3, 2026-11-15, 1d
+    M4 GoCore and the Go AST exporter        :m4, after m2, 49d
     M5 reference lowering for S1             :m5, after m4, 56d
     M6 per-program translation validation    :m6, after m5, 70d
     section Widen
@@ -710,7 +708,7 @@ gantt
 |---|---|---|
 | M1 | 2–3 weeks | Done: T1 is proved, pinned in `Statements.lean` and listed in COVERAGE.md. |
 | M2 | 6–8 weeks | T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator is checked against T2's conditions. |
-| M3 | 3–4 weeks | `MatchLowering.lean`'s separate source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form. |
+| M3 | 3–4 weeks | Done: the toy source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form (`lowerMatch_correct`). |
 | M4 | 5–8 weeks | GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |
 | M5 | 6–9 weeks | The reference lowering covers everything the transformer emits for S1, and its correctness theorem is proved. |
 | M6 | 8–12 weeks | The validator's soundness theorem is proved, and CI validates every S1 program in the corpus, listing the ones it rejects and why. |
