@@ -376,13 +376,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 28 | 1 | 56 | 3 |
+| AGREE | 28 | 1 | 58 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 468 | 34 | 440 | 32 |
+| UNSUPPORTED | 468 | 34 | 438 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
-Examples gala2lean translates whose Lean run agrees with Go: **56** (ratchet baseline 56).
+Examples gala2lean translates whose Lean run agrees with Go: **58** (ratchet baseline 58).
 
 ### Constructs
 
