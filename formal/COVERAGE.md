@@ -73,10 +73,7 @@ A run ends `unsupported:<kind>` when it reaches:
   named argument to a function value (`named-arg`); a positional argument after a named
   one (`positional-after-named`); a type outside S1 (`type-<name>`); an
   integer constant outside int64 (`int-constant-overflow`); a cycle in package-level
-  initialization (`init-cycle`); a default value whose expansion reopens itself, such as
-  `func f(a int, b int = f(1))` called as `f(0)` from what a package-level initializer
-  reaches, which leaves the initialization order undefined (`default-cycle`, before
-  anything is initialized); a program without `main` (`no-main`);
+  initialization (`init-cycle`); a program without `main` (`no-main`);
 - an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
   runs the package's initializers whether or not the run reaches a name of it, and
   galaspec does not model them. A named import of one of a fixed list of packages
@@ -95,10 +92,11 @@ A run ends `unsupported:<kind>` when it reaches:
 
 `lake exe galaspec-tests` runs the fixtures in [`tests/`](tests):
 
-- 15 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+- 16 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
   interpolated strings, lambdas and closures, named arguments and defaults, a by-name
   default whose name a caller's local shadows,
-  package-level initialization and its order, scoping, three panic classes, fuel), and a
+  package-level initialization and its order (with defaults that call their own function),
+  scoping, three panic classes, fuel), and a
   document with
   an unknown `core` version, which is malformed.
   Each `.out` is what the program prints when built and run with the `gala` CLI; for
