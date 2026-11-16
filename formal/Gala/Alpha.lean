@@ -14,8 +14,11 @@
 
   Conditions on a renamed binder (`BinderR`, `PatR.bind`): it is lowercase on both sides,
   never `_`, and never a package-level name (functions, package-level variables, structs,
-  sealed cases). This is stricter than keeping the capitalization. A function's parameters
-  stay distinct, and a named argument follows its parameter's new name.
+  sealed cases: the names in `pkg`). This is stricter than keeping the capitalization.
+  `DeclsR` puts every function, struct and case name in `pkg`; that the package-level
+  variables' are in it too is left to the relation on whole programs (T2, part c), since
+  `Decls` does not list them. A function's parameters stay distinct, and a named argument
+  follows its parameter's new name.
 
   The relation covers the shapes the parser produces: a declaration only as a statement of a
   block, and a named argument only as a call's argument. A program of another shape is not
@@ -221,8 +224,14 @@ inductive Fall2 (R : α → β → Prop) : List α → List β → Prop
   | nil : Fall2 R [] []
   | cons {a b as bs} : R a b → Fall2 R as bs → Fall2 R (a :: as) (b :: bs)
 
+/-- A sealed case related by the renaming: the same but for its fields' defaults. -/
+def VarR (pkg : List String) (pm : String → Ren) (v w : Variant) : Prop :=
+  v.name = w.name ∧ v.isDefault = w.isDefault ∧ Fall2 (FieldR pkg pm) v.fields w.fields
+
 /-- The declarations of two programs: the same, but for renamed binders inside function
-    bodies, defaults and field defaults. `pkg` holds every package-level name. -/
+    bodies, defaults and field defaults. `pkg` holds every function, struct and sealed case
+    name (`inPkg`); the names of package-level variables, which `Decls` does not carry, are
+    required to be in it by the relation on whole programs (T2, part c). -/
 structure DeclsR (pkg : List String) (pm : String → Ren) (ds ds' : Decls) : Prop where
   funcs : Fall2 (fun (a : String × Func) (b : String × Func) => a.1 = b.1 ∧ a.2.name = a.1 ∧
     FuncR pkg pm a.2 b.2) ds.funcs ds'.funcs
@@ -230,9 +239,8 @@ structure DeclsR (pkg : List String) (pm : String → Ren) (ds ds' : Decls) : Pr
   structs : Fall2 (fun (a b : String × List Field) => a.1 = b.1 ∧ Fall2 (FieldR pkg pm) a.2 b.2)
     ds.structs ds'.structs
   shorthands : ds.shorthands = ds'.shorthands
-  sealeds : Fall2 (fun (a b : String × List Variant) => a.1 = b.1 ∧
-    Fall2 (fun (v w : Variant) => v.name = w.name ∧ v.isDefault = w.isDefault ∧
-      Fall2 (FieldR pkg pm) v.fields w.fields) a.2 b.2) ds.sealeds ds'.sealeds
+  sealeds : Fall2 (fun (a b : String × List Variant) => a.1 = b.1 ∧ Fall2 (VarR pkg pm) a.2 b.2)
+    ds.sealeds ds'.sealeds
   unsupported : ds.unsupported = ds'.unsupported
   inPkg : ∀ x, ((ds.funcs.lookup x).isSome ∨ (ds.structs.lookup x).isSome ∨
     (ds.variant? x).isSome) → x ∈ pkg
@@ -332,8 +340,7 @@ def RefR (pkg : List String) (pm : String → Ren) : Ref → Ref → Prop
   | .var b, .var b' => BindR pkg pm b b'
   | .func f, .func f' => FuncR pkg pm f f'
   | .struct_ n fs, .struct_ n' fs' => n = n' ∧ Fall2 (FieldR pkg pm) fs fs'
-  | .variant ty v, .variant ty' v' => ty = ty' ∧ v.name = v'.name ∧ v.isDefault = v'.isDefault ∧
-      Fall2 (FieldR pkg pm) v.fields v'.fields
+  | .variant ty v, .variant ty' v' => ty = ty' ∧ VarR pkg pm v v'
   | .print nl, .print nl' => nl = nl'
   | .unbound, .unbound => True
   | _, _ => False
@@ -408,9 +415,6 @@ theorem lookup_fall2 {S : String × α → String × β → Prop} {R : α → β
       exact lookup_fall2 hS x ht
 
 /-- Variants related as in `DeclsR`. -/
-def VarR (pkg : List String) (pm : String → Ren) (v w : Variant) : Prop :=
-  v.name = w.name ∧ v.isDefault = w.isDefault ∧ Fall2 (FieldR pkg pm) v.fields w.fields
-
 theorem find_name_fall2 {pkg : List String} {pm : String → Ren} (x : String) :
     ∀ {vs ws : List Variant}, Fall2 (VarR pkg pm) vs ws →
       (vs.find? (·.name == x) = none ∧ ws.find? (·.name == x) = none) ∨
@@ -922,6 +926,39 @@ theorem argSlots_go_rel {pkg : List String} {pm : String → Ren} {Γ : Ren}
     split
     · exact argSlots_go_rel hn hnd true _ ha
     · exact .stuck _ _
+
+theorem argSlots_same_go_rel {pkg : List String} {pm : String → Ren} {Γ : Ren}
+    (names : List String) :
+    ∀ {args args' : List Expr} (nm : Bool) (acc : List Nat), ArgsR pkg pm [] Γ args args' →
+      ResR pkg pm Eq (argSlots.go names args nm acc) (argSlots.go names args' nm acc)
+  | _, _, nm, acc, .nil => by
+    simp only [argSlots.go]
+    split
+    · exact .stuck _ _
+    · rfl
+  | _, _, nm, acc, .pos (e := e) (e' := e') hne he ha => by
+    have hne' := alphaE_not_named he
+    cases e <;> simp [isNamed] at hne <;> cases e' <;> simp [isNamed] at hne' <;>
+      simp only [argSlots.go] <;>
+      (split
+       · exact StopR.unsupported _ _ _
+       · exact argSlots_same_go_rel names nm _ ha)
+  | _, _, nm, acc, .named (n := n) (n' := n') hm _ ha => by
+    obtain rfl : n = n' := by
+      rcases hm with h | ⟨h, _⟩
+      · simp at h
+      · exact h
+    simp only [argSlots.go]
+    split
+    · exact argSlots_same_go_rel names true _ ha
+    · exact .stuck _ _
+
+/-- A constructor's arguments, whose field names are not renamed (`AlphaE.callFree` with
+    `pm` giving no renaming), get the same slots on both sides. -/
+theorem argSlots_same_rel {pkg : List String} {pm : String → Ren} {Γ : Ren}
+    (names : List String) {args args' : List Expr} (ha : ArgsR pkg pm [] Γ args args') :
+    ResR pkg pm Eq (argSlots names args) (argSlots names args') :=
+  argSlots_same_go_rel names false [] ha
 
 /-- Binding arguments to parameters commutes with renaming the parameters: a named
     argument follows its parameter's new name, so each argument gets the same slot. -/

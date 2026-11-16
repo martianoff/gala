@@ -271,6 +271,12 @@ theorem argSlots_rel : ∀ {pkg : List String} {pm : String → Ren} {Γ : Ren}
   Gala.Spec.argSlots_rel
 
 open Gala.Spec in
+theorem argSlots_same_rel : ∀ {pkg : List String} {pm : String → Ren} {Γ : Ren}
+    (names : List String) {args args' : List Expr}, ArgsR pkg pm [] Γ args args' →
+    ResR pkg pm Eq (argSlots names args) (argSlots names args') :=
+  Gala.Spec.argSlots_same_rel
+
+open Gala.Spec in
 theorem byNameOk_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
     {l l' : Env} {c c' : Core} {ty : Option Ty} {a a' : Expr},
     DeclsR pkg pm ds ds' → EnvR pkg pm Γ l l' → GlobR pkg pm c.globals c'.globals →

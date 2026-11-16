@@ -55,6 +55,7 @@ def requiredTheorems : List Name := [
   `Gala.Spec.resolve_rel,
   `Gala.Spec.matchPat_rel,
   `Gala.Spec.argSlots_rel,
+  `Gala.Spec.argSlots_same_rel,
   `Gala.Spec.byNameOk_rel
 ]
 
