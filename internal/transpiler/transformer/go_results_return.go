@@ -72,33 +72,27 @@ func (t *galaASTTransformer) goResultsValue(results *ast.FieldList) (transpiler.
 }
 
 // finishLambda is lit, a lambda or placeholder lambda lowered against
-// slotType, as its value. Its body gets, in this order, the nil checks of its
-// Ptr parameters (entryChecks, see lowerLambda), the line marker of body, the
-// expression it is written as (exprFuncBody; a zero body, a block lambda's,
-// adds none), and its statements; and its one value is spread over Go's
-// results (spreadLambdaGoResults) when slotType is non-nil. at is where the
+// slotType, as its value. Its one value is spread over Go's results
+// (spreadLambdaGoResults) when slotType is non-nil; then its body is led, in
+// this order, by the nil checks of its Ptr parameters (entryChecks, see
+// lowerLambda) and the line marker of body, the expression it is written as
+// (exprFuncBody; a zero body, a block lambda's, adds none). at is where the
 // lambda is written.
 //
-// The spread reads the body as it was before line markers: with no checks
-// it runs first and the marker is added after it; with checks it already
-// reads several statements, so the checks and the marker go in first and the
-// spread moves them all into its thunk, the marker still right above the
-// expression's statement.
+// The spread is chosen by what body is (see returnGoResults), so it reads the
+// lambda's own statements: the checks and the marker go in after it.
 func (t *galaASTTransformer) finishLambda(lit ast.Expr, entryChecks []ast.Stmt, slotType transpiler.Type, at srcNode, body exprSrc) (ast.Expr, error) {
-	fn, isLit := lit.(*ast.FuncLit)
-	if isLit && len(entryChecks) > 0 {
-		fn.Body = withPtrEntryChecks(t.exprFuncBody(body, fn.Body), entryChecks)
-	}
 	if slotType != nil {
 		var err error
-		if lit, err = t.spreadLambdaGoResults(lit, slotType, at); err != nil {
+		if lit, err = t.spreadLambdaGoResults(lit, slotType, at, body.ok()); err != nil {
 			return nil, err
 		}
 	}
-	if len(entryChecks) > 0 {
-		return lit, nil
+	lit = t.exprFuncLit(body, lit)
+	if fn, isLit := lit.(*ast.FuncLit); isLit && len(entryChecks) > 0 {
+		fn.Body = withPtrEntryChecks(fn.Body, entryChecks)
 	}
-	return t.exprFuncLit(body, lit), nil
+	return lit, nil
 }
 
 // spreadLambdaGoResults returns lit, a lambda lowered against slotType,
@@ -107,7 +101,8 @@ func (t *galaASTTransformer) finishLambda(lit ast.Expr, entryChecks []ast.Stmt, 
 // parameter of a generic Go callee) takes its type from the lambda's value:
 // `Try[V]` makes `(V, error)`, `TupleN[...]` makes its N components. at is where
 // the lambda is written, for the error when its value cannot make the results.
-func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transpiler.Type, at srcNode) (ast.Expr, error) {
+// exprBody says the lambda's body is an expression (see returnGoResults).
+func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transpiler.Type, at srcNode, exprBody bool) (ast.Expr, error) {
 	fn, ok := lit.(*ast.FuncLit)
 	if !ok {
 		return lit, nil
@@ -137,7 +132,7 @@ func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transp
 		return nil, semanticErrorAtStart(at,
 			fmt.Sprintf("this lambda is passed where Go expects a function with %d results, so it must give %s, but it gives %s", len(ft.Results), want, got))
 	}
-	fn.Body = t.returnGoResults(fn.Body, valueType, results)
+	fn.Body = t.returnGoResults(fn.Body, exprBody, valueType, results)
 	fn.Type.Results = results
 	return fn, nil
 }
@@ -164,7 +159,7 @@ func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.
 	body := &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}}
 	return &ast.FuncLit{
 		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: results},
-		Body: t.returnGoResults(body, t.typeToExpr(valueType), results),
+		Body: t.returnGoResults(body, true, t.typeToExpr(valueType), results),
 	}, true
 }
 
@@ -192,9 +187,20 @@ func (t *galaASTTransformer) resultFieldList(types []transpiler.Type) *ast.Field
 
 // returnGoResults rewrites body, which returns one value of valueType, to
 // return that value spread over goResults (see the comment at the top).
-func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.Expr, goResults *ast.FieldList) *ast.BlockStmt {
+//
+// The lowering is chosen by what the body is, never by how many statements
+// it happened to lower to (line markers and Ptr entry checks add some, and
+// some builds leave the markers out):
+//   - exprBody, an expression body (`= expr`, `=> expr`, a placeholder
+//     lambda or a lifted thunk), whose value is a Go call with these results
+//     returns the call's results as they are. body is the expression's own
+//     lowering, without a marker or entry checks: callers add those after
+//     this rewrite.
+//   - Any other body, a block body among them, runs in a thunk whose one
+//     value is spread: a failed Try returns the zero values with its error.
+func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, exprBody bool, valueType ast.Expr, goResults *ast.FieldList) *ast.BlockStmt {
 	var value ast.Expr
-	if len(body.List) == 1 {
+	if exprBody && len(body.List) == 1 {
 		if ret, ok := body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
 			value = ret.Results[0]
 		}

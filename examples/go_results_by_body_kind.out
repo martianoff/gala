@@ -1,0 +1,7 @@
+block function: 0, failed: true
+expression function: 9223372036854775807, failed: true
+block lambda: 0, failed: true
+expression lambda: 9223372036854775807, failed: true
+Ptr block lambda: 0, failed: true
+Ptr expression lambda: 9223372036854775807, failed: true
+expression lambda, success: 42, failed: false

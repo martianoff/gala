@@ -1,6 +1,8 @@
 package transformer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -320,4 +322,75 @@ func TestGoCallbackReturnsGoResults(t *testing.T) {
 			"main.gala":            "package main\n\nimport (\n    \"strconv\"\n    \"example.com/callbacks/callback\"\n)\n\nfunc itoa(n int) string = strconv.Itoa(n)\n\n" + body + "\n\nfunc main() {}\n",
 		}, "main.gala"
 	})
+}
+
+// goResultsSpread is the start of a body whose Try is spread over Go's
+// results: on a failure Go gets the zero value with the error.
+const goResultsSpread = "var _goResult std.Try[int] = func() std.Try[int] {"
+
+// TestGoResultsByBodyKind covers how a body lowered to `(int, error)` gives
+// Go its results: a block body always spreads its Try, an expression body
+// that is a Go call with those results returns them as they are. Neither may
+// depend on the statements the body happens to lower to: line markers (left
+// out without a file path) and a lambda's Ptr nil checks add some.
+func TestGoResultsByBodyKind(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	ptrSlot := "struct In(text string)\n\nfunc each(f func(*In) (int, error), in *In) Try[int] = f(in)\n\n"
+	cases := []struct {
+		name   string
+		body   string
+		spread bool
+	}{
+		{name: "a function with a block body", body: "func parse(s string) (int, error) {\n    strconv.Atoi(s)\n}", spread: true},
+		{name: "a function with an expression body", body: "func parse(s string) (int, error) = strconv.Atoi(s)"},
+		{name: "a block lambda", body: "func five() int = run(() => {\n    strconv.Atoi(\"5\")\n})", spread: true},
+		{name: "an expression lambda", body: `func five() int = run(() => strconv.Atoi("5"))`},
+		{name: "a block lambda with a Ptr parameter", body: ptrSlot + "func five() Try[int] {\n    var in = In(\"5\")\n    each((p Ptr[In]) => {\n        strconv.Atoi(p.text)\n    }, &in)\n}", spread: true},
+		{name: "an expression lambda with a Ptr parameter", body: ptrSlot + "func five() Try[int] {\n    var in = In(\"5\")\n    each((p Ptr[In]) => strconv.Atoi(p.text), &in)\n}"},
+	}
+	for _, path := range []string{"go_results_return_test.gala", ""} {
+		for _, tc := range cases {
+			t.Run(tc.name+", file path "+path, func(t *testing.T) {
+				out, err := trans.Transpile(goResultsReturnProgram(tc.body), path)
+				require.NoError(t, err)
+				if tc.spread {
+					assert.Contains(t, out, goResultsSpread, "generated:\n%s", out)
+				} else {
+					assert.NotContains(t, out, "_goResult", "generated:\n%s", out)
+					assert.Contains(t, out, "return strconv.Atoi(", "generated:\n%s", out)
+				}
+			})
+		}
+	}
+}
+
+// TestGoResultsByBodyKindInForeignDefault covers a lambda default declared in
+// another file of the package: it is lowered in the calling file without line
+// markers, and still gives Go its results by what its body is.
+func TestGoResultsByBodyKindInForeignDefault(t *testing.T) {
+	cases := []struct {
+		name   string
+		lambda string
+		spread bool
+	}{
+		{name: "a block lambda", lambda: "() => {\n    strconv.Atoi(\"5\")\n}", spread: true},
+		{name: "an expression lambda", lambda: `() => strconv.Atoi("5")`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "lib"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/defaults\n\ngala dev\n"), 0644))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "lib", "own.gala"),
+				[]byte("package lib\n\nimport \"strconv\"\n\nfunc RunWith(f func() (int, error) = "+tc.lambda+") int = f().GetOrElse(-1)\n"), 0644))
+			out, err := transpileCrossPkgFile(t, root, "package lib\n\nimport \"strconv\"\n\nfunc Use() int = RunWith() + strconv.IntSize\n", filepath.Join(root, "lib", "use.gala"))
+			require.NoError(t, err)
+			if tc.spread {
+				assert.Contains(t, out, goResultsSpread, "generated:\n%s", out)
+			} else {
+				assert.NotContains(t, out, "_goResult", "generated:\n%s", out)
+				assert.Contains(t, out, "return strconv.Atoi(\"5\")", "generated:\n%s", out)
+			}
+		})
+	}
 }

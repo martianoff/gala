@@ -5316,6 +5316,15 @@ gala_exec_test(
     expected = "go_results_block_body_zero_value.out",
 )
 
+# A Go-results body is lowered by what it is: a block body spreads its Try
+# (the zero value on a failure), an expression body that is a Go call returns
+# its results as they are, with or without a lambda's Ptr nil check.
+gala_exec_test(
+    name = "go_results_by_body_kind",
+    src = "go_results_by_body_kind.gala",
+    expected = "go_results_by_body_kind.out",
+)
+
 gala_exec_test(
     name = "try_combinator_panics",
     src = "try_combinator_panics.gala",

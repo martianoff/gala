@@ -1101,7 +1101,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		body = exprBody
 	}
 	if goResults != nil {
-		body = t.returnGoResults(body, funcType.Results.List[0].Type, goResults)
+		body = t.returnGoResults(body, d.expr.ok(), funcType.Results.List[0].Type, goResults)
 		funcType.Results = goResults
 	}
 	body = t.exprFuncBody(markedExpr, body)
