@@ -36,6 +36,10 @@ type Record struct {
 	// Lean is the third oracle's result, gala2lean's translation run with
 	// Lean; nil when the run did not use it.
 	Lean *LeanRecord
+	// GoCore is how GoCore fared on the Go the transformer emitted, compared
+	// with `go run`; nil when the run did not use it or the program did not
+	// compile.
+	GoCore *GoCoreRecord
 }
 
 // Baseline is the ratchet the coverage may not fall below.
@@ -46,6 +50,46 @@ type Baseline struct {
 	// Gala2LeanAgreeingExamples is how many examples gala2lean translates
 	// whose Lean run agrees with Go.
 	Gala2LeanAgreeingExamples int `json:"gala2lean_agreeing_examples"`
+	// GoCoreAgreeingExamples is how many examples agree three ways: GoCore's
+	// run of the emitted Go agrees with `go run` of it, and galaspec agrees
+	// with `go run` (docs/FORMAL_SEMANTICS.MD, M4).
+	GoCoreAgreeingExamples int `json:"gocore_agreeing_examples"`
+}
+
+// GoCoreAgreeingExamples is how many example records agree three ways: GoCore
+// with `go run`, and galaspec with `go run`.
+func GoCoreAgreeingExamples(records []Record) int {
+	n := 0
+	for _, r := range records {
+		if r.Source == FromExample && r.Verdict == Agree && r.GoCore != nil && r.GoCore.Verdict == Agree {
+			n++
+		}
+	}
+	return n
+}
+
+// usesGoCore reports whether the run compared GoCore's runs.
+func usesGoCore(records []Record) bool {
+	for _, r := range records {
+		if r.GoCore != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckGoCore names every GoCore disagreement. Each is a bug in GoCore or the
+// Go AST exporter, never the transpiler's, so none may be listed as known: it
+// fails the run until it is fixed, or the construct is reported as
+// unsupported.
+func CheckGoCore(records []Record) []string {
+	var problems []string
+	for _, r := range records {
+		if r.GoCore != nil && r.GoCore.Verdict == Disagree {
+			problems = append(problems, fmt.Sprintf("%s: GoCore DISAGREEs with go run: %s\n  a GoCore or exporter bug: fix it, or report the construct as unsupported", r.ID, r.GoCore.Reason))
+		}
+	}
+	return problems
 }
 
 // Gala2LeanAgreeingExamples is how many example records gala2lean
@@ -89,6 +133,10 @@ func CheckBaseline(b Baseline, records []Record) (problem, note string) {
 	if usesLean(records) {
 		check(Gala2LeanAgreeingExamples(records), b.Gala2LeanAgreeingExamples,
 			"examples gala2lean translates agree with Go", "gala2lean_agreeing_examples")
+	}
+	if usesGoCore(records) {
+		check(GoCoreAgreeingExamples(records), b.GoCoreAgreeingExamples,
+			"examples agree three ways (GoCore, galaspec and go run)", "gocore_agreeing_examples")
 	}
 	return strings.Join(problems, "; "), strings.Join(notes, "; ")
 }
@@ -156,7 +204,64 @@ func Render(c Coverage) string {
 		renderLeanUnsupported(&b, c.Records)
 	}
 	renderKnown(&b, c.Known)
+	if usesGoCore(c.Records) {
+		renderGoCore(&b, c)
+	}
 	return b.String()
+}
+
+// GoCoreVerdicts is every GoCore verdict, in report order.
+var GoCoreVerdicts = []Verdict{Agree, Disagree, Unsupported, Inconclusive, Resource}
+
+// renderGoCore is the GoCore section (docs/FORMAL_SEMANTICS.MD, M4): its
+// fidelity to `go run` on the Go the transformer emitted, apart from the
+// spec's verdicts above, and the three-way count.
+func renderGoCore(b *strings.Builder, c Coverage) {
+	b.WriteString("### GoCore: the Go the transformer emitted\n\n")
+	b.WriteString("GoCore (`formal/Gala/GoCore/`), the Lean model of the Go the transpiler emits, runs\n")
+	b.WriteString("each compiled program's actual Go output, read back by the Go AST exporter, and is\n")
+	b.WriteString("compared with `go run` of the same Go: stdout, and how it ends, a panic by the text Go\n")
+	b.WriteString("prints. These measure GoCore's fidelity to Go, tested, not proved. RESOURCE is a run\n")
+	b.WriteString("Go aborted for lack of stack or memory, or that ran past its time limit: reported,\n")
+	b.WriteString("never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.\n\n")
+	counts := map[Source]map[Verdict]int{FromExample: {}, FromGenerator: {}}
+	for _, r := range c.Records {
+		if r.GoCore != nil {
+			counts[r.Source][r.GoCore.Verdict]++
+		}
+	}
+	b.WriteString("| GoCore against go run | Examples | Generated programs |\n|---|---|---|\n")
+	for _, v := range GoCoreVerdicts {
+		fmt.Fprintf(b, "| %s | %d | %d |\n", v, counts[FromExample][v], counts[FromGenerator][v])
+	}
+	fmt.Fprintf(b, "\nExamples where GoCore agrees with go run and galaspec agrees with go run: **%d** (ratchet baseline %d).\n\n",
+		GoCoreAgreeingExamples(c.Records), c.Baseline.GoCoreAgreeingExamples)
+	var agree []string
+	for _, r := range c.Records {
+		if r.Source == FromExample && r.Verdict == Agree && r.GoCore != nil && r.GoCore.Verdict == Agree {
+			agree = append(agree, "`"+r.ID+"`")
+		}
+	}
+	if len(agree) > 0 {
+		b.WriteString("They are: " + strings.Join(agree, ", ") + ".\n\n")
+	}
+	unsupported := map[string]int{}
+	var resource []string
+	for _, r := range c.Records {
+		switch {
+		case r.GoCore == nil:
+		case r.GoCore.Verdict == Unsupported:
+			unsupported[r.GoCore.Construct]++
+		case r.GoCore.Verdict == Resource:
+			resource = append(resource, fmt.Sprintf("- `%s`: %s", r.ID, r.GoCore.Reason))
+		}
+	}
+	if len(unsupported) > 0 {
+		renderCounts(b, unsupported, "The construct GoCore stopped at in each program it did not run to the end, by how many programs")
+	}
+	if len(resource) > 0 {
+		b.WriteString("Runs Go aborted, not compared:\n\n" + strings.Join(resource, "\n") + "\n\n")
+	}
 }
 
 func renderVerdicts(b *strings.Builder, records []Record, lean bool) {

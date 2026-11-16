@@ -9,6 +9,7 @@ go_library(
     testonly = True,
     srcs = [
         "coverage.go",
+        "gocore.go",
         "harness.go",
         "known.go",
         "lean.go",
@@ -23,8 +24,10 @@ go_library(
         "//internal/formal/coreexport",
         "//internal/formal/coreexport/analyzerhints",
         "//internal/formal/gala2lean",
+        "//internal/formal/gocoreexport",
         "//internal/transpiler/fuzz/proggen",
         "//internal/transpiler/fuzz/progrun",
+        "//internal/transpiler/gooracle",
         "@rules_go//go/tools/bazel",
     ],
 )
@@ -62,6 +65,7 @@ go_test(
     size = "medium",
     srcs = [
         "difftest_test.go",
+        "gocore_test.go",
         "lean_test.go",
         "stub_test.go",
     ],

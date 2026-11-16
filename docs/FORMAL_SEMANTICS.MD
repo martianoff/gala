@@ -145,6 +145,14 @@ formal/
   2. Transpile, build and run it with the machinery `FuzzPrograms` already uses.
   3. Compare stdout and outcome. Each comparison is one of four verdicts: `AGREE`,
      `DISAGREE`, `UNSUPPORTED` or `INCONCLUSIVE`.
+  4. From M4, for a program that compiles: export the Go it ran, with the Go of the GALA
+     packages it imports, to GoCore JSON, run `gocore`, and compare it with `go run` of the
+     same Go: stdout, and how it ends, a panic by the exact text Go prints. This is GoCore's
+     own lane, with one more verdict, `RESOURCE`: a run Go aborted for lack of stack or
+     memory, or that ran past its time limit, reported and never compared. A GoCore
+     `DISAGREE` is a GoCore or exporter bug, never listed as a known disagreement: it fails
+     the run until it is fixed or the construct is reported as unsupported.
+     `//formal:gocore` comes in as `//formal:galaspec` does, or from `GALA_GOCORE_BIN`.
 - **Where `galaspec` comes from:** under `--config=formal`, `//formal:galaspec`, built with
   rules_lean, is a data dependency of the target. Without the config, the
   `GALA_SPEC_BIN` environment variable names one instead, e.g. a Lake-built galaspec
@@ -398,8 +406,15 @@ column lists what each milestone's claim rests on beyond them.
     - Its evaluator is total, by structural fuel.
     - Only `fmt` and the hand-written, reflective standard-library functions it names
       are models.
-  - **What remains:** the differential lane, which compares GoCore with galaspec and
-    `go run` on the corpus.
+  - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
+    every compiled program's Go runs through GoCore and is compared with `go run`. GoCore
+    agrees with `go run` on the programs the "GoCore" part of
+    [COVERAGE.md](../formal/COVERAGE.md#differential-testing) lists, and stops
+    `unsupported` on the rest, naming the construct; none disagrees. Tested, not proved.
+    The examples that agree three ways (GoCore with `go run`, galaspec with `go run`) are
+    the ratchet `gocore_agreeing_examples`.
+  - **What remains:** widening GoCore where the corpus stops it (variadic functions and
+    the slices behind them, `fmt.Printf`, floats, `defer`), each a construct the run names.
   - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
     `match` lowering targets, with abstract sealed values and pattern primitives, and
     this one, with the flat layout. M5's reference lowering targets this one, and M3's
@@ -596,6 +611,10 @@ puts it into the file and leaves the hand-written rest alone.
 - A `DISAGREE` fails the build, unless that exact program appears in
   `internal/formal/difftest/known_disagreements.json` with an **open** issue number. When the issue is
   closed, the CI job requires the entry to be removed.
+- The number of examples that agree three ways, GoCore with `go run` and galaspec with
+  `go run`, may not go down (`gocore_agreeing_examples` in `baseline.json`).
+- A GoCore `DISAGREE` always fails the build: it is a GoCore or exporter bug, and the
+  known-disagreements list is only for transpiler bugs.
 
 ### Subsets
 

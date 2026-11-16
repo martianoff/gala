@@ -24,6 +24,7 @@ go_test(
     ] + select({
         "//formal:lean_enabled": [
             "//formal:galaspec",
+            "//formal:gocore",
             "//formal:lean_runtime",
         ],
         "//conditions:default": [],
@@ -31,6 +32,7 @@ go_test(
     env = select({
         "//formal:lean_enabled": {
             "GALA_LEAN_RLOCATION": "$(rlocationpath //formal:lean_runtime)",
+            "GALA_GOCORE_RLOCATION": "$(rlocationpath //formal:gocore)",
             "GALA_SPEC_RLOCATION": "$(rlocationpath //formal:galaspec)",
         },
         "//conditions:default": {},

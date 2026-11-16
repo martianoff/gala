@@ -2,8 +2,11 @@ package difftest
 
 import (
 	"errors"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -11,6 +14,7 @@ import (
 	"martianoff/gala/internal/formal/coreexport/analyzerhints"
 	"martianoff/gala/internal/formal/gala2lean"
 	"martianoff/gala/internal/transpiler/fuzz/progrun"
+	"martianoff/gala/internal/transpiler/gooracle"
 )
 
 // Program is one program to compare.
@@ -37,6 +41,10 @@ type Harness struct {
 	// Lean, when set, runs each program gala2lean translates, the third
 	// oracle (Record.Lean).
 	Lean LeanRunner
+	// GoCore, when set, runs the Go the transformer emitted for each program
+	// that compiles, read back by the Go AST exporter, and compares it with
+	// `go run` (Record.GoCore).
+	GoCore GoCoreRunner
 }
 
 // Check compares one program, and fails tb only for a broken setup: a
@@ -78,11 +86,24 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 	var (
 		real   Run
 		stderr string
+		goProg *GoProgram
 	)
-	if NeedsReal(spec.Outcome) || leanRes != nil {
-		real, stderr = realRun(tb, p)
+	if NeedsReal(spec.Outcome) || leanRes != nil || h.GoCore != nil {
+		real, stderr, goProg = realRun(tb, p)
 	}
 	rec.Comparison = Compare(spec, real)
+	if h.GoCore != nil && goProg != nil {
+		doc, err := exportGoCore(h.Dir, p.ID, *goProg)
+		if err != nil {
+			tb.Fatalf("%s: Go AST export: %v", p.ID, err)
+		}
+		g, err := h.GoCore.Run(doc)
+		if err != nil {
+			tb.Fatalf("%s: %v", p.ID, err)
+		}
+		gr := compareGoCore(g, real, goPanicText(stderr))
+		rec.GoCore = &gr
+	}
 	if leanRes != nil {
 		lr, err := compareLean(h.Lean, leanRes, spec, real)
 		if err != nil {
@@ -103,12 +124,12 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 }
 
 // realRun transpiles, builds and runs p with the real toolchain, and returns
-// the run and what it wrote to stderr. A program the transpiler or the Go
-// compiler rejects is a KindRejected outcome.
-func realRun(tb testing.TB, p Program) (Run, string) {
+// the run, what it wrote to stderr, and the Go that ran. A program the
+// transpiler or the Go compiler rejects is a KindRejected outcome, with no Go.
+func realRun(tb testing.TB, p Program) (Run, string, *GoProgram) {
 	tb.Helper()
-	rejected := func(detail string) (Run, string) {
-		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, ""
+	rejected := func(detail string) (Run, string, *GoProgram) {
+		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, "", nil
 	}
 	if p.Lib != "" {
 		progrun.WriteLibrary(tb, p.LibPath, p.Lib)
@@ -134,7 +155,46 @@ func realRun(tb testing.TB, p Program) (Run, string) {
 		}
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	return Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}, out.Stderr
+	return Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}, out.Stderr,
+		&GoProgram{Main: res.Go, Packages: importedSources(imp, res.Go)}
+}
+
+// importedSources is the Go of every GALA package mainGo imports, directly or
+// not, as the importer generated it, by import path.
+func importedSources(imp *gooracle.Importer, mainGo string) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	queue := goImports(mainGo)
+	for len(queue) > 0 {
+		path := queue[0]
+		queue = queue[1:]
+		if _, done := out[path]; done || !strings.HasPrefix(path, "martianoff/gala/") {
+			continue
+		}
+		sources, ok := imp.Sources(path)
+		if !ok {
+			continue
+		}
+		out[path] = sources
+		for _, src := range sources {
+			queue = append(queue, goImports(src)...)
+		}
+	}
+	return out
+}
+
+// goImports lists the import paths of a Go file.
+func goImports(src string) []string {
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ImportsOnly)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, spec := range f.Imports {
+		if p, err := strconv.Unquote(spec.Path.Value); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // firstLine is the first line of a diagnostic, past the "# package" header

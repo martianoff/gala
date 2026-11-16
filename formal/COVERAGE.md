@@ -209,7 +209,9 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
   a nil receiver;
 - generics, two panics, fuel and an unsupported construct.
 
-The differential run over the corpus is the next part of M4.
+The differential run (`internal/formal/difftest`) runs every compiled program's Go through
+GoCore and compares it with `go run`; its results are in the "GoCore" part of the
+generated section below.
 
 ## gala2lean
 
