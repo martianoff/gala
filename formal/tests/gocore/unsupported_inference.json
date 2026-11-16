@@ -1,0 +1,381 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 4,
+            "col": 1
+          },
+          "name": "unsupported_inference.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 8,
+                "col": 1
+              },
+              "name": "contains",
+              "recv": null,
+              "typeParams": [
+                {
+                  "names": [
+                    "S"
+                  ],
+                  "type": {
+                    "kind": "unary",
+                    "pos": {
+                      "line": 8,
+                      "col": 17
+                    },
+                    "op": "~",
+                    "x": {
+                      "kind": "array-type",
+                      "pos": {
+                        "line": 8,
+                        "col": 18
+                      },
+                      "len": null,
+                      "elt": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 8,
+                          "col": 20
+                        },
+                        "name": "E"
+                      }
+                    }
+                  },
+                  "tag": ""
+                },
+                {
+                  "names": [
+                    "E"
+                  ],
+                  "type": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 8,
+                      "col": 25
+                    },
+                    "name": "comparable"
+                  },
+                  "tag": ""
+                }
+              ],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 8,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "s"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 8,
+                        "col": 39
+                      },
+                      "name": "S"
+                    },
+                    "tag": ""
+                  },
+                  {
+                    "names": [
+                      "v"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 8,
+                        "col": 44
+                      },
+                      "name": "E"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 8,
+                        "col": 47
+                      },
+                      "name": "bool"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 8,
+                  "col": 52
+                },
+                "stmts": [
+                  {
+                    "kind": "range",
+                    "pos": {
+                      "line": 9,
+                      "col": 2
+                    },
+                    "key": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 9,
+                        "col": 6
+                      },
+                      "name": "_"
+                    },
+                    "value": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 9,
+                        "col": 9
+                      },
+                      "name": "x"
+                    },
+                    "tok": ":=",
+                    "x": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 9,
+                        "col": 20
+                      },
+                      "name": "s"
+                    },
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 9,
+                        "col": 22
+                      },
+                      "stmts": [
+                        {
+                          "kind": "if",
+                          "pos": {
+                            "line": 10,
+                            "col": 3
+                          },
+                          "init": null,
+                          "cond": {
+                            "kind": "binary",
+                            "pos": {
+                              "line": 10,
+                              "col": 6
+                            },
+                            "op": "==",
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 10,
+                                "col": 6
+                              },
+                              "name": "x"
+                            },
+                            "y": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 10,
+                                "col": 11
+                              },
+                              "name": "v"
+                            }
+                          },
+                          "body": {
+                            "kind": "block",
+                            "pos": {
+                              "line": 10,
+                              "col": 13
+                            },
+                            "stmts": [
+                              {
+                                "kind": "return",
+                                "pos": {
+                                  "line": 11,
+                                  "col": 4
+                                },
+                                "results": [
+                                  {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 11,
+                                      "col": 11
+                                    },
+                                    "name": "true"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          "else": null
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 14,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 14,
+                          "col": 9
+                        },
+                        "name": "false"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 17,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 17,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 17,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 18,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 18,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 18,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 18,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 18,
+                            "col": 14
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 18,
+                              "col": 14
+                            },
+                            "name": "contains"
+                          },
+                          "args": [
+                            {
+                              "kind": "composite-lit",
+                              "pos": {
+                                "line": 18,
+                                "col": 23
+                              },
+                              "type": {
+                                "kind": "array-type",
+                                "pos": {
+                                  "line": 18,
+                                  "col": 23
+                                },
+                                "len": null,
+                                "elt": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 18,
+                                    "col": 25
+                                  },
+                                  "name": "int8"
+                                }
+                              },
+                              "elts": [
+                                {
+                                  "kind": "int-lit",
+                                  "pos": {
+                                    "line": 18,
+                                    "col": 30
+                                  },
+                                  "value": "1"
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 18,
+                                "col": 34
+                              },
+                              "value": "1"
+                            }
+                          ],
+                          "ellipsis": false
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

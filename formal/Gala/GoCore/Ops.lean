@@ -19,6 +19,11 @@ def runtimePanic (text : String) : GM α :=
     nil function or interface (Go spec, "Address operators", "Run-time panics"). -/
 def nilDeref : GM α := runtimePanic "invalid memory address or nil pointer dereference"
 
+/-- Whether `t` is the type of an untyped constant. -/
+def Ty.isUntyped : Ty → Bool
+  | .untyped _ => true
+  | _ => false
+
 /-- The default type of an untyped constant (Go spec, "Constants"). -/
 def UKind.default : UKind → Option Ty
   | .int => some (.int .int)

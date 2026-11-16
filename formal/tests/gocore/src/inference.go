@@ -23,6 +23,12 @@ func convert[To, From any](x From, f func(From) To) To { return f(x) }
 
 func pick[T any](a, b T) T { return a }
 
+// A variadic function type: its final parameter is []T, so T is the element type.
+func each[T any](f func(...T)) {
+	var z T
+	fmt.Println(z)
+}
+
 func main() {
 	// A typed argument decides T over an untyped constant before it: int8 wraps.
 	fmt.Println(pick(1, int8(2)) + 127)
@@ -30,6 +36,7 @@ func main() {
 	r := pick(1, 'a')
 	r += 2147483647
 	fmt.Println(r)
+	each(func(xs ...int) {})
 	b := mapBox(box[int]{3}, func(x int) string { return fmt.Sprint("n=", x) })
 	fmt.Println(b.v)
 	h := compose(func(x int) int { return x + 1 }, func(y int) string { return fmt.Sprint(y * 2) })

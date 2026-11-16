@@ -4,11 +4,12 @@
 # what it prints (<name>.out), how it ends (<name>.outcome: ok or panic) and, for a
 # panic, the text Go prints after "panic: " (<name>.panic).
 #
-# Two fixtures are about GoCore's own outcomes, which Go does not share, and are
+# Some fixtures are about GoCore's own outcomes, which Go does not share, and are
 # not regenerated from Go: fuel (Go aborts with a stack overflow, GoCore ends in
-# fuel), unsupported_map (GoCore stops at the map) and unsupported_escape (GoCore
-# stops at a capacity that depends on gc's escape analysis). Their files are written by
-# hand.
+# fuel) and the unsupported_* ones, where GoCore stops: at a map
+# (unsupported_map), at a capacity that depends on gc's escape analysis
+# (unsupported_escape), and at constraint type inference
+# (unsupported_inference). Their files are written by hand.
 #
 # Run from formal/tests/gocore with GOCOREJSON naming the exporter binary.
 set -euo pipefail
@@ -16,7 +17,7 @@ set -euo pipefail
 for f in src/*.go; do
   b="$(basename "$f" .go)"
   "$GOCOREJSON" "$f" > "$b.json"
-  case "$b" in fuel|unsupported_map|unsupported_escape) continue ;; esac
+  case "$b" in fuel|unsupported_*) continue ;; esac
   set +e
   go run "$f" > "$b.out" 2> "$b.goerr"
   code=$?
