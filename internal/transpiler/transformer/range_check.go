@@ -2,7 +2,10 @@ package transformer
 
 import (
 	"fmt"
+	"go/ast"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -22,11 +25,16 @@ import (
 // opaque type (a scalar underneath, and Go ranges over an integer) and an
 // unresolved type are left to Go, so valid code is never rejected.
 func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.Type) error {
-	// Immutable and Sendable wrap the value Go ranges over.
-	if elem, ok := transpiler.ImmutableElem(xType); ok {
-		xType = elem
+	// Immutable and Sendable wrap the value Go ranges over, in either order.
+	for {
+		if elem, ok := transpiler.ImmutableElem(xType); ok {
+			xType = elem
+		} else if elem, ok := transpiler.UnwrapSendable(xType); ok {
+			xType = elem
+		} else {
+			break
+		}
 	}
-	xType, _ = transpiler.UnwrapSendable(xType)
 	impl, ok := t.implTypeOf(xType)
 	if !ok || impl.meta.IsOpaque {
 		return nil
@@ -56,21 +64,29 @@ var rangeLoopForms = [][]struct{ method, form string }{
 // struct, is told which of its fields Go can range over, if any, and to give
 // itself such a method.
 func (t *galaASTTransformer) rangeOverGalaTypeHint(meta *transpiler.TypeMetadata, x string) string {
+	goMethods := t.goMethodsOnGalaType(meta)
 	var forms []string
 	for _, job := range rangeLoopForms {
 		for _, f := range job {
-			if t.hasMemberOrGoMethod(meta, f.method) {
+			_, inGala := meta.Methods[f.method]
+			_, inGo := goMethods[f.method]
+			if inGala || inGo {
 				forms = append(forms, fmt.Sprintf(f.form, receiverText(x)))
 				break
 			}
 		}
 	}
 	if len(forms) == 0 {
+		if len(meta.Methods) == 0 && meta.Package != t.packageName {
+			// Another package's type may have been loaded without its
+			// methods (canJudgeMembers), so none can be named.
+			return fmt.Sprintf("iterate with a method of %s, such as ForEach or FoldLeft, or range over a Go slice or map it gives", meta.Name)
+		}
 		fields := t.rangeableFields(meta)
 		if len(fields) == 0 {
 			return fmt.Sprintf("give %s a method that visits its elements", meta.Name)
 		}
-		return fmt.Sprintf("range over a field Go can range over, %s, or give %s a method that visits its elements", strings.Join(fields, " or "), meta.Name)
+		return fmt.Sprintf("range over its Go slice or map field %s, or give %s a method that visits its elements", strings.Join(fields, " or "), meta.Name)
 	}
 	if len(forms) > 1 {
 		forms[len(forms)-1] = "or " + forms[len(forms)-1]
@@ -78,11 +94,14 @@ func (t *galaASTTransformer) rangeOverGalaTypeHint(meta *transpiler.TypeMetadata
 	return "iterate with a method; here, " + strings.Join(forms, ", ")
 }
 
-// rangeableFields names the fields of meta's type whose declared type is a
-// Go slice or map.
+// rangeableFields names the fields of meta's type, reachable from this
+// package, whose declared type is a Go slice or map.
 func (t *galaASTTransformer) rangeableFields(meta *transpiler.TypeMetadata) []string {
 	var out []string
 	for _, name := range meta.FieldNames {
+		if meta.Package != t.packageName && !ast.IsExported(name) {
+			continue
+		}
 		switch t.followAliasChain(meta.Fields[name]).(type) {
 		case transpiler.ArrayType, transpiler.MapType:
 			out = append(out, "`"+name+"`")
@@ -91,21 +110,38 @@ func (t *galaASTTransformer) rangeableFields(meta *transpiler.TypeMetadata) []st
 	return out
 }
 
-// receiverText is x as the receiver of a method call: parenthesized unless
-// it has no space outside its brackets, so that the hint for
-// `if (c) xs else ys` calls the method on the whole expression, not on ys.
+// receiverText is x as the receiver of a method call: bare when it is a chain
+// of names, selectors, calls and indexes (`xs`, `b.items`, `ListOf(1, 2)`),
+// parenthesized otherwise, so that the hint for `if (c) xs else ys` or `*p`
+// calls the method on the whole expression rather than on its last operand.
+// Brackets inside a string or rune literal are not counted.
 func receiverText(x string) string {
+	isName := func(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
+	if r, _ := utf8.DecodeRuneInString(x); r == utf8.RuneError || !isName(r) || unicode.IsDigit(r) {
+		return "(" + x + ")"
+	}
 	depth := 0
+	var quote rune
+	escaped := false
 	for _, r := range x {
-		switch r {
-		case '(', '[', '{':
-			depth++
-		case ')', ']', '}':
-			depth--
-		case ' ':
-			if depth == 0 {
-				return "(" + x + ")"
+		switch {
+		case quote != 0:
+			switch {
+			case escaped:
+				escaped = false
+			case r == '\\' && quote != '`':
+				escaped = true
+			case r == quote:
+				quote = 0
 			}
+		case r == '"' || r == '\'' || r == '`':
+			quote = r
+		case r == '(' || r == '[' || r == '{':
+			depth++
+		case r == ')' || r == ']' || r == '}':
+			depth--
+		case depth == 0 && r != '.' && !isName(r):
+			return "(" + x + ")"
 		}
 	}
 	return x

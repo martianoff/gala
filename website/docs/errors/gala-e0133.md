@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "GALA-E0133 — Range Over a GALA Type"
-description: "GALA-E0133 fires on range over a GALA collection or struct. Go ranges over slices, maps, strings, integers, channels and functions; iterate an Array, List or HashMap with ForEach, ZipWithIndex or FoldLeft."
+description: "GALA-E0133 fires on range over a GALA collection or struct. Go ranges over slices, arrays, maps, strings, integers, channels and functions; iterate an Array, List or HashMap with ForEach, ZipWithIndex or FoldLeft."
 keywords: "gala-e0133, gala range, gala for range Array, gala cannot range over, gala ForEach, gala ZipWithIndex, gala FoldLeft, gala ToGoSlice"
 permalink: /docs/errors/gala-e0133/
 last_modified_at: 2026-11-15

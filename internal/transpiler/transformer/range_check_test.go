@@ -49,12 +49,17 @@ func TestRangeOverGalaType(t *testing.T) {
 		{
 			"a user struct with a Go slice field",
 			"package main\n\nimport \"martianoff/gala/go_interop\"\n\nstruct Bag(names []string)\n\nfunc main() {\n    val b = Bag(go_interop.SliceOf(\"a\"))\n    for _, n := range b {\n        Println(n)\n    }\n}\n",
-			"range over a field Go can range over, `names`, or give Bag a method that visits its elements",
+			"range over its Go slice or map field `names`, or give Bag a method that visits its elements",
 		},
 		{
 			"an if-expression, parenthesized in the hint",
 			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc pick(c bool) {\n    for _, x := range if (c) ArrayOf(1) else ArrayOf(2) {\n        Println(x)\n    }\n}\n\nfunc main() {\n    pick(true)\n}\n",
 			"`(if (c) ArrayOf(1) else ArrayOf(2)).ForEach((x) => ...)`",
+		},
+		{
+			"a dereference, parenthesized in the hint",
+			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc each(p *Array[int]) {\n    for _, x := range *p {\n        Println(x)\n    }\n}\n\nfunc main() {\n    var xs = ArrayOf(1)\n    each(&xs)\n}\n",
+			"`(*p).ForEach((x) => ...)`",
 		},
 		{
 			"a Sendable collection",
