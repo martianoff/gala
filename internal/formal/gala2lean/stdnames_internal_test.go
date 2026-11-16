@@ -25,7 +25,12 @@ import (
 // outside the subset, reported where its names are used.
 //
 // It reads the Go every stdlib package is shipped as, which is what Go
-// resolves a dot import against: its exported package-level names.
+// resolves a dot import against: its exported package-level names. Bazel
+// builds that snapshot from the repository's sources in the same build (the
+// .gala transpiled, the .go copied), and internal/stdlib's
+// TestEmbeddedStdlibMatchesSourceTree and TestEmbeddedStdlibHasNoStaleFiles
+// check its file set is the source tree's, both ways; so the fact holds for
+// the repository's stdlib, which Bazel builds compile, as for the CLI's.
 func TestStdNamesOnlyInStd(t *testing.T) {
 	var names []string
 	for x := range stdCtors {
