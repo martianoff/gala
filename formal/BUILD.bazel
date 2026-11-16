@@ -108,6 +108,7 @@ GALA_SRCS = [
     "Gala/AlphaStep.lean",
     "Gala/MatchLower.lean",
     "Gala/AlphaEval.lean",
+    "Gala/AlphaProg.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

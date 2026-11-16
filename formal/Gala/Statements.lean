@@ -21,6 +21,7 @@ import Gala.Alpha
 import Gala.AlphaStep
 import Gala.MatchLower
 import Gala.AlphaEval
+import Gala.AlphaProg
 
 namespace Gala.Statements
 
