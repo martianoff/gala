@@ -139,8 +139,9 @@ lake exe galaspec alpha a.json b.json
 
 decides whether `b.json` is `a.json` with its local binders renamed as T2 covers
 (`alphaCheck`): it prints `galaspec: alpha=related` and exits 0, or `galaspec:
-alpha=unrelated` and exits 1 (4 for malformed input). `related` is sound
-(`alphaCheck_sound`): the two programs then print the same output and end the same way.
+alpha=unrelated` and exits 1 (`galaspec: alpha=malformed` and 4 for input it cannot
+read). `related` is sound (`alphaCheck_sound`): the two programs then print the same
+output and end the same way.
 
 ### Tests
 

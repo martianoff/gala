@@ -4,12 +4,13 @@
   docs/FORMAL_SEMANTICS.MD, "M2": renaming bound variables apart does not change what
   galaspec says a program does. This file defines when one program is another with its
   binders renamed, and proves that the evaluator's name lookups do not tell them apart:
-  `lookup_rel`, `resolve_rel`, `matchPat_rel`, `argSlots_rel` and `byNameOk_rel`. T2 itself,
-  for expressions and for programs, is not proved yet.
+  `lookup_rel`, `resolve_rel`, `matchPat_rel`, `argSlots_rel` and `byNameOk_rel`. T2 itself is
+  `eval_alpha` for expressions (Gala/AlphaEval.lean) and `run_alpha` for programs
+  (Gala/AlphaProg.lean).
 
-  The renaming is a relation, not a function, so that shadowing is allowed: `Ren` holds the
-  binders in scope with their names on both sides, and `NameR` says two occurrences refer to
-  the same binder, or are the same free name (a package-level declaration or a builtin)
+  The renaming is a relation, not a function, so that shadowing is allowed: `Ren`
+  (Gala/AlphaCheck.lean, with the pattern slots) holds the binders in scope with their
+  names on both sides, and `NameR` says two occurrences refer to the same binder, or are the same free name (a package-level declaration or a builtin)
   bound on neither side, so that no binder captures a free name such as `Println`.
 
   Conditions on a renamed binder (`BinderR`, `PatR.bind`): it is lowercase on both sides,

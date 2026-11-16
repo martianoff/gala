@@ -95,6 +95,12 @@ def runText (text : String) (fuel : Nat) : IO UInt32 := do
 
 def alphaUsage : String := "usage: galaspec alpha <a.json> <b.json>"
 
+/-- `galaspec alpha`'s answer to input it cannot read or decode: exit 4. -/
+def alphaMalformed (msg : String) : IO UInt32 := do
+  IO.eprintln s!"galaspec: {msg}"
+  IO.println "galaspec: alpha=malformed"
+  pure 4
+
 /-- Decide two Core JSON texts: `related`, `unrelated`, or an error for malformed input. -/
 def alphaTexts (a b : String) : Except String Bool := do
   let p ← Json.parse a
@@ -107,7 +113,7 @@ def alphaTexts (a b : String) : Except String Bool := do
     `galaspec: alpha=unrelated` (exit 1), or reports malformed input (exit 4). -/
 def alphaMain (a b : String) : IO UInt32 := do
   match alphaTexts a b with
-  | .error e => malformed s!"malformed input: {e}"
+  | .error e => alphaMalformed s!"malformed input: {e}"
   | .ok true => IO.println "galaspec: alpha=related"; pure 0
   | .ok false => IO.println "galaspec: alpha=unrelated"; pure 1
 

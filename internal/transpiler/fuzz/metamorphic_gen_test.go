@@ -1866,8 +1866,9 @@ func (g *metaGen) nameHostile(c *mScan) {
 	rng.Shuffle(len(funcNames), func(i, j int) { funcNames[i], funcNames[j] = funcNames[j], funcNames[i] })
 	taken := map[string]bool{}
 	for i, f := range g.funcs {
-		// localOnly draws the same random numbers, so binders are chosen as
-		// they would be, but keeps the plain name.
+		// localOnly keeps the plain name. The function's name is then not
+		// taken, so the binders' pool and the names they draw can differ
+		// from FuzzAlphaRenaming's for the same input.
 		if i < len(funcNames) && rng.Intn(5) > 0 && !g.cfg.localOnly {
 			f.name = funcNames[i]
 			taken[f.name] = true

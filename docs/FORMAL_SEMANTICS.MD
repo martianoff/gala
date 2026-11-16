@@ -298,7 +298,9 @@ column lists what each milestone's claim rests on beyond them.
     a named argument as a call's argument.
 
   Renaming top-level declarations consistently is a separate lemma, not proved.
-- **What it gives:** a proof that the metamorphic renaming generator is sound. It gives a
+- **What it gives:** a renaming the metamorphic generator makes that meets these
+  conditions cannot change galaspec's answer (the generator is checked against them on
+  generated programs, see T2 below, not proved to meet them). It gives a
   binder a hostile name (another binder's in scope, `std`, `panic`, …) only where every
   reference still resolves to its own binder, which is capture avoidance; M2 also checks
   its renamings against the remaining conditions above. A renaming that changes Go's
@@ -312,10 +314,12 @@ column lists what each milestone's claim rests on beyond them.
   a struct or case field's default, and shapes the parser does not produce. galaspec's
   `alpha` command runs a checker, `alphaCheck`, proved sound (`alphaCheck_sound`): a pair
   it accepts is related, so it runs the same way. A test runs the generator's renamings of
-  local binders through it (`internal/transpiler/fuzz/alpha_check_test.go`, the same code
-  path as `FuzzAlphaRenaming` with the top-level names kept) and checks it rejects a
-  capturing renaming. The generator also renames top-level functions to builtin names,
-  which T2 does not cover. Making galaspec's initialization order provable needed
+  local binders through it, on a fixed batch of generated programs
+  (`internal/transpiler/fuzz/alpha_check_test.go`: `FuzzAlphaRenaming`'s generator with
+  the top-level names kept), and checks it rejects a capturing renaming. So the
+  generator's local renamings are tested against T2's conditions, not proved to meet them
+  for every input; its renaming of top-level functions to builtin names is not covered by
+  T2. Making galaspec's initialization order provable needed
   `mentions` to be total; it now expands each default value at most once per chain of
   defaults, which gives the same names, since a default is expanded in a scope fixed by
   its callee and slot (#1200).
