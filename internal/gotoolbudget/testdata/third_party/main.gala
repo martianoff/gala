@@ -1,0 +1,26 @@
+package main
+
+import "github.com/spf13/cobra"
+
+// The program of examples/go_transitive_module: cobra's Command.Flags()
+// returns a *pflag.FlagSet, from a module this file does not import, so
+// typing it reads pflag as well as cobra.
+
+func file(cmd *cobra.Command) Try[string] = cmd.Flags().GetString("file")
+
+func count(cmd *cobra.Command) Try[int] {
+    val flags = cmd.Flags()
+    flags.GetInt("count")
+}
+
+func fileType(cmd *cobra.Command) string = cmd.Flags().Lookup("file").Value.Type()
+
+func main() {
+    val cmd = &cobra.Command(Use = "x")
+    cmd.Flags().String("file", "a.txt", "the input file")
+    cmd.Flags().Int("count", 3, "how many")
+    Println(file(cmd))
+    Println(count(cmd))
+    Println(fileType(cmd))
+    Println(cmd.Flags().GetBool("file").IsFailure())
+}

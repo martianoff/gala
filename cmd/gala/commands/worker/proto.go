@@ -265,3 +265,76 @@ func ReadRequest(r io.Reader) (*WorkRequest, error) {
 func WriteResponse(w io.Writer, resp *WorkResponse) error {
 	return writeDelimited(w, EncodeWorkResponse(resp))
 }
+
+// The side of the protocol Bazel plays, for tests that drive the worker as
+// Bazel does.
+
+// EncodeWorkRequest serializes req to a protobuf wire-format payload (no
+// length prefix — pair with writeDelimited).
+func EncodeWorkRequest(req *WorkRequest) []byte {
+	var buf []byte
+	for _, a := range req.Arguments {
+		buf = writeVarint(buf, fieldKey(1, wireBytes))
+		buf = writeVarint(buf, uint64(len(a)))
+		buf = append(buf, a...)
+	}
+	if req.RequestID != 0 {
+		buf = writeVarint(buf, fieldKey(3, wireVarint))
+		buf = writeVarint(buf, uint64(int64(req.RequestID)))
+	}
+	if req.Cancel {
+		buf = writeVarint(buf, fieldKey(4, wireVarint))
+		buf = writeVarint(buf, 1)
+	}
+	return buf
+}
+
+// DecodeWorkResponse parses a serialized WorkResponse payload (no length
+// prefix — pair with readDelimited).
+func DecodeWorkResponse(buf []byte) (*WorkResponse, error) {
+	resp := &WorkResponse{}
+	for len(buf) > 0 {
+		df, rest, err := decodeField(buf)
+		if err != nil {
+			return nil, err
+		}
+		switch df.field {
+		case 1: // exit_code
+			if df.wire != wireVarint {
+				return nil, fmt.Errorf("worker: bad wire on exit_code: %d", df.wire)
+			}
+			resp.ExitCode = int32(df.payloadVarint)
+		case 2: // output
+			if df.wire != wireBytes {
+				return nil, fmt.Errorf("worker: bad wire on output: %d", df.wire)
+			}
+			resp.Output = string(df.payloadBytes)
+		case 3: // request_id
+			if df.wire != wireVarint {
+				return nil, fmt.Errorf("worker: bad wire on request_id: %d", df.wire)
+			}
+			resp.RequestID = int32(df.payloadVarint)
+		case 4: // was_cancelled
+			if df.wire != wireVarint {
+				return nil, fmt.Errorf("worker: bad wire on was_cancelled: %d", df.wire)
+			}
+			resp.WasCancelled = df.payloadVarint != 0
+		}
+		buf = rest
+	}
+	return resp, nil
+}
+
+// WriteRequest frames and writes req to w.
+func WriteRequest(w io.Writer, req *WorkRequest) error {
+	return writeDelimited(w, EncodeWorkRequest(req))
+}
+
+// ReadResponse pulls one WorkResponse off r.
+func ReadResponse(r io.Reader) (*WorkResponse, error) {
+	payload, err := readDelimited(r)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeWorkResponse(payload)
+}

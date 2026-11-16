@@ -1,0 +1,13 @@
+package main
+
+import (
+    "strconv"
+    "time"
+    "unicode/utf8"
+)
+
+func Report(n int) string = strconv.Itoa(n) + " words in " + Elapsed(2 * time.Second)
+
+func Elapsed(d time.Duration) string = d.String()
+
+func Width(s string) int = utf8.RuneCountInString(s)

@@ -4,7 +4,10 @@ go_library(
     name = "worker",
     srcs = ["proto.go"],
     importpath = "martianoff/gala/cmd/gala/commands/worker",
-    visibility = ["//cmd/gala/commands:__pkg__"],
+    visibility = [
+        "//cmd/gala/commands:__pkg__",
+        "//internal/gotoolbudget:__pkg__",
+    ],
 )
 
 go_test(
