@@ -170,9 +170,12 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "binary" =>
     return .binary (← str j "op") (← decodeExpr (← field j "left")) (← decodeExpr (← field j "right"))
   -- A call written `X[...](...)`: type arguments or an index, which galaspec models
-  -- neither of (`index`, as before Core JSON exported the brackets, version 10).
+  -- neither of (`index`, as before Core JSON exported the brackets, version 10). The
+  -- schema leaves the field out when there is none; `null` counts as none.
   | "call" =>
-    if (j.getObjVal? "bracket").isOk then return .unsupported "index"
+    match j.getObjVal? "bracket" with
+    | .ok .null | .error _ => pure ()
+    | .ok _ => return .unsupported "index"
     return .call (← decodeExpr (← field j "callee")) (← (← arr j "args").mapM decodeExpr)
   | "select" => return .select (← decodeExpr (← field j "target")) (← str j "name")
   | "paren" => return .paren (← decodeExpr (← field j "expr"))

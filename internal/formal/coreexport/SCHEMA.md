@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 9,
+  "core": 10,
   "files": [ { "kind": "file", ... } ]
 }
 ```

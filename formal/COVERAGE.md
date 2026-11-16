@@ -397,13 +397,13 @@ The constructs galaspec stopped at, by how many programs it stopped at each (37 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (90 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (88 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 143 |
+| `import` | 142 |
 | `generic-type` | 38 |
-| `index` | 24 |
+| `index` | 26 |
 | `qualified-type` | 23 |
 | `pointer-type` | 14 |
 | `type-float64` | 14 |

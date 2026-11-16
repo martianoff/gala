@@ -14,6 +14,10 @@ func second[A any, B any](a A, b B) B = b
 
 func firsts[T any](xs Array[T], n int) Array[T] = xs.Take(n)
 
+func show[T any](x T) {
+    Println("show", x)
+}
+
 func main() {
     Println(id[int](3), id[string]("s"))
     Println(second[int, string](1, "one"))
@@ -23,4 +27,7 @@ func main() {
     Println(None[int](), Some[string]("x"), Left[string, int]("l"), Right[string, int](4))
     Println(Box[int](5).Value, Box[string]("b"))
     Println(firsts[int](ArrayOf(7, 8, 9), 2))
+    // A statement, and elements whose type only the bracket gives.
+    show[string]("s")
+    Println(ArrayOf[Option[int]](None(), Some(1)))
 }

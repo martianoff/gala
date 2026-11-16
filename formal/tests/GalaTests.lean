@@ -74,6 +74,21 @@ private def withImport (path alias : String) : String :=
 #guard (Cli.evaluate (withImport "martianoff/gala/collection_immutable" ".") Cli.defaultFuel).2.1 == "ok"
 #guard (Cli.evaluate (withImport "martianoff/gala/json" "") Cli.defaultFuel).2.1 == "unsupported:import"
 
+-- A call written with a bracket, `Println[int](1)` (type arguments or an index, version
+-- 10), stops the run as `index`; a `null` bracket is no bracket.
+private def withBracket (bracket : String) : String :=
+  let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
+  "{\"core\": 10, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
+  "\"package\": \"main\", \"decls\": [" ++
+  "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"main\", \"receiver\": null, " ++
+  "\"type-params\": [], \"params\": [], \"result\": null, " ++
+  "\"body\": {\"kind\": \"block\", " ++ pos ++ ", \"stmts\": [" ++
+  "{\"kind\": \"call\", " ++ pos ++ ", \"callee\": {\"kind\": \"name\", " ++ pos ++
+  ", \"name\": \"Println\"}, \"bracket\": " ++ bracket ++ ", \"args\": [" ++
+  "{\"kind\": \"int\", " ++ pos ++ ", \"text\": \"1\", \"value\": 1}]}]}}]}]}"
+#guard (Cli.evaluate (withBracket "{\"exprs\": [], \"types\": null}") Cli.defaultFuel).2.1 == "unsupported:index"
+#guard (Cli.evaluate (withBracket "null") Cli.defaultFuel).2.1 == "ok"
+
 -- The command line.
 #guard Cli.parseArgs ["run", "p.json"] == some ("p.json", Cli.defaultFuel)
 #guard Cli.parseArgs ["run", "--fuel", "5", "p.json"] == some ("p.json", 5)

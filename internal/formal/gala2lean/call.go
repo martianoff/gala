@@ -483,6 +483,15 @@ func (g *gen) printableType(t string, pos coreexport.Pos) {
 
 // stdCtor builds an Option or Either value.
 func (g *gen) stdCtor(x string, e *coreexport.Call, sc *scope) term {
+	return g.stdCtorAt(stdCtors[x], x, e, sc)
+}
+
+// stdCtorAt is stdCtor with the constructor applied as head: `GOption.Some`,
+// or with its type arguments given, `GOption.Some (α := Int64)`.
+func (g *gen) stdCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
+	if strings.Contains(head, " ") {
+		head = "(" + head + ")"
+	}
 	want := 1
 	if x == "None" {
 		want = 0
@@ -491,11 +500,11 @@ func (g *gen) stdCtor(x string, e *coreexport.Call, sc *scope) term {
 		unsup(e.Pos, "argument-count")
 	}
 	if want == 0 {
-		return term{code: stdCtors[x], pure: true}
+		return term{code: head, pure: true}
 	}
 	positional(e.Args[0])
 	v := g.expr(e.Args[0], sc)
-	return wrap("("+stdCtors[x]+" "+v.val()+")", v)
+	return wrap("("+head+" "+v.val()+")", v)
 }
 
 // interp translates an interpolated string: its parts left to right, each
