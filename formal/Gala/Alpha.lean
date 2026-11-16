@@ -22,9 +22,9 @@
 
   The relation covers the shapes the parser produces: a declaration only as a statement of a
   block, and a named argument only as a call's argument. Binders inside a struct or case
-  field's default are not renamed, and such a default may not pass a named argument to a
-  function whose parameters are renamed (`FieldR`): struct and sealed declarations are the
-  same on both sides. A program of another shape is not related, so T2 says nothing about
+  field's default are not renamed, and such a default may not pass a named argument whose
+  name the callee's parameter renaming changes (`FieldR`): struct and sealed declarations are
+  the same on both sides. A program of another shape is not related, so T2 says nothing about
   it.
 -/
 import Gala.Order
@@ -221,8 +221,8 @@ structure FuncR (pkg : List String) (pm : String → Ren) (f f' : Func) : Prop w
     field's default are not renamed (a restriction of the relation; a function parameter's
     default is renamed, by `FuncR`). The default is evaluated in each program's own
     declarations, with no local in scope, so it must be related to itself there: equal text
-    is not enough, since a named argument it passes to a function whose parameters are
-    renamed would name no parameter on the other side. -/
+    is not enough, since a named argument it passes whose name the callee's parameter
+    renaming changes would name no parameter on the other side. -/
 def FieldR (pkg : List String) (pm : String → Ren) (a b : Field) : Prop :=
   a = b ∧ OptR pkg pm [] a.default a.default
 

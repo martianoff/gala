@@ -332,19 +332,6 @@ theorem RelM.res {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren �
   cases (x.run.run s).1 <;> cases (y.run.run s').1 <;> simp only [ResR] <;>
     first | exact id | exact hr _ _
 
-/-- An `H` step that stops on both sides, leaving the state as it was: whatever follows it
-    is never run. -/
-theorem relM_stop_bind {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
-    {S : β → β' → Prop} {x : H α} {x' : H α'} {f : α → M β} {f' : α' → M β'}
-    (h : ∀ c c', ∃ e e', x.run.run c = (.error e, c) ∧ x'.run.run c' = (.error e', c') ∧
-      StopR pkg pm e e') :
-    RelM pkg pm Γ Q S (liftM x >>= f) (liftM x' >>= f') := by
-  intro s s' hs
-  rw [run_bind_eq, run_bind_eq, run_liftM, run_liftM]
-  obtain ⟨e, e', h1, h2, he⟩ := h s.toCore s'.toCore
-  rw [h1, h2]
-  exact ⟨he, Γ, hs, fun ⟨_, ha⟩ => nomatch ha⟩
-
 /-- An `H` step that stops on both sides. -/
 theorem relM_stop {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
     {R : α → α' → Prop} {x : H α} {x' : H α'}
@@ -356,6 +343,16 @@ theorem relM_stop {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren 
   obtain ⟨e, e', h1, h2, he⟩ := h s.toCore s'.toCore
   rw [h1, h2]
   exact ⟨he, Γ, hs, fun ⟨_, ha⟩ => nomatch ha⟩
+
+/-- An `H` step that stops on both sides, leaving the state as it was: whatever follows it
+    is never run. -/
+theorem relM_stop_bind {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
+    {S : β → β' → Prop} {x : H α} {x' : H α'} {f : α → M β} {f' : α' → M β'}
+    (h : ∀ c c', ∃ e e', x.run.run c = (.error e, c) ∧ x'.run.run c' = (.error e', c') ∧
+      StopR pkg pm e e') :
+    RelM pkg pm Γ Q S (liftM x >>= f) (liftM x' >>= f') :=
+  relM_bind_gen (relM_stop (Q := fun _ => True) (R := fun (_ : α) (_ : α') => False) h)
+    fun _ _ _ _ h => h.elim
 
 theorem fall2_map {R : α → β → Prop} {S : γ → δ → Prop} {f : α → γ} {g : β → δ}
     (h : ∀ a b, R a b → S (f a) (g b)) :
@@ -1538,7 +1535,7 @@ theorem evalIH_all (hD : DeclsR pkg pm ds ds') : ∀ d, EvalIH pkg pm ds ds' d
     | incdec op h => exact eval_incdec_alpha hD op h
     | lambda r htys hns hb => exact eval_lambda_alpha r htys hns hb
 
-/-- **`eval` commutes with the renaming** (T2, part b): related expressions, evaluated from
+/-- **`eval` commutes with the renaming** (T2, part b2): related expressions, evaluated from
     related states, give related results (or related `Stop`s), leave related states with
     the same output and exactly the same steps left, and, after a value, the same scope. -/
 theorem eval_alpha (hD : DeclsR pkg pm ds ds') (d : Nat) {Γ : Ren} {e e' : Expr}

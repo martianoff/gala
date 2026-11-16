@@ -291,8 +291,9 @@ column lists what each milestone's claim rests on beyond them.
   - renaming a function's parameter renames the named arguments at its call sites too,
     since `bindArgs` resolves `name = value` by parameter name;
   - binders inside a struct or sealed case field's default value are not renamed, and such
-    a default may not pass a named argument to a function whose parameters are renamed
-    (it is evaluated in each program's own declarations, so equal text is not enough);
+    a default may not pass a named argument whose name the callee's parameter renaming
+    changes (it is evaluated in each program's own declarations, so equal text is not
+    enough);
   - only the shapes the parser produces are related: a declaration as a block statement,
     a named argument as a call's argument.
 
