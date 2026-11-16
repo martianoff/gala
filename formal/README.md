@@ -32,6 +32,12 @@ GALA release.
   in a small GALA core, and the Go constructs the transpiler lowers them to (tagged
   struct, `Unapply` chain, panic).
 
+- **GoCore**, `Gala/GoCore.lean`: a semantics of the subset of Go the transpiler emits,
+  so far the fragment its `match` lowering needs (`:=`, blocks, `if`, assignment,
+  `return`, `panic`, a function literal called at once, `==`, `&&`, int `+` and `>`, and
+  the `Unapply` / `IsDefined` / `Value.Get()` / field-read primitives). It does not
+  import galaspec. The file lists its modelling choices.
+
 - **gala2lean's prelude and proofs**, `Gala/Gala2Lean/`: the runtime model that the Lean
   `internal/formal/gala2lean` writes for a GALA program imports, and theorems about one
   such translation (see [gala2lean](#gala2lean-a-third-oracle)).
