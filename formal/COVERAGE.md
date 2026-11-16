@@ -92,10 +92,12 @@ A run ends `unsupported:<kind>` when it reaches:
 
 `lake exe galaspec-tests` runs the fixtures in [`tests/`](tests):
 
-- 15 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+- 17 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
   interpolated strings, lambdas and closures, named arguments and defaults, a by-name
   default whose name a caller's local shadows,
-  package-level initialization and its order, scoping, three panic classes, fuel), and a
+  package-level initialization and its order (with defaults that call their own function,
+  in a branch that does not run and in one that does),
+  scoping, three panic classes, fuel), and a
   document with
   an unknown `core` version, which is malformed.
   Each `.out` is what the program prints when built and run with the `gala` CLI; for

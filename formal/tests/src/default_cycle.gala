@@ -1,0 +1,24 @@
+package main
+
+// Defaults that call their own function and leave themselves out: a call
+// that evaluates one recurses forever, but ordering the package-level
+// variables only needs the names a default mentions, the same each time it
+// is expanded. Here the cycles sit in a branch that never runs, so z and w
+// initialize and main prints them. (gala build overflows its stack on this
+// program, #1199; the output is galaspec's.)
+func f(a int, b int = f(1) + f(2)) int = a + b
+
+func h(a int = k()) int = a
+
+func k(b int = h()) int = b
+
+func g(n int) int = if (n > 0) f(0) + h() else 1
+
+val w = z + 1
+
+val z = g(0)
+
+func main() {
+    Println(z)
+    Println(w)
+}
