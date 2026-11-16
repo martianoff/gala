@@ -80,6 +80,250 @@ theorem ValsR.refl_fo {pkg : List String} {pm : String → Ren} :
     exact .cons (ValR.refl_fo v h.1) (ValsR.refl_fo vs h.2)
 end
 
+/-! ## `mapM` over read-only steps -/
+
+theorem readOnly_mapM {f : α → H β} (hf : ∀ x, ReadOnly (f x)) :
+    ∀ l : List α, ReadOnly (l.mapM f)
+  | [] => readOnly_pure _
+  | a :: as => by
+    rw [List.mapM_cons]
+    exact readOnly_bind (hf a) fun _ => readOnly_bind (readOnly_mapM hf as) fun _ => readOnly_pure _
+
+theorem mapM_rel {pkg : List String} {pm : String → Ren} {R : β → β' → Prop} {f : α → H β}
+    {g : α → H β'} {c c' : Core} (hf : ∀ x, ReadOnly (f x)) (hg : ∀ x, ReadOnly (g x)) :
+    ∀ (l : List α), (∀ x ∈ l, ResR pkg pm R ((f x).run.run c).1 ((g x).run.run c').1) →
+      ResR pkg pm (Fall2 R) ((l.mapM f).run.run c).1 ((l.mapM g).run.run c').1
+  | [], _ => .nil
+  | a :: as, h => by
+    rw [List.mapM_cons, List.mapM_cons]
+    exact resR_bind (h a (List.mem_cons_self ..)) (hf a) (hg a) fun b b' hb =>
+      resR_bind (mapM_rel hf hg as fun x hx => h x (List.mem_cons_of_mem _ hx))
+        (readOnly_mapM hf as) (readOnly_mapM hg as) fun bs bs' hbs => .cons hb hbs
+
+theorem valsR_of_fall2 {pkg : List String} {pm : String → Ren} :
+    ∀ {vs vs' : List Val}, Fall2 (ValR pkg pm) vs vs' → ValsR pkg pm vs vs'
+  | _, _, .nil => .nil
+  | _, _, .cons h t => .cons h (valsR_of_fall2 t)
+
+/-! ## Types and zero values -/
+
+mutual
+theorem readOnly_checkTy (ds : Decls) : ∀ t, ReadOnly (checkTy ds t)
+  | .unsupported _ => readOnly_throw _
+  | .name n => by unfold checkTy; split <;> first | exact readOnly_pure _ | exact readOnly_throw _
+  | .func ps none => by
+    unfold checkTy; exact readOnly_bind (readOnly_checkTys ds ps) fun _ => readOnly_pure _
+  | .func ps (some r) => by
+    unfold checkTy
+    exact readOnly_bind (readOnly_checkTys ds ps) fun _ =>
+      readOnly_bind (readOnly_bind (readOnly_checkTy ds r) fun _ => readOnly_pure _) fun _ =>
+        readOnly_pure _
+theorem readOnly_checkTys (ds : Decls) : ∀ ts, ReadOnly (checkTys ds ts)
+  | [] => readOnly_pure _
+  | t :: ts => by
+    unfold checkTys
+    exact readOnly_bind (readOnly_bind (readOnly_checkTy ds t) fun _ => readOnly_pure _) fun _ =>
+      readOnly_checkTys ds ts
+end
+
+theorem readOnly_checkOptTy (ds : Decls) (w : String) (t : Option Ty) :
+    ReadOnly (checkOptTy ds w t) := by
+  cases t
+  · exact readOnly_throw _
+  · exact readOnly_checkTy ds _
+
+/-- An `H` step that neither reads nor changes the state. -/
+def PureH (x : H α) : Prop :=
+  ∀ c c', (x.run.run c).1 = (x.run.run c').1 ∧ (x.run.run c).2 = c
+
+theorem PureH.readOnly {x : H α} (h : PureH x) : ReadOnly x := fun c => (h c c).2
+
+theorem pureH_pure (a : α) : PureH (pure a : H α) := fun _ _ => ⟨rfl, rfl⟩
+
+theorem pureH_throw (e : Stop) : PureH (throw e : H α) := fun _ _ => ⟨rfl, rfl⟩
+
+theorem pureH_bind {x : H α} {f : α → H β} (hx : PureH x) (hf : ∀ a, PureH (f a)) :
+    PureH (x >>= f) := by
+  intro c c'
+  rw [run_bind_eq, run_bind_eq]
+  obtain ⟨h1, h2⟩ := hx c c'
+  have h2' := (hx c' c).2
+  rcases e : x.run.run c with ⟨r, t⟩
+  rcases e' : x.run.run c' with ⟨r', t'⟩
+  rw [e, e'] at h1
+  rw [e] at h2
+  rw [e'] at h2'
+  simp only at h1 h2 h2'
+  subst h1 h2 h2'
+  cases r with
+  | error => exact ⟨rfl, rfl⟩
+  | ok a => exact hf a _ _
+
+theorem pureH_mapM {f : α → H β} (hf : ∀ x, PureH (f x)) : ∀ l : List α, PureH (l.mapM f)
+  | [] => pureH_pure _
+  | a :: as => by
+    rw [List.mapM_cons]
+    exact pureH_bind (hf a) fun _ => pureH_bind (pureH_mapM hf as) fun _ => pureH_pure _
+
+set_option hygiene false in
+macro "pure_step" : tactic => `(tactic| (first
+  | exact pureH_pure _
+  | exact pureH_throw _
+  | (apply pureH_bind <;> intros)
+  | (apply pureH_mapM; intros)
+  | exact ihC _
+  | exact ihC
+  | exact ihC _ _
+  | exact ihCs
+  | exact ihZ _
+  | split))
+
+mutual
+theorem pureH_checkTy (ds : Decls) : ∀ t, PureH (checkTy ds t)
+  | .unsupported _ => pureH_throw _
+  | .name _ => by unfold checkTy; repeat' pure_step
+  | .func ps none => by
+    have ihCs := pureH_checkTys ds ps
+    unfold checkTy; repeat' pure_step
+  | .func ps (some r) => by
+    have ihCs := pureH_checkTys ds ps
+    have ihC := pureH_checkTy ds r
+    unfold checkTy; repeat' pure_step
+theorem pureH_checkTys (ds : Decls) : ∀ ts, PureH (checkTys ds ts)
+  | [] => pureH_pure _
+  | t :: ts => by
+    have ihC := pureH_checkTy ds t
+    have ihCs := pureH_checkTys ds ts
+    unfold checkTys; repeat' pure_step
+end
+
+theorem pureH_checkOptTy (ds : Decls) (w : String) (t : Option Ty) :
+    PureH (checkOptTy ds w t) := by
+  cases t
+  · exact pureH_throw _
+  · exact pureH_checkTy ds _
+
+theorem pureH_zero (ds : Decls) : ∀ n t, PureH (zero ds n t)
+  | 0, _ => pureH_throw _
+  | n + 1, t => by
+    have ihZ := pureH_zero ds n
+    have ihC := pureH_checkOptTy ds
+    rw [zero.eq_def]
+    split <;> (try (injections; subst_vars)) <;> repeat' pure_step
+
+/-- An `H` step that never throws a `return`. -/
+def NoRetH (x : H α) : Prop := ∀ c v, (x.run.run c).1 ≠ .error (.ret v)
+
+theorem noRet_pure (a : α) : NoRetH (pure a : H α) := fun _ _ h => nomatch h
+
+theorem noRet_throw {e : Stop} (he : ∀ v, e ≠ .ret v) : NoRetH (throw e : H α) :=
+  fun _ v h => he v (by cases h; rfl)
+
+theorem noRet_bind {x : H α} {f : α → H β} (hx : NoRetH x) (hf : ∀ a, NoRetH (f a)) :
+    NoRetH (x >>= f) := by
+  intro c v h
+  rw [run_bind_eq] at h
+  rcases e : x.run.run c with ⟨r, t⟩
+  rw [e] at h
+  cases r with
+  | error e' => exact hx c v (by rw [e]; simpa using h)
+  | ok a => exact hf a t v h
+
+theorem noRet_mapM {f : α → H β} (hf : ∀ x, NoRetH (f x)) : ∀ l : List α, NoRetH (l.mapM f)
+  | [] => noRet_pure _
+  | a :: as => by
+    rw [List.mapM_cons]
+    exact noRet_bind (hf a) fun _ => noRet_bind (noRet_mapM hf as) fun _ => noRet_pure _
+
+/-- A result that is no `return`, whose value (if any) is related to itself, is related to
+    itself. -/
+theorem resR_self {pkg : List String} {pm : String → Ren} {R : α → α → Prop} {r : Except Stop α}
+    (hR : ∀ a, r = .ok a → R a a) (hn : ∀ v, r ≠ .error (.ret v)) : ResR pkg pm R r r := by
+  cases r with
+  | ok a => exact hR a rfl
+  | error e =>
+    cases e with
+    | panic => exact .panic _ _
+    | fuel => exact .fuel
+    | unsupported => exact .unsupported _ _ _
+    | stuck => exact .stuck _ _
+    | ret v => exact absurd rfl (hn v)
+
+set_option hygiene false in
+macro "noret_step" : tactic => `(tactic| (first
+  | exact noRet_pure _
+  | (apply noRet_throw; intro _ h; cases h)
+  | (apply noRet_bind <;> intros)
+  | (apply noRet_mapM; intros)
+  | exact ihC
+  | exact ihC _ _
+  | exact ihCs
+  | exact ihZ _
+  | split))
+
+mutual
+theorem noRet_checkTy (ds : Decls) : ∀ t, NoRetH (checkTy ds t)
+  | .unsupported _ => noRet_throw (fun _ h => by cases h)
+  | .name _ => by unfold checkTy; repeat' noret_step
+  | .func ps none => by
+    have ihCs := noRet_checkTys ds ps
+    unfold checkTy; repeat' noret_step
+  | .func ps (some r) => by
+    have ihCs := noRet_checkTys ds ps
+    have ihC := noRet_checkTy ds r
+    unfold checkTy; repeat' noret_step
+theorem noRet_checkTys (ds : Decls) : ∀ ts, NoRetH (checkTys ds ts)
+  | [] => noRet_pure _
+  | t :: ts => by
+    have ihC := noRet_checkTy ds t
+    have ihCs := noRet_checkTys ds ts
+    unfold checkTys; repeat' noret_step
+end
+
+theorem noRet_checkOptTy (ds : Decls) (w : String) (t : Option Ty) :
+    NoRetH (checkOptTy ds w t) := by
+  cases t
+  · exact noRet_throw (fun _ h => by cases h)
+  · exact noRet_checkTy ds _
+
+/-- A type check's result is related to itself: a type name, `stuck` or `unsupported`. -/
+theorem checkTy_self {pkg : List String} {pm : String → Ren} (ds : Decls) (c : Core) (t : Ty) :
+    ResR pkg pm Eq ((checkTy ds t).run.run c).1 ((checkTy ds t).run.run c).1 :=
+  resR_self (fun _ _ => rfl) (noRet_checkTy ds t c)
+
+theorem checkOptTy_self {pkg : List String} {pm : String → Ren} (ds : Decls) (c : Core)
+    (w : String) (t : Option Ty) :
+    ResR pkg pm Eq ((checkOptTy ds w t).run.run c).1 ((checkOptTy ds w t).run.run c).1 :=
+  resR_self (fun _ _ => rfl) (noRet_checkOptTy ds w t c)
+
+/-- A zero value is related to itself. -/
+theorem zero_self {pkg : List String} {pm : String → Ren} (ds : Decls) :
+    ∀ n t c, ResR pkg pm (ValR pkg pm) ((zero ds n t).run.run c).1 ((zero ds n t).run.run c).1
+  | 0, _, _ => .stuck _ _
+  | n + 1, t, c => by
+    have hro : ∀ f : Field, ReadOnly (do zero ds n (← checkOptTy ds s!"field {f.name}" f.type)) :=
+      fun f => (pureH_bind (pureH_checkOptTy ds _ _) fun _ => pureH_zero ds n _).readOnly
+    have hfs : ∀ fs : List Field, ResR pkg pm (Fall2 (ValR pkg pm))
+        ((fs.mapM fun (f : Field) => do zero ds n (← checkOptTy ds s!"field {f.name}" f.type)).run.run c).1
+        ((fs.mapM fun (f : Field) => do zero ds n (← checkOptTy ds s!"field {f.name}" f.type)).run.run c).1 :=
+      fun fs => mapM_rel hro hro fs fun f _ =>
+        resR_bind (checkOptTy_self ds c _ _) (pureH_checkOptTy ds _ _).readOnly
+          (pureH_checkOptTy ds _ _).readOnly fun a a' h => by subst h; exact zero_self ds n a c
+    rw [zero.eq_def]
+    split <;> (try (injections; subst_vars))
+    all_goals first
+      | exact .int _ | exact .bool _ | exact .str _
+      | exact .unsupported _ _ _ | exact .stuck _ _
+      | skip
+    all_goals dsimp only
+    all_goals repeat' split
+    all_goals first
+      | exact .unsupported _ _ _ | exact .stuck _ _
+      | exact resR_bind (hfs _) (readOnly_mapM hro _) (readOnly_mapM hro _) fun _ _ h =>
+          .struct_ _ (valsR_of_fall2 h)
+      | exact resR_bind (hfs _) (readOnly_mapM hro _) (readOnly_mapM hro _) fun _ _ h =>
+          .sealed _ _ (valsR_of_fall2 h)
+
 /-! ## Operators -/
 
 /-- `binop` reads no state. -/
