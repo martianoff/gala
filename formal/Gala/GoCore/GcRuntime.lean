@@ -51,6 +51,9 @@ def ptrSize : Nat := 8
 /-- An integer type: its width in bytes, aligned to its size. -/
 def Layout.ofInt (k : IntKind) : Layout := ⟨k.bits / 8, k.bits / 8, false⟩
 
+/-- A floating-point type of `bits` bits: its width in bytes, aligned to its size. -/
+def Layout.ofFloat (bits : Nat) : Layout := ⟨bits / 8, bits / 8, false⟩
+
 def Layout.bool : Layout := ⟨1, 1, false⟩
 /-- A pointer, function, map or channel: one word that is a pointer. -/
 def Layout.word : Layout := ⟨ptrSize, ptrSize, true⟩
