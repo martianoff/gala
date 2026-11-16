@@ -521,41 +521,41 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 239 | 31 |
+| AGREE | 245 | 31 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 165 | 4 |
+| UNSUPPORTED | 159 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **270** (ratchet baseline 270).
+Programs GoCore agrees with go run on: **276** (ratchet baseline 276).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **28** (ratchet baseline 28).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
 
-The construct GoCore stopped at in each program it did not run to the end, by how many programs (53 kinds, the top 20 shown):
+The construct GoCore stopped at in each program it did not run to the end, by how many programs (54 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
 | `float-lit` | 25 |
-| `defer` | 23 |
-| `fmt.Printf` | 20 |
-| `unicode/utf8.RuneCountInString` | 14 |
+| `fmt.Printf` | 21 |
+| `unicode/utf8.RuneCountInString` | 16 |
+| `errors.New` | 14 |
 | `map-type` | 8 |
-| `errors.New` | 7 |
 | `fmt.Stringer` | 5 |
 | `local-type` | 5 |
 | `slices.SortFunc` | 5 |
+| `strconv.Atoi` | 5 |
 | `float-constant` | 4 |
-| `strconv.Atoi` | 3 |
+| `recover-runtime-error` | 3 |
 | `fmt-verb-0` | 2 |
 | `fmt-verb-T` | 2 |
 | `fmt.Errorf` | 2 |
 | `net/url.URL` | 2 |
+| `os.TempDir` | 2 |
 | `std.Copy-reflective` | 2 |
 | `strings.ToUpper` | 2 |
 | `type-complex64` | 2 |
 | `type-inference` | 2 |
-| `bytes.Buffer` | 1 |
 <!-- difftest:end -->
 
 <!-- ownership:begin -->
