@@ -32,7 +32,18 @@ def requiredTheorems : List Name := [
   `Gala.Gala2Lean.Examples.Match.eval_total,
   `Gala.Spec.run_fuel_adequate,
   `Gala.Spec.defaultFrame_lookup,
-  `Gala.Spec.bindDefaults_callerLocals
+  `Gala.Spec.bindDefaults_callerLocals,
+  `Gala.Spec.evalList_acts,
+  `Gala.Spec.eval_and_acts,
+  `Gala.Spec.eval_or_acts,
+  `Gala.Spec.argSlots_eq,
+  `Gala.Spec.bindArgs_acts,
+  `Gala.Spec.eval_compound_acts,
+  `Gala.Spec.compound_eff,
+  `Gala.Spec.matchPats_stops,
+  `Gala.Spec.evalCases_nomatch,
+  `Gala.Spec.evalCases_guard_false,
+  `Gala.Spec.evalCases_guard_true
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

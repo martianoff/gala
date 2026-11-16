@@ -33,6 +33,17 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.run_fuel_adequate",
     "Gala.Spec.defaultFrame_lookup",
     "Gala.Spec.bindDefaults_callerLocals",
+    "Gala.Spec.evalList_acts",
+    "Gala.Spec.eval_and_acts",
+    "Gala.Spec.eval_or_acts",
+    "Gala.Spec.argSlots_eq",
+    "Gala.Spec.bindArgs_acts",
+    "Gala.Spec.eval_compound_acts",
+    "Gala.Spec.compound_eff",
+    "Gala.Spec.matchPats_stops",
+    "Gala.Spec.evalCases_nomatch",
+    "Gala.Spec.evalCases_guard_false",
+    "Gala.Spec.evalCases_guard_true",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -61,6 +72,7 @@ GALA_SRCS = [
     "Gala/Theorems.lean",
     "Gala/Fuel.lean",
     "Gala/Defaults.lean",
+    "Gala/Order.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]
