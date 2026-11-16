@@ -1473,12 +1473,17 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	// (e.g., the dot-import-used scan and method lookup on generic Go-style
 	// structs imported via dot import) can resolve `Type[T]` references and
 	// the methods they expose.
-	if named, ok := typ.(*types.Named); ok {
-		if tps := named.TypeParams(); tps != nil {
-			for i := 0; i < tps.Len(); i++ {
-				data.TypeParams = append(data.TypeParams, tps.At(i).Obj().Name())
-			}
-		}
+	var tps *types.TypeParamList
+	switch t := typ.(type) {
+	case *types.Named:
+		tps = t.TypeParams()
+	case *types.Alias:
+		// A generic alias (`type A[T any] = *T`): its target, recorded in
+		// TypeAliases, names these, which an instantiation substitutes.
+		tps = t.TypeParams()
+	}
+	for i := 0; i < tps.Len(); i++ {
+		data.TypeParams = append(data.TypeParams, tps.At(i).Obj().Name())
 	}
 
 	// Extract method set (including pointer receiver methods)
