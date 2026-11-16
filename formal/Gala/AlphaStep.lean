@@ -535,4 +535,119 @@ theorem getField_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} 
     · simp only [hv]; exact .unsupported _ _ _
   | _ => exact .unsupported _ _ _
 
+theorem valsR_set {pkg : List String} {pm : String → Ren} {x x' : Val} (hx : ValR pkg pm x x') :
+    ∀ {vs vs' : List Val} (i : Nat), ValsR pkg pm vs vs' → ValsR pkg pm (vs.set i x) (vs'.set i x')
+  | _, _, _, .nil => .nil
+  | _, _, 0, .cons _ t => .cons hx t
+  | _, _, i + 1, .cons h t => .cons h (valsR_set hx i t)
+
+theorem setField_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {c c' : Core}
+    (hs : SameLayout ds ds') {v v' x x' : Val} (f : String) (hv : ValR pkg pm v v')
+    (hx : ValR pkg pm x x') :
+    ResR pkg pm (ValR pkg pm) ((setField ds v f x).run.run c).1
+      ((setField ds' v' f x').run.run c').1 := by
+  unfold setField
+  simp only [← hs.structs]
+  cases hv with
+  | struct_ ty h =>
+    dsimp only
+    split
+    · exact .struct_ _ (valsR_set hx _ h)
+    · exact .stuck _ _
+  | _ => exact .stuck _ _
+
+/-! ## Locals, cells and package-level variables -/
+
+/-- The lookup of a variable, on both sides. -/
+theorem lookupVar_rel2 {pkg : List String} {pm : String → Ren} {Γ : Ren} {l l' g g' : Env}
+    {x x' : String} (hl : EnvR pkg pm Γ l l') (hg : GlobR pkg pm g g') (hx : NameR Γ x x') :
+    OptBindR pkg pm (lookupVar l g x) (lookupVar l' g' x') := by
+  have hloc := lookup_rel hl hx
+  unfold lookupVar
+  cases h1 : lookup l x <;> cases h1' : lookup l' x' <;> rw [h1, h1'] at hloc
+  · obtain rfl : x = x' := by
+      rcases hx with hb | ⟨h, _⟩
+      · have := bound_lookup_isSome hl hb; rw [h1] at this; exact absurd this (by simp)
+      · exact h
+    exact lookup_rel hg (nameR_self g x)
+  · exact absurd hloc id
+  · exact absurd hloc id
+  · exact hloc
+
+/-- Updating a variable on both sides keeps the environments related. -/
+theorem update_rel {pkg : List String} {pm : String → Ren} {v v' : Val} (hv : ValR pkg pm v v') :
+    ∀ {Γ : Ren} {ρ ρ' : Env} {x x' : String}, EnvR pkg pm Γ ρ ρ' → NameR Γ x x' →
+      (update ρ x v = none ∧ update ρ' x' v' = none) ∨
+        ∃ r r', update ρ x v = some r ∧ update ρ' x' v' = some r' ∧ EnvR pkg pm Γ r r'
+  | _, _, _, _, _, .nil, _ => Or.inl ⟨rfl, rfl⟩
+  | _, _, _, x, x', .cons (k := k) (k' := k') hm hb ht, hx => by
+    simp only [update]
+    rcases hx with hbd | ⟨rfl, hf⟩
+    · simp only [Ren.bound] at hbd
+      rcases hbd with ⟨rfl, rfl⟩ | ⟨h1, h2, hbd⟩
+      · simp only [ite_true]
+        exact Or.inr ⟨_, _, rfl, rfl, .cons hm hv ht⟩
+      · simp only [h1, h2, ite_false]
+        rcases update_rel hv ht (Or.inl hbd) with ⟨e1, e2⟩ | ⟨r, r', e1, e2, hr⟩
+        · rw [e1, e2]; exact Or.inl ⟨rfl, rfl⟩
+        · rw [e1, e2]; exact Or.inr ⟨_, _, rfl, rfl, .cons hm hb hr⟩
+    · simp only [Ren.free, List.map_cons, List.mem_cons, not_or] at hf
+      simp only [Ne.symm hf.1.1, Ne.symm hf.2.1, ite_false]
+      rcases update_rel hv ht (Or.inr ⟨rfl, hf.1.2, hf.2.2⟩) with ⟨e1, e2⟩ | ⟨r, r', e1, e2, hr⟩
+      · rw [e1, e2]; exact Or.inl ⟨rfl, rfl⟩
+      · rw [e1, e2]; exact Or.inr ⟨_, _, rfl, rfl, .cons hm hb hr⟩
+
+theorem heapR_set {pkg : List String} {pm : String → Ren} {h h' : Array Val} {v v' : Val}
+    (hh : HeapR pkg pm h h') (hv : ValR pkg pm v v') (n : Nat) :
+    HeapR pkg pm (h.set! n v) (h'.set! n v') := by
+  refine ⟨by simp [hh.1], fun i hi hi' => ?_⟩
+  simp only [Array.set!_eq_setIfInBounds, Array.size_setIfInBounds] at hi hi'
+  simp only [Array.set!_eq_setIfInBounds]
+  rw [Array.getElem_setIfInBounds, Array.getElem_setIfInBounds]
+  split
+  · exact hv
+  · exact hh.2 i hi hi'
+
+theorem heapR_push {pkg : List String} {pm : String → Ren} {h h' : Array Val} {v v' : Val}
+    (hh : HeapR pkg pm h h') (hv : ValR pkg pm v v') : HeapR pkg pm (h.push v) (h'.push v') := by
+  refine ⟨by simp [hh.1], fun i hi hi' => ?_⟩
+  simp only [Array.size_push] at hi hi'
+  have hsz := hh.1
+  simp only [Array.getElem_push]
+  by_cases hi1 : i < h.size
+  · have hi2 : i < h'.size := by omega
+    simp only [hi1, hi2, dite_true]
+    exact hh.2 i hi1 hi2
+  · have hi2 : ¬ i < h'.size := by omega
+    simp only [hi1, hi2, dite_false]
+    exact hv
+
+theorem store_run (n : Nat) (v : Val) (c : Core) :
+    (store n v).run.run c = if n < c.heap.size then (.ok (), { c with heap := c.heap.set! n v })
+      else (.error (.stuck "a reference to no cell"), c) := by
+  unfold store
+  rw [run_get_bind]
+  by_cases h : n < c.heap.size <;> simp only [h, ite_true, ite_false] <;> rfl
+
+/-- Storing related values in the same cell keeps the states related. -/
+theorem store_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {c c' : Core} {v v' : Val}
+    (hc : CoreR pkg pm Γ c c') (hv : ValR pkg pm v v') (n : Nat) :
+    ResR pkg pm Eq ((store n v).run.run c).1 ((store n v').run.run c').1 ∧
+      CoreR pkg pm Γ ((store n v).run.run c).2 ((store n v').run.run c').2 := by
+  have hsz := hc.2.2.1.1
+  rw [store_run, store_run, ← hsz]
+  split
+  · exact ⟨rfl, hc.1, hc.2.1, heapR_set hc.2.2.1 hv n, hc.2.2.2⟩
+  · exact ⟨.stuck _ _, hc⟩
+
+/-- A new cell for related values: the same index on both sides. -/
+theorem alloc_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {c c' : Core} {v v' : Val}
+    (hc : CoreR pkg pm Γ c c') (hv : ValR pkg pm v v') :
+    ResR pkg pm (ValR pkg pm) ((alloc v).run.run c).1 ((alloc v').run.run c').1 ∧
+      CoreR pkg pm Γ ((alloc v).run.run c).2 ((alloc v').run.run c').2 := by
+  have hsz := hc.2.2.1.1
+  refine ⟨?_, hc.1, hc.2.1, heapR_push hc.2.2.1 hv, hc.2.2.2⟩
+  show ValR pkg pm (.ref c.heap.size) (.ref c'.heap.size)
+  rw [hsz]; exact .ref _
+
 end Gala.Spec
