@@ -37,7 +37,9 @@ type Node interface {
 	Kind() string
 }
 
-// Meta is the kind and position every supported node starts with.
+// Meta is the kind and position every supported node starts with. The
+// exporter fills it from the node's Kind (see at), so a node's kind is its
+// type's.
 type Meta struct {
 	Kind string `json:"kind"`
 	Pos  Pos    `json:"pos"`
@@ -46,7 +48,7 @@ type Meta struct {
 func (m *Meta) setMeta(v Meta) { *m = v }
 
 // Unsupported stands for a Go construct outside GoCore, in place of the node
-// it would be. What names the construct (see UnsupportedKinds()).
+// it would be. What names the construct: one of the Unsupported* constants.
 type Unsupported struct {
 	What string `json:"unsupported"`
 	Pos  Pos    `json:"pos"`
@@ -76,18 +78,21 @@ type Import struct {
 // Body is nil for a declaration without a body.
 type FuncDecl struct {
 	Meta
-	Name       string   `json:"name"`
-	Recv       *Field   `json:"recv"`
-	TypeParams []*Field `json:"typeParams"`
-	Params     []*Field `json:"params"`
-	Results    []*Field `json:"results"`
-	Variadic   bool     `json:"variadic"`
-	Body       Node     `json:"body"`
+	Name       string    `json:"name"`
+	Recv       *Field    `json:"recv"`
+	TypeParams []*Field  `json:"typeParams"`
+	Type       *FuncType `json:"type"`
+	Body       Node      `json:"body"`
 }
 
-// TypeDecl is `type Name[params] Type`, or an alias `type Name = Type`.
+// TypeDecl is one `type` declaration: its specs in source order.
 type TypeDecl struct {
 	Meta
+	Specs []*TypeSpec `json:"specs"`
+}
+
+// TypeSpec is `Name[params] Type`, or an alias `Name = Type`.
+type TypeSpec struct {
 	Name       string   `json:"name"`
 	TypeParams []*Field `json:"typeParams"`
 	Alias      bool     `json:"alias"`
@@ -111,11 +116,14 @@ type ValueSpec struct {
 	Values []Node   `json:"values"`
 }
 
-// Field is a parameter, result, receiver, type parameter or struct field:
-// its names (none for an unnamed parameter or an embedded field) and type.
+// Field is a parameter, result, receiver, type parameter, struct field or
+// interface element: its names (none for an unnamed parameter or an
+// embedded field), its type and, for a struct field, its tag's value ("" for
+// none).
 type Field struct {
 	Names []string `json:"names"`
 	Type  Node     `json:"type"`
+	Tag   string   `json:"tag"`
 }
 
 // --- Types ---
@@ -133,7 +141,8 @@ type InterfaceType struct {
 	Elems []*Field `json:"elems"`
 }
 
-// FuncType is `func(params) results`.
+// FuncType is `func(params) results`; Variadic is set when the last
+// parameter is `...T`, whose Field has type T.
 type FuncType struct {
 	Meta
 	Params   []*Field `json:"params"`
@@ -149,24 +158,26 @@ type Ident struct {
 	Name string `json:"name"`
 }
 
-// IntLit is an integer literal; Value is its value in decimal, read from
-// the literal's text (any base, `_` separators), arbitrarily large.
+// IntLit is an integer literal; Value is its value in decimal, arbitrarily
+// large.
 type IntLit struct {
 	Meta
 	Value string `json:"value"`
 }
 
-// StringLit is a string literal, interpreted or raw; Value is its value,
-// escapes interpreted.
+// StringLit is a string literal, interpreted or raw; Value is its value. A
+// literal whose value is not valid UTF-8 is unsupported, since JSON could
+// not carry it exactly.
 type StringLit struct {
 	Meta
 	Value string `json:"value"`
 }
 
-// CharLit is a rune literal; Value is the code point.
+// CharLit is a rune literal; Value is its value (a code point, or a byte
+// for `'\xff'`).
 type CharLit struct {
 	Meta
-	Value int32 `json:"value"`
+	Value int64 `json:"value"`
 }
 
 // CompositeLit is `Type{elts}`. Type is nil for an elided type inside
@@ -257,11 +268,10 @@ type Block struct {
 	Stmts []Node `json:"stmts"`
 }
 
-// DeclStmt is a `var`, `const` or `type` declaration inside a function: one
-// ValueDecl, or a TypeDecl for each spec of a grouped `type ( ... )`.
+// DeclStmt is a `var`, `const` or `type` declaration inside a function.
 type DeclStmt struct {
 	Meta
-	Decls []Node `json:"decls"`
+	Decl Node `json:"decl"`
 }
 
 // ExprStmt is an expression used as a statement.
@@ -315,12 +325,10 @@ type Switch struct {
 	Clauses []*CaseClause `json:"clauses"`
 }
 
-// CaseClause is `case list: body`, or `default:` when List is empty and
-// Default is set.
+// CaseClause is `case list: body`, or `default:` when List is empty.
 type CaseClause struct {
-	List    []Node `json:"list"`
-	Default bool   `json:"default"`
-	Body    []Node `json:"body"`
+	List []Node `json:"list"`
+	Body []Node `json:"body"`
 }
 
 // For is `for init; cond; post { body }`; each of the three may be nil.
@@ -348,114 +356,94 @@ type Empty struct {
 	Meta
 }
 
-// nodeTypes maps each supported kind to its Go type, for schema_test.go and
-// for Kind().
-var nodeTypes = map[string]Node{
-	"file":           &File{},
-	"func-decl":      &FuncDecl{},
-	"type-decl":      &TypeDecl{},
-	"value-decl":     &ValueDecl{},
-	"struct-type":    &StructType{},
-	"interface-type": &InterfaceType{},
-	"func-type":      &FuncType{},
-	"ident":          &Ident{},
-	"int-lit":        &IntLit{},
-	"string-lit":     &StringLit{},
-	"char-lit":       &CharLit{},
-	"composite-lit":  &CompositeLit{},
-	"key-value":      &KeyValue{},
-	"func-lit":       &FuncLit{},
-	"paren":          &Paren{},
-	"selector":       &Selector{},
-	"index":          &Index{},
-	"type-assert":    &TypeAssert{},
-	"call":           &Call{},
-	"star":           &Star{},
-	"unary":          &Unary{},
-	"binary":         &Binary{},
-	"block":          &Block{},
-	"decl-stmt":      &DeclStmt{},
-	"expr-stmt":      &ExprStmt{},
-	"inc-dec":        &IncDec{},
-	"assign":         &Assign{},
-	"return":         &Return{},
-	"branch":         &Branch{},
-	"if":             &If{},
-	"switch":         &Switch{},
-	"for":            &For{},
-	"range":          &Range{},
-	"empty":          &Empty{},
-}
+func (*File) Kind() string          { return "file" }
+func (*FuncDecl) Kind() string      { return "func-decl" }
+func (*TypeDecl) Kind() string      { return "type-decl" }
+func (*ValueDecl) Kind() string     { return "value-decl" }
+func (*StructType) Kind() string    { return "struct-type" }
+func (*InterfaceType) Kind() string { return "interface-type" }
+func (*FuncType) Kind() string      { return "func-type" }
+func (*Ident) Kind() string         { return "ident" }
+func (*IntLit) Kind() string        { return "int-lit" }
+func (*StringLit) Kind() string     { return "string-lit" }
+func (*CharLit) Kind() string       { return "char-lit" }
+func (*CompositeLit) Kind() string  { return "composite-lit" }
+func (*KeyValue) Kind() string      { return "key-value" }
+func (*FuncLit) Kind() string       { return "func-lit" }
+func (*Paren) Kind() string         { return "paren" }
+func (*Selector) Kind() string      { return "selector" }
+func (*Index) Kind() string         { return "index" }
+func (*TypeAssert) Kind() string    { return "type-assert" }
+func (*Call) Kind() string          { return "call" }
+func (*Star) Kind() string          { return "star" }
+func (*Unary) Kind() string         { return "unary" }
+func (*Binary) Kind() string        { return "binary" }
+func (*Block) Kind() string         { return "block" }
+func (*DeclStmt) Kind() string      { return "decl-stmt" }
+func (*ExprStmt) Kind() string      { return "expr-stmt" }
+func (*IncDec) Kind() string        { return "inc-dec" }
+func (*Assign) Kind() string        { return "assign" }
+func (*Return) Kind() string        { return "return" }
+func (*Branch) Kind() string        { return "branch" }
+func (*If) Kind() string            { return "if" }
+func (*Switch) Kind() string        { return "switch" }
+func (*For) Kind() string           { return "for" }
+func (*Range) Kind() string         { return "range" }
+func (*Empty) Kind() string         { return "empty" }
 
-func (n *File) Kind() string          { return n.Meta.Kind }
-func (n *FuncDecl) Kind() string      { return n.Meta.Kind }
-func (n *TypeDecl) Kind() string      { return n.Meta.Kind }
-func (n *ValueDecl) Kind() string     { return n.Meta.Kind }
-func (n *StructType) Kind() string    { return n.Meta.Kind }
-func (n *InterfaceType) Kind() string { return n.Meta.Kind }
-func (n *FuncType) Kind() string      { return n.Meta.Kind }
-func (n *Ident) Kind() string         { return n.Meta.Kind }
-func (n *IntLit) Kind() string        { return n.Meta.Kind }
-func (n *StringLit) Kind() string     { return n.Meta.Kind }
-func (n *CharLit) Kind() string       { return n.Meta.Kind }
-func (n *CompositeLit) Kind() string  { return n.Meta.Kind }
-func (n *KeyValue) Kind() string      { return n.Meta.Kind }
-func (n *FuncLit) Kind() string       { return n.Meta.Kind }
-func (n *Paren) Kind() string         { return n.Meta.Kind }
-func (n *Selector) Kind() string      { return n.Meta.Kind }
-func (n *Index) Kind() string         { return n.Meta.Kind }
-func (n *TypeAssert) Kind() string    { return n.Meta.Kind }
-func (n *Call) Kind() string          { return n.Meta.Kind }
-func (n *Star) Kind() string          { return n.Meta.Kind }
-func (n *Unary) Kind() string         { return n.Meta.Kind }
-func (n *Binary) Kind() string        { return n.Meta.Kind }
-func (n *Block) Kind() string         { return n.Meta.Kind }
-func (n *DeclStmt) Kind() string      { return n.Meta.Kind }
-func (n *ExprStmt) Kind() string      { return n.Meta.Kind }
-func (n *IncDec) Kind() string        { return n.Meta.Kind }
-func (n *Assign) Kind() string        { return n.Meta.Kind }
-func (n *Return) Kind() string        { return n.Meta.Kind }
-func (n *Branch) Kind() string        { return n.Meta.Kind }
-func (n *If) Kind() string            { return n.Meta.Kind }
-func (n *Switch) Kind() string        { return n.Meta.Kind }
-func (n *For) Kind() string           { return n.Meta.Kind }
-func (n *Range) Kind() string         { return n.Meta.Kind }
-func (n *Empty) Kind() string         { return n.Meta.Kind }
-
-// unsupportedKinds names every construct the exporter reports as
-// Unsupported, for schema_test.go.
-var unsupportedKinds = []string{
-	"float-literal",
-	"imag-literal",
-	"slice-expr",
-	"array-type",
-	"map-type",
-	"chan-type",
-	"ellipsis",
-	"labeled-stmt",
-	"labeled-branch",
-	"goto",
-	"fallthrough",
-	"send",
-	"go",
-	"defer",
-	"select",
-	"type-switch",
-	"receive",
-	"bad-node",
+// nodeTypes is one value of every supported node type, for schema_test.go
+// and Kinds.
+var nodeTypes = []Node{
+	&File{}, &FuncDecl{}, &TypeDecl{}, &ValueDecl{}, &StructType{}, &InterfaceType{}, &FuncType{},
+	&Ident{}, &IntLit{}, &StringLit{}, &CharLit{}, &CompositeLit{}, &KeyValue{}, &FuncLit{},
+	&Paren{}, &Selector{}, &Index{}, &TypeAssert{}, &Call{}, &Star{}, &Unary{}, &Binary{},
+	&Block{}, &DeclStmt{}, &ExprStmt{}, &IncDec{}, &Assign{}, &Return{}, &Branch{}, &If{},
+	&Switch{}, &For{}, &Range{}, &Empty{},
 }
 
 // Kinds is every node kind, sorted.
 func Kinds() []string {
 	out := make([]string, 0, len(nodeTypes))
-	for k := range nodeTypes {
-		out = append(out, k)
+	for _, n := range nodeTypes {
+		out = append(out, n.Kind())
 	}
 	slices.Sort(out)
 	return out
 }
 
+// The constructs the exporter reports as Unsupported.
+const (
+	UnsupportedFloatLiteral  = "float-literal"
+	UnsupportedImagLiteral   = "imag-literal"
+	UnsupportedInvalidUTF8   = "invalid-utf8-string"
+	UnsupportedSliceExpr     = "slice-expr"
+	UnsupportedArrayType     = "array-type"
+	UnsupportedMapType       = "map-type"
+	UnsupportedChanType      = "chan-type"
+	UnsupportedEllipsis      = "ellipsis"
+	UnsupportedTilde         = "tilde"
+	UnsupportedReceive       = "receive"
+	UnsupportedLabeledStmt   = "labeled-stmt"
+	UnsupportedLabeledBranch = "labeled-branch"
+	UnsupportedGoto          = "goto"
+	UnsupportedFallthrough   = "fallthrough"
+	UnsupportedSend          = "send"
+	UnsupportedGo            = "go"
+	UnsupportedDefer         = "defer"
+	UnsupportedSelect        = "select"
+	UnsupportedTypeSwitch    = "type-switch"
+	UnsupportedBadNode       = "bad-node"
+)
+
+var unsupportedKinds = []string{
+	UnsupportedFloatLiteral, UnsupportedImagLiteral, UnsupportedInvalidUTF8, UnsupportedSliceExpr,
+	UnsupportedArrayType, UnsupportedMapType, UnsupportedChanType, UnsupportedEllipsis,
+	UnsupportedTilde, UnsupportedReceive, UnsupportedLabeledStmt, UnsupportedLabeledBranch,
+	UnsupportedGoto, UnsupportedFallthrough, UnsupportedSend, UnsupportedGo, UnsupportedDefer,
+	UnsupportedSelect, UnsupportedTypeSwitch, UnsupportedBadNode,
+}
+
 // UnsupportedKinds is every construct name an Unsupported node may carry.
 func UnsupportedKinds() []string {
-	return append([]string(nil), unsupportedKinds...)
+	return slices.Clone(unsupportedKinds)
 }

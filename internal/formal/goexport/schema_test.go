@@ -46,7 +46,8 @@ func TestSchemaDocumentsEveryKind(t *testing.T) {
 		}
 		sections[body[m[2]:m[3]]] = body[m[1]:end]
 	}
-	for kind, n := range nodeTypes {
+	for _, n := range nodeTypes {
+		kind := n.Kind()
 		text, ok := sections[kind]
 		if !ok {
 			t.Errorf("SCHEMA.md documents no kind %q", kind)
@@ -65,7 +66,7 @@ func TestSchemaDocumentsEveryKind(t *testing.T) {
 		}
 	}
 	for kind := range sections {
-		if _, ok := nodeTypes[kind]; !ok {
+		if !slices.Contains(Kinds(), kind) {
 			t.Errorf("SCHEMA.md documents %q, which is not a kind", kind)
 		}
 	}
@@ -84,15 +85,5 @@ func TestSchemaListsEveryUnsupportedConstruct(t *testing.T) {
 	slices.Sort(want)
 	if !slices.Equal(documented, want) {
 		t.Errorf("SCHEMA.md lists %v, the exporter reports %v", documented, want)
-	}
-}
-
-// TestKindsAreSet checks that every node type's Kind is its key in
-// nodeTypes once exported, so a kind is never empty.
-func TestKindsAreSet(t *testing.T) {
-	for kind := range nodeTypes {
-		if kind == "" || strings.ContainsAny(kind, " _") {
-			t.Errorf("bad kind %q", kind)
-		}
 	}
 }

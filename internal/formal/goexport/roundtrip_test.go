@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/parser"
 	"go/token"
-	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
@@ -16,33 +16,46 @@ import (
 )
 
 // The round trip is the exporter's main test: a document printed back as Go
-// must parse to the same syntax tree as the source, positions, comments,
-// struct tags and the spelling of literals aside. So the exporter drops
-// nothing GoCore can run and changes nothing: it is a plain syntax dump.
-// The printer below works on the JSON, the form the Lean decoder reads.
+// must parse to the same syntax tree as the source, positions, comments and
+// the spelling of literals aside. So the exporter drops nothing and changes
+// nothing: it is a plain syntax dump. The printer below works on the JSON,
+// the form the Lean decoder reads. A document with an unsupported node has
+// no source to print there, so the round trip covers the documents wholly
+// inside GoCore; TestExamplesRoundTrip says how many.
 
-// roundTrip exports src, prints the document back as Go and checks that it
-// parses to src's tree. It returns the document.
-func roundTrip(t *testing.T, name, src string) map[string]any {
+type obj = map[string]any
+
+// roundTrip exports src. When the document has no unsupported node it
+// prints it back as Go and checks that it parses to src's tree. It returns
+// the document and whether it was round-tripped.
+func roundTrip(t *testing.T, name, src string) (obj, bool) {
 	t.Helper()
 	prog, err := goexport.Export([]goexport.PackageSource{{Path: "main", Files: []goexport.Source{{Name: name, Text: src}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := goexport.Marshal(prog)
+	data, err := json.Marshal(prog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc map[string]any
+	var doc obj
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	pkg := doc["packages"].([]any)[0].(map[string]any)
-	file := pkg["files"].([]any)[0].(map[string]any)
+	clean := true
+	walk(doc, func(n obj) {
+		if _, ok := n["unsupported"]; ok {
+			clean = false
+		}
+	})
+	if !clean {
+		return doc, false
+	}
+	pkg := doc["packages"].([]any)[0].(obj)
 	var p printer
-	p.file(str(pkg["name"]), file)
+	p.file(str(pkg["name"]), pkg["files"].([]any)[0].(obj))
 	if p.unsupported != "" {
-		return doc
+		t.Fatalf("%s: the printer met %s", name, p.unsupported)
 	}
 	printed := p.b.String()
 	want := parse(t, name, src)
@@ -50,12 +63,12 @@ func roundTrip(t *testing.T, name, src string) map[string]any {
 	if d := diffTrees(reflect.ValueOf(want), reflect.ValueOf(got), "file"); d != "" {
 		t.Fatalf("%s: printed back, the document is not the source: %s\nprinted:\n%s", name, d, printed)
 	}
-	return doc
+	return doc, true
 }
 
-// parse parses src and normalizes what the round trip does not keep: each
-// import and each type spec in a declaration of its own at the top level,
-// struct tags dropped, literals in one spelling.
+// parse parses src and normalizes what the round trip does not keep: import
+// declarations (File.Imports is compared instead, which is flat) and the
+// spelling of literals and tags.
 func parse(t *testing.T, name, src string) *ast.File {
 	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), name, src, parser.SkipObjectResolution)
@@ -64,31 +77,28 @@ func parse(t *testing.T, name, src string) *ast.File {
 	}
 	var decls []ast.Decl
 	for _, d := range f.Decls {
-		g, ok := d.(*ast.GenDecl)
-		if !ok || (g.Tok != token.IMPORT && g.Tok != token.TYPE) || len(g.Specs) == 1 {
+		if g, ok := d.(*ast.GenDecl); !ok || g.Tok != token.IMPORT {
 			decls = append(decls, d)
-			continue
-		}
-		for _, s := range g.Specs {
-			decls = append(decls, &ast.GenDecl{Tok: g.Tok, Specs: []ast.Spec{s}})
 		}
 	}
 	f.Decls = decls
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.Field:
-			n.Tag = nil
+			if n.Tag != nil {
+				tag, _ := strconv.Unquote(n.Tag.Value)
+				n.Tag.Value = strconv.Quote(tag)
+			}
 		case *ast.BasicLit:
+			v := constant.MakeFromLiteral(n.Value, n.Kind, 0)
 			switch n.Kind {
 			case token.INT:
-				v, _ := new(big.Int).SetString(n.Value, 0)
-				n.Value = v.String()
+				n.Value = v.ExactString()
 			case token.STRING:
-				s, _ := strconv.Unquote(n.Value)
-				n.Value = strconv.Quote(s)
+				n.Value = strconv.Quote(constant.StringVal(v))
 			case token.CHAR:
-				s, _ := strconv.Unquote(n.Value)
-				n.Value = strconv.QuoteRune([]rune(s)[0])
+				r, _ := constant.Int64Val(v)
+				n.Value = strconv.QuoteRune(rune(r))
 			}
 		}
 		return true
@@ -132,7 +142,7 @@ func diffTrees(a, b reflect.Value, path string) string {
 				f.Type == reflect.TypeOf(&ast.CommentGroup{}),
 				f.Type == reflect.TypeOf(&ast.Scope{}),
 				f.Type == reflect.TypeOf(&ast.Object{}),
-				f.Name == "Imports", f.Name == "Unresolved", f.Name == "Comments",
+				f.Name == "Unresolved", f.Name == "Comments",
 				f.Name == "FileStart", f.Name == "FileEnd", f.Name == "GoVersion":
 				continue
 			}
@@ -156,8 +166,6 @@ type printer struct {
 }
 
 func (p *printer) w(format string, args ...any) { fmt.Fprintf(&p.b, format, args...) }
-
-type obj = map[string]any
 
 func list(v any) []any {
 	l, _ := v.([]any)
@@ -192,19 +200,25 @@ func (p *printer) decl(d obj) {
 		}
 		p.w("%s", str(d["name"]))
 		p.typeParams(d["typeParams"])
-		p.signature(d)
+		p.signature(d["type"].(obj))
 		if body, ok := d["body"].(obj); ok {
 			p.w(" ")
 			p.stmt(body)
 		}
 	case "type-decl":
-		p.w("type %s", str(d["name"]))
-		p.typeParams(d["typeParams"])
-		if d["alias"] == true {
-			p.w(" =")
+		p.w("type (\n")
+		for _, s := range list(d["specs"]) {
+			spec := s.(obj)
+			p.w("%s", str(spec["name"]))
+			p.typeParams(spec["typeParams"])
+			if spec["alias"] == true {
+				p.w(" =")
+			}
+			p.w(" ")
+			p.expr(spec["type"])
+			p.w("\n")
 		}
-		p.w(" ")
-		p.expr(d["type"])
+		p.w(")")
 	case "value-decl":
 		if d["const"] == true {
 			p.w("const (\n")
@@ -277,6 +291,9 @@ func (p *printer) field(f obj) {
 		p.w("%s ", strings.Join(names, ", "))
 	}
 	p.expr(f["type"])
+	if tag := str(f["tag"]); tag != "" {
+		p.w(" %s", strconv.Quote(tag))
+	}
 }
 
 func (p *printer) exprs(es []any) {
@@ -402,17 +419,7 @@ func (p *printer) stmt(s obj) {
 		p.stmts(list(s["stmts"]))
 		p.w("}")
 	case "decl-stmt":
-		ds := list(s["decls"])
-		if len(ds) > 1 {
-			p.w("type (\n")
-			for _, d := range ds {
-				p.b.WriteString(strings.TrimPrefix(p.sub(func(q *printer) { q.decl(d.(obj)) }), "type "))
-				p.w("\n")
-			}
-			p.w(")")
-			return
-		}
-		p.decl(ds[0].(obj))
+		p.decl(s["decl"].(obj))
 	case "expr-stmt":
 		p.expr(s["x"])
 	case "inc-dec":
@@ -450,7 +457,7 @@ func (p *printer) stmt(s obj) {
 		p.w(" {\n")
 		for _, c := range list(s["clauses"]) {
 			cc := c.(obj)
-			if cc["default"] == true {
+			if len(list(cc["list"])) == 0 {
 				p.w("default:\n")
 			} else {
 				p.w("case ")
@@ -495,14 +502,4 @@ func (p *printer) stmt(s obj) {
 	default:
 		p.node(s)
 	}
-}
-
-// sub prints with a fresh printer and returns the text.
-func (p *printer) sub(f func(*printer)) string {
-	var q printer
-	f(&q)
-	if q.unsupported != "" {
-		p.unsupported = q.unsupported
-	}
-	return q.b.String()
 }

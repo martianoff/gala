@@ -3,24 +3,25 @@
 // that the Lean model GoCore runs (docs/FORMAL_SEMANTICS.MD, "M4: GoCore and
 // the Go AST exporter"). SCHEMA.md documents the format.
 //
-// It is a plain syntax dump of go/ast. It resolves no names, infers no types,
-// folds no constants and drops nothing: a construct outside GoCore is written
-// as an `unsupported` node in its place, naming it, so the consumer stops
-// there with that name if a run reaches it. Literals are read lexically: an
-// integer's value in decimal, a string's with its escapes interpreted.
+// It is a plain syntax dump of go/ast. It resolves no names, infers no types
+// and folds no constants. A construct outside GoCore is written as an
+// `unsupported` node in its place, naming it, so the consumer stops there
+// with that name if a run reaches it; nothing else is dropped but comments.
+// Literals are read as the Go type checker reads them (go/constant).
 //
 // It is a test-support library: no part of the gala CLI links it.
 package goexport
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/parser"
 	"go/token"
-	"math/big"
-	"sort"
+	"slices"
 	"strconv"
 	"unicode/utf8"
 )
@@ -44,8 +45,8 @@ type PackageSource struct {
 func Export(pkgs []PackageSource) (*Program, error) {
 	prog := &Program{GoCore: Version, Packages: []*Package{}}
 	for _, ps := range pkgs {
-		files := append([]Source(nil), ps.Files...)
-		sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+		files := slices.Clone(ps.Files)
+		slices.SortFunc(files, func(a, b Source) int { return cmp.Compare(a.Name, b.Name) })
 		pkg := &Package{Path: ps.Path, Files: []*File{}}
 		for _, src := range files {
 			fset := token.NewFileSet()
@@ -71,7 +72,7 @@ func Marshal(p *Program) ([]byte, error) {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", " ")
+	enc.SetIndent("", "  ")
 	if err := enc.Encode(p); err != nil {
 		return nil, err
 	}
@@ -88,19 +89,27 @@ func (x *exporter) pos(p token.Pos) Pos {
 	return Pos{Line: pp.Line, Col: pp.Column}
 }
 
-func (x *exporter) meta(kind string, p token.Pos) Meta { return Meta{Kind: kind, Pos: x.pos(p)} }
+// metaNode is a node type whose Meta the exporter fills.
+type metaNode interface {
+	Node
+	setMeta(Meta)
+}
+
+// at gives n its kind and position, and returns it.
+func at[N metaNode](x *exporter, n N, p token.Pos) N {
+	n.setMeta(Meta{Kind: n.Kind(), Pos: x.pos(p)})
+	return n
+}
 
 func (x *exporter) unsupported(what string, p token.Pos) Node {
 	return &Unsupported{What: what, Pos: x.pos(p)}
 }
 
 func (x *exporter) file(name string, f *ast.File) *File {
-	out := &File{Meta: x.meta("file", f.Package), Name: name, Imports: []*Import{}, Decls: []Node{}}
+	out := at(x, &File{Name: name, Imports: []*Import{}, Decls: []Node{}}, f.Package)
 	for _, spec := range f.Imports {
-		path, err := strconv.Unquote(spec.Path.Value)
-		if err != nil {
-			path = spec.Path.Value
-		}
+		// The parser has checked that the path is a string literal.
+		path, _ := strconv.Unquote(spec.Path.Value)
 		imp := &Import{Path: path}
 		if spec.Name != nil {
 			imp.Name = spec.Name.Name
@@ -111,74 +120,51 @@ func (x *exporter) file(name string, f *ast.File) *File {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.IMPORT {
 			continue
 		}
-		out.Decls = append(out.Decls, x.decls(d)...)
+		out.Decls = append(out.Decls, x.decl(d))
 	}
 	return out
 }
 
-// decls exports a top-level or local declaration: a type declaration with
-// several specs becomes one TypeDecl each.
-func (x *exporter) decls(d ast.Decl) []Node {
+// decl exports a top-level or local declaration.
+func (x *exporter) decl(d ast.Decl) Node {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
-		return []Node{x.funcDecl(d)}
+		fd := at(x, &FuncDecl{
+			Name:       d.Name.Name,
+			TypeParams: x.fields(d.Type.TypeParams),
+			Type:       x.funcType(d.Type),
+		}, d.Pos())
+		if d.Recv != nil && len(d.Recv.List) == 1 {
+			fd.Recv = x.fields(d.Recv)[0]
+		}
+		if d.Body != nil {
+			fd.Body = x.block(d.Body)
+		}
+		return fd
 	case *ast.GenDecl:
 		switch d.Tok {
 		case token.TYPE:
-			var out []Node
+			td := at(x, &TypeDecl{Specs: []*TypeSpec{}}, d.Pos())
 			for _, s := range d.Specs {
 				ts := s.(*ast.TypeSpec)
-				out = append(out, &TypeDecl{
-					Meta:       x.meta("type-decl", ts.Pos()),
+				td.Specs = append(td.Specs, &TypeSpec{
 					Name:       ts.Name.Name,
 					TypeParams: x.fields(ts.TypeParams),
 					Alias:      ts.Assign.IsValid(),
 					Type:       x.expr(ts.Type),
 				})
 			}
-			return out
+			return td
 		case token.VAR, token.CONST:
-			vd := &ValueDecl{Meta: x.meta("value-decl", d.Pos()), Const: d.Tok == token.CONST, Specs: []*ValueSpec{}}
+			vd := at(x, &ValueDecl{Const: d.Tok == token.CONST, Specs: []*ValueSpec{}}, d.Pos())
 			for _, s := range d.Specs {
 				vs := s.(*ast.ValueSpec)
-				spec := &ValueSpec{Names: names(vs.Names), Values: x.exprs(vs.Values)}
-				if vs.Type != nil {
-					spec.Type = x.expr(vs.Type)
-				}
-				vd.Specs = append(vd.Specs, spec)
+				vd.Specs = append(vd.Specs, &ValueSpec{Names: names(vs.Names), Type: x.optExpr(vs.Type), Values: x.exprs(vs.Values)})
 			}
-			return []Node{vd}
+			return vd
 		}
 	}
-	return []Node{x.unsupported("bad-node", d.Pos())}
-}
-
-func (x *exporter) funcDecl(d *ast.FuncDecl) Node {
-	fd := &FuncDecl{
-		Meta:       x.meta("func-decl", d.Pos()),
-		Name:       d.Name.Name,
-		TypeParams: x.fields(d.Type.TypeParams),
-		Params:     x.fields(d.Type.Params),
-		Results:    x.fields(d.Type.Results),
-		Variadic:   variadic(d.Type),
-	}
-	if d.Recv != nil && len(d.Recv.List) == 1 {
-		fd.Recv = x.fields(d.Recv)[0]
-	}
-	if d.Body != nil {
-		fd.Body = x.block(d.Body)
-	}
-	return fd
-}
-
-// variadic reports whether t's last parameter is `...T`; its Field's type
-// is then T.
-func variadic(t *ast.FuncType) bool {
-	if t.Params == nil || len(t.Params.List) == 0 {
-		return false
-	}
-	_, ok := t.Params.List[len(t.Params.List)-1].Type.(*ast.Ellipsis)
-	return ok
+	return x.unsupported(UnsupportedBadNode, d.Pos())
 }
 
 func names(ids []*ast.Ident) []string {
@@ -195,13 +181,26 @@ func (x *exporter) fields(fl *ast.FieldList) []*Field {
 		return out
 	}
 	for _, f := range fl.List {
-		t := f.Type
-		if e, ok := t.(*ast.Ellipsis); ok {
-			t = e.Elt
+		field := &Field{Names: names(f.Names), Type: x.expr(f.Type)}
+		if f.Tag != nil {
+			field.Tag, _ = strconv.Unquote(f.Tag.Value)
 		}
-		out = append(out, &Field{Names: names(f.Names), Type: x.expr(t)})
+		out = append(out, field)
 	}
 	return out
+}
+
+func (x *exporter) funcType(t *ast.FuncType) *FuncType {
+	ft := at(x, &FuncType{Params: x.fields(t.Params), Results: x.fields(t.Results)}, t.Pos())
+	// `...T` is allowed only as the last parameter: its field gets type T
+	// and the signature the flag.
+	if t.Params != nil && len(t.Params.List) > 0 {
+		if e, ok := t.Params.List[len(t.Params.List)-1].Type.(*ast.Ellipsis); ok {
+			ft.Params[len(ft.Params)-1].Type = x.expr(e.Elt)
+			ft.Variadic = true
+		}
+	}
+	return ft
 }
 
 func (x *exporter) exprs(es []ast.Expr) []Node {
@@ -223,102 +222,90 @@ func (x *exporter) optExpr(e ast.Expr) Node {
 func (x *exporter) expr(e ast.Expr) Node {
 	switch e := e.(type) {
 	case *ast.Ident:
-		return &Ident{Meta: x.meta("ident", e.Pos()), Name: e.Name}
+		return at(x, &Ident{Name: e.Name}, e.Pos())
 	case *ast.BasicLit:
 		return x.basicLit(e)
 	case *ast.CompositeLit:
-		return &CompositeLit{Meta: x.meta("composite-lit", e.Pos()), Type: x.optExpr(e.Type), Elts: x.exprs(e.Elts)}
+		return at(x, &CompositeLit{Type: x.optExpr(e.Type), Elts: x.exprs(e.Elts)}, e.Pos())
 	case *ast.KeyValueExpr:
-		return &KeyValue{Meta: x.meta("key-value", e.Pos()), Key: x.expr(e.Key), Value: x.expr(e.Value)}
+		return at(x, &KeyValue{Key: x.expr(e.Key), Value: x.expr(e.Value)}, e.Pos())
 	case *ast.FuncLit:
-		return &FuncLit{Meta: x.meta("func-lit", e.Pos()), Type: x.funcType(e.Type), Body: x.block(e.Body)}
+		return at(x, &FuncLit{Type: x.funcType(e.Type), Body: x.block(e.Body)}, e.Pos())
 	case *ast.ParenExpr:
-		return &Paren{Meta: x.meta("paren", e.Pos()), X: x.expr(e.X)}
+		return at(x, &Paren{X: x.expr(e.X)}, e.Pos())
 	case *ast.SelectorExpr:
-		return &Selector{Meta: x.meta("selector", e.Pos()), X: x.expr(e.X), Sel: e.Sel.Name}
+		return at(x, &Selector{X: x.expr(e.X), Sel: e.Sel.Name}, e.Pos())
 	case *ast.IndexExpr:
-		return &Index{Meta: x.meta("index", e.Pos()), X: x.expr(e.X), Indices: []Node{x.expr(e.Index)}}
+		return at(x, &Index{X: x.expr(e.X), Indices: []Node{x.expr(e.Index)}}, e.Pos())
 	case *ast.IndexListExpr:
-		return &Index{Meta: x.meta("index", e.Pos()), X: x.expr(e.X), Indices: x.exprs(e.Indices)}
+		return at(x, &Index{X: x.expr(e.X), Indices: x.exprs(e.Indices)}, e.Pos())
 	case *ast.TypeAssertExpr:
-		if e.Type == nil {
-			return x.unsupported("type-switch", e.Pos())
-		}
-		return &TypeAssert{Meta: x.meta("type-assert", e.Pos()), X: x.expr(e.X), Type: x.expr(e.Type)}
+		// A nil Type is `x.(type)`, which only a type switch has, and a type
+		// switch is unsupported as a whole.
+		return at(x, &TypeAssert{X: x.expr(e.X), Type: x.expr(e.Type)}, e.Pos())
 	case *ast.CallExpr:
-		return &Call{Meta: x.meta("call", e.Pos()), Fun: x.expr(e.Fun), Args: x.exprs(e.Args), Ellipsis: e.Ellipsis.IsValid()}
+		return at(x, &Call{Fun: x.expr(e.Fun), Args: x.exprs(e.Args), Ellipsis: e.Ellipsis.IsValid()}, e.Pos())
 	case *ast.StarExpr:
-		return &Star{Meta: x.meta("star", e.Pos()), X: x.expr(e.X)}
+		return at(x, &Star{X: x.expr(e.X)}, e.Pos())
 	case *ast.UnaryExpr:
 		switch e.Op {
 		case token.SUB, token.ADD, token.NOT, token.XOR, token.AND:
-			return &Unary{Meta: x.meta("unary", e.Pos()), Op: e.Op.String(), X: x.expr(e.X)}
+			return at(x, &Unary{Op: e.Op.String(), X: x.expr(e.X)}, e.Pos())
+		case token.ARROW:
+			return x.unsupported(UnsupportedReceive, e.Pos())
+		case token.TILDE:
+			return x.unsupported(UnsupportedTilde, e.Pos())
 		}
-		return x.unsupported("receive", e.Pos())
 	case *ast.BinaryExpr:
-		return &Binary{Meta: x.meta("binary", e.Pos()), Op: e.Op.String(), X: x.expr(e.X), Y: x.expr(e.Y)}
+		return at(x, &Binary{Op: e.Op.String(), X: x.expr(e.X), Y: x.expr(e.Y)}, e.Pos())
 	case *ast.StructType:
-		return &StructType{Meta: x.meta("struct-type", e.Pos()), Fields: x.fields(e.Fields)}
+		return at(x, &StructType{Fields: x.fields(e.Fields)}, e.Pos())
 	case *ast.InterfaceType:
-		return &InterfaceType{Meta: x.meta("interface-type", e.Pos()), Elems: x.fields(e.Methods)}
+		return at(x, &InterfaceType{Elems: x.fields(e.Methods)}, e.Pos())
 	case *ast.FuncType:
 		return x.funcType(e)
 	case *ast.SliceExpr:
-		return x.unsupported("slice-expr", e.Pos())
+		return x.unsupported(UnsupportedSliceExpr, e.Pos())
 	case *ast.ArrayType:
-		return x.unsupported("array-type", e.Pos())
+		return x.unsupported(UnsupportedArrayType, e.Pos())
 	case *ast.MapType:
-		return x.unsupported("map-type", e.Pos())
+		return x.unsupported(UnsupportedMapType, e.Pos())
 	case *ast.ChanType:
-		return x.unsupported("chan-type", e.Pos())
+		return x.unsupported(UnsupportedChanType, e.Pos())
 	case *ast.Ellipsis:
-		return x.unsupported("ellipsis", e.Pos())
+		return x.unsupported(UnsupportedEllipsis, e.Pos())
 	}
-	return x.unsupported("bad-node", e.Pos())
+	return x.unsupported(UnsupportedBadNode, e.Pos())
 }
 
-func (x *exporter) funcType(t *ast.FuncType) *FuncType {
-	return &FuncType{
-		Meta:     x.meta("func-type", t.Pos()),
-		Params:   x.fields(t.Params),
-		Results:  x.fields(t.Results),
-		Variadic: variadic(t),
-	}
-}
-
-// basicLit reads a literal lexically (Go spec, "Integer literals", "Rune
-// literals", "String literals").
+// basicLit reads a literal as the Go type checker does (Go spec, "Integer
+// literals", "Rune literals", "String literals").
 func (x *exporter) basicLit(e *ast.BasicLit) Node {
 	switch e.Kind {
-	case token.INT:
-		n, ok := new(big.Int).SetString(e.Value, 0)
-		if !ok {
-			return x.unsupported("bad-node", e.Pos())
-		}
-		return &IntLit{Meta: x.meta("int-lit", e.Pos()), Value: n.String()}
-	case token.STRING:
-		s, err := strconv.Unquote(e.Value)
-		if err != nil {
-			return x.unsupported("bad-node", e.Pos())
-		}
-		return &StringLit{Meta: x.meta("string-lit", e.Pos()), Value: s}
-	case token.CHAR:
-		s, err := strconv.Unquote(e.Value)
-		r, _ := utf8.DecodeRuneInString(s)
-		if err != nil {
-			return x.unsupported("bad-node", e.Pos())
-		}
-		return &CharLit{Meta: x.meta("char-lit", e.Pos()), Value: r}
 	case token.FLOAT:
-		return x.unsupported("float-literal", e.Pos())
+		return x.unsupported(UnsupportedFloatLiteral, e.Pos())
 	case token.IMAG:
-		return x.unsupported("imag-literal", e.Pos())
+		return x.unsupported(UnsupportedImagLiteral, e.Pos())
 	}
-	return x.unsupported("bad-node", e.Pos())
+	v := constant.MakeFromLiteral(e.Value, e.Kind, 0)
+	switch {
+	case v.Kind() == constant.Unknown:
+		return x.unsupported(UnsupportedBadNode, e.Pos())
+	case e.Kind == token.INT:
+		return at(x, &IntLit{Value: v.ExactString()}, e.Pos())
+	case e.Kind == token.CHAR:
+		r, _ := constant.Int64Val(v)
+		return at(x, &CharLit{Value: r}, e.Pos())
+	}
+	s := constant.StringVal(v)
+	if !utf8.ValidString(s) {
+		return x.unsupported(UnsupportedInvalidUTF8, e.Pos())
+	}
+	return at(x, &StringLit{Value: s}, e.Pos())
 }
 
 func (x *exporter) block(b *ast.BlockStmt) Node {
-	return &Block{Meta: x.meta("block", b.Pos()), Stmts: x.stmts(b.List)}
+	return at(x, &Block{Stmts: x.stmts(b.List)}, b.Pos())
 }
 
 func (x *exporter) stmts(ss []ast.Stmt) []Node {
@@ -342,64 +329,64 @@ func (x *exporter) stmt(s ast.Stmt) Node {
 	case *ast.BlockStmt:
 		return x.block(s)
 	case *ast.DeclStmt:
-		return &DeclStmt{Meta: x.meta("decl-stmt", s.Pos()), Decls: x.decls(s.Decl)}
+		return at(x, &DeclStmt{Decl: x.decl(s.Decl)}, s.Pos())
 	case *ast.ExprStmt:
-		return &ExprStmt{Meta: x.meta("expr-stmt", s.Pos()), X: x.expr(s.X)}
+		return at(x, &ExprStmt{X: x.expr(s.X)}, s.Pos())
 	case *ast.IncDecStmt:
-		return &IncDec{Meta: x.meta("inc-dec", s.Pos()), Op: s.Tok.String(), X: x.expr(s.X)}
+		return at(x, &IncDec{Op: s.Tok.String(), X: x.expr(s.X)}, s.Pos())
 	case *ast.AssignStmt:
-		return &Assign{Meta: x.meta("assign", s.Pos()), Tok: s.Tok.String(), Lhs: x.exprs(s.Lhs), Rhs: x.exprs(s.Rhs)}
+		return at(x, &Assign{Tok: s.Tok.String(), Lhs: x.exprs(s.Lhs), Rhs: x.exprs(s.Rhs)}, s.Pos())
 	case *ast.ReturnStmt:
-		return &Return{Meta: x.meta("return", s.Pos()), Results: x.exprs(s.Results)}
+		return at(x, &Return{Results: x.exprs(s.Results)}, s.Pos())
 	case *ast.BranchStmt:
-		if s.Label != nil {
-			return x.unsupported("labeled-branch", s.Pos())
+		switch {
+		case s.Label != nil:
+			return x.unsupported(UnsupportedLabeledBranch, s.Pos())
+		case s.Tok == token.BREAK || s.Tok == token.CONTINUE:
+			return at(x, &Branch{Tok: s.Tok.String()}, s.Pos())
+		case s.Tok == token.GOTO:
+			return x.unsupported(UnsupportedGoto, s.Pos())
+		case s.Tok == token.FALLTHROUGH:
+			return x.unsupported(UnsupportedFallthrough, s.Pos())
 		}
-		switch s.Tok {
-		case token.BREAK, token.CONTINUE:
-			return &Branch{Meta: x.meta("branch", s.Pos()), Tok: s.Tok.String()}
-		case token.GOTO:
-			return x.unsupported("goto", s.Pos())
-		}
-		return x.unsupported("fallthrough", s.Pos())
 	case *ast.IfStmt:
-		return &If{Meta: x.meta("if", s.Pos()), Init: x.optStmt(s.Init), Cond: x.expr(s.Cond), Body: x.block(s.Body), Else: x.optStmt(s.Else)}
+		return at(x, &If{Init: x.optStmt(s.Init), Cond: x.expr(s.Cond), Body: x.block(s.Body), Else: x.optStmt(s.Else)}, s.Pos())
 	case *ast.SwitchStmt:
-		sw := &Switch{Meta: x.meta("switch", s.Pos()), Init: x.optStmt(s.Init), Tag: x.optExpr(s.Tag), Clauses: []*CaseClause{}}
+		sw := at(x, &Switch{Init: x.optStmt(s.Init), Tag: x.optExpr(s.Tag), Clauses: []*CaseClause{}}, s.Pos())
 		for _, c := range s.Body.List {
 			cc := c.(*ast.CaseClause)
-			sw.Clauses = append(sw.Clauses, &CaseClause{List: x.exprs(cc.List), Default: cc.List == nil, Body: x.stmts(cc.Body)})
+			sw.Clauses = append(sw.Clauses, &CaseClause{List: x.exprs(cc.List), Body: x.stmts(cc.Body)})
 		}
 		return sw
 	case *ast.ForStmt:
-		return &For{Meta: x.meta("for", s.Pos()), Init: x.optStmt(s.Init), Cond: x.optExpr(s.Cond), Post: x.optStmt(s.Post), Body: x.block(s.Body)}
+		return at(x, &For{Init: x.optStmt(s.Init), Cond: x.optExpr(s.Cond), Post: x.optStmt(s.Post), Body: x.block(s.Body)}, s.Pos())
 	case *ast.RangeStmt:
 		tok := ""
 		if s.Tok != token.ILLEGAL {
 			tok = s.Tok.String()
 		}
-		return &Range{Meta: x.meta("range", s.Pos()), Key: x.optExpr(s.Key), Value: x.optExpr(s.Value), Tok: tok, X: x.expr(s.X), Body: x.block(s.Body)}
+		return at(x, &Range{Key: x.optExpr(s.Key), Value: x.optExpr(s.Value), Tok: tok, X: x.expr(s.X), Body: x.block(s.Body)}, s.Pos())
 	case *ast.EmptyStmt:
-		return &Empty{Meta: x.meta("empty", s.Pos())}
+		return at(x, &Empty{}, s.Pos())
 	case *ast.LabeledStmt:
-		return x.unsupported("labeled-stmt", s.Pos())
+		return x.unsupported(UnsupportedLabeledStmt, s.Pos())
 	case *ast.SendStmt:
-		return x.unsupported("send", s.Pos())
+		return x.unsupported(UnsupportedSend, s.Pos())
 	case *ast.GoStmt:
-		return x.unsupported("go", s.Pos())
+		return x.unsupported(UnsupportedGo, s.Pos())
 	case *ast.DeferStmt:
-		return x.unsupported("defer", s.Pos())
+		return x.unsupported(UnsupportedDefer, s.Pos())
 	case *ast.SelectStmt:
-		return x.unsupported("select", s.Pos())
+		return x.unsupported(UnsupportedSelect, s.Pos())
 	case *ast.TypeSwitchStmt:
-		return x.unsupported("type-switch", s.Pos())
+		return x.unsupported(UnsupportedTypeSwitch, s.Pos())
 	}
-	return x.unsupported("bad-node", s.Pos())
+	return x.unsupported(UnsupportedBadNode, s.Pos())
 }
 
 // ConstructCounts is how often each construct occurs in p: the kind of
-// every supported node and the name of every unsupported one (its
-// name as written).
+// every supported node and the name of every unsupported one. It reads p
+// as JSON, the form a consumer sees.
 func ConstructCounts(p *Program) (map[string]int, error) {
 	data, err := json.Marshal(p)
 	if err != nil {
@@ -414,12 +401,10 @@ func ConstructCounts(p *Program) (map[string]int, error) {
 	walk = func(v any) {
 		switch v := v.(type) {
 		case map[string]any:
-			if k, ok := v["kind"].(string); ok {
-				counts[k]++
-			}
-			if u, ok := v["unsupported"].(string); ok {
-				name := u
-				counts[name]++
+			for _, field := range []string{"kind", "unsupported"} {
+				if name, ok := v[field].(string); ok {
+					counts[name]++
+				}
 			}
 			for _, c := range v {
 				walk(c)

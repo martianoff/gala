@@ -29,15 +29,17 @@ GoCore JSON is a plain syntax dump. The exporter does **not**:
   none;
 - decide anything about what the program does.
 
-It reads literals lexically, as the Go specification defines their values ("Integer
-literals", "Rune literals", "String literals"): an integer's value in decimal, any base
-and `_` separators read, arbitrarily large; a string's and a rune's with their escapes
-interpreted.
+It reads literals as the Go type checker does (`go/constant`), by the Go specification
+("Integer literals", "Rune literals", "String literals"): an integer's value in decimal,
+arbitrarily large; a rune's value (`'\xff'` is 255); a string's value, escapes
+interpreted. A string whose value is not valid UTF-8 is unsupported, since a JSON string
+cannot carry it exactly.
 
-It keeps everything GoCore needs and drops only what has no meaning in a run: comments,
-`//line` directives and struct tags. The round-trip test prints every exported document
-back as Go and checks that it parses to the source's syntax tree, positions, comments,
-tags and the spelling of literals aside.
+It drops nothing but comments (and with them `//line` directives). The round-trip test
+prints every exported file that has no unsupported node back as Go and checks that it
+parses to the source's syntax tree, positions, comments and the spelling of literals
+aside; it runs on the Go output of every example and of the GALA packages they import,
+and reports how many files it covered.
 
 ## Document
 
@@ -64,8 +66,9 @@ Optional child nodes are `null` when absent. Lists are never `null`; an empty li
 `[]`.
 
 A parameter, result, receiver, type parameter, struct field or interface element is a
-*field object*, not a node: `{"names": ["a", "b"], "type": <node>}`, with no names for an
-unnamed parameter or an embedded field.
+*field object*, not a node: `{"names": ["a", "b"], "type": <node>, "tag": ""}`, with no
+names for an unnamed parameter or an embedded field, and a struct field's tag value in
+`tag` (`""` for none).
 
 ## Unsupported nodes
 
@@ -90,13 +93,13 @@ source order).
 ### `func-decl`
 
 A function or method: `name`, `recv` (a field object, `null` for a function),
-`typeParams`, `params`, `results` (lists of field objects), `variadic` (the last
-parameter is `...T`; its field's type is `T`), `body` (a `block`, `null` without one).
+`typeParams` (field objects), `type` (its signature, a `func-type`), `body` (a `block`,
+`null` without one).
 
 ### `type-decl`
 
-`type name[typeParams] type`: `name`, `typeParams`, `alias` (`type name = type`),
-`type`. A grouped `type ( ... )` gives one `type-decl` per spec.
+A `type` declaration: `specs`, each `{"name", "typeParams", "alias", "type"}` for
+`type name[typeParams] type`, `alias` set for `type name = type`.
 
 ### `value-decl`
 
@@ -115,7 +118,8 @@ embedded type or type union none.
 
 ### `func-type`
 
-`func(params) results`: `params`, `results`, `variadic`.
+`func(params) results`: `params`, `results` (field objects) and `variadic` (the last
+parameter is `...T`; its field's type is `T`).
 
 ### `ident`
 
@@ -127,7 +131,7 @@ An integer literal: `value`, its value in decimal, as a string.
 
 ### `string-lit`
 
-A string literal: `value`, its value.
+A string literal: `value`, its value (valid UTF-8; see above).
 
 ### `char-lit`
 
@@ -185,7 +189,7 @@ calls are calls too.
 
 ### `decl-stmt`
 
-A declaration inside a function: `decls`, one `value-decl`, or a `type-decl` per spec.
+A declaration inside a function: `decl`, a `value-decl` or a `type-decl`.
 
 ### `expr-stmt`
 
@@ -215,7 +219,7 @@ An expression statement: `x`.
 ### `switch`
 
 An expression switch: `init`, `tag` (`null` for `switch {`), `clauses`, each
-`{"list", "default", "body"}`, `default` set for `default:`.
+`{"list", "body"}`, an empty `list` being `default:`.
 
 ### `for`
 
@@ -241,6 +245,8 @@ The empty statement; no fields.
 | `map-type` | `map[K]V` |
 | `chan-type` | `chan T` |
 | `ellipsis` | `...` anywhere but a last parameter (`[...]T`) |
+| `tilde` | `~T` in a constraint |
+| `invalid-utf8-string` | a string literal whose value is not valid UTF-8 |
 | `labeled-stmt` | a labeled statement |
 | `labeled-branch` | `break L`, `continue L` |
 | `goto` | `goto` |

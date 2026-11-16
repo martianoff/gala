@@ -15,7 +15,7 @@ go_library(
 
 go_test(
     name = "goexport_test",
-    # TestExamplesRoundTrip transpiles every example: about 20s.
+    # TestExamplesRoundTrip transpiles every example: about two minutes.
     size = "medium",
     srcs = [
         "export_test.go",
