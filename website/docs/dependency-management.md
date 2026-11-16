@@ -306,13 +306,47 @@ gala mod add github.com/example/utils@^1.0.0
 
 # Add Go dependency (not GALA)
 gala mod add github.com/google/uuid@v1.6.0 --go
+
+# Add the latest version of a Go dependency, tagged or not
+gala mod add github.com/hut8/goq@latest --go
 ```
 
 The command will:
-1. Fetch the module from Git
+1. Fetch the module: a GALA module from Git, a Go module through the Go toolchain
 2. Cache it locally
 3. Update `gala.mod` with the dependency
-4. Update `gala.sum` with checksums
+4. Update `gala.sum` with checksums (GALA modules)
+
+A module with no `.gala` file or `gala.mod` is a Go dependency, marked `// go`
+in `gala.mod`. It resolves the way `go get` resolves it, whether or not you
+pass `--go` (which only skips looking for a GALA module first): the Go
+toolchain looks the version up through `GOPROXY` (honoring `GOPRIVATE`,
+`GONOSUMDB` and the rest of your Go settings), checks it against the checksum
+database, and downloads it into the Go module cache `gala build` uses
+(`~/.gala/go/pkg/mod`). Vanity import paths (`golang.org/x/text`,
+`gopkg.in/yaml.v3`) and major-version suffixes (`/v2`) work as they do in Go.
+Its checksum is kept in the generated `go.sum`, so it gets no `gala.sum` line.
+
+**Untagged modules and pseudo-versions.** A module with no tagged version
+resolves to the pseudo-version of the latest commit on its default branch, as
+in Go:
+
+```
+$ gala mod add github.com/hut8/goq@latest --go
+Added github.com/hut8/goq@v0.0.0-20220603013715-3360bf22bea4 (Go dependency)
+```
+
+A pseudo-version (`v0.0.0-<UTC commit time>-<12-char commit hash>`, or one of
+the forms that follow a tag, `vX.Y.(Z+1)-0.<time>-<hash>` and
+`vX.Y.Z-pre.0.<time>-<hash>`) can also be given as the version, for Go and
+GALA modules alike. For a GALA module, a pseudo-version is rejected when its
+time is not its commit's time, its hash part is not a 12-character commit hash
+prefix, or its major version is not the one the module path names (`/v2`).
+
+**Pin the resolved version.** `gala mod add` resolves a query such as
+`latest` and writes the version it resolved to (a tag or a pseudo-version)
+into `gala.mod`. Keep that pinned version in `gala.mod` so every build uses
+the same one.
 
 ### gala mod remove
 
@@ -324,7 +358,11 @@ gala mod remove github.com/example/utils
 
 ### gala mod update
 
-Update dependencies to their latest versions.
+Update dependencies to their latest versions. A Go dependency (`// go`)
+updates to the version `go get <path>@latest` would pick, a pseudo-version for
+a module with no tag. Like `go get -u`, it never moves a dependency to a lower
+version: a pinned pseudo-version or prerelease newer than the latest tag
+stays.
 
 ```bash
 # Update all dependencies
@@ -646,7 +684,10 @@ GALA supports several version constraint syntaxes:
 | `^1.2.3` | Compatible | >=1.2.3, <2.0.0 |
 | `~1.2.3` | Approximate | >=1.2.3, <1.3.0 |
 | `>=1.2.3` | Minimum | At least v1.2.3 |
-| `latest` | Latest stable | Most recent tagged version |
+| `latest` | Latest stable | Most recent tagged version; for a module with no tag, the pseudo-version of its latest commit |
+
+For the version `gala mod add` writes to `gala.mod`, see
+[gala mod add](#gala-mod-add).
 
 **Minimal Version Selection (MVS):**
 

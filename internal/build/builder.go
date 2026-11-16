@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"fmt"
@@ -505,9 +506,10 @@ func GoModuleSrcDirs(galaMod *mod.File, config *Config) map[string]string {
 }
 
 // goModuleSrcDir is the cached source directory of one Go module: the GALA
-// dep cache's (which stores the module path verbatim, populated by `gala mod
-// add --go`) or the Go module cache's (which case-escapes it, uppercase letter
-// c -> "!"+lower(c)). The source is parsed, not compiled, so either works. A
+// dep cache's (which stores the module path verbatim; earlier `gala mod add
+// --go` fetched Go modules there) or the Go module cache's (which case-escapes
+// it, uppercase letter c -> "!"+lower(c); `gala mod add` downloads Go modules
+// there). The source is parsed, not compiled, so either works. A
 // module in the Go module cache counts whether or not it has a package at its
 // root (k8s.io/api has none): Go extracts a module whole.
 func goModuleSrcDir(config *Config, req mod.Require) (string, bool) {
@@ -613,21 +615,17 @@ func goModRequires(reqs []mod.Require, dirs, versions map[string]string) []mod.R
 // downloadGoModules runs `go mod download` for reqs into the Go module cache.
 // A failure is a warning, not an error (see resolveGoModuleSrcDirs).
 func downloadGoModules(config *Config, reqs []mod.Require, verbose bool) {
-	args := []string{"mod", "download"}
+	var mods []string
 	for _, req := range reqs {
-		args = append(args, req.Path+"@"+req.Version)
+		mods = append(mods, req.Path+"@"+req.Version)
 	}
 	if verbose {
-		fmt.Printf("Downloading Go module sources: %s\n", strings.Join(args[2:], ", "))
+		fmt.Printf("Downloading Go module sources: %s\n", strings.Join(mods, ", "))
 	}
-	cmd := exec.Command("go", args...)
-	// Outside any module, so a go.mod or go.work around the working directory
-	// cannot change what is downloaded.
-	cmd.Dir = config.GoPkgDir
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+config.GoPkgDir, "GOWORK=off")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	var out bytes.Buffer
+	if err := fetch.GoModDownload(config.GoPkgDir, &out, &out, mods...); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not download Go module sources (%s), so their types are unknown: %v\n%s",
-			strings.Join(args[2:], ", "), err, out)
+			strings.Join(mods, ", "), err, out.Bytes())
 	}
 }
 

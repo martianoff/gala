@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"cmp"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -25,13 +28,19 @@ The module path can optionally include a version specifier:
   - module@latest    Latest available version
   - module           Same as @latest
 
-Use --go flag to mark a dependency as a Go package (not GALA).
-Go dependencies are tracked in gala.mod but not transpiled.
+A module with no tagged version resolves to the pseudo-version of its latest
+commit (v0.0.0-20220603013715-3360bf22bea4), and a pseudo-version can be
+given as the version.
+
+A Go module (one with no .gala files or gala.mod) is tracked in gala.mod but
+not transpiled. The Go toolchain resolves and downloads it, as 'go get' does.
+Use --go to skip looking for a GALA module first.
 
 Examples:
   gala mod add github.com/example/gala-utils
   gala mod add github.com/example/gala-utils@v1.2.3
-  gala mod add github.com/example/go-lib@v2.0.0 --go`,
+  gala mod add github.com/example/go-lib@v2.0.0 --go
+  gala mod add golang.org/x/text@latest --go`,
 	Args: cobra.ExactArgs(1),
 	Run:  runModAdd,
 }
@@ -41,101 +50,138 @@ func init() {
 }
 
 func runModAdd(cmd *cobra.Command, args []string) {
-	// Parse module path and version
-	modulePath, versionSpec := parseModuleArg(args[0])
+	modulePath, query := parseModuleArg(args[0])
 
-	// Check if gala.mod exists
 	galaMod, err := mod.ParseFile("gala.mod")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: gala.mod not found. Run 'gala mod init' first.")
 		os.Exit(1)
 	}
-
-	// Check if already required
 	if existing := galaMod.GetRequire(modulePath); existing != nil {
 		fmt.Printf("Module %s already required at version %s\n", modulePath, existing.Version)
 		fmt.Println("Updating to new version...")
 	}
 
-	// Create cache and fetcher
-	cache := fetch.NewCache(nil)
-	fetcher := fetch.NewGitFetcher(cache)
-
-	var version string
-	var cachePath string
-	var hash string
-
-	// Determine version to fetch
-	if versionSpec == "" || versionSpec == "latest" {
-		fmt.Printf("Fetching latest version of %s...\n", modulePath)
-		ver, path, h, err := fetcher.FetchLatest(modulePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to fetch module: %v\n", err)
-			os.Exit(1)
-		}
-		version = ver
-		cachePath = path
-		hash = h
-	} else {
-		fmt.Printf("Fetching %s@%s...\n", modulePath, versionSpec)
-		path, h, err := fetcher.Fetch(modulePath, versionSpec)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to fetch module: %v\n", err)
-			os.Exit(1)
-		}
-		version = versionSpec
-		cachePath = path
-		hash = h
-	}
-
-	// Auto-detect if this is a Go package (no .gala files or gala.mod in cache)
-	isGoPackage := modAddIsGo
-	if !isGoPackage {
-		isGoPackage = !hasGalaFiles(cachePath)
-	}
-
 	// Read gala.sum before changing anything.
 	galaSum := loadGalaSum()
+	fetcher := fetch.NewGitFetcher(fetch.NewCache(nil))
 
-	// Update gala.mod
-	galaMod.AddRequire(modulePath, version, false)
-	// Mark as Go package if detected
-	if isGoPackage {
-		if req := galaMod.GetRequire(modulePath); req != nil {
-			req.Go = true
-		}
+	fmt.Printf("Fetching %s@%s...\n", modulePath, cmp.Or(query, "latest"))
+	added, err := addModule(galaMod, galaSum, fetcher, downloadGoModule, modulePath, query, modAddIsGo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to fetch module: %v\n", err)
+		os.Exit(1)
 	}
 	if err := mod.WriteFile(galaMod, "gala.mod"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to write gala.mod: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Update gala.sum
-	galaSum.Add(modulePath, version, "", hash)
-
-	// Also add gala.mod hash if present
-	if info, err := cache.Info(modulePath, version); err == nil && info.HasGalaMod {
-		modHash, err := cache.GetGalaMod(modulePath, version)
-		if err == nil && modHash != nil {
-			// Compute hash of the gala.mod content
-			galaModHash, err := sum.HashFile(cachePath + "/gala.mod")
-			if err == nil {
-				galaSum.Add(modulePath, version, "/gala.mod", galaModHash)
-			}
-		}
-	}
-
 	if err := sum.WriteFile(galaSum, "gala.sum"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to write gala.sum: %v\n", err)
 		os.Exit(1)
 	}
 
-	if isGoPackage {
-		fmt.Printf("Added %s@%s (Go dependency)\n", modulePath, version)
+	if added.goModule {
+		fmt.Printf("Added %s@%s (Go dependency)\n", modulePath, added.version)
 	} else {
-		fmt.Printf("Added %s@%s\n", modulePath, version)
+		fmt.Printf("Added %s@%s\n", modulePath, added.version)
 	}
-	fmt.Printf("  -> %s\n", cachePath)
+	fmt.Printf("  -> %s\n", added.dir)
+}
+
+// addedModule is the requirement addModule recorded.
+type addedModule struct {
+	version  string
+	dir      string // where the module's source was downloaded
+	goModule bool
+}
+
+// goDownloader resolves modulePath@query with the Go toolchain and downloads
+// that version (see fetch.DownloadGoModule).
+type goDownloader func(modulePath, query string) (*fetch.GoModule, error)
+
+// addModule requires modulePath, at the version query resolves to (latest when
+// empty), in galaMod and records its checksums in galaSum.
+//
+// A GALA module is fetched from its Git repository. A Go module is resolved
+// and downloaded by the Go toolchain (downloadGo), as `go get` does and as the
+// build downloads Go modules, so it resolves the same way whether or not
+// isGo says it is one: a vanity path (golang.org/x/text) names no Git
+// repository, and only Go knows where it lives. Without isGo, a module is a
+// Go module when the Git fetch fails or brings back no .gala file or gala.mod.
+func addModule(galaMod *mod.File, galaSum *sum.File, fetcher *fetch.GitFetcher, downloadGo goDownloader, modulePath, query string, isGo bool) (addedModule, error) {
+	var gitErr error
+	if !isGo {
+		var ver, dir, hash string
+		ver, dir, hash, gitErr = fetchGitModule(fetcher, modulePath, query)
+		if gitErr == nil && hasGalaFiles(dir) {
+			galaMod.AddRequire(modulePath, ver, false)
+			galaMod.GetRequire(modulePath).Go = false
+			if err := recordGalaSum(galaSum, modulePath, ver, dir, hash); err != nil {
+				return addedModule{}, err
+			}
+			return addedModule{version: ver, dir: dir}, nil
+		}
+	}
+	m, err := downloadGo(modulePath, cmp.Or(query, "latest"))
+	if err != nil {
+		if gitErr != nil {
+			return addedModule{}, fmt.Errorf("%w (as a GALA module from Git: %v)", err, gitErr)
+		}
+		return addedModule{}, err
+	}
+	// Added by name, so a direct requirement.
+	setGoRequire(galaMod, galaSum, modulePath, m.Version).Indirect = false
+	return addedModule{version: m.Version, dir: m.Dir, goModule: true}, nil
+}
+
+// fetchGitModule fetches modulePath at the version query names, its latest
+// version when query is empty or "latest", from its Git repository. It
+// returns the version, its cache directory and its hash.
+func fetchGitModule(fetcher *fetch.GitFetcher, modulePath, query string) (string, string, string, error) {
+	if query == "" || query == "latest" {
+		return fetcher.FetchLatest(modulePath)
+	}
+	dir, hash, err := fetcher.Fetch(modulePath, query)
+	return query, dir, hash, err
+}
+
+// recordGalaSum records the hash of GALA module modulePath at ver, fetched
+// into dir, in galaSum, and the hash of its gala.mod when it has one.
+func recordGalaSum(galaSum *sum.File, modulePath, ver, dir, hash string) error {
+	galaSum.Add(modulePath, ver, "", hash)
+	galaModPath := filepath.Join(dir, "gala.mod")
+	if _, err := os.Stat(galaModPath); err != nil {
+		return nil
+	}
+	galaModHash, err := sum.HashFile(galaModPath)
+	if err != nil {
+		return fmt.Errorf("failed to hash %s: %w", galaModPath, err)
+	}
+	galaSum.Add(modulePath, ver, "/gala.mod", galaModHash)
+	return nil
+}
+
+// downloadGoModule resolves modulePath@query with the Go toolchain and
+// downloads it into the Go module cache the build reads Go modules from.
+func downloadGoModule(modulePath, query string) (*fetch.GoModule, error) {
+	return fetch.DownloadGoModule(fetch.GoModCacheDir(fetch.DefaultGalaHome()), modulePath, query)
+}
+
+// setGoRequire requires the Go module modulePath at ver in galaMod, and
+// returns the requirement. Its checksum is go.sum's to keep, not gala.sum's
+// (see galaSumFor), so gala.sum loses every entry it has for the module, such
+// as the ones it had while the module was required as a GALA module.
+func setGoRequire(galaMod *mod.File, galaSum *sum.File, modulePath, ver string) *mod.Require {
+	galaSum.Entries = slices.DeleteFunc(galaSum.Entries, func(e sum.Entry) bool { return e.Path == modulePath })
+	req := galaMod.GetRequire(modulePath)
+	if req == nil {
+		galaMod.AddRequire(modulePath, ver, false)
+		req = galaMod.GetRequire(modulePath)
+	}
+	req.Version = ver
+	req.Go = true
+	return req
 }
 
 // hasGalaFiles checks if a directory contains .gala files or gala.mod.
