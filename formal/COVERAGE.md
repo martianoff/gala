@@ -117,8 +117,6 @@ pinned that way.
 
 | Theorem | Statement |
 |---|---|
-| `Gala.MatchLowering.compile_correct`, `program_correct` | In the lowering model only (a small GALA core with flat constructor patterns, no guards or literals, integers only; not galaspec, and not the transpiler's output): the scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
-| `Gala.MatchLowering.leaky_not_correct` | In the same model, a lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
 | `Gala.Spec.capturedEnv_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in, a `var` by the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells; that evaluation keeps this invariant is not proved. |
 | `Gala.Spec.bindDefaults_callerLocals` | **T4, default arguments.** The defaults phase of a call (`bindDefaults`, the second half of `bindArgs`: each parameter the call leaves out takes its default, evaluated in the callee's scope) does not read the caller's locals. Run with any other locals, it gives the same values or the same `Stop` and leaves the same output, heap, package-level variables and steps. When it succeeds, the caller's locals are back as they were. This covers a function's defaults and a field's (`Gala/Defaults.lean`). It failed before galaspec resolved a by-name default's bare name in the default's own frame (fixture `default_byname`). Not covered: that a call's written arguments are evaluated first, in the caller's scope, which is `bindArgs`'s definition (an ordering statement belongs to T3). Also not covered: that the caller's locals come back after a panic inside a default, which no run can observe, since nothing catches a panic. |
 | `Gala.Spec.defaultFrame_lookup`, `defaultFrame_other`, `defaultFrame_last` | **T4, the frame of a default.** The frame a default value is evaluated in binds exactly the parameters before it: each name to the value of the latest earlier parameter of that name, immutable; any other name, a local of the caller's included, is unbound there. `defaultFrame_other` and `defaultFrame_last` are special cases. That `bindDefaults` evaluates the default for parameter `j` in the frame of parameters `0..j-1`, with the values the call gave them (explicitly or by their own defaults), is its definition. |
@@ -142,7 +140,7 @@ inferred. They agree exactly when the value has that type. A program GALA's type
 accepts satisfies it; galaspec has no typing judgment to prove that (T7), so it stays a
 hypothesis.
 
-These are theorems about the *spec* (and a model of one lowering, and one program's
+These are theorems about the *spec* (and a model of one lowering into GoCore, and one program's
 translation under gala2lean's prelude), not about the transpiler.
 
 Not proved: T2 and T5–T7. T2 is in progress: the renaming relations and their commuting

@@ -28,10 +28,6 @@ GALA release.
       E --> O[stdout + outcome]
   ```
 
-- **A lowering model**, `Gala/MatchLowering.lean`: sealed-type constructors and `match`
-  in a small GALA core, and the Go constructs the transpiler lowers them to (tagged
-  struct, `Unapply` chain, panic).
-
 - **GoCore**, `Gala/GoCore.lean`: a semantics of the subset of Go the transpiler emits,
   so far the fragment its `match` lowering needs (`:=`, blocks, `if`, assignment,
   `return`, `panic`, a function literal called at once, `==`, `&&`, int `+` and `>`, and
@@ -52,12 +48,12 @@ GALA release.
 
 ```mermaid
 flowchart LR
-    S[GALA core<br/>seval] -->|compile| T[Go core<br/>teval]
-    S -->|encR| R[expected Go result]
-    T --> E{equal?}
-    R --> E
-    E -->|scoped lowering| P[proved for every program of the model<br/>compile_correct]
-    E -->|leaky lowering| C[counterexample<br/>leaky_not_correct]
+    S[galaspec<br/>eval of a match] -->|lowerMatch| T[GoCore<br/>geval]
+    P[subject, guards, bodies<br/>lowered correctly: Part] --> T
+    S --> E{forward simulation}
+    T --> E
+    E -->|scoped lowering| OK[proved: lowerMatch_correct]
+    E -->|leaky lowering, #996| C[fails: leaky_not_correct]
 ```
 
 Each definition's doc comment says what it models, and each file's header names the

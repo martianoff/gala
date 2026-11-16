@@ -12,7 +12,6 @@
   What this pins is the text of each statement. A definition a statement mentions (such
   as `cellsMutable`) is not pinned: changing it changes what the theorem means.
 -/
-import Gala.MatchLowering
 import Gala.Theorems
 import Gala.Gala2Lean.Theorems
 import Gala.Fuel
@@ -23,20 +22,6 @@ import Gala.AlphaStep
 import Gala.MatchLower
 
 namespace Gala.Statements
-
-open Gala.MatchLowering in
-theorem compile_correct : ∀ (e : SExpr) (ρ : SEnv) (τ : TEnv), EnvRel ρ τ →
-    teval τ (compile e) = encR (seval ρ e) :=
-  Gala.MatchLowering.compile_correct
-
-open Gala.MatchLowering in
-theorem program_correct : ∀ (e : SExpr), teval [] (compile e) = encR (seval [] e) :=
-  Gala.MatchLowering.program_correct
-
-open Gala.MatchLowering in
-theorem leaky_not_correct : ¬ ∀ (e : SExpr) (ρ : SEnv) (τ : TEnv), EnvRel ρ τ →
-    teval τ (compileLeaky e) = encR (seval ρ e) :=
-  Gala.MatchLowering.leaky_not_correct
 
 open Gala.Spec in
 theorem capturedEnv_captured : ∀ (ρ : Env), cellsMutable ρ → capturedEnv (captured ρ) = ρ :=
@@ -387,7 +372,7 @@ theorem lowerMatch_correct : ∀ (ds : Spec.Decls) (d : Nat) (inScope : String �
   Gala.M3.lowerMatch_correct
 
 open Gala Gala.M3 Gala.M3.Counterexample in
-theorem match_leaky_not_correct :
+theorem leaky_not_correct :
     ¬ Part (ScopeOk inScope) (fun _ => True) (Spec.eval ds 10 (.mtch (.name "s") (arms.map Arm.src)))
       (GoCore.geval X (lowerMatchLeaky ds inScope (.sealed "Shape") (.var (.user "s")) arms)) :=
   Gala.M3.leaky_not_correct

@@ -23,9 +23,6 @@ config_setting(
 # The theorems COVERAGE.md calls proved: the same list as requiredTheorems in
 # scripts/ProofCheck.lean, which tools/check_repo_policy.sh keeps in step.
 REQUIRED_THEOREMS = [
-    "Gala.MatchLowering.compile_correct",
-    "Gala.MatchLowering.program_correct",
-    "Gala.MatchLowering.leaky_not_correct",
     "Gala.Spec.capturedEnv_captured",
     "Gala.Spec.defaultFrame_other",
     "Gala.Spec.defaultFrame_last",
@@ -98,7 +95,6 @@ GALASPEC_MAIN = "Gala/Main.lean"
 
 # Models and theorems, and Gala.lean, which imports every module and stays last.
 GALA_SRCS = [
-    "Gala/MatchLowering.lean",
     "Gala/GoCore.lean",
     "Gala/Gala2Lean/Prelude.lean",
     "Gala/Gala2Lean/Examples/Match.lean",
