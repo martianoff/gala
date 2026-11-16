@@ -1,0 +1,38 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# The Go AST exporter of the formal semantics (docs/FORMAL_SEMANTICS.MD, M4):
+# reads the transpiler's Go output into GoCore JSON. A test-support library;
+# its visibility keeps it out of the gala CLI and every other shipped binary.
+go_library(
+    name = "goexport",
+    srcs = [
+        "export.go",
+        "schema.go",
+    ],
+    importpath = "martianoff/gala/internal/formal/goexport",
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
+go_test(
+    name = "goexport_test",
+    # TestExamplesRoundTrip transpiles every example: about 20s.
+    size = "medium",
+    srcs = [
+        "export_test.go",
+        "golden_test.go",
+        "roundtrip_test.go",
+        "schema_test.go",
+    ],
+    data = [
+        "SCHEMA.md",
+        "testdata/shapes.json",
+        "//examples:all_gala_sources",
+        "//internal/formal/difftest:stdlib_sources",
+    ],
+    embed = [":goexport"],
+    deps = [
+        "//internal/transpiler/fuzz/progrun",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)
