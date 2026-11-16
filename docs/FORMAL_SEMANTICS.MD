@@ -210,7 +210,8 @@ flowchart LR
 
 These are the properties of the spec the milestones prove (T1–T7), with the bugs each
 guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
-`formal/Gala/Fuel.lean`), T3 given what each part does (`formal/Gala/Order.lean`, see M2),
+`formal/Gala/Fuel.lean`), T2 for renamings of local binders (`run_alpha` in
+`formal/Gala/AlphaProg.lean`, see M2), T3 given what each part does (`formal/Gala/Order.lean`, see M2),
 and T4 for the defaults phase of a call (`bindDefaults_callerLocals` and
 `defaultFrame_lookup`, see M2). M3's `match` lowering is proved against galaspec
 (`lowerMatch_correct` in `formal/Gala/MatchLower.lean`);
@@ -296,12 +297,32 @@ column lists what each milestone's claim rests on beyond them.
   - only the shapes the parser produces are related: a declaration as a block statement,
     a named argument as a call's argument.
 
-  Renaming top-level declarations consistently is a separate, simpler lemma.
-- **What it gives:** a proof that the metamorphic renaming generator is sound. It gives a
+  Renaming top-level declarations consistently is a separate lemma, not proved.
+- **What it gives:** a renaming the metamorphic generator makes that meets these
+  conditions cannot change galaspec's answer (the generator is checked against them on
+  generated programs, see T2 below, not proved to meet them). It gives a
   binder a hostile name (another binder's in scope, `std`, `panic`, …) only where every
   reference still resolves to its own binder, which is capture avoidance; M2 also checks
   its renamings against the remaining conditions above. A renaming that changes Go's
   output is then a transpiler bug, never a spec artefact.
+- **T2: done** (`formal/Gala/AlphaProg.lean`). `run_alpha`: for programs related by
+  `AlphaProgram` and every fuel, `run` gives exactly the same output and the same outcome
+  up to the text of `unsupported` and `stuck`. `AlphaProgram` relates the declarations
+  `run` sees in order (files and declarations correspond one to one) and states the
+  conditions above; renamed binders are lowercase on both sides, which is stricter than
+  keeping the capitalization. Not covered: renaming top-level declarations, binders inside
+  a struct or case field's default, and shapes the parser does not produce. galaspec's
+  `alpha` command runs a checker, `alphaCheck`, proved sound (`alphaCheck_sound`): a pair
+  it accepts is related, so it runs the same way. A test runs the generator's renamings of
+  local binders through it, on a fixed batch of generated programs
+  (`internal/transpiler/fuzz/alpha_check_test.go`: `FuzzAlphaRenaming`'s generator with
+  the top-level names kept), and checks it rejects a capturing renaming. So the
+  generator's local renamings are tested against T2's conditions, not proved to meet them
+  for every input; its renaming of top-level functions to builtin names is not covered by
+  T2. Making galaspec's initialization order provable needed
+  `mentions` to be total; it now expands each default value at most once per chain of
+  defaults, which gives the same names, since a default is expanded in a scope fixed by
+  its callee and slot (#1200).
 - **T3: done** (`formal/Gala/Order.lean`): given what each part does, a compound does its
   parts in source order, for operand lists, `&&`/`||`, a call's arguments, compound
   assignment, sub-patterns and `match` arms (#996). `if`, blocks, declarations and calls of
@@ -679,11 +700,11 @@ To keep our obligations at zero:
 
 ## Plan
 
-Done so far: M1 (T1, fuel adequacy), the metamorphic generators, the Core JSON exporter,
+Done so far: M1 (T1, fuel adequacy), M2 (T2, T3 and T4), the metamorphic generators, the Core JSON exporter,
 galaspec for S1 and part of S2, the differential harness over `examples/`, gala2lean, and
 M3 (the `match` lowering proved against galaspec).
 The estimates are in weeks of one maintainer working with AI agents, and the chart runs
-the proof milestones one after another (M3 needed only M1, so it finished ahead of M2).
+the proof milestones one after another (M3 needed only M1, so it finished just ahead of M2).
 The spec-coverage lane, the rest of S2 and S3 in galaspec and
 switching `FuzzPrograms` to galaspec as its oracle, is separate work run by other agents
 and is drawn alongside. The dates are placeholders that show order and length, not
@@ -695,7 +716,7 @@ gantt
     axisFormat  %b %Y
     section Trust the oracle
     M1 fuel adequacy                         :done, m1, 2026-11-15, 1d
-    M2 alpha-invariance, T3, T4              :m2, after m1, 49d
+    M2 alpha-invariance, T3, T4              :done, m2, 2026-11-16, 1d
     section Link to the transformer
     M3 match lowering against galaspec       :done, m3, 2026-11-15, 1d
     M4 GoCore and the Go AST exporter        :m4, after m2, 49d
@@ -710,7 +731,7 @@ gantt
 | Milestone | Size | Done when |
 |---|---|---|
 | M1 | 2–3 weeks | Done: T1 is proved, pinned in `Statements.lean` and listed in COVERAGE.md. |
-| M2 | 6–8 weeks | T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator is checked against T2's conditions. |
+| M2 | 6–8 weeks | Done: T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator's local renamings are checked against T2 by a checker proved sound. |
 | M3 | 3–4 weeks | Done: the toy source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form (`lowerMatch_correct`). |
 | M4 | 5–8 weeks | GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |
 | M5 | 6–9 weeks | The reference lowering covers everything the transformer emits for S1, and its correctness theorem is proved. |

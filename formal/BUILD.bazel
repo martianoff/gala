@@ -16,8 +16,11 @@ config_setting(
     name = "lean_enabled",
     flag_values = {":lean": "True"},
     # For targets outside formal/ that use a Lean target only under the config
-    # (the differential test's data).
-    visibility = ["//internal/formal:__subpackages__"],
+    # (the differential test's data, and the generator's check against T2).
+    visibility = [
+        "//internal/formal:__subpackages__",
+        "//internal/transpiler/fuzz:__pkg__",
+    ],
 )
 
 # The theorems COVERAGE.md calls proved: the same list as requiredTheorems in
@@ -75,6 +78,9 @@ REQUIRED_THEOREMS = [
     "Gala.M3.part_gt",
     "Gala.M3.lowerMatch_instance",
     "Gala.Spec.eval_alpha",
+    "Gala.Spec.run_alpha",
+    "Gala.Spec.alphaCheck_sound",
+    "Gala.Spec.alphaCheck_run",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -88,6 +94,7 @@ GALASPEC_SRCS = [
     "Gala/Scope.lean",
     "Gala/Print.lean",
     "Gala/Eval.lean",
+    "Gala/AlphaCheck.lean",
     "Gala/Cli.lean",
 ]
 
@@ -108,6 +115,7 @@ GALA_SRCS = [
     "Gala/AlphaStep.lean",
     "Gala/MatchLower.lean",
     "Gala/AlphaEval.lean",
+    "Gala/AlphaProg.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]
@@ -163,7 +171,10 @@ lean_proof_test(
 # harness. A development and CI tool only; it never ships.
 lean_binary(
     name = "galaspec",
-    visibility = ["//internal/formal:__subpackages__"],
+    visibility = [
+        "//internal/formal:__subpackages__",
+        "//internal/transpiler/fuzz:__pkg__",
+    ],
     deps = [":galaspec_main"],
 )
 

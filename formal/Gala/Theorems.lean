@@ -15,8 +15,8 @@
 
   `lookup_bind_self` and `lookup_bind_other` are lemmas for those proofs.
 
-  T1 is proved in Gala/Fuel.lean and T3 in Gala/Order.lean. T2 is not proved;
-  docs/FORMAL_SEMANTICS.MD gives the statement it needs.
+  T1 is proved in Gala/Fuel.lean, T2 in Gala/AlphaProg.lean (`run_alpha`) and T3 in
+  Gala/Order.lean.
 -/
 import Gala.Eval
 

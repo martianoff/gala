@@ -4,12 +4,13 @@
   docs/FORMAL_SEMANTICS.MD, "M2": renaming bound variables apart does not change what
   galaspec says a program does. This file defines when one program is another with its
   binders renamed, and proves that the evaluator's name lookups do not tell them apart:
-  `lookup_rel`, `resolve_rel`, `matchPat_rel`, `argSlots_rel` and `byNameOk_rel`. T2 itself,
-  for expressions and for programs, is not proved yet.
+  `lookup_rel`, `resolve_rel`, `matchPat_rel`, `argSlots_rel` and `byNameOk_rel`. T2 itself is
+  `eval_alpha` for expressions (Gala/AlphaEval.lean) and `run_alpha` for programs
+  (Gala/AlphaProg.lean).
 
-  The renaming is a relation, not a function, so that shadowing is allowed: `Ren` holds the
-  binders in scope with their names on both sides, and `NameR` says two occurrences refer to
-  the same binder, or are the same free name (a package-level declaration or a builtin)
+  The renaming is a relation, not a function, so that shadowing is allowed: `Ren`
+  (Gala/AlphaCheck.lean, with the pattern slots) holds the binders in scope with their
+  names on both sides, and `NameR` says two occurrences refer to the same binder, or are the same free name (a package-level declaration or a builtin)
   bound on neither side, so that no binder captures a free name such as `Println`.
 
   Conditions on a renamed binder (`BinderR`, `PatR.bind`): it is lowercase on both sides,
@@ -28,14 +29,11 @@
   it.
 -/
 import Gala.Order
+import Gala.AlphaCheck
 
 namespace Gala.Spec
 
 /-! ## Renamings -/
-
-/-- The binders in scope, newest first: each binder's name in the one program and in the
-    other. -/
-abbrev Ren := List (String × String)
 
 /-- `x` and `x'` name the same binder of `Γ`: the newest binder named `x` on the left is
     the newest named `x'` on the right. -/
@@ -58,30 +56,12 @@ def BinderR (pkg : List String) (x x' : String) : Prop :=
   x = x' ∨ (x ≠ "_" ∧ x' ≠ "_" ∧ capitalized x = false ∧ capitalized x' = false ∧
     x ∉ pkg ∧ x' ∉ pkg)
 
-/-- Push a binder, as `bind` does: `_` binds nothing. -/
-def Ren.push (Γ : Ren) (xx : String × String) : Ren := if xx.1 = "_" then Γ else xx :: Γ
-
-/-- Push binders in order, the last newest, as `pushAll` and a function's frame do. -/
-def Ren.pushAll (Γ : Ren) (xs : Ren) : Ren := xs.foldl Ren.push Γ
-
 /-! ## Patterns
 
 A bare pattern name is a binding, a case test or a stable identifier depending on the
 subject's type and on what is in scope at run time (`classifyPatName`). A renamed one is
 lowercase and no package-level name, so it is always a binding (`slot.bind`). One kept
 the same may be either: it binds on both sides or on neither (`slot.maybe`). -/
-
-inductive Slot
-  /-- Always binds: `x` on the one side, `x'` on the other. -/
-  | bind (x x' : String)
-  /-- Binds `x` on both sides, or on neither. -/
-  | maybe (x : String)
-
-/-- The binders a pattern's slots can push, for each way the `maybe`s go. -/
-def Slot.outs : List Slot → List Ren
-  | [] => [[]]
-  | .bind x x' :: ss => (Slot.outs ss).map ((x, x') :: ·)
-  | .maybe x :: ss => (Slot.outs ss).map ((x, x) :: ·) ++ Slot.outs ss
 
 mutual
 /-- Related patterns, with their slots in order. -/

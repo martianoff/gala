@@ -13,7 +13,11 @@ go_library(
         "schema.go",
     ],
     importpath = "martianoff/gala/internal/formal/coreexport",
-    visibility = ["//internal/formal:__subpackages__"],
+    visibility = [
+        "//internal/formal:__subpackages__",
+        # The metamorphic renaming generator's check against T2 (alpha_check_test.go).
+        "//internal/transpiler/fuzz:__pkg__",
+    ],
     deps = [
         "//galaerr",
         "//internal/interpolation",

@@ -1174,6 +1174,10 @@ func (p pCtor) refutable() bool {
 type metaConfig struct {
 	// hostile renames the binders to hostile names.
 	hostile bool
+	// localOnly, with hostile, renames only local binders and keeps the
+	// top-level functions' names: the renamings the formal T2 covers
+	// (alpha_check_test.go).
+	localOnly bool
 	// traceOdds: one expression in traceOdds is wrapped in a tracing call.
 	traceOdds int
 }
@@ -1862,7 +1866,10 @@ func (g *metaGen) nameHostile(c *mScan) {
 	rng.Shuffle(len(funcNames), func(i, j int) { funcNames[i], funcNames[j] = funcNames[j], funcNames[i] })
 	taken := map[string]bool{}
 	for i, f := range g.funcs {
-		if i < len(funcNames) && rng.Intn(5) > 0 {
+		// localOnly keeps the plain name. The function's name is then not
+		// taken, so the binders' pool and the names they draw can differ
+		// from FuzzAlphaRenaming's for the same input.
+		if i < len(funcNames) && rng.Intn(5) > 0 && !g.cfg.localOnly {
 			f.name = funcNames[i]
 			taken[f.name] = true
 		}

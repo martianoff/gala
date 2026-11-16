@@ -251,6 +251,17 @@ jobs:
             --test_output=errors --verbose_failures \
             --action_env=GOROOT="$GOROOT" --action_env=PATH
 
+      - name: Metamorphic renamings against T2
+        # The renaming generator's local renamings, each checked by `galaspec
+        # alpha` (alphaCheck, proved sound): every one is a renaming T2 covers
+        # (internal/transpiler/fuzz/alpha_check_test.go). Without the config the
+        # two tests skip, so only this step runs them.
+        run: |
+          bazel test --config=formal //internal/transpiler/fuzz:fuzz_test \
+            --test_filter='TestGeneratedRenamingsAreCoveredByT2|TestAlphaCheckRejectsCapture' \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+
       - name: Differential run
         # --config=formal builds //formal:galaspec with rules_lean and hands it to
         # the test. The fuel is enough for examples/tco_deep_sum's million nested
