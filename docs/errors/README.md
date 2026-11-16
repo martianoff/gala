@@ -145,6 +145,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0130` | Go named results | [GALA-E0130.md](GALA-E0130.md) |
 | `GALA-E0131` | Go grouped type parameters `[K, V any]` | [GALA-E0131.md](GALA-E0131.md) |
 | `GALA-E0132` | Go multiple return `return a, b` | [GALA-E0132.md](GALA-E0132.md) |
+| `GALA-E0133` | `range` over a GALA type (a collection or struct) | [GALA-E0133.md](GALA-E0133.md) |
 
 ### Retired codes
 

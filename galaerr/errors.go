@@ -1134,6 +1134,14 @@ const (
 	// E0132: a Go multiple return, `return a, b`. A GALA function returns
 	// one value: a tuple for a Go result list, a Try for `(T, error)`.
 	CodeGoMultiReturn ErrorCode = "GALA-E0132"
+
+	// E0133: `for ... := range x` over a GALA type: a struct, which
+	// includes every collection (Array, List, HashMap, ...). Go ranges over
+	// slices, arrays, maps, strings, integers, channels and functions only, so
+	// the loop used to pass every GALA check and fail `go build` with "cannot
+	// range over x (variable of struct type ...)". Reported only when the
+	// ranged type is known to be a GALA struct.
+	CodeRangeOverGalaType ErrorCode = "GALA-E0133"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

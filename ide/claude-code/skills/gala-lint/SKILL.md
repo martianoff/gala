@@ -153,6 +153,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | `GALA-E0130` | Named results `func f() (n int, err error)` | Result types alone, `(int, error)`; the body gives a `Try` |
 | `GALA-E0131` | Grouped type parameters `[K, V any]` | `[K any, V any]` |
 | `GALA-E0132` | Multiple return `return a, b` | `return (a, b)`; `return Success(v)` / `Failure(err)` for `(T, error)` |
+| `GALA-E0133` | `for _, x := range xs` over a GALA `Array`, `List`, `HashMap`, `HashSet` or other GALA struct | `xs.ForEach((x) => ...)`, `xs.ZipWithIndex()` for the index, `xs.FoldLeft(init, f)` for an accumulator (`ForEachKV` / `FoldLeftKV` on a map); `range xs.ToGoSlice()` only if a Go loop is really needed |
 
 ### 1. Immutability (HIGH priority)
 
