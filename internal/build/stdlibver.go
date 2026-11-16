@@ -1,7 +1,9 @@
 package build
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,4 +195,63 @@ func (c *Config) removeStdlibVersionDir(dir string) error {
 		return fmt.Errorf("removing stale stdlib directory: %w", err)
 	}
 	return nil
+}
+
+// StdlibCacheFresh reports whether the stdlib cache directory for version holds
+// a complete extraction of the snapshot this binary embeds. False is not an
+// error: the next build or transpile re-extracts it.
+func (c *Config) StdlibCacheFresh(version string) bool {
+	got, err := os.ReadFile(filepath.Join(c.StdlibVersionDir(version), stdlibMarkerName))
+	return err == nil && string(got) == snapshotFingerprint(version)
+}
+
+// StaleStdlibDirs lists the directories in the stdlib cache that a gala of
+// version never reads: the version directories other gala versions extracted,
+// and staging directories an interrupted extraction left behind. The cache
+// keeps one directory per version and nothing else removes the old ones, so
+// they pile up across upgrades. A missing cache has none.
+func (c *Config) StaleStdlibDirs(version string) ([]string, error) {
+	entries, err := os.ReadDir(c.StdlibDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	current := filepath.Base(c.StdlibVersionDir(version))
+	var stale []string
+	for _, e := range entries {
+		if e.IsDir() && e.Name() != current && strings.HasPrefix(e.Name(), "v") {
+			stale = append(stale, filepath.Join(c.StdlibDir, e.Name()))
+		}
+	}
+	return stale, nil
+}
+
+// RemoveStaleStdlibDirs deletes what StaleStdlibDirs lists and returns the
+// directories it removed. It holds the stdlib cache lock, so it never deletes
+// a tree another gala is extracting. A gala of another version that is still
+// installed re-extracts its directory the next time it runs.
+func (c *Config) RemoveStaleStdlibDirs(version string) ([]string, error) {
+	if _, err := os.Stat(c.StdlibDir); errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	lock, err := lockDir(c.StdlibDir, stdlibLockTimeout, lockNotice{what: "stdlib cache"})
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+
+	stale, err := c.StaleStdlibDirs(version)
+	if err != nil {
+		return nil, err
+	}
+	var removed []string
+	for _, dir := range stale {
+		if err := c.removeStdlibVersionDir(dir); err != nil {
+			return removed, err
+		}
+		removed = append(removed, dir)
+	}
+	return removed, nil
 }

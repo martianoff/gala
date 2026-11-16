@@ -4,7 +4,7 @@ title: "GALA Documentation — Sum Types, Pattern Matching, Collections, and Con
 description: "Complete GALA documentation. Language reference, sum types (sealed types), pattern matching, Option/Either/Try, immutable collections, Futures, streams, and dependency management — all transpiling to Go."
 keywords: "gala documentation, gala docs, golang sum types docs, golang pattern matching docs, gala language reference, gala api docs, golang option type documentation"
 permalink: /docs/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-11-15
 ---
 
 # GALA Documentation
@@ -61,6 +61,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 | [Dependency Injection]({{ '/docs/dependency-injection/' | relative_url }}) | Explicit wiring: interfaces as ports, constructor parameters, a composition root, and fakes built with interface literals |
 | [Dependency Management]({{ '/docs/dependency-management/' | relative_url }}) | `gala.mod`, GALA and Go dependencies, and Bazel integration |
 | [Error Codes]({{ '/docs/errors/' | relative_url }}) | Every `GALA-Exxxx` diagnostic — when it fires and how to fix it |
+| [Troubleshooting]({{ '/docs/troubleshooting/' | relative_url }}) | `gala doctor`, a missing Go SDK, stale caches, `gala.mod` and `go.mod` drift, Windows setup, and how to report a bug |
 | [IDE Support]({{ '/features/ide-support/' | relative_url }}) | IntelliJ/GoLand plugin, [VS Code extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala), and the `gala lsp` server (Neovim and other LSP clients) |
 | [Playground](https://gala-playground.fly.dev) | Try GALA in your browser -- no installation required |
 | [GitHub Repository](https://github.com/martianoff/gala) | Source code, issue tracker, and release downloads |

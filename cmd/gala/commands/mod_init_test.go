@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
 )
 
@@ -72,10 +73,10 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go.mod")
 			require.NoError(t, os.WriteFile(path, []byte(tt.goMod), 0644))
-			goMod, err := readGoMod(path)
+			goMod, err := build.ReadGoMod(path)
 			require.NoError(t, err)
 			assert.Equal(t, "example.com/app", goMod.Module.Mod.Path)
-			reqs, skipped := goRequirementsOf(goMod)
+			reqs, skipped := build.GoRequirementsOf(goMod)
 			assert.Equal(t, tt.want, reqs)
 			assert.Equal(t, tt.wantSkipped, skipped)
 
@@ -91,13 +92,13 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 
 func TestReadGoMod(t *testing.T) {
 	dir := t.TempDir()
-	missing, err := readGoMod(filepath.Join(dir, "go.mod"))
+	missing, err := build.ReadGoMod(filepath.Join(dir, "go.mod"))
 	require.NoError(t, err)
 	assert.Nil(t, missing, "no go.mod reads as nil")
 
 	path := filepath.Join(dir, "go.mod")
 	require.NoError(t, os.WriteFile(path, []byte("module example.com/app\nrequire (\n"), 0644))
-	_, err = readGoMod(path)
+	_, err = build.ReadGoMod(path)
 	assert.ErrorContains(t, err, "cannot parse")
 }
 

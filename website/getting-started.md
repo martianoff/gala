@@ -96,6 +96,10 @@ bazel build //cmd/gala:gala
 
 The compiled binary will be at `bazel-bin/cmd/gala/gala_/gala`.
 
+### Check your setup
+
+Run `gala doctor` to check your setup: it confirms that Go is installed and recent enough and that gala's caches are healthy, and links each problem to its fix on the [troubleshooting page]({{ '/docs/troubleshooting/' | relative_url }}).
+
 ---
 
 ## Hello World

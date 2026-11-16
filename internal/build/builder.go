@@ -1357,6 +1357,11 @@ func (b *Builder) verifyNoSelfImports() error {
 		projectModule, strings.Join(leaked, "\n  "), b.workspace.Dir, buildDirHint)
 }
 
+// MinGoVersion is the oldest Go toolchain GALA supports on PATH: the version
+// the installers check for and the documentation states. It is a release
+// number without the "go" prefix.
+const MinGoVersion = "1.25"
+
 // ensureGoToolchain verifies that the Go toolchain is available on PATH.
 // Pre-built GALA binaries depend on `go build` to finish the compilation pipeline,
 // so if `go` is not on PATH we surface a clear actionable error before shelling
@@ -1364,7 +1369,7 @@ func (b *Builder) verifyNoSelfImports() error {
 // explain the prerequisite.
 func ensureGoToolchain() error {
 	if _, err := exec.LookPath("go"); err != nil {
-		return fmt.Errorf("Go 1.25+ is required on your PATH to build GALA programs (GALA transpiles to Go).\nInstall Go from https://go.dev/dl/ and try again")
+		return fmt.Errorf("Go %s+ is required on your PATH to build GALA programs (GALA transpiles to Go).\nInstall Go from https://go.dev/dl/ and try again", MinGoVersion)
 	}
 	return nil
 }

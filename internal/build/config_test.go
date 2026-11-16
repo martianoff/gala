@@ -329,3 +329,85 @@ func TestRemoveStdlibVersionDir_DoesNotFollowASymlinkedVersionDir(t *testing.T) 
 	require.NoDirExists(t, link)
 	require.FileExists(t, bystander, "removing the version directory must not follow the link")
 }
+
+// TestStaleStdlibDirs_ListsAndRemovesOtherVersions checks that the stdlib
+// directories of other versions and leftover staging trees count as stale, that
+// the current version's directory and non-version entries do not, and that
+// removing the stale ones leaves the rest in place.
+func TestStaleStdlibDirs_ListsAndRemovesOtherVersions(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []string // directories under the stdlib cache
+		files   []string // plain files under the stdlib cache
+		want    []string
+	}{
+		{name: "empty cache"},
+		{name: "only the current version", entries: []string{"v1.2.0"}},
+		{
+			name:    "older versions and a staging tree",
+			entries: []string{"v1.2.0", "v1.1.0", "v0.9.0-3-gabc", "v1.2.0.staging-17"},
+			want:    []string{"v0.9.0-3-gabc", "v1.1.0", "v1.2.0.staging-17"},
+		},
+		{
+			name:    "non-version entries are left alone",
+			entries: []string{"notes", "v1.0.0"},
+			files:   []string{"v0.1.0", lockFileName},
+			want:    []string{"v1.0.0"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := isolatedConfig(t)
+			for _, e := range tt.entries {
+				require.NoError(t, os.MkdirAll(filepath.Join(config.StdlibDir, e, "std"), 0755))
+			}
+			for _, f := range tt.files {
+				require.NoError(t, os.WriteFile(filepath.Join(config.StdlibDir, f), nil, 0644))
+			}
+			var want []string
+			for _, w := range tt.want {
+				want = append(want, filepath.Join(config.StdlibDir, w))
+			}
+
+			// The git describe suffix is dropped, as it is for every cache path.
+			stale, err := config.StaleStdlibDirs("1.2.0-4-gdef")
+			require.NoError(t, err)
+			require.Equal(t, want, stale)
+
+			removed, err := config.RemoveStaleStdlibDirs("1.2.0-4-gdef")
+			require.NoError(t, err)
+			require.Equal(t, want, removed)
+			for _, w := range want {
+				require.NoDirExists(t, w)
+			}
+			after, err := config.StaleStdlibDirs("1.2.0-4-gdef")
+			require.NoError(t, err)
+			require.Empty(t, after)
+		})
+	}
+}
+
+// TestStaleStdlibDirs_NoCache checks that a gala home without a stdlib cache
+// has nothing stale and nothing to remove.
+func TestStaleStdlibDirs_NoCache(t *testing.T) {
+	config := &Config{StdlibDir: filepath.Join(t.TempDir(), "stdlib")}
+	stale, err := config.StaleStdlibDirs("1.0.0")
+	require.NoError(t, err)
+	require.Empty(t, stale)
+	removed, err := config.RemoveStaleStdlibDirs("1.0.0")
+	require.NoError(t, err)
+	require.Empty(t, removed)
+	require.NoDirExists(t, config.StdlibDir)
+}
+
+// TestStdlibCacheFresh checks that only a completed extraction of this
+// binary's snapshot counts as fresh.
+func TestStdlibCacheFresh(t *testing.T) {
+	config := isolatedConfig(t)
+	require.False(t, config.StdlibCacheFresh("dev"), "nothing extracted yet")
+	_, err := config.EnsureStdlib("dev")
+	require.NoError(t, err)
+	require.True(t, config.StdlibCacheFresh("dev"))
+	require.NoError(t, os.WriteFile(filepath.Join(config.StdlibVersionDir("dev"), stdlibMarkerName), []byte("other"), 0644))
+	require.False(t, config.StdlibCacheFresh("dev"), "a marker from another snapshot")
+}

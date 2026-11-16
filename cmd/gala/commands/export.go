@@ -176,7 +176,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 // needs, or the project's own go.mod's when that is newer.
 func exportGoVersion(root string) (string, error) {
 	v := stdlib.GoVersion
-	f, err := readGoMod(filepath.Join(root, "go.mod"))
+	f, err := build.ReadGoMod(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return "", err
 	}
