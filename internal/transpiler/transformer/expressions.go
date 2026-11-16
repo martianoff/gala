@@ -592,7 +592,9 @@ func (t *galaASTTransformer) lowerIfExprBranchValue(e exprSrc, s slot) (loweredI
 	if err != nil {
 		return loweredIfBranch{}, err
 	}
-	return loweredIfBranch{expr: expr}, nil
+	// The statement using the value sits on its own Go line below the `if`,
+	// so it is led by the expression's own marker, as a block branch's is.
+	return loweredIfBranch{expr: expr, mark: t.exprMark(e)}, nil
 }
 
 // lowerIfExprBranchTailIf lowers the if/else chain ifS at the tail of an

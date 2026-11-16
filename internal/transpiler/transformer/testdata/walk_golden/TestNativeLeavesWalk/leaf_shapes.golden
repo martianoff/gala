@@ -371,8 +371,10 @@ func bodies() int {
 				_tmp_r := _tmp_23
 				if _tmp_22 {
 					r := _tmp_r
+//line $DIR/main.gala:59
 					return r
 				} else {
+//line $DIR/main.gala:60
 					return 0
 				}
 			}
@@ -429,8 +431,10 @@ func named(n int, acc int) int {
 //line $DIR/main.gala:72
 	{
 		if n <= 0 {
+//line $DIR/main.gala:72
 			return acc
 		} else {
+//line $DIR/main.gala:72
 			return named(n-1, acc+1)
 		}
 	}

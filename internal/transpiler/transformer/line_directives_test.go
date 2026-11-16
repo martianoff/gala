@@ -458,6 +458,21 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			src:   "package main\n\nfunc each(f func(*int) int, x *int) int = f(x)\n\nfunc main() {\n    var x = 1\n    println(each((p Ptr[int]) => 100 / *p, &x))\n}\n",
 			wants: map[string]string{"100 / *p": "7"},
 		},
+		{
+			name:  "if-expression body with its branches on separate lines",
+			src:   "package main\n\nfunc f(n int) int =\n    if (n == 0)\n        100 / n\n    else\n        n + 1\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"return 100 / n": "5", "return n + 1": "7"},
+		},
+		{
+			name:  "match body",
+			src:   "package main\n\nfunc f(n int) int = n match {\n    case 1 => n + 1\n    case _ => 100 / n\n}\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"return n + 1": "4", "return 100 / n": "5"},
+		},
+		{
+			name:  "if-expression body of a function returning nothing",
+			src:   "package main\n\nfunc f(n int) = if (n == 0) println(100 / n) else println(n + 1)\n\nfunc main() {\n    f(1)\n}\n",
+			wants: map[string]string{"println(100 / n)": "3", "println(n + 1)": "3"},
+		},
 	}
 
 	trans := newLineDirectiveTranspiler()
@@ -471,6 +486,24 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLineDirectives_PtrLambdaInGoResultsSlot pins finishLambda's ordering
+// for a lambda with both Ptr nil checks and Go results: the Go results
+// rewrite moves its body into a thunk, where the checks come first and the
+// expression's marker sits right above the statement holding it.
+func TestLineDirectives_PtrLambdaInGoResultsSlot(t *testing.T) {
+	const src = "package main\n\nimport \"strconv\"\n\nfunc each(f func(*int) (int, error), x *int) int = f(x).GetOrElse(0)\n\nfunc main() {\n    var x = 1\n    println(each((p Ptr[int]) => strconv.Atoi(strconv.Itoa(*p)), &x))\n}\n"
+	goCode, err := newLineDirectiveTranspiler().Transpile(src, exprBodyDemoFile)
+	require.NoError(t, err)
+
+	const ret = "return std.GoTry(strconv.Atoi(strconv.Itoa(*p)))"
+	assert.Equal(t, "//line "+exprBodyDemoFile+":9", lineAbove(t, goCode, ret),
+		"the marker must sit right above the expression's statement; generated:\n%s", goCode)
+	thunk, check, stmt := strings.Index(goCode, "var _goResult"), strings.Index(goCode, "if p == nil"), strings.Index(goCode, ret)
+	require.True(t, thunk >= 0 && check >= 0, "generated:\n%s", goCode)
+	assert.True(t, thunk < check && check < stmt,
+		"the nil check must come first inside the thunk, then the expression; generated:\n%s", goCode)
 }
 
 // lineAbove is the line directly above the one line of goCode that contains

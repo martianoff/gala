@@ -1716,12 +1716,14 @@ func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([
 		// statement, exactly like the tail of a braced arm: a nested match or
 		// if-expression runs as a statement (its own arms may hold loop
 		// control), and a plain value is evaluated but not used.
+		// Either way the arm's statement sits on its own Go line below the
+		// arm's test, so it is led by the expression's own marker.
 		if armSlot.discarded {
 			stmt, err := t.lowerExprStatement(e, functionDiscardHint)
 			if err != nil {
 				return nil, nil, err
 			}
-			return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
+			return t.markExprStmts(e, []ast.Stmt{stmt}), transpiler.VoidType{}, nil
 		}
 		// Otherwise the body is the arm's value: wrap it in a return.
 		if err := t.checkForbiddenStatementKeywordSrc(e); err != nil {
@@ -1734,7 +1736,7 @@ func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([
 		// B8: route through the unified value-vs-no-return classifier so
 		// every match-arm-tail decision agrees.
 		stmt, typ := t.lowerMatchArmTailExpr(expr)
-		return []ast.Stmt{stmt}, typ, nil
+		return t.markExprStmts(e, []ast.Stmt{stmt}), typ, nil
 	}
 	// Otherwise it's a side-effect statement (assignment, incDec, shortVarDecl)
 	stmt, err := t.lowerSimpleStatement(s, false)
