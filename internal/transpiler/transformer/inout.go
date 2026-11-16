@@ -159,7 +159,7 @@ type inoutCallee struct {
 	// fm is the declared function called; nil for a method or a function value.
 	fm *transpiler.FunctionMetadata
 	// paramTypes are the declared parameter types, an `inout` one as the
-	// Ptr[T] it lowers to (inoutCalleeTypeParams names their type parameters).
+	// Ptr[T] it lowers to.
 	paramTypes []transpiler.Type
 	// typeArgs are the type arguments the call spells for the callee's own
 	// type parameters: in the lowered call when it spells them all
@@ -329,7 +329,7 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 			}
 			continue
 		}
-		if ptr, isPtr := t.getExprTypeName(arg).(transpiler.PointerType); isPtr && ptr.NonNull {
+		if ptr, isPtr := t.followAliasChain(t.getExprTypeName(arg)).(transpiler.PointerType); isPtr && ptr.NonNull {
 			// A Ptr the caller holds lends its pointee.
 			if err := t.checkInoutPassedPtr(arg, ptr, callee, i, c); err != nil {
 				return err
@@ -361,44 +361,41 @@ func (t *galaASTTransformer) checkInoutLentPointer(place ast.Expr, callee inoutC
 	if !isPtr {
 		return nil
 	}
-	want, wantDepth, known := t.inoutLentType(callee, i)
-	haveDepth, _ := t.pointerDepth(have)
-	if !known || wantDepth == haveDepth {
+	lend, known := t.inoutLend(have, callee, i)
+	if !known || lend.wantDepth == lend.haveDepth {
 		return nil
 	}
 	at := t.inoutArgAt(c, callee, i)
 	operand := strings.TrimSpace(strings.TrimPrefix(at.sourceText(), "&"))
 	msg := fmt.Sprintf("cannot lend &%s to the inout parameter of %s: %s holds a %s", operand, callee.name, operand, displayType(have))
-	// The hint names the pointee only when it is the parameter's type.
-	if wantDepth != haveDepth-1 || !t.typesCompatible(receiverBase(t.followAliasChain(have.Elem)), receiverBase(t.followAliasChain(want))) {
-		return inoutError(at, fmt.Sprintf("%s, and the parameter takes a %s", msg, displayType(want)),
-			fmt.Sprintf("lend a place of type %s", displayType(want)))
+	if lend.wantDepth != lend.haveDepth-1 || !lend.sameCore {
+		return inoutError(at, fmt.Sprintf("%s, and the parameter takes a %s", msg, displayType(lend.want)),
+			fmt.Sprintf("lend a place of type %s", displayType(lend.want)))
 	}
 	hint := fmt.Sprintf("pass `%s` without `&`: a Ptr lends its pointee", operand)
 	if !have.NonNull {
 		hint = fmt.Sprintf("pass `RequirePtr(%s)` without `&`: a Ptr lends its pointee (RequirePtr panics on nil)", operand)
 	}
-	return inoutError(at, fmt.Sprintf("%s, and the parameter takes the %s it points to", msg, displayType(want)), hint)
+	return inoutError(at, fmt.Sprintf("%s, and the parameter takes the %s it points to", msg, displayType(lend.want)), hint)
 }
 
-// checkInoutPassedPtr rejects arg, a Ptr of type have passed without `&` to
-// the `inout` parameter i of callee, when the pointee it lends is not a
-// pointer as deep as the parameter's type at this call (GALA-E0111):
-// `put[Ptr[Counter]](p)` for a p of Ptr[Counter] lends a Counter where the
-// parameter takes a Ptr[Counter]. Only the depth decides; the pointee's
-// type is left to Go.
+// checkInoutPassedPtr rejects arg, a Ptr of type have (alias followed)
+// passed without `&` to the `inout` parameter i of callee, when the pointee
+// it lends is not a pointer as deep as the parameter's type at this call
+// (GALA-E0111): `put[Ptr[Counter]](p)` for a p of Ptr[Counter] lends a
+// Counter where the parameter takes a Ptr[Counter]. Only the depth
+// decides; the pointee's type is left to Go.
 func (t *galaASTTransformer) checkInoutPassedPtr(arg ast.Expr, have transpiler.PointerType, callee inoutCallee, i int, c callSrc) error {
-	want, wantDepth, known := t.inoutLentType(callee, i)
-	haveDepth, _ := t.pointerDepth(have)
-	if !known || wantDepth == haveDepth-1 {
+	lend, known := t.inoutLend(have, callee, i)
+	if !known || lend.wantDepth == lend.haveDepth-1 {
 		return nil
 	}
 	at := t.inoutArgAt(c, callee, i)
 	text := at.sourceText()
 	msg := fmt.Sprintf("cannot lend %s to the inout parameter of %s: %s holds a %s, and the parameter takes a %s",
-		text, callee.name, text, displayType(have), displayType(want))
-	hint := fmt.Sprintf("lend a place of type %s", displayType(want))
-	if wantDepth == haveDepth {
+		text, callee.name, text, displayType(have), displayType(lend.want))
+	hint := fmt.Sprintf("lend a place of type %s", displayType(lend.want))
+	if lend.wantDepth == lend.haveDepth && lend.sameCore {
 		hint = fmt.Sprintf("lend the variable holding the Ptr with `&%s`; without `&`, a Ptr lends its pointee", text)
 		if !t.isInoutPlace(arg) {
 			hint = fmt.Sprintf("lend a `var` holding the Ptr: `var q = %s`, then pass `&q`; without `&`, a Ptr lends its pointee", text)
@@ -407,14 +404,41 @@ func (t *galaASTTransformer) checkInoutPassedPtr(arg ast.Expr, have transpiler.P
 	return inoutError(at, msg, hint)
 }
 
+// inoutLendDepths is what a lend of a pointer to an `inout` parameter is
+// checked on: the parameter's type at the call (want), how many pointers
+// deep it and the pointer lent are, and whether the types they lead to
+// have the same name (sameCore), which only picks a hint.
+type inoutLendDepths struct {
+	want                 transpiler.Type
+	wantDepth, haveDepth int
+	sameCore             bool
+}
+
+// inoutLend measures the lend of have, a pointer (alias followed), to the
+// `inout` parameter i of callee. known is false when either depth is not
+// certain (inoutLentType, pointerDepth).
+func (t *galaASTTransformer) inoutLend(have transpiler.PointerType, callee inoutCallee, i int) (lend inoutLendDepths, known bool) {
+	want, wantDepth, wantCore, known := t.inoutLentType(callee, i)
+	if !known {
+		return lend, false
+	}
+	haveDepth, haveCore, known := t.pointerDepth(have)
+	if !known {
+		return lend, false
+	}
+	return inoutLendDepths{want: want, wantDepth: wantDepth, haveDepth: haveDepth,
+		sameCore: t.typesCompatible(receiverBase(haveCore), receiverBase(wantCore))}, true
+}
+
 // inoutLentType is the type the `inout` parameter i of a declared callee
-// lends at this call, and how many pointers deep it is: its declared type
-// with the type arguments the call spells and, for a method, those of the
-// receiver's type. known is false when that depth is not certain: for a
-// function value, whose type arguments the call does not spell, when the
-// type is unknown, and when it is a type parameter the call leaves for Go
-// to infer, which may be a pointer itself.
-func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want transpiler.Type, depth int, known bool) {
+// lends at this call, how many pointers deep it is, and the type that is no
+// pointer it leads to: its declared type with the type arguments the call
+// spells and, for a method, those of the receiver's type. known is false
+// when that depth is not certain: for a function value, whose type
+// arguments the call does not spell, when it is a type parameter the call
+// leaves for Go to infer, which may be a pointer itself, and when
+// pointerDepth cannot tell.
+func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want transpiler.Type, depth int, core transpiler.Type, known bool) {
 	var own []string
 	switch {
 	case callee.fm != nil:
@@ -422,59 +446,49 @@ func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want tran
 	case callee.method != nil:
 		own = callee.method.TypeParams
 	default:
-		return nil, 0, false
+		return nil, 0, nil, false
 	}
 	if i >= len(callee.paramTypes) || callee.paramTypes[i] == nil {
-		return nil, 0, false
+		return nil, 0, nil, false
 	}
 	subst := t.writtenTypeArgs(own, callee.typeArgs[:min(len(callee.typeArgs), len(own))])
 	if callee.method != nil {
 		subst = receiverTypeSubst(callee.recvTypeParams, derefType(callee.recvType), subst)
 	}
 	declared := derefType(callee.paramTypes[i])
-	free := slices.DeleteFunc(slices.Clone(t.inoutCalleeTypeParams(callee)), func(tp string) bool {
-		_, bound := subst[tp]
-		return bound
-	})
-	if isTypeParamNamed(declared, free) {
-		return nil, 0, false
+	if isTypeParamNamed(declared, own) || isTypeParamNamed(declared, callee.recvTypeParams) {
+		if _, bound := subst[declared.String()]; !bound {
+			return nil, 0, nil, false
+		}
 	}
 	want = t.substituteGoTypeParams(declared, subst)
-	depth, core := t.pointerDepth(want)
-	if transpiler.IsUnusable(core) {
-		return nil, 0, false
-	}
-	return want, depth, true
+	depth, core, known = t.pointerDepth(want)
+	return want, depth, core, known
 }
 
-// pointerDepth is the number of pointers typ is, through aliases, and the
-// type that is no pointer they lead to.
-func (t *galaASTTransformer) pointerDepth(typ transpiler.Type) (depth int, core transpiler.Type) {
+// pointerDepth is the number of pointers typ is, through GALA aliases, and
+// the type that is no pointer they lead to. known is false when that type
+// is unknown, or may be a pointer GALA does not see: a type that is neither
+// GALA's nor one Go declares as other than an alias (`type P = *T`).
+func (t *galaASTTransformer) pointerDepth(typ transpiler.Type) (depth int, core transpiler.Type, known bool) {
 	for {
 		typ = t.followAliasChain(typ)
 		ptr, isPtr := typ.(transpiler.PointerType)
 		if !isPtr {
-			return depth, typ
+			break
 		}
 		depth++
 		typ = ptr.Elem
 	}
-}
-
-// inoutCalleeTypeParams is the type parameters callee's parameter types may
-// name: a function's, or a method's own and its receiver type's.
-func (t *galaASTTransformer) inoutCalleeTypeParams(callee inoutCallee) []string {
-	switch {
-	case callee.fm != nil:
-		return callee.fm.TypeParams
-	case callee.method != nil:
-		params := callee.method.TypeParams
-		if meta := t.getTypeMeta(receiverBase(derefType(callee.recvType)).BaseName()); meta != nil && len(meta.TypeParams) > 0 {
-			params = append(slices.Clone(params), meta.TypeParams...)
-		}
-		return params
+	if transpiler.IsUnusable(typ) {
+		return depth, typ, false
 	}
-	return nil
+	named, isNamed := receiverBase(typ).(transpiler.NamedType)
+	if !isNamed || t.getTypeMeta(named.BaseName()) != nil {
+		return depth, typ, true
+	}
+	data := t.goTypeInfo.GetTypeData(t.goTypeLookupName(named))
+	return depth, typ, data != nil && data.Kind != "alias"
 }
 
 // inoutArgAt is where the value for parameter i of callee is written in the

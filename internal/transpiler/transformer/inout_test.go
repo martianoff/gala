@@ -275,6 +275,8 @@ struct Holds[T any](v T)
 func (h Holds[T]) fill(inout x T) {
     x = h.v
 }
+
+type PC Ptr[Counter]
 `
 
 // TestInoutLendPtrVarExplicitTypeArgs pins that a type argument fixed at
@@ -319,6 +321,9 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 		{"a Ptr without & for a pointer type argument", `var p = &Counter(1, "p")
     put[Ptr[Counter]](p, &Counter(2, "q"))`,
 			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend the variable holding the Ptr with `&p`"},
+		{"an alias of a Ptr", `var p PC = &Counter(1, "p")
+    bump(&p, 1)`,
+			"cannot lend &p to the inout parameter of bump: p holds a Ptr[Counter], and the parameter takes the Counter it points to", "pass `p` without `&`"},
 		{"a val Ptr without & for a pointer type argument", `val p = &Counter(1, "p")
     put[Ptr[Counter]](p, &Counter(2, "q"))`,
 			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend a `var` holding the Ptr: `var q = p`, then pass `&q`"},
@@ -354,6 +359,10 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 		{"an argument binding the type parameter, the pointer itself", `var p = &Counter(1, "p")
     put(p, Counter(2, "q"))
     Println(p.n)`, "put(p, "},
+		{"an alias of a Ptr, the pointer itself", `var p PC = &Counter(1, "p")
+    bump(p, 1)
+    put[Counter](p, Counter(2, "q"))
+    Println(p.n)`, "put[Counter](p, "},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
@@ -568,7 +577,7 @@ func main() {
 	require.NoError(t, err)
 
 	// A qualified parameter type is not a type parameter of the same name:
-	// Item stays lend.Counter's package's type, never the type argument.
+	// lend.Counter stays lend's type, never the type argument.
 	_, err = transpileCrossPkg(t, root, `package main
 
 import "example.com/lendx/lend"
@@ -580,6 +589,29 @@ func keep[Counter any](inout x lend.Counter, v Counter) {
 func main() {
     var p = &lend.Counter(1)
     keep[int](p, 5)
+    Println(p.N)
+}
+`)
+	require.NoError(t, err)
+
+	// A type argument Go declares as an alias may be a pointer GALA does not
+	// see (`type P = *GoCounter`): its depth is unknown, so nothing is
+	// reported, and Go takes &p for the *P it is.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "lend", "lend_go.go"), []byte(`package lend
+
+type GoCounter struct{ N int }
+
+type P = *GoCounter
+
+func NewP() *GoCounter { return &GoCounter{N: 1} }
+`), 0644))
+	_, err = transpileCrossPkg(t, root, `package main
+
+import "example.com/lendx/lend"
+
+func main() {
+    var p = &lend.GoCounter(N = 1)
+    lend.Put[lend.P](&p, lend.NewP())
     Println(p.N)
 }
 `)
