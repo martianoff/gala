@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
@@ -1601,12 +1603,111 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
-// Test runs the test flow: transpile source + test files, discover test
+// TestOptions configures a `gala test` run.
+type TestOptions struct {
+	// Verbose prints every test's output, as `go test -v` does.
+	Verbose bool
+	// JUnitPath, when set, is where the run writes a JUnit XML report.
+	JUnitPath string
+}
+
+// Test runs the tests with only the verbose option; see RunTests.
+func (b *Builder) Test(verbose bool) error {
+	return b.RunTests(TestOptions{Verbose: verbose})
+}
+
+// RunTests runs the test flow: transpile source + test files, discover test
 // functions, and run them. Each package's tests run through a generated
 // `go test` harness in that package; a package-main root's own tests run as a
-// synthesized test binary instead. If verbose is true, `go test` runs with -v.
-// Returns an error when any test fails.
-func (b *Builder) Test(verbose bool) error {
+// synthesized test binary instead. Both report through test2json events,
+// from which the run prints a summary and, with opts.JUnitPath, writes a
+// JUnit XML report. Returns an error when any test fails.
+func (b *Builder) RunTests(opts TestOptions) error {
+	report := NewTestReport(b.reportPackageName)
+	err := b.runTests(opts.Verbose, report)
+	return finishTestRun(report, err, opts.JUnitPath, b.moduleLabel(), os.Stdout)
+}
+
+// finishTestRun ends a run whose result is err: it prints the summary to
+// stdout and, with junitPath, writes the JUnit report. It returns err,
+// joined with a failure to write the report.
+func finishTestRun(report *TestReport, err error, junitPath, module string, stdout io.Writer) error {
+	// An error the report does not hold yet (a `go` command that could not
+	// run, say) goes in as a failure of the run itself, before the summary,
+	// so the summary agrees with the exit status.
+	unreported := withoutReported(err)
+	if unreported != nil && !report.Empty() {
+		report.AddBuildFailure(runFailureSuite, unreported.Error())
+		unreported = nil
+	}
+	report.WriteSummary(stdout)
+	if junitPath == "" {
+		return err
+	}
+	// A run that failed before any package ran (a GALA compile error) has
+	// no summary, its diagnostic says it all, but the report still shows
+	// the module's failed build.
+	if unreported != nil {
+		report.AddBuildFailure(module, unreported.Error())
+	}
+	if werr := report.WriteJUnitFile(junitPath); werr != nil {
+		return errors.Join(err, werr)
+	}
+	return err
+}
+
+// runFailureSuite names the report suite for a failure of the run itself,
+// not of one package.
+const runFailureSuite = "gala test"
+
+// reportedError marks an error the test report already records, so it is
+// not added again as a failed build.
+type reportedError struct{ error }
+
+func (e reportedError) Unwrap() error { return e.error }
+
+// withoutReported returns err without its reportedError parts; nil when
+// nothing else is left.
+func withoutReported(err error) error {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var rest []error
+		for _, e := range joined.Unwrap() {
+			if r := withoutReported(e); r != nil {
+				rest = append(rest, r)
+			}
+		}
+		return errors.Join(rest...)
+	}
+	if errors.As(err, new(reportedError)) {
+		return nil
+	}
+	return err
+}
+
+// moduleLabel names the project under test: its module path, or its
+// directory when it has none.
+func (b *Builder) moduleLabel() string {
+	label := b.galaMod.Module.Path
+	if label == "" || label == "gala-standalone" {
+		label = b.workspace.ProjectDir
+	}
+	return label
+}
+
+// reportPackageName maps a workspace package path, as the `go` command
+// reports it, back to the project's own import path.
+func (b *Builder) reportPackageName(pkg string) string {
+	gen := WorkspaceGenModule
+	if pkg == gen {
+		return b.moduleLabel()
+	}
+	if rest, ok := strings.CutPrefix(pkg, gen+"/"); ok {
+		return b.moduleLabel() + "/" + rest
+	}
+	return pkg
+}
+
+func (b *Builder) runTests(verbose bool, report *TestReport) error {
 	// Steps 1-2.6: workspace, lock, stdlib and dependencies.
 	release, err := b.prepare(nil)
 	if err != nil {
@@ -1633,11 +1734,7 @@ func (b *Builder) Test(verbose bool) error {
 		// exit successfully. Running `gala test` in a freshly-initialised project
 		// that has source files but no tests yet is a normal state, not a build
 		// failure.
-		label := b.galaMod.Module.Path
-		if label == "" || label == "gala-standalone" {
-			label = b.workspace.ProjectDir
-		}
-		fmt.Printf("?   \t%s\t[no test files]\n", label)
+		fmt.Printf("?   \t%s\t[no test files]\n", b.moduleLabel())
 		return nil
 	}
 
@@ -1724,7 +1821,7 @@ func (b *Builder) Test(verbose bool) error {
 		}
 
 		// Step 9: Run tests via `go test`
-		return b.runGoTest(verbose, []string{"./gen/..."})
+		return b.runGoTest(verbose, []string{"./gen/..."}, report)
 	}
 
 	// For a package-main root, the synthesized test binary runs the root's own
@@ -1769,75 +1866,153 @@ func (b *Builder) Test(verbose bool) error {
 		// imports; targeting "./gen/..." would ask `go build -o` to write
 		// multiple package outputs, which fails.
 		cmd := b.workspaceGoCmd("build", "-o", testBinary, "./gen")
-
+		var buildOutput bytes.Buffer
+		cmd.Stderr = io.MultiWriter(os.Stderr, &buildOutput)
 		if b.verbose {
 			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
 			fmt.Printf("Running: %s\n", strings.Join(cmd.Args, " "))
-		} else {
-			cmd.Stderr = os.Stderr
 		}
 
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("go build (test): %w", err)
-		}
-
-		// Step 10: Execute the test binary
-		if b.verbose {
-			fmt.Println("Running tests...")
-			fmt.Println()
-		}
-
-		execCmd := exec.Command(testBinary)
-		execCmd.Stdin = os.Stdin
-		execCmd.Stdout = os.Stdout
-		execCmd.Stderr = os.Stderr
-		execCmd.Dir = b.workspace.ProjectDir
-
-		if err := execCmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				rootErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
-			} else {
-				return fmt.Errorf("running test binary: %w", err)
+			report.AddBuildFailure(WorkspaceGenModule, buildOutput.String())
+			rootErr = reportedError{fmt.Errorf("go build (test): %w", err)}
+		} else {
+			// Step 10: Execute the test binary
+			if b.verbose {
+				fmt.Println("Running tests...")
+				fmt.Println()
 			}
+			testErr, runErr := b.runTestBinary(testBinary, report)
+			rootErr = errors.Join(testErr, runErr)
 		}
 	}
 
-	// The subpackages' tests run even when the root's failed, so one run
-	// reports every test failure.
+	// The subpackages' tests run even when the root's failed (to build, to
+	// run, or a test), so one run reports every failure.
 	var subErr error
 	if len(subTestDirs) > 0 {
 		pkgs := make([]string, len(subTestDirs))
 		for i, dir := range subTestDirs {
 			pkgs[i] = "./gen/" + filepath.ToSlash(dir)
 		}
-		subErr = b.runGoTest(verbose, pkgs)
+		subErr = b.runGoTest(verbose, pkgs, report)
 	}
 	return errors.Join(rootErr, subErr)
 }
 
-// runGoTest runs `go test` on pkgs (patterns relative to the workspace) — the
-// packages that carry a generated test harness.
-func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
-	args := []string{"test", "-count=1"}
-	if verbose {
-		args = append(args, "-v")
+// runTestBinary runs a package-main root's test binary in the project
+// directory, its output streamed to the terminal as it comes and converted
+// to test events by `go tool test2json` for the report. It returns the
+// binary's test failure as testErr, and err when the binary could not run.
+func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr, err error) {
+	conv := b.workspaceGoCmd("tool", "test2json", "-t", "-p", WorkspaceGenModule)
+	conv.Stderr = os.Stderr
+	in, err := conv.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("running test binary: %w", err)
 	}
-	cmd := b.workspaceGoCmd(append(args, pkgs...)...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	events, err := conv.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("running test binary: %w", err)
+	}
+	if err := conv.Start(); err != nil {
+		return nil, fmt.Errorf("running test2json: %w", err)
+	}
+
+	// The binary's stderr goes through test2json with its stdout, as under
+	// `go test`, so a panic's trace is part of the report.
+	execCmd := exec.Command(testBinary)
+	execCmd.Stdin = os.Stdin
+	execCmd.Stdout = in
+	execCmd.Stderr = in
+	execCmd.Dir = b.workspace.ProjectDir
+	// A process the tests started in the background inherits the output
+	// pipe; once the binary itself exits, stop waiting for it to close.
+	execCmd.WaitDelay = time.Second
+	start := time.Now()
+	if err := execCmd.Start(); err != nil {
+		in.Close()
+		conv.Wait()
+		return nil, fmt.Errorf("running test binary: %w", err)
+	}
+	exited := make(chan error, 1)
+	go func() {
+		exited <- execCmd.Wait()
+		in.Close()
+	}()
+
+	printer := &testEventPrinter{stdout: os.Stdout, stderr: os.Stderr, stream: true}
+	consumeErr := consumeTestEvents(events, report, printer)
+	convErr := conv.Wait()
+	err = <-exited
+	if errors.Is(err, exec.ErrWaitDelay) {
+		fmt.Fprintln(os.Stderr, "warning: the test binary exited, but a process it started still holds its output")
+		err = nil
+	}
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			return nil, fmt.Errorf("running test binary: %w", err)
+		}
+		testErr = reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+		// test2json reading a stream judges the package by its last line;
+		// a binary that died without printing FAIL failed all the same.
+		if !printer.failed {
+			report.Add(TestEvent{Action: "fail", Package: WorkspaceGenModule, Elapsed: time.Since(start).Seconds()})
+		}
+	}
+	if consumeErr != nil || convErr != nil {
+		return testErr, fmt.Errorf("reading test events: %w", errors.Join(consumeErr, convErr))
+	}
+	return testErr, nil
+}
+
+// runGoTest runs `go test -json` on pkgs (patterns relative to the
+// workspace) — the packages that carry a generated test harness — adding
+// its events to report and printing what `go test` would have.
+func (b *Builder) runGoTest(verbose bool, pkgs []string, report *TestReport) error {
+	cmd := b.workspaceGoCmd(append([]string{"test", "-count=1", "-json"}, pkgs...)...)
+	var stderr bytes.Buffer
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	events, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("go test: %w", err)
+	}
 
 	if b.verbose {
 		fmt.Printf("Running: %s\n", strings.Join(cmd.Args, " "))
 	}
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
-		}
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("go test: %w", err)
 	}
-	return nil
+	printer := &testEventPrinter{stdout: os.Stdout, stderr: os.Stderr, stream: verbose}
+	// A read error means events are missing from the report; it is
+	// returned with whatever else went wrong, never instead of it.
+	var readErr error
+	if err := consumeTestEvents(events, report, printer); err != nil {
+		readErr = fmt.Errorf("reading test events: %w", err)
+	}
+	var runErr error
+	if err := cmd.Wait(); err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		switch {
+		case !ok:
+			runErr = fmt.Errorf("go test: %w", err)
+		case printer.failed:
+			fmt.Println("FAIL")
+			runErr = reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+		case readErr == nil:
+			// `go test` failed before any package could report, on a
+			// module or package-loading error: one failure for the run.
+			report.AddBuildFailure(runFailureSuite, stderr.String())
+			runErr = reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+		default:
+			// The failure's events were lost with the stream: the read
+			// error is the cause the report can show.
+			runErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		}
+	}
+	return errors.Join(runErr, readErr)
 }
 
 // splitRootTestFiles separates the test files in the project root directory

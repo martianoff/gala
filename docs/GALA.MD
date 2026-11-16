@@ -6048,7 +6048,10 @@ The `gala test` command automatically discovers `_test.gala` files, transpiles t
 gala test                     # Test current directory
 gala test ./myproject         # Test specific directory
 gala test -v                  # Verbose output
+gala test --junit report.xml  # Also write a JUnit XML report for CI
 ```
+
+Every run ends with a summary of the passed, failed and skipped tests per package, followed by each failure and its reason. `--junit` writes the same results as JUnit XML; see [gala test](DEPENDENCY_MANAGEMENT.MD#gala-test) for the report format and a GitHub Actions example.
 
 `gala test` handles both project types:
 - **`package main` projects** (e.g. a single-binary CLI): source and test files are compiled together as `package main`.

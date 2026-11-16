@@ -164,8 +164,11 @@ fixture_lib_only() {
   cd "$dir"
   gala_ok build.log build || return 0
   expect_line "library compile check" build.log '^ok \(library compiled successfully\)'
-  gala_ok test.log test || return 0
+  gala_ok test.log test --junit reports/junit.xml || return 0
   expect_tests_ran "tests ran" test.log
+  expect_line "summary" test.log '^ok +example\.com/libonly +2 passed, 0 failed, 0 skipped$'
+  expect_line "JUnit report totals" reports/junit.xml '^<testsuites name="gala test" tests="2" failures="0" errors="0" skipped="0" time="'
+  expect_line "JUnit report test case" reports/junit.xml '<testcase name="TestRectArea" classname="example\.com/libonly" time="'
 }
 
 # go_subpkg: a hand-written Go package inside the module, whose types reach
