@@ -20,7 +20,7 @@ namespace Gala.Spec.Json
 open Lean (Json)
 
 /-- The Core JSON versions this decoder reads. -/
-def supportedCore : Nat := 10
+def supportedCore : Nat := 11
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
@@ -202,6 +202,8 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "val" => decodeDecl .val j
   | "var" => decodeDecl .var j
   | "named-arg" => return .named (← str j "name") (← decodeExpr (← field j "value"))
+  -- A spread argument `xs...` passes a slice (version 11): not in the subset.
+  | "spread" => return .unsupported "spread-arg"
   | "lambda" =>
     match ← decodeParams (← arr j "params") with
     | .error k => return .unsupported k
@@ -241,6 +243,8 @@ partial def decodeParams (params : List Json) :
   for p in params do
     -- The field is left out when false.
     if p.getObjVal? "inout" matches .ok (.bool true) then return .error "inout-param"
+    -- A variadic parameter takes a slice (version 11): not in the subset.
+    if p.getObjVal? "variadic" matches .ok (.bool true) then return .error "variadic-param"
   let ps ← params.mapM fun p => do
     unless (← kindOf p) == "param" do throw "expected a param"
     return (({ name := ← str p "name", type := ← optTy p "type" } : Param), ← optExpr p "default")

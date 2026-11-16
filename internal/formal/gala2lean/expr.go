@@ -175,6 +175,10 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 		}
 		return wrap(fmt.Sprintf("(T%d.mk %s)", len(e.Elems), strings.Join(parts, " ")), ts...)
 	case *coreexport.Select:
+		if g.variadicMethodNamed(e.Name) && g.isVariadicMethod(e.Target, e.Name, sc) {
+			// A call of the method value would pass its arguments one by one.
+			unsup(e.Pos, "variadic-func-value")
+		}
 		t := g.expr(e.Target, sc)
 		return wrap("("+t.val()+")."+ident(e.Name), t)
 	case *coreexport.Call:
@@ -198,6 +202,10 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 		return g.interp(e, sc)
 	case *coreexport.NamedArg:
 		unsup(e.Pos, "named-arg")
+	case *coreexport.Spread:
+		// A spread into a declared variadic function, ArrayOf or ListOf is
+		// translated there (variadic.go).
+		unsup(e.Pos, "spread-arg")
 	}
 	unsup(posOf(e), "%s", e.Kind())
 	return term{}
@@ -215,6 +223,10 @@ func (g *gen) branch(e coreexport.Node, sc *scope) term {
 func (g *gen) name(e *coreexport.Name, sc *scope) term {
 	x := e.Name
 	if l := sc.lookup(x); l != nil {
+		if l.slice {
+			// A variadic parameter is only spread or sized (variadic.go).
+			unsup(e.Pos, "slice-value")
+		}
 		if l.box >= 0 {
 			return term{code: fmt.Sprintf("(_gala_get%d %s)", l.box, ident(x))}
 		}
@@ -237,6 +249,10 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 		if hasInout(f.Params) {
 			// Its values are of type func(inout T), outside the subset.
 			unsup(e.Pos, "inout-func-value")
+		}
+		if isVariadic(f.Params) {
+			// A call of the value would pass its arguments one by one.
+			unsup(e.Pos, "variadic-func-value")
 		}
 		// A top-level function as a value.
 		if len(f.Params) == 0 {

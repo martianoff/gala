@@ -213,6 +213,20 @@ func main() {
     Println(id[int](1), id[pkg.T](n), id[x + 1](2))
 }
 `},
+		{"variadic", `package main
+
+func count(xs ...int) int = xs.Size()
+
+func pass(prefix string, xs ...int) int = count(xs...)
+
+func notLast(xs ...int, n int) int = n
+
+func main() {
+    Println(count(), count(1, 2), pass(prefix = "p", xs = 3))
+    val h = (ys ...int) => 0
+    val k func(...int) int = count
+}
+`},
 		{"unsupported", `package main
 
 import "fmt"

@@ -30,6 +30,9 @@ type local struct {
 	// receiver is true for a pointer method's receiver (in a cell, but
 	// reached by no other path).
 	receiver bool
+	// slice is true for a variadic parameter, a Lean List of its elements
+	// whose uses are limited (variadic.go).
+	slice bool
 }
 
 // valueAt is values[i], or nil past the end.

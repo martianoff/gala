@@ -405,7 +405,16 @@ func (g *gen) paramOf(pn coreexport.Node) *coreexport.Param {
 // param is value parameter p in Lean, bound in sc.
 func (g *gen) param(p *coreexport.Param, sc *scope) string {
 	lt := g.leanType(p.Type)
-	sc.bind(p.Name, false, lt).gtype = p.Type
+	if p.Variadic {
+		// A slice of its elements (variadic.go).
+		lt = sliceType(lt)
+	}
+	l := sc.bind(p.Name, false, lt)
+	if p.Variadic {
+		l.slice = true
+	} else {
+		l.gtype = p.Type
+	}
 	return fmt.Sprintf("(%s : %s)", ident(p.Name), lt)
 }
 

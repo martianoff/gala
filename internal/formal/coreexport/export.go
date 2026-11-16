@@ -254,7 +254,7 @@ func (e *exporter) varDecl(v native.VarDeclarationNode) Node {
 func (e *exporter) function(f native.FunctionDeclarationNode) Node {
 	sig := f.Signature()
 	fn := of(e, &Func{Name: f.Identifier().GetText(), TypeParams: e.typeParams(f.TypeParameters()),
-		Params: mapNodes(sig.Parameters().ParameterList().AllParameter(), e.param)}, f.GalaNodeRef)
+		Params: e.funcParams(sig.Parameters().ParameterList().AllParameter())}, f.GalaNodeRef)
 	if r := f.Receiver(); r.Ok() {
 		fn.Receiver = e.receiver(r)
 	}
@@ -295,8 +295,9 @@ func (e *exporter) receiver(r native.ReceiverNode) Node {
 	return of(e, rec, r.GalaNodeRef)
 }
 
-// unsupportedParam is what makes p, a function parameter or a shorthand
-// struct field, unsupported; nil when nothing does. A `val` or `var` mark is
+// unsupportedParam is what makes p, a lambda parameter or a shorthand struct
+// field, unsupported; nil when nothing does. A function's variadic
+// parameter is not (paramOf). A `val` or `var` mark is
 // the caller's to check: it is unsupported on a parameter only.
 func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 	switch {
@@ -308,15 +309,34 @@ func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 	return nil
 }
 
+// param is a lambda's parameter, which is never variadic.
 func (e *exporter) param(p native.ParameterNode) Node {
+	return e.paramOf(p, false)
+}
+
+// funcParams are a function's or method's parameters, whose last may be
+// variadic, `xs ...T`. A variadic parameter anywhere else is not GALA
+// (Go's "can only use ... with final parameter") and is unsupported.
+func (e *exporter) funcParams(ps []native.ParameterNode) []Node {
+	out := make([]Node, len(ps))
+	for i, p := range ps {
+		out[i] = e.paramOf(p, i == len(ps)-1)
+	}
+	return out
+}
+
+func (e *exporter) paramOf(p native.ParameterNode, mayBeVariadic bool) Node {
 	if p.VAL().Ok() || p.VAR().Ok() {
 		return e.unsupported(UnsupportedParamModifier, p.GalaNodeRef)
 	}
-	if bad := e.unsupportedParam(p); bad != nil {
-		return bad
+	variadic := mayBeVariadic && p.ELLIPSIS().Ok() && p.Identifier().Ok()
+	if !variadic {
+		if bad := e.unsupportedParam(p); bad != nil {
+			return bad
+		}
 	}
 	return of(e, &Param{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Default: e.paramDefault(p.ParamDefault()),
-		Inout: p.INOUT().Ok()}, p.GalaNodeRef)
+		Inout: p.INOUT().Ok(), Variadic: variadic}, p.GalaNodeRef)
 }
 
 // paramDefault is the default value d declares, or nil (JSON null) for none.
@@ -669,8 +689,8 @@ func (e *exporter) argValue(a native.ArgumentNode) Node {
 	if ep, ok := p.AsExpressionPattern(); ok {
 		return e.expr(ep.Expression().GalaNodeRef)
 	}
-	if _, ok := p.AsRestPattern(); ok {
-		return e.unsupported(UnsupportedSpreadArg, a.GalaNodeRef)
+	if rp, ok := p.AsRestPattern(); ok {
+		return of(e, &Spread{Value: e.expr(rp.Expression().GalaNodeRef)}, rp.GalaNodeRef)
 	}
 	return e.unsupported(UnsupportedTypedPattern, a.GalaNodeRef)
 }

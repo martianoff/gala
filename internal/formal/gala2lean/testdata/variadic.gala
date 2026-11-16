@@ -1,0 +1,49 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Variadic parameters: none, one or many arguments, a spread passed on, a
+// named variadic argument given or left out, a method, a generic function,
+// lambdas typed from the element type, and the order the arguments run in.
+
+func count(xs ...int) int = xs.Size()
+
+// Size is the number of arguments, not of runes, for strings too.
+func words(ws ...string) int = ws.Size()
+
+func total(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (acc, x) => acc + x)
+
+func joined(sep string, parts ...string) string = ListOf(parts...).MkString(sep)
+
+// forward passes its arguments on, whole.
+func forward(ws ...string) int = words(ws...)
+
+func label(prefix string, parts ...string) string = prefix + ArrayOf(parts...).MkString(",")
+
+func headOr[T any](fallback T, xs ...T) T = ArrayOf(xs...).HeadOption().GetOrElse(fallback)
+
+// nfuncs takes lambdas, typed from the element type.
+func nfuncs(fs ...func(int) int) int = fs.Size()
+
+struct Counter(N int)
+
+func (c Counter) Plus(x int, xs ...int) int = ArrayOf(xs...).FoldLeft(c.N + x, (acc, n) => acc + n)
+
+func noisy(x int) int {
+    Println("arg", x)
+    x
+}
+
+func main() {
+    Println(count(), count(7), count(1, 2, 3))
+    Println(words("é", "ab", "日本"), words())
+    Println(total(), total(5), total(1, 2, 3, 4))
+    Println(joined("-"), joined("-", "a"), joined("-", "a", "b", "c"))
+    Println(forward("x", "y"), forward())
+    Println(label(prefix = "p:"), label(prefix = "p:", parts = "a"), label("q:", "a", "b"))
+    Println(headOr(-1), headOr(-1, 10, 20), headOr("?", "s", "t"))
+    Println(nfuncs(), nfuncs((x) => x + 1, (x) => x * 10))
+    Println(Counter(1).Plus(2), Counter(1).Plus(2, 3, 4), Counter(1).Plus(x = 2, xs = 3))
+    Println(total(noisy(1), noisy(2), noisy(3)))
+    Println(joined(if (noisy(0) == 0) "+" else "-", "a", "b"))
+}

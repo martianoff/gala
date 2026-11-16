@@ -40,7 +40,8 @@ private def noDecls : Decls := { funcs := [], structs := [], shorthands := [], s
 
 -- The decoder rejects an unknown version and malformed documents.
 private def decodes (s : String) : Bool := (Json.parse s).toBool
-#guard decodes "{\"core\": 10, \"files\": []}"
+#guard decodes "{\"core\": 11, \"files\": []}"
+#guard !decodes "{\"core\": 10, \"files\": []}"
 #guard !decodes "{\"core\": 9, \"files\": []}"
 #guard !decodes "{\"core\": 8, \"files\": []}"
 #guard !decodes "{\"core\": 7, \"files\": []}"
@@ -49,7 +50,7 @@ private def decodes (s : String) : Bool := (Json.parse s).toBool
 #guard !decodes "{\"core\": 4, \"files\": []}"
 #guard !decodes "{\"core\": 3, \"files\": []}"
 #guard !decodes "{\"files\": []}"
-#guard !decodes "{\"core\": 10, \"files\": [{\"kind\": \"nope\"}]}"
+#guard !decodes "{\"core\": 11, \"files\": [{\"kind\": \"nope\"}]}"
 #guard !decodes "not json"
 
 -- An import runs its package's initializers, which galaspec does not model, whether
@@ -59,7 +60,7 @@ private def decodes (s : String) : Bool := (Json.parse s).toBool
 -- run.
 private def withImport (path alias : String) : String :=
   let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
-  "{\"core\": 10, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
+  "{\"core\": 11, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
   "\"package\": \"main\", \"decls\": [" ++
   "{\"kind\": \"import\", " ++ pos ++ ", \"path\": \"" ++ path ++ "\", \"alias\": \"" ++ alias ++ "\"}, " ++
   "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"main\", \"receiver\": null, " ++
@@ -78,7 +79,7 @@ private def withImport (path alias : String) : String :=
 -- 10), stops the run as `index`; a `null` bracket is no bracket.
 private def withBracket (bracket : String) : String :=
   let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
-  "{\"core\": 10, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
+  "{\"core\": 11, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
   "\"package\": \"main\", \"decls\": [" ++
   "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"main\", \"receiver\": null, " ++
   "\"type-params\": [], \"params\": [], \"result\": null, " ++
@@ -88,6 +89,29 @@ private def withBracket (bracket : String) : String :=
   "{\"kind\": \"int\", " ++ pos ++ ", \"text\": \"1\", \"value\": 1}]}]}}]}]}"
 #guard (Cli.evaluate (withBracket "{\"exprs\": [], \"types\": null}") Cli.defaultFuel).2.1 == "unsupported:index"
 #guard (Cli.evaluate (withBracket "null") Cli.defaultFuel).2.1 == "ok"
+
+-- A variadic parameter and a spread argument (version 11) are outside the subset: a
+-- run that reaches either stops, `variadic-param` or `spread-arg`.
+private def withVariadic (variadic : Bool) (arg : String) : String :=
+  let pos := "\"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}"
+  let int := "{\"kind\": \"type-name\", " ++ pos ++ ", \"package\": \"\", \"name\": \"int\", \"args\": []}"
+  "{\"core\": 11, \"files\": [{\"kind\": \"file\", " ++ pos ++ ", \"path\": \"m.gala\", " ++
+  "\"package\": \"main\", \"decls\": [" ++
+  "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"f\", \"receiver\": null, " ++
+  "\"type-params\": [], \"params\": [{\"kind\": \"param\", " ++ pos ++ ", \"name\": \"xs\", \"type\": " ++
+  int ++ ", \"default\": null, \"variadic\": " ++ toString variadic ++ "}], \"result\": null, " ++
+  "\"body\": {\"kind\": \"block\", " ++ pos ++ ", \"stmts\": []}}, " ++
+  "{\"kind\": \"func\", " ++ pos ++ ", \"name\": \"main\", \"receiver\": null, " ++
+  "\"type-params\": [], \"params\": [], \"result\": null, " ++
+  "\"body\": {\"kind\": \"block\", " ++ pos ++ ", \"stmts\": [" ++
+  "{\"kind\": \"call\", " ++ pos ++ ", \"callee\": {\"kind\": \"name\", " ++ pos ++
+  ", \"name\": \"f\"}, \"args\": [" ++ arg ++ "]}]}}]}]}"
+private def one : String := "{\"kind\": \"int\", \"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}, \"text\": \"1\", \"value\": 1}"
+#guard (Cli.evaluate (withVariadic false one) Cli.defaultFuel).2.1 == "ok"
+#guard (Cli.evaluate (withVariadic true one) Cli.defaultFuel).2.1 == "unsupported:variadic-param"
+#guard (Cli.evaluate (withVariadic false
+  ("{\"kind\": \"spread\", \"pos\": {\"line\": 1, \"col\": 1, \"off\": 0, \"end\": 1}, \"value\": " ++ one ++ "}"))
+  Cli.defaultFuel).2.1 == "unsupported:spread-arg"
 
 -- The command line.
 #guard Cli.parseArgs ["run", "p.json"] == some ("p.json", Cli.defaultFuel)
