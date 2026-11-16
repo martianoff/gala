@@ -88,6 +88,7 @@ GALASPEC_SRCS = [
     "Gala/Scope.lean",
     "Gala/Print.lean",
     "Gala/Eval.lean",
+    "Gala/AlphaCheck.lean",
     "Gala/Cli.lean",
 ]
 

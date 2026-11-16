@@ -28,14 +28,11 @@
   it.
 -/
 import Gala.Order
+import Gala.AlphaCheck
 
 namespace Gala.Spec
 
 /-! ## Renamings -/
-
-/-- The binders in scope, newest first: each binder's name in the one program and in the
-    other. -/
-abbrev Ren := List (String × String)
 
 /-- `x` and `x'` name the same binder of `Γ`: the newest binder named `x` on the left is
     the newest named `x'` on the right. -/
@@ -58,30 +55,12 @@ def BinderR (pkg : List String) (x x' : String) : Prop :=
   x = x' ∨ (x ≠ "_" ∧ x' ≠ "_" ∧ capitalized x = false ∧ capitalized x' = false ∧
     x ∉ pkg ∧ x' ∉ pkg)
 
-/-- Push a binder, as `bind` does: `_` binds nothing. -/
-def Ren.push (Γ : Ren) (xx : String × String) : Ren := if xx.1 = "_" then Γ else xx :: Γ
-
-/-- Push binders in order, the last newest, as `pushAll` and a function's frame do. -/
-def Ren.pushAll (Γ : Ren) (xs : Ren) : Ren := xs.foldl Ren.push Γ
-
 /-! ## Patterns
 
 A bare pattern name is a binding, a case test or a stable identifier depending on the
 subject's type and on what is in scope at run time (`classifyPatName`). A renamed one is
 lowercase and no package-level name, so it is always a binding (`slot.bind`). One kept
 the same may be either: it binds on both sides or on neither (`slot.maybe`). -/
-
-inductive Slot
-  /-- Always binds: `x` on the one side, `x'` on the other. -/
-  | bind (x x' : String)
-  /-- Binds `x` on both sides, or on neither. -/
-  | maybe (x : String)
-
-/-- The binders a pattern's slots can push, for each way the `maybe`s go. -/
-def Slot.outs : List Slot → List Ren
-  | [] => [[]]
-  | .bind x x' :: ss => (Slot.outs ss).map ((x, x') :: ·)
-  | .maybe x :: ss => (Slot.outs ss).map ((x, x) :: ·) ++ Slot.outs ss
 
 mutual
 /-- Related patterns, with their slots in order. -/

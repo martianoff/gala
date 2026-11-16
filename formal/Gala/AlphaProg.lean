@@ -1229,5 +1229,426 @@ theorem run_alpha {pkg : List String} {pm : String → Ren} {p p' : Program}
   · cases hr <;> first | exact .panic .. | exact .fuel | exact .unsupported .. | exact .stuck ..
   · exact .ok
 
+/-! ## The checker is sound -/
+
+namespace Check
+
+mutual
+theorem tyEq_eq : ∀ {a b : Ty}, tyEq a b = true → a = b
+  | .name _, .name _, h => by simp [tyEq] at h; rw [h]
+  | .func _ _, .func _ _, h => by
+    simp only [tyEq, Bool.and_eq_true] at h; rw [tysEq_eq h.1, optTyEq_eq h.2]
+  | .unsupported _, .unsupported _, h => by simp [tyEq] at h; rw [h]
+  | .name _, .func _ _, h | .name _, .unsupported _, h | .func _ _, .name _, h
+  | .func _ _, .unsupported _, h | .unsupported _, .name _, h | .unsupported _, .func _ _, h => by
+    simp [tyEq] at h
+theorem tysEq_eq : ∀ {a b : List Ty}, tysEq a b = true → a = b
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => by
+    simp only [tysEq, Bool.and_eq_true] at h; rw [tyEq_eq h.1, tysEq_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [tysEq] at h
+theorem optTyEq_eq : ∀ {a b : Option Ty}, optTyEq a b = true → a = b
+  | none, none, _ => rfl
+  | some _, some _, h => by simp only [optTyEq] at h; rw [tyEq_eq h]
+  | none, some _, h | some _, none, h => by simp [optTyEq] at h
+end
+
+theorem optTysEq_eq : ∀ {a b : List (Option Ty)}, optTysEq a b = true → a = b
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => by
+    simp only [optTysEq, Bool.and_eq_true] at h; rw [optTyEq_eq h.1, optTysEq_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [optTysEq] at h
+
+theorem litEq_eq : ∀ {a b : Lit}, litEq a b = true → a = b := by
+  intro a b h; cases a <;> cases b <;> simp_all [litEq]
+
+mutual
+theorem patEq_eq : ∀ {a b : Pat}, patEq a b = true → a = b
+  | .tuple _, .tuple _, h => by simp only [patEq] at h; rw [patsEq_eq h]
+  | .extract _ _, .extract _ _, h => by
+    simp only [patEq, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1, patsEq_eq h.2]
+  | .lit _, .lit _, h => by simp only [patEq] at h; rw [litEq_eq h]
+  | .wild, b, h | .name _, b, h | .unsupported _, b, h | .tuple _, b, h | .extract _ _, b, h
+  | .lit _, b, h => by
+    cases b <;> simp_all [patEq] <;> first | exact patsEq_eq h | exact litEq_eq h | exact patsEq_eq h.2
+theorem patsEq_eq : ∀ {a b : List Pat}, patsEq a b = true → a = b
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => by
+    simp only [patsEq, Bool.and_eq_true] at h; rw [patEq_eq h.1, patsEq_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [patsEq] at h
+end
+
+theorem paramsEq_eq : ∀ {a b : List Param}, paramsEq a b = true → a = b
+  | [], [], _ => rfl
+  | ⟨_, _⟩ :: _, ⟨_, _⟩ :: _, h => by
+    simp only [paramsEq, Bool.and_eq_true, beq_iff_eq] at h
+    rw [h.1.1, optTyEq_eq h.1.2, paramsEq_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [paramsEq] at h
+
+mutual
+theorem exprEq_eq : ∀ {a b : Expr}, exprEq a b = true → a = b
+  | a, b, h => by
+    cases a <;> cases b <;>
+      simp only [exprEq, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, Bool.false_eq_true] at h
+    · rw [litEq_eq h]
+    · rw [h]
+    · rw [h.1, exprEq_eq h.2]
+    · rw [h.1.1, exprEq_eq h.1.2, exprEq_eq h.2]
+    · rw [exprEq_eq h.1, exprsEq_eq h.2]
+    · rw [h.1, exprEq_eq h.2]
+    · rw [exprEq_eq h]
+    · rw [exprsEq_eq h]
+    · rw [exprEq_eq h.1.1, exprEq_eq h.1.2, exprEq_eq h.2]
+    · rw [exprEq_eq h.1, casesEq_eq h.2]
+    · rw [exprsEq_eq h]
+    · rw [exprEq_eq h.1.1, exprEq_eq h.1.2, optExprEq_eq h.2]
+    · rw [optExprEq_eq h]
+    · rw [h.1.1, exprsEq_eq h.1.2, exprsEq_eq h.2]
+    · rw [h.1, exprEq_eq h.2]
+    · rw [h.1.1.1.1, h.1.1.1.2, h.1.1.2, optTyEq_eq h.1.2, exprsEq_eq h.2]
+    · rw [exprsEq_eq h]
+    · rw [paramsEq_eq h.1.1, optTyEq_eq h.1.2, exprEq_eq h.2]
+    · rw [h.1, exprEq_eq h.2]
+    · rw [h]
+theorem exprsEq_eq : ∀ {a b : List Expr}, exprsEq a b = true → a = b
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => by
+    simp only [exprsEq, Bool.and_eq_true] at h; rw [exprEq_eq h.1, exprsEq_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [exprsEq] at h
+theorem optExprEq_eq : ∀ {a b : Option Expr}, optExprEq a b = true → a = b
+  | none, none, _ => rfl
+  | some _, some _, h => by simp only [optExprEq] at h; rw [exprEq_eq h]
+  | none, some _, h | some _, none, h => by simp [optExprEq] at h
+theorem casesEq_eq : ∀ {a b : List (Pat × Option Expr × Expr)}, casesEq a b = true → a = b
+  | [], [], _ => rfl
+  | (_, _, _) :: _, (_, _, _) :: _, h => by
+    simp only [casesEq, Bool.and_eq_true] at h
+    rw [patEq_eq h.1.1.1, optExprEq_eq h.1.1.2, exprEq_eq h.1.2, casesEq_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [casesEq] at h
+end
+
+theorem fieldEq_eq {a b : Field} (h : fieldEq a b = true) : a = b := by
+  obtain ⟨_, _, _, _⟩ := a
+  obtain ⟨_, _, _, _⟩ := b
+  simp only [fieldEq, Bool.and_eq_true, beq_iff_eq] at h
+  rw [h.1.1.1, optTyEq_eq h.1.1.2, h.1.2, optExprEq_eq h.2]
+
+/-! ### Names and binders -/
+
+theorem boundB_sound : ∀ {Γ : Ren} {x x' : String}, boundB Γ x x' = true → Γ.bound x x'
+  | [], _, _, h => by simp [boundB] at h
+  | (a, a') :: Γ, x, x', h => by
+    simp only [boundB, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at h
+    simp only [Ren.bound]
+    rcases h with h | ⟨⟨h1, h2⟩, h3⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨h1, h2, boundB_sound h3⟩
+
+theorem not_mem_of_contains {l : List String} {x : String} (h : l.contains x = false) : x ∉ l := by
+  intro hm
+  have := (contains_iff l x).2 hm
+  rw [h] at this
+  cases this
+
+theorem freeB_sound {Γ : Ren} {x : String} (h : freeB Γ x = true) : Γ.free x := by
+  simp only [freeB, Bool.and_eq_true, Bool.not_eq_true'] at h
+  exact ⟨not_mem_of_contains h.1, not_mem_of_contains h.2⟩
+
+theorem nameB_sound {Γ : Ren} {x x' : String} (h : nameB Γ x x' = true) : NameR Γ x x' := by
+  simp only [nameB, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  rcases h with h | ⟨rfl, h⟩
+  · exact Or.inl (boundB_sound h)
+  · exact Or.inr ⟨rfl, freeB_sound h⟩
+
+theorem renamedB_sound {pkg : List String} {x x' : String} (h : renamedB pkg x x' = true) :
+    x ≠ "_" ∧ x' ≠ "_" ∧ capitalized x = false ∧ capitalized x' = false ∧ x ∉ pkg ∧ x' ∉ pkg := by
+  simp only [renamedB, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at h
+  exact ⟨h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, not_mem_of_contains h.1.2,
+    not_mem_of_contains h.2⟩
+
+theorem binderB_sound {pkg : List String} {x x' : String} (h : binderB pkg x x' = true) :
+    BinderR pkg x x' := by
+  simp only [binderB, Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · exact Or.inl h
+  · exact Or.inr (renamedB_sound h)
+
+theorem namesB_sound {pkg : List String} {ns ns' : List String} (h : namesB pkg ns ns' = true) :
+    NamesR pkg ns ns' := by
+  simp only [namesB, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
+  exact ⟨h.1, fun p hp => binderB_sound (h.2 p hp)⟩
+
+theorem fall2B_sound {r : α → β → Bool} {R : α → β → Prop} (hr : ∀ a b, r a b = true → R a b) :
+    ∀ {l : List α} {l' : List β}, fall2B r l l' = true → Fall2 R l l'
+  | [], [], _ => .nil
+  | _ :: _, _ :: _, h => by
+    simp only [fall2B, Bool.and_eq_true] at h
+    exact .cons (hr _ _ h.1) (fall2B_sound hr h.2)
+  | [], _ :: _, h | _ :: _, [], h => by simp [fall2B] at h
+
+/-! ### Patterns and expressions -/
+
+mutual
+theorem patB_sound {pkg : List String} {Γ : Ren} :
+    ∀ {p p' : Pat} {ss : List Slot}, patB pkg Γ p p' = some ss → PatR pkg Γ p p' ss
+  | .wild, .wild, _, h => by simp only [patB, Option.some.injEq] at h; subst h; exact .wild
+  | .lit l, .lit l', _, h => by
+    simp only [patB] at h
+    split at h
+    · rename_i hl; rw [litEq_eq hl]; simp only [Option.some.injEq] at h; subst h; exact .lit _
+    · cases h
+  | .unsupported k, .unsupported k', _, h => by
+    simp only [patB, beq_iff_eq] at h
+    split at h
+    · rename_i hk; subst hk; simp only [Option.some.injEq] at h; subst h; exact .unsupported _
+    · cases h
+  | .name x, .name x', _, h => by
+    simp only [patB] at h
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨rfl, hn⟩ := hc
+      simp only [Option.some.injEq] at h; subst h
+      exact .same (nameB_sound hn)
+    · split at h
+      · rename_i hr
+        obtain ⟨h1, h2, h3, h4, h5, h6⟩ := renamedB_sound hr
+        simp only [Option.some.injEq] at h; subst h
+        exact .bind h1 h2 h3 h4 h5 h6
+      · cases h
+  | .tuple ps, .tuple ps', _, h => by simp only [patB] at h; exact .tuple (patsB_sound h)
+  | .extract c ps, .extract c' ps', _, h => by
+    simp only [patB, beq_iff_eq] at h
+    split at h
+    · rename_i hc; subst hc; exact .extract _ (patsB_sound h)
+    · cases h
+  | .wild, .name _, _, h | .wild, .lit _, _, h | .wild, .tuple _, _, h | .wild, .extract _ _, _, h
+  | .wild, .unsupported _, _, h | .name _, .wild, _, h | .name _, .lit _, _, h
+  | .name _, .tuple _, _, h | .name _, .extract _ _, _, h | .name _, .unsupported _, _, h
+  | .lit _, .wild, _, h | .lit _, .name _, _, h | .lit _, .tuple _, _, h | .lit _, .extract _ _, _, h
+  | .lit _, .unsupported _, _, h | .tuple _, .wild, _, h | .tuple _, .name _, _, h
+  | .tuple _, .lit _, _, h | .tuple _, .extract _ _, _, h | .tuple _, .unsupported _, _, h
+  | .extract _ _, .wild, _, h | .extract _ _, .name _, _, h | .extract _ _, .lit _, _, h
+  | .extract _ _, .tuple _, _, h | .extract _ _, .unsupported _, _, h
+  | .unsupported _, .wild, _, h | .unsupported _, .name _, _, h | .unsupported _, .lit _, _, h
+  | .unsupported _, .tuple _, _, h | .unsupported _, .extract _ _, _, h => by simp [patB] at h
+theorem patsB_sound {pkg : List String} {Γ : Ren} :
+    ∀ {ps ps' : List Pat} {ss : List Slot}, patsB pkg Γ ps ps' = some ss → PatsR pkg Γ ps ps' ss
+  | [], [], _, h => by simp only [patsB, Option.some.injEq] at h; subst h; exact .nil
+  | p :: ps, p' :: ps', _, h => by
+    simp only [patsB] at h
+    split at h
+    · rename_i s ss h1 h2
+      simp only [Option.some.injEq] at h; subst h
+      exact .cons (patB_sound h1) (patsB_sound h2)
+    · cases h
+  | [], _ :: _, _, h | _ :: _, [], _, h => by simp [patsB] at h
+end
+
+theorem freeB_complete {Γ : Ren} {x : String} (h : Γ.free x) : freeB Γ x = true := by
+  unfold freeB
+  have h1 : (Γ.map (·.1)).contains x = false := by
+    cases hc : (Γ.map (·.1)).contains x
+    · rfl
+    · exact absurd ((contains_iff _ x).1 hc) h.1
+  have h2 : (Γ.map (·.2)).contains x = false := by
+    cases hc : (Γ.map (·.2)).contains x
+    · rfl
+    · exact absurd ((contains_iff _ x).1 hc) h.2
+  rw [h1, h2]; rfl
+
+theorem namedB_sound {m : Ren} {n n' : String} (h : namedB m n n' = true) :
+    m.lookup n = some n' ∨ (n = n' ∧ n ∉ m.map (·.1) ∧ n ∉ m.map (·.2)) := by
+  simp only [namedB, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+  rcases h with h | ⟨⟨h1, h2⟩, h3⟩
+  · exact Or.inl h
+  · exact Or.inr ⟨h1, not_mem_of_contains h2, not_mem_of_contains h3⟩
+
+mutual
+theorem exprB_sound {pkg : List String} {pm : String → Ren} :
+    ∀ {Γ : Ren} {e e' : Expr}, exprB pkg pm Γ e e' = true → AlphaE pkg pm Γ e e'
+  | Γ, e, e', h => by
+    cases e <;> cases e' <;> simp only [exprB, Bool.false_eq_true] at h
+    · rw [litEq_eq h]; exact AlphaE.lit _
+    · exact .name (nameB_sound h)
+    · simp only [Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; exact .unary _ (exprB_sound h.2)
+    · simp only [Bool.and_eq_true, beq_iff_eq] at h
+      rw [h.1.1]; exact .binary _ (exprB_sound h.1.2) (exprB_sound h.2)
+    · rename_i c as c' as'
+      split at h
+      · rename_i f f'
+        split at h
+        · rename_i hf
+          simp only [Bool.and_eq_true, beq_iff_eq] at h
+          obtain ⟨rfl, ha⟩ := h
+          exact .callFree (freeB_sound hf) (argsB_sound ha)
+        · rename_i hf
+          simp only [Bool.and_eq_true] at h
+          refine .call (fun g hg => ?_) (.name (nameB_sound h.1)) (argsB_sound h.2)
+          cases hg
+          exact fun hfr => hf (freeB_complete hfr)
+      · cases h
+      · rename_i h1 h2
+        simp only [Bool.and_eq_true] at h
+        exact .call (fun g hg => (h1 g hg).elim) (exprB_sound h.1) (argsB_sound h.2)
+    · simp only [Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; exact .select _ (exprB_sound h.2)
+    · exact .paren (exprB_sound h)
+    · exact .tuple (listB_sound h)
+    · simp only [Bool.and_eq_true] at h
+      exact .ifExpr (exprB_sound h.1.1) (exprB_sound h.1.2) (exprB_sound h.2)
+    · simp only [Bool.and_eq_true] at h
+      exact .mtch (exprB_sound h.1) (casesB_sound h.2)
+    · exact .block (blockB_sound h)
+    · simp only [Bool.and_eq_true] at h
+      exact .ifStmt (exprB_sound h.1.1) (exprB_sound h.1.2) (optB_sound h.2)
+    · exact .ret (optB_sound h)
+    · simp only [Bool.and_eq_true, beq_iff_eq] at h
+      rw [h.1.1]; exact .assign _ (listB_sound h.1.2) (listB_sound h.2)
+    · simp only [Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; exact .incdec _ (exprB_sound h.2)
+    · exact .interp (listB_sound h)
+    · simp only [Bool.and_eq_true] at h
+      rw [optTyEq_eq h.1.1.1]
+      exact .lambda _ (optTysEq_eq h.1.1.2) (namesB_sound h.1.2) (exprB_sound h.2)
+    · simp only [beq_iff_eq] at h; subst h; exact .unsupported _
+  termination_by structural _ e _ _ => e
+theorem listB_sound {pkg : List String} {pm : String → Ren} :
+    ∀ {Γ : Ren} {es es' : List Expr}, listB pkg pm Γ es es' = true → AlphaL pkg pm Γ es es'
+  | _, [], [], _ => .nil
+  | _, _ :: _, _ :: _, h => by
+    simp only [listB, Bool.and_eq_true] at h; exact .cons (exprB_sound h.1) (listB_sound h.2)
+  | _, [], _ :: _, h | _, _ :: _, [], h => by simp [listB] at h
+  termination_by structural _ es _ _ => es
+theorem optB_sound {pkg : List String} {pm : String → Ren} :
+    ∀ {Γ : Ren} {o o' : Option Expr}, optB pkg pm Γ o o' = true → OptR pkg pm Γ o o'
+  | _, none, none, _ => .none
+  | _, some _, some _, h => by simp only [optB] at h; exact .some (exprB_sound h)
+  | _, none, some _, h | _, some _, none, h => by simp [optB] at h
+  termination_by structural _ o _ _ => o
+theorem argsB_sound {pkg : List String} {pm : String → Ren} :
+    ∀ {m Γ : Ren} {as as' : List Expr}, argsB pkg pm m Γ as as' = true → ArgsR pkg pm m Γ as as'
+  | _, _, [], [], _ => .nil
+  | _, _, e :: _, e' :: _, h => by
+    cases e <;> cases e' <;> simp only [argsB, Bool.and_eq_true, Bool.not_eq_true', isNamed] at h <;>
+    first
+      | exact .named (namedB_sound h.1.1) (exprB_sound h.1.2) (argsB_sound h.2)
+      | exact .pos rfl (exprB_sound h.1.2) (argsB_sound h.2)
+      | (exfalso; simp at h)
+  | _, _, [], _ :: _, h | _, _, _ :: _, [], h => by simp [argsB] at h
+  termination_by structural _ _ xs _ _ => xs
+theorem blockB_sound {pkg : List String} {pm : String → Ren} :
+    ∀ {Γ : Ren} {ss ss' : List Expr}, blockB pkg pm Γ ss ss' = true → BlockR pkg pm Γ ss ss'
+  | _, [], [], _ => .nil
+  | _, e :: _, e' :: _, h => by
+    cases e <;> cases e' <;> simp only [blockB, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h <;>
+    first
+      | exact .stmt (exprB_sound h.1) (blockB_sound h.2)
+      | (obtain ⟨⟨⟨⟨⟨hm, hd⟩, ht⟩, hn⟩, hv⟩, hr⟩ := h
+         subst hm hd
+         rw [optTyEq_eq ht]
+         exact .decl _ _ _ (namesB_sound hn) (listB_sound hv) (blockB_sound hr))
+  | _, [], _ :: _, h | _, _ :: _, [], h => by simp [blockB] at h
+  termination_by structural _ ss _ _ => ss
+theorem casesB_sound {pkg : List String} {pm : String → Ren} :
+    ∀ {Γ : Ren} {cs cs' : List (Pat × Option Expr × Expr)}, casesB pkg pm Γ cs cs' = true →
+      CasesR pkg pm Γ cs cs'
+  | _, [], [], _ => .nil
+  | Γ, (p, g, b) :: cs, (p', g', b') :: cs', h => by
+    simp only [casesB] at h
+    split at h
+    · rename_i ss hp
+      simp only [Bool.and_eq_true, List.all_eq_true] at h
+      exact .cons (patB_sound hp) (fun Δ hΔ => optB_sound (h.1 Δ hΔ).1)
+        (fun Δ hΔ => exprB_sound (h.1 Δ hΔ).2) (casesB_sound h.2)
+    · cases h
+  | _, [], _ :: _, h | _, _ :: _, [], h => by simp [casesB] at h
+  termination_by structural _ cs _ _ => cs
+end
+
+/-! ### Declarations and programs -/
+
+theorem funcB_sound {pkg : List String} {pm : String → Ren} {f f' : Func} (h : funcB pkg pm f f' = true) :
+    FuncR pkg pm f f' := by
+  simp only [funcB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true,
+    List.mem_range] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hn, ht⟩, hns⟩, hnd⟩, hnd'⟩, hm⟩, hl⟩, hd⟩, hr⟩, hb⟩ := h
+  refine ⟨hn, optTysEq_eq ht, namesB_sound hns, ⟨hnd, hnd'⟩, hm, hl, fun j => ?_, optTyEq_eq hr,
+    exprB_sound hb⟩
+  by_cases hj : j < f.defaults.length
+  · exact optB_sound (hd j hj)
+  · have h1 : f.defaults.getD j none = none := by
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+    have h2 : f'.defaults.getD j none = none := by
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+    rw [h1, h2]; exact .none
+
+theorem fieldB_sound {pkg : List String} {pm : String → Ren} {a b : Field} (h : fieldB pkg pm a b = true) :
+    FieldR pkg pm a b := by
+  simp only [fieldB, Bool.and_eq_true] at h
+  exact ⟨fieldEq_eq h.1, optB_sound h.2⟩
+
+theorem varB_sound {pkg : List String} {pm : String → Ren} {v w : Variant} (h : varB pkg pm v w = true) :
+    VarR pkg pm v w := by
+  simp only [varB, Bool.and_eq_true, beq_iff_eq] at h
+  exact ⟨h.1.1, h.1.2, fall2B_sound (fun _ _ => fieldB_sound) h.2⟩
+
+theorem globalB_sound {pkg : List String} {pm : String → Ren} {g g' : GlobalDecl}
+    (h : globalB pkg pm g g' = true) : GlobalR pkg pm g g' := by
+  simp only [globalB, Bool.and_eq_true, beq_iff_eq] at h
+  exact ⟨h.1.1.1.1, h.1.1.1.2, h.1.1.2, optTyEq_eq h.1.2, listB_sound h.2⟩
+
+end Check
+
+open Check in
+/-- `alphaPkg` holds every function, struct and case name, and every package-level
+    variable's name. -/
+theorem alphaPkg_decls (ds : Decls) (gs : List GlobalDecl) (x : String)
+    (h : (ds.funcs.lookup x).isSome ∨ (ds.structs.lookup x).isSome ∨ (ds.variant? x).isSome) :
+    x ∈ alphaPkg ds gs := by
+  unfold alphaPkg
+  simp only [List.mem_append]
+  rcases h with h | h | h
+  · obtain ⟨f, hf⟩ := Option.isSome_iff_exists.mp h
+    exact Or.inl (Or.inl (Or.inl (List.mem_map.mpr ⟨_, mem_of_lookup hf, rfl⟩)))
+  · obtain ⟨f, hf⟩ := Option.isSome_iff_exists.mp h
+    exact Or.inl (Or.inl (Or.inr (List.mem_map.mpr ⟨_, mem_of_lookup hf, rfl⟩)))
+  · obtain ⟨⟨ty, v⟩, hv⟩ := Option.isSome_iff_exists.mp h
+    unfold Decls.variant? at hv
+    obtain ⟨s, hs, hfs⟩ := List.exists_of_findSome?_eq_some hv
+    obtain ⟨w, hw, _⟩ := Option.map_eq_some_iff.mp hfs
+    have hname := List.find?_some hw
+    simp only [beq_iff_eq] at hname
+    exact Or.inl (Or.inr (List.mem_flatMap.mpr
+      ⟨s, hs, List.mem_map.mpr ⟨w, List.mem_of_find?_eq_some hw, hname⟩⟩))
+
+/-- **The checker is sound**: when `alphaCheck` accepts two programs, they are related by
+    `AlphaProgram`, with `alphaPkg` and `alphaPm` computed from them. -/
+theorem alphaCheck_sound {p p' : Program} (h : alphaCheck p p' = true) :
+    AlphaProgram (alphaPkg (collect p).1 (collect p).2) (alphaPm (collect p).1 (collect p').1) p p' := by
+  unfold alphaCheck at h
+  simp only [Check.declsB, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨hf, hs⟩, hsh⟩, hse⟩, hu⟩, hg⟩ := h
+  refine ⟨⟨?_, ?_, ?_, hsh, ?_, hu, ?_⟩, Check.fall2B_sound (fun _ _ => Check.globalB_sound) hg, ?_⟩
+  · refine Check.fall2B_sound (fun a b hab => ?_) hf
+    simp only [Bool.and_eq_true, beq_iff_eq] at hab
+    exact ⟨hab.1.1, hab.1.2, Check.funcB_sound hab.2⟩
+  · intro f hf
+    unfold alphaPm
+    rw [hf]
+  · refine Check.fall2B_sound (fun a b hab => ?_) hs
+    simp only [Bool.and_eq_true, beq_iff_eq] at hab
+    exact ⟨hab.1, Check.fall2B_sound (fun _ _ => Check.fieldB_sound) hab.2⟩
+  · refine Check.fall2B_sound (fun a b hab => ?_) hse
+    simp only [Bool.and_eq_true, beq_iff_eq] at hab
+    exact ⟨hab.1, Check.fall2B_sound (fun _ _ => Check.varB_sound) hab.2⟩
+  · exact alphaPkg_decls _ _
+  · intro g hg x hx
+    unfold alphaPkg
+    exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨g, hg, hx⟩)
+
+/-- **Programs the checker accepts run the same way** (T2, through `alphaCheck_sound`). -/
+theorem alphaCheck_run {p p' : Program} (h : alphaCheck p p' = true) (n : Nat) :
+    OutcomeR (run p n).1 (run p' n).1 ∧ (run p n).2 = (run p' n).2 :=
+  run_alpha (alphaCheck_sound h) n
+
 end Gala.Spec
 
