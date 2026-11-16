@@ -21,15 +21,21 @@ import (
 // Tuple[A, B]), and returns it to Go spread over the results:
 //
 //	func (c *Counter) Write(p []byte) (int, error) {
-//		_goResult := func() std.Try[int] { ...body... }()
+//		var _goResult std.Try[int] = func() std.Try[int] { ...body... }()
 //		if _goResult.IsFailure() {
 //			return *new(int), _goResult.GetError()
 //		}
 //		return _goResult.Get(), nil
 //	}
 //
-// A body that is a Go call with those results already (`() =>
-// strconv.Atoi(s)`) returns the call's results as they are.
+// (A body that is one `return` assigns its value directly, with no thunk.)
+// Two bodies return Go's results as they are instead:
+//   - an EXPRESSION body that is a single Go call with those results
+//     (`= strconv.Atoi(s)`, `() => strconv.Atoi(s)`) returns the call;
+//   - a body whose value is the Tuple of every result, Tuple[T, error]
+//     (go_interop's ResultsOf), returns its components:
+//     `var _goResult std.Tuple[int, error] = …; return _goResult.V1.Get(),
+//     _goResult.V2.Get()` (see goResultsBody).
 
 // goResultsName is the local holding the body's value while it is spread.
 const goResultsName = "_goResult"
@@ -151,8 +157,10 @@ func (t *galaASTTransformer) spreadLambdaGoResults(fn *ast.FuncLit, slotType tra
 // call with assignable results (`os.Open(p)` for `func() (io.Reader,
 // error)`) fills it; a result left open (a type parameter of a generic Go
 // callee) takes its type from expr's value. ok is false when expr's value
-// cannot make the results.
-func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.Type, slot []transpiler.Type) (ast.Expr, bool) {
+// cannot make the results. mark, the expression's line marker (nil for none),
+// goes right above the statement holding the value, as returnGoResults
+// places an expression body's.
+func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.Type, slot []transpiler.Type, mark ast.Stmt) (ast.Expr, bool) {
 	var results *ast.FieldList
 	if v, _ := transpiler.GoResultValueOf(slot); !transpiler.ContainsUnusable(v.Type) && !t.hasTypeParams(v.Type) {
 		valueType = v.Type
@@ -166,7 +174,7 @@ func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.
 	body := &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}}
 	return &ast.FuncLit{
 		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: results},
-		Body: t.returnGoResults(body, true, t.typeToExpr(valueType), results),
+		Body: t.returnGoResults(body, true, t.typeToExpr(valueType), results, mark),
 	}, true
 }
 
@@ -210,7 +218,9 @@ func (t *galaASTTransformer) resultFieldList(types []transpiler.Type) *ast.Field
 // value — the `return` of the Go call, the spread's `var`, or the thunk's
 // first statement — so that statement carries the expression's line.
 func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, exprBody bool, valueType ast.Expr, goResults *ast.FieldList, lead ...ast.Stmt) *ast.BlockStmt {
-	lead = slices.DeleteFunc(slices.Clone(lead), func(s ast.Stmt) bool { return s == nil })
+	// lead is the caller's to give: a fresh variadic list, or finishLambda's
+	// own copy of its checks.
+	lead = slices.DeleteFunc(lead, func(s ast.Stmt) bool { return s == nil })
 	var value ast.Expr
 	if len(body.List) == 1 {
 		if ret, ok := body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {

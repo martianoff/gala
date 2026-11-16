@@ -4895,13 +4895,14 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// `Future(doSomething())` means `Future(() => doSomething())`. Lambdas and
 	// placeholder lambdas are handled by the earlier branches, so only bare
 	// expressions reach here.
-	if wrapped, ok := t.wrapExprAsThunkIfNeeded(expr, expectedType, s.tryThunk); ok {
+	// The thunk's body is led by e's line marker.
+	if wrapped, ok := t.wrapExprAsThunkIfNeeded(expr, expectedType, s.tryThunk, t.exprMark(e)); ok {
 		if t.inoutTypesSeen {
 			if err := t.checkInoutThunk(expr, s.tryThunk, e.at()); err != nil {
 				return nil, err
 			}
 		}
-		expr = t.exprFuncLit(e, wrapped)
+		expr = wrapped
 	}
 
 	return expr, nil
@@ -4929,7 +4930,11 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 // turned into the panic Try catches (see tryThunkValue). The one function
 // value that is wrapped is Try(f) with f returning only an `error`, which
 // means Try(() => f()) (see errorFuncThunk).
-func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type, tryThunk bool) (ast.Expr, bool) {
+//
+// mark, the line marker of the expression (nil for none), leads the thunk's
+// body; a thunk returning Go's several results takes it where returnGoResults
+// places it, right above the statement holding the value.
+func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type, tryThunk bool, mark ast.Stmt) (ast.Expr, bool) {
 	if expr == nil || expectedType == nil || expectedType.IsNil() {
 		return expr, false
 	}
@@ -4947,7 +4952,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// is the Failure, as it is for the call (see tryThunkValue).
 	if tryThunk {
 		if thunk, ok := t.errorFuncThunk(expr, exprType); ok {
-			return thunk, true
+			return withLead(thunk, mark), true
 		}
 	}
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
@@ -4957,16 +4962,16 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// Several results: the expression is their one GALA value, spread over
 	// them as a lambda's is (see spreadLambdaGoResults).
 	if len(ft.Results) > 1 {
-		return t.goResultsThunk(expr, exprType, ft.Results)
+		return t.goResultsThunk(expr, exprType, ft.Results, mark)
 	}
 
 	// Void thunk: `func()` expecting no result. The body is the expression as a
 	// statement, matching the void expression-lambda form `() => expr`.
 	if len(ft.Results) == 0 {
-		return &ast.FuncLit{
+		return withLead(&ast.FuncLit{
 			Type: &ast.FuncType{Params: &ast.FieldList{}},
 			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}},
-		}, true
+		}, mark), true
 	}
 
 	// Value thunk: `func() T`. The body mirrors the expression-lambda body
@@ -4984,7 +4989,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 			if concreteResult {
 				retTypeExpr = t.typeToExpr(resultType)
 			}
-			return thunkLit(thunkBody, retTypeExpr), true
+			return withLead(thunkLit(thunkBody, retTypeExpr), mark), true
 		}
 	}
 
@@ -5003,13 +5008,13 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
-	return &ast.FuncLit{
+	return withLead(&ast.FuncLit{
 		Type: &ast.FuncType{
 			Params:  &ast.FieldList{},
 			Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
 		},
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}},
-	}, true
+	}, mark), true
 }
 
 // liftToImmutableForArg wraps `expr` with `std.NewImmutable[T](expr)` when
