@@ -1,0 +1,266 @@
+{
+  "core": 9,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 331
+      },
+      "path": "formal/tests/src/default_cycle_run.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 6,
+            "col": 1,
+            "off": 235,
+            "end": 274
+          },
+          "name": "f",
+          "receiver": null,
+          "type-params": [],
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 6,
+                "col": 8,
+                "off": 242,
+                "end": 247
+              },
+              "name": "a",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 6,
+                  "col": 10,
+                  "off": 244,
+                  "end": 247
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "default": null
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 6,
+                "col": 15,
+                "off": 249,
+                "end": 261
+              },
+              "name": "b",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 6,
+                  "col": 17,
+                  "off": 251,
+                  "end": 254
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "default": {
+                "kind": "call",
+                "pos": {
+                  "line": 6,
+                  "col": 23,
+                  "off": 257,
+                  "end": 261
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 6,
+                    "col": 23,
+                    "off": 257,
+                    "end": 258
+                  },
+                  "name": "f"
+                },
+                "args": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 6,
+                      "col": 25,
+                      "off": 259,
+                      "end": 260
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 6,
+              "col": 29,
+              "off": 263,
+              "end": 266
+            },
+            "package": "",
+            "name": "int",
+            "args": []
+          },
+          "body": {
+            "kind": "binary",
+            "pos": {
+              "line": 6,
+              "col": 35,
+              "off": 269,
+              "end": 274
+            },
+            "op": "+",
+            "left": {
+              "kind": "name",
+              "pos": {
+                "line": 6,
+                "col": 35,
+                "off": 269,
+                "end": 270
+              },
+              "name": "a"
+            },
+            "right": {
+              "kind": "name",
+              "pos": {
+                "line": 6,
+                "col": 39,
+                "off": 273,
+                "end": 274
+              },
+              "name": "b"
+            }
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 8,
+            "col": 1,
+            "off": 276,
+            "end": 331
+          },
+          "name": "main",
+          "receiver": null,
+          "type-params": [],
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 8,
+              "col": 13,
+              "off": 288,
+              "end": 331
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 294,
+                  "end": 311
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 9,
+                    "col": 5,
+                    "off": 294,
+                    "end": 301
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 9,
+                      "col": 13,
+                      "off": 302,
+                      "end": 310
+                    },
+                    "text": "\"before\"",
+                    "value": "before",
+                    "raw": false
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 10,
+                  "col": 5,
+                  "off": 316,
+                  "end": 329
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 10,
+                    "col": 5,
+                    "off": 316,
+                    "end": 323
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 10,
+                      "col": 13,
+                      "off": 324,
+                      "end": 328
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 10,
+                        "col": 13,
+                        "off": 324,
+                        "end": 325
+                      },
+                      "name": "f"
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 10,
+                          "col": 15,
+                          "off": 326,
+                          "end": 327
+                        },
+                        "text": "0",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

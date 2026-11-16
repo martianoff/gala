@@ -856,11 +856,17 @@ def defaultCount (ds : Decls) : Nat :=
     mention too, since it may be a stable identifier.
 
     The default values a call leaves out are mentions of the call, and so are theirs in
-    turn. Each is expanded in a scope fixed by its callee and slot, so it mentions the same
-    names wherever it is expanded: a slot already being expanded (in `chain`) adds nothing
-    new, and is not expanded again. A chain of slots none of which repeats is at most
+    turn. A default that calls its own function and leaves itself out
+    (`func f(a int, b int = f(1))`) unfolds forever, but each default is expanded in a scope
+    fixed by its callee and slot, so it mentions the same names wherever it is expanded:
+    the names of the endless unfolding are those of the unfolding that stops at a slot
+    already being expanded (in `chain`). That is an argument, not a theorem here (gala2lean's
+    `refsInDefault` stops the same way). A chain of slots none of which repeats is at most
     `defaultCount` long (`mentions`), so the budget `k`, which makes the definition
-    terminate, cuts nothing off there. -/
+    terminate, cuts nothing off.
+
+    Defaults that share defaults without a cycle are expanded once per path, which can take
+    time exponential in the depth of such sharing, as before. -/
 def mentionsUpTo (ds : Decls) (k : Nat) (chain : List (String × Nat)) (bound : List String) :
     Expr → List String
   | .lit _ | .unsupported _ | .ret none => []
