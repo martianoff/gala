@@ -254,7 +254,7 @@ func (e *exporter) varDecl(v native.VarDeclarationNode) Node {
 func (e *exporter) function(f native.FunctionDeclarationNode) Node {
 	sig := f.Signature()
 	fn := of(e, &Func{Name: f.Identifier().GetText(), TypeParams: e.typeParams(f.TypeParameters()),
-		Params: mapNodes(sig.Parameters().ParameterList().AllParameter(), e.param)}, f.GalaNodeRef)
+		Params: mapNodes(sig.Parameters().ParameterList().AllParameter(), e.funcParam)}, f.GalaNodeRef)
 	if r := f.Receiver(); r.Ok() {
 		fn.Receiver = e.receiver(r)
 	}
@@ -308,15 +308,29 @@ func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 	return nil
 }
 
+// param is a lambda's parameter, which is never variadic.
 func (e *exporter) param(p native.ParameterNode) Node {
+	return e.paramOf(p, false)
+}
+
+// funcParam is a function's or method's parameter, which may be variadic,
+// `xs ...T`.
+func (e *exporter) funcParam(p native.ParameterNode) Node {
+	return e.paramOf(p, true)
+}
+
+func (e *exporter) paramOf(p native.ParameterNode, mayBeVariadic bool) Node {
 	if p.VAL().Ok() || p.VAR().Ok() {
 		return e.unsupported(UnsupportedParamModifier, p.GalaNodeRef)
 	}
-	if bad := e.unsupportedParam(p); bad != nil {
-		return bad
+	variadic := mayBeVariadic && p.ELLIPSIS().Ok() && p.Identifier().Ok()
+	if !variadic {
+		if bad := e.unsupportedParam(p); bad != nil {
+			return bad
+		}
 	}
 	return of(e, &Param{Name: p.Identifier().GetText(), Type: e.optType(p.Type_()), Default: e.paramDefault(p.ParamDefault()),
-		Inout: p.INOUT().Ok()}, p.GalaNodeRef)
+		Inout: p.INOUT().Ok(), Variadic: variadic}, p.GalaNodeRef)
 }
 
 // paramDefault is the default value d declares, or nil (JSON null) for none.
@@ -669,8 +683,8 @@ func (e *exporter) argValue(a native.ArgumentNode) Node {
 	if ep, ok := p.AsExpressionPattern(); ok {
 		return e.expr(ep.Expression().GalaNodeRef)
 	}
-	if _, ok := p.AsRestPattern(); ok {
-		return e.unsupported(UnsupportedSpreadArg, a.GalaNodeRef)
+	if rp, ok := p.AsRestPattern(); ok {
+		return of(e, &Spread{Value: e.expr(rp.Expression().GalaNodeRef)}, a.GalaNodeRef)
 	}
 	return e.unsupported(UnsupportedTypedPattern, a.GalaNodeRef)
 }

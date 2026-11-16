@@ -26,6 +26,7 @@ go_library(
         "stdfuncs.go",
         "stmt.go",
         "types.go",
+        "variadic.go",
     ],
     importpath = "martianoff/gala/internal/formal/gala2lean",
     visibility = ["//internal/formal:__subpackages__"],

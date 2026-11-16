@@ -52,7 +52,7 @@ func funcResult(t string) string {
 // returns their final values too).
 func (g *gen) funcDeclType(f *coreexport.Func) string {
 	t := paramsType(f.Params, f.Result)
-	if t == nil || len(f.TypeParams) > 0 || hasInout(f.Params) {
+	if t == nil || len(f.TypeParams) > 0 || hasInout(f.Params) || isVariadic(f.Params) {
 		return ""
 	}
 	return g.safeType(func() string { return g.funcTypeLean(t) })

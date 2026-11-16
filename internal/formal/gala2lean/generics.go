@@ -462,19 +462,28 @@ func (g *gen) unify(p coreexport.Node, t ltype, params []string, m map[string]st
 // call with the arguments args of a callee whose parameters are names of
 // types types: each type parameter's Lean type, as far as the arguments'
 // types are plain to see, "" for one not known.
-func (g *gen) instantiate(params, names []string, types []coreexport.Node, args []coreexport.Node, sc *scope, seen map[string]bool) map[string]string {
+func (g *gen) instantiate(params, names []string, types []coreexport.Node, variadic bool, args []coreexport.Node, sc *scope, seen map[string]bool) map[string]string {
 	m := map[string]string{}
 	for i, a := range args {
 		k := i
 		if na, ok := a.(*coreexport.NamedArg); ok {
 			k = slices.Index(names, na.Name)
+		} else if variadic && k >= len(names)-1 {
+			// Every argument from the variadic position on is one element.
+			k = len(names) - 1
 		}
 		if k < 0 || k >= len(types) || types[k] == nil {
 			continue
 		}
 		// Each argument's own cycle guard: a global two arguments name is
 		// typed for each.
-		t := g.safeType(func() string { return g.exprType(argNode(a), sc, maps.Clone(seen)) })
+		t := g.safeType(func() string {
+			if sp, ok := argNode(a).(*coreexport.Spread); ok && variadic && k == len(names)-1 {
+				// A spread slice gives its element type.
+				return sliceElem(g.exprType(sp.Value, sc, maps.Clone(seen)))
+			}
+			return g.exprType(argNode(a), sc, maps.Clone(seen))
+		})
 		if t != "" {
 			g.unify(types[k], parseLean(t), params, m)
 		}
@@ -493,7 +502,7 @@ func (g *gen) instFunc(f *coreexport.Func, args []coreexport.Node, sc *scope, se
 	if s == nil {
 		return nil
 	}
-	return g.instantiate(typeParamNames(f.TypeParams), s.names, s.types, args, sc, seen)
+	return g.instantiate(typeParamNames(f.TypeParams), s.names, s.types, s.variadic, args, sc, seen)
 }
 
 // instSig puts the type arguments of the call e of generic function f into
@@ -502,7 +511,7 @@ func (g *gen) instFunc(f *coreexport.Func, args []coreexport.Node, sc *scope, se
 // (func-type-arg); one not plain to see is left to Lean, and stops a
 // parameter type the translation needs (a lambda's).
 func (g *gen) instSig(f *coreexport.Func, s *sig, e *coreexport.Call, sc *scope) {
-	m := g.instantiate(typeParamNames(f.TypeParams), s.names, s.types, e.Args, sc, map[string]bool{})
+	m := g.instantiate(typeParamNames(f.TypeParams), s.names, s.types, s.variadic, e.Args, sc, map[string]bool{})
 	for _, lt := range m {
 		if strings.Contains(lt, "→") {
 			unsup(e.Pos, "func-type-arg")
@@ -527,7 +536,7 @@ func (g *gen) ctorOf(x string) string {
 // generic type name into s, its signature, as instSig does. A function type
 // argument is a field holding a function, as in a non-generic type.
 func (g *gen) instCtor(name string, s *sig, e *coreexport.Call, sc *scope) {
-	m := g.instantiate(g.typeParamNamesOf(name), s.names, s.types, e.Args, sc, map[string]bool{})
+	m := g.instantiate(g.typeParamNamesOf(name), s.names, s.types, false, e.Args, sc, map[string]bool{})
 	g.substSig(s, m, e.Pos)
 }
 
@@ -564,7 +573,7 @@ func (g *gen) ctorType(name string, fields []*coreexport.Field, args []coreexpor
 	for i, f := range fields {
 		names[i], types[i] = f.Name, f.Type
 	}
-	m := g.instantiate(params, names, types, args, sc, seen)
+	m := g.instantiate(params, names, types, false, args, sc, seen)
 	parts := []string{ident(name)}
 	for _, x := range params {
 		if m[x] == "" {

@@ -29,6 +29,8 @@
 //     panic.
 //   - Package-level val/var are initialized in Go's dependency order before
 //     main runs.
+//   - A variadic parameter is a Lean List of its arguments, which may only be
+//     spread or sized (variadic.go).
 //
 // A construct outside the translated subset is reported, with the
 // construct's name and position (UnsupportedError); nothing is ever left out

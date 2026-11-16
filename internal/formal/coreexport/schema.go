@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "core" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 10
+const Version = 11
 
 // Program is a Core JSON document: one or more source files.
 type Program struct {
@@ -135,6 +135,9 @@ type Param struct {
 	Default Node `json:"default"`
 	// Inout is true for an `inout` parameter, `inout name Type`.
 	Inout bool `json:"inout,omitempty"`
+	// Variadic is true for a function's or method's last parameter
+	// `name ...T` (version 11); Type is then the element type T.
+	Variadic bool `json:"variadic,omitempty"`
 }
 
 // Struct is `type Name struct { fields }`, or with Shorthand
@@ -385,6 +388,13 @@ type NamedArg struct {
 	Value Node   `json:"value"`
 }
 
+// Spread is a spread argument `value...` (version 11): a slice passed whole as
+// the arguments of a call's variadic parameter.
+type Spread struct {
+	Meta
+	Value Node `json:"value"`
+}
+
 // --- Functions as values ---
 
 // Lambda is `(params) [result] => body`. A parameter's Type is null when it
@@ -460,6 +470,7 @@ func (*PatLit) Kind() string      { return "pat-lit" }
 func (*PatTuple) Kind() string    { return "pat-tuple" }
 func (*PatExtract) Kind() string  { return "pat-extract" }
 func (*NamedArg) Kind() string    { return "named-arg" }
+func (*Spread) Kind() string      { return "spread" }
 func (*Lambda) Kind() string      { return "lambda" }
 func (*TypeFunc) Kind() string    { return "type-func" }
 func (*Interp) Kind() string      { return "interp" }
@@ -473,7 +484,7 @@ var nodeTypes = []Node{
 	&Int{}, &Bool{}, &String{}, &Name{}, &Unary{}, &AddressOf{}, &Binary{}, &Call{}, &Select{}, &Paren{}, &Tuple{},
 	&IfExpr{}, &Match{}, &Case{},
 	&PatWild{}, &PatName{}, &PatLit{}, &PatTuple{}, &PatExtract{},
-	&NamedArg{}, &Lambda{}, &TypeFunc{},
+	&NamedArg{}, &Spread{}, &Lambda{}, &TypeFunc{},
 	&Interp{}, &InterpText{},
 }
 
@@ -511,7 +522,6 @@ const (
 	UnsupportedCompositeLiteral = "composite-literal"
 	UnsupportedIndex            = "index"
 	UnsupportedNamedSubPattern  = "named-sub-pattern"
-	UnsupportedSpreadArg        = "spread-arg"
 	UnsupportedUnit             = "unit"
 	UnsupportedOneTuple         = "one-tuple"
 	UnsupportedLeadingZero      = "leading-zero"
@@ -544,7 +554,7 @@ var unsupportedKinds = []string{
 	UnsupportedParamModifier, UnsupportedParamDefault, UnsupportedVariadicParam,
 	UnsupportedUnnamedParam, UnsupportedBind, UnsupportedAlso, UnsupportedUse, UnsupportedFor,
 	UnsupportedIfInit, UnsupportedShortVarDecl, UnsupportedPartialFunction, UnsupportedPlaceholder,
-	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedSubPattern, UnsupportedSpreadArg,
+	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedSubPattern,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,
 	UnsupportedStringEscape,

@@ -33,6 +33,9 @@ type sig struct {
 	// lent is, for a call of it, the place each argument given to an inout
 	// parameter lends, by argument index (lendCall).
 	lent map[int]coreexport.Node
+	// variadic is true when the last parameter is variadic, `xs ...T`; its
+	// type in types is the element type T (variadic.go).
+	variadic bool
 }
 
 // stdCtors are the standard library's Option and Either constructors, which
@@ -64,6 +67,10 @@ func (g *gen) sigOf(x string) *sig {
 func funcSig(f *coreexport.Func, head string) *sig {
 	s := &sig{head: head, paramsInDefaults: true}
 	lends := hasInout(f.Params)
+	s.variadic = isVariadic(f.Params)
+	if lends && s.variadic {
+		unsup(f.Pos, "variadic-inout")
+	}
 	for _, pn := range f.Params {
 		p, ok := pn.(*coreexport.Param)
 		if !ok {
@@ -181,6 +188,9 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 // statement), so an argument that calls a pointer method writes its
 // receiver back there, in argument order (`x.m(x.n())`).
 func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]string, term) {
+	if s.variadic {
+		e = packCall(s, e)
+	}
 	given := bindArgs(s, e.Args, e.Pos)
 	paramOf := make([]int, len(e.Args))
 	for k, a := range given {
@@ -200,6 +210,10 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 				pre[i], vals[i], hoisted = items, term{code: res, pure: true}, true
 				continue
 			}
+		}
+		if p, ok := argNode(a).(*packed); ok {
+			vals[i] = g.packTerm(p, sc, s.types[paramOf[i]])
+			continue
 		}
 		vals[i] = g.exprExpect(argNode(a), sc, s.types[paramOf[i]])
 	}
@@ -369,6 +383,9 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	}
 	ft := g.calleeType(e.Callee, sc)
 	if s, ok := e.Callee.(*coreexport.Select); ok && ft == nil {
+		if t, ok := g.sliceSize(e, s, sc); ok {
+			return t
+		}
 		if t, ok := g.methodCall(e, s, sc); ok {
 			return t
 		}

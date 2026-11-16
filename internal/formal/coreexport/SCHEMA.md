@@ -1,4 +1,4 @@
-# Core JSON, version 10
+# Core JSON, version 11
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -13,6 +13,7 @@ the parts of S2 listed here:
 - interpolated strings, `s"..."` (S2);
 - lambdas, function types and functions as values (S2);
 - default values of parameters and fields, and named arguments (S2);
+- variadic parameters of functions and methods, and spread arguments `xs...`;
 - methods: a function with a receiver, by value or `*Type`;
 - generics: type parameters of functions, structs and sealed types, and type arguments
   of types (`Option[int]`); imports.
@@ -48,7 +49,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 10,
+  "core": 11,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -208,8 +209,8 @@ type.
 
 ### `param`
 
-A function or lambda parameter. Variadic parameters and `val`/`var` modifiers are
-unsupported.
+A function or lambda parameter. A variadic lambda parameter and the `val`/`var`
+modifiers are unsupported.
 
 - `name` (string).
 - `type` (type or null): null when left out.
@@ -217,6 +218,8 @@ unsupported.
   the spec decides where and when it is evaluated.
 - `inout` (bool, left out when false): an `inout` parameter, `inout c Counter`. The
   caller lends it a place with an [`address-of`](#address-of) argument.
+- `variadic` (bool, version 11, left out when false): a function's or method's last
+  parameter `xs ...T`. `type` is then the element type `T`; the body sees a slice of it.
 
 ```json
 { "kind": "param", "pos": "…", "name": "n", "type": { "kind": "type-name", "pos": "…", "package": "", "name": "int", "args": [] },
@@ -446,8 +449,8 @@ one level nests to the left: `a - b - c` is `(a - b) - c`.
 ### `call`
 
 `callee(args)`. Struct and variant construction (`Point(1, 2)`) and printing
-(`Println(x)`) are calls too: the exporter does not tell them apart. Spread arguments are
-unsupported; a lambda argument is a [`lambda`](#lambda).
+(`Println(x)`) are calls too: the exporter does not tell them apart. A spread argument is
+a [`spread`](#spread); a lambda argument is a [`lambda`](#lambda).
 
 - `callee` (expression).
 - `bracket` (object, version 10; absent when the call has none): the items of a
@@ -458,7 +461,8 @@ unsupported; a lambda argument is a [`lambda`](#lambda).
   - `types` (list or `null`): the items as types when every one reads as a type (a
     name, `pkg.Name`, or such a name applied to `[...]` items of the same form), else
     `null`.
-- `args` (list): in source order, each an expression or a [`named-arg`](#named-arg).
+- `args` (list): in source order, each an expression, a [`spread`](#spread) or a
+  [`named-arg`](#named-arg).
   The exporter does not reorder named arguments or fill in defaults.
 
 ```json
@@ -597,11 +601,22 @@ The pattern `(p1, p2, ...)`, two or more elements.
 A named argument of a call, `f(x = 1)` (S2), in its place among the arguments.
 
 - `name` (string): the parameter or field it names.
-- `value` (expression or [`lambda`](#lambda)).
+- `value` (expression, [`spread`](#spread) or [`lambda`](#lambda)).
 
 ```json
 { "kind": "named-arg", "pos": "…", "name": "divisor",
   "value": { "kind": "int", "pos": "…", "text": "4" } }
+```
+
+### `spread`
+
+A spread argument `value...` (version 11): a slice given whole as the arguments of the
+callee's variadic parameter, `f(xs...)`.
+
+- `value` (expression): the slice.
+
+```json
+{ "kind": "spread", "pos": "…", "value": { "kind": "name", "pos": "…", "name": "xs" } }
 ```
 
 ### `lambda`
@@ -675,7 +690,7 @@ Every name an `unsupported` node can carry.
 | `go-results` | a Go-style multiple result list `(T1, T2)` |
 | `param-modifier` | a function parameter marked `val` or `var`, or a parameter of a function type marked `inout` |
 | `param-default` | a parameter of a function type with a default value, `func(x int = 1)` |
-| `variadic-param` | a variadic parameter or field, `xs ...T` |
+| `variadic-param` | a variadic parameter of a lambda or a function type, or a variadic field, `xs ...T` |
 | `unnamed-param` | a parameter or field with a type and no name |
 | `bind` | a `bind` declaration |
 | `also` | an `also` declaration |
@@ -688,7 +703,6 @@ Every name an `unsupported` node can carry.
 | `composite-literal` | a Go composite literal, `T{...}` |
 | `index` | indexing, `x[i]`, and brackets not written right before a call (`id[int]` as a value); a call `x[items](args)` keeps its brackets in [`call`](#call)'s `bracket` |
 | `named-sub-pattern` | a named sub-pattern of an extractor, `case Rect(Height = h)` |
-| `spread-arg` | a spread argument, `f(xs...)` |
 | `unit` | `()` |
 | `one-tuple` | `(a,)` |
 | `leading-zero` | an integer literal with a leading zero, `0755`, which Go reads as octal |
