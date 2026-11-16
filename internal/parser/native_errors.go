@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -28,14 +30,46 @@ import (
 // the rest the parse never reaches, as when an expression's parse stops
 // before them, and they are not reported.
 //
-// The Go function literals of the tree (GALA-E0117, goFuncLiterals) are
-// merged in by position, so a literal leads the syntax errors of its body.
-func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError) []error {
-	errs := nativeParseErrors(tree, ts, parseErrs)
-	if tree == nil {
-		return errs
+// The Go function literals of the tree (GALA-E0117, goFuncLiterals) and the
+// other Go constructs of the tokens (GALA-E0121 to GALA-E0132, goHabits) are
+// merged in by position, so a construct leads the syntax errors after it.
+//
+// When there are constructs of goHabits, the syntax errors are those of
+// reparse, the parse of ts, run on the tokens without them (withoutHabits):
+// the errors they caused, and the recovery's cascade after them, are gone.
+// reparse is nil for no retry; a galop panic in it keeps the first parse.
+func nativeSyntaxErrors(tree *native.GalaTree, ts *native.GalaTokens, parseErrs []native.GalaParseError,
+	reparse func(*native.GalaTokens) (*native.GalaTree, []native.GalaParseError)) []error {
+	// Each construct fails to parse or to lex, so a clean parse has none:
+	// the scan never judges a program the grammar accepts.
+	var habits []goHabit
+	if len(parseErrs) > 0 || len(ts.Errors) > 0 {
+		habits = inFailedDeclarations(ts, goHabits(ts), parseErrs)
 	}
-	return mergeByPosition(errs, goFuncLiterals(tree))
+	if len(habits) > 0 && reparse != nil {
+		retry := withoutHabits(ts, habits)
+		var retryTree *native.GalaTree
+		var retryErrs []native.GalaParseError
+		if underGalop("parser", ts.Src, 0, 0, func() { retryTree, retryErrs = reparse(retry) }) == nil {
+			tree, ts, parseErrs = retryTree, retry, retryErrs
+		}
+	}
+	errs := nativeParseErrors(tree, ts, parseErrs)
+	var found []*galaerr.SemanticError
+	if tree != nil {
+		found = goFuncLiterals(tree)
+	}
+	for _, h := range habits {
+		if h.err != nil { // nil: cut without a diagnostic of its own
+			found = append(found, h.err)
+		}
+	}
+	if len(habits) > 0 {
+		slices.SortStableFunc(found, func(a, b *galaerr.SemanticError) int {
+			return cmp.Or(cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
+		})
+	}
+	return mergeByPosition(errs, found)
 }
 
 // nativeParseErrors is the lexical and parse errors of nativeSyntaxErrors.

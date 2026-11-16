@@ -1668,6 +1668,31 @@ Bare Go builtins are **not** part of GALA's surface: calling one is a transpile 
 | `close(ch)` | `go_interop.CloseChan(ch)` (or `CloseSignal` for a `go_interop.Signal`; see [signal channels](/docs/go-interop/#signal-channels-and-anonymous-struct-types)) |
 | `panic(v)` | `go_builtins.Panic(v)` — but prefer `Option` / `Try` / `Either` |
 | `recover()` | not available — `Try` captures panics |
+| `min(a, b)`, `max(a, b)` | `if (a < b) a else b`; `math.Min` / `math.Max` for float64; `slices.Min` / `slices.Max` on a Go slice |
+| `clear(c)` | `.Clear()` on a `collection_mutable` collection; a new Go map from `go_interop.MapEmpty` |
+
+A `make` of a Go type, `make([]T, n)` or `make(map[K]V)`, is reported by the parser, before the call is read, with the exact `go_interop` call for the type and arguments written.
+
+### Go Declaration and Statement Forms
+
+Go forms GALA has no syntax for are each a coded error whose hint spells the GALA form for the code written:
+
+| Go form | GALA form | Code |
+|---|---|---|
+| `const N = 10`, `const ( ... )` | `val N = 10`; an `iota` enumeration is a `sealed type` | [GALA-E0121](/docs/errors/gala-e0121/) |
+| `var ( ... )`, `type ( ... )` | one declaration per name | [GALA-E0122](/docs/errors/gala-e0122/) |
+| `switch x { case 1, 2: ... default: ... }` | `x match { case 1 \| 2 => ... case _ => ... }`; a tagless switch is an `if` chain | [GALA-E0123](/docs/errors/gala-e0123/) |
+| `x.(T)`, `switch v := x.(type)` | `x match { case v: T => ... case _ => ... }` | [GALA-E0124](/docs/errors/gala-e0124/) |
+| `interface{}`, an inline interface, `[16]byte` | `any`; a declared interface; a slice or an `Array` | [GALA-E0125](/docs/errors/gala-e0125/) |
+| embedded field `Base`, embedded interface `io.Reader` | a named field `Base Base`; the interface's methods | [GALA-E0126](/docs/errors/gala-e0126/) |
+| `~int \| ~float64` constraints | `cmp.Ordered`, or a constraint in a `.go` file | [GALA-E0127](/docs/errors/gala-e0127/) |
+| `s[i:j]`, `s[i:]`, `s[:j]` | `.Slice(i, j)`, `.Drop(i)`, `.Take(j)`; `go_interop.Slice` / `SliceDrop` / `SliceTake` | [GALA-E0128](/docs/errors/gala-e0128/) |
+| `outer:`, `break outer`, `continue outer` | a flag `var`, or a function and `return` | [GALA-E0129](/docs/errors/gala-e0129/) |
+| `func f() (n int, err error)` | `func f() (int, error)` | [GALA-E0130](/docs/errors/gala-e0130/) |
+| `[K, V any]` | `[K any, V any]` | [GALA-E0131](/docs/errors/gala-e0131/) |
+| `return a, b` | `return (a, b)`; `Success(v)` / `Failure(err)` for `(T, error)` | [GALA-E0132](/docs/errors/gala-e0132/) |
+
+GALA has no slice syntax on purpose: Go slices are an interop type, reached through `go_interop`.
 
 ### Names That Are Go Keywords
 

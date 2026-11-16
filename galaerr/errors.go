@@ -298,7 +298,9 @@ const (
 	CodeUntypedParam ErrorCode = "GALA-E0034"
 
 	// E0035: a bare Go builtin (append, make, new, cap, copy, delete, close,
-	// complex, real, imag, panic, recover, len) was called as a function. These
+	// complex, real, imag, panic, recover, len, min, max, clear) was called as
+	// a function; the parser reports a `make` whose type argument no GALA
+	// expression can spell (`make([]int, n)`) from its tokens. These
 	// are the last symbols that resolved with no import and no GALA declaration
 	// — an implicit Go leakage the language forbids. Each has a GALA-native or
 	// sanctioned interop replacement (`.Size()`/`.ByteSize()`, the go_interop
@@ -1071,6 +1073,67 @@ const (
 	// import, `import _ "path"`, imports a package for its initialization
 	// only, and is never reported.
 	CodeUnusedImport ErrorCode = "GALA-E0120"
+
+	// E0121 to E0132 are Go constructs GALA has no form for, written in a
+	// GALA file. Each used to stop the parser with a raw message ("mismatched
+	// input 'const'", "no viable alternative at input '[16'") and a cascade
+	// of "extraneous input" errors, none naming the GALA form. The parser
+	// finds each in the file's tokens (go_habits.go in internal/parser),
+	// reports it with its GALA spelling, and drops the syntax errors it
+	// caused.
+
+	// E0121: a Go `const` declaration, `const N = 10` or a `const ( ... )`
+	// block. GALA declares a constant with `val`.
+	CodeGoConst ErrorCode = "GALA-E0121"
+
+	// E0122: a Go declaration group, `var ( ... )`, `val ( ... )` or
+	// `type ( ... )`. GALA declares one name per declaration.
+	CodeGoDeclGroup ErrorCode = "GALA-E0122"
+
+	// E0123: a Go `switch` statement: an expression switch, a tagless
+	// `switch { ... }` or a type switch. GALA branches with `match` or an
+	// `if` chain.
+	CodeGoSwitch ErrorCode = "GALA-E0123"
+
+	// E0124: a Go type assertion, `x.(T)`. GALA tests a value's type with a
+	// type pattern in a `match`.
+	CodeGoTypeAssertion ErrorCode = "GALA-E0124"
+
+	// E0125: a Go type that GALA cannot spell: `interface{}` (GALA's is
+	// `any`), an interface type written inline, or a fixed-size array type
+	// `[N]T`.
+	CodeGoTypeForm ErrorCode = "GALA-E0125"
+
+	// E0126: an embedded field in a struct (`Base`, `*Base`) or an embedded
+	// interface in an interface (`io.Reader`). GALA fields are named, and an
+	// interface lists its methods.
+	CodeGoEmbedded ErrorCode = "GALA-E0126"
+
+	// E0127: a Go type-set constraint: a union (`int | float64`) or an
+	// approximation (`~int`), in an interface or a type parameter's
+	// constraint.
+	CodeGoTypeSetConstraint ErrorCode = "GALA-E0127"
+
+	// E0128: a Go slice expression, `s[i:j]`, `s[i:]`, `s[:j]`. GALA has no
+	// slice syntax: a collection has Slice, Drop and Take, and a Go slice
+	// the go_interop functions of the same names.
+	CodeGoSliceExpr ErrorCode = "GALA-E0128"
+
+	// E0129: a Go label, `outer:`, or a labeled `break outer` /
+	// `continue outer`. GALA's break and continue take no label.
+	CodeGoLabel ErrorCode = "GALA-E0129"
+
+	// E0130: Go named results, `func f() (n int, err error)`. GALA results
+	// have no names.
+	CodeGoNamedResults ErrorCode = "GALA-E0130"
+
+	// E0131: Go grouped type parameters, `[K, V any]`. Each GALA type
+	// parameter has its own constraint: `[K any, V any]`.
+	CodeGoGroupedTypeParams ErrorCode = "GALA-E0131"
+
+	// E0132: a Go multiple return, `return a, b`. A GALA function returns
+	// one value: a tuple for a Go result list, a Try for `(T, error)`.
+	CodeGoMultiReturn ErrorCode = "GALA-E0132"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

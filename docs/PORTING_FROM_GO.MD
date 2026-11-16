@@ -51,21 +51,21 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `n, err := strconv.Atoi(s)` | Same, and gives Go's raw values; in GALA code prefer the `Try`: `val n = strconv.Atoi(s)` ([below](#t-error-try-or-gos-result-list)) | Works |
 | `v, ok := m[k]` on a Go map | Same, or `val v, ok = m[k]`; `go_interop.OptionFromMap(m, k)` gives an `Option` | Works |
 | `a, b = b, a` | Same | Works |
-| `const N = 10` | `val N = 10` ([below](#const-exported-values-and-methods-on-scalar-types)); a constant a Go API must keep stays in a `.go` file | Parse error |
-| `iota` | A `sealed type` for an enumeration; a Go `const` block in a `.go` file when the numbers matter | Parse error (`const`) |
+| `const N = 10` | `val N = 10` ([below](#const-exported-values-and-methods-on-scalar-types)); a constant a Go API must keep stays in a `.go` file | [GALA-E0121](errors/GALA-E0121.md) |
+| `iota` | A `sealed type` for an enumeration; a Go `const` block in a `.go` file when the numbers matter | [GALA-E0121](errors/GALA-E0121.md) |
 | `type Point struct { X int }` | Same block form, or the shorthand `struct Point(X int)`. Fields are immutable unless declared `var` | Works |
 | `Point{X: 1}` | Same, or GALA's `Point(X = 1)` | Works |
 | `type Celsius float64` with methods | `opaque type Celsius float64` ([below](#const-exported-values-and-methods-on-scalar-types)) | [GALA-E0048](errors/GALA-E0048.md) on the method: `type X Y` is an alias in GALA |
 | `type Name = string` | `type Name string` (no `=`; it is an alias) | Parse error |
-| `type Number interface { ~int \| ~float64 }` | None in GALA syntax: declare the constraint in a `.go` file, or use one such as `cmp.Ordered` | Parse error |
-| `type RW interface { io.Reader; io.Writer }` | List the methods; embedded interfaces have no GALA form | Parse error |
-| `interface{}` | `any` | Parse error |
+| `type Number interface { ~int \| ~float64 }` | None in GALA syntax: declare the constraint in a `.go` file, or use one such as `cmp.Ordered` | [GALA-E0127](errors/GALA-E0127.md) |
+| `type RW interface { io.Reader; io.Writer }` | List the methods; embedded interfaces have no GALA form | [GALA-E0126](errors/GALA-E0126.md) |
+| `interface{}` | `any` | [GALA-E0125](errors/GALA-E0125.md) |
 | struct tags, `` Name string `json:"name"` `` | `Codec[T]` keys, or the type in a `.go` file ([below](#struct-tags-a-codec-or-a-go-file)) | [GALA-E0085](errors/GALA-E0085.md) |
-| embedded fields, `struct { Base; Name string }` | Name the field (`Base Base`) and call through it, or keep the type in a `.go` file | Parse error |
+| embedded fields, `struct { Base; Name string }` | Name the field (`Base Base`) and call through it, or keep the type in a `.go` file | [GALA-E0126](errors/GALA-E0126.md) |
 | `struct { X int }` (anonymous struct type) | A named struct; a Go value of such a type can be used but not named | Parse error; [GALA-E0090](errors/GALA-E0090.md) where the generated Go would have to write the type |
 | `map[string]struct{}` (a set) | `HashSet[string]` from `collection_immutable` | Parse error |
-| `[16]byte` (fixed-size array) | None: a slice, or the type in a `.go` file | Parse error |
-| `x.(T)`, `v, ok := x.(T)` | `x match { case v: T => ... case _ => ... }` | Parse error |
+| `[16]byte` (fixed-size array) | None: a slice, or the type in a `.go` file | [GALA-E0125](errors/GALA-E0125.md) |
+| `x.(T)`, `v, ok := x.(T)` | `x match { case v: T => ... case _ => ... }` | [GALA-E0124](errors/GALA-E0124.md) |
 | `var p *T` / `*p = 3` | Same; a pointer GALA creates is a `Ptr[T]`, never nil ([GALA-E0080](errors/GALA-E0080.md)) | Works |
 | `val sb = strings.Builder{}` then `sb.WriteString(...)` | `var sb strings.Builder` (also `sync.Mutex`, `bytes.Buffer`) | [GALA-E0053](errors/GALA-E0053.md) |
 | a name that is a Go keyword, `default := 1` | Another name | [GALA-E0055](errors/GALA-E0055.md) |
@@ -77,15 +77,15 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `func f(a, b int) int { return a + b }` | Same, but each parameter has its own type: `func f(a int, b int) int = a + b` | [GALA-E0034](errors/GALA-E0034.md) for `a, b int` |
 | `return x` at the end of a block | Same; the last expression of a block is its value, so `x` alone also works | Works |
 | `func f() (int, error)` | Same signature; the body gives a `Try[int]` ([below](#t-error-try-or-gos-result-list)) | Works |
-| `return 0, err` / `return n, nil` | `Failure(err)` / `Success(n)` | Parse error |
-| named results, `func f() (n int, err error)` | Unnamed results | Parse error |
+| `return 0, err` / `return n, nil` | `Failure(err)` / `Success(n)` | [GALA-E0132](errors/GALA-E0132.md) |
+| named results, `func f() (n int, err error)` | Unnamed results | [GALA-E0130](errors/GALA-E0130.md) |
 | `func(x int) int { return x + 1 }` | A lambda: `(x int) => x + 1` | [GALA-E0117](errors/GALA-E0117.md) |
 | `Cmd{Run: func() string { ... }}` | `Cmd(Run = () => ...)`: the lambda takes its types from the field | [GALA-E0117](errors/GALA-E0117.md) |
 | a named `func` inside a function | `val helper = (x int) => ...`; for recursion, `var fact func(int) int` then assign | [GALA-E0052](errors/GALA-E0052.md) |
 | `func sum(xs ...int)`, `f(xs...)` | Same | Works |
 | `func f(_ int)` | Same | Works |
 | `func (c *Counter) Inc()` | Same | Works |
-| `func Map[T, U any](...)` | Each type parameter with its own constraint: `[T any, U any]`; call with or without type arguments | Parse error for `[T, U any]` |
+| `func Map[T, U any](...)` | Each type parameter with its own constraint: `[T any, U any]`; call with or without type arguments | [GALA-E0131](errors/GALA-E0131.md) |
 | `f := strings.ToUpper`, `w := sb.WriteString` | Same (function and method values) | Works |
 | `func init()`, `func main()` | Same | Works |
 | `http.HandlerFunc(func(w, r) {...})` | `http.HandlerFunc((w, r) => { ... })` | [GALA-E0117](errors/GALA-E0117.md) |
@@ -97,17 +97,17 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `if cond { ... } else { ... }` | Same | Works |
 | `if v, err := f(); err != nil` | `f() match { case Success(v) => ... case Failure(e) => ... }`, or `.GetOrElse(...)` | [GALA-E0047](errors/GALA-E0047.md) |
 | `c ? a : b` (not Go, but often reached for) | `if (c) a else b` is an expression | Parse error |
-| `switch x { case 1: ... }` | `x match { case 1 => ... case _ => ... }` ([below](#switch-match-or-an-if-chain)) | Parse error |
-| `case 1, 2:` | `case 1 \| 2 =>` | Parse error |
-| `case MaxSize:` (a constant) | `case MaxSize =>`: a capitalized name in scope compares | Parse error (`switch`) |
-| `switch { case x < 10: ... }` | `if (x < 10) ... else if ...`, or a match with guards | Parse error |
-| `switch v := x.(type)` | `x match { case v: int => ... }` | Parse error |
+| `switch x { case 1: ... }` | `x match { case 1 => ... case _ => ... }` ([below](#switch-match-or-an-if-chain)) | [GALA-E0123](errors/GALA-E0123.md) |
+| `case 1, 2:` | `case 1 \| 2 =>` | [GALA-E0123](errors/GALA-E0123.md) |
+| `case MaxSize:` (a constant) | `case MaxSize =>`: a capitalized name in scope compares | [GALA-E0123](errors/GALA-E0123.md) |
+| `switch { case x < 10: ... }` | `if (x < 10) ... else if ...`, or a match with guards | [GALA-E0123](errors/GALA-E0123.md) |
+| `switch v := x.(type)` | `x match { case v: int => ... }` | [GALA-E0123](errors/GALA-E0123.md) |
 | `fallthrough` | Combine the cases with `\|`, or call a shared function | [GALA-E0036](errors/GALA-E0036.md) |
 | `goto` | Structured control flow | [GALA-E0036](errors/GALA-E0036.md) (with a label: [GALA-E0023](errors/GALA-E0023.md), undefined label) |
 | `for i := 0; i < n; i++`, `for cond`, `for` | Same | Works |
 | `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same | Works |
 | `break`, `continue` | Same | Works |
-| `break outer` / `continue outer` (labels) | None: a flag `var`, or a function and `return` | Parse error |
+| `break outer` / `continue outer` (labels) | None: a flag `var`, or a function and `return` | [GALA-E0129](errors/GALA-E0129.md) |
 
 ## Builtins and expressions
 
@@ -116,8 +116,8 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `len(s)` | `s.Size()` (characters of a string, elements of a collection or Go slice) or `s.ByteSize()` (bytes, which is what Go's `len` counts on a string) | [GALA-E0035](errors/GALA-E0035.md) |
 | `cap(s)` | `go_interop.SliceCap(s)` | [GALA-E0035](errors/GALA-E0035.md) |
 | `append(s, x)`, `append(s, t...)` | `go_interop.SliceAppend(s, x)`, `SliceAppendAll(s, t)`; `Array.Append` | [GALA-E0035](errors/GALA-E0035.md) |
-| `make([]T, n)`, `make([]T, 0, n)` | `go_interop.SliceWithSize[T](n)`, `SliceWithCapacity[T](n)` | Parse error |
-| `make(map[K]V)` | `go_interop.MapEmpty[K, V]()`, or `EmptyHashMap[K, V]()` | Parse error |
+| `make([]T, n)`, `make([]T, 0, n)` | `go_interop.SliceWithSize[T](n)`, `SliceWithCapacity[T](n)` | [GALA-E0035](errors/GALA-E0035.md) |
+| `make(map[K]V)` | `go_interop.MapEmpty[K, V]()`, or `EmptyHashMap[K, V]()` | [GALA-E0035](errors/GALA-E0035.md) |
 | `new(T)` | `go_interop.New[T]()`, or `&T(...)` | [GALA-E0035](errors/GALA-E0035.md) |
 | `delete(m, k)` | `go_interop.MapDelete(m, k)`; `HashMap.Remove(k)` | [GALA-E0035](errors/GALA-E0035.md) |
 | `copy(dst, src)` | `go_interop.SliceCopy(src)` returns a new copy; filling an existing `dst` in place has no helper (write a loop, or keep it in Go) | [GALA-E0035](errors/GALA-E0035.md) |
@@ -125,13 +125,13 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `complex`, `real`, `imag` | `go_interop.Complex`, `Real`, `Imag` | [GALA-E0035](errors/GALA-E0035.md) |
 | `panic(v)` | `Failure(err)` in a `Try`; `go_builtins.Panic(v)` for a broken invariant ([below](#panic-and-recover-try-first)) | [GALA-E0035](errors/GALA-E0035.md) |
 | `recover()` | `Try(() => ...)` turns a panic into a `Failure` | [GALA-E0035](errors/GALA-E0035.md) |
-| `min(a, b)`, `max(a, b)`, `clear(m)` | `if (a < b) a else b`; `slices.Min`/`slices.Max` on a Go slice; a new map from `MapEmpty` | [GALA-E0023](errors/GALA-E0023.md) (undefined) |
+| `min(a, b)`, `max(a, b)`, `clear(m)` | `if (a < b) a else b`; `slices.Min`/`slices.Max` on a Go slice; a new map from `MapEmpty` | [GALA-E0035](errors/GALA-E0035.md) |
 | `println(x)`, `print(x)` | `Println(x)`, `Print(x)`: built in, no import | Works (Go's builtin, writing to stderr) |
 | `[]int{1, 2}` | `go_interop.SliceOf(1, 2)`; `ArrayOf(1, 2)` | [GALA-E0007](errors/GALA-E0007.md) |
 | `map[string]int{"a": 1}` | `HashMapOf(("a", 1))`; `go_interop.MapEmpty` and `MapPut` | [GALA-E0008](errors/GALA-E0008.md) |
 | `[]byte(s)`, `[]rune(s)` | `go_interop.ToBytes(s)`, `ToRunes(s)` | [GALA-E0040](errors/GALA-E0040.md) |
 | `string(b)`, `int(f)`, `float64(n)`, `string(rune(65))` | Same | Works |
-| `s[a:b]`, `s[a:]`, `s[:b]` | `go_interop.Slice(s, a, b)`, `SliceDrop(s, a)`, `SliceTake(s, b)`; on a string, `strings` or a GALA string method | Parse error |
+| `s[a:b]`, `s[a:]`, `s[:b]` | `go_interop.Slice(s, a, b)`, `SliceDrop(s, a)`, `SliceTake(s, b)`; on a string, `strings` or a GALA string method | [GALA-E0128](errors/GALA-E0128.md) |
 | `s[i]`, `m[k]`, `m[k] = v` | Same | Works |
 | `fmt.Sprintf("%d items", n)` | Works; `s"${n} items"` and `f"${x}%.2f"` are the GALA forms | Works |
 | `&Point{X: 1}` | Same, or `&Point(X = 1)` | Works |
@@ -169,7 +169,7 @@ The table above covers each builtin; [the worked section](#slices-and-maps-go_in
 |----|------|--------------------------|
 | `go f()` | `go_interop.Spawn(() => f())`; or a `Future` from `concurrent` | [GALA-E0036](errors/GALA-E0036.md) |
 | fan-out with goroutines and a result channel | `Traverse(items, (x) => Future(...))`, `Sequence`, then `Await()` ([below](#goroutines-channels-and-select)) | — |
-| `chan T`, `make(chan T)`, `ch <- v` | None: a `Future`/`Promise`, `EventBus` from `concurrent`, or a `.go` file that owns the channel | [GALA-E0055](errors/GALA-E0055.md) for `chan T`; parse error for `make(chan T)` and `ch <- v` |
+| `chan T`, `make(chan T)`, `ch <- v` | None: a `Future`/`Promise`, `EventBus` from `concurrent`, or a `.go` file that owns the channel | [GALA-E0055](errors/GALA-E0055.md) for `chan T`; [GALA-E0035](errors/GALA-E0035.md) for `make(chan T)`; parse error for `ch <- v` |
 | `<-ch` on a channel a Go API returns | Same | Works |
 | `chan struct{}` as a done signal | `go_interop.NewSignal()`, `CloseSignal`, `WaitClosed`, `IsClosed` | [GALA-E0055](errors/GALA-E0055.md) |
 | `select` with `time.After` | `go_interop.WaitClosedTimeout(ch, d)`, `Future.AwaitFor(d)`, `WithTimeout` | [GALA-E0055](errors/GALA-E0055.md) |

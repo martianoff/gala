@@ -164,8 +164,17 @@ var otherCheckOwnedNames = func() map[string]bool {
 	for name := range transformer.ForbiddenStatementKeywords() {
 		out[name] = true
 	}
+	for name := range builtinsReportedHere {
+		delete(out, name)
+	}
 	return out
 }()
+
+// builtinsReportedHere are the Go builtins of GALA-E0035 this check reports
+// itself, as GALA-E0035, wherever the name is used and resolves to nothing:
+// the transformer's check sees calls only, and `xs.FoldLeft(0, max)` passes
+// `max` as a value. The older builtins keep the transformer's check alone.
+var builtinsReportedHere = map[string]bool{"min": true, "max": true, "clear": true}
 
 // isGoPredeclaredTypeName reports whether name is one of Go's predeclared type
 // names. They reach expression position as conversions (`int(x)`) and as
@@ -1088,6 +1097,14 @@ func (c *undefChecker) reportWith(name string, at scopewalk.Site, msg, hint stri
 		}
 		return
 	}
+	code := galaerr.CodeUndefinedVariable
+	if builtinsReportedHere[name] && msg == "" && hint == "" {
+		if suggestion, ok := transformer.ForbiddenGoBuiltinHint(name); ok {
+			code = galaerr.CodeForbiddenGoBuiltin
+			msg = fmt.Sprintf("bare Go builtin %q is not part of GALA's surface", name+"(...)")
+			hint = suggestion
+		}
+	}
 	if msg == "" {
 		msg = fmt.Sprintf("undefined: %s", name)
 	}
@@ -1095,7 +1112,7 @@ func (c *undefChecker) reportWith(name string, at scopewalk.Site, msg, hint stri
 		hint = c.hintFor(name)
 	}
 	err := galaerr.NewCodedSemanticError(
-		galaerr.CodeUndefinedVariable,
+		code,
 		at.Line, at.Column, msg, hint,
 	).WithSpan(span)
 	c.reported[name] = len(c.errs)

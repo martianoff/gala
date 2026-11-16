@@ -2096,6 +2096,222 @@ func main() {
 			code:   galaerr.CodePackageNotFound, // GALA-E0020
 			render: renderGoModuleNotRequiredRepro,
 		},
+		{
+			name: "make of a Go slice type",
+			code: galaerr.CodeForbiddenGoBuiltin, // GALA-E0035
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val buf = make([]byte, 64)
+    Println(buf)
+}
+`)
+			},
+		},
+		{
+			name: "Go const declaration",
+			code: galaerr.CodeGoConst, // GALA-E0121
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+const MaxRetries = 3
+
+func main() {
+    Println(MaxRetries)
+}
+`)
+			},
+		},
+		{
+			name: "Go var group",
+			code: galaerr.CodeGoDeclGroup, // GALA-E0122
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+var (
+    host = "localhost"
+    port = 8080
+)
+
+func main() {
+    Println(host, port)
+}
+`)
+			},
+		},
+		{
+			name: "Go expression switch",
+			code: galaerr.CodeGoSwitch, // GALA-E0123
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func describe(n int) string {
+    switch n {
+    case 1, 2:
+        return "small"
+    default:
+        return "large"
+    }
+}
+
+func main() {
+    Println(describe(2))
+}
+`)
+			},
+		},
+		{
+			name: "Go type assertion",
+			code: galaerr.CodeGoTypeAssertion, // GALA-E0124
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func show(v any) string {
+    val n = v.(int)
+    return s"int $n"
+}
+
+func main() {
+    Println(show(42))
+}
+`)
+			},
+		},
+		{
+			name: "Go empty interface",
+			code: galaerr.CodeGoTypeForm, // GALA-E0125
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func show(v interface{}) {
+    Println(v)
+}
+
+func main() {
+    show(42)
+}
+`)
+			},
+		},
+		{
+			name: "Go embedded struct field",
+			code: galaerr.CodeGoEmbedded, // GALA-E0126
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Base struct {
+    ID int
+}
+
+type User struct {
+    Base
+    Name string
+}
+
+func main() {
+    Println("users")
+}
+`)
+			},
+		},
+		{
+			name: "Go type-set constraint",
+			code: galaerr.CodeGoTypeSetConstraint, // GALA-E0127
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Number interface {
+    ~int | ~float64
+}
+
+func main() {
+    Println("numbers")
+}
+`)
+			},
+		},
+		{
+			name: "Go slice expression",
+			code: galaerr.CodeGoSliceExpr, // GALA-E0128
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "martianoff/gala/go_interop"
+
+func main() {
+    val xs = go_interop.SliceOf(1, 2, 3, 4)
+    Println(xs[:2])
+}
+`)
+			},
+		},
+		{
+			name: "Go label and labeled continue",
+			code: galaerr.CodeGoLabel, // GALA-E0129
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+outer:
+    for i := 0; i < 3; i++ {
+        for j := 0; j < 3; j++ {
+            if j == i {
+                continue outer
+            }
+            Println(i, j)
+        }
+    }
+}
+`)
+			},
+		},
+		{
+			name: "Go named results",
+			code: galaerr.CodeGoNamedResults, // GALA-E0130
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func half(n int) (q int) {
+    q = n / 2
+}
+
+func main() {
+    Println(half(8))
+}
+`)
+			},
+		},
+		{
+			name: "Go grouped type parameters",
+			code: galaerr.CodeGoGroupedTypeParams, // GALA-E0131
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func pair[K, V any](k K, v V) Tuple[K, V] = (k, v)
+
+func main() {
+    Println(pair("a", 1))
+}
+`)
+			},
+		},
+		{
+			name: "Go multiple return",
+			code: galaerr.CodeGoMultiReturn, // GALA-E0132
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func split(n int) (int, int) {
+    return n / 2, n % 2
+}
+
+func main() {
+    Println(split(7))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

@@ -20,7 +20,8 @@ import (
 // token: galop's repository holds its lexer and parser to ANTLR's, and this
 // golden holds what GALA adds on top of them (the line-break re-typing, the
 // doc comments, the blank-line check, the source-text check, the coded hints
-// GALA-E0040, GALA-E0042 and GALA-E0085 and their cascade suppression, the
+// GALA-E0040, GALA-E0042 and GALA-E0085 and their cascade suppression, the Go
+// constructs of go_habits.go and the parse retried without them, the
 // positions of an expression parsed at an offset, the native-tree helpers)
 // and the parts of galop's output GALA reads (tokens, errors, clean and
 // error-recovered trees).

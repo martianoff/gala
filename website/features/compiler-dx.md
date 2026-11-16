@@ -164,7 +164,7 @@ The rewrite is **silent**: a function outside the supported shape compiles to or
 
 The same "compiler works for you" principle applies to constructs that used to *appear* to work. Bare Go builtins and bare Go statement keywords are now hard errors with a named replacement, rather than silently doing something surprising.
 
-**Bare Go builtins (GALA-E0035).** `len`, `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover` are not on GALA's surface. Each rejection names its replacement — `go_interop.SliceAppend`, `go_builtins.Panic`, `Try(() => ...)` for `recover`, and `.Size()` / `.ByteSize()` for `len`.
+**Bare Go builtins (GALA-E0035).** `len`, `append`, `make`, `new`, `cap`, `copy`, `delete`, `close`, `complex`, `real`, `imag`, `panic`, `recover`, `min`, `max`, `clear` are not on GALA's surface. Each rejection names its replacement — `go_interop.SliceAppend`, `go_builtins.Panic`, `Try(() => ...)` for `recover`, and `.Size()` / `.ByteSize()` for `len`.
 
 `len` in particular fixes a real footgun: Go's `len(string)` returns **bytes**, so any non-ASCII text mis-counts.
 
