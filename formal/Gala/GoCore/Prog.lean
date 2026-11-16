@@ -56,8 +56,10 @@ structure PkgCtx where
   inits : Array (Nat × Option (List Stmt))
   /-- The methods by name, of whatever type: what a selector `x.m` may refer to. -/
   methodsByName : HashMap String (List Method)
+  /-- `Package.isPartial`. -/
+  isPartial : Bool := false
 
-instance : Inhabited PkgCtx := ⟨⟨"", "", #[], {}, {}, #[], #[], {}⟩⟩
+instance : Inhabited PkgCtx := ⟨⟨"", "", #[], {}, {}, #[], #[], {}, false⟩⟩
 
 /-- The program: its packages by import path, and the main package's path. -/
 structure Ctx where
@@ -134,7 +136,8 @@ def buildPkg (pkgNames : HashMap String String) (p : Package) : PkgCtx := Id.run
       | .unsupported _ => pure ()
     fi := fi + 1
   let methodsByName := methods.fold (fun m k me => m.insert ((k.splitOn ".").getLast!) (me :: m.getD ((k.splitOn ".").getLast!) [])) {}
-  return { path := p.path, name := p.name, imports, objs, methods, vars, inits, methodsByName }
+  return { path := p.path, name := p.name, imports, objs, methods, vars, inits, methodsByName,
+           isPartial := p.isPartial }
 
 /-- The program's tables. The main package is the first one, as the exporter writes
     it. -/

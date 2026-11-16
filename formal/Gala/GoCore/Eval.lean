@@ -96,6 +96,15 @@ def nameOwner (c : Ctx) (env : Env) (x : String) : Option String :=
     else ((p.imports[env.file]?).getD []).findSome? fun (n, path) =>
       if n == "." && ((c.pkgs.get? path).map (·.objs.contains x)).getD false then some path else none
 
+/-- Whether names of the package at `path` may be missing from the document: it holds
+    none of the package's files (Go's own standard library), or only some (`isPartial`, Go's
+    runnable files). A name such a package lacks is outside what GoCore runs, not a
+    GoCore or exporter bug. -/
+def partialPkg (c : Ctx) (path : String) : Bool :=
+  match c.pkgs.get? path with
+  | some p => p.isPartial
+  | none => true
+
 /-- A package the file dot-imports that the document does not hold (Go's own standard
     library), whose names GoCore cannot see. -/
 def foreignDotImport (c : Ctx) (env : Env) : Option String :=
@@ -463,11 +472,11 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
         -- A type of a package the document does not hold (Go's own standard library).
         if let .selector (.ident q) sel := e then
           if let some path := importOf c env q then
-            if !c.pkgs.contains path then unsupported s!"{path}.{sel}"
+            if partialPkg c path then unsupported s!"{path}.{sel}"
         match e with
         | .index (.selector (.ident q) sel) _ =>
           if let some path := importOf c env q then
-            if !c.pkgs.contains path then unsupported s!"{path}.{sel}"
+            if partialPkg c path then unsupported s!"{path}.{sel}"
           stuck "not a type"
         | .ident x =>
           if ["comparable", "complex64", "complex128"].contains x then
@@ -675,7 +684,9 @@ def evalName (c : Ctx) : Nat → Env → String → String → GM Val
       funcVal c n path x []
     | some (.type ..) => stuck s!"type {x} as a value"
     | none =>
-      if path != env.pkg then stuck s!"no {path}.{x}"
+      if path != env.pkg then
+        if partialPkg c path then unsupported s!"{path}.{x}"
+        stuck s!"no {path}.{x}"
       match x with
       | "true" => pure (.bool (.untyped .bool) true)
       | "false" => pure (.bool (.untyped .bool) false)
@@ -1059,7 +1070,7 @@ def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
             match globals.get? s!"{path}.{sel}" with
             | some cell => return (⟨cell, []⟩, ← cellType cell)
             | none =>
-              if c.pkgs.contains path then stuck s!"{q}.{sel} is not addressable"
+              if !partialPkg c path then stuck s!"{q}.{sel} is not addressable"
               else unsupported s!"{path}.{sel}"
       let (v, l) ← operand c n env x
       match v with

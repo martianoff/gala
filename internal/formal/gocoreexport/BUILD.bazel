@@ -8,6 +8,7 @@ go_library(
     srcs = [
         "export.go",
         "schema.go",
+        "stdlib.go",
     ],
     importpath = "martianoff/gala/internal/formal/gocoreexport",
     visibility = ["//internal/formal:__subpackages__"],
@@ -23,18 +24,24 @@ go_test(
         "golden_test.go",
         "roundtrip_test.go",
         "schema_test.go",
+        "stdlib_test.go",
     ],
     data = [
         "SCHEMA.md",
         "testdata/shapes.json",
         "//examples:all_gala_sources",
+        "//formal:Gala/GoCore/Run.lean",
         "//formal:gocore_fixtures",
         "//internal/formal/difftest:stdlib_sources",
     ],
     embed = [":gocoreexport"],
+    env = {
+        "GOCORE_RUN_LEAN": "$(rlocationpath //formal:Gala/GoCore/Run.lean)",
+    },
     deps = [
         "//internal/transpiler/fuzz/progrun",
         "@com_github_stretchr_testify//require",
+        "@rules_go//go/runfiles",
         "@rules_go//go/tools/bazel",
     ],
 )

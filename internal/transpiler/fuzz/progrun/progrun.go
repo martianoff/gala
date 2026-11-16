@@ -223,8 +223,10 @@ func (e *Error) Error() string { return e.Step + ": " + e.Err.Error() + "\n" + e
 type goRunner struct {
 	mu    sync.Mutex // one program at a time: they share main.go
 	goBin string
-	// goVersion is the toolchain's release, as `go env GOVERSION` prints it.
+	// goVersion is the toolchain's release, as `go env GOVERSION` prints it,
+	// and goRoot its GOROOT.
 	goVersion string
+	goRoot    string
 	dir       string
 	env       []string
 	written   map[string]bool // the GALA packages already in dir
@@ -249,7 +251,7 @@ func programRunner(tb testing.TB) *goRunner {
 		if _, err := os.Stat(goBin); err != nil {
 			return
 		}
-		r := &goRunner{goBin: goBin, written: map[string]bool{}}
+		r := &goRunner{goBin: goBin, goRoot: goroot, written: map[string]bool{}}
 		if r.dir, runnerErr = os.MkdirTemp("", "gala-fuzz-programs-"); runnerErr != nil {
 			return
 		}
@@ -296,6 +298,12 @@ func programRunner(tb testing.TB) *goRunner {
 func GoVersion(tb testing.TB) string {
 	tb.Helper()
 	return programRunner(tb).goVersion
+}
+
+// GoRoot is the GOROOT of the Go toolchain Run builds with.
+func GoRoot(tb testing.TB) string {
+	tb.Helper()
+	return programRunner(tb).goRoot
 }
 
 // Run builds mainGo, with the Go of every GALA package it imports, runs it

@@ -38,6 +38,8 @@ type Source struct {
 type PackageSource struct {
 	Path  string
 	Files []Source
+	// Partial: only some of the package's files are given (Package.Partial).
+	Partial bool
 }
 
 // Export parses every package's files and exports them, packages in the
@@ -48,7 +50,7 @@ func Export(pkgs []PackageSource) (*Program, error) {
 	for _, ps := range pkgs {
 		files := slices.Clone(ps.Files)
 		slices.SortFunc(files, func(a, b Source) int { return cmp.Compare(a.Name, b.Name) })
-		pkg := &Package{Path: ps.Path, Files: []*File{}}
+		pkg := &Package{Path: ps.Path, Partial: ps.Partial, Files: []*File{}}
 		for _, src := range files {
 			fset := token.NewFileSet()
 			f, err := parser.ParseFile(fset, src.Name, src.Text, parser.SkipObjectResolution)

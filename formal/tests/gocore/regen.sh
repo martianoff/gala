@@ -9,17 +9,27 @@
 # not regenerated from Go: fuel (Go aborts with a stack overflow, GoCore ends in
 # fuel) and the unsupported_* ones, where GoCore stops: at a map
 # (unsupported_map), at a capacity that depends on gc's escape analysis
-# (unsupported_escape), at constraint type inference (unsupported_inference)
-# at a float operation (unsupported_float*), at panic(nil) (unsupported_panic_nil)
-# and at what fmt prints as an error (unsupported_printf_*).
+# (unsupported_escape), at constraint type inference (unsupported_inference),
+# at a float operation (unsupported_float*), at panic(nil) (unsupported_panic_nil),
+# at what fmt prints as an error (unsupported_printf_*), and at a name a runnable
+# standard-library file lacks (unsupported_stdlib).
 # Their files are written by hand.
 #
-# Run from formal/tests/gocore with GOCOREJSON naming the exporter binary.
+# Run from formal/tests/gocore with GOCOREJSON naming the exporter binary, and a
+# `go` that is the release MODULE.bazel pins: the expected output comes from its
+# `go run`, and the standard library's runnable files (gocoreexport.RunnableStdlib)
+# from its GOROOT.
 set -euo pipefail
 : "${GOCOREJSON:?set GOCOREJSON to the gocorejson binary}"
+pinned="go$(sed -nE 's/^go_sdk\.download\(version = "([^"]+)"\)/\1/p' ../../../MODULE.bazel)"
+if [[ "$(go env GOVERSION)" != "$pinned" ]]; then
+  echo "regen.sh: go is $(go env GOVERSION), MODULE.bazel pins $pinned" >&2
+  exit 1
+fi
+goroot="$(go env GOROOT)"
 for f in src/*.go; do
   b="$(basename "$f" .go)"
-  "$GOCOREJSON" "$f" > "$b.json"
+  "$GOCOREJSON" -goroot="$goroot" "$f" > "$b.json"
   case "$b" in fuel|unsupported_*) continue ;; esac
   set +e
   go run "$f" > "$b.out" 2> "$b.goerr"

@@ -16,11 +16,14 @@ type Program struct {
 	Packages []*Package `json:"packages"`
 }
 
-// Package is one Go package: its import path and its files.
+// Package is one Go package: its import path and its files. Partial marks a
+// package of which only some files are given (RunnableStdlib): a name it lacks
+// is in a file left out, not an error.
 type Package struct {
-	Path  string  `json:"path"`
-	Name  string  `json:"name"`
-	Files []*File `json:"files"`
+	Path    string  `json:"path"`
+	Name    string  `json:"name"`
+	Partial bool    `json:"partial,omitempty"`
+	Files   []*File `json:"files"`
 }
 
 // Pos is where a node starts in its file: the line and column (both from 1,

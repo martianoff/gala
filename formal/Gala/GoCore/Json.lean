@@ -219,7 +219,12 @@ def decode (j : Json) : D Program := do
   unless v == supportedVersion do
     throw s!"GoCore JSON version {v}; this decoder reads version {supportedVersion}"
   let pkgs ← (← arr j "packages").mapM fun p => do
-    return Package.mk (← str p "path") (← str p "name") (← (← arr p "files").mapM decodeFile)
+    let isPartial ← match p.getObjVal? "partial" with
+      | .ok (.bool b) => pure b
+      | .ok _ => throw "field `partial` is not a boolean"
+      | .error _ => pure false
+    return { path := ← str p "path", name := ← str p "name", isPartial,
+             files := ← (← arr p "files").mapM decodeFile }
   return { packages := pkgs }
 
 /-- Parse and decode a GoCore JSON text. -/

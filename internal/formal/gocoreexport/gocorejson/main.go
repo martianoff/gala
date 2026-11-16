@@ -25,11 +25,21 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: gocorejson <main.go>... [importpath=dir]...")
+		return fmt.Errorf("usage: gocorejson [-goroot=dir] <main.go>... [importpath=dir]...")
 	}
 	mainPkg := gocoreexport.PackageSource{Path: "main"}
 	var pkgs []gocoreexport.PackageSource
+	goroot := ""
 	for _, a := range args {
+		// -goroot=dir: the standard library's runnable files come from dir/src
+		// (gocoreexport.AddStdlib), as the differential run adds them.
+		if r, ok := strings.CutPrefix(a, "-goroot="); ok {
+			if r == "" {
+				return fmt.Errorf("-goroot= without a directory")
+			}
+			goroot = r
+			continue
+		}
 		path, dir, isPkg := strings.Cut(a, "=")
 		if !isPkg {
 			src, err := read(a)
@@ -56,7 +66,11 @@ func run(args []string) error {
 		}
 		pkgs = append(pkgs, pkg)
 	}
-	prog, err := gocoreexport.Export(append([]gocoreexport.PackageSource{mainPkg}, pkgs...))
+	all, err := gocoreexport.AddStdlib(goroot, append([]gocoreexport.PackageSource{mainPkg}, pkgs...))
+	if err != nil {
+		return err
+	}
+	prog, err := gocoreexport.Export(all)
 	if err != nil {
 		return err
 	}
