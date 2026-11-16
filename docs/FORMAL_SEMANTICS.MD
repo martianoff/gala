@@ -208,8 +208,9 @@ flowchart LR
 
 These are the properties of the spec the milestones prove (T1–T7), with the bugs each
 guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
-`formal/Gala/Fuel.lean`), and T4 for the defaults phase of a call
-(`bindDefaults_callerLocals` and `defaultFrame_lookup`, see M2);
+`formal/Gala/Fuel.lean`), T3 given what each part does (`formal/Gala/Order.lean`, see M2),
+and T4 for the defaults phase of a call (`bindDefaults_callerLocals` and
+`defaultFrame_lookup`, see M2);
 [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) lists what is proved.
 
 | # | Statement (informal) | Guards against | Milestone |
@@ -292,8 +293,16 @@ column lists what each milestone's claim rests on beyond them.
   reference still resolves to its own binder, which is capture avoidance; M2 also checks
   its renamings against the remaining conditions above. A renaming that changes Go's
   output is then a transpiler bug, never a spec artefact.
-- **Statement (T3):** T3 relates the output and state of each compound construct to
-  those of its parts in source order.
+- **T3: done** (`formal/Gala/Order.lean`). A part's behaviour is an `Eff`: from the
+  starting state, its result (a value or a `Stop`), the state it leaves and the exact
+  steps it spends. Each theorem takes the parts' `Eff`s as hypotheses and says the
+  compound does them in source order, each from the state the one before left, none after
+  one that stopped. Steps are exact, so no statement holds by running out of fuel. It
+  covers operand lists, `&&`/`||`, a call's arguments (written order, then defaults in
+  parameter order), compound assignment (the target is read first), sub-patterns (the
+  first failure stops the rest) and `match` arms (a failed arm leaves only its guard's
+  effects, #996). `if`, blocks, declarations and calls of function values have no theorem.
+  [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each one.
 - **T4: done.** The defaults phase of a call (`bindDefaults`) does not read the caller's
   locals (`bindDefaults_callerLocals`), and the frame `defaultFrame` binds exactly the
   parameters it is given (`defaultFrame_lookup`). That `bindDefaults` gives it the earlier
