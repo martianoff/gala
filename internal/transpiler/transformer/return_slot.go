@@ -31,6 +31,9 @@ type returnSlot struct {
 	// funcName is the GALA name of the function declaration the slot belongs
 	// to (see sourceFunctionName), for diagnostics; "" for a lambda.
 	funcName string
+	// goResults follows the result values of a body Go calls with results
+	// ending in `error` (see noteGoResultsValue); nil for any other body.
+	goResults *goResultsBody
 }
 
 // deferredReturn is a result value (a `return` value or the body's trailing
@@ -167,7 +170,11 @@ func (t *galaASTTransformer) lowerReturnValue(e exprSrc) (*ast.ReturnStmt, error
 	if err != nil {
 		return nil, err
 	}
-	return &ast.ReturnStmt{Results: []ast.Expr{t.unwrapImmutable(expr)}}, nil
+	expr = t.unwrapImmutable(expr)
+	if err := t.noteGoResultsValue(expr, e.at()); err != nil {
+		return nil, err
+	}
+	return &ast.ReturnStmt{Results: []ast.Expr{expr}}, nil
 }
 
 // returnSlotPending reports whether the current slot is fillable and still

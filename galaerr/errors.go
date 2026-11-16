@@ -1142,6 +1142,15 @@ const (
 	// range over x (variable of struct type ...)". Reported only when the
 	// ranged type is known to be a GALA struct.
 	CodeRangeOverGalaType ErrorCode = "GALA-E0133"
+
+	// E0134: the body of a function, method or lambda that Go calls with a
+	// result list ending in `error`, `(T, error)`, gives a value that cannot
+	// become those results. The body gives a Try[T] (a failure is Go's zero
+	// value with the error) or, through go_interop's ResultsOf, a
+	// Tuple[T, error] that Go receives as it is. Any other value, or both
+	// kinds in one body, used to fail `go build` against the generated
+	// return ("cannot use std.Tuple[int, error]{…} as std.Try[int] value").
+	CodeGoResultsBodyValue ErrorCode = "GALA-E0134"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

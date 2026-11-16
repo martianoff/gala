@@ -146,6 +146,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0131` | Go grouped type parameters `[K, V any]` | [GALA-E0131.md](GALA-E0131.md) |
 | `GALA-E0132` | Go multiple return `return a, b` | [GALA-E0132.md](GALA-E0132.md) |
 | `GALA-E0133` | `range` over a GALA type (a collection or struct) | [GALA-E0133.md](GALA-E0133.md) |
+| `GALA-E0134` | A Go-results body gives neither the Try nor the Tuple of its results | [GALA-E0134.md](GALA-E0134.md) |
 
 ### Retired codes
 

@@ -235,6 +235,35 @@ func (c *LineCounter) Write(p []byte) (int, error) {
 }
 ```
 
+A failed `Try` gives Go the zero value with the error, Go's usual convention.
+For an API with a partial-result contract — `io.Reader` returning `n > 0` with
+`io.EOF`, `io.Writer` reporting a short write, `bufio.Reader.ReadString`
+returning the last line with `io.EOF`, `strconv` returning the clamped value
+with a range error — the value matters with the error. `ResultsOf` from
+`go_interop` keeps both results of a Go `(T, error)` call as a
+`Tuple[T, error]`, and a body giving that Tuple hands Go both as they are
+(`ResultsOf2` for `(A, B, error)`). An expression body that is the Go call
+itself, `= r.inner.Read(p)`, passes the results through too
+([Keeping a value returned with an error](GALA.MD#keeping-a-value-returned-with-an-error-resultsof)):
+
+```gala
+import (
+    "io"
+    . "martianoff/gala/go_interop"
+)
+
+struct Tee(inner io.Reader, copy io.Writer)
+
+// io.Reader: the bytes read with io.EOF reach the caller.
+func (t Tee) Read(p []byte) (int, error) {
+    val (n, err) = ResultsOf(t.inner.Read(p))
+    if (n > 0) {
+        t.copy.Write(Slice(p, 0, n))
+    }
+    (n, err)
+}
+```
+
 ### Go slices and maps
 
 Prefer GALA's collections in GALA code, and convert at the boundary:

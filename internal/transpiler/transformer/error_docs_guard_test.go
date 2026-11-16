@@ -2329,6 +2329,25 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "a Go-results body giving a plain value",
+			code: galaerr.CodeGoResultsBodyValue, // GALA-E0134
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "strconv"
+
+func parse(s string) (int, error) {
+    val n = strconv.Atoi(s).GetOrElse(0)
+    n * 2
+}
+
+func main() {
+    Println(parse("21"))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

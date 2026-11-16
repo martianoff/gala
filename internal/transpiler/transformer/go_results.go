@@ -123,6 +123,24 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	return wrapper, nil
 }
 
+// goCallResults are the result types of expr when it is a call of a Go
+// function (or of a GALA one declaring a Go result list) with two or more
+// results, as liftGoResults finds them; nil otherwise.
+func (t *galaASTTransformer) goCallResults(expr ast.Expr) []transpiler.Type {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	sig := t.resolveGoCallSignature(call)
+	if sig == nil || t.isGalaCallee(call) {
+		sig = t.declaredGoResultsSignature(call)
+	}
+	if sig == nil || len(sig.Returns) < 2 {
+		return nil
+	}
+	return t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
+}
+
 // goResultHelper names the std function that converts n values (plus an error
 // when fails) to one GALA value.
 func goResultHelper(n int, fails bool) string {

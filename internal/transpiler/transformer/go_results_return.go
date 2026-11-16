@@ -5,8 +5,11 @@ import (
 	"go/ast"
 	"go/token"
 	"slices"
+	"strings"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // One GALA value returned as Go's several results
@@ -111,6 +114,17 @@ func (t *galaASTTransformer) spreadLambdaGoResults(fn *ast.FuncLit, slotType tra
 	var value transpiler.Type = transpiler.NilType{}
 	if valueType != nil {
 		value = t.astTypeToTranspilerType(valueType)
+	}
+	// A body giving the Tuple of every result (ResultsOf) instead of the
+	// Try its slot makes returns them as they are.
+	if b := newGoResultsBodyOf(ft.Results, value, "this lambda"); b != nil && isStdTry(value) {
+		if err := t.noteLambdaGoResults(fn.Body, b, at); err != nil {
+			return false, err
+		}
+		if whole := b.wholeType(); whole != nil {
+			value, valueType = whole, t.typeToExpr(whole)
+			fn.Type.Results.List[0].Type = valueType
+		}
 	}
 	results := t.goResultsOfValue(value, len(ft.Results))
 	if results == nil {
@@ -225,8 +239,10 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, exprBody bool,
 	stmts := append(lead, &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{&ast.ValueSpec{
 		Names: []*ast.Ident{ast.NewIdent(resultName)}, Type: valueType, Values: []ast.Expr{value},
 	}}}})
-	if !fails {
-		return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: tupleFieldGets(ast.NewIdent(resultName), len(values))})}
+	// A Tuple of every result — the trailing error among them when the body
+	// gives the Tuple ResultsOf makes — is the results as they are.
+	if !fails || isResultsTuple(t.astTypeToTranspilerType(valueType), len(results)) {
+		return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: tupleFieldGets(ast.NewIdent(resultName), len(results))})}
 	}
 	// if _goResult.IsFailure() { return *new(A), ..., _goResult.GetError() }
 	failure := make([]ast.Expr, 0, len(results))
@@ -246,6 +262,182 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, exprBody bool,
 		successResults = tupleFieldGets(ast.NewIdent(valueName), len(values))
 	}
 	return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: append(successResults, ast.NewIdent("nil"))})}
+}
+
+// The value a Go-results body gives
+//
+// A body Go calls with results ending in `error` gives one GALA value. By
+// default it is the Try those results make (`(T, error)` is a Try[T]): a
+// failure gives Go the zero values with the error, Go's usual convention.
+// Some Go APIs return a meaningful value with an error — io.Reader's Read
+// (n > 0 with io.EOF), io.Writer's short write — and a body implementing one
+// gives instead the Tuple of every result, Tuple[T, error], which
+// go_interop's ResultsOf makes from a Go call. Go receives that Tuple's
+// components as they are. Each result value of the body is checked as it is
+// lowered (noteGoResultsValue); one body gives one kind.
+
+// goResultsBody follows the result values of one Go-results body.
+type goResultsBody struct {
+	results []transpiler.Type // Go's results, the trailing error among them
+	value   transpiler.Type   // the Try they make by default
+	whole   transpiler.Type   // the Tuple of every result
+	subject string            // "function F", "this lambda": the body's owner, for diagnostics
+	// valueAt and wholeAt are the first result value of each kind; zero
+	// when the body has none.
+	valueAt, wholeAt srcNode
+}
+
+// newGoResultsBody follows a body Go calls with goResults, whose default
+// value is value. It is nil when the results do not end in `error`: their
+// value, a Tuple, already is every result.
+func (t *galaASTTransformer) newGoResultsBody(goResults *ast.FieldList, value transpiler.Type, subject string) *goResultsBody {
+	results := make([]transpiler.Type, len(goResults.List))
+	for i, f := range goResults.List {
+		results[i] = t.astTypeToTranspilerType(f.Type)
+	}
+	return newGoResultsBodyOf(results, value, subject)
+}
+
+// newGoResultsBodyOf is newGoResultsBody for result types.
+func newGoResultsBodyOf(results []transpiler.Type, value transpiler.Type, subject string) *goResultsBody {
+	name, fits := transpiler.TupleArityName(len(results))
+	if !fits || results[len(results)-1].String() != "error" || transpiler.ContainsUnusable(value) {
+		return nil
+	}
+	return &goResultsBody{
+		results: results,
+		value:   value,
+		whole:   transpiler.GenericType{Base: transpiler.NamedType{Package: registry.StdPackageName, Name: name}, Params: results},
+		subject: subject,
+	}
+}
+
+// wholeType is the Tuple of every result when the body gives it, nil when
+// it gives the default Try (or b is nil).
+func (b *goResultsBody) wholeType() transpiler.Type {
+	if b == nil || !b.wholeAt.ok() {
+		return nil
+	}
+	return b.whole
+}
+
+// isResultsTuple reports whether typ is the std Tuple of n values.
+func isResultsTuple(typ transpiler.Type, n int) bool {
+	gen, ok := typ.(transpiler.GenericType)
+	if !ok || len(gen.Params) != n {
+		return false
+	}
+	name, fits := transpiler.TupleArityName(n)
+	base, named := gen.Base.(transpiler.NamedType)
+	return fits && named && base.Package == registry.StdPackageName && base.Name == name
+}
+
+// isStdTry reports whether typ is a std Try.
+func isStdTry(typ transpiler.Type) bool {
+	gen, ok := typ.(transpiler.GenericType)
+	if !ok {
+		return false
+	}
+	base, named := gen.Base.(transpiler.NamedType)
+	return named && base.Package == registry.StdPackageName && base.Name == transpiler.TypeTry
+}
+
+// noteGoResultsValue checks expr, a result value of the body being lowered,
+// written at at, when Go calls that body with results ending in `error`
+// (returnSlot.goResults): it must be the Try of the results or the Tuple of
+// every result, and one body gives one of them. A value whose type is not
+// known, or one that may still be either (an interface, a type parameter), is
+// left to Go.
+func (t *galaASTTransformer) noteGoResultsValue(expr ast.Expr, at srcNode) error {
+	return t.noteGoResultsValueIn(t.returnSlot.goResults, expr, at)
+}
+
+// noteGoResultsValueIn is noteGoResultsValue for the body b follows.
+func (t *galaASTTransformer) noteGoResultsValueIn(b *goResultsBody, expr ast.Expr, at srcNode) error {
+	if b == nil || t.isNoReturnCallExpr(expr) {
+		return nil
+	}
+	typ := t.getExprTypeName(expr)
+	if transpiler.ContainsUnusable(typ) {
+		return nil
+	}
+	switch {
+	case isResultsTuple(typ, len(b.results)):
+		for i, r := range b.results {
+			if t.cannotHold(r, typ.(transpiler.GenericType).Params[i]) {
+				return b.wrongValueError(at, typ)
+			}
+		}
+		if b.valueAt.ok() {
+			return b.mixedError(at, typ, b.value, b.valueAt)
+		}
+		if !b.wholeAt.ok() {
+			b.wholeAt = at
+		}
+	case isStdTry(typ):
+		if b.wholeAt.ok() {
+			return b.mixedError(at, typ, b.whole, b.wholeAt)
+		}
+		if !b.valueAt.ok() {
+			b.valueAt = at
+		}
+	case t.cannotHold(b.value, typ):
+		return b.wrongValueError(at, typ)
+	}
+	return nil
+}
+
+// noteLambdaGoResults checks each result value of body, a lambda's lowered
+// body, as noteGoResultsValueIn does; at is where the lambda is written. Its
+// trailing value is promoted to a `return` after lowering, so the values are
+// read from the lowered body: its `return`s, never a nested function's.
+func (t *galaASTTransformer) noteLambdaGoResults(body *ast.BlockStmt, b *goResultsBody, at srcNode) error {
+	var err error
+	ast.Inspect(body, func(n ast.Node) bool {
+		if err != nil {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			if len(n.Results) == 1 {
+				err = t.noteGoResultsValueIn(b, n.Results[0], at)
+			}
+		}
+		return true
+	})
+	return err
+}
+
+// resultsText spells the Go results: `(int, error)`.
+func (b *goResultsBody) resultsText() string {
+	parts := make([]string, len(b.results))
+	for i, r := range b.results {
+		parts[i] = displayType(r)
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
+}
+
+// wrongValueError reports a result value of type got that is neither the
+// body's Try nor the Tuple of its results.
+func (b *goResultsBody) wrongValueError(at srcNode, got transpiler.Type) error {
+	r := at.rng()
+	return spanErrorAt(galaerr.CodeGoResultsBodyValue, r, r,
+		fmt.Sprintf("%s gives Go the results %s, so its body gives a %s (on a failure Go receives the zero value with the error) or a %s of the results as they are; this value is of type %s",
+			b.subject, b.resultsText(), displayType(b.value), displayType(b.whole), displayType(got)),
+		fmt.Sprintf("give a %s or a %s; `Success(v)` or `Failure(err)` make the Try, and `ResultsOf(call)` from go_interop keeps both results of a Go call", displayType(b.value), displayType(b.whole)))
+}
+
+// mixedError reports a result value of type got in a body whose value
+// written at otherAt is of the other kind, other.
+func (b *goResultsBody) mixedError(at srcNode, got, other transpiler.Type, otherAt srcNode) error {
+	r := at.rng()
+	line, _ := otherAt.start()
+	return spanErrorAt(galaerr.CodeGoResultsBodyValue, r, r,
+		fmt.Sprintf("%s gives a %s here but a %s at line %d: a body Go calls with the results %s gives either the Try or the Tuple of the results, not both",
+			b.subject, displayType(got), displayType(other), line, b.resultsText()),
+		fmt.Sprintf("give one kind; a %s everywhere keeps every result as it is (`ResultsOf(call)`, or `(v, err)`)", displayType(b.whole)))
 }
 
 // tupleFieldGets reads the n components of the Tuple tuple: tuple.V1.Get(), ….

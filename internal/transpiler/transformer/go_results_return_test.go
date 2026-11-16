@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"martianoff/gala/galaerr"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -392,6 +394,167 @@ func TestGoResultsByBodyKindInForeignDefault(t *testing.T) {
 			out, err := transpileCrossPkgFile(t, root, "package lib\n\nimport \"strconv\"\n\nfunc Use() int = RunWith() + strconv.IntSize\n", filepath.Join(root, "lib", "use.gala"))
 			require.NoError(t, err)
 			assertGoResultsLowering(t, out, tc.spread)
+		})
+	}
+}
+
+// goResultsWholeProgram is goResultsReturnProgram with go_interop
+// dot-imported, for ResultsOf.
+func goResultsWholeProgram(body string) string {
+	return `package main
+
+import (
+    "bufio"
+    "errors"
+    "io"
+    "strconv"
+    . "martianoff/gala/go_interop"
+)
+
+func run(f func() (int, error)) int = f().GetOrElse(-1)
+
+func reader(r io.Reader) *bufio.Reader = bufio.NewReader(r)
+
+func failWith(msg string) error = errors.New(msg)
+
+func keepAll(s string) Tuple[int, error] = ResultsOf(strconv.Atoi(s))
+
+` + body + `
+
+func main() {}
+`
+}
+
+// TestGoResultsKeptWhole covers a body Go calls with `(T, error)` results
+// that gives the Tuple of every result, Tuple[T, error], instead of the
+// default Try: Go receives both components as they are, a value returned with
+// an error included (io.Reader's n with io.EOF). go_interop's ResultsOf makes
+// that Tuple from a Go call, which Go spreads over its parameters as it is.
+func TestGoResultsKeptWhole(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	whole := []string{"var _goResult std.Tuple[int, error] = ", "return _goResult.V1.Get(), _goResult.V2.Get()"}
+	cases := []struct {
+		name     string
+		body     string
+		contains []string
+		absent   []string
+	}{
+		{
+			name:     "a block body giving ResultsOf",
+			body:     "struct Wrap(inner io.Reader)\n\nfunc (w Wrap) Read(p []byte) (int, error) {\n    ResultsOf(w.inner.Read(p))\n}",
+			contains: append([]string{"func (w Wrap) Read(p []byte) (int, error) {", "ResultsOf(w.inner.Get().Read(p))"}, whole...),
+			absent:   []string{"IsFailure", "GoTry(w.inner"},
+		},
+		{
+			name:     "an expression body giving ResultsOf",
+			body:     "func parse(s string) (int, error) = ResultsOf(strconv.Atoi(s))",
+			contains: append([]string{"ResultsOf(strconv.Atoi(s))"}, whole...),
+			absent:   []string{"IsFailure", "GoTry(strconv"},
+		},
+		{
+			name:     "a tuple of the results",
+			body:     "func parse(s string) (int, error) {\n    val (n, err) = ResultsOf(strconv.Atoi(s))\n    (n, err)\n}",
+			contains: whole,
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "an early return of a tuple",
+			body:     "func parse(s string) (int, error) {\n    if (s == \"\") {\n        return (0, io.EOF)\n    }\n    ResultsOf(strconv.Atoi(s))\n}",
+			contains: []string{"func() std.Tuple[int, error] {", "return _goResult.V1.Get(), _goResult.V2.Get()"},
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "(A, B, error) from ResultsOf2",
+			body:     "func line(r *bufio.Reader) ([]byte, bool, error) = ResultsOf2(r.ReadLine())",
+			contains: []string{"ResultsOf2(r.ReadLine())", "var _goResult std.Tuple3[[]byte, bool, error] = ", "return _goResult.V1.Get(), _goResult.V2.Get(), _goResult.V3.Get()"},
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a block lambda giving ResultsOf",
+			body:     "func five() int = run(() => {\n    ResultsOf(strconv.Atoi(\"5\"))\n})",
+			contains: []string{"run(func() (int, error) {", "var _goResult std.Tuple[int, error] = ", "return _goResult.V1.Get(), _goResult.V2.Get()"},
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "an expression lambda giving ResultsOf",
+			body:     `func five() int = run(() => ResultsOf(strconv.Atoi("5")))`,
+			contains: []string{"run(func() (int, error) {", "var _goResult std.Tuple[int, error] = ", "return _goResult.V1.Get(), _goResult.V2.Get()"},
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "the default stays the Try",
+			body:     "struct Wrap(inner io.Reader)\n\nfunc (w Wrap) Read(p []byte) (int, error) {\n    w.inner.Read(p)\n}",
+			contains: []string{"var _goResult std.Try[int] = ", "return *new(int), _goResult.GetError()"},
+		},
+		{
+			name:     "a Go call's results are passed to a Go function taking them",
+			body:     "func first(s string) int = keepAll(s).V1",
+			contains: []string{"func keepAll(s string) std.Tuple[int, error] {", "return ResultsOf(strconv.Atoi(s))"},
+			absent:   []string{"GoTry(strconv"},
+		},
+		{
+			name:     "every result binds a type parameter of the Go function taking them",
+			body:     "func flag(r *bufio.Reader) bool = ResultsOf2(r.ReadLine()).V2",
+			contains: []string{"ResultsOf2(r.ReadLine()).V2.Get()"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(goResultsWholeProgram(tc.body), "go_results_whole_test.gala")
+			require.NoError(t, err)
+			for _, want := range tc.contains {
+				assert.Contains(t, out, want, "generated:\n%s", out)
+			}
+			for _, not := range tc.absent {
+				assert.NotContains(t, out, not, "generated:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestGoResultsBodyValueRejected pins GALA-E0134: a body Go calls with
+// `(T, error)` results gives the Try or the Tuple of the results; any other
+// value, or both kinds in one body, is reported at the value rather than left
+// to go build against the generated return.
+func TestGoResultsBodyValueRejected(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "a function giving a plain value",
+			body: "func parse(s string) (int, error) {\n    s.Size()\n}",
+			want: "function parse gives Go the results (int, error), so its body gives a Try[int] (on a failure Go receives the zero value with the error) or a Tuple[int, error] of the results as they are; this value is of type int",
+		},
+		{
+			name: "an expression body giving an Option",
+			body: "func parse(s string) (int, error) = Some(s.Size())",
+			want: "this value is of type Option[int]",
+		},
+		{
+			name: "a Tuple of other types",
+			body: "func parse(s string) (int, error) = (\"x\", errors.New(s))",
+			want: "this value is of type Tuple[string, error]",
+		},
+		{
+			name: "a Try and a Tuple in one body",
+			body: "func parse(s string) (int, error) {\n    if (s == \"\") {\n        return Success(0)\n    }\n    ResultsOf(strconv.Atoi(s))\n}",
+			want: "function parse gives a Tuple[int, error] here but a Try[int] at line 21",
+		},
+		{
+			name: "a lambda giving a plain value",
+			body: "func five() int = run(() => {\n    5\n})",
+			want: "this lambda gives Go the results (int, error)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(goResultsWholeProgram(tc.body), "go_results_whole_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), string(galaerr.CodeGoResultsBodyValue))
+			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
 }
