@@ -177,11 +177,13 @@ func (s Rules) String() string {
 
 //line $DIR/main.gala:23
 func area(s Shape, f func(Shape) std.Option[int]) int {
+//line $DIR/main.gala:23
 	return f(s).GetOrElse(-1)
 }
 
 //line $DIR/main.gala:25
 func classify() func(Shape) std.Option[string] {
+//line $DIR/main.gala:25
 	return func(_pf_arg Shape) std.Option[string] {
 		{
 			_tmp_1 := Circle{}.Unapply(_pf_arg)
@@ -348,14 +350,17 @@ func composites() int {
 func bodies() int {
 //line $DIR/main.gala:56
 	var add = func(a int, b int) int {
+//line $DIR/main.gala:56
 		return a + b
 	}
 //line $DIR/main.gala:57
 	var wrap = func(n int) Box {
+//line $DIR/main.gala:57
 		return Box{label: std.NewImmutable("w"), size: n}
 	}
 //line $DIR/main.gala:58
 	var pick = func(s Shape) int {
+//line $DIR/main.gala:58
 		{
 			_subj := s
 			{
@@ -379,6 +384,7 @@ func bodies() int {
 
 //line $DIR/main.gala:65
 func fact(n int, acc int) int {
+//line $DIR/main.gala:65
 	for {
 		if n <= 1 {
 			return acc
@@ -393,6 +399,7 @@ func fact(n int, acc int) int {
 
 //line $DIR/main.gala:67
 func steps(n int, acc int) int {
+//line $DIR/main.gala:67
 	for {
 		if n <= 0 {
 			return acc
@@ -414,6 +421,7 @@ func steps(n int, acc int) int {
 
 //line $DIR/main.gala:72
 func named(n int, acc int) int {
+//line $DIR/main.gala:72
 	{
 		if n <= 0 {
 			return acc

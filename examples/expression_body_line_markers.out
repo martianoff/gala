@@ -1,0 +1,7 @@
+function: true
+method: true
+expression on the next line: true
+function returning nothing: true
+returned lambda: true
+lambda: true
+placeholder lambda: true

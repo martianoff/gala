@@ -93,31 +93,37 @@ func NewShapeEmpty() Shape {
 
 //line $DIR/main.gala:8
 func apply(x int, f func(int) int) int {
+//line $DIR/main.gala:8
 	return f(x)
 }
 
 //line $DIR/main.gala:10
 func pick(s Shape, f func(Shape) std.Option[int]) int {
+//line $DIR/main.gala:10
 	return f(s).GetOrElse(0)
 }
 
 //line $DIR/main.gala:12
 func label(s string, n int) string {
+//line $DIR/main.gala:12
 	return fmt.Sprintf("%s:%d", s, n)
 }
 
 //line $DIR/main.gala:14
 func hook(cb func()) bool {
+//line $DIR/main.gala:14
 	return cb == nil
 }
 
 //line $DIR/main.gala:16
 func block(f func(int) int) int {
+//line $DIR/main.gala:19
 	return f(1)
 }
 
 //line $DIR/main.gala:21
 func tried(n int) int {
+//line $DIR/main.gala:21
 	return n
 }
 
@@ -152,6 +158,7 @@ func (s Box) Equal(other Box) bool {
 
 //line $DIR/main.gala:29
 func (b Box) Scaled(k int) int {
+//line $DIR/main.gala:29
 	return b.n.Get() * k
 }
 
@@ -163,6 +170,7 @@ func main() {
 	var c = Cfg{name: std.NewImmutable("é"), size: std.NewImmutable(3), tags: std.NewImmutable(std.None[string]{}.Apply())}
 //line $DIR/main.gala:34
 	fmt.Println(apply(1, func(a int) int {
+//line $DIR/main.gala:8
 		return a + 1
 	}), pick(Circle{}.Apply(2), func(_pf_arg Shape) std.Option[int] {
 		{
@@ -182,9 +190,12 @@ func main() {
 //line $DIR/main.gala:18
 		return d + 1
 	}), tried(std.Try[int]{}.Apply(func() int {
+//line $DIR/main.gala:21
 		return 6 / 2
 	}).GetOrElse(0)), std.Try[int]{}.Apply(func() int {
+//line $DIR/main.gala:34
 		return apply(2, func(a int) int {
+//line $DIR/main.gala:8
 			return a + 1
 		})
 	}).GetOrElse(0), c.size.Get(), Box{n: std.NewImmutable(3)}.Scaled(Box{n: std.NewImmutable(3)}.n.Get()*2))

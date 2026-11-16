@@ -78,7 +78,7 @@ func TestDeclaredGoResults(t *testing.T) {
 		{
 			name:     "a Go call with the same results is returned as it is",
 			body:     `func parse(s string) (int, error) = strconv.Atoi(s)`,
-			contains: []string{"func parse(s string) (int, error) {\n\treturn strconv.Atoi(s)\n}"},
+			contains: []string{"func parse(s string) (int, error) {\n//line go_results_return_test.gala:25\n\treturn strconv.Atoi(s)\n}"},
 			absent:   []string{"GoTry(strconv"},
 		},
 		{
@@ -148,7 +148,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a Go call body is returned as it is",
 			body:     `func five() int = run(() => strconv.Atoi("5"))`,
-			contains: []string{"run(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
+			contains: []string{"run(func() (int, error) {\n//line go_results_return_test.gala:25\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
 			absent:   []string{"GoTry(strconv"},
 		},
 		{
@@ -167,7 +167,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a generic Go callee's results are the lambda's",
 			body:     "func once() int {\n    val get = sync.OnceValues(() => strconv.Atoi(\"5\"))\n    val n, _ = get()\n    n\n}",
-			contains: []string{"sync.OnceValues(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
+			contains: []string{"sync.OnceValues(func() (int, error) {\n//line go_results_return_test.gala:26\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
 			absent:   []string{"T1", "T2"},
 		},
 		{
@@ -214,7 +214,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a placeholder lambda over a Go call returns its results",
 			body:     "func atoiWith(f func(string) (int, error)) Try[int] = f(\"7\")\n\nfunc seven() Try[int] = atoiWith(strconv.Atoi(_))",
-			contains: []string{"atoiWith(func(__p0 string) (int, error) {\n\t\treturn strconv.Atoi(__p0)"},
+			contains: []string{"atoiWith(func(__p0 string) (int, error) {\n//line go_results_return_test.gala:27\n\t\treturn strconv.Atoi(__p0)"},
 		},
 		{
 			name:     "a placeholder lambda's Tuple is spread",
@@ -303,7 +303,7 @@ func TestGoCallbackReturnsGoResults(t *testing.T) {
 		{
 			name:     "value-and-error callback with a Go call body",
 			body:     `func five() int = callback.RunWith(() => strconv.Atoi("5"))`,
-			want:     "callback.RunWith(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})",
+			want:     "callback.RunWith(func() (int, error) {\n//line main.gala:10\n\t\treturn strconv.Atoi(\"5\")\n\t})",
 			unlifted: true,
 		},
 		{

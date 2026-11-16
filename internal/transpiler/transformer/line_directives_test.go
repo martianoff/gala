@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -368,4 +369,96 @@ func TestLineDirectives_ReservedNameRejected(t *testing.T) {
 				"error should name the reserved prefix; got: %v", err)
 		})
 	}
+}
+
+// exprBodyDemoFile names the GALA source of the expression-body tests.
+const exprBodyDemoFile = "expr_body_demo.gala"
+
+// TestLineDirectives_ExpressionBodyMarked is the regression test for an
+// expression body (`= expr`, `=> expr`) reporting the line after its
+// expression: the Go statement such a body lowers to must be preceded by a
+// directive naming the expression's own line, rather than counting on from the
+// declaration's directive. In each case the body is the only line of the
+// generated Go containing `100 / n`.
+func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		wantLine string
+	}{
+		{
+			name:     "function",
+			src:      "package main\n\nfunc f(n int) int = 100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
+			wantLine: "3",
+		},
+		{
+			name:     "method",
+			src:      "package main\n\nstruct C(k int)\n\nfunc (c C) Div(n int) int = 100 / n\n\nfunc main() {\n    println(C(1).Div(1))\n}\n",
+			wantLine: "5",
+		},
+		{
+			name:     "function returning nothing",
+			src:      "package main\n\nfunc f(n int) = println(100 / n)\n\nfunc main() {\n    f(1)\n}\n",
+			wantLine: "3",
+		},
+		{
+			name:     "expression on a later line",
+			src:      "package main\n\nfunc f(n int) int =\n\n    100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
+			wantLine: "5",
+		},
+		{
+			name:     "lambda",
+			src:      "package main\n\nfunc main() {\n    val g = (n int) => 100 / n\n    println(g(1))\n}\n",
+			wantLine: "4",
+		},
+	}
+
+	trans := newLineDirectiveTranspiler()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			goCode, err := trans.Transpile(tc.src, exprBodyDemoFile)
+			require.NoError(t, err)
+			assert.Equal(t, "//line "+exprBodyDemoFile+":"+tc.wantLine, lineAbove(t, goCode, "100 / n"),
+				"the body's statement must carry its expression's line; generated:\n%s", goCode)
+		})
+	}
+}
+
+// lineAbove is the line directly above the one line of goCode that contains
+// needle.
+func lineAbove(t *testing.T, goCode, needle string) string {
+	t.Helper()
+	lines := strings.Split(goCode, "\n")
+	at := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, needle) {
+			require.Equal(t, -1, at, "%q must occur on one line; generated:\n%s", needle, goCode)
+			at = i
+		}
+	}
+	require.Greater(t, at, 0, "%q must occur below the first line; generated:\n%s", needle, goCode)
+	return lines[at-1]
+}
+
+// TestLineDirectives_ExpressionBodyPanicLine is the runtime half: a panic in
+// an expression-bodied function reports the function's own line (3), not the
+// line after it.
+func TestLineDirectives_ExpressionBodyPanicLine(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH; cannot compile+run generated program")
+	}
+	const src = "package main\n\nfunc f(n int) int = 100 / n\n\nfunc main() {\n    f(0)\n}\n"
+
+	goCode, err := newLineDirectiveTranspiler().Transpile(src, exprBodyDemoFile)
+	require.NoError(t, err)
+
+	out, runErr := buildAndRunGeneratedGo(t, goCode)
+	require.Error(t, runErr, "expected the program to panic; output:\n%s", out)
+	assert.Contains(t, out, "integer divide by zero", "full output:\n%s", out)
+	// The frame of f, the first after the panic, reads `main.f(...)` then
+	// `<file>:<line>`, with ` +0x..` unless f was inlined.
+	frame := regexp.MustCompile(`(?m)^main\.f\(.*\)\n\t(.*)$`).FindStringSubmatch(out)
+	require.NotNil(t, frame, "no frame for f; full output:\n%s", out)
+	assert.Regexp(t, `^`+regexp.QuoteMeta(exprBodyDemoFile)+`:3( |$)`, frame[1],
+		"the panic must report line 3; full output:\n%s", out)
 }

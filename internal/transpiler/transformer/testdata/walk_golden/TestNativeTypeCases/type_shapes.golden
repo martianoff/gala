@@ -101,11 +101,13 @@ var counter map[string]int
 
 //line $DIR/main.gala:43
 func (b Box[T]) Get() T {
+//line $DIR/main.gala:43
 	return b.v.Get()
 }
 
 //line $DIR/main.gala:45
 func (b *Box[T]) Ptr() T {
+//line $DIR/main.gala:45
 	return b.v.Get()
 }
 
@@ -114,6 +116,7 @@ func (b *Box[T]) NonNull() T {
 	if b == nil {
 		panic("Box.NonNull: receiver b is a Ptr[Box[T]], but the caller passed nil")
 	}
+//line $DIR/main.gala:47
 	return b.v.Get()
 }
 

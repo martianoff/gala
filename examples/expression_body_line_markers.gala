@@ -1,0 +1,38 @@
+package main
+
+import "regexp"
+
+// A panic in the body of an expression-bodied function, method or lambda
+// reports the GALA line of its expression, as a panic in a block body does.
+
+struct Counter(x int)
+
+func div(n int) int = 100 / n
+
+func (c Counter) Div(n int) int = c.x / n
+
+func divTwoLines(n int) int =
+    100 / n
+
+func report(n int) = Println(100 / n)
+
+func divider() func(int) int = (n) => 100 / n
+
+func applyTo(f func(int) int, n int) int = f(n)
+
+// panicsAt reports whether the first GALA frame of the stack of the panic
+// err came from, the one that panicked, is at the given .gala line. The file
+// name is not matched, so the example can be run under any name.
+func panicsAt(err error, line int) bool = PanicStack(err).Exists((stack) =>
+    regexp.MustCompile(s"^(runtime\\.[^\\n]*\\n\\t[^\\n]*\\n)*main\\.[^\\n]*\\n\\t[^\\n]*\\.gala:$line\\n").MatchString(stack))
+
+func main() {
+    val lambda = (n int) => 100 / n
+    Println(s"function: ${panicsAt(Try(div(0)).GetError(), 10)}")
+    Println(s"method: ${panicsAt(Try(Counter(1).Div(0)).GetError(), 12)}")
+    Println(s"expression on the next line: ${panicsAt(Try(divTwoLines(0)).GetError(), 15)}")
+    Println(s"function returning nothing: ${panicsAt(TryApply(() => { report(0); 0 }).GetError(), 17)}")
+    Println(s"returned lambda: ${panicsAt(Try(divider()(0)).GetError(), 19)}")
+    Println(s"lambda: ${panicsAt(Try(lambda(0)).GetError(), 30)}")
+    Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 37)}")
+}

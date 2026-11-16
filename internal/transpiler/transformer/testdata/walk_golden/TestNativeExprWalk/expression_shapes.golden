@@ -36,6 +36,7 @@ var hits = 0
 
 //line $DIR/main.gala:16
 func id[T any](v T) T {
+//line $DIR/main.gala:16
 	return v
 }
 

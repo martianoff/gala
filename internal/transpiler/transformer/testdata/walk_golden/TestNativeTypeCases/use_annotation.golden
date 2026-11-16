@@ -25,6 +25,7 @@ func (h Handle) Close() error {
 
 //line $DIR/main.gala:11
 func open(name string) Handle {
+//line $DIR/main.gala:11
 	return Handle{name: std.NewImmutable(name)}
 }
 

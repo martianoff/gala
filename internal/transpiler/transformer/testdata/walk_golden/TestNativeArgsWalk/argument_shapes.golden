@@ -28,21 +28,25 @@ func (s P) String() string {
 
 //line $DIR/main.gala:10
 func apply(f func(int) int, v int) int {
+//line $DIR/main.gala:10
 	return f(v)
 }
 
 //line $DIR/main.gala:12
 func run(body func() int) int {
+//line $DIR/main.gala:12
 	return body()
 }
 
 //line $DIR/main.gala:14
 func pair() std.Tuple[int64, string] {
+//line $DIR/main.gala:14
 	return std.Tuple[int64, string]{V1: std.NewImmutable[int64](1), V2: std.NewImmutable("ü")}
 }
 
 //line $DIR/main.gala:16
 func pick(b bool) int {
+//line $DIR/main.gala:16
 	{
 		if b {
 			return 1
@@ -54,6 +58,7 @@ func pick(b bool) int {
 
 //line $DIR/main.gala:18
 func parse[T any]() std.Option[T] {
+//line $DIR/main.gala:18
 	return std.None[T]{}.Apply()
 }
 
@@ -62,6 +67,7 @@ func parse[T any]() std.Option[T] {
 // A hint pushed for parse() through its ANTLR context is the one its call
 // takes on the native tree (checkWalksAgree).
 func parsed() std.Option[int] {
+//line $DIR/main.gala:22
 	return parse[int]()
 }
 
@@ -69,14 +75,17 @@ func parsed() std.Option[int] {
 func args(p P) int {
 //line $DIR/main.gala:25
 	var a = apply(func(v int) int {
+//line $DIR/main.gala:25
 		return v + 1
 	}, 2)
 //line $DIR/main.gala:26
 	var b = apply(func(__p0 int) int {
+//line $DIR/main.gala:26
 		return __p0 * 2
 	}, 3)
 //line $DIR/main.gala:27
 	var c = apply(func(v int) int {
+//line $DIR/main.gala:27
 		return v
 	}, p.x.Get())
 //line $DIR/main.gala:28
@@ -85,12 +94,14 @@ func args(p P) int {
 	var e = P{x: std.Copy(p.x), y: b}.y
 //line $DIR/main.gala:30
 	var f = run(func() int {
+//line $DIR/main.gala:30
 		return c + 1
 	}) + run(func() int {
 		return c * 2
 	})
 //line $DIR/main.gala:31
 	var g = std.Option_Map(std.Some[int]{}.Apply(a), func(__p0 int) int {
+//line $DIR/main.gala:31
 		return __p0 + 1
 	}).GetOrElse(0)
 //line $DIR/main.gala:32
@@ -108,6 +119,7 @@ func args(p P) int {
 	var h = _tmp_1
 //line $DIR/main.gala:38
 	var t = std.Try[int]{}.Apply(func() int {
+//line $DIR/main.gala:38
 		_v0, _err := strconv.Atoi("ü")
 		if _err != nil {
 			panic(_err)

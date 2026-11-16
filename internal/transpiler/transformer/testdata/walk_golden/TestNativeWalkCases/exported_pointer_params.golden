@@ -21,6 +21,7 @@ func (s P) String() string {
 
 //line $DIR/main.gala:5
 func (p *P) Get(q *P) int {
+//line $DIR/main.gala:5
 	return p.x.Get() + q.x.Get()
 }
 
@@ -29,5 +30,6 @@ func Use(p *P) int {
 	if p == nil {
 		panic("Use: parameter p is a Ptr[P], but the caller passed nil")
 	}
+//line $DIR/main.gala:7
 	return 1
 }

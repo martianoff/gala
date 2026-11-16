@@ -163,6 +163,10 @@ func (t *galaASTTransformer) resultFieldList(types []transpiler.Type) *ast.Field
 // returnGoResults rewrites body, which returns one value of valueType, to
 // return that value spread over goResults (see the comment at the top).
 func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.Expr, goResults *ast.FieldList) *ast.BlockStmt {
+	// An expression body's line marker stays first, above the rewrite.
+	if mark, rest := splitLineMarker(body); mark != nil {
+		return prependStmt(mark, t.returnGoResults(rest, valueType, goResults))
+	}
 	var value ast.Expr
 	if len(body.List) == 1 {
 		if ret, ok := body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {

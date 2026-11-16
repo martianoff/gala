@@ -18,5 +18,6 @@ var names, err2 = os.ReadDir("..")
 
 //line $DIR/main.gala:9
 func main() {
+//line $DIR/main.gala:9
 	fmt.Println(entries.Get(), err.Get(), names, err2)
 }

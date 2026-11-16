@@ -43,11 +43,13 @@ func (s Pair) String() string {
 
 //line $DIR/main.gala:12
 func id[T any](v T) T {
+//line $DIR/main.gala:12
 	return v
 }
 
 //line $DIR/main.gala:14
 func pick[T any, U any](v T, u U) T {
+//line $DIR/main.gala:14
 	return v
 }
 
@@ -102,6 +104,7 @@ func (_ Box[T]) IsBox() bool {
 
 //line $DIR/main.gala:32
 func Box_Empty[U any, T any](b Box[T]) std.Option[U] {
+//line $DIR/main.gala:32
 	return std.None[U]{}.Apply()
 }
 
@@ -123,16 +126,19 @@ func typeArgs(b Box[int], cell std.Immutable[int]) {
 
 //line $DIR/main.gala:43
 func (p P) Sum(k int) int {
+//line $DIR/main.gala:43
 	return (p.x.Get() + p.y) * k
 }
 
 //line $DIR/main.gala:45
 func dflt(a int, b int) int {
+//line $DIR/main.gala:45
 	return a + b
 }
 
 //line $DIR/main.gala:47
 func mk() P {
+//line $DIR/main.gala:47
 	return P{x: std.NewImmutable(0), y: 0}
 }
 
@@ -144,6 +150,7 @@ func calls(p P) int {
 	var b = P{x: std.NewImmutable(1), y: 2}.Sum(1) + p.Sum(2)
 //line $DIR/main.gala:52
 	var c = std.Option_Map(std.Some[int]{}.Apply(a), func(v int) int {
+//line $DIR/main.gala:52
 		return v + b
 	}).GetOrElse(0)
 //line $DIR/main.gala:53
