@@ -239,7 +239,8 @@ type unsupportedPanic struct {
 }
 
 func unsup(pos coreexport.Pos, format string, a ...any) {
-	panic(unsupportedPanic{fmt.Sprintf(format, a...), pos})
+	// A renamed library name (hideLibNames) is reported as written.
+	panic(unsupportedPanic{unhide(fmt.Sprintf(format, a...)), pos})
 }
 
 // guard runs f, the translation of the declaration named decl, and records

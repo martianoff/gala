@@ -215,12 +215,13 @@ func (g *gen) collect(p *coreexport.Program) {
 // unresolved stops the translation at a name it cannot resolve. The name most
 // likely refers to a declaration outside the subset (an import, say), so
 // that declaration's construct is reported if there is one, else fallback.
+// A collections name in a file that does not dot-import them
+// (hideLibNames) is fallback: no import explains it.
 func (g *gen) unresolved(pos coreexport.Pos, fallback string) {
-	if len(g.outsideDecls) > 0 {
+	if len(g.outsideDecls) > 0 && !strings.Contains(fallback, noCollPrefix) {
 		unsup(pos, "%s", g.outsideDecls[0].What)
 	}
-	// A name hideLibNames renamed is reported by the name written.
-	unsup(pos, "%s", strings.ReplaceAll(fallback, hiddenPrefix, ""))
+	unsup(pos, "%s", fallback)
 }
 
 // basic stops the translation unless e, which is printed or compared, has

@@ -46,41 +46,101 @@ func (g *gen) libName(x string, seq bool) bool {
 
 // Names resolve per file, as in the Go the transpiler writes, which keeps
 // each file's imports: a dot import makes its package's names visible in
-// its own file only. hiddenPrefix renames a reference to a modelled library
-// name in a file where the name might not mean the library's; GALA reserves
-// the _gala_ prefix, so no declaration has the renamed name, which resolves
-// to nothing and is reported as before.
-const hiddenPrefix = "_gala_hidden_"
+// its own file only. A reference to a modelled library name, in a file where
+// the name might not mean the library's, is renamed: with otherDotPrefix
+// where another dot-imported package might declare it, with noCollPrefix
+// where the file does not dot-import the immutable collections it belongs
+// to. GALA rejects a declaration whose name starts with _gala_ (GALA-E0097)
+// and no library table holds a renamed name, so it resolves to nothing and
+// is reported, under the name written (unhidden).
+const (
+	otherDotPrefix = "_gala_hidden_dot_"
+	noCollPrefix   = "_gala_hidden_coll_"
+)
 
-// hideLibNames is p with, in each file that dot-imports a package other than
-// std and the immutable collections, every reference to a name of stdFuncs
-// or seqCtors renamed (hiddenPrefix): that package might declare the name.
-// In a file that does not dot-import the immutable collections, their names
-// are renamed too. Only references are renamed, never a binder, so a
-// renaming can only stop a translation, never change what a translated name
-// means.
+// libNames classifies name x: fn when it is one of the library functions
+// libName decides (stdFuncs, seqCtors), seq when it is a name of the
+// immutable collections the translation gives a meaning (their functions,
+// Array and List, and the HashMap and HashSet names it reports, hash-order).
+func libNames(x string) (fn, seq bool) {
+	f, isStd := stdFuncs[x]
+	t, isGen := stdGeneric[x]
+	fn = isStd || seqCtors[x] != ""
+	seq = seqCtors[x] != "" || hashTypes[x] || isStd && f.seq || isGen && t.collections
+	return fn, seq
+}
+
+// hideLibNames is p with references renamed where a file's dot imports rule
+// the library out: in a file that dot-imports a package other than std and
+// the immutable collections, each library function (fn), which that package
+// might declare; in a file that does not dot-import the immutable
+// collections, each of their names (seq), as a name or a type name. A name
+// the program declares (a function, type, case or package-level value; seen
+// in every file of its package) is left alone: libName and stdType already
+// rule the library out for it. Binders are never renamed, so a renaming can
+// only stop a translation, never change what a translated name means; a
+// local named like a library name, in such a file, is reported too. Std's
+// Some, None, Left, Right and its Option, Either and tuple types keep the
+// program-wide rule they had.
 func hideLibNames(p *coreexport.Program) *coreexport.Program {
+	declared := map[string]bool{}
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			for _, x := range append(declNames(d), globalNames(d)...) {
+				declared[x] = true
+			}
+		}
+	}
+	hidden := func(x string, other, collections bool) string {
+		fn, seq := libNames(x)
+		switch {
+		case declared[x]:
+			return ""
+		case other && fn:
+			return otherDotPrefix
+		case seq && !collections:
+			return noCollPrefix
+		}
+		return ""
+	}
 	out := *p
 	out.Files = make([]*coreexport.File, len(p.Files))
 	for i, f := range p.Files {
 		other, collections := fileDotImports(f)
-		hide := func(x string) bool {
-			std, isStd := stdFuncs[x]
-			seq := seqCtors[x] != "" || isStd && std.seq
-			return other && (isStd || seq) || !collections && seq
+		if collections && !other {
+			out.Files[i] = f // nothing to rename
+			continue
 		}
 		var rename func(n coreexport.Node) coreexport.Node
 		rename = func(n coreexport.Node) coreexport.Node {
-			if nm, ok := n.(*coreexport.Name); ok && hide(nm.Name) {
-				c := *nm
-				c.Name = hiddenPrefix + nm.Name
-				return &c
+			switch n := n.(type) {
+			case *coreexport.Name:
+				if pre := hidden(n.Name, other, collections); pre != "" {
+					c := *n
+					c.Name = pre + n.Name
+					return &c
+				}
+			case *coreexport.TypeName:
+				// A collections type (Array, List, HashMap, HashSet): `int`
+				// is a type and a conversion.
+				_, isType := stdGeneric[n.Name]
+				isType = isType || hashTypes[n.Name]
+				if pre := hidden(n.Name, other, collections); pre == noCollPrefix && isType && n.Package == "" {
+					c := *(mapChildren(n, rename).(*coreexport.TypeName))
+					c.Name = pre + n.Name
+					return &c
+				}
 			}
 			return mapChildren(n, rename)
 		}
 		out.Files[i] = rename(f).(*coreexport.File)
 	}
 	return &out
+}
+
+// unhide is text with every renamed name written as the source has it.
+func unhide(text string) string {
+	return strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "").Replace(text)
 }
 
 // fileDotImports reports whether file f dot-imports a package other than std

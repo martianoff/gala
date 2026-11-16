@@ -366,12 +366,13 @@ func noCollections() int = ArrayOf(1).Size()
 			stopped[it.Decl] = it.Construct
 		}
 	}
-	// Each is reported as the import its name might come from.
+	// A name another dot import might declare is reported as that import; a
+	// collections name in a file without their import as the call it is.
 	require.Equal(t, "import", stopped["viaSlice"])
 	require.Equal(t, "import", stopped["pair"])
-	require.Equal(t, "import", stopped["noCollections"])
+	require.Equal(t, "call-of-ArrayOf", stopped["noCollections"])
 	require.NotContains(t, stopped, "sizes")
 	require.NotContains(t, stopped, "both")
-	require.NotContains(t, err.Error(), "_gala_hidden_")
+	require.NotContains(t, err.Error(), "_gala_hidden")
 	require.Equal(t, gala2lean.Stats{Funcs: 6, Translated: 3}, gala2lean.CountTranslated(p, err), "%v", err)
 }

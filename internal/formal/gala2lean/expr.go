@@ -269,6 +269,10 @@ func (g *gen) name(e *coreexport.Name, sc *scope) term {
 	if stdCtors[x] != "" || g.isStdFunc(x) {
 		unsup(e.Pos, "func-value")
 	}
+	if strings.HasPrefix(x, noCollPrefix) {
+		// A collections name in a file without their import (hideLibNames).
+		unsup(e.Pos, "unresolved-name")
+	}
 	g.unresolved(e.Pos, "unresolved-name")
 	return term{}
 }

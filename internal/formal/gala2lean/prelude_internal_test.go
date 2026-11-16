@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"martianoff/gala/internal/formal/coreexport"
+	"martianoff/gala/internal/formal/coreexport/analyzerhints"
 )
 
 // TestPreludeNamesReserved checks that every definition of the prelude,
@@ -23,17 +26,48 @@ func TestPreludeNamesReserved(t *testing.T) {
 }
 
 // TestHiddenNamesNeverResolve checks that a name hideLibNames renames can
-// resolve to nothing: GALA rejects a declaration whose name starts with
-// _gala_ (GALA-E0097), and the renamed name is no library name either.
+// resolve to nothing. A name resolves to a declaration of the program, and
+// GALA rejects one whose name starts with _gala_ (GALA-E0097), or to an
+// entry of a library table, and no table holds a renamed name.
 func TestHiddenNamesNeverResolve(t *testing.T) {
-	require.True(t, strings.HasPrefix(hiddenPrefix, "_gala_"))
-	g := newGen()
-	g.collections = true
-	for x := range stdFuncs {
-		require.False(t, g.isStdFunc(hiddenPrefix+x), x)
+	for _, pre := range []string{otherDotPrefix, noCollPrefix} {
+		require.True(t, strings.HasPrefix(pre, "_gala_"))
+		for _, x := range []string{"ArrayOf", "ListOf", "ArrayTabulate", "When", "Tuple", "int64",
+			"Array", "List", "HashMap", "HashSetOf"} {
+			fn, seq := libNames(x)
+			require.True(t, fn || seq, x)
+			h := pre + x
+			fn, seq = libNames(h)
+			require.False(t, fn || seq, h)
+			_, std := stdFuncs[h]
+			_, gen := stdGeneric[h]
+			require.False(t, std || gen || seqCtors[h] != "" || stdCtors[h] != "" || hashTypes[h], h)
+			require.Equal(t, x, unhide(h))
+		}
 	}
-	for x := range seqCtors {
-		require.Empty(t, seqCtors[hiddenPrefix+x], x)
-		require.False(t, g.libName(hiddenPrefix+x, true) && seqCtors[hiddenPrefix+x] != "", x)
+}
+
+// TestHideLibNamesKeepsDeclared checks that a library name the program
+// declares itself is not renamed, in any file: a package-level declaration
+// is seen in every file of its package.
+func TestHideLibNamesKeepsDeclared(t *testing.T) {
+	p, err := coreexport.Export([]coreexport.Source{
+		{Path: "a.gala", Text: "package main\n\nfunc ListOf(n int) int = n\n"},
+		{Path: "b.gala", Text: "package main\n\nfunc main() { Println(ListOf(1), Some(2)) }\n"},
+	}, coreexport.Options{LiteralType: analyzerhints.LiteralType})
+	require.NoError(t, err)
+	var names []string
+	var walk func(n coreexport.Node)
+	walk = func(n coreexport.Node) {
+		if nm, ok := n.(*coreexport.Name); ok {
+			names = append(names, nm.Name)
+		}
+		walkChildren(n, walk)
 	}
+	for _, f := range hideLibNames(p).Files {
+		walk(f)
+	}
+	// ListOf is declared; Some is std's and not a collections name.
+	require.Contains(t, names, "ListOf")
+	require.Contains(t, names, "Some")
 }
