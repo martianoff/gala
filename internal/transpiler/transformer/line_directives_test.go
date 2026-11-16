@@ -411,6 +411,23 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			src:      "package main\n\nfunc main() {\n    val g = (n int) => 100 / n\n    println(g(1))\n}\n",
 			wantLine: "4",
 		},
+		{
+			name:     "argument lifted into a thunk",
+			src:      "package main\n\nfunc later(f func() int) int = f()\n\nfunc main() {\n    println(later(100 / n()))\n}\n\nfunc n() int = 1\n",
+			wantLine: "6",
+		},
+		{
+			name:     "argument of Try",
+			src:      "package main\n\nfunc main() {\n    println(Try(100 / n()).GetOrElse(0))\n}\n\nfunc n() int = 1\n",
+			wantLine: "4",
+		},
+		{
+			// Not an expression body: its first statement keeps its own
+			// marker when the Go results rewrite moves it into a thunk.
+			name:     "block body with Go results",
+			src:      "package main\n\nfunc f(n int) (int, error) {\n    val q = 100 / n\n    Success(q)\n}\n\nfunc main() {\n    println(f(1).GetOrElse(0))\n}\n",
+			wantLine: "4",
+		},
 	}
 
 	trans := newLineDirectiveTranspiler()

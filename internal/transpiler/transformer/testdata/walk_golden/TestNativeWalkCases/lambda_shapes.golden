@@ -106,6 +106,7 @@ func main() {
 	})
 //line $DIR/main.gala:48
 	var g = Future[int]{}.Apply(func() int {
+//line $DIR/main.gala:48
 		return shared * 2
 	})
 //line $DIR/main.gala:49

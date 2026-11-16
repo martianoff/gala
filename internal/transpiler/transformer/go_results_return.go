@@ -71,6 +71,21 @@ func (t *galaASTTransformer) goResultsValue(results *ast.FieldList) (transpiler.
 	return value, nil
 }
 
+// finishLambda is lit, a lambda or placeholder lambda lowered against
+// slotType, as its value: its one value spread over Go's results
+// (spreadLambdaGoResults) when slotType is non-nil, then its body led by the
+// line marker of body, the expression it is written as (exprFuncBody); a zero
+// body, a block lambda's, adds none. at is where the lambda is written.
+func (t *galaASTTransformer) finishLambda(lit ast.Expr, slotType transpiler.Type, at srcNode, body exprSrc) (ast.Expr, error) {
+	if slotType != nil {
+		var err error
+		if lit, err = t.spreadLambdaGoResults(lit, slotType, at); err != nil {
+			return nil, err
+		}
+	}
+	return t.exprFuncLit(body, lit), nil
+}
+
 // spreadLambdaGoResults returns lit, a lambda lowered against slotType,
 // spreading its one value over Go's results when slotType is a function type
 // with several (see lambdaExpectation). A result the slot leaves open (a type
@@ -163,10 +178,6 @@ func (t *galaASTTransformer) resultFieldList(types []transpiler.Type) *ast.Field
 // returnGoResults rewrites body, which returns one value of valueType, to
 // return that value spread over goResults (see the comment at the top).
 func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.Expr, goResults *ast.FieldList) *ast.BlockStmt {
-	// An expression body's line marker stays first, above the rewrite.
-	if mark, rest := splitLineMarker(body); mark != nil {
-		return prependStmt(mark, t.returnGoResults(rest, valueType, goResults))
-	}
 	var value ast.Expr
 	if len(body.List) == 1 {
 		if ret, ok := body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {

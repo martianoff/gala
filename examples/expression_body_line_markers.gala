@@ -2,8 +2,8 @@ package main
 
 import "regexp"
 
-// A panic in the body of an expression-bodied function, method or lambda
-// reports the GALA line of its expression, as a panic in a block body does.
+// A panic in an expression body (a function's, method's or lambda's, or an
+// argument lifted into a thunk) reports its expression's GALA line.
 
 struct Counter(x int)
 
@@ -35,4 +35,19 @@ func main() {
     Println(s"returned lambda: ${panicsAt(Try(divider()(0)).GetError(), 19)}")
     Println(s"lambda: ${panicsAt(Try(lambda(0)).GetError(), 30)}")
     Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 37)}")
+    Println(s"argument of Try: ${panicsAt(Try(100 / zero()).GetError(), 38)}")
+    Println(s"by-name argument: ${panicsAt(Try(later(100 / zero())).GetError(), 39)}")
+    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 49)}")
+    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 53)}")
 }
+
+func zero() int = 0
+
+func later(f func() int) int = f()
+
+func firstStatement() (int, error) {
+    val q = 100 / zero()
+    Success(q)
+}
+
+func countdown(n int, acc int) int = if (n == 0) 100 / acc else countdown(n - 1, acc)

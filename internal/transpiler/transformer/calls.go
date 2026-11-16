@@ -4675,7 +4675,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 	if err := t.checkInoutFuncSlot(lit, s.typ, l.at()); err != nil {
 		return nil, err
 	}
-	return t.spreadLambdaGoResults(lit, s.typ, l.at())
+	return t.finishLambda(lit, s.typ, l.at(), l.expression())
 }
 
 // declaresAnyResult reports whether slot s is a function type whose results the
@@ -4861,7 +4861,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(e, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
-		return t.spreadLambdaGoResults(expr, funcSlot, e.at())
+		return t.finishLambda(expr, funcSlot, e.at(), e)
 	}
 
 	// Check mode: an if-expression or match lowers its branches against the
@@ -4891,7 +4891,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 				return nil, err
 			}
 		}
-		expr = wrapped
+		expr = t.exprFuncLit(e, wrapped)
 	}
 
 	return expr, nil

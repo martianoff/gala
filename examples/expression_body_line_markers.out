@@ -5,3 +5,7 @@ function returning nothing: true
 returned lambda: true
 lambda: true
 placeholder lambda: true
+argument of Try: true
+by-name argument: true
+block body with Go results: true
+self-tail-call loop: true

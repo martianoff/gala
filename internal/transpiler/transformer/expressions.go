@@ -770,7 +770,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 			if err != nil {
 				return nil, err
 			}
-			return t.spreadLambdaGoResults(lit, s.typ, f.lambda.at())
+			return t.finishLambda(lit, s.typ, f.lambda.at(), f.lambda.expression())
 		}
 		return t.lowerExpr(e)
 	case f.partial.ok():

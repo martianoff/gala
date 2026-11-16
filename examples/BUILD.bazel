@@ -5308,6 +5308,14 @@ gala_exec_test(
     expected = "expression_body_line_markers.out",
 )
 
+# A block body giving a Go call's results as a Try spreads it: on a failure
+# Go receives the zero value with the error.
+gala_exec_test(
+    name = "go_results_block_body_zero_value",
+    src = "go_results_block_body_zero_value.gala",
+    expected = "go_results_block_body_zero_value.out",
+)
+
 gala_exec_test(
     name = "try_combinator_panics",
     src = "try_combinator_panics.gala",

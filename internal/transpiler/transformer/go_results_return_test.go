@@ -183,7 +183,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a bare Go call is lifted into a thunk returning its results",
 			body:     `func five() int = run(strconv.Atoi("5"))`,
-			contains: []string{"run(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
+			contains: []string{"run(func() (int, error) {\n//line go_results_return_test.gala:25\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
 			absent:   []string{"GoTry(strconv"},
 		},
 		{
@@ -194,7 +194,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a bare Go call fills a generic Go callee's thunk",
 			body:     "func once() int {\n    val get = sync.OnceValues(strconv.Atoi(\"5\"))\n    get().GetOrElse(0)\n}",
-			contains: []string{"sync.OnceValues(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
+			contains: []string{"sync.OnceValues(func() (int, error) {\n//line go_results_return_test.gala:26\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
 		},
 		{
 			name:     "a function value with the results is passed as it is",

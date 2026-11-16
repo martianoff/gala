@@ -97,6 +97,7 @@ func args(p P) int {
 //line $DIR/main.gala:30
 		return c + 1
 	}) + run(func() int {
+//line $DIR/main.gala:30
 		return c * 2
 	})
 //line $DIR/main.gala:31

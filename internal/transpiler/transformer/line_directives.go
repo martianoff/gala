@@ -24,7 +24,7 @@ import (
 // are rewritten to column-0 `//line` directives, which the Go compiler honors.
 //
 // Granularity: one marker before each statement in a block, one before the body
-// of an expression-bodied function or lambda (markExprBody), and one before each
+// of a Go function whose source is an expression (exprFuncBody), and one before each
 // top-level declaration. A directive maps the first physical Go line of the
 // statement's generated code back to its GALA line.
 //
@@ -94,41 +94,33 @@ func (t *galaASTTransformer) checkReservedName(name string, at srcNode) error {
 	return nil
 }
 
-// markExprBody prepends to body, the lowered body of an expression-bodied
-// function or lambda (`= expr`, `=> expr`), the line marker of its expression
-// e. A block body marks each of its statements (walkBlock), but an expression
-// body has no statement of its own to mark: without this marker the Go
-// statement it lowers to sits on the line after the declaration's directive,
-// so Go attributes a panic in it to the GALA line after the expression.
-func (t *galaASTTransformer) markExprBody(body *ast.BlockStmt, e exprSrc) *ast.BlockStmt {
+// exprFuncBody is body, a Go block holding the lowering of the expression e,
+// led by the line marker of e. Such a block is the body of a Go function whose
+// GALA source is an expression — an expression-bodied function or method
+// (`= expr`), an expression lambda (`=> expr`), a placeholder lambda
+// (`f(_ + 1)`) or an argument lifted into a thunk (`Try(expr)`) — or the loop
+// body and branches of a self-tail-call loop (tco.go). A block body marks each of its statements (walkBlock),
+// but an expression body has no statement of its own to mark: without this
+// marker the Go statement it lowers to sits on the line after the enclosing
+// directive, so Go reports a panic in it one GALA line late.
+//
+// Every producer of such a body calls it last, after any rewrite that reads
+// the body's statements (returnGoResults), so no rewrite sees the marker.
+// A zero e (a block lambda's expression) leaves body as it is.
+func (t *galaASTTransformer) exprFuncBody(e exprSrc, body *ast.BlockStmt) *ast.BlockStmt {
 	if body == nil || len(body.List) == 0 || !t.emitLineMarkers() || !e.ok() {
 		return body
 	}
 	line, _ := e.at().start()
-	return prependStmt(lineMarkerStmt(line), body)
+	return prependStmts(body, lineMarkerStmt(line))
 }
 
-// prependStmt is body with stmt before its statements.
-func prependStmt(stmt ast.Stmt, body *ast.BlockStmt) *ast.BlockStmt {
-	list := make([]ast.Stmt, 0, len(body.List)+1)
-	list = append(list, stmt)
-	return &ast.BlockStmt{List: append(list, body.List...)}
-}
-
-// splitLineMarker separates the line marker markExprBody put at the start of
-// body from the rest of it, for a rewrite that reads the body's statements: it
-// returns the marker and the body without it, or nil and body itself when body
-// does not start with a marker.
-func splitLineMarker(body *ast.BlockStmt) (ast.Stmt, *ast.BlockStmt) {
-	if len(body.List) == 0 {
-		return nil, body
+// exprFuncLit is expr with its body led by e's line marker (exprFuncBody)
+// when expr is a func literal whose source is the expression e; any other
+// expr is returned as it is.
+func (t *galaASTTransformer) exprFuncLit(e exprSrc, expr ast.Expr) ast.Expr {
+	if lit, ok := expr.(*ast.FuncLit); ok {
+		lit.Body = t.exprFuncBody(e, lit.Body)
 	}
-	stmt, ok := body.List[0].(*ast.ExprStmt)
-	if !ok {
-		return nil, body
-	}
-	if ident, ok := stmt.X.(*ast.Ident); !ok || !strings.HasPrefix(ident.Name, transpiler.LineMarkerPrefix) {
-		return nil, body
-	}
-	return stmt, &ast.BlockStmt{List: body.List[1:]}
+	return expr
 }

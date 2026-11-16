@@ -386,9 +386,12 @@ func bodies() int {
 func fact(n int, acc int) int {
 //line $DIR/main.gala:65
 	for {
+//line $DIR/main.gala:65
 		if n <= 1 {
+//line $DIR/main.gala:65
 			return acc
 		} else {
+//line $DIR/main.gala:65
 			_tmp_24 := n - 1
 			_tmp_25 := acc * n
 			n, acc = _tmp_24, _tmp_25
@@ -401,10 +404,14 @@ func fact(n int, acc int) int {
 func steps(n int, acc int) int {
 //line $DIR/main.gala:67
 	for {
+//line $DIR/main.gala:67
 		if n <= 0 {
+//line $DIR/main.gala:67
 			return acc
 		} else {
+//line $DIR/main.gala:67
 			if n%2 == 0 {
+//line $DIR/main.gala:67
 				_tmp_26 := n / 2
 				_tmp_27 := acc + 1
 				n, acc = _tmp_26, _tmp_27

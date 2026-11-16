@@ -341,7 +341,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 		if err != nil {
 			return nil, err
 		}
-		body = t.markExprBody(b, expr)
+		body = b
 		if inferredRet != nil {
 			retType = inferredRet
 		}
@@ -1739,7 +1739,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 			Params:  fieldList,
 			Results: resultField,
 		},
-		Body: t.markExprBody(&ast.BlockStmt{List: []ast.Stmt{bodyStmt}}, e),
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{bodyStmt},
+		},
 	}
 	return funcLit, true, nil
 }

@@ -275,9 +275,12 @@ func Show() {
 func Fact(n int, acc int) int {
 //line $DIR/main.gala:80
 	for {
+//line $DIR/main.gala:80
 		if n <= 1 {
+//line $DIR/main.gala:80
 			return acc
 		} else {
+//line $DIR/main.gala:80
 			_tmp_1 := n - 1
 			_tmp_2 := acc * n
 			n, acc = _tmp_1, _tmp_2

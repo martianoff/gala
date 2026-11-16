@@ -137,8 +137,11 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 		return nil, false, nil
 	}
 
+	// The loop body is the function's expression body run once per call, so
+	// it is led by the expression's marker: one above `for {` alone would let
+	// the statements inside count on from it.
 	loop := &ast.ForStmt{
-		Body: &ast.BlockStmt{List: []ast.Stmt{ifStmt}},
+		Body: t.exprFuncBody(body, &ast.BlockStmt{List: []ast.Stmt{ifStmt}}),
 	}
 	return &ast.BlockStmt{List: []ast.Stmt{loop}}, true, nil
 }
@@ -222,33 +225,13 @@ func (t *galaASTTransformer) buildTailBranch(
 	tc *tailCtx,
 ) ([]ast.Stmt, bool, error) {
 	if e := branch.expr(); e.ok() {
-		// Nested if-expression: recurse so `if a x else if b self(...) else y`
-		// keeps the tail self-call in tail position.
-		if nested := t.ifIn(e); nested.ok() {
-			ifStmt, found, err := t.buildTailIfStmt(nested, tc)
-			if err != nil {
-				return nil, false, err
-			}
-			return []ast.Stmt{ifStmt}, found, nil
-		}
-
-		// Direct tail self-call.
-		if stmts, ok, err := t.buildTailCallStep(e, tc); err != nil {
-			return nil, false, err
-		} else if ok {
-			return stmts, true, nil
-		}
-
-		// Terminal value: return it.
-		value, err := t.lowerResultAgainst(e, t.tailResultSlot(tc), false)
+		stmts, found, err := t.buildTailExprBranch(e, tc)
 		if err != nil {
 			return nil, false, err
 		}
-		if stmt, ok := t.divergingStmt(value); ok {
-			return []ast.Stmt{stmt}, false, nil
-		}
-		value = t.wrapWithAssertion(value, tc.retType)
-		return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{value}}}, false, nil
+		// The branch's statements sit on their own Go lines below the `if`, so
+		// they are led by the marker of the expression they lower.
+		return t.exprFuncBody(e, &ast.BlockStmt{List: stmts}).List, found, nil
 	}
 
 	// Block branch: reuse the shared branch transform and append a terminal
@@ -265,6 +248,37 @@ func (t *galaASTTransformer) buildTailBranch(
 		return b.withValue(&ast.ReturnStmt{Results: []ast.Expr{t.wrapWithAssertion(b.expr, tc.retType)}}), false, nil
 	}
 	return b.stmts, false, nil
+}
+
+// buildTailExprBranch is buildTailBranch for a branch that is the expression e.
+func (t *galaASTTransformer) buildTailExprBranch(e exprSrc, tc *tailCtx) ([]ast.Stmt, bool, error) {
+	// Nested if-expression: recurse so `if a x else if b self(...) else y`
+	// keeps the tail self-call in tail position.
+	if nested := t.ifIn(e); nested.ok() {
+		ifStmt, found, err := t.buildTailIfStmt(nested, tc)
+		if err != nil {
+			return nil, false, err
+		}
+		return []ast.Stmt{ifStmt}, found, nil
+	}
+
+	// Direct tail self-call.
+	if stmts, ok, err := t.buildTailCallStep(e, tc); err != nil {
+		return nil, false, err
+	} else if ok {
+		return stmts, true, nil
+	}
+
+	// Terminal value: return it.
+	value, err := t.lowerResultAgainst(e, t.tailResultSlot(tc), false)
+	if err != nil {
+		return nil, false, err
+	}
+	if stmt, ok := t.divergingStmt(value); ok {
+		return []ast.Stmt{stmt}, false, nil
+	}
+	value = t.wrapWithAssertion(value, tc.retType)
+	return []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{value}}}, false, nil
 }
 
 // buildTailCallStep detects whether e is a direct call to tc.funcName with an
