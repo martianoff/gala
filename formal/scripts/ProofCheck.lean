@@ -75,7 +75,8 @@ def requiredTheorems : List Name := [
   `Gala.M3.part_lit_int,
   `Gala.M3.part_var,
   `Gala.M3.part_add,
-  `Gala.M3.part_gt
+  `Gala.M3.part_gt,
+  `Gala.M3.lowerMatch_instance
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

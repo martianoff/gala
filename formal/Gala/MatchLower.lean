@@ -49,7 +49,7 @@
   values and panics), and a `return` inside an arm (the transformer lowers such a match
   inline; M5).
 -/
-import Gala.Order
+import Gala.AlphaStep
 import Gala.GoCore
 
 namespace Gala.M3
@@ -264,10 +264,7 @@ theorem grun_bind (x : GM α) (f : α → GM β) (s : GSt) :
 
 theorem grun_pure (a : α) (s : GSt) : (pure a : GM α).run.run s = (.ok a, s) := rfl
 theorem grun_get (s : GSt) : (get : GM GSt).run.run s = (.ok s, s) := rfl
-theorem grun_throw (e : GStop) (s : GSt) : (throw e : GM α).run.run s = (.error e, s) := rfl
 theorem grun_set (t s : GSt) : (set t : GM PUnit).run.run s = (.ok ⟨⟩, t) := rfl
-theorem grun_modify (f : GSt → GSt) (s : GSt) :
-    (modify f : GM PUnit).run.run s = (.ok ⟨⟩, f s) := rfl
 
 theorem grun_ofExcept (r : Except GStop α) (s : GSt) :
     (MonadExcept.ofExcept r : GM α).run.run s = (r, s) := by
@@ -314,15 +311,11 @@ theorem geval_peval (X : Nat → GM GVal) (g : GSt) :
 
 /-! ## The pattern lowering is correct -/
 
-/-- Two lists related element by element. -/
-inductive Forall2 (R : α → β → Prop) : List α → List β → Prop
-  | nil : Forall2 R [] []
-  | cons : R a b → Forall2 R as bs → Forall2 R (a :: as) (b :: bs)
-
-theorem Forall2.append {R : α → β → Prop} :
-    Forall2 R as bs → Forall2 R as' bs' → Forall2 R (as ++ as') (bs ++ bs')
-  | .nil, h => h
-  | .cons hab h, h' => .cons hab (h.append h')
+theorem fall2_append {R : α → β → Prop} :
+    ∀ {as as' : List α} {bs bs' : List β},
+      Spec.Fall2 R as bs → Spec.Fall2 R as' bs' → Spec.Fall2 R (as ++ as') (bs ++ bs')
+  | _, _, _, _, .nil, h => h
+  | _, _, _, _, .cons hab h, h' => .cons hab (fall2_append h h')
 
 mutual
 /-- galaspec's `==` is symmetric. -/
@@ -344,15 +337,6 @@ end
 
 theorem encs_getElem? (vs : List Spec.Val) (i : Nat) (h : i < vs.length) :
     (encs vs)[i]? = some (enc vs[i]) := by
-  induction vs generalizing i with
-  | nil => simp at h
-  | cons v vs ih =>
-    cases i with
-    | zero => rfl
-    | succ i => exact ih i (by simpa using h)
-
-theorem encs_getD (vs : List Spec.Val) (i : Nat) (h : i < vs.length) :
-    (encs vs).getD i .zero = enc vs[i] := by
   induction vs generalizing i with
   | nil => simp at h
   | cons v vs ih =>
@@ -399,7 +383,7 @@ theorem matchPats_cons_run (ds : Decls) (L G : Env) (p : Pat) (ps : List Pat) (v
 def PatOk (look : GoCore.GVar → Option GoCore.GVal) (lp : LPat)
     (r : Option (List (String × Spec.Val))) : Prop :=
   peval look lp.1 = some (.bool r.isSome) ∧
-  ∀ bs, r = some bs → Forall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
+  ∀ bs, r = some bs → Spec.Fall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
     xe.1 = xv.1 ∧ peval look xe.2 = some (enc xv.2) ∧ ∀ n, xv.2 ≠ .ref n) lp.2 bs
 
 /-- The static scope agrees with galaspec's: a name is in scope exactly when it is bound. -/
@@ -679,7 +663,7 @@ theorem lowerPats_correct (ds : Spec.Decls) (inScope : String → Bool) (c : Spe
         · simp only [lowerPats, peval, Option.bind_eq_bind, hc1, Option.isSome_some, Option.bind_some,
             hc2]
         · simp only [Option.some.injEq] at hbs; subst hbs
-          exact Forall2.append (hb1 b rfl) (hb2 bs rfl)
+          exact fall2_append (hb1 b rfl) (hb2 bs rfl)
   | [], ps, proj, i, vs, r, h, hl, hp, hm => by
     cases h
     cases ps with
@@ -715,7 +699,7 @@ inductive LocRel (heap : Array Spec.Val) : Spec.Env → List (GoCore.GVar × GoC
     with the same names, in order, and related values. -/
 def R (c : Spec.Core) (g : GoCore.GSt) : Prop :=
   c.out = g.out ∧ LocRel c.heap c.locals g.locals ∧
-    Forall2 (fun (xb : String × Spec.Binding) (yw : String × GoCore.GVal) =>
+    Spec.Fall2 (fun (xb : String × Spec.Binding) (yw : String × GoCore.GVal) =>
       xb.1 = yw.1 ∧ BRel c.heap xb.2 yw.2) c.globals g.globals
 
 theorem hrun_get (c : Spec.Core) : (get : Spec.H Spec.Core).run.run c = (.ok c, c) := rfl
@@ -761,7 +745,7 @@ theorem LocRel.lookup {heap : Array Spec.Val} {ρ τ} (h : LocRel heap ρ τ) (x
 
 theorem globals_lookup {heap : Array Spec.Val} :
     ∀ {G : Spec.Env} {Γ : List (String × GoCore.GVal)},
-    Forall2 (fun (xb : String × Spec.Binding) (yw : String × GoCore.GVal) =>
+    Spec.Fall2 (fun (xb : String × Spec.Binding) (yw : String × GoCore.GVal) =>
       xb.1 = yw.1 ∧ BRel heap xb.2 yw.2) G Γ → ∀ (x : String) (b : Spec.Binding),
     Spec.lookup G x = some b → ∃ w, Γ.lookup x = some w ∧ BRel heap b w
   | _, _, .nil, x, b, h => by simp [Spec.lookup] at h
@@ -902,33 +886,14 @@ end GRun2
 
 /-! ### Lists -/
 
-theorem Forall2.length {R : α → β → Prop} : Forall2 R as bs → as.length = bs.length
-  | .nil => rfl
-  | .cons _ h => by simp [h.length]
-
-/-- Split a `Forall2` over an append on the left. -/
-theorem Forall2.split_left {R : α → β → Prop} :
-    ∀ {as as' : List α} {bs : List β}, Forall2 R (as ++ as') bs →
-      ∃ b1 b2, bs = b1 ++ b2 ∧ Forall2 R as b1 ∧ Forall2 R as' b2
+/-- Split a `Fall2` over an append on the left. -/
+theorem fall2_split_left {R : α → β → Prop} :
+    ∀ {as as' : List α} {bs : List β}, Spec.Fall2 R (as ++ as') bs →
+      ∃ b1 b2, bs = b1 ++ b2 ∧ Spec.Fall2 R as b1 ∧ Spec.Fall2 R as' b2
   | [], _, _, h => ⟨[], _, rfl, .nil, h⟩
   | _ :: _, _, _ :: _, .cons hab h => by
-    obtain ⟨b1, b2, rfl, h1, h2⟩ := Forall2.split_left h
+    obtain ⟨b1, b2, rfl, h1, h2⟩ := fall2_split_left h
     exact ⟨_ :: b1, b2, rfl, .cons hab h1, h2⟩
-
-/-- Split a `Forall2` over two appends whose first parts have the same length. -/
-theorem Forall2.split {R : α → β → Prop} :
-    ∀ {as as' : List α} {bs bs' : List β}, as.length = bs.length →
-      Forall2 R (as ++ as') (bs ++ bs') → Forall2 R as bs ∧ Forall2 R as' bs'
-  | [], _, [], _, _, h => ⟨.nil, h⟩
-  | _ :: _, _, _ :: _, _, hl, .cons hab h => by
-    obtain ⟨h1, h2⟩ := Forall2.split (by simpa using hl) h
-    exact ⟨.cons hab h1, h2⟩
-  | [], _, _ :: _, _, hl, _ | _ :: _, _, [], _, hl, _ => by simp at hl
-
-theorem Forall2.imp {R S : α → β → Prop} (f : ∀ a b, R a b → S a b) :
-    Forall2 R as bs → Forall2 S as bs
-  | .nil => .nil
-  | .cons h t => .cons (f _ _ h) (t.imp f)
 
 /-! ### Temporaries -/
 
@@ -1072,11 +1037,11 @@ theorem defsOf_run (X : Nat → GoCore.GM GoCore.GVal) (c : Spec.Core) (v : Spec
       ∀ g, Good c v g → ∃ ws : List GoCore.GVal, ws.length = suf.length ∧
         (GoCore.gexecs X (defsOf n suf)).run.run g =
           (.ok (), { g with locals := pushTemps n ws g.locals }) ∧
-        ∀ bsv, r = some bsv → Forall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws
+        ∀ bsv, r = some bsv → Spec.Fall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws
           (bsv.drop pre.length)
   | [], pre, hsplit, n, hn, g, hg => by
     refine ⟨[], rfl, by rw [defsOf, gexecs_nil]; rfl, fun bsv hr => ?_⟩
-    have hl := ((hok g hg).2 bsv hr).length
+    have hl := Spec.fall2_length ((hok g hg).2 bsv hr)
     rw [hsplit] at hl
     simp only [List.append_nil] at hl
     rw [hl, List.drop_length]
@@ -1095,8 +1060,8 @@ theorem defsOf_run (X : Nat → GoCore.GM GoCore.GVal) (c : Spec.Core) (v : Spec
       rfl
     · have hf := (hok g hg).2 bsv hr
       rw [hsplit] at hf
-      obtain ⟨b1, b2, hb, h1, h2⟩ := hf.split_left
-      have hb1 := h1.length
+      obtain ⟨b1, b2, hb, h1, h2⟩ := fall2_split_left hf
+      have hb1 := Spec.fall2_length h1
       cases h2 with
       | cons hxe h2' =>
         rename_i b bs'
@@ -1157,9 +1122,9 @@ theorem pushed_cons (x : String) (v : Spec.Val) (bsv : List (String × Spec.Val)
 theorem pushed_userTop {heap : Array Spec.Val} :
     ∀ (bs : List (String × GoCore.GExpr)) (bsv : List (String × Spec.Val)) (ws : List GoCore.GVal)
       (ρ : Spec.Env) (τ : List (GoCore.GVar × GoCore.GVal)),
-      Forall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
+      Spec.Fall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
         xe.1 = xv.1 ∧ ∀ n, xv.2 ≠ .ref n) bs bsv →
-      Forall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws bsv →
+      Spec.Fall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws bsv →
       ∃ A U, Spec.pushed bsv ρ = A ++ ρ ∧ userTop bs ws τ = U ++ τ ∧ A.length = U.length ∧
         (∀ e ∈ U, isTmpE e = false) ∧
         ∀ ρ' τ', LocRel heap ρ' τ' → LocRel heap (A ++ ρ') (U ++ τ')
@@ -1305,7 +1270,7 @@ def FrameS (c c' : Spec.Core) : Prop :=
 
 /-- GoCore's frame: the same local names, in order, and every temporary's value kept. -/
 def FrameL (τ τ' : List (GoCore.GVar × GoCore.GVal)) : Prop :=
-  Forall2 (fun a b => a.1 = b.1 ∧ (isTmpE a = true → a.2 = b.2)) τ τ'
+  Spec.Fall2 (fun a b => a.1 = b.1 ∧ (isTmpE a = true → a.2 = b.2)) τ τ'
 
 /-- **A part simulates.** From related states, wherever galaspec's run of `x` gives a
     value or a panic, GoCore's run of `y` gives the encoded value or a panic of the same
@@ -1426,7 +1391,7 @@ theorem pop_rel {c c' : Spec.Core} {g' : GoCore.GSt} {A ρ : Spec.Env}
     ∃ ρ' Z bot, Spec.exitScope c'.locals ρ.length = ρ' ∧ ρ'.map (·.1) = ρ.map (·.1) ∧
       g'.locals = Z ++ bot ∧ FrameL τb bot ∧
       R { c' with locals := ρ' } { g' with locals := bot } := by
-  obtain ⟨Z, bot, hg', hZ', hbot⟩ := Forall2.split_left hFL
+  obtain ⟨Z, bot, hg', hZ', hbot⟩ := fall2_split_left hFL
   have hl : c'.locals.length = A.length + ρ.length := by
     have := congrArg List.length hF; simp [hc] at this; omega
   refine ⟨c'.locals.drop A.length, Z, bot, ?_, ?_, hg', hbot, ⟨hR.1, ?_, hR.2.2⟩⟩
@@ -1533,9 +1498,9 @@ theorem arm_body (X : Nat → GoCore.GM GoCore.GVal) (P : Spec.Core → Prop) (b
     (b' : GoCore.GExpr) (hb : Part P (fun _ => True) b (GoCore.geval X b'))
     (bs : List (String × GoCore.GExpr)) (bsv : List (String × Spec.Val)) (ws : List GoCore.GVal)
     (n : Nat) (s0 t0 : Spec.St) (gB : GoCore.GSt)
-    (hf1 : Forall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
+    (hf1 : Spec.Fall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
       xe.1 = xv.1 ∧ ∀ n, xv.2 ≠ .ref n) bs bsv)
-    (hf2 : Forall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws bsv)
+    (hf2 : Spec.Fall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws bsv)
     (hlk : ∀ j (hj : j < ws.length), gB.locals.lookup (.tmp (n + j)) = some ws[j])
     (ht0 : t0.locals = Spec.pushed bsv s0.locals)
     (hglob : t0.globals.map (·.1) = s0.globals.map (·.1))
@@ -1548,7 +1513,7 @@ theorem arm_body (X : Nat → GoCore.GM GoCore.GVal) (P : Spec.Core → Prop) (b
         | (.ok r, t) => (.ok r, popped t s0.locals.length)
         | (.error e, t) => (.error e, t))
       ((GoCore.gexecs X (bindUser n bs ++ [.ret b'])).run.run gB) := by
-  have hl : ws.length = bs.length := by rw [hf2.length, hf1.length]
+  have hl : ws.length = bs.length := by rw [Spec.fall2_length hf2, Spec.fall2_length hf1]
   obtain ⟨A, U, hA, hU, hAU, hUt, hrel⟩ := pushed_userTop (heap := t0.heap) bs bsv ws s0.locals gB.locals hf1 hf2
   rw [gexecs_append, bindUser_run X bs ws n gB hl hlk]
   simp only
@@ -1696,7 +1661,7 @@ theorem ArmsRes.weaken {s0 s1 : Spec.St} {τ0 τ' T : List (GoCore.GVar × GoCor
   · rename_i w hw
     rw [hw] at h
     obtain ⟨hret, ⟨Z, bot, hz, hfb, hR⟩, hFS⟩ := h
-    obtain ⟨T2, bot', rfl, hT2, hbot'⟩ := Forall2.split_left hfb
+    obtain ⟨T2, bot', rfl, hT2, hbot'⟩ := fall2_split_left hfb
     refine ⟨hret, ⟨Z ++ T2, bot', by simp [hz], hF.trans hbot', ⟨hR.1, ?_, hR.2.2⟩⟩, ?_⟩
     · exact LocRel.drop_top [] T2 _ bot' hR.2.1
         (by rw [← FrameL.isTmp_eq hT2, filter_users_tmps T hT]; rfl)
@@ -1729,7 +1694,7 @@ def ArmsOkFrom (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t : STy)
       ((GoCore.gexecs X (lowerArms ds inScope t n arms)).run.run g)
 
 theorem names_eq {bs : List (String × GoCore.GExpr)} {bsv : List (String × Spec.Val)}
-    (h : Forall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
+    (h : Spec.Fall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
       xe.1 = xv.1 ∧ peval look xe.2 = some (enc xv.2) ∧ ∀ n, xv.2 ≠ .ref n) bs bsv) :
     bs.map (·.1) = bsv.map (·.1) := by
   induction h with
@@ -1747,7 +1712,7 @@ theorem arm_start (ds : Spec.Decls) (inScope : String → Bool) (t : STy) (X : N
     (∀ g', Good s.toCore v g' → PatOk (GoCore.lookupVar g') lp r) ∧
     ∃ ws : List GoCore.GVal, ws.length = lp.2.length ∧
       (GoCore.gexecs X (defsOf n lp.2)).run.run g = (.ok (), { g with locals := pushTemps n ws g.locals }) ∧
-      ∀ bsv, r = some bsv → Forall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws bsv := by
+      ∀ bsv, r = some bsv → Spec.Fall2 (fun w (xv : String × Spec.Val) => w = enc xv.2) ws bsv := by
   intro lp
   have hpok : ∀ g', Good s.toCore v g' → PatOk (GoCore.lookupVar g') lp r := fun g' hg' =>
     lowerPat_correct ds inScope s.toCore _ (R_reads hg'.1) hS t p _ v r hv
@@ -1774,9 +1739,6 @@ theorem branch_err (X : Nat → GoCore.GM GoCore.GVal) (s : GoCore.GStmt) (ss : 
 theorem withScope_err (m : GoCore.GM α) (g : GoCore.GSt) (e : GoCore.GStop) (t : GoCore.GSt)
     (h : m.run.run g = (.error e, t)) : (GoCore.withScope m).run.run g = (.error e, t) := by
   rw [withScope_run, h]
-
-theorem armsRes_go {s0 τb gs} {go : Except GoCore.GStop Unit × GoCore.GSt} (go' : Except GoCore.GStop Unit × GoCore.GSt)
-    (h : ArmsRes s0 τb gs go) (hgo : go' = go) : ArmsRes s0 τb gs go' := hgo ▸ h
 
 theorem good_push_eq {g : GoCore.GSt} (n : Nat) (ws : List GoCore.GVal) :
     ∃ T, pushTemps n ws g.locals = T ++ g.locals ∧ ∀ e ∈ T, isTmpE e = true := by
@@ -1828,8 +1790,8 @@ theorem arm_noguard (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t :
   | some bsv =>
     rw [evalCases_noguard ds d v p b _ s bsv hm] at hnb ⊢
     have hok := (hpok gd hgd).2 bsv rfl
-    have hf1 : Forall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
-        xe.1 = xv.1 ∧ ∀ n, xv.2 ≠ .ref n) lp.2 bsv := hok.imp fun _ _ h => ⟨h.1, h.2.2⟩
+    have hf1 : Spec.Fall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
+        xe.1 = xv.1 ∧ ∀ n, xv.2 ≠ .ref n) lp.2 bsv := Spec.fall2_mono (fun _ _ h => ⟨h.1, h.2.2⟩) hok
     have hP : ScopeOk (armScope inScope (lp.2.map (·.1))) (withBinds s bsv).toCore := by
       rw [names_eq hok]; exact hS.pushed bsv
     have h := arm_body X _ _ b' hb lp.2 bsv ws n s (withBinds s bsv) gd hf1 (hvals bsv rfl)
@@ -1931,8 +1893,8 @@ theorem arm_guard (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t : S
       · exact hTt e he) (FrameL.refl _) (FrameS.refl _)
   | some bsv =>
     have hok := (hpok gv hgv).2 bsv rfl
-    have hf1 : Forall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
-        xe.1 = xv.1 ∧ ∀ n, xv.2 ≠ .ref n) lp.2 bsv := hok.imp fun _ _ h => ⟨h.1, h.2.2⟩
+    have hf1 : Spec.Fall2 (fun (xe : String × GoCore.GExpr) (xv : String × Spec.Val) =>
+        xe.1 = xv.1 ∧ ∀ n, xv.2 ≠ .ref n) lp.2 bsv := Spec.fall2_mono (fun _ _ h => ⟨h.1, h.2.2⟩) hok
     have hf2 := hvals bsv rfl
     have hl : ws.length = lp.2.length := hwl
     -- The temporaries hold the variables' values, past the flag.
@@ -2010,7 +1972,7 @@ theorem arm_guard (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t : S
         rw [hU]; show U ++ (GoCore.GVar.tmp ok, GoCore.GVal.bool false) :: pushTemps n ws g.locals = _
         rw [hT]
       rw [hgb1] at hFL
-      obtain ⟨U', rest1, hgy, hUU, hrest1⟩ := Forall2.split_left hFL
+      obtain ⟨U', rest1, hgy, hUU, hrest1⟩ := fall2_split_left hFL
       cases hrest1 with
       | cons hok1 hR' =>
       rename_i e1 R'
@@ -2025,7 +1987,7 @@ theorem arm_guard (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t : S
         have := hUt e0 he0
         simp only [isTmpE, hn0, h] at this
         exact absurd this (by decide)
-      have hR'len : R'.length = (T ++ g.locals).length := hR'.length.symm
+      have hR'len : R'.length = (T ++ g.locals).length := (Spec.fall2_length hR').symm
       let gt : GoCore.GSt := { gy with locals := (.tmp ok, enc gvv) :: R' }
       -- Running up to the flag's test.
       have hupd : GoCore.updateVar gy (.tmp ok) (enc gvv) =
@@ -2059,7 +2021,7 @@ theorem arm_guard (ds : Spec.Decls) (d : Nat) (inScope : String → Bool) (t : S
         show ((GoCore.GVar.tmp ok, enc gvv) :: R').lookup (.tmp k) = _
         rw [lookup_tmp_skip _ _ _ _ (Ne.symm hk)]
         exact FrameL.lookup_tmp hR' k
-      obtain ⟨T2, R2, hR2, hTT2, hgR2⟩ := Forall2.split_left hR'
+      obtain ⟨T2, R2, hR2, hTT2, hgR2⟩ := fall2_split_left hR'
       have hT0 : ∀ e ∈ (GoCore.GVar.tmp ok, enc gvv) :: T2, isTmpE e = true := by
         intro e he; simp only [List.mem_cons] at he
         rcases he with rfl | he
@@ -2173,6 +2135,43 @@ theorem tick_run (s : Spec.St) : Spec.tick.run.run s = match s.steps with
   rcases s with ⟨c, n⟩
   cases n <;> rfl
 
+theorem tick_succ (s : Spec.St) (k : Nat) (h : s.steps = k + 1) :
+    Spec.tick.run.run s = (.ok (), { s with steps := k }) := by
+  rw [tick_run, h]
+
+theorem eval_mtch_run (ds : Spec.Decls) (d : Nat) (subj : Spec.Expr)
+    (cs : List (Spec.Pat × Option Spec.Expr × Spec.Expr)) (s : Spec.St) :
+    (Spec.eval ds (d + 1) (.mtch subj cs)).run.run s =
+      match Spec.tick.run.run s with
+      | (.ok _, s1) => match (Spec.eval ds d subj).run.run s1 with
+        | (.ok v, t1) => (Spec.evalCases ds d v cs).run.run t1
+        | (.error e, t1) => (.error e, t1)
+      | (.error e, s1) => (.error e, s1) := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq]
+  rcases Spec.tick.run.run s with ⟨r, s1⟩
+  cases r
+  · rfl
+  · simp only
+    rcases (Spec.eval ds d subj).run.run s1 with ⟨r', t1⟩
+    cases r' <;> rfl
+
+/-- A name bound to `b`: its value, read through `deref`. -/
+theorem eval_name_run (ds : Spec.Decls) (d : Nat) (x : String) (s : Spec.St) (b : Spec.Binding)
+    (hb : Spec.lookupVar s.locals s.globals x = some b) :
+    (Spec.eval ds (d + 1) (.name x)).run.run s =
+      match Spec.tick.run.run s with
+      | (.ok _, s1) => ((liftM (Spec.deref b.val) : Spec.M Spec.Val)).run.run s1
+      | (.error e, s1) => (.error e, s1) := by
+  have hres : Spec.resolve ds s.locals s.globals x = .var b := by simp [Spec.resolve, hb]
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_run]
+  rcases s.steps with _ | k
+  · rfl
+  · simp only [Spec.run_liftM, Spec.run_getCore]
+    rw [hres]; rfl
+
+
 /-- **M3: the scoped lowering of `match` is correct with respect to galaspec**, given that
     the subject, guards and bodies are lowered correctly.
 
@@ -2208,21 +2207,7 @@ theorem lowerMatch_correct (ds : Spec.Decls) (d : Nat) (inScope : String → Boo
       (GoCore.geval X (lowerMatch ds inScope t subj' arms)) := by
   refine ⟨fun s g hR hpre hnb => ?_⟩
   -- galaspec: a step, the subject, then the arms.
-  have heq : (Spec.eval ds (d + 1) (.mtch subj (arms.map Arm.src))).run.run s =
-      match Spec.tick.run.run s with
-      | (.ok _, s1) => match (Spec.eval ds d subj).run.run s1 with
-        | (.ok v, t1) => (Spec.evalCases ds d v (arms.map Arm.src)).run.run t1
-        | (.error e, t1) => (.error e, t1)
-      | (.error e, s1) => (.error e, s1) := by
-    rw [Spec.eval.eq_def ds (d + 1) _]
-    simp only [Spec.run_bind_eq]
-    rcases Spec.tick.run.run s with ⟨r, s1⟩
-    cases r
-    · rfl
-    · simp only
-      rcases (Spec.eval ds d subj).run.run s1 with ⟨r', t1⟩
-      cases r' <;> rfl
-  rw [heq, tick_run] at hnb ⊢
+  rw [eval_mtch_run, tick_run] at hnb ⊢
   rcases hst : s.steps with _ | k
   · rw [hst] at hnb; simp [NotBad] at hnb
   rw [hst] at hnb
@@ -2297,7 +2282,7 @@ theorem lowerMatch_correct (ds : Spec.Decls) (d : Nat) (inScope : String → Boo
       cases hfb with
       | cons h0 hbot =>
       rename_i e0 bot2
-      have hlen : g.locals.length = bot2.length := by rw [hFL.length, hbot.length]
+      have hlen : g.locals.length = bot2.length := by rw [Spec.fall2_length hFL, Spec.fall2_length hbot]
       have htr : GoCore.truncate t3 g.locals.length = { t3 with locals := bot2 } := by
         rw [hlen]; exact truncate_append t3 (Z ++ [e0]) bot2 (by simpa using hz)
       refine ⟨rfl, ?_, fun _ h => ?_⟩
@@ -2365,18 +2350,7 @@ theorem part_var (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
   | zero => rw [eval_zero] at hnb; simp [NotBad] at hnb
   | succ d =>
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.mp hpre
-    have hres : Spec.resolve ds s.locals s.globals x = .var b := by simp [Spec.resolve, hb]
-    have heq : (Spec.eval ds (d + 1) (.name x)).run.run s =
-        match Spec.tick.run.run s with
-        | (.ok _, s1) => ((liftM (Spec.deref b.val) : Spec.M Spec.Val)).run.run s1
-        | (.error e, s1) => (.error e, s1) := by
-      rw [Spec.eval.eq_def ds (d + 1) _]
-      simp only [Spec.run_bind_eq, tick_run]
-      rcases s.steps with _ | k
-      · rfl
-      · simp only [Spec.run_liftM, Spec.run_getCore]
-        rw [hres]; rfl
-    rw [heq, tick_run] at hnb ⊢
+    rw [eval_name_run ds d x s b hb, tick_run] at hnb ⊢
     rcases hst : s.steps with _ | k
     · rw [hst] at hnb; simp [NotBad] at hnb
     rw [hst] at hnb
@@ -2507,6 +2481,41 @@ theorem part_gt (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
   part_bin ds d X pre hpre ">" .gt (by decide) (by decide) _
     (fun x y c => ⟨.bool (decide (x > y)), rfl, rfl, trivial⟩) l r l' r' hl hr
 
+/-- A weaker `post`. -/
+theorem Part.mono_post {pre : Spec.Core → Prop} {P Q : Spec.Val → Prop} {x : Spec.M Spec.Val}
+    {y : GoCore.GM GoCore.GVal} (h : Part pre P x y) (hpq : ∀ v, P v → Q v) : Part pre Q x y :=
+  ⟨fun s g hR hp hnb =>
+    let ⟨hres, hRt, hfr⟩ := h.sim s g hR hp hnb
+    ⟨hres, hRt, fun v hv => let ⟨hP, hS, hL⟩ := hfr v hv; ⟨hpq v hP, hS, hL⟩⟩⟩
+
+/-- The arms of `3 match { case 1 => 10; case x => 20; case _ => 30 }`, with literal bodies. -/
+def instanceArms : List Arm :=
+  [⟨.lit (.int 1), none, (.lit (.int 10), .lit (.int 10))⟩,
+   ⟨.name "x", none, (.lit (.int 20), .lit (.int 20))⟩,
+   ⟨.wild, none, (.lit (.int 30), .lit (.int 30))⟩]
+
+/-- **The theorem's hypotheses can be met all together.** `lowerMatch_correct` applied to
+    `3 match { case 1 => 10; case x => 20; case _ => 30 }` (a literal, a binder and a
+    wildcard pattern): the subject is an int, of static type `other`, and every arm's body
+    is a literal, so each hypothesis follows from `part_lit_int`. -/
+theorem lowerMatch_instance (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal) :
+    Part (ScopeOk fun _ => false) (fun _ => True)
+      (Spec.eval ds (d + 1) (.mtch (.lit (.int 3)) (instanceArms.map Arm.src)))
+      (GoCore.geval X (lowerMatch ds (fun _ => false) .other (.lit (.int 3)) instanceArms)) :=
+  lowerMatch_correct ds d _ .other X _ _ _
+    ((part_lit_int ds d X _ 3 ⟨by decide, by decide⟩).mono_post fun v hv => by
+      subst hv; exact .other _ nofun nofun nofun nofun)
+    (by
+      intro a ha
+      simp only [instanceArms, List.mem_cons, List.not_mem_nil, or_false] at ha
+      rcases ha with rfl | rfl | rfl
+      · exact ⟨(fun _ _ h => nomatch h),
+          (part_lit_int ds d X _ 10 ⟨by decide, by decide⟩).mono_post fun _ _ => trivial⟩
+      · exact ⟨(fun _ _ h => nomatch h),
+          (part_lit_int ds d X _ 20 ⟨by decide, by decide⟩).mono_post fun _ _ => trivial⟩
+      · exact ⟨(fun _ _ h => nomatch h),
+          (part_lit_int ds d X _ 30 ⟨by decide, by decide⟩).mono_post fun _ _ => trivial⟩)
+
 /-! ## The leaky lowering is not correct (#996)
 
 The lowering #996 reported: an arm's pattern variables bound to their names before the
@@ -2534,43 +2543,6 @@ open GoCore in
 def lowerMatchLeaky (ds : Spec.Decls) (inScope : String → Bool) (t : STy) (subj : GExpr)
     (arms : List Arm) : GExpr :=
   .funcLit (.define (.tmp 0) subj :: lowerArmsLeaky ds inScope t 1 arms)
-
-theorem tick_succ (s : Spec.St) (k : Nat) (h : s.steps = k + 1) :
-    Spec.tick.run.run s = (.ok (), { s with steps := k }) := by
-  rw [tick_run, h]
-
-theorem eval_mtch_run (ds : Spec.Decls) (d : Nat) (subj : Spec.Expr)
-    (cs : List (Spec.Pat × Option Spec.Expr × Spec.Expr)) (s : Spec.St) :
-    (Spec.eval ds (d + 1) (.mtch subj cs)).run.run s =
-      match Spec.tick.run.run s with
-      | (.ok _, s1) => match (Spec.eval ds d subj).run.run s1 with
-        | (.ok v, t1) => (Spec.evalCases ds d v cs).run.run t1
-        | (.error e, t1) => (.error e, t1)
-      | (.error e, s1) => (.error e, s1) := by
-  rw [Spec.eval.eq_def ds (d + 1) _]
-  simp only [Spec.run_bind_eq]
-  rcases Spec.tick.run.run s with ⟨r, s1⟩
-  cases r
-  · rfl
-  · simp only
-    rcases (Spec.eval ds d subj).run.run s1 with ⟨r', t1⟩
-    cases r' <;> rfl
-
-/-- A name bound to `b`: its value, read through `deref`. -/
-theorem eval_name_run (ds : Spec.Decls) (d : Nat) (x : String) (s : Spec.St) (b : Spec.Binding)
-    (hb : Spec.lookupVar s.locals s.globals x = some b) :
-    (Spec.eval ds (d + 1) (.name x)).run.run s =
-      match Spec.tick.run.run s with
-      | (.ok _, s1) => ((liftM (Spec.deref b.val) : Spec.M Spec.Val)).run.run s1
-      | (.error e, s1) => (.error e, s1) := by
-  have hres : Spec.resolve ds s.locals s.globals x = .var b := by simp [Spec.resolve, hb]
-  rw [Spec.eval.eq_def ds (d + 1) _]
-  simp only [Spec.run_bind_eq, tick_run]
-  rcases s.steps with _ | k
-  · rfl
-  · simp only [Spec.run_liftM, Spec.run_getCore]
-    rw [hres]; rfl
-
 /-
   The counterexample, in GALA (a failing guard, so no zero value is involved):
 

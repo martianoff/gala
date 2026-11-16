@@ -333,29 +333,22 @@ column lists what each milestone's claim rests on beyond them.
   their pinned statements in `Statements.lean` change with them.
 - **Risk:** galaspec's match runs in a monad with state, fuel and a heap; the simulation
   needs M1's fuel lemmas.
-- **Status: proved** (`formal/Gala/MatchLower.lean`), as a statement relative to the
-  match's parts, the shape T3 has: *given that the subject, guards and bodies are lowered
-  correctly*, the scoped lowering of `match` into GoCore (`formal/Gala/GoCore.lean`) is
-  correct with respect to galaspec (`lowerMatch_correct`). "Correct" is forward
-  simulation from galaspec's results (`Part`): from related states, wherever galaspec's
-  run ends with a value or a panic, GoCore's ends with the encoded value or a panic of the
-  same class, in related states. Runs galaspec ends out of fuel, `stuck` or
-  `unsupported`, and a `return` inside an arm (which the transformer lowers inline, M5),
-  are not covered; by M1, "not out of fuel" is a property of the program, so no fuel
-  corollary is needed. It covers every S1 pattern form and guards. The subject, guards and
-  bodies are holes in GoCore; the `Part` hypotheses on them are also what keep the
-  evaluation order of a call in them relative to a variable read unobservable (Go fixes the
-  order only among calls), and M5 has to establish them for its lowering. `Part` holds of
-  literals, variables and int `+` and `>` (`part_lit_int`, `part_var`, `part_add`,
-  `part_gt`), so the hypotheses can be met. The #996 counterexample is restated against
-  galaspec (`leaky_not_correct`): with a failing guard, galaspec gives 10, the leaky
-  lowering 6.
-- **Stated gap:** the subject has the static type the transformer inferred (`HasTy`).
-  galaspec decides what a bare pattern name means at run time, from the value's sealed
-  type; the transformer decides it statically. They agree exactly when the value has that
-  type; discharging it needs a typing judgment (T7).
-- **Still trusted:** that the lowering describes what the transformer emits. It does up to
-  five normalizations, which M6 has to prove (see M6).
+- **Status: proved** (`formal/Gala/MatchLower.lean`, `lowerMatch_correct`), relative to
+  the match's parts, as T3 is: *given that the subject, guards and bodies are lowered
+  correctly*, the scoped lowering into GoCore is correct with respect to galaspec, as
+  forward simulation from galaspec's values and panics, for every S1 pattern form and
+  guards. The `Part` hypotheses on the parts, which are holes in GoCore, are also what keep
+  a call's evaluation order relative to a variable read unobservable (Go fixes the order
+  only among calls); M5 has to establish them. A `return` inside an arm is left to M5. By
+  M1, "not out of fuel" is a property of the program, so no fuel corollary is needed.
+  `lowerMatch_instance` shows the hypotheses can all be met, and `leaky_not_correct`
+  restates #996 against galaspec (10 against 6).
+  [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each theorem in full.
+- **Stated gap:** the subject has the static type the transformer inferred (`HasTy`);
+  galaspec classifies a bare pattern name at run time, the transformer statically.
+  Discharging it needs a typing judgment (T7).
+- **Still trusted:** that the lowering describes what the transformer emits, up to the
+  five normalizations M6 has to prove (see M6).
 
 #### M4: GoCore and the Go AST exporter
 

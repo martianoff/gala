@@ -422,4 +422,11 @@ theorem part_gt : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.
     Part pre (fun _ => True) (Spec.eval ds (d + 1) (.binary ">" l r)) (GoCore.geval X (.bin .gt l' r')) :=
   Gala.M3.part_gt
 
+open Gala Gala.M3 in
+theorem lowerMatch_instance : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal),
+    Part (ScopeOk fun _ => false) (fun _ => True)
+      (Spec.eval ds (d + 1) (.mtch (.lit (.int 3)) (instanceArms.map Arm.src)))
+      (GoCore.geval X (lowerMatch ds (fun _ => false) .other (.lit (.int 3)) instanceArms)) :=
+  Gala.M3.lowerMatch_instance
+
 end Gala.Statements
