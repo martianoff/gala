@@ -1,0 +1,38 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// FlatMap, Collect, Zip, TakeWhile, DropWhile, Distinct, FindLast and
+// Grouped, each run as std runs it: the functions it is given are called in
+// std's order, and only as often as std calls them.
+
+func seen(s string, v int) int {
+    Println("see", s, v)
+    v
+}
+
+func main() {
+    val a = ArrayOf(1, 2, 3, 4, 5)
+    val l = ListOf(1, 2, 3, 4, 5)
+
+    Println(a.FlatMap((x) => ArrayOf(seen("a", x), x * 10)))
+    Println(l.FlatMap((x) => if (seen("l", x) % 2 == 0) ListOf(x) else EmptyList()))
+    Println(a.FlatMap((x) => ArrayOf(x)).Size())
+
+    Println(a.Collect((x) => if (seen("c", x) > 2) Some(x * 100) else None()))
+    Println(l.Collect((x) => if (x % 2 == 1) Some(s"odd ${x}") else None()))
+
+    Println(a.Zip(ArrayOf("one", "two", "three")))
+    Println(l.Zip(ListOf(true, false)))
+    Println(a.Zip(ArrayOf(9)).Size())
+
+    Println(a.TakeWhile((x) => seen("tw", x) < 3), l.TakeWhile((x) => x < 0))
+    Println(a.DropWhile((x) => seen("dw", x) < 3), l.DropWhile((x) => x < 10))
+
+    Println(ArrayOf(3, 1, 3, 2, 1).Distinct(), ListOf("b", "a", "b").Distinct())
+
+    Println(a.FindLast((x) => seen("fl", x) % 2 == 0), a.FindLast((x) => x > 9))
+
+    val none Array[int] = EmptyArray()
+    Println(a.Grouped(2), a.Grouped(5), none.Grouped(3))
+}

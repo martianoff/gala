@@ -317,6 +317,50 @@ def seqMkString [GShow α] (xs : List α) (sep : String) : String := sep.interca
 def seqHead (xs : List α) : Prog σ α := orStd xs.head?
 def seqLast (xs : List α) : Prog σ α := orStd xs.getLast?
 
+/-- `FlatMap(f)`: `f` on each element from the first, the results' elements in order
+    (array.gala:790; list.gala:353's `f(l.head).AppendAll(tail.FlatMap(f))` calls `f` on
+    the head before the tail's). `data` reads a result's elements. -/
+def seqFlatMap (xs : List α) (f : α → Prog σ γ) (data : γ → List β) : Prog σ (List β) := do
+  let ys ← xs.mapM f
+  pure (ys.flatMap data)
+
+/-- `Collect(pf)`: `pf` on each element from the first, the values of the `Some`s it
+    returns in order (array.gala:804, list.gala:362). -/
+def seqCollect (xs : List α) (pf : α → Prog σ (GOption β)) : Prog σ (List β) :=
+  xs.filterMapM fun x => do
+    match ← pf x with
+    | .Some v => pure (some v)
+    | .None => pure none
+
+/-- `Zip(other)`: pairs up to the shorter length (array.gala:947, list.gala:508). -/
+def seqZip (xs : List α) (ys : List β) : List (T2 α β) :=
+  (xs.zip ys).map fun (a, b) => T2.mk a b
+
+/-- `TakeWhile(p)`: `p` from the first element, stopping at the first false
+    (array.gala:704, list.gala:287). -/
+def seqTakeWhile : List α → (α → Prog σ Bool) → Prog σ (List α)
+  | [], _ => pure []
+  | x :: r, p => do if ← p x then (x :: ·) <$> seqTakeWhile r p else pure []
+
+/-- `DropWhile(p)`: `p` from the first element, stopping at the first false
+    (array.gala:717, list.gala:295). -/
+def seqDropWhile : List α → (α → Prog σ Bool) → Prog σ (List α)
+  | [], _ => pure []
+  | x :: r, p => do if ← p x then seqDropWhile r p else pure (x :: r)
+
+/-- `FindLast(p)`: `p` from the last element, stopping at the first true
+    (array.gala:926). -/
+def seqFindLast (xs : List α) (p : α → Prog σ Bool) : Prog σ (GOption α) :=
+  toGOption <$> xs.reverse.findM? p
+
+/-- `Grouped(n)`: `Panic.std` for `n ≤ 0`, else the elements in groups of `n`, the last
+    shorter (array.gala:1044). -/
+def seqGrouped (xs : List α) (n : Int64) : Prog σ (List (GArray α)) :=
+  if n ≤ 0 then throw .std
+  else
+    let k := n.toInt.toNat
+    pure ((List.range ((xs.length + k - 1) / k)).map fun i => GArray.mk ((xs.drop (i * k)).take k))
+
 /-! Methods of `Option` (std/option.gala) and `Either` (std/either.gala), each after the
     std code it cites. A function argument runs only where std calls it; where std panics
     the model throws `Panic.std`. -/
