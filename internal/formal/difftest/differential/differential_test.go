@@ -18,7 +18,12 @@
 // Each program gala2lean translates is also run as Lean, the third oracle,
 // and compared with Go. --config=formal gives it the toolchain's lean;
 // without the config GALA_LEAN_BIN must name one (e.g. elan's), with
-// --test_env=GALA_LEAN_BIN. It needs one either way. It
+// --test_env=GALA_LEAN_BIN. It needs one either way.
+//
+// Each program that compiles also has its Go run by gocore, GoCore's
+// interpreter, and compared with `go run`. --config=formal builds
+// //formal:gocore; without the config GALA_GOCORE_BIN must name one (e.g. a
+// Lake build), with --test_env=GALA_GOCORE_BIN. It needs one either way. It
 // writes the coverage section of formal/COVERAGE.md and a summary to its
 // undeclared outputs (see difftest.Render).
 package differential_test

@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,8 +44,6 @@ type GoCoreRunner interface {
 // GoCore runs the gocore binary.
 type GoCore struct {
 	Bin string
-	// Fuel is the budget passed as --fuel; 0 keeps gocore's default.
-	Fuel int
 }
 
 var _ GoCoreRunner = GoCore{}
@@ -70,11 +67,7 @@ var goCoreExitCodes = map[string]int{"ok": 0, "panic": 1, "fuel": 2, "unsupporte
 func (g GoCore) Run(path string) (GoCoreRun, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), GoCoreTimeout)
 	defer cancel()
-	args := []string{"run", path}
-	if g.Fuel > 0 {
-		args = append(args, "--fuel", strconv.Itoa(g.Fuel))
-	}
-	cmd := exec.CommandContext(ctx, g.Bin, args...)
+	cmd := exec.CommandContext(ctx, g.Bin, "run", path)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
@@ -134,11 +127,8 @@ type GoCoreRecord struct {
 // stdout and on how they end, a panic by the exact text Go prints after
 // `panic: `. real's outcome and goPanic are Go's.
 func compareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
-	switch {
-	case real.Outcome.Kind == KindTimeout:
-		return GoCoreRecord{Comparison: Comparison{Resource, "the Go program ran past its time limit"}}
-	case real.Outcome.Kind == KindCrash && isResource(real.Outcome.Detail):
-		return GoCoreRecord{Comparison: Comparison{Resource, "Go aborted: " + real.Outcome.Detail}}
+	if r, ok := goResource(real); ok {
+		return r
 	}
 	kind, construct, _ := strings.Cut(g.Outcome, ":")
 	switch kind {
@@ -167,6 +157,18 @@ func compareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
 	return GoCoreRecord{Comparison: Comparison{Verdict: Agree}}
 }
 
+// goResource is the RESOURCE verdict for a Go run that ran past its time
+// limit or aborted for lack of stack or memory; ok is false for any other run.
+func goResource(real Run) (r GoCoreRecord, ok bool) {
+	switch {
+	case real.Outcome.Kind == KindTimeout:
+		return GoCoreRecord{Comparison: Comparison{Resource, "the Go program ran past its time limit"}}, true
+	case real.Outcome.Kind == KindCrash && isResource(real.Outcome.Detail):
+		return GoCoreRecord{Comparison: Comparison{Resource, "Go aborted: " + real.Outcome.Detail}}, true
+	}
+	return GoCoreRecord{}, false
+}
+
 // isResource reports whether a Go runtime fatal error is a lack of stack or
 // memory.
 func isResource(msg string) bool {
@@ -174,17 +176,19 @@ func isResource(msg string) bool {
 		strings.Contains(msg, "cannot allocate memory")
 }
 
-// goPanicText is the text Go printed after `panic: ` on its first panic line,
-// without the ` [recovered]` a re-panic adds.
+// goPanicText is the text of the panic that ended a Go run, without the
+// ` [recovered]` a re-panic adds. A panic raised while another unwinds is
+// printed after it, tab-indented, so the last panic line is the one that
+// ended the run; a line the program printed itself comes before them all.
 func goPanicText(stderr string) string {
+	text := ""
 	for _, line := range strings.Split(stderr, "\n") {
-		line = strings.TrimRight(line, "\r")
+		line = strings.TrimLeft(strings.TrimRight(line, "\r"), "\t")
 		if msg, ok := strings.CutPrefix(line, "panic: "); ok {
-			msg, _, _ = strings.Cut(msg, " [recovered")
-			return msg
+			text, _, _ = strings.Cut(msg, " [recovered")
 		}
 	}
-	return ""
+	return text
 }
 
 // GoProgram is the Go of a compiled program: its main package's file and the

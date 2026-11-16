@@ -76,11 +76,17 @@ func GoCoreFidelityAgreeing(records []Record) int {
 func GoCoreAgreeingExamples(records []Record) int {
 	n := 0
 	for _, r := range records {
-		if r.Source == FromExample && r.Verdict == Agree && r.GoCore != nil && r.GoCore.Verdict == Agree {
+		if agreesThreeWays(r) {
 			n++
 		}
 	}
 	return n
+}
+
+// agreesThreeWays reports whether r is an example on which GoCore agrees
+// with `go run` and galaspec agrees with `go run`.
+func agreesThreeWays(r Record) bool {
+	return r.Source == FromExample && r.Verdict == Agree && r.GoCore != nil && r.GoCore.Verdict == Agree
 }
 
 // usesGoCore reports whether the run compared GoCore's runs.
@@ -257,7 +263,7 @@ func renderGoCore(b *strings.Builder, c Coverage) {
 		GoCoreAgreeingExamples(c.Records), c.Baseline.GoCoreAgreeingExamples)
 	var agree []string
 	for _, r := range c.Records {
-		if r.Source == FromExample && r.Verdict == Agree && r.GoCore != nil && r.GoCore.Verdict == Agree {
+		if agreesThreeWays(r) {
 			agree = append(agree, "`"+r.ID+"`")
 		}
 	}

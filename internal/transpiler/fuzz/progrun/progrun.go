@@ -350,16 +350,13 @@ func RunOK(tb testing.TB, imp *gooracle.Importer, mainGo string) (string, error)
 // generated for them. A generated library's path is the hash of its source,
 // so a package once written never changes.
 func (r *goRunner) writePackages(imp *gooracle.Importer, mainGo string) error {
-	queue := importsOf(mainGo)
-	for len(queue) > 0 {
-		path := queue[0]
-		queue = queue[1:]
-		if r.written[path] || !strings.HasPrefix(path, "martianoff/gala/") {
+	pkgs, err := ImportedSources(imp, mainGo)
+	if err != nil {
+		return err
+	}
+	for path, sources := range pkgs {
+		if r.written[path] {
 			continue
-		}
-		sources, ok := imp.Sources(path)
-		if !ok {
-			return &Error{"writing the module", os.ErrNotExist, "no generated Go for " + path}
 		}
 		pkgDir := filepath.Join(r.dir, filepath.FromSlash(strings.TrimPrefix(path, "martianoff/gala/")))
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
@@ -369,11 +366,34 @@ func (r *goRunner) writePackages(imp *gooracle.Importer, mainGo string) error {
 			if err := os.WriteFile(filepath.Join(pkgDir, name), []byte(src), 0o644); err != nil {
 				return err
 			}
-			queue = append(queue, importsOf(src)...)
 		}
 		r.written[path] = true
 	}
 	return nil
+}
+
+// ImportedSources is the Go imp generated for every GALA package mainGo
+// imports, directly or not: file name to source, by import path. The error is
+// for an imported GALA package imp has no Go for.
+func ImportedSources(imp *gooracle.Importer, mainGo string) (map[string]map[string]string, error) {
+	out := map[string]map[string]string{}
+	queue := importsOf(mainGo)
+	for len(queue) > 0 {
+		path := queue[0]
+		queue = queue[1:]
+		if _, done := out[path]; done || !strings.HasPrefix(path, "martianoff/gala/") {
+			continue
+		}
+		sources, ok := imp.Sources(path)
+		if !ok {
+			return nil, &Error{"writing the module", os.ErrNotExist, "no generated Go for " + path}
+		}
+		out[path] = sources
+		for _, src := range sources {
+			queue = append(queue, importsOf(src)...)
+		}
+	}
+	return out, nil
 }
 
 // importsOf lists the import paths of a Go file.

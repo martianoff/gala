@@ -74,6 +74,9 @@ def pkgCtx (c : Ctx) (path : String) : GM PkgCtx :=
 def importOf (c : Ctx) (env : Env) (x : String) : Option String :=
   (c.pkgs.get? env.pkg).bind fun p => (p.imports[env.file]?).bind (·.lookup x)
 
+/-- Whether a name is exported (Go spec, "Exported identifiers"). -/
+def exported (x : String) : Bool := x.front.isUpper
+
 /-- The package a bare, non-local name `x` is declared in: the current one, else a
     package the file dot-imports (Go spec, "Import declarations": `import . "p"` declares
     `p`'s exported names in the file's block). `none` for a predeclared name or one of
@@ -83,6 +86,7 @@ def nameOwner (c : Ctx) (env : Env) (x : String) : Option String :=
   | none => none
   | some p =>
     if p.objs.contains x then some env.pkg
+    else if !exported x then none
     else ((p.imports[env.file]?).getD []).findSome? fun (n, path) =>
       if n == "." && ((c.pkgs.get? path).map (·.objs.contains x)).getD false then some path else none
 
@@ -91,9 +95,6 @@ def nameOwner (c : Ctx) (env : Env) (x : String) : Option String :=
 def foreignDotImport (c : Ctx) (env : Env) : Option String :=
   ((c.pkgs.get? env.pkg).bind (·.imports[env.file]?)).bind fun is =>
     is.findSome? fun (n, path) => if n == "." && !c.pkgs.contains path then some path else none
-
-/-- Whether a name is exported (Go spec, "Exported identifiers"). -/
-def exported (x : String) : Bool := x.front.isUpper
 
 /-- The methods of a type: those of `pkg.name`, keyed by method name. -/
 def methodOf (c : Ctx) (pkg tyName m : String) : Option Method :=
@@ -242,8 +243,13 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
       match target with
       | some (path, t) =>
         match (c.pkgs.get? path).bind (·.objs.get? t) with
-        | some (.type _ (.mk _ (_ :: _) _ _)) =>
-          return some (.named path t (← args.mapM (evalType c n env)))
+        | some (.type fi (.mk _ tps@(_ :: _) alias te)) =>
+          let targs ← args.mapM (evalType c n env)
+          -- A generic alias denotes its type with the arguments substituted, no
+          -- new named type (Go spec, "Alias declarations").
+          if alias then
+            return some (← evalType c n { pkg := path, file := fi, tenv := ← bindTParams tps targs } te)
+          return some (.named path t targs)
         | _ => return none
       | none => return none
     | .star x => return (← typeOf? c n env x).map .ptr
@@ -888,7 +894,12 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → GM (List Val)
       -- "Bootstrapping").
       let _ ← args.mapM (evalExpr c n env)
       pure []
-    | b, _ => unsupported s!"builtin-{b}"
+    | b, _ =>
+      -- An exported name is no builtin: one of a dot-imported package the
+      -- document does not hold.
+      if exported b then
+        if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
+      unsupported s!"builtin-{b}"
 
 /-- The text Go's runtime prints after `panic: ` for a panic value: a string as it is,
     an error's `Error()`, a Stringer's `String()` (runtime `printpanicval`). -/

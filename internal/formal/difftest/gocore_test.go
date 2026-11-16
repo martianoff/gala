@@ -79,6 +79,9 @@ func TestGoPanicText(t *testing.T) {
 	require.Equal(t, "runtime error: integer divide by zero",
 		goPanicText("panic: runtime error: integer divide by zero\n[signal 0xc0000005]\n\ngoroutine 1 [running]:\n"))
 	require.Equal(t, "code 7", goPanicText("panic: code 7 [recovered]\n"))
+	// A panic raised while another unwinds ended the run: Go prints it last.
+	require.Equal(t, "second", goPanicText("panic: first [recovered]\n\tpanic: second\n\ngoroutine 1 [running]:\n"))
+	require.Equal(t, "real", goPanicText("panic: printed by the program\npanic: real\n"))
 	require.Equal(t, "", goPanicText("fatal error: stack overflow\n"))
 }
 

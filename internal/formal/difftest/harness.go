@@ -2,11 +2,8 @@ package difftest
 
 import (
 	"errors"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -14,7 +11,6 @@ import (
 	"martianoff/gala/internal/formal/coreexport/analyzerhints"
 	"martianoff/gala/internal/formal/gala2lean"
 	"martianoff/gala/internal/transpiler/fuzz/progrun"
-	"martianoff/gala/internal/transpiler/gooracle"
 )
 
 // Program is one program to compare.
@@ -65,7 +61,7 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 	if err != nil {
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	file := filepath.Join(h.Dir, strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(p.ID)+".json")
+	file := filepath.Join(h.Dir, safeName(p.ID)+".json")
 	if err := os.WriteFile(file, doc, 0o644); err != nil {
 		tb.Fatal(err)
 	}
@@ -89,19 +85,24 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 		goProg *GoProgram
 	)
 	if NeedsReal(spec.Outcome) || leanRes != nil || h.GoCore != nil {
-		real, stderr, goProg = realRun(tb, p)
+		real, stderr, goProg = realRun(tb, p, h.GoCore != nil)
 	}
 	rec.Comparison = Compare(spec, real)
 	if h.GoCore != nil && goProg != nil {
-		doc, err := exportGoCore(h.Dir, p.ID, *goProg)
-		if err != nil {
-			tb.Fatalf("%s: Go AST export: %v", p.ID, err)
+		// A run Go could not finish is never compared, so GoCore does not
+		// run it: it could exhaust its own stack or time limit on it.
+		gr, resource := goResource(real)
+		if !resource {
+			doc, err := exportGoCore(h.Dir, p.ID, *goProg)
+			if err != nil {
+				tb.Fatalf("%s: Go AST export: %v", p.ID, err)
+			}
+			g, err := h.GoCore.Run(doc)
+			if err != nil {
+				tb.Fatalf("%s: %v", p.ID, err)
+			}
+			gr = compareGoCore(g, real, goPanicText(stderr))
 		}
-		g, err := h.GoCore.Run(doc)
-		if err != nil {
-			tb.Fatalf("%s: %v", p.ID, err)
-		}
-		gr := compareGoCore(g, real, goPanicText(stderr))
 		rec.GoCore = &gr
 	}
 	if leanRes != nil {
@@ -124,9 +125,10 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 }
 
 // realRun transpiles, builds and runs p with the real toolchain, and returns
-// the run, what it wrote to stderr, and the Go that ran. A program the
-// transpiler or the Go compiler rejects is a KindRejected outcome, with no Go.
-func realRun(tb testing.TB, p Program) (Run, string, *GoProgram) {
+// the run, what it wrote to stderr, and, when withGo is set, the Go that ran.
+// A program the transpiler or the Go compiler rejects is a KindRejected
+// outcome, with no Go.
+func realRun(tb testing.TB, p Program, withGo bool) (Run, string, *GoProgram) {
 	tb.Helper()
 	rejected := func(detail string) (Run, string, *GoProgram) {
 		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, "", nil
@@ -155,46 +157,15 @@ func realRun(tb testing.TB, p Program) (Run, string, *GoProgram) {
 		}
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	return Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}, out.Stderr,
-		&GoProgram{Main: res.Go, Packages: importedSources(imp, res.Go)}
-}
-
-// importedSources is the Go of every GALA package mainGo imports, directly or
-// not, as the importer generated it, by import path.
-func importedSources(imp *gooracle.Importer, mainGo string) map[string]map[string]string {
-	out := map[string]map[string]string{}
-	queue := goImports(mainGo)
-	for len(queue) > 0 {
-		path := queue[0]
-		queue = queue[1:]
-		if _, done := out[path]; done || !strings.HasPrefix(path, "martianoff/gala/") {
-			continue
-		}
-		sources, ok := imp.Sources(path)
-		if !ok {
-			continue
-		}
-		out[path] = sources
-		for _, src := range sources {
-			queue = append(queue, goImports(src)...)
-		}
+	run := Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}
+	if !withGo {
+		return run, out.Stderr, nil
 	}
-	return out
-}
-
-// goImports lists the import paths of a Go file.
-func goImports(src string) []string {
-	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ImportsOnly)
+	pkgs, err := progrun.ImportedSources(imp, res.Go)
 	if err != nil {
-		return nil
+		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	var out []string
-	for _, spec := range f.Imports {
-		if p, err := strconv.Unquote(spec.Path.Value); err == nil {
-			out = append(out, p)
-		}
-	}
-	return out
+	return run, out.Stderr, &GoProgram{Main: res.Go, Packages: pkgs}
 }
 
 // firstLine is the first line of a diagnostic, past the "# package" header
