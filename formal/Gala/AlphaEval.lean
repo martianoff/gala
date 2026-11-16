@@ -43,10 +43,11 @@ theorem relM_throw {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren
     RelM pkg pm Γ Q R (throw e) (throw e') :=
   fun _ _ hs => ⟨h, Γ, hs, fun ⟨_, ha⟩ => nomatch ha⟩
 
-theorem relM_bind {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
+/-- Bind, with the scope the first computation leaves. -/
+theorem relM_bind_gen {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q₁ Q : Ren → Prop}
     {R : α → α' → Prop} {S : β → β' → Prop} {x : M α} {x' : M α'} {f : α → M β}
-    {f' : α' → M β'} (hx : RelM pkg pm Γ (· = Γ) R x x')
-    (hf : ∀ a a', R a a' → RelM pkg pm Γ Q S (f a) (f' a')) :
+    {f' : α' → M β'} (hx : RelM pkg pm Γ Q₁ R x x')
+    (hf : ∀ Γ' a a', Q₁ Γ' → R a a' → RelM pkg pm Γ' Q S (f a) (f' a')) :
     RelM pkg pm Γ Q S (x >>= f) (x' >>= f') := by
   intro s s' hs
   rw [run_bind_eq, run_bind_eq]
@@ -59,8 +60,15 @@ theorem relM_bind {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren 
   · exact ⟨h1, Γ', h2, fun ⟨_, ha⟩ => nomatch ha⟩
   · exact absurd h1 id
   · exact absurd h1 id
-  · obtain rfl := h3 ⟨_, rfl⟩
-    exact hf _ _ h1 t t' h2
+  · exact hf Γ' _ _ (h3 ⟨_, rfl⟩) h1 t t' h2
+
+/-- Bind, when the first computation keeps the scope. -/
+theorem relM_bind {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
+    {R : α → α' → Prop} {S : β → β' → Prop} {x : M α} {x' : M α'} {f : α → M β}
+    {f' : α' → M β'} (hx : RelM pkg pm Γ (· = Γ) R x x')
+    (hf : ∀ a a', R a a' → RelM pkg pm Γ Q S (f a) (f' a')) :
+    RelM pkg pm Γ Q S (x >>= f) (x' >>= f') :=
+  relM_bind_gen hx fun _ a a' hq h => hq ▸ hf a a' h
 
 theorem relM_tick {pkg : List String} {pm : String → Ren} {Γ : Ren} :
     RelM pkg pm Γ (· = Γ) Eq tick tick := by
@@ -216,11 +224,11 @@ theorem relM_getCore {pkg : List String} {pm : String → Ren} {Γ : Ren} :
   rw [run_liftM, run_liftM]
   exact ⟨hc, Γ, ⟨hc, hn⟩, fun _ => rfl⟩
 
-theorem relM_discard {pkg : List String} {pm : String → Ren} {Γ : Ren} {R : α → β → Prop}
-    {x : M α} {y : M β} (h : RelM pkg pm Γ (· = Γ) R x y) :
-    RelM pkg pm Γ (· = Γ) Eq (discard x) (discard y) := by
+theorem relM_discard {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
+    {R : α → β → Prop} {x : M α} {y : M β} (h : RelM pkg pm Γ Q R x y) :
+    RelM pkg pm Γ Q Eq (discard x) (discard y) := by
   simp only [discard, Functor.mapConst]
-  exact relM_bind h fun _ _ _ => relM_pure rfl
+  exact relM_bind_gen h fun _ _ _ hq _ s s' hs => ⟨rfl, _, hs, fun _ => hq⟩
 
 theorem readOnly_printable (ds : Decls) (vs : List Val) : ReadOnly (printable ds vs) :=
   fun c => by unfold printable; split <;> rfl
@@ -242,17 +250,12 @@ theorem relM_asBool {pkg : List String} {pm : String → Ren} {Γ : Ren} {v v' :
 
 theorem relM_intLit {pkg : List String} {pm : String → Ren} {Γ : Ren} (n : Int) :
     RelM pkg pm Γ (· = Γ) (ValR pkg pm) (liftM (intLit n)) (liftM (intLit n)) := by
-  refine relM_liftH_ro (fun c => by unfold intLit; split <;> rfl)
-    (fun c => by unfold intLit; split <;> rfl) fun c c' _ => ?_
+  have hro : ReadOnly (intLit n) := fun c => by unfold intLit; split <;> rfl
+  refine relM_liftH_ro hro hro fun c c' _ => ?_
   unfold intLit
   split
   · exact .int _
   · exact .unsupported _ _ _
-
-theorem relM_unsup {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
-    {R : α → β → Prop} (k m m' : String) :
-    RelM pkg pm Γ Q R (throw (.unsupported k m)) (throw (.unsupported k m')) :=
-  relM_throw (.unsupported _ _ _)
 
 theorem capR_captured {pkg : List String} {pm : String → Ren} {Γ : Ren} {ρ ρ' : Env}
     (h : EnvR pkg pm Γ ρ ρ') : CapR pkg pm (captured ρ) (captured ρ') := by
@@ -318,25 +321,6 @@ theorem relM_binop {pkg : List String} {pm : String → Ren} {Γ : Ren} (op : St
     binop_rel op c c' ha hb
 
 /-! ## More combinators -/
-
-/-- Bind, with the scope the first computation leaves. -/
-theorem relM_bind_gen {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q₁ Q : Ren → Prop}
-    {R : α → α' → Prop} {S : β → β' → Prop} {x : M α} {x' : M α'} {f : α → M β}
-    {f' : α' → M β'} (hx : RelM pkg pm Γ Q₁ R x x')
-    (hf : ∀ Γ' a a', Q₁ Γ' → R a a' → RelM pkg pm Γ' Q S (f a) (f' a')) :
-    RelM pkg pm Γ Q S (x >>= f) (x' >>= f') := by
-  intro s s' hs
-  rw [run_bind_eq, run_bind_eq]
-  obtain ⟨h1, Γ', h2, h3⟩ := hx s s' hs
-  rcases e : x.run.run s with ⟨r, t⟩
-  rcases e' : x'.run.run s' with ⟨r', t'⟩
-  rw [e, e'] at h1 h2
-  rw [e] at h3
-  cases r <;> cases r' <;> simp only at h1 h2 h3 ⊢
-  · exact ⟨h1, Γ', h2, fun ⟨_, ha⟩ => nomatch ha⟩
-  · exact absurd h1 id
-  · exact absurd h1 id
-  · exact hf Γ' _ _ (h3 ⟨_, rfl⟩) h1 t t' h2
 
 /-- Weaken the relation on results. -/
 theorem RelM.res {pkg : List String} {pm : String → Ren} {Γ : Ren} {Q : Ren → Prop}
@@ -653,13 +637,6 @@ theorem map_fst_zip_take : ∀ (ns : List String) (vs : List Val),
   | _ :: _, [] => by simp
   | n :: ns, v :: vs => by simp [map_fst_zip_take ns vs]
 
-theorem take_zip' : ∀ (j : Nat) (as : List String) (bs : List String),
-    (as.take j).zip (bs.take j) = (as.zip bs).take j
-  | 0, _, _ => by simp
-  | _ + 1, [], _ => by simp
-  | _ + 1, _ :: _, [] => by simp
-  | j + 1, a :: as, b :: bs => by simp [take_zip' j as bs]
-
 /-- A declaration's bindings: the declared names, with related values. -/
 def BindsR (pkg : List String) (pm : String → Ren) (ns ns' : List String)
     (bs bs' : List (String × Val)) : Prop :=
@@ -684,6 +661,10 @@ theorem bindsR_map {ns ns' : List String} {z z' : Val} (hn : NamesR pkg ns ns')
   | nil => exact .nil
   | cons h _ ih => exact .cons ⟨h, hz⟩ ih
 
+/-- An argument that is not named is its own value expression. -/
+theorem unnamed_of_not_named {e : Expr} (h : isNamed e = false) : unnamed e = e := by
+  cases e <;> first | rfl | simp [isNamed] at h
+
 /-- Each argument's value expression, related. -/
 theorem argsR_unnamed {m Γ : Ren} : ∀ {as as' : List Expr}, ArgsR pkg pm m Γ as as' →
     Fall2 (fun a a' => AlphaE pkg pm Γ (unnamed a) (unnamed a')) as as'
@@ -691,7 +672,8 @@ theorem argsR_unnamed {m Γ : Ren} : ∀ {as as' : List Expr}, ArgsR pkg pm m Γ
   | _, _, .pos (e := e) (e' := e') hn he t => by
     have hn' := alphaE_not_named he
     refine .cons ?_ (argsR_unnamed t)
-    cases e <;> simp [isNamed] at hn <;> cases e' <;> simp [isNamed] at hn' <;> exact he
+    rw [unnamed_of_not_named hn, unnamed_of_not_named hn']
+    exact he
   | _, _, .named _ he t => .cons he (argsR_unnamed t)
 
 theorem argsR_any_named {m Γ : Ren} : ∀ {as as' : List Expr}, ArgsR pkg pm m Γ as as' →
@@ -765,7 +747,9 @@ theorem envR_defaultFrame {names names' : List String} {vals vals' : List Val}
   have h := envR_foldl (pkg := pkg) (pm := pm) (Γ := []) (ρ := []) (ρ' := [])
     (fall2_zip (namesR_fall2 hn) (fall2_of_valsR hv)) .nil
   have hl := valsR_length hv
-  rw [map_fst_zip_take, map_fst_zip_take, ← hl, take_zip'] at h
+  rw [map_fst_zip_take, map_fst_zip_take, ← hl] at h
+  rw [show ∀ j (as bs : List String), (as.take j).zip (bs.take j) = (as.zip bs).take j from
+    fun _ _ _ => by simp only [List.zip, List.take_zipWith]] at h
   exact h
 
 /-- The default-value frames of a call or construction, related: for each parameter `j`,
@@ -896,11 +880,6 @@ theorem relM_popTo {P Γ : Ren} :
   intro s s' ⟨hc, hn⟩
   rw [run_liftM, run_liftM, popTo_run, popTo_run]
   exact ⟨rfl, Γ, ⟨⟨exitScope_envR hc.1, hc.2.1, hc.2.2.1, hc.2.2.2⟩, hn⟩, fun _ => rfl⟩
-
-theorem relM_discard_gen {Γ : Ren} {Q : Ren → Prop} {R : α → β → Prop} {x : M α} {y : M β}
-    (h : RelM pkg pm Γ Q R x y) : RelM pkg pm Γ Q Eq (discard x) (discard y) := by
-  simp only [discard, Functor.mapConst]
-  exact relM_bind_gen h fun _ _ _ hq _ s s' hs => ⟨rfl, _, hs, fun _ => hq⟩
 
 /-- What a computation does from two given related states. `RelM` is this from every pair of
     related states. -/
@@ -1103,7 +1082,7 @@ theorem evalBlock_alpha_of (ih : EvalIH pkg pm ds ds' d) :
       exact hd.mono fun _ h => by subst h; exact pushAll_prefix _ _
     · have hr' : rest' ≠ [] := fun e => hr ((blockR_nil hrest).mpr e)
       rw [evalBlock.eq_3 _ _ _ _ hr, evalBlock.eq_3 _ _ _ _ hr']
-      refine relM_bind_gen (relM_discard_gen hd) fun Γ' _ _ hq _ => ?_
+      refine relM_bind_gen (relM_discard hd) fun Γ' _ _ hq _ => ?_
       subst hq
       exact (evalBlock_alpha_of ih hrest).mono fun _ ⟨P, hP⟩ => by
         obtain ⟨P0, hP0⟩ := pushAll_prefix Γ (ns.zip ns')
