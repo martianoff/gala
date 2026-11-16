@@ -254,7 +254,7 @@ func (e *exporter) varDecl(v native.VarDeclarationNode) Node {
 func (e *exporter) function(f native.FunctionDeclarationNode) Node {
 	sig := f.Signature()
 	fn := of(e, &Func{Name: f.Identifier().GetText(), TypeParams: e.typeParams(f.TypeParameters()),
-		Params: mapNodes(sig.Parameters().ParameterList().AllParameter(), e.funcParam)}, f.GalaNodeRef)
+		Params: e.funcParams(sig.Parameters().ParameterList().AllParameter())}, f.GalaNodeRef)
 	if r := f.Receiver(); r.Ok() {
 		fn.Receiver = e.receiver(r)
 	}
@@ -314,10 +314,15 @@ func (e *exporter) param(p native.ParameterNode) Node {
 	return e.paramOf(p, false)
 }
 
-// funcParam is a function's or method's parameter, which may be variadic,
-// `xs ...T`.
-func (e *exporter) funcParam(p native.ParameterNode) Node {
-	return e.paramOf(p, true)
+// funcParams are a function's or method's parameters, whose last may be
+// variadic, `xs ...T`. A variadic parameter anywhere else is not GALA
+// (Go's "can only use ... with final parameter") and is unsupported.
+func (e *exporter) funcParams(ps []native.ParameterNode) []Node {
+	out := make([]Node, len(ps))
+	for i, p := range ps {
+		out[i] = e.paramOf(p, i == len(ps)-1)
+	}
+	return out
 }
 
 func (e *exporter) paramOf(p native.ParameterNode, mayBeVariadic bool) Node {
@@ -685,7 +690,7 @@ func (e *exporter) argValue(a native.ArgumentNode) Node {
 		return e.expr(ep.Expression().GalaNodeRef)
 	}
 	if rp, ok := p.AsRestPattern(); ok {
-		return of(e, &Spread{Value: e.expr(rp.Expression().GalaNodeRef)}, a.GalaNodeRef)
+		return of(e, &Spread{Value: e.expr(rp.Expression().GalaNodeRef)}, rp.GalaNodeRef)
 	}
 	return e.unsupported(UnsupportedTypedPattern, a.GalaNodeRef)
 }

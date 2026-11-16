@@ -284,6 +284,16 @@ galaspec models them, except as listed below):
   of an empty sequence, `Grouped` of a size below 1) the model panics with the same
   class, `other`. Each function has a case in
   `internal/formal/gala2lean/testdata` whose output the gala CLI printed;
+- a function's or method's variadic parameter `xs ...T`, as a Lean `List` of its
+  arguments: a call passes the trailing arguments, evaluated in the order written with
+  the others, as one list (`[]` for none, or when a call with named arguments leaves it
+  out; `xs = v` is one value), and a spread `f(xs...)` passes a variadic parameter on
+  whole. Its only uses that translate are a spread into a declared variadic function,
+  `ArrayOf` or `ListOf`, and `xs.Size()` (Go's `len`); any other use is reported
+  (`slice-value`), so no slice is written, compared or printed. Reported too: a spread
+  of anything else or beside other arguments, a named spread (`spread-arg`), a variadic
+  function or method used as a value (`variadic-func-value`), and a function with both
+  `inout` and variadic parameters (`variadic-inout`);
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
   them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every

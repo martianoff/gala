@@ -13,7 +13,7 @@ import (
 // the others, as one list; none (or the parameter left out of a call with
 // named arguments) is []; `xs = v` is [v]; a spread `f(ys...)` passes ys.
 // A named spread, `xs = ys...`, is reported (spread-arg): the generated Go
-// passes ys without the spread, which does not compile.
+// passes ys without the spread, which does not compile (#1214).
 //
 // The only uses of the parameter that translate are a spread of it into a
 // declared variadic function or into ArrayOf or ListOf, and `xs.Size()`
@@ -183,8 +183,12 @@ func (g *gen) variadicMethodNamed(m string) bool {
 }
 
 // isVariadicMethod reports whether method m of the type of value e has a
-// variadic parameter.
+// variadic parameter, or may have: when e's type cannot be read, a method of
+// that name is.
 func (g *gen) isVariadicMethod(e coreexport.Node, m string, sc *scope) bool {
-	f, _ := g.methodOf(e, m, sc, nil)
-	return f != nil && isVariadic(f.Params)
+	f, u := attempt(func() *coreexport.Func {
+		f, _ := g.methodOf(e, m, sc, nil)
+		return f
+	})
+	return u != nil || f != nil && isVariadic(f.Params)
 }

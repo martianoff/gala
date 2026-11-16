@@ -219,6 +219,8 @@ func count(xs ...int) int = xs.Size()
 
 func pass(prefix string, xs ...int) int = count(xs...)
 
+func notLast(xs ...int, n int) int = n
+
 func main() {
     Println(count(), count(1, 2), pass(prefix = "p", xs = 3))
     val h = (ys ...int) => 0

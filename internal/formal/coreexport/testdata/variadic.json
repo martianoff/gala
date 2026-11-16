@@ -7,7 +7,7 @@
         "line": 1,
         "col": 1,
         "off": 0,
-        "end": 250
+        "end": 290
       },
       "path": "variadic.gala",
       "package": "main",
@@ -211,7 +211,75 @@
             "line": 7,
             "col": 1,
             "off": 109,
-            "end": 250
+            "end": 147
+          },
+          "name": "notLast",
+          "receiver": null,
+          "type-params": [],
+          "params": [
+            {
+              "unsupported": "variadic-param",
+              "pos": {
+                "line": 7,
+                "col": 14,
+                "off": 122,
+                "end": 131
+              }
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 7,
+                "col": 25,
+                "off": 133,
+                "end": 138
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 7,
+                  "col": 27,
+                  "off": 135,
+                  "end": 138
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "default": null
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 7,
+              "col": 32,
+              "off": 140,
+              "end": 143
+            },
+            "package": "",
+            "name": "int",
+            "args": []
+          },
+          "body": {
+            "kind": "name",
+            "pos": {
+              "line": 7,
+              "col": 38,
+              "off": 146,
+              "end": 147
+            },
+            "name": "n"
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 9,
+            "col": 1,
+            "off": 149,
+            "end": 290
           },
           "name": "main",
           "receiver": null,
@@ -221,27 +289,27 @@
           "body": {
             "kind": "block",
             "pos": {
-              "line": 7,
+              "line": 9,
               "col": 13,
-              "off": 121,
-              "end": 250
+              "off": 161,
+              "end": 290
             },
             "stmts": [
               {
                 "kind": "call",
                 "pos": {
-                  "line": 8,
+                  "line": 10,
                   "col": 5,
-                  "off": 127,
-                  "end": 184
+                  "off": 167,
+                  "end": 224
                 },
                 "callee": {
                   "kind": "name",
                   "pos": {
-                    "line": 8,
+                    "line": 10,
                     "col": 5,
-                    "off": 127,
-                    "end": 134
+                    "off": 167,
+                    "end": 174
                   },
                   "name": "Println"
                 },
@@ -249,18 +317,18 @@
                   {
                     "kind": "call",
                     "pos": {
-                      "line": 8,
+                      "line": 10,
                       "col": 13,
-                      "off": 135,
-                      "end": 142
+                      "off": 175,
+                      "end": 182
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
-                        "line": 8,
+                        "line": 10,
                         "col": 13,
-                        "off": 135,
-                        "end": 140
+                        "off": 175,
+                        "end": 180
                       },
                       "name": "count"
                     },
@@ -269,18 +337,18 @@
                   {
                     "kind": "call",
                     "pos": {
-                      "line": 8,
+                      "line": 10,
                       "col": 22,
-                      "off": 144,
-                      "end": 155
+                      "off": 184,
+                      "end": 195
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
-                        "line": 8,
+                        "line": 10,
                         "col": 22,
-                        "off": 144,
-                        "end": 149
+                        "off": 184,
+                        "end": 189
                       },
                       "name": "count"
                     },
@@ -288,10 +356,10 @@
                       {
                         "kind": "int",
                         "pos": {
-                          "line": 8,
+                          "line": 10,
                           "col": 28,
-                          "off": 150,
-                          "end": 151
+                          "off": 190,
+                          "end": 191
                         },
                         "text": "1",
                         "hint": {
@@ -301,10 +369,10 @@
                       {
                         "kind": "int",
                         "pos": {
-                          "line": 8,
+                          "line": 10,
                           "col": 31,
-                          "off": 153,
-                          "end": 154
+                          "off": 193,
+                          "end": 194
                         },
                         "text": "2",
                         "hint": {
@@ -316,18 +384,18 @@
                   {
                     "kind": "call",
                     "pos": {
-                      "line": 8,
+                      "line": 10,
                       "col": 35,
-                      "off": 157,
-                      "end": 183
+                      "off": 197,
+                      "end": 223
                     },
                     "callee": {
                       "kind": "name",
                       "pos": {
-                        "line": 8,
+                        "line": 10,
                         "col": 35,
-                        "off": 157,
-                        "end": 161
+                        "off": 197,
+                        "end": 201
                       },
                       "name": "pass"
                     },
@@ -335,19 +403,19 @@
                       {
                         "kind": "named-arg",
                         "pos": {
-                          "line": 8,
+                          "line": 10,
                           "col": 40,
-                          "off": 162,
-                          "end": 174
+                          "off": 202,
+                          "end": 214
                         },
                         "name": "prefix",
                         "value": {
                           "kind": "string",
                           "pos": {
-                            "line": 8,
+                            "line": 10,
                             "col": 49,
-                            "off": 171,
-                            "end": 174
+                            "off": 211,
+                            "end": 214
                           },
                           "text": "\"p\"",
                           "value": "p",
@@ -357,19 +425,19 @@
                       {
                         "kind": "named-arg",
                         "pos": {
-                          "line": 8,
+                          "line": 10,
                           "col": 54,
-                          "off": 176,
-                          "end": 182
+                          "off": 216,
+                          "end": 222
                         },
                         "name": "xs",
                         "value": {
                           "kind": "int",
                           "pos": {
-                            "line": 8,
+                            "line": 10,
                             "col": 59,
-                            "off": 181,
-                            "end": 182
+                            "off": 221,
+                            "end": 222
                           },
                           "text": "3",
                           "hint": {
@@ -384,10 +452,10 @@
               {
                 "kind": "val",
                 "pos": {
-                  "line": 9,
+                  "line": 11,
                   "col": 5,
-                  "off": 189,
-                  "end": 213
+                  "off": 229,
+                  "end": 253
                 },
                 "names": [
                   "h"
@@ -398,19 +466,19 @@
                   {
                     "kind": "lambda",
                     "pos": {
-                      "line": 9,
+                      "line": 11,
                       "col": 13,
-                      "off": 197,
-                      "end": 213
+                      "off": 237,
+                      "end": 253
                     },
                     "params": [
                       {
                         "unsupported": "variadic-param",
                         "pos": {
-                          "line": 9,
+                          "line": 11,
                           "col": 14,
-                          "off": 198,
-                          "end": 207
+                          "off": 238,
+                          "end": 247
                         }
                       }
                     ],
@@ -418,10 +486,10 @@
                     "body": {
                       "kind": "int",
                       "pos": {
-                        "line": 9,
+                        "line": 11,
                         "col": 28,
-                        "off": 212,
-                        "end": 213
+                        "off": 252,
+                        "end": 253
                       },
                       "text": "0",
                       "hint": {
@@ -434,10 +502,10 @@
               {
                 "kind": "val",
                 "pos": {
-                  "line": 10,
+                  "line": 12,
                   "col": 5,
-                  "off": 218,
-                  "end": 248
+                  "off": 258,
+                  "end": 288
                 },
                 "names": [
                   "k"
@@ -446,29 +514,29 @@
                 "type": {
                   "kind": "type-func",
                   "pos": {
-                    "line": 10,
+                    "line": 12,
                     "col": 11,
-                    "off": 224,
-                    "end": 240
+                    "off": 264,
+                    "end": 280
                   },
                   "params": [
                     {
                       "unsupported": "variadic-param",
                       "pos": {
-                        "line": 10,
+                        "line": 12,
                         "col": 16,
-                        "off": 229,
-                        "end": 235
+                        "off": 269,
+                        "end": 275
                       }
                     }
                   ],
                   "result": {
                     "kind": "type-name",
                     "pos": {
-                      "line": 10,
+                      "line": 12,
                       "col": 24,
-                      "off": 237,
-                      "end": 240
+                      "off": 277,
+                      "end": 280
                     },
                     "package": "",
                     "name": "int",
@@ -479,10 +547,10 @@
                   {
                     "kind": "name",
                     "pos": {
-                      "line": 10,
+                      "line": 12,
                       "col": 30,
-                      "off": 243,
-                      "end": 248
+                      "off": 283,
+                      "end": 288
                     },
                     "name": "count"
                   }
