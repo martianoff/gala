@@ -518,6 +518,10 @@ func (g *gen) methodCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (t
 // value written back. It returns the do-items and the name holding the
 // call's result, or nil items when e is not such a call.
 func (g *gen) ptrCall(e *coreexport.Call, sc *scope) ([]string, string) {
+	if e.Bracket != nil {
+		// A call written with a bracket is bracketCall's, wherever it is.
+		return nil, ""
+	}
 	if items, res := g.lendCall(e, sc); items != nil {
 		return items, res
 	}

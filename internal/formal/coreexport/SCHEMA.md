@@ -1,4 +1,4 @@
-# Core JSON, version 9
+# Core JSON, version 10
 
 Core JSON is the surface syntax of a GALA program as the formal semantics reads it
 (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_SEMANTICS.MD)). The exporter in
@@ -48,7 +48,7 @@ The spec does each of those itself; they are the transpiler steps under test.
 
 ```json
 {
-  "core": 9,
+  "core": 10,
   "files": [ { "kind": "file", ... } ]
 }
 ```
@@ -450,6 +450,14 @@ one level nests to the left: `a - b - c` is `(a - b) - c`.
 unsupported; a lambda argument is a [`lambda`](#lambda).
 
 - `callee` (expression).
+- `bracket` (object, version 10; absent when the call has none): the items of a
+  `[...]` written right before the arguments, `F[int](x)` or `fs[i](x)`. Without
+  types the exporter cannot tell type arguments from an index, so it keeps both
+  readings and the consumer decides from the callee:
+  - `exprs` (list): the items as expressions, always.
+  - `types` (list or `null`): the items as types when every one reads as a type (a
+    name, `pkg.Name`, or such a name applied to `[...]` items of the same form), else
+    `null`.
 - `args` (list): in source order, each an expression or a [`named-arg`](#named-arg).
   The exporter does not reorder named arguments or fill in defaults.
 
@@ -678,7 +686,7 @@ Every name an `unsupported` node can carry.
 | `partial-function` | a partial function literal, `{ case ... }` |
 | `placeholder-lambda` | a placeholder lambda, `_ * 2`, which the transpiler rewrites from the expected type |
 | `composite-literal` | a Go composite literal, `T{...}` |
-| `index` | indexing or explicit type arguments, `x[i]` |
+| `index` | indexing, `x[i]`, and brackets not written right before a call (`id[int]` as a value); a call `x[items](args)` keeps its brackets in [`call`](#call)'s `bracket` |
 | `named-sub-pattern` | a named sub-pattern of an extractor, `case Rect(Height = h)` |
 | `spread-arg` | a spread argument, `f(xs...)` |
 | `unit` | `()` |

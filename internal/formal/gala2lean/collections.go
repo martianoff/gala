@@ -54,6 +54,12 @@ func seqOf(t string) (kind, elem string, ok bool) {
 
 // seqCtor builds an Array or a List from its elements, in the order written.
 func (g *gen) seqCtor(x string, e *coreexport.Call, sc *scope) term {
+	return g.seqCtorAt(seqCtors[x]+".mk", x, e, sc)
+}
+
+// seqCtorAt is seqCtor with the constructor applied as head: `GArray.mk`, or
+// with its element type given, `GArray.mk (α := Int64)`.
+func (g *gen) seqCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
 	if strings.HasPrefix(x, "Empty") && len(e.Args) > 0 {
 		unsup(e.Pos, "argument-count")
 	}
@@ -64,7 +70,7 @@ func (g *gen) seqCtor(x string, e *coreexport.Call, sc *scope) term {
 		subs[i] = g.expr(a, sc)
 		parts[i] = subs[i].val()
 	}
-	return wrap("("+seqCtors[x]+".mk ["+strings.Join(parts, ", ")+"])", subs...)
+	return wrap("("+head+" ["+strings.Join(parts, ", ")+"])", subs...)
 }
 
 // seqCtorType is exprType of a call of an Array or List builder.

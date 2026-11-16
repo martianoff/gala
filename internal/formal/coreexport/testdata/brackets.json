@@ -1,0 +1,425 @@
+{
+  "core": 10,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 140
+      },
+      "path": "brackets.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 39
+          },
+          "name": "id",
+          "receiver": null,
+          "type-params": [
+            {
+              "kind": "type-param",
+              "pos": {
+                "line": 3,
+                "col": 9,
+                "off": 22,
+                "end": 27
+              },
+              "name": "T",
+              "constraint": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 11,
+                  "off": 24,
+                  "end": 27
+                },
+                "package": "",
+                "name": "any",
+                "args": []
+              }
+            }
+          ],
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 3,
+                "col": 16,
+                "off": 29,
+                "end": 32
+              },
+              "name": "x",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 3,
+                  "col": 18,
+                  "off": 31,
+                  "end": 32
+                },
+                "package": "",
+                "name": "T",
+                "args": []
+              },
+              "default": null
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 3,
+              "col": 21,
+              "off": 34,
+              "end": 35
+            },
+            "package": "",
+            "name": "T",
+            "args": []
+          },
+          "body": {
+            "kind": "name",
+            "pos": {
+              "line": 3,
+              "col": 25,
+              "off": 38,
+              "end": 39
+            },
+            "name": "x"
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 5,
+            "col": 1,
+            "off": 41,
+            "end": 140
+          },
+          "name": "main",
+          "receiver": null,
+          "type-params": [],
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 5,
+              "col": 13,
+              "off": 53,
+              "end": 140
+            },
+            "stmts": [
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 6,
+                  "col": 5,
+                  "off": 59,
+                  "end": 86
+                },
+                "names": [
+                  "n"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 6,
+                      "col": 13,
+                      "off": 67,
+                      "end": 86
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 6,
+                        "col": 13,
+                        "off": 67,
+                        "end": 71
+                      },
+                      "name": "None"
+                    },
+                    "bracket": {
+                      "exprs": [
+                        {
+                          "unsupported": "index",
+                          "pos": {
+                            "line": 6,
+                            "col": 18,
+                            "off": 72,
+                            "end": 83
+                          }
+                        }
+                      ],
+                      "types": [
+                        {
+                          "kind": "type-name",
+                          "pos": {
+                            "line": 6,
+                            "col": 18,
+                            "off": 72,
+                            "end": 83
+                          },
+                          "package": "",
+                          "name": "Option",
+                          "args": [
+                            {
+                              "kind": "type-name",
+                              "pos": {
+                                "line": 6,
+                                "col": 25,
+                                "off": 79,
+                                "end": 82
+                              },
+                              "package": "",
+                              "name": "int",
+                              "args": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 7,
+                  "col": 5,
+                  "off": 91,
+                  "end": 138
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 7,
+                    "col": 5,
+                    "off": 91,
+                    "end": 98
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 7,
+                      "col": 13,
+                      "off": 99,
+                      "end": 109
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 7,
+                        "col": 13,
+                        "off": 99,
+                        "end": 101
+                      },
+                      "name": "id"
+                    },
+                    "bracket": {
+                      "exprs": [
+                        {
+                          "kind": "name",
+                          "pos": {
+                            "line": 7,
+                            "col": 16,
+                            "off": 102,
+                            "end": 105
+                          },
+                          "name": "int"
+                        }
+                      ],
+                      "types": [
+                        {
+                          "kind": "type-name",
+                          "pos": {
+                            "line": 7,
+                            "col": 16,
+                            "off": 102,
+                            "end": 105
+                          },
+                          "package": "",
+                          "name": "int",
+                          "args": []
+                        }
+                      ]
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 21,
+                          "off": 107,
+                          "end": 108
+                        },
+                        "text": "1",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 7,
+                      "col": 25,
+                      "off": 111,
+                      "end": 123
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 7,
+                        "col": 25,
+                        "off": 111,
+                        "end": 113
+                      },
+                      "name": "id"
+                    },
+                    "bracket": {
+                      "exprs": [
+                        {
+                          "kind": "select",
+                          "pos": {
+                            "line": 7,
+                            "col": 28,
+                            "off": 114,
+                            "end": 119
+                          },
+                          "target": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 7,
+                              "col": 28,
+                              "off": 114,
+                              "end": 117
+                            },
+                            "name": "pkg"
+                          },
+                          "name": "T"
+                        }
+                      ],
+                      "types": [
+                        {
+                          "kind": "type-name",
+                          "pos": {
+                            "line": 7,
+                            "col": 28,
+                            "off": 114,
+                            "end": 119
+                          },
+                          "package": "pkg",
+                          "name": "T",
+                          "args": []
+                        }
+                      ]
+                    },
+                    "args": [
+                      {
+                        "kind": "name",
+                        "pos": {
+                          "line": 7,
+                          "col": 35,
+                          "off": 121,
+                          "end": 122
+                        },
+                        "name": "n"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 7,
+                      "col": 39,
+                      "off": 125,
+                      "end": 137
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 7,
+                        "col": 39,
+                        "off": 125,
+                        "end": 127
+                      },
+                      "name": "id"
+                    },
+                    "bracket": {
+                      "exprs": [
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 7,
+                            "col": 42,
+                            "off": 128,
+                            "end": 133
+                          },
+                          "op": "+",
+                          "left": {
+                            "kind": "name",
+                            "pos": {
+                              "line": 7,
+                              "col": 42,
+                              "off": 128,
+                              "end": 129
+                            },
+                            "name": "x"
+                          },
+                          "right": {
+                            "kind": "int",
+                            "pos": {
+                              "line": 7,
+                              "col": 46,
+                              "off": 132,
+                              "end": 133
+                            },
+                            "text": "1",
+                            "hint": {
+                              "type": "int"
+                            }
+                          }
+                        }
+                      ],
+                      "types": null
+                    },
+                    "args": [
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 7,
+                          "col": 49,
+                          "off": 135,
+                          "end": 136
+                        },
+                        "text": "2",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
