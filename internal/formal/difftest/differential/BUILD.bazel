@@ -41,6 +41,7 @@ go_test(
     deps = [
         "//internal/formal/difftest",
         "//internal/formal/gala2lean",
+        "//internal/transpiler/fuzz/progrun",
         "@rules_go//go/runfiles",
         "@rules_go//go/tools/bazel",
     ],

@@ -29,6 +29,8 @@ inductive Expr
   | selector (x : Expr) (sel : String)
   /-- `x[indices]`: an index, or an instantiation with type arguments. -/
   | index (x : Expr) (indices : List Expr)
+  /-- `x[low:high]`, or `x[low:high:max]`; each index may be omitted. -/
+  | sliceExpr (x : Expr) (low high max : Option Expr)
   | typeAssert (x : Expr) (ty : Expr)
   | call (fn : Expr) (args : List Expr) (ellipsis : Bool)
   | star (x : Expr)
@@ -37,6 +39,10 @@ inductive Expr
   | structType (fields : List Field)
   | interfaceType (elems : List Field)
   | funcType (sig : Sig)
+  /-- `[len]elt`, or the slice type `[]elt` when `len` is `none`. -/
+  | arrayType (len : Option Expr) (elt : Expr)
+  /-- The `...` length of `[...]T{...}`. -/
+  | ellipsis
   | unsupported (what : String)
 /-- A parameter, result, receiver, type parameter, struct field or interface element:
     its names (none when unnamed or embedded) and its type. -/

@@ -23,6 +23,11 @@ import (
 // or the exporter, never listed in known_disagreements.json, and fails the
 // run until it is fixed or the construct is reported as unsupported.
 
+// GcRuntimeGoVersion is the Go release whose gc choices GoCore models
+// (`goVersion` in formal/Gala/GoCore/GcRuntime.lean, which
+// tools/check_repo_policy.sh keeps equal to this and to MODULE.bazel's Go SDK).
+const GcRuntimeGoVersion = "go1.25.5"
+
 // GoCoreEnv is the environment variable that names the gocore binary.
 const GoCoreEnv = "GALA_GOCORE_BIN"
 

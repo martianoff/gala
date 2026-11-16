@@ -225,11 +225,13 @@ jobs:
           done
           exit $status
 
+      # The release MODULE.bazel pins, exactly: GoCore models its gc runtime's
+      # choices, and the differential test refuses another (tools/check_repo_policy.sh).
       - name: Setup Go
         id: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.25.5' # GoCore's gc model
           cache: false
 
       - name: Export GOROOT
@@ -279,7 +281,8 @@ jobs:
             --nocache_test_results \
             --nozip_undeclared_test_outputs \
             --test_output=errors --verbose_failures \
-            --action_env=GOROOT="$GOROOT" --action_env=PATH
+            --action_env=GOROOT="$GOROOT" --action_env=PATH \
+            --test_env=GOROOT="$GOROOT"
 
       - name: Keep the run's report
         # coverage_section.md is what formal/COVERAGE.md carries; download it and

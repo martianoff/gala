@@ -1,0 +1,390 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 3,
+            "col": 1
+          },
+          "name": "panic_assign.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 7,
+                "col": 1
+              },
+              "name": "f",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 7,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 7,
+                        "col": 10
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 7,
+                  "col": 14
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 8,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 8,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 8,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 8,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 8,
+                            "col": 14
+                          },
+                          "value": "right side"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 9,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 9,
+                          "col": 9
+                        },
+                        "value": "7"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 12,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 12,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 12,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 13,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 13,
+                          "col": 2
+                        },
+                        "name": "xs"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "composite-lit",
+                        "pos": {
+                          "line": 13,
+                          "col": 8
+                        },
+                        "type": {
+                          "kind": "array-type",
+                          "pos": {
+                            "line": 13,
+                            "col": 8
+                          },
+                          "len": null,
+                          "elt": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 13,
+                              "col": 10
+                            },
+                            "name": "int"
+                          }
+                        },
+                        "elts": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 13,
+                              "col": 14
+                            },
+                            "value": "1"
+                          },
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 13,
+                              "col": 17
+                            },
+                            "value": "2"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 14,
+                      "col": 2
+                    },
+                    "tok": "=",
+                    "lhs": [
+                      {
+                        "kind": "index",
+                        "pos": {
+                          "line": 14,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 14,
+                            "col": 2
+                          },
+                          "name": "xs"
+                        },
+                        "indices": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 14,
+                              "col": 5
+                            },
+                            "value": "0"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "index",
+                        "pos": {
+                          "line": 14,
+                          "col": 9
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 14,
+                            "col": 9
+                          },
+                          "name": "xs"
+                        },
+                        "indices": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 14,
+                              "col": 12
+                            },
+                            "value": "1"
+                          }
+                        ]
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 14,
+                          "col": 17
+                        },
+                        "value": "10"
+                      },
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 14,
+                          "col": 21
+                        },
+                        "value": "20"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 15,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 15,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 15,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 15,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 15,
+                            "col": 14
+                          },
+                          "name": "xs"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 16,
+                      "col": 2
+                    },
+                    "tok": "=",
+                    "lhs": [
+                      {
+                        "kind": "index",
+                        "pos": {
+                          "line": 16,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 16,
+                            "col": 2
+                          },
+                          "name": "xs"
+                        },
+                        "indices": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 16,
+                              "col": 5
+                            },
+                            "value": "5"
+                          }
+                        ]
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 16,
+                          "col": 10
+                        },
+                        "fun": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 16,
+                            "col": 10
+                          },
+                          "name": "f"
+                        },
+                        "args": [],
+                        "ellipsis": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

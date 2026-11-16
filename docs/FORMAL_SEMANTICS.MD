@@ -406,16 +406,21 @@ column lists what each milestone's claim rests on beyond them.
     - Its evaluator is total, by structural fuel.
     - Only `fmt` and the hand-written, reflective standard-library functions it names
       are models.
+    - Slices, arrays and variadic calls are Go's: slices share their underlying array,
+      index and slice expressions panic with Go's text. What the spec leaves to the
+      implementation, the capacity a growing `append` gives, is gc's, in a module of
+      its own (`formal/Gala/GoCore/GcRuntime.lean`; see [What is trusted](#what-is-trusted)).
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
     every compiled program's Go runs through GoCore and is compared with `go run`. In the
-    CI run that set the baselines, GoCore agrees with `go run` on 179 programs that
-    compile (151 examples, 28 generated), and on 28 examples galaspec agrees with
+    CI run that set the baselines, GoCore agrees with `go run` on 231 programs that
+    compile (200 examples, 31 generated), and on 28 examples galaspec agrees with
     `go run` too. It stops `unsupported` on the rest, naming the construct, and none
     disagrees. Tested, not proved. Both counts are ratchets (`gocore_fidelity_agreeing`,
     `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
     [COVERAGE.md](../formal/COVERAGE.md#differential-testing).
-  - **What remains:** widening GoCore where the corpus stops it (variadic functions and
-    the slices behind them, `fmt.Printf`, floats, `defer`), each a construct the run names.
+  - **What remains:** widening GoCore where the corpus stops it (type inference through
+    function-typed parameters, floats, `fmt.Printf`, `defer`), each a construct the run
+    names.
   - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
     `match` lowering targets, with abstract sealed values and pattern primitives, and
     this one, with the flat layout. M5's reference lowering targets this one, and M3's
@@ -571,6 +576,7 @@ The table is honest about what the guarantees rest on.
 | Go toolchain and runtime | GoCore models the subset the transpiler emits: M3's fragment (`formal/Gala/GoCore.lean`) and, from M4, whole programs (`formal/Gala/GoCore/*.lean`). That real Go behaves as GoCore says is assumed | GoCore runs next to `go run` on the transformer's output for every program in the corpus, and on fixtures whose expectations come from `go run` (`formal/tests/gocore`); runs Go aborts for lack of stack or memory are outside every claim |
 | GoCore's models of `fmt` and of the standard library's hand-written functions | GoCore runs the exported Go, but not Go's own standard library, nor the reflective functions of GALA's (`std/types.go`). `fmt`'s `Println`, `Print`, `Sprint` and `Sprintf` (with `%v %d %s %t %%`) are modelled, and so are `FormatStruct`, `Copy`, `Equal`, `EvalOperand` and `Immutable.Format`, replaced by name (`libFuncs` in `formal/Gala/GoCore/Eval.lean`). Anything `fmt` would print as `%!verb(...)` or as an address is unsupported, never imitated | Each model cites the code it follows; the differential run against `go run` tests them |
 | GoCore's layout of a sealed value | M3's fragment holds a sealed value as its type, its active case and that case's fields; the generated Go holds every case's fields in one struct with a tag | From M4, GoCore for whole programs runs the flat struct, `_variant` included, through the generated `Unapply`, `Equal` and `String` bodies, so the layout is tested against `go run`. M3's abstract layout against the flat one: a proof is owed by M5, whose reference lowering targets the flat layout |
+| gc runtime model (append growth, size classes) | The Go spec leaves the capacity a growing `append` gives a slice to the implementation. GoCore takes gc's: `growslice`'s growth, the allocator's size classes and amd64 type layout, as Go 1.25.5 has them (`formal/Gala/GoCore/GcRuntime.lean`), and nothing outside that module encodes them. Where gc's choice depends on its escape analysis (a 32-byte stack buffer for a slice grown from empty), GoCore keeps both capacities and stops `unsupported` when a run would tell them apart | Tested against the pinned toolchain: `tools/check_repo_policy.sh` keeps the modelled release equal to MODULE.bazel's Go SDK and to the formal workflow's, the differential test refuses any other `go`, and fixtures from `go run` cover growth across the 256-element threshold, aliasing after growth, pointerful elements over 512 bytes and zero-size elements. No proof may rely on the policy's numbers, only on what the spec guarantees (capacity at least the length; growth allocates a fresh array; an append within capacity shares it), so proofs hold across Go releases |
 | Go AST exporter (`internal/formal/gocoreexport`, M4) | It decides which GoCore program the emitted Go is | A plain syntax dump of `go/ast`: every Go construct has a kind of its own and GoCore alone decides which it runs; literals are read as the Go type checker reads them; nothing but comments is dropped. A round-trip test prints every exported file back as Go and checks that it parses to the source's syntax tree, over the Go output of every example and of the GALA packages they import |
 | The validator's run (planned, M6) | Evaluated by Lean's kernel, or by compiled Lean when the kernel is too slow | The kernel needs no mitigation; compiled Lean is named as trusted where it is used |
 | The transformer | **Not trusted.** It is what we test, and from M6 what we validate per program | — |

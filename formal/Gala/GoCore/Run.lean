@@ -45,6 +45,8 @@ def refsE (bound : List String) : Expr → List String
   | .funcLit (.mk ps rs _) body => (refsSs (bound ++ fieldListNames ps ++ fieldListNames rs) body).1
   | .paren x | .star x | .unary _ x => refsE bound x
   | .index x is => refsE bound x ++ refsEs bound is
+  | .sliceExpr x l h m => refsE bound x ++ refsOE bound l ++ refsOE bound h ++ refsOE bound m
+  | .arrayType l e => refsOE bound l ++ refsE bound e
   | .typeAssert x t => refsE bound x ++ refsE bound t
   | .call f as _ => refsE bound f ++ refsEs bound as
   | .binary _ x y => refsE bound x ++ refsE bound y
@@ -181,7 +183,7 @@ def initPkg (c : Ctx) (n : Nat) (path : String) : GM Unit := do
       initialized := initialized.insert x
     done := done.insert i
   for (fi, body) in p.inits do
-    let _ ← callBody c n { pkg := path, file := fi } (.mk [] [] false) body none []
+    let _ ← callBody c n { pkg := path, file := fi } (.mk [] [] false) body none [] false
 
 /-- The order packages are initialized in (Go spec, "Package initialization"). -/
 def pkgOrder (c : Ctx) : List String := Id.run do
@@ -224,7 +226,7 @@ def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
     for path in pkgOrder c do
       initPkg c depth path
     let mainFn ← funcVal c depth c.main "main" []
-    let _ ← callValue c depth mainFn []
+    let _ ← callValue c depth mainFn [] false
   let (r, s) := (go.run).run { cells := #[], closures := #[], out := "", steps := fuel }
   let o := match r with
     | .ok () => .ok
