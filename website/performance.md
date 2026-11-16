@@ -61,7 +61,7 @@ The httpjson program doesn't compile with 0.100.0, so it has no row here.
 GALA=$(command -v gala) tools/ci/binary_size/measure.sh /tmp/binary-size
 ```
 
-The script prints the table above and writes it to `sizes.tsv` in the directory you give it. CI runs it on every pull request with the CLI built from that pull request, and fails when a GALA binary grows more than 10% past the checked-in baseline in [`tools/ci/binary_size/baseline.tsv`](https://github.com/martianoff/gala/blob/master/tools/ci/binary_size/baseline.tsv). That file says how to update the baseline when growth is intended.
+The script prints the table above and writes it to `sizes.tsv` in the directory you give it. CI runs it on every pull request to `master` with the CLI built from that pull request, and fails when a GALA binary grows more than 10% past the checked-in baseline in [`tools/ci/binary_size/baseline.tsv`](https://github.com/martianoff/gala/blob/master/tools/ci/binary_size/baseline.tsv). That file says how to update the baseline when growth is intended.
 
 ---
 

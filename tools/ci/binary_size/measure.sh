@@ -19,8 +19,10 @@
 # With BASELINE set, the GALA bytes are compared against that file (lines of
 # "program flags bytes"; # starts a comment) and the script fails when any of
 # them is more than MARGIN_PERCENT (default 10) larger than its baseline.
-# Programs that are not in the baseline are measured but not checked.
+# Programs that are not in the baseline are measured but not checked, and
+# baseline lines for programs left out of PROGRAMS are skipped.
 set -euo pipefail
+shopt -s inherit_errexit # a failed build inside $(build ...) must stop the script
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 : "${GALA:?set GALA to the gala binary under test}"
@@ -29,6 +31,9 @@ mkdir -p "$work"
 work=$(cd "$work" && pwd)
 programs=${PROGRAMS:-hello httpjson collections}
 margin=${MARGIN_PERCENT:-10}
+case $margin in
+  '' | *[!0-9]*) echo "MARGIN_PERCENT must be a whole number, got '$margin'" >&2; exit 2 ;;
+esac
 
 export GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOTOOLCHAIN=local
 # A private GALA_HOME keeps the stdlib snapshot and build workspaces of the
@@ -48,6 +53,7 @@ build() {
   local prog=$1 flags=$2 goflags=$3
   local src="$work/src/$prog" out="$work/bin/$prog-$flags"
   mkdir -p "$out"
+  rm -f "$out/gala" "$out/go"
   (cd "$src/gala" && GOFLAGS=$goflags "$GALA" build -o "$out/gala" . >/dev/null)
   (cd "$src/go" && GOFLAGS=$goflags go build -trimpath -o "$out/go" .)
   echo "$(wc -c <"$out/gala") $(wc -c <"$out/go")"
@@ -61,7 +67,10 @@ for prog in $programs; do
       default) goflags="" ;;
       stripped) goflags="'-ldflags=-s -w'" ;;
     esac
-    read -r gala_bytes go_bytes < <(build "$prog" "$flags" "$goflags")
+    # A command substitution, not `read < <(...)`, so a failed build stops
+    # the script under set -e instead of leaving empty sizes behind.
+    sizes=$(build "$prog" "$flags" "$goflags")
+    read -r gala_bytes go_bytes <<<"$sizes"
     printf '%s\t%s\t%s\t%s\n' "$prog" "$flags" "$gala_bytes" "$go_bytes" >>"$work/sizes.tsv"
     printf '%-12s %-8s %12s %12s %8s\n' "$prog" "$flags" "$gala_bytes" "$go_bytes" \
       "$(awk -v a="$gala_bytes" -v b="$go_bytes" 'BEGIN { printf "%.3f", a / b }')"
@@ -74,7 +83,9 @@ echo
 echo "Checking GALA sizes against $BASELINE (margin ${margin}%)"
 failed=0
 while read -r prog flags base; do
+  base=${base%$'\r'} # a CRLF checkout on Windows
   case $prog in '' | '#'*) continue ;; esac
+  case " $programs " in *" $prog "*) ;; *) continue ;; esac
   now=$(awk -v p="$prog" -v f="$flags" '$1 == p && $2 == f { print $3 }' "$work/sizes.tsv")
   if [ -z "$now" ]; then
     echo "::error::$prog/$flags is in the baseline but was not measured"
