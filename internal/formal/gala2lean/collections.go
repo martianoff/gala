@@ -63,17 +63,15 @@ func (g *gen) seqCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
 	if strings.HasPrefix(x, "Empty") && len(e.Args) > 0 {
 		unsup(e.Pos, "argument-count")
 	}
-	if len(e.Args) > 0 {
-		if sp, ok := e.Args[0].(*coreexport.Spread); ok {
-			// ArrayOf(xs...) and ListOf(xs...): std's ArrayOf copies the
-			// slice (ArrayFromSlice) and ListOf conses its elements from
-			// the last, so both hold its elements in order.
-			if len(e.Args) != 1 {
-				unsup(e.Pos, "spread-arg")
-			}
-			v := g.spreadTerm(sp.Value, sc)
-			return wrap("("+head+" "+v.val()+")", v)
+	if sp, ok := firstArg(e).(*coreexport.Spread); ok {
+		// ArrayOf(xs...) and ListOf(xs...): std's ArrayOf copies the slice
+		// (ArrayFromSlice) and ListOf conses its elements from the last, so
+		// both hold its elements in order.
+		if len(e.Args) != 1 {
+			unsup(e.Pos, "spread-arg")
 		}
+		v := g.spreadTerm(sp.Value, sc)
+		return wrap("("+head+" "+v.val()+")", v)
 	}
 	parts := make([]string, len(e.Args))
 	subs := make([]term, len(e.Args))
@@ -90,13 +88,13 @@ func (g *gen) seqCtorType(x string, e *coreexport.Call, sc *scope, seen map[stri
 	if len(e.Args) == 0 {
 		return ""
 	}
+	var t string
 	if sp, ok := e.Args[0].(*coreexport.Spread); ok {
-		if t := sliceElem(g.exprType(sp.Value, sc, seen)); t != "" {
-			return "(" + seqCtors[x] + " " + t + ")"
-		}
-		return ""
+		t = sliceElem(g.exprType(sp.Value, sc, seen))
+	} else {
+		t = g.exprType(argNode(e.Args[0]), sc, seen)
 	}
-	if t := g.exprType(argNode(e.Args[0]), sc, seen); t != "" {
+	if t != "" {
 		return "(" + seqCtors[x] + " " + t + ")"
 	}
 	return ""

@@ -408,10 +408,13 @@ func (g *gen) param(p *coreexport.Param, sc *scope) string {
 	if p.Variadic {
 		// A slice of its elements (variadic.go).
 		lt = sliceType(lt)
-		sc.bind(p.Name, false, lt).slice = true
-		return fmt.Sprintf("(%s : %s)", ident(p.Name), lt)
 	}
-	sc.bind(p.Name, false, lt).gtype = p.Type
+	l := sc.bind(p.Name, false, lt)
+	if p.Variadic {
+		l.slice = true
+	} else {
+		l.gtype = p.Type
+	}
 	return fmt.Sprintf("(%s : %s)", ident(p.Name), lt)
 }
 

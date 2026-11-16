@@ -295,8 +295,9 @@ func (e *exporter) receiver(r native.ReceiverNode) Node {
 	return of(e, rec, r.GalaNodeRef)
 }
 
-// unsupportedParam is what makes p, a function parameter or a shorthand
-// struct field, unsupported; nil when nothing does. A `val` or `var` mark is
+// unsupportedParam is what makes p, a lambda parameter or a shorthand struct
+// field, unsupported; nil when nothing does. A function's variadic
+// parameter is not (paramOf). A `val` or `var` mark is
 // the caller's to check: it is unsupported on a parameter only.
 func (e *exporter) unsupportedParam(p native.ParameterNode) Node {
 	switch {

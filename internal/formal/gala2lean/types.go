@@ -694,13 +694,13 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			return g.bracketCallType(e, sc)
 		}
 		if s, isSel := e.Callee.(*coreexport.Select); isSel {
+			if _, ok := g.sliceSize(e, s, sc); ok {
+				return "Int64"
+			}
 			// The receiver's type, read once for every kind of method below
 			// (a chain of calls would otherwise read each receiver again per
 			// kind).
 			rt := g.exprType(s.Target, sc, seen)
-			if s.Name == "Size" && len(e.Args) == 0 && sliceLocal(s.Target, sc) != nil {
-				return "Int64"
-			}
 			// A method: its declared result, or a generated Copy or Equal.
 			if f := g.methods[g.typeByLean(rt)][s.Name]; f != nil {
 				g.use(g.key(f))

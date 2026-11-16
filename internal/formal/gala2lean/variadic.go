@@ -53,7 +53,6 @@ func isVariadic(params []coreexport.Node) bool {
 // packed is the arguments a call gives a variadic parameter: elems, or the
 // slice spread, one list in Lean. It exists only inside the translation.
 type packed struct {
-	pos    coreexport.Pos
 	elems  []coreexport.Node
 	spread coreexport.Node
 }
@@ -76,7 +75,7 @@ func packCall(s *sig, e *coreexport.Call) *coreexport.Call {
 	}
 	out := *e
 	if nPos > k {
-		p := pack(e.Pos, e.Args[k:nPos])
+		p := pack(e.Args[k:nPos])
 		out.Args = append(append(slices.Clone(e.Args[:k]), p), e.Args[nPos:]...)
 		return &out
 	}
@@ -88,28 +87,28 @@ func packCall(s *sig, e *coreexport.Call) *coreexport.Call {
 				unsup(sp.Pos, "spread-arg")
 			}
 			n := *na
-			n.Value = pack(na.Pos, []coreexport.Node{na.Value})
+			n.Value = pack([]coreexport.Node{na.Value})
 			out.Args[i] = &n
 			return &out
 		}
 	}
 	out.Args = append(out.Args, &coreexport.NamedArg{Meta: coreexport.Meta{Pos: e.Pos}, Name: name,
-		Value: &packed{pos: e.Pos}})
+		Value: &packed{}})
 	return &out
 }
 
 // pack is the packed argument of args. A spread is the only argument, as
 // in Go.
-func pack(pos coreexport.Pos, args []coreexport.Node) *packed {
+func pack(args []coreexport.Node) *packed {
 	for _, a := range args {
 		if sp, ok := a.(*coreexport.Spread); ok {
 			if len(args) != 1 {
 				unsup(sp.Pos, "spread-arg")
 			}
-			return &packed{pos: pos, spread: sp.Value}
+			return &packed{spread: sp.Value}
 		}
 	}
-	return &packed{pos: pos, elems: args}
+	return &packed{elems: args}
 }
 
 // packTerm is packed argument p of elements of GALA type elem: the list of
@@ -134,23 +133,21 @@ func (g *gen) packTerm(p *packed, sc *scope, elem coreexport.Node) term {
 	return wrap(code, subs...)
 }
 
-// sliceLocal is the local that e, a name, refers to when it is a variadic
-// parameter, else nil.
-func sliceLocal(e coreexport.Node, sc *scope) *local {
+// isSliceParam reports whether e is a name that refers to a variadic
+// parameter.
+func isSliceParam(e coreexport.Node, sc *scope) bool {
 	n, ok := e.(*coreexport.Name)
 	if !ok || sc == nil {
-		return nil
+		return false
 	}
-	if l := sc.lookup(n.Name); l != nil && l.slice {
-		return l
-	}
-	return nil
+	l := sc.lookup(n.Name)
+	return l != nil && l.slice
 }
 
 // spreadTerm is the slice `v...` spreads: a variadic parameter, the only
 // slice the translation has.
 func (g *gen) spreadTerm(v coreexport.Node, sc *scope) term {
-	if sliceLocal(v, sc) == nil {
+	if !isSliceParam(v, sc) {
 		unsup(posOf(v), "spread-arg")
 	}
 	return term{code: ident(v.(*coreexport.Name).Name), pure: true}
@@ -160,8 +157,34 @@ func (g *gen) spreadTerm(v coreexport.Node, sc *scope) term {
 // the transpiler lowers it to for every element type; ok is false for any
 // other call.
 func (g *gen) sliceSize(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
-	if s.Name != "Size" || len(e.Args) != 0 || sliceLocal(s.Target, sc) == nil {
+	if s.Name != "Size" || len(e.Args) != 0 || !isSliceParam(s.Target, sc) {
 		return term{}, false
 	}
 	return term{code: "(seqSize " + ident(s.Target.(*coreexport.Name).Name) + ")", pure: true}, true
+}
+
+// firstArg is call e's first argument, or nil when it has none.
+func firstArg(e *coreexport.Call) coreexport.Node {
+	if len(e.Args) == 0 {
+		return nil
+	}
+	return e.Args[0]
+}
+
+// variadicMethodNamed reports whether some method named m has a variadic
+// parameter: a cheap test before isVariadicMethod types a receiver.
+func (g *gen) variadicMethodNamed(m string) bool {
+	for _, ms := range g.methods {
+		if f := ms[m]; f != nil && isVariadic(f.Params) {
+			return true
+		}
+	}
+	return false
+}
+
+// isVariadicMethod reports whether method m of the type of value e has a
+// variadic parameter.
+func (g *gen) isVariadicMethod(e coreexport.Node, m string, sc *scope) bool {
+	f, _ := g.methodOf(e, m, sc, nil)
+	return f != nil && isVariadic(f.Params)
 }

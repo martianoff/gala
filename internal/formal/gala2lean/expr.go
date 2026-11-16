@@ -175,7 +175,7 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 		}
 		return wrap(fmt.Sprintf("(T%d.mk %s)", len(e.Elems), strings.Join(parts, " ")), ts...)
 	case *coreexport.Select:
-		if f, _ := g.methodOf(e.Target, e.Name, sc, nil); f != nil && isVariadic(f.Params) {
+		if g.variadicMethodNamed(e.Name) && g.isVariadicMethod(e.Target, e.Name, sc) {
 			// A call of the method value would pass its arguments one by one.
 			unsup(e.Pos, "variadic-func-value")
 		}
