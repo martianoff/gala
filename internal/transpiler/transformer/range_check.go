@@ -22,9 +22,11 @@ import (
 // opaque type (a scalar underneath, and Go ranges over an integer) and an
 // unresolved type are left to Go, so valid code is never rejected.
 func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.Type) error {
+	// Immutable and Sendable wrap the value Go ranges over.
 	if elem, ok := transpiler.ImmutableElem(xType); ok {
 		xType = elem
 	}
+	xType, _ = transpiler.UnwrapSendable(xType)
 	impl, ok := t.implTypeOf(xType)
 	if !ok || impl.meta.IsOpaque {
 		return nil
@@ -51,23 +53,60 @@ var rangeLoopForms = [][]struct{ method, form string }{
 
 // rangeOverGalaTypeHint names, for each job in rangeLoopForms, the first
 // method meta's type has, spelled on x. A type with none of them, a user
-// struct, is told to range over one of its fields or to give itself such a
-// method.
+// struct, is told which of its fields Go can range over, if any, and to give
+// itself such a method.
 func (t *galaASTTransformer) rangeOverGalaTypeHint(meta *transpiler.TypeMetadata, x string) string {
 	var forms []string
 	for _, job := range rangeLoopForms {
 		for _, f := range job {
 			if t.hasMemberOrGoMethod(meta, f.method) {
-				forms = append(forms, fmt.Sprintf(f.form, x))
+				forms = append(forms, fmt.Sprintf(f.form, receiverText(x)))
 				break
 			}
 		}
 	}
 	if len(forms) == 0 {
-		return fmt.Sprintf("range over a field of %s that Go can range over, or give %s a method that visits its elements", meta.Name, meta.Name)
+		fields := t.rangeableFields(meta)
+		if len(fields) == 0 {
+			return fmt.Sprintf("give %s a method that visits its elements", meta.Name)
+		}
+		return fmt.Sprintf("range over a field Go can range over, %s, or give %s a method that visits its elements", strings.Join(fields, " or "), meta.Name)
 	}
 	if len(forms) > 1 {
 		forms[len(forms)-1] = "or " + forms[len(forms)-1]
 	}
 	return "iterate with a method; here, " + strings.Join(forms, ", ")
+}
+
+// rangeableFields names the fields of meta's type whose declared type is a
+// Go slice or map.
+func (t *galaASTTransformer) rangeableFields(meta *transpiler.TypeMetadata) []string {
+	var out []string
+	for _, name := range meta.FieldNames {
+		switch t.followAliasChain(meta.Fields[name]).(type) {
+		case transpiler.ArrayType, transpiler.MapType:
+			out = append(out, "`"+name+"`")
+		}
+	}
+	return out
+}
+
+// receiverText is x as the receiver of a method call: parenthesized unless
+// it has no space outside its brackets, so that the hint for
+// `if (c) xs else ys` calls the method on the whole expression, not on ys.
+func receiverText(x string) string {
+	depth := 0
+	for _, r := range x {
+		switch r {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case ' ':
+			if depth == 0 {
+				return "(" + x + ")"
+			}
+		}
+	}
+	return x
 }

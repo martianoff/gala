@@ -57,8 +57,10 @@ range over the Go slice or map the collection converts to, `xs.ToGoSlice()` or
 `m.ToGoMap()`. The hint names the methods the ranged type has, spelled on the
 expression written.
 
-For a struct of your own the hint has nothing to name: range over a field Go
-can range over, or give the type a method that visits its elements.
+For a struct of your own, the hint names its fields that are a Go slice or map,
+to range over one of them, or says to give the type a method that visits its
+elements. An expression that is not a single operand, such as an
+`if`-expression, is parenthesized in the hint.
 
 **Rationale.** `range` is lowered to a Go range statement as written, and Go
 cannot range over a struct. The loop used to pass every GALA check and fail

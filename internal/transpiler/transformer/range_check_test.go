@@ -44,7 +44,22 @@ func TestRangeOverGalaType(t *testing.T) {
 		{
 			"a user struct",
 			"package main\n\nstruct Point(X int, Y int)\n\nfunc main() {\n    val p = Point(1, 2)\n    for x := range p {\n        Println(x)\n    }\n}\n",
-			"range over a field of Point that Go can range over, or give Point a method that visits its elements",
+			"give Point a method that visits its elements",
+		},
+		{
+			"a user struct with a Go slice field",
+			"package main\n\nimport \"martianoff/gala/go_interop\"\n\nstruct Bag(names []string)\n\nfunc main() {\n    val b = Bag(go_interop.SliceOf(\"a\"))\n    for _, n := range b {\n        Println(n)\n    }\n}\n",
+			"range over a field Go can range over, `names`, or give Bag a method that visits its elements",
+		},
+		{
+			"an if-expression, parenthesized in the hint",
+			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc pick(c bool) {\n    for _, x := range if (c) ArrayOf(1) else ArrayOf(2) {\n        Println(x)\n    }\n}\n\nfunc main() {\n    pick(true)\n}\n",
+			"`(if (c) ArrayOf(1) else ArrayOf(2)).ForEach((x) => ...)`",
+		},
+		{
+			"a Sendable collection",
+			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc each(xs Sendable[Array[int]]) {\n    for _, x := range xs {\n        Println(x)\n    }\n}\n\nfunc main() {\n    each(ArrayOf(1))\n}\n",
+			"cannot range over `xs`: it is a collection_immutable.Array[int]",
 		},
 		{
 			"an Array field",
@@ -72,7 +87,7 @@ func TestRangeOverGalaType(t *testing.T) {
 		{"a GALA alias of a Go slice", "package main\n\nimport \"martianoff/gala/go_interop\"\n\ntype Names []string\n\nfunc show(ns Names) {\n    for _, n := range ns {\n        Println(n)\n    }\n}\n\nfunc main() {\n    show(go_interop.SliceOf(\"a\"))\n}\n"},
 		{"an opaque integer", "package main\n\nopaque type Count int\n\nfunc main() {\n    val c = Count(3)\n    for i := range c {\n        Println(i)\n    }\n}\n"},
 		{"a Go iterator function", "package main\n\nimport (\n    \"maps\"\n\n    \"martianoff/gala/go_interop\"\n)\n\nfunc main() {\n    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), \"a\", 1)\n    for k := range maps.Keys(m) {\n        Println(k)\n    }\n}\n"},
-		{"a collection's Go slice","package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    for _, x := range ArrayOf(1, 2).ToGoSlice() {\n        Println(x)\n    }\n}\n"},
+		{"a collection's Go slice", "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    for _, x := range ArrayOf(1, 2).ToGoSlice() {\n        Println(x)\n    }\n}\n"},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
