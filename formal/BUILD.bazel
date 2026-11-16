@@ -94,6 +94,19 @@ GALASPEC_SRCS = [
 # galaspec's `main`, apart so that the test binary has only its own `main`.
 GALASPEC_MAIN = "Gala/Main.lean"
 
+# GoCore for whole programs (M4): the Lean model of the Go the transpiler emits,
+# which the `gocore` binary runs on the Go AST exporter's output.
+GOCORE_SRCS = [
+    "Gala/GoCore/Syntax.lean",
+    "Gala/GoCore/Json.lean",
+    "Gala/GoCore/Value.lean",
+    "Gala/GoCore/Prog.lean",
+    "Gala/GoCore/Ops.lean",
+    "Gala/GoCore/Eval.lean",
+    "Gala/GoCore/Run.lean",
+    "Gala/GoCore/Cli.lean",
+]
+
 # Models and theorems, and Gala.lean, which imports every module and stays last.
 GALA_SRCS = [
     "Gala/GoCore.lean",
@@ -118,7 +131,7 @@ GALA_SRCS = [
           "or GALA_SRCS (models and theorems, before Gala.lean), after the modules it " +
           "imports").format(f))
     for f in glob(["Gala/**/*.lean"])
-    if f not in GALASPEC_SRCS + [GALASPEC_MAIN] + GALA_SRCS
+    if f not in GALASPEC_SRCS + [GALASPEC_MAIN] + GOCORE_SRCS + GALA_SRCS
 ]
 
 lean_library(
@@ -132,12 +145,28 @@ lean_library(
     deps = [":galaspec_lib"],
 )
 
+lean_library(
+    name = "gocore_lib",
+    srcs = GOCORE_SRCS,
+)
+
+# gocore's `main`, outside Gala/ so that the proof check, which imports every
+# module there together, does not see two `main`s.
+lean_library(
+    name = "gocore_main",
+    srcs = ["GoCoreMain.lean"],
+    deps = [":gocore_lib"],
+)
+
 # The `Gala` library as Lake's `import Gala` sees it (every module but Main).
 lean_library(
     name = "gala",
     srcs = GALA_SRCS,
     visibility = ["//visibility:public"],
-    deps = [":galaspec_lib"],
+    deps = [
+        ":galaspec_lib",
+        ":gocore_lib",
+    ],
 )
 
 # Like scripts/ProofCheck.lean under Lake: fails on sorry and on axioms other
@@ -156,6 +185,7 @@ lean_proof_test(
         ":gala",
         ":galaspec_lib",
         ":galaspec_main",
+        ":gocore_lib",
     ],
 )
 
@@ -182,6 +212,28 @@ sh_test(
         "tests/panic_divide.json",
         ":galaspec",
     ],
+)
+
+# GoCore, the Lean model of the Go the transpiler emits (`gocore run
+# prog.json`), for the differential harness. A development and CI tool only.
+lean_binary(
+    name = "gocore",
+    visibility = ["//internal/formal:__subpackages__"],
+    deps = [":gocore_main"],
+)
+
+# GoCore's fixtures: Go programs whose output, outcome and panic text come
+# from a real `go run` (tests/gocore/regen.sh), run through gocore.
+sh_test(
+    name = "gocore_tests",
+    srcs = ["gocore_tests.sh"],
+    args = ["$(rootpath :gocore)"] + ["$(rootpath {})".format(f) for f in glob(["tests/gocore/*.json"])],
+    data = [":gocore"] + glob([
+        "tests/gocore/*.json",
+        "tests/gocore/*.out",
+        "tests/gocore/*.outcome",
+        "tests/gocore/*.panic",
+    ]),
 )
 
 lean_library(
@@ -223,6 +275,17 @@ exports_files(
         "Gala/Gala2Lean/Examples/Match.lean",
         "Gala/Json.lean",
     ],
+    visibility = ["//internal/formal:__subpackages__"],
+)
+
+# GoCore's fixtures, sources and documents, which a gocoreexport test keeps
+# equal to what the exporter writes for the sources.
+filegroup(
+    name = "gocore_fixtures",
+    srcs = glob([
+        "tests/gocore/src/*.go",
+        "tests/gocore/*.json",
+    ]),
     visibility = ["//internal/formal:__subpackages__"],
 )
 

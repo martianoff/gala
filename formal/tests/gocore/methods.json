@@ -1,0 +1,1969 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 5,
+            "col": 1
+          },
+          "name": "methods.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "type-decl",
+              "pos": {
+                "line": 9,
+                "col": 1
+              },
+              "specs": [
+                {
+                  "name": "V",
+                  "typeParams": [],
+                  "alias": false,
+                  "type": {
+                    "kind": "struct-type",
+                    "pos": {
+                      "line": 9,
+                      "col": 8
+                    },
+                    "fields": [
+                      {
+                        "names": [
+                          "n"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 9,
+                            "col": 18
+                          },
+                          "name": "int"
+                        },
+                        "tag": ""
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 11,
+                "col": 1
+              },
+              "name": "String",
+              "recv": {
+                "names": [
+                  "v"
+                ],
+                "type": {
+                  "kind": "ident",
+                  "pos": {
+                    "line": 11,
+                    "col": 9
+                  },
+                  "name": "V"
+                },
+                "tag": ""
+              },
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 11,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 11,
+                        "col": 21
+                      },
+                      "name": "string"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 11,
+                  "col": 28
+                },
+                "stmts": [
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 11,
+                      "col": 30
+                    },
+                    "results": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 11,
+                          "col": 37
+                        },
+                        "fun": {
+                          "kind": "selector",
+                          "pos": {
+                            "line": 11,
+                            "col": 37
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 11,
+                              "col": 37
+                            },
+                            "name": "fmt"
+                          },
+                          "sel": "Sprintf"
+                        },
+                        "args": [
+                          {
+                            "kind": "string-lit",
+                            "pos": {
+                              "line": 11,
+                              "col": 49
+                            },
+                            "value": "V<%d>"
+                          },
+                          {
+                            "kind": "selector",
+                            "pos": {
+                              "line": 11,
+                              "col": 58
+                            },
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 11,
+                                "col": 58
+                              },
+                              "name": "v"
+                            },
+                            "sel": "n"
+                          }
+                        ],
+                        "ellipsis": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "type-decl",
+              "pos": {
+                "line": 13,
+                "col": 1
+              },
+              "specs": [
+                {
+                  "name": "P",
+                  "typeParams": [],
+                  "alias": false,
+                  "type": {
+                    "kind": "struct-type",
+                    "pos": {
+                      "line": 13,
+                      "col": 8
+                    },
+                    "fields": [
+                      {
+                        "names": [
+                          "n"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 13,
+                            "col": 18
+                          },
+                          "name": "int"
+                        },
+                        "tag": ""
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 15,
+                "col": 1
+              },
+              "name": "String",
+              "recv": {
+                "names": [
+                  "p"
+                ],
+                "type": {
+                  "kind": "star",
+                  "pos": {
+                    "line": 15,
+                    "col": 9
+                  },
+                  "x": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 15,
+                      "col": 10
+                    },
+                    "name": "P"
+                  }
+                },
+                "tag": ""
+              },
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 15,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 15,
+                        "col": 22
+                      },
+                      "name": "string"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 15,
+                  "col": 29
+                },
+                "stmts": [
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 15,
+                      "col": 31
+                    },
+                    "results": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 15,
+                          "col": 38
+                        },
+                        "fun": {
+                          "kind": "selector",
+                          "pos": {
+                            "line": 15,
+                            "col": 38
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 15,
+                              "col": 38
+                            },
+                            "name": "fmt"
+                          },
+                          "sel": "Sprintf"
+                        },
+                        "args": [
+                          {
+                            "kind": "string-lit",
+                            "pos": {
+                              "line": 15,
+                              "col": 50
+                            },
+                            "value": "P<%d>"
+                          },
+                          {
+                            "kind": "selector",
+                            "pos": {
+                              "line": 15,
+                              "col": 59
+                            },
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 15,
+                                "col": 59
+                              },
+                              "name": "p"
+                            },
+                            "sel": "n"
+                          }
+                        ],
+                        "ellipsis": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 17,
+                "col": 1
+              },
+              "name": "Inc",
+              "recv": {
+                "names": [
+                  "p"
+                ],
+                "type": {
+                  "kind": "star",
+                  "pos": {
+                    "line": 17,
+                    "col": 9
+                  },
+                  "x": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 17,
+                      "col": 10
+                    },
+                    "name": "P"
+                  }
+                },
+                "tag": ""
+              },
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 17,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 17,
+                  "col": 19
+                },
+                "stmts": [
+                  {
+                    "kind": "inc-dec",
+                    "pos": {
+                      "line": 17,
+                      "col": 21
+                    },
+                    "op": "++",
+                    "x": {
+                      "kind": "selector",
+                      "pos": {
+                        "line": 17,
+                        "col": 21
+                      },
+                      "x": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 17,
+                          "col": 21
+                        },
+                        "name": "p"
+                      },
+                      "sel": "n"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "type-decl",
+              "pos": {
+                "line": 19,
+                "col": 1
+              },
+              "specs": [
+                {
+                  "name": "Plain",
+                  "typeParams": [],
+                  "alias": false,
+                  "type": {
+                    "kind": "struct-type",
+                    "pos": {
+                      "line": 19,
+                      "col": 12
+                    },
+                    "fields": [
+                      {
+                        "names": [
+                          "A"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 20,
+                            "col": 4
+                          },
+                          "name": "int"
+                        },
+                        "tag": ""
+                      },
+                      {
+                        "names": [
+                          "B"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 21,
+                            "col": 4
+                          },
+                          "name": "string"
+                        },
+                        "tag": ""
+                      },
+                      {
+                        "names": [
+                          "C"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 22,
+                            "col": 4
+                          },
+                          "name": "bool"
+                        },
+                        "tag": ""
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "type-decl",
+              "pos": {
+                "line": 25,
+                "col": 1
+              },
+              "specs": [
+                {
+                  "name": "Outer",
+                  "typeParams": [],
+                  "alias": false,
+                  "type": {
+                    "kind": "struct-type",
+                    "pos": {
+                      "line": 25,
+                      "col": 12
+                    },
+                    "fields": [
+                      {
+                        "names": [
+                          "In"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 26,
+                            "col": 7
+                          },
+                          "name": "Plain"
+                        },
+                        "tag": ""
+                      },
+                      {
+                        "names": [
+                          "Val"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 27,
+                            "col": 7
+                          },
+                          "name": "V"
+                        },
+                        "tag": ""
+                      },
+                      {
+                        "names": [
+                          "hide"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 28,
+                            "col": 7
+                          },
+                          "name": "V"
+                        },
+                        "tag": ""
+                      },
+                      {
+                        "names": [
+                          "Ptr"
+                        ],
+                        "type": {
+                          "kind": "star",
+                          "pos": {
+                            "line": 29,
+                            "col": 7
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 29,
+                              "col": 8
+                            },
+                            "name": "Plain"
+                          }
+                        },
+                        "tag": ""
+                      },
+                      {
+                        "names": [
+                          "Any"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 30,
+                            "col": 7
+                          },
+                          "name": "any"
+                        },
+                        "tag": ""
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 33,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 33,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 33,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 34,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 34,
+                          "col": 2
+                        },
+                        "name": "v"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "composite-lit",
+                        "pos": {
+                          "line": 34,
+                          "col": 7
+                        },
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 34,
+                            "col": 7
+                          },
+                          "name": "V"
+                        },
+                        "elts": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 34,
+                              "col": 9
+                            },
+                            "value": "1"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 35,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 35,
+                          "col": 2
+                        },
+                        "name": "p"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "composite-lit",
+                        "pos": {
+                          "line": 35,
+                          "col": 7
+                        },
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 35,
+                            "col": 7
+                          },
+                          "name": "P"
+                        },
+                        "elts": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 35,
+                              "col": 9
+                            },
+                            "value": "2"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 36,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 36,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 36,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 36,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 36,
+                            "col": 14
+                          },
+                          "name": "v"
+                        },
+                        {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 36,
+                            "col": 17
+                          },
+                          "op": "&",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 36,
+                              "col": 18
+                            },
+                            "name": "v"
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 37,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 37,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 37,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 37,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 37,
+                            "col": 14
+                          },
+                          "name": "p"
+                        },
+                        {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 37,
+                            "col": 17
+                          },
+                          "op": "&",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 37,
+                              "col": 18
+                            },
+                            "name": "p"
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 38,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 38,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 38,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 38,
+                            "col": 2
+                          },
+                          "name": "p"
+                        },
+                        "sel": "Inc"
+                      },
+                      "args": [],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 39,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 39,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 39,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "paren",
+                          "pos": {
+                            "line": 39,
+                            "col": 2
+                          },
+                          "x": {
+                            "kind": "unary",
+                            "pos": {
+                              "line": 39,
+                              "col": 3
+                            },
+                            "op": "&",
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 39,
+                                "col": 4
+                              },
+                              "name": "p"
+                            }
+                          }
+                        },
+                        "sel": "Inc"
+                      },
+                      "args": [],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 40,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 40,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 40,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 40,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "selector",
+                          "pos": {
+                            "line": 40,
+                            "col": 14
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 40,
+                              "col": 14
+                            },
+                            "name": "p"
+                          },
+                          "sel": "n"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 41,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 41,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 41,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 41,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "composite-lit",
+                          "pos": {
+                            "line": 41,
+                            "col": 14
+                          },
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 41,
+                              "col": 14
+                            },
+                            "name": "Plain"
+                          },
+                          "elts": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 41,
+                                "col": 20
+                              },
+                              "value": "1"
+                            },
+                            {
+                              "kind": "string-lit",
+                              "pos": {
+                                "line": 41,
+                                "col": 23
+                              },
+                              "value": "x"
+                            },
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 41,
+                                "col": 28
+                              },
+                              "name": "true"
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 41,
+                            "col": 35
+                          },
+                          "op": "&",
+                          "x": {
+                            "kind": "composite-lit",
+                            "pos": {
+                              "line": 41,
+                              "col": 36
+                            },
+                            "type": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 41,
+                                "col": 36
+                              },
+                              "name": "Plain"
+                            },
+                            "elts": [
+                              {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 41,
+                                  "col": 42
+                                },
+                                "value": "2"
+                              },
+                              {
+                                "kind": "string-lit",
+                                "pos": {
+                                  "line": 41,
+                                  "col": 45
+                                },
+                                "value": "y"
+                              },
+                              {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 41,
+                                  "col": 50
+                                },
+                                "name": "false"
+                              }
+                            ]
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 42,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 42,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "np"
+                          ],
+                          "type": {
+                            "kind": "star",
+                            "pos": {
+                              "line": 42,
+                              "col": 9
+                            },
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 42,
+                                "col": 10
+                              },
+                              "name": "Plain"
+                            }
+                          },
+                          "values": []
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 43,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 43,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 43,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 43,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 43,
+                            "col": 14
+                          },
+                          "name": "np"
+                        },
+                        {
+                          "kind": "composite-lit",
+                          "pos": {
+                            "line": 43,
+                            "col": 18
+                          },
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 43,
+                              "col": 18
+                            },
+                            "name": "Outer"
+                          },
+                          "elts": [
+                            {
+                              "kind": "key-value",
+                              "pos": {
+                                "line": 43,
+                                "col": 24
+                              },
+                              "key": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 43,
+                                  "col": 24
+                                },
+                                "name": "In"
+                              },
+                              "value": {
+                                "kind": "composite-lit",
+                                "pos": {
+                                  "line": 43,
+                                  "col": 28
+                                },
+                                "type": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 43,
+                                    "col": 28
+                                  },
+                                  "name": "Plain"
+                                },
+                                "elts": [
+                                  {
+                                    "kind": "int-lit",
+                                    "pos": {
+                                      "line": 43,
+                                      "col": 34
+                                    },
+                                    "value": "3"
+                                  },
+                                  {
+                                    "kind": "string-lit",
+                                    "pos": {
+                                      "line": 43,
+                                      "col": 37
+                                    },
+                                    "value": "z"
+                                  },
+                                  {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 43,
+                                      "col": 42
+                                    },
+                                    "name": "true"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "key-value",
+                              "pos": {
+                                "line": 43,
+                                "col": 49
+                              },
+                              "key": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 43,
+                                  "col": 49
+                                },
+                                "name": "Val"
+                              },
+                              "value": {
+                                "kind": "composite-lit",
+                                "pos": {
+                                  "line": 43,
+                                  "col": 54
+                                },
+                                "type": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 43,
+                                    "col": 54
+                                  },
+                                  "name": "V"
+                                },
+                                "elts": [
+                                  {
+                                    "kind": "int-lit",
+                                    "pos": {
+                                      "line": 43,
+                                      "col": 56
+                                    },
+                                    "value": "4"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "key-value",
+                              "pos": {
+                                "line": 43,
+                                "col": 60
+                              },
+                              "key": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 43,
+                                  "col": 60
+                                },
+                                "name": "hide"
+                              },
+                              "value": {
+                                "kind": "composite-lit",
+                                "pos": {
+                                  "line": 43,
+                                  "col": 66
+                                },
+                                "type": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 43,
+                                    "col": 66
+                                  },
+                                  "name": "V"
+                                },
+                                "elts": [
+                                  {
+                                    "kind": "int-lit",
+                                    "pos": {
+                                      "line": 43,
+                                      "col": 68
+                                    },
+                                    "value": "5"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 44,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 44,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 44,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 44,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Print"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 12
+                          },
+                          "value": "a"
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 17
+                          },
+                          "value": "1"
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 20
+                          },
+                          "value": "2"
+                        },
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 23
+                          },
+                          "value": "b"
+                        },
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 28
+                          },
+                          "value": "c"
+                        },
+                        {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 33
+                          },
+                          "value": "3"
+                        },
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 44,
+                            "col": 36
+                          },
+                          "name": "true"
+                        },
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 44,
+                            "col": 42
+                          },
+                          "value": "\n"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 45,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 45,
+                          "col": 2
+                        },
+                        "name": "s"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "call",
+                        "pos": {
+                          "line": 45,
+                          "col": 7
+                        },
+                        "fun": {
+                          "kind": "selector",
+                          "pos": {
+                            "line": 45,
+                            "col": 7
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 45,
+                              "col": 7
+                            },
+                            "name": "fmt"
+                          },
+                          "sel": "Sprintf"
+                        },
+                        "args": [
+                          {
+                            "kind": "string-lit",
+                            "pos": {
+                              "line": 45,
+                              "col": 19
+                            },
+                            "value": "%d|%s|%v|%t|%%|%v"
+                          },
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 45,
+                              "col": 40
+                            },
+                            "value": "42"
+                          },
+                          {
+                            "kind": "string-lit",
+                            "pos": {
+                              "line": 45,
+                              "col": 44
+                            },
+                            "value": "str"
+                          },
+                          {
+                            "kind": "composite-lit",
+                            "pos": {
+                              "line": 45,
+                              "col": 51
+                            },
+                            "type": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 45,
+                                "col": 51
+                              },
+                              "name": "V"
+                            },
+                            "elts": [
+                              {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 45,
+                                  "col": 53
+                                },
+                                "value": "6"
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 45,
+                              "col": 57
+                            },
+                            "name": "false"
+                          },
+                          {
+                            "kind": "composite-lit",
+                            "pos": {
+                              "line": 45,
+                              "col": 64
+                            },
+                            "type": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 45,
+                                "col": 64
+                              },
+                              "name": "Plain"
+                            },
+                            "elts": [
+                              {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 45,
+                                  "col": 70
+                                },
+                                "value": "7"
+                              },
+                              {
+                                "kind": "string-lit",
+                                "pos": {
+                                  "line": 45,
+                                  "col": 73
+                                },
+                                "value": "w"
+                              },
+                              {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 45,
+                                  "col": 78
+                                },
+                                "name": "true"
+                              }
+                            ]
+                          }
+                        ],
+                        "ellipsis": false
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 46,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 46,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 46,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 46,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 46,
+                            "col": 14
+                          },
+                          "name": "s"
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 46,
+                            "col": 17
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 46,
+                              "col": 17
+                            },
+                            "name": "len"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 46,
+                                "col": 21
+                              },
+                              "name": "s"
+                            }
+                          ],
+                          "ellipsis": false
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 47,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 47,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "a"
+                          ],
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 47,
+                              "col": 8
+                            },
+                            "name": "any"
+                          },
+                          "values": [
+                            {
+                              "kind": "composite-lit",
+                              "pos": {
+                                "line": 47,
+                                "col": 14
+                              },
+                              "type": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 47,
+                                  "col": 14
+                                },
+                                "name": "V"
+                              },
+                              "elts": [
+                                {
+                                  "kind": "int-lit",
+                                  "pos": {
+                                    "line": 47,
+                                    "col": 16
+                                  },
+                                  "value": "8"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "if",
+                    "pos": {
+                      "line": 48,
+                      "col": 2
+                    },
+                    "init": {
+                      "kind": "assign",
+                      "pos": {
+                        "line": 48,
+                        "col": 5
+                      },
+                      "tok": ":=",
+                      "lhs": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 48,
+                            "col": 5
+                          },
+                          "name": "w"
+                        },
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 48,
+                            "col": 8
+                          },
+                          "name": "ok"
+                        }
+                      ],
+                      "rhs": [
+                        {
+                          "kind": "type-assert",
+                          "pos": {
+                            "line": 48,
+                            "col": 14
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 48,
+                              "col": 14
+                            },
+                            "name": "a"
+                          },
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 48,
+                              "col": 17
+                            },
+                            "name": "V"
+                          }
+                        }
+                      ]
+                    },
+                    "cond": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 48,
+                        "col": 21
+                      },
+                      "name": "ok"
+                    },
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 48,
+                        "col": 24
+                      },
+                      "stmts": [
+                        {
+                          "kind": "expr-stmt",
+                          "pos": {
+                            "line": 49,
+                            "col": 3
+                          },
+                          "x": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 49,
+                              "col": 3
+                            },
+                            "fun": {
+                              "kind": "selector",
+                              "pos": {
+                                "line": 49,
+                                "col": 3
+                              },
+                              "x": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 49,
+                                  "col": 3
+                                },
+                                "name": "fmt"
+                              },
+                              "sel": "Println"
+                            },
+                            "args": [
+                              {
+                                "kind": "string-lit",
+                                "pos": {
+                                  "line": 49,
+                                  "col": 15
+                                },
+                                "value": "V"
+                              },
+                              {
+                                "kind": "selector",
+                                "pos": {
+                                  "line": 49,
+                                  "col": 20
+                                },
+                                "x": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 49,
+                                    "col": 20
+                                  },
+                                  "name": "w"
+                                },
+                                "sel": "n"
+                              }
+                            ],
+                            "ellipsis": false
+                          }
+                        }
+                      ]
+                    },
+                    "else": null
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 51,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 51,
+                          "col": 2
+                        },
+                        "name": "_"
+                      },
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 51,
+                          "col": 5
+                        },
+                        "name": "ok"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "type-assert",
+                        "pos": {
+                          "line": 51,
+                          "col": 11
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 51,
+                            "col": 11
+                          },
+                          "name": "a"
+                        },
+                        "type": {
+                          "kind": "star",
+                          "pos": {
+                            "line": 51,
+                            "col": 14
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 51,
+                              "col": 15
+                            },
+                            "name": "P"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 52,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 52,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 52,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 52,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 52,
+                            "col": 14
+                          },
+                          "name": "ok"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 52,
+                            "col": 18
+                          },
+                          "op": "==",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 52,
+                              "col": 18
+                            },
+                            "name": "a"
+                          },
+                          "y": {
+                            "kind": "composite-lit",
+                            "pos": {
+                              "line": 52,
+                              "col": 23
+                            },
+                            "type": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 52,
+                                "col": 23
+                              },
+                              "name": "V"
+                            },
+                            "elts": [
+                              {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 52,
+                                  "col": 25
+                                },
+                                "value": "8"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 52,
+                            "col": 29
+                          },
+                          "op": "!=",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 52,
+                              "col": 29
+                            },
+                            "name": "a"
+                          },
+                          "y": {
+                            "kind": "composite-lit",
+                            "pos": {
+                              "line": 52,
+                              "col": 34
+                            },
+                            "type": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 52,
+                                "col": 34
+                              },
+                              "name": "V"
+                            },
+                            "elts": [
+                              {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 52,
+                                  "col": 36
+                                },
+                                "value": "9"
+                              }
+                            ]
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

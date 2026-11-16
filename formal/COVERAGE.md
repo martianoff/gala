@@ -155,6 +155,45 @@ the metamorphic generator's renamings are not.
 [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems-the-road-to-an-end-to-end-proof) gives the statement
 T2 needs: alpha-invariance with its side conditions.
 
+## GoCore: the Go the transpiler emits (M4, in progress)
+
+`gocore` (`Gala/GoCore/*.lean`, `GoCoreMain.lean`) runs the transformer's actual Go
+output, read by the Go AST exporter (`internal/formal/gocoreexport`), together with the
+Go of the GALA packages it imports: the program's sealed types and their `Unapply`,
+`Equal` and `String` methods, and the standard library's generated Go, run as the Go they
+are. It is a model of the Go subset the transpiler emits, not of Go, and its fidelity to
+Go is tested, not proved.
+
+| Construct (Go spec section) | Modelled |
+|---|---|
+| Integer types of every width, wrapping; untyped constants exact, checked representable where typed ("Constants", "Integer overflow", "Representability") | yes |
+| `+ - * / % & \| ^ &^ << >>`, unary `- + ^ !`, `&& \|\|`, comparisons; division by zero and a negative shift count panic with Go's runtime text ("Arithmetic operators", "Comparison operators") | yes |
+| Variables as cells: `&x`, `*p`, pointer equality by identity, field addresses ("Address operators") | yes |
+| `:=`, `=` (two phases), `op=`, `++`/`--`, `var`, blocks and shadowing ("Assignment statements", "Blocks") | yes |
+| `if`, expression `switch`, type `switch`, `for` with `break`/`continue` and per-iteration loop variables ("If statements", "Switch statements", "For statements") | yes |
+| Functions, methods with value and pointer receivers, method sets, method values, closures, named results ("Function declarations", "Method sets", "Function literals") | yes |
+| Structs, composite literals, type assertions, interfaces holding a value with its dynamic type ("Struct types", "Composite literals", "Type assertions") | yes |
+| Generic functions and types, type arguments explicit or inferred from the arguments ("Instantiations", "Type inference") | yes |
+| Package-level variables in dependency order, packages in import order ("Package initialization") | yes |
+| `panic` with Go's printed text: a string, an error's `Error()`, a Stringer's `String()` ("Handling panics") | yes |
+| `fmt.Println`, `Print`, `Sprint`, `Sprintf` with `%v %d %s %t %%`; `String`, `Error` and `Format` by method set; `&{...}` for a top-level pointer to a struct; no methods through unexported fields | yes (a model) |
+| `std.FormatStruct`, `Copy`, `Equal`, `EvalOperand`, `Immutable.Format` (hand-written, reflective) | yes (models, `libFuncs` in `Gala/GoCore/Eval.lean`) |
+| Slices, arrays, maps, channels, floats, `range`, `defer`, `go`, `select`, labels, `goto`, `fallthrough`, Go's standard library beyond `fmt`'s four functions | no: a run that reaches one ends `unsupported:<construct>` |
+
+A run ends `ok`, `panic` (with Go's text), `fuel` (out of steps or depth: inconclusive),
+`unsupported:<construct>`, or `stuck`, which no program Go compiles reaches: a GoCore or
+exporter bug. A variable of an imported package whose initializer reaches a construct
+outside GoCore (reflection in `std/types.go`) is left poisoned: reading it ends the run
+`unsupported`. This assumes the initializer prints nothing and does not panic, as
+galaspec assumes for the packages it lets a program import.
+
+**Tested:** `formal/tests/gocore` holds Go programs whose output, outcome and panic text
+come from a real `go run` (`tests/gocore/regen.sh`): integer wrapping and shifts, method
+sets and `fmt` (a value-receiver `String` for `T` and `*T`, a pointer-receiver one only for
+`*T`, an unexported field), control flow and loop variables, initialization order,
+generics, two panics, fuel and an unsupported construct. The differential run over the
+corpus is the next part of M4.
+
 ## gala2lean
 
 [gala2lean](README.md#gala2lean-a-third-oracle) translates the programs it covers to
