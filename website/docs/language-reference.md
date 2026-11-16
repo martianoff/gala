@@ -1189,6 +1189,8 @@ for _, v := range items {
 }
 ```
 
+`range` takes what Go ranges over: a Go slice, array, map, string, integer, channel or function. A GALA collection is a struct, so `range` over an `Array`, `List` or `HashMap` is [GALA-E0133](/docs/errors/gala-e0133/); call its `ForEach`, `ZipWithIndex()` or `FoldLeft` instead.
+
 ### Break and Continue
 
 `break` leaves the innermost enclosing `for` loop and `continue` advances it, as in Go. Both also work in an arm of a `match` used as a statement inside the loop:

@@ -105,7 +105,7 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `fallthrough` | Combine the cases with `\|`, or call a shared function | [GALA-E0036](errors/GALA-E0036.md) |
 | `goto` | Structured control flow | [GALA-E0036](errors/GALA-E0036.md) (with a label: [GALA-E0023](errors/GALA-E0023.md), undefined label) |
 | `for i := 0; i < n; i++`, `for cond`, `for` | Same | Works |
-| `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same, over a Go slice, map, string or integer; over a GALA `Array` or `List`, use `ForEach`, `Map`, `Filter`, `FoldLeft`, or `ZipWithIndex()` for the index | Works |
+| `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same, over a Go slice, array, map, string, integer, channel or function; over a GALA `Array`, `List` or `HashMap`, use `ForEach`, `Map`, `Filter`, `FoldLeft`, or `ZipWithIndex()` for the index | Works over a Go value; over a GALA collection, [GALA-E0133](errors/GALA-E0133.md) |
 | `break`, `continue` | Same | Works |
 | `break outer` / `continue outer` (labels) | None: a flag `var`, or a function and `return` | [GALA-E0129](errors/GALA-E0129.md) |
 

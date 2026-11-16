@@ -798,12 +798,12 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 	return false
 }
 
-// inferRangeTypes returns the key and value types for a range expression.
+// inferRangeTypes returns the key and value types for a range expression of
+// type exprType.
 // For slices/arrays: key is int, value is element type
 // For maps: key is map key type, value is map value type
 // For strings: key is int, value is rune
-func (t *galaASTTransformer) inferRangeTypes(rangeExpr ast.Expr) (keyType transpiler.Type, valueType transpiler.Type) {
-	exprType := t.getExprTypeName(rangeExpr)
+func inferRangeTypes(exprType transpiler.Type) (keyType transpiler.Type, valueType transpiler.Type) {
 	if exprType.IsNil() {
 		return transpiler.NilType{}, transpiler.NilType{}
 	}
