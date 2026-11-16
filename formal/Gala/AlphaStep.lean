@@ -477,4 +477,62 @@ theorem fmtFields_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     simp only [Print.fmtFields, fmtV_rel hs true h, fmtV_rel hs false h, fmtFields_rel hs m fs t]
 end
 
+/-! ## Fields -/
+
+theorem valsR_get {pkg : List String} {pm : String → Ren} :
+    ∀ {vs vs' : List Val} (i : Nat), ValsR pkg pm vs vs' →
+      (vs[i]? = none ∧ vs'[i]? = none) ∨ ∃ a b, vs[i]? = some a ∧ vs'[i]? = some b ∧ ValR pkg pm a b
+  | _, _, _, .nil => Or.inl ⟨rfl, rfl⟩
+  | _, _, 0, .cons h _ => Or.inr ⟨_, _, rfl, rfl, h⟩
+  | _, _, i + 1, .cons _ t => by simpa using valsR_get i t
+
+theorem getField_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {c c' : Core}
+    (hs : SameLayout ds ds') {v v' : Val} (f : String) (hv : ValR pkg pm v v') :
+    ResR pkg pm (ValR pkg pm) ((getField ds v f).run.run c).1 ((getField ds' v' f).run.run c').1 := by
+  have hz : ∀ t, ResR pkg pm (ValR pkg pm) ((do zero ds 64 (← checkTy ds t)).run.run c).1
+      ((do zero ds 64 (← checkTy ds t)).run.run c').1 := fun t => by
+    rw [show ((do zero ds 64 (← checkTy ds t) : H Val).run.run c').1 =
+        ((do zero ds 64 (← checkTy ds t) : H Val).run.run c).1 from
+        ((pureH_bind (pureH_checkTy ds t) fun _ => pureH_zero ds 64 _) c' c).1]
+    exact resR_bind (checkTy_self ds c t) (pureH_checkTy ds t).readOnly
+      (pureH_checkTy ds t).readOnly fun a a' h => by subst h; exact zero_self ds 64 a c
+  unfold getField
+  simp only [← hs.structs, ← hs.unsupported, ← caseFields_congr hs, ← hs.sealeds,
+    ← zero_congr hs, ← checkTy_congr hs]
+  cases hv with
+  | struct_ ty h =>
+    dsimp only
+    split
+    · rename_i i _
+      rcases valsR_get i h with ⟨h1, h2⟩ | ⟨a, b, h1, h2, hr⟩
+      · rw [h1, h2]; exact .stuck _ _
+      · rw [h1, h2]; exact hr
+    · split <;> exact .unsupported _ _ _
+  | sealed ty cs h =>
+    dsimp only
+    split
+    · rename_i i _
+      rcases valsR_get i h with ⟨h1, h2⟩ | ⟨a, b, h1, h2, hr⟩
+      · rw [h1, h2]; exact .stuck _ _
+      · rw [h1, h2]; exact hr
+    · split
+      · exact hz _
+      · exact .unsupported _ _ _
+  | tuple h =>
+    dsimp only
+    by_cases hv : f.startsWith "V" = true
+    · simp only [hv, ite_true]
+      cases (f.drop 1).toNat? with
+      | none => exact .unsupported _ _ _
+      | some i =>
+        simp only [Option.bind_some]
+        by_cases hi : i = 0
+        · simp only [hi, ite_true]; exact .unsupported _ _ _
+        · simp only [hi, ite_false]
+          rcases valsR_get (i - 1) h with ⟨h1, h2⟩ | ⟨a, b, h1, h2, hr⟩
+          · rw [h1, h2]; exact .unsupported _ _ _
+          · rw [h1, h2]; exact hr
+    · simp only [hv]; exact .unsupported _ _ _
+  | _ => exact .unsupported _ _ _
+
 end Gala.Spec
