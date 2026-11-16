@@ -1,0 +1,10 @@
+package main
+
+// std panics here (go_builtins.Panic with a message, class other); what
+// was printed before stays printed.
+func main() {
+    val e Either[string, int] = Right(1)
+    Println("before")
+    Println(e.GetLeft())
+    Println("not reached")
+}

@@ -17,6 +17,7 @@ go_library(
         "methods.go",
         "match.go",
         "names.go",
+        "options.go",
         "packages.go",
         "program.go",
         "run.go",

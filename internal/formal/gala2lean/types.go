@@ -712,6 +712,9 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 			if t := g.seqCallType(e, s, sc, seen); t != "" {
 				return t
 			}
+			if t := g.optCallType(e, s, sc, cloneSeen(seen)); t != "" {
+				return t
+			}
 			switch s.Name {
 			case "Copy":
 				return g.exprType(s.Target, sc, seen)

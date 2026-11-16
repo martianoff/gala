@@ -104,6 +104,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a blank import of a package it is not given", "package main\nimport _ \"example.com/m/lib\"\n\nfunc main() { Println(1) }\n", "blank-import"},
 		{"lambda without parameter types", "package main\nfunc main() { val f = (x) => x\n Println(1) }\n", "untyped-lambda-param"},
 		{"method call", "package main\nfunc main() { Println(\"abc\".Size()) }\n", "method-call"},
+		{"an Option method not modelled", "package main\nfunc main() { Println(Some(1).Hash()) }\n", "option-method"},
 		{"a case test of a generic sealed type", "package main\nsealed type S[T any] {\n case A(V T)\n case B()\n}\nfunc main() { val s S[int] = A(1)\n Println(s.isA()) }\n", "method-call"},
 		{"a case test whose name a field holds", "package main\nsealed type S {\n case A(isA bool)\n case B()\n}\nfunc main() { val s S = B()\n Println(s.isA()) }\n", "method-call"},
 		{"pointer method on a package-level var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nvar g = C(0)\nfunc main() { g.Inc()\n Println(g.N) }\n", "ptr-escape"},

@@ -1,0 +1,10 @@
+package main
+
+// std panics here (go_builtins.Panic with a message, class other); what
+// was printed before stays printed.
+func main() {
+    val o Option[int] = None()
+    Println("before")
+    Println(o.Get())
+    Println("not reached")
+}
