@@ -372,7 +372,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 56 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 466 | 34 | 438 | 32 |
+| UNSUPPORTED | 468 | 34 | 440 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -439,7 +439,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (38 
 
 | Construct | Programs |
 |---|---|
-| `import` | 276 |
+| `import` | 278 |
 | `method-call` | 52 |
 | `generic-type` | 41 |
 | `index` | 38 |
@@ -462,14 +462,14 @@ The constructs galaspec stopped at, by how many programs it stopped at each (38 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (88 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (89 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
 | `import` | 142 |
 | `generic-type` | 38 |
 | `index` | 26 |
-| `qualified-type` | 23 |
+| `qualified-type` | 24 |
 | `pointer-type` | 14 |
 | `type-float64` | 14 |
 | `method-call` | 12 |
@@ -501,13 +501,13 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 151 | 28 |
+| AGREE | 200 | 31 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 251 | 7 |
+| UNSUPPORTED | 204 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **179** (ratchet baseline 179).
+Programs GoCore agrees with go run on: **231** (ratchet baseline 231).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **28** (ratchet baseline 28).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
@@ -516,17 +516,15 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 
 | Construct | Programs |
 |---|---|
-| `variadic` | 93 |
-| `type-inference` | 30 |
-| `type-float64` | 21 |
-| `fmt.Printf` | 18 |
-| `defer` | 16 |
-| `array-type` | 9 |
+| `type-inference` | 60 |
+| `type-float64` | 28 |
+| `fmt.Printf` | 20 |
+| `defer` | 17 |
+| `unicode/utf8.RuneCountInString` | 8 |
 | `float-lit` | 7 |
-| `errors.New` | 5 |
-| `unicode/utf8.RuneCountInString` | 5 |
-| `local-type` | 4 |
-| `map-type` | 3 |
+| `errors.New` | 6 |
+| `map-type` | 6 |
+| `local-type` | 5 |
 | `strconv.Atoi` | 3 |
 | `type-float32` | 3 |
 | `fmt-verb-0` | 2 |
@@ -534,6 +532,8 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 | `fmt.Errorf` | 2 |
 | `fmt.Stringer` | 2 |
 | `net/url.URL` | 2 |
+| `slices.SortFunc` | 2 |
+| `strings.ToUpper` | 2 |
 | `context.Background` | 1 |
 | `crypto/sha256.New` | 1 |
 <!-- difftest:end -->
