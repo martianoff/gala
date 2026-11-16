@@ -650,4 +650,181 @@ theorem alloc_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {c c' : C
   show ValR pkg pm (.ref c.heap.size) (.ref c'.heap.size)
   rw [hsz]; exact .ref _
 
+/-! ## Places: reading and assigning -/
+
+theorem readOnly_getField (ds : Decls) (v : Val) (f : String) : ReadOnly (getField ds v f) := by
+  have ihZ := pureH_zero ds 64
+  have ihC := pureH_checkTy ds
+  apply PureH.readOnly
+  unfold getField
+  repeat' (first | pure_step | exact ihC _ | dsimp only)
+
+theorem readOnly_readPlace (ds : Decls) : ∀ t, ReadOnly (readPlace ds t)
+  | .name x => by
+    unfold readPlace
+    intro c
+    rw [run_get_bind]
+    split
+    · exact readOnly_deref _ c
+    · rfl
+  | .select t f => by
+    unfold readPlace
+    exact readOnly_bind (readOnly_readPlace ds t) fun v => readOnly_getField ds v f
+  | .paren e => by unfold readPlace; exact readOnly_readPlace ds e
+  | .lit _ | .unary .. | .binary .. | .call .. | .tuple _ | .ifExpr .. | .mtch .. | .block _
+  | .ifStmt .. | .ret _ | .assign .. | .incdec .. | .decl .. | .interp _ | .lambda ..
+  | .named .. | .unsupported _ => by unfold readPlace; exact readOnly_throw _
+
+theorem readPlace_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    {c c' : Core} (hs : SameLayout ds ds') (hc : CoreR pkg pm Γ c c') :
+    ∀ {t t' : Expr}, AlphaE pkg pm Γ t t' →
+      ResR pkg pm (ValR pkg pm) ((readPlace ds t).run.run c).1 ((readPlace ds' t').run.run c').1
+  | _, _, .name hx => by
+    unfold readPlace
+    rw [run_get_bind, run_get_bind]
+    have hb := lookupVar_rel2 hc.1 hc.2.1 hx
+    cases h1 : lookupVar c.locals c.globals _ <;> cases h2 : lookupVar c'.locals c'.globals _ <;>
+      rw [h1, h2] at hb
+    · exact .stuck _ _
+    · exact absurd hb id
+    · exact absurd hb id
+    · exact deref_rel hc.2.2.1 hb.2
+  | _, _, .select f h => by
+    unfold readPlace
+    exact resR_bind (readPlace_rel hs hc h) (readOnly_readPlace ds _) (readOnly_readPlace ds' _)
+      fun _ _ hv => getField_rel hs f hv
+  | _, _, .paren h => by unfold readPlace; exact readPlace_rel hs hc h
+  | _, _, .lit _ | _, _, .unsupported _ | _, _, .unary .. | _, _, .binary .. | _, _, .callFree ..
+  | _, _, .call .. | _, _, .tuple _ | _, _, .interp _ | _, _, .ifExpr .. | _, _, .ifStmt ..
+  | _, _, .mtch .. | _, _, .block _ | _, _, .ret _ | _, _, .assign .. | _, _, .incdec ..
+  | _, _, .lambda .. => by unfold readPlace; exact .stuck _ _
+
+theorem readOnly_setField (ds : Decls) (v : Val) (f : String) (x : Val) :
+    ReadOnly (setField ds v f x) := by
+  apply PureH.readOnly
+  unfold setField
+  repeat' (first | pure_step | dsimp only)
+
+/-- `resR_bind`, tracking the states: a read-only step, then one that keeps them related. -/
+theorem resR_bind_st {pkg : List String} {pm : String → Ren} {Γ : Ren} {R : α → α' → Prop}
+    {S : β → β' → Prop} {x : H α} {x' : H α'} {f : α → H β} {f' : α' → H β'} {c c' : Core}
+    (hc : CoreR pkg pm Γ c c')
+    (hx : ResR pkg pm R (x.run.run c).1 (x'.run.run c').1) (hro : ReadOnly x) (hro' : ReadOnly x')
+    (hf : ∀ a a', R a a' → ResR pkg pm S ((f a).run.run c).1 ((f' a').run.run c').1 ∧
+      CoreR pkg pm Γ ((f a).run.run c).2 ((f' a').run.run c').2) :
+    ResR pkg pm S ((x >>= f).run.run c).1 ((x' >>= f').run.run c').1 ∧
+      CoreR pkg pm Γ ((x >>= f).run.run c).2 ((x' >>= f').run.run c').2 := by
+  rw [run_bind_eq, run_bind_eq]
+  rcases h : x.run.run c with ⟨r, t⟩
+  rcases h' : x'.run.run c' with ⟨r', t'⟩
+  have ht : t = c := by have := hro c; rw [h] at this; exact this
+  have ht' : t' = c' := by have := hro' c'; rw [h'] at this; exact this
+  subst ht ht'
+  rw [h, h'] at hx
+  cases r <;> cases r' <;> simp only at hx ⊢
+  · exact ⟨hx, hc⟩
+  · exact absurd hx id
+  · exact absurd hx id
+  · exact hf _ _ hx
+
+theorem set_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {d d' : Core}
+    (hd : CoreR pkg pm Γ d d') (c c' : Core) :
+    ResR pkg pm Eq (((set d : H Unit)).run.run c).1 ((set d' : H Unit).run.run c').1 ∧
+      CoreR pkg pm Γ ((set d : H Unit).run.run c).2 ((set d' : H Unit).run.run c').2 :=
+  ⟨rfl, hd⟩
+
+theorem update_keys : ∀ {ρ r : Env} {x : String} {v : Val}, update ρ x v = some r →
+    r.map (fun kb => (kb.1, kb.1)) = ρ.map (fun kb => (kb.1, kb.1))
+  | [], _, _, _, h => by simp [update] at h
+  | (k, b) :: ρ, r, x, v, h => by
+    simp only [update] at h
+    split at h
+    · simp at h; subst h; simp
+    · obtain ⟨r', h1, rfl⟩ := Option.map_eq_some_iff.mp h
+      simp [update_keys h1]
+
+theorem bound_update_ne_none {pkg : List String} {pm : String → Ren} {Γ : Ren} {ρ ρ' : Env}
+    {x x' : String} {v : Val} (h : EnvR pkg pm Γ ρ ρ') (hb : Γ.bound x x') : update ρ x v ≠ none := by
+  induction h with
+  | nil => exact absurd hb (by simp [Ren.bound])
+  | @cons Γ k k' b b' ρ ρ' _ _ _ ih =>
+    simp only [Ren.bound] at hb
+    simp only [update]
+    rcases hb with ⟨rfl, rfl⟩ | ⟨h1, _, hb⟩
+    · simp
+    · simp only [h1, ite_false]
+      intro he
+      exact ih hb (Option.map_eq_none_iff.mp he)
+
+/-- Assigning related values to related places keeps the states related. -/
+theorem assignTo_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren}
+    (hs : SameLayout ds ds') :
+    ∀ {t t' : Expr} {v v' : Val} {c c' : Core}, CoreR pkg pm Γ c c' → AlphaE pkg pm Γ t t' →
+      ValR pkg pm v v' →
+      ResR pkg pm Eq ((assignTo ds t v).run.run c).1 ((assignTo ds' t' v').run.run c').1 ∧
+        CoreR pkg pm Γ ((assignTo ds t v).run.run c).2 ((assignTo ds' t' v').run.run c').2
+  | _, _, v, v', c, c', hc, .name (x := x) (x' := x') hx, hv => by
+    unfold assignTo
+    rw [run_get_bind, run_get_bind]
+    have hl := lookup_rel hc.1 hx
+    -- Not a cell: update the local, else the package-level variable.
+    have hrest : ResR pkg pm Eq
+        ((match update c.locals x v with
+          | some l => (set { c with locals := l } : H Unit)
+          | none => match update c.globals x v with
+            | some g => set { c with globals := g }
+            | none => throw (Stop.stuck s!"assignment to {x}, which is not a variable")).run.run c).1
+        ((match update c'.locals x' v' with
+          | some l => (set { c' with locals := l } : H Unit)
+          | none => match update c'.globals x' v' with
+            | some g => set { c' with globals := g }
+            | none => throw (Stop.stuck s!"assignment to {x'}, which is not a variable")).run.run c').1 ∧
+        CoreR pkg pm Γ
+        ((match update c.locals x v with
+          | some l => (set { c with locals := l } : H Unit)
+          | none => match update c.globals x v with
+            | some g => set { c with globals := g }
+            | none => throw (Stop.stuck s!"assignment to {x}, which is not a variable")).run.run c).2
+        ((match update c'.locals x' v' with
+          | some l => (set { c' with locals := l } : H Unit)
+          | none => match update c'.globals x' v' with
+            | some g => set { c' with globals := g }
+            | none => throw (Stop.stuck s!"assignment to {x'}, which is not a variable")).run.run c').2 := by
+      rcases update_rel hv hc.1 hx with ⟨e1, e2⟩ | ⟨r, r', e1, e2, hr⟩
+      · rw [e1, e2]
+        obtain rfl : x = x' := by
+          rcases hx with hb | ⟨h, _⟩
+          · exact absurd e1 (bound_update_ne_none hc.1 hb)
+          · exact h
+        rcases update_rel hv hc.2.1 (nameR_self c.globals x) with ⟨g1, g2⟩ | ⟨g, g', g1, g2, hg⟩
+        · rw [g1, g2]; exact ⟨.stuck _ _, hc⟩
+        · rw [g1, g2]
+          refine ⟨rfl, hc.1, ?_, hc.2.2.1, hc.2.2.2⟩
+          show EnvR pkg pm (g.map fun kb => (kb.1, kb.1)) g g'
+          rw [update_keys g1]; exact hg
+      · rw [e1, e2]; exact ⟨rfl, hr, hc.2.1, hc.2.2.1, hc.2.2.2⟩
+    rcases h1 : lookup c.locals x with _ | ⟨bv, bm⟩ <;>
+      rcases h1' : lookup c'.locals x' with _ | ⟨bv', bm'⟩ <;> rw [h1, h1'] at hl
+    · exact hrest
+    · exact absurd hl id
+    · exact absurd hl id
+    · obtain ⟨_, hb⟩ := hl
+      cases hb <;> first | exact store_rel hc hv _ | exact hrest
+  | _, _, v, v', c, c', hc, .select f h, hv => by
+    unfold assignTo
+    exact resR_bind_st hc (readPlace_rel hs hc h) (readOnly_readPlace ds _)
+      (readOnly_readPlace ds' _) fun _ _ hw =>
+        resR_bind_st hc (setField_rel hs f hw hv) (readOnly_setField _ _ _ _)
+          (readOnly_setField _ _ _ _) fun _ _ hw' => assignTo_rel hs hc h hw'
+  | _, _, v, v', c, c', hc, .paren h, hv => by unfold assignTo; exact assignTo_rel hs hc h hv
+  | _, _, _, _, c, c', hc, .lit _, _ | _, _, _, _, c, c', hc, .unsupported _, _
+  | _, _, _, _, c, c', hc, .unary .., _ | _, _, _, _, c, c', hc, .binary .., _
+  | _, _, _, _, c, c', hc, .callFree .., _ | _, _, _, _, c, c', hc, .call .., _
+  | _, _, _, _, c, c', hc, .tuple _, _ | _, _, _, _, c, c', hc, .interp _, _
+  | _, _, _, _, c, c', hc, .ifExpr .., _ | _, _, _, _, c, c', hc, .ifStmt .., _
+  | _, _, _, _, c, c', hc, .mtch .., _ | _, _, _, _, c, c', hc, .block _, _
+  | _, _, _, _, c, c', hc, .ret _, _ | _, _, _, _, c, c', hc, .assign .., _
+  | _, _, _, _, c, c', hc, .incdec .., _ | _, _, _, _, c, c', hc, .lambda .., _ => by
+    unfold assignTo; exact ⟨.stuck _ _, hc⟩
+
 end Gala.Spec
