@@ -31,6 +31,7 @@ Usage:
   gala mod add <pkg>@<version>  Add a dependency
   gala mod tidy                 Tidy dependencies
   gala clean                    Clean build workspace
+  gala doctor                   Check Go, caches and project setup
   gala version                  Print version
 
 Legacy transpilation (creates files in project directory):

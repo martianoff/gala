@@ -1,0 +1,44 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "doctor",
+    srcs = [
+        "doctor.go",
+        "longpaths_other.go",
+        "longpaths_windows.go",
+    ],
+    importpath = "martianoff/gala/internal/doctor",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/build",
+        "//internal/depman/mod",
+        "@org_golang_x_mod//modfile",
+    ] + select({
+        "@rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows/registry",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+go_test(
+    name = "doctor_test",
+    srcs = [
+        "anchors_test.go",
+        "doctor_test.go",
+    ],
+    # The troubleshooting page, both copies: every anchor a check links to
+    # must be one of its headings.
+    data = [
+        "//docs:TROUBLESHOOTING.MD",
+        "//website:pages",
+    ],
+    embed = [":doctor"],
+    deps = [
+        "//internal/build",
+        "//internal/depman/mod",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_x_mod//modfile",
+        "@rules_go//go/tools/bazel",
+    ],
+)

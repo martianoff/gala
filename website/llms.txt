@@ -10,6 +10,7 @@ GALA is close enough to Scala and Kotlin to be readable on sight, and different 
 - `gala build --json ./main.gala` — the same diagnostics as JSON (`code`, `message`, `hint`, `file`, `line`, `column`, `endColumn`, `docsUrl`). Prefer this over parsing the framed text output
 - `gala explain GALA-E0044` — the full reference page for a code, offline; `gala explain --list` enumerates them
 - `gala run ./main.gala`, `gala test ./...`
+- `gala doctor --json` — checks Go, the Go SDK used for type inference, gala's caches and the project's `gala.mod`/`go.mod`; each problem has a `fix` and a `docsUrl` into [Troubleshooting](https://gala.fyi/docs/troubleshooting/). Run it first when a build fails for no reason in the code
 
 ## Differences that most often produce wrong code
 

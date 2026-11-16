@@ -15,6 +15,8 @@ var (
 	cleanAll   bool
 	cleanStale bool
 	cleanCache bool
+
+	cleanStaleStdlib bool
 )
 
 var cleanCmd = &cobra.Command{
@@ -25,15 +27,19 @@ var cleanCmd = &cobra.Command{
 By default, only cleans the workspace for the current project.
 
 Options:
-  --all     Remove all build workspaces
-  --stale   Remove workspaces older than 7 days
-  --cache   Remove the analysis cache (.gala/cache/)
+  --all            Remove all build workspaces
+  --stale          Remove workspaces older than 7 days
+  --cache          Remove the analysis cache (.gala/cache/)
+  --stale-stdlib   Remove stdlib cache directories of other gala versions.
+                   Stop editors and builds running another gala version
+                   first: they read their directory while they run.
 
 Examples:
-  gala clean              # Clean current project's workspace
-  gala clean --all        # Clean all workspaces
-  gala clean --stale      # Clean stale workspaces
-  gala clean --cache      # Clear analysis cache`,
+  gala clean                  # Clean current project's workspace
+  gala clean --all            # Clean all workspaces
+  gala clean --stale          # Clean stale workspaces
+  gala clean --cache          # Clear analysis cache
+  gala clean --stale-stdlib   # Drop the stdlib extracted by older gala versions`,
 	Run: runClean,
 }
 
@@ -41,10 +47,28 @@ func init() {
 	cleanCmd.Flags().BoolVar(&cleanAll, "all", false, "Clean all workspaces")
 	cleanCmd.Flags().BoolVar(&cleanStale, "stale", false, "Clean workspaces older than 7 days")
 	cleanCmd.Flags().BoolVar(&cleanCache, "cache", false, "Clear analysis cache (.gala/cache/)")
+	cleanCmd.Flags().BoolVar(&cleanStaleStdlib, "stale-stdlib", false,
+		"Remove the stdlib cache directories of every gala version but this one")
 }
 
 func runClean(cmd *cobra.Command, args []string) {
 	config := build.DefaultConfig()
+
+	if cleanStaleStdlib {
+		removed, err := config.RemoveStaleStdlibDirs(Version)
+		for _, dir := range removed {
+			fmt.Printf("Removed %s\n", dir)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Removed %d stale stdlib cache directories.\n", len(removed))
+		// Alone, the flag does not also clean the project's workspace.
+		if !cleanCache && !cleanAll && !cleanStale {
+			return
+		}
+	}
 
 	if cleanCache {
 		cwd, err := os.Getwd()

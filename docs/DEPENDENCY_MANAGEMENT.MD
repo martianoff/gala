@@ -14,6 +14,7 @@ GALA provides a dependency management system similar to Go modules, using `gala.
    - [gala build](#gala-build)
    - [gala run](#gala-run)
    - [gala clean](#gala-clean)
+   - [gala doctor](#gala-doctor)
    - [gala export](#gala-export)
    - [gala stdlib export](#gala-stdlib-export)
    - [gala mod init](#gala-mod-init)
@@ -228,6 +229,19 @@ gala clean --all
 
 # Clean stale workspaces (projects that no longer exist)
 gala clean --stale
+
+# Remove the stdlib cache directories older gala versions extracted
+gala clean --stale-stdlib
+```
+
+### gala doctor
+
+Check the environment gala runs in: the Go toolchain and its version, the Go SDK used for type inference, gala's caches, the Go build cache, and, in a project, `gala.mod` and its agreement with `go.mod`. Each check prints one line marked `OK`, `WARN` or `FAIL`, and each problem comes with a fix and a link to [Troubleshooting](TROUBLESHOOTING.MD). It exits non-zero when a check fails.
+
+```bash
+gala doctor              # Check this machine and the project here
+gala doctor ./myproject  # Check another project
+gala doctor --json       # The same checks as JSON, for bug reports
 ```
 
 ### gala export

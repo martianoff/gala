@@ -1,3 +1,7 @@
+# Read by //internal/doctor's test, which checks that the page has a heading
+# for every section `gala doctor` links to.
+exports_files(["TROUBLESHOOTING.MD"])
+
 # The language documentation pages whose ```gala blocks
 # //internal/doccheck:doccheck_test compiles.
 filegroup(

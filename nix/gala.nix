@@ -48,7 +48,7 @@
   },
   # Hash of the vendored Go dependencies in the current go.mod. Run
   # `nix build` once and copy the hash it suggests if this goes stale.
-  galaVendorHash ? "sha256-87rS9xZkm1GrFil7d3tWi4HADHIYChH1z6cum9Ix62o=",
+  galaVendorHash ? "sha256-wnV30/wZ1ZULm6BcB+R9imHcSTK7lScvVoZ+PcHXiO8=",
   version ? (
     let
       line = lib.findFirst (l: lib.hasPrefix "gala " l) "gala 0.0.0" (

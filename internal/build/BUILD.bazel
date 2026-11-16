@@ -10,6 +10,7 @@ go_library(
         "errors.go",
         "generate.go",
         "gomod.go",
+        "gomodreqs.go",
         "lock.go",
         "stdlibver.go",
         "testgen.go",
@@ -31,6 +32,7 @@ go_library(
         "//internal/transpiler/profiler",
         "//internal/transpiler/transformer",
         "@org_golang_x_mod//modfile",
+        "@org_golang_x_mod//module",
     ],
 )
 
