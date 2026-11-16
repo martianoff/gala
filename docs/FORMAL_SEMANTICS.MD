@@ -327,8 +327,7 @@ column lists what each milestone's claim rests on beyond them.
   GoCore, and `GoCore.geval (lowerMatch e) ≈ Spec.eval e` under an environment relation.
 - **What it removed:** the earlier prototype, `MatchLowering.lean`, proved a match
   lowering correct against a separate toy source semantics that no theorem tied to
-  galaspec. It is gone, with its theorems `compile_correct` and `program_correct`; the
-  #996 counterexample `leaky_not_correct` is restated against galaspec and GoCore.
+  galaspec. It is gone, with its theorems `compile_correct` and `program_correct`.
 - **Status: proved** (`formal/Gala/MatchLower.lean`, `lowerMatch_correct`), relative to
   the match's parts, as T3 is: *given that the subject, guards and bodies are lowered
   correctly*, the scoped lowering into GoCore is correct with respect to galaspec, as
@@ -681,8 +680,8 @@ Done so far: M1 (T1, fuel adequacy), the metamorphic generators, the Core JSON e
 galaspec for S1 and part of S2, the differential harness over `examples/`, gala2lean, and
 M3 (the `match` lowering proved against galaspec).
 The estimates are in weeks of one maintainer working with AI agents, and the chart runs
-the proof milestones one after another (M3 needs only M1, so M2 and M3 could overlap with
-a second person). The spec-coverage lane, the rest of S2 and S3 in galaspec and
+the proof milestones one after another (M3 needed only M1, so it finished ahead of M2).
+The spec-coverage lane, the rest of S2 and S3 in galaspec and
 switching `FuzzPrograms` to galaspec as its oracle, is separate work run by other agents
 and is drawn alongside. The dates are placeholders that show order and length, not
 commitments.
@@ -695,8 +694,8 @@ gantt
     M1 fuel adequacy                         :done, m1, 2026-11-15, 1d
     M2 alpha-invariance, T3, T4              :m2, after m1, 49d
     section Link to the transformer
-    M3 match lowering against galaspec       :m3, after m2, 28d
-    M4 GoCore and the Go AST exporter        :m4, after m3, 49d
+    M3 match lowering against galaspec       :done, m3, 2026-11-15, 1d
+    M4 GoCore and the Go AST exporter        :m4, after m2, 49d
     M5 reference lowering for S1             :m5, after m4, 56d
     M6 per-program translation validation    :m6, after m5, 70d
     section Widen

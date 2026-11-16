@@ -140,8 +140,8 @@ inferred. They agree exactly when the value has that type. A program GALA's type
 accepts satisfies it; galaspec has no typing judgment to prove that (T7), so it stays a
 hypothesis.
 
-These are theorems about the *spec* (and a model of one lowering into GoCore, and one program's
-translation under gala2lean's prelude), not about the transpiler.
+These are theorems about the *spec* (and a model of one lowering into GoCore, and one
+program's translation under gala2lean's prelude), not about the transpiler.
 
 Not proved: T2 and T5–T7. T2 is in progress: the renaming relations and their commuting
 lemmas (resolve, matchPat, argSlots, byNameOk) and the step lemmas for the evaluator's
