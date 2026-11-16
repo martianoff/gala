@@ -1,0 +1,8 @@
+package main
+
+// The test writes chain.go next to this file: hand-written Go importing a
+// chain of Go packages of the program's own module, which import each other.
+
+func main() {
+    Println(ChainDepth())
+}

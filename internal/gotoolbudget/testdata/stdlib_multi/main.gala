@@ -1,0 +1,14 @@
+package main
+
+import (
+    "strings"
+
+    "example.com/budget/textutil"
+)
+
+func main() {
+    val words = strings.Fields("the quick brown fox")
+    Println(Report(words.Size()))
+    Println(textutil.Reverse("gala"))
+    Println(HelperBanner())
+}

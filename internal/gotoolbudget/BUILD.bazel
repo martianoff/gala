@@ -1,0 +1,40 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load(":defs.bzl", "go_toolchain_manifest")
+
+# The Go package of the stdlib_multi program's own module. The worker cases
+# read its types from the export data this compiles, as rules-gala hands the
+# transpiler a go_deps library's.
+go_library(
+    name = "textutil",  # keep
+    srcs = ["testdata/stdlib_multi/textutil/textutil.go"],  # keep
+    importpath = "example.com/budget/textutil",  # keep
+    visibility = ["//visibility:private"],
+)
+
+go_toolchain_manifest(
+    name = "toolchain_manifest",
+    testonly = True,
+    deps = [
+        ":textutil",
+        "@com_github_spf13_cobra//:cobra",
+    ],
+)
+
+go_test(
+    name = "gotoolbudget_test",
+    # The Go build cache starts empty, and `go list -export` compiles the
+    # packages it lists: 20-50 s on a workstation, more on a loaded CI runner.
+    size = "large",
+    srcs = ["budget_test.go"],
+    data = [
+        ":toolchain_manifest",
+        "//cmd/gala",
+        "//internal/gotoolbudget/goshim",
+    ] + glob(["testdata/**"]),
+    env = {
+        "GALA_BIN": "$(rlocationpath //cmd/gala)",
+        "GOSHIM_BIN": "$(rlocationpath //internal/gotoolbudget/goshim)",
+        "TOOLCHAIN_MANIFEST": "$(rlocationpath :toolchain_manifest)",
+    },
+    deps = ["@rules_go//go/runfiles"],
+)

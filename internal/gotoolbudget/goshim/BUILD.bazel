@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "goshim_lib",
+    srcs = ["main.go"],
+    importpath = "martianoff/gala/internal/gotoolbudget/goshim",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "goshim",
+    embed = [":goshim_lib"],
+    visibility = ["//internal/gotoolbudget:__pkg__"],
+)
