@@ -31,9 +31,9 @@ type Pos struct {
 }
 
 // Node is a node of GoCore JSON: one of the kinds in nodeTypes, or an
-// Unsupported construct.
+// Unrepresentable node.
 type Node interface {
-	// Kind is the node's "kind" field ("" for Unsupported).
+	// Kind is the node's "kind" field ("" for Unrepresentable).
 	Kind() string
 }
 
@@ -46,15 +46,6 @@ type Meta struct {
 }
 
 func (m *Meta) setMeta(v Meta) { *m = v }
-
-// Unsupported stands for a Go construct outside GoCore, in place of the node
-// it would be. What names the construct: one of the Unsupported* constants.
-type Unsupported struct {
-	What string `json:"unsupported"`
-	Pos  Pos    `json:"pos"`
-}
-
-func (*Unsupported) Kind() string { return "" }
 
 // --- Files and declarations ---
 
@@ -150,6 +141,34 @@ type FuncType struct {
 	Variadic bool     `json:"variadic"`
 }
 
+// ArrayType is `[len]Elt`, or a slice type `[]Elt` when Len is nil; Len is
+// an Ellipsis in `[...]Elt{...}`.
+type ArrayType struct {
+	Meta
+	Len Node `json:"len"`
+	Elt Node `json:"elt"`
+}
+
+// MapType is `map[Key]Value`.
+type MapType struct {
+	Meta
+	Key   Node `json:"key"`
+	Value Node `json:"value"`
+}
+
+// ChanType is `chan Value`, `chan<- Value` (Dir "send") or `<-chan Value`
+// (Dir "recv"); Dir is "both" for `chan`.
+type ChanType struct {
+	Meta
+	Dir   string `json:"dir"`
+	Value Node   `json:"value"`
+}
+
+// Ellipsis is the `...` length of `[...]T`.
+type Ellipsis struct {
+	Meta
+}
+
 // --- Expressions (a type name is an Ident, Selector, Index or Star) ---
 
 // Ident is a name, whatever it refers to.
@@ -165,9 +184,22 @@ type IntLit struct {
 	Value string `json:"value"`
 }
 
+// FloatLit is a floating-point literal; Value is its exact value as
+// go/constant writes it (a decimal, or a fraction `p/q`).
+type FloatLit struct {
+	Meta
+	Value string `json:"value"`
+}
+
+// ImagLit is an imaginary literal; Value is its imaginary part's exact
+// value, as FloatLit's.
+type ImagLit struct {
+	Meta
+	Value string `json:"value"`
+}
+
 // StringLit is a string literal, interpreted or raw; Value is its value. A
-// literal whose value is not valid UTF-8 is unsupported, since JSON could
-// not carry it exactly.
+// literal whose value is not valid UTF-8 is Unrepresentable.
 type StringLit struct {
 	Meta
 	Value string `json:"value"`
@@ -223,7 +255,18 @@ type Index struct {
 	Indices []Node `json:"indices"`
 }
 
-// TypeAssert is `x.(Type)`.
+// SliceExpr is `x[low:high]`, or `x[low:high:max]` when Slice3 is set; each
+// index may be nil.
+type SliceExpr struct {
+	Meta
+	X      Node `json:"x"`
+	Low    Node `json:"low"`
+	High   Node `json:"high"`
+	Max    Node `json:"max"`
+	Slice3 bool `json:"slice3"`
+}
+
+// TypeAssert is `x.(Type)`; Type is nil for `x.(type)` in a type switch.
 type TypeAssert struct {
 	Meta
 	X    Node `json:"x"`
@@ -245,7 +288,7 @@ type Star struct {
 	X Node `json:"x"`
 }
 
-// Unary is `op x`, Op one of `- + ! ^ &`.
+// Unary is `op x`, Op one of `- + ! ^ & <- ~`.
 type Unary struct {
 	Meta
 	Op string `json:"op"`
@@ -301,10 +344,19 @@ type Return struct {
 	Results []Node `json:"results"`
 }
 
-// Branch is `break` or `continue`, without a label.
+// Branch is `break`, `continue`, `goto` or `fallthrough`; Label is "" for
+// none.
 type Branch struct {
 	Meta
-	Tok string `json:"tok"`
+	Tok   string `json:"tok"`
+	Label string `json:"label"`
+}
+
+// Labeled is `label: stmt`.
+type Labeled struct {
+	Meta
+	Label string `json:"label"`
+	Stmt  Node   `json:"stmt"`
 }
 
 // If is `if init; cond { body } else ...`; Init and Else may be nil, Else is
@@ -331,6 +383,28 @@ type CaseClause struct {
 	Body []Node `json:"body"`
 }
 
+// TypeSwitch is `switch init; assign { clauses }`. Assign is `x :=
+// y.(type)` or `y.(type)`: an Assign or ExprStmt whose expression is a
+// TypeAssert with a nil type. A clause's List holds types.
+type TypeSwitch struct {
+	Meta
+	Init    Node          `json:"init"`
+	Assign  Node          `json:"assign"`
+	Clauses []*CaseClause `json:"clauses"`
+}
+
+// Select is `select { clauses }`.
+type Select struct {
+	Meta
+	Clauses []*CommClause `json:"clauses"`
+}
+
+// CommClause is `case comm: body`, or `default:` when Comm is nil.
+type CommClause struct {
+	Comm Node   `json:"comm"`
+	Body []Node `json:"body"`
+}
+
 // For is `for init; cond; post { body }`; each of the three may be nil.
 type For struct {
 	Meta
@@ -351,10 +425,40 @@ type Range struct {
 	Body  Node   `json:"body"`
 }
 
+// Send is `ch <- value`.
+type Send struct {
+	Meta
+	Chan  Node `json:"chan"`
+	Value Node `json:"value"`
+}
+
+// Go is `go call`.
+type Go struct {
+	Meta
+	Call Node `json:"call"`
+}
+
+// Defer is `defer call`.
+type Defer struct {
+	Meta
+	Call Node `json:"call"`
+}
+
 // Empty is the empty statement.
 type Empty struct {
 	Meta
 }
+
+// Unrepresentable stands for a node JSON cannot carry exactly, in place of
+// it; What is one of the Unrepresentable* constants. Every Go construct has
+// a kind of its own: this is only for a node the exporter cannot write
+// faithfully, never for one outside GoCore, which the Lean side decides.
+type Unrepresentable struct {
+	What string `json:"unrepresentable"`
+	Pos  Pos    `json:"pos"`
+}
+
+func (*Unrepresentable) Kind() string { return "" }
 
 func (*File) Kind() string          { return "file" }
 func (*FuncDecl) Kind() string      { return "func-decl" }
@@ -363,8 +467,13 @@ func (*ValueDecl) Kind() string     { return "value-decl" }
 func (*StructType) Kind() string    { return "struct-type" }
 func (*InterfaceType) Kind() string { return "interface-type" }
 func (*FuncType) Kind() string      { return "func-type" }
+func (*ArrayType) Kind() string     { return "array-type" }
+func (*MapType) Kind() string       { return "map-type" }
+func (*ChanType) Kind() string      { return "chan-type" }
 func (*Ident) Kind() string         { return "ident" }
 func (*IntLit) Kind() string        { return "int-lit" }
+func (*FloatLit) Kind() string      { return "float-lit" }
+func (*ImagLit) Kind() string       { return "imag-lit" }
 func (*StringLit) Kind() string     { return "string-lit" }
 func (*CharLit) Kind() string       { return "char-lit" }
 func (*CompositeLit) Kind() string  { return "composite-lit" }
@@ -373,11 +482,13 @@ func (*FuncLit) Kind() string       { return "func-lit" }
 func (*Paren) Kind() string         { return "paren" }
 func (*Selector) Kind() string      { return "selector" }
 func (*Index) Kind() string         { return "index" }
+func (*SliceExpr) Kind() string     { return "slice-expr" }
 func (*TypeAssert) Kind() string    { return "type-assert" }
 func (*Call) Kind() string          { return "call" }
 func (*Star) Kind() string          { return "star" }
 func (*Unary) Kind() string         { return "unary" }
 func (*Binary) Kind() string        { return "binary" }
+func (*Ellipsis) Kind() string      { return "ellipsis" }
 func (*Block) Kind() string         { return "block" }
 func (*DeclStmt) Kind() string      { return "decl-stmt" }
 func (*ExprStmt) Kind() string      { return "expr-stmt" }
@@ -385,20 +496,27 @@ func (*IncDec) Kind() string        { return "inc-dec" }
 func (*Assign) Kind() string        { return "assign" }
 func (*Return) Kind() string        { return "return" }
 func (*Branch) Kind() string        { return "branch" }
+func (*Labeled) Kind() string       { return "labeled" }
 func (*If) Kind() string            { return "if" }
 func (*Switch) Kind() string        { return "switch" }
+func (*TypeSwitch) Kind() string    { return "type-switch" }
+func (*Select) Kind() string        { return "select" }
 func (*For) Kind() string           { return "for" }
 func (*Range) Kind() string         { return "range" }
+func (*Send) Kind() string          { return "send" }
+func (*Go) Kind() string            { return "go" }
+func (*Defer) Kind() string         { return "defer" }
 func (*Empty) Kind() string         { return "empty" }
 
-// nodeTypes is one value of every supported node type, for schema_test.go
-// and Kinds.
+// nodeTypes is one value of every node type, for schema_test.go and Kinds.
 var nodeTypes = []Node{
 	&File{}, &FuncDecl{}, &TypeDecl{}, &ValueDecl{}, &StructType{}, &InterfaceType{}, &FuncType{},
-	&Ident{}, &IntLit{}, &StringLit{}, &CharLit{}, &CompositeLit{}, &KeyValue{}, &FuncLit{},
-	&Paren{}, &Selector{}, &Index{}, &TypeAssert{}, &Call{}, &Star{}, &Unary{}, &Binary{},
-	&Block{}, &DeclStmt{}, &ExprStmt{}, &IncDec{}, &Assign{}, &Return{}, &Branch{}, &If{},
-	&Switch{}, &For{}, &Range{}, &Empty{},
+	&ArrayType{}, &MapType{}, &ChanType{}, &Ident{}, &IntLit{}, &FloatLit{}, &ImagLit{},
+	&StringLit{}, &CharLit{}, &CompositeLit{}, &KeyValue{}, &FuncLit{}, &Paren{}, &Selector{},
+	&Index{}, &SliceExpr{}, &TypeAssert{}, &Call{}, &Star{}, &Unary{}, &Binary{}, &Ellipsis{},
+	&Block{}, &DeclStmt{}, &ExprStmt{}, &IncDec{}, &Assign{}, &Return{}, &Branch{}, &Labeled{},
+	&If{}, &Switch{}, &TypeSwitch{}, &Select{}, &For{}, &Range{}, &Send{}, &Go{}, &Defer{},
+	&Empty{},
 }
 
 // Kinds is every node kind, sorted.
@@ -411,38 +529,17 @@ func Kinds() []string {
 	return out
 }
 
-// The constructs the exporter reports as Unsupported.
+// The nodes JSON cannot carry exactly.
 const (
-	UnsupportedFloatLiteral  = "float-literal"
-	UnsupportedImagLiteral   = "imag-literal"
-	UnsupportedInvalidUTF8   = "invalid-utf8-string"
-	UnsupportedSliceExpr     = "slice-expr"
-	UnsupportedArrayType     = "array-type"
-	UnsupportedMapType       = "map-type"
-	UnsupportedChanType      = "chan-type"
-	UnsupportedTilde         = "tilde"
-	UnsupportedReceive       = "receive"
-	UnsupportedLabeledStmt   = "labeled-stmt"
-	UnsupportedLabeledBranch = "labeled-branch"
-	UnsupportedGoto          = "goto"
-	UnsupportedFallthrough   = "fallthrough"
-	UnsupportedSend          = "send"
-	UnsupportedGo            = "go"
-	UnsupportedDefer         = "defer"
-	UnsupportedSelect        = "select"
-	UnsupportedTypeSwitch    = "type-switch"
-	UnsupportedBadNode       = "bad-node"
+	// UnrepresentableInvalidUTF8 is a string literal or a struct tag whose
+	// value is not valid UTF-8.
+	UnrepresentableInvalidUTF8 = "invalid-utf8"
+	// UnrepresentableBadNode is a node go/parser marks bad, or one no Go type
+	// checker accepts (a method with no receiver, or two).
+	UnrepresentableBadNode = "bad-node"
 )
 
-var unsupportedKinds = []string{
-	UnsupportedFloatLiteral, UnsupportedImagLiteral, UnsupportedInvalidUTF8, UnsupportedSliceExpr,
-	UnsupportedArrayType, UnsupportedMapType, UnsupportedChanType,
-	UnsupportedTilde, UnsupportedReceive, UnsupportedLabeledStmt, UnsupportedLabeledBranch,
-	UnsupportedGoto, UnsupportedFallthrough, UnsupportedSend, UnsupportedGo, UnsupportedDefer,
-	UnsupportedSelect, UnsupportedTypeSwitch, UnsupportedBadNode,
-}
-
-// UnsupportedKinds is every construct name an Unsupported node may carry.
-func UnsupportedKinds() []string {
-	return slices.Clone(unsupportedKinds)
+// UnrepresentableKinds is every name an Unrepresentable node may carry.
+func UnrepresentableKinds() []string {
+	return []string{UnrepresentableInvalidUTF8, UnrepresentableBadNode}
 }

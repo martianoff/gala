@@ -7,6 +7,7 @@ import (
 	"go/constant"
 	"go/parser"
 	"go/token"
+	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
@@ -19,13 +20,13 @@ import (
 // must parse to the same syntax tree as the source, positions, comments and
 // the spelling of literals aside. So the exporter drops nothing and changes
 // nothing: it is a plain syntax dump. The printer below works on the JSON,
-// the form the Lean decoder reads. A document with an unsupported node has
-// no source to print there, so the round trip covers the documents wholly
-// inside GoCore; TestExamplesRoundTrip says how many.
+// the form the Lean decoder reads. Only a document with an unrepresentable
+// node (a string that is not UTF-8) has no source to print, and
+// TestExamplesRoundTrip lists those.
 
 type obj = map[string]any
 
-// roundTrip exports src. When the document has no unsupported node it
+// roundTrip exports src. When the document has no unrepresentable node it
 // prints it back as Go and checks that it parses to src's tree. It returns
 // the document and whether it was round-tripped.
 func roundTrip(t *testing.T, name, src string) (obj, bool) {
@@ -44,7 +45,7 @@ func roundTrip(t *testing.T, name, src string) (obj, bool) {
 	}
 	clean := true
 	walk(doc, func(n obj) {
-		if _, ok := n["unsupported"]; ok {
+		if _, ok := n["unrepresentable"]; ok {
 			clean = false
 		}
 	})
@@ -54,8 +55,8 @@ func roundTrip(t *testing.T, name, src string) (obj, bool) {
 	pkg := doc["packages"].([]any)[0].(obj)
 	var p printer
 	p.file(str(pkg["name"]), pkg["files"].([]any)[0].(obj))
-	if p.unsupported != "" {
-		t.Fatalf("%s: the printer met %s", name, p.unsupported)
+	if p.unrepresentable != "" {
+		t.Fatalf("%s: the printer met %s", name, p.unrepresentable)
 	}
 	printed := p.b.String()
 	want := parse(t, name, src)
@@ -94,6 +95,10 @@ func parse(t *testing.T, name, src string) *ast.File {
 			switch n.Kind {
 			case token.INT:
 				n.Value = v.ExactString()
+			case token.FLOAT:
+				n.Value = decimal(v.ExactString())
+			case token.IMAG:
+				n.Value = decimal(constant.Imag(v).ExactString()) + "i"
 			case token.STRING:
 				n.Value = strconv.Quote(constant.StringVal(v))
 			case token.CHAR:
@@ -104,6 +109,31 @@ func parse(t *testing.T, name, src string) *ast.File {
 		return true
 	})
 	return f
+}
+
+// decimal writes an exact rational value, `p` or `p/q`, as a decimal
+// float literal. A Go float literal's value is a decimal or binary
+// fraction, so its denominator has no prime factors but 2 and 5 and the
+// expansion ends.
+func decimal(exact string) string {
+	r, ok := new(big.Rat).SetString(exact)
+	if !ok {
+		return exact
+	}
+	digits := 0
+	for d := new(big.Int).Set(r.Denom()); d.Cmp(big.NewInt(1)) != 0; digits++ {
+		switch {
+		case new(big.Int).Mod(d, big.NewInt(10)).Sign() == 0:
+			d.Div(d, big.NewInt(10))
+		case new(big.Int).Mod(d, big.NewInt(2)).Sign() == 0:
+			d.Div(d, big.NewInt(2))
+		case new(big.Int).Mod(d, big.NewInt(5)).Sign() == 0:
+			d.Div(d, big.NewInt(5))
+		default:
+			return exact
+		}
+	}
+	return r.FloatString(digits + 1)
 }
 
 // diffTrees compares two syntax trees, ignoring positions, comments, scopes
@@ -158,11 +188,11 @@ func diffTrees(a, b reflect.Value, path string) string {
 	return ""
 }
 
-// printer prints a GoCore JSON file back as Go source. unsupported is set
-// when it met an unsupported node, which has no source to print.
+// printer prints a GoCore JSON file back as Go source. unrepresentable is set
+// when it met an unrepresentable node, which has no source to print.
 type printer struct {
-	b           strings.Builder
-	unsupported string
+	b               strings.Builder
+	unrepresentable string
 }
 
 func (p *printer) w(format string, args ...any) { fmt.Fprintf(&p.b, format, args...) }
@@ -306,11 +336,11 @@ func (p *printer) exprs(es []any) {
 }
 
 func (p *printer) node(n obj) {
-	if u, ok := n["unsupported"]; ok {
-		p.unsupported = str(u)
+	if u, ok := n["unrepresentable"]; ok {
+		p.unrepresentable = str(u)
 		return
 	}
-	p.unsupported = "unknown kind " + str(n["kind"])
+	p.unrepresentable = "unknown kind " + str(n["kind"])
 }
 
 func (p *printer) expr(v any) {
@@ -356,8 +386,48 @@ func (p *printer) expr(v any) {
 	case "type-assert":
 		p.expr(e["x"])
 		p.w(".(")
+		if e["type"] == nil {
+			p.w("type")
+		}
 		p.expr(e["type"])
 		p.w(")")
+	case "float-lit":
+		p.w("%s", decimal(str(e["value"])))
+	case "imag-lit":
+		p.w("%si", decimal(str(e["value"])))
+	case "slice-expr":
+		p.expr(e["x"])
+		p.w("[")
+		p.expr(e["low"])
+		p.w(":")
+		p.expr(e["high"])
+		if e["slice3"] == true {
+			p.w(":")
+			p.expr(e["max"])
+		}
+		p.w("]")
+	case "array-type":
+		p.w("[")
+		p.expr(e["len"])
+		p.w("]")
+		p.expr(e["elt"])
+	case "ellipsis":
+		p.w("...")
+	case "map-type":
+		p.w("map[")
+		p.expr(e["key"])
+		p.w("]")
+		p.expr(e["value"])
+	case "chan-type":
+		switch e["dir"] {
+		case "send":
+			p.w("chan<- ")
+		case "recv":
+			p.w("<-chan ")
+		default:
+			p.w("chan ")
+		}
+		p.expr(e["value"])
 	case "call":
 		p.expr(e["fun"])
 		p.w("(")
@@ -433,7 +503,7 @@ func (p *printer) stmt(s obj) {
 		p.w("return ")
 		p.exprs(list(s["results"]))
 	case "branch":
-		p.w("%s", str(s["tok"]))
+		p.w("%s %s", str(s["tok"]), str(s["label"]))
 	case "if":
 		p.w("if ")
 		if init, ok := s["init"].(obj); ok {
@@ -447,11 +517,14 @@ func (p *printer) stmt(s obj) {
 			p.w(" else ")
 			p.stmt(e)
 		}
-	case "switch":
+	case "switch", "type-switch":
 		p.w("switch ")
 		if init, ok := s["init"].(obj); ok {
 			p.stmt(init)
 			p.w("; ")
+		}
+		if a, ok := s["assign"].(obj); ok {
+			p.stmt(a)
 		}
 		p.expr(s["tag"])
 		p.w(" {\n")
@@ -467,6 +540,30 @@ func (p *printer) stmt(s obj) {
 			p.stmts(list(cc["body"]))
 		}
 		p.w("}")
+	case "select":
+		p.w("select {\n")
+		for _, c := range list(s["clauses"]) {
+			cc := c.(obj)
+			if comm, ok := cc["comm"].(obj); ok {
+				p.w("case ")
+				p.stmt(comm)
+				p.w(":\n")
+			} else {
+				p.w("default:\n")
+			}
+			p.stmts(list(cc["body"]))
+		}
+		p.w("}")
+	case "labeled":
+		p.w("%s:\n", str(s["label"]))
+		p.stmt(s["stmt"].(obj))
+	case "send":
+		p.expr(s["chan"])
+		p.w(" <- ")
+		p.expr(s["value"])
+	case "go", "defer":
+		p.w("%s ", str(s["kind"]))
+		p.expr(s["call"])
 	case "for":
 		p.w("for ")
 		if s["init"] != nil || s["post"] != nil {

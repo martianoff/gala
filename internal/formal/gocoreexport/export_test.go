@@ -56,34 +56,69 @@ type T struct {
 		`"aAé\n"`, `"x\\n"`, `10`, `255`, `233`, `tag json:"f"`}, got)
 }
 
-// TestUnsupportedIsReportedInPlace checks that constructs outside GoCore
-// are exported as unsupported nodes where they are, never dropped, and that
-// the statements around them are kept.
-func TestUnsupportedIsReportedInPlace(t *testing.T) {
-	prog, err := gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "u.go", Text: `package main
+// TestEveryConstructRoundTrips exports the constructs GoCore does not run
+// (deciding that is the Lean side's business) and checks that they
+// round-trip like any other.
+func TestEveryConstructRoundTrips(t *testing.T) {
+	doc, ok := roundTrip(t, "all.go", `package main
 
-func f(ch chan int, m map[string]int, xs []int) float64 {
+type Num interface {
+	~int | ~int64
+}
+
+func f(ch chan int, in <-chan int, out chan<- int, m map[string]int, xs []int, a [3]int) float64 {
 	defer println("x")
-	go f(ch, m, xs)
+	go f(ch, in, out, m, xs, a)
 	ch <- 1
 	_ = <-ch
 	_ = xs[1:2]
-	_ = "\xff"
+	_ = xs[:2:3]
+	_ = [...]int{1, 2}
+	_ = 0x1p-2 + 1e3 + 2.5i
 L:
 	for {
 		break L
 	}
 	switch v := any(1).(type) {
-	case int:
+	case int, string:
 		_ = v
+	default:
+	}
+	switch any(1).(type) {
+	}
+	select {
+	case v := <-ch:
+		_ = v
+	case out <- 2:
+	default:
 	}
 	goto M
+M:
 	switch 1 {
 	case 1:
 		fallthrough
 	default:
 	}
 	return 1.5
+}
+`)
+	require.True(t, ok)
+	counts := counts(doc)
+	for _, kind := range []string{"chan-type", "map-type", "array-type", "ellipsis", "defer", "go", "send",
+		"slice-expr", "labeled", "type-switch", "select", "float-lit", "imag-lit"} {
+		require.Positive(t, counts[kind], "%s is exported", kind)
+	}
+}
+
+// TestUnrepresentable checks the nodes JSON cannot carry exactly: they are
+// reported in place, and the statements around them are kept.
+func TestUnrepresentable(t *testing.T) {
+	prog, err := gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "u.go", Text: `package main
+
+func f() {
+	x := 1
+	_ = "\xff"
+	x = 2
 }
 
 func () g() {}
@@ -95,15 +130,9 @@ type T struct {
 	require.NoError(t, err)
 	counts, err := gocoreexport.ConstructCounts(prog)
 	require.NoError(t, err)
-	require.Equal(t, 1, counts["labeled-stmt"], "a labeled statement is reported whole, its break L inside")
+	require.Equal(t, 2, counts["invalid-utf8"], "a string and a struct whose tag is not UTF-8")
 	require.Equal(t, 1, counts["bad-node"], "a method without a receiver")
-	require.Equal(t, 2, counts["invalid-utf8-string"], "a string and a struct with a tag that is not UTF-8")
-	for _, name := range []string{"chan-type", "map-type", "array-type", "defer", "go", "send", "receive",
-		"slice-expr", "goto", "fallthrough", "type-switch", "float-literal"} {
-		require.Equal(t, 1, counts[name], "%s is reported once", name)
-		require.Contains(t, gocoreexport.UnsupportedKinds(), name)
-	}
-	require.Equal(t, 3, counts["assign"], "the statements around the unsupported ones are kept")
+	require.Equal(t, 3, counts["assign"], "the statements around them are kept")
 }
 
 func TestVersionAndOrder(t *testing.T) {
@@ -125,9 +154,9 @@ func TestVersionAndOrder(t *testing.T) {
 
 // TestExamplesRoundTrip transpiles every example, exports the Go it emits
 // with the Go of every GALA package it imports, directly or not, and checks
-// every file: each node's kind is a schema kind, each unsupported name is
-// listed, and each file without unsupported nodes prints back to its own
-// syntax tree.
+// every file: each node's kind is a schema kind, and the file prints back
+// to its own syntax tree. The files with an unrepresentable node, which do
+// not print, are listed.
 func TestExamplesRoundTrip(t *testing.T) {
 	files, err := bazel.ListRunfiles()
 	require.NoError(t, err)
@@ -140,22 +169,21 @@ func TestExamplesRoundTrip(t *testing.T) {
 	slices.Sort(examples)
 	require.Greater(t, len(examples), 200, "//examples:all_gala_sources is not staged")
 
-	kinds, unsupported := set(gocoreexport.Kinds()), set(gocoreexport.UnsupportedKinds())
+	kinds, unrepresentable := set(gocoreexport.Kinds()), set(gocoreexport.UnrepresentableKinds())
 	imp := progrun.OracleImporter(t)
 	seen, exportedPkgs := map[string]bool{}, map[string]bool{}
-	var exported, roundTripped, transpiled, mainsRoundTripped int
-	var untranspiled, unloaded []string
-	// check exports one file, says whether it round-tripped, and returns the
-	// packages it imports.
-	check := func(name, text string) (bool, []string) {
+	exported, transpiled := 0, 0
+	var untranspiled, unloaded, notPrinted []string
+	// check exports one file and returns the packages it imports.
+	check := func(name, text string) []string {
 		exported++
 		doc, ok := roundTrip(t, name, text)
-		if ok {
-			roundTripped++
+		if !ok {
+			notPrinted = append(notPrinted, name)
 		}
 		walk(doc, func(n obj) {
-			if u, ok := n["unsupported"].(string); ok && !unsupported[u] {
-				t.Errorf("%s: unsupported %q is not listed", name, u)
+			if u, ok := n["unrepresentable"].(string); ok && !unrepresentable[u] {
+				t.Errorf("%s: unrepresentable %q is not listed", name, u)
 			}
 			if k, ok := n["kind"].(string); ok && !kinds[k] {
 				t.Errorf("%s: kind %q is not a schema kind", name, k)
@@ -166,7 +194,7 @@ func TestExamplesRoundTrip(t *testing.T) {
 		for _, i := range list(file["imports"]) {
 			imports = append(imports, str(i.(obj)["path"]))
 		}
-		return ok, imports
+		return imports
 	}
 	for _, ex := range examples {
 		src, err := os.ReadFile(ex)
@@ -178,10 +206,7 @@ func TestExamplesRoundTrip(t *testing.T) {
 			continue
 		}
 		transpiled++
-		ok, queue := check(filepath.Base(ex)+".go", res.Go)
-		if ok {
-			mainsRoundTripped++
-		}
+		queue := check(filepath.Base(ex)+".go", res.Go)
 		for len(queue) > 0 {
 			p := queue[0]
 			queue = queue[1:]
@@ -199,19 +224,14 @@ func TestExamplesRoundTrip(t *testing.T) {
 			}
 			exportedPkgs[p] = true
 			for _, n := range slices.Sorted(maps.Keys(sources)) {
-				_, imports := check(p+"/"+n, sources[n])
-				queue = append(queue, imports...)
+				queue = append(queue, check(p+"/"+n, sources[n])...)
 			}
 		}
 	}
-	t.Logf("%d examples transpiled, %d not (%v); the Go output of %d of them round-tripped", transpiled, len(untranspiled), untranspiled, mainsRoundTripped)
-	t.Logf("%d packages exported; %d did not load (%v)", len(exportedPkgs), len(unloaded), unloaded)
-	t.Logf("%d files exported, %d of them wholly inside GoCore and round-tripped", exported, roundTripped)
+	t.Logf("%d examples transpiled, %d not: %v", transpiled, len(untranspiled), untranspiled)
+	t.Logf("%d packages exported; %d not staged for this test: %v", len(exportedPkgs), len(unloaded), unloaded)
+	t.Logf("%d files exported and printed back; %d with an unrepresentable node: %v", exported-len(notPrinted), len(notPrinted), notPrinted)
 	require.Greater(t, transpiled, 400)
-	// Most examples' Go output is wholly inside GoCore's syntax (it lacks
-	// slices, maps and channels); a drop below half means the exporter or
-	// the transpiler changed.
-	require.Greater(t, mainsRoundTripped, transpiled/2)
 	for _, p := range []string{"martianoff/gala/std", "martianoff/gala/collection_immutable"} {
 		require.True(t, exportedPkgs[p], "%s was exported", p)
 	}

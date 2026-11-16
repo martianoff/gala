@@ -72,15 +72,15 @@ func TestSchemaDocumentsEveryKind(t *testing.T) {
 	}
 }
 
-// TestSchemaListsEveryUnsupportedConstruct checks the table of unsupported
-// constructs against unsupportedKinds, both ways.
-func TestSchemaListsEveryUnsupportedConstruct(t *testing.T) {
-	body := section(t, readSchema(t), "Unsupported constructs")
+// TestSchemaListsEveryUnrepresentableNode checks the table of unrepresentable
+// nodes against UnrepresentableKinds, both ways.
+func TestSchemaListsEveryUnrepresentableNode(t *testing.T) {
+	body := section(t, readSchema(t), "Unrepresentable names")
 	var documented []string
 	for _, m := range regexp.MustCompile("(?m)^\\| `([^`]+)` \\|").FindAllStringSubmatch(body, -1) {
 		documented = append(documented, m[1])
 	}
-	want := UnsupportedKinds()
+	want := UnrepresentableKinds()
 	slices.Sort(documented)
 	slices.Sort(want)
 	if !slices.Equal(documented, want) {

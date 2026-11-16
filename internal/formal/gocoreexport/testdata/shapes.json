@@ -1412,7 +1412,8 @@
                                   "line": 55,
                                   "col": 4
                                 },
-                                "tok": "continue"
+                                "tok": "continue",
+                                "label": ""
                               }
                             ]
                           }

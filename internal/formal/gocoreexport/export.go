@@ -1,13 +1,14 @@
-// Package gocoreexport reads Go source, the transpiler's output and the Go of the
-// GALA packages it imports, into GoCore JSON: the syntax of the Go subset
-// that the Lean model GoCore runs (docs/FORMAL_SEMANTICS.MD, "M4: GoCore and
-// the Go AST exporter"). SCHEMA.md documents the format.
+// Package gocoreexport reads Go source, the transpiler's output and the Go
+// of the GALA packages it imports, into GoCore JSON, which the Lean model
+// GoCore runs (docs/FORMAL_SEMANTICS.MD, "M4: GoCore and the Go AST
+// exporter"). SCHEMA.md documents the format.
 //
-// It is a plain syntax dump of go/ast. It resolves no names, infers no types
-// and folds no constants. A construct outside GoCore is written as an
-// `unsupported` node in its place, naming it, so the consumer stops there
-// with that name if a run reaches it; nothing else is dropped but comments.
-// Literals are read as the Go type checker reads them (go/constant).
+// It is a plain syntax dump of go/ast: every Go construct has a kind of its
+// own, and which ones GoCore runs is decided on the Lean side alone. It
+// resolves no names, infers no types and folds no constants; it reads
+// literals as the Go type checker does (go/constant). It drops nothing but
+// comments. A node JSON cannot carry exactly (a string that is not UTF-8)
+// is written as an `unrepresentable` node in its place.
 //
 // It is a test-support library: no part of the gala CLI links it.
 package gocoreexport
@@ -101,8 +102,8 @@ func at[N metaNode](x *exporter, n N, p token.Pos) N {
 	return n
 }
 
-func (x *exporter) unsupported(what string, p token.Pos) Node {
-	return &Unsupported{What: what, Pos: x.pos(p)}
+func (x *exporter) unrepresentable(what string, p token.Pos) Node {
+	return &Unrepresentable{What: what, Pos: x.pos(p)}
 }
 
 func (x *exporter) file(name string, f *ast.File) *File {
@@ -131,7 +132,7 @@ func (x *exporter) decl(d ast.Decl) Node {
 	case *ast.FuncDecl:
 		if d.Recv != nil && len(d.Recv.List) != 1 {
 			// go/parser accepts `func () M()`; Go's type checker does not.
-			return x.unsupported(UnsupportedBadNode, d.Pos())
+			return x.unrepresentable(UnrepresentableBadNode, d.Pos())
 		}
 		fd := at(x, &FuncDecl{
 			Name:       d.Name.Name,
@@ -168,7 +169,7 @@ func (x *exporter) decl(d ast.Decl) Node {
 			return vd
 		}
 	}
-	return x.unsupported(UnsupportedBadNode, d.Pos())
+	return x.unrepresentable(UnrepresentableBadNode, d.Pos())
 }
 
 func names(ids []*ast.Ident) []string {
@@ -258,27 +259,19 @@ func (x *exporter) expr(e ast.Expr) Node {
 	case *ast.IndexListExpr:
 		return at(x, &Index{X: x.expr(e.X), Indices: x.exprs(e.Indices)}, e.Pos())
 	case *ast.TypeAssertExpr:
-		// A nil Type is `x.(type)`, which only a type switch has, and a type
-		// switch is unsupported as a whole.
-		return at(x, &TypeAssert{X: x.expr(e.X), Type: x.expr(e.Type)}, e.Pos())
+		// A nil Type is `x.(type)` in a type switch.
+		return at(x, &TypeAssert{X: x.expr(e.X), Type: x.optExpr(e.Type)}, e.Pos())
 	case *ast.CallExpr:
 		return at(x, &Call{Fun: x.expr(e.Fun), Args: x.exprs(e.Args), Ellipsis: e.Ellipsis.IsValid()}, e.Pos())
 	case *ast.StarExpr:
 		return at(x, &Star{X: x.expr(e.X)}, e.Pos())
 	case *ast.UnaryExpr:
-		switch e.Op {
-		case token.SUB, token.ADD, token.NOT, token.XOR, token.AND:
-			return at(x, &Unary{Op: e.Op.String(), X: x.expr(e.X)}, e.Pos())
-		case token.ARROW:
-			return x.unsupported(UnsupportedReceive, e.Pos())
-		case token.TILDE:
-			return x.unsupported(UnsupportedTilde, e.Pos())
-		}
+		return at(x, &Unary{Op: e.Op.String(), X: x.expr(e.X)}, e.Pos())
 	case *ast.BinaryExpr:
 		return at(x, &Binary{Op: e.Op.String(), X: x.expr(e.X), Y: x.expr(e.Y)}, e.Pos())
 	case *ast.StructType:
 		if !validTags(e.Fields) {
-			return x.unsupported(UnsupportedInvalidUTF8, e.Pos())
+			return x.unrepresentable(UnrepresentableInvalidUTF8, e.Pos())
 		}
 		return at(x, &StructType{Fields: x.fields(e.Fields)}, e.Pos())
 	case *ast.InterfaceType:
@@ -286,39 +279,49 @@ func (x *exporter) expr(e ast.Expr) Node {
 	case *ast.FuncType:
 		return x.funcType(e)
 	case *ast.SliceExpr:
-		return x.unsupported(UnsupportedSliceExpr, e.Pos())
+		return at(x, &SliceExpr{X: x.expr(e.X), Low: x.optExpr(e.Low), High: x.optExpr(e.High), Max: x.optExpr(e.Max), Slice3: e.Slice3}, e.Pos())
 	case *ast.ArrayType:
-		return x.unsupported(UnsupportedArrayType, e.Pos())
+		return at(x, &ArrayType{Len: x.optExpr(e.Len), Elt: x.expr(e.Elt)}, e.Pos())
 	case *ast.MapType:
-		return x.unsupported(UnsupportedMapType, e.Pos())
+		return at(x, &MapType{Key: x.expr(e.Key), Value: x.expr(e.Value)}, e.Pos())
 	case *ast.ChanType:
-		return x.unsupported(UnsupportedChanType, e.Pos())
+		dir := "both"
+		switch e.Dir {
+		case ast.SEND:
+			dir = "send"
+		case ast.RECV:
+			dir = "recv"
+		}
+		return at(x, &ChanType{Dir: dir, Value: x.expr(e.Value)}, e.Pos())
+	case *ast.Ellipsis:
+		// Only the length of `[...]T`: a variadic parameter's is read by
+		// fields.
+		return at(x, &Ellipsis{}, e.Pos())
 	}
-	return x.unsupported(UnsupportedBadNode, e.Pos())
+	return x.unrepresentable(UnrepresentableBadNode, e.Pos())
 }
 
 // basicLit reads a literal as the Go type checker does (Go spec, "Integer
-// literals", "Rune literals", "String literals").
+// literals", "Floating-point literals", "Imaginary literals", "Rune
+// literals", "String literals").
 func (x *exporter) basicLit(e *ast.BasicLit) Node {
-	switch e.Kind {
-	case token.FLOAT:
-		return x.unsupported(UnsupportedFloatLiteral, e.Pos())
-	case token.IMAG:
-		return x.unsupported(UnsupportedImagLiteral, e.Pos())
-	}
 	v := constant.MakeFromLiteral(e.Value, e.Kind, 0)
 	switch {
 	case v.Kind() == constant.Unknown:
-		return x.unsupported(UnsupportedBadNode, e.Pos())
+		return x.unrepresentable(UnrepresentableBadNode, e.Pos())
 	case e.Kind == token.INT:
 		return at(x, &IntLit{Value: v.ExactString()}, e.Pos())
+	case e.Kind == token.FLOAT:
+		return at(x, &FloatLit{Value: v.ExactString()}, e.Pos())
+	case e.Kind == token.IMAG:
+		return at(x, &ImagLit{Value: constant.Imag(v).ExactString()}, e.Pos())
 	case e.Kind == token.CHAR:
 		r, _ := constant.Int64Val(v)
 		return at(x, &CharLit{Value: r}, e.Pos())
 	}
 	s := constant.StringVal(v)
 	if !utf8.ValidString(s) {
-		return x.unsupported(UnsupportedInvalidUTF8, e.Pos())
+		return x.unrepresentable(UnrepresentableInvalidUTF8, e.Pos())
 	}
 	return at(x, &StringLit{Value: s}, e.Pos())
 }
@@ -358,25 +361,26 @@ func (x *exporter) stmt(s ast.Stmt) Node {
 	case *ast.ReturnStmt:
 		return at(x, &Return{Results: x.exprs(s.Results)}, s.Pos())
 	case *ast.BranchStmt:
-		switch {
-		case s.Tok == token.GOTO:
-			return x.unsupported(UnsupportedGoto, s.Pos())
-		case s.Tok == token.FALLTHROUGH:
-			return x.unsupported(UnsupportedFallthrough, s.Pos())
-		case s.Label != nil:
-			return x.unsupported(UnsupportedLabeledBranch, s.Pos())
-		default:
-			return at(x, &Branch{Tok: s.Tok.String()}, s.Pos())
+		br := at(x, &Branch{Tok: s.Tok.String()}, s.Pos())
+		if s.Label != nil {
+			br.Label = s.Label.Name
 		}
+		return br
+	case *ast.LabeledStmt:
+		return at(x, &Labeled{Label: s.Label.Name, Stmt: x.stmt(s.Stmt)}, s.Pos())
 	case *ast.IfStmt:
 		return at(x, &If{Init: x.optStmt(s.Init), Cond: x.expr(s.Cond), Body: x.block(s.Body), Else: x.optStmt(s.Else)}, s.Pos())
 	case *ast.SwitchStmt:
-		sw := at(x, &Switch{Init: x.optStmt(s.Init), Tag: x.optExpr(s.Tag), Clauses: []*CaseClause{}}, s.Pos())
+		return at(x, &Switch{Init: x.optStmt(s.Init), Tag: x.optExpr(s.Tag), Clauses: x.caseClauses(s.Body)}, s.Pos())
+	case *ast.TypeSwitchStmt:
+		return at(x, &TypeSwitch{Init: x.optStmt(s.Init), Assign: x.stmt(s.Assign), Clauses: x.caseClauses(s.Body)}, s.Pos())
+	case *ast.SelectStmt:
+		sel := at(x, &Select{Clauses: []*CommClause{}}, s.Pos())
 		for _, c := range s.Body.List {
-			cc := c.(*ast.CaseClause)
-			sw.Clauses = append(sw.Clauses, &CaseClause{List: x.exprs(cc.List), Body: x.stmts(cc.Body)})
+			cc := c.(*ast.CommClause)
+			sel.Clauses = append(sel.Clauses, &CommClause{Comm: x.optStmt(cc.Comm), Body: x.stmts(cc.Body)})
 		}
-		return sw
+		return sel
 	case *ast.ForStmt:
 		return at(x, &For{Init: x.optStmt(s.Init), Cond: x.optExpr(s.Cond), Post: x.optStmt(s.Post), Body: x.block(s.Body)}, s.Pos())
 	case *ast.RangeStmt:
@@ -387,25 +391,28 @@ func (x *exporter) stmt(s ast.Stmt) Node {
 		return at(x, &Range{Key: x.optExpr(s.Key), Value: x.optExpr(s.Value), Tok: tok, X: x.expr(s.X), Body: x.block(s.Body)}, s.Pos())
 	case *ast.EmptyStmt:
 		return at(x, &Empty{}, s.Pos())
-	case *ast.LabeledStmt:
-		return x.unsupported(UnsupportedLabeledStmt, s.Pos())
 	case *ast.SendStmt:
-		return x.unsupported(UnsupportedSend, s.Pos())
+		return at(x, &Send{Chan: x.expr(s.Chan), Value: x.expr(s.Value)}, s.Pos())
 	case *ast.GoStmt:
-		return x.unsupported(UnsupportedGo, s.Pos())
+		return at(x, &Go{Call: x.expr(s.Call)}, s.Pos())
 	case *ast.DeferStmt:
-		return x.unsupported(UnsupportedDefer, s.Pos())
-	case *ast.SelectStmt:
-		return x.unsupported(UnsupportedSelect, s.Pos())
-	case *ast.TypeSwitchStmt:
-		return x.unsupported(UnsupportedTypeSwitch, s.Pos())
+		return at(x, &Defer{Call: x.expr(s.Call)}, s.Pos())
 	}
-	return x.unsupported(UnsupportedBadNode, s.Pos())
+	return x.unrepresentable(UnrepresentableBadNode, s.Pos())
+}
+
+func (x *exporter) caseClauses(b *ast.BlockStmt) []*CaseClause {
+	out := []*CaseClause{}
+	for _, c := range b.List {
+		cc := c.(*ast.CaseClause)
+		out = append(out, &CaseClause{List: x.exprs(cc.List), Body: x.stmts(cc.Body)})
+	}
+	return out
 }
 
 // ConstructCounts is how often each construct occurs in p: the kind of
-// every supported node and the name of every unsupported one. It reads p
-// as JSON, the form a consumer sees.
+// every node, and the name of every unrepresentable one. It reads p as
+// JSON, the form a consumer sees.
 func ConstructCounts(p *Program) (map[string]int, error) {
 	data, err := json.Marshal(p)
 	if err != nil {
@@ -420,7 +427,7 @@ func ConstructCounts(p *Program) (map[string]int, error) {
 	walk = func(v any) {
 		switch v := v.(type) {
 		case map[string]any:
-			for _, field := range []string{"kind", "unsupported"} {
+			for _, field := range []string{"kind", "unrepresentable"} {
 				if name, ok := v[field].(string); ok {
 					counts[name]++
 				}

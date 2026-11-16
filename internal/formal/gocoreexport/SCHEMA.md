@@ -7,7 +7,7 @@ transpiler emits, reads it (see [docs/FORMAL_SEMANTICS.MD](../../../docs/FORMAL_
 program imports, the standard library's generated and hand-written files alike.
 
 The Go types in [schema.go](schema.go) are the same schema. `schema_test.go` checks that
-every kind, field and unsupported construct there is documented here.
+every kind, field and unrepresentable node there is documented here.
 
 ```mermaid
 flowchart LR
@@ -20,26 +20,27 @@ flowchart LR
 
 ## What the exporter does not do
 
-GoCore JSON is a plain syntax dump. The exporter does **not**:
+GoCore JSON is a plain syntax dump: every Go construct has a kind of its own, and which
+of them GoCore runs is decided by the Lean decoder and evaluator alone. The exporter does
+**not**:
 
 - resolve names: an identifier is an `ident`, whatever it refers to; `std.Some` is a
   `selector` whether `std` is a package or a variable;
 - infer or check types, or tell a conversion `T(x)` from a call;
 - fold constants, or repeat a `const` spec's expression in the specs after it that have
   none;
-- decide anything about what the program does.
+- decide anything about what the program does, or which constructs GoCore covers.
 
 It reads literals as the Go type checker does (`go/constant`), by the Go specification
-("Integer literals", "Rune literals", "String literals"): an integer's value in decimal,
-arbitrarily large; a rune's value (`'\xff'` is 255); a string's value, escapes
-interpreted. A string whose value is not valid UTF-8 is unsupported, since a JSON string
-cannot carry it exactly.
+("Integer literals", "Floating-point literals", "Imaginary literals", "Rune literals",
+"String literals"): an integer's value in decimal, arbitrarily large; a float's exact
+value; a rune's value (`'\xff'` is 255); a string's value, escapes interpreted.
 
 It drops nothing but comments (and with them `//line` directives). The round-trip test
-prints every exported file that has no unsupported node back as Go and checks that it
-parses to the source's syntax tree, positions, comments and the spelling of literals
-aside; it runs on the Go output of every example and of the GALA packages they import,
-and reports how many files it covered.
+prints every exported file back as Go and checks that it parses to the source's syntax
+tree, positions, comments and the spelling of literals aside. It runs on the Go output of
+every example and of every GALA package they import, and lists the files it could not
+print: those with an [unrepresentable node](#unrepresentable-nodes).
 
 ## Document
 
@@ -56,7 +57,7 @@ and reports how many files it covered.
 
 ## Common fields
 
-Every supported node is a JSON object that starts with:
+Every node but an unrepresentable one is a JSON object that starts with:
 
 - `kind`: one of the kinds below.
 - `pos`: where the node starts, `{"line": 3, "col": 5}`, as `go/token` reports it:
@@ -70,17 +71,17 @@ A parameter, result, receiver, type parameter, struct field or interface element
 names for an unnamed parameter or an embedded field, and a struct field's tag value in
 `tag` (`""` for none).
 
-## Unsupported nodes
+## Unrepresentable nodes
 
-A construct outside GoCore is exported in place of the node it would be, as
+A node JSON cannot carry exactly is exported in place of the node it would be, as
 
 ```json
-{ "unsupported": "defer", "pos": { "line": 3, "col": 2 } }
+{ "unrepresentable": "invalid-utf8", "pos": { "line": 3, "col": 7 } }
 ```
 
-It has `unsupported` instead of `kind`, and a `pos`. It never makes the export fail: a
-consumer that reaches it stops, naming the construct. It has no children.
-[Unsupported constructs](#unsupported-constructs) lists every name.
+It has `unrepresentable` instead of `kind`, and a `pos`. It never makes the export fail: a
+consumer that reaches it stops, naming it. It has no children. It is never used for a
+construct outside GoCore; [the table](#unrepresentable-names) lists every name.
 
 ## Node kinds
 
@@ -121,6 +122,23 @@ embedded type or type union none.
 `func(params) results`: `params`, `results` (field objects) and `variadic` (the last
 parameter is `...T`; its field's type is `T`).
 
+### `array-type`
+
+`[len]elt`, or the slice type `[]elt` when `len` is `null`: `len`, `elt`.
+
+### `ellipsis`
+
+The `...` length of `[...]T`; no fields.
+
+### `map-type`
+
+`map[key]value`: `key`, `value`.
+
+### `chan-type`
+
+A channel type: `dir` (`"both"` for `chan T`, `"send"` for `chan<- T`, `"recv"` for
+`<-chan T`) and `value`.
+
 ### `ident`
 
 A name: `name`.
@@ -129,13 +147,22 @@ A name: `name`.
 
 An integer literal: `value`, its value in decimal, as a string.
 
+### `float-lit`
+
+A floating-point literal: `value`, its exact value as `go/constant` writes it (a
+fraction `p/q`, or an integer).
+
+### `imag-lit`
+
+An imaginary literal: `value`, the exact value of its imaginary part, as `float-lit`'s.
+
 ### `string-lit`
 
 A string literal: `value`, its value (valid UTF-8; see above).
 
 ### `char-lit`
 
-A rune literal: `value`, its code point.
+A rune literal: `value`, its value.
 
 ### `composite-lit`
 
@@ -162,9 +189,14 @@ A function literal: `type` (a `func-type`) and `body` (a `block`).
 `x[indices]`: an index expression, or a generic function or type instantiated with
 type arguments: `x` and `indices`.
 
+### `slice-expr`
+
+`x[low:high]`, or `x[low:high:max]` when `slice3` is set: `x`, `low`, `high`, `max` (each
+index may be `null`) and `slice3`.
+
 ### `type-assert`
 
-`x.(T)`: `x` and `type`.
+`x.(T)`: `x` and `type`, which is `null` for `x.(type)` in a type switch.
 
 ### `call`
 
@@ -177,7 +209,7 @@ calls are calls too.
 
 ### `unary`
 
-`op x`, `op` one of `-`, `+`, `!`, `^`, `&`: `op`, `x`.
+`op x`, `op` one of `-`, `+`, `!`, `^`, `&`, `<-` and `~`: `op`, `x`.
 
 ### `binary`
 
@@ -209,7 +241,11 @@ An expression statement: `x`.
 
 ### `branch`
 
-`break` or `continue` without a label: `tok`.
+`break`, `continue`, `goto` or `fallthrough`: `tok` and `label` (`""` for none).
+
+### `labeled`
+
+`label: stmt`: `label`, `stmt`.
 
 ### `if`
 
@@ -221,6 +257,17 @@ An expression statement: `x`.
 An expression switch: `init`, `tag` (`null` for `switch {`), `clauses`, each
 `{"list", "body"}`, an empty `list` being `default:`.
 
+### `type-switch`
+
+`switch init; assign { clauses }`: `init`, `assign` (an `assign` or `expr-stmt` whose
+expression is a `type-assert` with a `null` type) and `clauses`, as `switch`'s, their
+lists holding types.
+
+### `select`
+
+`select { clauses }`: `clauses`, each `{"comm", "body"}`, `comm` being the send or
+receive statement, or `null` for `default:`.
+
 ### `for`
 
 `for init; cond; post { body }`: `init`, `cond`, `post` (each may be `null`) and `body`.
@@ -230,30 +277,25 @@ An expression switch: `init`, `tag` (`null` for `switch {`), `clauses`, each
 `for key, value tok range x { body }`: `key`, `value` (each may be `null`), `tok` (`:=`,
 `=` or `""`), `x`, `body`.
 
+### `send`
+
+`ch <- value`: `chan`, `value`.
+
+### `go`
+
+`go call`: `call`.
+
+### `defer`
+
+`defer call`: `call`.
+
 ### `empty`
 
 The empty statement; no fields.
 
-## Unsupported constructs
+## Unrepresentable names
 
-| Name | Construct |
+| Name | Node |
 |---|---|
-| `float-literal` | a floating-point literal |
-| `imag-literal` | an imaginary literal |
-| `slice-expr` | `a[i:j]` |
-| `array-type` | `[n]T` and `[]T` |
-| `map-type` | `map[K]V` |
-| `chan-type` | `chan T` |
-| `tilde` | `~T` in a constraint |
-| `invalid-utf8-string` | a string literal whose value is not valid UTF-8 |
-| `labeled-stmt` | a labeled statement |
-| `labeled-branch` | `break L`, `continue L` |
-| `goto` | `goto` |
-| `fallthrough` | `fallthrough` |
-| `send` | `ch <- v` |
-| `receive` | `<-ch` |
-| `go` | a `go` statement |
-| `defer` | a `defer` statement |
-| `select` | a `select` statement |
-| `type-switch` | a type switch |
-| `bad-node` | a node `go/ast` marks bad, or a literal that does not read |
+| `invalid-utf8` | a string literal, or a struct type with a tag, whose value is not valid UTF-8 |
+| `bad-node` | a node `go/parser` marks bad, or a method with no receiver or two, which `go/parser` accepts and no Go type checker does |
