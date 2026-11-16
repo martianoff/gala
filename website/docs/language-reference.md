@@ -1459,12 +1459,14 @@ too.
 
 **A lambda** passed where a function with several results is expected — a Go
 callback such as `func() (T, error)`, or a parameter of that function type —
-works the same way: its value is spread over the results. An expression body
-that is a Go call with those results, of a lambda (`=> strconv.Atoi(s)`) or a
-function (`= strconv.Atoi(s)`), returns them as they are; a block body's value
-is always spread, so a failure gives Go the zero value. A placeholder lambda
-(`strconv.Atoi(_)`) is an expression body. With no parameters, the lambda can be written as
-its bare body: `sync.OnceValues(strconv.Atoi(s))`. A
+works the same way: its value is spread over the results, so a failure gives
+Go the zero value with the error. The one exception is an expression body
+that is a single Go call with those results, of a lambda
+(`=> strconv.Atoi(s)`), a placeholder lambda (`strconv.Atoi(_)`) or a
+function (`= strconv.Atoi(s)`): it returns the call's results as they are.
+A block body is always spread, and so is an if or match that chooses between
+two Go calls. With no parameters, the lambda can be written as its bare body:
+`sync.OnceValues(strconv.Atoi(s))`. A
 generic Go function takes its type arguments from the lambda's results:
 
 ```gala

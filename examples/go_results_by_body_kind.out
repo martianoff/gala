@@ -1,7 +1,8 @@
-block function: 0, failed: true
-expression function: 9223372036854775807, failed: true
-block lambda: 0, failed: true
-expression lambda: 9223372036854775807, failed: true
-Ptr block lambda: 0, failed: true
-Ptr expression lambda: 9223372036854775807, failed: true
-expression lambda, success: 42, failed: false
+block function: failed, zero value: true
+expression function: failed, zero value: false
+if-expression function: failed, zero value: true
+block lambda: failed, zero value: true
+expression lambda: failed, zero value: false
+Ptr block lambda: failed, zero value: true
+Ptr expression lambda: failed, zero value: false
+expression lambda, success: 42

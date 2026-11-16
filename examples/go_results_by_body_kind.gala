@@ -4,11 +4,12 @@ import "strconv"
 
 // A function or lambda that Go calls with `(int, error)` results returns
 // them by what its body is:
-//   - a block body gives one GALA value, a Try, that is spread over the
-//     results: on a failure Go receives the zero value with the error;
-//   - an expression body that is a Go call with those results returns the
-//     call's results as they are (strconv.Atoi returns the largest int with
-//     its range error).
+//   - an expression body that is a single Go call with those results returns
+//     the call's results as they are (strconv.Atoi returns the largest int,
+//     not zero, with its range error);
+//   - any other body, a block body or an if choosing between Go calls among
+//     them, gives one GALA value, a Try, that is spread over the results: on
+//     a failure Go receives the zero value with the error.
 // A lambda's Ptr parameter, which adds a nil check to its body, changes
 // neither.
 
@@ -20,7 +21,11 @@ func parseBlock(s string) (int, error) {
 
 func parseExpr(s string) (int, error) = strconv.Atoi(s)
 
-func describe(n int, err error) string = s"$n, failed: ${err != nil}"
+func parseEither(s string, hex bool) (int, error) =
+    if (hex) strconv.Atoi("0x" + s) else strconv.Atoi(s)
+
+func describe(n int, err error) string =
+    if (err != nil) s"failed, zero value: ${n == 0}" else s"$n"
 
 func callText(f func(string) (int, error), s string) string {
     val n, err = f(s)
@@ -40,6 +45,8 @@ func main() {
     Println(s"block function: ${describe(b, bErr)}")
     val e, eErr = parseExpr(tooBig)
     Println(s"expression function: ${describe(e, eErr)}")
+    val i, iErr = parseEither(tooBig, false)
+    Println(s"if-expression function: ${describe(i, iErr)}")
 
     Println(s"block lambda: ${callText((s) => { strconv.Atoi(s) }, tooBig)}")
     Println(s"expression lambda: ${callText((s) => strconv.Atoi(s), tooBig)}")

@@ -115,12 +115,12 @@ func (t *galaASTTransformer) checkReservedName(name string, at srcNode) error {
 // the Go statement it lowers to sits on the line after the enclosing
 // directive, so Go reports a panic in it one GALA line late.
 //
-// The marker must sit directly above the statement holding the expression,
-// and the Go results rewrite (returnGoResults) reads the expression's own
-// lowering, so ordering is part of the contract:
-//   - The rewrite runs first and the marker is added to what it produced.
-//   - The nil checks of Ptr parameters (withPtrEntryChecks) go above the
-//     marker, after this call, for a function and a lambda alike.
+// The marker sits directly above the statement holding the expression, below
+// the nil checks of Ptr parameters (withPtrEntryChecks), which a function
+// gets after this call. A body whose value is spread over Go's results is
+// not marked here: returnGoResults takes the marker (and a lambda's checks)
+// and puts it right above the statement that holds the value, inside the
+// spread's thunk when there is one (see finishLambda and lowerFuncDecl).
 //
 // A zero e (a block lambda's expression) leaves body as it is.
 func (t *galaASTTransformer) exprFuncBody(e exprSrc, body *ast.BlockStmt) *ast.BlockStmt {

@@ -1101,10 +1101,13 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		body = exprBody
 	}
 	if goResults != nil {
-		body = t.returnGoResults(body, d.expr.ok(), funcType.Results.List[0].Type, goResults)
+		// The rewrite puts the expression's marker right above the
+		// statement holding its value.
+		body = t.returnGoResults(body, d.expr.ok(), funcType.Results.List[0].Type, goResults, t.exprMark(markedExpr))
 		funcType.Results = goResults
+	} else {
+		body = t.exprFuncBody(markedExpr, body)
 	}
-	body = t.exprFuncBody(markedExpr, body)
 	// Go code can call an exported function or method with a nil pointer.
 	// A method lowered to a function takes its receiver as the first
 	// parameter, which is checked as the receiver.

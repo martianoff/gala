@@ -1,7 +1,6 @@
 package transformer_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -324,9 +323,18 @@ func TestGoCallbackReturnsGoResults(t *testing.T) {
 	})
 }
 
-// goResultsSpread is the start of a body whose Try is spread over Go's
-// results: on a failure Go gets the zero value with the error.
-const goResultsSpread = "var _goResult std.Try[int] = func() std.Try[int] {"
+// assertGoResultsLowering checks how out gives Go a body's `(int, error)`
+// results: spread, its Try declared and spread (a failure gives the zero
+// value), or not, the Go call `return strconv.Atoi(` passed through.
+func assertGoResultsLowering(t *testing.T, out string, spread bool) {
+	t.Helper()
+	if spread {
+		assert.Contains(t, out, "var _goResult std.Try[int] = ", "generated:\n%s", out)
+		return
+	}
+	assert.NotContains(t, out, "_goResult", "generated:\n%s", out)
+	assert.Contains(t, out, "return strconv.Atoi(", "generated:\n%s", out)
+}
 
 // TestGoResultsByBodyKind covers how a body lowered to `(int, error)` gives
 // Go its results: a block body always spreads its Try, an expression body
@@ -349,16 +357,15 @@ func TestGoResultsByBodyKind(t *testing.T) {
 		{name: "an expression lambda with a Ptr parameter", body: ptrSlot + "func five() Try[int] {\n    var in = In(\"5\")\n    each((p Ptr[In]) => strconv.Atoi(p.text), &in)\n}"},
 	}
 	for _, path := range []string{"go_results_return_test.gala", ""} {
+		shown := path
+		if shown == "" {
+			shown = "<none>"
+		}
 		for _, tc := range cases {
-			t.Run(tc.name+", file path "+path, func(t *testing.T) {
+			t.Run(tc.name+", file path "+shown, func(t *testing.T) {
 				out, err := trans.Transpile(goResultsReturnProgram(tc.body), path)
 				require.NoError(t, err)
-				if tc.spread {
-					assert.Contains(t, out, goResultsSpread, "generated:\n%s", out)
-				} else {
-					assert.NotContains(t, out, "_goResult", "generated:\n%s", out)
-					assert.Contains(t, out, "return strconv.Atoi(", "generated:\n%s", out)
-				}
+				assertGoResultsLowering(t, out, tc.spread)
 			})
 		}
 	}
@@ -378,19 +385,13 @@ func TestGoResultsByBodyKindInForeignDefault(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			require.NoError(t, os.MkdirAll(filepath.Join(root, "lib"), 0755))
-			require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/defaults\n\ngala dev\n"), 0644))
-			require.NoError(t, os.WriteFile(filepath.Join(root, "lib", "own.gala"),
-				[]byte("package lib\n\nimport \"strconv\"\n\nfunc RunWith(f func() (int, error) = "+tc.lambda+") int = f().GetOrElse(-1)\n"), 0644))
+			root := writeGalaModule(t, map[string]string{
+				"gala.mod":     "module example.com/defaults\n\ngala dev\n",
+				"lib/own.gala": "package lib\n\nimport \"strconv\"\n\nfunc RunWith(f func() (int, error) = " + tc.lambda + ") int = f().GetOrElse(-1)\n",
+			})
 			out, err := transpileCrossPkgFile(t, root, "package lib\n\nimport \"strconv\"\n\nfunc Use() int = RunWith() + strconv.IntSize\n", filepath.Join(root, "lib", "use.gala"))
 			require.NoError(t, err)
-			if tc.spread {
-				assert.Contains(t, out, goResultsSpread, "generated:\n%s", out)
-			} else {
-				assert.NotContains(t, out, "_goResult", "generated:\n%s", out)
-				assert.Contains(t, out, "return strconv.Atoi(\"5\")", "generated:\n%s", out)
-			}
+			assertGoResultsLowering(t, out, tc.spread)
 		})
 	}
 }
