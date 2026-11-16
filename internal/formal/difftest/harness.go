@@ -165,7 +165,7 @@ func realRun(tb testing.TB, p Program, withGo bool) (Run, string, *GoProgram) {
 	if err != nil {
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	return run, out.Stderr, &GoProgram{Main: res.Go, Packages: pkgs}
+	return run, out.Stderr, &GoProgram{Main: res.Go, Packages: pkgs, GoRoot: progrun.GoRoot(tb)}
 }
 
 // firstLine is the first line of a diagnostic, past the "# package" header

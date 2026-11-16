@@ -14,12 +14,15 @@
 # and at what fmt prints as an error (unsupported_printf_*).
 # Their files are written by hand.
 #
-# Run from formal/tests/gocore with GOCOREJSON naming the exporter binary.
+# Run from formal/tests/gocore with GOCOREJSON naming the exporter binary. The
+# standard library's runnable files (gocoreexport.RunnableStdlib) come from the
+# toolchain `go` picks here, the one MODULE.bazel pins.
 set -euo pipefail
 : "${GOCOREJSON:?set GOCOREJSON to the gocorejson binary}"
+goroot="$(go env GOROOT)"
 for f in src/*.go; do
   b="$(basename "$f" .go)"
-  "$GOCOREJSON" "$f" > "$b.json"
+  "$GOCOREJSON" -goroot="$goroot" "$f" > "$b.json"
   case "$b" in fuel|unsupported_*) continue ;; esac
   set +e
   go run "$f" > "$b.out" 2> "$b.goerr"

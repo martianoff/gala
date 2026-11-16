@@ -201,6 +201,10 @@ func goPanicText(stderr string) string {
 type GoProgram struct {
 	Main     string
 	Packages map[string]map[string]string
+	// GoRoot is the GOROOT of the toolchain that built it, whose source of the
+	// standard library's runnable files (gocoreexport.RunnableStdlib) GoCore runs
+	// too; "" for none.
+	GoRoot string
 }
 
 // exportGoCore writes prog's GoCore JSON document under dir, named for id,
@@ -220,6 +224,12 @@ func exportGoCore(dir, id string, prog GoProgram) (string, error) {
 			ps.Files = append(ps.Files, gocoreexport.Source{Name: name, Text: text})
 		}
 		pkgs = append(pkgs, ps)
+	}
+	if prog.GoRoot != "" {
+		var err error
+		if pkgs, err = gocoreexport.AddStdlib(prog.GoRoot, pkgs); err != nil {
+			return "", err
+		}
 	}
 	doc, err := gocoreexport.Export(pkgs)
 	if err != nil {

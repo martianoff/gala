@@ -1,6 +1,7 @@
 package gocoreexport_test
 
 import (
+	"encoding/json"
 	"os"
 	"path"
 	"strings"
@@ -43,7 +44,28 @@ func TestGoCoreFixturesFresh(t *testing.T) {
 		require.True(t, ok, "%s has no document", name)
 		want, err := os.ReadFile(docPath)
 		require.NoError(t, err)
-		require.Equal(t, strings.ReplaceAll(string(want), "\r\n", "\n"), string(got),
+		// The standard library's runnable files, which regen.sh adds from the
+		// pinned toolchain's GOROOT (gocoreexport.AddStdlib), are not read here:
+		// the document is compared without them.
+		require.Equal(t, withoutStdlib(t, want), withoutStdlib(t, got),
 			"%s.json is stale: run formal/tests/gocore/regen.sh", name)
 	}
+}
+
+// withoutStdlib is a GoCore document, as JSON values, without the packages of
+// gocoreexport.RunnableStdlib.
+func withoutStdlib(t *testing.T, doc []byte) map[string]any {
+	t.Helper()
+	var v map[string]any
+	require.NoError(t, json.Unmarshal(doc, &v))
+	pkgs, _ := v["packages"].([]any)
+	kept := []any{}
+	for _, p := range pkgs {
+		if m, ok := p.(map[string]any); ok && gocoreexport.RunnableStdlib[m["path"].(string)] != nil {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	v["packages"] = kept
+	return v
 }

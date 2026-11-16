@@ -405,7 +405,9 @@ column lists what each milestone's claim rests on beyond them.
     - Each construct cites the Go spec section it follows.
     - Its evaluator is total, by structural fuel.
     - Only `fmt` and the hand-written, reflective standard-library functions it names
-      are models.
+      are models. A few small, import-free files of Go's standard library (`errors.go`,
+      `unicode/utf8/utf8.go`) are not modelled at all: their own source, from the pinned
+      toolchain, runs with the program (`gocoreexport.RunnableStdlib`).
     - Slices, arrays and variadic calls are Go's: slices share their underlying array,
       index and slice expressions panic with Go's text. What the spec leaves to the
       implementation, the capacity a growing `append` gives, is gc's, in a module of
@@ -419,7 +421,7 @@ column lists what each milestone's claim rests on beyond them.
     `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
     [COVERAGE.md](../formal/COVERAGE.md#differential-testing).
   - **What remains:** widening GoCore where the corpus stops it (float operations,
-    `utf8.RuneCountInString`, maps, generic functions used as values), each a construct the run names.
+    maps, generic functions used as values), each a construct the run names.
   - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
     `match` lowering targets, with abstract sealed values and pattern primitives, and
     this one, with the flat layout. M5's reference lowering targets this one, and M3's
