@@ -25,9 +25,8 @@
     the left one does not decide the result.
   * T3c, a call's arguments: `bindArgs_acts`. The written arguments run in the order
     written, named ones included, then the left-out parameters' defaults in parameter
-    order (`bindDefaults_acts`). `argSlots_eq` says which parameter each argument goes
-    to, and `bindArgs_given_acts` that, when the call gives every parameter, the values
-    are passed in parameter order.
+    order (`bindDefaults_acts`). Parameter `j` gets the value of the argument whose slot is
+    `j` (`defaultStep`), and `argSlots_eq` says which slot each argument has.
   * T3d, compound assignment: `eval_compound_acts`, `compound_eff`. `t op= x` reads `t`
     before `x` runs.
   * T3e, sub-patterns: `matchPats_append`, `matchPats_stops`. In S1 a pattern has no
@@ -116,8 +115,10 @@ def Acts (x : M α) (p : Eff α) : Prop :=
 
 /-! ## `Acts` of the building blocks of `M` -/
 
-theorem acts_bind {x : M α} {f : α → M β} {p : Eff α} {q : α → Eff β}
-    (hx : Acts x p) (hf : ∀ a, Acts (f a) (q a)) : Acts (x >>= f) (p.bind q) := by
+/-- `x >>= f` does `p.bind q`, needing `f a` only for the values `x` can give. -/
+theorem acts_bind_of {x : M α} {f : α → M β} {p : Eff α} {q : α → Eff β}
+    (hx : Acts x p) (hf : ∀ c a, p.res c = .ok a → Acts (f a) (q a)) :
+    Acts (x >>= f) (p.bind q) := by
   intro s hs
   rw [run_bind_eq]
   simp only [Eff.bind] at hs ⊢
@@ -130,10 +131,14 @@ theorem acts_bind {x : M α} {f : α → M β} {p : Eff α} {q : α → Eff β}
     simp only at hs
     rw [hx s (by omega), hr]
     simp only
-    rw [hf a _ (by simp only; omega)]
+    rw [hf _ a hr _ (by simp only; omega)]
     simp only
     congr 2
     omega
+
+theorem acts_bind {x : M α} {f : α → M β} {p : Eff α} {q : α → Eff β}
+    (hx : Acts x p) (hf : ∀ a, Acts (f a) (q a)) : Acts (x >>= f) (p.bind q) :=
+  acts_bind_of hx fun _ a _ => hf a
 
 theorem acts_congr {x : M α} {p q : Eff α} (h : Acts x p) (he : p = q) : Acts x q := he ▸ h
 
@@ -263,15 +268,20 @@ def compoundOp (op : String) : String :=
   match op with
   | "+=" => "+" | "-=" => "-" | "*=" => "*" | "/=" => "/" | o => o
 
+/-- `t op= x` given what `x` does: one step, read `t`, then `x`, then the operator, then
+    store into `t`. -/
+def compoundEff (ds : Decls) (op : String) (t : Expr) (px : Eff Val) : Eff Val :=
+  Eff.tick.bind fun _ => (Eff.ofH (readPlace ds t)).bind fun cur => px.bind fun v =>
+    (Eff.ofH (binop (compoundOp op) cur v)).bind fun w =>
+      (Eff.ofH (assignTo ds t w)).bind fun _ => Eff.pure .unit
+
 /-- **T3d, compound assignment.** `t op= x` reads `t` first, from the state before `x`
     runs, then runs `x`, then stores the result. So when `x` itself assigns `t` (through a
     function, say), the result is computed from `t`'s value before that assignment. -/
 theorem eval_compound_acts (ds : Decls) (d : Nat) (op : String) (t x : Expr) (px : Eff Val)
     (hop : op ≠ "=") (hx : Acts (eval ds d x) px) :
-    Acts (eval ds (d + 1) (.assign op [t] [x]))
-      (Eff.tick.bind fun _ => (Eff.ofH (readPlace ds t)).bind fun cur => px.bind fun v =>
-        (Eff.ofH (binop (compoundOp op) cur v)).bind fun w =>
-          (Eff.ofH (assignTo ds t w)).bind fun _ => Eff.pure .unit) := by
+    Acts (eval ds (d + 1) (.assign op [t] [x])) (compoundEff ds op t px) := by
+  unfold compoundEff
   eval_case
   all_goals unfold compoundOp
   all_goals first
@@ -286,13 +296,10 @@ theorem compound_eff (ds : Decls) (op : String) (t : Expr) (px : Eff Val) (c : C
     (x₀ v w : Val)
     (h0 : (readPlace ds t).run.run c = (.ok x₀, c)) (hv : px.res c = .ok v)
     (hw : (binop (compoundOp op) x₀ v).run.run (px.eff c) = (.ok w, px.eff c)) :
-    let E := Eff.tick.bind fun _ => (Eff.ofH (readPlace ds t)).bind fun cur => px.bind fun v =>
-      (Eff.ofH (binop (compoundOp op) cur v)).bind fun w =>
-        (Eff.ofH (assignTo ds t w)).bind fun _ => Eff.pure Val.unit
-    E.eff c = ((assignTo ds t w).run.run (px.eff c)).2 ∧
-      E.res c = (((assignTo ds t w).run.run (px.eff c)).1.map fun _ => Val.unit) := by
-  intro E
-  simp only [E, Eff.bind, Eff.tick, Eff.ofH, Eff.pure, id, h0, hv, hw]
+    (compoundEff ds op t px).eff c = ((assignTo ds t w).run.run (px.eff c)).2 ∧
+      (compoundEff ds op t px).res c =
+        (((assignTo ds t w).run.run (px.eff c)).1.map fun _ => Val.unit) := by
+  simp only [compoundEff, Eff.bind, Eff.tick, Eff.ofH, Eff.pure, id, h0, hv, hw]
   constructor
   · split <;> rfl
   · split <;> rename_i h <;> simp [h, Except.map]
@@ -398,12 +405,7 @@ macro "ro_step" : tactic => `(tactic| (first
 mutual
 theorem matchPat_readOnly (ds : Decls) (locals globals : Env) :
     ∀ (p : Pat) (v : Val), ReadOnly (matchPat ds locals globals p v)
-  | .tuple ps, v => by
-    have ihPs := fun vs => matchPats_readOnly ds locals globals ps vs
-    rw [matchPat.eq_def ds locals globals _ _]
-    dsimp only
-    repeat' ro_step
-  | .extract c ps, v => by
+  | .tuple ps, _ | .extract _ ps, _ => by
     have ihPs := fun vs => matchPats_readOnly ds locals globals ps vs
     rw [matchPat.eq_def ds locals globals _ _]
     dsimp only
@@ -567,27 +569,6 @@ theorem evalCases_guard_true (ds : Decls) (d : Nat) (v : Val) (p : Pat) (ge b : 
 
 /-! ## T3c: named arguments -/
 
-/-- `acts_bind`, needing `f a` only for the values `x` can give. -/
-theorem acts_bind_of {x : M α} {f : α → M β} {p : Eff α} {q : α → Eff β}
-    (hx : Acts x p) (hf : ∀ c a, p.res c = .ok a → Acts (f a) (q a)) :
-    Acts (x >>= f) (p.bind q) := by
-  intro s hs
-  rw [run_bind_eq]
-  simp only [Eff.bind] at hs ⊢
-  cases hr : p.res s.toCore with
-  | error e =>
-    rw [hr] at hs
-    rw [hx s hs, hr]
-  | ok a =>
-    rw [hr] at hs
-    simp only at hs
-    rw [hx s (by omega), hr]
-    simp only
-    rw [hf _ a hr _ (by simp only; omega)]
-    simp only
-    congr 2
-    omega
-
 /-- An `H` step that gives `a` and changes nothing does what `Eff.pure a` does. -/
 theorem acts_liftM_pure {x : H α} {a : α} (h : ∀ c, x.run.run c = (.ok a, c)) :
     Acts (liftM x : M α) (Eff.pure a) := by
@@ -618,67 +599,6 @@ theorem seq_length : ∀ (ps : List (Eff α)) (c : Core) (vs : List α),
         exact seq_length ps _ _ (by assumption)
       · simp at h
     · simp at h
-
-
-theorem foldl_append_map (xs : List γ) (f : γ → β) (acc : List β) :
-    xs.foldl (fun vals a => vals ++ [f a]) acc = acc ++ xs.map f := by
-  induction xs generalizing acc with
-  | nil => simp
-  | cons a as ih => simp [ih]
-
-/-- When the call gives every parameter, the defaults phase only puts the given values in
-    parameter order. -/
-theorem bindDefaults_given (ds : Decls) (d : Nat) (names : List String) (tys : List (Option Ty))
-    (dflts : List (Option Expr)) (fs : Bool) (given : List (Nat × Val))
-    (h : ∀ j, j < names.length → (given.lookup j).isSome) :
-    Acts (bindDefaults ds d names tys dflts fs given)
-      (Eff.pure (names.zipIdx.map fun (_, j) => (given.lookup j).getD .unit)) := by
-  rw [bindDefaults.eq_1]
-  refine acts_congr (acts_bind (acts_forIn_fold _ _
-    (fun vals (nj : String × Nat) => vals ++ [(given.lookup nj.2).getD .unit]) ?_)
-    fun r => acts_pure r) ?_
-  · intro nj vals hm
-    have hj : nj.2 < names.length := by
-      obtain ⟨n, j⟩ := nj
-      simpa using (List.mem_zipIdx hm).2.1
-    obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp (h _ hj)
-    obtain ⟨n, j⟩ := nj
-    simp only at hv ⊢
-    simp only [hv, Option.getD_some]
-    exact acts_pure _
-  · simp only [Eff.bind, Eff.pure, foldl_append_map, List.nil_append]
-    rfl
-
-theorem argSlots_go_length (names : List String) :
-    ∀ (as : List Expr) (named : Bool) (acc slots : List Nat),
-      argSlots.go names as named acc = .ok slots → slots.length = acc.length + as.length
-  | [], _, acc, slots, h => by
-    simp only [argSlots.go] at h
-    split at h
-    · simp at h
-    · simp at h; subst h; simp
-  | .named n _ :: as, _, acc, slots, h => by
-    simp only [argSlots.go] at h
-    split at h
-    · rw [argSlots_go_length names as _ _ _ h]; simp; omega
-    · simp at h
-  | a :: as, named, acc, slots, h => by
-    unfold argSlots.go at h
-    split at h
-    · simp_all
-    · rename_i heq
-      injection heq with ha has
-      subst ha; subst has
-      split at h
-      · rw [argSlots_go_length names _ _ _ _ h]; simp; omega
-      · simp at h
-    · rename_i heq
-      injection heq with ha has
-      subst ha; subst has
-      split at h
-      · simp at h
-      · rw [argSlots_go_length names _ _ _ _ h]; simp; omega
-
 /-- The parameter argument number `i` goes to: its position if positional, else the
     parameter it names. -/
 def slotOf (names : List String) : Expr × Nat → Nat
@@ -732,7 +652,8 @@ theorem argSlots_eq (names : List String) (args : List Expr) (slots : List Nat)
 
 theorem argSlots_length (names : List String) (args : List Expr) (slots : List Nat)
     (h : argSlots names args = .ok slots) : slots.length = args.length := by
-  simpa using argSlots_go_length names args false [] slots h
+  rw [argSlots_eq names args slots h]
+  simp
 
 theorem lookup_zip_isSome : ∀ (l : List Nat) (vs : List Val) (j : Nat), j ∈ l →
     l.length = vs.length → ((l.zip vs).lookup j).isSome
@@ -745,49 +666,6 @@ theorem lookup_zip_isSome : ∀ (l : List Nat) (vs : List Val) (j : Nat), j ∈ 
       exact lookup_zip_isSome l vs j (by simpa [hjk] using hm) (by simpa using hl)
   | [], _, _, hm, _ => by simp at hm
   | _ :: _, [], _, _, hl => by simp at hl
-
-/-- **T3c, named arguments.** A call's arguments run in the order they are written,
-    named ones included, and their values are passed in parameter order. Given: the
-    arguments are well formed (`argSlots` gives each its parameter, `slots`), the call gives
-    every parameter, each by-name check passes, and each argument's value expression does
-    `ps[i]`. Then binding the arguments does `Eff.seq ps`, in written order, and passes
-    parameter `j` the value of the argument whose slot is `j`. -/
-theorem bindArgs_given_acts (ds : Decls) (d : Nat) (names : List String) (tys : List (Option Ty))
-    (dflts : List (Option Expr)) (fs : Bool) (args : List Expr) (slots : List Nat)
-    (ps : List (Eff Val))
-    (hs : argSlots names args = .ok slots)
-    (hall : ∀ j, j < names.length → j ∈ slots)
-    (hbn : ∀ a j, (a, j) ∈ args.zip slots → ∀ (locals : Env) (c : Core),
-      (byNameOk ds locals (tys.getD j none) (unnamed a)).run.run c = (.ok true, c))
-    (hl : args.length = ps.length)
-    (hp : ∀ a p, (a, p) ∈ args.zip ps → Acts (eval ds d (unnamed a)) p) :
-    Acts (bindArgs ds d names tys dflts fs args)
-      ((Eff.seq ps).bind fun vs =>
-        Eff.pure (names.zipIdx.map fun (_, j) => ((slots.zip vs).lookup j).getD .unit)) := by
-  have hsl := argSlots_length names args slots hs
-  rw [bindArgs.eq_1]
-  simp only [hs, pure_bind]
-  refine acts_congr (acts_bind (acts_liftM getCore) fun c0 =>
-    acts_bind (acts_forIn_fold _ _ (fun _ _ => ⟨⟩) ?_) fun _ =>
-    acts_bind_of (evalList_acts ds d _ ps (by simpa using hl) ?_) fun c vs hvs =>
-    bindDefaults_given ds d names tys dflts fs _ fun j hj =>
-      lookup_zip_isSome slots vs j (hall j hj) (by rw [seq_length ps c vs hvs]; omega)) ?_
-  · intro aj _ hm
-    obtain ⟨a, j⟩ := aj
-    refine acts_congr (acts_bind_of (q := fun _ => Eff.pure (.yield ⟨⟩))
-      (acts_liftM_pure (hbn a j hm c0.locals)) fun c b hb => ?_) ?_
-    · have : b = true := by simpa [Eff.pure] using hb.symm
-      subst this
-      exact acts_pure _
-    · rfl
-  · intro e p hm
-    rw [List.zip_map_left] at hm
-    obtain ⟨⟨a, p'⟩, hm', heq⟩ := List.mem_map.mp hm
-    simp only [Prod.map, id, Prod.mk.injEq] at heq
-    obtain ⟨rfl, rfl⟩ := heq
-    exact hp _ _ hm'
-  · simp only [Eff.bind, Eff.pure, Eff.ofH, run_getCore, Nat.zero_add]
-    congr
 
 /-- `q` over `xs` in order, threading an accumulator: each step from the state the one
     before left; the first `Stop` ends it. -/
@@ -872,9 +750,7 @@ theorem bindDefaults_acts (ds : Decls) (d : Nat) (names : List String) (tys : Li
 
 theorem lookup_zip_none (l : List Nat) (vs : List Val) (j : Nat) (hl : l.length = vs.length)
     (h : (l.zip vs).lookup j = none) : j ∉ l := fun hm => by
-  have := lookup_zip_isSome l vs j hm hl
-  rw [h] at this
-  exact absurd this (by simp)
+  simpa [h] using lookup_zip_isSome l vs j hm hl
 
 /-- **T3c, a call's arguments.** The arguments a call writes run first, in the order
     written (named ones included), then the defaults of the parameters it leaves out, in

@@ -124,10 +124,7 @@ theorem bindArgs_acts : ∀ (ds : Decls) (d : Nat) (names : List String) (tys : 
 open Gala.Spec in
 theorem eval_compound_acts : ∀ (ds : Decls) (d : Nat) (op : String) (t x : Expr) (px : Eff Val),
     op ≠ "=" → Acts (eval ds d x) px →
-    Acts (eval ds (d + 1) (.assign op [t] [x]))
-      (Eff.tick.bind fun _ => (Eff.ofH (readPlace ds t)).bind fun cur => px.bind fun v =>
-        (Eff.ofH (binop (compoundOp op) cur v)).bind fun w =>
-          (Eff.ofH (assignTo ds t w)).bind fun _ => Eff.pure .unit) :=
+    Acts (eval ds (d + 1) (.assign op [t] [x])) (compoundEff ds op t px) :=
   Gala.Spec.eval_compound_acts
 
 open Gala.Spec in
@@ -135,11 +132,9 @@ theorem compound_eff : ∀ (ds : Decls) (op : String) (t : Expr) (px : Eff Val) 
     (x₀ v w : Val),
     (readPlace ds t).run.run c = (.ok x₀, c) → px.res c = .ok v →
     (binop (compoundOp op) x₀ v).run.run (px.eff c) = (.ok w, px.eff c) →
-    let E := Eff.tick.bind fun _ => (Eff.ofH (readPlace ds t)).bind fun cur => px.bind fun v =>
-      (Eff.ofH (binop (compoundOp op) cur v)).bind fun w =>
-        (Eff.ofH (assignTo ds t w)).bind fun _ => Eff.pure Val.unit
-    E.eff c = ((assignTo ds t w).run.run (px.eff c)).2 ∧
-      E.res c = (((assignTo ds t w).run.run (px.eff c)).1.map fun _ => Val.unit) :=
+    (compoundEff ds op t px).eff c = ((assignTo ds t w).run.run (px.eff c)).2 ∧
+      (compoundEff ds op t px).res c =
+        (((assignTo ds t w).run.run (px.eff c)).1.map fun _ => Val.unit) :=
   Gala.Spec.compound_eff
 
 open Gala.Spec in
