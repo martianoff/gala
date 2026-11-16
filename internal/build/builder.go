@@ -1624,9 +1624,10 @@ func (b *Builder) RunTests(opts TestOptions) (err error) {
 		if opts.JUnitPath == "" {
 			return
 		}
-		// A run that failed before any package reported (a GALA compile
-		// error, say) is still a failed build in the report.
-		if err != nil && report.Empty() {
+		// A run that failed without a package failing (a GALA compile
+		// error, or a `go` command that could not run) is still a failed
+		// build in the report.
+		if err != nil && !report.hasFailure() {
 			report.AddBuildFailure(b.moduleLabel(), err.Error())
 		}
 		if werr := report.WriteJUnitFile(opts.JUnitPath); werr != nil {
@@ -1880,6 +1881,9 @@ func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr,
 	execCmd.Stdout = in
 	execCmd.Stderr = in
 	execCmd.Dir = b.workspace.ProjectDir
+	// A process the tests started in the background inherits the output
+	// pipe; once the binary itself exits, stop waiting for it to close.
+	execCmd.WaitDelay = time.Second
 	start := time.Now()
 	if err := execCmd.Start(); err != nil {
 		in.Close()
@@ -1895,7 +1899,7 @@ func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr,
 	printer := &testEventPrinter{stdout: os.Stdout, stderr: os.Stderr, stream: true}
 	consumeErr := consumeTestEvents(events, report, printer)
 	convErr := conv.Wait()
-	if err := <-exited; err != nil {
+	if err := <-exited; err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok {
 			return nil, fmt.Errorf("running test binary: %w", err)
@@ -1939,11 +1943,8 @@ func (b *Builder) runGoTest(verbose bool, pkgs []string, report *TestReport) err
 				fmt.Println("FAIL")
 			} else {
 				// `go test` failed before any package could report, on a
-				// module or package-loading error.
-				// "./gen/x" is the workspace package WorkspaceModule/gen/x.
-				for _, pkg := range pkgs {
-					report.AddBuildFailure(WorkspaceModule+strings.TrimPrefix(pkg, "."), stderr.String())
-				}
+				// module or package-loading error: one failure for the run.
+				report.AddBuildFailure(b.moduleLabel(), stderr.String())
 			}
 			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
 		}

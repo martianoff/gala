@@ -167,6 +167,29 @@ func TestTestReport_JUnit(t *testing.T) {
 			counts: [4]int{4, 3, 0, 0},
 		},
 		{
+			// GALA's framework prints a subtest's result before its parent
+			// goes on, so test2json files the parent's later lines under
+			// the subtest that already reported.
+			name: "what a parent logs after a subtest finished stays with the parent",
+			stream: eventStream(
+				`{"Action":"run",`+pkgMain+`,"Test":"TestP"}`,
+				`{"Action":"run",`+pkgMain+`,"Test":"TestP/a"}`,
+				`{"Action":"output",`+pkgMain+`,"Test":"TestP/a","Output":"--- PASS: TestP/a (0.000s)\n"}`,
+				`{"Action":"pass",`+pkgMain+`,"Test":"TestP/a","Elapsed":0}`,
+				`{"Action":"output",`+pkgMain+`,"Test":"TestP/a","Output":"    ERROR: bad total\n"}`,
+				`{"Action":"output",`+pkgMain+`,"Test":"TestP","Output":"--- FAIL: TestP (0.000s)\n"}`,
+				`{"Action":"output",`+pkgMain+`,"Test":"TestP","Output":"=== RESULTS ===\n"}`,
+				`{"Action":"fail",`+pkgMain+`,"Test":"TestP","Elapsed":0}`,
+				`{"Action":"fail",`+pkgMain+`,"Elapsed":0.1}`,
+			),
+			suite: []wantCase{
+				{name: "TestP", outcome: "fail", message: "bad total", body: "ERROR: bad total"},
+				{name: "TestP/a", outcome: "pass"},
+			},
+			counts: [4]int{2, 1, 0, 0},
+			sysOut: "=== RESULTS ===",
+		},
+		{
 			name: "parallel tests with interleaved events",
 			stream: eventStream(
 				`{"Action":"run",`+pkgMain+`,"Test":"TestA"}`,
@@ -323,6 +346,35 @@ Failures:
 
 2 passed, 4 failed, 1 skipped in 3 package(s)
 `, buf.String())
+}
+
+func TestTestReport_SummaryOfUnfinishedAndCrashedPackages(t *testing.T) {
+	report, _, _ := readReport(t, eventStream(
+		// Interrupted: the package never reported its own result.
+		`{"Action":"run","Package":"gala-build-workspace/gen/cut","Test":"TestSlow"}`,
+		// Failed outside its tests.
+		`{"Action":"output",`+pkgMain+`,"Output":"panic: init failed\n"}`,
+		`{"Action":"fail",`+pkgMain+`,"Elapsed":0.1}`,
+	), false)
+	var buf bytes.Buffer
+	report.WriteSummary(&buf)
+	assert.Contains(t, buf.String(), "FAIL  example.com/proj/cut  0 passed, 1 failed, 0 skipped\n")
+	assert.Contains(t, buf.String(), "  example.com/proj: [package failed]\n"+
+		"      the test binary failed outside of any test\n"+
+		"      panic: init failed\n")
+}
+
+func TestConsumeTestEvents_LongLine(t *testing.T) {
+	long := strings.Repeat("x", 200*1024)
+	report, _, _ := readReport(t, eventStream(
+		`{"Action":"run",`+pkgMain+`,"Test":"TestBig"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestBig","Output":"`+long+`\n"}`,
+		`{"Action":"pass",`+pkgMain+`,"Test":"TestBig","Elapsed":0}`,
+		`{"Action":"pass",`+pkgMain+`,"Elapsed":0.1}`,
+	), false)
+	doc := decodeJUnit(t, report)
+	require.Len(t, doc.Suites, 1)
+	assert.Equal(t, long+"\n", doc.Suites[0].TestCases[0].SystemOut)
 }
 
 func TestTestEventPrinter(t *testing.T) {

@@ -61,8 +61,31 @@ func runTest(cmd *cobra.Command, args []string) {
 		projectDir = args[0]
 	}
 
+	// The report path is relative to where gala was run, not to the project.
+	junitPath := testJUnit
+	if junitPath != "" {
+		var err error
+		if junitPath, err = filepath.Abs(junitPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	// A run that cannot start still writes its report, so CI never reads a
+	// stale one left by an earlier run.
+	failEarly := func(err error) {
+		if junitPath == "" {
+			return
+		}
+		report := build.NewTestReport(nil)
+		report.AddBuildFailure(projectDir, err.Error())
+		if werr := report.WriteJUnitFile(junitPath); werr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", werr)
+		}
+	}
+
 	absProjectDir, err := findProjectRoot(projectDir)
 	if err != nil {
+		failEarly(err)
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		fmt.Fprintln(os.Stderr, "Run 'gala mod init' to create one.")
 		os.Exit(1)
@@ -71,17 +94,9 @@ func runTest(cmd *cobra.Command, args []string) {
 	// Create builder
 	builder, err := build.NewBuilderForMode(absProjectDir, Version, testVerbose, build.ModeTest)
 	if err != nil {
+		failEarly(err)
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
-	}
-
-	// The report path is relative to where gala was run, not to the project.
-	junitPath := testJUnit
-	if junitPath != "" {
-		if junitPath, err = filepath.Abs(junitPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
 	}
 
 	// Run tests

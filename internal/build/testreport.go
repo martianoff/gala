@@ -54,6 +54,8 @@ type packageResult struct {
 	byName  map[string]*testResult
 	// buildFailure is the compiler output of a package that did not build.
 	buildFailure *string
+	// failedParents caches hasFailedSubtest.
+	failedParents map[string]bool
 }
 
 type testResult struct {
@@ -133,27 +135,45 @@ func (r *TestReport) Add(ev TestEvent) {
 	switch ev.Action {
 	case "output":
 		// test2json attributes everything up to the next test's start to
-		// the last test, so the runner's closing lines would land in it.
-		// They belong to the package once the test has reported.
-		if t.reported {
+		// the last test, even once it has reported: what a parent logs after
+		// a subtest finished, and the runner's closing lines. They belong to
+		// the closest test still running, or to the package.
+		owner := p.runningOwner(t)
+		if owner == nil {
 			p.output.WriteString(ev.Output)
 			return
 		}
 		// Only a line starting "=== " or "--- " can be framing.
 		line := strings.TrimLeft(ev.Output, " \t")
 		if !strings.HasPrefix(line, "=== ") && !strings.HasPrefix(line, "--- ") {
-			t.output.WriteString(ev.Output)
+			owner.output.WriteString(ev.Output)
 			return
 		}
-		if m := reportLine.FindStringSubmatch(line); m != nil && m[2] == ev.Test {
-			t.reported = true
+		if m := reportLine.FindStringSubmatch(line); m != nil && m[2] == owner.name {
+			owner.reported = true
 		}
 		if !framingLine.MatchString(line) {
-			t.output.WriteString(ev.Output)
+			owner.output.WriteString(ev.Output)
 		}
 	case "pass", "fail", "skip":
 		t.action, t.elapsed = ev.Action, ev.Elapsed
 	}
+}
+
+// runningOwner returns t, or when t has already reported, its closest
+// ancestor that has not; nil when there is none.
+func (p *packageResult) runningOwner(t *testResult) *testResult {
+	for name := t.name; t.reported; {
+		i := strings.LastIndex(name, "/")
+		if i < 0 {
+			return nil
+		}
+		name = name[:i]
+		if parent, ok := p.byName[name]; ok {
+			t = parent
+		}
+	}
+	return t
 }
 
 // finishFailedPackage makes sure a failed package reports why: a test still
@@ -197,6 +217,16 @@ func (r *TestReport) Empty() bool {
 		}
 	}
 	return true
+}
+
+// hasFailure reports whether any package failed.
+func (r *TestReport) hasFailure() bool {
+	for _, p := range r.packages {
+		if p.action == "fail" {
+			return true
+		}
+	}
+	return false
 }
 
 // hasResult reports whether the package has something to report. A package
@@ -279,15 +309,25 @@ func failureMessage(t *testResult, p *packageResult) string {
 // failedOnlyThroughSubtest reports whether t failed with nothing of its own
 // to say, because a subtest failed.
 func failedOnlyThroughSubtest(t *testResult, p *packageResult) bool {
-	if t.action != "fail" || t.output.Len() > 0 {
-		return false
-	}
-	for _, sub := range p.tests {
-		if strings.HasPrefix(sub.name, t.name+"/") && sub.action == "fail" {
-			return true
+	return t.action == "fail" && t.output.Len() == 0 && p.hasFailedSubtest(t.name)
+}
+
+// hasFailedSubtest reports whether a subtest of the named test failed. It is
+// asked once the run is over, so the set of failed parents is built once.
+func (p *packageResult) hasFailedSubtest(name string) bool {
+	if p.failedParents == nil {
+		p.failedParents = map[string]bool{}
+		for _, t := range p.tests {
+			if t.action != "fail" {
+				continue
+			}
+			for n := t.name; strings.Contains(n, "/"); {
+				n = n[:strings.LastIndex(n, "/")]
+				p.failedParents[n] = true
+			}
 		}
 	}
-	return false
+	return p.failedParents[name]
 }
 
 // JUnit XML, in the shape the common JUnit schema (as read by GitHub, GitLab
@@ -433,12 +473,14 @@ func (r *TestReport) WriteSummary(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "=== SUMMARY ===")
 	for _, p := range pkgs {
-		status := "ok  "
-		if p.action == "fail" {
-			status = "FAIL"
-		}
 		c := p.counts()
 		total.add(c)
+		// A package that never finished (an interrupted run) has
+		// unfinished tests counted as failures, and is no "ok" either.
+		status := "ok  "
+		if p.action == "fail" || c.failures+c.errors > 0 {
+			status = "FAIL"
+		}
 		if p.buildFailure != nil {
 			fmt.Fprintf(w, "%s  %-*s  build failed\n", status, width, p.name)
 			continue
@@ -461,7 +503,12 @@ func (r *TestReport) WriteSummary(w io.Writer) {
 			if failedOnlyThroughSubtest(t, p) {
 				continue
 			}
-			failures = append(failures, fmt.Sprintf("  %s: %s\n      %s\n", p.name, t.name, failureMessage(t, p)))
+			entry := fmt.Sprintf("  %s: %s\n      %s\n", p.name, t.name, failureMessage(t, p))
+			if t.name == packageFailedCase && p.output.Len() > 0 {
+				// Its reason is in what the package printed.
+				entry += indent(p.output.String(), "      ")
+			}
+			failures = append(failures, entry)
 		}
 	}
 	if len(failures) > 0 {
@@ -529,19 +576,28 @@ func (pr *testEventPrinter) print(ev TestEvent) {
 
 // consumeTestEvents reads a test2json stream from r, adding each event to
 // report and printing it with pr. A line that is not an event is printed
-// as is.
+// as is. It reads r to the end even after a read error, so the process
+// writing it never blocks on a full pipe.
 func consumeTestEvents(r io.Reader, report *TestReport, pr *testEventPrinter) error {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
-	for sc.Scan() {
-		line := sc.Bytes()
-		var ev TestEvent
-		if len(line) == 0 || line[0] != '{' || json.Unmarshal(line, &ev) != nil {
-			fmt.Fprintln(pr.stdout, string(line))
-			continue
+	br := bufio.NewReader(r)
+	for {
+		line, err := br.ReadBytes('\n')
+		if len(line) > 0 {
+			line = bytes.TrimRight(line, "\r\n")
+			var ev TestEvent
+			if len(line) == 0 || line[0] != '{' || json.Unmarshal(line, &ev) != nil {
+				fmt.Fprintln(pr.stdout, string(line))
+			} else {
+				report.Add(ev)
+				pr.print(ev)
+			}
 		}
-		report.Add(ev)
-		pr.print(ev)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			_, _ = io.Copy(io.Discard, br)
+			return err
+		}
 	}
-	return sc.Err()
 }
