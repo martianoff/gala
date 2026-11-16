@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -341,6 +343,8 @@ ok    example.com/proj/sub     1 passed, 0 failed, 0 skipped
 Failures:
   example.com/proj: TestBad
       expected 4, got 3
+  example.com/proj: TestSubs
+      a subtest failed
   example.com/proj: TestSubs/two
       expected 2, got 1
   example.com/proj/broken: build failed
@@ -362,9 +366,91 @@ func TestTestReport_SummaryOfUnfinishedAndCrashedPackages(t *testing.T) {
 	report.WriteSummary(&buf)
 	assert.Contains(t, buf.String(), "FAIL  example.com/proj/cut  0 passed, 1 failed, 0 skipped\n")
 	assert.Contains(t, buf.String(), "  example.com/proj/cut: TestSlow\n      the test did not finish\n")
-	assert.Contains(t, buf.String(), "  example.com/proj: [package failed]\n"+
-		"      the test binary failed outside of any test\n"+
-		"      panic: init failed\n")
+	// The panic is the reason, not the generic message.
+	assert.Contains(t, buf.String(), "  example.com/proj: [package failed]\n      panic: init failed\n")
+	assert.NotContains(t, buf.String(), packageFailedMessage)
+}
+
+// Two t.Run calls with the same name are two test cases: a failing second
+// run must not hide behind a passing first one.
+func TestTestReport_RepeatedSubtestNames(t *testing.T) {
+	report, _, _ := readReport(t, eventStream(
+		`{"Action":"run",`+pkgMain+`,"Test":"TestT"}`,
+		`{"Action":"run",`+pkgMain+`,"Test":"TestT/case"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/case","Output":"=== RUN   TestT/case\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/case","Output":"--- PASS: TestT/case (0.000s)\n"}`,
+		`{"Action":"pass",`+pkgMain+`,"Test":"TestT/case","Elapsed":0}`,
+		`{"Action":"run",`+pkgMain+`,"Test":"TestT/case"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/case","Output":"=== RUN   TestT/case\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/case","Output":"    ERROR: expected 2, got 1\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT/case","Output":"--- FAIL: TestT/case (0.000s)\n"}`,
+		`{"Action":"fail",`+pkgMain+`,"Test":"TestT/case","Elapsed":0}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestT","Output":"--- FAIL: TestT (0.000s)\n"}`,
+		`{"Action":"fail",`+pkgMain+`,"Test":"TestT","Elapsed":0}`,
+		`{"Action":"fail",`+pkgMain+`,"Elapsed":0.1}`,
+	), false)
+	cases := decodeJUnit(t, report).Suites[0].TestCases
+	require.Len(t, cases, 3)
+	assert.Equal(t, "TestT/case", cases[1].Name)
+	assert.Nil(t, cases[1].Failure)
+	assert.Equal(t, "TestT/case#01", cases[2].Name)
+	require.NotNil(t, cases[2].Failure)
+	assert.Equal(t, "expected 2, got 1", cases[2].Failure.Message)
+}
+
+// A test that logs a line looking like the runner's framing keeps it: only
+// the framework's own unindented lines naming the test are framing.
+func TestTestReport_LoggedLinesThatLookLikeFraming(t *testing.T) {
+	report, _, _ := readReport(t, eventStream(
+		`{"Action":"run",`+pkgMain+`,"Test":"TestLog"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestLog","Output":"=== RUN   TestLog\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestLog","Output":"    --- FAIL: expected header\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestLog","Output":"    === RUN   TestLog\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestLog","Output":"    ERROR: mismatch\n"}`,
+		`{"Action":"output",`+pkgMain+`,"Test":"TestLog","Output":"--- FAIL: TestLog (0.000s)\n"}`,
+		`{"Action":"fail",`+pkgMain+`,"Test":"TestLog","Elapsed":0}`,
+		`{"Action":"fail",`+pkgMain+`,"Elapsed":0.1}`,
+	), false)
+	tc := decodeJUnit(t, report).Suites[0].TestCases[0]
+	require.NotNil(t, tc.Failure)
+	assert.Equal(t, "    --- FAIL: expected header\n    === RUN   TestLog\n    ERROR: mismatch\n", tc.Failure.Body)
+}
+
+// An error that reaches the end of a run without being in the report goes
+// in before the summary is printed, so the summary does not say "ok" for a
+// run that fails.
+func TestFinishTestRun_LateErrorIsInTheSummary(t *testing.T) {
+	report, _, _ := readReport(t, eventStream(
+		`{"Action":"run",`+pkgMain+`,"Test":"TestOK"}`,
+		`{"Action":"pass",`+pkgMain+`,"Test":"TestOK","Elapsed":0}`,
+		`{"Action":"pass",`+pkgMain+`,"Elapsed":0.1}`,
+	), false)
+	late := errors.New("reading test events: broken pipe")
+	var out bytes.Buffer
+	junit := filepath.Join(t.TempDir(), "junit.xml")
+	err := finishTestRun(report, errors.Join(reportedError{errors.New("tests failed (exit code 1)")}, late), junit, "example.com/proj", &out)
+	require.Error(t, err)
+	assert.Contains(t, out.String(), "FAIL  gala test         build failed\n")
+	assert.Contains(t, out.String(), "reading test events: broken pipe")
+
+	data, readErr := os.ReadFile(junit)
+	require.NoError(t, readErr)
+	var doc junitTestSuites
+	require.NoError(t, xml.Unmarshal(data, &doc))
+	assert.Equal(t, 1, doc.Errors)
+}
+
+// A run that fails before any package ran (a GALA compile error) prints no
+// summary, but its report still shows the module's failed build.
+func TestFinishTestRun_EarlyError(t *testing.T) {
+	var out bytes.Buffer
+	junit := filepath.Join(t.TempDir(), "junit.xml")
+	err := finishTestRun(NewTestReport(nil), errors.New("undefined: nope"), junit, "example.com/proj", &out)
+	require.Error(t, err)
+	assert.Empty(t, out.String())
+	data, readErr := os.ReadFile(junit)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(data), `<testsuite name="example.com/proj" tests="1" failures="0" errors="1"`)
 }
 
 func TestConsumeTestEvents_LongLine(t *testing.T) {

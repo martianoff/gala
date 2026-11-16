@@ -51,7 +51,8 @@ type packageResult struct {
 	elapsed float64
 	output  strings.Builder // output that belongs to no test
 	tests   []*testResult
-	byName  map[string]*testResult
+	byName  map[string]*testResult // by test2json name, the latest run
+	reruns  map[string]int         // runs after the first, by name
 	// buildFailure is the compiler output of a package that did not build.
 	buildFailure *string
 	// failedParents caches hasFailedSubtest.
@@ -59,7 +60,8 @@ type packageResult struct {
 }
 
 type testResult struct {
-	name     string
+	key      string // the name test2json reports it under
+	name     string // the name in the report: key, numbered for a rerun
 	action   string // pass, fail or skip; "" while still running
 	elapsed  float64
 	output   strings.Builder
@@ -84,17 +86,26 @@ func (r *TestReport) pkg(path string) *packageResult {
 	if r.pkgName != nil {
 		name = r.pkgName(path)
 	}
-	p := &packageResult{name: name, byName: map[string]*testResult{}}
+	p := &packageResult{name: name, byName: map[string]*testResult{}, reruns: map[string]int{}}
 	r.packages[path] = p
 	return p
 }
 
-// framingLine matches the lines a test runner prints around a test, which
-// are not part of what the test itself logged.
-var framingLine = regexp.MustCompile(`^(=== (RUN|PAUSE|CONT|NAME)|--- (PASS|FAIL|SKIP):)`)
+// framingLine matches a line the test runner prints around a test, not one
+// the test logged: unindented, as GALA's test framework prints them, and
+// naming the test. Group 2 is "--- " for a test's own result line, group 3
+// the test's name.
+var framingLine = regexp.MustCompile(`^((=== (?:RUN|PAUSE|CONT|NAME) +)|--- (?:PASS|FAIL|SKIP): )(\S+)`)
 
-// reportLine matches a test's own result line, "--- PASS: TestX (0.00s)".
-var reportLine = regexp.MustCompile(`^--- (PASS|FAIL|SKIP): (\S+)`)
+// framing reports whether line is the runner's framing for the test named
+// name, and whether it is that test's own result line.
+func framing(line, name string) (isFraming, isResult bool) {
+	m := framingLine.FindStringSubmatch(line)
+	if m == nil || m[3] != name {
+		return false, false
+	}
+	return true, m[2] == ""
+}
 
 // Add records one event.
 func (r *TestReport) Add(ev TestEvent) {
@@ -127,8 +138,16 @@ func (r *TestReport) Add(ev TestEvent) {
 		return
 	}
 	t, ok := p.byName[ev.Test]
-	if !ok {
-		t = &testResult{name: ev.Test}
+	// A second run under a name already used (two t.Run calls with the
+	// same name) is a test case of its own, numbered as `go test` numbers
+	// them: "case#01".
+	if !ok || (ev.Action == "run" && (t.action != "" || t.reported)) {
+		name := ev.Test
+		if ok {
+			p.reruns[ev.Test]++
+			name = fmt.Sprintf("%s#%02d", ev.Test, p.reruns[ev.Test])
+		}
+		t = &testResult{key: ev.Test, name: name}
 		p.byName[ev.Test] = t
 		p.tests = append(p.tests, t)
 	}
@@ -143,16 +162,11 @@ func (r *TestReport) Add(ev TestEvent) {
 			p.output.WriteString(ev.Output)
 			return
 		}
-		// Only a line starting "=== " or "--- " can be framing.
-		line := strings.TrimLeft(ev.Output, " \t")
-		if !strings.HasPrefix(line, "=== ") && !strings.HasPrefix(line, "--- ") {
-			owner.output.WriteString(ev.Output)
-			return
+		isFraming, isResult := framing(ev.Output, ev.Test)
+		if isResult && owner == t {
+			t.reported = true
 		}
-		if m := reportLine.FindStringSubmatch(line); m != nil && m[2] == owner.name {
-			owner.reported = true
-		}
-		if !framingLine.MatchString(line) {
+		if !isFraming {
 			owner.output.WriteString(ev.Output)
 		}
 	case "pass", "fail", "skip":
@@ -163,7 +177,7 @@ func (r *TestReport) Add(ev TestEvent) {
 // runningOwner returns t, or when t has already reported, its closest
 // ancestor that has not; nil when there is none.
 func (p *packageResult) runningOwner(t *testResult) *testResult {
-	for name := t.name; t.reported; {
+	for name := t.key; t.reported; {
 		i := strings.LastIndex(name, "/")
 		if i < 0 {
 			return nil
@@ -198,7 +212,7 @@ func (r *TestReport) finishFailedPackage(p *packageResult, ev TestEvent) {
 			return
 		}
 	}
-	p.tests = append(p.tests, &testResult{name: packageFailedCase, action: "error"})
+	p.tests = append(p.tests, &testResult{key: packageFailedCase, name: packageFailedCase, action: "error"})
 }
 
 // AddBuildFailure records a package that failed to build before any of its
@@ -282,10 +296,19 @@ func (c *packageCounts) add(o packageCounts) {
 	c.skipped += o.skipped
 }
 
+// packageFailedMessage is the reason given for a package that failed outside
+// its tests with no error or panic line to quote.
+const packageFailedMessage = "the test binary failed outside of any test"
+
 // failureMessage is the one-line reason a test failed: the first error the
 // test reported, or a panic.
 func failureMessage(t *testResult, p *packageResult) string {
-	for line := range strings.Lines(t.output.String()) {
+	out := t.output.String()
+	if t.name == packageFailedCase {
+		// Its reason is in what the package printed.
+		out = p.output.String()
+	}
+	for line := range strings.Lines(out) {
 		line = strings.TrimSpace(line)
 		for _, prefix := range []string{"ERROR: ", "FATAL: "} {
 			if strings.HasPrefix(line, prefix) {
@@ -297,7 +320,7 @@ func failureMessage(t *testResult, p *packageResult) string {
 		}
 	}
 	if t.name == packageFailedCase {
-		return "the test binary failed outside of any test"
+		return packageFailedMessage
 	}
 	if t.action == "" {
 		return "the test did not finish"
@@ -311,7 +334,7 @@ func failureMessage(t *testResult, p *packageResult) string {
 // failedOnlyThroughSubtest reports whether t failed with nothing of its own
 // to say, because a subtest failed.
 func failedOnlyThroughSubtest(t *testResult, p *packageResult) bool {
-	return t.action == "fail" && t.output.Len() == 0 && p.hasFailedSubtest(t.name)
+	return t.action == "fail" && t.output.Len() == 0 && p.hasFailedSubtest(t.key)
 }
 
 // hasFailedSubtest reports whether a subtest of the named test failed. It is
@@ -323,7 +346,7 @@ func (p *packageResult) hasFailedSubtest(name string) bool {
 			if t.action != "fail" {
 				continue
 			}
-			for n := t.name; strings.Contains(n, "/"); {
+			for n := t.key; strings.Contains(n, "/"); {
 				n = n[:strings.LastIndex(n, "/")]
 				p.failedParents[n] = true
 			}
@@ -500,14 +523,12 @@ func (r *TestReport) WriteSummary(w io.Writer) {
 			if t.action == "pass" || t.action == "skip" {
 				continue
 			}
-			// A test that failed only because a subtest did is listed
-			// through that subtest.
-			if failedOnlyThroughSubtest(t, p) {
-				continue
-			}
-			entry := fmt.Sprintf("  %s: %s\n      %s\n", p.name, t.name, failureMessage(t, p))
-			if t.name == packageFailedCase && p.output.Len() > 0 {
-				// Its reason is in what the package printed.
+			// Every failure the counts include is listed, a parent that
+			// failed through a subtest too ("a subtest failed").
+			msg := failureMessage(t, p)
+			entry := fmt.Sprintf("  %s: %s\n      %s\n", p.name, t.name, msg)
+			if msg == packageFailedMessage && p.output.Len() > 0 {
+				// No error or panic line to quote: show what it printed.
 				entry += indent(p.output.String(), "      ")
 			}
 			failures = append(failures, entry)

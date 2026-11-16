@@ -1617,28 +1617,38 @@ func (b *Builder) Test(verbose bool) error {
 // synthesized test binary instead. Both report through test2json events,
 // from which the run prints a summary and, with opts.JUnitPath, writes a
 // JUnit XML report. Returns an error when any test fails.
-func (b *Builder) RunTests(opts TestOptions) (err error) {
+func (b *Builder) RunTests(opts TestOptions) error {
 	report := NewTestReport(b.reportPackageName)
-	defer func() {
-		report.WriteSummary(os.Stdout)
-		if opts.JUnitPath == "" {
-			return
-		}
-		// An error the report does not hold yet (a GALA compile error, or a
-		// `go` command that could not run) goes in as a failed build: under
-		// the module when nothing else ran, else as the run's own suite.
-		if unreported := withoutReported(err); unreported != nil {
-			name := b.moduleLabel()
-			if !report.Empty() {
-				name = runFailureSuite
-			}
-			report.AddBuildFailure(name, unreported.Error())
-		}
-		if werr := report.WriteJUnitFile(opts.JUnitPath); werr != nil {
-			err = errors.Join(err, werr)
-		}
-	}()
-	return b.runTests(opts.Verbose, report)
+	err := b.runTests(opts.Verbose, report)
+	return finishTestRun(report, err, opts.JUnitPath, b.moduleLabel(), os.Stdout)
+}
+
+// finishTestRun ends a run whose result is err: it prints the summary to
+// stdout and, with junitPath, writes the JUnit report. It returns err,
+// joined with a failure to write the report.
+func finishTestRun(report *TestReport, err error, junitPath, module string, stdout io.Writer) error {
+	// An error the report does not hold yet (a `go` command that could not
+	// run, say) goes in as a failure of the run itself, before the summary,
+	// so the summary agrees with the exit status.
+	unreported := withoutReported(err)
+	if unreported != nil && !report.Empty() {
+		report.AddBuildFailure(runFailureSuite, unreported.Error())
+		unreported = nil
+	}
+	report.WriteSummary(stdout)
+	if junitPath == "" {
+		return err
+	}
+	// A run that failed before any package ran (a GALA compile error) has
+	// no summary, its diagnostic says it all, but the report still shows
+	// the module's failed build.
+	if unreported != nil {
+		report.AddBuildFailure(module, unreported.Error())
+	}
+	if werr := report.WriteJUnitFile(junitPath); werr != nil {
+		return errors.Join(err, werr)
+	}
+	return err
 }
 
 // runFailureSuite names the report suite for a failure of the run itself,
@@ -1860,22 +1870,20 @@ func (b *Builder) runTests(verbose bool, report *TestReport) error {
 
 		if err := cmd.Run(); err != nil {
 			report.AddBuildFailure(WorkspaceGenModule, buildOutput.String())
-			return reportedError{fmt.Errorf("go build (test): %w", err)}
-		}
-
-		// Step 10: Execute the test binary
-		if b.verbose {
-			fmt.Println("Running tests...")
-			fmt.Println()
-		}
-		var runErr error
-		if rootErr, runErr = b.runTestBinary(testBinary, report); runErr != nil {
-			return runErr
+			rootErr = reportedError{fmt.Errorf("go build (test): %w", err)}
+		} else {
+			// Step 10: Execute the test binary
+			if b.verbose {
+				fmt.Println("Running tests...")
+				fmt.Println()
+			}
+			testErr, runErr := b.runTestBinary(testBinary, report)
+			rootErr = errors.Join(testErr, runErr)
 		}
 	}
 
-	// The subpackages' tests run even when the root's failed, so one run
-	// reports every test failure.
+	// The subpackages' tests run even when the root's failed (to build, to
+	// run, or a test), so one run reports every failure.
 	var subErr error
 	if len(subTestDirs) > 0 {
 		pkgs := make([]string, len(subTestDirs))
