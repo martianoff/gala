@@ -273,7 +273,7 @@ A gala2lean result is only as good as these parts. None of them is the transform
 |---|---|---|
 | The translator, `internal/formal/gala2lean` | Its rules decide what each Lean definition means | Every rule is mechanical and listed in its package doc; the output is compared with galaspec and with Go on every translated example |
 | The prelude, `Gala/Gala2Lean/Prelude.lean` | It models Go's `int64` division and shifts, panics and how `Println`/`Print` lay out values | Small (about 170 lines); independent of galaspec's `Print.lean`, so a mistake in either shows up as a disagreement |
-| The trusted Go models (`gofuncs.go` and the prelude) | Each says what a function of Go's standard library does (`fmt.Println` and `fmt.Print` on `int`, `string` and `bool` so far), after the Go 1.25.5 source | Each is tested against `go run` with edge cases (`testdata/go_fmt.gala`); none is proved |
+| The trusted Go models (`gofuncs.go`) | Each says what a function of Go's standard library does, after the Go 1.25.5 source: so far the assumption that `fmt.Println` and `fmt.Print` on `int`, `string` and `bool` print as the prelude's `Println` and `Print` | Tested on the examples the differential run compares with `go run`, and on `testdata/go_fmt.gala`, whose output the gala CLI printed; none is proved |
 | The shared front end: galop parser, interpolated-string splitter, Core JSON exporter and the analyzer's literal hints | gala2lean and galaspec read the same Core JSON | As for galaspec (docs/FORMAL_SEMANTICS.MD, "What is trusted") |
 | The Lean kernel and compiler | Lean checks the theorems and runs the programs | none needed |
 

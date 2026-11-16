@@ -305,7 +305,7 @@ galaspec models them, except as listed below):
   `bool` operands, where `fmt` resolves to Go's package: Go's `%v` of those prints as
   GALA's `Println` and `Print` do, with the same spacing (a trusted model, tested in
   `internal/formal/gala2lean/testdata/go_fmt.gala`). Any other operand
-  (`fmt-operand`), or the call used as a value, is reported;
+  (`fmt-operand`), or the call used as a value (`fmt-value`), is reported;
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
   them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every

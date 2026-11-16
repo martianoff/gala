@@ -383,6 +383,11 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	}
 	ft := g.calleeType(e.Callee, sc)
 	if s, ok := e.Callee.(*coreexport.Select); ok && ft == nil {
+		if _, ok := g.isGoPrint(e, sc); ok {
+			// Go's fmt.Println as a value: its results (n int, err error)
+			// are outside the subset; as a statement, goPrintStmt.
+			unsup(e.Pos, "fmt-value")
+		}
 		if t, ok := g.sliceSize(e, s, sc); ok {
 			return t
 		}
