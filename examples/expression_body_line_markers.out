@@ -9,3 +9,5 @@ argument of Try: true
 by-name argument: true
 block body with Go results: true
 self-tail-call loop: true
+lambda with a Ptr parameter: true
+self-tail-call loop on several lines: true

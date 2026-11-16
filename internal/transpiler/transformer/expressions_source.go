@@ -232,11 +232,11 @@ func (t *galaASTTransformer) lowerPrimaryExprNative(n native.GalaNodeRef) (ast.E
 		case native.GalaKIND_lambdaExpression:
 			// The context-free form: no expected type.
 			l := lambdaSrc{node: native.LambdaExpressionNode{GalaNodeRef: kid}}
-			lit, err := t.lowerLambda(l, nil, nil, true, false)
+			lit, checks, err := t.lowerLambda(l, nil, nil, true, false)
 			if err != nil {
 				return nil, err
 			}
-			return t.finishLambda(lit, nil, l.at(), l.expression())
+			return t.finishLambda(lit, checks, nil, l.at(), l.expression())
 		case native.GalaKIND_ifExpression:
 			return t.lowerIfExpression(ifExprSrc{node: kid}, slot{})
 		case native.GalaKIND_partialFunctionLiteral:

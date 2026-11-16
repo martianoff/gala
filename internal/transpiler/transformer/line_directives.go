@@ -41,6 +41,11 @@ import (
 //     inside their generated blocks, but because those blocks are moved relative
 //     to the GALA source, a panic inside a match arm reports a line near, not
 //     necessarily exactly at, the arm.
+//   - Approximate after a lambda or thunk inside a statement: the markers in
+//     its body reset Go's line counter in the middle of the enclosing
+//     statement, so the Go lines of that statement after the func literal
+//     count on from the lambda's line, not the statement's. Block lambdas
+//     have always done this; expression lambdas and thunks now do too.
 //
 // These approximations are accepted limitations of this slice.
 
@@ -95,24 +100,45 @@ func (t *galaASTTransformer) checkReservedName(name string, at srcNode) error {
 }
 
 // exprFuncBody is body, a Go block holding the lowering of the expression e,
-// led by the line marker of e. Such a block is the body of a Go function whose
-// GALA source is an expression — an expression-bodied function or method
-// (`= expr`), an expression lambda (`=> expr`), a placeholder lambda
-// (`f(_ + 1)`) or an argument lifted into a thunk (`Try(expr)`) — or the loop
-// body and branches of a self-tail-call loop (tco.go). A block body marks each of its statements (walkBlock),
-// but an expression body has no statement of its own to mark: without this
-// marker the Go statement it lowers to sits on the line after the enclosing
+// led by the line marker of e (markExprStmts). Such a block is the body of a
+// Go function whose GALA source is an expression: an expression-bodied
+// function or method (`= expr`), an expression lambda (`=> expr`), a
+// placeholder lambda (`f(_ + 1)`) or an argument lifted into a thunk
+// (`Try(expr)`). A block body marks each of its statements (walkBlock), but an
+// expression body has no statement of its own to mark: without this marker
+// the Go statement it lowers to sits on the line after the enclosing
 // directive, so Go reports a panic in it one GALA line late.
 //
-// Every producer of such a body calls it last, after any rewrite that reads
-// the body's statements (returnGoResults), so no rewrite sees the marker.
+// The marker must sit directly above the statement holding the expression,
+// and the Go results rewrite (returnGoResults) must read the body as it did
+// before markers, so ordering is part of the contract:
+//   - The rewrite runs first and the marker is added to what it produced: it
+//     decides by the body's statements, and a marker would add one. (It does
+//     see walkBlock's per-statement markers in a block body, as it always
+//     has.)
+//   - The nil checks of Ptr parameters (withPtrEntryChecks) go above the
+//     marker. A function gets them after this call. A lambda's checks are
+//     already above its expression when the rewrite reads it, so finishLambda
+//     adds checks and marker together before the rewrite, which moves both
+//     into its thunk.
+//
 // A zero e (a block lambda's expression) leaves body as it is.
 func (t *galaASTTransformer) exprFuncBody(e exprSrc, body *ast.BlockStmt) *ast.BlockStmt {
-	if body == nil || len(body.List) == 0 || !t.emitLineMarkers() || !e.ok() {
+	if body == nil {
 		return body
 	}
+	return &ast.BlockStmt{Lbrace: body.Lbrace, List: t.markExprStmts(e, body.List), Rbrace: body.Rbrace}
+}
+
+// markExprStmts is stmts, the lowering of the expression e, led by the line
+// marker of e; stmts as they are when markers are off, e is zero or there are
+// none. The self-tail-call loop marks its body and branches with it (tco.go).
+func (t *galaASTTransformer) markExprStmts(e exprSrc, stmts []ast.Stmt) []ast.Stmt {
+	if len(stmts) == 0 || !t.emitLineMarkers() || !e.ok() {
+		return stmts
+	}
 	line, _ := e.at().start()
-	return prependStmts(body, lineMarkerStmt(line))
+	return append([]ast.Stmt{lineMarkerStmt(line)}, stmts...)
 }
 
 // exprFuncLit is expr with its body led by e's line marker (exprFuncBody)

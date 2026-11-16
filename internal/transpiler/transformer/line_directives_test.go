@@ -378,55 +378,85 @@ const exprBodyDemoFile = "expr_body_demo.gala"
 // expression body (`= expr`, `=> expr`) reporting the line after its
 // expression: the Go statement such a body lowers to must be preceded by a
 // directive naming the expression's own line, rather than counting on from the
-// declaration's directive. In each case the body is the only line of the
-// generated Go containing `100 / n`.
+// declaration's directive. Each case names the generated Go lines to check,
+// by a text found on that line alone.
 func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 	cases := []struct {
-		name     string
-		src      string
-		wantLine string
+		name  string
+		src   string
+		wants map[string]string // needle -> the GALA line of the directive right above it
 	}{
 		{
-			name:     "function",
-			src:      "package main\n\nfunc f(n int) int = 100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
-			wantLine: "3",
+			name:  "function",
+			src:   "package main\n\nfunc f(n int) int = 100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"100 / n": "3"},
 		},
 		{
-			name:     "method",
-			src:      "package main\n\nstruct C(k int)\n\nfunc (c C) Div(n int) int = 100 / n\n\nfunc main() {\n    println(C(1).Div(1))\n}\n",
-			wantLine: "5",
+			name:  "method",
+			src:   "package main\n\nstruct C(k int)\n\nfunc (c C) Div(n int) int = 100 / n\n\nfunc main() {\n    println(C(1).Div(1))\n}\n",
+			wants: map[string]string{"100 / n": "5"},
 		},
 		{
-			name:     "function returning nothing",
-			src:      "package main\n\nfunc f(n int) = println(100 / n)\n\nfunc main() {\n    f(1)\n}\n",
-			wantLine: "3",
+			name:  "function returning nothing",
+			src:   "package main\n\nfunc f(n int) = println(100 / n)\n\nfunc main() {\n    f(1)\n}\n",
+			wants: map[string]string{"100 / n": "3"},
 		},
 		{
-			name:     "expression on a later line",
-			src:      "package main\n\nfunc f(n int) int =\n\n    100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
-			wantLine: "5",
+			name:  "expression on a later line",
+			src:   "package main\n\nfunc f(n int) int =\n\n    100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"100 / n": "5"},
 		},
 		{
-			name:     "lambda",
-			src:      "package main\n\nfunc main() {\n    val g = (n int) => 100 / n\n    println(g(1))\n}\n",
-			wantLine: "4",
+			name:  "lambda",
+			src:   "package main\n\nfunc main() {\n    val g = (n int) => 100 / n\n    println(g(1))\n}\n",
+			wants: map[string]string{"100 / n": "4"},
 		},
 		{
-			name:     "argument lifted into a thunk",
-			src:      "package main\n\nfunc later(f func() int) int = f()\n\nfunc main() {\n    println(later(100 / n()))\n}\n\nfunc n() int = 1\n",
-			wantLine: "6",
+			name:  "argument lifted into a thunk",
+			src:   "package main\n\nfunc later(f func() int) int = f()\n\nfunc main() {\n    println(later(100 / n()))\n}\n\nfunc n() int = 1\n",
+			wants: map[string]string{"100 / n": "6"},
 		},
 		{
-			name:     "argument of Try",
-			src:      "package main\n\nfunc main() {\n    println(Try(100 / n()).GetOrElse(0))\n}\n\nfunc n() int = 1\n",
-			wantLine: "4",
+			name:  "argument of Try",
+			src:   "package main\n\nfunc main() {\n    println(Try(100 / n()).GetOrElse(0))\n}\n\nfunc n() int = 1\n",
+			wants: map[string]string{"100 / n": "4"},
 		},
 		{
 			// Not an expression body: its first statement keeps its own
 			// marker when the Go results rewrite moves it into a thunk.
-			name:     "block body with Go results",
-			src:      "package main\n\nfunc f(n int) (int, error) {\n    val q = 100 / n\n    Success(q)\n}\n\nfunc main() {\n    println(f(1).GetOrElse(0))\n}\n",
-			wantLine: "4",
+			name:  "block body with Go results",
+			src:   "package main\n\nfunc f(n int) (int, error) {\n    val q = 100 / n\n    Success(q)\n}\n\nfunc main() {\n    println(f(1).GetOrElse(0))\n}\n",
+			wants: map[string]string{"100 / n": "4"},
+		},
+		{
+			name:  "placeholder lambda",
+			src:   "package main\n\nfunc applyTo(f func(int) int, n int) int = f(n)\n\nfunc main() {\n    println(applyTo(100 / _, 1))\n}\n",
+			wants: map[string]string{"100 / __p0": "6"},
+		},
+		{
+			// The loop's statements and each branch carry their own lines.
+			name: "self-tail-call loop with its branches on separate lines",
+			src:  "package main\n\nfunc f(n int, acc int) int =\n    if (n == 0)\n        100 / acc\n    else\n        f(n - 1, acc)\n\nfunc main() {\n    println(f(2, 1))\n}\n",
+			wants: map[string]string{
+				"if n == 0 {":      "4",
+				"return 100 / acc": "5",
+				"_tmp_1 := n - 1":  "7",
+			},
+		},
+		{
+			name: "lambda and thunk giving a Go call's results",
+			src:  "package main\n\nimport \"strconv\"\n\nfunc run(f func() (int, error)) int = Try(f()).GetOrElse(0)\n\nfunc main() {\n    println(run(() => strconv.Atoi(\"5\")))\n    println(run(strconv.Atoi(\"6\")))\n}\n",
+			wants: map[string]string{
+				`return strconv.Atoi("5")`: "8",
+				`return strconv.Atoi("6")`: "9",
+			},
+		},
+		{
+			// The nil checks of its Ptr parameter come first, then the marker
+			// right above the expression's statement.
+			name:  "lambda with a Ptr parameter filling a *T slot",
+			src:   "package main\n\nfunc each(f func(*int) int, x *int) int = f(x)\n\nfunc main() {\n    var x = 1\n    println(each((p Ptr[int]) => 100 / *p, &x))\n}\n",
+			wants: map[string]string{"100 / *p": "7"},
 		},
 	}
 
@@ -435,8 +465,10 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			goCode, err := trans.Transpile(tc.src, exprBodyDemoFile)
 			require.NoError(t, err)
-			assert.Equal(t, "//line "+exprBodyDemoFile+":"+tc.wantLine, lineAbove(t, goCode, "100 / n"),
-				"the body's statement must carry its expression's line; generated:\n%s", goCode)
+			for needle, line := range tc.wants {
+				assert.Equal(t, "//line "+exprBodyDemoFile+":"+line, lineAbove(t, goCode, needle),
+					"the statement holding %q must carry its line; generated:\n%s", needle, goCode)
+			}
 		})
 	}
 }

@@ -37,8 +37,11 @@ func main() {
     Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 37)}")
     Println(s"argument of Try: ${panicsAt(Try(100 / zero()).GetError(), 38)}")
     Println(s"by-name argument: ${panicsAt(Try(later(100 / zero())).GetError(), 39)}")
-    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 49)}")
-    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 53)}")
+    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 52)}")
+    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 56)}")
+    var z = 0
+    Println(s"lambda with a Ptr parameter: ${panicsAt(Try(each((p Ptr[int]) => 100 / *p, &z)).GetError(), 43)}")
+    Println(s"self-tail-call loop on several lines: ${panicsAt(Try(countdownLines(3, 0)).GetError(), 62)}")
 }
 
 func zero() int = 0
@@ -51,3 +54,11 @@ func firstStatement() (int, error) {
 }
 
 func countdown(n int, acc int) int = if (n == 0) 100 / acc else countdown(n - 1, acc)
+
+func each(f func(*int) int, x *int) int = f(x)
+
+func countdownLines(n int, acc int) int =
+    if (n == 0)
+        100 / acc
+    else
+        countdownLines(n - 1, acc)

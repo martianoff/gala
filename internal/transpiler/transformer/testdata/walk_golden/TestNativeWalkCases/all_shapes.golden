@@ -273,7 +273,6 @@ func Show() {
 
 //line $DIR/main.gala:80
 func Fact(n int, acc int) int {
-//line $DIR/main.gala:80
 	for {
 //line $DIR/main.gala:80
 		if n <= 1 {

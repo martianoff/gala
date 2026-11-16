@@ -1044,6 +1044,10 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 	defer t.enterReturnSlot(funcSlot)()
 
 	var body *ast.BlockStmt
+	// markedExpr is the expression whose line marker leads the body (see
+	// exprFuncBody): none for a block body, whose statements carry their own,
+	// or for a self-tail-call loop, which places its markers inside the loop.
+	markedExpr := d.expr
 	if d.block.ok() {
 		// A function with a result type returns its body's trailing
 		// expression, as a lambda does: the body is lowered so that value is a
@@ -1084,7 +1088,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 				return nil, tcoErr
 			}
 			if ok {
-				exprBody = loopBody
+				exprBody, markedExpr = loopBody, exprSrc{}
 			}
 		}
 		if exprBody == nil {
@@ -1100,7 +1104,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		body = t.returnGoResults(body, funcType.Results.List[0].Type, goResults)
 		funcType.Results = goResults
 	}
-	body = t.exprFuncBody(d.expr, body)
+	body = t.exprFuncBody(markedExpr, body)
 	// Go code can call an exported function or method with a nil pointer.
 	// A method lowered to a function takes its receiver as the first
 	// parameter, which is checked as the receiver.

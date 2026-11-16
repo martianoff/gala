@@ -72,16 +72,31 @@ func (t *galaASTTransformer) goResultsValue(results *ast.FieldList) (transpiler.
 }
 
 // finishLambda is lit, a lambda or placeholder lambda lowered against
-// slotType, as its value: its one value spread over Go's results
-// (spreadLambdaGoResults) when slotType is non-nil, then its body led by the
-// line marker of body, the expression it is written as (exprFuncBody); a zero
-// body, a block lambda's, adds none. at is where the lambda is written.
-func (t *galaASTTransformer) finishLambda(lit ast.Expr, slotType transpiler.Type, at srcNode, body exprSrc) (ast.Expr, error) {
+// slotType, as its value. Its body gets, in this order, the nil checks of its
+// Ptr parameters (entryChecks, see lowerLambda), the line marker of body, the
+// expression it is written as (exprFuncBody; a zero body, a block lambda's,
+// adds none), and its statements; and its one value is spread over Go's
+// results (spreadLambdaGoResults) when slotType is non-nil. at is where the
+// lambda is written.
+//
+// The spread reads the body as it was before line markers: with no checks
+// it runs first and the marker is added after it; with checks it already
+// reads several statements, so the checks and the marker go in first and the
+// spread moves them all into its thunk, the marker still right above the
+// expression's statement.
+func (t *galaASTTransformer) finishLambda(lit ast.Expr, entryChecks []ast.Stmt, slotType transpiler.Type, at srcNode, body exprSrc) (ast.Expr, error) {
+	fn, isLit := lit.(*ast.FuncLit)
+	if isLit && len(entryChecks) > 0 {
+		fn.Body = withPtrEntryChecks(t.exprFuncBody(body, fn.Body), entryChecks)
+	}
 	if slotType != nil {
 		var err error
 		if lit, err = t.spreadLambdaGoResults(lit, slotType, at); err != nil {
 			return nil, err
 		}
+	}
+	if len(entryChecks) > 0 {
+		return lit, nil
 	}
 	return t.exprFuncLit(body, lit), nil
 }
