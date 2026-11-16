@@ -1,0 +1,25 @@
+package main
+
+import "fmt"
+
+// Go's fmt.Println and fmt.Print with int, string and bool operands, called
+// as statements: the operands run in order before anything prints, Println
+// puts a space between every two operands, and Print only between two that
+// are not strings.
+
+func noisy(x int) int {
+    Println("arg", x)
+    x
+}
+
+func main() {
+    fmt.Println()
+    fmt.Println(1, "two", true, -4)
+    fmt.Println("a", "b")
+    fmt.Print(1, 2, "x", 3, "y", "z", false, true)
+    fmt.Print("\n")
+    fmt.Println(noisy(1), noisy(2))
+    fmt.Println(s"interp ${1 + 2}", "é日本")
+    fmt.Print(9223372036854775807, -9223372036854775807 - 1)
+    fmt.Println()
+}

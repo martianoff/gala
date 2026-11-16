@@ -540,6 +540,13 @@ flowchart LR
   "agrees", nothing stronger.
 - **What it trusts:** the translator, its Lean prelude and the front end it shares with
   galaspec ([formal/README.md](../formal/README.md#what-gala2lean-trusts)).
+- **Trusted Go models.** A function of Go's standard library that a program calls
+  through its package is translated only where the prelude models it, after the Go
+  source of the release the repository pins (Go 1.25.5). Each model is trusted and
+  tested against `go run` on edge cases; none is proved. Modelled so far:
+  `fmt.Println` and `fmt.Print`, as statements, with `int`, `string` and `bool`
+  operands (Go's `%v` of those prints as GALA's `Println` and `Print` do, with the same
+  spacing). Any other operand, or the call used as a value, is reported.
 - **Phases:** S1 with provable output first; then lambdas and closures (a captured `var`
   becomes a reference cell in the state), interpolation and `Option`/`Either`/`Try`;
   then generics and the immutable collections, modelled in the prelude.

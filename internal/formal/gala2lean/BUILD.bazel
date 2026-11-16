@@ -13,6 +13,7 @@ go_library(
         "expr.go",
         "gala2lean.go",
         "generics.go",
+        "gofuncs.go",
         "inout.go",
         "lambda.go",
         "methods.go",

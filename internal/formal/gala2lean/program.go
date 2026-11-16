@@ -39,6 +39,9 @@ type gen struct {
 	// collections is true when the program dot-imports the immutable
 	// collections (collectionsPath).
 	collections bool
+	// importPaths is, by the name a file refers to it by, the import paths
+	// of the program's imports (goFunc).
+	importPaths map[string][]string
 	// depNS is the namespaces of the packages of the module the program
 	// imports (packages.go).
 	depNS map[string]bool
@@ -131,6 +134,7 @@ func newGen() *gen {
 		inDefault:     map[string]bool{},
 		refsInDefault: map[string]bool{},
 		uses:          map[string]map[string]bool{},
+		importPaths:   map[string][]string{},
 	}
 }
 
@@ -153,6 +157,9 @@ func (g *gen) collect(p *coreexport.Program) {
 					g.collections = true
 				} else {
 					g.outsideDecls = append(g.outsideDecls, &coreexport.Unsupported{What: "import", Pos: imp.Pos})
+				}
+				if name := importName(imp); name != "" {
+					g.importPaths[name] = append(g.importPaths[name], imp.Path)
 				}
 				continue
 			}
