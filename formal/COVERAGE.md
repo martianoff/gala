@@ -209,7 +209,9 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
   a nil receiver;
 - generics, two panics, fuel and an unsupported construct.
 
-The differential run over the corpus is the next part of M4.
+The differential run (`internal/formal/difftest`) runs every compiled program's Go through
+GoCore and compares it with `go run`; its results are in the "GoCore" part of the
+generated section below.
 
 ## gala2lean
 
@@ -366,7 +368,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 56 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 465 | 34 | 437 | 32 |
+| UNSUPPORTED | 466 | 34 | 438 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -429,7 +431,7 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (37 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (38 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
@@ -484,6 +486,52 @@ The first construct gala2lean did not translate in each program, by how many pro
 ### Known disagreements
 
 None.
+### GoCore: the Go the transformer emitted
+
+GoCore (`formal/Gala/GoCore/`), the Lean model of the Go the transpiler emits, runs
+each compiled program's actual Go output, read back by the Go AST exporter, and is
+compared with `go run` of the same Go: stdout, and how it ends, a panic by the text Go
+prints. These measure GoCore's fidelity to Go, tested, not proved. RESOURCE is a run
+Go aborted for lack of stack or memory, or that ran past its time limit: reported,
+never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
+
+| GoCore against go run | Examples | Generated programs |
+|---|---|---|
+| AGREE | 151 | 28 |
+| DISAGREE | 0 | 0 |
+| UNSUPPORTED | 251 | 7 |
+| INCONCLUSIVE | 0 | 0 |
+| RESOURCE | 0 | 0 |
+
+Programs GoCore agrees with go run on: **179** (ratchet baseline 179).
+Examples where GoCore agrees with go run and galaspec agrees with go run: **28** (ratchet baseline 28).
+
+They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
+
+The construct GoCore stopped at in each program it did not run to the end, by how many programs (49 kinds, the top 20 shown):
+
+| Construct | Programs |
+|---|---|
+| `variadic` | 93 |
+| `type-inference` | 30 |
+| `type-float64` | 21 |
+| `fmt.Printf` | 18 |
+| `defer` | 16 |
+| `array-type` | 9 |
+| `float-lit` | 7 |
+| `errors.New` | 5 |
+| `unicode/utf8.RuneCountInString` | 5 |
+| `local-type` | 4 |
+| `map-type` | 3 |
+| `strconv.Atoi` | 3 |
+| `type-float32` | 3 |
+| `fmt-verb-0` | 2 |
+| `fmt-verb-T` | 2 |
+| `fmt.Errorf` | 2 |
+| `fmt.Stringer` | 2 |
+| `net/url.URL` | 2 |
+| `context.Background` | 1 |
+| `crypto/sha256.New` | 1 |
 <!-- difftest:end -->
 
 <!-- ownership:begin -->

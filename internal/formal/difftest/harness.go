@@ -37,6 +37,10 @@ type Harness struct {
 	// Lean, when set, runs each program gala2lean translates, the third
 	// oracle (Record.Lean).
 	Lean LeanRunner
+	// GoCore, when set, runs the Go the transformer emitted for each program
+	// that compiles, read back by the Go AST exporter, and compares it with
+	// `go run` (Record.GoCore).
+	GoCore GoCoreRunner
 }
 
 // Check compares one program, and fails tb only for a broken setup: a
@@ -57,7 +61,7 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 	if err != nil {
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	file := filepath.Join(h.Dir, strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(p.ID)+".json")
+	file := filepath.Join(h.Dir, safeName(p.ID)+".json")
 	if err := os.WriteFile(file, doc, 0o644); err != nil {
 		tb.Fatal(err)
 	}
@@ -78,11 +82,29 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 	var (
 		real   Run
 		stderr string
+		goProg *GoProgram
 	)
-	if NeedsReal(spec.Outcome) || leanRes != nil {
-		real, stderr = realRun(tb, p)
+	if NeedsReal(spec.Outcome) || leanRes != nil || h.GoCore != nil {
+		real, stderr, goProg = realRun(tb, p, h.GoCore != nil)
 	}
 	rec.Comparison = Compare(spec, real)
+	if h.GoCore != nil && goProg != nil {
+		// A run Go could not finish is never compared, so GoCore does not
+		// run it: it could exhaust its own stack or time limit on it.
+		gr, resource := goResource(real)
+		if !resource {
+			doc, err := exportGoCore(h.Dir, p.ID, *goProg)
+			if err != nil {
+				tb.Fatalf("%s: Go AST export: %v", p.ID, err)
+			}
+			g, err := h.GoCore.Run(doc)
+			if err != nil {
+				tb.Fatalf("%s: %v", p.ID, err)
+			}
+			gr = compareGoCore(g, real, goPanicText(stderr))
+		}
+		rec.GoCore = &gr
+	}
 	if leanRes != nil {
 		lr, err := compareLean(h.Lean, leanRes, spec, real)
 		if err != nil {
@@ -103,12 +125,13 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 }
 
 // realRun transpiles, builds and runs p with the real toolchain, and returns
-// the run and what it wrote to stderr. A program the transpiler or the Go
-// compiler rejects is a KindRejected outcome.
-func realRun(tb testing.TB, p Program) (Run, string) {
+// the run, what it wrote to stderr, and, when withGo is set, the Go that ran.
+// A program the transpiler or the Go compiler rejects is a KindRejected
+// outcome, with no Go.
+func realRun(tb testing.TB, p Program, withGo bool) (Run, string, *GoProgram) {
 	tb.Helper()
-	rejected := func(detail string) (Run, string) {
-		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, ""
+	rejected := func(detail string) (Run, string, *GoProgram) {
+		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, "", nil
 	}
 	if p.Lib != "" {
 		progrun.WriteLibrary(tb, p.LibPath, p.Lib)
@@ -134,7 +157,15 @@ func realRun(tb testing.TB, p Program) (Run, string) {
 		}
 		tb.Fatalf("%s: %v", p.ID, err)
 	}
-	return Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}, out.Stderr
+	run := Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}
+	if !withGo {
+		return run, out.Stderr, nil
+	}
+	pkgs, err := progrun.ImportedSources(imp, res.Go)
+	if err != nil {
+		tb.Fatalf("%s: %v", p.ID, err)
+	}
+	return run, out.Stderr, &GoProgram{Main: res.Go, Packages: pkgs}
 }
 
 // firstLine is the first line of a diagnostic, past the "# package" header

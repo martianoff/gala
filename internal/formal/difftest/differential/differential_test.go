@@ -18,7 +18,12 @@
 // Each program gala2lean translates is also run as Lean, the third oracle,
 // and compared with Go. --config=formal gives it the toolchain's lean;
 // without the config GALA_LEAN_BIN must name one (e.g. elan's), with
-// --test_env=GALA_LEAN_BIN. It needs one either way. It
+// --test_env=GALA_LEAN_BIN. It needs one either way.
+//
+// Each program that compiles also has its Go run by gocore, GoCore's
+// interpreter, and compared with `go run`. --config=formal builds
+// //formal:gocore; without the config GALA_GOCORE_BIN must name one (e.g. a
+// Lake build), with --test_env=GALA_GOCORE_BIN. It needs one either way. It
 // writes the coverage section of formal/COVERAGE.md and a summary to its
 // undeclared outputs (see difftest.Render).
 package differential_test
@@ -109,6 +114,35 @@ func leanBin(t *testing.T) string {
 	return ""
 }
 
+// gocoreRlocationEnv names //formal:gocore in the runfiles; the target sets it
+// under --config=formal.
+const gocoreRlocationEnv = "GALA_GOCORE_RLOCATION"
+
+// gocoreBin is the gocore that runs the transformer's Go output: GALA_GOCORE_BIN
+// when set, otherwise the //formal:gocore that --config=formal puts in the
+// runfiles. The run needs one either way.
+func gocoreBin(t *testing.T) string {
+	if bin := os.Getenv(difftest.GoCoreEnv); bin != "" {
+		if _, err := os.Stat(bin); err != nil {
+			t.Fatalf("%s=%s: %v", difftest.GoCoreEnv, bin, err)
+		}
+		return bin
+	}
+	if loc := os.Getenv(gocoreRlocationEnv); loc != "" {
+		bin, err := runfiles.Rlocation(loc)
+		if err == nil {
+			_, err = os.Stat(bin)
+		}
+		if err != nil {
+			t.Fatalf("finding //formal:gocore (%s) in the runfiles: %v", loc, err)
+		}
+		return bin
+	}
+	t.Fatalf("no gocore: run with --config=formal, or point %s at one (`lake build gocore` in formal/)\n"+
+		"and pass --test_env=%s", difftest.GoCoreEnv, difftest.GoCoreEnv)
+	return ""
+}
+
 func TestDifferential(t *testing.T) {
 	bin := specBin(t)
 	fuel := envInt(t, "GALA_SPEC_FUEL", 0)
@@ -137,7 +171,12 @@ func TestDifferential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := difftest.Harness{Spec: difftest.Spec{Bin: bin, Fuel: fuel}, Dir: t.TempDir(), Lean: lean}
+	// GoCore runs each compiled program's Go and is compared with go run of
+	// it. Its comparisons are against go run's stdout, never an example's
+	// .out, so an example whose .out mixes in stderr (complex.gala prints with
+	// the builtin println) needs no exclusion here.
+	h := difftest.Harness{Spec: difftest.Spec{Bin: bin, Fuel: fuel}, Dir: t.TempDir(), Lean: lean,
+		GoCore: difftest.GoCore{Bin: gocoreBin(t)}}
 	var records []difftest.Record
 	results := map[string]difftest.Comparison{}
 	var problems []string
@@ -151,6 +190,7 @@ func TestDifferential(t *testing.T) {
 		}
 	}
 	problems = append(problems, difftest.CheckKnown(known, results)...)
+	problems = append(problems, difftest.CheckGoCore(records)...)
 	problem, note := difftest.CheckBaseline(baseline, records)
 	if problem != "" {
 		problems = append(problems, problem)
@@ -179,6 +219,17 @@ func summarize(records []difftest.Record, rejected int, problems []string, note 
 	for _, v := range difftest.Verdicts {
 		fmt.Fprintf(&b, "- %s: %d (gala2lean: %d)\n", v, counts[v], leanCounts[v])
 	}
+	gocoreCounts := map[difftest.Verdict]int{}
+	for _, r := range records {
+		if r.GoCore != nil {
+			gocoreCounts[r.GoCore.Verdict]++
+		}
+	}
+	b.WriteString("- GoCore against go run:")
+	for _, v := range difftest.GoCoreVerdicts {
+		fmt.Fprintf(&b, " %s %d;", v, gocoreCounts[v])
+	}
+	fmt.Fprintf(&b, " three-way agreeing examples %d\n", difftest.GoCoreAgreeingExamples(records))
 	fmt.Fprintf(&b, "- generated programs that must be rejected, left out: %d\n", rejected)
 	if note != "" {
 		fmt.Fprintf(&b, "\n%s\n", note)

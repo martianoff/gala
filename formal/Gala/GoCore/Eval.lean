@@ -77,6 +77,25 @@ def importOf (c : Ctx) (env : Env) (x : String) : Option String :=
 /-- Whether a name is exported (Go spec, "Exported identifiers"). -/
 def exported (x : String) : Bool := x.front.isUpper
 
+/-- The package a bare, non-local name `x` is declared in: the current one, else a
+    package the file dot-imports (Go spec, "Import declarations": `import . "p"` declares
+    `p`'s exported names in the file's block). `none` for a predeclared name or one of
+    no package the document holds. -/
+def nameOwner (c : Ctx) (env : Env) (x : String) : Option String :=
+  match c.pkgs.get? env.pkg with
+  | none => none
+  | some p =>
+    if p.objs.contains x then some env.pkg
+    else if !exported x then none
+    else ((p.imports[env.file]?).getD []).findSome? fun (n, path) =>
+      if n == "." && ((c.pkgs.get? path).map (·.objs.contains x)).getD false then some path else none
+
+/-- A package the file dot-imports that the document does not hold (Go's own standard
+    library), whose names GoCore cannot see. -/
+def foreignDotImport (c : Ctx) (env : Env) : Option String :=
+  ((c.pkgs.get? env.pkg).bind (·.imports[env.file]?)).bind fun is =>
+    is.findSome? fun (n, path) => if n == "." && !c.pkgs.contains path then some path else none
+
 /-- The methods of a type: those of `pkg.name`, keyed by method name. -/
 def methodOf (c : Ctx) (pkg tyName m : String) : Option Method :=
   (c.pkgs.get? pkg).bind (·.methods.get? s!"{tyName}.{m}")
@@ -193,12 +212,13 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
     | .ident x =>
       if (env.lookup x).isSome then return none
       if let some t := env.tenv.lookup x then return some t
-      let p ← pkgCtx c env.pkg
-      match p.objs.get? x with
-      | some (.type _ (.mk _ tps alias te)) =>
-        if alias then return some (← evalType c n { env with tenv := [] } te)
-        if tps.isEmpty then return some (.named env.pkg x []) else stuck s!"generic type {x} without type arguments"
-      | some _ => return none
+      match nameOwner c env x with
+      | some path =>
+        match (c.pkgs.get? path).bind (·.objs.get? x) with
+        | some (.type fi (.mk _ tps alias te)) =>
+          if alias then return some (← evalType c n { pkg := path, file := fi } te)
+          if tps.isEmpty then return some (.named path x []) else stuck s!"generic type {x} without type arguments"
+        | _ => return none
       | none => return universeType? x
     | .selector (.ident q) sel =>
       if (env.lookup q).isSome then return none
@@ -216,15 +236,20 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
     | .index x args =>
       -- A generic type instantiated: `T[args]` or `pkg.T[args]`.
       let target : Option (String × String) := match x with
-        | .ident t => if (env.lookup t).isSome then none else some (env.pkg, t)
+        | .ident t => if (env.lookup t).isSome then none else (nameOwner c env t).map (·, t)
         | .selector (.ident q) t =>
           if (env.lookup q).isSome then none else (importOf c env q).map (·, t)
         | _ => none
       match target with
       | some (path, t) =>
         match (c.pkgs.get? path).bind (·.objs.get? t) with
-        | some (.type _ (.mk _ (_ :: _) _ _)) =>
-          return some (.named path t (← args.mapM (evalType c n env)))
+        | some (.type fi (.mk _ tps@(_ :: _) alias te)) =>
+          let targs ← args.mapM (evalType c n env)
+          -- A generic alias denotes its type with the arguments substituted, no
+          -- new named type (Go spec, "Alias declarations").
+          if alias then
+            return some (← evalType c n { pkg := path, file := fi, tenv := ← bindTParams tps targs } te)
+          return some (.named path t targs)
         | _ => return none
       | none => return none
     | .star x => return (← typeOf? c n env x).map .ptr
@@ -266,6 +291,7 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
         | .ident x =>
           if ["comparable", "float32", "float64", "complex64", "complex128"].contains x then
             unsupported s!"type-{x}"
+          if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
           stuck s!"{x} is not a type"
         | _ => stuck "not a type"
 
@@ -351,7 +377,7 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
     | .ident "_" => stuck "_ as a value"
     | .ident x =>
       if let some cell := env.lookup x then return ← loadCell cell
-      evalName c n env env.pkg x
+      evalName c n env ((nameOwner c env x).getD env.pkg) x
     | .intLit v => pure (.int (.untyped .int) v)
     | .charLit v => pure (.int (.untyped .rune) v)
     | .strLit s => pure (.str (.untyped .string) s)
@@ -450,7 +476,10 @@ def evalName (c : Ctx) : Nat → Env → String → String → GM Val
         match env.iota with
         | some i => pure (.int (.untyped .int) i)
         | none => stuck "iota outside a constant declaration"
-      | _ => stuck s!"undefined: {x}"
+      | _ =>
+        -- A name of a dot-imported package the document does not hold.
+        if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
+        stuck s!"undefined: {x}"
 
 /-- A declared function as a value. -/
 def funcVal (c : Ctx) : Nat → String → String → List Ty → GM Val
@@ -471,8 +500,9 @@ def funcValue? (c : Ctx) : Nat → Env → Expr → GM (Option Val)
     match e with
     | .index (.ident f) args =>
       if (env.lookup f).isSome then return none
-      match (← pkgCtx c env.pkg).objs.get? f with
-      | some (.func ..) => return some (← funcVal c n env.pkg f (← args.mapM (evalType c n env)))
+      let some path := nameOwner c env f | return none
+      match (c.pkgs.get? path).bind (·.objs.get? f) with
+      | some (.func ..) => return some (← funcVal c n path f (← args.mapM (evalType c n env)))
       | _ => return none
     | .index (.selector (.ident q) f) args =>
       if (env.lookup q).isSome then return none
@@ -574,7 +604,8 @@ def operand (c : Ctx) : Nat → Env → Expr → GM (Val × Option Loc)
     match e with
     | .ident x =>
       if let some cell := env.lookup x then return (← loadCell cell, some ⟨cell, []⟩)
-      if let some cell := (← get).globals.get? s!"{env.pkg}.{x}" then
+      let globals := (← get).globals
+      if let some cell := (nameOwner c env x).bind fun p => globals.get? s!"{p}.{x}" then
         return (← loadCell cell, some ⟨cell, []⟩)
       return (← evalExpr c n env e, none)
     | .paren x => operand c n env x
@@ -583,8 +614,13 @@ def operand (c : Ctx) : Nat → Env → Expr → GM (Val × Option Loc)
       return (← load l, some l)
     | .selector x sel =>
       if let .ident q := x then
-        if (env.lookup q).isNone && (importOf c env q).isSome then
-          return (← evalExpr c n env e, none)
+        if (env.lookup q).isNone then
+          if let some path := importOf c env q then
+            -- `pkg.V`: a package-level variable of another package is addressable.
+            let globals := (← get).globals
+            if let some cell := globals.get? s!"{path}.{sel}" then
+              return (← loadCell cell, some ⟨cell, []⟩)
+            return (← evalExpr c n env e, none)
       let (v, l) ← operand c n env x
       match v with
       | .ptr _ (some pl) =>
@@ -635,7 +671,8 @@ def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
       match env.lookup x with
       | some cell => return (⟨cell, []⟩, ← cellType cell)
       | none =>
-        match (← get).globals.get? s!"{env.pkg}.{x}" with
+        let globals := (← get).globals
+        match (nameOwner c env x).bind fun p => globals.get? s!"{p}.{x}" with
         | some cell => return (⟨cell, []⟩, ← cellType cell)
         | none => stuck s!"{x} is not addressable"
     | .paren x => evalAddr c n env x
@@ -646,6 +683,15 @@ def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
       | .ptr _ none => nilDeref
       | _ => stuck "* of a non-pointer"
     | .selector x sel =>
+      if let .ident q := x then
+        if (env.lookup q).isNone then
+          if let some path := importOf c env q then
+            let globals := (← get).globals
+            match globals.get? s!"{path}.{sel}" with
+            | some cell => return (⟨cell, []⟩, ← cellType cell)
+            | none =>
+              if c.pkgs.contains path then stuck s!"{q}.{sel} is not addressable"
+              else unsupported s!"{path}.{sel}"
       let (v, l) ← operand c n env x
       match v with
       | .ptr _ (some pl) =>
@@ -795,7 +841,7 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → GM (List Val)
       return [← conversion c n t (← evalExpr c n env a)]
     match fn with
     | .ident b =>
-      if (env.lookup b).isNone && !((← pkgCtx c env.pkg).objs.contains b) then
+      if (env.lookup b).isNone && (nameOwner c env b).isNone then
         return ← builtin c n env b args
     | .selector (.ident q) f =>
       if (env.lookup q).isNone then
@@ -807,7 +853,7 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → GM (List Val)
     -- A declared function called by name: a generic one gets its type arguments by
     -- inference from the arguments (Go spec, "Type inference").
     let declared : Option (String × String) := match fn with
-      | .ident f => if (env.lookup f).isSome then none else some (env.pkg, f)
+      | .ident f => if (env.lookup f).isSome then none else (nameOwner c env f).map (·, f)
       | .selector (.ident q) f => if (env.lookup q).isSome then none else (importOf c env q).map (·, f)
       | _ => none
     if let some (path, f) := declared then
@@ -848,7 +894,12 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → GM (List Val)
       -- "Bootstrapping").
       let _ ← args.mapM (evalExpr c n env)
       pure []
-    | b, _ => unsupported s!"builtin-{b}"
+    | b, _ =>
+      -- An exported name is no builtin: one of a dot-imported package the
+      -- document does not hold.
+      if exported b then
+        if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
+      unsupported s!"builtin-{b}"
 
 /-- The text Go's runtime prints after `panic: ` for a panic value: a string as it is,
     an error's `Error()`, a Stringer's `String()` (runtime `printpanicval`). -/
