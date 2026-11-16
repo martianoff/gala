@@ -3,6 +3,7 @@ package transformer_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -315,21 +316,12 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 		{"an Option type argument", `var p = &Some(1)
     put[Option[int]](&p, None[int]())`,
 			"cannot lend &p to the inout parameter of put: p holds a Ptr[Option[int]], and the parameter takes the Option[int] it points to", "pass `p` without `&`"},
-		{"a pointer type argument to another type", `var p = &Counter(1, "p")
-    put[Ptr[Point]](&p, &Point(1, 2))`,
-			"cannot lend &p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Point]", "lend a place of type Ptr[Point]"},
 		{"a Ptr without & for a pointer type argument", `var p = &Counter(1, "p")
     put[Ptr[Counter]](p, &Counter(2, "q"))`,
 			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend the variable holding the Ptr with `&p`"},
 		{"a val Ptr without & for a pointer type argument", `val p = &Counter(1, "p")
     put[Ptr[Counter]](p, &Counter(2, "q"))`,
 			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Ptr[Counter]", "lend a `var` holding the Ptr: `var q = p`, then pass `&q`"},
-		{"a Ptr without & to another type argument", `var p = &Counter(1, "p")
-    put[Point](p, Point(1, 2))`,
-			"cannot lend p to the inout parameter of put: p holds a Ptr[Counter], and the parameter takes a Point", "lend a place of type Point"},
-		{"a Ptr without & to another type", `var q = &Point(1, 2)
-    bump(q, 1)`,
-			"cannot lend q to the inout parameter of bump: q holds a Ptr[Point], and the parameter takes a Counter", "lend a place of type Counter"},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
@@ -371,9 +363,11 @@ func TestInoutLendPtrVarExplicitTypeArgs(t *testing.T) {
 		})
 	}
 
-	// A type parameter the call leaves to Go is not compared: Go infers it
-	// from every argument, a literal taking the pointee's type.
-	acceptedPrograms := []struct{ name, src string }{
+	// Valid programs: only the pointer depth is compared, and a type
+	// parameter the call leaves to Go is not. A program whose imports are
+	// all Go's is built and run (runs is its output); the others, which
+	// import GALA packages, are transpiled.
+	acceptedPrograms := []struct{ name, src, runs string }{
 		{"a literal for an inferred type parameter", `package main
 
 type Named interface {
@@ -401,7 +395,43 @@ func main() {
     set(r, c2)
     Println(n, f, s.Name())
 }
-`},
+`, ""},
+		{"a byte for a uint8 and a rune for an int32", `package main
+
+func setU8(inout x uint8) {
+    x = 2
+}
+
+func setI32(inout x int32) {
+    x = 3
+}
+
+func main() {
+    var b byte = 1
+    val p = &b
+    setU8(p)
+    var r rune = 1
+    val q = &r
+    setI32(q)
+    Println(b, r)
+}
+`, "2 3"},
+		{"a function value of a generic field", `package main
+
+struct Counter(var n int)
+
+func bumpAll[T any](inout x T) {
+    Println("lent")
+}
+
+struct Box[T any](var f func(inout T))
+
+func main() {
+    val b = Box[Ptr[Counter]](bumpAll[Ptr[Counter]])
+    var p = &Counter(1)
+    b.f(&p)
+}
+`, ""},
 		{"a slice of an inferred type parameter", `package main
 
 import . "martianoff/gala/go_interop"
@@ -416,7 +446,7 @@ func main() {
     appendTo(p, 3)
     Println(s)
 }
-`},
+`, ""},
 		{"a type argument named like a free type parameter", `package main
 
 struct U(var n int)
@@ -430,12 +460,12 @@ func main() {
     put[U](p, 5)
     Println(p.n)
 }
-`},
+`, ""},
 		{"a receiver's type argument named like a free type parameter", `package main
 
 struct U(var n int)
 
-struct Holds[T any](v T)
+struct Holds[T any](var v T)
 
 func (h Holds[T]) fillWith[U any](inout x T, u U) {
     x = h.v
@@ -447,12 +477,17 @@ func main() {
     h.fillWith(p, 5)
     Println(p.n)
 }
-`},
+`, ""},
 	}
 	for _, tc := range acceptedPrograms {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := trans.Transpile(tc.src, "inout_explicit_test.gala")
+			out, err := trans.Transpile(tc.src, "inout_explicit_test.gala")
 			require.NoError(t, err)
+			if tc.runs != "" {
+				got, runErr := buildAndRunGeneratedGo(t, out)
+				require.NoError(t, runErr, got)
+				assert.Equal(t, tc.runs, strings.TrimSpace(got))
+			}
 		})
 	}
 
@@ -527,6 +562,24 @@ import z "example.com/lendx/lend"
 func main() {
     var p z.PC = &z.Counter(1)
     z.Put[z.PC](&p, &z.Counter(2))
+    Println(p.N)
+}
+`)
+	require.NoError(t, err)
+
+	// A qualified parameter type is not a type parameter of the same name:
+	// Item stays lend.Counter's package's type, never the type argument.
+	_, err = transpileCrossPkg(t, root, `package main
+
+import "example.com/lendx/lend"
+
+func keep[Counter any](inout x lend.Counter, v Counter) {
+    Println(v)
+}
+
+func main() {
+    var p = &lend.Counter(1)
+    keep[int](p, 5)
     Println(p.N)
 }
 `)
