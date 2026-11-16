@@ -42,8 +42,10 @@
   extractor's statements under the conditions before it (here eagerly, which is sound only
   because generated extractors are pure and total; a user-defined `Unapply` is outside
   S1); it binds only the pattern variables a branch reads (here all of them); when a guard
-  reads no pattern variable it emits `if cond && guard` (here always the guard block); and
-  in a function's tail position it returns directly (here always a function literal).
+  reads no pattern variable it emits `if cond && guard` (here always the guard block); in a
+  function's tail position it returns directly (here always a function literal); and it
+  ends an exhaustive match with a panic of another class (here `panic match`, as galaspec),
+  which is equal only where the match is exhaustive (T5).
 
   **Not covered**: runs galaspec ends out of fuel, `stuck` or `unsupported` (claims are about
   values and panics), and a `return` inside an arm (the transformer lowers such a match

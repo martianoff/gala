@@ -122,7 +122,7 @@ formal/
   Gala/Theorems.lean        proofs about the semantics
   Gala/Fuel.lean            T1, fuel adequacy
   Gala/Statements.lean      the pinned statements of the theorems COVERAGE.md calls proved
-  Gala/*Lowering.lean       models of individual lowerings; they become the reference lowering (M3, M5)
+  Gala/*Lower*.lean         models of individual lowerings; they become the reference lowering (M3, M5)
   COVERAGE.md               hand-written now, generated later; see "Coverage"
 ```
 
@@ -241,7 +241,7 @@ column lists what each milestone's claim rests on beyond them.
 |---|---|---|---|---|
 | M1 | Fuel adequacy (T1) | galaspec's answer for a program never depends on the fuel budget, except that too little fuel ends in `fuel` | nothing | 2–3 weeks |
 | M2 | Alpha-invariance, left-to-right, defaults (T2–T4) | for the subset galaspec models (S1 plus lambdas, closures, named arguments and defaults), renaming bound variables apart never changes what galaspec says a program does, its effects happen in source order, and a default sees only the callee's earlier parameters | nothing | 6–8 weeks |
-| M3 | Match lowering against galaspec | the scoped `match` lowering, into a first fragment of GoCore, is correct with respect to galaspec itself (not a separate toy semantics), for every S1 pattern form | that the lowering describes what the transformer emits | 3–4 weeks |
+| M3 | Match lowering against galaspec | the scoped `match` lowering, into a first fragment of GoCore, is correct with respect to galaspec itself (not a separate toy semantics), for every S1 pattern form | that the lowering describes what the transformer emits; that the subject, guards and bodies are lowered correctly (M5); that the subject has the inferred static type (T7) | 3–4 weeks |
 | M4 | GoCore and the Go AST exporter | for every S1 program in the corpus, GoCore run on the transformer's *actual* output agrees with galaspec and with `go run` (tested, not proved) | parser, interpolation splitter, analyzer annotations, both exporters, GoCore's fidelity to Go | 5–8 weeks |
 | M5 | Reference lowering for all of S1 | a lowering from galaspec's syntax to GoCore, covering everything the transformer emits for S1, is proved to preserve meaning | that the lowering describes what the transformer emits | 6–9 weeks |
 | M6 | Per-program translation validation | for each S1 program the validator accepts, every run of it that galaspec ends `ok` or in a panic is proved to have the same output and outcome as the Go the transformer emitted, run in GoCore | as M4, plus the validator's run (kernel or compiled Lean) | 8–12 weeks |
@@ -331,8 +331,6 @@ column lists what each milestone's claim rests on beyond them.
   which no theorem ties to galaspec today. `compile_correct`, `program_correct` and the
   #996 counterexample `leaky_not_correct` are restated against galaspec and GoCore, and
   their pinned statements in `Statements.lean` change with them.
-- **Risk:** galaspec's match runs in a monad with state, fuel and a heap; the simulation
-  needs M1's fuel lemmas.
 - **Status: proved** (`formal/Gala/MatchLower.lean`, `lowerMatch_correct`), relative to
   the match's parts, as T3 is: *given that the subject, guards and bodies are lowered
   correctly*, the scoped lowering into GoCore is correct with respect to galaspec, as
@@ -341,14 +339,15 @@ column lists what each milestone's claim rests on beyond them.
   a call's evaluation order relative to a variable read unobservable (Go fixes the order
   only among calls); M5 has to establish them. A `return` inside an arm is left to M5. By
   M1, "not out of fuel" is a property of the program, so no fuel corollary is needed.
-  `lowerMatch_instance` shows the hypotheses can all be met, and `leaky_not_correct`
-  restates #996 against galaspec (10 against 6).
+  `lowerMatch_instance` meets every hypothesis on a match with literal, binder and wildcard
+  patterns (a guard or a body that reads a pattern variable needs typed locals, T7), and
+  `leaky_not_correct` restates #996 against galaspec (10 against 6).
   [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each theorem in full.
 - **Stated gap:** the subject has the static type the transformer inferred (`HasTy`);
   galaspec classifies a bare pattern name at run time, the transformer statically.
   Discharging it needs a typing judgment (T7).
 - **Still trusted:** that the lowering describes what the transformer emits, up to the
-  five normalizations M6 has to prove (see M6).
+  six normalizations M6 has to prove (see M6).
 
 #### M4: GoCore and the Go AST exporter
 
@@ -404,11 +403,13 @@ column lists what each milestone's claim rests on beyond them.
   temporaries and a correctness lemma for each normalization rule; both are part of
   M6's size.
 - **Normalizations M3 left to prove.** M3's reference lowering of `match` differs from what
-  the transformer emits in five deliberate ways. Each is a normalization lemma M6 has to
+  the transformer emits in six deliberate ways. Each is a normalization lemma M6 has to
   prove against the transformer's actual code; they are where #996- and #998-class bugs
   would hide.
-  1. *Temporaries inlined.* The transformer names an arm's intermediate results
-     (`_tmp_1 := C{}.Unapply(_subj)`, `_tmp_2 := _tmp_1.IsDefined()`); M3 writes them inline.
+  1. *Temporaries inlined and renamed.* The transformer names an arm's intermediate
+     results (`_tmp_1 := C{}.Unapply(_subj)`, `_tmp_2 := _tmp_1.IsDefined()`), keeps some
+     of them alive with `_ = _tmp_3`, adds copies (`_tmp_y := _tmp_3`), and calls the
+     subject `_subj`; M3 writes the expressions inline and numbers its temporaries.
   2. *Nested extractors evaluated eagerly.* The transformer runs a nested extractor's
      statements under the conditions before it (`if ok { ... }`, with `var` hoists); M3
      runs them unconditionally. This is valid only because generated extractors are pure
@@ -422,6 +423,12 @@ column lists what each milestone's claim rests on beyond them.
      rule against the real check.
   5. *A function literal or a direct return.* In a function's tail position the transformer
      returns from the function directly; M3 always uses a function literal called at once.
+  6. *The final panic.* When no arm matches, M3 panics with class `match`, as galaspec
+     does. The transformer ends an exhaustive match with another panic
+     (`panic("unreachable")`, or a message naming a sealed type's zero value), whose class
+     differs. That branch is unreachable only if the match is exhaustive for the subject's
+     value, so this lemma needs T5 (exhaustiveness) or a check that the program's matches
+     are exhaustive.
 - **What it removes:** the transformer from the trusted base, for each validated program.
 - **Risk:** the transformer's output must be normalized before comparison; a validator
   that is too strict rejects correct output and stalls coverage.
