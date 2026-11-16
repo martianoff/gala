@@ -317,6 +317,64 @@ def seqMkString [GShow α] (xs : List α) (sep : String) : String := sep.interca
 def seqHead (xs : List α) : Prog σ α := orStd xs.head?
 def seqLast (xs : List α) : Prog σ α := orStd xs.getLast?
 
+/-- `FlatMap(f)`: `f` on each element from the first, the results' elements in order
+    (array.gala:790; list.gala:353's `f(l.head).AppendAll(tail.FlatMap(f))` calls `f` on
+    the head before the tail's). `data` reads a result's elements. -/
+def seqFlatMap (xs : List α) (f : α → Prog σ γ) (data : γ → List β) : Prog σ (List β) := do
+  let ys ← xs.mapM f
+  pure (ys.flatMap data)
+
+/-- `Collect(pf)`: `pf` on each element from the first, the values of the `Some`s it
+    returns in order (array.gala:804, list.gala:363). -/
+def seqCollect (xs : List α) (pf : α → Prog σ (GOption β)) : Prog σ (List β) :=
+  xs.filterMapM fun x => do
+    match ← pf x with
+    | .Some v => pure (some v)
+    | .None => pure none
+
+/-- `Zip(other)`: pairs up to the shorter length (array.gala:947, list.gala:508). -/
+def seqZip (xs : List α) (ys : List β) : List (T2 α β) :=
+  (xs.zip ys).map fun (a, b) => T2.mk a b
+
+/-- `TakeWhile(p)`: `p` from the first element, stopping at the first false
+    (array.gala:704, list.gala:287). -/
+def seqTakeWhile : List α → (α → Prog σ Bool) → Prog σ (List α)
+  | [], _ => pure []
+  | x :: r, p => do if ← p x then (x :: ·) <$> seqTakeWhile r p else pure []
+
+/-- `DropWhile(p)`: `p` from the first element, stopping at the first false
+    (array.gala:717, list.gala:295). -/
+def seqDropWhile : List α → (α → Prog σ Bool) → Prog σ (List α)
+  | [], _ => pure []
+  | x :: r, p => do if ← p x then seqDropWhile r p else pure (x :: r)
+
+/-- `FindLast(p)`: `p` from the last element, stopping at the first true
+    (array.gala:926). -/
+def seqFindLast (xs : List α) (p : α → Prog σ Bool) : Prog σ (GOption α) :=
+  toGOption <$> xs.reverse.findM? p
+
+/-- `Grouped(n)`: `Panic.std` for `n ≤ 0`, else the elements in order, a new group after
+    each `n` of them, the last group shorter (array.gala:1044's loop `i += n` with
+    `Slice(i, min(i + n, length))`). One pass: the group being filled is kept reversed,
+    with its size. -/
+def seqGrouped (xs : List α) (n : Int64) : Prog σ (List (GArray α)) :=
+  if n ≤ 0 then throw .std
+  else
+    let k := n.toInt.toNat
+    let (done, cur, _) := xs.foldl (fun (done, cur, c) x =>
+      if c + 1 = k then (GArray.mk (x :: cur).reverse :: done, [], 0) else (done, x :: cur, c + 1))
+      (([] : List (GArray α)), ([] : List α), (0 : Nat))
+    pure (if cur.isEmpty then done.reverse else (GArray.mk cur.reverse :: done).reverse)
+
+/-- `Distinct()`: the first occurrence of each element, in order (array.gala:972,
+    list.gala:533, through hashset.gala:89's `firstOccurrence`). std keeps an element
+    unless an earlier kept one is `Equal` to it, by value through a HashSet for a
+    primitive type and by `Equal` otherwise; `eraseDups` keeps it unless an earlier one
+    is `==` to it. These agree because the `BEq` the translation derives is GALA's
+    generated `Equal`, which is symmetric; a type with its own `Equal` is reported
+    before this runs (`compares`). -/
+def seqDistinct [BEq α] (xs : List α) : List α := xs.eraseDups
+
 /-! Methods of `Option` (std/option.gala) and `Either` (std/either.gala), each after the
     std code it cites. A function argument runs only where std calls it; where std panics
     the model throws `Panic.std`. -/

@@ -203,10 +203,12 @@ galaspec models them, except as listed below):
 - `Array` and `List` from the dot-imported `collection_immutable`, as the prelude's
   `GArray` and `GList`, with the functions the prelude models (`ArrayOf`, `ListOf`,
   `EmptyArray`, `EmptyList`, `Size`, `Get`, `Map`, `Filter`, `FoldLeft`, `FoldRight`,
-  `Reduce`, `Partition`, `MkString`, ...; `Prelude.lean` lists them), each after the
-  std code it cites: the functions a call passes run in the order std runs them, with
-  the same early exits, and where std panics (`Get` out of range, `Reduce` of an empty
-  sequence) the model panics with the same class, `other`. Each function has a case in
+  `Reduce`, `Partition`, `MkString`, `FlatMap`, `Collect`, `Zip`, `TakeWhile`,
+  `DropWhile`, `Distinct`, `FindLast`, `Grouped`, ...; `Prelude.lean` lists them), each
+  after the std code it cites: the functions a call passes run in the order std runs
+  them, with the same early exits, and where std panics (`Get` out of range, `Reduce`
+  of an empty sequence, `Grouped` of a size below 1) the model panics with the same
+  class, `other`. Each function has a case in
   `internal/formal/gala2lean/testdata` whose output the gala CLI printed;
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
@@ -301,7 +303,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 47 | 1 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 463 | 34 | 444 | 34 |
+| UNSUPPORTED | 465 | 34 | 446 | 34 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -368,8 +370,8 @@ The constructs galaspec stopped at, by how many programs it stopped at each (37 
 
 | Construct | Programs |
 |---|---|
-| `import` | 275 |
-| `method-call` | 51 |
+| `import` | 276 |
+| `method-call` | 52 |
 | `generic-type` | 41 |
 | `index` | 38 |
 | `generic-decl` | 15 |
@@ -401,20 +403,20 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `qualified-type` | 22 |
 | `pointer-type` | 14 |
 | `type-float64` | 14 |
-| `method-call` | 11 |
 | `type-error` | 10 |
+| `method-call` | 9 |
 | `slice-type` | 8 |
 | `composite-literal` | 7 |
 | `return-inside-expression` | 7 |
-| `collection-method` | 6 |
 | `variadic-param` | 6 |
 | `untyped-global` | 5 |
+| `collection-method` | 4 |
 | `for` | 4 |
 | `local-struct` | 4 |
+| `partial-function` | 4 |
 | `type-any` | 4 |
 | `type-uint32` | 4 |
 | `bind` | 3 |
-| `expression-pattern` | 3 |
 
 ### Known disagreements
 

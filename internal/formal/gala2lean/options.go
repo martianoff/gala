@@ -146,7 +146,7 @@ func (g *gen) optParamType(p, t string, args []string) coreexport.Node {
 		case "_":
 			return infer
 		case "O_":
-			return &coreexport.TypeName{Name: "Option", Args: []coreexport.Node{infer}}
+			return optionOfInferred()
 		case "E_":
 			// Lean takes the left type from eitherFlatMap's signature.
 			return &coreexport.TypeName{Name: "Either", Args: []coreexport.Node{infer, infer}}
@@ -196,6 +196,26 @@ func (g *gen) typedLambda(l *coreexport.Lambda, expect coreexport.Node) *coreexp
 	return &c
 }
 
+// optionOfInferred is the GALA type Option of a type Lean infers.
+func optionOfInferred() coreexport.Node {
+	return &coreexport.TypeName{Name: "Option", Args: []coreexport.Node{&coreexport.TypeName{Name: inferTypeArg}}}
+}
+
+// funcArgResult is the Lean result type of function argument a of a std
+// call whose parameter wants expect, "" when not plain to see. A lambda
+// that leaves out its parameter types is read with them typed as the call
+// types them (typedLambda).
+func (g *gen) funcArgResult(a coreexport.Node, expect coreexport.Node, sc *scope, seen map[string]bool) string {
+	a = argNode(a)
+	if l, ok := a.(*coreexport.Lambda); ok {
+		a = g.typedLambda(l, expect)
+	}
+	if r := funcResult(g.exprType(a, sc, seen)); r != "_" {
+		return r
+	}
+	return ""
+}
+
 // optCallType is exprType of a call of a method of an Option or an Either
 // whose receiver has Lean type t.
 func (g *gen) optCallType(e *coreexport.Call, t string, s *coreexport.Select, sc *scope, seen map[string]bool) string {
@@ -211,11 +231,7 @@ func (g *gen) optCallType(e *coreexport.Call, t string, s *coreexport.Select, sc
 	// is plain to see (Fold's two give the same type).
 	fres := func() string {
 		for i, a := range e.Args {
-			a := argNode(a)
-			if l, ok := a.(*coreexport.Lambda); ok {
-				a = g.typedLambda(l, g.optParamType(m.params[i], t, args))
-			}
-			if r := funcResult(g.exprType(a, sc, seen)); r != "_" && r != "" {
+			if r := g.funcArgResult(a, g.optParamType(m.params[i], t, args), sc, seen); r != "" {
 				return r
 			}
 		}

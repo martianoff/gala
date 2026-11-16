@@ -1,0 +1,40 @@
+see a 1
+see a 2
+see a 3
+see a 4
+see a 5
+Array(1, 10, 2, 20, 3, 30, 4, 40, 5, 50)
+see l 1
+see l 2
+see l 3
+see l 4
+see l 5
+List(2, 4)
+5
+Array(2, 2, 4, 4)
+see c 1
+see c 2
+see c 3
+see c 4
+see c 5
+Array(300, 400, 500)
+List(odd 1, odd 3, odd 5)
+Array((1, one), (2, two), (3, three))
+List((1, true), (2, false))
+1 Array((7, 1)) List((7, 1))
+see tw 1
+see tw 2
+see tw 3
+Array(1, 2) List()
+see dw 1
+see dw 2
+see dw 3
+Array(3, 4, 5) List()
+Array(3, 1, 2) List(b, a)
+Array(P(1, a), P(2, b), P(1, c)) List(P(2, b), P(1, a))
+see fl 5
+see fl 4
+Some(4) None()
+Array(Array(1, 2), Array(3, 4), Array(5)) Array(Array(1, 2, 3, 4, 5)) Array(Array(1, 2, 3, 4, 5)) Array()
+3 Array(2, 2, 1) Array(6, 8, 10)
+5 Array(2, 4, 6, 8, 10)
