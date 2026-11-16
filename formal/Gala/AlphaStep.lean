@@ -48,38 +48,6 @@ theorem DeclsR.sealeds_eq {pkg : List String} {pm : String → Ren} {ds ds' : De
     (hD : DeclsR pkg pm ds ds') : ds.sealeds = ds'.sealeds :=
   fall2_pair_eq (fun _ _ h => fall2_eq (fall2_mono (fun _ _ hv => VarR.eq hv) h)) hD.sealeds
 
-/-! ## First-order values -/
-
-mutual
-/-- A value with no closure, function or cell in it. -/
-def Val.fo : Val → Bool
-  | .int _ | .bool _ | .str _ | .unit => true
-  | .tuple vs | .struct_ _ vs | .sealed _ _ vs => Val.fos vs
-  | .closure .. | .fn _ | .ref _ => false
-def Val.fos : List Val → Bool
-  | [] => true
-  | v :: vs => v.fo && Val.fos vs
-end
-
-mutual
-theorem ValR.refl_fo {pkg : List String} {pm : String → Ren} :
-    ∀ (v : Val), v.fo = true → ValR pkg pm v v
-  | .int _, _ => .int _
-  | .bool _, _ => .bool _
-  | .str _, _ => .str _
-  | .unit, _ => .unit
-  | .tuple vs, h => .tuple (ValsR.refl_fo vs (by simpa [Val.fo] using h))
-  | .struct_ _ vs, h => .struct_ _ (ValsR.refl_fo vs (by simpa [Val.fo] using h))
-  | .sealed _ _ vs, h => .sealed _ _ (ValsR.refl_fo vs (by simpa [Val.fo] using h))
-  | .closure .., h | .fn _, h | .ref _, h => by simp [Val.fo] at h
-theorem ValsR.refl_fo {pkg : List String} {pm : String → Ren} :
-    ∀ (vs : List Val), Val.fos vs = true → ValsR pkg pm vs vs
-  | [], _ => .nil
-  | v :: vs, h => by
-    simp only [Val.fos, Bool.and_eq_true] at h
-    exact .cons (ValR.refl_fo v h.1) (ValsR.refl_fo vs h.2)
-end
-
 /-! ## `mapM` over read-only steps -/
 
 theorem readOnly_mapM {f : α → H β} (hf : ∀ x, ReadOnly (f x)) :
@@ -532,23 +500,6 @@ theorem setField_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls} 
   | _ => exact .stuck _ _
 
 /-! ## Locals, cells and package-level variables -/
-
-/-- The lookup of a variable, on both sides. -/
-theorem lookupVar_rel2 {pkg : List String} {pm : String → Ren} {Γ : Ren} {l l' g g' : Env}
-    {x x' : String} (hl : EnvR pkg pm Γ l l') (hg : GlobR pkg pm g g') (hx : NameR Γ x x') :
-    OptBindR pkg pm (lookupVar l g x) (lookupVar l' g' x') := by
-  have hloc := lookup_rel hl hx
-  unfold lookupVar
-  cases h1 : lookup l x <;> cases h1' : lookup l' x' <;> rw [h1, h1'] at hloc
-  · obtain rfl : x = x' := by
-      rcases hx with hb | ⟨h, _⟩
-      · have := bound_lookup_isSome hl hb; rw [h1] at this; exact absurd this (by simp)
-      · exact h
-    exact lookup_rel hg (nameR_self g x)
-  · exact absurd hloc id
-  · exact absurd hloc id
-  · exact hloc
-
 /-- Updating a variable on both sides keeps the environments related. -/
 theorem update_rel {pkg : List String} {pm : String → Ren} {v v' : Val} (hv : ValR pkg pm v v') :
     ∀ {Γ : Ren} {ρ ρ' : Env} {x x' : String}, EnvR pkg pm Γ ρ ρ' → NameR Γ x x' →
@@ -657,7 +608,7 @@ theorem readPlace_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
   | _, _, .name hx => by
     unfold readPlace
     rw [run_get_bind, run_get_bind]
-    have hb := lookupVar_rel2 hc.1 hc.2.1 hx
+    have hb := lookupVar_rel hc.1 hc.2.1 hx
     cases h1 : lookupVar c.locals c.globals _ <;> cases h2 : lookupVar c'.locals c'.globals _ <;>
       rw [h1, h2] at hb
     · exact .stuck _ _
@@ -701,12 +652,6 @@ theorem resR_bind_st {pkg : List String} {pm : String → Ren} {Γ : Ren} {R : �
   · exact absurd hx id
   · exact absurd hx id
   · exact hf _ _ hx
-
-theorem set_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {d d' : Core}
-    (hd : CoreR pkg pm Γ d d') (c c' : Core) :
-    ResR pkg pm Eq (((set d : H Unit)).run.run c).1 ((set d' : H Unit).run.run c').1 ∧
-      CoreR pkg pm Γ ((set d : H Unit).run.run c).2 ((set d' : H Unit).run.run c').2 :=
-  ⟨rfl, hd⟩
 
 theorem update_keys : ∀ {ρ r : Env} {x : String} {v : Val}, update ρ x v = some r →
     r.map (fun kb => (kb.1, kb.1)) = ρ.map (fun kb => (kb.1, kb.1))

@@ -342,4 +342,25 @@ theorem construct_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : 
       ((construct ds' name fs vs').run.run c').1 :=
   Gala.Spec.construct_rel
 
+open Gala.Spec in
+theorem emit_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {Γ : Ren},
+    SameLayout ds ds' → ∀ (r : Print.P String) {c c' : Core}, CoreR pkg pm Γ c c' →
+    ResR pkg pm Eq ((emit r ds).run.run c).1 ((emit r ds').run.run c').1 ∧
+      CoreR pkg pm Γ ((emit r ds).run.run c).2 ((emit r ds').run.run c').2 :=
+  Gala.Spec.emit_rel
+
+open Gala.Spec in
+theorem setField_rel : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {c c' : Core},
+    SameLayout ds ds' → ∀ {v v' x x' : Val} (f : String), ValR pkg pm v v' → ValR pkg pm x x' →
+    ResR pkg pm (ValR pkg pm) ((setField ds v f x).run.run c).1
+      ((setField ds' v' f x').run.run c').1 :=
+  Gala.Spec.setField_rel
+
+open Gala.Spec in
+theorem alloc_rel : ∀ {pkg : List String} {pm : String → Ren} {Γ : Ren} {c c' : Core}
+    {v v' : Val}, CoreR pkg pm Γ c c' → ValR pkg pm v v' →
+    ResR pkg pm (ValR pkg pm) ((alloc v).run.run c).1 ((alloc v').run.run c').1 ∧
+      CoreR pkg pm Γ ((alloc v).run.run c).2 ((alloc v').run.run c').2 :=
+  Gala.Spec.alloc_rel
+
 end Gala.Statements

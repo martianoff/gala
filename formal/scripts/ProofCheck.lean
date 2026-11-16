@@ -64,7 +64,10 @@ def requiredTheorems : List Name := [
   `Gala.Spec.readPlace_rel,
   `Gala.Spec.assignTo_rel,
   `Gala.Spec.pushAll_rel,
-  `Gala.Spec.construct_rel
+  `Gala.Spec.construct_rel,
+  `Gala.Spec.emit_rel,
+  `Gala.Spec.setField_rel,
+  `Gala.Spec.alloc_rel
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

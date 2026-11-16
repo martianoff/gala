@@ -621,12 +621,16 @@ def PatNameR (pkg : List String) (pm : String → Ren) : PatName → PatName →
   | _, _ => False
 
 theorem lookupVar_rel {pkg : List String} {pm : String → Ren} {Γ : Ren} {l l' g g' : Env}
-    {x : String} (hl : EnvR pkg pm Γ l l') (hg : GlobR pkg pm g g') (hx : NameR Γ x x) :
-    OptBindR pkg pm (lookupVar l g x) (lookupVar l' g' x) := by
+    {x x' : String} (hl : EnvR pkg pm Γ l l') (hg : GlobR pkg pm g g') (hx : NameR Γ x x') :
+    OptBindR pkg pm (lookupVar l g x) (lookupVar l' g' x') := by
   have hloc := lookup_rel hl hx
   unfold lookupVar
-  cases h1 : lookup l x <;> cases h1' : lookup l' x <;> rw [h1, h1'] at hloc
-  · exact lookup_rel hg (nameR_self g x)
+  cases h1 : lookup l x <;> cases h1' : lookup l' x' <;> rw [h1, h1'] at hloc
+  · obtain rfl : x = x' := by
+      rcases hx with hb | ⟨h, _⟩
+      · have := bound_lookup_isSome hl hb; rw [h1] at this; exact absurd this (by simp)
+      · exact h
+    exact lookup_rel hg (nameR_self g x)
   · exact absurd hloc id
   · exact absurd hloc id
   · exact hloc
