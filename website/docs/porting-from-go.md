@@ -118,7 +118,7 @@ Most Go statements and expressions work as they are: `for` loops, `if`/`else`, `
 | `fallthrough` | Combine the cases with `\|`, or call a shared function | [GALA-E0036](/docs/errors/gala-e0036/) |
 | `goto` | Structured control flow | [GALA-E0036](/docs/errors/gala-e0036/) (with a label: [GALA-E0023](/docs/errors/gala-e0023/), undefined label) |
 | `for i := 0; i < n; i++`, `for cond`, `for` | Same | Works |
-| `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same, over a Go slice, map, string, integer or channel; over a GALA `Array`, `List` or `HashMap`, use `ForEach`, `Map`, `Filter`, `FoldLeft`, or `ZipWithIndex()` for the index | Works over a Go value; over a GALA collection, [GALA-E0133](/docs/errors/gala-e0133/) |
+| `for i, v := range xs`, `range m`, `range "str"`, `range 10` | Same, over a Go slice, array, map, string, integer, channel or function; over a GALA `Array`, `List` or `HashMap`, use `ForEach`, `Map`, `Filter`, `FoldLeft`, or `ZipWithIndex()` for the index | Works over a Go value; over a GALA collection, [GALA-E0133](/docs/errors/gala-e0133/) |
 | `break`, `continue` | Same | Works |
 | `break outer` / `continue outer` (labels) | None: a flag `var`, or a function and `return` | [GALA-E0129](/docs/errors/gala-e0129/) |
 

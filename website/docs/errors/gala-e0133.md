@@ -36,7 +36,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0133]: cannot range over `xs`: it is a collection_immutable.Array[int], and `range` takes a Go slice, map, string, integer, channel or function
+error[GALA-E0133]: cannot range over `xs`: it is a collection_immutable.Array[int], and `range` takes a Go slice, array, map, string, integer, channel or function
   --> main.gala:7:23
   |
 7 |     for i, x := range xs {

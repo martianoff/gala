@@ -69,7 +69,10 @@ func TestRangeOverGalaType(t *testing.T) {
 		{"an int", "package main\n\nfunc main() {\n    for i := range 3 {\n        Println(i)\n    }\n}\n"},
 		{"a channel", "package main\n\nimport \"time\"\n\nfunc main() {\n    for v := range time.After(time.Millisecond) {\n        Println(v.IsZero())\n        break\n    }\n}\n"},
 		{"a go_interop slice", "package main\n\nimport \"martianoff/gala/go_interop\"\n\nfunc main() {\n    val xs = go_interop.SliceOf(1, 2, 3)\n    for _, x := range go_interop.SliceDrop(xs, 1) {\n        Println(x)\n    }\n}\n"},
-		{"a collection's Go slice", "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    for _, x := range ArrayOf(1, 2).ToGoSlice() {\n        Println(x)\n    }\n}\n"},
+		{"a GALA alias of a Go slice", "package main\n\nimport \"martianoff/gala/go_interop\"\n\ntype Names []string\n\nfunc show(ns Names) {\n    for _, n := range ns {\n        Println(n)\n    }\n}\n\nfunc main() {\n    show(go_interop.SliceOf(\"a\"))\n}\n"},
+		{"an opaque integer", "package main\n\nopaque type Count int\n\nfunc main() {\n    val c = Count(3)\n    for i := range c {\n        Println(i)\n    }\n}\n"},
+		{"a Go iterator function", "package main\n\nimport (\n    \"maps\"\n\n    \"martianoff/gala/go_interop\"\n)\n\nfunc main() {\n    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), \"a\", 1)\n    for k := range maps.Keys(m) {\n        Println(k)\n    }\n}\n"},
+		{"a collection's Go slice","package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    for _, x := range ArrayOf(1, 2).ToGoSlice() {\n        Println(x)\n    }\n}\n"},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {

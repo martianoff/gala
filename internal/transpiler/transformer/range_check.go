@@ -19,7 +19,7 @@ import (
 
 // rangeOverGalaTypeError reports the ranged expression e, of type xType, when
 // xType is a GALA struct or a pointer to one. A Go type, an interface, an
-// opaque type (whose representation may be a slice or a map) and an
+// opaque type (a scalar underneath, and Go ranges over an integer) and an
 // unresolved type are left to Go, so valid code is never rejected.
 func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.Type) error {
 	if elem, ok := transpiler.ImmutableElem(xType); ok {
@@ -34,7 +34,7 @@ func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.
 	x := oneLine(e.at().sourceText())
 	at := e.at().rng()
 	return spanErrorAt(galaerr.CodeRangeOverGalaType, at, at,
-		fmt.Sprintf("cannot range over `%s`: it is a %s, and `range` takes a Go slice, map, string, integer, channel or function", x, displayType(xType)),
+		fmt.Sprintf("cannot range over `%s`: it is a %s, and `range` takes a Go slice, array, map, string, integer, channel or function", x, displayType(xType)),
 		t.rangeOverGalaTypeHint(impl.meta, x))
 }
 
