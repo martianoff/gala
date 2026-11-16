@@ -179,7 +179,8 @@ Go is tested, not proved.
 | `slices.Clip` | yes (a model) |
 | `float32` and `float64` types: values of them stored and moved, type assertions and switches on them ("Numeric types") | yes |
 | Operations on floating-point values (arithmetic, comparison, conversion, printing) and float literals; complex numbers | no: `unsupported:float-*`, `fmt-float`, `float-lit` |
-| Maps, channels, `defer`, `go`, `select`, labels, `goto`, `fallthrough`, conversions between strings and slices, Go's standard library beyond `fmt`'s four functions and `slices.Clip` | no: a run that reaches one ends `unsupported:<construct>` |
+| `defer` and `recover`: the deferred function and arguments evaluated at the `defer`, the calls run newest first when the function returns or panics, after a `return` set the results; `recover` stops a panic only called by a deferred call itself (an exact call depth); a panic in a deferred call replaces the current one; the panic's text made when it ends the run ("Defer statements", "Handling panics") | yes; recovering a runtime error, `panic(nil)` and deferring a builtin, conversion or another package's function (`defer fmt.Println`) are not modelled |
+| Maps, channels, `go`, `select`, labels, `goto`, `fallthrough`, conversions between strings and slices, Go's standard library beyond `fmt`'s four functions and `slices.Clip` | no: a run that reaches one ends `unsupported:<construct>` |
 
 A run ends `ok`, `panic` (with Go's text), `fuel` (out of steps or depth: inconclusive),
 `unsupported:<construct>`, or `stuck`, which no program Go compiles reaches: a GoCore or

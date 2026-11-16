@@ -65,7 +65,7 @@ private def unsupportedOf (j : Json) : D (Option String) :=
     without their children. A kind the schema does not have is malformed. -/
 def outsideExprs : List String :=
   ["map-type", "chan-type", "float-lit", "imag-lit"]
-def outsideStmts : List String := ["labeled", "select", "send", "go", "defer"]
+def outsideStmts : List String := ["labeled", "select", "send", "go"]
 
 private def kindOf (j : Json) : D String := str j "kind"
 
@@ -174,6 +174,7 @@ partial def decodeStmt (j : Json) : D Stmt := do
     return .range (← optExpr j "key") (← optExpr j "value") (← str j "tok") (← decodeExpr (← field j "x"))
       (← decodeBlock (← field j "body"))
   | "empty" => return .empty
+  | "defer" => return .defer_ (← decodeExpr (← field j "call"))
   | k =>
     if outsideStmts.contains k then return .unsupported k
     throw s!"expected a statement, got kind `{k}`"

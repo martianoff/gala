@@ -93,6 +93,7 @@ def refsS (bound : List String) : Stmt → List String × List String
   | .range k v tok x b =>
     let bk := if tok == ":=" then bound ++ declaredBy (k.toList ++ v.toList) else bound
     (refsE bound x ++ (refsSs bk b).1, bound)
+  | .defer_ x => (refsE bound x, bound)
   | _ => ([], bound)
 /-- Switch clauses: their cases in scope `bl`, their bodies in scope `bb`. -/
 def refsClauses (bl bb : List String) : List Clause → List String
@@ -171,7 +172,12 @@ def initPkg (c : Ctx) (n : Nat) (path : String) : GM Unit := do
         let vals ← (List.range d.names.length).mapM fun k => declValue c n t? vs[k]?
         pure (Except.ok (vals.map fun v => (t?.getD v.ty, v))))
       fun
-        | .unsupported what => if quiet then pure (.error what) else throw (.unsupported what)
+        | .unsupported what =>
+          if quiet then do
+            -- The initializer stopped part-way: no call it made is running any more.
+            modify fun s => { s with defers := [], recoverable := none }
+            pure (.error what)
+          else throw (.unsupported what)
         | e => throw e
     let vals := match r with
       | .ok vs => vs
@@ -222,15 +228,24 @@ def maxDepth : Nat := 1000000
 def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
   let c := buildCtx prog
   let depth := min fuel maxDepth
-  let go : GM Unit := do
-    for path in pkgOrder c do
-      initPkg c depth path
-    let mainFn ← funcVal c depth c.main "main" []
-    let _ ← callValue c depth mainFn [] false
+  let go : GM (Option String) := do
+    tryCatch (do
+        for path in pkgOrder c do
+          initPkg c depth path
+        let mainFn ← funcVal c depth c.main "main" []
+        let _ ← callValue c depth mainFn [] false
+        pure none) fun
+      -- A panic that ends the run: the text Go prints, made now, after every
+      -- deferred call ran (runtime `printpanics`), by its `Error` or `String` too.
+      | .panic v runtime => do
+        let text ← if runtime then asStr v else panicText c depth v
+        pure (some text)
+      | e => throw e
   let (r, s) := (go.run).run { cells := #[], closures := #[], out := "", steps := fuel }
   let o := match r with
-    | .ok () => .ok
-    | .error (.panic _ text) => .panic text
+    | .ok none => .ok
+    | .ok (some text) => .panic text
+    | .error (.panic ..) => .unsupported "panic-while-printing-a-panic"
     | .error .fuel => .fuel
     | .error (.unsupported what) => .unsupported what
     | .error (.stuck msg) => .stuck msg

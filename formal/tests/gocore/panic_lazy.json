@@ -1,0 +1,603 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 3,
+            "col": 1
+          },
+          "name": "panic_lazy.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "type-decl",
+              "pos": {
+                "line": 7,
+                "col": 1
+              },
+              "specs": [
+                {
+                  "name": "failure",
+                  "typeParams": [],
+                  "alias": false,
+                  "type": {
+                    "kind": "struct-type",
+                    "pos": {
+                      "line": 7,
+                      "col": 14
+                    },
+                    "fields": [
+                      {
+                        "names": [
+                          "msg"
+                        ],
+                        "type": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 7,
+                            "col": 26
+                          },
+                          "name": "string"
+                        },
+                        "tag": ""
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 9,
+                "col": 1
+              },
+              "name": "Error",
+              "recv": {
+                "names": [
+                  "f"
+                ],
+                "type": {
+                  "kind": "star",
+                  "pos": {
+                    "line": 9,
+                    "col": 9
+                  },
+                  "x": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 9,
+                      "col": 10
+                    },
+                    "name": "failure"
+                  }
+                },
+                "tag": ""
+              },
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 9,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 9,
+                        "col": 27
+                      },
+                      "name": "string"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 9,
+                  "col": 34
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 10,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 10,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 10,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 10,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 10,
+                            "col": 14
+                          },
+                          "value": "Error called"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 11,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 11,
+                          "col": 9
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 11,
+                            "col": 9
+                          },
+                          "name": "f"
+                        },
+                        "sel": "msg"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 14,
+                "col": 1
+              },
+              "name": "recovered",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 14,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 14,
+                  "col": 18
+                },
+                "stmts": [
+                  {
+                    "kind": "defer",
+                    "pos": {
+                      "line": 15,
+                      "col": 2
+                    },
+                    "call": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 15,
+                        "col": 8
+                      },
+                      "fun": {
+                        "kind": "func-lit",
+                        "pos": {
+                          "line": 15,
+                          "col": 8
+                        },
+                        "type": {
+                          "kind": "func-type",
+                          "pos": {
+                            "line": 15,
+                            "col": 8
+                          },
+                          "params": [],
+                          "results": [],
+                          "variadic": false
+                        },
+                        "body": {
+                          "kind": "block",
+                          "pos": {
+                            "line": 15,
+                            "col": 15
+                          },
+                          "stmts": [
+                            {
+                              "kind": "expr-stmt",
+                              "pos": {
+                                "line": 15,
+                                "col": 17
+                              },
+                              "x": {
+                                "kind": "call",
+                                "pos": {
+                                  "line": 15,
+                                  "col": 17
+                                },
+                                "fun": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 15,
+                                    "col": 17
+                                  },
+                                  "name": "recover"
+                                },
+                                "args": [],
+                                "ellipsis": false
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "args": [],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 16,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 16,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 16,
+                          "col": 2
+                        },
+                        "name": "panic"
+                      },
+                      "args": [
+                        {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 16,
+                            "col": 8
+                          },
+                          "op": "&",
+                          "x": {
+                            "kind": "composite-lit",
+                            "pos": {
+                              "line": 16,
+                              "col": 9
+                            },
+                            "type": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 16,
+                                "col": 9
+                              },
+                              "name": "failure"
+                            },
+                            "elts": [
+                              {
+                                "kind": "string-lit",
+                                "pos": {
+                                  "line": 16,
+                                  "col": 17
+                                },
+                                "value": "recovered, never printed"
+                              }
+                            ]
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 19,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 19,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 19,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 20,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 20,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 20,
+                          "col": 2
+                        },
+                        "name": "recovered"
+                      },
+                      "args": [],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 21,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 21,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 21,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 21,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 21,
+                            "col": 14
+                          },
+                          "value": "after the recovered panic"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 22,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 22,
+                          "col": 2
+                        },
+                        "name": "f"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "unary",
+                        "pos": {
+                          "line": 22,
+                          "col": 7
+                        },
+                        "op": "&",
+                        "x": {
+                          "kind": "composite-lit",
+                          "pos": {
+                            "line": 22,
+                            "col": 8
+                          },
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 22,
+                              "col": 8
+                            },
+                            "name": "failure"
+                          },
+                          "elts": [
+                            {
+                              "kind": "string-lit",
+                              "pos": {
+                                "line": 22,
+                                "col": 16
+                              },
+                              "value": "first"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "defer",
+                    "pos": {
+                      "line": 23,
+                      "col": 2
+                    },
+                    "call": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 23,
+                        "col": 8
+                      },
+                      "fun": {
+                        "kind": "func-lit",
+                        "pos": {
+                          "line": 23,
+                          "col": 8
+                        },
+                        "type": {
+                          "kind": "func-type",
+                          "pos": {
+                            "line": 23,
+                            "col": 8
+                          },
+                          "params": [],
+                          "results": [],
+                          "variadic": false
+                        },
+                        "body": {
+                          "kind": "block",
+                          "pos": {
+                            "line": 23,
+                            "col": 15
+                          },
+                          "stmts": [
+                            {
+                              "kind": "assign",
+                              "pos": {
+                                "line": 23,
+                                "col": 17
+                              },
+                              "tok": "=",
+                              "lhs": [
+                                {
+                                  "kind": "selector",
+                                  "pos": {
+                                    "line": 23,
+                                    "col": 17
+                                  },
+                                  "x": {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 23,
+                                      "col": 17
+                                    },
+                                    "name": "f"
+                                  },
+                                  "sel": "msg"
+                                }
+                              ],
+                              "rhs": [
+                                {
+                                  "kind": "string-lit",
+                                  "pos": {
+                                    "line": 23,
+                                    "col": 25
+                                  },
+                                  "value": "changed by a deferred call"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "args": [],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 24,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 24,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 24,
+                          "col": 2
+                        },
+                        "name": "panic"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 24,
+                            "col": 8
+                          },
+                          "name": "f"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

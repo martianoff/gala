@@ -1,0 +1,16 @@
+deferred body
+nested recover is nil: true
+caught: boom
+body done
+deferred 2
+deferred 1
+deferred 0
+32
+3 
+0 recovered: division by zero
+true
+helper got true
+7
+0
+pointer before inc 5
+value receiver saw 1
