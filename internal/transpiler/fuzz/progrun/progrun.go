@@ -221,11 +221,13 @@ func (e *Error) Error() string { return e.Step + ": " + e.Err.Error() + "\n" + e
 // process: the GALA packages a program imports are written there once, and
 // each program replaces only its main package.
 type goRunner struct {
-	mu      sync.Mutex // one program at a time: they share main.go
-	goBin   string
-	dir     string
-	env     []string
-	written map[string]bool // the GALA packages already in dir
+	mu    sync.Mutex // one program at a time: they share main.go
+	goBin string
+	// goVersion is the toolchain's release, as `go env GOVERSION` prints it.
+	goVersion string
+	dir       string
+	env       []string
+	written   map[string]bool // the GALA packages already in dir
 }
 
 var (
@@ -271,7 +273,8 @@ func programRunner(tb testing.TB) *goRunner {
 		)
 		version := "1.25"
 		if raw, err := os.ReadFile(filepath.Join(goroot, "VERSION")); err == nil {
-			v := strings.TrimPrefix(strings.SplitN(string(raw), "\n", 2)[0], "go")
+			r.goVersion = strings.TrimSpace(strings.SplitN(string(raw), "\n", 2)[0])
+			v := strings.TrimPrefix(r.goVersion, "go")
 			if parts := strings.Split(v, "."); len(parts) >= 2 {
 				version = parts[0] + "." + parts[1]
 			}
@@ -286,6 +289,13 @@ func programRunner(tb testing.TB) *goRunner {
 		requireUnderBazel(tb, "no go binary in the Go SDK: generated programs cannot be run")
 	}
 	return runner
+}
+
+// GoVersion is the release of the Go toolchain Run builds with, as `go env
+// GOVERSION` prints it (its GOROOT's VERSION file); "" if that file is missing.
+func GoVersion(tb testing.TB) string {
+	tb.Helper()
+	return programRunner(tb).goVersion
 }
 
 // Run builds mainGo, with the Go of every GALA package it imports, runs it

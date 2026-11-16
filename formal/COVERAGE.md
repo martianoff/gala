@@ -173,7 +173,11 @@ Go is tested, not proved.
 | `panic` with Go's printed text: a string, an error's `Error()`, a Stringer's `String()` ("Handling panics") | yes |
 | `fmt.Println`, `Print`, `Sprint`, `Sprintf` with `%v %d %s %t %%`; `String`, `Error` and `Format` by method set; `&{...}` for a top-level pointer to a struct; no methods through unexported fields | yes (a model) |
 | `std.FormatStruct`, `Copy`, `Equal`, `EvalOperand`, `Immutable.Format` (hand-written, reflective) | yes (models, `libFuncs` in `Gala/GoCore/Eval.lean`) |
-| Slices, arrays, maps, channels, floats, `range`, `defer`, `go`, `select`, labels, `goto`, `fallthrough`, Go's standard library beyond `fmt`'s four functions | no: a run that reaches one ends `unsupported:<construct>` |
+| Slices and arrays: slices sharing an underlying array, `len`, `cap`, `make`, `append`, `copy` (from a string too), index and slice expressions (the full `a[l:h:m]` too) with Go's runtime panic text, literals with keys, `[...]T`, elided element types; arrays compared element by element, slices only with `nil` ("Slice types", "Array types", "Index expressions", "Slice expressions", "Appending to and copying slices") | yes |
+| The capacity `append` gives a growing slice, which the spec leaves open | yes: gc's (Go 1.25.5, amd64), `Gala/GoCore/GcRuntime.lean`; where gc's choice depends on escape analysis, a run that would tell the two apart ends `unsupported` (`cap-escape-dependent`, `append-escape-dependent`, `slice-escape-dependent`) |
+| `range` over slices, arrays (through a pointer too), strings and integers; variadic functions, `f(xs...)` ("For statements with range clause", "Passing arguments to ... parameters") | yes |
+| `slices.Clip` | yes (a model) |
+| Maps, channels, floats, `defer`, `go`, `select`, labels, `goto`, `fallthrough`, conversions between strings and slices, Go's standard library beyond `fmt`'s four functions and `slices.Clip` | no: a run that reaches one ends `unsupported:<construct>` |
 
 A run ends `ok`, `panic` (with Go's text), `fuel` (out of steps or depth: inconclusive),
 `unsupported:<construct>`, or `stuck`, which no program Go compiles reaches: a GoCore or

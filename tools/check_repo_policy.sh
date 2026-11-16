@@ -147,6 +147,18 @@ while IFS= read -r thm; do
   fi
 done <<< "$lake_theorems"
 
+# --- 7. one Go release for GoCore's gc model --------------------------------
+# GoCore models the gc toolchain's choices of one Go release
+# (formal/Gala/GoCore/GcRuntime.lean); the differential run compares it with
+# go run of the Go SDK MODULE.bazel pins, which the formal workflow installs.
+bazel_go="$(sed -nE 's/^go_sdk\.download\(version = "([^"]+)"\)/\1/p' MODULE.bazel)"
+gocore_go="$(sed -nE 's/^def goVersion : String := "go([^"]+)"/\1/p' formal/Gala/GoCore/GcRuntime.lean)"
+difftest_go="$(sed -nE 's/^const GcRuntimeGoVersion = "go([^"]+)"/\1/p' internal/formal/difftest/gocore.go)"
+ci_go="$(sed -nE "s/^ *go-version: '([^']+)' # GoCore's gc model/\1/p" .github/workflows/formal.yml)"
+if [[ -z "$bazel_go" || "$bazel_go" != "$gocore_go" || "$bazel_go" != "$difftest_go" || "$bazel_go" != "$ci_go" ]]; then
+  fail "Go releases differ: MODULE.bazel go_sdk '$bazel_go', GcRuntime.lean goVersion '$gocore_go', difftest GcRuntimeGoVersion '$difftest_go', formal.yml difftest go-version '$ci_go'"
+fi
+
 # A plain `bazel build //...` must never download Lean (AGENTS.md rule 4).
 # formal/lean.bzl gates every Lean rule behind --config=formal, so the rules
 # are loaded from there and nowhere else.

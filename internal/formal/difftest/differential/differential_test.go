@@ -43,6 +43,7 @@ import (
 
 	"martianoff/gala/internal/formal/difftest"
 	"martianoff/gala/internal/formal/gala2lean"
+	"martianoff/gala/internal/transpiler/fuzz/progrun"
 )
 
 // defaultGenerated is how many generated programs a run compares;
@@ -175,6 +176,14 @@ func TestDifferential(t *testing.T) {
 	// it. Its comparisons are against go run's stdout, never an example's
 	// .out, so an example whose .out mixes in stderr (complex.gala prints with
 	// the builtin println) needs no exclusion here.
+	//
+	// GoCore models the gc toolchain's choices of one Go release (append
+	// growth, formal/Gala/GoCore/GcRuntime.lean); against another release it
+	// would disagree for no fault of its own.
+	if got := progrun.GoVersion(t); got != difftest.GcRuntimeGoVersion {
+		t.Fatalf("go run uses %s, but GoCore models %s (formal/Gala/GoCore/GcRuntime.lean): "+
+			"run the differential test with the Go SDK MODULE.bazel pins (GOROOT)", got, difftest.GcRuntimeGoVersion)
+	}
 	h := difftest.Harness{Spec: difftest.Spec{Bin: bin, Fuel: fuel}, Dir: t.TempDir(), Lean: lean,
 		GoCore: difftest.GoCore{Bin: gocoreBin(t)}}
 	var records []difftest.Record

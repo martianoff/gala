@@ -92,6 +92,10 @@ inductive Ty
   | func_ (params results : List Ty) (variadic : Bool)
   /-- The results of a call with several, `(T1, T2)`. -/
   | tuple (ts : List Ty)
+  /-- `[]elem` (Go spec, "Slice types"). -/
+  | slice (elem : Ty)
+  /-- `[n]elem` (Go spec, "Array types"). -/
+  | array (n : Nat) (elem : Ty)
 end
 
 instance : Inhabited Ty := ⟨.bool⟩
@@ -107,6 +111,8 @@ def Ty.beq : Ty → Ty → Bool
   | .iface ms, .iface ns => ms == ns
   | .func_ ps rs v, .func_ qs ss w => Ty.beqs ps qs && Ty.beqs rs ss && v == w
   | .tuple as, .tuple bs => Ty.beqs as bs
+  | .slice a, .slice b => a.beq b
+  | .array n a, .array m b => n == m && a.beq b
   | _, _ => false
 def Ty.beqs : List Ty → List Ty → Bool
   | [], [] => true
@@ -143,6 +149,8 @@ def Ty.text : Ty → String
   | .func_ ps rs _ => "func(" ++ ", ".intercalate (Ty.texts ps) ++ ")" ++
       (if rs.isEmpty then "" else " " ++ ", ".intercalate (Ty.texts rs))
   | .tuple ts => "(" ++ ", ".intercalate (Ty.texts ts) ++ ")"
+  | .slice t => "[]" ++ t.text
+  | .array n t => s!"[{n}]" ++ t.text
 def Ty.texts : List Ty → List String
   | [] => []
   | t :: ts => t.text :: Ty.texts ts
@@ -158,6 +166,23 @@ structure Loc where
   cell : Nat
   path : List Nat
   deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A non-nil slice (Go spec, "Slice types"): its underlying array, at `base` (a cell
+    holding an array value, or such a value inside one), and the window `off`,
+    `len` and `cap` into it. Slices sharing an underlying array share `base`. -/
+structure SliceRep where
+  base : Loc
+  off : Nat
+  len : Nat
+  cap : Nat
+  /-- The other capacity the gc toolchain may have given the slice, when that depends
+      on its escape analysis, which GoCore does not model (`GcRuntime.stackAppendCap`).
+      A run that would observe which one it is stops `unsupported`. -/
+  alt : Option Nat := none
+  deriving Inhabited, BEq
+
+/-- Where element `i` of the slice is. -/
+def SliceRep.loc (r : SliceRep) (i : Nat) : Loc := ⟨r.base.cell, r.base.path ++ [r.off + i]⟩
 
 /-- A function value: a declared function, a method bound to a receiver (a method
     value), or a function literal's closure, by its index in the state. -/
@@ -185,14 +210,20 @@ inductive Val
   | boxed (t : Ty) (v : Val)
   /-- The results of a call with several. -/
   | tuple (vs : List Val)
-  /-- A package-level variable of an imported package whose initializer GoCore could
-      not run (it reached `what`); reading it stops the run with `what`. -/
+  /-- An array value, its elements in order (Go spec, "Array types"). -/
+  | array (t : Ty) (es : Array Val)
+  /-- A slice; `none` is nil. -/
+  | slice (t : Ty) (s : Option SliceRep)
+  /-- A value GoCore cannot know, reading or writing into it stopping the run with
+      `what`: a package-level variable of an imported package whose initializer GoCore
+      could not run (it reached `what`), or the array an append left behind when gc
+      may or may not have written into it (`appendValues`). -/
   | poison (what : String)
   deriving Inhabited
 
 def Val.ty : Val → Ty
   | .int t _ | .bool t _ | .str t _ | .struct_ t _ | .ptr t _ | .func_ t _ | .nilIface t
-  | .boxed t _ => t
+  | .boxed t _ | .array t _ | .slice t _ => t
   | .tuple vs => .tuple (vs.map fun _ => .bool)
   | .poison _ => .tuple []
 
@@ -271,20 +302,29 @@ def cellType (cell : Nat) : GM Ty := do
   | some t => pure t
   | none => stuck "no such variable"
 
-/-- The field at `path` inside `v`. -/
+/-- The field or array element at `path` inside `v`. -/
 def Val.at : Val → List Nat → Option Val
   | v, [] => some v
   | .struct_ _ fs, i :: p => (fs[i]?).bind (·.at p)
+  | .array _ es, i :: p => (es[i]?).bind (·.at p)
+  -- Inside a value GoCore cannot read, the same.
+  | .poison w, _ => some (.poison w)
   | _, _ => none
 
-/-- `v` with the field at `path` replaced by `w`. -/
-def Val.setAt : Val → List Nat → Val → Option Val
-  | _, [], w => some w
-  | .struct_ t fs, i :: p, w => do
-    let f ← fs[i]?
-    let f' ← f.setAt p w
-    pure (.struct_ t (fs.set i f'))
-  | _, _, _ => none
+/-- `v` with the field or element at `path` replaced by `w`; `v` itself where `path`
+    leads nowhere (`store` checks it first). An array element is replaced in place
+    when the array is not shared, so a store into a slice costs no copy of it. -/
+def Val.setAt : Val → List Nat → Val → Val
+  | _, [], w => w
+  | .struct_ t fs, i :: p, w =>
+    match fs[i]? with
+    -- The field is taken out first, so it is not shared while it is updated.
+    | some f => .struct_ t ((fs.set i default).set i (f.setAt p w))
+    | none => .struct_ t fs
+  -- `Array.modify` takes the element out while it is updated, so an unshared array is
+  -- updated in place.
+  | .array t es, i :: p, w => .array t (es.modify i (·.setAt p w))
+  | v, _, _ => v
 
 def load (l : Loc) : GM Val := do
   match (← get).cells[l.cell]? >>= (·.at l.path) with
@@ -303,8 +343,12 @@ def storeCell (cell : Nat) (v : Val) : GM Unit :=
   modify fun s => { s with cells := s.cells.set! cell v }
 
 def store (l : Loc) (w : Val) : GM Unit := do
-  match (← get).cells[l.cell]? >>= (·.setAt l.path w) with
-  | some v => storeCell l.cell v
+  match (← get).cells[l.cell]? >>= (·.at l.path) with
   | none => stuck "a store through a pointer to nothing"
+  -- A store into a value GoCore cannot read (`Val.poison`) stops the run.
+  | some (.poison what) => if !l.path.isEmpty then throw (.unsupported what)
+  | some _ => pure ()
+  -- `modify` on the cell, so an unshared value is updated in place.
+  modify fun s => { s with cells := s.cells.modify l.cell (·.setAt l.path w) }
 
 end Gala.GoCore.Full

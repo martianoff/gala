@@ -26,6 +26,7 @@
 -/
 import Gala.GoCore.Ops
 import Gala.GoCore.Prog
+import Gala.GoCore.GcRuntime
 
 namespace Gala.GoCore.Full
 
@@ -165,6 +166,8 @@ def unify (tps : List String) : Expr → Ty → List (String × Ty)
   | .index (.ident _) es, .named _ _ args => unifyAll tps es args
   | .index (.selector _ _) es, .named _ _ args => unifyAll tps es args
   | .paren e, t => unify tps e t
+  | .arrayType none e, .slice t => unify tps e t
+  | .arrayType (some _) e, .array _ t => unify tps e t
   | _, _ => []
 /-- `unify` on type arguments, pairwise. -/
 def unifyAll (tps : List String) : List Expr → List Ty → List (String × Ty)
@@ -199,6 +202,62 @@ def boolType (a b : Val) : Ty :=
 /-- The types a field list declares, one per name. -/
 def fieldTypes (fs : List Field) : List Expr :=
   fs.flatMap fun | .mk ns t => if ns.isEmpty then [t] else ns.map fun _ => t
+
+/-- The largest slice capacity GoCore allocates; a larger one is a question of memory,
+    which the comparison leaves out (`unsupported`). -/
+def maxSliceCap : Nat := 10000000
+
+/-- The elements of a slice, in order. -/
+def sliceElems (v : Val) : GM (List Val) := do
+  match v with
+  | .slice _ none => pure []
+  | .slice _ (some r) =>
+    match ← load r.base with
+    | .array _ es => pure (es.extract r.off (r.off + r.len)).toList
+    | _ => stuck "a slice without its array"
+  | _ => stuck s!"... of {v.ty}"
+
+/-- The arguments a model of a variadic library function sees: for `f(xs...)`, the
+    elements of the slice `xs` in place of it, which are what the function's `...`
+    parameter holds (Go spec, "Passing arguments to ... parameters"). -/
+def spreadArgs (spread : Bool) (vs : List Val) : GM (List Val) := do
+  if !spread then return vs
+  match vs.getLast? with
+  | some s => return vs.dropLast ++ (← sliceElems s)
+  | none => stuck "... without an argument"
+
+/-- An index `i` out of the range `[0, len)`: a run-time panic (Go spec, "Index
+    expressions"), with the text Go's runtime prints (runtime/error.go, `boundsError`). -/
+def indexOutOfRange (i : Int) (len : Nat) : GM α :=
+  if i < 0 then runtimePanic s!"index out of range [{i}]"
+  else runtimePanic s!"index out of range [{i}] with length {len}"
+
+/-- The bounds of `x[lo:hi]` or `x[lo:hi:max]` for an operand of length `len` and
+    capacity `cap`: `lo` defaults to 0, `hi` to the length, `max` to the capacity, and
+    out of range, `0 ≤ lo ≤ hi ≤ max ≤ cap` failing, is a run-time panic (Go spec, "Slice
+    expressions"). The text is Go's runtime's (runtime/error.go, `boundsError`), checked
+    in the order the compiled code checks: `max`, then `hi`, then `lo`. `capWord` is
+    "capacity" for a slice operand, "length" for an array or string. -/
+def sliceBounds (lo hi mx : Option Int) (len cap : Nat) (capWord : String) : GM (Nat × Nat × Nat) := do
+  let oob := fun (s : String) => runtimePanic (α := Nat × Nat × Nat) s!"slice bounds out of range {s}"
+  let l := lo.getD 0
+  match mx with
+  | some m =>
+    let h := hi.getD len
+    if m < 0 then return ← oob s!"[::{m}]"
+    if m > cap then return ← oob s!"[::{m}] with {capWord} {cap}"
+    if h < 0 then return ← oob s!"[:{h}:]"
+    if h > m then return ← oob s!"[:{h}:{m}]"
+    if l < 0 then return ← oob s!"[{l}::]"
+    if l > h then return ← oob s!"[{l}:{h}:]"
+    pure (l.toNat, h.toNat, m.toNat)
+  | none =>
+    let h := hi.getD len
+    if h < 0 then return ← oob s!"[:{h}]"
+    if h > cap then return ← oob s!"[:{h}] with {capWord} {cap}"
+    if l < 0 then return ← oob s!"[{l}:]"
+    if l > h then return ← oob s!"[{l}:{h}]"
+    pure (l.toNat, h.toNat, cap)
 
 mutual
 
@@ -254,7 +313,8 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
       | none => return none
     | .star x => return (← typeOf? c n env x).map .ptr
     | .paren x => typeOf? c n env x
-    | .structType _ | .interfaceType _ | .funcType _ => return some (← evalType c n env e)
+    | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. =>
+      return some (← evalType c n env e)
     | .unsupported k => unsupported k
     | _ => return none
 
@@ -273,7 +333,17 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
       -- Sorted, so an interface type does not depend on the order it lists them in.
       return .iface ((fieldListNames es).mergeSort (fun a b => decide (a ≤ b)))
     | .funcType (.mk ps rs v) =>
-      return .func_ (← (fieldTypes ps).mapM (evalType c n env)) (← (fieldTypes rs).mapM (evalType c n env)) v
+      let pts ← (fieldTypes ps).mapM (evalType c n env)
+      -- A final `...T` parameter has type `[]T` (Go spec, "Function types").
+      let pts := if v then pts.dropLast ++ (pts.getLast?.map Ty.slice).toList else pts
+      return .func_ pts (← (fieldTypes rs).mapM (evalType c n env)) v
+    | .arrayType none elt => return .slice (← evalType c n env elt)
+    | .arrayType (some .ellipsis) _ => stuck "[...]T outside a composite literal"
+    | .arrayType (some len) elt =>
+      -- The length is a non-negative constant (Go spec, "Array types").
+      let k ← asInt (← evalExpr c n env len)
+      if k < 0 then stuck "negative array length"
+      return .array k.toNat (← evalType c n env elt)
     | .unsupported k => unsupported k
     | _ =>
       match ← typeOf? c n env e with
@@ -321,6 +391,10 @@ def zero (c : Ctx) : Nat → Ty → GM Val
     | .ptr _ => pure (.ptr t none)
     | .func_ .. => pure (.func_ t none)
     | .iface _ => pure (.nilIface t)
+    | .slice _ => pure (.slice t none)
+    | .array k et =>
+      if k > maxSliceCap then unsupported "array-large"
+      pure (.array t (Array.replicate k (← zero c n et)))
     | u => unsupported s!"zero-value-{u}"
 
 /-- `v` assigned to a variable of type `t` (Go spec, "Assignability", "Representability"):
@@ -344,6 +418,9 @@ def convert (c : Ctx) : Nat → Ty → Val → GM Val
     | .string, .str (.untyped _) s => pure (.str t s)
     | .ptr _, .nilIface (.untyped .nil) => pure (.ptr t none)
     | .func_ .., .nilIface (.untyped .nil) => pure (.func_ t none)
+    | .slice _, .nilIface (.untyped .nil) => pure (.slice t none)
+    | _, .slice vt r => if (← underlying c n vt) == u then pure (.slice t r) else stuck s!"cannot use {vt} as {t}"
+    | _, .array vt es => if (← underlying c n vt) == u then pure (.array t es) else stuck s!"cannot use {vt} as {t}"
     | _, .int vt x => if (← underlying c n vt) == u then pure (.int t x) else stuck s!"cannot use {vt} as {t}"
     | _, .bool _ b => if u == .bool then pure (.bool t b) else stuck s!"cannot use bool as {t}"
     | _, .str _ s => if u == .string then pure (.str t s) else stuck s!"cannot use string as {t}"
@@ -364,6 +441,9 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       if k.represents x then pure (.int t x) else stuck s!"constant {x} overflows {k.name}"
     | .int k, .int _ x => pure (.int t (k.wrap x))
     | .string, .int _ _ => unsupported "string-of-int"
+    | .slice _, .str .. => unsupported "slice-of-string"
+    | .string, .slice .. => unsupported "string-of-slice"
+    | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
     | _, _ => convert c n t v
 
 -- Expressions
@@ -382,8 +462,14 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
     | .charLit v => pure (.int (.untyped .rune) v)
     | .strLit s => pure (.str (.untyped .string) s)
     | .paren x => evalExpr c n env x
+    | .composite (some (.arrayType (some .ellipsis) elt)) elts =>
+      -- `[...]T{...}`: the length is the largest index plus one (Go spec, "Composite
+      -- literals").
+      let et ← evalType c n env elt
+      let es ← elements c n env et elts
+      pure (.array (.array es.size et) es)
     | .composite (some te) elts => composite c n env (← evalType c n env te) elts
-    | .composite none _ => unsupported "elided-composite-type"
+    | .composite none _ => stuck "a composite literal without a type outside another"
     | .funcLit sig body => do
       let id := (← get).closures.size
       let cl : Closure := { pkg := env.pkg, file := env.file, scopes := env.scopes, tenv := env.tenv, sig, body }
@@ -391,12 +477,14 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       let t ← evalType c n env (.funcType sig)
       pure (.func_ t (some (.closure id)))
     | .selector x sel => selector c n env x sel
-    | .index x _ =>
+    | .index x is =>
       match ← funcValue? c n env e with
       | some v => pure v
       | none =>
-        let _ ← evalExpr c n env x
-        unsupported "index"
+        let [i] := is | stuck "an index with several indices"
+        let v ← evalExpr c n env x
+        return (← element c n v none (← evalExpr c n env i)).1
+    | .sliceExpr x lo hi mx => sliceOf c n env x lo hi mx
     | .typeAssert x te => do
       let v ← evalExpr c n env x
       let t ← evalType c n env te
@@ -405,9 +493,7 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       -- Go's text names the operand's static interface type in Go's own spelling;
       -- the panic is not modelled.
       | none => unsupported "failed-type-assertion"
-    | .call fn args ellipsis => do
-      if ellipsis then unsupported "call-ellipsis"
-      Val.single (← evalCall c n env fn args)
+    | .call fn args ellipsis => Val.single (← evalCall c n env fn args ellipsis)
     | .star x => do
       match ← evalExpr c n env x with
       | .ptr _ (some l) => load l
@@ -415,8 +501,8 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       | _ => stuck "* of a non-pointer"
     | .unary "&" x =>
       match x with
-      | .composite (some te) elts => do
-        let v ← composite c n env (← evalType c n env te) elts
+      | .composite (some _) _ => do
+        let v ← evalExpr c n env x
         let cell ← alloc v
         pure (.ptr (.ptr v.ty) (some ⟨cell, []⟩))
       | _ => do
@@ -441,7 +527,8 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       binary c n op a b
     | .unsupported k => unsupported k
     | .keyValue .. => stuck "key: value outside a composite literal"
-    | .structType _ | .interfaceType _ | .funcType _ => stuck "a type as a value"
+    | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. => stuck "a type as a value"
+    | .ellipsis => stuck "... outside an array type"
 
 /-- A package-level name of package `path`: a variable, constant or function (Go
     spec, "Declarations and scope"), else a predeclared one. -/
@@ -463,7 +550,9 @@ def evalName (c : Ctx) : Nat → Env → String → String → GM Val
         | some te => convert c n (← evalType c n { pkg := path, file := fi } te) v
         | none => pure v
     | some (.func _ tps _ _) =>
-      if !tps.isEmpty then stuck s!"generic function {x} without type arguments"
+      -- Its type arguments come from the context it is used in (Go spec, "Type
+      -- inference": a generic function assigned to a typed variable or parameter).
+      if !tps.isEmpty then unsupported "type-inference"
       funcVal c n path x []
     | some (.type ..) => stuck s!"type {x} as a value"
     | none =>
@@ -488,6 +577,8 @@ def funcVal (c : Ctx) : Nat → String → String → List Ty → GM Val
     let p ← pkgCtx c path
     match p.objs.get? x with
     | some (.func fi tps sig _) =>
+      -- The type arguments not given come from the context (Go spec, "Type inference").
+      if targs.length < (fieldListNames tps).length then unsupported "type-inference"
       let tenv ← bindTParams tps targs
       let t ← evalType c n { pkg := path, file := fi, tenv } (.funcType sig)
       pure (.func_ t (some (.decl path x targs)))
@@ -539,7 +630,161 @@ def composite (c : Ctx) : Nat → Env → Ty → List Expr → GM Val
           | none => stuck "too many values in a struct literal"
         i := i + 1
       pure (.struct_ t vals)
+    | .slice et =>
+      let es ← elements c n env et elts
+      pure (.slice t (some (← newArray c n et es es.size)))
+    | .array k et =>
+      let es ← elements c n env et elts
+      if es.size > k then stuck "an index out of an array literal's bounds"
+      pure (.array t (es ++ Array.replicate (k - es.size) (← zero c n et)))
     | _ => unsupported s!"composite-{t}"
+
+/-- A new underlying array of `size` elements of type `et`: `es`, then zero values. A
+    slice over it is as long as `es`. -/
+def newArray (c : Ctx) : Nat → Ty → Array Val → Nat → GM SliceRep
+  | 0, _, _, _ => throw .fuel
+  | n + 1, et, es, size => do
+    let len := es.size
+    let es := es ++ Array.replicate (size - len) (← zero c n et)
+    let cell ← allocAs (.array size et) (.array (.array size et) es)
+    pure { base := ⟨cell, []⟩, off := 0, len, cap := size }
+
+/-- The indices of an array or slice literal's elements: a key's constant value, else
+    the previous index plus one, from 0 (Go spec, "Composite literals"). -/
+def elementKeys (c : Ctx) : Nat → Env → List Expr → GM (List Nat)
+  | 0, _, _ => throw .fuel
+  | n + 1, env, elts => do
+    let mut next := 0
+    let mut keys := #[]
+    for e in elts do
+      if let .keyValue k _ := e then
+        let i ← asInt (← evalExpr c n env k)
+        if i < 0 then stuck "a negative index in a literal"
+        if i > maxSliceCap then unsupported "literal-large"
+        next := i.toNat
+      keys := keys.push next
+      next := next + 1
+    pure keys.toList
+
+/-- The elements of an array or slice literal of element type `et`, as many as its
+    largest index plus one, the ones it does not give zero. An element may elide its
+    composite literal's type, `&T` for a pointer element type (Go spec, "Composite
+    literals"). -/
+def elements (c : Ctx) : Nat → Env → Ty → List Expr → GM (Array Val)
+  | 0, _, _, _ => throw .fuel
+  | n + 1, env, et, elts => do
+    let keys ← elementKeys c n env elts
+    let z ← zero c n et
+    let mut es := Array.replicate (keys.foldl (fun m k => max m (k + 1)) 0) z
+    for (k, e) in keys.zip elts do
+      let ve := match e with | .keyValue _ v => v | v => v
+      let elided := match ve with
+        | .composite none inner => some (false, inner)
+        | .unary "&" (.composite none inner) => some (true, inner)
+        | _ => none
+      let v ← match elided with
+        | some (amp, inner) =>
+          match ← underlying c n et, amp with
+          | .ptr pt, _ => do
+            let w ← composite c n env pt inner
+            pure (.ptr et (some ⟨← alloc w, []⟩))
+          | _, false => composite c n env et inner
+          | _, true => stuck "&{...} for a non-pointer element"
+        | none => do convert c n et (← evalExpr c n env ve)
+      es := es.set! k v
+    pure es
+
+/-- The operand of `len`, `cap`, or a `range` with at most one iteration variable.
+    Go does not evaluate it when it is an array, or a pointer to one, without function
+    calls or receives: the length is a constant (Go spec, "Length and capacity", "For
+    statements with range clause"). GoCore evaluates it, which is the same unless it
+    panics; a panic ends the run `unsupported`, as GoCore cannot tell the two apart. -/
+def constantOperand (c : Ctx) : Nat → Env → Expr → GM Val
+  | 0, _, _ => throw .fuel
+  | n + 1, env, x =>
+    tryCatch (evalExpr c n env x) fun
+      | .panic .. => unsupported "constant-length-operand"
+      | e => throw e
+
+/-- Element `iv` of `v`, which is at `l` if addressable (Go spec, "Index expressions"):
+    its value, where it is if it is addressable (a slice's element always is, an
+    array's when the array is, Go spec "Address operators"), and its type. A pointer to
+    an array indexes the array; a string gives its byte. -/
+def element (c : Ctx) : Nat → Val → Option Loc → Val → GM (Val × Option Loc × Ty)
+  | 0, _, _, _ => throw .fuel
+  | n + 1, v, l, iv => do
+    let i ← asInt iv
+    match v with
+    | .slice t r =>
+      let .slice et ← underlying c n t | stuck "a slice of a non-slice type"
+      match r with
+      | some r =>
+        if i < 0 || i ≥ r.len then return ← indexOutOfRange i r.len
+        let el := r.loc i.toNat
+        return (← load el, some el, et)
+      | none => indexOutOfRange i 0
+    | .array t es =>
+      let .array _ et ← underlying c n t | stuck "an array of a non-array type"
+      if i < 0 || i ≥ es.size then return ← indexOutOfRange i es.size
+      return (es[i.toNat]!, l.map fun l => ⟨l.cell, l.path ++ [i.toNat]⟩, et)
+    | .str _ s =>
+      let bs := s.toUTF8
+      if i < 0 || i ≥ bs.size then return ← indexOutOfRange i bs.size
+      return (.int (.int .uint8) bs[i.toNat]!.toNat, none, .int .uint8)
+    | .ptr _ (some pl) =>
+      match ← load pl with
+      | w@(.array ..) => element c n w (some pl) iv
+      | _ => stuck "an index through a pointer to a non-array"
+    | .ptr _ none => nilDeref
+    | _ => stuck s!"an index of {v.ty}"
+
+/-- `x[lo:hi]` and `x[lo:hi:max]` (Go spec, "Slice expressions"): of a string, a
+    string of its bytes; of a slice, a slice of the same type and underlying array; of
+    an addressable array (through a pointer too), a slice of it. -/
+def sliceOf (c : Ctx) : Nat → Env → Expr → Option Expr → Option Expr → Option Expr → GM Val
+  | 0, _, _, _, _, _ => throw .fuel
+  | n + 1, env, x, lo, hi, mx => do
+    let (v, l) ← operand c n env x
+    let idx := fun (e : Option Expr) => e.mapM fun e => do asInt (← evalExpr c n env e)
+    let lo ← idx lo
+    let hi ← idx hi
+    let mx ← idx mx
+    -- A slice of the array at `al`, of type `[]et`.
+    let ofArray := fun (al : Loc) (t : Ty) (size : Nat) => do
+      let .array _ et ← underlying c n t | stuck "an array of a non-array type"
+      let (a, b, m) ← sliceBounds lo hi mx size size "length"
+      pure (Val.slice (.slice et) (some ⟨al, a, b - a, m - a, none⟩))
+    match v with
+    | .str _ s =>
+      let bs := s.toUTF8
+      let (a, b, _) ← sliceBounds lo hi mx bs.size bs.size "length"
+      let t := (defaultVal v).ty
+      match String.fromUTF8? (bs.extract a b) with
+      | some r => pure (.str t r)
+      -- GoCore's strings are valid UTF-8; Go's may not be.
+      | none => unsupported "string-slice-mid-rune"
+    | .slice t none =>
+      let _ ← sliceBounds lo hi mx 0 0 "capacity"
+      pure (.slice t none)
+    | .slice t (some r) =>
+      -- With two possible capacities, a bound between them panics with one only.
+      if let some alt := r.alt then
+        let bound := mx.getD (hi.getD r.len)
+        if bound > min r.cap alt then unsupported "slice-escape-dependent"
+      let (a, b, m) ← sliceBounds lo hi mx r.len r.cap "capacity"
+      -- A full slice expression sets the capacity; otherwise both shrink by `lo`.
+      let alt := if mx.isSome then none else r.alt.map (· - a)
+      pure (.slice t (some { base := r.base, off := r.off + a, len := b - a, cap := m - a, alt }))
+    | .array t es =>
+      match l with
+      | some al => ofArray al t es.size
+      | none => stuck "a slice of an unaddressable array"
+    | .ptr _ (some pl) =>
+      match ← load pl with
+      | .array t es => ofArray pl t es.size
+      | _ => stuck "a slice through a pointer to a non-array"
+    | .ptr _ none => nilDeref
+    | _ => stuck s!"a slice of {v.ty}"
 
 /-- `x.sel`: a name of an imported package, a field (through a pointer too) or a method
     value (Go spec, "Selectors", "Method values"). -/
@@ -631,6 +876,11 @@ def operand (c : Ctx) : Nat → Env → Expr → GM (Val × Option Loc)
         match ← field? c n v sel with
         | some (f, k, _) => return (f, l.map fun l => ⟨l.cell, l.path ++ [k]⟩)
         | none => return (← selectOn c n v l sel, none)
+    | .index x [i] =>
+      if let some f ← funcValue? c n env e then return (f, none)
+      let (v, l) ← operand c n env x
+      let (w, el, _) ← element c n v l (← evalExpr c n env i)
+      return (w, el)
     | _ => return (← evalExpr c n env e, none)
 
 /-- `.sel` of an operand's value `v` (at `l` if addressable): a field, or a method
@@ -703,6 +953,11 @@ def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
         match ← field? c n v sel, l with
         | some (_, k, ft), some l => return (⟨l.cell, l.path ++ [k]⟩, ft)
         | _, _ => stuck s!"{sel} is not addressable"
+    | .index x [i] =>
+      let (v, l) ← operand c n env x
+      match ← element c n v l (← evalExpr c n env i) with
+      | (_, some el, t) => return (el, t)
+      | _ => stuck "an element of an unaddressable value"
     | _ => stuck "not addressable"
 
 /-- `x.(T)` (Go spec, "Type assertions"): the value if its dynamic type is `T`, or
@@ -793,6 +1048,11 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     -- Interface values compare by their dynamic values (Go spec, "Comparison
     -- operators"); a nil interface, typed by `binary`'s conversion of `nil`, equals
     -- only another nil interface, so a nil pointer inside one is not nil.
+    -- Interface values whose dynamic values are slices: Go's runtime panics comparing
+    -- them (not modelled).
+    match a, b with
+    | .boxed _ (.slice ..), _ | _, .boxed _ (.slice ..) => unsupported "uncomparable"
+    | _, _ => pure ()
     let (a, b) := (a.dyn, b.dyn)
     -- Values of different dynamic types are unequal: by the precondition (see the
     -- module doc), only two interface operands can differ in type.
@@ -802,6 +1062,7 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     match a, b with
     | .ptr _ l, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .ptr _ l => pure l.isNone
     | .func_ _ f, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .func_ _ f => pure f.isNone
+    | .slice _ r, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .slice _ r => pure r.isNone
     | .nilIface _, .nilIface _ => pure true
     | .nilIface _, _ | _, .nilIface _ => pure false
     -- Go compiles `==` on functions only against nil, which `binary` has converted to
@@ -809,6 +1070,9 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     -- of interface operands, where Go panics at run time (not modelled).
     | .func_ _ f, .func_ _ g =>
       if f.isNone || g.isNone then pure (f.isNone && g.isNone) else unsupported "uncomparable"
+    -- A slice compares only with nil, likewise.
+    | .slice _ r, .slice _ q =>
+      if r.isNone || q.isNone then pure (r.isNone && q.isNone) else unsupported "uncomparable"
     | _, _ =>
       if !same then return false
       match a, b with
@@ -816,25 +1080,32 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
       | .bool _ x, .bool _ y => pure (x == y)
       | .str _ x, .str _ y => pure (x == y)
       | .ptr _ l, .ptr _ m => pure (l == m)
-      | .struct_ _ xs, .struct_ _ ys =>
-        let rec go : List Val → List Val → GM Bool
-          -- A function field makes the struct type incomparable: Go rejects the
-          -- comparison, or through interfaces panics at run time; not modelled.
-          | .func_ .. :: _, _ :: _ => unsupported "uncomparable"
-          | x :: xs, y :: ys => do if ← equal c n x y then go xs ys else pure false
-          | _, _ => pure true
-        go xs ys
+      | .struct_ _ xs, .struct_ _ ys => equalAll c n xs ys
+      -- Arrays element by element (Go spec, "Comparison operators").
+      | .array _ xs, .array _ ys => equalAll c n xs.toList ys.toList
       | _, _ => pure false
+
+/-- Fields or elements pairwise, in order, stopping at the first unequal pair. A
+    function or slice among them makes the type incomparable: Go rejects the
+    comparison, or through interfaces panics at run time; not modelled. -/
+def equalAll (c : Ctx) : Nat → List Val → List Val → GM Bool
+  | 0, _, _ => throw .fuel
+  | n + 1, xs, ys => do
+    for (x, y) in xs.zip ys do
+      if let .func_ .. := x then unsupported "uncomparable"
+      if let .slice .. := x then unsupported "uncomparable"
+      if !(← equal c n x y) then return false
+    return true
 
 -- Calls
 
 /-- A call `fn(args)`, with its results: a conversion, a builtin, a model of a library
     function, a method call or a call of a function value (Go spec, "Calls",
     "Conversions", "Built-in functions"). The function value and the arguments are
-    evaluated left to right. -/
-def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → GM (List Val)
-  | 0, _, _, _ => throw .fuel
-  | n + 1, env, fn, args => do
+    evaluated left to right. `spread` is set for `fn(args...)`. -/
+def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (List Val)
+  | 0, _, _, _, _ => throw .fuel
+  | n + 1, env, fn, args, spread => do
     -- A conversion `T(x)`.
     if let some t ← typeOf? c n env fn then
       let [a] := args | stuck "a conversion takes one argument"
@@ -842,27 +1113,103 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → GM (List Val)
     match fn with
     | .ident b =>
       if (env.lookup b).isNone && (nameOwner c env b).isNone then
-        return ← builtin c n env b args
+        return ← builtin c n env b args spread
     | .selector (.ident q) f =>
       if (env.lookup q).isNone then
         if let some path := importOf c env q then
           if path == "fmt" && fmtFuncs.contains f then
-            return ← fmtCall c n f (← evalArgs c n env args)
+            return ← fmtCall c n f (← spreadArgs spread (← evalArgs c n env args))
+          -- `slices.Clip(s)` is `s[:len(s):len(s)]` (its documentation, package slices).
+          if path == "slices" && f == "Clip" && !spread then
+            match ← evalArgs c n env args with
+            | [.slice t r] => return [.slice t (r.map fun r => { r with cap := r.len, alt := none })]
+            | _ => stuck "slices.Clip of a non-slice"
           if !c.pkgs.contains path then unsupported s!"{path}.{f}"
     | _ => pure ()
     -- A declared function called by name: a generic one gets its type arguments by
     -- inference from the arguments (Go spec, "Type inference").
-    let declared : Option (String × String) := match fn with
+    -- Called with some of its type arguments, `f[T](...)`, it infers the rest.
+    let named : Expr → Option (String × String) := fun
       | .ident f => if (env.lookup f).isSome then none else (nameOwner c env f).map (·, f)
       | .selector (.ident q) f => if (env.lookup q).isSome then none else (importOf c env q).map (·, f)
       | _ => none
+    let (declared, targExprs) := match fn with
+      | .index g ts => (named g, ts)
+      | g => (named g, [])
     if let some (path, f) := declared then
       if let some (.func ..) := (c.pkgs.get? path).bind (·.objs.get? f) then
+        let targs ← targExprs.mapM (evalType c n env)
         let vs ← evalArgs c n env args
-        return ← callValue c n (.func_ (.func_ [] [] false) (some (.decl path f []))) vs
+        return ← callValue c n (.func_ (.func_ [] [] false) (some (.decl path f targs))) vs spread
     let fv ← evalExpr c n env fn
     let vs ← evalArgs c n env args
-    callValue c n fv vs
+    callValue c n fv vs spread
+
+/-- `append(s, xs...)` of a slice `s` of type `t`, element type `et` (Go spec,
+    "Appending to and copying slices"): within its capacity, the values are written
+    into its underlying array and the result shares it; past it, they go with `s`'s
+    elements into a new array, whose capacity is the gc runtime's choice
+    (`GcRuntime.grownCap`). -/
+def appendValues (c : Ctx) : Nat → Ty → Ty → Val → List Val → Bool → GM Val
+  | 0, _, _, _, _, _ => throw .fuel
+  | n + 1, t, et, s, xs, spread => do
+    if xs.isEmpty then return s
+    let (len, cap, alt, r?) := match s with
+      | .slice _ (some r) => (r.len, r.cap, r.alt, some r)
+      | _ => (0, 0, none, none)
+    let newLen := len + xs.length
+    -- With two possible capacities (`SliceRep.alt`), an append that fits one only
+    -- writes into the old array in one run of gc and into a new one in the other.
+    -- GoCore takes the new array, and the old one becomes unreadable: until it is
+    -- read or written again, the two runs cannot be told apart.
+    let ambiguous := match r?, alt with
+      | some _, some a => newLen > min cap a && newLen ≤ max cap a
+      | _, _ => false
+    if let some r := r? then
+      if newLen ≤ cap && !ambiguous then
+        for (v, i) in xs.zipIdx do
+          store (r.loc (len + i)) v
+        return .slice t (some { r with len := newLen })
+    let elem ← layout c n et
+    -- The new array's capacity, and the other one it may have (`SliceRep.alt`).
+    let (newCap, alt) := match alt with
+      | some a =>
+        if ambiguous then (GcRuntime.grownCap newLen (min cap a) elem, some (max cap a))
+        else (GcRuntime.grownCap newLen cap elem, some (GcRuntime.grownCap newLen a elem))
+      | none => (GcRuntime.grownCap newLen cap elem, none)
+    let alt := alt.filter (· != newCap)
+    -- Grown from empty, the slice may get a stack buffer (`GcRuntime.stackAppendCap`);
+    -- with two capacities already, that may be a third, more than GoCore follows.
+    let stack := (GcRuntime.stackAppendCap elem len newLen spread).filter (· != newCap)
+    let alt ← match alt, stack with
+      | some a, some k => if k == a then pure (some a) else unsupported "append-escape-dependent"
+      | some a, none => pure (some a)
+      | none, k => pure k
+    if max newCap (alt.getD 0) > maxSliceCap then unsupported "append-large"
+    let old ← sliceElems s
+    if ambiguous then
+      let some r := r? | stuck "an ambiguous append of a nil slice"
+      if !r.base.path.isEmpty then stuck "a slice of two capacities inside a variable"
+      storeCell r.base.cell (.poison "append-escape-dependent")
+    -- The array holds the larger capacity, so either run's appends fit it.
+    let rep ← newArray c n et (old ++ xs).toArray (max newCap (alt.getD 0))
+    pure (.slice t (some { rep with cap := newCap, alt }))
+
+/-- `t`'s size, alignment and whether it holds pointers, as the gc toolchain lays it
+    out (`GcRuntime.Layout`). -/
+def layout (c : Ctx) : Nat → Ty → GM GcRuntime.Layout
+  | 0, _ => throw .fuel
+  | n + 1, t => do
+    match ← underlying c n t with
+    | .int k => pure (.ofInt k)
+    | .bool => pure .bool
+    | .string => pure .string
+    | .ptr _ | .func_ .. => pure .word
+    | .iface _ => pure .iface
+    | .slice _ => pure .slice
+    | .array k e => pure (.array k (← layout c n e))
+    | .struct_ fs => pure (.struct_ (← fs.mapM fun (_, ft) => layout c n ft))
+    | u => unsupported s!"layout-{u}"
 
 /-- Arguments, left to right; `f(g())` passes `g`'s results (Go spec, "Calls"). -/
 def evalArgs (c : Ctx) : Nat → Env → List Expr → GM (List Val)
@@ -874,9 +1221,10 @@ def evalArgs (c : Ctx) : Nat → Env → List Expr → GM (List Val)
 
 /-- The builtins the transpiler emits (Go spec, "Built-in functions", "Handling
     panics"). -/
-def builtin (c : Ctx) : Nat → Env → String → List Expr → GM (List Val)
-  | 0, _, _, _ => throw .fuel
-  | n + 1, env, b, args => do
+def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (List Val)
+  | 0, _, _, _, _ => throw .fuel
+  | n + 1, env, b, args, spread => do
+    if spread && b != "append" then stuck s!"... in a call of {b}"
     match b, args with
     | "panic", [a] =>
       let v ← evalExpr c n env a
@@ -885,10 +1233,74 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → GM (List Val)
       let t ← evalType c n env te
       let cell ← allocAs t (← zero c n t)
       pure [.ptr (.ptr t) (some ⟨cell, []⟩)]
-    | "len", [a] =>
-      match ← evalExpr c n env a with
-      | .str _ s => pure [.int (.int .int) s.utf8ByteSize]
-      | _ => unsupported "len"
+    -- (Go spec, "Length and capacity".)
+    | "len", [a] | "cap", [a] =>
+      -- Of an array (or pointer to one), without calls, a constant: the operand is not
+      -- evaluated (Go spec, "Length and capacity"). See `constantOperand`.
+      let k ← match ← constantOperand c n env a with
+        | .str _ s => if b == "len" then pure s.utf8ByteSize else stuck "cap of a string"
+        | .slice _ none => pure 0
+        | .slice _ (some r) =>
+          if b == "len" then pure r.len
+          else if r.alt.isSome then unsupported "cap-escape-dependent"
+          else pure r.cap
+        | .array _ es => pure es.size
+        -- A pointer to an array, nil too: the array type's length.
+        | v@(.ptr t _) => do
+          let .ptr pt ← underlying c n t | stuck s!"{b} of {v.ty}"
+          let .array k _ ← underlying c n pt | stuck s!"{b} of {v.ty}"
+          pure k
+        | v => unsupported s!"{b}-{v.ty}"
+      pure [.int (.int .int) k]
+    -- (Go spec, "Making slices, maps and channels".)
+    | "make", te :: sizes =>
+      let t ← evalType c n env te
+      let .slice et ← underlying c n t | unsupported s!"make-{t}"
+      let sizes ← sizes.mapM fun e => do asInt (← evalExpr c n env e)
+      let (len, cap) ← match sizes with
+        | [l] => pure (l, l)
+        | [l, m] => pure (l, m)
+        | _ => stuck "make of a slice takes one or two sizes"
+      if len < 0 then runtimePanic "makeslice: len out of range"
+      -- A slice that large is a resource question, which the comparison leaves out;
+      -- and which of gc's panics a huge size gets depends on escape analysis.
+      if len > maxSliceCap || cap > maxSliceCap then unsupported "make-large"
+      if cap < len then runtimePanic "makeslice: cap out of range"
+      let z ← zero c n et
+      pure [.slice t (some (← newArray c n et (Array.replicate len.toNat z) cap.toNat))]
+    -- (Go spec, "Appending to and copying slices".)
+    | "append", s :: rest =>
+      let sv ← evalExpr c n env s
+      let t := sv.ty
+      let .slice et ← underlying c n t | stuck s!"append to {t}"
+      let xs ← if spread then
+          match rest with
+          | [r] =>
+            match ← evalExpr c n env r with
+            -- `append(bytes, s...)` appends a string's bytes.
+            | .str _ str => pure (str.toUTF8.toList.map fun b => Val.int et b.toNat)
+            | v => sliceElems v
+          | _ => stuck "append(s, x, ys...)"
+        else
+          let vs ← rest.mapM (evalExpr c n env)
+          vs.mapM (convert c n et)
+      return [← appendValues c n t et sv xs spread]
+    | "copy", [d, s] =>
+      let dv ← evalExpr c n env d
+      let src ← match ← evalExpr c n env s with
+        -- `copy(bytes, s)` copies a string's bytes.
+        | .str _ str => pure (str.toUTF8.toList.map fun b => Val.int (.int .uint8) b.toNat)
+        | v => sliceElems v
+      match dv with
+      | .slice _ none => pure [.int (.int .int) 0]
+      | .slice dt (some r) =>
+        let .slice et ← underlying c n dt | stuck "copy to a non-slice"
+        let k := min r.len src.length
+        -- The source is read whole first, so overlapping slices copy as `memmove`.
+        for (v, i) in (src.take k).zipIdx do
+          store (r.loc i) (← convert c n et v)
+        pure [.int (.int .int) k]
+      | _ => stuck "copy to a non-slice"
     | "print", _ | "println", _ =>
       -- They write to standard error, which the comparison leaves out (Go spec,
       -- "Bootstrapping").
@@ -925,83 +1337,116 @@ def callMethod? (c : Ctx) : Nat → Val → String → GM (Option Val)
     match methodSet c v.ty m with
     | some (p, _, args, me) =>
       match me.sig with
-      | .mk [] [_] _ => return some (← Val.single (← callMethod c n p args me v []))
+      | .mk [] [_] _ => return some (← Val.single (← callMethod c n p args me v [] false))
       | _ => return none
     | none => return none
 
 /-- Call a function value with argument values. -/
-def callValue (c : Ctx) : Nat → Val → List Val → GM (List Val)
-  | 0, _, _ => throw .fuel
-  | n + 1, fv, vs => do
+def callValue (c : Ctx) : Nat → Val → List Val → Bool → GM (List Val)
+  | 0, _, _, _ => throw .fuel
+  | n + 1, fv, vs, spread => do
     match fv with
     | .func_ _ none => nilDeref
     | .func_ _ (some (.decl path x targs)) =>
       -- A function a model replaces runs as the model, however it is reached:
       -- qualified, from inside its own package, instantiated or as a value.
-      if path == stdPath && libFuncs.contains x then return ← libCall c n x vs
+      if path == stdPath && libFuncs.contains x then
+        return ← libCall c n x (← spreadArgs spread vs)
       let p ← pkgCtx c path
       match p.objs.get? x with
       | some (.func fi tps sig body) =>
-        let targs ← if tps.isEmpty || !targs.isEmpty then pure targs else inferTArgs tps sig vs
+        let targs ← if targs.length == (fieldListNames tps).length then pure targs
+          else inferTArgs tps sig targs vs spread
         let tenv ← bindTParams tps targs
-        callBody c n { pkg := path, file := fi, tenv } sig body none vs
+        callBody c n { pkg := path, file := fi, tenv } sig body none vs spread
       | _ => stuck s!"{x} is not a function"
     | .func_ _ (some (.method p tn m args cell)) =>
       match methodOf c p tn m with
-      | some me => callMethod c n p args me (← loadCell cell) vs
+      | some me => callMethod c n p args me (← loadCell cell) vs spread
       | none => stuck s!"no method {tn}.{m}"
     | .func_ _ (some (.closure id)) =>
       match (← get).closures[id]? with
       | some cl =>
         callBody c n { pkg := cl.pkg, file := cl.file, scopes := cl.scopes, tenv := cl.tenv }
-          cl.sig (some cl.body) none vs
+          cl.sig (some cl.body) none vs spread
       | none => stuck "no closure"
     | _ => stuck "call of a non-function"
 
 /-- Call method `m` of type `p.tn[args]` with receiver `recv` (Go spec, "Method
     declarations"): a pointer receiver gets the pointer, a value receiver a copy of
     the value (through a pointer too, Go spec, "Calls"). -/
-def callMethod (c : Ctx) : Nat → String → List Ty → Method → Val → List Val → GM (List Val)
-  | 0, _, _, _, _, _ => throw .fuel
-  | n + 1, p, args, me, recv, vs => do
+def callMethod (c : Ctx) : Nat → String → List Ty → Method → Val → List Val → Bool → GM (List Val)
+  | 0, _, _, _, _, _, _ => throw .fuel
+  | n + 1, p, args, me, recv, vs, spread => do
     let recv ← if me.ptr then pure recv else
       match recv with
       | .ptr _ (some l) => load l
       | .ptr _ none => nilDeref
       | v => pure v
     let tenv := me.recvTParams.zip args
-    callBody c n { pkg := p, file := me.file, tenv } me.sig me.body (some (me.recvName, recv)) vs
+    callBody c n { pkg := p, file := me.file, tenv } me.sig me.body (some (me.recvName, recv)) vs spread
 
 /-- Type arguments of a generic function from its arguments' types (Go spec, "Type
-    inference"); an untyped constant argument has its default type. -/
-def inferTArgs (tps : List Field) (sig : Sig) (vs : List Val) : GM (List Ty) := do
+    inference"); an untyped constant argument has its default type. Each argument for
+    a final `...T` parameter is typed `T`; the slice `f(xs...)` passes, `[]T`. -/
+def inferTArgs (tps : List Field) (sig : Sig) (explicit : List Ty) (vs : List Val) (spread : Bool) : GM (List Ty) := do
   let names := fieldListNames tps
-  let .mk ps _ _ := sig
+  let .mk ps _ variadic := sig
   let ptys := fieldTypes ps
-  let eqs := (ptys.zip vs).flatMap fun (t, v) => unify names t (defaultVal v).ty
-  names.mapM fun x => match eqs.lookup x with
-    | some t => pure t
-    | none => unsupported "type-inference"
+  let pairs := if variadic then
+      let k := ptys.length - 1
+      let last := ptys.getLast?.getD (.ident "_")
+      let lastTy := if spread then Expr.arrayType none last else last
+      (ptys.take k).zip vs ++ (vs.drop k).map (lastTy, ·)
+    else ptys.zip vs
+  let eqs := pairs.flatMap fun (t, v) => unify names t (defaultVal v).ty
+  -- The type arguments given explicitly come first (Go spec, "Instantiations": a
+  -- partial type argument list leaves the rest to inference).
+  names.zipIdx.mapM fun (x, i) => match explicit[i]?, eqs.lookup x with
+    | some t, _ | none, some t => pure t
+    | none, none => unsupported "type-inference"
 
 /-- Run a function body: parameters (and the receiver) in new cells, converted to
     their types; named results in cells holding zero values; the results of its
     `return` (Go spec, "Function declarations", "Return statements"). -/
-def callBody (c : Ctx) : Nat → Env → Sig → Option (List Stmt) → Option (String × Val) → List Val → GM (List Val)
-  | 0, _, _, _, _, _ => throw .fuel
-  | n + 1, env, .mk ps rs variadic, body, recv, vs => do
+def callBody (c : Ctx) : Nat → Env → Sig → Option (List Stmt) → Option (String × Val) → List Val → Bool → GM (List Val)
+  | 0, _, _, _, _, _, _ => throw .fuel
+  | n + 1, env, .mk ps rs variadic, body, recv, vs, spread => do
     tick
-    if variadic then unsupported "variadic"
     let some body := body | unsupported "func-without-body"
+    -- The signature's types are read where the function is declared: the parameters',
+    -- receiver's and results' scope is the body (Go spec, "Declarations and scope").
+    let sigEnv := env
     let mut env := env.push
     if let some (r, v) := recv then
       env := env.bind r (← alloc v)
     let params := ps.flatMap fun | .mk ns t => if ns.isEmpty then [("_", t)] else ns.map (·, t)
+    -- A final `...T` parameter is a `[]T` holding the arguments past the others
+    -- (Go spec, "Passing arguments to ... parameters"): nil for none, else a new slice
+    -- with a new underlying array of them; `f(xs...)` passes `xs` itself.
+    let (params, vs) ← if !variadic then pure (params, vs) else do
+      let k := params.length - 1
+      let (x, te) := params.getLast?.getD ("_", .ident "_")
+      let rest := vs.drop k
+      let sv ← if spread then
+          match rest with
+          | [s] => pure s
+          | _ => stuck "... with other arguments for the variadic parameter"
+        else
+          let et ← evalType c n sigEnv te
+          let st := Ty.slice et
+          if rest.isEmpty then pure (Val.slice st none)
+          else
+            let es ← rest.mapM (convert c n et)
+            pure (Val.slice st (some (← newArray c n et es.toArray (GcRuntime.variadicCap es.length))))
+      pure (params.take k ++ [(x, Expr.arrayType none te)], vs.take k ++ [sv])
+    if spread && !variadic then stuck "... for a function that is not variadic"
     if params.length != vs.length then stuck "wrong number of arguments"
     for ((x, te), v) in params.zip vs do
-      let t ← evalType c n env te
+      let t ← evalType c n sigEnv te
       env := env.bind x (← allocAs t (← convert c n t v))
     let results := rs.flatMap fun | .mk ns t => if ns.isEmpty then [("", t)] else ns.map (·, t)
-    let rtys ← results.mapM fun (_, te) => evalType c n env te
+    let rtys ← results.mapM fun (_, te) => evalType c n sigEnv te
     let mut named : List Nat := []
     for ((x, _), t) in results.zip rtys do
       if !x.isEmpty then
@@ -1100,7 +1545,7 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
         | .brk => pure ()
         | e => throw e
       pure env
-    | .range .. => unsupported "range"
+    | .range k v tok x body => do rangeLoop c n env k v tok x body; pure env
     | .unsupported k => unsupported k
 
 /-- The value a declared variable starts with: the initializer's value converted to the
@@ -1200,6 +1645,57 @@ def forLoop (c : Ctx) : Nat → Env → Option Expr → Option Stmt → List Stm
         let _ ← execStmt c n env p
       return some env
 
+/-- `for k, v := range x { body }` (Go spec, "For statements with range clause"), over
+    a slice, an array (through a pointer too), a string or an integer. `x` is evaluated
+    once; a slice's elements, or a pointed-to array's, are read as each iteration
+    reaches them, an array value's from its copy. A string's iterations are its runes:
+    the byte index and the rune. With `:=`, each iteration has its own variables (Go
+    1.22); with `=`, the iteration values are assigned to `k` and `v`. -/
+def rangeLoop (c : Ctx) : Nat → Env → Option Expr → Option Expr → String → Expr → List Stmt → GM Unit
+  | 0, _, _, _, _, _, _ => throw .fuel
+  | n + 1, env, k, v, tok, x, body => do
+    -- With one iteration variable, Go does not evaluate an array (or pointer to one)
+    -- whose length is constant (Go spec, "For statements with range clause"); GoCore
+    -- does not know the static type, so a panic evaluating it ends the run instead.
+    let xv ← if (v.map (· matches .ident "_")).getD true then constantOperand c n env x else evalExpr c n env x
+    let intVal := fun (i : Nat) => Val.int (.int .int) i
+    -- The number of iterations, and the key and value of each.
+    let (count, item) : Nat × (Nat → GM (Val × Val)) ← match xv with
+      | .slice _ none => pure (0, fun i => pure (intVal i, .tuple []))
+      | .slice _ (some r) => pure (r.len, fun i => do pure (intVal i, ← load (r.loc i)))
+      | .array _ es => pure (es.size, fun i => pure (intVal i, es[i]!))
+      | .ptr _ (some pl) => do
+        match ← load pl with
+        | .array _ es => pure (es.size, fun i => do pure (intVal i, ← load ⟨pl.cell, pl.path ++ [i]⟩))
+        | _ => stuck "range over a pointer to a non-array"
+      | .str _ s =>
+        let runes := (s.toList.foldl (fun (acc : List (Nat × Char) × Nat) ch =>
+          ((acc.2, ch) :: acc.1, acc.2 + ch.utf8Size)) ([], 0)).1.reverse.toArray
+        pure (runes.size, fun i =>
+          let (off, ch) := runes[i]!
+          pure (intVal off, .int (.int .int32) ch.toNat))
+      | .int _ m => do
+        let t := (defaultVal xv).ty
+        pure (m.toNat, fun i => pure (.int t i, .tuple []))
+      | v => unsupported s!"range-{v.ty}"
+    for i in [0:count] do
+      tick
+      let (kv, vv) ← item i
+      let mut env' := env.push
+      for (e?, w) in [(k, kv), (v, vv)] do
+        match e?, tok with
+        | none, _ | some (.ident "_"), _ => pure ()
+        | some (.ident y), ":=" => env' := env'.bind y (← alloc w)
+        | some e, "=" =>
+          let (l, ty) ← evalAddr c n env e
+          store l (← convert c n ty w)
+        | some _, _ => stuck s!"range with {tok}"
+      let r ← tryCatch (do execBlock c n env' body; pure true) fun
+        | .brk => pure false
+        | .cont => pure true
+        | e => throw e
+      if !r then break
+
 /-- An assignment (Go spec, "Assignment statements", "Short variable declarations"):
     the operands of the left side's indirections and the right side are evaluated
     left to right, then the assignments are carried out left to right. -/
@@ -1220,13 +1716,24 @@ def assign (c : Ctx) : Nat → Env → String → List Expr → List Expr → GM
         | _ => stuck ":= of a non-name"
       return env
     if tok == "=" then
+      -- An index expression's operands are evaluated with the rest, its bounds checked
+      -- when its assignment is carried out (Go spec, "Assignment statements": `x[1],
+      -- x[3] = 4, 5` sets `x[1]`, then panics).
       let targets ← lhs.mapM fun x => match x with
         | .ident "_" => pure none
-        | x => some <$> evalAddr c n env x
+        | .index a [i] => do
+          let (av, al) ← operand c n env a
+          pure (some (Sum.inr (av, al, ← evalExpr c n env i)))
+        | x => do pure (some (Sum.inl (← evalAddr c n env x)))
       let vs ← rhsValues c n env lhs.length rhs
       for (t, v) in targets.zip vs do
-        if let some (l, ty) := t then
-          store l (← convert c n ty v)
+        match t with
+        | none => pure ()
+        | some (.inl (l, ty)) => store l (← convert c n ty v)
+        | some (.inr (av, al, iv)) =>
+          match ← element c n av al iv with
+          | (_, some el, ty) => store el (← convert c n ty v)
+          | _ => stuck "an assignment to an element of an unaddressable value"
       return env
     -- `x op= y`: `x` is evaluated once.
     let op := String.ofList tok.toList.dropLast
@@ -1356,12 +1863,23 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
       let parts ← (fs.zip ftys).mapM fun (f, (name, _)) =>
         fmtValue c n f 'v' (depth + 1) (canIface && exported name)
       pure ("{" ++ " ".intercalate parts ++ "}")
+    -- A slice or array prints its elements in brackets (`printValue`'s
+    -- `reflect.Array, reflect.Slice`).
+    | .slice .. | .array .. =>
+      if verb != 'v' then unsupported "fmt-verb-slice"
+      let es ← match v with
+        | .array _ es => pure es.toList
+        | _ => sliceElems v
+      let parts ← es.mapM fun e => fmtValue c n e verb (depth + 1) canIface
+      pure ("[" ++ " ".intercalate parts ++ "]")
     | .ptr _ none => pure "<nil>"
     | .ptr _ (some l) =>
       let w ← load l
       if depth == 0 then
-        if let .struct_ .. := w then
+        match w with
+        | .struct_ .. | .slice .. | .array .. =>
           return "&" ++ (← fmtValue c n w verb (depth + 1) canIface)
+        | _ => pure ()
       unsupported "print-pointer"
     | .nilIface _ => pure "<nil>"
     | .func_ .. => unsupported "print-pointer"
@@ -1395,7 +1913,7 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
       | .int _ | .bool | .string => pure [.bool .bool (← equal c n a b)]
       | _ =>
         match methodSet c a.ty "Equal" with
-        | some (p, _, args, me) => callMethod c n p args me a [b]
+        | some (p, _, args, me) => callMethod c n p args me a [b] false
         | none => unsupported "std.Equal-reflective"
     -- `Copy[T](v T) T` (std/types.go, lines 122-145 and 200-203): a nil pointer is returned as it is, a value with its own
     -- `Copy() T` is copied by it; the reflective rest is unsupported.
@@ -1407,7 +1925,7 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
         | some (p, _, args, me) =>
           match v, me.ptr with
           | .ptr _ _, false => pure [v]  -- copiesPointee: the pointee's Copy, returned as is
-          | _, _ => callMethod c n p args me v []
+          | _, _ => callMethod c n p args me v [] false
         | none =>
           match v with
           | .int (.int _) _ | .bool .bool _ | .str .string _ => pure [v]
