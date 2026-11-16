@@ -1676,13 +1676,7 @@ func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) (td *
 	if t.goTypeInfo == nil {
 		return nil, nil
 	}
-	key := t.goTypeLookupName(typ)
-	td = t.goTypeInfo.GetTypeData(key)
-	if name, bare := bareTypeName(typ); td == nil && bare {
-		if key = t.dotImportedGoTypeKey(name); key != "" {
-			td = t.goTypeInfo.GetTypeData(key)
-		}
-	}
+	key, td := t.goTypeDataFor(typ)
 	// The hop bound stops an alias chain that refers back to itself.
 	for hop := 0; hop < 16 && td != nil && td.Kind == "alias"; hop++ {
 		target = t.goTypeInfo.ResolveTypeAlias(key)
@@ -1697,6 +1691,23 @@ func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) (td *
 		key, td, target = next, nextTD, nil
 	}
 	return td, target
+}
+
+// goTypeDataFor is the Go type information of typ, as it is, and the key it
+// is filed under: typ's lookup name, or for a bare name a dot-imported Go
+// type's. data is nil when there is none.
+func (t *galaASTTransformer) goTypeDataFor(typ transpiler.Type) (key string, data *transpiler.GoTypeData) {
+	if t.goTypeInfo == nil {
+		return "", nil
+	}
+	key = t.goTypeLookupName(typ)
+	data = t.goTypeInfo.GetTypeData(key)
+	if name, bare := bareTypeName(typ); data == nil && bare {
+		if key = t.dotImportedGoTypeKey(name); key != "" {
+			data = t.goTypeInfo.GetTypeData(key)
+		}
+	}
+	return key, data
 }
 
 // bareTypeName returns the name of typ written without a package qualifier.

@@ -331,7 +331,8 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 			}
 			continue
 		}
-		if have, isPtr := t.heldPointer(arg); isPtr && have.NonNull {
+		have, isPtr := t.heldPointer(arg)
+		if isPtr && have.NonNull {
 			// A Ptr the caller holds lends its pointee.
 			if err := t.checkInoutLentPtr(arg, have, false, callee, i, c); err != nil {
 				return err
@@ -340,6 +341,11 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 		}
 		at := t.inoutArgAt(c, callee, i)
 		text := at.sourceText()
+		if isPtr {
+			// A *T may be nil (GALA-E0080 for one GALA sees as it is).
+			return inoutError(at, fmt.Sprintf("the argument %s of %s is a pointer that may be nil, passed to an inout parameter", text, callee.name),
+				fmt.Sprintf("pass `RequirePtr(%s)`: a Ptr lends its pointee (RequirePtr panics on nil)", text))
+		}
 		return inoutError(at, fmt.Sprintf("the argument %s of %s is passed to an inout parameter without `&`", text, callee.name),
 			fmt.Sprintf("lend the place with `&%s`; an inout argument is marked at the call site", text))
 	}
@@ -351,39 +357,54 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 }
 
 // heldPointer is the pointer type (a Ptr[T] or a *T) expr holds, through
-// GALA aliases (`type PC Ptr[Counter]`); ok is false when it holds none.
+// GALA and Go aliases (unaliasedType); ok is false when it holds none.
 func (t *galaASTTransformer) heldPointer(expr ast.Expr) (ptr transpiler.PointerType, ok bool) {
-	ptr, ok = t.followAliasChain(t.getExprTypeName(expr)).(transpiler.PointerType)
+	ptr, ok = t.unaliasedType(t.getExprTypeName(expr)).(transpiler.PointerType)
 	return ptr, ok
 }
 
+// unaliasedType follows typ through GALA aliases (`type PC Ptr[Counter]`)
+// and Go aliases (`type GP = *GoCounter`) to the type they name. A Go alias
+// whose target does not resolve, and a generic one given type arguments,
+// are left as they are.
+func (t *galaASTTransformer) unaliasedType(typ transpiler.Type) transpiler.Type {
+	// The hop bound stops an alias chain that refers back to itself.
+	for hop := 0; hop < 64; hop++ {
+		typ = t.followAliasChain(typ)
+		named, isNamed := typ.(transpiler.NamedType)
+		if !isNamed {
+			return typ
+		}
+		target, isAlias := t.goAliasTarget(named)
+		if !isAlias || target == nil {
+			return typ
+		}
+		typ = target
+	}
+	return typ
+}
+
 // checkInoutLentPtr rejects a pointer of type have lent to the `inout`
-// parameter i of callee when it is not as many pointers deep as the
-// parameter's type at this call (inoutLentType) takes (GALA-E0111). With
-// amp, arg is the place of `&place`, which lends the variable holding the
-// pointer: `put[Counter](&p)` lends a `**Counter` where the parameter is a
-// `*Counter`. Without, arg is a Ptr the caller holds, which lends its
-// pointee: `put[Ptr[Counter]](p)` lends a `*Counter` where the parameter
-// is a `**Counter`. Only the depth decides; the pointee's type is left to
-// Go, and only picks the hint.
+// parameter i of callee when it certainly is not as many pointers deep as
+// the parameter's type at this call (inoutLentType) takes (GALA-E0111,
+// depthMismatch). With amp, arg is the place of `&place`, which lends the
+// variable holding the pointer: `put[Counter](&p)` lends a `**Counter`
+// where the parameter is a `*Counter`. Without, arg is a Ptr the caller
+// holds, which lends its pointee: `put[Ptr[Counter]](p)` lends a
+// `*Counter` where the parameter is a `**Counter`. Only the depth decides;
+// the pointee's type is left to Go, and only picks the hint.
 func (t *galaASTTransformer) checkInoutLentPtr(arg ast.Expr, have transpiler.PointerType, amp bool, callee inoutCallee, i int, c callSrc) error {
 	want, free, known := t.inoutLentType(callee, i)
 	if !known {
 		return nil
 	}
-	wantDepth, known := t.pointerDepth(want)
-	if !known {
-		return nil
-	}
-	haveDepth, known := t.pointerDepth(have)
-	if !known {
-		return nil
-	}
+	wantDepth, wantExact := t.pointerDepth(want, free)
+	haveDepth, haveExact := t.pointerDepth(have, nil)
 	lent := haveDepth // the depth of what arg lends: the pointer, or its pointee
 	if !amp {
 		lent--
 	}
-	if lent == wantDepth {
+	if !depthMismatch(lent, haveExact, wantDepth, wantExact) {
 		return nil
 	}
 	at := t.inoutArgAt(c, callee, i)
@@ -391,7 +412,7 @@ func (t *galaASTTransformer) checkInoutLentPtr(arg ast.Expr, have transpiler.Poi
 	takes := fmt.Sprintf("lend a place of type %s", displayType(want))
 	if amp {
 		operand := strings.TrimSpace(strings.TrimPrefix(text, "&"))
-		msg := fmt.Sprintf("cannot lend &%s to the inout parameter of %s: %s holds a %s", operand, callee.name, operand, displayType(have))
+		msg := fmt.Sprintf("cannot lend &%s to the inout parameter of %s: %s holds a %s", operand, callee.name, operand, heldText(have))
 		if wantDepth != haveDepth-1 || !t.lendFits(have.Elem, want, free) {
 			return inoutError(at, fmt.Sprintf("%s, and the parameter takes a %s", msg, displayType(want)), takes)
 		}
@@ -402,7 +423,7 @@ func (t *galaASTTransformer) checkInoutLentPtr(arg ast.Expr, have transpiler.Poi
 		return inoutError(at, fmt.Sprintf("%s, and the parameter takes the %s it points to", msg, displayType(want)), hint)
 	}
 	msg := fmt.Sprintf("cannot lend %s to the inout parameter of %s: %s holds a %s, and the parameter takes a %s",
-		text, callee.name, text, displayType(have), displayType(want))
+		text, callee.name, text, heldText(have), displayType(want))
 	hint := takes
 	if wantDepth == haveDepth && t.lendFits(have, want, free) {
 		hint = fmt.Sprintf("lend the variable holding the Ptr with `&%s`; without `&`, a Ptr lends its pointee", text)
@@ -413,12 +434,38 @@ func (t *galaASTTransformer) checkInoutLentPtr(arg ast.Expr, have transpiler.Poi
 	return inoutError(at, msg, hint)
 }
 
+// heldText names have, a held pointer, in a message: its type, or
+// "pointer" when GALA does not know what it points to.
+func heldText(have transpiler.PointerType) string {
+	if transpiler.IsUnusable(have.Elem) {
+		return "pointer"
+	}
+	return displayType(have)
+}
+
+// depthMismatch reports whether what is lent, lent pointers deep, certainly
+// does not fill a parameter want pointers deep. Each depth is exact, or a
+// lower bound (pointerDepth): the mismatch is certain when both are exact
+// and differ, when the lent depth already exceeds an exact parameter
+// depth, or when an exact lent depth is short of the parameter's least.
+func depthMismatch(lent int, lentExact bool, want int, wantExact bool) bool {
+	switch {
+	case lentExact && wantExact:
+		return lent != want
+	case wantExact:
+		return lent > want
+	case lentExact:
+		return lent < want
+	}
+	return false
+}
+
 // lendFits reports whether a place of type have fills an inout parameter of
 // type want, type arguments included, a type parameter of free (one Go
 // infers) taking any type. It only picks a hint: one that suggests the
 // place is given only when it fits.
 func (t *galaASTTransformer) lendFits(have, want transpiler.Type, free []string) bool {
-	have, want = t.followAliasChain(have), t.followAliasChain(want)
+	have, want = t.unaliasedType(have), t.unaliasedType(want)
 	if isTypeParamNamed(want, free) {
 		return true
 	}
@@ -447,9 +494,7 @@ func (t *galaASTTransformer) lendFits(have, want transpiler.Type, free []string)
 // lends at this call: its declared type with the type arguments the call
 // spells and, for a method, those of the receiver's type. free is the
 // callee's type parameters neither binds, which Go infers. known is false
-// for a function value, whose type arguments the call does not spell, and
-// when the type is, or points to, a type parameter in free, which may be a
-// pointer itself.
+// for a function value, whose type arguments the call does not spell.
 func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want transpiler.Type, free []string, known bool) {
 	var own []string
 	switch {
@@ -474,23 +519,19 @@ func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want tran
 			}
 		}
 	}
-	declared := derefType(callee.paramTypes[i])
-	core := t.followAliasChain(declared)
-	for ptr, isPtr := core.(transpiler.PointerType); isPtr; ptr, isPtr = core.(transpiler.PointerType) {
-		core = t.followAliasChain(ptr.Elem)
-	}
-	if isTypeParamNamed(core, free) {
-		return nil, nil, false
-	}
-	return t.substituteGoTypeParams(declared, subst), free, true
+	return t.substituteGoTypeParams(derefType(callee.paramTypes[i]), subst), free, true
 }
 
-// pointerDepth is how many pointers typ is, through GALA aliases and Go
-// aliases (`type P = *T`). known is false only when that is not certain:
-// typ is unknown, or a Go alias whose target does not resolve. A type
-// parameter in scope, and a Go named type with no Go type information,
-// are no pointer.
-func (t *galaASTTransformer) pointerDepth(typ transpiler.Type) (depth int, known bool) {
+// pointerDepth counts the pointers typ is, through GALA and Go aliases
+// (`type P = *T` is one). The count is exact when they lead to a type
+// that is no pointer: a GALA type, a type parameter in scope, a type
+// that is no named one, or a Go named type that is no alias (or has no Go
+// type information, as on master). It is only a lower bound when they
+// lead to a type that may be a pointer: an unknown type, a type
+// parameter of free (one Go infers), a Go alias whose target does not
+// resolve, or a generic Go alias given type arguments, which is not
+// instantiated here.
+func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (depth int, exact bool) {
 	// The hop bound stops an alias chain that refers back to itself.
 	for hop := 0; hop < 64; hop++ {
 		typ = t.followAliasChain(typ)
@@ -499,7 +540,7 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type) (depth int, known
 			typ = ptr.Elem
 			continue
 		}
-		if transpiler.IsUnusable(typ) {
+		if transpiler.IsUnusable(typ) || isTypeParamNamed(typ, free) {
 			return depth, false
 		}
 		named, isNamed := receiverBase(typ).(transpiler.NamedType)
@@ -510,7 +551,7 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type) (depth int, known
 		if !isAlias {
 			return depth, true
 		}
-		if target == nil {
+		if _, generic := typ.(transpiler.GenericType); generic || target == nil {
 			return depth, false
 		}
 		typ = target
@@ -523,16 +564,7 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type) (depth int, known
 // other than an alias, or Go type information has no record of it; target
 // is nil for an alias whose target does not resolve.
 func (t *galaASTTransformer) goAliasTarget(named transpiler.NamedType) (target transpiler.Type, isAlias bool) {
-	if t.goTypeInfo == nil {
-		return nil, false
-	}
-	key := t.goTypeLookupName(named)
-	data := t.goTypeInfo.GetTypeData(key)
-	if name, bare := bareTypeName(named); data == nil && bare {
-		if key = t.dotImportedGoTypeKey(name); key != "" {
-			data = t.goTypeInfo.GetTypeData(key)
-		}
-	}
+	key, data := t.goTypeDataFor(named)
 	if data == nil || data.Kind != "alias" {
 		return nil, false
 	}

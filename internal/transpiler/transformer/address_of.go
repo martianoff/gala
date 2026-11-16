@@ -110,7 +110,7 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 	case *ast.ParenExpr:
 		return t.immutablePathReason(e.X)
 	case *ast.SelectorExpr:
-		xType := t.followAliasChain(t.getExprTypeName(e.X)) // through `type PC Ptr[Counter]`
+		xType := t.unaliasedType(t.getExprTypeName(e.X)) // through `type PC Ptr[Counter]`, `type GP = *T`
 		if _, isPtr := xType.(transpiler.PointerType); isPtr || transpiler.IsUnusable(xType) {
 			return "", ""
 		}

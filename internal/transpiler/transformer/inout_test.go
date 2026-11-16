@@ -561,6 +561,35 @@ func main() {
 	// A pointer as deep as the parameter's type is certain is rejected
 	// whatever names the types; a hint suggests the place only when it fits.
 	rejectedPrograms := []struct{ name, src, want, hint, notHint string }{
+		{"a pointer to a type GALA does not resolve", `package main
+
+import "os"
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var m = os.FileMode(1)
+    var pm = &m
+    put[os.FileMode](&pm, m)
+}
+`, "cannot lend &pm to the inout parameter of put: pm holds a pointer", "", ""},
+		{"a Ptr to a type parameter Go infers, not deep enough", `package main
+
+struct Counter(var n int)
+
+type PT[T any] Ptr[T]
+
+func putp[T any](inout x PT[T], v PT[T]) {
+    x = v
+}
+
+func main() {
+    var p = &Counter(1)
+    putp(p, p)
+}
+`, "cannot lend p to the inout parameter of putp", "", ""},
 		{"a type parameter in scope", `package main
 
 func put[T any](inout x T, v T) {
@@ -713,4 +742,94 @@ func main() {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GALA-E0111")
 	assert.Contains(t, err.Error(), "cannot lend &p to the inout parameter of Put: p holds a Ptr[lend.GoCounter]")
+}
+
+// TestInoutLendGoAliases pins the lend check through Go aliases, which a
+// package's own hand-written .go file declares: a Ptr is seen through
+// `type GP = *GoCounter` and an alias chain, `type Same = GoCounter` is no
+// pointer, and a generic `type A[T any] = *T` given type arguments is at
+// least one pointer deep, so it is never reported on.
+func TestInoutLendGoAliases(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/goalias\n\ngala dev\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "goside.go"), []byte(`package main
+
+type GoCounter struct{ N int }
+
+type GP = *GoCounter
+
+type GP2 = GP
+
+type Same = GoCounter
+
+type A[T any] = *T
+
+func NewP() *GoCounter { return &GoCounter{N: 1} }
+`), 0644))
+	src := func(body string) string {
+		return `package main
+
+struct Counter(var n int)
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func bumpG(inout c GoCounter) {
+    c.N = c.N + 1
+}
+
+func tick(inout n int) {
+    n = n + 1
+}
+
+func main() {
+    ` + body + `
+}
+`
+	}
+	transpile := func(body string) error {
+		_, err := transpileCrossPkgFile(t, root, src(body), filepath.Join(root, "main.gala"))
+		return err
+	}
+
+	rejected := []struct{ name, body, want, hint string }{
+		{"&g for a Go alias of a pointer", `var g GP = NewP()
+    bumpG(&g)`, "cannot lend &g to the inout parameter of bumpG: g holds a *main.GoCounter, and the parameter takes the GoCounter it points to",
+			"pass `RequirePtr(g)` without `&`"},
+		{"g, a Go alias of a pointer that may be nil", `var g GP = NewP()
+    bumpG(g)`, "the argument g of bumpG is a pointer that may be nil", "pass `RequirePtr(g)`"},
+		{"&p for a Go alias of the pointee", `var p = &GoCounter(N = 1)
+    put[Same](&p, GoCounter(N = 2))`, "cannot lend &p to the inout parameter of put", "pass `p` without `&`"},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			err := transpile(tc.body)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0111")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Contains(t, err.Error(), tc.hint)
+		})
+	}
+
+	accepted := []struct{ name, body string }{
+		{"a field of a val of a Go alias of a pointer", `val g GP = NewP()
+    tick(&g.N)
+    Println(g.N)`},
+		{"a Go alias of a pointer and an alias chain as type arguments", `var p = &GoCounter(N = 1)
+    var q = &GoCounter(N = 7)
+    put[GP](&p, q)
+    put[GP2](&p, q)
+    Println(p.N)`},
+		{"a generic Go alias of a pointer", `var c = &Counter(1)
+    var pp = &c
+    var q = &Counter(2)
+    put[A[Ptr[Counter]]](&pp, &q)
+    Println(c.n)`},
+	}
+	for _, tc := range accepted {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, transpile(tc.body))
+		})
+	}
 }
