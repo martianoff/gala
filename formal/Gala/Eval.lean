@@ -459,11 +459,13 @@ def defaultFrame (earlier : List (String × Val)) : Env :=
     parameter of type `func() T` is lifted into `() => expr`. The subset passes lambdas and
     names of function values only; anything else is outside it. A parameter whose type is
     left out (a lambda's, inferred) may be such a parameter too, so only a lambda, a name
-    or a literal is passed to it. -/
-private def byNameOk (ds : Decls) (paramTy : Option Ty) (arg : Expr) : H Bool := do
+    or a literal is passed to it. A name is resolved in `locals`, the scope the argument is
+    evaluated in: the caller's for an argument the call writes, the default's frame for a
+    default. -/
+def byNameOk (ds : Decls) (locals : Env) (paramTy : Option Ty) (arg : Expr) : H Bool := do
   let s ← get
   let fnName : Expr → H Bool
-    | .name x => match resolve ds s.locals s.globals x with
+    | .name x => match resolve ds locals s.globals x with
       | .func _ => pure true
       | .var b => do pure (isFn (← deref b.val))
       | _ => pure false
@@ -656,23 +658,34 @@ def bindArgs (ds : Decls) : Nat → List String → List (Option Ty) → List (O
         slots := slots ++ [slots.length]
     if slots.eraseDups.length != slots.length || slots.any (· ≥ names.length) then
       stuck "an argument given twice, or too many"
+    let locals := (← getCore).locals
     for (a, j) in args.zip slots do
-      unless ← byNameOk ds (tys.getD j none) (unnamed a) do
+      unless ← byNameOk ds locals (tys.getD j none) (unnamed a) do
         unsup "by-name-arg" "a plain expression passed as a func() T"
-    let given := slots.zip (← evalList ds d (args.map unnamed))
+    bindDefaults ds d names tys dflts fieldScope (slots.zip (← evalList ds d (args.map unnamed)))
+  termination_by d _ _ _ _ _ => (d, 2, 0)
+/-- The second half of `bindArgs`: each parameter's value, in parameter order. It is the
+    value the call gave it (`given`, by parameter index), or else its default, evaluated in
+    the callee's scope: `defaultFrame`, or no local at all for a field's default. The
+    caller's locals are not read here, and are back afterwards
+    (`bindDefaults_callerLocals`, Gala/Defaults.lean). -/
+def bindDefaults (ds : Decls) : Nat → List String → List (Option Ty) → List (Option Expr) →
+    Bool → List (Nat × Val) → M (List Val)
+  | d, names, tys, dflts, fieldScope, given => do
     let mut vals : List Val := []
     for (n, j) in names.zipIdx do
       match given.lookup j, dflts.getD j none with
       | some v, _ => vals := vals ++ [v]
       | none, some e =>
-        -- A default for a `func() T` parameter is a by-name argument too.
-        unless ← byNameOk ds (tys.getD j none) e do
-          unsup "by-name-arg" "a plain expression as the default of a func() T"
         let frame := if fieldScope then [] else defaultFrame (names.zip vals)
+        -- A default for a `func() T` parameter is a by-name argument too. A name in it is
+        -- resolved in its frame, as the default is evaluated there.
+        unless ← byNameOk ds frame (tys.getD j none) e do
+          unsup "by-name-arg" "a plain expression as the default of a func() T"
         vals := vals ++ [← runIn ds d frame e]
       | none, none => stuck s!"no argument for {n}"
     pure vals
-  termination_by d _ _ _ _ _ => (d, 2, 0)
+  termination_by d _ _ _ _ _ => (d, 1, 1)
 /-- A function's arguments, bound to its parameters. -/
 def funcArgs (ds : Decls) : Nat → Func → List Expr → M (List Val)
   | d, f, args => bindArgs ds d (f.params.map (·.name)) (f.params.map (·.type)) f.defaults false args

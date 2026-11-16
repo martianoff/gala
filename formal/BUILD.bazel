@@ -31,6 +31,8 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.defaultFrame_last",
     "Gala.Gala2Lean.Examples.Match.eval_total",
     "Gala.Spec.run_fuel_adequate",
+    "Gala.Spec.defaultFrame_lookup",
+    "Gala.Spec.bindDefaults_callerLocals",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -58,6 +60,7 @@ GALA_SRCS = [
     "Gala/Gala2Lean/Theorems.lean",
     "Gala/Theorems.lean",
     "Gala/Fuel.lean",
+    "Gala/Defaults.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

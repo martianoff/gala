@@ -37,7 +37,7 @@ The tiers mean exactly this:
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | no |
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | no |
 | S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body without a result type is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | capture of the scope only |
-| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the scope of a default only (T4) |
+| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the defaults phase only (T4): it does not read the caller's locals, and each default's frame binds exactly the earlier parameters |
 
 Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
 compile time, while galaspec wraps it at run time. Only programs Go rejects differ.
@@ -92,8 +92,9 @@ A run ends `unsupported:<kind>` when it reaches:
 
 `lake exe galaspec-tests` runs the fixtures in [`tests/`](tests):
 
-- 14 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
-  interpolated strings, lambdas and closures, named arguments and defaults,
+- 15 programs in `tests/src/` (integer arithmetic, printing, `match`, evaluation order,
+  interpolated strings, lambdas and closures, named arguments and defaults, a by-name
+  default whose name a caller's local shadows,
   package-level initialization and its order, scoping, three panic classes, fuel), and a
   document with
   an unknown `core` version, which is malformed.
@@ -119,14 +120,15 @@ pinned that way.
 | `Gala.MatchLowering.compile_correct`, `program_correct` | In the lowering model only (a small GALA core with flat constructor patterns, no guards or literals, integers only; not galaspec, and not the transpiler's output): the scoped match lowering preserves meaning, for values and errors. "No arm matched" becomes a Go panic. |
 | `Gala.MatchLowering.leaky_not_correct` | In the same model, a lowering that declares an arm's pattern variables before its `if` (issue [#996](https://github.com/martianoff/gala/issues/996)) does not preserve meaning. The counterexample evaluates to 3 where GALA says 10. |
 | `Gala.Spec.capturedEnv_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in, a `var` by the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells; that evaluation keeps this invariant is not proved. |
-| `Gala.Spec.defaultFrame_other`, `defaultFrame_last` | **T4, the scope only.** The frame a default value is evaluated in holds only the parameters before it, the last bound to the value the call gave it: no local of the caller's is visible there. That `bindArgs` uses this frame, and evaluates arguments as written and then defaults in parameter order, is its definition, not a theorem. |
+| `Gala.Spec.bindDefaults_callerLocals` | **T4, default arguments.** The defaults phase of a call (`bindDefaults`, the second half of `bindArgs`: each parameter the call leaves out takes its default, evaluated in the callee's scope) does not read the caller's locals. Run with any other locals, it gives the same values or the same `Stop` and leaves the same output, heap, package-level variables and steps. When it succeeds, the caller's locals are back as they were. This covers a function's defaults and a field's (`Gala/Defaults.lean`). It failed before galaspec resolved a by-name default's bare name in the default's own frame (fixture `default_byname`). Not covered: that a call's written arguments are evaluated first, in the caller's scope, which is `bindArgs`'s definition (an ordering statement belongs to T3). Also not covered: that the caller's locals come back after a panic inside a default, which no run can observe, since nothing catches a panic. |
+| `Gala.Spec.defaultFrame_lookup`, `defaultFrame_other`, `defaultFrame_last` | **T4, the frame of a default.** The frame a default value is evaluated in binds exactly the parameters before it: each name to the value of the latest earlier parameter of that name, immutable; any other name, a local of the caller's included, is unbound there. `defaultFrame_other` and `defaultFrame_last` are special cases. That `bindDefaults` evaluates the default for parameter `j` in the frame of parameters `0..j-1`, with the values the call gave them (explicitly or by their own defaults), is its definition. |
 | `Gala.Gala2Lean.Examples.Match.eval_total` | About one program: gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it, under gala2lean's prelude. Its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
 | `Gala.Spec.run_fuel_adequate` | **T1, fuel adequacy.** For every program and fuels `n ≤ m`: if galaspec's run with fuel `n` does not end in `fuel`, the run with fuel `m` ends the same way (`ok`, the same panic, `unsupported` or `stuck`) and prints the same output. So an `AGREE` or `DISAGREE` verdict stays the same with any larger fuel budget (a smaller one can turn it into `INCONCLUSIVE`). It says nothing about a run that ends in `fuel`: `INCONCLUSIVE` stays inconclusive. Covers all of `run` (`Gala/Fuel.lean`). |
 
 These are theorems about the *spec* (and a model of one lowering, and one program's
 translation under gala2lean's prelude), not about the transpiler.
 
-Not proved: T2, T3 and T5–T7, and T4 beyond the scope of a default value.
+Not proved: T2, T3 and T5–T7.
 [docs/FORMAL_SEMANTICS.MD](../docs/FORMAL_SEMANTICS.MD#5-theorems-the-road-to-an-end-to-end-proof) gives the statements
 they need: alpha-invariance with its side conditions for T2, and an observational
 statement about the order of effects for T3.

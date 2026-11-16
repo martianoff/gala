@@ -208,7 +208,8 @@ flowchart LR
 
 These are the properties of the spec the milestones prove (T1–T7), with the bugs each
 guards against. T1 is proved for all of galaspec (`run_fuel_adequate` in
-`formal/Gala/Fuel.lean`), and T4 only for the scope a default value sees;
+`formal/Gala/Fuel.lean`), and T4 for the defaults phase of a call
+(`bindDefaults_callerLocals` and `defaultFrame_lookup`, see M2);
 [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) lists what is proved.
 
 | # | Statement (informal) | Guards against | Milestone |
@@ -291,9 +292,15 @@ column lists what each milestone's claim rests on beyond them.
   reference still resolves to its own binder, which is capture avoidance; M2 also checks
   its renamings against the remaining conditions above. A renaming that changes Go's
   output is then a transpiler bug, never a spec artefact.
-- **Statements (T3, T4):** T3 relates the output and state of each compound construct to
-  those of its parts in source order; T4 extends today's lemmas about the default frame
-  to `bindArgs` itself.
+- **Statement (T3):** T3 relates the output and state of each compound construct to
+  those of its parts in source order.
+- **T4: done.** The defaults phase of a call (`bindDefaults`) does not read the caller's
+  locals (`bindDefaults_callerLocals`), and the frame `defaultFrame` binds exactly the
+  parameters it is given (`defaultFrame_lookup`). That `bindDefaults` gives it the earlier
+  parameters, with the values the call gave them, is `bindDefaults`'s definition, not a
+  theorem; so is that the written arguments come before the defaults, and an ordering
+  claim is T3's.
+  [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states both in full.
 - **Risk:** the renaming must commute with `resolve`, pattern classification, closures'
   captured scopes and default frames. A state relation (environments renamed, heap equal)
   carries the induction. Needs M1's lemmas.

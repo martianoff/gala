@@ -30,7 +30,9 @@ def requiredTheorems : List Name := [
   `Gala.Spec.defaultFrame_other,
   `Gala.Spec.defaultFrame_last,
   `Gala.Gala2Lean.Examples.Match.eval_total,
-  `Gala.Spec.run_fuel_adequate
+  `Gala.Spec.run_fuel_adequate,
+  `Gala.Spec.defaultFrame_lookup,
+  `Gala.Spec.bindDefaults_callerLocals
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

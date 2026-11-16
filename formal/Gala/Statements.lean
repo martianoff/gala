@@ -16,6 +16,7 @@ import Gala.MatchLowering
 import Gala.Theorems
 import Gala.Gala2Lean.Theorems
 import Gala.Fuel
+import Gala.Defaults
 
 namespace Gala.Statements
 
@@ -56,5 +57,21 @@ open Gala.Spec in
 theorem run_fuel_adequate : ∀ (p : Program) (n m : Nat), n ≤ m → (run p n).1 ≠ .fuel →
     run p m = run p n :=
   Gala.Spec.run_fuel_adequate
+
+open Gala.Spec in
+theorem defaultFrame_lookup : ∀ (earlier : List (String × Val)) (x : String),
+    lookup (defaultFrame earlier) x =
+      if x = "_" then none else (earlier.reverse.lookup x).map (⟨·, false⟩) :=
+  Gala.Spec.defaultFrame_lookup
+
+open Gala.Spec in
+theorem bindDefaults_callerLocals : ∀ (ds : Decls) (d : Nat) (names : List String)
+    (tys : List (Option Ty)) (dflts : List (Option Expr)) (fieldScope : Bool)
+    (given : List (Nat × Val)) (s : St) (l : Env),
+    let a := (bindDefaults ds d names tys dflts fieldScope given).run.run s
+    let b := (bindDefaults ds d names tys dflts fieldScope given).run.run { s with locals := l }
+    a.1 = b.1 ∧ { a.2 with locals := [] } = { b.2 with locals := [] } ∧
+      ∀ v, a.1 = .ok v → a.2.locals = s.locals ∧ b.2.locals = l :=
+  Gala.Spec.bindDefaults_callerLocals
 
 end Gala.Statements
