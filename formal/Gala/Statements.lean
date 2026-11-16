@@ -21,6 +21,7 @@ import Gala.Order
 import Gala.Alpha
 import Gala.AlphaStep
 import Gala.MatchLower
+import Gala.AlphaEval
 
 namespace Gala.Statements
 
@@ -428,5 +429,11 @@ theorem lowerMatch_instance : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCor
       (Spec.eval ds (d + 1) (.mtch (.lit (.int 3)) (instanceArms.map Arm.src)))
       (GoCore.geval X (lowerMatch ds (fun _ => false) .other (.lit (.int 3)) instanceArms)) :=
   Gala.M3.lowerMatch_instance
+
+open Gala.Spec in
+theorem eval_alpha : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Decls},
+    DeclsR pkg pm ds ds' → ∀ (d : Nat) {Γ : Ren} {e e' : Expr}, AlphaE pkg pm Γ e e' →
+    RelM pkg pm Γ (· = Γ) (ValR pkg pm) (eval ds d e) (eval ds' d e') :=
+  Gala.Spec.eval_alpha
 
 end Gala.Statements

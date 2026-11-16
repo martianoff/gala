@@ -290,9 +290,11 @@ column lists what each milestone's claim rests on beyond them.
     binder into a comparison;
   - renaming a function's parameter renames the named arguments at its call sites too,
     since `bindArgs` resolves `name = value` by parameter name;
-  - binders inside a struct or sealed case field's default value are not renamed, and only
-    the shapes the parser produces are related: a declaration as a block statement, a
-    named argument as a call's argument.
+  - binders inside a struct or sealed case field's default value are not renamed, and such
+    a default may not pass a named argument to a function whose parameters are renamed
+    (it is evaluated in each program's own declarations, so equal text is not enough);
+  - only the shapes the parser produces are related: a declaration as a block statement,
+    a named argument as a call's argument.
 
   Renaming top-level declarations consistently is a separate, simpler lemma.
 - **What it gives:** a proof that the metamorphic renaming generator is sound. It gives a

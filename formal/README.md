@@ -73,7 +73,7 @@ Each definition's doc comment says what it models, and each file's header names 
 | `BUILD.bazel` | The Bazel build of the same modules, with rules_lean. Hand-written; gazelle skips `formal/`. |
 | `lean.bzl` | Wrappers of the rules_lean rules that put every Lean target behind `--config=formal`. Load Lean rules from here, not from `@rules_lean`. |
 | `Gala.lean` | Root module, for `import Gala`. It imports every module, so it comes last in `GALA_SRCS` in `BUILD.bazel`. Lake and the Lake proof check find modules by directory, not through it. |
-| `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems`, `Fuel` (T1), `Defaults` (T4), `Order` (T3) and `Alpha` and `AlphaStep` (T2, in progress) the theorems about it, `Statements` the pinned statements of the required theorems. |
+| `Gala/*.lean` | The models and proofs. `Syntax`, `Json`, `Scope`, `Eval`, `Print` and `Cli` are galaspec, `Main` its executable, `Theorems`, `Fuel` (T1), `Defaults` (T4), `Order` (T3) and `Alpha`, `AlphaStep` and `AlphaEval` (T2, in progress) the theorems about it, `Statements` the pinned statements of the required theorems. |
 | `Gala/Gala2Lean/` | gala2lean's prelude (`Prelude`), a translation it wrote (`Examples/`) and theorems about it (`Theorems`); see [gala2lean](#gala2lean-a-third-oracle). |
 | `tests/` | galaspec's tests: `GalaTests.lean`, Core JSON fixtures with their expected `.out` and `.outcome`, the GALA sources in `tests/src/`, and `export.sh`, which re-exports the fixtures. |
 | `galaspec_tests.sh` | Runs the galaspec fixture tests under Bazel, from `formal/` in the runfiles. |

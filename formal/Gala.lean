@@ -16,6 +16,7 @@ import Gala.Order
 import Gala.MatchLower
 import Gala.Alpha
 import Gala.AlphaStep
+import Gala.AlphaEval
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems
