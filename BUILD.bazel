@@ -31,6 +31,7 @@ exports_files(
 # lane builds with the `gala` binary, never with Bazel.
 # gazelle:exclude tools/ci/cli_path/testdata
 # gazelle:exclude tools/ci/go_export/testdata
+# gazelle:exclude tools/ci/binary_size/testdata
 # First-party GALA stdlib packages are bootstrap-built: each .gala is
 # transpiled per-file via gala_bootstrap_transpile and bundled (with any
 # hand-written .go) into a single go_library. That hand-wired shape is not the
