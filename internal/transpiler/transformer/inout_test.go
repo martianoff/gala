@@ -487,6 +487,43 @@ func main() {
     Println(p.n)
 }
 `, ""},
+		{"an alias of a Ptr, the pointer itself", `package main
+
+type PI Ptr[int]
+
+func incr(inout n int) {
+    n = n + 1
+}
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var x = 1
+    var p PI = &x
+    incr(p)
+    put[int](p, 5)
+    incr(p)
+    Println(x)
+}
+`, "6"},
+		{"a field of a val holding an alias of a Ptr", `package main
+
+struct Counter(var n int)
+
+type PC Ptr[Counter]
+
+func tick(inout n int) {
+    n = n + 1
+}
+
+func main() {
+    val p PC = &Counter(1)
+    tick(&p.n)
+    Println(p.n)
+}
+`, ""},
 	}
 	for _, tc := range acceptedPrograms {
 		t.Run(tc.name, func(t *testing.T) {
@@ -520,6 +557,65 @@ func main() {
 		assert.Contains(t, err.Error(), "GALA-E0111")
 		assert.Contains(t, err.Error(), "cannot lend &p to the inout parameter of put: p holds a Ptr[T], and the parameter takes the T it points to")
 	})
+
+	// A pointer as deep as the parameter's type is certain is rejected
+	// whatever names the types; a hint suggests the place only when it fits.
+	rejectedPrograms := []struct{ name, src, want, hint, notHint string }{
+		{"a type parameter in scope", `package main
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func g[T any](var p Ptr[T], v T) {
+    put[T](&p, v)
+}
+
+func main() {
+    var n = 1
+    g(&n, 2)
+}
+`, "cannot lend &p to the inout parameter of put: p holds a Ptr[T], and the parameter takes the T it points to", "pass `p` without `&`", ""},
+		{"a pointer too deep to another type argument", `package main
+
+struct Box[T any](var v T)
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var inner = &Box(1)
+    var pp = &inner
+    put[Ptr[Box[string]]](&pp, &Box("s"))
+}
+`, "cannot lend &pp to the inout parameter of put: pp holds a Ptr[Ptr[Box[int]]], and the parameter takes a Ptr[Box[string]]", "lend a place of type Ptr[Box[string]]", "without `&`"},
+		{"a Ptr not deep enough for another type argument", `package main
+
+struct Box[T any](var v T)
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var p = &Box(1)
+    put[Ptr[Box[string]]](p, &Box("s"))
+}
+`, "cannot lend p to the inout parameter of put: p holds a Ptr[Box[int]], and the parameter takes a Ptr[Box[string]]", "lend a place of type Ptr[Box[string]]", "`&p`"},
+	}
+	for _, tc := range rejectedPrograms {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(tc.src, "inout_explicit_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0111")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Contains(t, err.Error(), tc.hint)
+			if tc.notHint != "" {
+				assert.NotContains(t, err.Error(), tc.notHint)
+			}
+		})
+	}
 }
 
 // TestInoutLendPtrVarQualifiedGeneric pins the same check for a generic
@@ -594,16 +690,16 @@ func main() {
 `)
 	require.NoError(t, err)
 
-	// A type argument Go declares as an alias may be a pointer GALA does not
-	// see (`type P = *GoCounter`): its depth is unknown, so nothing is
-	// reported, and Go takes &p for the *P it is.
+	// A Go type the parameter is an alias of is no pointer here: &p lends a
+	// pointer where the parameter takes the GoCounter itself. (This harness
+	// has no Go type information for lend's .go file, so Same counts as a
+	// named type, depth 0; a Go alias of a pointer, `type P = *GoCounter`,
+	// is checked end to end with the CLI, which has it.)
 	require.NoError(t, os.WriteFile(filepath.Join(root, "lend", "lend_go.go"), []byte(`package lend
 
 type GoCounter struct{ N int }
 
-type P = *GoCounter
-
-func NewP() *GoCounter { return &GoCounter{N: 1} }
+type Same = GoCounter
 `), 0644))
 	_, err = transpileCrossPkg(t, root, `package main
 
@@ -611,9 +707,10 @@ import "example.com/lendx/lend"
 
 func main() {
     var p = &lend.GoCounter(N = 1)
-    lend.Put[lend.P](&p, lend.NewP())
-    Println(p.N)
+    lend.Put[lend.Same](&p, lend.GoCounter(N = 2))
 }
 `)
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0111")
+	assert.Contains(t, err.Error(), "cannot lend &p to the inout parameter of Put: p holds a Ptr[lend.GoCounter]")
 }
