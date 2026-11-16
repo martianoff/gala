@@ -923,7 +923,9 @@ func (s *habitScanner) fixedArray(i int) bool {
 }
 
 // arraySize is the index of the `]` of a Go array type's size that starts at
-// the `[` at i, `[16]`, `[...]`, `[N]` or `[sha256.Size]`, or -1.
+// the `[` at i, `[16]` or `[...]`, or -1. A name between brackets, `[T]`,
+// is a type argument, as in a call cut short mid-edit, `TreeSet[T]Min`, so a
+// size that is a constant's name, `[N]byte`, is not recognised.
 func (s *habitScanner) arraySize(i int) int {
 	if s.text(i) != "[" {
 		return -1
@@ -932,9 +934,6 @@ func (s *habitScanner) arraySize(i int) int {
 	switch {
 	case s.typ(k) == native.GalaINT_LIT, s.text(k) == "...":
 		k++
-	case s.isIdent(k):
-		for k++; s.text(k) == "." && s.isIdent(k+1); k += 2 {
-		}
 	default:
 		return -1
 	}

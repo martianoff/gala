@@ -503,10 +503,10 @@ func TestGoHabitsReviewFindings(t *testing.T) {
 			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
 		},
 		{
-			name:  "array_of_a_named_size",
-			input: "package main\n\nfunc main() {\n    var digest [sha256.Size]byte\n    Println(digest)\n}\n",
-			want:  []galaerr.ErrorCode{galaerr.CodeGoTypeForm},
-			hint:  "`[]byte`",
+			// A type argument cut short mid-edit is no array size.
+			name:  "type_argument_before_a_name",
+			input: "package main\n\nfunc (s TreeSet[T]) Max() T = s.max\n\nfunc f(s TreeSet[int]) int = s.TreeSet[T]Min()\n",
+			want:  []galaerr.ErrorCode{""},
 		},
 		{
 			name:  "array_of_pointers_parameter",
