@@ -25,7 +25,7 @@ def MenR (pkg : List String) (m m' : List String) : Prop := inPkg pkg m = inPkg 
 
 /-- A scope of `mentions` related to the renaming's: every binder of `Γ` is a renamed one,
     one that is a package-level name is in `b`, and `b`, `b'` agree on package-level names. -/
-structure ScopeOk (pkg : List String) (Γ : Ren) (b b' : List String) : Prop where
+structure MenScope (pkg : List String) (Γ : Ren) (b b' : List String) : Prop where
   binders : ∀ p ∈ Γ, BinderR pkg p.1 p.2
   bound : ∀ p ∈ Γ, p.1 ∈ pkg → p.1 ∈ b
   same : ∀ y ∈ pkg, y ∈ b ↔ y ∈ b'
@@ -61,7 +61,7 @@ theorem contains_iff (b : List String) (x : String) : b.contains x = true ↔ x 
 
 /-- A name's mention, when it refers to the same thing on both sides. -/
 theorem menR_name {pkg : List String} {Γ : Ren} {b b' : List String} {x x' : String}
-    (hs : ScopeOk pkg Γ b b') (hx : NameR Γ x x') :
+    (hs : MenScope pkg Γ b b') (hx : NameR Γ x x') :
     MenR pkg (if b.contains x then [] else [x]) (if b'.contains x' then [] else [x']) := by
   unfold MenR
   have key : x ∈ pkg ∨ x' ∈ pkg → x = x' ∧ (x ∈ b ↔ x' ∈ b') := by
@@ -102,9 +102,9 @@ theorem mem_pushAll : ∀ {Γ Δ : Ren} {p : String × String}, p ∈ Γ.pushAll
         · exact Or.inr h
 
 /-- Pushing binders `Δ` named in `ns`, `ns'`, which agree on package-level names. -/
-theorem ScopeOk.push {pkg : List String} {Γ Δ : Ren} {b b' ns ns' : List String}
-    (hs : ScopeOk pkg Γ b b') (hΔ : ∀ p ∈ Δ, BinderR pkg p.1 p.2 ∧ p.1 ∈ ns)
-    (hn : ∀ y ∈ pkg, y ∈ ns ↔ y ∈ ns') : ScopeOk pkg (Γ.pushAll Δ) (ns ++ b) (ns' ++ b') where
+theorem MenScope.push {pkg : List String} {Γ Δ : Ren} {b b' ns ns' : List String}
+    (hs : MenScope pkg Γ b b') (hΔ : ∀ p ∈ Δ, BinderR pkg p.1 p.2 ∧ p.1 ∈ ns)
+    (hn : ∀ y ∈ pkg, y ∈ ns ↔ y ∈ ns') : MenScope pkg (Γ.pushAll Δ) (ns ++ b) (ns' ++ b') where
   binders p hp := by
     rcases mem_pushAll hp with h | h
     · exact (hΔ p h).1
@@ -142,8 +142,8 @@ theorem NamesR.same {pkg : List String} {ns ns' : List String} (h : NamesR pkg n
     ∀ y ∈ pkg, y ∈ ns ↔ y ∈ ns' := zip_same h.1 h.2
 
 theorem NamesR.push {pkg : List String} {Γ : Ren} {b b' ns ns' : List String}
-    (hs : ScopeOk pkg Γ b b') (h : NamesR pkg ns ns') :
-    ScopeOk pkg (Γ.pushAll (ns.zip ns')) (ns ++ b) (ns' ++ b') :=
+    (hs : MenScope pkg Γ b b') (h : NamesR pkg ns ns') :
+    MenScope pkg (Γ.pushAll (ns.zip ns')) (ns ++ b) (ns' ++ b') :=
   hs.push (fun p hp => ⟨h.2 p hp, (List.of_mem_zip hp).1⟩) h.same
 
 /-! ### Pattern names -/
@@ -291,7 +291,7 @@ theorem menR_patNames {pkg : List String} {b b' : List String} (hb : ∀ y ∈ p
 /-! ### Omitted defaults -/
 /-- Two omitted defaults related: the same slot, the expressions by the renaming, in related scopes. -/
 def OmitR (pkg : List String) (pm : String → Ren) (a a' : Nat × List String × Expr) : Prop :=
-  a.1 = a'.1 ∧ ∃ Γ, AlphaE pkg pm Γ a.2.2 a'.2.2 ∧ ScopeOk pkg Γ a.2.1 a'.2.1
+  a.1 = a'.1 ∧ ∃ Γ, AlphaE pkg pm Γ a.2.2 a'.2.2 ∧ MenScope pkg Γ a.2.1 a'.2.1
 
 theorem fall2_filterMap {S : α → β → Prop} {R : γ → δ → Prop} {F : α → Option γ} {G : β → Option δ}
     (h : ∀ a b, S a b → (F a = none ∧ G b = none) ∨ ∃ x y, F a = some x ∧ G b = some y ∧ R x y) :
@@ -373,7 +373,7 @@ theorem NamesR.take {pkg : List String} {ns ns' : List String} (h : NamesR pkg n
     NamesR pkg (ns.take j) (ns'.take j) :=
   ⟨by simp [h.1], fun p hp => h.2 p (by rw [← take_zip] at hp; exact List.mem_of_mem_take hp)⟩
 
-theorem scopeOk_nil (pkg : List String) : ScopeOk pkg [] [] [] :=
+theorem menScope_nil (pkg : List String) : MenScope pkg [] [] [] :=
   ⟨by simp, by simp, fun _ _ => Iff.rfl⟩
 
 /-- An omitted default, or none, on both sides. -/
@@ -381,7 +381,7 @@ def OptOmitR (pkg : List String) (pm : String → Ren) (j : Nat) (sc sc' : List 
   (o = none ∧ o' = none) ∨ ∃ e e', o = some e ∧ o' = some e' ∧ OmitR pkg pm (j, sc, e) (j, sc', e')
 
 theorem OptR.omit {pkg : List String} {pm : String → Ren} {Γ : Ren} {o o' : Option Expr} (j : Nat)
-    {sc sc' : List String} (h : OptR pkg pm Γ o o') (hs : ScopeOk pkg Γ sc sc') :
+    {sc sc' : List String} (h : OptR pkg pm Γ o o') (hs : MenScope pkg Γ sc sc') :
     OptOmitR pkg pm j sc sc' o o' := by
   cases h with
   | none => exact Or.inl ⟨rfl, rfl⟩
@@ -448,7 +448,7 @@ theorem omitted_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
         rcases hn with hn | ⟨rfl, _⟩
         · simp at hn
         · rfl) ha]
-      exact omittedSlots_rel _ rfl fun j => (fieldDefaults_self h j).omit j (scopeOk_nil pkg)
+      exact omittedSlots_rel _ rfl fun j => (fieldDefaults_self h j).omit j (menScope_nil pkg)
     rcases lookup_fall2 (S := fun (a b : String × List Field) => a.1 = b.1 ∧ Fall2 (FieldR pkg pm) a.2 b.2)
         (R := Fall2 (FieldR pkg pm)) (fun _ _ h => h) x hD.structs with
       ⟨s1, s2⟩ | ⟨fs, fs', s1, s2, hfs⟩
@@ -480,7 +480,7 @@ theorem omitted_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
         rw [e1] at h1; rw [e2] at h2
         rw [List.idxOf?_eq_none_iff.mpr h1, List.idxOf?_eq_none_iff.mpr h2]) ha]
     refine omittedSlots_rel _ hf.dlen fun j => (hf.defaults j).omit j ?_
-    have := NamesR.push (scopeOk_nil pkg) (hf.names.take j)
+    have := NamesR.push (menScope_nil pkg) (hf.names.take j)
     simp only [List.append_nil] at this
     unfold pairsOf
     rw [take_zip]
@@ -520,7 +520,7 @@ theorem omitted_nil {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
 /-- `mentionsUpTo` at budget `k` commutes with the renaming. -/
 def MenStmt (pkg : List String) (pm : String → Ren) (ds ds' : Decls) (k : Nat) : Prop :=
   ∀ {c : List (String × Nat)} {Γ : Ren} {e e' : Expr} {b b' : List String}, AlphaE pkg pm Γ e e' →
-    ScopeOk pkg Γ b b' → MenR pkg (mentionsUpTo ds k c b e) (mentionsUpTo ds' k c b' e')
+    MenScope pkg Γ b b' → MenR pkg (mentionsUpTo ds k c b e) (mentionsUpTo ds' k c b' e')
 
 theorem MenR.self_nil {pkg : List String} {m m' : List String} (h : m = []) (h' : m' = []) :
     MenR pkg m m' := by subst h h'; exact MenR.nil
@@ -574,7 +574,7 @@ theorem alphaE_not_decl {Γ : Ren} {e e' : Expr} (h : AlphaE pkg pm Γ e e') :
   intro m ns d ty vs he; subst he; cases h
 
 theorem menR_nameE {k : Nat} {c : List (String × Nat)} {Γ : Ren} {b b' : List String} {x x' : String}
-    (hs : ScopeOk pkg Γ b b') (hx : NameR Γ x x') :
+    (hs : MenScope pkg Γ b b') (hx : NameR Γ x x') :
     MenR pkg (mentionsUpTo ds k c b (.name x)) (mentionsUpTo ds' k c b' (.name x')) := by
   unfold mentionsUpTo; exact menR_name hs hx
 
@@ -584,7 +584,7 @@ theorem alphaE_not_decl_right {Γ : Ren} {e e' : Expr} (h : AlphaE pkg pm Γ e e
 
 /-- `mentionsUpTo` at budget `k` commutes with the renaming on renamings of `e`. -/
 abbrev MenP (pkg : List String) (pm : String → Ren) (ds ds' : Decls) (k : Nat) (c : List (String × Nat)) (e : Expr) : Prop :=
-  ∀ {Γ : Ren} {e' : Expr} {b b' : List String}, AlphaE pkg pm Γ e e' → ScopeOk pkg Γ b b' →
+  ∀ {Γ : Ren} {e' : Expr} {b b' : List String}, AlphaE pkg pm Γ e e' → MenScope pkg Γ b b' →
     MenR pkg (mentionsUpTo ds k c b e) (mentionsUpTo ds' k c b' e')
 
 section
@@ -592,7 +592,7 @@ variable {k N : Nat} {c : List (String × Nat)} (ih : ∀ e : Expr, sizeOf e < N
 include ih
 
 theorem mentions_alphaL : ∀ {Γ : Ren} {es es' : List Expr} {b b' : List String}, sizeOf es ≤ N →
-    AlphaL pkg pm Γ es es' → ScopeOk pkg Γ b b' →
+    AlphaL pkg pm Γ es es' → MenScope pkg Γ b b' →
       Fall2 (MenR pkg) (es.map (mentionsUpTo ds k c b)) (es'.map (mentionsUpTo ds' k c b'))
   | _, _, _, _, _, _, .nil, _ => .nil
   | _, _, _, _, _, hsz, .cons h t, hs => by
@@ -600,7 +600,7 @@ theorem mentions_alphaL : ∀ {Γ : Ren} {es es' : List Expr} {b b' : List Strin
     exact .cons (ih _ (by omega) h hs) (mentions_alphaL (by omega) t hs)
 
 theorem mentions_argsR : ∀ {m Γ : Ren} {as as' : List Expr} {b b' : List String}, sizeOf as ≤ N →
-    ArgsR pkg pm m Γ as as' → ScopeOk pkg Γ b b' →
+    ArgsR pkg pm m Γ as as' → MenScope pkg Γ b b' →
       Fall2 (MenR pkg) (as.map (mentionsUpTo ds k c b)) (as'.map (mentionsUpTo ds' k c b'))
   | _, _, _, _, _, _, _, .nil, _ => .nil
   | _, _, _, _, _, _, hsz, .pos _ h t, hs => by
@@ -622,7 +622,7 @@ theorem mentions_blockR {F F' : List String × List String → Expr → List Str
     (hF2' : ∀ b acc e, (∀ m ns d ty vs, e ≠ .decl m ns d ty vs) →
       F' (b, acc) e = (b, acc ++ mentionsUpTo ds' k c b e)) :
     ∀ {Γ : Ren} {ss ss' : List Expr} {b b' : List String} {acc acc' : List String}, sizeOf ss ≤ N →
-      BlockR pkg pm Γ ss ss' → ScopeOk pkg Γ b b' → MenR pkg acc acc' →
+      BlockR pkg pm Γ ss ss' → MenScope pkg Γ b b' → MenR pkg acc acc' →
       MenR pkg (ss.foldl F (b, acc)).2 (ss'.foldl F' (b', acc')).2
   | _, _, _, _, _, _, _, _, .nil, _, hacc => hacc
   | _, _, _, _, _, _, _, hsz, .decl _ _ _ hn hvs hrest, hs, hacc => by
@@ -640,7 +640,7 @@ theorem mentions_blockR {F F' : List String × List String → Expr → List Str
 theorem mentions_casesR :
     ∀ {Γ : Ren} {cs cs' : List (Pat × Option Expr × Expr)} {b b' : List String}
       {A A' : Pat × Option Expr × Expr → List String}, sizeOf cs ≤ N →
-      CasesR pkg pm Γ cs cs' → ScopeOk pkg Γ b b' →
+      CasesR pkg pm Γ cs cs' → MenScope pkg Γ b b' →
       (∀ p bd, A (p, none, bd) = (patNames p).filter (!b.contains ·) ++
         [] ++ mentionsUpTo ds k c (patNames p ++ b) bd) →
       (∀ p bd, A' (p, none, bd) = (patNames p).filter (!b'.contains ·) ++
@@ -656,7 +656,7 @@ theorem mentions_casesR :
     rename_i p g bd _ p' _ _ ss _
     simp only [List.cons.sizeOf_spec, Prod.mk.sizeOf_spec] at hsz
     obtain ⟨n1, n2, hok⟩ := patR_names hp
-    have hs' : ScopeOk pkg (Γ.pushAll (Slot.all ss)) (patNames p ++ b) (patNames p' ++ b') := by
+    have hs' : MenScope pkg (Γ.pushAll (Slot.all ss)) (patNames p ++ b) (patNames p' ++ b') := by
       rw [n1, n2]
       exact hs.push (outs_mem hok _ (all_mem_outs ss)) (slots_same hok)
     have hpat : MenR pkg ((patNames p).filter (!b.contains ·)) ((patNames p').filter (!b'.contains ·)) := by
@@ -819,7 +819,7 @@ theorem defaultCount_eq (hD : DeclsR pkg pm ds ds') : defaultCount ds = defaultC
 /-- **`mentions` commutes with the renaming**: on related expressions in related scopes it
     lists the same package-level names. -/
 theorem mentions_alpha (hD : DeclsR pkg pm ds ds') {Γ : Ren} {e e' : Expr} {b b' : List String}
-    (he : AlphaE pkg pm Γ e e') (hs : ScopeOk pkg Γ b b') :
+    (he : AlphaE pkg pm Γ e e') (hs : MenScope pkg Γ b b') :
     MenR pkg (mentions ds b e) (mentions ds' b' e') := by
   unfold mentions
   rw [← defaultCount_eq hD]
@@ -854,7 +854,7 @@ theorem expand_rel (hD : DeclsR pkg pm ds ds') (x : String) :
   · refine ⟨fun hx => ?_, ?_⟩
     · rw [(funcs_none hD hx).1] at h1; cases h1
     · simp only [h1, h2, Option.map_some]
-      have hs := NamesR.push (scopeOk_nil pkg) hf.names
+      have hs := NamesR.push (menScope_nil pkg) hf.names
       simp only [List.append_nil] at hs
       exact congrArg some (mentions_alpha hD hf.body hs)
 
@@ -1059,7 +1059,7 @@ theorem deps_eq (hD : DeclsR pkg pm ds ds') {all : List String} (hall : ∀ x �
     (reach ds (g.values.flatMap (mentions ds []))).filter (all.contains ·) =
       (reach ds' (g'.values.flatMap (mentions ds' []))).filter (all.contains ·) := by
   have hm : MenR pkg (g.values.flatMap (mentions ds [])) (g'.values.flatMap (mentions ds' [])) :=
-    MenR.all (fall2_map (fun _ _ he => mentions_alpha hD he (scopeOk_nil pkg)) (alphaL_fall2 hg.values))
+    MenR.all (fall2_map (fun _ _ he => mentions_alpha hD he (menScope_nil pkg)) (alphaL_fall2 hg.values))
   have hr := reach_alpha hD hm
   have key : ∀ l : List String, l.filter (all.contains ·) = (inPkg pkg l).filter (all.contains ·) := by
     intro l
@@ -1649,6 +1649,36 @@ theorem alphaCheck_sound {p p' : Program} (h : alphaCheck p p' = true) :
 theorem alphaCheck_run {p p' : Program} (h : alphaCheck p p' = true) (n : Nat) :
     OutcomeR (run p n).1 (run p' n).1 ∧ (run p n).2 = (run p' n).2 :=
   run_alpha (alphaCheck_sound h) n
+
+/-! ## Not vacuous
+
+A program with a struct field default, a package-level variable, and a function whose
+parameters (one with a default that reads the other) are renamed, called with a named
+argument that follows the renaming, is related to its renaming: `alphaCheck` accepts the
+pair (by evaluation in the kernel), so `alphaCheck_run` applies. -/
+
+section
+private def witness (x y : String) : Program :=
+  let int : Option Ty := some (.name "int")
+  { files := [{ path := "w.gala", package := "main", decls := [
+      .struct_ "Cfg" true [⟨"tries", int, false, some (.lit (.int 3))⟩],
+      .global .val ["g"] false none [.call (.name "f") [.lit (.int 1)]],
+      .func ⟨"f", [⟨x, int⟩, ⟨y, int⟩], [none, some (.name x)], int,
+        .binary "+" (.name x) (.name y)⟩,
+      .func ⟨"main", [], [], none,
+        .block [.call (.name "Println") [.call (.name "f") [.named x (.lit (.int 2))]],
+          .call (.name "Println") [.name "g"]]⟩] }] }
+
+private theorem witness_related : alphaCheck (witness "x" "y") (witness "a" "b") = true := by decide +kernel
+
+example (n : Nat) : OutcomeR (run (witness "x" "y") n).1 (run (witness "a" "b") n).1 ∧
+    (run (witness "x" "y") n).2 = (run (witness "a" "b") n).2 :=
+  alphaCheck_run witness_related n
+
+/-- Renaming `y` to `x`, so that both parameters are named `x` and the default `x` would
+    read the wrong one, is rejected. -/
+private theorem witness_capture : alphaCheck (witness "x" "y") (witness "x" "x") = false := by decide +kernel
+end
 
 end Gala.Spec
 

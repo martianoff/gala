@@ -75,6 +75,9 @@ REQUIRED_THEOREMS = [
     "Gala.M3.part_gt",
     "Gala.M3.lowerMatch_instance",
     "Gala.Spec.eval_alpha",
+    "Gala.Spec.run_alpha",
+    "Gala.Spec.alphaCheck_sound",
+    "Gala.Spec.alphaCheck_run",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the

@@ -18,6 +18,7 @@
 -/
 import Gala.Json
 import Gala.Eval
+import Gala.AlphaCheck
 
 namespace Gala.Spec.Cli
 
@@ -91,5 +92,24 @@ def runText (text : String) (fuel : Nat) : IO UInt32 := do
   if let some d := detail then IO.eprintln d
   IO.eprintln s!"galaspec: outcome={outcome}"
   pure (exitCode outcome)
+
+/-- `galaspec alpha a.json b.json`: whether the second program is the first with its binders
+    renamed as T2 covers (`alphaCheck`; sound by `alphaCheck_sound`, so then both print the
+    same and end the same way, `run_alpha`). -/
+def alphaUsage : String := "usage: galaspec alpha <a.json> <b.json>"
+
+/-- Decide two Core JSON texts: `related`, `unrelated`, or an error for malformed input. -/
+def alphaTexts (a b : String) : Except String Bool := do
+  let p ← Json.parse a
+  let p' ← Json.parse b
+  pure (alphaCheck p p')
+
+/-- Print `galaspec: alpha=related` (exit 0) or `galaspec: alpha=unrelated` (exit 1), or
+    report malformed input (exit 4). -/
+def alphaMain (a b : String) : IO UInt32 := do
+  match alphaTexts a b with
+  | .error e => malformed s!"malformed input: {e}"
+  | .ok true => IO.println "galaspec: alpha=related"; pure 0
+  | .ok false => IO.println "galaspec: alpha=unrelated"; pure 1
 
 end Gala.Spec.Cli

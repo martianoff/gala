@@ -422,4 +422,20 @@ theorem eval_alpha : ∀ {pkg : List String} {pm : String → Ren} {ds ds' : Dec
     RelM pkg pm Γ (· = Γ) (ValR pkg pm) (eval ds d e) (eval ds' d e') :=
   Gala.Spec.eval_alpha
 
+open Gala.Spec in
+theorem run_alpha : ∀ {pkg : List String} {pm : String → Ren} {p p' : Program},
+    AlphaProgram pkg pm p p' → ∀ (n : Nat),
+    OutcomeR (run p n).1 (run p' n).1 ∧ (run p n).2 = (run p' n).2 :=
+  Gala.Spec.run_alpha
+
+open Gala.Spec in
+theorem alphaCheck_sound : ∀ {p p' : Program}, alphaCheck p p' = true →
+    AlphaProgram (alphaPkg (collect p).1 (collect p).2) (alphaPm (collect p).1 (collect p').1) p p' :=
+  Gala.Spec.alphaCheck_sound
+
+open Gala.Spec in
+theorem alphaCheck_run : ∀ {p p' : Program}, alphaCheck p p' = true → ∀ (n : Nat),
+    OutcomeR (run p n).1 (run p' n).1 ∧ (run p n).2 = (run p' n).2 :=
+  Gala.Spec.alphaCheck_run
+
 end Gala.Statements
