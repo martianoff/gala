@@ -1981,29 +1981,33 @@ func (b *Builder) runGoTest(verbose bool, pkgs []string, report *TestReport) err
 		return fmt.Errorf("go test: %w", err)
 	}
 	printer := &testEventPrinter{stdout: os.Stdout, stderr: os.Stderr, stream: verbose}
-	consumeErr := consumeTestEvents(events, report, printer)
+	// A read error means events are missing from the report; it is
+	// returned with whatever else went wrong, never instead of it.
+	var readErr error
+	if err := consumeTestEvents(events, report, printer); err != nil {
+		readErr = fmt.Errorf("reading test events: %w", err)
+	}
+	var runErr error
 	if err := cmd.Wait(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if printer.failed {
-				fmt.Println("FAIL")
-			} else {
-				// `go test` failed before any package could report, on a
-				// module or package-loading error: one failure for the run.
-				report.AddBuildFailure(runFailureSuite, stderr.String())
-			}
-			failed := reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
-			if consumeErr != nil {
-				// Events after the read error are missing from the report.
-				return errors.Join(failed, fmt.Errorf("reading test events: %w", consumeErr))
-			}
-			return failed
+		exitErr, ok := err.(*exec.ExitError)
+		switch {
+		case !ok:
+			runErr = fmt.Errorf("go test: %w", err)
+		case printer.failed:
+			fmt.Println("FAIL")
+			runErr = reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+		case readErr == nil:
+			// `go test` failed before any package could report, on a
+			// module or package-loading error: one failure for the run.
+			report.AddBuildFailure(runFailureSuite, stderr.String())
+			runErr = reportedError{fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())}
+		default:
+			// The failure's events were lost with the stream: the read
+			// error is the cause the report can show.
+			runErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
 		}
-		return fmt.Errorf("go test: %w", err)
 	}
-	if consumeErr != nil {
-		return fmt.Errorf("reading test events: %w", consumeErr)
-	}
-	return nil
+	return errors.Join(runErr, readErr)
 }
 
 // splitRootTestFiles separates the test files in the project root directory

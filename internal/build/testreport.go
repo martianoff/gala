@@ -97,15 +97,18 @@ func (r *TestReport) pkg(path string) *packageResult {
 // hold spaces.
 func framing(line, name string) (isFraming, isResult bool) {
 	line = strings.TrimRight(line, "\r\n")
-	for _, prefix := range []string{"=== RUN   ", "=== PAUSE ", "=== CONT  ", "=== NAME  "} {
-		if line == prefix+name {
-			return true, false
-		}
+	if len(line) < 10 {
+		return false, false
 	}
-	for _, prefix := range []string{"--- PASS: ", "--- FAIL: ", "--- SKIP: "} {
-		if rest, ok := strings.CutPrefix(line, prefix+name); ok && (rest == "" || strings.HasPrefix(rest, " (")) {
-			return true, true
-		}
+	// Every marker is 10 bytes: "=== RUN   ", "--- PASS: " and the rest.
+	marker, rest := line[:10], line[10:]
+	switch marker {
+	case "=== RUN   ", "=== PAUSE ", "=== CONT  ", "=== NAME  ":
+		return rest == name, false
+	case "--- PASS: ", "--- FAIL: ", "--- SKIP: ":
+		after, ok := strings.CutPrefix(rest, name)
+		ok = ok && (after == "" || strings.HasPrefix(after, " ("))
+		return ok, ok
 	}
 	return false, false
 }
@@ -128,7 +131,10 @@ func (r *TestReport) Add(ev TestEvent) {
 		return
 	}
 	p := r.pkg(ev.Package)
-	p.failedParents = nil // results change: rebuild the cache when asked
+	switch ev.Action {
+	case "run", "pass", "fail", "skip":
+		p.failedParents = nil // results change: rebuild when next asked
+	}
 	if ev.Test == "" {
 		switch ev.Action {
 		case "output":
@@ -208,7 +214,7 @@ func (r *TestReport) finishFailedPackage(p *packageResult, ev TestEvent) {
 		if b, ok := r.buildOutput[ev.FailedBuild]; ok {
 			out = b.String()
 		}
-		p.buildFailure = &out
+		p.addBuildFailure(out)
 		return
 	}
 	for _, t := range p.tests {
@@ -224,8 +230,13 @@ func (r *TestReport) finishFailedPackage(p *packageResult, ev TestEvent) {
 func (r *TestReport) AddBuildFailure(pkgPath, output string) {
 	p := r.pkg(pkgPath)
 	p.action = "fail"
+	p.addBuildFailure(output)
+}
+
+// addBuildFailure records output as why the package did not build; a
+// second failure keeps the first.
+func (p *packageResult) addBuildFailure(output string) {
 	if p.buildFailure != nil {
-		// A second failure under the same name keeps the first.
 		output = strings.TrimRight(*p.buildFailure, "\n") + "\n" + output
 	}
 	p.buildFailure = &output
@@ -345,8 +356,9 @@ func failedOnlyThroughSubtest(t *testResult, p *packageResult) bool {
 	return t.action == "fail" && t.output.Len() == 0 && p.hasFailedSubtest(t.key)
 }
 
-// hasFailedSubtest reports whether a subtest of the named test failed. It is
-// asked once the run is over, so the set of failed parents is built once.
+// hasFailedSubtest reports whether a subtest of the named test failed. The
+// set of failed parents is built when first asked and dropped by Add when a
+// result changes.
 func (p *packageResult) hasFailedSubtest(name string) bool {
 	if p.failedParents == nil {
 		p.failedParents = map[string]bool{}
