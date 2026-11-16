@@ -19,6 +19,31 @@ checksums differ.
 The latest optimization round's numbers, changes and validation are recorded
 in [RESULTS.md](RESULTS.md).
 
+## Metrics: what the numbers are
+
+Every metric here is CPU work:
+
+- `run.sh`: wall-clock nanoseconds for one iteration of the ported function
+  over a whole corpus; each process's first iteration is dropped as warm-up,
+  so start-up and corpus loading are outside the reported loop.
+- `hyperfine.sh`: wall-clock time for a whole process, including start-up and
+  corpus loading.
+- `callgrind.sh`: Valgrind instruction counts (Ir), which do not move with
+  CPU frequency. It runs without `--cache-sim`/`--branch-sim`, so these are
+  instruction counts only.
+
+"Run it" and "Why both in-process and hyperfine numbers" below cover the
+in-process/end-to-end distinction, and "What is measured" lists the exact
+component call behind each scenario.
+
+Memory is **not** measured. No harness records peak RSS, allocation counts,
+GC statistics or cache behaviour, so a ratio such as "Lean is 0.5x of Go" is
+a CPU-time statement and says nothing about the heap; do not cite these
+numbers for memory. Go's allocation-heavy paths can still lose on wall-clock
+time while executing a similar number of instructions, which is why
+[RESULTS.md](RESULTS.md) reports the ratio next to the instruction count
+instead of alone.
+
 ## Run it
 
 From the repository root, in the Lean dev shell:

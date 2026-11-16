@@ -4,6 +4,12 @@ This is the iteration record for the optimization round on the staged ports.
 The method is in [README.md](README.md); the harness itself lives in
 `run.sh`, `hyperfine.sh` and `callgrind.sh`.
 
+Every number here is CPU work: wall-clock time per corpus pass (`run.sh`),
+whole-process time (`hyperfine.sh`) and Valgrind instruction counts
+(`callgrind.sh`). Memory is not measured — no peak RSS, allocation counts,
+GC statistics or cache simulation — so nothing below says anything about the
+heap; see "Metrics: what the numbers are" in [README.md](README.md).
+
 ## Environment
 
 - Lean 4.35.0 from `nix develop .#gala-lean`, `leanc -O3 -flto -DNDEBUG`
