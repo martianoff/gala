@@ -44,7 +44,9 @@ structure Sim (k : Nat) (x y : M α) : Prop where
 
 /-! ## `Sim` of the building blocks of `M` -/
 
-theorem run_bind_eq (x : M α) (f : α → M β) (s : St) :
+/-- A bind run on a state: for `M`, and for `H` (`σ := Core`). -/
+theorem run_bind_eq {σ : Type} (x : ExceptT Stop (StateM σ) α) (f : α → ExceptT Stop (StateM σ) β)
+    (s : σ) :
     (x >>= f).run.run s = match x.run.run s with
       | (.ok a, t) => (f a).run.run t
       | (.error e, t) => (.error e, t) := by

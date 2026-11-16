@@ -294,16 +294,11 @@ column lists what each milestone's claim rests on beyond them.
   output is then a transpiler bug, never a spec artefact.
 - **Statement (T3):** T3 relates the output and state of each compound construct to
   those of its parts in source order.
-- **T4: done.** `bindArgs` evaluates the arguments a call writes, in the caller's scope,
-  and then passes their values to `bindDefaults`, which fills each left-out parameter
-  with its default. `bindDefaults_callerLocals` (`formal/Gala/Defaults.lean`): the
-  defaults phase does not read the caller's locals. Run with any other locals, it gives
-  the same values or `Stop` and the same output, heap, package-level variables and
-  steps, and when it succeeds the caller's locals are back. `defaultFrame_lookup`: each
-  default's frame binds exactly the earlier parameters, a name to the latest of them.
-  The first theorem was false until a by-name default's bare name was resolved in the
-  default's frame rather than among the caller's locals. That the written arguments come
-  before the defaults is `bindArgs`'s definition; an ordering claim is T3's.
+- **T4: done.** The defaults phase of a call (`bindDefaults`) does not read the caller's
+  locals (`bindDefaults_callerLocals`), and each default's frame binds exactly the earlier
+  parameters (`defaultFrame_lookup`). That the written arguments come before the
+  defaults is `bindArgs`'s definition; an ordering claim is T3's.
+  [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states both in full.
 - **Risk:** the renaming must commute with `resolve`, pattern classification, closures'
   captured scopes and default frames. A state relation (environments renamed, heap equal)
   carries the induction. Needs M1's lemmas.

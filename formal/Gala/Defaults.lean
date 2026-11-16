@@ -53,13 +53,6 @@ theorem eraseL_setLocals {s s' : St} (h : eraseL s = eraseL s') (l : Env) :
   simp only [eraseL, St.mk.injEq, Core.mk.injEq] at h ⊢
   simp_all
 
-theorem eraseL_core {s s' : St} (h : eraseL s = eraseL s') :
-    ({ s.toCore with locals := [] } : Core) = { s'.toCore with locals := [] } := by
-  obtain ⟨⟨_, _, _, _⟩, _⟩ := s
-  obtain ⟨⟨_, _, _, _⟩, _⟩ := s'
-  simp only [eraseL, St.mk.injEq, Core.mk.injEq] at h ⊢
-  simp_all
-
 /-! ## `Oblivious` of the building blocks of `M` -/
 
 theorem obl_pure (a : α) : Oblivious (pure a : M α) := by
@@ -73,8 +66,7 @@ theorem obl_bind {x : M α} {f : α → M β} (hx : Oblivious x) (hf : ∀ a, Ob
   obtain ⟨h1, h2, h3⟩ := hx s s' h
   rcases hxs : x.run.run s with ⟨r, t⟩
   rcases hxs' : x.run.run s' with ⟨r', t'⟩
-  rw [hxs, hxs'] at h1 h2
-  rw [hxs, hxs'] at h3
+  rw [hxs, hxs'] at h1 h2 h3
   simp only at h1 h2 h3
   subst h1
   cases r with
@@ -91,7 +83,7 @@ theorem run_liftM (x : H α) (s : St) : (liftM x : M α).run.run s =
 
 theorem obl_liftM {x : H α} (hx : ReadsNoLocals x) : Oblivious (liftM x : M α) := by
   intro s s' h
-  obtain ⟨r, hr, hr'⟩ := hx s.toCore s'.toCore (eraseL_core h)
+  obtain ⟨r, hr, hr'⟩ := hx s.toCore s'.toCore (congrArg St.toCore (eraseL_setLocals h []))
   rw [run_liftM, run_liftM, hr, hr']
   exact ⟨rfl, h, fun _ _ => ⟨rfl, rfl⟩⟩
 
@@ -143,27 +135,18 @@ theorem obl_runIn (ds : Decls) (d : Nat) (fr : Env) (b : Expr) : Oblivious (runI
   cases r with
   | error e => exact ⟨rfl, rfl, fun _ hv => nomatch hv⟩
   | ok a =>
-    refine ⟨rfl, ?_, fun _ _ => ⟨rfl, rfl⟩⟩
-    exact eraseL_setLocals (s := { t with locals := s.locals }) (s' := { t with locals := s'.locals }) rfl []
+    exact ⟨rfl, rfl, fun _ _ => ⟨rfl, rfl⟩⟩
 
 /-! ## The by-name check reads no locals
 
 `byNameOk` resolves a name in the locals it is given (for a default, its frame), and reads
 only the package-level variables and the heap of the state. -/
 
-/-- The part of a state `deref` and `byNameOk` read. -/
-def readPart (c : Core) : Core := { locals := [], globals := c.globals, out := "", heap := c.heap }
+/-- A state without its locals, all that `deref` and `byNameOk` may read. -/
+def readPart (c : Core) : Core := { c with locals := [] }
 
 theorem run_get_bind (f : Core → H α) (c : Core) :
     ((get : H Core) >>= f).run.run c = (f c).run.run c := rfl
-
-theorem run_bind_H (x : H α) (f : α → H β) (c : Core) :
-    (x >>= f).run.run c = match x.run.run c with
-      | (.ok a, t) => (f a).run.run t
-      | (.error e, t) => (.error e, t) := by
-  simp only [ExceptT.run_bind, StateT.run_bind]
-  rcases x.run.run c with ⟨r, t⟩
-  cases r <;> rfl
 
 theorem deref_run (v : Val) (c : Core) :
     (deref v).run.run c = (((deref v).run.run (readPart c)).1, c) := by
@@ -179,17 +162,13 @@ theorem byNameOk_run (ds : Decls) (fr : Env) (ty : Option Ty) (e : Expr) (c : Co
   rw [run_get_bind, run_get_bind]
   rw [show (readPart c).globals = c.globals from rfl]
   cases e <;> split <;> (try rfl) <;> (try dsimp only) <;> (generalize resolve ds fr c.globals _ = r) <;>
-    cases r <;> (try rfl) <;> rw [run_bind_H, run_bind_H, deref_run] <;>
+    cases r <;> (try rfl) <;> rw [run_bind_eq, run_bind_eq, deref_run] <;>
     rcases (deref _).run.run (readPart c) with ⟨r, t⟩ <;> cases r <;> rfl
 
 theorem readsNoLocals_byNameOk (ds : Decls) (fr : Env) (ty : Option Ty) (e : Expr) :
     ReadsNoLocals (byNameOk ds fr ty e) := by
   intro c c' h
-  have hp : readPart c = readPart c' := by
-    obtain ⟨_, _, _, _⟩ := c
-    obtain ⟨_, _, _, _⟩ := c'
-    simp only [Core.mk.injEq] at h
-    simp [readPart, h]
+  have hp : readPart c = readPart c' := h
   exact ⟨_, byNameOk_run ds fr ty e c, by rw [byNameOk_run, hp]⟩
 
 /-! ## The defaults phase -/

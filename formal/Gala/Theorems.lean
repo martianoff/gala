@@ -62,29 +62,6 @@ theorem capturedEnv_captured (ρ : Env) (h : cellsMutable ρ) : capturedEnv (cap
 
 /-! ## T4: the scope of a default value -/
 
-private theorem lookup_foldl_bind_other (x : String) :
-    ∀ (earlier : List (String × Val)) (ρ : Env), x ∉ earlier.map (·.1) →
-      lookup (earlier.foldl (fun ρ (y, v) => bind ρ y ⟨v, false⟩) ρ) x = lookup ρ x
-  | [], _, _ => rfl
-  | (y, v) :: rest, ρ, h => by
-    simp only [List.map, List.mem_cons, not_or] at h
-    simp only [List.foldl]
-    rw [lookup_foldl_bind_other x rest _ h.2, lookup_bind_other ρ y x _ (Ne.symm h.1)]
-
-/-- **T4, scoping.** A default value is evaluated in a scope holding only the parameters
-    before it: any other name, a local of the caller's included, is not bound there, so it
-    resolves to a package-level declaration or to nothing. -/
-theorem defaultFrame_other (earlier : List (String × Val)) (x : String)
-    (h : x ∉ earlier.map (·.1)) : lookup (defaultFrame earlier) x = none :=
-  lookup_foldl_bind_other x earlier [] h
-
-/-- **T4, values.** In that scope the parameter just before is bound to the value the call
-    gave it (explicitly or by its own default). -/
-theorem defaultFrame_last (earlier : List (String × Val)) (x : String) (v : Val)
-    (hx : x ≠ "_") : lookup (defaultFrame (earlier ++ [(x, v)])) x = some ⟨v, false⟩ := by
-  simp only [defaultFrame, List.foldl_append, List.foldl]
-  exact lookup_bind_self _ x _ hx
-
 /-- **T4, the frame of a default.** The scope a default value is evaluated in binds exactly
     the parameters before it: a name is bound to the value of the latest earlier parameter
     of that name, as an immutable binding, and is unbound if no earlier parameter has it
@@ -114,5 +91,28 @@ theorem defaultFrame_lookup (earlier : List (String × Val)) (x : String) :
     · rw [lookup_bind_other _ _ _ _ hxy, ih]
       have : (x == y) = false := by simp [Ne.symm hxy]
       simp [List.lookup_cons, this]
+
+/-- **T4, scoping.** A default value is evaluated in a scope holding only the parameters
+    before it: any other name, a local of the caller's included, is not bound there, so it
+    resolves to a package-level declaration or to nothing. -/
+theorem defaultFrame_other (earlier : List (String × Val)) (x : String)
+    (h : x ∉ earlier.map (·.1)) : lookup (defaultFrame earlier) x = none := by
+  rw [defaultFrame_lookup]
+  split
+  · rfl
+  · have : earlier.reverse.lookup x = none := by
+      induction earlier with
+      | nil => rfl
+      | cons yv rest ih =>
+        simp only [List.map, List.mem_cons, not_or] at h
+        rw [List.reverse_cons, List.lookup_append, ih h.2]
+        simp [h.1]
+    simp [this]
+
+/-- **T4, values.** In that scope the parameter just before is bound to the value the call
+    gave it (explicitly or by its own default). -/
+theorem defaultFrame_last (earlier : List (String × Val)) (x : String) (v : Val)
+    (hx : x ≠ "_") : lookup (defaultFrame (earlier ++ [(x, v)])) x = some ⟨v, false⟩ := by
+  simp [defaultFrame_lookup, hx]
 
 end Gala.Spec
