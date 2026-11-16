@@ -23,12 +23,14 @@ stdenv.mkDerivation {
   # The Lake package needs its own sources plus the modules it imports from
   # the reference semantics and the three ports. Only Lean sources (and the
   # one fixture the check runs) take part; the ports' build/ directories,
-  # harnesses and Go oracles stay out.
+  # harnesses and Go oracles stay out. `Gala.lean` is the root module a newer
+  # formal/Gala ships; this branch's copy has none, hence `maybeMissing`.
   src = lib.fileset.toSource {
     root = ../formal;
     fileset = lib.fileset.unions [
       ../formal/gala-lean/lakefile.toml
       (lib.fileset.fileFilter (file: file.hasExt "lean") ../formal/gala-lean)
+      (lib.fileset.maybeMissing ../formal/Gala.lean)
       (lib.fileset.fileFilter (file: file.hasExt "lean") ../formal/Gala)
       (lib.fileset.fileFilter (file: file.hasExt "lean") ../formal/interpolation)
       (lib.fileset.fileFilter (file: file.hasExt "lean") ../formal/diagnostics)

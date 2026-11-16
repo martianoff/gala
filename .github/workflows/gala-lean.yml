@@ -5,8 +5,8 @@ name: Gala-lean — Nix build and checks
 # formal/gala-lean/README.md. This is a development artifact, not a GALA
 # compiler: it has no GALA source parser and no Go emitter.
 #
-# The Lean version is the one nixpkgs packages through flake.lock (4.30.0),
-# not the elan/lean-toolchain pin of the formal semantics (4.35.0).
+# The Lean version is the one nixpkgs packages through flake.lock (4.35.0),
+# the same version as the `formal/lean-toolchain` pin of the formal semantics.
 #
 # This is not a required check, so path filtering is safe: PRs that cannot
 # affect the Lean ports do not pay for a Lean build.

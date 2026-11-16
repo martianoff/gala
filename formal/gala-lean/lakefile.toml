@@ -9,12 +9,13 @@ name = "gala-lean"
 version = "0.1.0-draft"
 defaultTargets = ["gala-lean"]
 
-# galaspec's interpreter modules (the same list as GALASPEC_SRCS in
-# formal/BUILD.bazel), excluding its `Gala.Main` executable root.
+# Every module under Gala/, the same recursive glob the formal package uses.
+# A fixed list goes stale as soon as a newer formal/Gala adds an import of
+# its own: on master `Gala.Cli` also imports `Gala.AlphaCheck`.
 [[lean_lib]]
 name = "GalaSpec"
 srcDir = ".."
-globs = ["Gala.Syntax", "Gala.Json", "Gala.Scope", "Gala.Print", "Gala.Eval", "Gala.Cli"]
+globs = ["Gala", "Gala.+"]
 
 [[lean_lib]]
 name = "GalaInterpolation"
