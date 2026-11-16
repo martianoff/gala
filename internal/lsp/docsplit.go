@@ -12,7 +12,7 @@ import (
 // following the summary:
 //
 //	// GetOrElse returns the option's value if the option is Some, otherwise
-//	// returns the result of evaluating defaultValue.
+//	// returns defaultValue. The argument is evaluated before the call either way.
 //	// defaultValue: the default value to return if the option is empty.
 //
 // splitDoc separates those lines from the prose so signature help can attach

@@ -6468,7 +6468,7 @@ follows Go's convention exactly.
 
 ```gala
 // GetOrElse returns the option's value if the option is Some, otherwise
-// returns the result of evaluating defaultValue.
+// returns defaultValue. The argument is evaluated before the call either way.
 // defaultValue: the default value to return if the option is empty.
 func (o Option[T]) GetOrElse(defaultValue T) T {
     if o.isSome() {

@@ -33,7 +33,7 @@ examples/match_stmt_true_dangle.gala: half-typed declaration	3a6c3ca2c56ce85d	a9
 examples/match_stmt_true_dangle.gala: member being typed	ce48222291036438	2c21284891b95263
 examples/match_stmt_true_dangle.gala: truncated	58dcb1ba5456131f	3ff4c4814ef43449
 examples/match_stmt_true_dangle.gala: unclosed call	db6b159a02e0ed89	487879345aba9494
-examples/sourcemap_imports_demo.gala: unclosed call	ec39e3dc68c13ac0	052b9afeca348e21
+examples/sourcemap_imports_demo.gala: unclosed call	ec39e3dc68c13ac0	b04852e885aed59c
 examples/struct_field_defaults.gala: member being typed	79914670814b7ef0	38be662049d465d5
 examples/struct_field_defaults.gala: truncated	7dbb061c634cec70	3edb4ae6bb9383bc
 examples/struct_field_defaults.gala: unclosed call	cfab5b63ada2c751	29576252e5a3d5c2
