@@ -10,8 +10,10 @@
 //	gala-bench gen <out-dir>
 //
 // The interp and mod subcommands print one `iter=<n> ns=<elapsed>` line per
-// repetition, then a checksum line. formal/bench/run.sh compares the checksum
-// lines before reporting any timing.
+// repetition, then a checksum line, then a `mem load_peak_kib=<n>
+// peak_kib=<n>` line read from procfs (Linux). formal/bench/run.sh compares
+// the checksum lines before reporting any timing; formal/bench/mem.sh reads
+// the mem line and requires it to be non-zero.
 package main
 
 import (
@@ -65,6 +67,34 @@ func parseReps(s string) (int, error) {
 	return reps, nil
 }
 
+// peakRSSKiB returns this process's peak resident set size in KiB, read from
+// VmHWM in procfs. It returns 0 when procfs is unavailable (for example on
+// macOS); formal/bench/mem.sh treats zero as an error rather than reporting a
+// made-up number. VmHWM is the high-water mark, so reading it costs nothing
+// and does not disturb the measured loop.
+func peakRSSKiB() int64 {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		rest, ok := strings.CutPrefix(line, "VmHWM:")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			return 0
+		}
+		kib, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
+			return 0
+		}
+		return kib
+	}
+	return 0
+}
+
 func cmdInterp(args []string) error {
 	if len(args) != 3 {
 		return fmt.Errorf("usage: gala-bench interp <s|f> <reps> <cases-file>")
@@ -87,6 +117,10 @@ func cmdInterp(args []string) error {
 	}
 	formatSpecs := mode == "f"
 
+	// Corpus load is complete here, so this is the high-water mark before the
+	// measured loop; mem.sh reports it next to the final peak.
+	loadPeak := peakRSSKiB()
+
 	var parts, bytes int64
 	var total int64
 	for r := 0; r < reps; r++ {
@@ -103,6 +137,7 @@ func cmdInterp(args []string) error {
 		fmt.Printf("iter=%d ns=%d\n", r, elapsed.Nanoseconds())
 	}
 	fmt.Printf("parts=%d bytes=%d ns=%d\n", parts, bytes, total)
+	fmt.Printf("mem load_peak_kib=%d peak_kib=%d\n", loadPeak, peakRSSKiB())
 	return nil
 }
 
@@ -126,6 +161,9 @@ func cmdMod(args []string) error {
 		return err
 	}
 	text := string(data)
+	// Read the load mark before the setup parse below: for the manifest driver
+	// that parse is part of the work both sides do, not part of loading.
+	loadPeak := peakRSSKiB()
 	base, err := mod.Parse(text)
 	if err != nil {
 		return err
@@ -150,6 +188,7 @@ func cmdMod(args []string) error {
 		fmt.Printf("iter=%d ns=%d\n", r, elapsed.Nanoseconds())
 	}
 	fmt.Printf("require=%d replace=%d exclude=%d bytes=%d\n", reqs, reps2, excs, bytes)
+	fmt.Printf("mem load_peak_kib=%d peak_kib=%d\n", loadPeak, peakRSSKiB())
 	return nil
 }
 

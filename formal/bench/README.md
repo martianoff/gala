@@ -16,12 +16,14 @@ function on identical input, and the drivers print a checksum of everything
 they computed; the harness refuses to report a ratio when the Lean and Go
 checksums differ.
 
-The latest optimization round's numbers, changes and validation are recorded
-in [RESULTS.md](RESULTS.md).
+The CPU benchmark and the memory benchmark are separate measurements of the
+same calls, so a speed ratio is never mistaken for a whole cost model. The
+latest optimization round's numbers, changes and validation are recorded in
+[RESULTS.md](RESULTS.md).
 
 ## Metrics: what the numbers are
 
-Every metric here is CPU work:
+Three metrics are CPU work, and one is memory:
 
 - `run.sh`: wall-clock nanoseconds for one iteration of the ported function
   over a whole corpus; each process's first iteration is dropped as warm-up,
@@ -31,18 +33,19 @@ Every metric here is CPU work:
 - `callgrind.sh`: Valgrind instruction counts (Ir), which do not move with
   CPU frequency. It runs without `--cache-sim`/`--branch-sim`, so these are
   instruction counts only.
+- `mem.sh`: peak resident set size (RSS) in KiB for a whole process, read
+  from `VmHWM` in procfs by the drivers themselves. Linux only.
 
-"Run it" and "Why both in-process and hyperfine numbers" below cover the
-in-process/end-to-end distinction, and "What is measured" lists the exact
-component call behind each scenario.
+The CPU ratios say nothing about the heap. `mem.sh` reports peak RSS only:
+not allocation counts, GC statistics or cache behaviour. Lean's runtime has
+no allocation counter comparable to Go's `runtime.MemStats`, so an
+"allocated bytes" column would compare one side's instrumentation with the
+other's silence; peak RSS is the one memory number both processes can report
+the same way.
 
-Memory is **not** measured. No harness records peak RSS, allocation counts,
-GC statistics or cache behaviour, so a ratio such as "Lean is 0.5x of Go" is
-a CPU-time statement and says nothing about the heap; do not cite these
-numbers for memory. Go's allocation-heavy paths can still lose on wall-clock
-time while executing a similar number of instructions, which is why
-[RESULTS.md](RESULTS.md) reports the ratio next to the instruction count
-instead of alone.
+The wall-clock ratios can sit next to a comparable instruction count because
+allocation-heavy Go code stalls more; see [RESULTS.md](RESULTS.md). That is a
+CPU-time effect, not a memory result — use `mem.sh` for memory.
 
 ## Run it
 
@@ -66,6 +69,24 @@ iteration is one pass over a whole corpus. The first iteration of each process
 is dropped as warm-up, so process start and corpus loading do not count; that
 is what makes this a component measurement. Use `--full` for the larger run
 counts, `--runs N` to change repetitions, and `--no-build` to reuse binaries.
+
+`mem.sh` measures memory on the same scenarios:
+
+```console
+$ formal/bench/mem.sh --runs 7
+memory: peak RSS (VmHWM), 7 process runs per side, 1 pass(es) per run
+startup is an empty-corpus run: process and runtime baseline
+
+scenario       lean load/peak/work KiB    go load/peak/work KiB    peak lean/go
+startup        lean   12960/  13000/    40 KiB  go    2376/   2408/    32 KiB  peak  5.40x
+interp s       lean   49832/  49844/    12 KiB  go   19808/  40064/ 20256 KiB  peak  1.24x
+...
+```
+
+Each cell is the median of `--runs` processes (default 3; the sample above
+uses 7, like [RESULTS.md](RESULTS.md)). `--reps N` runs N passes per process
+instead of one, which shows whether memory is retained between passes. The
+script needs Linux procfs; "Memory: peak RSS" below explains the columns.
 
 `hyperfine.sh` and `callgrind.sh` answer different questions:
 
@@ -112,6 +133,46 @@ They are written under `formal/bench/build/` (ignored by git). Nothing in this
 directory depends on the repository's absolute path, so the same command works
 from any checkout.
 
+## Memory: peak RSS
+
+`mem.sh` reports `VmHWM`, the process's peak resident set size, not its live
+heap. It is a high-water mark, so it counts whatever garbage the garbage
+collector had not reclaimed yet. That is deliberate: it answers the question
+a CLI user asks — how much memory does this run need? — without forcing a
+collection point that would flatter either runtime.
+
+The three numbers in each cell:
+
+- `load`: the mark after process start and corpus loading, before the
+  measured work.
+- `peak`: the mark after the measured work. This is the end-to-end footprint
+  for the same input and number of passes, and it is what the `peak lean/go`
+  ratio compares.
+- `work`: `peak - load`, the additional high-water mark the measured work
+  caused. It is the closest thing to the port's own memory cost, but it
+  still includes each runtime's GC headroom: Go's default `GOGC=100` lets the
+  heap grow before collecting, and Lean's runtime has its own policy.
+
+`load` is not comparable between the interpolation sides: the Lean driver
+materializes every corpus line as a `ByteArray`, while the Go driver keeps
+strings, so Lean's baseline is larger before `split` is called at all. That
+is why `work` is reported. Do not compare across scenarios either: `interp s`
+loads 200,000 bodies and `mod 40` loads a few hundred bytes.
+
+The manifest driver parses its input once before the loop because `format`
+mode needs a parsed manifest; `both` and `parse` then parse again in the
+loop. That setup parse is inside `work` on both sides, so it does not bias
+the comparison, but a manifest row does one parse more than the timed loop
+in `run.sh`.
+
+Readings cover the whole process, including the benchmark driver and the
+corpus; they are not a measurement of the ported function's live set alone.
+Reading `VmHWM` allocates a little, which is why the empty `startup` row has
+a small non-zero `work` instead of exactly zero. Peak RSS also moves with GC
+timing — the Go interpolation peak varies by several MiB between processes —
+so the harness reports medians and alternates Lean and Go. Differences of a
+few percent are noise.
+
 ## Why both in-process and hyperfine numbers
 
 `run.sh` measures the steady-state cost of the component: corpus loading and
@@ -126,14 +187,19 @@ component changing. The two numbers are expected to differ; neither is wrong,
 they measure different things. `callgrind.sh` then removes frequency noise
 entirely and shows where the instructions go.
 
+`mem.sh` cannot separate start-up from the measured work the way `run.sh`
+does: `VmHWM` belongs to the whole process. Its `load` and `peak` columns
+make that boundary visible instead of hiding it, and `--reps N` is the
+memory-side equivalent of running more than one iteration.
+
 ## Adding a port
 
 1. Add the Lean call and the Go call to the two drivers (or a new pair of
    subcommands/scenarios).
 2. Add a corpus generation branch in `driver/main.go` if the existing corpora
    do not exercise the new component.
-3. Add a scenario to `run.sh`, `hyperfine.sh`, and `callgrind.sh`, and verify
-   that the checksum lines still match.
+3. Add a scenario to `run.sh`, `hyperfine.sh`, `callgrind.sh`, and `mem.sh`,
+   and verify that the checksum lines still match.
 
 The ports are built with Lean directly, not by Bazel: `run.sh` calls the
 per-port `build.sh` and links the benchmark driver against the generated C.
