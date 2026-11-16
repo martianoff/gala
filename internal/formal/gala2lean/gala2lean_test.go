@@ -104,6 +104,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a blank import of a package it is not given", "package main\nimport _ \"example.com/m/lib\"\n\nfunc main() { Println(1) }\n", "blank-import"},
 		{"lambda without parameter types", "package main\nfunc main() { val f = (x) => x\n Println(1) }\n", "untyped-lambda-param"},
 		{"method call", "package main\nfunc main() { Println(\"abc\".Size()) }\n", "method-call"},
+		{"a case test of a generic sealed type", "package main\nsealed type S[T any] {\n case A(V T)\n case B()\n}\nfunc main() { val s S[int] = A(1)\n Println(s.isA()) }\n", "method-call"},
+		{"a case test whose name a field holds", "package main\nsealed type S {\n case A(isA bool)\n case B()\n}\nfunc main() { val s S = B()\n Println(s.isA()) }\n", "method-call"},
 		{"pointer method on a package-level var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nvar g = C(0)\nfunc main() { g.Inc()\n Println(g.N) }\n", "ptr-escape"},
 		{"pointer method on a captured var", "package main\nstruct C(var N int)\nfunc (c *C) Inc() { c.N = c.N + 1 }\nfunc main() { var c = C(0)\n val f = () => c.N\n c.Inc()\n Println(f()) }\n", "ptr-escape"},
 		{"receiver passed on", "package main\nstruct C(var N int)\nfunc show(c C) int = c.N\nfunc (c *C) Show() int = show(c)\nfunc main() { var c = C(0)\n Println(c.Show()) }\n", "ptr-escape"},

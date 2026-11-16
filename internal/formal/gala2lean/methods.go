@@ -608,14 +608,52 @@ func (g *gen) placeKind(e coreexport.Node, sc *scope) placeKind {
 	return placeUnique
 }
 
-// generatedMethod translates a call of a method GALA generates for every
-// struct, `Copy` with named arguments and `Equal`, when the type does not
-// declare its own.
+// caseTest is case C of sealed type name when m is `isC`, the test GALA
+// generates for each case (docs/errors/GALA-E0083.md), and nil otherwise.
+// A method of that name the type declares replaces it (the caller checks
+// that). A field of that name in any case is left to the report: the
+// type's Go struct holds every case's fields, so the field and the
+// generated method would clash. A generic sealed type is left out too: a
+// method it declares is outside the subset (outsideSubset), so an `isC` of
+// its own would not be seen, and would win over the generated one.
+func (g *gen) caseTest(name, m string) *variantInfo {
+	c, ok := strings.CutPrefix(m, "is")
+	if !ok || g.sealeds[name] == nil || g.isGenericDecl(name) {
+		return nil
+	}
+	v := g.variants[pkgPrefix(name)+c]
+	if v == nil || v.sealed.Name != name {
+		return nil
+	}
+	for _, vn := range g.sealeds[name].Variants {
+		for _, f := range vn.(*coreexport.Variant).Fields {
+			if f, ok := f.(*coreexport.Field); ok && f.Name == m {
+				return nil
+			}
+		}
+	}
+	return v
+}
+
+// generatedMethod translates a call of a method GALA generates, when the
+// type does not declare its own: `Copy` with named arguments and `Equal`
+// for every struct and sealed type, and `isC()` for each case C of a sealed
+// type (caseTest).
 func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
 	t := g.typeOf(s.Target, sc)
 	name := g.typeByLean(t)
 	if name == "" || g.methods[name][s.Name] != nil {
 		return term{}, false
+	}
+	if v := g.caseTest(name, s.Name); v != nil && len(e.Args) == 0 {
+		x := g.expr(s.Target, sc)
+		// A sealed type of one case has no other arm: Lean rejects a
+		// redundant one.
+		other := ""
+		if len(g.sealeds[name].Variants) > 1 {
+			other = " | _ => false"
+		}
+		return wrap(fmt.Sprintf("(match %s with | %s.%s .. => true%s)", x.val(), ident(name), ident(v.v.Name), other), x), true
 	}
 	switch s.Name {
 	case "Equal":

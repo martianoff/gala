@@ -155,7 +155,8 @@ galaspec models them, except as listed below):
   `var` it called the method on, after the arguments are evaluated and the method
   returns (a method that panics writes nothing back; no output is lost, since a panic
   ends the run); the `Copy` (with named arguments) and `Equal` GALA generates for a
-  struct;
+  struct, and the `isC()` it generates for each case `C` of a non-generic sealed type
+  (a `match` on the case), unless the type declares that method itself;
 - `inout` receivers `(inout c T)`, as pointer receivers (they lower to one), whose
   body may also read and replace the receiver whole; and `inout` parameters of
   top-level functions, by the same state passing: a function with `inout` parameters

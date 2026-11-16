@@ -1,0 +1,51 @@
+package main
+
+// GALA generates `isC()` for each case C of a sealed type: true when the
+// value is that case.
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+    case Dot()
+}
+
+// A sealed type of one case.
+sealed type One {
+    case Only(N int)
+}
+
+// A sealed type that declares one of the tests itself: its own wins.
+sealed type Coin {
+    case Heads()
+    case Tails()
+}
+
+func (c Coin) isHeads() bool = false
+
+// A package-level value whose type is not written.
+val top = Circle(5)
+
+func build(tag string, s Shape) Shape {
+    Println("build", tag)
+    s
+}
+
+func describe(s Shape) string {
+    if s.isCircle() {
+        return "circle"
+    }
+    if s.isDot() {
+        return "dot"
+    }
+    "square"
+}
+
+func main() {
+    Println(describe(Circle(1)), describe(Square(2)), describe(Dot()))
+    Println(Square(3).isSquare(), Square(3).isCircle(), Dot().isSquare())
+    // The value is evaluated once, before the test.
+    Println(build("a", Circle(2)).isCircle())
+    Println(Only(4).isOnly())
+    Println(Heads().isHeads(), Tails().isTails())
+    Println(top.isCircle(), top.isDot())
+}
