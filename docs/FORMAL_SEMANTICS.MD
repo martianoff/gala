@@ -454,15 +454,21 @@ column lists what each milestone's claim rests on beyond them.
 - **Status: in progress.** Step 2a is proved: call-free expressions
   (`expr_correct` in `formal/Gala/M5/Expr.lean`, with `eval_pure` in
   `formal/Gala/M5/SpecPure.lean`). From related states, galaspec's evaluation of a
-  call-free expression the lowering accepts leaves galaspec's state as it was, and, at
-  every depth from a bound on, GoCore's evaluation of the lowering gives a related value
-  of the expression's kind or the same panic, leaving GoCore's state as it was. It covers
+  call-free expression the lowering accepts leaves the state the program sees as it was
+  (it spends steps), and wherever it ends with a value or a panic, GoCore's evaluation of
+  the lowering, at every depth from a bound on, gives a related value of the
+  expression's kind or the same panic, leaving GoCore's state as it was. Nothing is
+  claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`.
+  `expr_correct_instance` meets every hypothesis, on `x + 1`. It covers
   literals, locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %` and comparisons on
   `int`s, `==` and `!=` on one kind, string `+`, `&&` and `||`. Shifts, the bitwise
   operators and string ordering are not lowered yet. The lowering is type-directed, as
   the transformer is: without types, galaspec's `x == "a"` on an `int` is `false` where
-  Go rejects the program. The claim is for GoCore's order, left to right, which is gc's
-  for operands that are not calls (fixtures `panic_order_divide`, `panic_order_shift`).
+  Go rejects the program. The only run-time panic in this subset is an integer division
+  by zero, whose class and text are the same wherever it happens, so the order of
+  evaluation is unobservable here; it is proved for GoCore's, left to right. For later
+  steps, the fixtures `panic_order_divide` and `panic_order_shift` pin gc 1.25.5's
+  order of two failing operands that are not calls (left to right).
   The rest of the plan below is not proved yet.
 
 ##### The target

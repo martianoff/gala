@@ -24,11 +24,12 @@
   * **Constant expressions.** galaspec folds them before a run (`Gala/Const.lean`), so
     the expressions a run evaluates have none: `NoConstOp`.
   * **Evaluation order.** A call-free expression has no effects other than its result
-    or a panic, and its parts run left to right in GoCore as in galaspec. Which of two
-    failing operands panics is the only thing the order decides; Go fixes the order only
-    among calls, and gc evaluates such operands left to right (the GoCore fixtures
-    `panic_order_divide` and `panic_order_shift` pin it). The claim is for GoCore's
-    order; M5's later steps take the order as a parameter.
+    or a panic, and the only run-time panic this step lowers is an integer division by
+    zero, whose class and text are the same wherever it happens. So the order its parts
+    run in is unobservable here, and the claim holds for any order Go allows, though it is
+    proved for GoCore's, left to right. When shifts are lowered, two failing operands can
+    panic differently; the GoCore fixtures `panic_order_divide` and `panic_order_shift`
+    pin gc 1.25.5's choice there (left to right) for that step.
 -/
 import Gala.M5.SpecPure
 import Gala.GoCore.Eval
@@ -134,24 +135,13 @@ def NoConstOp : Spec.Expr → Prop
   | .binary op l r => Spec.constEval (.binary op l r) = none ∧ NoConstOp l ∧ NoConstOp r
   | _ => True
 
-/-- How a galaspec panic and a GoCore panic agree: GoCore's is a runtime error whose text
-    is galaspec's message. -/
+/-- How a galaspec panic and a GoCore panic agree in this step, whose only run-time panic
+    is an integer division by zero: galaspec's is of class `divide`, and GoCore's is the
+    runtime error with the same text. -/
 def PanicRel : Spec.PanicClass → String → GoCore.Full.Val → Prop
-  | c, m, .str _ t => t = m ∧ (c = .divide ∨ c = .other)
+  | c, m, .str .string t => c = .divide ∧ t = m
   | _, _, _ => False
 
-/-- What GoCore's evaluation of `le` at every depth from some point on gives, against
-    galaspec's result `r`: a related value of kind `k`, or the same panic; anything else
-    galaspec gives (it ran out of fuel, or stopped `stuck` or `unsupported`) claims
-    nothing. GoCore's state is left as it was. -/
-def Matches (cx : GoCore.Full.Ctx) (env : GoCore.Full.Env) (g : GoCore.Full.St) (le : GoCore.Full.Expr)
-    (k : Kind) (r : Except Spec.Stop Spec.Val) (typed : Prop) : Prop :=
-  match r with
-  | .ok v => ∃ m, ∀ n ≥ m, ∃ w, (GoCore.Full.evalExpr cx n env le).run.run g = (.ok w, g) ∧
-      VRel v w ∧ valKind v = some k ∧ (typed → ¬ UInt w)
-  | .error (.panic c msg) => ∃ m, ∀ n ≥ m, ∃ pv,
-      (GoCore.Full.evalExpr cx n env le).run.run g = (.error (.panic pv true), g) ∧ PanicRel c msg pv
-  | _ => True
 
 /-! ## GoCore's evaluation of the lowered forms -/
 
@@ -368,7 +358,7 @@ theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     | exact ⟨_, rfl, .int _, rfl, by simp [UInt]⟩
     | (by_cases hy : y = 0
        · simp only [hy, ite_true]
-         exact ⟨_, rfl, rfl, .inl rfl⟩
+         exact ⟨_, rfl, rfl, rfl⟩
        · simp only [hy, ite_false]
          exact ⟨_, rfl, .int _, rfl, by simp [UInt]⟩)
 
@@ -907,7 +897,19 @@ theorem inst_predeclared : Predeclared instCtx instEnv := by
 
 def instSt : St := { cells := #[.int intTy 5], closures := #[], out := "", steps := 0 }
 
-example (ds : Spec.Decls) (steps d : Nat) :=
+/-- What the instance computes: with `x = 5`, `x + 1` is `6` in galaspec and in GoCore. -/
+theorem inst_values (ds : Spec.Decls) :
+    ((pureEval ds instExpr).run.run instCore).1 = .ok (.int 6) ∧
+    (evalExpr instCtx 5 instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt =
+      (.ok (.int intTy 6), instSt) := by
+  exact ⟨rfl, rfl⟩
+
+/-- `expr_correct` applied to `x + 1`, every hypothesis discharged: it is not vacuous. -/
+theorem expr_correct_instance (ds : Spec.Decls) (steps d : Nat) :
+    ((Spec.eval ds d instExpr).run.run { instCore with steps }).2.toCore = instCore ∧
+    ∀ N ≥ gdepth instExpr, ERel .int instSt (isLitE instExpr)
+      ((Spec.eval ds d instExpr).run.run { instCore with steps }).1
+      ((evalExpr instCtx N instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt) :=
   expr_correct ds instCtx instKinds instExpr .int (.binary "+" (.ident "x") (.intLit 1)) rfl
     ⟨rfl, trivial, trivial⟩ { instCore with steps } instSt instEnv inst_locRel inst_predeclared d
 

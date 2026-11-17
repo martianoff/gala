@@ -140,7 +140,7 @@ theorem pureEval_readOnly (ds : Decls) : ∀ e, ReadOnly (pureEval ds e)
   | .binary op l r => by
     have ihl := pureEval_readOnly ds l
     have ihr := pureEval_readOnly ds r
-    have hb : ∀ b : Bool, ReadOnly (do pure (Val.bool (← asBool (← pureEval ds r)))) := fun _ =>
+    have hb : ReadOnly (do pure (Val.bool (← asBool (← pureEval ds r)))) :=
       readOnly_bind ihr fun _ => readOnly_bind (readOnly_asBool _) fun _ => readOnly_pure _
     unfold pureEval
     split
@@ -150,7 +150,7 @@ theorem pureEval_readOnly (ds : Decls) : ∀ e, ReadOnly (pureEval ds e)
          first
           | exact readOnly_bind ihl fun _ => readOnly_bind ihr fun _ => readOnly_binop _ _ _
           | exact readOnly_bind ihl fun _ => readOnly_bind (readOnly_asBool _) fun b => by
-              cases b <;> first | exact readOnly_pure _ | exact hb true)
+              cases b <;> first | exact readOnly_pure _ | exact hb)
   | .call .. | .select .. | .tuple _ | .ifExpr .. | .mtch .. | .block _ | .ifStmt ..
   | .ret _ | .assign .. | .incdec .. | .decl .. | .interp _ | .lambda .. | .named ..
   | .unsupported _ => readOnly_throw _

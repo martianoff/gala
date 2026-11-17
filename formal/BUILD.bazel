@@ -83,6 +83,7 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.alphaCheck_run",
     "Gala.M5.eval_pure",
     "Gala.M5.expr_correct",
+    "Gala.M5.expr_correct_instance",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the

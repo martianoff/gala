@@ -454,4 +454,12 @@ theorem expr_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ : String
         ((GoCore.Full.evalExpr cx N env le).run.run g) :=
   Gala.M5.expr_correct
 
+open Gala Gala.M5 in
+theorem expr_correct_instance : ∀ (ds : Spec.Decls) (steps d : Nat),
+    ((Spec.eval ds d instExpr).run.run { instCore with steps }).2.toCore = instCore ∧
+    ∀ N ≥ gdepth instExpr, ERel .int instSt (isLitE instExpr)
+      ((Spec.eval ds d instExpr).run.run { instCore with steps }).1
+      ((GoCore.Full.evalExpr instCtx N instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt) :=
+  Gala.M5.expr_correct_instance
+
 end Gala.Statements
