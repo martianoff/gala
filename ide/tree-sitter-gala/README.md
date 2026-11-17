@@ -136,13 +136,21 @@ source = { git = "https://github.com/martianoff/gala", rev = "<commit>", subpath
 ```
 
 Fetch and build it with `hx --grammar fetch` and `hx --grammar build`, then
-copy `queries/*.scm` to `~/.config/helix/runtime/queries/gala/`.
+copy `queries/highlights.scm` and `queries/injections.scm` to
+`~/.config/helix/runtime/queries/gala/`. `locals.scm` and `indents.scm` use
+nvim-treesitter's capture names, which Helix's own scope and indent queries
+do not share, so leave them out.
 
-The queries use nvim-treesitter's capture names. Helix themes match most of
-them by prefix (`@keyword.conditional` falls back to `keyword`), but spell a
-few differently: numbers (`constant.numeric`), booleans
-(`constant.builtin.boolean`) and escapes (`constant.character.escape`) stay
-uncolored unless you rename those captures in your copy.
+The highlights need two edits in your copy:
+
+- Helix lets the first matching pattern win, and the query is ordered for
+  editors where the last one does. Move the generic `(identifier) @variable`
+  and `(type_identifier) @type` patterns to the end of the file, or every
+  name is colored as a plain variable or type.
+- Helix themes match most capture names by prefix (`@keyword.conditional`
+  falls back to `keyword`), but spell a few differently: rename `@number` to
+  `@constant.numeric`, `@boolean` to `@constant.builtin.boolean` and
+  `@string.escape` to `@constant.character.escape`, or those stay uncolored.
 
 ## Zed
 
@@ -178,8 +186,9 @@ block_comment = ["/* ", " */"]
 tab_size = 4
 ```
 
-Copy `queries/highlights.scm`, `queries/injections.scm` and
-`queries/indents.scm` into `languages/gala/`, then run **zed: install dev
+Copy `queries/highlights.scm` and `queries/injections.scm` into
+`languages/gala/` (`indents.scm` uses Neovim's capture names, which Zed does
+not read), then run **zed: install dev
 extension** on the directory. A language server in a Zed extension is started
 by a few lines of Rust (`language_server_command` returning `gala lsp`); see
 Zed's guide to
@@ -221,9 +230,11 @@ Commit the regenerated `src/` with the change to `grammar.js`.
 - Only the outermost extractor of a pattern is highlighted as a constructor:
   in `case Some(Ok(x))`, `Ok` is colored as a call.
 - A qualified type has one qualifier, `pkg.Type`; gala.g4 allows more dots.
-- The line-break rule looks at whitespace only: a `(` after a block comment
-  that spans lines, `f() /* ... */ (x)`, is still a call, where GALA counts the
-  comment as a line break.
+- A comment between a line break and a line that starts with `(`, `*p` or
+  `&n` is read by the scanner to find the line break, and so is not a node of
+  its own: it is not highlighted as a comment.
+- Pattern bindings in `locals.scm` are found at the top level of a pattern and
+  one extractor deep (`case Some(x)`), not deeper.
 - Format specifiers in `f"..."` strings (`%.2f`) are plain string content.
 
 ## License

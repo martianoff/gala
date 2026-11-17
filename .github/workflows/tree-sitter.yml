@@ -10,8 +10,9 @@ name: Tree-sitter grammar
 #   - queries/highlights.scm captures every gala.g4 keyword and exactly the
 #     builtin types of IsPrimitiveType (internal/transpiler/types.go).
 #
-# Runs when the grammar, gala.g4, types.go or any .gala file changes: a new
-# construct in GALA code that the grammar cannot parse shows up here.
+# Runs when the grammar, gala.g4, newline.go, types.go or any .gala file
+# changes: a new construct in GALA code that the grammar cannot parse shows up
+# here.
 on:
   pull_request:
     branches: [master]
@@ -19,6 +20,7 @@ on:
       - "ide/tree-sitter-gala/**"
       - "**/*.gala"
       - "internal/parser/grammar/gala.g4"
+      - "internal/parser/newline.go"
       - "internal/transpiler/types.go"
       - ".github/workflows/tree-sitter.yml"
   push:
@@ -27,6 +29,7 @@ on:
       - "ide/tree-sitter-gala/**"
       - "**/*.gala"
       - "internal/parser/grammar/gala.g4"
+      - "internal/parser/newline.go"
       - "internal/transpiler/types.go"
       - ".github/workflows/tree-sitter.yml"
 

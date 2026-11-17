@@ -153,9 +153,9 @@ names in `queries/highlights.scm`
 the repository, and `script/check-queries.sh`, which fails when a gala.g4
 keyword has no highlight capture or the builtin types differ from
 `IsPrimitiveType` (see its README). The `Tree-sitter grammar` workflow runs
-them on any change to the grammar, gala.g4, types.go or a `.gala` file, so a
-construct the grammar does not know fails there. A new construct gets a corpus
-test in `test/corpus/`.
+them on any change to the grammar, gala.g4, newline.go, types.go or a `.gala`
+file, so a construct the grammar does not know fails there. A new construct
+gets a corpus test in `test/corpus/`.
 
 ## When to Sync
 

@@ -16,6 +16,9 @@
  *   - `_call_lparen` is a '(' with no line break before it. A call takes only
  *     this token; every other '(' takes it or a plain '(' (`_lparen`), since
  *     the scanner produces it wherever a call could follow.
+ *   - `_nl_lparen` is a '(' after a line break, which no call takes. The
+ *     scanner reads through comments to find the line break, so
+ *     `f()\n/* note *\/ (x)` is two statements.
  *   - `_nl_star` / `_nl_amp` are a '*' / '&' after a line break, directly
  *     against their operand, where a prefix operator can begin. Only the unary
  *     operator takes them, so they never continue the line before.
@@ -58,6 +61,7 @@ module.exports = grammar({
 
   externals: $ => [
     $._call_lparen,
+    $._nl_lparen,
     $._nl_star,
     $._nl_amp,
     // Never produced: lets the scanner detect error recovery, when tree-sitter
@@ -690,10 +694,9 @@ module.exports = grammar({
       optional(field('default', $.default_value)),
     ),
 
-    // Any '(' but a call's. gala.g4 writes it `'(' | NL_LPAREN` where it can
-    // follow an expression; here the scanner's `_call_lparen` stands in for
-    // its '(' wherever a call could also follow, so every '(' takes both.
-    _lparen: $ => choice('(', alias($._call_lparen, '(')),
+    // Any '(' but a call's: gala.g4's `'(' | NL_LPAREN`. The scanner produces
+    // `_call_lparen` wherever a call could also follow, so every '(' takes it.
+    _lparen: $ => choice('(', alias($._call_lparen, '('), alias($._nl_lparen, '(')),
 
     // literal
     _literal: $ => choice(

@@ -1,6 +1,7 @@
 ; Highlights for GALA. Capture names follow nvim-treesitter's. Where two
-; patterns match one node, the more specific one comes later: in Neovim and
-; Zed the last match wins.
+; patterns match one node, the more specific one comes later, for editors in
+; which the last match wins, as in Neovim. Where the first wins, as in Helix,
+; move the generic `(identifier)` and `(type_identifier)` patterns to the end.
 
 ; Identifiers
 
@@ -184,6 +185,12 @@
       (selector_expression
         field: (field_identifier) @constructor)
     ]))
+
+; A variant without fields, `case None =>`, is a bare name; by convention a
+; variant is capitalized and a binding is not.
+((case_clause
+  pattern: (identifier) @constructor)
+  (#match? @constructor "^[A-Z]"))
 
 ; Literals
 

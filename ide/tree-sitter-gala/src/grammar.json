@@ -3803,6 +3803,15 @@
           },
           "named": false,
           "value": "("
+        },
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_nl_lparen"
+          },
+          "named": false,
+          "value": "("
         }
       ]
     },
@@ -4342,6 +4351,10 @@
     {
       "type": "SYMBOL",
       "name": "_call_lparen"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_nl_lparen"
     },
     {
       "type": "SYMBOL",

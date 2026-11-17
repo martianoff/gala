@@ -70,6 +70,20 @@
 (typed_pattern
   name: (identifier) @local.definition.var)
 
+; Names a pattern binds: `case x`, `case Some(x)`, `case (a, b)`. A pattern is
+; an expression, so only names at its top level and one extractor deep are
+; caught; a capitalized name is a variant (`case None`), not a binding.
+((case_clause
+  pattern: [
+    (identifier) @local.definition.var
+    (call_expression
+      arguments: (argument_list
+        (identifier) @local.definition.var))
+    (tuple_expression
+      (identifier) @local.definition.var)
+  ])
+  (#match? @local.definition.var "^[a-z_]"))
+
 (import_spec
   name: (package_identifier) @local.definition.import)
 

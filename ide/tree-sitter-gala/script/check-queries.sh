@@ -17,8 +17,12 @@ repo_root="$(cd "$grammar_dir/../.." && pwd)"
 highlights="$grammar_dir/queries/highlights.scm"
 status=0
 
+# The query's patterns alone: no comments, and no predicates, whose strings
+# (`#any-of? ... "int"`) are names to compare against, not captures.
+patterns="$(perl -0pe 's/;[^\n]*//g; s/\(#[^()]*\)//g' "$highlights")"
+
 while IFS= read -r keyword; do
-  if ! grep -qE "(\"$keyword\"|\($keyword\))" "$highlights"; then
+  if ! grep -qE "(\"$keyword\"|\($keyword\))" <<< "$patterns"; then
     echo "queries/highlights.scm: gala.g4 keyword '$keyword' has no capture" >&2
     status=1
   fi
