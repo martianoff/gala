@@ -4678,7 +4678,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		// it is: each parameter is `any`, as the callee declares.
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
-	b := t.goResultsBodyFor(s.typ, "this lambda")
+	b := t.goResultsBodyFor(s.typ, "this lambda").withBody(l.expression())
 	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
 	if err != nil {
 		return nil, err
@@ -4874,7 +4874,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	} else if handled {
 		// The placeholder lambda's body is e, lowered on its own: its one
 		// value is checked here.
-		b := t.goResultsBodyFor(funcSlot, "this lambda")
+		b := t.goResultsBodyFor(funcSlot, "this lambda").withBody(e)
 		if ret := soleReturnValue(expr.Body); ret != nil {
 			if err := t.noteGoResultsValue(b, ret, e.at()); err != nil {
 				return nil, err
@@ -4887,7 +4887,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// thunk's one value: each value it gives — each branch of an if or match —
 	// is checked as a Go-results body's (see lowerGoResultsValue).
 	// A `nil` is no such value but the function itself, typed as the slot.
-	byName := t.byNameGoResults(funcSlot)
+	byName := t.byNameGoResults(funcSlot).withBody(e)
 	nilFunc := byName != nil && e.isNil()
 	if nilFunc {
 		byName = nil
@@ -4900,7 +4900,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	if err != nil {
 		return nil, err
 	}
-	if nilFunc && !s.open {
+	if nilFunc && !s.open && !t.hasTypeParams(s.typ) {
 		t.typeNilAs(expr, s.typ)
 	}
 
@@ -4979,16 +4979,17 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 			return withLead(thunk, mark), true
 		}
 	}
-	// A value of a named function type (`type Getter func() int`) is one too.
-	if t.resolveTranspilerTypeAsFuncType(exprType) != nil {
+	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
 		return expr, false
 	}
 
 	// Several results: the expression is their one GALA value, spread over
-	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
-	// left untyped (an open one) is the function, as no Try or Tuple is nil.
+	// them as a lambda's is (see spreadLambdaGoResults). A value of a named
+	// function type (`type Getter func() (int, error)`) is the function
+	// itself, and so is a `nil` the slot left untyped (an open one): no Try
+	// or Tuple is either.
 	if len(ft.Results) > 1 {
-		if isNilIdent(expr) {
+		if isNilIdent(expr) || t.resolveTranspilerTypeAsFuncType(exprType) != nil {
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)

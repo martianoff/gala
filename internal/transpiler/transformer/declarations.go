@@ -1048,7 +1048,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 			if receiver != nil && len(receiver.List) == 1 && len(receiver.List[0].Names) == 1 {
 				b.selfRecv = receiver.List[0].Names[0].Name
 			}
-			funcSlot.goResults = b
+			funcSlot.goResults = b.withBody(d.expr)
 		}
 	}
 	defer t.enterReturnSlot(funcSlot)()

@@ -3137,8 +3137,9 @@ of the Tuple needs only to be assignable to its result, so
 receives a non-nil `io.Reader` holding a nil `*os.File`, exactly as Go's own
 `return os.Open(p)` gives it, so callers check `err`, not `r != nil`. A `Try`
 has no such slack: a value of type `Try[*os.File]` is not a `Try[io.Reader]`,
-so give `ResultsOf(...)` there. A Go call written as the whole expression
-body, `= os.Open(p)`, passes its results through as they are.
+so give `ResultsOf(...)` there. A Go call that is a whole lambda body or
+by-name argument (`() => os.Open(p)`, `opened(os.Open(p))`) passes its
+results through as they are.
 
 The same holds for a lambda or by-name argument passed to a **generic** Go
 function whose results are still open (`sync.OnceValues`, a

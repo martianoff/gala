@@ -1025,8 +1025,8 @@ used as a value, is inferred as one GALA type built from the Go signature:
   it; with none it is GALA-E0067. Go infers the type arguments from the
   lambda's results. A `Try` value's element must be the result's own type:
   `Try` has no covariance, so a `Try[*os.File]` value for `(io.Reader, error)`
-  is GALA-E0134 (a Go call that is the whole expression body passes its
-  results through instead).
+  is GALA-E0134 (a Go call that is a whole lambda body or by-name argument
+  passes its results through instead).
 - A by-name argument whose type is a function type, named
   (`type Getter func() (int, error)`) or not, and `nil`, are the function a
   `func() (A, B)` parameter takes: they are passed as they are, not lifted

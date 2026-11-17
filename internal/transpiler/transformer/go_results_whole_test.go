@@ -215,6 +215,12 @@ func TestGoResultsKeptWhole(t *testing.T) {
 			absent:   []string{"func() (int, error) {"},
 		},
 		{
+			name:     "a Go call that is the whole by-name argument passes assignable results through",
+			body:     "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(os.Open(p))",
+			contains: []string{"return os.Open(p)"},
+			absent:   []string{"_goResult"},
+		},
+		{
 			name:     "nil is passed as the function it is",
 			body:     "func none() int = run(nil)",
 			contains: []string{"run(nil)"},
@@ -343,6 +349,12 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			body: "func openIt(p string) Try[*os.File] = Try(os.Open(p))\n\nfunc open(p string) (io.Reader, error) = openIt(p)",
 			line: 3, col: 42,
 			want: "so its value is a Try[io.Reader] (on a failure Go receives the zero value with the error) or a Tuple[io.Reader, error] of the results as they are; this value is of type Try[*os.File]",
+		},
+		{
+			name: "a Go call of a concrete type as a by-name branch for an interface result",
+			body: "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(if (p == \"\") os.Open(p) else os.Open(p + \"x\"))",
+			line: 3, col: 51,
+			want: "this value is of type Try[*os.File]",
 		},
 		{
 			name: "a Try, then a Tuple, in a generic Go callee's block lambda",

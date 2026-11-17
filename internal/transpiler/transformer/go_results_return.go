@@ -383,6 +383,19 @@ type goResultsBody struct {
 	// it is a call of the function itself (see selfCall).
 	valueAt, wholeAt srcNode
 	valueSelf        string
+	// body is where an expression body is written (`= expr`, `() => expr`,
+	// a by-name argument); zero for a block body. A Go call with the
+	// results written there is returned as it is (see returnGoResults).
+	body srcNode
+}
+
+// withBody notes e as b's expression body (see goResultsBody.body); b may be
+// nil, and e not ok (a block body).
+func (b *goResultsBody) withBody(e exprSrc) *goResultsBody {
+	if b != nil && e.ok() {
+		b.body = e.at()
+	}
+	return b
 }
 
 // newGoResultsBody follows a body Go calls with results. It is nil for fewer
@@ -625,11 +638,13 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 		return nil
 	}
 	if elem, ok := transpiler.TryElem(typ); ok && b.fails {
-		// A Go call's own Try is exempt from notCovariant: written as an
-		// expression body it passes its results through as they are, each
-		// only assignable to its result (`os.Open(p)` for `(io.Reader, error)`).
-		goCall := t.goResults[asCall(expr)] != nil
-		if want, ok := transpiler.TryElem(b.value); ok && (t.cannotHold(want, elem) || !goCall && t.notCovariant(want, elem)) {
+		// A Go call with these results that is the whole expression body is
+		// exempt from notCovariant: it passes its results through as they
+		// are, each only assignable to its result (`os.Open(p)` for
+		// `(io.Reader, error)`; see returnGoResults).
+		res := t.goResults[asCall(expr)]
+		passThrough := res != nil && b.body.ok() && at == b.body && res.count() == len(b.results)
+		if want, ok := transpiler.TryElem(b.value); ok && (t.cannotHold(want, elem) || !passThrough && t.notCovariant(want, elem)) {
 			return b.wrongValueError(at, written)
 		}
 		if b.wholeAt.ok() {

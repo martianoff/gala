@@ -778,7 +778,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 		return &ast.ParenExpr{X: expr}, nil
 	case f.lambda.ok():
 		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(s.typ); ok {
-			b := t.goResultsBodyFor(s.typ, "this lambda")
+			b := t.goResultsBodyFor(s.typ, "this lambda").withBody(f.lambda.expression())
 			lit, checks, err := t.lowerLambda(f.lambda, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
 			if err != nil {
 				return nil, err
