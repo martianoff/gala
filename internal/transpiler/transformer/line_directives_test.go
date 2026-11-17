@@ -491,6 +491,45 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			src:   "package main\n\nfunc f(n int) = if (n == 0) println(100 / n) else println(n + 1)\n\nfunc main() {\n    f(1)\n}\n",
 			wants: map[string]string{"println(100 / n)": "3", "println(n + 1)": "3"},
 		},
+		{
+			// The `if` is inside the block its returned function literal is
+			// inlined as, a line below the body's marker.
+			name:  "condition of an if-expression body",
+			src:   "package main\n\nfunc f(n int) int = if (100 / n > 1) 1 else 2\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"if 100/n > 1 {": "3"},
+		},
+		{
+			name:  "subject of a match body",
+			src:   "package main\n\nfunc f(n int) int = (100 / n) match {\n    case 1 => 1\n    case _ => 2\n}\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"_subj := (100 / n)": "3"},
+		},
+		{
+			name:  "else-if condition of an if-expression body",
+			src:   "package main\n\nfunc f(n int) int =\n    if (n == 1)\n        1\n    else if (100 / n == 2)\n        2\n    else\n        3\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"if 100/n == 2 {": "6"},
+		},
+		{
+			// An `else if` becomes an else block led by its condition's
+			// marker; unmarked, it would count on from the then-branch's line.
+			name:  "else-if condition of a discarded if-expression",
+			src:   "package main\n\nfunc f(n int) =\n    if (n == 1)\n        println(1)\n    // the other cases\n    else if (100 / n == 2)\n        println(2)\n    else\n        println(3)\n\nfunc main() {\n    f(1)\n}\n",
+			wants: map[string]string{"if 100/n == 2 {": "7"},
+		},
+		{
+			// A subject matched as `any` is bound in the function literal,
+			// below the match's marker, not passed as its argument on the
+			// line that closes it.
+			name:  "subject of a type-switch match",
+			src:   "package main\n\nfunc boxed(x int) any = x\n\nfunc f(n int) string = boxed(100 / n) match {\n    case i: int => s\"int $i\"\n    case _ => \"other\"\n}\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"_subj := boxed(100 / n)": "5"},
+		},
+		{
+			// The code after the function literal counts on from the line the
+			// match ends on, not from its last arm's marker.
+			name:  "code after a match",
+			src:   "package main\n\nfunc f(n int) int = (n match {\n    case 1 => 1\n    case _ => 2\n}) + 100 / n\n\nfunc main() {\n    println(f(1))\n}\n",
+			wants: map[string]string{"}()) + 100/n": "6"},
+		},
 	}
 
 	trans := newLineDirectiveTranspiler()

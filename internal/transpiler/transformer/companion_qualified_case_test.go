@@ -110,7 +110,7 @@ func main() {
     Println(describe(), AsIs())
 }
 `,
-			want: []string{"func(_subj yaml.Naming) string", "yaml.AsIs{}.Unapply(_subj)"},
+			want: []string{"var _subj yaml.Naming =", "yaml.AsIs{}.Unapply(_subj)"},
 		},
 		{
 			name: "a subject typed by a case qualified with an alias",
@@ -131,7 +131,7 @@ func main() {
     Println(describe(), AsIs())
 }
 `,
-			want: []string{"func(_subj y.Naming) string", "y.AsIs{}.Unapply(_subj)"},
+			want: []string{"var _subj y.Naming =", "y.AsIs{}.Unapply(_subj)"},
 		},
 		{
 			name: "a subject typed by a case of one of two packages that share a name",
@@ -152,7 +152,7 @@ func main() {
     Println(describe(), ka.Same())
 }
 `,
-			want: []string{"func(_subj kb.Kind) string", "kb.Same{}.Unapply(_subj)"},
+			want: []string{"var _subj kb.Kind =", "kb.Same{}.Unapply(_subj)"},
 		},
 		{
 			name: "a bare case of std and of a dot import: std's",
@@ -172,7 +172,7 @@ func main() {
     Println(describe(), Fail())
 }
 `,
-			want: []string{"func(_subj std.Try["},
+			want: []string{"var _subj std.Try["},
 		},
 		{
 			name: "a default lowered in a package with a bare case of the name",
@@ -189,7 +189,7 @@ func main() {
     Println(lib.Describe(), Same(), Other())
 }
 `,
-			want: []string{"func(_subj kinda.KindA) string"},
+			want: []string{"var _subj kinda.KindA ="},
 		},
 		{
 			name: "a default lowered in a file that dot-imports another case of the name",
@@ -204,7 +204,7 @@ func main() {
     Println(lib.Describe(), DiffB())
 }
 `,
-			want: []string{"func(_subj kinda.KindA) string", "kinda.Same{}.Unapply(_subj)"},
+			want: []string{"var _subj kinda.KindA =", "kinda.Same{}.Unapply(_subj)"},
 		},
 	}
 	for _, tt := range tests {

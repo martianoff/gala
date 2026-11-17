@@ -337,6 +337,7 @@ func (s Half) String() string {
 func (h Half) Unapply(n int) std.Option[int] {
 //line $DIR/main.gala:38
 	{
+//line $DIR/main.gala:38
 		if n%2 == 0 {
 //line $DIR/main.gala:38
 			return std.Some[int]{}.Apply(n / 2)
@@ -344,6 +345,7 @@ func (h Half) Unapply(n int) std.Option[int] {
 //line $DIR/main.gala:38
 			return std.None[int]{}.Apply()
 		}
+//line $DIR/main.gala:38
 	}
 }
 
@@ -354,6 +356,7 @@ var Limit = std.NewImmutable(10)
 func literals(x int) string {
 //line $DIR/main.gala:42
 	{
+//line $DIR/main.gala:42
 		_subj := x
 		if _subj == 0 {
 //line $DIR/main.gala:43
@@ -379,6 +382,7 @@ func literals(x int) string {
 				return "other"
 			}
 		}
+//line $DIR/main.gala:48
 	}
 }
 
@@ -386,6 +390,7 @@ func literals(x int) string {
 func strs(s string) int {
 //line $DIR/main.gala:50
 	{
+//line $DIR/main.gala:50
 		_subj := s
 		if _subj == "ä" {
 //line $DIR/main.gala:51
@@ -398,6 +403,7 @@ func strs(s string) int {
 //line $DIR/main.gala:53
 			return utf8.RuneCountInString(other)
 		}
+//line $DIR/main.gala:54
 	}
 }
 
@@ -405,6 +411,7 @@ func strs(s string) int {
 func shapes(s Shape) int {
 //line $DIR/main.gala:56
 	{
+//line $DIR/main.gala:56
 		_subj := s
 		{
 			_tmp_2 := Circle{}.Unapply(_subj)
@@ -455,6 +462,7 @@ func shapes(s Shape) int {
 				}
 			}
 		}
+//line $DIR/main.gala:61
 	}
 }
 
@@ -462,6 +470,7 @@ func shapes(s Shape) int {
 func colors(c Color) string {
 //line $DIR/main.gala:63
 	{
+//line $DIR/main.gala:63
 		_subj := c
 		{
 			var _tmp_15 bool
@@ -486,6 +495,7 @@ func colors(c Color) string {
 				}
 			}
 		}
+//line $DIR/main.gala:66
 	}
 }
 
@@ -493,6 +503,7 @@ func colors(c Color) string {
 func tuples(p std.Tuple[int, string]) string {
 //line $DIR/main.gala:68
 	{
+//line $DIR/main.gala:68
 		_subj := p
 		{
 			_tmp_s := _subj.V2.Get()
@@ -518,6 +529,7 @@ func tuples(p std.Tuple[int, string]) string {
 				}
 			}
 		}
+//line $DIR/main.gala:72
 	}
 }
 
@@ -525,6 +537,7 @@ func tuples(p std.Tuple[int, string]) string {
 func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
 //line $DIR/main.gala:74
 	{
+//line $DIR/main.gala:74
 		_subj := o
 		{
 			_tmp_18 := _unapply_std_Some_e5564f09(_subj)
@@ -572,6 +585,7 @@ func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
 				}
 			}
 		}
+//line $DIR/main.gala:78
 	}
 }
 
@@ -579,6 +593,7 @@ func nested(o std.Option[std.Tuple[int, std.Option[string]]]) string {
 func people(p Person) string {
 //line $DIR/main.gala:80
 	{
+//line $DIR/main.gala:80
 		_subj := p
 		{
 			_tmp_a := _subj.age.Get()
@@ -603,13 +618,16 @@ func people(p Person) string {
 				}
 			}
 		}
+//line $DIR/main.gala:84
 	}
 }
 
 //line $DIR/main.gala:86
 func boxes(x any) string {
 //line $DIR/main.gala:86
-	return func(_subj any) string {
+	{
+//line $DIR/main.gala:86
+		_subj := x
 		{
 			_tmp_30, _tmp_31 := std.As[Box[int]](_subj)
 			_tmp_v := _tmp_30.v.Get()
@@ -638,13 +656,15 @@ func boxes(x any) string {
 				}
 			}
 		}
-	}(x)
+//line $DIR/main.gala:91
+	}
 }
 
 //line $DIR/main.gala:93
 func seqs(a Array[int]) int {
 //line $DIR/main.gala:93
 	{
+//line $DIR/main.gala:93
 		_subj := a
 		{
 			_tmp_34 := _subj.Size() == 0
@@ -690,6 +710,7 @@ func seqs(a Array[int]) int {
 				}
 			}
 		}
+//line $DIR/main.gala:98
 	}
 }
 
@@ -697,6 +718,7 @@ func seqs(a Array[int]) int {
 func lists(l List[std.Option[int]]) int {
 //line $DIR/main.gala:100
 	{
+//line $DIR/main.gala:100
 		_subj := l
 		{
 			_tmp_40 := _subj.Size() >= 1
@@ -722,6 +744,7 @@ func lists(l List[std.Option[int]]) int {
 				return -1
 			}
 		}
+//line $DIR/main.gala:103
 	}
 }
 
@@ -729,6 +752,7 @@ func lists(l List[std.Option[int]]) int {
 func users(u UserID) string {
 //line $DIR/main.gala:105
 	{
+//line $DIR/main.gala:105
 		_subj := u
 		if int64(_subj) == 0 {
 //line $DIR/main.gala:106
@@ -749,6 +773,7 @@ func users(u UserID) string {
 				return "negative"
 			}
 		}
+//line $DIR/main.gala:109
 	}
 }
 
@@ -756,6 +781,7 @@ func users(u UserID) string {
 func views(m MaybeInt) string {
 //line $DIR/main.gala:111
 	{
+//line $DIR/main.gala:111
 		_subj := m.MatchView()
 		{
 			_tmp_46 := _unapply_std_Some_e5564f09(_subj)
@@ -777,6 +803,7 @@ func views(m MaybeInt) string {
 				}
 			}
 		}
+//line $DIR/main.gala:114
 	}
 }
 
@@ -784,6 +811,7 @@ func views(m MaybeInt) string {
 func extractors(n int) string {
 //line $DIR/main.gala:116
 	{
+//line $DIR/main.gala:116
 		_subj := n
 		{
 			_tmp_50 := Half{}.Unapply(_subj)
@@ -810,6 +838,7 @@ func extractors(n int) string {
 				}
 			}
 		}
+//line $DIR/main.gala:120
 	}
 }
 
@@ -817,6 +846,7 @@ func extractors(n int) string {
 func bools(b bool) int {
 //line $DIR/main.gala:122
 	{
+//line $DIR/main.gala:122
 		_subj := b
 		if _subj == true {
 //line $DIR/main.gala:123
@@ -827,6 +857,7 @@ func bools(b bool) int {
 		} else {
 			panic("unreachable")
 		}
+//line $DIR/main.gala:125
 	}
 }
 
@@ -834,6 +865,7 @@ func bools(b bool) int {
 func blocks(x std.Option[int]) int {
 //line $DIR/main.gala:128
 	var r = func() int {
+//line $DIR/main.gala:128
 		_subj := x
 		{
 			_tmp_55 := _unapply_std_Some_e5564f09(_subj)
@@ -865,9 +897,11 @@ func blocks(x std.Option[int]) int {
 				}
 			}
 		}
+//line $DIR/main.gala:141
 	}()
 //line $DIR/main.gala:142
 	func() {
+//line $DIR/main.gala:142
 		_subj := x
 		{
 			_tmp_59 := _unapply_std_Some_e5564f09(_subj)
@@ -892,6 +926,7 @@ func blocks(x std.Option[int]) int {
 	for i := 0; i < 3; i++ {
 //line $DIR/main.gala:149
 		{
+//line $DIR/main.gala:149
 			_subj := i
 			if _subj == 1 {
 				continue
@@ -912,6 +947,7 @@ func blocks(x std.Option[int]) int {
 func parens(x int) string {
 //line $DIR/main.gala:160
 	{
+//line $DIR/main.gala:160
 		_subj := x
 		if _subj == 1 || _subj == 2 {
 //line $DIR/main.gala:161
@@ -923,6 +959,7 @@ func parens(x int) string {
 //line $DIR/main.gala:163
 			return "other"
 		}
+//line $DIR/main.gala:164
 	}
 }
 
@@ -930,6 +967,7 @@ func parens(x int) string {
 func qualified(s string) string {
 //line $DIR/main.gala:166
 	{
+//line $DIR/main.gala:166
 		_subj := strings.ToUpper(s)
 		if _subj == "A" {
 //line $DIR/main.gala:167
@@ -938,6 +976,7 @@ func qualified(s string) string {
 //line $DIR/main.gala:168
 			return s
 		}
+//line $DIR/main.gala:169
 	}
 }
 

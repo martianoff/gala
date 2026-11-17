@@ -245,14 +245,14 @@ func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, e
 		call := &ast.CallExpr{
 			Fun: &ast.FuncLit{
 				Type: &ast.FuncType{Params: &ast.FieldList{}},
-				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.IfStmt{
+				Body: &ast.BlockStmt{List: markedStmts(t.startMark(e.at()), &ast.IfStmt{
 					Cond: cond,
 					Body: branchBody(lowered[0]),
 					Else: branchBody(lowered[1]),
-				}}},
+				})},
 			},
 		}
-		t.recordBranchingCall(call, "if-expression", line, col)
+		t.recordBranchingCall(call, "if-expression", e.at())
 		return call, nil
 	}
 
@@ -279,6 +279,9 @@ func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, e
 	}
 
 	// Transpile to IIFE: func() T { if cond { ...thenBody } else { ...elseBody } }()
+	// The `if` is led by the if-expression's line marker: the code around
+	// the literal may be on another line, and its `{` may not survive (the
+	// generator inlines a returned call's body as a block).
 	call := &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
@@ -288,17 +291,15 @@ func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, e
 				},
 			},
 			Body: &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.IfStmt{
-						Cond: cond,
-						Body: body(lowered[0]),
-						Else: body(lowered[1]),
-					},
-				},
+				List: markedStmts(t.startMark(e.at()), &ast.IfStmt{
+					Cond: cond,
+					Body: body(lowered[0]),
+					Else: body(lowered[1]),
+				}),
 			},
 		},
 	}
-	t.recordBranchingCall(call, "if-expression", line, col)
+	t.recordBranchingCall(call, "if-expression", e.at())
 	return call, nil
 }
 
@@ -491,7 +492,8 @@ func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slo
 		return &ast.BlockStmt{List: b.stmts}
 	}
 	ifStmt := &ast.IfStmt{Cond: cond, Body: store(branches[0]), Else: store(branches[1])}
-	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ, line, col)
+	// The `if` follows the declaration of the variable, on a line of its own.
+	return t.hoistedResult(s.hoist, markedStmts(t.startMark(e.at()), ifStmt), typ, line, col)
 }
 
 // isNilIdent reports whether expr is the identifier `nil`.

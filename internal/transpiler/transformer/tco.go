@@ -141,7 +141,7 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 	// it is led by the expression's marker: one above `for {` alone would let
 	// the statements inside count on from it.
 	loop := &ast.ForStmt{
-		Body: &ast.BlockStmt{List: t.markExprStmts(body, []ast.Stmt{ifStmt})},
+		Body: &ast.BlockStmt{List: t.markExprStmts(body, ifStmt)},
 	}
 	return &ast.BlockStmt{List: []ast.Stmt{loop}}, true, nil
 }
@@ -231,7 +231,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 		// The branch's statements sit on their own Go lines below the `if`, so
 		// they are led by the marker of the expression they lower.
-		return t.markExprStmts(e, stmts), found, nil
+		return t.markExprStmts(e, stmts...), found, nil
 	}
 
 	// Block branch: reuse the shared branch transform and append a terminal

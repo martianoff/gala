@@ -47,6 +47,7 @@ func (r Res) Close() {
 func lookup(k string) std.Option[int] {
 //line $DIR/main.gala:13
 	{
+//line $DIR/main.gala:13
 		if k == "ä" {
 //line $DIR/main.gala:13
 			return std.Some[int]{}.Apply(1)
@@ -54,6 +55,7 @@ func lookup(k string) std.Option[int] {
 //line $DIR/main.gala:13
 			return std.None[int]{}.Apply()
 		}
+//line $DIR/main.gala:13
 	}
 }
 
@@ -87,6 +89,7 @@ func chain(a string, b string) std.Option[int] {
 func branches(c bool, n int) int {
 //line $DIR/main.gala:30
 	var v = func() int {
+//line $DIR/main.gala:30
 		if c {
 //line $DIR/main.gala:31
 			var m = n * 2
@@ -108,6 +111,7 @@ func branches(c bool, n int) int {
 				return 0
 			}
 		}
+//line $DIR/main.gala:42
 	}()
 //line $DIR/main.gala:43
 	if c {
@@ -119,6 +123,7 @@ func branches(c bool, n int) int {
 	}
 //line $DIR/main.gala:46
 	var o = func() std.Option[int] {
+//line $DIR/main.gala:46
 		if c {
 //line $DIR/main.gala:47
 			return std.Option_FlatMap[int, int](lookup("ä"), func(q int) std.Option[int] {
@@ -129,6 +134,7 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:49
 			return std.None[int]{}.Apply()
 		}
+//line $DIR/main.gala:49
 	}()
 //line $DIR/main.gala:50
 	return v + o.GetOrElse(0)

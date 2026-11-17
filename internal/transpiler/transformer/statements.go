@@ -931,54 +931,39 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(e ifExprSrc) (ast.Stmt, 
 			continue // parse-error recovery
 		}
 		var stmt ast.Stmt
+		// mark leads an expression branch, which sits on its own Go line below
+		// the `if` or the `else`: the marker of its expression. A block
+		// branch's statements carry their own.
+		var mark ast.Stmt
 		if b := branch.block(); b.ok() {
 			stmt, err = t.lowerBlock(b, tailDiscarded, slot{})
 		} else {
 			stmt, err = t.lowerExprStatement(branch.expr(), functionDiscardHint)
-			stmt = t.markIfExprStatementBranch(branch.expr(), stmt, i > 0)
+			mark = t.exprMark(branch.expr())
 		}
 		if err != nil {
 			return nil, err
 		}
+		if s, isIf := stmt.(*ast.IfStmt); isIf && i > 0 && mark == nil {
+			// An else branch that is itself an if stays an `else if` when
+			// there is no marker to lead its condition.
+			ifStmt.Else = s
+			continue
+		}
 		body, isBlock := stmt.(*ast.BlockStmt)
 		switch {
-		case i == 0 && isBlock:
+		case !isBlock:
+			body = &ast.BlockStmt{List: markedStmts(mark, stmt)}
+		case mark != nil && len(body.List) > 0:
+			body = prependStmts(body, mark)
+		}
+		if i == 0 {
 			ifStmt.Body = body
-		case i == 0:
-			ifStmt.Body = &ast.BlockStmt{List: []ast.Stmt{stmt}}
-		case isBlock:
+		} else {
 			ifStmt.Else = body
-		default:
-			// An else branch that is itself an if stays an `else if`.
-			ifStmt.Else = stmt
-			if _, isIf := stmt.(*ast.IfStmt); !isIf {
-				ifStmt.Else = &ast.BlockStmt{List: []ast.Stmt{stmt}}
-			}
 		}
 	}
 	return ifStmt, nil
-}
-
-// markIfExprStatementBranch is stmt, the statement an expression branch e of
-// a discarded if-expression lowers to, led by e's line marker: it sits on its
-// own Go line below the `if`. An else branch that is itself an if stays an
-// `else if`, unmarked; its own branches are marked. A nil stmt (an error) is
-// returned as it is.
-func (t *galaASTTransformer) markIfExprStatementBranch(e exprSrc, stmt ast.Stmt, isElse bool) ast.Stmt {
-	switch s := stmt.(type) {
-	case nil:
-		return stmt
-	case *ast.BlockStmt:
-		return t.exprFuncBody(e, s)
-	case *ast.IfStmt:
-		if isElse {
-			return stmt
-		}
-	}
-	if marked := t.markExprStmts(e, []ast.Stmt{stmt}); len(marked) > 1 {
-		return &ast.BlockStmt{List: marked}
-	}
-	return stmt
 }
 
 // lowerExprStatement lowers an expression whose value nothing reads the way a

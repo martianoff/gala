@@ -57,17 +57,33 @@ func chainMatchClauses(clauses []ast.Stmt, defaultBody []ast.Stmt) []ast.Stmt {
 	return []ast.Stmt{rootIf}
 }
 
-// buildInlinedMatchBlock wraps the inlined match body in a Go block that
-// binds the subject to paramName, mirroring the IIFE's parameter binding so
-// the if-else chain (which references paramName) stays well-formed. The block
-// also contains a fresh scope so the binding does not leak.
-func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt) *ast.BlockStmt {
-	stmts := make([]ast.Stmt, 0, len(body)+1)
+// buildInlinedMatchBlock wraps the match body in a Go block that binds the
+// subject expr to paramName, so the if-else chain (which references
+// paramName) stays well-formed: the body of the function literal a match
+// lowers to, or the block a match lowered as statements is. The block also
+// contains a fresh scope so the binding does not leak. typ, when not nil, is
+// the type the subject is bound as, which converts it (`var _subj T =
+// expr`); otherwise the binding takes the subject's own type.
+//
+// The binding is led by lead, the match's line marker (nil for none): it sits
+// on a line of its own below the code around the block, so without it the
+// subject would count on from that code's marker.
+func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName string, typ ast.Expr, lead ast.Stmt, body []ast.Stmt) *ast.BlockStmt {
+	stmts := appendMark(make([]ast.Stmt, 0, len(body)+2), lead)
 	// The subject is evaluated either way. When no arm reads it (`case _ =>`
 	// only), binding it would be an unused Go variable, so it is discarded.
-	bind := &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []ast.Expr{expr}}
+	name := "_"
 	if readsName(body, paramName) {
-		bind.Lhs[0], bind.Tok = ast.NewIdent(paramName), token.DEFINE
+		name = paramName
+	}
+	var bind ast.Stmt
+	switch {
+	case typ != nil:
+		bind = seqVarDecl(name, typ, expr)
+	case name == "_":
+		bind = assignStmt(name, expr)
+	default:
+		bind = &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(name)}, Tok: token.DEFINE, Rhs: []ast.Expr{expr}}
 	}
 	stmts = append(stmts, bind)
 	stmts = append(stmts, body...)
@@ -75,23 +91,43 @@ func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName str
 }
 
 // readsName reports whether stmts read the identifier name declared before
-// them. Once a statement declares name again (`name := ...`, as a nested
-// inlined match declares its own subject), the statements after it read the new
-// one, and so does a function literal with a parameter of that name. A
-// selector's field name is no read.
+// them. Once a statement declares name again (`name := ...` or `var name T =
+// ...`, as a nested match declares its own subject), the statements after it
+// read the new one, and so does a function literal with a parameter of that
+// name. A selector's field name is no read.
 func readsName(stmts []ast.Stmt, name string) bool {
 	for _, s := range stmts {
-		if as, ok := s.(*ast.AssignStmt); ok && as.Tok == token.DEFINE && slices.ContainsFunc(as.Lhs, func(l ast.Expr) bool {
-			id, ok := l.(*ast.Ident)
-			return ok && id.Name == name
-		}) {
-			return slices.ContainsFunc(as.Rhs, func(r ast.Expr) bool { return nodeReadsName(r, name) })
+		if values, ok := redeclaration(s, name); ok {
+			return slices.ContainsFunc(values, func(r ast.Expr) bool { return nodeReadsName(r, name) })
 		}
 		if nodeReadsName(s, name) {
 			return true
 		}
 	}
 	return false
+}
+
+// redeclaration is the values s declares name with, and true, when s
+// declares name: `name := ...` or `var name T = ...`.
+func redeclaration(s ast.Stmt, name string) ([]ast.Expr, bool) {
+	switch s := s.(type) {
+	case *ast.AssignStmt:
+		if s.Tok == token.DEFINE && slices.ContainsFunc(s.Lhs, func(l ast.Expr) bool {
+			id, ok := l.(*ast.Ident)
+			return ok && id.Name == name
+		}) {
+			return s.Rhs, true
+		}
+	case *ast.DeclStmt:
+		if gd, ok := s.Decl.(*ast.GenDecl); ok && gd.Tok == token.VAR {
+			for _, spec := range gd.Specs {
+				if vs, ok := spec.(*ast.ValueSpec); ok && slices.ContainsFunc(vs.Names, func(id *ast.Ident) bool { return id.Name == name }) {
+					return vs.Values, true
+				}
+			}
+		}
+	}
+	return nil, false
 }
 
 // nodeReadsName is readsName for one node: its blocks are scopes of their own.
@@ -623,7 +659,7 @@ func stmtContainsBareReturn(stmt ast.Stmt) bool {
 //
 // A match lowered to a function literal (hoisted false) emits Go like:
 //
-//	func(_subj T) string { ...; return /* no value */ }(subject)
+//	func() string { _subj := subject; ...; return /* no value */ }()
 //
 // which fails to compile with "not enough return values". The user intent is
 // ambiguous between "exit the outer function" and "exit the match IIFE", so we
@@ -1723,7 +1759,7 @@ func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([
 			if err != nil {
 				return nil, nil, err
 			}
-			return t.markExprStmts(e, []ast.Stmt{stmt}), transpiler.VoidType{}, nil
+			return t.markExprStmts(e, stmt), transpiler.VoidType{}, nil
 		}
 		// Otherwise the body is the arm's value: wrap it in a return.
 		if err := t.checkForbiddenStatementKeywordSrc(e); err != nil {
@@ -1736,7 +1772,7 @@ func (t *galaASTTransformer) transformCaseBodyStmt(s simpleSrc, armSlot slot) ([
 		// B8: route through the unified value-vs-no-return classifier so
 		// every match-arm-tail decision agrees.
 		stmt, typ := t.lowerMatchArmTailExpr(expr)
-		return t.markExprStmts(e, []ast.Stmt{stmt}), typ, nil
+		return t.markExprStmts(e, stmt), typ, nil
 	}
 	// Otherwise it's a side-effect statement (assignment, incDec, shortVarDecl)
 	stmt, err := t.lowerSimpleStatement(s, false)

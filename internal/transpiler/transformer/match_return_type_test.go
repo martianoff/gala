@@ -36,7 +36,7 @@ func getHash(v any) uint32 {
 	return result
 }`,
 			shouldNotContain: "testpkg.uint32",
-			shouldContain:    "func(_subj any) uint32",
+			shouldContain:    "func() uint32 {\n\t\t_subj := v",
 		},
 		{
 			name: "Match returning int should not be package-qualified",
@@ -50,7 +50,7 @@ func getValue(v any) int {
 	return result
 }`,
 			shouldNotContain: "testpkg.int",
-			shouldContain:    "func(_subj any) int",
+			shouldContain:    "func() int {\n\t\t_subj := v",
 		},
 		{
 			name: "Match returning string should not be package-qualified",
@@ -64,7 +64,7 @@ func getString(v any) string {
 	return result
 }`,
 			shouldNotContain: "testpkg.string",
-			shouldContain:    "func(_subj any) string",
+			shouldContain:    "func() string {\n\t\t_subj := v",
 		},
 		{
 			name: "Match returning bool should not be package-qualified",
@@ -78,7 +78,7 @@ func getBool(v any) bool {
 	return result
 }`,
 			shouldNotContain: "testpkg.bool",
-			shouldContain:    "func(_subj any) bool",
+			shouldContain:    "func() bool {\n\t\t_subj := v",
 		},
 	}
 

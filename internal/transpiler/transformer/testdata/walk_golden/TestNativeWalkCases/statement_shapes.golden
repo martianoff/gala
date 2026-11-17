@@ -50,6 +50,7 @@ func (s Cell) String() string {
 func look(x int) std.Option[int] {
 //line $DIR/main.gala:17
 	{
+//line $DIR/main.gala:17
 		if x > 0 {
 //line $DIR/main.gala:17
 			return std.Some[int]{}.Apply(x)
@@ -57,6 +58,7 @@ func look(x int) std.Option[int] {
 //line $DIR/main.gala:17
 			return std.None[int]{}.Apply()
 		}
+//line $DIR/main.gala:17
 	}
 }
 
@@ -185,6 +187,7 @@ func locals() {
 	var x = 3
 //line $DIR/main.gala:85
 	func() {
+//line $DIR/main.gala:85
 		_subj := x
 		if _subj == 3 {
 //line $DIR/main.gala:86

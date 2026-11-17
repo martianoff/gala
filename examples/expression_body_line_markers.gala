@@ -1,9 +1,10 @@
 package main
 
+import "reflect"
 import "regexp"
 
-// A panic in an expression body (a function's, method's or lambda's, or an
-// argument lifted into a thunk) reports its expression's GALA line.
+// A panic in an expression body, of a function, method, lambda or thunk,
+// an if-expression or a match, reports the GALA line it is on.
 
 struct Counter(x int)
 
@@ -28,27 +29,35 @@ func panicsAt(err error, line int) bool = PanicStack(err).Exists((stack) =>
 
 func main() {
     val lambda = (n int) => 100 / n
-    Println(s"function: ${panicsAt(Try(div(0)).GetError(), 10)}")
-    Println(s"method: ${panicsAt(Try(Counter(1).Div(0)).GetError(), 12)}")
-    Println(s"expression on the next line: ${panicsAt(Try(divTwoLines(0)).GetError(), 15)}")
-    Println(s"function returning nothing: ${panicsAt(TryApply(() => { report(0); 0 }).GetError(), 17)}")
-    Println(s"returned lambda: ${panicsAt(Try(divider()(0)).GetError(), 19)}")
-    Println(s"lambda: ${panicsAt(Try(lambda(0)).GetError(), 30)}")
-    Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 37)}")
-    Println(s"argument of Try: ${panicsAt(Try(100 / zero()).GetError(), 38)}")
-    Println(s"by-name argument: ${panicsAt(Try(later(100 / zero())).GetError(), 39)}")
-    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 59)}")
-    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 63)}")
+    Println(s"function: ${panicsAt(Try(div(0)).GetError(), 11)}")
+    Println(s"method: ${panicsAt(Try(Counter(1).Div(0)).GetError(), 13)}")
+    Println(s"expression on the next line: ${panicsAt(Try(divTwoLines(0)).GetError(), 16)}")
+    Println(s"function returning nothing: ${panicsAt(TryApply(() => { report(0); 0 }).GetError(), 18)}")
+    Println(s"returned lambda: ${panicsAt(Try(divider()(0)).GetError(), 20)}")
+    Println(s"lambda: ${panicsAt(Try(lambda(0)).GetError(), 31)}")
+    Println(s"placeholder lambda: ${panicsAt(Try(applyTo(100 / _, 0)).GetError(), 38)}")
+    Println(s"argument of Try: ${panicsAt(Try(100 / zero()).GetError(), 39)}")
+    Println(s"by-name argument: ${panicsAt(Try(later(100 / zero())).GetError(), 40)}")
+    Println(s"block body with Go results: ${panicsAt(Try(firstStatement()).GetError(), 68)}")
+    Println(s"self-tail-call loop: ${panicsAt(Try(countdown(3, 0)).GetError(), 72)}")
     var z = 0
-    Println(s"lambda with a Ptr parameter: ${panicsAt(Try(each((p Ptr[int]) => 100 / *p, &z)).GetError(), 43)}")
-    Println(s"self-tail-call loop on several lines: ${panicsAt(Try(countdownLines(3, 0)).GetError(), 69)}")
+    Println(s"lambda with a Ptr parameter: ${panicsAt(Try(each((p Ptr[int]) => 100 / *p, &z)).GetError(), 44)}")
+    Println(s"self-tail-call loop on several lines: ${panicsAt(Try(countdownLines(3, 0)).GetError(), 78)}")
     val ifLambda = (n int) => if (n == 0) 100 / n else 1
-    Println(s"lambda with an if-expression body: ${panicsAt(Try(ifLambda(0)).GetError(), 45)}")
-    Println(s"if-expression body: ${panicsAt(Try(ifBody(0)).GetError(), 73)}")
-    Println(s"if-expression body on several lines: ${panicsAt(Try(ifLines(0)).GetError(), 77)}")
-    Println(s"match body: ${panicsAt(Try(matchBody(0)).GetError(), 83)}")
-    Println(s"function returning nothing with an if-expression body: ${panicsAt(TryApply(() => { ifVoid(0); 0 }).GetError(), 86)}")
-    Println(s"recursion that is not a tail call: ${panicsAt(Try(countdownNonTail(3, 0)).GetError(), 88)}")
+    Println(s"lambda with an if-expression body: ${panicsAt(Try(ifLambda(0)).GetError(), 46)}")
+    Println(s"if-expression body: ${panicsAt(Try(ifBody(0)).GetError(), 82)}")
+    Println(s"if-expression body on several lines: ${panicsAt(Try(ifLines(0)).GetError(), 86)}")
+    Println(s"match body: ${panicsAt(Try(matchBody(0)).GetError(), 92)}")
+    Println(s"function returning nothing with an if-expression body: ${panicsAt(TryApply(() => { ifVoid(0); 0 }).GetError(), 95)}")
+    Println(s"recursion that is not a tail call: ${panicsAt(Try(countdownNonTail(3, 0)).GetError(), 97)}")
+    Println(s"if-expression condition: ${panicsAt(Try(ifCond(0)).GetError(), 99)}")
+    Println(s"match subject: ${panicsAt(Try(matchSubject(0)).GetError(), 101)}")
+    Println(s"else-if condition: ${panicsAt(Try(elseIf(0)).GetError(), 106)}")
+    Println(s"else-if condition on several lines: ${panicsAt(Try(elseIfLines(0)).GetError(), 111)}")
+    Println(s"else-if condition of a discarded if-expression: ${panicsAt(TryApply(() => { elseIfVoid(0); 0 }).GetError(), 116)}")
+    Println(s"subject of a type-switch match: ${panicsAt(Try(dispatch(0)).GetError(), 120)}")
+    Println(s"code after an if-expression: ${panicsAt(Try(afterIf(0)).GetError(), 125)}")
+    Println(s"code after a match: ${panicsAt(Try(afterMatch(0)).GetError(), 130)}")
 }
 
 func zero() int = 0
@@ -86,3 +95,36 @@ func matchBody(n int) int = n match {
 func ifVoid(n int) = if (n == 0) Println(100 / n) else Println(1)
 
 func countdownNonTail(n int, acc int) int = if (n == 0) 100 / acc else 0 + countdownNonTail(n - 1, acc)
+
+func ifCond(n int) int = if (100 / n > 1) 1 else 2
+
+func matchSubject(n int) int = (100 / n) match {
+    case 1 => 1
+    case _ => 2
+}
+
+func elseIf(n int) int = if (n == 1) 1 else if (100 / n == 2) 2 else 3
+
+func elseIfLines(n int) int =
+    if (n == 1)
+        1
+    else if (100 / n == 2)
+        2
+    else
+        3
+
+func elseIfVoid(n int) = if (n == 1) Println(1) else if (100 / n == 2) Println(2) else Println(3)
+
+// A subject of Go's empty interface type is dispatched by a type switch.
+
+func dispatch(n int) string = reflect.ValueOf(100 / n).Interface() match {
+    case i: int => s"int $i"
+    case _ => "other"
+}
+
+func afterIf(n int) int = (if (n == 1) 1 else 2) + 100 / n
+
+func afterMatch(n int) int = (n match {
+    case 1 => 1
+    case _ => 2
+}) + 100 / n

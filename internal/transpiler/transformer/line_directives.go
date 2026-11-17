@@ -29,24 +29,34 @@ import (
 //     expression-bodied function or method, an expression or placeholder
 //     lambda, an argument lifted into a thunk (exprFuncBody),
 //   - the statement holding each expression branch of an if-expression and
-//     each expression arm of a match (exprMark, markExprStmts),
+//     each expression arm of a match (exprMark, markExprStmts), an `else if`
+//     of a discarded if-expression included,
+//   - the lowered match or if-expression itself: the `if` of an
+//     if-expression, the subject binding of a match (startMark), inside the
+//     function literal or block it lowers to,
 //   - the body and each expression branch of a self-tail-call loop (tco.go),
 //   - each top-level declaration.
 // A directive maps the first physical Go line of the statement's generated
-// code back to its GALA line.
+// code back to its GALA line. A match or if-expression lowered to a function
+// literal whose value is used also ends that literal's body in the marker of
+// the line it ends on (endBranchingCalls), so the code after the call, in the
+// same Go statement, counts on from the GALA line it is on.
 //
 // Precision:
 //   - Exact for a GALA statement, branch or arm that lowers to a single Go
 //     statement (one physical line, or a multi-line expression whose panic
 //     originates on its first line): the panic reports the GALA line.
+//   - Exact for the condition of an if-expression, the subject of a match,
+//     and the code after one in its statement, when the code after it is on
+//     the line it ends on.
 //   - Approximate for a GALA statement that expands to MULTIPLE Go statements
 //     (e.g. `use x = acquire` → `x := acquire` plus `defer x.Close()`): only the
 //     first Go line carries the directive, so later Go lines auto-increment and
 //     attribute to the following GALA source line.
-//   - Approximate for the generated lines of a match or if-expression that no
-//     marker leads: its subject (`_subj := ...`), its tests and conditions,
-//     and a `bind` chain's plumbing count on from the marker above them, so a
-//     panic there reports a line near, not necessarily at, the GALA code.
+//   - Approximate for the generated lines of a match that no marker leads:
+//     the tests of its arms and a `bind` chain's plumbing count on from the
+//     marker above them, so a panic there reports a line near, not
+//     necessarily at, the GALA code.
 //   - Approximate after a lambda or thunk inside a statement: the markers in
 //     its body reset Go's line counter in the middle of the enclosing
 //     statement, so the Go lines of that statement after the func literal
@@ -67,8 +77,10 @@ func (t *galaASTTransformer) emitLineMarkers() bool {
 // lineMarkerStmt builds the statement-position marker for a 1-based GALA line: a
 // bare identifier expression statement (`__gala_line_<n>`). insertLineDirectives
 // rewrites it into a `//line` directive. It is always emitted immediately before
-// the statement it annotates and is never the trailing statement of a block, so
-// downstream trailing-expression-to-return promotion never wraps it.
+// the statement it annotates and is never the trailing statement of a block
+// while the file is lowered, so downstream trailing-expression-to-return
+// promotion never wraps it; only endBranchingCalls, which runs once the file
+// is complete, ends a block in one.
 func lineMarkerStmt(line int) ast.Stmt {
 	return &ast.ExprStmt{X: ast.NewIdent(transpiler.LineMarkerName(line))}
 }
@@ -136,15 +148,20 @@ func (t *galaASTTransformer) exprFuncBody(e exprSrc, body *ast.BlockStmt) *ast.B
 }
 
 // markExprStmts is stmts, the lowering of the expression e, led by the line
-// marker of e (exprMark); stmts as they are when there is no marker or no
-// statement. Expression arms of a match mark their statements with it, and
-// the self-tail-call loop its body and branches (tco.go).
-func (t *galaASTTransformer) markExprStmts(e exprSrc, stmts []ast.Stmt) []ast.Stmt {
-	mark := t.exprMark(e)
-	if len(stmts) == 0 || mark == nil {
+// marker of e (exprMark). Expression arms of a match and expression branches
+// of a discarded if-expression mark their statements with it, and the
+// self-tail-call loop its body and branches (tco.go).
+func (t *galaASTTransformer) markExprStmts(e exprSrc, stmts ...ast.Stmt) []ast.Stmt {
+	return markedStmts(t.exprMark(e), stmts...)
+}
+
+// markedStmts is stmts led by mark, in a new slice; stmts as they are when
+// there is no marker or no statement, so a marker never ends a block.
+func markedStmts(mark ast.Stmt, stmts ...ast.Stmt) []ast.Stmt {
+	if mark == nil || len(stmts) == 0 {
 		return stmts
 	}
-	return append([]ast.Stmt{mark}, stmts...)
+	return append(append(make([]ast.Stmt, 0, len(stmts)+1), mark), stmts...)
 }
 
 // exprMark is the line marker of the expression e, or nil when markers are
@@ -152,11 +169,59 @@ func (t *galaASTTransformer) markExprStmts(e exprSrc, stmts []ast.Stmt) []ast.St
 // as its mark (lowerIfExprBranchValue), which withValue puts right above the
 // statement that returns, stores or runs the branch's value.
 func (t *galaASTTransformer) exprMark(e exprSrc) ast.Stmt {
-	if !t.emitLineMarkers() || !e.ok() {
+	if !e.ok() {
 		return nil
 	}
-	line, _ := e.at().start()
+	return t.startMark(e.at())
+}
+
+// startMark is the line marker of the line at starts on, or nil when markers
+// are off.
+func (t *galaASTTransformer) startMark(at srcNode) ast.Stmt {
+	if !t.emitLineMarkers() {
+		return nil
+	}
+	line, _ := at.start()
 	return lineMarkerStmt(line)
+}
+
+// stopLine is the line at ends on, the last line of its last token (a
+// multi-line string spans several), or 0 when markers are off: the line the
+// code after it in the same Go statement is on (see endBranchingCalls).
+func (t *galaASTTransformer) stopLine(at srcNode) int {
+	i := at.node.StopIndex()
+	if !t.emitLineMarkers() || i < 0 {
+		return 0
+	}
+	tree := at.node.Tree()
+	return int(tree.Token(i).Line) + strings.Count(tree.Text(i), "\n")
+}
+
+// endBranchingCalls ends the body of each function literal a match or
+// if-expression whose value is used lowered to (recordBranchingCall) in the
+// line marker of the line the construct ends on. The markers of its branches
+// and arms reset Go's line counter inside the literal, and the Go code after
+// the call, on the line that closes the literal, would count on from the last
+// of them: `(if (c) a else b) + 100 / n` would report a panic in `100 / n`
+// on the else branch's line plus one. The marker is added once the file is
+// complete: no lowering reads the literal's body after that, so none takes
+// the marker for the body's trailing statement. The file is walked, as
+// checkBranchingCalls walks it, so a lowering built for an alternative and
+// then thrown away is left alone.
+func (t *galaASTTransformer) endBranchingCalls(file *ast.File) {
+	if len(t.branchingCalls) == 0 {
+		return
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if lit, isLit := call.Fun.(*ast.FuncLit); isLit && t.branchingCalls[call].end > 0 {
+			lit.Body.List = append(lit.Body.List, lineMarkerStmt(t.branchingCalls[call].end))
+		}
+		return true
+	})
 }
 
 // withLead is expr with its body led by mark, an expression's line marker

@@ -55,6 +55,7 @@ var Limit = std.NewImmutable(10)
 func literals(x int) string {
 //line $DIR/main.gala:16
 	{
+//line $DIR/main.gala:16
 		_subj := x
 		if _subj == 0 {
 //line $DIR/main.gala:17
@@ -69,6 +70,7 @@ func literals(x int) string {
 //line $DIR/main.gala:20
 			return "other"
 		}
+//line $DIR/main.gala:21
 	}
 }
 
@@ -76,6 +78,7 @@ func literals(x int) string {
 func subjects(b Bag, s string) int {
 //line $DIR/main.gala:24
 	var n = func() int {
+//line $DIR/main.gala:24
 		_subj := b.items.Get().Size()
 		if _subj == 0 {
 //line $DIR/main.gala:25
@@ -85,9 +88,11 @@ func subjects(b Bag, s string) int {
 //line $DIR/main.gala:26
 			return k
 		}
+//line $DIR/main.gala:27
 	}()
 //line $DIR/main.gala:28
 	func() {
+//line $DIR/main.gala:28
 		_subj := strings.ToUpper(s)
 		if _subj == "ü" || _subj == "Ä" {
 //line $DIR/main.gala:29
@@ -105,6 +110,7 @@ func subjects(b Bag, s string) int {
 func heads(o std.Option[int], x any) int {
 //line $DIR/main.gala:36
 	var a = func() int {
+//line $DIR/main.gala:36
 		_subj := o
 		{
 			_tmp_1 := _unapply_std_Some_e5564f09(_subj)
@@ -121,9 +127,12 @@ func heads(o std.Option[int], x any) int {
 				return 0
 			}
 		}
+//line $DIR/main.gala:39
 	}()
 //line $DIR/main.gala:40
-	var b = func(_subj any) int {
+	var b = func() int {
+//line $DIR/main.gala:40
+		_subj := x
 		{
 			_tmp_4, _tmp_5 := std.As[Box[int]](_subj)
 			_tmp_v := _tmp_4.v.Get()
@@ -136,7 +145,8 @@ func heads(o std.Option[int], x any) int {
 				return 0
 			}
 		}
-	}(x)
+//line $DIR/main.gala:43
+	}()
 //line $DIR/main.gala:44
 	return a + b
 }
@@ -146,6 +156,7 @@ func hoisted(x int) int {
 //line $DIR/main.gala:48
 	var _tmp_6 int
 	{
+//line $DIR/main.gala:48
 		_subj := x
 		if _subj == 1 {
 //line $DIR/main.gala:49
@@ -164,6 +175,7 @@ func hoisted(x int) int {
 func nested(o std.Option[std.Option[string]]) string {
 //line $DIR/main.gala:55
 	{
+//line $DIR/main.gala:55
 		_subj := o
 		{
 			_tmp_7 := _unapply_std_Some_e5564f09(_subj)
@@ -175,6 +187,7 @@ func nested(o std.Option[std.Option[string]]) string {
 				inner := _tmp_inner
 //line $DIR/main.gala:56
 				{
+//line $DIR/main.gala:56
 					_subj := inner
 					{
 						_tmp_10 := _unapply_std_Some_e5564f09(_subj)
@@ -189,12 +202,14 @@ func nested(o std.Option[std.Option[string]]) string {
 							return "other"
 						}
 					}
+//line $DIR/main.gala:59
 				}
 			} else {
 //line $DIR/main.gala:60
 				return "none"
 			}
 		}
+//line $DIR/main.gala:61
 	}
 }
 

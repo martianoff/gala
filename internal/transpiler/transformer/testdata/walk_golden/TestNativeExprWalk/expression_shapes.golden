@@ -114,6 +114,7 @@ func names(p P) int {
 func branches(c bool, n int) int {
 //line $DIR/main.gala:57
 	var a = func() int {
+//line $DIR/main.gala:57
 		if c {
 //line $DIR/main.gala:57
 			return 1
@@ -121,9 +122,11 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:57
 			return 2
 		}
+//line $DIR/main.gala:57
 	}()
 //line $DIR/main.gala:58
 	var b = func() int {
+//line $DIR/main.gala:58
 		if n > 0 {
 //line $DIR/main.gala:59
 			var m = n * 2
@@ -133,9 +136,11 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:62
 			return 0
 		}
+//line $DIR/main.gala:63
 	}()
 //line $DIR/main.gala:64
 	var o = func() std.Option[int] {
+//line $DIR/main.gala:64
 		if c {
 //line $DIR/main.gala:64
 			return std.Some[int]{}.Apply(n)
@@ -143,6 +148,7 @@ func branches(c bool, n int) int {
 //line $DIR/main.gala:64
 			return std.None[int]{}.Apply()
 		}
+//line $DIR/main.gala:64
 	}()
 //line $DIR/main.gala:65
 	if c {
@@ -161,6 +167,7 @@ func branches(c bool, n int) int {
 		}
 //line $DIR/main.gala:70
 		var _tmp_1 int
+//line $DIR/main.gala:70
 		if i > 3 {
 //line $DIR/main.gala:70
 			_tmp_1 = i
