@@ -1543,6 +1543,14 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 	return inst
 }
 
+// readsGenericGoSlot reports whether v, an argument of a generic Go function
+// filling a parameter of type slot, is typed by the type arguments the other
+// arguments bind (genericGoLambdaSlot): a lambda, or a thunk for a parameter
+// taking nothing and giving several results.
+func readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
+	return v.lambda.ok() || isGoResultsThunkSlot(slot)
+}
+
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
 // and returning several results, the slot a bare expression fills as a thunk
 // (see goResultsThunk); for a generic Go callee it is typed as a lambda's is,
@@ -2099,7 +2107,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		if transpiler.IsUnusable(expectedType) && !v.spread {
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
-		if genericGo && (v.lambda.ok() || isGoResultsThunkSlot(expectedType)) {
+		if genericGo && readsGenericGoSlot(v, expectedType) {
 			// The arguments lowered so far, each at its parameter, bind the
 			// type parameters: those passed by name too.
 			prior := positional
@@ -2197,7 +2205,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 
 		// Positional argument, or one passed by name to a Go function.
-		if argName != "" && genericGo && !v.spread && (v.lambda.ok() || isGoResultsThunkSlot(goSigParamType(goSig, slotIdx))) {
+		if argName != "" && genericGo && !v.spread && readsGenericGoSlot(v, goSigParamType(goSig, slotIdx)) {
 			deferred = append(deferred, deferredArg{v, argName, slotIdx})
 			continue
 		}
@@ -2218,12 +2226,19 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		positional = append(positional, expr)
 		argIdx++
 	}
-	for _, l := range deferred {
-		expr, aerr := lowerSlot(l.v, l.name, l.slotIdx)
-		if aerr != nil {
-			return nil, nil, false, aerr
+	// Thunks first: their results bind type parameters a lambda's parameters
+	// may name.
+	for _, lambdas := range []bool{false, true} {
+		for _, l := range deferred {
+			if l.v.lambda.ok() != lambdas {
+				continue
+			}
+			expr, aerr := lowerSlot(l.v, l.name, l.slotIdx)
+			if aerr != nil {
+				return nil, nil, false, aerr
+			}
+			named[l.name] = expr
 		}
-		named[l.name] = expr
 	}
 	return positional, named, hasSpread, nil
 }

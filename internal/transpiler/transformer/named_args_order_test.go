@@ -125,6 +125,11 @@ func size(m map[string]int) int = go_interop.MapLen(m)
 			wantError: `cannot pass "a" by name in call to g: its parameter names are not known`,
 		},
 		{
+			name:     "generic go function, function reference by name",
+			body:     `func show(k string, v int) = Println(k, v)` + "\n\n" + `func f(m map[string]int) = go_interop.MapForEach(f = show, m = m)`,
+			contains: `go_interop.MapForEach(m, show)`,
+		},
+		{
 			name:      "function value a call returns",
 			body:      `func mk() func(int) int = (x) => x` + "\n\n" + `func f() int = mk()(x = 1)`,
 			wantError: `cannot pass "x" by name in call to this function: its parameter names are not known`,
