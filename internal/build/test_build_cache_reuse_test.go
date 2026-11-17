@@ -100,9 +100,9 @@ func TestBuildAfterTest_ReusesGoBuildCache(t *testing.T) {
 	out, runErr := runBuiltBinary(binPath)
 	require.Error(t, runErr, "the program must panic; output:\n%s", out)
 	assert.Contains(t, out, "integer divide by zero", "output:\n%s", out)
-	assert.Contains(t, out, filepath.Base(projectDir)+"/core/core.gala:4",
+	assert.Contains(t, out, "example.com/reuse/core/core.gala:4",
 		"the reused package's frame must name its .gala source; output:\n%s", out)
-	assert.Contains(t, out, filepath.Base(projectDir)+"/main.gala:6",
+	assert.Contains(t, out, "example.com/reuse/main.gala:6",
 		"the user's frame must name main.gala; output:\n%s", out)
 	assert.NotContains(t, out, ".gen.go", "output:\n%s", out)
 }
