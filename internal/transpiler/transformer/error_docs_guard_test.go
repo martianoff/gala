@@ -2348,6 +2348,36 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "a default calling its own function without the parameter",
+			code: galaerr.CodeDefaultCycle, // GALA-E0135
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func f(a int, b int = f(1)) int = a + b
+
+func main() {
+    Println(f(0))
+}
+`)
+			},
+		},
+		{
+			name: "defaults of two functions that call each other",
+			code: galaerr.CodeDefaultCycle, // GALA-E0135
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func g(a int = h()) int = a
+
+func h(b int = g()) int = b
+
+func main() {
+    Println(g())
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

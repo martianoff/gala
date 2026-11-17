@@ -677,7 +677,7 @@ func (t *galaASTTransformer) unshadowedFunctionByName(name string) (*transpiler.
 		}
 	}
 	if t.loweringForeignDefault() {
-		if fm := t.functions[t.loweringDefault.pkg+"."+name]; fm != nil {
+		if fm := t.functions[t.loweringDefault.src.pkg+"."+name]; fm != nil {
 			return fm, true
 		}
 	} else if key := ownFunctionKey(t.packageName, name); key != name {
@@ -702,7 +702,7 @@ func (t *galaASTTransformer) unshadowedFunctionByName(name string) (*transpiler.
 // package is being lowered, so its names resolve in that package.
 func (t *galaASTTransformer) loweringForeignDefault() bool {
 	d := t.loweringDefault
-	return d != nil && d.pkg != "" && d.pkg != t.packageName
+	return d != nil && d.src.pkg != "" && d.src.pkg != t.packageName
 }
 
 // lexicallyScoped reports whether src, the default being lowered, is from
