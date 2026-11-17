@@ -17,9 +17,7 @@ import (
 // differential run compares with `go run` and on a case of testdata whose
 // output the gala CLI printed; none is proved (docs/FORMAL_SEMANTICS.MD,
 // "Trusted Go models"). A call is taken as one of them only when its
-// qualifier resolves to that package: no local, package-level value or
-// declaration hides it, and every import the program may refer to by that
-// name is the package.
+// qualifier resolves to that package in its own file (qualifyGoImports).
 
 // versionElem is a major-version path element, `v2` in `math/rand/v2`.
 var versionElem = regexp.MustCompile(`^v[0-9]+$`)
@@ -29,7 +27,8 @@ var versionElem = regexp.MustCompile(`^v[0-9]+$`)
 // (its last element; the one before a major version, `rand` for
 // `math/rand/v2`; the part before a dot, `yaml` for `gopkg.in/yaml.v3`).
 // A dot or blank import has none. Taking every candidate can only make a
-// name mean more than one package, which goPackage then rejects.
+// name mean more than one package in a file, which qualifyGoImports then
+// leaves alone.
 func importNames(imp *coreexport.Import) []string {
 	switch imp.Alias {
 	case ".", "_":
@@ -49,13 +48,11 @@ func importNames(imp *coreexport.Import) []string {
 	return names
 }
 
-// goPackage reports whether qualifier q, at a use in scope sc, is Go's
-// package goPath: the program imports it by that name, no import of another
-// package may have the name (in any file: conservative), and no local,
-// package-level value or declaration hides it.
-func (g *gen) goPackage(q coreexport.Node, goPath string, sc *scope) bool {
+// isGoPackage reports whether qualifier q is Go's package goPath: the name
+// qualifyGoImports gives it, which nothing else can have.
+func isGoPackage(q coreexport.Node, goPath string) bool {
 	n, ok := q.(*coreexport.Name)
-	return ok && n.Name == goPackageName(goPath) && sc.lookup(n.Name) == nil
+	return ok && n.Name == goPackageName(goPath)
 }
 
 // goPackagePrefix starts the name a qualifier of a modelled Go package is
@@ -67,8 +64,11 @@ const goPackagePrefix = "_gala_go_"
 // the path with `_` written `_u` and `/` written `_s`, so different paths
 // never share a name.
 func goPackageName(path string) string {
-	return goPackagePrefix + strings.NewReplacer("_", "_u", "/", "_s").Replace(path)
+	return goPackagePrefix + goPathEscaper.Replace(path)
 }
+
+// goPathEscaper writes a package path as part of an identifier, injectively.
+var goPathEscaper = strings.NewReplacer("_", "_u", "/", "_s")
 
 // goModelled reports whether Go's package path has a function modelled here.
 func goModelled(path string) bool {
@@ -82,17 +82,11 @@ func goModelled(path string) bool {
 // file, in GALA as in Go. A file where q is also bound (a val, var,
 // parameter, receiver or pattern binder), or where the program declares q,
 // keeps its references: a local `strings` is never taken for the package.
-// So a renaming only ever lets a call of a modelled function translate in a
-// file that imports its package.
+// That is conservative: a binder anywhere in the file, even out of scope of
+// a call, leaves the file's calls reported. So a renaming only ever lets a
+// call of a modelled function translate in a file that imports its package.
 func qualifyGoImports(p *coreexport.Program) *coreexport.Program {
-	declared := map[string]bool{}
-	for _, f := range p.Files {
-		for _, d := range f.Decls {
-			for _, x := range append(declNames(d), globalNames(d)...) {
-				declared[x] = true
-			}
-		}
-	}
+	declared := programDecls(p)
 	out := *p
 	out.Files = make([]*coreexport.File, len(p.Files))
 	for i, f := range p.Files {
@@ -194,7 +188,7 @@ func (g *gen) goFuncOf(e *coreexport.Call, s *coreexport.Select, sc *scope) (goF
 		return goFunc{}, false
 	}
 	for pkg, fs := range goFuncs {
-		if f, ok := fs[s.Name]; ok && g.goPackage(s.Target, pkg, sc) {
+		if f, ok := fs[s.Name]; ok && isGoPackage(s.Target, pkg) {
 			return f, true
 		}
 	}
@@ -249,7 +243,7 @@ func (g *gen) newReplacerOf(e *coreexport.Call, s *coreexport.Select, sc *scope)
 		return nil, false
 	}
 	q, ok := nr.Callee.(*coreexport.Select)
-	if !ok || q.Name != "NewReplacer" || !g.goPackage(q.Target, "strings", sc) {
+	if !ok || q.Name != "NewReplacer" || !isGoPackage(q.Target, "strings") {
 		return nil, false
 	}
 	return nr, true
@@ -318,7 +312,7 @@ func (g *gen) toGoSliceOfStrings(v coreexport.Node, sc *scope) (term, bool) {
 // of Go's fmt.
 func (g *gen) isGoPrint(c *coreexport.Call, sc *scope) (*coreexport.Select, bool) {
 	s, ok := c.Callee.(*coreexport.Select)
-	if !ok || c.Bracket != nil || (s.Name != "Println" && s.Name != "Print") || !g.goPackage(s.Target, "fmt", sc) {
+	if !ok || c.Bracket != nil || (s.Name != "Println" && s.Name != "Print") || !isGoPackage(s.Target, "fmt") {
 		return nil, false
 	}
 	return s, true

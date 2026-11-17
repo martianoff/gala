@@ -302,8 +302,13 @@ galaspec models them, except as listed below):
   of anything else or beside other arguments, a named spread (`spread-arg`), a variadic
   function or method used as a value (`variadic-func-value`), and a function with both
   `inout` and variadic parameters (`variadic-inout`);
+- in the items below, a qualifier such as `fmt` or `strings` means Go's package only
+  where the file the call is in imports that package by that name, imports nothing
+  else by it, and binds that name nowhere (no val, var, parameter, receiver or pattern
+  binder in the file), and the program declares nothing of that name: imports resolve
+  per file;
 - Go's `fmt.Println` and `fmt.Print` called as statements with `int`, `string` and
-  `bool` operands, where `fmt` resolves to Go's package (the file the call is in imports it by that name, and nothing else by it, and binds no local of that name: imports resolve per file): Go's `%v` of those prints as
+  `bool` operands, where `fmt` resolves to Go's package: Go's `%v` of those prints as
   GALA's `Println` and `Print` do, with the same spacing (a trusted model, tested in
   `internal/formal/gala2lean/testdata/go_fmt.gala`). Any other operand
   (`fmt-operand`), or the call used as a value (`fmt-value`), is reported;
