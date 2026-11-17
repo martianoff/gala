@@ -21,6 +21,8 @@ inductive Expr
   | intLit (value : Int)
   | strLit (value : String)
   | charLit (value : Int)
+  /-- A floating-point literal's exact value, `num / den`. -/
+  | floatLit (num : Int) (den : Nat)
   /-- `T{elts}`; `none` for a type elided inside another composite literal. -/
   | composite (ty : Option Expr) (elts : List Expr)
   | keyValue (key value : Expr)

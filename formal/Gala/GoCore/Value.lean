@@ -69,7 +69,7 @@ def IntKind.represents (k : IntKind) (x : Int) : Bool := k.wrap x == x
 
 /-- The kind of an untyped constant (Go spec, "Constants"). -/
 inductive UKind
-  | int | rune | bool | string | nil
+  | int | rune | float | bool | string | nil
   deriving DecidableEq, Repr, Inhabited, BEq
 
 mutual
@@ -142,6 +142,7 @@ def Ty.text : Ty → String
   | .untyped .bool => "untyped bool"
   | .untyped .string => "untyped string"
   | .untyped .nil => "untyped nil"
+  | .untyped .float => "untyped float"
   | .named p n args =>
     let q := (p.splitOn "/").getLast!
     let base := if p.isEmpty then n else s!"{q}.{n}"
@@ -219,12 +220,13 @@ inductive Val
   | array (t : Ty) (es : Array Val)
   /-- A slice; `none` is nil. -/
   | slice (t : Ty) (s : Option SliceRep)
-  /-- A floating-point value. GoCore so far only stores, moves and boxes them, and
-      retypes them between types of one width (their types decide type assertions
-      and switches); any other operation on one (arithmetic, comparison, conversion
-      between widths, printing) stops the run `unsupported`. The only one GoCore
-      makes is a zero value, `+0.0`. -/
+  /-- A `float64` or `float32` value: an IEEE binary64 value, a `float32` one held as
+      the binary64 value it converts to exactly (Go spec, "Numeric types"; `FloatRep`). -/
   | float (t : Ty) (x : Float)
+  /-- An untyped floating-point constant, exact: `num / den`, in lowest terms, `den > 0`
+      (Go spec, "Constants": numeric constants are exact values). Its type is
+      `untyped float`. -/
+  | rat (t : Ty) (num : Int) (den : Nat)
   /-- A value GoCore cannot know, reading or writing into it stopping the run with
       `what`: a package-level variable of an imported package whose initializer GoCore
       could not run (it reached `what`), or the array an append left behind when gc
@@ -234,7 +236,7 @@ inductive Val
 
 def Val.ty : Val → Ty
   | .int t _ | .bool t _ | .str t _ | .struct_ t _ | .ptr t _ | .func_ t _ | .nilIface t
-  | .boxed t _ | .array t _ | .slice t _ | .float t _ => t
+  | .boxed t _ | .array t _ | .slice t _ | .float t _ | .rat t _ _ => t
   | .tuple vs => .tuple (vs.map fun _ => .bool)
   | .poison _ => .tuple []
 

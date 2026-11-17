@@ -8,6 +8,7 @@
   the other operand").
 -/
 import Gala.GoCore.Value
+import Gala.GoCore.Float
 
 namespace Gala.GoCore.Full
 
@@ -30,10 +31,12 @@ def UKind.default : UKind → Option Ty
   | .rune => some (.int .int32)
   | .bool => some .bool
   | .string => some .string
+  | .float => some (.float 64)
   | .nil => none
 
 /-- An untyped value given its default type, for `x := 1` and an interface operand. -/
 def defaultVal : Val → Val
+  | .rat _ n d => .float (.float 64) (FloatRep.ofRat 64 n d)
   | .int (.untyped k) n => .int ((k.default).getD (.int .int)) n
   | .bool (.untyped _) b => .bool .bool b
   | .str (.untyped _) s => .str .string s
