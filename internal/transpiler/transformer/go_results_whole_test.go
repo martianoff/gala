@@ -221,6 +221,24 @@ func TestGoResultsKeptWhole(t *testing.T) {
 			absent:   []string{"_goResult"},
 		},
 		{
+			name:     "a Go call that is a function's expression body passes assignable results through",
+			body:     "func open(p string) (io.Reader, error) = os.Open(p)",
+			contains: []string{"func open(p string) (io.Reader, error) {", "return os.Open(p)"},
+			absent:   []string{"_goResult"},
+		},
+		{
+			name:     "a Go call that is a lambda's expression body passes assignable results through",
+			body:     "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => os.Open(p))",
+			contains: []string{"return os.Open(p)"},
+			absent:   []string{"_goResult"},
+		},
+		{
+			name:     "a Go call that is a method's expression body passes assignable results through",
+			body:     "struct Opener(Dir string)\n\nfunc (o Opener) Open(name string) (io.Reader, error) = os.Open(o.Dir + name)",
+			contains: []string{"return os.Open(o.Dir.Get() + name)"},
+			absent:   []string{"_goResult"},
+		},
+		{
 			name:     "a value of a named function type still fills a single-result thunk slot as a thunk",
 			body:     "type Getter func() int\n\nfunc takeG(f func() Getter) int = f()()\n\nfunc one() int = 1\n\nfunc viaG() int {\n    val g Getter = one\n    takeG(g)\n}",
 			contains: []string{"takeG(func() Getter {"},
@@ -432,6 +450,30 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			body: "func pair(s string) (int, int) = Success(1)",
 			line: 1, col: 34,
 			want: "this value is of type Try[int]",
+		},
+		{
+			name: "a Go call expression body whose results are not assignable",
+			body: "func parse(s string) (string, error) = strconv.Atoi(s)",
+			line: 1, col: 40,
+			want: "function parse gives Go the results (string, error), so its value is a Try[string] (on a failure Go receives the zero value with the error) or a Tuple[string, error] of the results as they are; this value is of type Try[int]",
+		},
+		{
+			name: "a Go call lambda body whose results are not assignable",
+			body: "func parseWith(f func() (string, error)) bool = f().IsFailure()\n\nfunc check(s string) bool = parseWith(() => strconv.Atoi(s))",
+			line: 3, col: 45,
+			want: "this lambda gives Go the results (string, error)",
+		},
+		{
+			name: "a Go call of a concrete type as a block body's value for an interface result",
+			body: "func open(p string) (io.Reader, error) {\n    os.Open(p)\n}",
+			line: 2, col: 5,
+			want: "function open gives Go the results (io.Reader, error), so its value is a Try[io.Reader] (on a failure Go receives the zero value with the error) or a Tuple[io.Reader, error] of the results as they are; this value is of type Try[*os.File]",
+		},
+		{
+			name: "a Go call of a concrete type as a block lambda's value for an interface result",
+			body: "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => {\n    os.Open(p)\n})",
+			line: 4, col: 5,
+			want: "this lambda gives Go the results (io.Reader, error)",
 		},
 	}
 	for _, tc := range cases {

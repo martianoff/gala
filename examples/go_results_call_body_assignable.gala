@@ -1,0 +1,36 @@
+package main
+
+import (
+    "fmt"
+    "net/url"
+)
+
+// A Go call that is the whole expression body of a function, method or lambda
+// Go calls with several results passes its results through as they are, as
+// Go's `return url.Parse(raw)` does: url.Parse's (*url.URL, error) fills
+// (fmt.Stringer, error), each result only assignable to its Go result.
+
+func parse(raw string) (fmt.Stringer, error) = url.Parse(raw)
+
+struct Site(Base string)
+
+func (s Site) Page(path string) (fmt.Stringer, error) = url.Parse(s.Base + path)
+
+func describe(f func() (fmt.Stringer, error)) string {
+    val link, err = f()
+    if (err != nil) "invalid" else link.String()
+}
+
+func main() {
+    val link, err = parse("https://example.com/a")
+    Println(link.String(), err == nil)
+    val _, parseErr = parse("://bad")
+    Println(parseErr != nil)
+
+    val page, pageErr = Site("https://example.com").Page("/b")
+    Println(page.String(), pageErr == nil)
+
+    Println(describe(() => url.Parse("https://example.com/c")))
+    Println(describe(() => url.Parse("://bad")))
+    Println(describe(url.Parse("https://example.com/d")))
+}

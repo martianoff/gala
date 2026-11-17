@@ -386,10 +386,8 @@ type goResultsBody struct {
 	// body is where an expression body is written (`= expr`, `() => expr`,
 	// a by-name argument); zero for a block body. A Go call with one result
 	// per Go result written there is returned as it is (see
-	// returnGoResults), so its Try is exempt from notCovariant. Of these, only
-	// a by-name argument reaches this check with a Try of another element
-	// type: a function or lambda body is lowered against the Try first and
-	// rejects one as GALA-E0049 (#1238).
+	// returnGoResults), so its Try is exempt from notCovariant and from the
+	// check against the body's own Try (see passesThrough).
 	body srcNode
 }
 
@@ -567,6 +565,7 @@ func (t *galaASTTransformer) lowerGoResultsValue(e exprSrc, s slot, strict bool)
 		}
 		s.typ = b.whole
 	}
+	s.goResultsValue = b
 	expr, err := t.lowerAgainst(e, s, strict)
 	if err != nil {
 		return nil, err
@@ -646,9 +645,7 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 		// exempt from notCovariant: it passes its results through as they
 		// are, each only assignable to its result (`os.Open(p)` for
 		// `(io.Reader, error)`; see returnGoResults).
-		res := t.goResults[asCall(expr)]
-		passThrough := res != nil && b.body.ok() && at == b.body && res.count() == len(b.results)
-		if want, ok := transpiler.TryElem(b.value); ok && (t.cannotHold(want, elem) || !passThrough && t.notCovariant(want, elem)) {
+		if want, ok := transpiler.TryElem(b.value); ok && (t.cannotHold(want, elem) || !t.passesThrough(b, expr, at) && t.notCovariant(want, elem)) {
 			return b.wrongValueError(at, written)
 		}
 		if b.wholeAt.ok() {
@@ -666,6 +663,24 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 		return b.wrongValueError(at, written)
 	}
 	return nil
+}
+
+// passesThrough reports whether expr, a result value of the body b follows
+// written at at, is a Go call with one result per Go result written as b's
+// expression body. It is returned as it is (see returnGoResults), as Go's
+// `return os.Open(p)` is, so each of its results need only be assignable to
+// its Go result.
+func (t *galaASTTransformer) passesThrough(b *goResultsBody, expr ast.Expr, at srcNode) bool {
+	return b.body.ok() && at == b.body && t.isGoCallOf(b, expr)
+}
+
+// isGoCallOf reports whether expr is a Go call with one result per Go result
+// of the body b follows. Its Try or Tuple as a result value of b is checked
+// against b's results by noteGoResultsValue, which knows whether it passes
+// through (see passesThrough).
+func (t *galaASTTransformer) isGoCallOf(b *goResultsBody, expr ast.Expr) bool {
+	res := t.goResults[asCall(expr)]
+	return res != nil && res.count() == len(b.results)
 }
 
 // notCovariant reports whether a Try[elem] is known not to be the Try[want]

@@ -1680,6 +1680,13 @@ gala_exec_test(
     expected = "named_sub_patterns.out",
 )
 
+# A Go call that is a whole expression body passes assignable results through to Go's results
+gala_exec_test(
+    name = "go_results_call_body_assignable",
+    src = "go_results_call_body_assignable.gala",
+    expected = "go_results_call_body_assignable.out",
+)
+
 # A block-bodied function returns its trailing expression
 gala_exec_test(
     name = "block_function_trailing_value",
