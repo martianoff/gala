@@ -115,6 +115,16 @@ func size(m map[string]int) int = go_interop.MapLen(m)
 			wantError: `parameter "src" is given more than once in call to ReplaceAllString`,
 		},
 		{
+			name:     "generic go function, lambda before the value it is typed by",
+			body:     `func f(m map[string]int) = go_interop.MapForEach(f = (k, v) => Println(k, v), m = m)`,
+			contains: `go_interop.MapForEach(m, func(k string, v int)`,
+		},
+		{
+			name:      "function-typed value",
+			body:      `func f(g func(int, int) int) int = g(b = 1, a = 2)`,
+			wantError: `cannot pass "a" by name in call to g: its parameter names are not known`,
+		},
+		{
 			name:     "generic go function, lambda after the value it is typed by",
 			body:     `func f(m map[string]int) = go_interop.MapForEach(m = m, f = (k, v) => Println(k, v))`,
 			contains: `go_interop.MapForEach(m, func(k string, v int)`,

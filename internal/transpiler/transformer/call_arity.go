@@ -261,12 +261,18 @@ func (p paramList) checkSpreads(args argsSrc) error {
 // the call passes, or -1 when it passes some by name.
 func (p paramList) missingError(i, nargs, line, col int) error {
 	msg := fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", p.names[i], i+1, p.callee)
+	fix := fmt.Sprintf("pass %q, or declare a default for it", p.names[i])
+	switch {
+	case p.names[i] == "" || p.names[i] == "_":
+		// A parameter Go leaves unnamed or blank takes an argument by
+		// position only.
+		msg = fmt.Sprintf("missing required argument for parameter %d in call to %s", i+1, p.callee)
+		fix = "pass it by position, before the arguments passed by name"
+	case p.goDeclared:
+		fix = fmt.Sprintf("pass %q", p.names[i])
+	}
 	if nargs >= 0 {
 		msg += fmt.Sprintf(": expected %s, got %d", p.expected(), nargs)
-	}
-	fix := fmt.Sprintf("pass %q, or declare a default for it", p.names[i])
-	if p.goDeclared {
-		fix = fmt.Sprintf("pass %q", p.names[i])
 	}
 	return galaerr.NewCodedSemanticError(galaerr.CodeArgumentCountMismatch, line, col, msg,
 		fix+"; "+p.signatureHint())
