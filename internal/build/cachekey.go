@@ -7,6 +7,7 @@ import (
 	"hash"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -54,6 +55,9 @@ import (
 //	               transitive): its coordinates, the directory it is read from,
 //	               and the contents of that directory — which is what makes an
 //	               edit behind `replace X => ../localX` visible
+//	Go replaces    every Go module of the build that gala.mod replaces with a
+//	               directory: its coordinates, the directory, and its contents
+//	               (the analyzer reads Go types from it)
 //
 // Everything else a build produces (go.mod, go.sum, the binary) is regenerated
 // or left to the Go toolchain's own cache on every build.
@@ -461,19 +465,42 @@ func (b *Builder) galaDependencies() []depInput {
 	return deps
 }
 
+// goReplacementDirs lists the Go modules of the build that gala.mod replaces
+// with a directory, each with that directory. Unlike a module version, a
+// directory can change, and the analyzer reads the Go types the transpiles
+// depend on from it.
+func (b *Builder) goReplacementDirs() []depInput {
+	if b.galaMod == nil || !slices.ContainsFunc(b.galaMod.Replace, func(r mod.Replace) bool { return r.New.IsLocal() }) {
+		return nil // only a directory replacement adds one
+	}
+	replacement := b.goReplacement()
+	var deps []depInput
+	for _, req := range b.goRequires() {
+		if _, dir := replacement(req); dir != "" {
+			deps = append(deps, depInput{Require: req, Dir: dir})
+		}
+	}
+	return deps
+}
+
 // depsKey returns the dependency key, computed once per builder. It is "" when
-// the project has no GALA dependencies, and an error when one of them cannot be
-// read — the caller then treats the cache as a miss.
+// the project has neither GALA dependencies nor Go dependencies replaced by a
+// directory, and an error when one of them cannot be read — the caller then
+// treats the cache as a miss.
 func (b *Builder) depsKey() (string, error) {
 	if b.depsKeyValue != nil {
 		return *b.depsKeyValue, nil
 	}
 	key := ""
-	if b.galaMod != nil && len(b.galaMod.GalaRequires()) > 0 {
-		galaReqs := b.galaMod.GalaRequires()
-		key = computeDepsHash(galaReqs, b.galaMod.Replace, b.toolchain(), b.galaDependencies())
+	var galaReqs []mod.Require
+	if b.galaMod != nil {
+		galaReqs = b.galaMod.GalaRequires()
+	}
+	goDirs := b.goReplacementDirs()
+	if len(galaReqs) > 0 || len(goDirs) > 0 {
+		key = computeDepsHash(galaReqs, b.galaMod.Replace, b.toolchain(), append(b.galaDependencies(), goDirs...))
 		if key == "" {
-			return "", fmt.Errorf("a GALA dependency could not be read")
+			return "", fmt.Errorf("a dependency could not be read")
 		}
 	}
 	b.depsKeyValue = &key

@@ -41,9 +41,15 @@ type ModuleVersion struct {
 	Version string // Version (empty for local paths)
 }
 
-// IsLocal returns true if the ModuleVersion represents a local path.
+// IsLocal returns true if the ModuleVersion represents a local path: a
+// relative one (./, ../) or a rooted one, a Windows drive path among them.
 func (mv ModuleVersion) IsLocal() bool {
-	return mv.Version == "" && (len(mv.Path) > 0 && (mv.Path[0] == '.' || mv.Path[0] == '/' || mv.Path[0] == '\\'))
+	p := mv.Path
+	if mv.Version != "" || p == "" {
+		return false
+	}
+	driveLetter := len(p) >= 2 && p[1] == ':' && ('a' <= p[0]|0x20 && p[0]|0x20 <= 'z')
+	return p[0] == '.' || p[0] == '/' || p[0] == '\\' || driveLetter
 }
 
 // NewFile creates a new empty gala.mod file with the given module path.
@@ -92,6 +98,29 @@ func (f *File) GetRequire(path string) *Require {
 		}
 	}
 	return nil
+}
+
+// ReplaceFor returns the replace directive that applies to a module required
+// at path and version. As in Go, one for that version wins over one for every
+// version of path. A nil File has none.
+func (f *File) ReplaceFor(path, version string) (Replace, bool) {
+	if f == nil {
+		return Replace{}, false
+	}
+	var any *Replace
+	for i, r := range f.Replace {
+		switch {
+		case r.Old.Path != path:
+		case r.Old.Version == version && version != "":
+			return r, true
+		case r.Old.Version == "" && any == nil:
+			any = &f.Replace[i]
+		}
+	}
+	if any == nil {
+		return Replace{}, false
+	}
+	return *any, true
 }
 
 // AddReplace adds a path replacement to the file.

@@ -116,7 +116,7 @@ func parseLines(lines []string) (*File, error) {
 				}
 				f.Require = append(f.Require, req)
 			case "replace":
-				rep, err := parseReplaceLine(parts)
+				rep, err := ParseReplaceEntry(parts)
 				if err != nil {
 					return nil, &ParseError{Line: lineNum, Message: err.Error()}
 				}
@@ -155,7 +155,7 @@ func parseLines(lines []string) (*File, error) {
 
 		case "replace":
 			// Single-line replace
-			rep, err := parseReplaceLine(parts[1:])
+			rep, err := ParseReplaceEntry(parts[1:])
 			if err != nil {
 				return nil, &ParseError{Line: lineNum, Message: err.Error()}
 			}
@@ -191,8 +191,9 @@ func parseRequireLine(parts []string, indirect bool, isGo bool) (Require, error)
 	}, nil
 }
 
-// parseReplaceLine parses a replace entry: "old [version] => new [version]"
-func parseReplaceLine(parts []string) (Replace, error) {
+// ParseReplaceEntry parses the fields of a replace entry, "old [version] =>
+// new [version]", without the "replace" keyword.
+func ParseReplaceEntry(parts []string) (Replace, error) {
 	// Find the => separator
 	arrowIdx := -1
 	for i, p := range parts {

@@ -642,7 +642,7 @@ func galaSumFor(galaMod *mod.File, previous *sum.File, cache *fetch.Cache, fetch
 	f := sum.NewFile()
 	for _, req := range galaMod.Require {
 		path, ver := req.Path, req.Version
-		if rep := replacementFor(galaMod, req); rep != nil {
+		if rep, ok := galaMod.ReplaceFor(req.Path, req.Version); ok {
 			if rep.New.IsLocal() {
 				continue
 			}
@@ -662,17 +662,6 @@ func galaSumFor(galaMod *mod.File, previous *sum.File, cache *fetch.Cache, fetch
 		}
 	}
 	return f, nil
-}
-
-// replacementFor returns the replace directive of galaMod that applies to req:
-// one for its path at its version, or for its path at any version.
-func replacementFor(galaMod *mod.File, req mod.Require) *mod.Replace {
-	for i, rep := range galaMod.Replace {
-		if rep.Old.Path == req.Path && (rep.Old.Version == "" || rep.Old.Version == req.Version) {
-			return &galaMod.Replace[i]
-		}
-	}
-	return nil
 }
 
 // Helper to check if a version string is valid

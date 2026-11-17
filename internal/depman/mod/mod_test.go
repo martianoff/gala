@@ -278,6 +278,8 @@ func TestModuleVersion_IsLocal(t *testing.T) {
 		{"../local-utils", "", true},
 		{"./local-utils", "", true},
 		{"/absolute/path", "", true},
+		{`C:\src\utils`, "", true},
+		{"c:/src/utils", "", true},
 		{"github.com/example/utils", "", false},
 		{"github.com/example/utils", "v1.0.0", false},
 	}
@@ -490,4 +492,26 @@ gala 1.0
 	require.NoError(t, err)
 	assert.Equal(t, "github.com/user/project", f.Module.Path)
 	assert.Equal(t, "1.0", f.Gala)
+}
+
+// A replace for a module's exact version wins over one for all its versions,
+// wherever each sits in the file, as in Go.
+func TestReplaceFor(t *testing.T) {
+	f, err := Parse("module example.com/app\n\nreplace (\n\texample.com/x => ../any\n\texample.com/x v1.2.0 => ../exact\n)\n")
+	assert.NoError(t, err)
+
+	rep, ok := f.ReplaceFor("example.com/x", "v1.2.0")
+	assert.True(t, ok)
+	assert.Equal(t, "../exact", rep.New.Path)
+
+	rep, ok = f.ReplaceFor("example.com/x", "v1.0.0")
+	assert.True(t, ok)
+	assert.Equal(t, "../any", rep.New.Path)
+
+	_, ok = f.ReplaceFor("example.com/y", "v1.0.0")
+	assert.False(t, ok)
+
+	var none *File
+	_, ok = none.ReplaceFor("example.com/x", "v1.0.0")
+	assert.False(t, ok)
 }
