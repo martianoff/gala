@@ -234,16 +234,16 @@ func (t *galaASTTransformer) resultFieldList(types []transpiler.Type) *ast.Field
 func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, exprBody bool, valueType ast.Expr, goResults *ast.FieldList, b *goResultsBody, lead ...ast.Stmt) *ast.BlockStmt {
 	lead = slices.DeleteFunc(slices.Clone(lead), func(s ast.Stmt) bool { return s == nil })
 	value := soleReturnValue(body)
-	// An expression that is a Go call with these results is returned as it is.
-	if res := t.goCallWithResults(value, len(goResults.List)); exprBody && res != nil {
-		return &ast.BlockStmt{List: append(lead, &ast.ReturnStmt{Results: []ast.Expr{res.raw}})}
-	}
 	results := make([]ast.Expr, len(goResults.List))
 	for i, f := range goResults.List {
 		results[i] = f.Type
 	}
 	n := len(results)
 	fails := isErrorType(t.astTypeToTranspilerType(results[n-1]))
+	// An expression that is a Go call with these results is returned as it is.
+	if res := t.goCallWithResults(value, n, fails); exprBody && res != nil {
+		return &ast.BlockStmt{List: append(lead, &ast.ReturnStmt{Results: []ast.Expr{res.raw}})}
+	}
 	_, wholeValue := transpiler.TupleComponents(t.followAliasChain(t.astTypeToTranspilerType(valueType)), n)
 	if !fails || b.givesWhole() || wholeValue {
 		return &ast.BlockStmt{List: append(lead, t.spreadTupleReturns(body.List, n)...)}
@@ -565,7 +565,9 @@ func (t *galaASTTransformer) lowerGoResultsValue(e exprSrc, s slot, strict bool)
 		}
 		s.typ = b.whole
 	}
-	s.goResultsValue = b
+	if b.body.ok() && e.at() == b.body {
+		s.goCallBody = b
+	}
 	expr, err := t.lowerAgainst(e, s, strict)
 	if err != nil {
 		return nil, err
@@ -671,14 +673,15 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 // `return os.Open(p)` is, so each of its results need only be assignable to
 // its Go result.
 func (t *galaASTTransformer) passesThrough(b *goResultsBody, expr ast.Expr, at srcNode) bool {
-	return b.body.ok() && at == b.body && t.goCallWithResults(expr, len(b.results)) != nil
+	return b.body.ok() && at == b.body && t.goCallWithResults(expr, len(b.results), b.fails) != nil
 }
 
 // goCallWithResults is expr's Go call when expr is a direct Go call with n
-// results, and nil otherwise. As an expression body of n Go results it is
-// returned as it is (see returnGoResults).
-func (t *galaASTTransformer) goCallWithResults(expr ast.Expr, n int) *goResult {
-	if res := t.goResults[asCall(expr)]; res != nil && res.count() == n {
+// results, the last an `error` exactly when fails, and nil otherwise. As an
+// expression body of such Go results it is returned as it is (see
+// returnGoResults); a comma-ok call (`(v, ok)`) never fills `(T, error)`.
+func (t *galaASTTransformer) goCallWithResults(expr ast.Expr, n int, fails bool) *goResult {
+	if res := t.goResults[asCall(expr)]; res != nil && res.count() == n && res.Fails == fails {
 		return res
 	}
 	return nil

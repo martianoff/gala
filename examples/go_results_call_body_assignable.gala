@@ -5,10 +5,11 @@ import (
     "net/url"
 )
 
-// A Go call that is the whole expression body of a function, method or lambda
-// Go calls with several results passes its results through as they are, as
-// Go's `return url.Parse(raw)` does: url.Parse's (*url.URL, error) fills
-// (fmt.Stringer, error), each result only assignable to its Go result.
+// A function, method or lambda that returns several Go results can have a Go
+// call as its whole expression body. The call's results are then returned as
+// they are, as Go's `return url.Parse(raw)` does, so url.Parse's
+// (*url.URL, error) fills (fmt.Stringer, error): each result need only be
+// assignable to its Go result.
 
 func parse(raw string) (fmt.Stringer, error) = url.Parse(raw)
 

@@ -463,18 +463,6 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			line: 3, col: 45,
 			want: "this lambda gives Go the results (string, error)",
 		},
-		{
-			name: "a Go call of a concrete type as a block body's value for an interface result",
-			body: "func open(p string) (io.Reader, error) {\n    os.Open(p)\n}",
-			line: 2, col: 5,
-			want: "function open gives Go the results (io.Reader, error), so its value is a Try[io.Reader] (on a failure Go receives the zero value with the error) or a Tuple[io.Reader, error] of the results as they are; this value is of type Try[*os.File]",
-		},
-		{
-			name: "a Go call of a concrete type as a block lambda's value for an interface result",
-			body: "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => {\n    os.Open(p)\n})",
-			line: 4, col: 5,
-			want: "this lambda gives Go the results (io.Reader, error)",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -490,6 +478,48 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			case tc.mixedAt > 0:
 				assert.Contains(t, msg, fmt.Sprintf("at line %d:", goResultsWholeBodyLine+tc.mixedAt-1))
 			}
+		})
+	}
+}
+
+// TestGoCallNotPassedThrough pins the Go calls a Go-results body does not
+// pass through: one that is not the whole expression body is its Try, which
+// must be the body's own, and a comma-ok call never gives `(T, error)`. Both
+// are GALA-E0049 at the call.
+func TestGoCallNotPassedThrough(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "a block body's trailing value",
+			body: "func open(p string) (io.Reader, error) {\n    os.Open(p)\n}",
+			want: "`os.Open(...)` can fail, so it produces `Try[*os.File]`; `Try[io.Reader]` is expected here",
+		},
+		{
+			name: "a block lambda's trailing value",
+			body: "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => {\n    os.Open(p)\n})",
+			want: "`Try[io.Reader]` is expected here",
+		},
+		{
+			name: "a branch of an expression body",
+			body: "func open(p string) (io.Reader, error) = if (p == \"\") os.Open(\"x\") else os.Open(p)",
+			want: "`Try[io.Reader]` is expected here",
+		},
+		{
+			name: "a comma-ok call as an expression body",
+			body: "func env(k string) (string, error) = os.LookupEnv(k)",
+			want: "`os.LookupEnv(...)` returns 2 values, so it produces `Tuple[string, bool]`",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(goResultsWholeProgram(tc.body), "go_results_whole_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), string(galaerr.CodeGoCallResultAsValue))
+			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
 }
