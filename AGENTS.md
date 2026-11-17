@@ -137,8 +137,8 @@ Two things to know:
   Such a `go_library` must embed a `gala_package_marker` (in the stdlib:
   `stdlib_gala_package()` from `//internal/stdlib:shipped_sources.bzl`), or
   transpiles that depend on it read its types from its compiled Go instead of
-  its `.gala` source. `//internal/stdlib:stdlib_test` fails for a stdlib package
-  with `.gala` sources that is not marked.
+  its `.gala` source. `//internal/stdlib/galapackages:galapackages_test` requires
+  a stdlib package to be marked exactly when it has `.gala` sources.
 
 ### Prerequisites
 

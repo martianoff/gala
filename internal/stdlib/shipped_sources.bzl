@@ -2,6 +2,33 @@
 
 load("@rules_gala//gala:defs.bzl", "gala_package_marker")
 
+# Every stdlib package. //internal/stdlib:source_tree_files and
+# //internal/stdlib/galapackages are built from it, and embed_completeness_test.go
+# checks it against PackageImportPaths.
+STDLIB_PACKAGES = [
+    "collection_immutable",
+    "collection_mutable",
+    "concurrent",
+    "crypto",
+    "fs",
+    "go_builtins",
+    "go_interop",
+    "io",
+    "json",
+    "lazy",
+    "path",
+    "regex",
+    "resource",
+    "std",
+    "stream",
+    "strings",
+    "subprocess",
+    "test",
+    "time_utils",
+    "validation",
+    "yaml",
+]
+
 def stdlib_shipped_sources():
     """Declares :shipped_sources, every non-test source file of this package.
 
@@ -25,7 +52,10 @@ def stdlib_shipped_sources():
             # A pure-Go or pure-GALA package leaves one pattern empty.
             allow_empty = True,
         ),
-        visibility = ["//internal/stdlib:__pkg__"],
+        visibility = [
+            "//internal/stdlib:__pkg__",
+            "//internal/stdlib/galapackages:__pkg__",
+        ],
     )
 
 def stdlib_gala_package():

@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_test")
+load("//internal/stdlib:shipped_sources.bzl", "STDLIB_PACKAGES")
+load(":gala_packages.bzl", "stdlib_gala_packages")
+
+stdlib_gala_packages(
+    name = "gala_packages",
+    out = "gala_packages_gen_test.go",
+    packages = STDLIB_PACKAGES,
+    visibility = ["//visibility:private"],
+)
+
+go_test(
+    name = "galapackages_test",
+    srcs = [
+        "gala_packages_gen_test.go",
+        "gala_packages_test.go",
+    ],
+)
