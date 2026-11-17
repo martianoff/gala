@@ -2134,15 +2134,16 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		return expr, nil
 	}
 
-	// A lambda passed by name to a generic Go function is lowered once every
-	// other argument is, whatever order they are written in: they bind the
-	// type parameters its parameters are typed by.
-	type pendingLambda struct {
+	// An argument passed by name for a function parameter of a generic Go
+	// function (a lambda, a thunk) is lowered once every other argument is,
+	// whatever order they are written in: they bind the type parameters it is
+	// typed by.
+	type deferredArg struct {
 		v       argValue
 		name    string
 		slotIdx int
 	}
-	var lambdas []pendingLambda
+	var deferred []deferredArg
 
 	for _, arg := range args {
 		v, extractErr := t.argContent(arg)
@@ -2195,8 +2196,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 
 		// Positional argument, or one passed by name to a Go function.
-		if argName != "" && genericGo && v.lambda.ok() {
-			lambdas = append(lambdas, pendingLambda{v, argName, slotIdx})
+		if argName != "" && genericGo && t.resolveTranspilerTypeAsFuncType(goSigParamType(goSig, slotIdx)) != nil {
+			deferred = append(deferred, deferredArg{v, argName, slotIdx})
 			continue
 		}
 		expr, aerr := lowerSlot(v, argName, slotIdx)
@@ -2216,7 +2217,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		positional = append(positional, expr)
 		argIdx++
 	}
-	for _, l := range lambdas {
+	for _, l := range deferred {
 		expr, aerr := lowerSlot(l.v, l.name, l.slotIdx)
 		if aerr != nil {
 			return nil, nil, false, aerr
@@ -3019,8 +3020,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 		}
 		// A Go function, or a value of function type: laid out by the Go
 		// signature's parameter names, reported when there is none to read.
-		if callCtx.goSig != nil || (callCtx.goFuncParamTypes != nil && callCtx.applyMethodMeta == nil) {
-			return handleNamedArgsGoCall(fun, callCtx.goSig, goParamList(t.argCalleeName(fun), callCtx.goSig), args, sortedNamedArgs(namedArgs), hasSpread, c)
+		if callCtx.goFuncParamTypes != nil && callCtx.applyMethodMeta == nil {
+			callee := t.argCalleeName(fun)
+			if callee == "" {
+				callee = "this function value"
+			}
+			return handleNamedArgsGoCall(fun, callCtx.goSig, goParamList(callee, callCtx.goSig), args, sortedNamedArgs(namedArgs), hasSpread, c)
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, c)
 	}

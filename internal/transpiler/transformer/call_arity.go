@@ -274,7 +274,10 @@ func (p paramList) missingError(i, nargs, line, col int) error {
 		// A parameter Go leaves unnamed or blank takes an argument by
 		// position only.
 		msg = fmt.Sprintf("missing required argument for parameter %d in call to %s", i+1, p.callee)
-		fix = "pass it by position, before the arguments passed by name"
+		fix = "pass it by position"
+		if nargs < 0 {
+			fix = "pass it, and every argument before it, by position"
+		}
 	case p.goDeclared:
 		fix = fmt.Sprintf("pass %q", p.names[i])
 	}
