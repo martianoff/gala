@@ -1,0 +1,14 @@
+package main
+
+import "strings"
+
+// An empty old string on text beyond ASCII: Go writes the new string between
+// the bytes of a character, which makes a string that is not valid UTF-8. The
+// model does not hold such a string, so the Lean run stops there,
+// unsupported:replacer-empty-old, after what was printed before. (Its .out is
+// that output, not the Go run's.)
+
+func main() {
+    Println(strings.NewReplacer("", "-").Replace("ab"))
+    Println(strings.NewReplacer("", "-").Replace("é"))
+}

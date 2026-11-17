@@ -79,6 +79,13 @@ func compareLean(r LeanRunner, res *gala2lean.Result, spec, real Run) (LeanRecor
 	if err != nil {
 		return LeanRecord{}, fmt.Errorf("gala2lean run: %w", err)
 	}
+	if o.Kind == KindUnsupported {
+		// The run reached a case a trusted model does not cover (a Panic's
+		// `unsupported` in the prelude): outside what gala2lean translates,
+		// never a verdict.
+		return LeanRecord{Comparison: Comparison{Unsupported, "the Lean run stopped: " + out.Outcome},
+			Construct: "runtime:" + o.Detail}, nil
+	}
 	lean := Run{Stdout: out.Stdout, Outcome: o}
 	switch real.Outcome.Kind {
 	case KindRejected, KindTimeout, KindCrash:

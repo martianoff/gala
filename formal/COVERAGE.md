@@ -314,6 +314,13 @@ galaspec models them, except as listed below):
   which agree on the valid UTF-8 every translated string is (a string literal that is
   not valid UTF-8 is reported, `invalid-utf8`). Tested in
   `internal/formal/gala2lean/testdata/go_strings*.gala`;
+- `strings.NewReplacer(oldnew...).Replace(s)`, built and used at once, with the old/new
+  strings written out or spread from a variadic parameter or an `Array`'s or `List`'s
+  `ToGoSlice()`: the earliest pair whose old string starts at a position wins, as Go's
+  four replacer algorithms do on valid UTF-8; an odd count panics, class `other`. An
+  empty old string on text beyond ASCII stops the Lean run,
+  `unsupported:replacer-empty-old` (Go would write inside a character), counted as
+  unsupported. Tested in `internal/formal/gala2lean/testdata/go_replacer*.gala`;
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
   them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every
@@ -406,13 +413,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 28 | 1 | 73 | 3 |
+| AGREE | 28 | 1 | 74 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 468 | 34 | 423 | 32 |
+| UNSUPPORTED | 468 | 34 | 422 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
-Examples gala2lean translates whose Lean run agrees with Go: **73** (ratchet baseline 73).
+Examples gala2lean translates whose Lean run agrees with Go: **74** (ratchet baseline 74).
 
 ### Constructs
 
@@ -426,33 +433,33 @@ when run as Lean and compared with Go.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
-| `file` | yes | yes: 29 agree | no | translated: 76 agree |
-| `import` | yes | no: 1 agree | no | translated: 28 agree |
-| `val` | yes | yes: 11 agree | no | translated: 51 agree |
+| `file` | yes | yes: 29 agree | no | translated: 77 agree |
+| `import` | yes | no: 1 agree | no | translated: 29 agree |
+| `val` | yes | yes: 11 agree | no | translated: 52 agree |
 | `var` | yes | yes: 4 agree | no | translated: 7 agree |
-| `func` | yes | yes: 29 agree | no | translated: 76 agree |
+| `func` | yes | yes: 29 agree | no | translated: 77 agree |
 | `receiver` | not seen | no | no | translated: 7 agree |
 | `type-param` | not seen | no | no | translated: 16 agree |
-| `param` | yes | yes: 26 agree | no | translated: 63 agree |
+| `param` | yes | yes: 26 agree | no | translated: 64 agree |
 | `struct` | yes | yes: 3 agree | no | translated: 19 agree |
 | `field` | yes | yes: 7 agree | no | translated: 39 agree |
 | `sealed` | yes | yes: 7 agree | no | translated: 26 agree |
 | `variant` | yes | yes: 7 agree | no | translated: 26 agree |
 | `type-name` | yes | yes: 27 agree | no | translated: 70 agree |
-| `block` | yes | yes: 29 agree | no | translated: 76 agree |
+| `block` | yes | yes: 29 agree | no | translated: 77 agree |
 | `if` | yes | yes: 6 agree | no | translated: 10 agree |
 | `return` | yes | yes: 5 agree | no | translated: 19 agree |
 | `assign` | yes | yes: 4 agree | no | translated: 7 agree |
 | `incdec` | not seen | no | no | not translated |
-| `int` | yes | yes: 26 agree | no | translated: 62 agree |
+| `int` | yes | yes: 26 agree | no | translated: 63 agree |
 | `bool` | yes | yes: 8 agree | no | translated: 16 agree |
 | `string` | yes | yes: 21 agree | no | translated: 61 agree |
-| `name` | yes | yes: 29 agree | no | translated: 76 agree |
+| `name` | yes | yes: 29 agree | no | translated: 77 agree |
 | `unary` | yes | yes: 5 agree | no | translated: 12 agree |
 | `address-of` | not seen | no | no | not translated |
-| `binary` | yes | yes: 22 agree | no | translated: 46 agree |
-| `call` | yes | yes: 29 agree | no | translated: 76 agree |
-| `select` | yes | yes: 4 agree | no | translated: 40 agree |
+| `binary` | yes | yes: 22 agree | no | translated: 47 agree |
+| `call` | yes | yes: 29 agree | no | translated: 77 agree |
+| `select` | yes | yes: 4 agree | no | translated: 41 agree |
 | `paren` | yes | no: 1 agree | no | translated: 3 agree |
 | `tuple` | not seen | no | no | translated: 5 agree |
 | `if-expr` | yes | yes: 10 agree | no | translated: 13 agree |
@@ -465,7 +472,7 @@ when run as Lean and compared with Go.
 | `pat-extract` | yes | yes: 4 agree | no | translated: 25 agree |
 | `named-arg` | yes | yes: 5 agree | no | translated: 17 agree |
 | `spread` | not seen | no | no | translated: 1 agree |
-| `lambda` | yes | yes: 5 agree | no | translated: 20 agree |
+| `lambda` | yes | yes: 5 agree | no | translated: 21 agree |
 | `type-func` | yes | yes: 3 agree | no | translated: 7 agree |
 | `interp` | yes | yes: 13 agree | no | translated: 35 agree |
 | `interp-text` | yes | yes: 13 agree | no | translated: 35 agree |

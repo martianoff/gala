@@ -557,7 +557,13 @@ flowchart LR
   program holds is valid UTF-8 (a literal that is not is reported, `invalid-utf8`, and
   nothing in the subset builds a string from bytes), and on valid UTF-8 a byte match
   starts only where a character does. `strings.ToLower` and `ToUpper` are not modelled:
-  Go's case mapping follows the full Unicode tables.
+  Go's case mapping follows the full Unicode tables. And
+  `strings.NewReplacer(oldnew...).Replace(s)`, built and used at once: at each position
+  the earliest pair whose old string starts there wins, which on valid UTF-8 with
+  non-empty old strings is what each of the four algorithms Go picks does. An empty old
+  string on text beyond ASCII makes Go write inside a character; there the Lean run
+  stops with the outcome `unsupported:replacer-empty-old`, which the harness counts as
+  unsupported, never as a verdict.
 - **Phases:** S1 with provable output first; then lambdas and closures (a captured `var`
   becomes a reference cell in the state), interpolation and `Option`/`Either`/`Try`;
   then generics and the immutable collections, modelled in the prelude.
