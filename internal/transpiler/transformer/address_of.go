@@ -110,8 +110,7 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 	case *ast.ParenExpr:
 		return t.immutablePathReason(e.X)
 	case *ast.SelectorExpr:
-		xType, _ := t.unaliasedType(t.getExprTypeName(e.X), nil) // through `type PC Ptr[Counter]`, `type GP = *T`
-		if _, isPtr := xType.(transpiler.PointerType); isPtr || transpiler.IsUnusable(xType) {
+		if xType := t.getExprTypeName(e.X); t.selectsThroughPointer(xType) || transpiler.IsUnusable(xType) {
 			return "", ""
 		}
 		return t.immutablePathReason(e.X)
@@ -191,7 +190,7 @@ func (t *galaASTTransformer) plainValPathRoot(path ast.Expr) (root *ast.Ident, j
 			path = e.X
 		case *ast.SelectorExpr:
 			xType := t.getExprTypeName(e.X)
-			if _, isPtr := xType.(transpiler.PointerType); isPtr {
+			if t.selectsThroughPointer(xType) {
 				return nil, false
 			}
 			judged = judged && !transpiler.IsUnusable(xType)

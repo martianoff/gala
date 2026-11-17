@@ -297,8 +297,10 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	// this file has no type information for — a field of a struct another
 	// package declares, of a Go package this file does not import — may be
 	// either, so it is spelled too: the slot already has that type, so naming
-	// it never changes what the value must be assignable to.
-	if (t.isGoNamedFuncType(target) || t.isInterfaceType(target) || t.isGoTypeWithoutInfo(target)) &&
+	// it never changes what the value must be assignable to. A value of an
+	// unnamed type goes into a slot of a Go type defined over it (`type NP
+	// *T`, `type IDs []int`) the same way.
+	if (t.isGoNamedFuncType(target) || t.isInterfaceType(target) || t.isGoTypeWithoutInfo(target) || t.isGoDefinedOverTypeLiteral(target)) &&
 		!t.typeMentionsUnresolvedTypeParam(target) {
 		return t.typeToExpr(target)
 	}
@@ -310,6 +312,22 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 		return nil
 	}
 	return t.typeToExpr(target)
+}
+
+// isGoDefinedOverTypeLiteral reports whether typ is a type Go defines over
+// an unnamed type (`type NP *T`, `type IDs []int`, a map, a channel or a
+// function type), which a value of that unnamed type is assignable to;
+// through GALA and Go aliases of one.
+func (t *galaASTTransformer) isGoDefinedOverTypeLiteral(typ transpiler.Type) bool {
+	if transpiler.IsPrimitiveType(typ.BaseName()) {
+		return false
+	}
+	typ, _ = t.unaliasedType(typ, nil)
+	switch t.goDefinedUnderlying(typ, nil).(type) {
+	case transpiler.PointerType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType, transpiler.FuncType:
+		return true
+	}
+	return false
 }
 
 // isNumericSlotType reports whether typ is a numeric type an untyped numeric

@@ -758,7 +758,11 @@ func main() {
 // either side of the lend; `type Same = GoCounter` is no pointer; a generic
 // `type A[T any] = *T` given type arguments is at least one pointer deep,
 // so it is never reported on; and a type parameter named like a Go alias
-// (`type T = *GoCounter`) is the type parameter. Every accepted program is
+// (`type T = *GoCounter`) is the type parameter. A Go defined type of a
+// pointer (`type NP *GoCounter`, a generic `type PT[T any] *T`) is that
+// pointer: a field of a val of one is reached through it, and it lends as
+// a *GoCounter that may be nil; a val field of a Go type defined over an
+// unnamed type is filled by a value of that type. Every accepted program is
 // type-checked as Go, with the Go file's declarations.
 func TestInoutLendGoAliases(t *testing.T) {
 	const goSide = `
@@ -776,7 +780,17 @@ type B[T any] = T
 
 type T = *GoCounter
 
+type NP *GoCounter
+
+type PT[T any] *T
+
+type IDs []int
+
+type GIDs = IDs
+
 func NewP() *GoCounter { return &GoCounter{N: 1} }
+
+func NewIDs() []int { return []int{1, 2} }
 `
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "gala.mod"), []byte("module example.com/goalias\n\ngala dev\n"), 0644))
@@ -789,6 +803,10 @@ struct Counter(var n int)
 type MyGP GP
 
 struct HG(g GP)
+
+struct HN(n NP)
+
+struct HI(ids GIDs)
 
 func put[T any](inout x T, v T) {
     x = v
@@ -873,6 +891,24 @@ func main() {
     var g GP = NewP()
     f(&g)
 }`, "the argument x of bumpGP is passed to an inout parameter without `&`", "lend the place with `&x`"},
+		{"&n for a Go defined pointer type", `func main() {
+    var n NP = NewP()
+    bumpG(&n)
+}`, "cannot lend &n to the inout parameter of bumpG: n holds a *GoCounter, and the parameter takes the GoCounter it points to",
+			"pass `RequirePtr(n)` without `&`"},
+		{"n, a Go defined pointer type that may be nil", `func main() {
+    var n NP = NewP()
+    bumpG(n)
+}`, "the argument n of bumpG is a pointer that may be nil", "pass `RequirePtr(n)`"},
+		{"&g for a generic Go defined pointer type", `func main() {
+    var g PT[GoCounter] = NewP()
+    bumpG(&g)
+}`, "cannot lend &g to the inout parameter of bumpG: g holds a *GoCounter", "pass `RequirePtr(g)` without `&`"},
+		{"a Ptr short of a Go defined pointer type", `func main() {
+    var p = &GoCounter(N = 1)
+    var n NP = NewP()
+    put[NP](p, n)
+}`, "cannot lend p to the inout parameter of put: p holds a Ptr[GoCounter], and the parameter takes a NP", "lend a place of type NP"},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
@@ -946,6 +982,33 @@ func main() {
     val a A[GoCounter] = NewP()
     tick(&a.N)
     Println(a.N)
+}`},
+		{"a field of a val of a Go defined pointer type", `func main() {
+    val n NP = NewP()
+    tick(&n.N)
+    n.N = n.N + 1
+    Println(n.N)
+}`},
+		{"a field of a val of a generic Go defined pointer type", `func main() {
+    val g PT[GoCounter] = NewP()
+    tick(&g.N)
+    Println(g.N)
+}`},
+		{"a plain slice in a val field of a Go alias of a defined slice type", `func main() {
+    val h = HI(NewIDs())
+    Println(h.ids[1])
+}`},
+		{"a field of a Go defined pointer type in a val field", `func main() {
+    val h = HN(NewP())
+    tick(&h.n.N)
+    Println(h.n.N)
+}`},
+		{"a Go defined pointer type lent as itself and as its pointee", `func main() {
+    var n NP = NewP()
+    var m NP = NewP()
+    put[NP](&n, m)
+    bumpG(RequirePtr(n))
+    Println(n.N)
 }`},
 		{"a type parameter Go infers named like a Go alias", `func main() {
     var p = &Counter(1)

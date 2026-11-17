@@ -1,0 +1,69 @@
+package inout_go_pointer_types
+
+// A val holding a pointer of a Go type (a generic Go alias of a pointer, a
+// Go defined pointer type) reaches its fields through the pointer, so they
+// are lent and written like the fields of a Ptr held by a val.
+
+func tick(inout n int) {
+    n = n + 1
+}
+
+func bump(inout c GoCounter) {
+    c.N = c.N + 10
+}
+
+func swap[T any](inout x T, v T) {
+    x = v
+}
+
+struct Holder(n NP)
+
+// A field of a val of a generic Go alias of a pointer.
+func ViaAlias(start int) int {
+    val a A[GoCounter] = NewP(start)
+    tick(&a.N)
+    a.N
+}
+
+// A field of a val of a Go defined pointer type, lent and written.
+func ViaDefined(start int) int {
+    val n NP = NewP(start)
+    tick(&n.N)
+    n.N = n.N * 2
+    n.N
+}
+
+// A field of a val of a generic Go defined pointer type.
+func ViaGenericDefined(start int) int {
+    val g PT[GoCounter] = NewP(start)
+    tick(&g.N)
+    g.N
+}
+
+// A field of a Go defined pointer type held in a val field.
+func ViaField(start int) int {
+    val h = Holder(NewP(start))
+    tick(&h.n.N)
+    h.n.N
+}
+
+// A pointer-receiver method called on a field reached through a val of a Go
+// defined pointer type changes that field, not a copy of it.
+func BumpThrough(start int) int {
+    val p PP = NewPair(start)
+    p.C.Bump()
+    p.C.N
+}
+
+struct Batch(ids IDs)
+
+// A plain slice fills a val field of a Go defined slice type.
+func LastID() int = Batch(NewIDs()).ids[2]
+
+// A Go defined pointer type lent as itself, then as its pointee.
+func Replaced(start int, next int) int {
+    var n NP = NewP(start)
+    swap[NP](&n, NewP(next))
+    bump(RequirePtr(n))
+    n.N
+}

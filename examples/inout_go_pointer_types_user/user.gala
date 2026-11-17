@@ -1,0 +1,22 @@
+package inout_go_pointer_types_user
+
+import "martianoff/gala/examples/inout_go_pointer_types"
+
+// The same through another package's Go types: a field of a val of its Go
+// defined pointer type, and of its generic Go alias of a pointer.
+
+func tick(inout n int) {
+    n = n + 1
+}
+
+func ViaImportedDefined(start int) int {
+    val n inout_go_pointer_types.NP = inout_go_pointer_types.NewP(start)
+    tick(&n.N)
+    n.N
+}
+
+func ViaImportedAlias(start int) int {
+    val a inout_go_pointer_types.A[inout_go_pointer_types.GoCounter] = inout_go_pointer_types.NewP(start)
+    tick(&a.N)
+    a.N
+}
