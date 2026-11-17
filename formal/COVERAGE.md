@@ -41,10 +41,12 @@ The tiers mean exactly this:
 
 An operator expression of literals only is a Go constant expression, evaluated exactly at
 compile time (#1237): `(1 << 70) >> 68` is `4`. galaspec folds each one before it runs a
-program (`Gala/Const.lean`). A value that does not fit `int`, a constant division by zero
-and a negative constant shift count, which Go rejects at compile time, stop a run that
-reaches them `unsupported`, never wrapped; so does a constant left shift by more than
-1024, a bound of the model.
+program (`Gala/Const.lean`). Within such an expression, a division by zero, a negative
+shift count, a value of 512 bits or more and a shift count above 1024 (bounds of the
+model, within gc's), all of which Go rejects at compile time, stop a run that reaches
+them `unsupported`; so does a result that does not fit `int`. None is ever wrapped. A
+division of a variable by the literal `0` is not a constant expression, and stays a
+run-time panic.
 
 `int64` is accepted as a type and means the same as `int`. Every other numeric type is
 outside S1 and reported as unsupported.
@@ -78,7 +80,7 @@ A run ends `unsupported:<kind>` when it reaches:
   one (`positional-after-named`); a type outside S1 (`type-<name>`); an
   integer constant outside int64 (`int-constant-overflow`), a constant division by zero
   (`constant-division-by-zero`), a negative constant shift count (`constant-negative-shift`)
-  or a constant left shift by more than 1024 (`constant-shift-too-large`); a cycle in package-level
+  or a constant beyond the model's bounds (`constant-too-large`); a cycle in package-level
   initialization (`init-cycle`); a program without `main` (`no-main`);
 - an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
   runs the package's initializers whether or not the run reaches a name of it, and

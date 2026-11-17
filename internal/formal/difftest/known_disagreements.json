@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "program": "examples/constant_expressions.gala",
+    "issue": 1237,
+    "symptom": "gala2lean=\"0\", go=\"4\"",
+    "oracle": "gala2lean"
+  }
+]

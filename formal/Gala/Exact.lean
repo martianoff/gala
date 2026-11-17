@@ -46,44 +46,59 @@ inductive Err
   | divByZero
   /-- A negative shift count (Go spec, "Operators": the count must be non-negative). -/
   | negativeShift
-  /-- A left shift by more than `maxShift`: a bound of this model, not of Go, which keeps
-      the exact result's size bounded. gc's own limit on constants is lower. -/
-  | shiftTooLarge
-  deriving Repr, BEq, DecidableEq
+  /-- A shift count above `maxShift`, or a value of `maxBits` bits or more. Go's spec lets
+      an implementation bound its constants ("Constants": at least 256 bits), and gc
+      rejects a constant of more than 512 bits and a shift count above 1074. These bounds
+      are this model's, no larger than gc's, so a constant they stop is one gc rejects
+      too, and it is never given a value. -/
+  | tooLarge
+  deriving Repr, DecidableEq
 
 /-- A constant's value, or the compile-time error computing it is. -/
 inductive Res (α : Type) where
   | val (v : α)
   | err (e : Err)
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, DecidableEq
 
-/-- The largest count `x << s` is computed for exactly. -/
+/-- The largest shift count computed. -/
 def maxShift : Nat := 1024
+
+/-- Values of this many bits or more are not computed. -/
+def maxBits : Nat := 512
+
+/-- `x`, or `tooLarge` if it has `maxBits` bits or more. -/
+def bounded (x : Int) : Res Int :=
+  if x.natAbs ≥ 2 ^ maxBits then .err .tooLarge else .val x
 
 /-- An integer operator on untyped constants, exactly (Go spec, "Constant expressions"):
     `/` and `%` truncate toward zero, `>>` floors; `none` for an operator that is not an
     integer operator. -/
 def intOp (op : String) (x y : Int) : Option (Res Int) :=
   match op with
-  | "+" => some (.val (x + y))
-  | "-" => some (.val (x - y))
-  | "*" => some (.val (x * y))
-  | "/" => some (if y == 0 then .err .divByZero else .val (x.tdiv y))
-  | "%" => some (if y == 0 then .err .divByZero else .val (x.tmod y))
-  | "&" => some (.val (bitAnd x y))
-  | "|" => some (.val (bitOr x y))
-  | "^" => some (.val (bitXor x y))
-  | "&^" => some (.val (bitAnd x (bitNot y)))
+  | "+" => some (bounded (x + y))
+  | "-" => some (bounded (x - y))
+  | "*" => some (bounded (x * y))
+  | "/" => some (if y == 0 then .err .divByZero else bounded (x.tdiv y))
+  | "%" => some (if y == 0 then .err .divByZero else bounded (x.tmod y))
+  | "&" => some (bounded (bitAnd x y))
+  | "|" => some (bounded (bitOr x y))
+  | "^" => some (bounded (bitXor x y))
+  | "&^" => some (bounded (bitAnd x (bitNot y)))
   | "<<" =>
     some (if y < 0 then .err .negativeShift
-      else if y.toNat > maxShift then .err .shiftTooLarge
-      else .val (x * 2 ^ y.toNat))
-  | ">>" => some (if y < 0 then .err .negativeShift else .val (x.shiftRight y.toNat))
+      else if y.toNat > maxShift then .err .tooLarge
+      else bounded (x * 2 ^ y.toNat))
+  | ">>" =>
+    some (if y < 0 then .err .negativeShift
+      else if y.toNat > maxShift then .err .tooLarge
+      else bounded (x.shiftRight y.toNat))
   | _ => none
 
 -- Spot checks against Go's constant arithmetic.
 #guard intOp "/" (-7) 2 == some (.val (-3)) && intOp "%" (-7) 3 == some (.val (-1))
-#guard intOp ">>" (-5) 1 == some (.val (-3)) && intOp ">>" (-1) 3000 == some (.val (-1))
+#guard intOp ">>" (-5) 1 == some (.val (-3)) && intOp ">>" (-1) 1000 == some (.val (-1))
+-- gc rejects these: `1 >> 2000` (shift count), `1 << 600` (constant overflow).
+#guard intOp ">>" 1 2000 == some (.err .tooLarge) && intOp "<<" 1 600 == some (.err .tooLarge)
 #guard intOp "<<" 1 70 == some (.val 1180591620717411303424)
 #guard intOp "/" 1 0 == some (.err .divByZero) && intOp "<<" 1 (-1) == some (.err .negativeShift)
 

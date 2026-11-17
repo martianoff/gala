@@ -68,8 +68,9 @@ theorem isNamed_foldE (e : Expr) : isNamed (foldE e) = isNamed e := by
 
 /-- An operator node folded: its value if it is a constant expression, else the node with
     folded operands; related on both sides when the operands are. -/
-private theorem foldOp_alpha {Γ : Ren} {e e' r r' : Expr} (hc : constEval e = constEval e')
-    (hr : AlphaE pkg pm Γ r r') : AlphaE pkg pm Γ (foldOp e r) (foldOp e' r') := by
+private theorem foldOp_alpha {Γ : Ren} {e e' : Expr} {r r' : Unit → Expr}
+    (hc : constEval e = constEval e') (hr : AlphaE pkg pm Γ (r ()) (r' ())) :
+    AlphaE pkg pm Γ (foldOp e r) (foldOp e' r') := by
   unfold foldOp; rw [hc]
   cases constEval e' with
   | some v => exact constExpr_alpha Γ v
@@ -161,15 +162,10 @@ theorem collectDecl_fold (a : Decls × List GlobalDecl) (d : Decl) :
   | global m ns dz t vs => simp [collectDecl, foldDecl, foldAcc, foldGlobal]
   | unsupported k => simp [collectDecl, foldDecl, foldAcc, foldDecls]
 
-private theorem foldl_collectDecl_fold :
-    ∀ (l : List Decl) (a : Decls × List GlobalDecl),
-      (l.map foldDecl).foldl collectDecl (foldAcc a) = foldAcc (l.foldl collectDecl a)
-  | [], _ => rfl
-  | d :: l, a => by
-    simp only [List.map_cons, List.foldl_cons, collectDecl_fold]
-    exact foldl_collectDecl_fold l _
+private theorem foldl_collectDecl_fold (l : List Decl) (a : Decls × List GlobalDecl) :
+    (l.map foldDecl).foldl collectDecl (foldAcc a) = foldAcc (l.foldl collectDecl a) := by
+  rw [List.foldl_map]; exact List.foldl_hom foldAcc collectDecl_fold
 
-/-- A folded program's declarations and package-level variables are its own, folded. -/
 private theorem foldl_files_fold :
     ∀ (fs : List File) (a : Decls × List GlobalDecl),
       (fs.map fun f => { f with decls := f.decls.map foldDecl }).foldl
@@ -177,8 +173,7 @@ private theorem foldl_files_fold :
         foldAcc (fs.foldl (fun acc file => file.decls.foldl collectDecl acc) a)
   | [], _ => rfl
   | f :: fs, a => by
-    simp only [List.map_cons, List.foldl_cons]
-    rw [foldl_collectDecl_fold]
+    simp only [List.map_cons, List.foldl_cons, foldl_collectDecl_fold]
     exact foldl_files_fold fs _
 
 /-- A folded program's declarations and package-level variables are its own, folded. -/
@@ -192,11 +187,10 @@ private theorem lookup_map_snd {β γ : Type} (g : β → γ) (x : String) :
     simp only [List.map_cons, List.lookup_cons]
     split <;> simp_all [lookup_map_snd g x l]
 
-private theorem getD_map_foldOE :
-    ∀ (l : List (Option Expr)) (j : Nat), (l.map foldOE).getD j none = foldOE (l.getD j none)
-  | [], _ => by simp [foldOE]
-  | _ :: _, 0 => by simp
-  | _ :: l, j + 1 => by simpa using getD_map_foldOE l j
+private theorem getD_map_foldOE (l : List (Option Expr)) (j : Nat) :
+    (l.map foldOE).getD j none = foldOE (l.getD j none) := by
+  simp only [List.getD_eq_getElem?_getD, List.getElem?_map]
+  cases l[j]? <;> simp [foldOE]
 
 private theorem variant?_fold (ds : Decls) (x : String) :
     ((foldDecls ds).variant? x).isSome = (ds.variant? x).isSome := by

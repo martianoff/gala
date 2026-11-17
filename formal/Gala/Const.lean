@@ -23,9 +23,12 @@
     `unsupported int-constant-overflow`, never a wrapped value: Go rejects it where it
     gives it type `int`, but Core JSON does not say which type the program gives it,
     and a constant of another type (`uint64`) may be valid. So a run that reaches one is
-    inconclusive. A division by zero, a negative shift count, and a left shift beyond
-    the model's bound (`Exact.maxShift`) become `unsupported` too: Go rejects the first
-    two at compile time.
+    inconclusive. A division by zero, a negative shift count, and a value or shift
+    count beyond the model's bounds (`Exact.maxBits`, `Exact.maxShift`, within gc's)
+    become `unsupported` too: Go rejects all of them at compile time.
+  * **Where an error is reported.** Like any error galaspec finds, a constant Go rejects
+    stops a run only when the run reaches it. Go rejects the whole program, so such a
+    program is never compared with Go.
   * **A shift by a non-constant count** (`1 << n`) is not a constant expression. Its
     constant left operand takes the type it would have without the shift (Go spec,
     "Operators"), `int` wherever S1 can put it, which is the type evaluation gives it.
@@ -42,7 +45,7 @@ inductive CVal
   | int (v : Int)
   | bool (b : Bool)
   | str (s : String)
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, DecidableEq
 
 /-- A unary operator on a constant; `none` if Go does not apply it to that kind. -/
 def unaryC (op : String) (v : CVal) : Option (Res CVal) :=
@@ -89,7 +92,9 @@ def binaryC (op : String) (a b : CVal) : Option (Res CVal) :=
 /-- The value of `e` if it is a constant expression, `none` if it is not. An error in an
     operand is the whole expression's: Go rejects the program either way. -/
 def constEval : Expr → Option (Res CVal)
-  | .lit (.int v) => some (.val (.int v))
+  | .lit (.int v) => some (match bounded v with
+    | .val v => .val (.int v)
+    | .err e => .err e)
   | .lit (.bool b) => some (.val (.bool b))
   | .lit (.str s) => some (.val (.str s))
   | .paren e => constEval e
@@ -99,10 +104,13 @@ def constEval : Expr → Option (Res CVal)
     | some (.err k) => some (.err k)
     | none => none
   | .binary op l r =>
-    match constEval l, constEval r with
-    | some (.val x), some (.val y) => binaryC op x y
-    | some (.err k), some _ | some (.val _), some (.err k) => some (.err k)
-    | _, _ => none
+    match constEval l with
+    | none => none
+    | some a =>
+      match a, constEval r with
+      | .val x, some (.val y) => binaryC op x y
+      | .err k, some _ | .val _, some (.err k) => some (.err k)
+      | _, none => none
   | _ => none
 
 /-- The smallest and largest `int`, Go's int64. -/
@@ -116,20 +124,22 @@ def constExpr : Res CVal → Expr
   | .val (.str s) => .lit (.str s)
   | .err .divByZero => .unsupported "constant-division-by-zero"
   | .err .negativeShift => .unsupported "constant-negative-shift"
-  | .err .shiftTooLarge => .unsupported "constant-shift-too-large"
+  | .err .tooLarge => .unsupported "constant-too-large"
 
-/-- `e` with each largest constant expression that has an operator replaced by its value;
-    a lone literal stays as it is. -/
-def foldOp (e : Expr) (rest : Expr) : Expr :=
+/-- An operator node `e`: its value if it is a constant expression, else `rest ()`, the
+    node with its operands folded (built only then). -/
+def foldOp (e : Expr) (rest : Unit → Expr) : Expr :=
   match constEval e with
   | some r => constExpr r
-  | none => rest
+  | none => rest ()
 
 mutual
+/-- `e` with each largest constant expression that has an operator replaced by its value;
+    a lone literal stays as it is. -/
 def foldE : Expr → Expr
-  | .unary op e => foldOp (.unary op e) (.unary op (foldE e))
-  | .binary op l r => foldOp (.binary op l r) (.binary op (foldE l) (foldE r))
-  | .paren e => foldOp (.paren e) (.paren (foldE e))
+  | .unary op e => foldOp (.unary op e) fun _ => .unary op (foldE e)
+  | .binary op l r => foldOp (.binary op l r) fun _ => .binary op (foldE l) (foldE r)
+  | .paren e => foldOp (.paren e) fun _ => .paren (foldE e)
   | .call c as => .call (foldE c) (foldEs as)
   | .select t f => .select (foldE t) f
   | .tuple es => .tuple (foldEs es)
