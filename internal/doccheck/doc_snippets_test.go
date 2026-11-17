@@ -188,6 +188,7 @@ func matchKnownBug(b block) (knownBug, bool) {
 // repository root.
 var docGlobs = []string{
 	"docs/ADD_GALA_TO_GO_REPO.MD",
+	"docs/COOKBOOK.MD",
 	"docs/DEPENDENCY_INJECTION.MD",
 	"docs/GALA.MD",
 	"docs/EXAMPLES.MD",

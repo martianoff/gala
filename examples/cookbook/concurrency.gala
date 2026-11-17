@@ -1,0 +1,54 @@
+package main
+
+// Cookbook: run work concurrently and collect the results with Future.
+// docs/COOKBOOK.MD quotes this file.
+
+import (
+    "errors"
+    "strings"
+    "time"
+
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/concurrent"
+)
+
+// slowLength stands in for a call that takes a while, such as an HTTP request.
+func slowLength(word string) int {
+    time.Sleep(10 * time.Millisecond)
+    word.Size()
+}
+
+// lengthOf is the work of one item as a Future, which fails on a blank word.
+func lengthOf(word string) Future[int] =
+    if (strings.TrimSpace(word) == "") FutureFailed(errors.New("empty word"))
+    else Future(slowLength(word))
+
+// lengths fans out: one Future per word. Traverse keeps the input order.
+func lengths(words Array[string]) Future[Array[int]] = Traverse(words, lengthOf)
+
+// longestWord is the first of the longest words, or None for no words.
+func longestWord(words Array[string]) Option[string] =
+    words.ReduceOption((a, b) => if (b.Size() > a.Size()) b else a)
+
+// summarize runs two different jobs at once: the clauses of an `also`
+// group run concurrently, and the block waits for both.
+func summarize(words Array[string]) Future[string] {
+    bind all = lengths(words)
+    also longest = Future(longestWord(words).GetOrElse("(none)"))
+    Future(s"${all.FoldLeft(0, (n, l) => n + l)} letters, longest word $longest")
+}
+
+// report is the lengths, or why they could not be computed.
+func report(r Try[Array[int]]) string =
+    r.Fold((err) => s"failed: ${err.Error()}", (ls) => ls.MkString(" "))
+
+func main() {
+    val words = ArrayOf("alpha", "beta", "gamma", "delta")
+
+    // Await blocks until every Future is done; a failure in any of them
+    // fails the whole result.
+    Println(report(lengths(words).Await()))
+    Println(report(lengths(words.Append(" ")).Await()))
+
+    Println(summarize(words).Await().GetOrElse("failed"))
+}

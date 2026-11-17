@@ -1,0 +1,43 @@
+package main
+
+// Cookbook: encode a GALA struct as JSON and decode it back.
+// docs/COOKBOOK.MD quotes this file.
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+)
+
+// Address is a nested struct; the codec handles it with no extra code.
+struct Address(City string, Zip string)
+
+// User has no struct tags: the codec sets the JSON keys.
+struct User(ID int, FullName string, Email Option[string], Tags Array[string], Home Address)
+
+// userCodec writes snake_case keys, "id" for ID, and leaves Email out when
+// it is None.
+val userCodec = json.Codec[User](json.SnakeCase()).Rename("ID", "id").OmitEmpty("Email")
+
+// show is an encoded document, or why encoding failed.
+func show(encoded Try[string]) string = encoded match {
+    case Success(text) => text
+    case Failure(err) => s"cannot encode: ${err.Error()}"
+}
+
+func main() {
+    val ann = User(1, "Ann Lee", None(), ArrayOf("admin"), Address("Oslo", "0150"))
+    Println(show(userCodec.Encode(ann)))
+
+    val text = `{"id":2,"full_name":"Bo","email":"bo@example.com","tags":[],"home":{"city":"Rome","zip":"00100"}}`
+    userCodec.Decode(text) match {
+        case Success(u) => Println(s"${u.FullName}, ${u.Home.City}, ${u.Email.GetOrElse("no email")}")
+        case Failure(err) => Println(s"bad user: ${err.Error()}")
+    }
+
+    // Malformed or mistyped input is a Failure. A missing key takes its empty
+    // value, so check required fields yourself.
+    Println(userCodec.Decode(`{"id":"three"}`).IsFailure())
+
+    // A JSON array at the root: the element codec's .Array().
+    Println(show(userCodec.Array().Encode(ArrayOf(ann, ann.Copy(ID = 3, Tags = EmptyArray())))))
+}

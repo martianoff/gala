@@ -23,6 +23,7 @@ go_test(
         "//examples:all_gala_sources",
         "//examples:all_go_bridge_sources",
         "//examples/cobra_cli:sources",
+        "//examples/cookbook:sources",
         "//examples/go_interop:sources",
         "//examples/porting_from_go:sources",
         "//fs:gala_sources",

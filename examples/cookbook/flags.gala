@@ -1,0 +1,46 @@
+package main
+
+// Cookbook: parse command-line flags with Go's flag package.
+// docs/COOKBOOK.MD quotes this file.
+
+import (
+    "flag"
+    "io"
+    "os"
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/go_interop"
+)
+
+// Options are the settings one run takes from its command line.
+struct Options(Name string, Times int, Loud bool, Rest Array[string])
+
+// parseArgs reads the flags in args, which leaves out the program name.
+// A bad flag is a Failure that holds flag's own message.
+func parseArgs(args []string) Try[Options] {
+    val set = flag.NewFlagSet("greet", flag.ContinueOnError)
+    set.SetOutput(io.Discard)
+    val name = set.String("name", "world", "who to greet")
+    val times = set.Int("n", 1, "how many times")
+    val loud = set.Bool("loud", false, "shout")
+    FromError(set.Parse(args)).Map((_) => Options(*name, *times, *loud, ArrayFromSlice(set.Args())))
+}
+
+func greet(o Options) string {
+    val line = s"hello, ${o.Name}"
+    val text = if (o.Loud) strings.ToUpper(line) else line
+    ArrayFill(o.Times, text).MkString(" / ") + s" (rest: ${o.Rest.MkString(",")})"
+}
+
+func run(args []string) string = parseArgs(args) match {
+    case Success(o) => greet(o)
+    case Failure(err) => s"error: ${err.Error()}"
+}
+
+func main() {
+    // A real program passes its own arguments, without the program name.
+    Println(run(SliceDrop(os.Args, 1)))
+    Println(run(SliceOf("-name", "gala", "-n", "2", "-loud", "a.txt", "b.txt")))
+    Println(run(SliceOf("-n", "two")))
+}

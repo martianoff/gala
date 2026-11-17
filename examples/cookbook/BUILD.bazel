@@ -1,0 +1,102 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test", "gala_test")
+
+# The recipes of docs/COOKBOOK.MD. Each program runs and its output is
+# checked against the .out file beside it; slug is a library with a
+# table-driven test. None of them needs the network: the HTTP recipe serves
+# on httptest's loopback listener.
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**/*.gala",
+        "**/*.out",
+    ]),
+    visibility = ["//internal/doccheck:__pkg__"],
+)
+
+gala_exec_test(
+    name = "collections",
+    src = "collections.gala",
+    expected = "collections.out",
+    deps = [
+        "//collection_immutable",
+        "//strings",
+    ],
+)
+
+gala_exec_test(
+    name = "concurrency",
+    src = "concurrency.gala",
+    expected = "concurrency.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+    ],
+)
+
+gala_exec_test(
+    name = "env",
+    src = "env.gala",
+    expected = "env.out",
+)
+
+gala_exec_test(
+    name = "errors",
+    src = "errors.gala",
+    expected = "errors.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "files",
+    src = "files.gala",
+    expected = "files.out",
+    deps = ["//fs"],
+)
+
+gala_exec_test(
+    name = "flags",
+    src = "flags.gala",
+    expected = "flags.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
+gala_exec_test(
+    name = "go_library",
+    src = "go_library.gala",
+    expected = "go_library.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "http_json",
+    src = "http_json.gala",
+    expected = "http_json.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+        "//json",
+    ],
+)
+
+gala_exec_test(
+    name = "json_codec",
+    src = "json_codec.gala",
+    expected = "json_codec.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
+gala_test(
+    name = "slug_test",
+    srcs = ["slug/slug_test.gala"],
+    importpath = "martianoff/gala/examples/cookbook/slug",
+    lib_srcs = ["slug/slug.gala"],
+    pkg = "slug",
+    deps = ["//collection_immutable"],
+)

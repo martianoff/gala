@@ -8,6 +8,7 @@ filegroup(
     name = "language_docs",
     srcs = [
         "ADD_GALA_TO_GO_REPO.MD",
+        "COOKBOOK.MD",
         "DEPENDENCY_INJECTION.MD",
         "EXAMPLES.MD",
         "GALA.MD",

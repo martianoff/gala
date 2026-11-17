@@ -1,0 +1,24 @@
+package slug
+
+import (
+    "strings"
+
+    . "martianoff/gala/test"
+)
+
+// Each Case runs as its own subtest, named by Name.
+func TestSlug(t T) T = RunCases(t,
+    (sub, title, want) => Eq(sub, Slug(title), want),
+    Case[string, string](Name = "lower-cases words", Input = "Hello World", Expected = "hello-world"),
+    Case[string, string](Name = "drops punctuation", Input = "GALA: a cookbook!", Expected = "gala-a-cookbook"),
+    Case[string, string](Name = "squeezes spaces", Input = "  many   spaces ", Expected = "many-spaces"),
+    Case[string, string](Name = "keeps digits and accents", Input = "Café 2026", Expected = "café-2026"),
+    Case[string, string](Name = "empty title", Input = "", Expected = ""),
+)
+
+// A plain test chains assertions: each one takes and returns the T.
+func TestSlugIsIdempotent(t T) T {
+    val once = Slug("Twice Is Nice")
+    val t1 = Eq(t, Slug(once), once)
+    IsFalse(t1, strings.Contains(once, " "))
+}

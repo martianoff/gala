@@ -1,0 +1,19 @@
+package slug
+
+// Cookbook: the code under test of the table-driven test in slug_test.gala.
+// docs/COOKBOOK.MD quotes both files.
+
+import (
+    "strings"
+    "unicode"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// Slug turns a title into a URL path segment: lower case, letters and
+// digits only, words joined by single dashes.
+func Slug(title string) string {
+    val keep = (r rune) => unicode.IsLetter(r) || unicode.IsDigit(r)
+    val cleaned = strings.Map((r) => if (keep(r)) unicode.ToLower(r) else ' ', title)
+    ArrayFromSlice(strings.Fields(cleaned)).MkString("-")
+}

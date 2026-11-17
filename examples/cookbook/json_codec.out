@@ -1,0 +1,4 @@
+{"id":1,"full_name":"Ann Lee","tags":["admin"],"home":{"city":"Oslo","zip":"0150"}}
+Bo, Rome, bo@example.com
+true
+[{"id":1,"full_name":"Ann Lee","tags":["admin"],"home":{"city":"Oslo","zip":"0150"}},{"id":3,"full_name":"Ann Lee","tags":[],"home":{"city":"Oslo","zip":"0150"}}]
