@@ -217,8 +217,10 @@ func (t *galaASTTransformer) endBranchingCalls(file *ast.File) {
 		if !ok {
 			return true
 		}
-		if lit, isLit := call.Fun.(*ast.FuncLit); isLit && t.branchingCalls[call].end > 0 {
-			lit.Body.List = append(lit.Body.List, lineMarkerStmt(t.branchingCalls[call].end))
+		if lit, isLit := call.Fun.(*ast.FuncLit); isLit {
+			if end := t.branchingCalls[call].end; end > 0 {
+				lit.Body.List = append(lit.Body.List, lineMarkerStmt(end))
+			}
 		}
 		return true
 	})

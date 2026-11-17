@@ -521,7 +521,7 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			// line that closes it.
 			name:  "subject of a type-switch match",
 			src:   "package main\n\nfunc boxed(x int) any = x\n\nfunc f(n int) string = boxed(100 / n) match {\n    case i: int => s\"int $i\"\n    case _ => \"other\"\n}\n\nfunc main() {\n    println(f(1))\n}\n",
-			wants: map[string]string{"_subj := boxed(100 / n)": "5"},
+			wants: map[string]string{"_subj := any(boxed(100 / n))": "5"},
 		},
 		{
 			// The code after the function literal counts on from the line the
