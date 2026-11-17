@@ -405,6 +405,39 @@ theorem binary_str_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Strin
     | exact ⟨_, rfl, .strU _, rfl, by simp [UInt]⟩
     | (simp [show (Ty.string == Ty.string) = true from rfl]; exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩)
 
+theorem evalExpr_and (c : Ctx) (n : Nat) (env : Env) (x y : Expr) :
+    evalExpr c (n + 1) env (.binary "&&" x y) = (do
+      let a ← evalExpr c n env x
+      if ← asBool a then
+        let b ← evalExpr c n env y
+        pure (.bool (boolType a b) (← asBool b))
+      else pure a) := by
+  simp [evalExpr]
+
+theorem evalExpr_or (c : Ctx) (n : Nat) (env : Env) (x y : Expr) :
+    evalExpr c (n + 1) env (.binary "||" x y) = (do
+      let a ← evalExpr c n env x
+      if ← asBool a then pure a
+      else
+        let b ← evalExpr c n env y
+        pure (.bool (boolType a b) (← asBool b))) := by
+  simp [evalExpr]
+
+/-- `true` and `false`, Go's predeclared constants, where nothing shadows them. -/
+theorem evalExpr_predeclared (c : Ctx) (n : Nat) (env : Env) (b : Bool) (g : St)
+    (hp : Predeclared c env) :
+    (evalExpr c (n + 2) env (.ident (if b then "true" else "false"))).run.run g =
+      (.ok (.bool (.untyped .bool) b), g) := by
+  cases b
+  · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp "false" (by simp)
+    simp only [Std.HashMap.get?_eq_getElem?] at hpk hobj
+    simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj, grun_bind]
+    rfl
+  · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp "true" (by simp)
+    simp only [Std.HashMap.get?_eq_getElem?] at hpk hobj
+    simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj, grun_bind]
+    rfl
+
 theorem binaryKind_noshift {op : String} {k₁ k₂ k : Kind} (h : binaryKind op k₁ k₂ = some k) :
     (op == "<<" || op == ">>") = false := by
   unfold binaryKind at h
@@ -438,5 +471,53 @@ theorem binary_sim (cx : Ctx) (n : Nat) (op : String) (v₁ v₂ : Spec.Val) (w�
 
 end GoCoreRuns
 
+/-! ## Literal trees are constant expressions -/
+
+/-- A literal, through parentheses: the only expressions whose GoCore value may be an
+    untyped integer. -/
+def isLitE : Spec.Expr → Bool
+  | .lit _ => true
+  | .paren e => isLitE e
+  | _ => false
+
+def cvKind : Spec.CVal → Kind
+  | .int _ => .int
+  | .bool _ => .bool
+  | .str _ => .str
+
+theorem lit_const (κ : String → Option Kind) : ∀ (x : Spec.Expr) (k : Kind) (lx : GoCore.Full.Expr),
+    lowerE κ x = some (k, lx) → isLitE x = true →
+    ∃ r, Spec.constEval x = some r ∧ ∀ cv, r = .val cv → cvKind cv = k
+  | .lit (.int v), k, lx, h, _ => by
+    simp only [lowerE, lowerLit, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    refine ⟨_, rfl, fun cv hcv => ?_⟩
+    revert hcv; unfold Gala.Exact.bounded; split <;> intro hcv <;> cases hcv <;> rfl
+  | .lit (.bool b), k, lx, h, _ => by
+    simp only [lowerE, lowerLit, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact ⟨_, rfl, fun cv hcv => by cases hcv; rfl⟩
+  | .lit (.str s), k, lx, h, _ => by
+    simp only [lowerE, lowerLit, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact ⟨_, rfl, fun cv hcv => by cases hcv; rfl⟩
+  | .paren x, k, lx, h, hl => by
+    simp only [lowerE, Option.map_eq_some_iff] at h
+    obtain ⟨⟨k', lx'⟩, h', he⟩ := h
+    simp only [Prod.mk.injEq] at he
+    obtain ⟨r, hr, hk⟩ := lit_const κ x k' lx' h' hl
+    exact ⟨r, by simp [Spec.constEval, hr], fun cv h => he.1 ▸ hk cv h⟩
+
+theorem unaryC_some {op : String} {k k' : Kind} {cv : Spec.CVal} (hu : unaryKind op k = some k')
+    (hk : cvKind cv = k) : (Spec.unaryC op cv).isSome := by
+  subst hk
+  cases cv <;> (unfold unaryKind at hu; split at hu <;> simp_all [Spec.unaryC, cvKind])
+
+theorem binaryC_some {op : String} {kl kr k : Kind} {l r : Spec.CVal}
+    (hb : binaryKind op kl kr = some k) (hl : cvKind l = kl) (hr : cvKind r = kr) :
+    (Spec.binaryC op l r).isSome := by
+  subst hl hr
+  cases l <;> cases r <;> (unfold binaryKind at hb; split at hb <;>
+    simp_all [Spec.binaryC, cvKind, Gala.Exact.intOp]) <;> (try split) <;> simp_all
 
 end Gala.M5
