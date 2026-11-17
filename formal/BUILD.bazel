@@ -87,10 +87,14 @@ REQUIRED_THEOREMS = [
 # modules listed before it (in its own list or in a library it depends on).
 # This file is the module root, so module names are Gala.X, as with Lake.
 
+# What both semantics share, importing neither: exact constant arithmetic.
+SHARED_SRCS = [
+    "Gala/Exact.lean",
+]
+
 # The interpreter: what galaspec and its tests link.
 GALASPEC_SRCS = [
     "Gala/Syntax.lean",
-    "Gala/Exact.lean",
     "Gala/Const.lean",
     "Gala/Json.lean",
     "Gala/Scope.lean",
@@ -144,12 +148,18 @@ GALA_SRCS = [
           "or GALA_SRCS (models and theorems, before Gala.lean), after the modules it " +
           "imports").format(f))
     for f in glob(["Gala/**/*.lean"])
-    if f not in GALASPEC_SRCS + [GALASPEC_MAIN] + GOCORE_SRCS + GALA_SRCS
+    if f not in SHARED_SRCS + GALASPEC_SRCS + [GALASPEC_MAIN] + GOCORE_SRCS + GALA_SRCS
 ]
+
+lean_library(
+    name = "shared_lib",
+    srcs = SHARED_SRCS,
+)
 
 lean_library(
     name = "galaspec_lib",
     srcs = GALASPEC_SRCS,
+    deps = [":shared_lib"],
 )
 
 lean_library(
@@ -161,6 +171,7 @@ lean_library(
 lean_library(
     name = "gocore_lib",
     srcs = GOCORE_SRCS,
+    deps = [":shared_lib"],
 )
 
 # gocore's `main`, outside Gala/ so that the proof check, which imports every
@@ -199,6 +210,7 @@ lean_proof_test(
         ":galaspec_lib",
         ":galaspec_main",
         ":gocore_lib",
+        ":shared_lib",
     ],
 )
 

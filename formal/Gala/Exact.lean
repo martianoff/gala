@@ -9,8 +9,7 @@
   definitions.
 
   This module imports nothing, so either semantics can import it without depending on the
-  other. For now `Gala/GoCore/Ops.lean` still has its own copies of the bitwise
-  operations; they move here, with the rational constants floats need.
+  other.
 -/
 namespace Gala.Exact
 
