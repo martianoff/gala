@@ -568,8 +568,9 @@ def goReplaceAll (s old new : String) : String :=
 /-- `strings.Repeat` (strings.go:616): a count of 0 gives `""` and 1 gives `s`; a negative
     count panics ("strings: negative Repeat count"), and so does a result longer than
     Go's largest int in bytes ("strings: Repeat output length overflow"); both are
-    string panics, class `other` (`Panic.std`). A result of more than 2^48 bytes, Go's
-    largest allocation on amd64 (malloc.go: `maxAlloc`, `heapAddrBits` 48), panics as
+    string panics, class `other` (`Panic.std`). A result of more than 2^48 bytes panics as
+    well, a choice of the runtime, not of the `strings` API (gc, amd64, Go 1.25.5:
+    malloc.go `maxAlloc` = 2^48, `heapAddrBits` 48; another platform differs). It panics as
     the result's buffer is made ("runtime error: makeslice: len out of range",
     slice.go:395 `bytealg_MakeNoZero`, from `Builder.Grow`), class `other` too. Otherwise
     `s`, `count` times. (A result Go can allocate but the machine cannot hold ends the Go
