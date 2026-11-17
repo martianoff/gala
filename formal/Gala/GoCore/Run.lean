@@ -222,12 +222,13 @@ inductive Outcome
     reports instead of comparing. -/
 def maxDepth : Nat := 1000000
 
-/-- Run a program: initialize its packages, then call the main package's `main`.
-    `fuel` bounds the steps (calls and loop iterations), and the depth up to
-    `maxDepth`. -/
-def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
+/-- Run a program: initialize its packages, then call the main package's `main`, with
+    `depth` nested evaluation levels and `fuel` steps (calls and loop iterations).
+    Unlike `runProgram`, the depth is not capped by a constant: galaspec bounds its
+    depth by the fuel alone, and M5's theorems relate the two runs at depth and fuel
+    equal (docs/FORMAL_SEMANTICS.MD, "M5"). -/
+def runProgramAt (prog : Program) (depth fuel : Nat) : Outcome × String :=
   let c := buildCtx prog
-  let depth := min fuel maxDepth
   let go : GM (Option String) := do
     tryCatch (do
         for path in pkgOrder c do
@@ -252,5 +253,11 @@ def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
     | .error (.ret _) => .stuck "return outside a function"
     | .error .brk | .error .cont => .stuck "break or continue outside a loop"
   (o, s.out)
+
+/-- Run a program: initialize its packages, then call the main package's `main`.
+    `fuel` bounds the steps (calls and loop iterations), and the depth up to
+    `maxDepth`. -/
+def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
+  runProgramAt prog (min fuel maxDepth) fuel
 
 end Gala.GoCore.Full

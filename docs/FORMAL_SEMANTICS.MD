@@ -253,7 +253,7 @@ column lists what each milestone's claim rests on beyond them.
 | M2 | Alpha-invariance, left-to-right, defaults (T2–T4) | for the subset galaspec models (S1 plus lambdas, closures, named arguments and defaults), renaming bound variables apart never changes what galaspec says a program does, its effects happen in source order, and a default sees only the callee's earlier parameters | nothing | 6–8 weeks |
 | M3 | Match lowering against galaspec | the scoped `match` lowering, into a first fragment of GoCore, is correct with respect to galaspec itself (not a separate toy semantics), for every S1 pattern form | that the lowering describes what the transformer emits; that the subject, guards and bodies are lowered correctly (M5); that the subject has the inferred static type (T7) | 3–4 weeks |
 | M4 | GoCore and the Go AST exporter | for every S1 program in the corpus, GoCore run on the transformer's *actual* output agrees with galaspec and with `go run` (tested, not proved) | parser, interpolation splitter, analyzer annotations, both exporters, GoCore's fidelity to Go | 5–8 weeks |
-| M5 | Reference lowering for all of S1 | a lowering from galaspec's syntax to GoCore, covering everything the transformer emits for S1, is proved to preserve meaning | that the lowering describes what the transformer emits | 6–9 weeks |
+| M5 | Reference lowering for all of S1 | a lowering from galaspec's syntax to GoCore, covering everything the transformer emits for S1, is proved to preserve meaning for every program it lowers (how many it lowers is reported) | that the lowering describes what the transformer emits; GoCore's models and `stdExcerpt` (see M5) | 6–9 weeks |
 | M6 | Per-program translation validation | for each S1 program the validator accepts, every run of it that galaspec ends `ok` or in a panic is proved to have the same output and outcome as the Go the transformer emitted, run in GoCore | as M4, plus the validator's run (kernel or compiled Lean) | 8–12 weeks |
 | M7 | Widening the subset | M6's claim for S2 (lambdas, defaults, named arguments, interpolation), then methods, `Option`/`Either`/`Try` and generics | as M6 | 2–4 weeks per construct family |
 
@@ -435,15 +435,176 @@ column lists what each milestone's claim rests on beyond them.
 
 #### M5: the reference lowering for all of S1
 
-- **Claim:** a lowering `lower : Spec.Program → GoCore.Program` that produces the shapes
-  the transformer emits (M4 shows which) preserves meaning for every S1 program.
+- **Claim:** a lowering `lower : Spec.Program → Option GoCore.Program` that produces the
+  shapes the transformer emits (M4 shows which) preserves meaning for every S1 program
+  it lowers. It is partial (see [the target](#the-target)); how much of S1 it lowers is
+  reported, not assumed.
 - **Statement:** for every S1 program `p` whose galaspec run ends `ok` or in a panic,
   `GoCore.run (lower p)` ends the same way with the same output, and a program that runs
   out of every fuel budget in one runs out in the other. It generalizes M3 from `match`
   to arithmetic, `if`, blocks, calls, structs, sealed values, package-level
-  initialization and printing.
+  initialization and printing. [The statement](#the-statement) below makes this precise:
+  GoCore's run without its depth cap, relative to `stdExcerpt`, for every operand order
+  Go allows.
 - **Risk:** printing and initialization order are the largest proofs; GoCore's `fmt`
   model has to be exact for the theorem to say anything about real output.
+- **Status: planned,** as below; nothing of it is proved yet.
+
+##### The target
+
+`lower` targets GoCore for whole programs (`Gala.GoCore.Full`), not M3's fragment. Its
+result is a `Full.Program` of two packages: `main`, lowered from the source, and
+`stdExcerpt`, a fixed Lean term holding only the declarations of the generated
+`martianoff/gala/std` the lowered code reaches: `Immutable` with `NewImmutable` and
+`Get`; `Option` with its `Value` field and `IsDefined`; `Some[T]{}.Apply` and
+`None[T]{}.Apply`; the tuple types. They are copied from the exported Go, and a test
+checks that each is exactly the declaration of the same name in the exported standard
+library, as GoCore syntax. The theorems hold relative to `stdExcerpt`, and say so. The
+real standard library has more declarations, and package-level variables of its own;
+that adding them changes no run is a lemma M6 owes.
+GoCore's models are trusted as GoCore is: `fmt`, the four `libFuncs` (`FormatStruct`,
+`Copy`, `Equal`, `EvalOperand`), and `Immutable.Format` (hand-written in
+`std/types.go`), through which `FormatStruct` prints a struct's `Immutable` fields.
+
+`lower` is partial, `Spec.Program → Option Full.Program`, because some shapes need a
+static type the source does not write (an `if` expression's result type, a local's
+type in a function literal's signature). It computes those with a small S1 type
+inference of its own and returns `none` where that fails. The theorems are about every
+`p` with `lower p = some q`; how many programs that covers is reported, not assumed.
+
+##### The shapes
+
+Each is what the transformer emits for S1 today; the lowering emits it the same way, so
+M6's validator has as few normalizations as possible to prove.
+
+| Source | Lowered Go |
+|---|---|
+| `int`, `bool`, `string` literal | the Go literal (an untyped constant) |
+| unary and binary operators, `&&`, `\|\|` | the same operator; `/` and `%` panic on zero with Go's runtime error |
+| local `val x = e`, `var x = e` | `var x = e` |
+| package-level `val g = e` | `var g = std.NewImmutable(e)`, read as `g.Get()` |
+| package-level `var g = e` | `var g = e` |
+| local `val (a, b) = e` | a `var` block: a temporary `__tuple_n = e`, then `a = __tuple_n.V1.Get()`, ... |
+| tuple `(a, b)` | `std.Tuple[A, B]{V1: std.NewImmutable(a), V2: std.NewImmutable(b)}` |
+| `if (c) a else b` as an expression | `func() T { if c { return a } else { return b } }()` |
+| `if` statement, block | the Go `if`, the Go block |
+| function, `= e` body | `func f(params) R { return e }`, except that an `if` or `match` body returns from each branch directly, in a block, with no function literal; a block body ends in `return` of its last expression |
+| `= if (c) a else f(args)`, a direct self-tail call | a `for {}` loop that reassigns the parameters and `continue`s (`internal/transpiler/transformer/tco.go`) |
+| struct declaration | `type S struct { ... }`: a `val` field `f std.Immutable[T]`, a `var` field plain `T`; with its `Copy`, `Equal` and `String` methods |
+| `S(a, b)` | `S{f: std.NewImmutable(a), g: b}` (`NewImmutable` on `val` fields only); `s.f` is `s.f.Get()` for a `val` field, `s.g` for a `var` one |
+| sealed declaration | one struct holding each distinct field once: cases that declare a field of one name and type share its slot, and a name used with different types (or clashing with a method) gets a slot per case, prefixed with the case's name (`internal/transpiler/analyzer/field_method_names.go`); a field of the sealed type itself is a pointer `*T`; `_variant uint8` (case `i` is `i + 1`) with a `_T_C` constant per case; per case `C{}.Apply`, `C{}.Unapply` (a `bool` for a case without fields, an `Option` otherwise), `isC`/`IsC` and `NewTC`; and the type's `Copy`, `Equal` and `String` methods |
+| `C(a)` of a sealed case | `C{}.Apply(a)`; `Apply` stores a recursive field as `&t` |
+| `match` | M3's scoped shape on this layout: `_subj` once, per arm `C{}.Unapply(_subj)`, `IsDefined()`, `Value.Get()`, the binders' values in `_tmp_<binder>`, binders scoped to their branch, the guard in its own block, a final `panic` |
+| `Println(a, b)`, `Print(a)` | `fmt.Println(a', b')`, `fmt.Print(a')` |
+| an operand that reads storage a later operand's call could change | `std.EvalOperand(x)` (`internal/transpiler/transformer/eval_order.go`) |
+
+##### The relations
+
+- **Values.** `Enc ds cells v w`, a relation between a galaspec value and a GoCore value
+  over GoCore's cells, typed as Go types them. It is a relation, not a function,
+  because a recursive sealed field is a pointer to a cell. An `int` is `int`; a struct
+  is the named struct, a `val` field `Immutable[T]{value: w}` and a `var` field `w`
+  itself, with `Enc` of the field's value and `w`; a sealed value is the flat struct:
+  the slots of its active case hold its fields (a recursive one a pointer to a cell
+  holding it), every other slot Go's zero value of its type, `_variant` the case's
+  tag. This is where M3's
+  abstract layout meets the flat one: M3's `Unapply` primitive is replaced by the
+  generated `Unapply` body run in GoCore, and a lemma shows that body returns `Some` of
+  exactly the active case's fields and `None` otherwise (`true` or `false` for a case
+  without fields). With it, M3's
+  `lowerPat_correct` and `lowerMatch_correct` are re-proved against `Full`, and the
+  fragment (`formal/Gala/GoCore.lean`) is deleted with the M3 proofs that only it used.
+- **States.** `R c g` between galaspec's `Core` and GoCore's `St`: the outputs are equal;
+  every local galaspec binds is bound in GoCore's innermost-first scopes to a cell
+  holding a value it encodes (a `var`'s through galaspec's heap); every package-level
+  variable `x` is the cell `main.x`, holding a value `v` encodes, wrapped in `Immutable`
+  for a `val`. GoCore's own temporaries (`_subj`, `_tmp_n`, `_tmp_<binder>`,
+  `__tuple_n`) and the closures, types and defers of its
+  state are unconstrained. The lowering names its temporaries apart from every name
+  of the program, so no source program is excluded. The transformer does the same
+  for the names in scope (a `match` inside a function that declares `_subj` gets
+  `_subj2`); its names differ from the lowering's only by a renaming, which is M6's
+  first normalization.
+- **Outcomes.** `ok` matches `ok`. A galaspec panic matches a GoCore panic whose text
+  has the same class; for `divide` the texts are also equal. The outputs are equal byte
+  for byte. The class is a Lean function that mirrors the differential run's
+  `panicClass` (`internal/formal/difftest/outcome.go`), and a test keeps the two equal on
+  the texts S1 programs panic with: a mismatch would let the theorem and the
+  differential run judge by different classifiers.
+
+##### The statement
+
+GoCore's `runProgram` caps its depth at the constant `maxDepth`, while galaspec bounds
+its depth by the fuel alone, so a deep recursion galaspec finishes would be `fuel` in
+GoCore for every budget, and the statement above would be false. The theorems are therefore stated for `runProgramAt q depth fuel`,
+the same run without the cap (`runProgram q fuel` is `runProgramAt q (min fuel maxDepth)
+fuel`). The differential run uses the capped run, which can only turn an agreement into
+`fuel` (inconclusive), never into another verdict; a run Go aborts for lack of stack is
+outside every claim already. For every `p` and `q` with `lower p = some q`, relative to
+`stdExcerpt` and for every operand order Go allows (see below):
+
+1. **Forward.** If `Spec.run p n` ends `ok` or in a panic, there is an `m` such that
+   `runProgramAt q m m` ends the same way, with the same output.
+2. **Divergence.** If `Spec.run p n` ends in `fuel` for every `n`, then
+   `runProgramAt q m m` ends in `fuel` for every `m`. Conversely, if the GoCore run is
+   `fuel` for every `m`, galaspec never ends `ok` or in a panic (it may end `stuck` or
+   `unsupported`, where nothing is claimed).
+
+The forward direction composes sub-runs, which needs GoCore's version of M1: a run that
+does not run out of steps or depth gives the same result, with the extra budget left,
+under any larger budget. It is proved first, for GoCore's whole mutual block, as M1 was
+for galaspec's. The divergence direction is a counting argument on GoCore's steps, each
+a call or a loop iteration: the source has no loops, but the emitted Go does. Between
+two source calls galaspec spends at most `K` steps, `K` fixed by the program's size, and
+each source call costs GoCore at least one step (its call, or an iteration of a
+self-tail-call loop; the lowering's other calls, `Get`, `Apply`, the function literals,
+only add steps); so `Spec.run p (K * (m + 1))` ending in `fuel` forces
+`runProgramAt q m m` to end in `fuel` too. That needs, besides, that the lowered program
+does not stop `stuck` or `unsupported` in GoCore while galaspec is still running, which
+the lock-step lemma (step 3) carries as part of its state relation.
+
+##### Evaluation order
+
+GoCore evaluates every operand list left to right. Go's spec orders calls, method calls
+and receive operations among themselves, left to right, and leaves a variable read
+unordered against them; gc performs the calls first. So GoCore disagrees with gc on
+`a + f()` where `f` changes `a`. The differential run shows no disagreement only because
+the transformer wraps such reads in `std.EvalOperand`. Two changes follow.
+
+- **Fidelity (M4).** GoCore's run uses gc's order: the calls, method calls and receives
+  of an operand list in lexical order, then the other operands. It is one instance of
+  the order parameter below, not a second mechanism: a gc choice, kept apart as
+  `GcRuntime` keeps append growth, and pinned by a `go run` fixture in which
+  `a + f()`, with `f` changing `a`, shows it. An order a fixture cannot pin is
+  `unsupported`, not guessed.
+- **The theorem.** Proved for gc's order alone, it would hold for that gc release only;
+  a later gc may pick any order the spec allows. So GoCore's operand evaluation takes
+  the order as a parameter, constrained to the orders the spec allows; the harness runs
+  gc's, and M5's theorems are proved for every allowed one. Then `EvalOperand` carries
+  weight: without it, some allowed order breaks the theorem, which is how a #996-class
+  bug shows. If the parameter proves too heavy, the theorems fall back to gc's order and
+  say "for gc 1.25.5's operand order".
+
+##### Steps
+
+Each step is its own pull request with a theorem.
+
+1. GoCore: the run without the depth cap (`runProgramAt`), gc's operand order with
+   the order as a parameter, and fuel adequacy for `Full`'s mutual block.
+2. Pure expressions, `val`/`var`, `if` and blocks, with no calls: the forward simulation
+   for one function body.
+3. Calls and recursion, the IIFE and self-tail-call loop shapes, and the divergence
+   theorem. The counting argument above is a backward fact, which the forward
+   simulation (it starts from a run galaspec finished) cannot give: it is proved as a
+   fuel-indexed lock-step lemma, galaspec given `K * (m + 1)` steps simulating GoCore's
+   first `m` steps with related states.
+4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
+   M3 fragment retired.
+5. Package-level initialization (galaspec's `mentions` order against GoCore's
+   `varDeps` order: they agree on S1 programs, which has to be proved, not assumed) and
+   printing (`fmt`'s `%v` of each S1 value through the generated `String` methods and
+   `FormatStruct`, against galaspec's `Print`), then the theorems above for whole
+   programs.
 
 #### M6: per-program translation validation
 
@@ -809,7 +970,7 @@ gantt
 | M2 | 6–8 weeks | Done: T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator's local renamings are checked against T2 by a checker proved sound. |
 | M3 | 3–4 weeks | Done: the toy source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form (`lowerMatch_correct`). |
 | M4 | 5–8 weeks | GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |
-| M5 | 6–9 weeks | The reference lowering covers everything the transformer emits for S1, and its correctness theorem is proved. |
+| M5 | 6–9 weeks | The reference lowering covers everything the transformer emits for S1, and its correctness theorem is proved for every program it lowers. |
 | M6 | 8–12 weeks | The validator's soundness theorem is proved, and CI validates every S1 program in the corpus, listing the ones it rejects and why. |
 | M7 | 2–4 weeks per construct family | Each family is in galaspec, GoCore, the reference lowering and the validator. |
 
