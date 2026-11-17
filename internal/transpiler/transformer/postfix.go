@@ -885,17 +885,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// The function literal binds the subject itself (`_subj := subject`, as an
 	// inlined match does), so Go infers the subject's type and the lowering
 	// never writes it. A subject whose type only the cases tell is bound as
-	// that type, which converts it. A subject matched as `any` is converted
-	// to it (`_subj := any(subject)`), so the type switch that dispatches it
-	// gets an interface value even where its Go type is not `any` yet. Bound
-	// in the literal, the subject is evaluated below the match's line marker,
-	// not on the line that closes the literal, where a call's arguments are.
+	// that type, which converts it; any other subject, one matched as `any`
+	// included, already has the type it is matched as. Bound in the literal,
+	// the subject is evaluated below the match's line marker, not on the line
+	// that closes the literal, where a call's arguments are.
 	var bindType ast.Expr
-	switch {
-	case typedFromCases:
+	if typedFromCases {
 		bindType = t.typeToExpr(matchedType)
-	case matchedType.IsAny():
-		subject = &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{subject}}
 	}
 	funcLit := &ast.FuncLit{
 		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField},

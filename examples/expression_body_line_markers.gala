@@ -115,8 +115,8 @@ func elseIfLines(n int) int =
 
 func elseIfVoid(n int) = if (n == 1) Println(1) else if (100 / n == 2) Println(2) else Println(3)
 
+// A subject of Go's empty interface type is dispatched by a type switch.
 
-// dispatch's subject has Go's empty interface type, so a type switch matches it.
 func dispatch(n int) string = reflect.ValueOf(100 / n).Interface() match {
     case i: int => s"int $i"
     case _ => "other"

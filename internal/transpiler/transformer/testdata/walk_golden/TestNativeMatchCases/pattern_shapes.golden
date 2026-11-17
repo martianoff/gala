@@ -627,7 +627,7 @@ func boxes(x any) string {
 //line $DIR/main.gala:86
 	{
 //line $DIR/main.gala:86
-		_subj := any(x)
+		_subj := x
 		{
 			_tmp_30, _tmp_31 := std.As[Box[int]](_subj)
 			_tmp_v := _tmp_30.v.Get()

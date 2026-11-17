@@ -691,9 +691,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 
 	// The line the code after a match or if-expression lowered to a function
 	// literal is on (see line_directives.go). It ends those literals' bodies
-	// in a marker, so it runs after every pass that reads a body's trailing
-	// statement (whether it leaves, what value it returns); keep it last
-	// among them.
+	// in a marker, so no pass after it may read a body's trailing statement
+	// (whether it leaves, what value it returns): the passes below touch only
+	// codec declarations and top-level names.
 	t.endBranchingCalls(file)
 
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)

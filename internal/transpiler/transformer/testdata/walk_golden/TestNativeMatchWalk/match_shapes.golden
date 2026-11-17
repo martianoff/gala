@@ -132,7 +132,7 @@ func heads(o std.Option[int], x any) int {
 //line $DIR/main.gala:40
 	var b = func() int {
 //line $DIR/main.gala:40
-		_subj := any(x)
+		_subj := x
 		{
 			_tmp_4, _tmp_5 := std.As[Box[int]](_subj)
 			_tmp_v := _tmp_4.v.Get()
