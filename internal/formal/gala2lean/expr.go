@@ -158,7 +158,6 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 	case *coreexport.Name:
 		return g.name(e, sc)
 	case *coreexport.Unary:
-		checkUntypedConstant(e, e.Pos)
 		o := g.expr(e.Operand, sc)
 		switch e.Op {
 		case "-":
@@ -172,7 +171,6 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 		}
 		unsup(e.Pos, "unary-%s", e.Op)
 	case *coreexport.Binary:
-		checkUntypedConstant(e, e.Pos)
 		return g.binary(e, sc)
 	case *coreexport.Tuple:
 		if len(e.Elems) > 4 {
