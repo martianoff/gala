@@ -36,11 +36,22 @@ within the construct — for:
 
 **Imported GALA packages map too.** The mapping is not limited to your own
 files: imported GALA libraries — the standard library and third-party
-dependencies alike — are transpiled per file with their real source path, so a
+dependencies alike — are transpiled per file, each naming its own source, so a
 panic that originates inside an imported package reports *that library's*
 `.gala` position (e.g. `option.gala:37`), and the surrounding frames report your
 own files. A single stack trace can therefore span library and application
 source, each mapped to GALA.
+
+**File names.** `gala build`, `gala run` and `gala test` name a source the way
+Go's `-trimpath` names a Go file: by its module's path and its path inside the
+module (`example.com/app/cmd/foo.gala:12`), with the version added for a
+dependency read from the module cache (`example.com/lib@v1.2.0/lib.gala:7`).
+A project without a `gala.mod` names a file by its path in the project
+directory, and the standard library by its package directory
+(`std/option.gala:37`). The build machine's directories stay out of the
+binary. Set `GOFLAGS=-trimpath=false` to get host paths instead, for Go and
+GALA files alike, for example so a debugger can match breakpoints set on the
+`.gala` files.
 
 **Suppression.** Directives are only emitted when the transpiler knows the
 source file path. Anonymous snippet transpilation (e.g. the LSP) emits none.

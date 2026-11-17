@@ -1023,6 +1023,10 @@ type GalaToGoTranspiler struct {
 	analyzer    Analyzer
 	transformer ASTTransformer
 	generator   CodeGenerator
+
+	// lineFile is the file name the //line directives give the source, when
+	// it is not the path the source is read from (see SetLineFile).
+	lineFile string
 }
 
 // NewGalaToGoTranspiler creates a new instance of GalaToGoTranspiler with its dependencies.
@@ -1038,6 +1042,14 @@ func NewGalaToGoTranspiler(
 		transformer: transformer,
 		generator:   generator,
 	}
+}
+
+// SetLineFile sets the file name the generated `//line` directives give the
+// source, which panics and stack traces report. It defaults to the path
+// Transpile is given; a build that keeps host paths out of its binary passes
+// a module-relative one.
+func (t *GalaToGoTranspiler) SetLineFile(name string) {
+	t.lineFile = name
 }
 
 // Transpile executes the full transpilation pipeline.
@@ -1124,7 +1136,11 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// originating file — an empty filePath (e.g. LSP snippet transpilation) has
 	// no source map to point at, so markers are simply not emitted upstream.
 	if filePath != "" {
-		code, err = insertLineDirectivesWithProfiler(code, filePath, prof)
+		lineFile := t.lineFile
+		if lineFile == "" {
+			lineFile = filePath
+		}
+		code, err = insertLineDirectivesWithProfiler(code, lineFile, prof)
 		if err != nil {
 			return "", galaerr.WithFilePath(err, filePath)
 		}
