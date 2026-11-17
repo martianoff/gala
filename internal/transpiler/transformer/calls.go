@@ -2079,6 +2079,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		goParams = goParamList("", goSig)
 	}
 	genericGo := goSig != nil && len(goSig.TypeParams) > 0
+	var namedSpreads map[string]bool // the arguments passed by name that spread
 
 	// lowerSlot lowers v, the argument filling parameter slotIdx of a Go
 	// function or any positional argument, against that parameter.
@@ -2106,7 +2107,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 				prior = make([]ast.Expr, len(goParams.names))
 				copy(prior, positional)
 				for name, e := range named {
-					if j := goParams.slotOf(0, name); j >= 0 {
+					// A spread is a slice, not the element its variadic
+					// parameter is typed by; it binds nothing here.
+					if j := goParams.slotOf(0, name); j >= 0 && !namedSpreads[name] {
 						prior[j] = e
 					}
 				}
@@ -2202,6 +2205,12 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 		if argName != "" {
 			named[argName] = expr
+			if v.spread {
+				if namedSpreads == nil {
+					namedSpreads = make(map[string]bool)
+				}
+				namedSpreads[argName] = true
+			}
 			continue
 		}
 		positional = append(positional, expr)

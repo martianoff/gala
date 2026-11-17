@@ -61,6 +61,13 @@ func goParamList(callee string, sig *transpiler.GoFuncSignature) paramList {
 	return paramList{callee: callee, names: names, variadic: sig.IsVariadic, goDeclared: true}
 }
 
+// namesUnknown reports whether the callee has parameters but names none of
+// them: a Go signature that leaves them unnamed. One that names some is
+// told a wrong name apart from an unknown one.
+func (p paramList) namesUnknown() bool {
+	return len(p.names) > 0 && !slices.ContainsFunc(p.names, func(n string) bool { return n != "" })
+}
+
 // slotOf is the index of the parameter the i-th argument of a call fills,
 // passed by name when name is not "": its own position, as positional
 // arguments come first, or the parameter of its name (-1 for none). Its
@@ -179,7 +186,7 @@ func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs i
 	for _, n := range named {
 		idx := slices.Index(p.names, n.name)
 		switch {
-		case idx < 0 && slices.Contains(p.names, ""):
+		case idx < 0 && p.namesUnknown():
 			return nil, unknownParamNamesError(n.name, p.callee, line, col)
 		case idx < 0:
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", n.name, p.callee))
