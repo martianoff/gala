@@ -240,8 +240,9 @@ galaspec models them, except as listed below):
   is evaluated before translation with Go's own constant arithmetic (`go/constant`, as
   Go's type checker does, so `(1 << 70) >> 68` is 4) and written as its value. What
   Go rejects at compile time is reported (`untyped-constant`, #1237), never wrapped:
-  an integer result outside int64, a division by zero, a negative shift count or one
-  above Go's bound. A name is never a constant: a `val` lowers to a Go variable;
+  an integer result outside int64, an integer of more than 512 bits at any step (the
+  type checker's limit), a division by zero, a negative shift count or one above
+  Go's bound. A name is never a constant: a `val` lowers to a Go variable;
 - interpolated strings `s"..."`, each part printed as `Println` prints it;
 - named arguments and default values: arguments in the order written, then each
   left-out default in parameter order, in the callee's scope; package-level

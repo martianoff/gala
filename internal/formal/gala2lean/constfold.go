@@ -10,19 +10,26 @@ import (
 
 // Constant expressions. An operator tree whose leaves are all literals is a
 // Go untyped constant once transpiled: the transformer writes it as such,
-// and Go evaluates it exactly, on unbounded integers, before it takes a
-// type (#1237). So `(1 << 70) >> 68` is 4, where int64 operations would
-// give 0. Each maximal such tree is evaluated here with Go's own constant
-// arithmetic (go/constant, as Go's type checker does) and written as its
-// value: an int that fits int64, a bool or a string. What Go rejects is
-// reported (untyped-constant), never wrapped: an int result outside int64,
-// which does not compile as an int, and an operation Go refuses on
-// constants (a division by zero, a negative shift count, operands of
-// different kinds). A name is never a constant: a GALA `val` lowers to a Go
-// variable.
+// and Go evaluates it exactly before it takes a type (#1237). So
+// `(1 << 70) >> 68` is 4, where int64 operations would give 0. Each maximal
+// such tree is evaluated here as Go's type checker evaluates it: with
+// go/constant, under the checker's limits, and written as its value: an int
+// that fits int64, a bool or a string. What Go rejects is reported
+// (untyped-constant), never wrapped: an int result outside int64, which
+// does not compile as an int; an integer of more than 512 bits at any step
+// (go/types: "constant overflow"); and an operation Go refuses on constants
+// (a division by zero, a shift count that is negative or above shiftBound,
+// operands of different kinds). A name is never a constant: a GALA `val`
+// lowers to a Go variable.
 
-// shiftBound is the largest constant shift count Go's type checker accepts.
-const shiftBound = 1023 - 1 + 52
+const (
+	// shiftBound is the largest constant shift count Go's type checker
+	// accepts.
+	shiftBound = 1023 - 1 + 52
+	// constBits is the most bits an untyped integer constant may have in Go's
+	// type checker, at every step of its evaluation.
+	constBits = 512
+)
 
 var (
 	constUnaryOps = map[string]token.Token{"-": token.SUB, "+": token.ADD, "^": token.XOR, "!": token.NOT}
@@ -34,59 +41,51 @@ var (
 		"&^": token.AND_NOT, "<<": token.SHL, ">>": token.SHR}
 )
 
-// constTree reports whether e, possibly parenthesized, is an int literal or
-// an operator: an int literal goes through the same int64 check as a fold.
-func constTree(e coreexport.Node) bool {
-	switch e := e.(type) {
-	case *coreexport.Int, *coreexport.Unary, *coreexport.Binary:
-		return true
-	case *coreexport.Paren:
-		return constTree(e.Expr)
+// constValue is the value of e as Go's type checker computes it, nil when e
+// is not built of literals and operators only. An operation Go rejects on
+// such operands does not compile in Go, and is reported. Each node is
+// evaluated once: g.expr asks again for every subtree of a tree that is not
+// a constant.
+func (g *gen) constValue(e coreexport.Node) constant.Value {
+	if v, seen := g.consts[e]; seen {
+		return v
 	}
-	return false
-}
-
-// goConstValue is the value of e as Go's type checker computes it, when e
-// is built of literals and operators only (ok). An operation Go rejects on
-// such operands does not compile in Go, and is reported.
-func goConstValue(e coreexport.Node) (constant.Value, bool) {
+	var v constant.Value
 	switch e := e.(type) {
 	case *coreexport.Int:
-		v := constant.MakeFromLiteral(e.Text, token.INT, 0)
+		v = constant.MakeFromLiteral(e.Text, token.INT, 0)
 		if v.Kind() != constant.Int {
 			unsup(e.Pos, "int-literal")
 		}
-		return v, true
+		v = checkedConst(v, e)
 	case *coreexport.Bool:
-		return constant.MakeBool(e.Value), true
+		v = constant.MakeBool(e.Value)
 	case *coreexport.String:
-		return constant.MakeString(e.Value), true
+		v = constant.MakeString(e.Value)
 	case *coreexport.Paren:
-		return goConstValue(e.Expr)
+		v = g.constValue(e.Expr)
 	case *coreexport.Unary:
-		x, ok := goConstValue(e.Operand)
-		if !ok {
-			return nil, false
+		if x := g.constValue(e.Operand); x != nil {
+			v = checkedConst(unaryConst(e.Op, x), e)
 		}
-		return checkedConst(unaryConst(e.Op, x), e), true
 	case *coreexport.Binary:
-		x, ok := goConstValue(e.Left)
-		if !ok {
-			return nil, false
+		if x := g.constValue(e.Left); x != nil {
+			if y := g.constValue(e.Right); y != nil {
+				v = checkedConst(binaryConst(e.Op, x, y), e)
+			}
 		}
-		y, ok := goConstValue(e.Right)
-		if !ok {
-			return nil, false
-		}
-		return checkedConst(binaryConst(e.Op, x, y), e), true
 	}
-	return nil, false
+	if g.consts == nil {
+		g.consts = map[coreexport.Node]constant.Value{}
+	}
+	g.consts[e] = v
+	return v
 }
 
-// checkedConst is v, the value of operator e, reporting e when Go rejects it
-// (v nil).
+// checkedConst is v, the value of e, reporting e when Go rejects it: v is
+// nil, or an integer of more than constBits bits.
 func checkedConst(v constant.Value, e coreexport.Node) constant.Value {
-	if v == nil {
+	if v == nil || (v.Kind() == constant.Int && constant.BitLen(v) > constBits) {
 		unsup(posOf(e), "untyped-constant")
 	}
 	return v
@@ -148,13 +147,15 @@ func binaryConst(op string, x, y constant.Value) constant.Value {
 }
 
 // constTerm is e written as its value, when e is an int literal or a
-// constant operator tree (ok).
-func constTerm(e coreexport.Node) (term, bool) {
-	if !constTree(e) {
+// constant operator tree (ok). A bool or string literal alone is left to
+// g.expr.
+func (g *gen) constTerm(e coreexport.Node) (term, bool) {
+	switch e.(type) {
+	case *coreexport.Bool, *coreexport.String:
 		return term{}, false
 	}
-	v, ok := goConstValue(e)
-	if !ok {
+	v := g.constValue(e)
+	if v == nil {
 		return term{}, false
 	}
 	switch v.Kind() {

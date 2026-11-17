@@ -2,6 +2,7 @@ package gala2lean
 
 import (
 	"fmt"
+	"go/constant"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -9,6 +10,9 @@ import (
 
 // gen is one translation.
 type gen struct {
+	// consts holds each expression's constant value (constfold.go), nil for
+	// one that is not a constant.
+	consts   map[coreexport.Node]constant.Value
 	structs  map[string]*coreexport.Struct
 	sealeds  map[string]*coreexport.Sealed
 	variants map[string]*variantInfo
