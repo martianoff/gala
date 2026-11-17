@@ -33,7 +33,11 @@ inductive Panic where
   | std
   /-- Not a panic: the run reached a case a model does not cover, `what`, and stops
       there with the outcome `unsupported:what` (galaspec's spelling), which the
-      differential harness counts as unsupported, never as a verdict. -/
+      differential harness counts as unsupported, never as a verdict. It travels in
+      the panic channel, and nothing the translation writes catches a `Panic` (no
+      recover, no catching combinator): any future handler of `Panic` must rethrow
+      `.unsupported` unchanged, or an unsupported run would pass for a recovered
+      panic. -/
   | unsupported (what : String)
   deriving Repr, Inhabited, BEq
 
