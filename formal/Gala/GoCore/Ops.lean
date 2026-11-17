@@ -50,6 +50,12 @@ def Val.materialize : Val → Val
   | v@(.rat ..) => defaultVal v
   | v => v
 
+/-- A typed float constant as the float it denotes, once it is stored or meets a
+    variable; any other value, an untyped constant included, itself. -/
+def Val.materializeTyped : Val → Val
+  | v@(.rat _ (_ + 1) ..) => defaultVal v
+  | v => v
+
 /-- `x << s` and `x >> s` for an integer of kind `k`: `>>` is arithmetic for signed
     integers, logical for unsigned ones; the count may exceed the width (Go spec,
     "Integer operators"). -/

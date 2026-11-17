@@ -520,6 +520,19 @@ def zero (c : Ctx) : Nat → Ty → GM Val
       pure (.array t (Array.replicate k (← zero c n et)))
     | u => unsupported s!"zero-value-{u}"
 
+/-- The numeric constant `x / d` given type `t`, of underlying type `u`: for a float
+    type, a typed constant rounded to the type, ties to even (Go spec, "Constants",
+    "Representability"); for an integer type, the integer it must be. A constant
+    that overflows the type, or is not an integer, is a compile error (stuck). -/
+def constTo (t u : Ty) (x : Int) (d : Nat) : GM Val :=
+  match u with
+  | .float b =>
+    if let some (num, den) := FloatRep.roundRat b x d then pure (.rat t b num den)
+    else stuck s!"constant {x}/{d} overflows {t}"
+  | .int k =>
+    if d == 1 && k.represents x then pure (.int t x) else stuck s!"constant {x}/{d} is not an {k.name}"
+  | _ => stuck s!"cannot use constant {x}/{d} as {t}"
+
 /-- `v` assigned to a variable of type `t` (Go spec, "Assignability", "Representability"):
     an untyped constant takes the type, checked to be representable; a value assigned to
     an interface type keeps its own dynamic type; a value of an identical underlying type
@@ -528,7 +541,7 @@ def convert (c : Ctx) : Nat → Ty → Val → GM Val
   | 0, _, _ => throw .fuel
   | n + 1, t, v => do
     -- A typed float constant stored in a variable is a float.
-    let v := match v with | .rat _ (_ + 1) .. => defaultVal v | v => v
+    let v := v.materializeTyped
     -- A value already of the variable's type: nothing to do (the common case).
     if v.ty == t then return v
     let u ← underlying c n t
@@ -546,18 +559,10 @@ def convert (c : Ctx) : Nat → Ty → Val → GM Val
     | .slice _, .nilIface (.untyped .nil) => pure (.slice t none)
     | _, .slice vt r => if (← underlying c n vt) == u then pure (.slice t r) else stuck s!"cannot use {vt} as {t}"
     | _, .array vt es => if (← underlying c n vt) == u then pure (.array t es) else stuck s!"cannot use {vt} as {t}"
-    -- An untyped numeric constant given a float type: the nearest float, ties to even
-    -- (Go spec, "Representability"); a float constant given an integer type must be
-    -- an integer.
-    -- (A constant that overflows the float type is rejected by Go.)
-    | .float b, .int (.untyped _) x =>
-      if (FloatRep.roundRat b x 1).isNone then stuck s!"constant {x} overflows {t}"
-      pure (.float t (FloatRep.ofRat b x 1))
-    | .float b, .rat _ _ x d =>
-      if (FloatRep.roundRat b x d).isNone then stuck s!"constant {x}/{d} overflows {t}"
-      pure (.float t (FloatRep.ofRat b x d))
-    | .int k, .rat _ _ x d =>
-      if d == 1 && k.represents x then pure (.int t x) else stuck s!"constant {x}/{d} is not an {k.name}"
+    -- An untyped numeric constant given a float type: the nearest float (`constTo`);
+    -- a float constant given an integer type must be an integer.
+    | .float _, .int (.untyped _) x => return (← constTo t u x 1).materialize
+    | .float _, .rat _ _ x d | .int _, .rat _ _ x d => return (← constTo t u x d).materialize
     | _, .float vt x => if (← underlying c n vt) == u then pure (.float t x) else stuck s!"cannot use {vt} as {t}"
     | _, .int vt x => if (← underlying c n vt) == u then pure (.int t x) else stuck s!"cannot use {vt} as {t}"
     | _, .bool _ b => if u == .bool then pure (.bool t b) else stuck s!"cannot use bool as {t}"
@@ -585,16 +590,8 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
     -- "Conversions between numeric types"), not modelled.
     -- A constant converted to a float type is a typed constant, its value rounded to
     -- the type (Go spec, "Conversions": "x is representable by a value of type T").
-    | .float b, .int (.untyped _) x | .float b, .rat _ _ x 1 =>
-      match FloatRep.roundRat b x 1 with
-      | some (num, den) => pure (.rat t b num den)
-      | none => stuck s!"constant {x} overflows {t}"
-    | .float b, .rat _ _ x d =>
-      match FloatRep.roundRat b x d with
-      | some (num, den) => pure (.rat t b num den)
-      | none => stuck s!"constant {x}/{d} overflows {t}"
-    | .int k, .rat _ _ x d =>
-      if d == 1 && k.represents x then pure (.int t x) else stuck s!"constant {x}/{d} is not an {k.name}"
+    | .float _, .int (.untyped _) x => constTo t u x 1
+    | .float _, .rat _ _ x d | .int _, .rat _ _ x d => constTo t u x d
     | .float b, .int _ x => pure (.float t (FloatRep.ofRat b x 1))
     | .float b, .float _ x => pure (.float t (FloatRep.toSize b x))
     | .int k, .float _ x =>
@@ -1228,9 +1225,7 @@ def binary (c : Ctx) : Nat → String → Val → Val → GM Val
       | some (num, den) => return .rat t size num den
       | none => stuck s!"constant overflows {t}"
     -- A typed float constant meeting a variable is a float.
-    let (a, b) := match a, b with
-      | .rat _ (_ + 1) .., _ | _, .rat _ (_ + 1) .. => (defaultVal a, defaultVal b)
-      | _, _ => (a, b)
+    let (a, b) := (a.materializeTyped, b.materializeTyped)
     -- Bring an untyped operand to the other's type (Go spec, "Operators").
     let (a, b) ← match a.ty, b.ty with
       | .untyped _, .untyped _ => pure (a, b)
