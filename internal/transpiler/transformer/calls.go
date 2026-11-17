@@ -1064,19 +1064,27 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 // for the parameters without a default, is GALA-E0082, at the call's anchor.
 func bindMethodArguments(c callSrc, methodMeta *transpiler.MethodMetadata) ([]argSrc, error) {
 	args := c.args.list
-	named := false
+	named, spread := false, false
 	for _, arg := range args {
 		named = named || arg.named()
+		spread = spread || arg.spread()
 	}
 	if methodMeta == nil {
 		return args, nil
 	}
 	line, col := c.anchor().start()
 	params := methodParamList(methodMeta.Name, methodMeta)
+	// A spread fills only the variadic last parameter; a Go method's
+	// positional arguments keep Go's own check.
+	if spread && (named || !methodMeta.GoDeclared) {
+		if err := params.checkSpreads(c.args); err != nil {
+			return nil, err
+		}
+	}
 	if !named {
 		// A spread argument fills an unknown number of parameters, and a Go
 		// method keeps Go's own check (see call_arity.go).
-		if !slices.ContainsFunc(args, argSrc.spread) && !methodMeta.GoDeclared {
+		if !spread && !methodMeta.GoDeclared {
 			if err := params.checkPositional(len(args), line, col); err != nil {
 				return nil, err
 			}
@@ -1621,6 +1629,9 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
+			if v.spread {
+				expectedType = spreadArgType(expectedType)
+			}
 			expr, err := t.lowerArg(v, typedSlot(expectedType), false)
 			if err != nil {
 				return nil, err
@@ -1643,15 +1654,19 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	}
 	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 	al, ac := c.anchor().start()
-	// A Go method keeps Go's own check (see call_arity.go).
-	if len(mNamedArgs) == 0 && !hasSpread && !methodMeta.GoDeclared {
-		if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(len(mArgs),
-			al, ac); err != nil {
+	// A spread fills only the variadic last parameter; a Go method's
+	// positional arguments keep Go's own check (see call_arity.go).
+	if hasSpread && (len(mNamedArgs) > 0 || !methodMeta.GoDeclared) {
+		if err := methodParamList(methodMeta.Name, methodMeta).checkSpreads(c.args); err != nil {
+			return nil, err
+		}
+	} else if len(mNamedArgs) == 0 && !hasSpread && !methodMeta.GoDeclared {
+		if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(len(mArgs), al, ac); err != nil {
 			return nil, err
 		}
 	}
 	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvType, typeSubst, al, ac)
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, hasSpread, methodMeta, recvType, typeSubst, al, ac)
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
 		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, al, ac)
@@ -2051,6 +2066,12 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			namedExpectedType, expErr := t.resolveNamedArgExpectedFuncType(fun, argName, callCtx, argLine, argCol)
 			if expErr != nil {
 				return nil, nil, false, expErr
+			}
+			if v.spread && callCtx.funcMeta != nil {
+				// A named spread fills the variadic parameter with a whole
+				// slice, as a positional one does (expectedArgType). One
+				// naming a field is rejected by handleNamedArgsCall.
+				namedExpectedType = spreadArgType(namedExpectedType)
 			}
 
 			// Concurrency boundary: enforce capture-safety when this named
@@ -2859,18 +2880,25 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// --- Section 6.9: argument count of a GALA function (GALA-E0082) ---
 	// A positional call is checked here; a call with named arguments is
 	// checked as its arguments are laid out (handleNamedArgsFuncCall). A
-	// spread argument fills an unknown number of parameters.
-	if callCtx.funcMeta != nil && len(namedArgs) == 0 && !hasSpread {
-		if err := funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta).checkPositional(len(args),
-			al, ac); err != nil {
-			return nil, err
+	// spread argument fills an unknown number of parameters, and only the
+	// variadic last one.
+	if callCtx.funcMeta != nil {
+		params := funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta)
+		if hasSpread {
+			if err := params.checkSpreads(c.args); err != nil {
+				return nil, err
+			}
+		} else if len(namedArgs) == 0 {
+			if err := params.checkPositional(len(args), al, ac); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
-			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, al, ac)
+			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, hasSpread, callCtx.funcMeta, callCtx.inferredTypeSubst, al, ac)
 			// A result-only type parameter comes from the slot, as for a
 			// positional call (section 12.5), over the arguments in order.
 			if call, ok := expr.(*ast.CallExpr); ok && err == nil {
@@ -2977,6 +3005,17 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	line, col := c.anchor().start()
 	// 1. Extract the type name for struct field lookup.
 	typeName, qualifiedName := extractTypeNameFromExpr(fun)
+	// A field takes one value: no spread fills it, by name as by position
+	// (bindPositionalStructArgs). A callee that names no type is reported
+	// below.
+	for _, a := range c.args.list {
+		if !a.spread() || qualifiedName == "" {
+			continue
+		}
+		if name, _ := a.name(); name != "" {
+			return nil, spreadFieldError(a, name, qualifiedName)
+		}
+	}
 
 	// 2. GALA struct or sealed variant companion? Use qualifiedName so a
 	// Go struct type (e.g., "go_struct_bridge.Cookie") does NOT resolve
@@ -3141,9 +3180,7 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 	bound := maps.Clone(namedArgs)
 	for i, arg := range args[:min(len(args), len(fields))] {
 		if a := list.list[i]; a.spread() {
-			line, col := a.at().start()
-			return nil, galaerr.NewSemanticErrorAt(line, col,
-				fmt.Sprintf("a spread argument cannot fill field %q in construction of %q", fields[i], qualifiedName))
+			return nil, spreadFieldError(a, fields[i], qualifiedName)
 		}
 		if _, twice := bound[fields[i]]; twice {
 			line, col := namedArgPos(list, fields[i])
@@ -3154,6 +3191,14 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 		bound[fields[i]] = arg
 	}
 	return bound, nil
+}
+
+// spreadFieldError reports the spread argument a filling field of the struct
+// qualifiedName, by position or by name: a field takes one value.
+func spreadFieldError(a argSrc, field, qualifiedName string) error {
+	line, col := a.at().start()
+	return galaerr.NewSemanticErrorAt(line, col,
+		fmt.Sprintf("a spread argument cannot fill field %q in construction of %q", field, qualifiedName))
 }
 
 // namedArgPos is the position of the argument naming field in args.
@@ -4514,10 +4559,13 @@ func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpil
 
 // handleNamedArgsFuncCall handles function calls with named arguments and default parameter values.
 // Reorders named args to match parameter order and fills gaps with defaults.
+// spread is whether an argument, positional or named, spreads a slice: it
+// fills the variadic last parameter (checkSpreads), so the call keeps its `...`.
 func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	fun ast.Expr,
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
+	spread bool,
 	funcMeta *transpiler.FunctionMetadata,
 	typeSubst typeSubstMap,
 	line, col int,
@@ -4574,16 +4622,18 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 		}
 	}
 
-	return &ast.CallExpr{Fun: fun, Args: result}, nil
+	return &ast.CallExpr{Fun: fun, Args: result, Ellipsis: ellipsisPos(spread)}, nil
 }
 
 // handleNamedArgsMethodCall handles method calls with named arguments and default parameter values.
 // callSiteReceiver is the actual receiver expression at the call site (e.g., config.Get()).
+// spread is as for handleNamedArgsFuncCall.
 func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	fun ast.Expr,
 	callSiteReceiver ast.Expr,
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
+	spread bool,
 	methodMeta *transpiler.MethodMetadata,
 	recvType transpiler.Type,
 	typeSubst typeSubstMap,
@@ -4631,7 +4681,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 			result[i] = expr
 		}
 	}
-	return &ast.CallExpr{Fun: fun, Args: result}, nil
+	return &ast.CallExpr{Fun: fun, Args: result, Ellipsis: ellipsisPos(spread)}, nil
 }
 
 // fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.

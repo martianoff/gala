@@ -456,6 +456,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "named_args_variadic_spread",
+    src = "named_args_variadic_spread.gala",
+    expected = "named_args_variadic_spread.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "copy_and_equal",
     src = "copy_and_equal.gala",
     expected = "copy_and_equal.out",
