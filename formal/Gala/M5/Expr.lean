@@ -269,12 +269,174 @@ theorem convert_ustr (c : Ctx) (n : Nat) (s : String) (g : St) :
     (convert c (n + 2) .string (.str (.untyped .string) s)).run.run g = (.ok (.str .string s), g) := by
   simp [convert, grun_bind, underlying_string, Val.ty, untyped_beq]; rfl
 
-example (cx : Ctx) (n : Nat) (x y : Int) (g : St) (hr : IntKind.int.represents x = true) :
-    (binary cx (n + 3) "+" (.int (.untyped .int) x) (.int intTy y)).run.run g =
-      (.ok (.int intTy (IntKind.int.wrap (x + y))), g) := by
-  simp [binary, grun_bind, underlying_int, intOp, Val.isFloat, convert_uint _ _ _ _ hr, Val.ty]
-  rfl
+/-- An untyped operand next to a typed one of the same kind is converted first (Go spec,
+    "Operators"), so the operator then runs on two typed values. -/
+theorem binary_uint_left (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
+    (hr : IntKind.int.represents x = true) (hs : (op == "<<" || op == ">>") = false) :
+    (binary cx (n + 3) op (.int (.untyped .int) x) (.int intTy y)).run.run g =
+      (binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g := by
+  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp [convert_uint _ _ _ _ hr, Val.ty, grun_bind]
+
+theorem binary_uint_right (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
+    (hr : IntKind.int.represents y = true) (hs : (op == "<<" || op == ">>") = false) :
+    (binary cx (n + 3) op (.int intTy x) (.int (.untyped .int) y)).run.run g =
+      (binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g := by
+  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp [convert_uint _ _ _ _ hr, Val.ty, grun_bind]
+
+theorem binary_ubool_left (cx : Ctx) (n : Nat) (op : String) (x y : Bool) (g : St)
+    (hs : (op == "<<" || op == ">>") = false) :
+    (binary cx (n + 3) op (.bool (.untyped .bool) x) (.bool .bool y)).run.run g =
+      (binary cx (n + 3) op (.bool .bool x) (.bool .bool y)).run.run g := by
+  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp [convert_ubool, Val.ty, grun_bind]
+
+theorem binary_ubool_right (cx : Ctx) (n : Nat) (op : String) (x y : Bool) (g : St)
+    (hs : (op == "<<" || op == ">>") = false) :
+    (binary cx (n + 3) op (.bool .bool x) (.bool (.untyped .bool) y)).run.run g =
+      (binary cx (n + 3) op (.bool .bool x) (.bool .bool y)).run.run g := by
+  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp [convert_ubool, Val.ty, grun_bind]
+
+theorem binary_ustr_left (cx : Ctx) (n : Nat) (op : String) (x y : String) (g : St)
+    (hs : (op == "<<" || op == ">>") = false) :
+    (binary cx (n + 3) op (.str (.untyped .string) x) (.str .string y)).run.run g =
+      (binary cx (n + 3) op (.str .string x) (.str .string y)).run.run g := by
+  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp [convert_ustr, Val.ty, grun_bind]
+
+theorem binary_ustr_right (cx : Ctx) (n : Nat) (op : String) (x y : String) (g : St)
+    (hs : (op == "<<" || op == ">>") = false) :
+    (binary cx (n + 3) op (.str .string x) (.str (.untyped .string) y)).run.run g =
+      (binary cx (n + 3) op (.str .string x) (.str .string y)).run.run g := by
+  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp [convert_ustr, Val.ty, grun_bind]
+
+/-- A galaspec result and a GoCore run agree: a related value of kind `k`, or the same
+    panic, with GoCore's state unchanged; any other galaspec result claims nothing. -/
+def RRel (k : Kind) (g : St) : Except Spec.Stop Spec.Val → Except Stop Val × St → Prop
+  | .ok v, r => ∃ w, r = (.ok w, g) ∧ VRel v w ∧ valKind v = some k ∧ ¬ UInt w
+  | .error (.panic c m), r => ∃ pv, r = (.error (.panic pv true), g) ∧ PanicRel c m pv
+  | _, _ => True
+
+theorem cmp_lt (x y : Int) : (compare x y == .lt) = decide (x < y) := by
+  by_cases h : x < y
+  · simp [h, Int.compare_eq_lt.mpr h]
+  · have : compare x y ≠ .lt := fun e => h (Int.compare_eq_lt.mp e)
+    simp [h]; exact this
+
+theorem cmp_gt (x y : Int) : (compare x y == .gt) = decide (x > y) := by
+  by_cases h : x > y
+  · simp [h, Int.compare_eq_gt.mpr h]
+  · have : compare x y ≠ .gt := fun e => h (Int.compare_eq_gt.mp e)
+    simp [h]; exact this
+
+theorem cmp_le (x y : Int) : (compare x y != .gt) = decide (x ≤ y) := by
+  have h := cmp_gt x y
+  simp only [bne, h]
+  by_cases hxy : x ≤ y
+  · simp [hxy, Int.not_lt.mpr hxy]
+  · simp [hxy, Int.not_le.mp hxy]
+
+theorem cmp_ge (x y : Int) : (compare x y != .lt) = decide (x ≥ y) := by
+  have h := cmp_lt x y
+  simp only [bne, h]
+  by_cases hxy : x ≥ y
+  · simp [hxy, Int.not_lt.mpr hxy]
+  · simp [hxy, Int.not_le.mp hxy]
+
+theorem intTy_beq : (intTy == intTy) = true := rfl
+
+/-- **Integer operators** on two typed `int`s, against galaspec's. -/
+theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St) (c : Spec.Core)
+    (k : Kind) (hk : binaryKind op .int .int = some k) :
+    RRel k g ((Spec.binop op (.int x) (.int y)).run.run c).1
+      ((binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g) := by
+  have hop : op = "==" ∨ op = "!=" ∨ op = "<" ∨ op = "<=" ∨ op = ">" ∨ op = ">=" ∨
+      op = "+" ∨ op = "-" ∨ op = "*" ∨ op = "/" ∨ op = "%" := by
+    unfold binaryKind at hk; split at hk <;> simp_all
+  rcases hop with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk
+  all_goals simp [Spec.binop, binary, grun_bind, underlying_int, intOp, cmpOp, Val.isFloat, Val.ty,
+    equal, Val.dyn, Ty.isUntyped, intTy_beq, runtimePanic, RRel, Spec.valEq, cmp_lt, cmp_gt,
+    cmp_le, cmp_ge, wrap_eq]
+  all_goals first
+    | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
+    | exact ⟨_, rfl, .int _, rfl, by simp [UInt]⟩
+    | (by_cases hy : y = 0
+       · simp only [hy, ite_true]
+         exact ⟨_, rfl, rfl, .inl rfl⟩
+       · simp only [hy, ite_false]
+         exact ⟨_, rfl, .int _, rfl, by simp [UInt]⟩)
+
+/-- `==` and `!=` on two booleans of one type: Go's `bool`, or two untyped ones (two
+    comparisons' results). -/
+theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool) (g : St)
+    (c : Spec.Core) (k : Kind) (ht : t = .bool ∨ t = .untyped .bool)
+    (hk : binaryKind op .bool .bool = some k) (h1 : op ≠ "&&") (h2 : op ≠ "||") :
+    RRel k g ((Spec.binop op (.bool x) (.bool y)).run.run c).1
+      ((binary cx (n + 3) op (.bool t x) (.bool t y)).run.run g) := by
+  have hop : op = "==" ∨ op = "!=" := by
+    unfold binaryKind at hk; split at hk <;> simp_all
+  rcases hop with rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk <;>
+    rcases ht with rfl | rfl
+  all_goals simp [Spec.binop, binary, grun_bind, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
+    RRel, Spec.valEq]
+  all_goals first
+    | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
+    | (simp [show (Ty.bool == Ty.bool) = true from rfl]; exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩)
+
+/-- `+`, `==` and `!=` on two strings of one type: Go's `string`, or two untyped ones. -/
+theorem binary_str_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : String) (g : St)
+    (c : Spec.Core) (k : Kind) (ht : t = .string ∨ t = .untyped .string)
+    (hk : binaryKind op .str .str = some k) :
+    RRel k g ((Spec.binop op (.str x) (.str y)).run.run c).1
+      ((binary cx (n + 3) op (.str t x) (.str t y)).run.run g) := by
+  have hop : op = "==" ∨ op = "!=" ∨ op = "+" := by
+    unfold binaryKind at hk; split at hk <;> simp_all
+  rcases hop with rfl | rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;>
+    subst hk <;> rcases ht with rfl | rfl
+  all_goals simp [Spec.binop, binary, grun_bind, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
+    RRel, Spec.valEq]
+  all_goals first
+    | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
+    | exact ⟨_, rfl, .str _, rfl, by simp [UInt]⟩
+    | exact ⟨_, rfl, .strU _, rfl, by simp [UInt]⟩
+    | (simp [show (Ty.string == Ty.string) = true from rfl]; exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩)
+
+theorem binaryKind_noshift {op : String} {k₁ k₂ k : Kind} (h : binaryKind op k₁ k₂ = some k) :
+    (op == "<<" || op == ">>") = false := by
+  unfold binaryKind at h
+  split at h <;> simp_all
+
+/-- **Binary operators** other than `&&` and `||`, on related operands: galaspec's result
+    and GoCore's agree. The two operands are not both untyped integers: an expression
+    with no constant operator node never has two (`NoConstOp`). -/
+theorem binary_sim (cx : Ctx) (n : Nat) (op : String) (v₁ v₂ : Spec.Val) (w₁ w₂ : Val)
+    (k₁ k₂ k : Kind) (g : St) (c : Spec.Core) (h1 : VRel v₁ w₁) (h2 : VRel v₂ w₂)
+    (hk1 : valKind v₁ = some k₁) (hk2 : valKind v₂ = some k₂) (hb : binaryKind op k₁ k₂ = some k)
+    (ha : op ≠ "&&") (ho : op ≠ "||") (hnu : ¬ (UInt w₁ ∧ UInt w₂)) :
+    RRel k g ((Spec.binop op v₁ v₂).run.run c).1 ((binary cx (n + 3) op w₁ w₂).run.run g) := by
+  have hs := binaryKind_noshift hb
+  rcases h1 with x | ⟨x, hx⟩ | x | x | x | x <;> rcases h2 with y | ⟨y, hy⟩ | y | y | y | y <;>
+    simp only [valKind, Option.some.injEq] at hk1 hk2 <;> subst hk1 hk2
+  all_goals first
+    | (exfalso; unfold binaryKind at hb; split at hb <;> simp_all; done)
+    | (simp [UInt] at hnu; done)
+    | exact binary_int_typed cx n op x y g c k hb
+    | (rw [binary_uint_left cx n op x y g hx hs]; exact binary_int_typed cx n op x y g c k hb)
+    | (rw [binary_uint_right cx n op x y g hy hs]; exact binary_int_typed cx n op x y g c k hb)
+    | exact binary_bool_same cx n op _ x y g c k (.inl rfl) hb ha ho
+    | exact binary_bool_same cx n op _ x y g c k (.inr rfl) hb ha ho
+    | (rw [binary_ubool_left cx n op x y g hs]; exact binary_bool_same cx n op _ x y g c k (.inl rfl) hb ha ho)
+    | (rw [binary_ubool_right cx n op x y g hs]; exact binary_bool_same cx n op _ x y g c k (.inl rfl) hb ha ho)
+    | exact binary_str_same cx n op _ x y g c k (.inl rfl) hb
+    | exact binary_str_same cx n op _ x y g c k (.inr rfl) hb
+    | (rw [binary_ustr_left cx n op x y g hs]; exact binary_str_same cx n op _ x y g c k (.inl rfl) hb)
+    | (rw [binary_ustr_right cx n op x y g hs]; exact binary_str_same cx n op _ x y g c k (.inl rfl) hb)
 
 end GoCoreRuns
+
 
 end Gala.M5
