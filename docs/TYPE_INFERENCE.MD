@@ -1015,12 +1015,22 @@ used as a value, is inferred as one GALA type built from the Go signature:
   is checked against its Tuple the same way.
 - A lambda or by-name argument passed to a generic Go function whose results
   are still open (`sync.OnceValues`, a `func() (T, error)` parameter of a
-  generic callee) gives one kind with a single trailing value: the value's
-  inferred type decides, `sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))`
-  or `runG(() => (4, nil))` (the trailing `error` types the `nil`), and Go
-  infers the type arguments from it. Mixing kinds there, an early
-  `return (0, nil)`, or an if or match whose branches give different kinds is
-  not checked yet and fails in `go build`.
+  generic callee) is checked the same way, value by value. The first value
+  that fixes an open result (a `Try[V]` fixes `(V, error)`, a Tuple each
+  component it has a type for) decides its type; every later value is checked
+  against it, and a tuple literal is inferred against the Tuple of the results
+  fixed so far, so `runG(() => (4, nil))` is a `Tuple[int, error]` (the
+  slot's `error` types the `nil`). A bare `nil` for a result nothing has fixed
+  waits for a later `return`, the trailing value or a sibling branch to fix
+  it; with none it is GALA-E0067. Go infers the type arguments from the
+  lambda's results. A `Try` value's element must be the result's own type:
+  `Try` has no covariance, so a `Try[*os.File]` value for `(io.Reader, error)`
+  is GALA-E0134 (a Go call that is the whole expression body passes its
+  results through instead).
+- A by-name argument whose type is a function type, named
+  (`type Getter func() (int, error)`) or not, and `nil`, are the function a
+  `func() (A, B)` parameter takes: they are passed as they are, not lifted
+  into a thunk.
 - A Go call passed as the sole argument of a Go function whose parameters take
   its results one for one (`f(g())`, `ResultsOf(r.Read(p))`) passes them as
   they are, and each result binds the callee's type parameter at its position:

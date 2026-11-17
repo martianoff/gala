@@ -34,6 +34,8 @@ func keepAll(s string) Tuple[int, error] = ResultsOf(strconv.Atoi(s))
 
 func runG[T any](f func() (T, error)) Try[T] = f()
 
+func runPair[A any, B any](f func() (A, B)) Tuple[A, B] = f()
+
 ` + body + `
 
 func main() {}
@@ -42,7 +44,7 @@ func main() {}
 
 // goResultsWholeBodyLine is the line the body of goResultsWholeProgram
 // starts on.
-const goResultsWholeBodyLine = 22
+const goResultsWholeBodyLine = 24
 
 // TestGoResultsKeptWhole covers a body Go calls with `(T, error)` results
 // that gives the Tuple of every result, Tuple[T, error], instead of the
@@ -178,6 +180,47 @@ func TestGoResultsKeptWhole(t *testing.T) {
 			absent:   []string{"IsFailure"},
 		},
 		{
+			name:     "an early tuple with nil in a generic Go callee's block lambda",
+			body:     "func early(k int) Try[int] = runG(() => {\n    if (k == 0) { return (0, nil) }\n    ResultsOf(strconv.Atoi(\"2\"))\n})",
+			contains: append([]string{"runG(func() (int, error) {", "std.Tuple[int, error]{"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a match of ResultsOf and a tuple with nil in a generic Go callee's slot",
+			body:     "func arms(k int) Try[int] = runG(() => k match {\n    case 0 => ResultsOf(strconv.Atoi(\"2\"))\n    case _ => (5, nil)\n})",
+			contains: append([]string{"runG(func() (int, error) {", "std.Tuple[int, error]{"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "an if-expression of ResultsOf and a tuple with nil in a generic Go callee's slot",
+			body:     `func pick(c bool) Try[int] = runG(() => if (c) ResultsOf(strconv.Atoi("6")) else (7, nil))`,
+			contains: append([]string{"runG(func() (int, error) {", "std.Tuple[int, error]{"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a by-name if-expression in a generic Go callee's slot",
+			body:     `func pick(c bool) Try[int] = runG(if (c) ResultsOf(strconv.Atoi("6")) else (7, nil))`,
+			contains: append([]string{"runG(func() (int, error) {", "std.Tuple[int, error]{"}, whole...),
+			absent:   []string{"IsFailure"},
+		},
+		{
+			name:     "a block lambda giving Try values in a generic Go callee's slot",
+			body:     "func tries(k int) Try[int] = runG(() => {\n    if (k == 0) { return Failure(failWith(\"zero\")) }\n    Success(k)\n})",
+			contains: []string{"runG(func() (int, error) {", "IsFailure"},
+		},
+		{
+			name:     "a value of a named function type is passed as the function it is",
+			body:     "type Getter func() (int, error)\n\nfunc via(g Getter) int = run(g)",
+			contains: []string{"run(g)"},
+			absent:   []string{"func() (int, error) {"},
+		},
+		{
+			name:     "nil is passed as the function it is",
+			body:     "func none() int = run(nil)",
+			contains: []string{"run(nil)"},
+			absent:   []string{"func() (int, error) {"},
+		},
+		{
 			name:     "a by-name if-expression of two ResultsOf",
 			body:     `func one(c bool) int = run(if (c) ResultsOf(strconv.Atoi("1")) else ResultsOf(strconv.Atoi("2")))`,
 			contains: append([]string{"run(func() (int, error) {"}, whole...),
@@ -287,7 +330,55 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			name: "a call of the function itself next to a Tuple",
 			body: "func down(k int) (int, error) = k match {\n    case 0 => ResultsOf(strconv.Atoi(\"7\"))\n    case _ => down(k - 1)\n}",
 			line: 3, col: 15, mixedAt: 2,
-			want: "a call of the function itself is its Try: `ResultsOf(down(...))` keeps its results as they are",
+			want: "a call of the function itself is its Try: `ResultsOf(down(k - 1))` keeps its results as they are",
+		},
+		{
+			name: "a val bound to a call of the function itself next to a Tuple",
+			body: "func down(k int) (int, error) {\n    if (k == 0) { return ResultsOf(strconv.Atoi(\"7\")) }\n    val r = down(k - 1)\n    r\n}",
+			line: 4, col: 5, mixedAt: 2,
+			want: "`r` holds a call of the function itself, which is its Try: `ResultsOf(down(k - 1))` keeps its results as they are",
+		},
+		{
+			name: "a Try of a concrete type for an interface result",
+			body: "func openIt(p string) Try[*os.File] = Try(os.Open(p))\n\nfunc open(p string) (io.Reader, error) = openIt(p)",
+			line: 3, col: 42,
+			want: "so its value is a Try[io.Reader] (on a failure Go receives the zero value with the error) or a Tuple[io.Reader, error] of the results as they are; this value is of type Try[*os.File]",
+		},
+		{
+			name: "a Try, then a Tuple, in a generic Go callee's block lambda",
+			body: "func mixed(k int) Try[int] = runG(() => {\n    if (k == 0) { return Success(1) }\n    ResultsOf(strconv.Atoi(\"2\"))\n})",
+			line: 3, col: 5, mixedAt: 2,
+			want: "this lambda gives a Tuple[int, error] here but a Try[int] at line",
+		},
+		{
+			name: "a Tuple, then a Try, in a generic Go callee's block lambda",
+			body: "func mixed(k int) Try[int] = runG(() => {\n    if (k == 0) { return ResultsOf(strconv.Atoi(\"2\")) }\n    Success(1)\n})",
+			line: 3, col: 5, mixedAt: 2,
+			want: "this lambda gives a Try[int] here but a Tuple[int, error] at line",
+		},
+		{
+			name: "an if-expression giving a Try and a Tuple in a generic Go callee's slot",
+			body: `func mixed(c bool) Try[int] = runG(() => if (c) Success(1) else ResultsOf(strconv.Atoi("2")))`,
+			line: 1, col: 65, mixedAt: 1, mixedCol: 49,
+			want: "this lambda gives a Tuple[int, error] here but a Try[int] at column 49: a body Go calls with the results (int, error)",
+		},
+		{
+			name: "a match giving a Try and a Tuple in a generic Go callee's slot",
+			body: "func mixed(k int) Try[int] = runG(() => k match {\n    case 0 => ResultsOf(strconv.Atoi(\"2\"))\n    case _ => Success(5)\n})",
+			line: 3, col: 15, mixedAt: 2,
+			want: "this lambda gives a Try[int] here but a Tuple[int, error] at line",
+		},
+		{
+			name: "a by-name if-expression giving a Try and a Tuple in a generic Go callee's slot",
+			body: `func mixed(c bool) Try[int] = runG(if (c) Success(1) else ResultsOf(strconv.Atoi("2")))`,
+			line: 1, col: 59, mixedAt: 1, mixedCol: 43,
+			want: "this argument gives a Tuple[int, error] here but a Try[int] at column 43",
+		},
+		{
+			name: "a plain value in a generic Go callee's slot spells its open result",
+			body: "func five() Try[int] = runG(() => {\n    5\n})",
+			line: 2, col: 5,
+			want: "this lambda gives Go the results (_, error), so its value is a Try[_] (on a failure Go receives the zero value with the error) or a Tuple[_, error] of the results as they are; this value is of type int",
 		},
 		{
 			name: "a lambda giving a plain value",
@@ -342,4 +433,39 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGoResultsOpenNil covers a tuple literal in a slot whose results a
+// generic Go callee leaves open, `func() (A, B)`: an element fixes its result
+// by its own type, but a bare `nil` has none. Another value of the body fixes
+// it — a sibling branch, or a later value of a block lambda — and the `nil`
+// is then typed by it; with no such value it is GALA-E0067 at the `nil`.
+func TestGoResultsOpenNil(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	whole := []string{"_goResult := ", "return _goResult.V1.Get(), _goResult.V2.Get()"}
+	fixed := []struct {
+		name string
+		body string
+	}{
+		{"by a sibling branch", `func pick(c bool) Tuple[int, error] = runPair(() => if (c) (8, nil) else ResultsOf(strconv.Atoi("9")))`},
+		{"by a later value", "func early(k int) Tuple[int, error] = runPair(() => {\n    if (k == 0) { return (0, nil) }\n    ResultsOf(strconv.Atoi(\"2\"))\n})"},
+	}
+	for _, tc := range fixed {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(goResultsWholeProgram(tc.body), "go_results_whole_test.gala")
+			require.NoError(t, err)
+			for _, want := range append([]string{"runPair(func() (int, error) {", "std.NewImmutable[error](nil)"}, whole...) {
+				assert.Contains(t, out, want, "generated:\n%s", out)
+			}
+			assert.NotContains(t, out, "std.Tuple[int, any]", "generated:\n%s", out)
+		})
+	}
+	t.Run("by nothing", func(t *testing.T) {
+		_, err := trans.Transpile(goResultsWholeProgram("func zero() Tuple[int, error] = runPair(() => (0, nil))"), "go_results_whole_test.gala")
+		require.Error(t, err)
+		msg := err.Error()
+		assert.Contains(t, msg, string(galaerr.CodeUninferredTypeArgument))
+		assert.Contains(t, msg, fmt.Sprintf("go_results_whole_test.gala:%d:%d ", goResultsWholeBodyLine, 50))
+		assert.Contains(t, msg, "cannot infer the type of this `nil`: this lambda gives Go the results (_, _), and no other value it gives fixes the result this `nil` fills")
+	})
 }

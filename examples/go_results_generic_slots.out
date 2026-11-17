@@ -1,0 +1,13 @@
+early (0, nil): 0 false
+after the early return: true true
+match, ResultsOf arm: true true
+match, (5, nil) arm: 5 false
+if, (8, nil) first: 8 false
+if, ResultsOf second: true true
+Try values, Failure: 0 true
+Try values, Success: 3 false
+runG if-expression: 6 false
+runG block with early return: 9 false
+runG by-name if-expression: 9223372036854775807 true
+named function type: 12 false
+nil function: no function

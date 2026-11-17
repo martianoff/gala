@@ -259,7 +259,7 @@ func TestGoResultsRejected(t *testing.T) {
 		{
 			name: "a lambda whose value cannot make the results",
 			body: "func bad() int {\n    val get = sync.OnceValues(() => Some(1))\n    0\n}",
-			want: "this lambda is passed where Go expects a function with 2 results, so it must give a Try for `(T, error)`, a Tuple for `(A, B)`, but it gives a value of type std.Option[int]",
+			want: "[SemanticError GALA-E0134] go_results_return_test.gala:26:36 this lambda gives Go the results (_, _), so its value is a Try (for results ending in `error`) or a Tuple[_, _] of the results; this value is of type Option[int]",
 		},
 		{
 			name: "a nested function declaring a Go result list",

@@ -1042,7 +1042,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}
 	if goResults != nil {
-		if b := newGoResultsBody(t.fieldListTypes(goResults), "function "+funcSlot.funcName); b != nil {
+		if b := newGoResultsBody(t.fieldListTypes(goResults), nil, "function "+funcSlot.funcName); b != nil {
 			// A call of the function itself is its own Try (see selfCall).
 			b.selfName = name
 			if receiver != nil && len(receiver.List) == 1 && len(receiver.List[0].Names) == 1 {

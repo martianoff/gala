@@ -127,12 +127,28 @@ func (c callSrc) calleeText() string {
 	if !c.suffix.node.Ok() {
 		return ""
 	}
-	tree := c.post.node.Tree()
-	from, to := tree.Token(c.post.node.StartIndex()), tree.Token(c.suffix.node.StartIndex())
-	if to.Start < from.Start {
+	return c.quoteUpTo(int(c.post.node.Tree().Token(c.suffix.node.StartIndex()).Start))
+}
+
+// text is the source text of the call — its postfix expression up to and
+// including the call suffix — or "" when that is not quotable.
+func (c callSrc) text() string {
+	if !c.suffix.node.Ok() || c.suffix.node.StopIndex() < 0 {
 		return ""
 	}
-	if text := tree.Src[from.Start:to.Start]; quotable(text) {
+	tree, stop := c.post.node.Tree(), c.suffix.node.StopIndex()
+	return c.quoteUpTo(int(tree.Token(stop).Start) + len(tree.Text(stop)))
+}
+
+// quoteUpTo is the source of the call's postfix expression from its start to
+// the byte offset end, or "" when that is not quotable.
+func (c callSrc) quoteUpTo(end int) string {
+	tree := c.post.node.Tree()
+	from := int(tree.Token(c.post.node.StartIndex()).Start)
+	if end < from || end > len(tree.Src) {
+		return ""
+	}
+	if text := tree.Src[from:end]; quotable(text) {
 		return text
 	}
 	return ""

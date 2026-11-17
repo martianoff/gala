@@ -1,0 +1,84 @@
+package main
+
+import (
+    "strconv"
+    "sync"
+    . "martianoff/gala/go_interop"
+)
+
+// A lambda or by-name argument passed to a generic Go function whose results
+// are still open (sync.OnceValues, a generic runner) gives Go its results the
+// same way as anywhere else: each value is a Try or the Tuple of the results,
+// checked one by one, an early `return (v, nil)` included. A value of a named
+// function type and `nil` are passed as the function they are.
+
+val tooBig = "99999999999999999999"
+
+func runG[T any](f func() (T, error)) string {
+    val v, err = f()
+    s"$v ${err != nil}"
+}
+
+type Getter func() (int, error)
+
+func run(f func() (int, error)) string = if (f == nil) "no function" else {
+    val n, err = f()
+    s"$n ${err != nil}"
+}
+
+func get() (int, error) = strconv.Atoi("12")
+
+func earlyNil(k int) func() (int, error) = sync.OnceValues(() => {
+    if (k == 0) {
+        return (0, nil)
+    }
+    ResultsOf(strconv.Atoi(tooBig))
+})
+
+func arms(k int) func() (int, error) = sync.OnceValues(() => k match {
+    case 0 => ResultsOf(strconv.Atoi(tooBig))
+    case _ => (5, nil)
+})
+
+func nilFirst(c bool) func() (int, error) = sync.OnceValues(() => if (c) (8, nil) else ResultsOf(strconv.Atoi(tooBig)))
+
+func tries(k int) func() (int, error) = sync.OnceValues(() => {
+    if (k == 0) {
+        return Failure(strconv.ErrRange)
+    }
+    Success(k)
+})
+
+func show(n int, err error) string = s"${n > 0} ${err != nil}"
+
+func main() {
+    val a, aErr = earlyNil(0)()
+    Println(s"early (0, nil): $a ${aErr != nil}")
+    val b, bErr = earlyNil(1)()
+    Println(s"after the early return: ${show(b, bErr)}")
+    val c, cErr = arms(0)()
+    Println(s"match, ResultsOf arm: ${show(c, cErr)}")
+    val d, dErr = arms(1)()
+    Println(s"match, (5, nil) arm: $d ${dErr != nil}")
+    val e, eErr = nilFirst(true)()
+    Println(s"if, (8, nil) first: $e ${eErr != nil}")
+    val f, fErr = nilFirst(false)()
+    Println(s"if, ResultsOf second: ${show(f, fErr)}")
+    val g, gErr = tries(0)()
+    Println(s"Try values, Failure: $g ${gErr != nil}")
+    val h, hErr = tries(3)()
+    Println(s"Try values, Success: $h ${hErr != nil}")
+    val flag = true
+    Println(s"runG if-expression: ${runG(() => if (flag) ResultsOf(strconv.Atoi("6")) else (7, nil))}")
+    val early = runG(() => {
+        if (flag) {
+            return (9, nil)
+        }
+        ResultsOf(strconv.Atoi("3"))
+    })
+    Println(s"runG block with early return: $early")
+    Println(s"runG by-name if-expression: ${runG(if (flag) ResultsOf(strconv.Atoi(tooBig)) else (7, nil))}")
+    val getter Getter = get
+    Println(s"named function type: ${run(getter)}")
+    Println(s"nil function: ${run(nil)}")
+}

@@ -4886,7 +4886,12 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// A by-name argument where Go expects a `func() (A, B, ...)` is that
 	// thunk's one value: each value it gives — each branch of an if or match —
 	// is checked as a Go-results body's (see lowerGoResultsValue).
+	// A `nil` is no such value but the function itself, typed as the slot.
 	byName := t.byNameGoResults(funcSlot)
+	nilFunc := byName != nil && e.isNil()
+	if nilFunc {
+		byName = nil
+	}
 	s.goResults = byName
 
 	// Check mode: an if-expression or match lowers its branches against the
@@ -4894,6 +4899,9 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	expr, err := t.lowerAgainst(e, s, strict)
 	if err != nil {
 		return nil, err
+	}
+	if nilFunc && !s.open {
+		t.typeNilAs(expr, s.typ)
 	}
 
 	// Lift bare T value to Immutable[T] when the expected param type is
@@ -4971,13 +4979,18 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 			return withLead(thunk, mark), true
 		}
 	}
-	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
+	// A value of a named function type (`type Getter func() int`) is one too.
+	if t.resolveTranspilerTypeAsFuncType(exprType) != nil {
 		return expr, false
 	}
 
 	// Several results: the expression is their one GALA value, spread over
-	// them as a lambda's is (see spreadLambdaGoResults).
+	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
+	// left untyped (an open one) is the function, as no Try or Tuple is nil.
 	if len(ft.Results) > 1 {
+		if isNilIdent(expr) {
+			return expr, false
+		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
 	}
 
@@ -5395,6 +5408,12 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		paramType := paramTypes[pi]
 		if a.spread {
 			paramType = spreadArgType(paramType)
+		}
+		// An if or match passed where Go expects a `func() (A, B)` is the
+		// thunk's value, lowered branch by branch against the slot (see
+		// byNameGoResults); lowered on its own, its value types nothing.
+		if isGoResultsThunkSlot(paramType) && t.needsExpectedType(a.expr) {
+			continue
 		}
 		expr, err := t.lowerExpr(a.expr)
 		if err != nil {

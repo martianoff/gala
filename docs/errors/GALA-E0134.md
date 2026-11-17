@@ -11,23 +11,21 @@ become those results. Its body gives one of two values:
   an error included.
 
 A value of another type is this error — a `Try` or `Tuple` whose element
-types the results cannot hold among them — and so is a body that gives a
-`Try` in one place and the `Tuple` in another. A result list without an
-`error`, such as `(int, int)`, has one value, the `Tuple` of its results, and
-a value of another type is this error too. Each value is checked where it is
-written (a `return`, the trailing value, each `if` branch and `match` arm),
-and the same holds for a lambda or an argument passed where Go expects a
-`func() (T, error)` whose results are all known. For a lambda or by-name
-argument passed to a generic Go function whose results are still open
-(`sync.OnceValues`, a `func() (T, error)` parameter of a generic callee),
-give one kind with a single trailing value —
-`sync.OnceValues(() => ResultsOf(strconv.Atoi(s)))`, `runG(() => (4, nil))`:
-mixing kinds there, an early `return (0, nil)`, or branches of different
-kinds is not checked yet and fails in `go build`.
+types the results cannot hold among them, or a `Try` of another element
+type (`Try` has no covariance: a `Try[*os.File]` is no `Try[io.Reader]`) —
+and so is a body that gives a `Try` in one place and the `Tuple` in another.
+A result list without an `error`, such as `(int, int)`, has one value, the
+`Tuple` of its results, and a value of another type is this error too. Each
+value is checked where it is written (a `return`, the trailing value, each
+`if` branch and `match` arm), and the same holds for a lambda or an argument
+passed where Go expects a `func() (T, error)`. That includes a generic Go
+function whose results are still open (`sync.OnceValues`, a
+`func() (T, error)` parameter of a generic callee): the first value fixes
+the open results, and the other values are checked against them.
 
 A call of the function itself is its `Try`, like any call of it: in a body
 that gives the `Tuple`, write it `ResultsOf(down(k - 1))`, and the hint says
-so.
+so, also for a `val` bound to such a call.
 
 **Minimal repro.**
 
@@ -98,8 +96,7 @@ func main() {
 ```
 
 A body gives one kind of value: `return Success(0)` in a body that ends in
-`ResultsOf(...)` is this error too. In a function or method, or a lambda
-passed to a non-generic Go function type, write the early return as a tuple,
+`ResultsOf(...)` is this error too. Write the early return as a tuple,
 `return (0, io.EOF)`.
 
 **Rationale.** The body is lowered to Go against the value the results make,

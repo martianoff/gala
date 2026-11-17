@@ -754,18 +754,16 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.Expr, error) {
 	untyped := transpiler.IsUnusable(s.typ)
 	// A result value of a Go-results body is checked where it is written:
-	// each branch of an if or match lowered against the slot is one. With no
-	// slot type (a generic Go callee's), the whole value is.
-	if s.goResults != nil {
-		if f := t.classifyExpr(e); untyped || (!f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok()) {
-			return t.lowerGoResultsValue(e, s, strict)
-		}
-	}
-	if untyped && s.hoist == "" {
+	// each branch of an if or match lowered against the slot is one, with a
+	// slot type or without one (a generic Go callee's).
+	if untyped && s.goResults == nil && s.hoist == "" {
 		return t.lowerExpr(e)
 	}
 	f := t.classifyExpr(e)
-	if untyped && !t.hoistableForm(f) {
+	if s.goResults != nil && !f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok() {
+		return t.lowerGoResultsValue(e, s, strict)
+	}
+	if untyped && s.goResults == nil && !t.hoistableForm(f) {
 		return t.lowerExpr(e)
 	}
 	if e.node.Ok() {

@@ -676,7 +676,7 @@ func (t *galaASTTransformer) lowerBlockTail(b blockSrc, dst []ast.Stmt, st stmtS
 	// a slot of that type like any other result value.
 	if slotBody && t.returnSlot.fillable &&
 		transpiler.IsUnusable(lastValueExpected.typ) && !transpiler.IsUnusable(t.returnSlot.typ) {
-		lastValueExpected = typedSlot(t.returnSlot.typ)
+		lastValueExpected = t.resultSlot(t.returnSlot.typ)
 	}
 	ifS := st.ifStmt()
 	if bs, ok := t.lowerLoopControl(value); ok {
@@ -725,7 +725,17 @@ func (t *galaASTTransformer) lowerBlockTail(b blockSrc, dst []ast.Stmt, st stmtS
 		}
 	} else if fillsPendingSlot {
 		if err = t.checkForbiddenStatementKeywordSrc(value); err == nil {
-			stmt = &ast.ExprStmt{X: t.lowerFillingValue(value, false)}
+			var expr ast.Expr
+			if expr, err = t.lowerFillingValue(value, false); err == nil {
+				stmt = &ast.ExprStmt{X: expr}
+			}
+		}
+	} else if lastValueExpected.goResults != nil && value.ok() {
+		// A value of a Go-results body whose slot has no type yet (a branch
+		// in a generic Go callee's slot) is checked all the same.
+		var expr ast.Expr
+		if expr, err = t.lowerResultAgainst(value, lastValueExpected, true); err == nil {
+			stmt = &ast.ExprStmt{X: expr}
 		}
 	} else {
 		stmt, pre, err = t.lowerStatement(st)
