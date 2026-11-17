@@ -55,19 +55,109 @@ func importNames(imp *coreexport.Import) []string {
 // package-level value or declaration hides it.
 func (g *gen) goPackage(q coreexport.Node, goPath string, sc *scope) bool {
 	n, ok := q.(*coreexport.Name)
-	if !ok || sc.lookup(n.Name) != nil || g.globalBy[n.Name] != nil || g.declared(n.Name) {
-		return false
-	}
-	paths := g.importPaths[n.Name]
-	if len(paths) == 0 {
-		return false
-	}
-	for _, p := range paths {
-		if p != goPath {
-			return false
+	return ok && n.Name == goPackageName(goPath) && sc.lookup(n.Name) == nil
+}
+
+// goPackagePrefix starts the name a qualifier of a modelled Go package is
+// renamed to (qualifyGoImports). GALA rejects a declaration whose name
+// starts with _gala_ (GALA-E0097), so no declaration or local has it.
+const goPackagePrefix = "_gala_go_"
+
+// goPackageName is the name a qualifier of Go's package path is renamed to:
+// the path with `_` written `_u` and `/` written `_s`, so different paths
+// never share a name.
+func goPackageName(path string) string {
+	return goPackagePrefix + strings.NewReplacer("_", "_u", "/", "_s").Replace(path)
+}
+
+// goModelled reports whether Go's package path has a function modelled here.
+func goModelled(path string) bool {
+	_, ok := goFuncs[path]
+	return ok || path == "fmt"
+}
+
+// qualifyGoImports is p with, in each file, every qualifier `q` of a select
+// `q.F` renamed to goPackageName(path) where the file imports Go's package
+// path, one modelled here, as q, and nothing else as q: imports resolve per
+// file, in GALA as in Go. A file where q is also bound (a val, var,
+// parameter, receiver or pattern binder), or where the program declares q,
+// keeps its references: a local `strings` is never taken for the package.
+// So a renaming only ever lets a call of a modelled function translate in a
+// file that imports its package.
+func qualifyGoImports(p *coreexport.Program) *coreexport.Program {
+	declared := map[string]bool{}
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			for _, x := range append(declNames(d), globalNames(d)...) {
+				declared[x] = true
+			}
 		}
 	}
-	return true
+	out := *p
+	out.Files = make([]*coreexport.File, len(p.Files))
+	for i, f := range p.Files {
+		paths := map[string][]string{}
+		for _, d := range f.Decls {
+			if imp, ok := d.(*coreexport.Import); ok {
+				for _, name := range importNames(imp) {
+					paths[name] = append(paths[name], imp.Path)
+				}
+			}
+		}
+		bound := binderNames(f)
+		rename := map[string]string{}
+		for q, ps := range paths {
+			if len(ps) == 1 && goModelled(ps[0]) && !bound[q] && !declared[q] {
+				rename[q] = goPackageName(ps[0])
+			}
+		}
+		if len(rename) == 0 {
+			out.Files[i] = f
+			continue
+		}
+		var walk func(n coreexport.Node) coreexport.Node
+		walk = func(n coreexport.Node) coreexport.Node {
+			c := mapChildren(n, walk)
+			if s, ok := c.(*coreexport.Select); ok {
+				if t, ok := s.Target.(*coreexport.Name); ok && rename[t.Name] != "" {
+					nt := *t
+					nt.Name = rename[t.Name]
+					s.Target = &nt
+				}
+			}
+			return c
+		}
+		out.Files[i] = walk(f).(*coreexport.File)
+	}
+	return &out
+}
+
+// binderNames are the names file f binds anywhere: its vals and vars,
+// parameters, receivers and pattern binders.
+func binderNames(f *coreexport.File) map[string]bool {
+	bound := map[string]bool{}
+	var visit func(n coreexport.Node)
+	visit = func(n coreexport.Node) {
+		switch n := n.(type) {
+		case *coreexport.Val:
+			for _, x := range n.Names {
+				bound[x] = true
+			}
+		case *coreexport.Var:
+			for _, x := range n.Names {
+				bound[x] = true
+			}
+		case *coreexport.Param:
+			bound[n.Name] = true
+		case *coreexport.Receiver:
+			bound[n.Name] = true
+		case *coreexport.PatName:
+			bound[n.Name] = true
+		}
+		walkChildren(n, visit)
+	}
+	visit(f)
+	return bound
 }
 
 // goFunc is a function of Go's standard library the prelude models: its

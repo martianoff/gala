@@ -162,7 +162,7 @@ func hideLibNames(p *coreexport.Program) *coreexport.Program {
 }
 
 // unhider writes a renamed name as the source has it.
-var unhider = strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "")
+var unhider = strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "", goPackagePrefix, "")
 
 // unhide is text with every renamed name written as the source has it.
 func unhide(text string) string {
