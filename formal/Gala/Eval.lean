@@ -41,6 +41,7 @@
 -/
 import Gala.Scope
 import Gala.Print
+import Gala.Const
 
 namespace Gala.Spec
 
@@ -965,18 +966,20 @@ def initGlobals (ds : Decls) (d : Nat) (gs : List GlobalDecl) : M Unit := do
       done := done ++ g.names
 
 
+/-- `collect`'s step: one top-level declaration added. -/
+def collectDecl : Decls × List GlobalDecl → Decl → Decls × List GlobalDecl
+  | (ds, gs), .func f => ({ ds with funcs := ds.funcs ++ [(f.name, f)] }, gs)
+  | (ds, gs), .struct_ n sh fs =>
+    ({ ds with structs := ds.structs ++ [(n, fs)],
+               shorthands := if sh then ds.shorthands ++ [n] else ds.shorthands }, gs)
+  | (ds, gs), .sealed n vs => ({ ds with sealeds := ds.sealeds ++ [(n, vs)] }, gs)
+  | (ds, gs), .global m ns dz t vs => (ds, gs ++ [⟨m == Mut.var, ns, dz, t, vs⟩])
+  | (ds, gs), .unsupported k => ({ ds with unsupported := ds.unsupported ++ [k] }, gs)
+
 /-- The declarations of a program, and its package-level variables in source order. -/
 def collect (p : Program) : Decls × List GlobalDecl :=
   p.files.foldl (init := ({ funcs := [], structs := [], shorthands := [], sealeds := [], unsupported := [] }, []))
-    fun acc file => file.decls.foldl (init := acc) fun (ds, gs) d => match d with
-      | .func f => ({ ds with funcs := ds.funcs ++ [(f.name, f)] }, gs)
-      | .struct_ n sh fs => ({ ds with structs := ds.structs ++ [(n, fs)],
-                                        shorthands := if sh then ds.shorthands ++ [n] else ds.shorthands }, gs)
-      | .sealed n vs => ({ ds with sealeds := ds.sealeds ++ [(n, vs)] }, gs)
-      | .global m ns dz t vs =>
-        let g : GlobalDecl := ⟨m == Mut.var, ns, dz, t, vs⟩
-        (ds, gs ++ [g])
-      | .unsupported k => ({ ds with unsupported := ds.unsupported ++ [k] }, gs)
+    fun acc file => file.decls.foldl collectDecl acc
 
 /-- Run a program: initialize its package-level variables, then call `main`. -/
 def runM (p : Program) (fuel : Nat) : M Unit := do
@@ -991,9 +994,10 @@ def runM (p : Program) (fuel : Nat) : M Unit := do
   | some f => discard (callFunc ds fuel f [])
   | none => unsup "no-main"
 
-/-- The meaning of a program with `fuel` steps: what it prints, and how it ends. -/
+/-- The meaning of a program with `fuel` steps: what it prints, and how it ends. Its constant
+    expressions are evaluated first, at compile time, as Go does (`Gala/Const.lean`). -/
 def run (p : Program) (fuel : Nat) : Outcome × String :=
-  let (r, s) := (runM p fuel).run.run { locals := [], globals := [], out := "", steps := fuel }
+  let (r, s) := (runM (foldConstants p) fuel).run.run { locals := [], globals := [], out := "", steps := fuel }
   let o := match r with
     | .ok () => .ok
     | .error (.panic c m) => .panic c m

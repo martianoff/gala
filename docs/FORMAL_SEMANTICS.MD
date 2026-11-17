@@ -836,6 +836,7 @@ maintainer decision before the spec can encode it.
 | Identifiers starting with `_gala_` | **Reserved** for generated code: a compile-time error | [#1002](https://github.com/martianoff/gala/issues/1002) |
 | How plain structs print under `Println` and interpolation | **Like sealed values and Scala case classes:** `Pt(1, 2.5)`; collections by contents, nested values recursively; a user `String()` wins | [#1008](https://github.com/martianoff/gala/issues/1008) |
 | `if (c) 1 else 2.5` with no declared type | **An error** naming the int vs float64 mismatch, as `match` does (no implicit numeric conversion) | [#1008](https://github.com/martianoff/gala/issues/1008) |
+| Arithmetic on literals only, `(1 << 70) >> 68` | **Go's untyped constants:** evaluated exactly, at compile time; only the result takes a type, where Go gives it one, and a value that does not fit it is a compile-time error, never wrapped. galaspec folds such expressions before it runs a program (`formal/Gala/Const.lean`) | [#1237](https://github.com/martianoff/gala/issues/1237) |
 | `%` inside `s"..."` | **Literal text.** Format specs exist only in `f"..."`, as in Scala | — |
 | Lambda capture | **By reference**, as in Go, Scala and Kotlin: later assignments to a captured `var` are visible inside the lambda, and the lambda's assignments are visible outside | — |
 | `std.Iterable` | **Self-typed** `Iterable[T, C]`: collection-returning methods return `C`, so `Array[T]` implements `Iterable[T, Array[T]]` | [#1011](https://github.com/martianoff/gala/issues/1011) |

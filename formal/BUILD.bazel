@@ -90,6 +90,8 @@ REQUIRED_THEOREMS = [
 # The interpreter: what galaspec and its tests link.
 GALASPEC_SRCS = [
     "Gala/Syntax.lean",
+    "Gala/Exact.lean",
+    "Gala/Const.lean",
     "Gala/Json.lean",
     "Gala/Scope.lean",
     "Gala/Print.lean",
@@ -129,6 +131,7 @@ GALA_SRCS = [
     "Gala/AlphaStep.lean",
     "Gala/MatchLower.lean",
     "Gala/AlphaEval.lean",
+    "Gala/AlphaConst.lean",
     "Gala/AlphaProg.lean",
     "Gala/Statements.lean",
     "Gala.lean",

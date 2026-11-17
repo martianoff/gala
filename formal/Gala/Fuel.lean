@@ -347,13 +347,13 @@ theorem run_fuel_adequate (p : Program) (n m : Nat) (h : n ≤ m) (hn : (run p n
     simp only [shift]; congr; omega
   unfold run at hn ⊢
   rw [hs]
-  rcases hr : (runM p n).run.run { locals := [], globals := [], out := "", steps := n } with ⟨r, t⟩
+  rcases hr : (runM (foldConstants p) n).run.run { locals := [], globals := [], out := "", steps := n } with ⟨r, t⟩
   rw [hr] at hn
   have hnf : NotFuel r := by
     cases r with
     | ok => trivial
     | error e => cases e <;> first | trivial | exact hn rfl
-  rw [(runM_sim p (m - n) n m h).prop _ (by rw [hr]; exact hnf), hr]
+  rw [(runM_sim (foldConstants p) (m - n) n m h).prop _ (by rw [hr]; exact hnf), hr]
   rfl
 
 end Gala.Spec
