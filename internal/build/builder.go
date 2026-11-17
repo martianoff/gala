@@ -21,6 +21,7 @@ import (
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/depman/version"
+	"martianoff/gala/internal/stdlib"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -1361,8 +1362,9 @@ func (b *Builder) verifyNoSelfImports() error {
 
 // MinGoVersion is the oldest Go toolchain GALA supports on PATH: the version
 // the installers check for and the documentation states. It is a release
-// number without the "go" prefix.
-const MinGoVersion = "1.25"
+// number without the "go" prefix, and the go line of the go.mod files GALA
+// generates.
+const MinGoVersion = stdlib.GoVersion
 
 // ensureGoToolchain verifies that the Go toolchain is available on PATH.
 // Pre-built GALA binaries depend on `go build` to finish the compilation pipeline,

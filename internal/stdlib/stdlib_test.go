@@ -14,3 +14,11 @@ func TestGoVersionCoversGenericAliases(t *testing.T) {
 	require.GreaterOrEqual(t, goversion.Compare("go"+GoVersion, "go1.24"), 0, GoVersion)
 	require.Contains(t, generatePackageGoMod("std", PackageImportPaths["std"]), "\ngo "+GoVersion+"\n")
 }
+
+// TestGoVersionIsNoOlderThanSupportedGo: GALA supports no Go older than 1.25,
+// and the go line GoVersion writes into the build workspace's go.mod picks the
+// GODEBUG defaults of every program it builds. A go line older than the
+// supported Go would run those programs with an older release's settings.
+func TestGoVersionIsNoOlderThanSupportedGo(t *testing.T) {
+	require.GreaterOrEqual(t, goversion.Compare("go"+GoVersion, "go1.25"), 0, GoVersion)
+}

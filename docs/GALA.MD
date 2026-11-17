@@ -1072,8 +1072,8 @@ func main() {
 ```
 
 A generic alias transpiles to a Go generic alias
-(`type Conv[A any, B any] = func(A) B`), which Go accepts from 1.24 on, so the
-`go.mod` files `gala build` generates declare `go 1.24`.
+(`type Conv[A any, B any] = func(A) B`), which Go accepts from 1.24 on. The
+`go.mod` files `gala build` generates declare `go 1.25`, the oldest Go GALA supports.
 
 #### Generic aliases
 
