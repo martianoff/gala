@@ -489,28 +489,33 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 func TestGoCallNotPassedThrough(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
 	cases := []struct {
-		name string
-		body string
-		want string
+		name      string
+		body      string
+		line, col int
+		want      string
 	}{
 		{
 			name: "a block body's trailing value",
 			body: "func open(p string) (io.Reader, error) {\n    os.Open(p)\n}",
+			line: 2, col: 5,
 			want: "`os.Open(...)` can fail, so it produces `Try[*os.File]`; `Try[io.Reader]` is expected here",
 		},
 		{
 			name: "a block lambda's trailing value",
 			body: "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => {\n    os.Open(p)\n})",
+			line: 4, col: 5,
 			want: "`Try[io.Reader]` is expected here",
 		},
 		{
 			name: "a branch of an expression body",
 			body: "func open(p string) (io.Reader, error) = if (p == \"\") os.Open(\"x\") else os.Open(p)",
+			line: 1, col: 55,
 			want: "`Try[io.Reader]` is expected here",
 		},
 		{
 			name: "a comma-ok call as an expression body",
 			body: "func env(k string) (string, error) = os.LookupEnv(k)",
+			line: 1, col: 38,
 			want: "`os.LookupEnv(...)` returns 2 values, so it produces `Tuple[string, bool]`",
 		},
 	}
@@ -519,6 +524,7 @@ func TestGoCallNotPassedThrough(t *testing.T) {
 			_, err := trans.Transpile(goResultsWholeProgram(tc.body), "go_results_whole_test.gala")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), string(galaerr.CodeGoCallResultAsValue))
+			assert.Contains(t, err.Error(), fmt.Sprintf("go_results_whole_test.gala:%d:%d ", goResultsWholeBodyLine+tc.line-1, tc.col-1))
 			assert.Contains(t, err.Error(), tc.want)
 		})
 	}

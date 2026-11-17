@@ -384,10 +384,11 @@ type goResultsBody struct {
 	valueAt, wholeAt srcNode
 	valueSelf        string
 	// body is where an expression body is written (`= expr`, `() => expr`,
-	// a by-name argument); zero for a block body. A Go call with one result
-	// per Go result written there is returned as it is (see
-	// returnGoResults), so its Try is exempt from notCovariant and from the
-	// check against the body's own Try (see passesThrough).
+	// a by-name argument); zero for a block body. A Go call written there
+	// with one result per Go result, its last an `error` exactly when theirs
+	// is, is returned as it is (see returnGoResults), so its Try is exempt
+	// from notCovariant and from the check against the body's own Try (see
+	// passesThrough).
 	body srcNode
 }
 
@@ -668,8 +669,9 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 }
 
 // passesThrough reports whether expr, a result value of the body b follows
-// written at at, is a Go call with one result per Go result written as b's
-// expression body. It is returned as it is (see returnGoResults), as Go's
+// written at at, is a Go call written as b's expression body with one result
+// per Go result, its last an `error` exactly when theirs is (see
+// goCallWithResults). It is returned as it is (see returnGoResults), as Go's
 // `return os.Open(p)` is, so each of its results need only be assignable to
 // its Go result.
 func (t *galaASTTransformer) passesThrough(b *goResultsBody, expr ast.Expr, at srcNode) bool {
