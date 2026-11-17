@@ -34,7 +34,6 @@
 import Gala.M5.SpecPure
 import Gala.GoCore.Eval
 
-set_option linter.unusedSimpArgs false
 
 namespace Gala.M5
 
@@ -170,19 +169,19 @@ theorem evalExpr_paren (c : Ctx) (n : Nat) (env : Env) (x : Expr) :
 
 theorem evalExpr_unary (c : Ctx) (n : Nat) (env : Env) (op : String) (x : Expr) (h : op ≠ "&") :
     evalExpr c (n + 1) env (.unary op x) = (do unary c n op (← evalExpr c n env x)) := by
-  simp [evalExpr, h]
+  simp [evalExpr]
 
 theorem evalExpr_binary (c : Ctx) (n : Nat) (env : Env) (op : String) (x y : Expr)
     (h1 : op ≠ "&&") (h2 : op ≠ "||") :
     evalExpr c (n + 1) env (.binary op x y) =
       (do let a ← evalExpr c n env x; let b ← evalExpr c n env y; binary c n op a b) := by
-  simp [evalExpr, h1, h2]
+  simp [evalExpr]
 
 theorem evalExpr_local (c : Ctx) (n : Nat) (env : Env) (x : String) (cell : Nat) (w : Val)
     (g : St) (hl : env.lookup x = some cell) (hw : g.cells[cell]? = some w)
     (hp : ∀ what, w ≠ .poison what) (hx : x ≠ "_") :
     (evalExpr c (n + 1) env (.ident x)).run.run g = (.ok w, g) := by
-  simp [evalExpr, hl, loadCell, hx]
+  simp [evalExpr, hl, loadCell]
   show (match g.cells[cell]? with
     | some (.poison what) => (throw (Stop.unsupported what) : GM Val)
     | some v => pure v
@@ -267,42 +266,42 @@ theorem binary_uint_left (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     (hr : IntKind.int.represents x = true) (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.int (.untyped .int) x) (.int intTy y)).run.run g =
       (binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g := by
-  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp only [binary, Val.isFloat, Bool.or_false, hs]
   simp [convert_uint _ _ _ _ hr, Val.ty, grun_bind]
 
 theorem binary_uint_right (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     (hr : IntKind.int.represents y = true) (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.int intTy x) (.int (.untyped .int) y)).run.run g =
       (binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g := by
-  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp only [binary, Val.isFloat, Bool.or_false, hs]
   simp [convert_uint _ _ _ _ hr, Val.ty, grun_bind]
 
 theorem binary_ubool_left (cx : Ctx) (n : Nat) (op : String) (x y : Bool) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.bool (.untyped .bool) x) (.bool .bool y)).run.run g =
       (binary cx (n + 3) op (.bool .bool x) (.bool .bool y)).run.run g := by
-  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp only [binary, Val.isFloat, Bool.or_false, hs]
   simp [convert_ubool, Val.ty, grun_bind]
 
 theorem binary_ubool_right (cx : Ctx) (n : Nat) (op : String) (x y : Bool) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.bool .bool x) (.bool (.untyped .bool) y)).run.run g =
       (binary cx (n + 3) op (.bool .bool x) (.bool .bool y)).run.run g := by
-  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp only [binary, Val.isFloat, Bool.or_false, hs]
   simp [convert_ubool, Val.ty, grun_bind]
 
 theorem binary_ustr_left (cx : Ctx) (n : Nat) (op : String) (x y : String) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.str (.untyped .string) x) (.str .string y)).run.run g =
       (binary cx (n + 3) op (.str .string x) (.str .string y)).run.run g := by
-  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp only [binary, Val.isFloat, Bool.or_false, hs]
   simp [convert_ustr, Val.ty, grun_bind]
 
 theorem binary_ustr_right (cx : Ctx) (n : Nat) (op : String) (x y : String) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.str .string x) (.str (.untyped .string) y)).run.run g =
       (binary cx (n + 3) op (.str .string x) (.str .string y)).run.run g := by
-  simp only [binary, grun_bind, Val.isFloat, Bool.or_false, hs]
+  simp only [binary, Val.isFloat, Bool.or_false, hs]
   simp [convert_ustr, Val.ty, grun_bind]
 
 /-- A galaspec result and a GoCore run agree: a related value of kind `k`, or the same
@@ -373,7 +372,7 @@ theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool
     unfold binaryKind at hk; split at hk <;> simp_all
   rcases hop with rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk <;>
     rcases ht with rfl | rfl
-  all_goals simp [Spec.binop, binary, grun_bind, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
+  all_goals simp [Spec.binop, binary, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
     RRel, Spec.valEq]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
@@ -389,7 +388,7 @@ theorem binary_str_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Strin
     unfold binaryKind at hk; split at hk <;> simp_all
   rcases hop with rfl | rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;>
     subst hk <;> rcases ht with rfl | rfl
-  all_goals simp [Spec.binop, binary, grun_bind, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
+  all_goals simp [Spec.binop, binary, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
     RRel, Spec.valEq]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
@@ -423,11 +422,11 @@ theorem evalExpr_predeclared (c : Ctx) (n : Nat) (env : Env) (b : Bool) (g : St)
   cases b
   · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp "false" (by simp)
     simp only [Std.HashMap.get?_eq_getElem?] at hpk hobj
-    simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj, grun_bind]
+    simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj]
     rfl
   · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp "true" (by simp)
     simp only [Std.HashMap.get?_eq_getElem?] at hpk hobj
-    simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj, grun_bind]
+    simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj]
     rfl
 
 theorem binaryKind_noshift {op : String} {k₁ k₂ k : Kind} (h : binaryKind op k₁ k₂ = some k) :
