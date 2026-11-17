@@ -87,8 +87,7 @@ func posOf(n coreexport.Node) coreexport.Pos {
 // compile in Go, except 2^63 under a unary minus, which wraps to the same
 // value Go gives -2^63.
 func intLit(n *coreexport.Int) string {
-	t := strings.ReplaceAll(strings.ToLower(n.Text), "_", "")
-	v, ok := new(big.Int).SetString(t, 0)
+	v, ok := new(big.Int).SetString(normalizedIntText(n.Text), 0)
 	if !ok {
 		unsup(n.Pos, "int-literal")
 	}
@@ -97,6 +96,12 @@ func intLit(n *coreexport.Int) string {
 		unsup(n.Pos, "int-constant-overflow")
 	}
 	return "(" + v.String() + " : Int64)"
+}
+
+// normalizedIntText is an integer literal's text as big.Int.SetString reads it
+// with base 0: lowercase, without digit separators.
+func normalizedIntText(text string) string {
+	return strings.ReplaceAll(strings.ToLower(text), "_", "")
 }
 
 // strLit is a Lean string literal for s, which must be valid UTF-8 (a Lean
@@ -149,6 +154,7 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 	case *coreexport.Name:
 		return g.name(e, sc)
 	case *coreexport.Unary:
+		checkUntypedConstant(e, e.Pos)
 		o := g.expr(e.Operand, sc)
 		switch e.Op {
 		case "-":
@@ -162,6 +168,7 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 		}
 		unsup(e.Pos, "unary-%s", e.Op)
 	case *coreexport.Binary:
+		checkUntypedConstant(e, e.Pos)
 		return g.binary(e, sc)
 	case *coreexport.Tuple:
 		if len(e.Elems) > 4 {

@@ -235,6 +235,10 @@ generated section below.
 Lean definitions. It translates subset S1 and the S2 constructs galaspec models (as
 galaspec models them, except as listed below):
 
+- an operator expression of literals only, a Go constant expression, only where its
+  `Int64` translation gives Go's exact value: where an intermediate result leaves int64,
+  a shift count is outside 0..63 or a constant divides by zero, it is reported
+  (`untyped-constant`, #1237), as galaspec folds it and gala2lean does not yet;
 - interpolated strings `s"..."`, each part printed as `Println` prints it;
 - named arguments and default values: arguments in the order written, then each
   left-out default in parameter order, in the callee's scope; package-level
