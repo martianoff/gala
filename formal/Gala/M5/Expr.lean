@@ -250,15 +250,15 @@ theorem underlying_string (c : Ctx) (n : Nat) (g : St) :
     type (Go spec, "Operators"). -/
 theorem convert_uint (c : Ctx) (n : Nat) (x : Int) (g : St) (hr : IntKind.int.represents x = true) :
     (convert c (n + 2) intTy (.int (.untyped .int) x)).run.run g = (.ok (.int intTy x), g) := by
-  simp [convert, grun_bind, underlying_int, hr, Val.ty, untyped_beq]; rfl
+  simp [convert, grun_bind, underlying_int, hr, Val.ty, Val.materializeTyped, untyped_beq]; rfl
 
 theorem convert_ubool (c : Ctx) (n : Nat) (b : Bool) (g : St) :
     (convert c (n + 2) .bool (.bool (.untyped .bool) b)).run.run g = (.ok (.bool .bool b), g) := by
-  simp [convert, grun_bind, underlying_bool, Val.ty, untyped_beq]; rfl
+  simp [convert, grun_bind, underlying_bool, Val.ty, Val.materializeTyped, untyped_beq]; rfl
 
 theorem convert_ustr (c : Ctx) (n : Nat) (s : String) (g : St) :
     (convert c (n + 2) .string (.str (.untyped .string) s)).run.run g = (.ok (.str .string s), g) := by
-  simp [convert, grun_bind, underlying_string, Val.ty, untyped_beq]; rfl
+  simp [convert, grun_bind, underlying_string, Val.ty, Val.materializeTyped, untyped_beq]; rfl
 
 /-- An untyped operand next to a typed one of the same kind is converted first (Go spec,
     "Operators"), so the operator then runs on two typed values. -/
@@ -266,43 +266,43 @@ theorem binary_uint_left (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     (hr : IntKind.int.represents x = true) (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.int (.untyped .int) x) (.int intTy y)).run.run g =
       (binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g := by
-  simp only [binary, Val.isFloat, Bool.or_false, hs]
-  simp [convert_uint _ _ _ _ hr, Val.ty, grun_bind]
+  simp only [binary, hs]
+  simp [convert_uint _ _ _ _ hr, Val.ty, Val.materializeTyped, grun_bind]
 
 theorem binary_uint_right (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     (hr : IntKind.int.represents y = true) (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.int intTy x) (.int (.untyped .int) y)).run.run g =
       (binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g := by
-  simp only [binary, Val.isFloat, Bool.or_false, hs]
-  simp [convert_uint _ _ _ _ hr, Val.ty, grun_bind]
+  simp only [binary, hs]
+  simp [convert_uint _ _ _ _ hr, Val.ty, Val.materializeTyped, grun_bind]
 
 theorem binary_ubool_left (cx : Ctx) (n : Nat) (op : String) (x y : Bool) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.bool (.untyped .bool) x) (.bool .bool y)).run.run g =
       (binary cx (n + 3) op (.bool .bool x) (.bool .bool y)).run.run g := by
-  simp only [binary, Val.isFloat, Bool.or_false, hs]
-  simp [convert_ubool, Val.ty, grun_bind]
+  simp only [binary, hs]
+  simp [convert_ubool, Val.ty, Val.materializeTyped, grun_bind]
 
 theorem binary_ubool_right (cx : Ctx) (n : Nat) (op : String) (x y : Bool) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.bool .bool x) (.bool (.untyped .bool) y)).run.run g =
       (binary cx (n + 3) op (.bool .bool x) (.bool .bool y)).run.run g := by
-  simp only [binary, Val.isFloat, Bool.or_false, hs]
-  simp [convert_ubool, Val.ty, grun_bind]
+  simp only [binary, hs]
+  simp [convert_ubool, Val.ty, Val.materializeTyped, grun_bind]
 
 theorem binary_ustr_left (cx : Ctx) (n : Nat) (op : String) (x y : String) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.str (.untyped .string) x) (.str .string y)).run.run g =
       (binary cx (n + 3) op (.str .string x) (.str .string y)).run.run g := by
-  simp only [binary, Val.isFloat, Bool.or_false, hs]
-  simp [convert_ustr, Val.ty, grun_bind]
+  simp only [binary, hs]
+  simp [convert_ustr, Val.ty, Val.materializeTyped, grun_bind]
 
 theorem binary_ustr_right (cx : Ctx) (n : Nat) (op : String) (x y : String) (g : St)
     (hs : (op == "<<" || op == ">>") = false) :
     (binary cx (n + 3) op (.str .string x) (.str (.untyped .string) y)).run.run g =
       (binary cx (n + 3) op (.str .string x) (.str .string y)).run.run g := by
-  simp only [binary, Val.isFloat, Bool.or_false, hs]
-  simp [convert_ustr, Val.ty, grun_bind]
+  simp only [binary, hs]
+  simp [convert_ustr, Val.ty, Val.materializeTyped, grun_bind]
 
 /-- A galaspec result and a GoCore run agree: a related value of kind `k`, or the same
     panic, with GoCore's state unchanged; any other galaspec result claims nothing. -/
@@ -349,8 +349,8 @@ theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     unfold binaryKind at hk; split at hk <;> simp_all
   rcases hop with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk
-  all_goals simp [Spec.binop, binary, grun_bind, underlying_int, intOp, cmpOp, Val.isFloat, Val.ty,
-    equal, Val.dyn, Ty.isUntyped, intTy_beq, runtimePanic, RRel, Spec.valEq, cmp_lt, cmp_gt,
+  all_goals simp [Spec.binop, binary, grun_bind, underlying_int, intOp, cmpOp, Val.ty, Val.materializeTyped,
+    equal, Val.dyn, Ty.isUntyped, runtimePanic, RRel, Spec.valEq, cmp_lt, cmp_gt,
     cmp_le, cmp_ge, wrap_eq]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
@@ -372,7 +372,7 @@ theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool
     unfold binaryKind at hk; split at hk <;> simp_all
   rcases hop with rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk <;>
     rcases ht with rfl | rfl
-  all_goals simp [Spec.binop, binary, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
+  all_goals simp [Spec.binop, binary, Val.ty, Val.materializeTyped, equal, Val.dyn, Ty.isUntyped,
     RRel, Spec.valEq]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
@@ -388,7 +388,7 @@ theorem binary_str_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Strin
     unfold binaryKind at hk; split at hk <;> simp_all
   rcases hop with rfl | rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;>
     subst hk <;> rcases ht with rfl | rfl
-  all_goals simp [Spec.binop, binary, Val.isFloat, Val.ty, equal, Val.dyn, Ty.isUntyped,
+  all_goals simp [Spec.binop, binary, Val.ty, Val.materializeTyped, equal, Val.dyn, Ty.isUntyped,
     RRel, Spec.valEq]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
