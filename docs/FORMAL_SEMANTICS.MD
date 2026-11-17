@@ -451,7 +451,19 @@ column lists what each milestone's claim rests on beyond them.
   Go allows.
 - **Risk:** printing and initialization order are the largest proofs; GoCore's `fmt`
   model has to be exact for the theorem to say anything about real output.
-- **Status: planned,** as below; nothing of it is proved yet.
+- **Status: in progress.** Step 2a is proved: call-free expressions
+  (`expr_correct` in `formal/Gala/M5/Expr.lean`, with `eval_pure` in
+  `formal/Gala/M5/SpecPure.lean`). From related states, galaspec's evaluation of a
+  call-free expression the lowering accepts leaves galaspec's state as it was, and, at
+  every depth from a bound on, GoCore's evaluation of the lowering gives a related value
+  of the expression's kind or the same panic, leaving GoCore's state as it was. It covers
+  literals, locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %` and comparisons on
+  `int`s, `==` and `!=` on one kind, string `+`, `&&` and `||`. Shifts, the bitwise
+  operators and string ordering are not lowered yet. The lowering is type-directed, as
+  the transformer is: without types, galaspec's `x == "a"` on an `int` is `false` where
+  Go rejects the program. The claim is for GoCore's order, left to right, which is gc's
+  for operands that are not calls (fixtures `panic_order_divide`, `panic_order_shift`).
+  The rest of the plan below is not proved yet.
 
 ##### The target
 

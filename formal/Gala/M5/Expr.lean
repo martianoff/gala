@@ -871,6 +871,46 @@ theorem expr_correct (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) 
   · rw [hr]; exact trivial
   · rw [hr]; exact pure_sim ds cx κ e k le hl hnc s.toCore g env hloc hp N hN
 
+/-! ### The hypotheses can be met
+
+A main package with no declarations, a local `x : int` holding `5` on both sides, and
+`x + 1`: every hypothesis of `expr_correct` holds, so it says something. -/
+
+section Instance
+open Std (HashMap)
+
+def emptyPkg : PkgCtx := ⟨"main", "main", #[[]], {}, {}, #[], #[], {}, false⟩
+def instCtx : Ctx := ⟨(∅ : HashMap String PkgCtx).insert "main" emptyPkg, "main"⟩
+def instEnv : Env := { pkg := "main", file := 0, scopes := [[("x", 0)]] }
+def instKinds : String → Option Kind := fun x => if x = "x" then some .int else none
+def instCore : Spec.Core := { locals := [("x", ⟨.int 5, false⟩)], globals := [], out := "" }
+def instExpr : Spec.Expr := .binary "+" (.name "x") (.lit (.int 1))
+
+theorem inst_locRel : LocRel instKinds instCore #[.int intTy 5] instEnv := by
+  intro x k hk
+  unfold instKinds at hk
+  split at hk
+  · subst_vars
+    simp only [Option.some.injEq] at hk; subst hk
+    exact ⟨_, 0, .int 5, .int intTy 5, rfl, rfl, rfl, rfl, .int 5, rfl, by simp [UInt],
+      by simp, by simp⟩
+  · cases hk
+
+theorem inst_predeclared : Predeclared instCtx instEnv := by
+  intro x hx
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+  refine ⟨?_, emptyPkg, by simp [instCtx, instEnv], by simp [emptyPkg], ?_⟩
+  · rcases hx with rfl | rfl <;> rfl
+  · rcases hx with rfl | rfl <;> simp [nameOwner, instCtx, instEnv, emptyPkg, exported] <;> decide
+
+def instSt : St := { cells := #[.int intTy 5], closures := #[], out := "", steps := 0 }
+
+example (ds : Spec.Decls) (steps d : Nat) :=
+  expr_correct ds instCtx instKinds instExpr .int (.binary "+" (.ident "x") (.intLit 1)) rfl
+    ⟨rfl, trivial, trivial⟩ { instCore with steps } instSt instEnv inst_locRel inst_predeclared d
+
+end Instance
+
 end Sim
 
 end Gala.M5

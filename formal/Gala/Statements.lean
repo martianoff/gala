@@ -22,6 +22,7 @@ import Gala.AlphaStep
 import Gala.MatchLower
 import Gala.AlphaEval
 import Gala.AlphaProg
+import Gala.M5.Expr
 
 namespace Gala.Statements
 
@@ -437,5 +438,20 @@ open Gala.Spec in
 theorem alphaCheck_run : ∀ {p p' : Program}, alphaCheck p p' = true → ∀ (n : Nat),
     OutcomeR (run p n).1 (run p' n).1 ∧ (run p n).2 = (run p' n).2 :=
   Gala.Spec.alphaCheck_run
+
+open Gala.Spec Gala.M5 in
+theorem eval_pure : ∀ (ds : Decls) (e : Expr) (d : Nat),
+    Follows (fun c => Pure c.locals e) (eval ds d e) (pureEval ds e) :=
+  Gala.M5.eval_pure
+
+open Gala Gala.M5 in
+theorem expr_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ : String → Option Kind)
+    (e : Spec.Expr) (k : Kind) (le : GoCore.Full.Expr), lowerE κ e = some (k, le) → NoConstOp e →
+    ∀ (s : Spec.St) (g : GoCore.Full.St) (env : GoCore.Full.Env), LocRel κ s.toCore g.cells env →
+      Predeclared cx env → ∀ (d : Nat),
+      ((Spec.eval ds d e).run.run s).2.toCore = s.toCore ∧
+      ∀ N ≥ gdepth e, ERel k g (isLitE e) ((Spec.eval ds d e).run.run s).1
+        ((GoCore.Full.evalExpr cx N env le).run.run g) :=
+  Gala.M5.expr_correct
 
 end Gala.Statements
