@@ -5352,6 +5352,18 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# A lambda or by-name argument passed to a generic Go function whose results
+# are still open (sync.OnceValues, a generic runner) gives Go its results
+# value by value: an early `return (v, nil)`, if and match branches of the Try
+# or the Tuple, and a `nil` a later value types. A named function type's value
+# and `nil` are passed as the function they are.
+gala_exec_test(
+    name = "go_results_generic_slots",
+    src = "go_results_generic_slots.gala",
+    expected = "go_results_generic_slots.out",
+    deps = ["//go_interop"],
+)
+
 gala_exec_test(
     name = "try_combinator_panics",
     src = "try_combinator_panics.gala",

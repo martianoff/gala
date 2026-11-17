@@ -80,6 +80,15 @@ func (r *goResult) source() string {
 	return callee + "(...)"
 }
 
+// text renders the call as written, `down(k - 1)`, for a hint to paste, or
+// as source does when it is not worth quoting.
+func (r *goResult) text() string {
+	if text := r.site.text(); text != "" {
+		return text
+	}
+	return r.source()
+}
+
 // liftGoResults converts expr, a call just built from its suffix, to one GALA
 // value when it calls a Go function with two or more results. Anything else is
 // returned unchanged.
@@ -104,7 +113,8 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	}
 	returns := t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
 	value, _ := transpiler.GoResultValueOf(returns)
-	// The diagnostics quote the callee only: the arguments are not kept.
+	// The call's source is kept by position (site): diagnostics quote the
+	// callee (source) or, for a hint to paste, the whole call (text).
 	res := &goResult{GoResultValue: value, raw: call, site: callSrc{post: c.post, suffix: c.suffix}}
 	if value.Values > transpiler.MaxGoResultValues {
 		line, col := c.start()
@@ -115,8 +125,10 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	wrapper := &ast.CallExpr{Fun: t.stdHelperIdent(goResultHelper(value.Values, res.Fails)), Args: []ast.Expr{call}}
 	if t.goResults == nil {
 		t.goResults = make(map[*ast.CallExpr]*goResult)
+		t.goResultsByRaw = make(map[*ast.CallExpr]*goResult)
 	}
 	t.goResults[wrapper] = res
+	t.goResultsByRaw[call] = res
 	if !res.Type.IsNil() {
 		t.exprTypeCache[wrapper] = res.Type
 	}
@@ -128,17 +140,12 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 // spreadGoResultArg), read from the one value it was converted to; nil
 // otherwise.
 func (t *galaASTTransformer) goCallResults(expr ast.Expr) []transpiler.Type {
-	call := asCall(expr)
-	if call == nil {
+	res := t.goResultsByRaw[asCall(expr)]
+	if res == nil {
 		return nil
 	}
-	for _, res := range t.goResults {
-		if res.raw == call {
-			results, _ := transpiler.GoResultsOf(res.Type, res.count())
-			return results
-		}
-	}
-	return nil
+	results, _ := transpiler.GoResultsOf(res.Type, res.count())
+	return results
 }
 
 // spreadsSoleArg is Go's `f(g())` rule: a call of a function with params

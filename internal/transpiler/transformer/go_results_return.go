@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -364,7 +366,8 @@ func (t *galaASTTransformer) spreadTupleReturnsIn(s ast.Stmt, n int) ast.Stmt {
 
 // goResultsBody follows the result values of one Go-results body.
 type goResultsBody struct {
-	results []transpiler.Type // Go's results; a type the slot leaves open (a callee's type parameter) is NilType
+	results []transpiler.Type // Go's results; a type the slot leaves open (a callee's type parameter) is NilType until a value fixes it (fixOpen)
+	open    []transpiler.Type // how diagnostics spell each result left open (`_`, or the slot's type parameter); nil when none is
 	fails   bool              // the last result is `error`
 	value   transpiler.Type   // the one value they make by default: Try[T] for `(T, error)`, the Tuple for `(A, B)`
 	whole   transpiler.Type   // the Tuple of every result
@@ -376,41 +379,128 @@ type goResultsBody struct {
 	// method is called on), whose call is its own Try (see selfCall).
 	selfName, selfRecv string
 	// valueAt and wholeAt are the first result value of each kind; zero
-	// when the body has none. valueSelf is that Try value's text when it is
-	// a call of the function itself.
+	// when the body has none. valueSelf is the hint for that Try value when
+	// it is a call of the function itself (see selfCall).
 	valueAt, wholeAt srcNode
 	valueSelf        string
+	// body is where an expression body is written (`= expr`, `() => expr`,
+	// a by-name argument); zero for a block body. A Go call with one result
+	// per Go result written there is returned as it is (see
+	// returnGoResults), so its Try is exempt from notCovariant. Of these, only
+	// a by-name argument reaches this check with a Try of another element
+	// type: a function or lambda body is lowered against the Try first and
+	// rejects one as GALA-E0049 (#1238).
+	body srcNode
+}
+
+// withBody notes e as b's expression body (see goResultsBody.body); b may be
+// nil, and e not ok (a block body).
+func (b *goResultsBody) withBody(e exprSrc) *goResultsBody {
+	if b != nil && e.ok() {
+		b.body = e.at()
+	}
+	return b
 }
 
 // newGoResultsBody follows a body Go calls with results. It is nil for fewer
-// than two results, or more than a Tuple holds.
-func newGoResultsBody(results []transpiler.Type, subject string) *goResultsBody {
-	v, ok := transpiler.GoResultValueOf(results)
-	whole, fits := transpiler.TupleOf(results)
-	if !ok || !fits {
+// than two results, or more than a Tuple holds. open is b.open.
+func newGoResultsBody(results, open []transpiler.Type, subject string) *goResultsBody {
+	b := &goResultsBody{results: results, open: open, subject: subject}
+	if !b.makeValues() {
 		return nil
 	}
-	return &goResultsBody{results: results, fails: v.Fails, value: v.Type, whole: whole, subject: subject}
+	return b
+}
+
+// makeValues sets the values b's results make; false when they make none.
+func (b *goResultsBody) makeValues() bool {
+	v, ok := transpiler.GoResultValueOf(b.results)
+	whole, fits := transpiler.TupleOf(b.results)
+	if !ok || !fits {
+		return false
+	}
+	b.fails, b.value, b.whole = v.Fails, v.Type, whole
+	return true
 }
 
 // goResultsBodyFor follows the body of a lambda (subject) or by-name argument
 // filling a slot of type slotType, when it is a function type with several
 // results. A result that is a type parameter of a generic Go callee is left
-// open: the values are then checked against the results the slot fixes, the
-// trailing `error` among them.
+// open until a value fixes it (see fixOpen): the values are checked against
+// the results the slot fixes, the trailing `error` among them.
 func (t *galaASTTransformer) goResultsBodyFor(slotType transpiler.Type, subject string) *goResultsBody {
 	ft := t.resolveTranspilerTypeAsFuncType(slotType)
 	if ft == nil || len(ft.Results) < 2 {
 		return nil
 	}
-	results := make([]transpiler.Type, len(ft.Results))
+	results := slices.Clone(ft.Results)
+	var open []transpiler.Type
 	for i, r := range ft.Results {
-		if t.hasTypeParams(r) || transpiler.ContainsUnusable(r) {
-			r = transpiler.NilType{}
+		unusable := transpiler.ContainsUnusable(r)
+		if !unusable && !t.hasTypeParams(r) {
+			continue
 		}
-		results[i] = r
+		if open == nil {
+			open = make([]transpiler.Type, len(ft.Results))
+		}
+		// A type parameter the slot no longer names is `_`, as GALA spells a
+		// type to infer.
+		open[i], results[i] = r, transpiler.NilType{}
+		if unusable {
+			open[i] = transpiler.BasicType{Name: "_"}
+		}
 	}
-	return newGoResultsBody(results, subject)
+	return newGoResultsBody(results, open, subject)
+}
+
+// fixOpen fixes the results b's slot leaves open from typ, the type of a
+// value the body gives that spreads over them (a Try, or a Tuple of every
+// result): a generic Go callee's type parameter is bound to the first value's
+// type, and every later value is checked against it.
+func (b *goResultsBody) fixOpen(typ transpiler.Type) {
+	if b.open == nil {
+		return
+	}
+	given, ok := transpiler.GoResultsOf(typ, len(b.results))
+	if !ok {
+		return
+	}
+	fixed := false
+	for i, r := range b.results {
+		if transpiler.IsUnusable(r) && !transpiler.ContainsUnusable(given[i]) {
+			b.results[i], fixed = given[i], true
+		}
+	}
+	if fixed {
+		b.makeValues()
+	}
+}
+
+// shown is b's results as diagnostics spell them: one still open as b.open
+// spells it.
+func (b *goResultsBody) shown() []transpiler.Type {
+	if b.open == nil {
+		return b.results
+	}
+	shown := slices.Clone(b.results)
+	for i, r := range shown {
+		if transpiler.IsUnusable(r) {
+			shown[i] = b.open[i]
+		}
+	}
+	return shown
+}
+
+// shownValue and shownWhole are b's value and Tuple as diagnostics spell
+// them (see shown): `Try[_]`.
+func (b *goResultsBody) shownValue() transpiler.Type {
+	v, _ := transpiler.GoResultValueOf(b.shown())
+	return v.Type
+}
+
+func (b *goResultsBody) shownWhole() transpiler.Type {
+	whole, _ := transpiler.TupleOf(b.shown())
+	return whole
 }
 
 // byNameGoResults follows a by-name argument filling a slot of type slotType
@@ -443,6 +533,23 @@ func (b *goResultsBody) isWholeTupleLiteral(e exprSrc) bool {
 	return n == len(b.results)
 }
 
+// openNil is where e, a tuple literal of every result, has a bare `nil` for a
+// result the slot leaves open and no value has fixed yet (see fixOpen): no
+// type is known for it. ok is false when it has none.
+func (b *goResultsBody) openNil(e exprSrc) (srcNode, bool) {
+	if b.open == nil {
+		return srcNode{}, false
+	}
+	i := 0
+	for el := range galaparser.NativeKids(e.solePostfix().tupleListNode(), native.GalaKIND_expression) {
+		if x := nativeExpr(el); i < len(b.results) && transpiler.IsUnusable(b.results[i]) && x.isNil() {
+			return x.at(), true
+		}
+		i++
+	}
+	return srcNode{}, false
+}
+
 // lowerGoResultsValue lowers e, a result value of the Go-results body s
 // belongs to (s.goResults), against s, and checks it (noteGoResultsValue).
 // A tuple literal of every result is lowered against their Tuple.
@@ -450,6 +557,14 @@ func (t *galaASTTransformer) lowerGoResultsValue(e exprSrc, s slot, strict bool)
 	b := s.goResults
 	s.goResults = nil
 	if b.isWholeTupleLiteral(e) {
+		if nilAt, ok := b.openNil(e); ok {
+			// Retried once another value fixes the result: a later `return`
+			// or the trailing value (settleReturnSlot), or a sibling branch
+			// (lowerBranches).
+			line, col := nilAt.start()
+			return nil, galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col,
+				fmt.Sprintf("cannot infer the type of this `nil`: %s gives Go the results %s, and no other value it gives fixes the result this `nil` fills", b.subject, b.resultsText()), "")
+		}
 		s.typ = b.whole
 	}
 	expr, err := t.lowerAgainst(e, s, strict)
@@ -459,34 +574,43 @@ func (t *galaASTTransformer) lowerGoResultsValue(e exprSrc, s slot, strict bool)
 	return expr, t.noteGoResultsValue(b, expr, e.at())
 }
 
-// selfCall is the source of expr, `down(...)`, when it is a call of the
-// function b's body belongs to, and "" otherwise. Such a call is the
-// function's own default value, a Try, whichever kind its body gives.
+// selfCall is the hint for expr when it is a call of the function b's body
+// belongs to, or a val bound to one, and "" otherwise. Such a call is the
+// function's own default value, a Try, whichever kind its body gives; the
+// hint quotes the call as written, `ResultsOf(down(k - 1))`.
 func (t *galaASTTransformer) selfCall(b *goResultsBody, expr ast.Expr) string {
-	res := t.goResults[asCall(expr)]
+	res := t.goResultOf(expr)
 	if res == nil || b.selfName == "" {
 		return ""
 	}
 	switch fun := res.raw.Fun.(type) {
 	case *ast.Ident:
-		if b.selfRecv == "" && fun.Name == b.selfName {
-			return res.source()
+		if b.selfRecv != "" || fun.Name != b.selfName {
+			return ""
 		}
 	case *ast.SelectorExpr:
-		if recv, ok := fun.X.(*ast.Ident); ok && b.selfRecv != "" && recv.Name == b.selfRecv && fun.Sel.Name == b.selfName {
-			return res.source()
+		if recv, ok := fun.X.(*ast.Ident); !ok || b.selfRecv == "" || recv.Name != b.selfRecv || fun.Sel.Name != b.selfName {
+			return ""
 		}
+	default:
+		return ""
 	}
-	return ""
+	call := "a call of the function itself"
+	if res.via != "" {
+		call = fmt.Sprintf("`%s` holds a call of the function itself, which", res.via)
+	}
+	return fmt.Sprintf("%s is its Try: `ResultsOf(%s)` keeps its results as they are", call, res.text())
 }
 
 // noteGoResultsValue checks expr, a result value of the body b follows,
 // written at at, through any alias of its type. For results ending in
-// `error` it is the Try of the results — its element held by theirs — or the
-// Tuple of every result, each component held by its result, and one body
-// gives one of them; for `(A, B)` it is their Tuple. A value whose type is
-// not known, or one that may still be either (an interface, a type
-// parameter), is left to Go, as is a function value filling a by-name slot.
+// `error` it is the Try of the results — of their own element type, since Try
+// has no covariance (notCovariant) — or the Tuple of every result, each
+// component held by its result, and one body gives one of them; for `(A, B)`
+// it is their Tuple. A value whose type is not known, or one that may still
+// be either (an interface, a type parameter), is left to Go, as is a function
+// value filling a by-name slot. A result a generic Go callee leaves open is
+// fixed by the first value that gives it (fixOpen).
 func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr, at srcNode) error {
 	if b == nil || t.isNoReturnCallExpr(expr) {
 		return nil
@@ -496,9 +620,10 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 		return nil
 	}
 	typ := t.followAliasChain(written)
-	if _, isFunc := typ.(transpiler.FuncType); isFunc && b.byName {
+	if b.byName && t.resolveTranspilerTypeAsFuncType(typ) != nil {
 		return nil
 	}
+	b.fixOpen(typ)
 	if components, ok := transpiler.TupleComponents(typ, len(b.results)); ok {
 		for i, r := range b.results {
 			if t.cannotHold(r, components[i]) {
@@ -509,7 +634,7 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 			return nil
 		}
 		if b.valueAt.ok() {
-			return b.mixedError(at, written, b.value, b.valueAt, b.valueSelf)
+			return b.mixedError(at, written, b.shownValue(), b.valueAt, b.valueSelf)
 		}
 		if !b.wholeAt.ok() {
 			b.wholeAt = at
@@ -517,28 +642,50 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 		return nil
 	}
 	if elem, ok := transpiler.TryElem(typ); ok && b.fails {
-		if want, ok := transpiler.TryElem(b.value); ok && t.cannotHold(want, elem) {
+		// A Go call with these results that is the whole expression body is
+		// exempt from notCovariant: it passes its results through as they
+		// are, each only assignable to its result (`os.Open(p)` for
+		// `(io.Reader, error)`; see returnGoResults).
+		res := t.goResults[asCall(expr)]
+		passThrough := res != nil && b.body.ok() && at == b.body && res.count() == len(b.results)
+		if want, ok := transpiler.TryElem(b.value); ok && (t.cannotHold(want, elem) || !passThrough && t.notCovariant(want, elem)) {
 			return b.wrongValueError(at, written)
 		}
-		self := t.selfCall(b, expr)
 		if b.wholeAt.ok() {
-			return b.mixedError(at, written, b.whole, b.wholeAt, self)
+			return b.mixedError(at, written, b.shownWhole(), b.wholeAt, t.selfCall(b, expr))
 		}
 		if !b.valueAt.ok() {
-			b.valueAt, b.valueSelf = at, self
+			b.valueAt, b.valueSelf = at, t.selfCall(b, expr)
 		}
 		return nil
 	}
-	if t.cannotHold(b.value, typ) {
+	// A value neither kind is wrong for results left open too, unless it may
+	// still be either (an interface, a type parameter).
+	open := transpiler.ContainsUnusable(b.value) && !t.isInterfaceType(typ) && !t.hasTypeParams(typ)
+	if open || t.cannotHold(b.value, typ) {
 		return b.wrongValueError(at, written)
 	}
 	return nil
 }
 
+// notCovariant reports whether a Try[elem] is known not to be the Try[want]
+// a body's results make, though want may hold an elem: Try has no
+// covariance, so a Try[*os.File] is no Try[io.Reader]. It is known when the
+// two types are known to differ, or when want is an interface and elem a
+// concrete type, which no interface is.
+func (t *galaASTTransformer) notCovariant(want, elem transpiler.Type) bool {
+	if same, known := t.identicalTypes(want, elem); known {
+		return !same
+	}
+	return t.isInterfaceType(want) && !t.isInterfaceType(elem) &&
+		!transpiler.ContainsUnusable(elem) && !t.hasTypeParams(elem)
+}
+
 // resultsText spells the Go results: `(int, error)`.
 func (b *goResultsBody) resultsText() string {
-	parts := make([]string, len(b.results))
-	for i, r := range b.results {
+	shown := b.shown()
+	parts := make([]string, len(shown))
+	for i, r := range shown {
 		parts[i] = displayType(r)
 	}
 	return "(" + strings.Join(parts, ", ") + ")"
@@ -547,22 +694,30 @@ func (b *goResultsBody) resultsText() string {
 // wrongValueError reports a result value of type got that is neither the
 // body's Try nor the Tuple of its results.
 func (b *goResultsBody) wrongValueError(at srcNode, got transpiler.Type) error {
-	r := at.rng()
-	if !b.fails {
-		return spanErrorAt(galaerr.CodeGoResultsBodyValue, r, r,
-			fmt.Sprintf("%s gives Go the results %s, so its value is a %s of the results; this value is of type %s",
-				b.subject, b.resultsText(), displayType(b.whole), displayType(got)),
-			fmt.Sprintf("give a %s: a tuple of the results, `(a, b)`", displayType(b.whole)))
+	value, whole := displayType(b.shownValue()), displayType(b.shownWhole())
+	var kinds, hint string
+	switch {
+	case transpiler.IsUnusable(b.results[len(b.results)-1]):
+		// The slot leaves the last result open: it may be an `error`.
+		kinds = fmt.Sprintf("a Try (for results ending in `error`) or a %s of the results", whole)
+		hint = fmt.Sprintf("give a Try or a %s; `ResultsOf(call)` from go_interop keeps both results of a Go call, and `(a, b)` is a tuple of the results", whole)
+	case !b.fails:
+		kinds = fmt.Sprintf("a %s of the results", whole)
+		hint = fmt.Sprintf("give a %s: a tuple of the results, `(a, b)`", whole)
+	default:
+		kinds = fmt.Sprintf("a %s (on a failure Go receives the zero value with the error) or a %s of the results as they are", value, whole)
+		hint = fmt.Sprintf("give a %s or a %s; `Success(v)` or `Failure(err)` make the Try, and `ResultsOf(call)` from go_interop keeps both results of a Go call", value, whole)
 	}
+	r := at.rng()
 	return spanErrorAt(galaerr.CodeGoResultsBodyValue, r, r,
-		fmt.Sprintf("%s gives Go the results %s, so its value is a %s (on a failure Go receives the zero value with the error) or a %s of the results as they are; this value is of type %s",
-			b.subject, b.resultsText(), displayType(b.value), displayType(b.whole), displayType(got)),
-		fmt.Sprintf("give a %s or a %s; `Success(v)` or `Failure(err)` make the Try, and `ResultsOf(call)` from go_interop keeps both results of a Go call", displayType(b.value), displayType(b.whole)))
+		fmt.Sprintf("%s gives Go the results %s, so its value is %s; this value is of type %s", b.subject, b.resultsText(), kinds, displayType(got)),
+		hint)
 }
 
 // mixedError reports a result value of type got in a body whose value
-// written at otherAt is of the other kind, other. self is the source of the
-// Try value of the two when it is a call of the function itself.
+// written at otherAt is of the other kind, other. self is the hint for the
+// Try value of the two when it is a call of the function itself (see
+// selfCall).
 func (b *goResultsBody) mixedError(at srcNode, got, other transpiler.Type, otherAt srcNode, self string) error {
 	r := at.rng()
 	line, col := otherAt.start()
@@ -570,9 +725,9 @@ func (b *goResultsBody) mixedError(at srcNode, got, other transpiler.Type, other
 	if here, _ := at.start(); here == line {
 		where = fmt.Sprintf("at column %d", col+1)
 	}
-	hint := fmt.Sprintf("give one kind; a %s everywhere keeps every result as it is (`ResultsOf(call)`, or `(v, err)`)", displayType(b.whole))
+	hint := fmt.Sprintf("give one kind; a %s everywhere keeps every result as it is (`ResultsOf(call)`, or `(v, err)`)", displayType(b.shownWhole()))
 	if self != "" {
-		hint = fmt.Sprintf("give one kind; a call of the function itself is its Try: `ResultsOf(%s)` keeps its results as they are", self)
+		hint = "give one kind; " + self
 	}
 	return spanErrorAt(galaerr.CodeGoResultsBodyValue, r, r,
 		fmt.Sprintf("%s gives a %s here but a %s %s: a body Go calls with the results %s gives either the Try or the Tuple of the results, not both",

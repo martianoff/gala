@@ -4735,7 +4735,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		// it is: each parameter is `any`, as the callee declares.
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
-	b := t.goResultsBodyFor(s.typ, "this lambda")
+	b := t.goResultsBodyFor(s.typ, "this lambda").withBody(l.expression())
 	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
 	if err != nil {
 		return nil, err
@@ -4931,7 +4931,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	} else if handled {
 		// The placeholder lambda's body is e, lowered on its own: its one
 		// value is checked here.
-		b := t.goResultsBodyFor(funcSlot, "this lambda")
+		b := t.goResultsBodyFor(funcSlot, "this lambda").withBody(e)
 		if ret := soleReturnValue(expr.Body); ret != nil {
 			if err := t.noteGoResultsValue(b, ret, e.at()); err != nil {
 				return nil, err
@@ -4943,7 +4943,12 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// A by-name argument where Go expects a `func() (A, B, ...)` is that
 	// thunk's one value: each value it gives — each branch of an if or match —
 	// is checked as a Go-results body's (see lowerGoResultsValue).
-	byName := t.byNameGoResults(funcSlot)
+	// A `nil` is no such value but the function itself, typed as the slot.
+	byName := t.byNameGoResults(funcSlot).withBody(e)
+	nilFunc := byName != nil && e.isNil()
+	if nilFunc {
+		byName = nil
+	}
 	s.goResults = byName
 
 	// Check mode: an if-expression or match lowers its branches against the
@@ -4951,6 +4956,9 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	expr, err := t.lowerAgainst(e, s, strict)
 	if err != nil {
 		return nil, err
+	}
+	if nilFunc && !s.open && !t.hasTypeParams(s.typ) {
+		t.typeNilAs(expr, s.typ)
 	}
 
 	// Lift bare T value to Immutable[T] when the expected param type is
@@ -5033,8 +5041,14 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	}
 
 	// Several results: the expression is their one GALA value, spread over
-	// them as a lambda's is (see spreadLambdaGoResults).
+	// them as a lambda's is (see spreadLambdaGoResults). A value of a named
+	// function type (`type Getter func() (int, error)`) is the function
+	// itself, and so is a `nil` the slot left untyped (an open one): no Try
+	// or Tuple is either.
 	if len(ft.Results) > 1 {
+		if isNilIdent(expr) || t.resolveTranspilerTypeAsFuncType(exprType) != nil {
+			return expr, false
+		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
 	}
 
@@ -5452,6 +5466,12 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		paramType := paramTypes[pi]
 		if a.spread {
 			paramType = spreadArgType(paramType)
+		}
+		// An if or match passed where Go expects a `func() (A, B)` is the
+		// thunk's value, lowered branch by branch against the slot (see
+		// byNameGoResults); lowered on its own, its value types nothing.
+		if isGoResultsThunkSlot(paramType) && t.needsExpectedType(a.expr) {
+			continue
 		}
 		expr, err := t.lowerExpr(a.expr)
 		if err != nil {

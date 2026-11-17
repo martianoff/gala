@@ -40,12 +40,11 @@ type returnSlot struct {
 // value) in a fillable slot that had no settled type when it was reached.
 // value is the expression emitted for it so far, replaced wherever it appears
 // once the value is settled; scope is the lexical scope it is lowered in
-// again; err is the first lowering's error.
+// again.
 type deferredReturn struct {
 	value ast.Expr
 	expr  exprSrc
 	scope *scope
-	err   error
 }
 
 // enterReturnSlot makes s the current return slot and returns the function
@@ -164,7 +163,11 @@ func (t *galaASTTransformer) tryFillReturnSlot(typ transpiler.Type) bool {
 // lowerFillingValue.
 func (t *galaASTTransformer) lowerReturnValue(e exprSrc) (*ast.ReturnStmt, error) {
 	if t.returnSlotPending() {
-		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(e, true)}}, nil
+		expr, err := t.lowerFillingValue(e, true)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ReturnStmt{Results: []ast.Expr{expr}}, nil
 	}
 	expr, err := t.lowerResultAgainst(e, t.resultSlot(t.returnSlot.typ), false)
 	if err != nil {
@@ -195,24 +198,34 @@ func (t *galaASTTransformer) returnSlotPending() bool {
 // type is not settled is deferred too (deferUnsettled); a trailing value is
 // not, since it may legitimately be void or have a type the transpiler cannot
 // name.
-func (t *galaASTTransformer) lowerFillingValue(e exprSrc, deferUnsettled bool) ast.Expr {
-	// A value of a lambda Go calls with several results is checked as it is
-	// lowered; its error, too, waits for the body to be lowered.
-	expr, err := t.lowerAgainst(e, slot{goResults: t.returnSlot.goResults}, false)
+//
+// A value of a lambda Go calls with several results is checked as it is
+// lowered (see lowerGoResultsValue); a value it rejects (GALA-E0134) is an
+// error at once, since lowering it again cannot make it fit.
+func (t *galaASTTransformer) lowerFillingValue(e exprSrc, deferUnsettled bool) (ast.Expr, error) {
+	expr, err := t.lowerAgainst(e, t.resultSlot(nil), false)
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
 		// A diverging call (`Panic(...)`) yields no value to type the slot
 		// with, and none to settle later: it lowers to a statement.
 		if t.isNoReturnCallExpr(expr) || t.tryFillReturnSlot(t.getExprTypeName(expr)) || !deferUnsettled {
-			return expr
+			return expr, nil
 		}
+	} else if isGoResultsBodyValueError(err) {
+		return nil, err
 	} else {
 		expr = ast.NewIdent("nil")
 	}
 	t.returnSlot.deferred = append(t.returnSlot.deferred, deferredReturn{
-		value: expr, expr: e, scope: t.currentScope, err: err,
+		value: expr, expr: e, scope: t.currentScope,
 	})
-	return expr
+	return expr, nil
+}
+
+// isGoResultsBodyValueError reports whether err is GALA-E0134.
+func isGoResultsBodyValueError(err error) bool {
+	var se *galaerr.SemanticError
+	return errors.As(err, &se) && se.Code == galaerr.CodeGoResultsBodyValue
 }
 
 // errorAtOutermostCall reports whether err is a semantic error anchored at the
@@ -279,7 +292,9 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	defer func() { t.currentScope = outerScope }()
 	for _, d := range s.deferred {
 		t.currentScope = d.scope
-		expr, err := t.lowerResultAgainst(d.expr, typedSlot(s.typ), false)
+		// Against the body's slot, so a value of a Go-results lambda is
+		// checked (see lowerGoResultsValue).
+		expr, err := t.lowerResultAgainst(d.expr, t.resultSlot(s.typ), false)
 		// A constructor with no type argument that is itself the value of an
 		// unfilled slot (`return Failure(e)`) is the lambda's missing result
 		// type, which is what the user has to annotate. One nested deeper

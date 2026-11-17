@@ -1695,7 +1695,7 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 	// A construct lowered as statements (s.hoist) keeps doing so; its
 	// `return`s leave the enclosing function, so they keep its slot.
 	retrySlot := typedSlot(common)
-	retrySlot.hoist = s.hoist
+	retrySlot.hoist, retrySlot.goResults = s.hoist, s.goResults
 	for _, i := range retry {
 		restore := func() {}
 		if s.hoist == "" {
