@@ -177,6 +177,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a strings.Replacer held as a value", "package main\nimport \"strings\"\n\nfunc main() { val r = strings.NewReplacer(\"a\", \"b\")\n Println(r.Replace(\"a\")) }\n", "import"},
 		{"a spread of a GALA list into NewReplacer", "package main\nimport \"strings\"\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(strings.NewReplacer(ListOf(\"a\", \"b\")...).Replace(\"a\")) }\n", "spread-arg"},
 		{"a constant outside int64", "package main\nfunc main() { Println(1 << 70) }\n", "untyped-constant"},
+		{"an int literal one past int64", "package main\nfunc main() { Println(9223372036854775808) }\n", "untyped-constant"},
 		{"a constant division by zero", "package main\nfunc main() { Println(1 / 0) }\n", "untyped-constant"},
 		{"a negative constant shift count in a larger expression", "package main\nfunc main() { val x = 2\n Println(x + (1 << -1)) }\n", "untyped-constant"},
 		{"fmt.Println of an Option", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(Some(1)) }\n", "fmt-operand"},

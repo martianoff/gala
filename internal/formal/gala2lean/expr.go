@@ -2,7 +2,6 @@ package gala2lean
 
 import (
 	"fmt"
-	"math/big"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -83,27 +82,6 @@ func posOf(n coreexport.Node) coreexport.Pos {
 	return metaPos(n)
 }
 
-// intLit is an int literal as an Int64. A constant outside int64 does not
-// compile in Go, except 2^63 under a unary minus, which wraps to the same
-// value Go gives -2^63.
-func intLit(n *coreexport.Int) string {
-	v, ok := new(big.Int).SetString(normalizedIntText(n.Text), 0)
-	if !ok {
-		unsup(n.Pos, "int-literal")
-	}
-	limit := new(big.Int).Lsh(big.NewInt(1), 63)
-	if v.Cmp(limit) > 0 {
-		unsup(n.Pos, "int-constant-overflow")
-	}
-	return "(" + v.String() + " : Int64)"
-}
-
-// normalizedIntText is an integer literal's text as big.Int.SetString reads it
-// with base 0: lowercase, without digit separators.
-func normalizedIntText(text string) string {
-	return strings.ReplaceAll(strings.ToLower(text), "_", "")
-}
-
 // strLit is a Lean string literal for s, which must be valid UTF-8 (a Lean
 // String is).
 func strLit(s string, pos coreexport.Pos) string {
@@ -144,8 +122,6 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 	switch e := e.(type) {
 	case *coreexport.Unsupported:
 		unsup(e.Pos, "%s", e.What)
-	case *coreexport.Int:
-		return term{code: intLit(e), pure: true}
 	case *coreexport.Bool:
 		if e.Value {
 			return term{code: "true", pure: true}

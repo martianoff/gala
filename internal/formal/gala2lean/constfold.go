@@ -34,11 +34,11 @@ var (
 		"&^": token.AND_NOT, "<<": token.SHL, ">>": token.SHR}
 )
 
-// constTree reports whether e is an operator tree, possibly parenthesized:
-// a unary or binary operator, not a literal alone.
+// constTree reports whether e, possibly parenthesized, is an int literal or
+// an operator: an int literal goes through the same int64 check as a fold.
 func constTree(e coreexport.Node) bool {
 	switch e := e.(type) {
-	case *coreexport.Unary, *coreexport.Binary:
+	case *coreexport.Int, *coreexport.Unary, *coreexport.Binary:
 		return true
 	case *coreexport.Paren:
 		return constTree(e.Expr)
@@ -94,8 +94,12 @@ func checkedConst(v constant.Value, e coreexport.Node) constant.Value {
 
 // unaryConst is `op x` as Go computes it, nil when Go rejects it.
 func unaryConst(op string, x constant.Value) constant.Value {
+	want := constant.Int
+	if op == "!" {
+		want = constant.Bool
+	}
 	tok, ok := constUnaryOps[op]
-	if !ok || (x.Kind() == constant.Bool) != (op == "!") || x.Kind() == constant.String {
+	if !ok || x.Kind() != want {
 		return nil
 	}
 	return constant.UnaryOp(tok, x, 0)
@@ -143,8 +147,8 @@ func binaryConst(op string, x, y constant.Value) constant.Value {
 	return constant.BinaryOp(x, tok, y)
 }
 
-// constTerm is e written as its value, when e is a constant operator tree
-// (ok).
+// constTerm is e written as its value, when e is an int literal or a
+// constant operator tree (ok).
 func constTerm(e coreexport.Node) (term, bool) {
 	if !constTree(e) {
 		return term{}, false
