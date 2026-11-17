@@ -1,0 +1,44 @@
+package main
+
+import "strings"
+import . "martianoff/gala/collection_immutable"
+
+// strings.NewReplacer(oldnew...).Replace(s): the earliest pair whose old
+// string starts at a position wins (not the longest), matches never overlap,
+// an empty old string matches between characters, and the old/new strings
+// come written out, from a variadic parameter, or from an Array's
+// ToGoSlice().
+
+func fill(template string, pairs ...string) string = strings.NewReplacer(pairs...).Replace(template)
+
+func fillFrom(template string, pairs Array[string]) string = strings.NewReplacer(pairs.ToGoSlice()...).Replace(template)
+
+func fillList(template string, pairs List[string]) string = strings.NewReplacer(pairs.ToGoSlice()...).Replace(template)
+
+// render numbers its arguments' placeholders, <arg>, <arg2>, ..., in one pass,
+// so an argument whose text holds a placeholder stays as written.
+func render(template string, args ...string) string {
+    val pairs = ArrayOf(args...).ZipWithIndex().FlatMap((pair) => {
+        val (value, i) = pair
+        ArrayOf(if (i == 0) "<arg>" else s"<arg${i + 1}>", value)
+    })
+    strings.NewReplacer(pairs.ToGoSlice()...).Replace(template)
+}
+
+func main() {
+    Println(strings.NewReplacer("a", "1", "ab", "2").Replace("ab"), strings.NewReplacer("ab", "2", "a", "1").Replace("ab"))
+    Println(strings.NewReplacer("aa", "x").Replace("aaa"), strings.NewReplacer("aa", "x").Replace("aaaa"))
+    Println(strings.NewReplacer("", "-").Replace("ab"), strings.NewReplacer("", "-").Replace(""))
+    Println(strings.NewReplacer("a", "1", "", "-").Replace("ab"), strings.NewReplacer("", "-", "a", "1").Replace("ab"))
+    Println(strings.NewReplacer("a", "b", "b", "a", "a", "z").Replace("abba"))
+    Println(strings.NewReplacer("a", "xy", "b", "", "a", "q").Replace("abcab"))
+    Println(strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace("<日本>é<"))
+    Println(strings.NewReplacer("本", "ほん", "日本", "にほん").Replace("日本語の本"))
+    Println(strings.NewReplacer().Replace("unchanged"), strings.NewReplacer("x", "y").Replace(""))
+    Println(fill("<a> and <b>", "<a>", "1", "<b>", "2"), fill("none"))
+    Println(fillFrom("<arg> then <arg2>", ArrayOf("<arg>", "x", "<arg2>", "y")))
+    Println(render("<arg> before <arg2>", "<arg2>", "two"), render("no args"))
+    Println(fillList("[x]", ListOf("x", "y")))
+    // An empty old string beside one that takes the whole character beyond ASCII.
+    Println(strings.NewReplacer("é", "e", "", "-").Replace("é"), strings.NewReplacer("", "-", "é", "e").Replace("aé"))
+}

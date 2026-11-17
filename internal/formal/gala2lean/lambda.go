@@ -77,7 +77,13 @@ func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
 	res := "_"
 	switch b := l.Body.(type) {
 	case *coreexport.Block:
-		if !returnsValue(b) {
+		if r := g.blockValueType(b, ls); r != "" {
+			// Its trailing expression's value (docs/GALA.MD: a block's
+			// value is its trailing expression).
+			res = r
+		} else if !returnsValue(b) && (len(b.Stmts) == 0 || !isValueIf(b.Stmts[len(b.Stmts)-1])) {
+			// A trailing `if`/`else` with block branches carries a value;
+			// its type is left to Lean.
 			res = "Unit"
 		}
 	default:
@@ -86,6 +92,64 @@ func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
 		}
 	}
 	return strings.TrimSuffix(ft, "Unit)") + res + ")"
+}
+
+// blockValueType is the Lean type of the value block b ends with, as far as
+// it is plain to see: its trailing expression's type, with each `val` or
+// `var` before it bound to its value's type (a destructuring one to the
+// parts of a tuple type); "" when not plain to see. A type read wrong here
+// is one Lean then rejects, never a different meaning.
+func (g *gen) blockValueType(b *coreexport.Block, sc *scope) string {
+	if len(b.Stmts) == 0 || !isExpr(b.Stmts[len(b.Stmts)-1]) {
+		return ""
+	}
+	bs := newScope(sc, sc.level)
+	for _, st := range b.Stmts[:len(b.Stmts)-1] {
+		var names []string
+		var values []coreexport.Node
+		var typ coreexport.Node
+		destructure := false
+		switch d := st.(type) {
+		case *coreexport.Val:
+			names, values, destructure, typ = d.Names, d.Values, d.Destructure, d.Type
+		case *coreexport.Var:
+			names, values, destructure, typ = d.Names, d.Values, d.Destructure, d.Type
+		default:
+			continue
+		}
+		declared := g.optTypeSafe(typ)
+		if len(values) != 1 || len(names) > 1 && !destructure {
+			// `var x int`, or `val a, b = 1, "s"`: the declared type, else each
+			// name's own value's.
+			for i, n := range names {
+				t := declared
+				if t == "" && len(values) == len(names) {
+					t = g.safeType(func() string { return g.typeOf(values[i], bs) })
+				}
+				bs.bind(n, false, t)
+			}
+			continue
+		}
+		t := declared
+		if t == "" {
+			t = g.safeType(func() string { return g.typeOf(values[0], bs) })
+		}
+		if !destructure {
+			for _, n := range names {
+				bs.bind(n, false, t)
+			}
+			continue
+		}
+		p := parseLean(t)
+		for i, n := range names {
+			et := ""
+			if (p.head == "T2" || p.head == "T3" || p.head == "T4") && len(p.args) == len(names) {
+				et = p.args[i].String()
+			}
+			bs.bind(n, false, et)
+		}
+	}
+	return g.safeType(func() string { return g.typeOf(b.Stmts[len(b.Stmts)-1], bs) })
 }
 
 // safeType is f's type, or "" when f stops at a construct outside the

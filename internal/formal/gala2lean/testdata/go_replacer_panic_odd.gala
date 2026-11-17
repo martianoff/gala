@@ -1,0 +1,16 @@
+package main
+
+import "strings"
+
+// strings.NewReplacer with an odd number of strings panics, before the
+// string to replace in is evaluated.
+
+func target() string {
+    Println("target")
+    "x"
+}
+
+func main() {
+    Println(strings.NewReplacer("a", "b").Replace("a"))
+    Println(strings.NewReplacer("a", "b", "c").Replace(target()))
+}

@@ -3,6 +3,7 @@ package difftest
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -78,6 +79,20 @@ func compareLean(r LeanRunner, res *gala2lean.Result, spec, real Run) (LeanRecor
 	o, err := parseSpecOutcome(out.Outcome)
 	if err != nil {
 		return LeanRecord{}, fmt.Errorf("gala2lean run: %w", err)
+	}
+	if o.Kind == KindUnsupported {
+		// The run reached a case a trusted model does not cover (a Panic's
+		// `unsupported` in the prelude): outside what gala2lean translates,
+		// never a verdict, once what it printed before stopping is what Go
+		// printed so far.
+		if real.Outcome.Kind == KindOK || real.Outcome.Kind == KindPanic {
+			if !strings.HasPrefix(strings.ReplaceAll(real.Stdout, "\r\n", "\n"), out.Stdout) {
+				return LeanRecord{Comparison: Comparison{Disagree,
+					"the Lean run stopped (" + out.Outcome + ") after printing what Go did not"}}, nil
+			}
+		}
+		return LeanRecord{Comparison: Comparison{Unsupported, "the Lean run stopped: " + out.Outcome},
+			Construct: "runtime:" + o.Detail}, nil
 	}
 	lean := Run{Stdout: out.Stdout, Outcome: o}
 	switch real.Outcome.Kind {

@@ -91,7 +91,8 @@ func (r *Runner) env() []string {
 type RunKind int
 
 const (
-	// RanOK: the program finished; Outcome is "ok" or "panic:CLASS".
+	// RanOK: the program finished; Outcome is "ok", "panic:CLASS", or
+	// "unsupported:WHAT" where a trusted model does not cover the case.
 	RanOK RunKind = iota
 	// Diverged: the program's result is divergence (Option's none).
 	Diverged

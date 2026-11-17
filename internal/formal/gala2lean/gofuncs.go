@@ -1,6 +1,7 @@
 package gala2lean
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"strings"
@@ -113,6 +114,9 @@ func (g *gen) goFuncOf(e *coreexport.Call, s *coreexport.Select, sc *scope) (goF
 // goCall translates a call of a modelled Go function: its arguments in the
 // order written, then the prelude's model; ok is false for any other call.
 func (g *gen) goCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
+	if nr, ok := g.newReplacerOf(e, s, sc); ok {
+		return g.replacerReplace(e, nr, sc), true
+	}
 	f, ok := g.goFuncOf(e, s, sc)
 	if !ok {
 		return term{}, false
@@ -137,10 +141,87 @@ func (g *gen) goCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term,
 // goCallType is exprType of a call of a modelled Go function, "" for any
 // other call.
 func (g *gen) goCallType(e *coreexport.Call, s *coreexport.Select, sc *scope) string {
+	if _, ok := g.newReplacerOf(e, s, sc); ok {
+		return "String"
+	}
 	if f, ok := g.goFuncOf(e, s, sc); ok {
 		return g.leanType(&coreexport.TypeName{Name: f.result})
 	}
 	return ""
+}
+
+// newReplacerOf is, for call e of s, `strings.NewReplacer(oldnew...).Replace(x)`,
+// the NewReplacer call. A Replacer is translated only so, built and used at
+// once: no Replacer value is held anywhere else.
+func (g *gen) newReplacerOf(e *coreexport.Call, s *coreexport.Select, sc *scope) (*coreexport.Call, bool) {
+	nr, ok := s.Target.(*coreexport.Call)
+	if !ok || s.Name != "Replace" || e.Bracket != nil || nr.Bracket != nil {
+		return nil, false
+	}
+	q, ok := nr.Callee.(*coreexport.Select)
+	if !ok || q.Name != "NewReplacer" || !g.goPackage(q.Target, "strings", sc) {
+		return nil, false
+	}
+	return nr, true
+}
+
+// replacerReplace translates `strings.NewReplacer(oldnew...).Replace(x)` (e,
+// with nr the NewReplacer call), in Go's order: the old/new strings, then
+// NewReplacer (which panics on an odd count), then x, then the replacement
+// (the prelude's goNewReplacer and goReplacerReplace).
+func (g *gen) replacerReplace(e, nr *coreexport.Call, sc *scope) term {
+	if len(e.Args) != 1 {
+		unsup(e.Pos, "argument-count")
+	}
+	positional(e.Args[0])
+	list := g.goStringArgs(nr, sc)
+	x := g.exprExpect(e.Args[0], sc, &coreexport.TypeName{Name: "string"})
+	return act(fmt.Sprintf("goReplacerReplace (← goNewReplacer %s) %s", list.val(), x.val()))
+}
+
+// goStringArgs are the arguments of call c of a Go function taking
+// ...string, as a Lean list of strings: the arguments written, or one
+// spread, of a variadic parameter, or of an Array or List's ToGoSlice() (a
+// copy of its elements in order that nothing else sees: the callee copies
+// its arguments).
+func (g *gen) goStringArgs(c *coreexport.Call, sc *scope) term {
+	if len(c.Args) == 1 {
+		if sp, ok := c.Args[0].(*coreexport.Spread); ok {
+			if isSliceParam(sp.Value, sc) {
+				return g.spreadTerm(sp.Value, sc)
+			}
+			if t, ok := g.toGoSliceOfStrings(sp.Value, sc); ok {
+				return t
+			}
+			unsup(sp.Pos, "spread-arg")
+		}
+	}
+	parts := make([]string, len(c.Args))
+	subs := make([]term, len(c.Args))
+	for i, a := range c.Args {
+		positional(a)
+		subs[i] = g.exprExpect(a, sc, &coreexport.TypeName{Name: "string"})
+		parts[i] = subs[i].val()
+	}
+	return wrap("(["+strings.Join(parts, ", ")+"] : List String)", subs...)
+}
+
+// toGoSliceOfStrings is `xs.ToGoSlice()` of an Array or List of strings xs,
+// as the list of its elements; ok is false for anything else.
+func (g *gen) toGoSliceOfStrings(v coreexport.Node, sc *scope) (term, bool) {
+	tc, ok := v.(*coreexport.Call)
+	if !ok || len(tc.Args) != 0 || tc.Bracket != nil {
+		return term{}, false
+	}
+	ts, ok := tc.Callee.(*coreexport.Select)
+	if !ok || ts.Name != "ToGoSlice" || !g.collections {
+		return term{}, false
+	}
+	if _, elem, ok := seqOf(g.typeOf(ts.Target, sc)); !ok || elem != "String" {
+		return term{}, false
+	}
+	t := g.expr(ts.Target, sc)
+	return wrap("("+t.val()+").data", t), true
 }
 
 // isGoPrint reports whether call c is `fmt.Println(...)` or `fmt.Print(...)`
