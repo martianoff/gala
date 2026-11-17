@@ -48,6 +48,7 @@ func pair() std.Tuple[int64, string] {
 func pick(b bool) int {
 //line $DIR/main.gala:16
 	{
+//line $DIR/main.gala:16
 		if b {
 //line $DIR/main.gala:16
 			return 1
@@ -55,6 +56,7 @@ func pick(b bool) int {
 //line $DIR/main.gala:16
 			return 2
 		}
+//line $DIR/main.gala:16
 	}
 }
 
@@ -110,6 +112,7 @@ func args(p P) int {
 //line $DIR/main.gala:32
 	var _tmp_1 int
 	{
+//line $DIR/main.gala:32
 		_subj := p.x.Get()
 		if _subj == 0 {
 //line $DIR/main.gala:34
@@ -140,6 +143,7 @@ func loops(n int) int {
 	for i := 0; i < n; i++ {
 //line $DIR/main.gala:44
 		var v = func() int {
+//line $DIR/main.gala:44
 			if i > 2 {
 //line $DIR/main.gala:45
 				for j := 0; j < i; j++ {
@@ -152,6 +156,7 @@ func loops(n int) int {
 //line $DIR/main.gala:50
 				return 0
 			}
+//line $DIR/main.gala:51
 		}()
 //line $DIR/main.gala:52
 		fmt.Println(v)

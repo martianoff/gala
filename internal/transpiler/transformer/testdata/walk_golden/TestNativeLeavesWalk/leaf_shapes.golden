@@ -362,6 +362,7 @@ func bodies() int {
 	var pick = func(s Shape) int {
 //line $DIR/main.gala:58
 		{
+//line $DIR/main.gala:58
 			_subj := s
 			{
 				_tmp_21 := Circle{}.Unapply(_subj)
@@ -378,6 +379,7 @@ func bodies() int {
 					return 0
 				}
 			}
+//line $DIR/main.gala:61
 		}
 	}
 //line $DIR/main.gala:62
@@ -430,6 +432,7 @@ func steps(n int, acc int) int {
 func named(n int, acc int) int {
 //line $DIR/main.gala:72
 	{
+//line $DIR/main.gala:72
 		if n <= 0 {
 //line $DIR/main.gala:72
 			return acc
@@ -437,6 +440,7 @@ func named(n int, acc int) int {
 //line $DIR/main.gala:72
 			return named(n-1, acc+1)
 		}
+//line $DIR/main.gala:72
 	}
 }
 

@@ -32,15 +32,19 @@ import (
 type branchingSite struct {
 	loopControlSite
 	kind string
+	// end is the line the construct ends on, which endBranchingCalls marks
+	// the end of the function literal with; 0 when markers are off.
+	end int
 }
 
-// recordBranchingCall records call, the lowering of the construct of kind at
-// line:col whose value is used.
-func (t *galaASTTransformer) recordBranchingCall(call *ast.CallExpr, kind string, line, col int) {
+// recordBranchingCall records call, the lowering of the construct of kind
+// written at at whose value is used.
+func (t *galaASTTransformer) recordBranchingCall(call *ast.CallExpr, kind string, at srcNode) {
 	if t.branchingCalls == nil {
 		t.branchingCalls = make(map[*ast.CallExpr]branchingSite)
 	}
-	t.branchingCalls[call] = branchingSite{loopControlSite{line, col}, kind}
+	line, col := at.start()
+	t.branchingCalls[call] = branchingSite{loopControlSite{line, col}, kind, t.stopLine(at)}
 }
 
 // recordUserReturn records ret as lowered from a source `return` at line:col.

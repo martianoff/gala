@@ -17,3 +17,11 @@ if-expression body on several lines: true
 match body: true
 function returning nothing with an if-expression body: true
 recursion that is not a tail call: true
+if-expression condition: true
+match subject: true
+else-if condition: true
+else-if condition on several lines: true
+else-if condition of a discarded if-expression: true
+subject of a type-switch match: true
+code after an if-expression: true
+code after a match: true

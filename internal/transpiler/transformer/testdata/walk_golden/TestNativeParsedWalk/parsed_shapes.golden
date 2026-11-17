@@ -203,6 +203,7 @@ func main() {
 	fmt.Println(fmt.Sprintf("üü %d %s", x+1, c.name.Get()), fmt.Sprintf("é %5d", x))
 //line $DIR/main.gala:36
 	fmt.Println(fmt.Sprintf("ü %d and %s %d", x*2, (func() string {
+//line $DIR/main.gala:36
 		if x > 1 {
 //line $DIR/main.gala:36
 			return "bïg"
@@ -210,5 +211,6 @@ func main() {
 //line $DIR/main.gala:36
 			return "small"
 		}
+//line $DIR/main.gala:36
 	}()), Box{n: std.NewImmutable(x)}.n.Get()))
 }

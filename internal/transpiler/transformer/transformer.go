@@ -689,6 +689,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// them (see eval_order.go).
 	t.orderOperands(file)
 
+	// The line the code after a match or if-expression lowered to a function
+	// literal is on (see line_directives.go).
+	t.endBranchingCalls(file)
+
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
 	if err := t.finalizeCodecs(file); err != nil {
 		return nil, nil, err

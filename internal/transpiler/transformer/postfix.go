@@ -831,7 +831,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// Statement-position match with a user-written `return X` inside an arm
 	// body cannot use the IIFE lowering. Wrapping the body in
-	// `func(_subj T) { ... }(subject)` would trap that `return X` inside the
+	// `func() { _subj := subject; ... }()` would trap that `return X` inside the
 	// IIFE's lambda — the surrounding gala function never returns, and any
 	// enclosing for-loop spins forever (the bug fired as a runtime hang, not
 	// a compile error). Inline the body instead so user returns become
@@ -845,7 +845,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		// A `use` in an arm is released at the end of the match, as in a
 		// match lowered to a function literal (see scopeReleases).
 		body := append(dispatch, t.buildMatchBodyForInline(clauses, defaultBody)...)
-		stmts, err := t.scopeReleases([]ast.Stmt{t.buildInlinedMatchBlock(subject, paramName, matchedType, body)},
+		stmts, err := t.scopeReleases([]ast.Stmt{t.buildInlinedMatchBlock(subject, paramName, nil, t.startMark(at), body)},
 			line, col)
 		if err != nil {
 			return nil, err
@@ -866,7 +866,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// acts on the enclosing function or loop (see hoisted_value.go).
 	if hoist != "" {
 		body := append(dispatch, t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)...)
-		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
+		block := t.buildInlinedMatchBlock(subject, paramName, nil, t.startMark(at), body)
 		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType, line, col)
 	}
 
@@ -883,21 +883,23 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// The function literal binds the subject itself (`_subj := subject`, as an
-	// inlined match does) instead of taking it as a parameter, so Go infers
-	// the subject's type and the lowering never writes it. A subject whose
-	// type only the cases tell, or that is matched as `any`, keeps the typed
-	// parameter, which converts it.
-	funcLit := &ast.FuncLit{Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField}}
-	call := &ast.CallExpr{Fun: funcLit}
-	if typedFromCases || matchedType.IsAny() {
-		funcLit.Type.Params.List = []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(matchedType)}}
-		funcLit.Body = &ast.BlockStmt{List: stmts}
-		call.Args = []ast.Expr{subject}
-	} else {
-		funcLit.Body = t.buildInlinedMatchBlock(subject, paramName, matchedType, stmts)
+	// inlined match does), so Go infers the subject's type and the lowering
+	// never writes it. A subject whose type only the cases tell is bound as
+	// that type, which converts it; any other subject, one matched as `any`
+	// included, already has the type it is matched as. Bound in the literal,
+	// the subject is evaluated below the match's line marker, not on the line
+	// that closes the literal, where a call's arguments are.
+	var bindType ast.Expr
+	if typedFromCases {
+		bindType = t.typeToExpr(matchedType)
 	}
+	funcLit := &ast.FuncLit{
+		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField},
+		Body: t.buildInlinedMatchBlock(subject, paramName, bindType, t.startMark(at), stmts),
+	}
+	call := &ast.CallExpr{Fun: funcLit}
 	if !stmtPosition {
-		t.recordBranchingCall(call, "match", line, col)
+		t.recordBranchingCall(call, "match", at)
 	}
 	return call, nil
 }
