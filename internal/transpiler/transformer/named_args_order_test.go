@@ -21,6 +21,8 @@ import (
     "net/http"
     "regexp"
     "strings"
+
+    "martianoff/gala/go_interop"
 )
 
 type Pairer interface {
@@ -36,6 +38,8 @@ type Ranker[T any] interface {
 func handler(h http.Handler) http.Handler = h
 
 func pattern(s string) *regexp.Regexp = regexp.MustCompile(strings.ToLower(s))
+
+func size(m map[string]int) int = go_interop.MapLen(m)
 
 `
 	cases := []struct {
@@ -98,6 +102,22 @@ func pattern(s string) *regexp.Regexp = regexp.MustCompile(strings.ToLower(s))
 			name:      "go method, argument left out",
 			body:      `func f(re *regexp.Regexp) string = re.ReplaceAllString(src = "banana")`,
 			wantError: `missing required argument "repl" (parameter 2) in call to ReplaceAllString`,
+		},
+		{
+			// A Go parameter takes no default, so the hint offers none.
+			name:      "go method, argument left out, hint",
+			body:      `func f(re *regexp.Regexp) string = re.ReplaceAllString(src = "banana")`,
+			wantError: `hint: pass "repl"; ReplaceAllString takes (src, repl)`,
+		},
+		{
+			name:      "go method, name given twice",
+			body:      `func f(re *regexp.Regexp) string = re.ReplaceAllString(src = "a", src = "b", repl = "c")`,
+			wantError: `parameter "src" is given more than once in call to ReplaceAllString`,
+		},
+		{
+			name:     "generic go function, lambda after the value it is typed by",
+			body:     `func f(m map[string]int) = go_interop.MapForEach(m = m, f = (k, v) => Println(k, v))`,
+			contains: `go_interop.MapForEach(m, func(k string, v int)`,
 		},
 	}
 	for _, tc := range cases {

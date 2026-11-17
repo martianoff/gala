@@ -1580,7 +1580,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 
 	for i, arg := range args {
 		paramType := goSigParamType(sig, i)
-		if paramType.IsNil() {
+		if paramType.IsNil() || arg == nil { // nil: a parameter not yet given (genericGoLambdaSlot)
 			continue
 		}
 

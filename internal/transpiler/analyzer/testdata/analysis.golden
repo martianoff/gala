@@ -132,7 +132,7 @@ corpus/examples/default_params_expr.gala	47d7cf5c882cfe37	92754f8821f580b8
 corpus/examples/default_type_param_binding.gala	47d7cf5c882cfe37	be2d9f08e219febd
 corpus/examples/default_vals_cross_pkg.gala	47d7cf5c882cfe37	1e30a3773e958345
 corpus/examples/default_values.gala	47d7cf5c882cfe37	66c1a8c71d74853c
-corpus/examples/dependency_injection.gala	47d7cf5c882cfe37	e5fd8b395c0b9f66
+corpus/examples/dependency_injection.gala	47d7cf5c882cfe37	46456314ca205bce
 corpus/examples/doc_io_verify.gala	47d7cf5c882cfe37	b1bc8247f300d9b9
 corpus/examples/doc_verify/concurrent_cancellation.gala	b12df3899cc51f44	ef4d7f7fda436635
 corpus/examples/doc_verify/concurrent_md.gala	b12df3899cc51f44	77f1adb0c35a4af8
@@ -228,7 +228,7 @@ corpus/examples/go_generic_struct_dot_import.gala	47d7cf5c882cfe37	9c5bd6d7fd264
 corpus/examples/go_generic_struct_dot_import_only_generic.gala	47d7cf5c882cfe37	b6fad30b6d0316c9
 corpus/examples/go_method_multi_results.gala	47d7cf5c882cfe37	70941ebb668536e3
 corpus/examples/go_multi_result_callbacks.gala	47d7cf5c882cfe37	a6fab65d8d585315
-corpus/examples/go_multi_result_methods.gala	47d7cf5c882cfe37	1ea5c353dd07c0e6
+corpus/examples/go_multi_result_methods.gala	47d7cf5c882cfe37	5c84623b746c0774
 corpus/examples/go_named_func_type_slots.gala	47d7cf5c882cfe37	6fb01d594bb2028f
 corpus/examples/go_pkg_shares_gala_name/gala_side.gala	4729acc10fe178bd	c5ebf10ae57e65f3
 corpus/examples/go_pkg_shares_gala_name/main.gala	4729acc10fe178bd	339ad29e4b395fd4
@@ -277,7 +277,7 @@ corpus/examples/immutable_typed_field_ctor.gala	47d7cf5c882cfe37	cf7838539e02b24
 corpus/examples/imports.gala	47d7cf5c882cfe37	e9696c348a53ef76
 corpus/examples/inc_dec.gala	47d7cf5c882cfe37	0950c8f02258a0ad
 corpus/examples/interface.gala	47d7cf5c882cfe37	f20e70d9a2c71e9c
-corpus/examples/interface_literal.gala	47d7cf5c882cfe37	119d86acc7921369
+corpus/examples/interface_literal.gala	47d7cf5c882cfe37	6fbd62fb152c1290
 corpus/examples/interface_val_field.gala	47d7cf5c882cfe37	c7e2e5af79cf6c72
 corpus/examples/interface_val_field_crosspkg.gala	47d7cf5c882cfe37	19f983a1d0415732
 corpus/examples/interpolation_escaped_quotes.gala	47d7cf5c882cfe37	c5e99ba014634694
@@ -633,7 +633,7 @@ corpus/examples/use_std_shadow_lib.gala	47d7cf5c882cfe37	16a5773540bb6bdd
 corpus/examples/user_get_method_option_chain.gala	47d7cf5c882cfe37	00078d494136c722
 corpus/examples/val_go_interface_method.gala	47d7cf5c882cfe37	b7ff20ee5f9655f6
 corpus/examples/val_multi_return.gala	47d7cf5c882cfe37	2d5387ee1bfdbc90
-corpus/examples/val_param_plain.gala	47d7cf5c882cfe37	f7c9b28901913cf6
+corpus/examples/val_param_plain.gala	47d7cf5c882cfe37	81b4731446a3ae81
 corpus/examples/val_pointer_field_mutation.gala	47d7cf5c882cfe37	7fece63bc256260f
 corpus/examples/value_match_control_flow.gala	47d7cf5c882cfe37	525065b9a1f242a9
 corpus/examples/value_match_return.gala	47d7cf5c882cfe37	8dc64a2a65178cd6
@@ -672,13 +672,13 @@ corpus/std/either.gala	ed1e7d52d9370e7b	85395c662a98d99c
 corpus/std/errors.gala	ed1e7d52d9370e7b	30819f1568d672e3
 corpus/std/hashable.gala	ed1e7d52d9370e7b	cc3bff6a63662495
 corpus/std/immutable.gala	ed1e7d52d9370e7b	0959a3dbaab69af3
-corpus/std/iterable.gala	ed1e7d52d9370e7b	2e9a8c555ff5f6b9
-corpus/std/meta.gala	ed1e7d52d9370e7b	fd4db1924af37bbb
+corpus/std/iterable.gala	ed1e7d52d9370e7b	57469f284c8a79fa
+corpus/std/meta.gala	ed1e7d52d9370e7b	a8e9939b230cb86a
 corpus/std/option.gala	ed1e7d52d9370e7b	735e0760d4153494
 corpus/std/option_ptr.gala	ed1e7d52d9370e7b	72cbf8c7ec26d117
-corpus/std/ordered.gala	ed1e7d52d9370e7b	3e75ee58800a4650
+corpus/std/ordered.gala	ed1e7d52d9370e7b	a6a1e0c897b62dd3
 corpus/std/ptr.gala	ed1e7d52d9370e7b	468ef6a6f4340190
-corpus/std/seq.gala	ed1e7d52d9370e7b	33695317708a5152
+corpus/std/seq.gala	ed1e7d52d9370e7b	3c9d1e32f293b943
 corpus/std/try.gala	ed1e7d52d9370e7b	e840351c97f34b6c
 corpus/std/tuple.gala	ed1e7d52d9370e7b	c20553f3714218ec
 corpus/stream/stream.gala	99f57ff211b18f31	b47e85805ed11b7f
@@ -852,7 +852,7 @@ error reference example 240: main.gala	7aadadd9de68a358	89b8cbc594642a1d
 error reference example 241: main.gala	435d205c4124c97f	08d1774d7d2fd67d
 error reference example 242: main.gala	7e69f15f20bc438c	0b36df41a99ed5b6
 error reference example 243: main.gala	000696b9d7bf8f5f	38202cea716a72ed
-error reference example 244: main.gala	865d82a8b858d3a7	7c1a2b7994ad6375
+error reference example 244: main.gala	865d82a8b858d3a7	64082df27646421d
 error reference example 245: main.gala	d600d46c4d711779	90f558498456231b
 error reference example 246: main.gala	f80e97d46ebb0957	283d6f99585ec4cb
 error reference example 247: main.gala	0270fb3a2ea86f35	16b5e2a9ebfd8ac0
@@ -900,7 +900,7 @@ error reference example 53: main.gala	9a28cab619135114	77391a1a91dc4d2a
 error reference example 54: main.gala	78c34f73ce34d505	17edd28edd9a6cd0
 error reference example 55: main.gala	3948a885f3567568	3d7c347da0f987ed
 error reference example 56: main.gala	2f740cc57a7a5f72	cca8aea9bcf2a004
-error reference example 57: main.gala	f98a665e989fd1f1	8219d9c7379615ce
+error reference example 57: main.gala	f98a665e989fd1f1	d8e8f78ce51fb508
 error reference example 58: main.gala	57f5c1d536c2262e	08d1774d7d2fd67d
 error reference example 59: main.gala	41a6e53c21ad32ae	08d1774d7d2fd67d
 error reference example 5: main.gala	0b2174dd79c73383	e61f2614fe8eb100

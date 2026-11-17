@@ -21,17 +21,21 @@ import (
 // the type had no constructor at all. The checks here report both in GALA
 // terms, naming the parameters the callee declares.
 //
-// Only callees GALA declared are checked. A Go function or method keeps Go's
-// own check: its metadata is synthesized from the Go type, and a call of it
-// can legitimately pass one multi-result Go call for several parameters.
+// Only callees GALA declared are checked, except for a call passing arguments
+// by name, which is laid out against the callee's parameters (layoutArgs). A
+// Go function or method called by position keeps Go's own check: its metadata
+// is synthesized from the Go type, and a call of it can legitimately pass one
+// multi-result Go call for several parameters.
 
-// paramList is the parameter list of a GALA callee, as a call's argument
-// count is checked against it.
+// paramList is the parameter list of a callee, as a call's argument count is
+// checked against it and its arguments are laid out.
 type paramList struct {
 	callee   string // the callee's declared name, for the message
 	names    []string
 	defaults map[int]transpiler.DefaultExpr
 	variadic bool // the last parameter is `...T`
+	// goDeclared: the callee is declared in Go, so it takes no default.
+	goDeclared bool
 }
 
 func funcParamList(callee string, fm *transpiler.FunctionMetadata) paramList {
@@ -39,7 +43,7 @@ func funcParamList(callee string, fm *transpiler.FunctionMetadata) paramList {
 }
 
 func methodParamList(callee string, mm *transpiler.MethodMetadata) paramList {
-	return paramList{callee: callee, names: paddedParamNames(mm.ParamNames, len(mm.ParamTypes)), defaults: mm.DefaultExprs, variadic: mm.Variadic}
+	return paramList{callee: callee, names: paddedParamNames(mm.ParamNames, len(mm.ParamTypes)), defaults: mm.DefaultExprs, variadic: mm.Variadic, goDeclared: mm.GoDeclared}
 }
 
 // goParamList is the parameter list of the Go function or method sig (nil
@@ -54,7 +58,7 @@ func goParamList(callee string, sig *transpiler.GoFuncSignature) paramList {
 	for i, p := range sig.Params {
 		names[i] = p.Name
 	}
-	return paramList{callee: callee, names: names, variadic: sig.IsVariadic}
+	return paramList{callee: callee, names: names, variadic: sig.IsVariadic, goDeclared: true}
 }
 
 // slotOf is the index of the parameter the i-th argument of a call fills,
@@ -179,8 +183,10 @@ func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs i
 			return nil, unknownParamNamesError(n.name, p.callee, line, col)
 		case idx < 0:
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", n.name, p.callee))
-		case filled[idx]:
+		case idx < len(positional):
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", n.name, p.callee))
+		case filled[idx]:
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q is given more than once in call to %s", n.name, p.callee))
 		}
 		slots[idx], filled[idx] = n.arg, true
 	}
@@ -209,8 +215,8 @@ func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs i
 // unknownParamNamesError reports the argument name passed by name to callee,
 // whose parameter names are not known: a Go signature that leaves its
 // parameters unnamed, or a method with no signature or metadata to read them
-// from. Placing it by its name is impossible,
-// and placing it where it is written could fill the wrong parameter.
+// from. Placing it by its name is impossible, and placing it where it is
+// written could fill the wrong parameter.
 func unknownParamNamesError(name, callee string, line, col int) error {
 	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 		"cannot pass %q by name in call to %s: its parameter names are not known; pass the arguments by position", name, callee))
@@ -258,8 +264,12 @@ func (p paramList) missingError(i, nargs, line, col int) error {
 	if nargs >= 0 {
 		msg += fmt.Sprintf(": expected %s, got %d", p.expected(), nargs)
 	}
+	fix := fmt.Sprintf("pass %q, or declare a default for it", p.names[i])
+	if p.goDeclared {
+		fix = fmt.Sprintf("pass %q", p.names[i])
+	}
 	return galaerr.NewCodedSemanticError(galaerr.CodeArgumentCountMismatch, line, col, msg,
-		fmt.Sprintf("pass %q, or declare a default for it; %s", p.names[i], p.signatureHint()))
+		fix+"; "+p.signatureHint())
 }
 
 // expected is the argument count the callee accepts: "2", "1 to 3", or

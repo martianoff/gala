@@ -1585,6 +1585,9 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	var named []namedArg[ast.Expr]
 	hasSpread := false
 	params := methodParamList(methodMeta.Name, methodMeta)
+	// `true` here filters to void function types only, avoiding leaked
+	// unresolved type params in return types.
+	unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 	for i, arg := range c.args.list {
 		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
@@ -1597,9 +1600,6 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		idx := params.slotOf(i, name)
 		expectedType := transpiler.Type(transpiler.NilType{})
 		if idx >= 0 {
-			// `true` here filters to void function types only, avoiding leaked
-			// unresolved type params in return types.
-			unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 			expectedType = t.expectedArgType(unresolvedCtx, idx, v.spread)
 		}
 		expr, err := t.lowerArg(v, slot{typ: expectedType, open: true}, false)
@@ -2140,7 +2140,19 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
 		if goSig != nil && len(goSig.TypeParams) > 0 && (v.lambda.ok() || isGoResultsThunkSlot(expectedType)) {
-			expectedType = t.genericGoLambdaSlot(goSig, slotIdx, positional, fun)
+			// The arguments lowered so far, each at its parameter, bind the
+			// type parameters: those passed by name too.
+			prior := positional
+			if len(named) > 0 {
+				prior = make([]ast.Expr, len(goParams.names))
+				copy(prior, positional)
+				for name, e := range named {
+					if j := slices.Index(goParams.names, name); j >= 0 {
+						prior[j] = e
+					}
+				}
+			}
+			expectedType = t.genericGoLambdaSlot(goSig, slotIdx, prior, fun)
 		}
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
