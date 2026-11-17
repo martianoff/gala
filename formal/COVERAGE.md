@@ -503,7 +503,7 @@ The first construct gala2lean did not translate in each program, by how many pro
 
 | Construct | Programs |
 |---|---|
-| `import` | 104 |
+| `import` | 103 |
 | `generic-type` | 35 |
 | `index` | 31 |
 | `qualified-type` | 24 |
