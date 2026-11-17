@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -39,6 +40,18 @@ func funcParamList(callee string, fm *transpiler.FunctionMetadata) paramList {
 
 func methodParamList(callee string, mm *transpiler.MethodMetadata) paramList {
 	return paramList{callee: callee, names: paddedParamNames(mm.ParamNames, len(mm.ParamTypes)), defaults: mm.DefaultExprs, variadic: mm.Variadic}
+}
+
+// goParamList is the parameter list of the Go function or method sig, as a
+// call passing arguments by name is laid out against it (layoutArgs). A Go
+// signature declares no defaults, and a parameter Go leaves unnamed has the
+// name "".
+func goParamList(callee string, sig *transpiler.GoFuncSignature) paramList {
+	names := make([]string, len(sig.Params))
+	for i, p := range sig.Params {
+		names[i] = p.Name
+	}
+	return paramList{callee: callee, names: names, variadic: sig.IsVariadic}
 }
 
 // paddedParamNames is names with one entry per parameter: metadata that lost
@@ -106,6 +119,87 @@ func (p paramList) tooManyError(nargs, line, col int) error {
 // a call may leave without an argument although it declares no default.
 func (p paramList) isVariadicSlot(i int) bool {
 	return p.variadic && i == len(p.names)-1
+}
+
+// namedArg is an argument passed by name, as layoutArgs places it.
+type namedArg[A any] struct {
+	name string
+	arg  A
+}
+
+// sortedNamedArgs is named as layoutArgs takes it, in name order, so the
+// error reported for a call with several wrong names does not depend on map
+// iteration order.
+func sortedNamedArgs[A any](named map[string]A) []namedArg[A] {
+	out := make([]namedArg[A], 0, len(named))
+	for _, name := range slices.Sorted(maps.Keys(named)) {
+		out = append(out, namedArg[A]{name, named[name]})
+	}
+	return out
+}
+
+// layoutArgs lays a call's arguments out in p's parameter order, the order Go
+// takes them in: the positional ones fill the leading parameters, and each
+// named one the parameter of its name. A parameter given no argument takes its
+// default, from fill (nil to only check that it has one), and a variadic last
+// one given none takes no argument: the slots returned then stop before it.
+// nargs is the argument count a missing-argument error names, -1 for none.
+//
+// Every call passing an argument by name is laid out here, whatever its
+// callee: a GALA function or method, an interface method, a Go function or
+// method. A callee whose parameter names are not known takes no argument by
+// name; that is reported rather than guessed at.
+func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs int, fill func(i int, slots []A) (A, error), line, col int) ([]A, error) {
+	slots := make([]A, len(p.names))
+	filled := make([]bool, len(p.names))
+	if len(positional) > len(slots) {
+		return nil, p.tooManyError(len(positional)+len(named), line, col)
+	}
+	for i, a := range positional {
+		slots[i], filled[i] = a, true
+	}
+	for _, n := range named {
+		idx := slices.Index(p.names, n.name)
+		switch {
+		case idx < 0 && slices.Contains(p.names, ""):
+			return nil, unknownParamNamesError(n.name, p.callee, line, col)
+		case idx < 0:
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", n.name, p.callee))
+		case filled[idx]:
+			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", n.name, p.callee))
+		}
+		slots[idx], filled[idx] = n.arg, true
+	}
+	for i := range slots {
+		if filled[i] {
+			continue
+		}
+		if p.isVariadicSlot(i) {
+			// A variadic parameter left out takes no argument.
+			return slots[:i], nil
+		}
+		if _, ok := p.defaults[i]; !ok {
+			return nil, p.missingError(i, nargs, line, col)
+		}
+		if fill != nil {
+			a, err := fill(i, slots)
+			if err != nil {
+				return nil, err
+			}
+			slots[i] = a
+		}
+	}
+	return slots, nil
+}
+
+// unknownParamNamesError reports the argument name passed by name to callee,
+// whose parameter names are not known: a Go signature that leaves its
+// parameters unnamed, or a method with no signature or metadata to read them
+// from. Placing it by its name is impossible,
+// and placing it where it is written could fill the wrong parameter.
+func unknownParamNamesError(name, callee string, line, col int) error {
+	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"cannot pass %q by name in call to %s: its parameter names are not known; pass the arguments by position", name, callee))
 }
 
 // checkSpreads reports a spread argument `xs...` of args that fills a
