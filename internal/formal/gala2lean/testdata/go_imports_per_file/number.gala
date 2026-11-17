@@ -1,0 +1,6 @@
+package main
+
+import strings "strconv"
+
+// number is n in decimal: `strings` names strconv in this file.
+func number(n int) string = strings.Itoa(n)

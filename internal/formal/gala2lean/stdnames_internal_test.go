@@ -14,6 +14,18 @@ import (
 	"martianoff/gala/internal/stdlib"
 )
 
+// TestGoPackageNameInjective checks that different Go package paths are
+// renamed to different names, all with the reserved prefix.
+func TestGoPackageNameInjective(t *testing.T) {
+	seen := map[string]string{}
+	for _, p := range []string{"fmt", "strings", "strconv", "unicode/utf8", "unicode_utf8", "a/b_c", "a_b/c", "a_sb", "a/sb"} {
+		n := goPackageName(p)
+		require.True(t, strings.HasPrefix(n, "_gala_"), p)
+		require.NotContains(t, seen, n, "%s and %s", p, seen[n])
+		seen[n] = p
+	}
+}
+
 // TestImportNames checks the names a file may refer to an import by.
 func TestImportNames(t *testing.T) {
 	for _, c := range []struct {

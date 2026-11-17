@@ -1,0 +1,11 @@
+package main
+
+import "strings"
+
+// An import's name means its package in its own file only: here `strings`
+// is Go's strings, in number.gala it is strconv.
+
+func main() {
+    Println(strings.TrimSuffix("main.gala", ".gala"), number(42))
+    Println(strings.NewReplacer("<n>", number(7)).Replace("n=<n>"))
+}

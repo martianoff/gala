@@ -83,14 +83,7 @@ func libNames(x string) (fn, seq bool) {
 // Some, None, Left, Right and its Option, Either and tuple types keep the
 // program-wide rule they had.
 func hideLibNames(p *coreexport.Program) *coreexport.Program {
-	declared := map[string]bool{}
-	for _, f := range p.Files {
-		for _, d := range f.Decls {
-			for _, x := range append(declNames(d), globalNames(d)...) {
-				declared[x] = true
-			}
-		}
-	}
+	declared := programDecls(p)
 	hidden := func(x string, other, collections bool) string {
 		fn, seq := libNames(x)
 		switch {
@@ -161,8 +154,24 @@ func hideLibNames(p *coreexport.Program) *coreexport.Program {
 	return &out
 }
 
-// unhider writes a renamed name as the source has it.
-var unhider = strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "")
+// programDecls are the names program p declares at the top level of any
+// file: functions, types, cases and package-level values, which every file
+// of their package sees.
+func programDecls(p *coreexport.Program) map[string]bool {
+	declared := map[string]bool{}
+	for _, f := range p.Files {
+		for _, d := range f.Decls {
+			for _, x := range append(declNames(d), globalNames(d)...) {
+				declared[x] = true
+			}
+		}
+	}
+	return declared
+}
+
+// unhider writes a renamed name as the source has it (a Go package
+// qualifier as its package path, `strings` for an alias of strings).
+var unhider = strings.NewReplacer(otherDotPrefix, "", noCollPrefix, "", goPackagePrefix, "")
 
 // unhide is text with every renamed name written as the source has it.
 func unhide(text string) string {
