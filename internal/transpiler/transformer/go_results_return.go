@@ -235,7 +235,7 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, exprBody bool,
 	lead = slices.DeleteFunc(slices.Clone(lead), func(s ast.Stmt) bool { return s == nil })
 	value := soleReturnValue(body)
 	// An expression that is a Go call with these results is returned as it is.
-	if res := t.goResults[asCall(value)]; exprBody && res != nil && res.count() == len(goResults.List) {
+	if res := t.goCallWithResults(value, len(goResults.List)); exprBody && res != nil {
 		return &ast.BlockStmt{List: append(lead, &ast.ReturnStmt{Results: []ast.Expr{res.raw}})}
 	}
 	results := make([]ast.Expr, len(goResults.List))
@@ -671,16 +671,17 @@ func (t *galaASTTransformer) noteGoResultsValue(b *goResultsBody, expr ast.Expr,
 // `return os.Open(p)` is, so each of its results need only be assignable to
 // its Go result.
 func (t *galaASTTransformer) passesThrough(b *goResultsBody, expr ast.Expr, at srcNode) bool {
-	return b.body.ok() && at == b.body && t.isGoCallOf(b, expr)
+	return b.body.ok() && at == b.body && t.goCallWithResults(expr, len(b.results)) != nil
 }
 
-// isGoCallOf reports whether expr is a Go call with one result per Go result
-// of the body b follows. Its Try or Tuple as a result value of b is checked
-// against b's results by noteGoResultsValue, which knows whether it passes
-// through (see passesThrough).
-func (t *galaASTTransformer) isGoCallOf(b *goResultsBody, expr ast.Expr) bool {
-	res := t.goResults[asCall(expr)]
-	return res != nil && res.count() == len(b.results)
+// goCallWithResults is expr's Go call when expr is a direct Go call with n
+// results, and nil otherwise. As an expression body of n Go results it is
+// returned as it is (see returnGoResults).
+func (t *galaASTTransformer) goCallWithResults(expr ast.Expr, n int) *goResult {
+	if res := t.goResults[asCall(expr)]; res != nil && res.count() == n {
+		return res
+	}
+	return nil
 }
 
 // notCovariant reports whether a Try[elem] is known not to be the Try[want]
