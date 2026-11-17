@@ -23,18 +23,17 @@ func main() {
     if ((1 << 70) >> 68 == 4) {
         Println("condition")
     }
-    val subject = ((1 << 70) >> 68) match {
+    Println(((1 << 70) >> 68) match {
         case 4 => "subject"
         case _ => "other"
-    }
-    Println(subject)
-    val guarded = 4 match {
+    })
+    Println(4 match {
         case n if n == (1 << 70) >> 68 => "guard"
         case _ => "no guard"
-    }
-    Println(guarded)
+    })
     Println(Box((1 << 70) >> 68), Sq((1 << 70) >> 68))
     Println(four())
+    // A constant operand of a non-constant expression is folded on its own.
     val x = 3
     Println(x + (1 << 70) >> 68)
     Println((-7) / 2, (-7) % 3, (-5) >> 1, ^5)
