@@ -109,6 +109,7 @@ GOCORE_SRCS = [
     "Gala/GoCore/Syntax.lean",
     "Gala/GoCore/Json.lean",
     "Gala/GoCore/Value.lean",
+    "Gala/GoCore/Float.lean",
     "Gala/GoCore/Prog.lean",
     "Gala/GoCore/Ops.lean",
     "Gala/GoCore/GcRuntime.lean",

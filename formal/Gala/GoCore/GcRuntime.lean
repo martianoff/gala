@@ -19,6 +19,10 @@
     not model escape analysis, so such a slice has two possible capacities
     (`SliceRep.alt`); the evaluator stops `unsupported` when a run would tell them
     apart.
+  * **No fused multiply-add.** The spec lets an implementation fuse `x*y + z` into one
+    rounding (Go spec, "Arithmetic operators", "Floating-point operators"); gc on amd64
+    at the default GOAMD64=v1 does not, so GoCore rounds each float operation (fixture
+    `floats`, whose fused result would differ).
   * **Sizes and alignment** of types on amd64 (cmd/compile/internal/types/size.go,
     `CalcStructSize`), which the growth reads through the element type's size and
     whether it holds pointers.

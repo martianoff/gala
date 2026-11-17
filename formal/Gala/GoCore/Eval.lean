@@ -164,6 +164,8 @@ def asBool : Val → GM Bool
 
 def asInt : Val → GM Int
   | .int _ n => pure n
+  -- An integral float constant where Go needs an integer (an index, a length).
+  | .rat _ _ n 1 => pure n
   | _ => stuck "not an integer"
 
 def asStr : Val → GM String
@@ -518,6 +520,19 @@ def zero (c : Ctx) : Nat → Ty → GM Val
       pure (.array t (Array.replicate k (← zero c n et)))
     | u => unsupported s!"zero-value-{u}"
 
+/-- The numeric constant `x / d` given type `t`, of underlying type `u`: for a float
+    type, a typed constant rounded to the type, ties to even (Go spec, "Constants",
+    "Representability"); for an integer type, the integer it must be. A constant
+    that overflows the type, or is not an integer, is a compile error (stuck). -/
+def constTo (t u : Ty) (x : Int) (d : Nat) : GM Val :=
+  match u with
+  | .float b =>
+    if let some (num, den) := FloatRep.roundRat b x d then pure (.rat t b num den)
+    else stuck s!"constant {x}/{d} overflows {t}"
+  | .int k =>
+    if d == 1 && k.represents x then pure (.int t x) else stuck s!"constant {x}/{d} is not an {k.name}"
+  | _ => stuck s!"cannot use constant {x}/{d} as {t}"
+
 /-- `v` assigned to a variable of type `t` (Go spec, "Assignability", "Representability"):
     an untyped constant takes the type, checked to be representable; a value assigned to
     an interface type keeps its own dynamic type; a value of an identical underlying type
@@ -525,6 +540,8 @@ def zero (c : Ctx) : Nat → Ty → GM Val
 def convert (c : Ctx) : Nat → Ty → Val → GM Val
   | 0, _, _ => throw .fuel
   | n + 1, t, v => do
+    -- A typed float constant stored in a variable is a float.
+    let v := v.materializeTyped
     -- A value already of the variable's type: nothing to do (the common case).
     if v.ty == t then return v
     let u ← underlying c n t
@@ -542,7 +559,10 @@ def convert (c : Ctx) : Nat → Ty → Val → GM Val
     | .slice _, .nilIface (.untyped .nil) => pure (.slice t none)
     | _, .slice vt r => if (← underlying c n vt) == u then pure (.slice t r) else stuck s!"cannot use {vt} as {t}"
     | _, .array vt es => if (← underlying c n vt) == u then pure (.array t es) else stuck s!"cannot use {vt} as {t}"
-    | .float _, .int (.untyped _) _ => unsupported "float-constant"
+    -- An untyped numeric constant given a float type: the nearest float (`constTo`);
+    -- a float constant given an integer type must be an integer.
+    | .float _, .int (.untyped _) x => return (← constTo t u x 1).materialize
+    | .float _, .rat _ _ x d | .int _, .rat _ _ x d => return (← constTo t u x d).materialize
     | _, .float vt x => if (← underlying c n vt) == u then pure (.float t x) else stuck s!"cannot use {vt} as {t}"
     | _, .int vt x => if (← underlying c n vt) == u then pure (.int t x) else stuck s!"cannot use {vt} as {t}"
     | _, .bool _ b => if u == .bool then pure (.bool t b) else stuck s!"cannot use bool as {t}"
@@ -564,11 +584,20 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       if k.represents x then pure (.int t x) else stuck s!"constant {x} overflows {k.name}"
     | .int k, .int _ x => pure (.int t (k.wrap x))
     | .string, .int _ _ => unsupported "string-of-int"
-    | .float _, .int .. | .int _, .float .. => unsupported "float-conversion"
-    -- Between float types of one width (a defined type and its underlying type), a
-    -- retype; between widths a rounding, not modelled.
-    | .float _, .float vt x =>
-      if (← underlying c n vt) == u then pure (.float t x) else unsupported "float-conversion"
+    -- An integer or float to a float type: the nearest value of its width, ties to
+    -- even. A float to an integer type: the value truncated toward zero; one out of the
+    -- type's range, an infinity or a NaN is implementation-specific (Go spec,
+    -- "Conversions between numeric types"), not modelled.
+    -- A constant converted to a float type is a typed constant, its value rounded to
+    -- the type (Go spec, "Conversions": "x is representable by a value of type T").
+    | .float _, .int (.untyped _) x => constTo t u x 1
+    | .float _, .rat _ _ x d | .int _, .rat _ _ x d => constTo t u x d
+    | .float b, .int _ x => pure (.float t (FloatRep.ofRat b x 1))
+    | .float b, .float _ x => pure (.float t (FloatRep.toSize b x))
+    | .int k, .float _ x =>
+      match FloatRep.truncate x with
+      | some i => if k.represents i then pure (.int t i) else unsupported "float-to-int-out-of-range"
+      | none => unsupported "float-to-int-out-of-range"
     | .slice _, .str .. => unsupported "slice-of-string"
     | .string, .slice .. => unsupported "string-of-slice"
     | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
@@ -588,6 +617,7 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       evalName c n env ((nameOwner c env x).getD env.pkg) x
     | .intLit v => pure (.int (.untyped .int) v)
     | .charLit v => pure (.int (.untyped .rune) v)
+    | .floatLit num den => pure (.rat (.untyped .float) 0 num den)
     | .strLit s => pure (.str (.untyped .string) s)
     | .paren x => evalExpr c n env x
     | .composite (some (.arrayType (some .ellipsis) elt)) elts =>
@@ -675,7 +705,8 @@ def evalName (c : Ctx) : Nat → Env → String → String → GM Val
       | some ve =>
         let v ← evalExpr c n { pkg := path, file := fi, iota := some iota } ve
         match te with
-        | some te => convert c n (← evalType c n { pkg := path, file := fi } te) v
+        -- A typed constant: its value converted to the type, a constant still.
+        | some te => conversion c n (← evalType c n { pkg := path, file := fi } te) v
         | none => pure v
     | some (.func _ tps _ _) =>
       -- Its type arguments come from the context it is used in (Go spec, "Type
@@ -1133,7 +1164,10 @@ def unary (c : Ctx) : Nat → String → Val → GM Val
       pure (.int t (k.wrap (bitNot x)))
     | "!", .bool t b => pure (.bool t !b)
     | "<-", _ => unsupported "receive"
-    | _, .float .. => unsupported "float-operation"
+    -- A float's negation flips its sign, of a zero and a NaN too (IEEE 754).
+    | "+", .float .. | "+", .rat .. => pure v
+    | "-", .float t x => pure (.float t (-x))
+    | "-", .rat t size x d => pure (.rat t size (-x) d)
     | _, _ => stuck s!"unary {op} on {v.ty}"
 
 /-- A binary operator other than `&&` and `||` (Go spec, "Operators"). An untyped
@@ -1141,8 +1175,8 @@ def unary (c : Ctx) : Nat → String → Val → GM Val
 def binary (c : Ctx) : Nat → String → Val → Val → GM Val
   | 0, _, _, _ => throw .fuel
   | n + 1, op, a, b => do
-    if a.isFloat || b.isFloat then unsupported "float-operation"
     if op == "<<" || op == ">>" then
+      if let .rat .. := a then unsupported "float-shift"
       -- The left operand's type is the result's; the count is any integer.
       let s ← asInt b
       match a, b.ty with
@@ -1157,6 +1191,41 @@ def binary (c : Ctx) : Nat → String → Val → Val → GM Val
         let .int k ← underlying c n t | stuck "shift of a non-integer"
         return .int t (← shiftOp op (some k) x s)
       | _ => stuck "shift of a non-integer"
+    -- An untyped integer or rune constant with an untyped float constant is a float
+    -- constant (Go spec, "Constant expressions": the operand of the kind later in
+    -- integer, rune, floating-point).
+    let lift := fun (v : Val) => match v with
+      | .int (.untyped _) x => Val.rat (.untyped .float) 0 x 1
+      | v => v
+    let (a, b) := match a, b with
+      | .rat .., .int (.untyped _) _ | .int (.untyped _) _, .rat .. => (lift a, lift b)
+      | _, _ => (a, b)
+    -- Two float constants: exact rational arithmetic (Go spec, "Constant expressions"),
+    -- the result rounded to the type of a typed one (a typed constant's value must be
+    -- representable: Go rejects one that overflows).
+    if let (.rat ta sa x dx, .rat tb sb y dy) := (a, b) then
+      let (t, size) := if sa == 0 then (tb, sb) else (ta, sa)
+      let cmp := compare (x * dy) (y * dx)
+      match op with
+      | "==" => return .bool (.untyped .bool) (cmp == .eq)
+      | "!=" => return .bool (.untyped .bool) (cmp != .eq)
+      | "<" | "<=" | ">" | ">=" => return .bool (.untyped .bool) (← cmpOp op cmp)
+      | _ => pure ()
+      let (num, den) : Int × Int ← match op with
+        | "+" => pure (x * dy + y * dx, dx * dy)
+        | "-" => pure (x * dy - y * dx, dx * dy)
+        | "*" => pure (x * y, dx * dy)
+        | "/" => if y == 0 then stuck "constant division by zero" else pure (x * dy, dx * y)
+        | _ => stuck s!"{op} on float constants"
+      let (num, den) := if den < 0 then (-num, -den) else (num, den)
+      let g := Nat.gcd num.natAbs den.toNat
+      let (num, den) := (num / g, den.toNat / g)
+      if size == 0 then return .rat t 0 num den
+      match FloatRep.roundRat size num den with
+      | some (num, den) => return .rat t size num den
+      | none => stuck s!"constant overflows {t}"
+    -- A typed float constant meeting a variable is a float.
+    let (a, b) := (a.materializeTyped, b.materializeTyped)
     -- Bring an untyped operand to the other's type (Go spec, "Operators").
     let (a, b) ← match a.ty, b.ty with
       | .untyped _, .untyped _ => pure (a, b)
@@ -1182,6 +1251,20 @@ def binary (c : Ctx) : Nat → String → Val → Val → GM Val
     | .str t x, .str _ y =>
       if op == "+" then return .str t (x ++ y)
       return .bool (.untyped .bool) (← cmpOp op (compare x y))
+    -- Floats: one IEEE 754 operation, rounded to the type's width; comparisons of a NaN
+    -- are false (Go spec, "Arithmetic operators", "Comparison operators").
+    | .float t x, .float _ y =>
+      let .float size ← underlying c n t | stuck "a float of a non-float type"
+      match op with
+      | "+" => return .float t (FloatRep.toSize size (x + y))
+      | "-" => return .float t (FloatRep.toSize size (x - y))
+      | "*" => return .float t (FloatRep.toSize size (x * y))
+      | "/" => return .float t (FloatRep.toSize size (x / y))
+      | "<" => return .bool (.untyped .bool) (x < y)
+      | "<=" => return .bool (.untyped .bool) (x ≤ y)
+      | ">" => return .bool (.untyped .bool) (y < x)
+      | ">=" => return .bool (.untyped .bool) (y ≤ x)
+      | _ => stuck s!"{op} on floats"
     | _, _ => stuck s!"{op} on {a.ty} and {b.ty}"
 
 /-- `a == b` (Go spec, "Comparison operators"): integers, booleans and strings by
@@ -1199,7 +1282,10 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     | .boxed _ (.slice ..), _ | _, .boxed _ (.slice ..) => unsupported "uncomparable"
     | _, _ => pure ()
     let (a, b) := (a.dyn, b.dyn)
-    if a.isFloat || b.isFloat then unsupported "float-comparison"
+    -- A float constant compared with a variable (through an interface) is a float.
+    let (a, b) := match a, b with
+      | .rat .., .rat .. => (a, b)
+      | _, _ => (a.materialize, b.materialize)
     -- Values of different dynamic types are unequal: by the precondition (see the
     -- module doc), only two interface operands can differ in type.
     let same := a.ty == b.ty || a.ty.isUntyped || b.ty.isUntyped
@@ -1223,6 +1309,9 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
       | .int _ x, .int _ y => pure (x == y)
       | .bool _ x, .bool _ y => pure (x == y)
       | .str _ x, .str _ y => pure (x == y)
+      -- IEEE 754 equality: a NaN equals nothing, +0 equals -0.
+      | .float _ x, .float _ y => pure (x == y)
+      | .rat _ _ x dx, .rat _ _ y dy => pure (x == y && dx == dy)
       | .ptr _ l, .ptr _ m => pure (l == m)
       | .struct_ _ xs, .struct_ _ ys => equalAll c n xs ys
       -- Arrays element by element (Go spec, "Comparison operators").
@@ -1627,7 +1716,8 @@ def inferTArgs (tps : List Field) (sig : Sig) (explicit : List Ty) (vs : List Va
     | [] =>
       if !trivial || typed.any (mayMention x maxUnifyDepth ·.1) then unsupported "type-inference"
       let ks := untypedKinds x
-      let k := if ks.contains .rune then some UKind.rune else ks.head?
+      -- The kind later in integer, rune, floating-point.
+      let k := if ks.contains .float then some UKind.float else if ks.contains .rune then some UKind.rune else ks.head?
       match k.bind UKind.default with
       | some t => pure t
       | none => unsupported "type-inference"
@@ -2098,6 +2188,7 @@ def sprintf (c : Ctx) : Nat → List Char → List Val → GM String
 def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
   | 0, _, _, _ => throw .fuel
   | n + 1, v, verb, spec => do
+    let v := v.materialize
     if spec.plain && ['v', 's', 'd', 't'].contains verb then return ← fmtArg c n v verb
     if verb == 'v' && (spec.sharp || spec.plus) then unsupported "fmt-flag-v"
     -- A nil operand: `padString("<nil>")`, padded, never truncated.
@@ -2177,9 +2268,14 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
       let parts ← (fs.zip ftys).mapM fun (f, (name, _)) =>
         fmtValue c n f 'v' (depth + 1) (canIface && exported name)
       pure ("{" ++ " ".intercalate parts ++ "}")
+    -- A float prints as `strconv.FormatFloat(x, 'g', -1, size)` (`fmtFloat`).
+    | .float t x =>
+      if verb != 'v' then unsupported s!"fmt-verb-{verb}-float"
+      let .float size ← underlying c n t | stuck "a float of a non-float type"
+      pure (FloatRep.format size x)
+    | .rat .. => fmtValue c n v.materialize verb depth canIface
     -- A slice or array prints its elements in brackets (`printValue`'s
     -- `reflect.Array, reflect.Slice`).
-    | .float .. => unsupported "fmt-float"
     | .slice .. | .array .. =>
       if verb != 'v' then unsupported "fmt-verb-slice"
       let es ← match v with
@@ -2225,7 +2321,7 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     -- unsupported.
     | "Equal", [a, b] =>
       match a.ty with
-      | .int _ | .bool | .string => pure [.bool .bool (← equal c n a b)]
+      | .int _ | .bool | .string | .float _ => pure [.bool .bool (← equal c n a b)]
       | _ =>
         -- `Equatable[T]`: `Equal(T) bool` exactly.
         match ← methodOfType c n a.ty "Equal" (.func_ [a.ty] [.bool] false) with

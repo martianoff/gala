@@ -64,7 +64,7 @@ private def unsupportedOf (j : Json) : D (Option String) :=
 /-- The kinds of the schema GoCore does not run: they decode to `unsupported <kind>`,
     without their children. A kind the schema does not have is malformed. -/
 def outsideExprs : List String :=
-  ["map-type", "chan-type", "float-lit", "imag-lit"]
+  ["map-type", "chan-type", "imag-lit"]
 def outsideStmts : List String := ["labeled", "select", "send", "go"]
 
 private def kindOf (j : Json) : D String := str j "kind"
@@ -86,6 +86,18 @@ partial def decodeExpr (j : Json) : D Expr := do
     | none => throw s!"int-lit value `{v}` is not a decimal integer"
   | "string-lit" => return .strLit (← str j "value")
   | "char-lit" => return .charLit (← int j "value")
+  -- go/constant's exact value: an integer, or a fraction `p/q` in lowest terms; one too
+  -- large for go/constant to keep exact (written `0x.8p-4321`) is not run.
+  | "float-lit" =>
+    let v ← str j "value"
+    match v.splitOn "/" with
+    | [p] => match p.toInt? with
+      | some n => return .floatLit n 1
+      | none => return .unsupported "float-lit-inexact"
+    | [p, q] => match p.toInt?, q.toNat? with
+      | some n, some d => if d == 0 then throw s!"float-lit value `{v}` divides by zero" else return .floatLit n d
+      | _, _ => return .unsupported "float-lit-inexact"
+    | _ => return .unsupported "float-lit-inexact"
   | "composite-lit" =>
     return .composite (← optExpr j "type") (← (← arr j "elts").mapM decodeExpr)
   | "key-value" => return .keyValue (← decodeExpr (← field j "key")) (← decodeExpr (← field j "value"))
