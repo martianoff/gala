@@ -167,6 +167,32 @@ genrule(
     visibility = ["//visibility:private"],
 )
 
+# Every stdlib package. source_tree_files and gala_packages are built from it,
+# and embed_completeness_test.go checks it against PackageImportPaths.
+_STDLIB_PACKAGES = [
+    "collection_immutable",
+    "collection_mutable",
+    "concurrent",
+    "crypto",
+    "fs",
+    "go_builtins",
+    "go_interop",
+    "io",
+    "json",
+    "lazy",
+    "path",
+    "regex",
+    "resource",
+    "std",
+    "stream",
+    "strings",
+    "subprocess",
+    "test",
+    "time_utils",
+    "validation",
+    "yaml",
+]
+
 # The stdlib source tree as it exists in the repo: every non-test .gala and
 # hand-written .go file of every embedded package (each package's
 # :shipped_sources glob), rendered as a Go list. embed_completeness_test.go
@@ -175,29 +201,7 @@ genrule(
 # cannot notice the omission; only the released CLI would.
 genrule(
     name = "source_tree_files",
-    srcs = [
-        "//collection_immutable:shipped_sources",
-        "//collection_mutable:shipped_sources",
-        "//concurrent:shipped_sources",
-        "//crypto:shipped_sources",
-        "//fs:shipped_sources",
-        "//go_builtins:shipped_sources",
-        "//go_interop:shipped_sources",
-        "//io:shipped_sources",
-        "//json:shipped_sources",
-        "//lazy:shipped_sources",
-        "//path:shipped_sources",
-        "//regex:shipped_sources",
-        "//resource:shipped_sources",
-        "//std:shipped_sources",
-        "//stream:shipped_sources",
-        "//strings:shipped_sources",
-        "//subprocess:shipped_sources",
-        "//test:shipped_sources",
-        "//time_utils:shipped_sources",
-        "//validation:shipped_sources",
-        "//yaml:shipped_sources",
-    ],
+    srcs = ["//%s:shipped_sources" % p for p in _STDLIB_PACKAGES],
     outs = ["source_tree_files_gen_test.go"],
     cmd = """
 {
@@ -215,36 +219,12 @@ genrule(
     visibility = ["//visibility:private"],
 )
 
-# Whether rules_gala treats each stdlib package's go_library as a GALA package
-# (see gala_packages.bzl). gala_packages_test.go requires it of every package
-# with .gala sources, so a hand-wired package whose go_library does not embed
-# :gala_package (stdlib_gala_package()) fails `bazel test`.
+# Whether rules_gala treats each stdlib go_library as a GALA package; checked by
+# gala_packages_test.go (see gala_packages.bzl).
 stdlib_gala_packages(
     name = "gala_packages",
     out = "gala_packages_gen_test.go",
-    libraries = [
-        "//collection_immutable",
-        "//collection_mutable",
-        "//concurrent",
-        "//crypto",
-        "//fs",
-        "//go_builtins",
-        "//go_interop",
-        "//io",
-        "//json",
-        "//lazy",
-        "//path",
-        "//regex",
-        "//resource",
-        "//std",
-        "//stream",
-        "//strings",
-        "//subprocess",
-        "//test",
-        "//time_utils",
-        "//validation",
-        "//yaml",
-    ],
+    libraries = ["//" + p for p in _STDLIB_PACKAGES],
     visibility = ["//visibility:private"],
 )
 

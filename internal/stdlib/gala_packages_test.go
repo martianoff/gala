@@ -1,38 +1,21 @@
 package stdlib
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
 
-// TestStdlibGalaPackagesAreMarked guards the GALA-package marker of the
-// hand-wired stdlib packages. Under go_export_data the transpile rules read a
-// Go library's types from its compiled export data unless rules_gala sees it
-// as a GALA package; a GALA package's types must come from its .gala source.
-// gala_library marks its library itself, but a package wired by hand
-// (gala_bootstrap_transpile plus a plain go_library) is marked only if its
-// go_library embeds :gala_package. Forgetting that compiles and mostly works,
-// with the transpiler silently typing the package from its generated Go.
-// bazelGalaPackages holds rules_gala's own verdict for every stdlib library
-// (//internal/stdlib:gala_packages); this test holds it against the source
-// tree.
+// TestStdlibGalaPackagesAreMarked requires every stdlib package with .gala
+// sources to be a GALA package to rules_gala, and no pure-Go one to be; see
+// gala_packages.bzl. TestEmbeddedStdlibMatchesSourceTree checks that the
+// package list behind bazelGalaPackages covers every registered package.
 func TestStdlibGalaPackagesAreMarked(t *testing.T) {
 	source := sourceTreeByPackage(t)
-
-	for _, pkg := range sortedKeys(PackageImportPaths) {
-		if _, ok := bazelGalaPackages[pkg]; !ok {
-			t.Errorf("stdlib package %q is not covered by the GALA-package marker check: list \"//%s\" in the libraries of the gala_packages target in internal/stdlib/BUILD.bazel", pkg, pkg)
-		}
-	}
-
 	for _, pkg := range sortedKeys(bazelGalaPackages) {
-		hasGala := false
-		for file := range source[pkg] {
-			if strings.HasSuffix(file, ".gala") {
-				hasGala = true
-				break
-			}
-		}
+		hasGala := slices.ContainsFunc(sortedKeys(source[pkg]), func(file string) bool {
+			return strings.HasSuffix(file, ".gala")
+		})
 		isGala := bazelGalaPackages[pkg]
 		switch {
 		case hasGala && !isGala:

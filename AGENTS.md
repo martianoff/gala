@@ -138,8 +138,7 @@ Two things to know:
   `stdlib_gala_package()` from `//internal/stdlib:shipped_sources.bzl`), or
   transpiles that depend on it read its types from its compiled Go instead of
   its `.gala` source. `//internal/stdlib:stdlib_test` fails for a stdlib package
-  with `.gala` sources that is not marked; list a new stdlib package in its
-  `gala_packages` target.
+  with `.gala` sources that is not marked.
 
 ### Prerequisites
 
