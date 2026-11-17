@@ -1,0 +1,10 @@
+package main
+
+import "strings"
+
+// strings.Repeat with a negative count panics, after what ran before it.
+
+func main() {
+    Println(strings.Repeat("ab", 2))
+    Println(strings.Repeat("ab", -1))
+}

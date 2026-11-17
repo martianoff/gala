@@ -307,6 +307,13 @@ galaspec models them, except as listed below):
   GALA's `Println` and `Print` do, with the same spacing (a trusted model, tested in
   `internal/formal/gala2lean/testdata/go_fmt.gala`). Any other operand
   (`fmt-operand`), or the call used as a value (`fmt-value`), is reported;
+- Go's `strings.HasPrefix`, `HasSuffix`, `TrimPrefix`, `TrimSuffix`, `Contains`,
+  `ReplaceAll` and `Repeat` (its negative-count, overflow and allocation panics, class `other`),
+  and `strconv.Itoa`, where the package name resolves to Go's: trusted models in the
+  prelude, after the Go 1.25.5 source, that match characters where Go matches bytes,
+  which agree on the valid UTF-8 every translated string is (a string literal that is
+  not valid UTF-8 is reported, `invalid-utf8`). Tested in
+  `internal/formal/gala2lean/testdata/go_strings*.gala`;
 - the packages of the program's module it imports (`gala2lean -module`): each one's
   declarations under a Lean namespace of its own, translated where the program uses
   them; `pkg.X` means package `pkg`'s `X` unless a local hides `pkg`. Every
@@ -496,7 +503,7 @@ The first construct gala2lean did not translate in each program, by how many pro
 
 | Construct | Programs |
 |---|---|
-| `import` | 104 |
+| `import` | 103 |
 | `generic-type` | 35 |
 | `index` | 31 |
 | `qualified-type` | 24 |

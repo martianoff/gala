@@ -3,6 +3,7 @@ package coreexport
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
@@ -38,6 +39,9 @@ func (e *exporter) interpolated(l native.LiteralNode) Node {
 			value, err := strconv.Unquote(`"` + p.Text + `"`)
 			if err != nil {
 				return e.unsupported(UnsupportedStringEscape, l.GalaNodeRef)
+			}
+			if !utf8.ValidString(value) {
+				return e.unsupported(UnsupportedInvalidUTF8, l.GalaNodeRef)
 			}
 			out = append(out, textRun(p.Start, p.End, value))
 			continue

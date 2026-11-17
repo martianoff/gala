@@ -551,6 +551,13 @@ flowchart LR
   `fmt.Print`, as statements, with `int`, `string` and `bool` operands, by the
   assumption that Go's `%v` of those prints as GALA's `Println` and `Print` do, with
   the same spacing. Any other operand, or the call used as a value, is reported.
+  And `strings.HasPrefix`, `HasSuffix`, `TrimPrefix`, `TrimSuffix`, `Contains`,
+  `ReplaceAll` and `Repeat`, and `strconv.Itoa`, as prelude code. Those match
+  characters where Go matches bytes; the two agree because every string a translated
+  program holds is valid UTF-8 (a literal that is not is reported, `invalid-utf8`, and
+  nothing in the subset builds a string from bytes), and on valid UTF-8 a byte match
+  starts only where a character does. `strings.ToLower` and `ToUpper` are not modelled:
+  Go's case mapping follows the full Unicode tables.
 - **Phases:** S1 with provable output first; then lambdas and closures (a captured `var`
   becomes a reference cell in the state), interpolation and `Option`/`Either`/`Try`;
   then generics and the immutable collections, modelled in the prelude.

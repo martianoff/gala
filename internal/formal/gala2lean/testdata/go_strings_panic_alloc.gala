@@ -1,0 +1,12 @@
+package main
+
+import "strings"
+
+// strings.Repeat panics when the result, though no longer than Go's largest
+// int in bytes, is more than Go can allocate: here 2 * 2^61 = 2^62 bytes,
+// past amd64's 2^48.
+
+func main() {
+    Println(strings.Repeat("-", 3))
+    Println(strings.Repeat("ab", 2305843009213693952))
+}

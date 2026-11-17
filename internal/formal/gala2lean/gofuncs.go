@@ -69,6 +69,80 @@ func (g *gen) goPackage(q coreexport.Node, goPath string, sc *scope) bool {
 	return true
 }
 
+// goFunc is a function of Go's standard library the prelude models: its
+// parameter types and result (GALA types: int, string, bool), the prelude
+// function, and whether that is an action (it can panic).
+type goFunc struct {
+	params []string
+	result string
+	lean   string
+	act    bool
+}
+
+// goFuncs are the modelled functions, by package path and name. strings'
+// functions match characters, which is Go's byte matching on the valid
+// UTF-8 every translated string is (the prelude's "Trusted Go models").
+var goFuncs = map[string]map[string]goFunc{
+	"strings": {
+		"HasPrefix":  {[]string{"string", "string"}, "bool", "goHasPrefix", false},
+		"HasSuffix":  {[]string{"string", "string"}, "bool", "goHasSuffix", false},
+		"TrimPrefix": {[]string{"string", "string"}, "string", "goTrimPrefix", false},
+		"TrimSuffix": {[]string{"string", "string"}, "string", "goTrimSuffix", false},
+		"Contains":   {[]string{"string", "string"}, "bool", "goContains", false},
+		"ReplaceAll": {[]string{"string", "string", "string"}, "string", "goReplaceAll", false},
+		"Repeat":     {[]string{"string", "int"}, "string", "goRepeat", true},
+	},
+	"strconv": {
+		"Itoa": {[]string{"int"}, "string", "goItoa", false},
+	},
+}
+
+// goFuncOf is the modelled function call e of q.F names, if any.
+func (g *gen) goFuncOf(e *coreexport.Call, s *coreexport.Select, sc *scope) (goFunc, bool) {
+	if e.Bracket != nil {
+		return goFunc{}, false
+	}
+	for pkg, fs := range goFuncs {
+		if f, ok := fs[s.Name]; ok && g.goPackage(s.Target, pkg, sc) {
+			return f, true
+		}
+	}
+	return goFunc{}, false
+}
+
+// goCall translates a call of a modelled Go function: its arguments in the
+// order written, then the prelude's model; ok is false for any other call.
+func (g *gen) goCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term, bool) {
+	f, ok := g.goFuncOf(e, s, sc)
+	if !ok {
+		return term{}, false
+	}
+	if len(e.Args) != len(f.params) {
+		unsup(e.Pos, "argument-count")
+	}
+	args := make([]term, len(e.Args))
+	vals := make([]string, len(e.Args))
+	for i, a := range e.Args {
+		positional(a)
+		args[i] = g.exprExpect(a, sc, &coreexport.TypeName{Name: f.params[i]})
+		vals[i] = args[i].val()
+	}
+	code := "(" + f.lean + " " + strings.Join(vals, " ") + ")"
+	if f.act {
+		return act(code), true
+	}
+	return wrap(code, args...), true
+}
+
+// goCallType is exprType of a call of a modelled Go function, "" for any
+// other call.
+func (g *gen) goCallType(e *coreexport.Call, s *coreexport.Select, sc *scope) string {
+	if f, ok := g.goFuncOf(e, s, sc); ok {
+		return g.leanType(&coreexport.TypeName{Name: f.result})
+	}
+	return ""
+}
+
 // isGoPrint reports whether call c is `fmt.Println(...)` or `fmt.Print(...)`
 // of Go's fmt.
 func (g *gen) isGoPrint(c *coreexport.Call, sc *scope) (*coreexport.Select, bool) {

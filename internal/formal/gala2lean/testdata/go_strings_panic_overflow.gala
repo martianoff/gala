@@ -1,0 +1,11 @@
+package main
+
+import "strings"
+
+// strings.Repeat panics when the result would be longer, in bytes, than Go's
+// largest int: here 2 * 2^62 = 2^63.
+
+func main() {
+    Println(strings.Repeat("", 4611686018427387904) == "")
+    Println(strings.Repeat("ab", 4611686018427387904))
+}

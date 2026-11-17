@@ -532,6 +532,7 @@ const (
 	UnsupportedFormatString     = "format-string"
 	UnsupportedInterpEscape     = "interpolated-escape"
 	UnsupportedStringEscape     = "string-escape"
+	UnsupportedInvalidUTF8      = "invalid-utf8"
 	UnsupportedQualifiedType    = "qualified-type"
 	UnsupportedSliceType        = "slice-type"
 	UnsupportedPointerType      = "pointer-type"
@@ -557,7 +558,7 @@ var unsupportedKinds = []string{
 	UnsupportedCompositeLiteral, UnsupportedIndex, UnsupportedNamedSubPattern,
 	UnsupportedUnit, UnsupportedOneTuple, UnsupportedLeadingZero, UnsupportedFloatLiteral, UnsupportedCharLiteral,
 	UnsupportedNil, UnsupportedInterpolated, UnsupportedFormatString, UnsupportedInterpEscape,
-	UnsupportedStringEscape,
+	UnsupportedStringEscape, UnsupportedInvalidUTF8,
 	UnsupportedQualifiedType, UnsupportedSliceType, UnsupportedPointerType, UnsupportedMapType,
 	UnsupportedFuncType, UnsupportedOtherType, UnsupportedDeref, UnsupportedReceive,
 	UnsupportedTypedPattern, UnsupportedRestPattern, UnsupportedSelectPattern,
