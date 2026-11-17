@@ -1,4 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
+load(":shipped_sources.bzl", "STDLIB_PACKAGES")
 
 # Generate embedded stdlib Go file from transpiled sources and GALA source files.
 # This uses gala_bootstrap (not gala) to avoid circular dependency.
@@ -174,29 +175,7 @@ genrule(
 # cannot notice the omission; only the released CLI would.
 genrule(
     name = "source_tree_files",
-    srcs = [
-        "//collection_immutable:shipped_sources",
-        "//collection_mutable:shipped_sources",
-        "//concurrent:shipped_sources",
-        "//crypto:shipped_sources",
-        "//fs:shipped_sources",
-        "//go_builtins:shipped_sources",
-        "//go_interop:shipped_sources",
-        "//io:shipped_sources",
-        "//json:shipped_sources",
-        "//lazy:shipped_sources",
-        "//path:shipped_sources",
-        "//regex:shipped_sources",
-        "//resource:shipped_sources",
-        "//std:shipped_sources",
-        "//stream:shipped_sources",
-        "//strings:shipped_sources",
-        "//subprocess:shipped_sources",
-        "//test:shipped_sources",
-        "//time_utils:shipped_sources",
-        "//validation:shipped_sources",
-        "//yaml:shipped_sources",
-    ],
+    srcs = ["//%s:shipped_sources" % p for p in STDLIB_PACKAGES],
     outs = ["source_tree_files_gen_test.go"],
     cmd = """
 {

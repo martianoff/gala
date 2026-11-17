@@ -54,7 +54,7 @@ func TestEmbeddedStdlibMatchesSourceTree(t *testing.T) {
 	// list, or its files would silently escape this check.
 	for _, pkg := range sortedKeys(PackageImportPaths) {
 		if _, ok := source[pkg]; !ok {
-			t.Errorf("stdlib package %q is not covered by the completeness check: add a :shipped_sources filegroup to %s/BUILD.bazel and list \"//%s:shipped_sources\" in the source_tree_files genrule in internal/stdlib/BUILD.bazel", pkg, pkg, pkg)
+			t.Errorf("stdlib package %q is not covered by the completeness and GALA-package checks: call stdlib_shipped_sources() in %s/BUILD.bazel and add %q to STDLIB_PACKAGES in internal/stdlib/shipped_sources.bzl", pkg, pkg, pkg)
 		}
 	}
 
