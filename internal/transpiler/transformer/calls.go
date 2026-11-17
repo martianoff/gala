@@ -1066,18 +1066,23 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 // at the call's anchor.
 func bindMethodArguments(c callSrc, method string, methodMeta *transpiler.MethodMetadata) ([]argSrc, error) {
 	args := c.args.list
-	named, spread := false, false
+	spread := false
+	var positional []argSrc
+	var byName []namedArg[argSrc]
 	for _, arg := range args {
-		named = named || arg.named()
 		spread = spread || arg.spread()
+		if name, _ := arg.name(); name != "" {
+			byName = append(byName, namedArg[argSrc]{name, arg})
+		} else {
+			positional = append(positional, arg)
+		}
 	}
+	named := len(byName) > 0
 	line, col := c.anchor().start()
 	if methodMeta == nil {
 		// Without metadata the parameters' names are not known.
-		for _, arg := range args {
-			if name, _ := arg.name(); name != "" {
-				return nil, unknownParamNamesError(name, method, line, col)
-			}
+		if named {
+			return nil, unknownParamNamesError(byName[0].name, method, line, col)
 		}
 		return args, nil
 	}
@@ -1089,6 +1094,7 @@ func bindMethodArguments(c callSrc, method string, methodMeta *transpiler.Method
 			return nil, err
 		}
 	}
+	nargs := -1
 	if !named {
 		// A spread argument fills an unknown number of parameters, and a Go
 		// method keeps Go's own check (see call_arity.go).
@@ -1100,20 +1106,7 @@ func bindMethodArguments(c callSrc, method string, methodMeta *transpiler.Method
 		if len(args) >= params.fixed() {
 			return args, nil
 		}
-	}
-
-	var positional []argSrc
-	var byName []namedArg[argSrc]
-	for _, arg := range args {
-		if name, _ := arg.name(); name != "" {
-			byName = append(byName, namedArg[argSrc]{name, arg})
-		} else {
-			positional = append(positional, arg)
-		}
-	}
-	nargs := len(args)
-	if named {
-		nargs = -1
+		nargs = len(args)
 	}
 	return layoutArgs(params, positional, byName, nargs, nil, line, col)
 }
@@ -1426,7 +1419,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 // A1 cont.
 func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, method string) (ast.Expr, error) {
 	var mArgs []ast.Expr
-	named := make(map[string]ast.Expr)
+	var named []namedArg[ast.Expr]
 	hasSpread := false
 	args := c.args.list
 	// The Go method's parameters, for passing a Go call's results through
@@ -1435,6 +1428,7 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 	if len(args) > 0 {
 		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
 	}
+	params := goParamList(method, goSig)
 	for i, arg := range args {
 		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
@@ -1443,13 +1437,8 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 		if v.spread {
 			hasSpread = true
 		}
-		// The parameter the argument fills: its position, as positional
-		// arguments come first, or the one of its name.
 		name, _ := arg.name()
-		idx := i
-		if name != "" {
-			idx = goSigParamIndex(goSig, name)
-		}
+		idx := params.slotOf(i, name)
 		typed := !v.spread && idx >= 0
 		// A lambda takes its parameter types from the Go method's parameter,
 		// once the signature is instantiated (see goMethodSignature).
@@ -1472,44 +1461,33 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 			}
 		}
 		if name != "" {
-			named[name] = expr
+			named = append(named, namedArg[ast.Expr]{name, expr})
 			continue
 		}
 		mArgs = append(mArgs, expr)
 	}
 	fun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 	if len(named) > 0 {
-		return handleNamedArgsGoCall(fun, method, goSig, mArgs, named, hasSpread, c)
+		return handleNamedArgsGoCall(fun, goSig, params, mArgs, named, hasSpread, c)
 	}
 	return &ast.CallExpr{Fun: fun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
 
-// goSigParamIndex is the index of the parameter of sig (may be nil) named
-// name, or -1.
-func goSigParamIndex(sig *transpiler.GoFuncSignature, name string) int {
-	if sig == nil {
-		return -1
-	}
-	return slices.IndexFunc(sig.Params, func(p transpiler.GoParam) bool { return p.Name == name })
-}
-
-// handleNamedArgsGoCall is the call of fun, the Go function or method callee
-// with the signature sig (nil when unknown), passing positional and the named
-// arguments: laid out in sig's parameter order, as Go takes them. A spread
-// argument fills only the variadic last parameter.
-func handleNamedArgsGoCall(fun ast.Expr, callee string, sig *transpiler.GoFuncSignature, positional []ast.Expr, named map[string]ast.Expr, spread bool, c callSrc) (ast.Expr, error) {
+// handleNamedArgsGoCall is the call of fun, the Go function or method with
+// the signature sig (nil when unknown) and the parameters params, passing
+// positional and the named arguments: laid out in sig's parameter order, as
+// Go takes them. A spread argument fills only the variadic last parameter.
+func handleNamedArgsGoCall(fun ast.Expr, sig *transpiler.GoFuncSignature, params paramList, positional []ast.Expr, named []namedArg[ast.Expr], spread bool, c callSrc) (ast.Expr, error) {
 	line, col := c.anchor().start()
-	byName := sortedNamedArgs(named)
 	if sig == nil {
-		return nil, unknownParamNamesError(byName[0].name, callee, line, col)
+		return nil, unknownParamNamesError(named[0].name, params.callee, line, col)
 	}
-	params := goParamList(callee, sig)
 	if spread {
 		if err := params.checkSpreads(c.args); err != nil {
 			return nil, err
 		}
 	}
-	args, err := layoutArgs(params, positional, byName, -1, nil, line, col)
+	args, err := layoutArgs(params, positional, named, -1, nil, line, col)
 	if err != nil {
 		return nil, err
 	}
@@ -1604,8 +1582,9 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	recvType transpiler.Type,
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
-	named := make(map[string]ast.Expr)
+	var named []namedArg[ast.Expr]
 	hasSpread := false
+	params := methodParamList(methodMeta.Name, methodMeta)
 	for i, arg := range c.args.list {
 		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
@@ -1614,13 +1593,8 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		if v.spread {
 			hasSpread = true
 		}
-		// The parameter the argument fills: its position, as positional
-		// arguments come first, or the one of its name.
 		name, _ := arg.name()
-		idx := i
-		if name != "" {
-			idx = slices.Index(methodMeta.ParamNames, name)
-		}
+		idx := params.slotOf(i, name)
 		expectedType := transpiler.Type(transpiler.NilType{})
 		if idx >= 0 {
 			// `true` here filters to void function types only, avoiding leaked
@@ -1633,7 +1607,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 			return nil, err
 		}
 		if name != "" {
-			named[name] = expr
+			named = append(named, namedArg[ast.Expr]{name, expr})
 			continue
 		}
 		mArgs = append(mArgs, expr)
@@ -1641,7 +1615,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	fun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 	if len(named) > 0 {
 		if hasSpread {
-			if err := methodParamList(methodMeta.Name, methodMeta).checkSpreads(c.args); err != nil {
+			if err := params.checkSpreads(c.args); err != nil {
 				return nil, err
 			}
 		}
@@ -1720,7 +1694,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		}
 	}
 	if len(mNamedArgs) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, hasSpread, methodMeta, recvType, typeSubst, al, ac)
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, sortedNamedArgs(mNamedArgs), hasSpread, methodMeta, recvType, typeSubst, al, ac)
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
 		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, al, ac)
@@ -2096,6 +2070,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	// (spreadGoResultArg) and for naming a Try or Tuple passed where its plain
 	// value is expected (checkGoResultGoArg).
 	goSig := callCtx.goSig
+	goParams := goParamList("", goSig)
 
 	for _, arg := range args {
 		v, extractErr := t.argContent(arg)
@@ -2110,8 +2085,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		// its name, and is typed as a positional argument there is.
 		argName, _ := arg.name()
 		slotIdx := argIdx
-		if argName != "" && goSig != nil {
-			slotIdx = goSigParamIndex(goSig, argName)
+		if goSig != nil {
+			slotIdx = goParams.slotOf(argIdx, argName)
 		}
 		if argName != "" && (goSig == nil || slotIdx < 0) {
 			// Named argument: resolve the expected type via struct-field lookup
@@ -2641,7 +2616,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 		}
 	}
 
-	if ctx.funcMeta == nil && ctx.applyMethodMeta == nil && ctx.goFuncParamTypes != nil {
+	if ctx.funcMeta == nil && ctx.applyMethodMeta == nil && ctx.goFuncParamTypes != nil && len(args.list) > 0 {
 		ctx.goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: fun})
 	}
 
@@ -2984,7 +2959,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 			return expr, nil
 		}
 		if callCtx.goSig != nil {
-			return handleNamedArgsGoCall(fun, t.argCalleeName(fun), callCtx.goSig, args, namedArgs, hasSpread, c)
+			return handleNamedArgsGoCall(fun, callCtx.goSig, goParamList(t.argCalleeName(fun), callCtx.goSig), args, sortedNamedArgs(namedArgs), hasSpread, c)
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, c)
 	}
@@ -4663,7 +4638,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	fun ast.Expr,
 	callSiteReceiver ast.Expr,
 	positionalArgs []ast.Expr,
-	namedArgs map[string]ast.Expr,
+	namedArgs []namedArg[ast.Expr],
 	spread bool,
 	methodMeta *transpiler.MethodMetadata,
 	recvType transpiler.Type,
@@ -4673,7 +4648,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	fill := func(i int, args []ast.Expr) (ast.Expr, error) {
 		return t.methodDefaultArg(methodMeta, i, args, callSiteReceiver, recvType, typeSubst, line, col)
 	}
-	args, err := layoutArgs(methodParamList(methodMeta.Name, methodMeta), positionalArgs, sortedNamedArgs(namedArgs), -1, fill, line, col)
+	args, err := layoutArgs(methodParamList(methodMeta.Name, methodMeta), positionalArgs, namedArgs, -1, fill, line, col)
 	if err != nil {
 		return nil, err
 	}

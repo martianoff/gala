@@ -42,16 +42,30 @@ func methodParamList(callee string, mm *transpiler.MethodMetadata) paramList {
 	return paramList{callee: callee, names: paddedParamNames(mm.ParamNames, len(mm.ParamTypes)), defaults: mm.DefaultExprs, variadic: mm.Variadic}
 }
 
-// goParamList is the parameter list of the Go function or method sig, as a
-// call passing arguments by name is laid out against it (layoutArgs). A Go
-// signature declares no defaults, and a parameter Go leaves unnamed has the
-// name "".
+// goParamList is the parameter list of the Go function or method sig (nil
+// when unknown: no parameters), as a call passing arguments by name is laid
+// out against it (layoutArgs). A Go signature declares no defaults, and a
+// parameter Go leaves unnamed has the name "".
 func goParamList(callee string, sig *transpiler.GoFuncSignature) paramList {
+	if sig == nil {
+		return paramList{callee: callee}
+	}
 	names := make([]string, len(sig.Params))
 	for i, p := range sig.Params {
 		names[i] = p.Name
 	}
 	return paramList{callee: callee, names: names, variadic: sig.IsVariadic}
+}
+
+// slotOf is the index of the parameter the i-th argument of a call fills,
+// passed by name when name is not "": its own position, as positional
+// arguments come first, or the parameter of its name (-1 for none). Its
+// argument is typed against that parameter before layoutArgs places it.
+func (p paramList) slotOf(i int, name string) int {
+	if name == "" {
+		return i
+	}
+	return slices.Index(p.names, name)
 }
 
 // paddedParamNames is names with one entry per parameter: metadata that lost
