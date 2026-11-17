@@ -5542,6 +5542,35 @@ gala_exec_test(
     ],
 )
 
+# A val holding a pointer of a Go type — a generic Go alias of a pointer,
+# a Go defined pointer type — lends and writes the fields it reaches
+# through the pointer, in the package's own Go types and another's.
+gala_library(
+    name = "inout_go_pointer_types",
+    srcs = ["inout_go_pointer_types/counter.gala"],
+    go_srcs = ["inout_go_pointer_types/counter.go"],
+    importpath = "martianoff/gala/examples/inout_go_pointer_types",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "inout_go_pointer_types_user",
+    srcs = ["inout_go_pointer_types_user/user.gala"],
+    importpath = "martianoff/gala/examples/inout_go_pointer_types_user",
+    visibility = ["//visibility:public"],
+    deps = [":inout_go_pointer_types"],
+)
+
+gala_exec_test(
+    name = "inout_go_pointer_types_test",
+    src = "inout_go_pointer_types_test.gala",
+    expected = "inout_go_pointer_types_test.out",
+    deps = [
+        ":inout_go_pointer_types",
+        ":inout_go_pointer_types_user",
+    ],
+)
+
 # An interface may declare an inout method: GALA types implement it with an
 # inout receiver, and a Go type only through the no-retain allow-list.
 gala_exec_test(

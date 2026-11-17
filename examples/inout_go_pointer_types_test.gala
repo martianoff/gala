@@ -1,0 +1,18 @@
+package main
+
+import (
+    "martianoff/gala/examples/inout_go_pointer_types"
+    "martianoff/gala/examples/inout_go_pointer_types_user"
+)
+
+func main() {
+    Println(inout_go_pointer_types.ViaAlias(1))
+    Println(inout_go_pointer_types.ViaDefined(1))
+    Println(inout_go_pointer_types.ViaGenericDefined(5))
+    Println(inout_go_pointer_types.ViaField(7))
+    Println(inout_go_pointer_types.Replaced(1, 3))
+    Println(inout_go_pointer_types.BumpThrough(40))
+    Println(inout_go_pointer_types.LastID())
+    Println(inout_go_pointer_types_user.ViaImportedDefined(20))
+    Println(inout_go_pointer_types_user.ViaImportedAlias(30))
+}

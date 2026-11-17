@@ -358,11 +358,36 @@ func (t *galaASTTransformer) checkInoutArgs(base ast.Expr, expr ast.Expr, c call
 }
 
 // heldPointer is the pointer type (a Ptr[T] or a *T) expr holds, through
-// GALA and Go aliases (unaliasedType); ok is false when it holds none.
+// GALA and Go aliases and Go defined pointer types (pointerView); ok is
+// false when it holds none.
 func (t *galaASTTransformer) heldPointer(expr ast.Expr) (ptr transpiler.PointerType, ok bool) {
-	held, _ := t.unaliasedType(t.getExprTypeName(expr), nil)
+	held, _ := t.pointerView(t.getExprTypeName(expr), nil)
 	ptr, ok = held.(transpiler.PointerType)
 	return ptr, ok
+}
+
+// pointerView is typ through GALA and Go aliases (unaliasedType), with a Go
+// defined type of a pointer (`type NP *GoCounter`; a generic one
+// instantiated with its type arguments) seen as that pointer: Go selects a
+// field through it, `n.N` as `(*n).N`, and passes it where its underlying
+// pointer is taken. Like any pointer from Go, it may be nil. pointerView
+// is used wherever GALA asks whether a value is a pointer: for a field
+// reached through it, the place it holds, or how many pointers deep a lend
+// is. It is not the type's identity: a hint matching types (lendFits)
+// keeps NP apart from *GoCounter. resolved is false when it stops at a Go
+// alias or defined pointer type it cannot instantiate.
+func (t *galaASTTransformer) pointerView(typ transpiler.Type, free []string) (_ transpiler.Type, resolved bool) {
+	return t.walkGoTypes(typ, free, true)
+}
+
+// selectsThroughPointer reports whether a field selected on a value of type
+// typ is reached through a pointer (pointerView): `x.f` of a Ptr, a *T, an
+// alias of one or a Go defined pointer type is `(*x).f`, a field of the
+// pointee, whatever x is bound by.
+func (t *galaASTTransformer) selectsThroughPointer(typ transpiler.Type) bool {
+	held, _ := t.pointerView(typ, nil)
+	_, isPtr := held.(transpiler.PointerType)
+	return isPtr
 }
 
 // unaliasedType follows typ through GALA aliases (`type PC Ptr[Counter]`)
@@ -370,17 +395,38 @@ func (t *galaASTTransformer) heldPointer(expr ast.Expr) (ptr transpiler.PointerT
 // instantiated with its type arguments) to the type they name. resolved
 // is false when it stops at a Go alias whose target does not resolve.
 func (t *galaASTTransformer) unaliasedType(typ transpiler.Type, free []string) (_ transpiler.Type, resolved bool) {
+	return t.walkGoTypes(typ, free, false)
+}
+
+// walkGoTypes is unaliasedType, and with definedPointers pointerView: one
+// Go type-information lookup per step.
+func (t *galaASTTransformer) walkGoTypes(typ transpiler.Type, free []string, definedPointers bool) (_ transpiler.Type, resolved bool) {
 	// The hop bound stops an alias chain that refers back to itself.
 	for hop := 0; hop < 64; hop++ {
 		typ = t.followAliasChain(typ)
-		target, isAlias := t.goAliasTarget(typ, free)
-		if !isAlias {
+		key, data, args := t.goDeclaredType(typ, free)
+		var next transpiler.Type
+		switch {
+		case data == nil:
+			return typ, true
+		case data.Kind == "alias":
+			next = t.instantiateGoType(t.goTypeInfo.ResolveTypeAlias(key), data.TypeParams, args)
+		case definedPointers:
+			if _, isPtr := data.Underlying.(transpiler.PointerType); !isPtr {
+				return typ, true
+			}
+			// One step: the pointer it is, not what that points to.
+			if ptr := t.instantiateGoType(data.Underlying, data.TypeParams, args); ptr != nil {
+				return ptr, true
+			}
+			return typ, false
+		default:
 			return typ, true
 		}
-		if target == nil {
+		if next == nil {
 			return typ, false
 		}
-		typ = target
+		typ = next
 	}
 	return typ, false
 }
@@ -551,8 +597,9 @@ func (t *galaASTTransformer) inoutLentType(callee inoutCallee, i int) (want tran
 	return t.substituteGoTypeParams(derefType(callee.paramTypes[i]), subst), free, true
 }
 
-// pointerDepth counts the pointers typ is, through GALA and Go aliases
-// (unaliasedType; `type P = *T` is one). The count is exact when they lead
+// pointerDepth counts the pointers typ is, through GALA and Go aliases and
+// Go defined pointer types (pointerView; `type P = *T` and `type NP *T`
+// are one each). The count is exact when they lead
 // to a type that is no pointer: a GALA type, a type parameter in scope, a
 // type that is no named one, or a Go type that is no alias (or has no Go
 // type information, as on master). It is only a lower bound when they
@@ -562,7 +609,7 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (d
 	// The hop bound stops a type that points to itself through aliases.
 	for hop := 0; hop < 64; hop++ {
 		var resolved bool
-		typ, resolved = t.unaliasedType(typ, free)
+		typ, resolved = t.pointerView(typ, free)
 		if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
 			depth++
 			typ = ptr.Elem
@@ -573,17 +620,24 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (d
 	return depth, false
 }
 
-// goAliasTarget is the type typ, a Go alias, names, pointers kept (`type
-// P = *T` is a *T), a generic one instantiated with typ's type arguments
-// (`A[Counter]` for `type A[T any] = *T` is a *Counter). typ is a named
-// type, or the basic type a GALA declaration names a Go type by, either
-// given type arguments or not. isAlias is false when Go declares typ as
-// other than an alias, Go type information has no record of it, or typ is
-// a GALA type or a type parameter (in scope, or of free): those are never
-// looked up as Go aliases. target is nil for an alias whose target does not
-// resolve.
-func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type, free []string) (target transpiler.Type, isAlias bool) {
-	var args []transpiler.Type
+// goDefinedUnderlying is the underlying type of typ, a type Go defines
+// (goDeclaredType) other than an alias, instantiated with typ's type
+// arguments; nil for any other type. A Go struct's is the placeholder
+// `any`, never a StructType.
+func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []string) transpiler.Type {
+	_, data, args := t.goDeclaredType(typ, free)
+	if data == nil || data.Kind == "alias" {
+		return nil
+	}
+	return t.instantiateGoType(data.Underlying, data.TypeParams, args)
+}
+
+// goDeclaredType is the Go type information of typ, a type Go declares: a
+// named type, or the basic type a GALA declaration names a Go type by,
+// given type arguments (args) or not. data is nil when Go type information
+// has no record of it, or typ is a GALA type or a type parameter (in
+// scope, or of free): those are never looked up as Go types.
+func (t *galaASTTransformer) goDeclaredType(typ transpiler.Type, free []string) (key string, data *transpiler.GoTypeData, args []transpiler.Type) {
 	if gen, isGen := typ.(transpiler.GenericType); isGen {
 		typ, args = gen.Base, gen.Params
 	}
@@ -595,27 +649,30 @@ func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type, free []string) (
 	case transpiler.BasicType:
 		name = v.Name
 	default:
-		return nil, false
+		return "", nil, nil
 	}
 	if t.getTypeMeta(typ.BaseName()) != nil || !qualified && (slices.Contains(free, name) || t.isActiveTypeParam(name)) {
-		return nil, false
+		return "", nil, nil
 	}
-	key, data := t.goTypeDataFor(typ)
-	if data == nil || data.Kind != "alias" {
-		return nil, false
+	key, data = t.goTypeDataFor(typ)
+	return key, data, args
+}
+
+// instantiateGoType is typ, which a Go declaration with the type
+// parameters params names, with args for them. It is nil when typ is, or
+// when the number of type arguments does not match.
+func (t *galaASTTransformer) instantiateGoType(typ transpiler.Type, params []string, args []transpiler.Type) transpiler.Type {
+	if typ == nil || len(args) == 0 && len(params) == 0 {
+		return typ
 	}
-	target = t.goTypeInfo.ResolveTypeAlias(key)
-	if target == nil || len(args) == 0 && len(data.TypeParams) == 0 {
-		return target, true
-	}
-	if len(args) != len(data.TypeParams) {
-		return nil, true
+	if len(args) != len(params) {
+		return nil
 	}
 	subst := make(typeSubstMap, len(args))
-	for k, tp := range data.TypeParams {
+	for k, tp := range params {
 		subst[tp] = args[k]
 	}
-	return t.substituteGoTypeParams(target, subst), true
+	return t.substituteGoTypeParams(typ, subst)
 }
 
 // inoutArgAt is where the value for parameter i of callee is written in the

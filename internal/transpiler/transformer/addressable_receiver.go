@@ -291,7 +291,8 @@ func (t *galaASTTransformer) isAddressable(expr ast.Expr) bool {
 		if xType == nil || transpiler.IsUnusable(xType) {
 			return true
 		}
-		if _, isPtr := xType.(transpiler.PointerType); isPtr {
+		// Through `type PC Ptr[Counter]`, `type GP = *T`, Go's `type NP *T`.
+		if t.selectsThroughPointer(xType) {
 			return true // implicit dereference
 		}
 		return t.isAddressable(e.X)
