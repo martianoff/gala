@@ -2981,6 +2981,89 @@
                       ],
                       "ellipsis": false
                     }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 73,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 73,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 73,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 73,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 73,
+                            "col": 14
+                          },
+                          "name": "once32"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 73,
+                            "col": 22
+                          },
+                          "op": ">",
+                          "x": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 73,
+                              "col": 22
+                            },
+                            "fun": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 73,
+                                "col": 22
+                              },
+                              "name": "float64"
+                            },
+                            "args": [
+                              {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 73,
+                                  "col": 30
+                                },
+                                "name": "once32"
+                              }
+                            ],
+                            "ellipsis": false
+                          },
+                          "y": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 73,
+                              "col": 40
+                            },
+                            "value": "1"
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
                   }
                 ]
               }
@@ -2988,7 +3071,150 @@
             {
               "kind": "value-decl",
               "pos": {
-                "line": 72,
+                "line": 76,
+                "col": 1
+              },
+              "const": true,
+              "specs": [
+                {
+                  "names": [
+                    "once32"
+                  ],
+                  "type": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 76,
+                      "col": 14
+                    },
+                    "name": "float32"
+                  },
+                  "values": [
+                    {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 76,
+                        "col": 24
+                      },
+                      "op": "+",
+                      "x": {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 76,
+                          "col": 24
+                        },
+                        "op": "+",
+                        "x": {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 76,
+                            "col": 24
+                          },
+                          "value": "1"
+                        },
+                        "y": {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 76,
+                            "col": 28
+                          },
+                          "op": "/",
+                          "x": {
+                            "kind": "float-lit",
+                            "pos": {
+                              "line": 76,
+                              "col": 28
+                            },
+                            "value": "1"
+                          },
+                          "y": {
+                            "kind": "paren",
+                            "pos": {
+                              "line": 76,
+                              "col": 32
+                            },
+                            "x": {
+                              "kind": "binary",
+                              "pos": {
+                                "line": 76,
+                                "col": 33
+                              },
+                              "op": "<<",
+                              "x": {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 76,
+                                  "col": 33
+                                },
+                                "value": "1"
+                              },
+                              "y": {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 76,
+                                  "col": 36
+                                },
+                                "value": "24"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "y": {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 76,
+                          "col": 42
+                        },
+                        "op": "/",
+                        "x": {
+                          "kind": "float-lit",
+                          "pos": {
+                            "line": 76,
+                            "col": 42
+                          },
+                          "value": "1"
+                        },
+                        "y": {
+                          "kind": "paren",
+                          "pos": {
+                            "line": 76,
+                            "col": 46
+                          },
+                          "x": {
+                            "kind": "binary",
+                            "pos": {
+                              "line": 76,
+                              "col": 47
+                            },
+                            "op": "<<",
+                            "x": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 47
+                              },
+                              "value": "1"
+                            },
+                            "y": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 50
+                              },
+                              "value": "60"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "value-decl",
+              "pos": {
+                "line": 78,
                 "col": 1
               },
               "const": true,
@@ -3000,7 +3226,7 @@
                   "type": {
                     "kind": "ident",
                     "pos": {
-                      "line": 72,
+                      "line": 78,
                       "col": 10
                     },
                     "name": "float64"
@@ -3009,7 +3235,7 @@
                     {
                       "kind": "int-lit",
                       "pos": {
-                        "line": 72,
+                        "line": 78,
                         "col": 20
                       },
                       "value": "0"
@@ -3021,7 +3247,7 @@
             {
               "kind": "value-decl",
               "pos": {
-                "line": 74,
+                "line": 80,
                 "col": 1
               },
               "const": true,
@@ -3033,7 +3259,7 @@
                   "type": {
                     "kind": "ident",
                     "pos": {
-                      "line": 74,
+                      "line": 80,
                       "col": 15
                     },
                     "name": "float32"
@@ -3042,14 +3268,14 @@
                     {
                       "kind": "binary",
                       "pos": {
-                        "line": 74,
+                        "line": 80,
                         "col": 25
                       },
                       "op": "/",
                       "x": {
                         "kind": "float-lit",
                         "pos": {
-                          "line": 74,
+                          "line": 80,
                           "col": 25
                         },
                         "value": "1"
@@ -3057,7 +3283,7 @@
                       "y": {
                         "kind": "int-lit",
                         "pos": {
-                          "line": 74,
+                          "line": 80,
                           "col": 31
                         },
                         "value": "3"
@@ -3070,7 +3296,7 @@
             {
               "kind": "value-decl",
               "pos": {
-                "line": 76,
+                "line": 82,
                 "col": 1
               },
               "const": true,
@@ -3082,7 +3308,7 @@
                   "type": {
                     "kind": "ident",
                     "pos": {
-                      "line": 76,
+                      "line": 82,
                       "col": 13
                     },
                     "name": "float32"
@@ -3091,7 +3317,7 @@
                     {
                       "kind": "float-lit",
                       "pos": {
-                        "line": 76,
+                        "line": 82,
                         "col": 23
                       },
                       "value": "300000000000000000000000000000000000000"

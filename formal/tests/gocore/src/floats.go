@@ -67,7 +67,13 @@ func main() {
 	var arr [2.0]int
 	s := []int{1, 2}
 	fmt.Println(len(arr), s[1.0], 1<<2.0, len(make([]int, 2.0)))
+	// A float32 constant rounds once, from the exact value: 1 + 2^-24 + 2^-60 is
+	// above the float32 tie, so it rounds up; through float64 it would land on the
+	// tie 1 + 2^-24 and round to even, to 1.
+	fmt.Println(once32, float64(once32) > 1)
 }
+
+const once32 float32 = 1 + 1.0/(1<<24) + 1.0/(1<<60)
 
 const z0 float64 = 0
 
