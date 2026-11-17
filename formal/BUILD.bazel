@@ -81,6 +81,9 @@ REQUIRED_THEOREMS = [
     "Gala.Spec.run_alpha",
     "Gala.Spec.alphaCheck_sound",
     "Gala.Spec.alphaCheck_run",
+    "Gala.M5.eval_pure",
+    "Gala.M5.expr_correct",
+    "Gala.M5.expr_correct_instance",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -138,6 +141,8 @@ GALA_SRCS = [
     "Gala/AlphaEval.lean",
     "Gala/AlphaConst.lean",
     "Gala/AlphaProg.lean",
+    "Gala/M5/SpecPure.lean",
+    "Gala/M5/Expr.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

@@ -77,7 +77,10 @@ def requiredTheorems : List Name := [
   `Gala.Spec.eval_alpha,
   `Gala.Spec.run_alpha,
   `Gala.Spec.alphaCheck_sound,
-  `Gala.Spec.alphaCheck_run
+  `Gala.Spec.alphaCheck_run,
+  `Gala.M5.eval_pure,
+  `Gala.M5.expr_correct,
+  `Gala.M5.expr_correct_instance
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

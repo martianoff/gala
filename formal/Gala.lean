@@ -21,6 +21,8 @@ import Gala.AlphaStep
 import Gala.AlphaEval
 import Gala.AlphaConst
 import Gala.AlphaProg
+import Gala.M5.SpecPure
+import Gala.M5.Expr
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems

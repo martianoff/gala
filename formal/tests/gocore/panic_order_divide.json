@@ -1,0 +1,220 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 3,
+            "col": 1
+          },
+          "name": "panic_order_divide.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 7,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 7,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 7,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 8,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 8,
+                          "col": 2
+                        },
+                        "name": "x"
+                      },
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 8,
+                          "col": 5
+                        },
+                        "name": "y"
+                      },
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 8,
+                          "col": 8
+                        },
+                        "name": "z"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 8,
+                          "col": 13
+                        },
+                        "value": "1"
+                      },
+                      {
+                        "kind": "unary",
+                        "pos": {
+                          "line": 8,
+                          "col": 16
+                        },
+                        "op": "-",
+                        "x": {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 8,
+                            "col": 17
+                          },
+                          "value": "1"
+                        }
+                      },
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 8,
+                          "col": 20
+                        },
+                        "value": "0"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 9,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 9,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 9,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 9,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 9,
+                            "col": 14
+                          },
+                          "op": "+",
+                          "x": {
+                            "kind": "binary",
+                            "pos": {
+                              "line": 9,
+                              "col": 14
+                            },
+                            "op": "/",
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 9,
+                                "col": 14
+                              },
+                              "name": "x"
+                            },
+                            "y": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 9,
+                                "col": 16
+                              },
+                              "name": "z"
+                            }
+                          },
+                          "y": {
+                            "kind": "paren",
+                            "pos": {
+                              "line": 9,
+                              "col": 20
+                            },
+                            "x": {
+                              "kind": "binary",
+                              "pos": {
+                                "line": 9,
+                                "col": 21
+                              },
+                              "op": "<<",
+                              "x": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 9,
+                                  "col": 21
+                                },
+                                "name": "x"
+                              },
+                              "y": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 9,
+                                  "col": 26
+                                },
+                                "name": "y"
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
