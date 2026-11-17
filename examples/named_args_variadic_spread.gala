@@ -1,0 +1,53 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A spread passed by name to a variadic parameter fills it with the whole
+// slice, as it does when passed by position.
+
+func label(prefix string, parts ...string) string = s"$prefix${parts.Size()}"
+
+func relabel(ws ...string) string = label(prefix = "r:", parts = ws...)
+
+// A named spread written before the fixed argument: the arguments are laid
+// out in parameter order, and the spread stays last.
+func joined(sep string, parts ...string) string = ArrayOf(parts...).MkString(sep)
+
+func joinAll(ws ...string) string = joined(parts = ws..., sep = ",")
+
+// A named spread into a generic variadic parameter.
+func count[T any](label string, xs ...T) string = s"$label${xs.Size()}"
+
+func countAll(ns ...int) string = count(label = "n:", xs = ns...)
+
+// Counter is a running total.
+struct Counter(N int)
+
+// Plus adds x and every value of xs to the counter.
+func (c Counter) Plus(x int, xs ...int) int = ArrayOf(xs...).FoldLeft(c.N + x, (acc, n) => acc + n)
+
+// PlusAll adds every value of ns to the counter, through a named spread.
+func (c Counter) PlusAll(ns ...int) int = c.Plus(x = 0, xs = ns...)
+
+// Box holds one value.
+struct Box[T any](V T)
+
+// Count is extra plus the number of values in xs and in the box.
+func (b Box[T]) Count(extra int, xs ...T) int = xs.Size() + extra + 1
+
+func boxCount(ns ...int) int = Box(0).Count(extra = 10, xs = ns...)
+
+// Tag is a method with a type parameter of its own.
+func (b Box[T]) Tag[U any](label U, xs ...T) string = s"$label${xs.Size()}"
+
+func boxTag(ns ...int) string = Box(0).Tag(label = "t:", xs = ns...)
+
+func main() {
+    Println(relabel("a", "b"))
+    Println(relabel())
+    Println(joinAll("x", "y", "z"))
+    Println(countAll(1, 2, 3, 4))
+    Println(Counter(1).PlusAll(2, 3, 4))
+    Println(boxCount(5, 6))
+    Println(boxTag(7, 8, 9))
+}

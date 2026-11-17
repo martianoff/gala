@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -105,6 +106,40 @@ func (p paramList) tooManyError(nargs, line, col int) error {
 // a call may leave without an argument although it declares no default.
 func (p paramList) isVariadicSlot(i int) bool {
 	return p.variadic && i == len(p.names)-1
+}
+
+// checkSpreads reports a spread argument `xs...` of args that fills a
+// parameter other than the variadic last one, the only one Go spreads a slice
+// into, whether it is passed by position or by name. Callers run it only for
+// a call that spreads one.
+func (p paramList) checkSpreads(args argsSrc) error {
+	pos := 0
+	for _, a := range args.list {
+		name, _ := a.name()
+		idx := pos
+		if name == "" {
+			pos++
+		} else {
+			idx = slices.Index(p.names, name)
+		}
+		// An unknown name is reported as the call's arguments are laid out.
+		if !a.spread() || idx < 0 || p.isVariadicSlot(idx) {
+			continue
+		}
+		line, col := a.at().start()
+		switch {
+		case idx < len(p.names):
+			return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+				"a spread argument cannot fill parameter %q of %s: only a variadic last parameter takes one", p.names[idx], p.callee))
+		case p.variadic:
+			return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+				"a spread argument must be the only argument of variadic parameter %q of %s", p.names[len(p.names)-1], p.callee))
+		default:
+			return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+				"a spread argument cannot fill a parameter of %s: it declares no variadic parameter", p.callee))
+		}
+	}
+	return nil
 }
 
 // missingError is GALA-E0082 for a call that leaves parameter i, which
