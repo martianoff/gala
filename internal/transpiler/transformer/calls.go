@@ -2144,9 +2144,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 
 	// An argument passed by name to a generic Go function whose lowering
 	// reads its slot (a lambda, or a thunk for a parameter taking nothing and
-	// giving several results, see lowerSlot) is lowered once every other is,
-	// whatever order they are written in: they bind the type parameters it is
-	// typed by.
+	// giving several results, see lowerSlot) is lowered after every argument
+	// that does not, whatever order they are written in: those bind the type
+	// parameters it is typed by.
 	type deferredArg struct {
 		v       argValue
 		name    string
@@ -2226,19 +2226,14 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		positional = append(positional, expr)
 		argIdx++
 	}
-	// Thunks first: their results bind type parameters a lambda's parameters
-	// may name.
-	for _, lambdas := range []bool{false, true} {
-		for _, l := range deferred {
-			if l.v.lambda.ok() != lambdas {
-				continue
-			}
-			expr, aerr := lowerSlot(l.v, l.name, l.slotIdx)
-			if aerr != nil {
-				return nil, nil, false, aerr
-			}
-			named[l.name] = expr
+	// In the order written: one deferred argument binds type parameters for a
+	// later one, as positional arguments do.
+	for _, l := range deferred {
+		expr, aerr := lowerSlot(l.v, l.name, l.slotIdx)
+		if aerr != nil {
+			return nil, nil, false, aerr
 		}
+		named[l.name] = expr
 	}
 	return positional, named, hasSpread, nil
 }
