@@ -317,8 +317,9 @@ galaspec models them, except as listed below):
 - `strings.NewReplacer(oldnew...).Replace(s)`, built and used at once, with the old/new
   strings written out or spread from a variadic parameter or an `Array`'s or `List`'s
   `ToGoSlice()`: the earliest pair whose old string starts at a position wins, as Go's
-  four replacer algorithms do on valid UTF-8; an odd count panics, class `other`. An
-  empty old string on text beyond ASCII stops the Lean run,
+  four replacer algorithms do on valid UTF-8; an odd count panics, class `other`. Where an
+  empty old string's match is followed by a character beyond ASCII that no other
+  old string takes, the Lean run stops,
   `unsupported:replacer-empty-old` (Go would write inside a character), counted as
   unsupported. Tested in `internal/formal/gala2lean/testdata/go_replacer*.gala`;
 - the packages of the program's module it imports (`gala2lean -module`): each one's

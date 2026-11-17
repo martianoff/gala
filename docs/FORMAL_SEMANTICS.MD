@@ -560,8 +560,9 @@ flowchart LR
   Go's case mapping follows the full Unicode tables. And
   `strings.NewReplacer(oldnew...).Replace(s)`, built and used at once: at each position
   the earliest pair whose old string starts there wins, which on valid UTF-8 with
-  non-empty old strings is what each of the four algorithms Go picks does. An empty old
-  string on text beyond ASCII makes Go write inside a character; there the Lean run
+  non-empty old strings is what each of the four algorithms Go picks does. Where an empty old
+  string's match is followed by a character beyond ASCII that no other old string
+  takes, Go writes inside that character; there the Lean run
   stops with the outcome `unsupported:replacer-empty-old`, which the harness counts as
   unsupported, never as a verdict.
 - **Phases:** S1 with provable output first; then lambdas and closures (a captured `var`

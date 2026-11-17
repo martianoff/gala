@@ -13,6 +13,8 @@ func fill(template string, pairs ...string) string = strings.NewReplacer(pairs..
 
 func fillFrom(template string, pairs Array[string]) string = strings.NewReplacer(pairs.ToGoSlice()...).Replace(template)
 
+func fillList(template string, pairs List[string]) string = strings.NewReplacer(pairs.ToGoSlice()...).Replace(template)
+
 // render numbers its arguments' placeholders, <arg>, <arg2>, ..., in one pass,
 // so an argument whose text holds a placeholder stays as written.
 func render(template string, args ...string) string {
@@ -36,4 +38,7 @@ func main() {
     Println(fill("<a> and <b>", "<a>", "1", "<b>", "2"), fill("none"))
     Println(fillFrom("<arg> then <arg2>", ArrayOf("<arg>", "x", "<arg2>", "y")))
     Println(render("<arg> before <arg2>", "<arg2>", "two"), render("no args"))
+    Println(fillList("[x]", ListOf("x", "y")))
+    // An empty old string beside one that takes the whole character beyond ASCII.
+    Println(strings.NewReplacer("é", "e", "", "-").Replace("é"), strings.NewReplacer("", "-", "é", "e").Replace("aé"))
 }

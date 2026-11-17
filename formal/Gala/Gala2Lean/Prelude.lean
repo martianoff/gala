@@ -620,23 +620,30 @@ def goReplacerLookup (ps : List (List Char × List Char)) (l : List Char) (ignor
     each position the pair `goReplacerLookup` finds is written and its old string
     skipped (`k` characters still to skip); with none, the character is kept. An empty
     match is written and the position tried again without the empty old string
-    (`prevMatchEmpty`); at the end only an empty old string can match. -/
-def goReplacerScan (ps : List (List Char × List Char)) : Nat → List Char → List Char
+    (`prevMatchEmpty`); at the end only an empty old string can match. Go's scan then
+    advances one byte: past an ASCII character that is the next position, but inside a
+    character beyond ASCII, where the empty old string matches again, so Go writes
+    inside the character, a string that is not valid UTF-8 and that the model does not
+    hold: `none` (the run stops, `goReplacerReplace`). Everywhere else the result is
+    Go's. -/
+def goReplacerScan (ps : List (List Char × List Char)) : Nat → List Char → Option (List Char)
   | k + 1, _ :: r => goReplacerScan ps k r
-  | _ + 1, [] => []
+  | _ + 1, [] => some []
   | 0, [] =>
     match goReplacerLookup ps [] false with
-    | some (_, n) => n
-    | none => []
+    | some (_, n) => some n
+    | none => some []
   | 0, l@(c :: r) =>
     match goReplacerLookup ps l false with
     | some (o, n) =>
       if o.isEmpty then
-        n ++ match goReplacerLookup ps l true with
-          | some (o', n') => n' ++ goReplacerScan ps (o'.length - 1) r
-          | none => c :: goReplacerScan ps 0 r
-      else n ++ goReplacerScan ps (o.length - 1) r
-    | none => c :: goReplacerScan ps 0 r
+        match goReplacerLookup ps l true with
+        | some (o', n') => (fun t => n ++ n' ++ t) <$> goReplacerScan ps (o'.length - 1) r
+        | none =>
+          if c.toNat ≥ 128 then none
+          else (fun t => n ++ c :: t) <$> goReplacerScan ps 0 r
+      else (fun t => n ++ t) <$> goReplacerScan ps (o.length - 1) r
+    | none => (fun t => c :: t) <$> goReplacerScan ps 0 r
 
 /-- `(*Replacer).Replace(s)` (replace.go): `build` picks one of four algorithms (one pair
     with an old string of more than a byte; old and new strings of a byte each; old
@@ -645,14 +652,14 @@ def goReplacerScan (ps : List (List Char × List Char)) : Nat → List Char → 
     goes on after it: a one-byte old string of valid UTF-8 is ASCII, so it never
     matches inside a character, and a longer one's match starts only where a character
     does. That is `goReplacerScan` over characters. An empty old string matches between
-    bytes, so on text with a character beyond ASCII Go writes inside a character, making
-    a string that is not valid UTF-8, which the model does not hold: the run stops,
-    `unsupported:replacer-empty-old`. On ASCII text bytes are characters, and the scan
-    is Go's. -/
+    bytes: where its match is followed by a character beyond ASCII that no other old
+    string takes, Go writes inside that character, making a string that is not valid
+    UTF-8, which the model does not hold: the run stops, `unsupported:replacer-empty-old`.
+    Anywhere else the scan is Go's. -/
 def goReplacerReplace {σ : Type} (ps : List (List Char × List Char)) (s : String) : Prog σ String :=
-  if ps.any (·.1.isEmpty) && s.toList.any (fun c => c.toNat ≥ 128) then
-    throw (.unsupported "replacer-empty-old")
-  else pure (String.ofList (goReplacerScan ps 0 s.toList))
+  match goReplacerScan ps 0 s.toList with
+  | some l => pure (String.ofList l)
+  | none => throw (.unsupported "replacer-empty-old")
 
 /-- The outcome line a run ends with on stderr, in galaspec's spelling. -/
 def outcomeLine (o : String) : String := "gala2lean: outcome=" ++ o

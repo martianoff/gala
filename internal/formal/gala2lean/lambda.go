@@ -81,7 +81,9 @@ func (g *gen) lambdaType(l *coreexport.Lambda, sc *scope) string {
 			// Its trailing expression's value (docs/GALA.MD: a block's
 			// value is its trailing expression).
 			res = r
-		} else if !returnsValue(b) {
+		} else if !returnsValue(b) && (len(b.Stmts) == 0 || !isValueIf(b.Stmts[len(b.Stmts)-1])) {
+			// A trailing `if`/`else` with block branches carries a value;
+			// its type is left to Lean.
 			res = "Unit"
 		}
 	default:
@@ -115,13 +117,20 @@ func (g *gen) blockValueType(b *coreexport.Block, sc *scope) string {
 		default:
 			continue
 		}
-		if len(values) != 1 {
-			for _, n := range names {
-				bs.bind(n, false, "")
+		declared := g.optTypeSafe(typ)
+		if len(values) != 1 || len(names) > 1 && !destructure {
+			// `var x int`, or `val a, b = 1, "s"`: the declared type, else each
+			// name's own value's.
+			for i, n := range names {
+				t := declared
+				if t == "" && len(values) == len(names) {
+					t = g.safeType(func() string { return g.typeOf(values[i], bs) })
+				}
+				bs.bind(n, false, t)
 			}
 			continue
 		}
-		t := g.optTypeSafe(typ)
+		t := declared
 		if t == "" {
 			t = g.safeType(func() string { return g.typeOf(values[0], bs) })
 		}

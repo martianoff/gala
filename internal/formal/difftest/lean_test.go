@@ -47,6 +47,10 @@ func TestCompareLean(t *testing.T) {
 			name: "a case a model does not cover", out: gala2lean.RunResult{Kind: gala2lean.RanOK, Stdout: "", Outcome: "unsupported:replacer-empty-old"},
 			want: Unsupported, reason: "the Lean run stopped: unsupported:replacer-empty-old", construct: "runtime:replacer-empty-old",
 		},
+		{
+			name: "a case a model does not cover, after printing what Go did not", out: gala2lean.RunResult{Kind: gala2lean.RanOK, Stdout: "2\n", Outcome: "unsupported:replacer-empty-old"},
+			want: Disagree, reason: "after printing what Go did not",
+		},
 		{name: "timed out", out: gala2lean.RunResult{Kind: gala2lean.TimedOut}, want: Inconclusive, reason: "did not finish"},
 		{name: "diverged", out: gala2lean.RunResult{Kind: gala2lean.Diverged}, want: Inconclusive, reason: "diverged"},
 		{name: "crashed", out: gala2lean.RunResult{Kind: gala2lean.Crashed, Message: "Stack overflow"}, want: Inconclusive, reason: "crashed: Stack overflow"},
