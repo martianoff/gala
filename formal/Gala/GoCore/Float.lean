@@ -62,9 +62,7 @@ def split (f : Fmt) (bits : Nat) : Bool × Nat × Nat :=
 def mantExp (f : Fmt) (biased frac : Nat) : Nat × Int :=
   if biased == 0 then (frac, f.emin) else (frac + 2 ^ f.mbits, biased + f.emin - 1)
 
-/-- `x / 10^s` for a decimal scale `s`, against the rational `n * 2^e2`: the pair
-    `(c * D, n * N)` a comparison needs, with `c` scaled. Here: the exact value of
-    `a * 2^e2 * 10^s` as a fraction `(num, den)`. -/
+/-- The exact value of `a * 2^e2 * 10^s` as a fraction `(num, den)`. -/
 def scaled (a : Nat) (e2 s : Int) : Nat × Nat :=
   let num := a * (if e2 ≥ 0 then 2 ^ e2.toNat else 1) * (if s ≥ 0 then 10 ^ s.toNat else 1)
   let den := (if e2 < 0 then 2 ^ (-e2).toNat else 1) * (if s < 0 then 10 ^ (-s).toNat else 1)
@@ -176,10 +174,26 @@ def format (size : Nat) (x : Float) : String :=
     (Go spec, "Conversions": a constant is rounded; "Representability"). A binary32
     value is held as the `Float` it converts to exactly. -/
 def ofRat (size : Nat) (num : Int) (den : Nat) : Float :=
-  let mag := if size == 32 then
-      (Float32.ofBits (UInt32.ofNat (roundBits f32 num.natAbs den))).toFloat
-    else Float.ofBits (UInt64.ofNat (roundBits f64 num.natAbs den))
-  if num < 0 then -mag else mag
+  let bits := roundBits (if size == 32 then f32 else f64) num.natAbs den
+  let mag := if size == 32 then (Float32.ofBits (UInt32.ofNat bits)).toFloat
+    else Float.ofBits (UInt64.ofNat bits)
+  -- A negative value that rounds to zero is +0: an exact value has no negative zero.
+  if num < 0 && bits != 0 then -mag else mag
+
+/-- The exact value of the float of `size` nearest `num / den`, in lowest terms: a typed
+    constant's value (Go spec, "Constants": a typed constant is rounded to its type);
+    `none` when it overflows the type, which Go rejects ("Representability"). -/
+def roundRat (size : Nat) (num : Int) (den : Nat) : Option (Int × Nat) :=
+  let f := if size == 32 then f32 else f64
+  let bits := roundBits f num.natAbs den
+  let (_, biased, frac) := split f bits
+  if biased == f.emax then none
+  else
+    let (m, e) := mantExp f biased frac
+    let (n, d) : Nat × Nat := if e ≥ 0 then (m * 2 ^ e.toNat, 1) else (m, 2 ^ (-e).toNat)
+    let g := Nat.gcd n d
+    let n : Int := (n / g : Nat)
+    some (if num < 0 then -n else n, if g == 0 then 1 else d / g)
 
 /-- A float64 or float32 value rounded to `size` bits: an operation's result. -/
 def toSize (size : Nat) (x : Float) : Float :=

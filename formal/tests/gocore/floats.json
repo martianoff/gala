@@ -2288,9 +2288,817 @@
                       ],
                       "ellipsis": false
                     }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 60,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 60,
+                          "col": 2
+                        },
+                        "name": "w"
+                      },
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 60,
+                          "col": 5
+                        },
+                        "name": "v"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "unary",
+                        "pos": {
+                          "line": 60,
+                          "col": 10
+                        },
+                        "op": "-",
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 60,
+                            "col": 11
+                          },
+                          "name": "z0"
+                        }
+                      },
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 60,
+                          "col": 15
+                        },
+                        "op": "*",
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 60,
+                            "col": 15
+                          },
+                          "name": "z0"
+                        },
+                        "y": {
+                          "kind": "unary",
+                          "pos": {
+                            "line": 60,
+                            "col": 18
+                          },
+                          "op": "-",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 60,
+                              "col": 19
+                            },
+                            "value": "1"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 61,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 61,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "tiny"
+                          ],
+                          "type": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 61,
+                              "col": 11
+                            },
+                            "name": "float64"
+                          },
+                          "values": [
+                            {
+                              "kind": "unary",
+                              "pos": {
+                                "line": 61,
+                                "col": 21
+                              },
+                              "op": "-",
+                              "x": {
+                                "kind": "float-lit",
+                                "pos": {
+                                  "line": 61,
+                                  "col": 22
+                                },
+                                "value": "1/10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 62,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 62,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 62,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 62,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 62,
+                            "col": 14
+                          },
+                          "name": "w"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 62,
+                            "col": 17
+                          },
+                          "op": "/",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 62,
+                              "col": 17
+                            },
+                            "value": "1"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 62,
+                              "col": 19
+                            },
+                            "name": "w"
+                          }
+                        },
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 62,
+                            "col": 22
+                          },
+                          "name": "v"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 62,
+                            "col": 25
+                          },
+                          "op": "/",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 62,
+                              "col": 25
+                            },
+                            "value": "1"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 62,
+                              "col": 27
+                            },
+                            "name": "v"
+                          }
+                        },
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 62,
+                            "col": 30
+                          },
+                          "name": "tiny"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 62,
+                            "col": 36
+                          },
+                          "op": "/",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 62,
+                              "col": 36
+                            },
+                            "value": "1"
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 62,
+                              "col": 38
+                            },
+                            "name": "tiny"
+                          }
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 62,
+                            "col": 44
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 62,
+                              "col": 44
+                            },
+                            "name": "float32"
+                          },
+                          "args": [
+                            {
+                              "kind": "unary",
+                              "pos": {
+                                "line": 62,
+                                "col": 52
+                              },
+                              "op": "-",
+                              "x": {
+                                "kind": "float-lit",
+                                "pos": {
+                                  "line": 62,
+                                  "col": 53
+                                },
+                                "value": "1/100000000000000000000000000000000000000000000000000"
+                              }
+                            }
+                          ],
+                          "ellipsis": false
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 65,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 65,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 65,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 65,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 65,
+                            "col": 14
+                          },
+                          "name": "third32"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 65,
+                            "col": 23
+                          },
+                          "op": "*",
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 65,
+                              "col": 23
+                            },
+                            "name": "third32"
+                          },
+                          "y": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 65,
+                              "col": 31
+                            },
+                            "value": "3"
+                          }
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 65,
+                            "col": 34
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 65,
+                              "col": 34
+                            },
+                            "name": "float64"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 65,
+                                "col": 42
+                              },
+                              "name": "third32"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 65,
+                            "col": 52
+                          },
+                          "op": "*",
+                          "x": {
+                            "kind": "binary",
+                            "pos": {
+                              "line": 65,
+                              "col": 52
+                            },
+                            "op": "/",
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 65,
+                                "col": 52
+                              },
+                              "name": "big32"
+                            },
+                            "y": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 65,
+                                "col": 58
+                              },
+                              "value": "4"
+                            }
+                          },
+                          "y": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 65,
+                              "col": 60
+                            },
+                            "value": "2"
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 67,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 67,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "arr"
+                          ],
+                          "type": {
+                            "kind": "array-type",
+                            "pos": {
+                              "line": 67,
+                              "col": 10
+                            },
+                            "len": {
+                              "kind": "float-lit",
+                              "pos": {
+                                "line": 67,
+                                "col": 11
+                              },
+                              "value": "2"
+                            },
+                            "elt": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 67,
+                                "col": 15
+                              },
+                              "name": "int"
+                            }
+                          },
+                          "values": []
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 68,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 68,
+                          "col": 2
+                        },
+                        "name": "s"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "composite-lit",
+                        "pos": {
+                          "line": 68,
+                          "col": 7
+                        },
+                        "type": {
+                          "kind": "array-type",
+                          "pos": {
+                            "line": 68,
+                            "col": 7
+                          },
+                          "len": null,
+                          "elt": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 68,
+                              "col": 9
+                            },
+                            "name": "int"
+                          }
+                        },
+                        "elts": [
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 68,
+                              "col": 13
+                            },
+                            "value": "1"
+                          },
+                          {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 68,
+                              "col": 16
+                            },
+                            "value": "2"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 69,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 69,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 69,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 69,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 69,
+                            "col": 14
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 69,
+                              "col": 14
+                            },
+                            "name": "len"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 69,
+                                "col": 18
+                              },
+                              "name": "arr"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "index",
+                          "pos": {
+                            "line": 69,
+                            "col": 24
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 69,
+                              "col": 24
+                            },
+                            "name": "s"
+                          },
+                          "indices": [
+                            {
+                              "kind": "float-lit",
+                              "pos": {
+                                "line": 69,
+                                "col": 26
+                              },
+                              "value": "1"
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 69,
+                            "col": 32
+                          },
+                          "op": "<<",
+                          "x": {
+                            "kind": "int-lit",
+                            "pos": {
+                              "line": 69,
+                              "col": 32
+                            },
+                            "value": "1"
+                          },
+                          "y": {
+                            "kind": "float-lit",
+                            "pos": {
+                              "line": 69,
+                              "col": 35
+                            },
+                            "value": "2"
+                          }
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 69,
+                            "col": 40
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 69,
+                              "col": 40
+                            },
+                            "name": "len"
+                          },
+                          "args": [
+                            {
+                              "kind": "call",
+                              "pos": {
+                                "line": 69,
+                                "col": 44
+                              },
+                              "fun": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 69,
+                                  "col": 44
+                                },
+                                "name": "make"
+                              },
+                              "args": [
+                                {
+                                  "kind": "array-type",
+                                  "pos": {
+                                    "line": 69,
+                                    "col": 49
+                                  },
+                                  "len": null,
+                                  "elt": {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 69,
+                                      "col": 51
+                                    },
+                                    "name": "int"
+                                  }
+                                },
+                                {
+                                  "kind": "float-lit",
+                                  "pos": {
+                                    "line": 69,
+                                    "col": 56
+                                  },
+                                  "value": "2"
+                                }
+                              ],
+                              "ellipsis": false
+                            }
+                          ],
+                          "ellipsis": false
+                        }
+                      ],
+                      "ellipsis": false
+                    }
                   }
                 ]
               }
+            },
+            {
+              "kind": "value-decl",
+              "pos": {
+                "line": 72,
+                "col": 1
+              },
+              "const": true,
+              "specs": [
+                {
+                  "names": [
+                    "z0"
+                  ],
+                  "type": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 72,
+                      "col": 10
+                    },
+                    "name": "float64"
+                  },
+                  "values": [
+                    {
+                      "kind": "int-lit",
+                      "pos": {
+                        "line": 72,
+                        "col": 20
+                      },
+                      "value": "0"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "value-decl",
+              "pos": {
+                "line": 74,
+                "col": 1
+              },
+              "const": true,
+              "specs": [
+                {
+                  "names": [
+                    "third32"
+                  ],
+                  "type": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 74,
+                      "col": 15
+                    },
+                    "name": "float32"
+                  },
+                  "values": [
+                    {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 74,
+                        "col": 25
+                      },
+                      "op": "/",
+                      "x": {
+                        "kind": "float-lit",
+                        "pos": {
+                          "line": 74,
+                          "col": 25
+                        },
+                        "value": "1"
+                      },
+                      "y": {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 74,
+                          "col": 31
+                        },
+                        "value": "3"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "value-decl",
+              "pos": {
+                "line": 76,
+                "col": 1
+              },
+              "const": true,
+              "specs": [
+                {
+                  "names": [
+                    "big32"
+                  ],
+                  "type": {
+                    "kind": "ident",
+                    "pos": {
+                      "line": 76,
+                      "col": 13
+                    },
+                    "name": "float32"
+                  },
+                  "values": [
+                    {
+                      "kind": "float-lit",
+                      "pos": {
+                        "line": 76,
+                        "col": 23
+                      },
+                      "value": "300000000000000000000000000000000000000"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

@@ -54,4 +54,23 @@ func main() {
 	fmt.Println(float64(n), int(float64(n)))
 	var c celsius = 36.6
 	fmt.Println(c, float64(c)*2, c > 30)
+
+	// Constants have no negative zero: -z and z * -1 are folded exactly; a negative
+	// constant too small for the type rounds to +0.
+	w, v := -z0, z0*-1
+	var tiny float64 = -1e-400
+	fmt.Println(w, 1/w, v, 1/v, tiny, 1/tiny, float32(-1e-50))
+	// A typed constant is its type's value, and typed constant arithmetic rounds to
+	// the type.
+	fmt.Println(third32, third32*3, float64(third32), big32/4*2)
+	// An integral float constant where Go needs an integer.
+	var arr [2.0]int
+	s := []int{1, 2}
+	fmt.Println(len(arr), s[1.0], 1<<2.0, len(make([]int, 2.0)))
 }
+
+const z0 float64 = 0
+
+const third32 float32 = 1.0 / 3
+
+const big32 float32 = 3e38

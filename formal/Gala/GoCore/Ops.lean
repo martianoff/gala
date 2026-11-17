@@ -34,12 +34,20 @@ def UKind.default : UKind → Option Ty
   | .float => some (.float 64)
   | .nil => none
 
-/-- An untyped value given its default type, for `x := 1` and an interface operand. -/
+/-- An untyped value given its default type, for `x := 1` and an interface operand; a
+    typed float constant becomes a float of its type: what a variable holds. -/
 def defaultVal : Val → Val
-  | .rat _ n d => .float (.float 64) (FloatRep.ofRat 64 n d)
+  | .rat _ 0 n d => .float (.float 64) (FloatRep.ofRat 64 n d)
+  | .rat t size n d => .float t (FloatRep.ofRat size n d)
   | .int (.untyped k) n => .int ((k.default).getD (.int .int)) n
   | .bool (.untyped _) b => .bool .bool b
   | .str (.untyped _) s => .str .string s
+  | v => v
+
+/-- A float constant as the float value it denotes (`defaultVal`); any other value
+    itself. -/
+def Val.materialize : Val → Val
+  | v@(.rat ..) => defaultVal v
   | v => v
 
 /-- `x << s` and `x >> s` for an integer of kind `k`: `>>` is arithmetic for signed
