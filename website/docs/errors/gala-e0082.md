@@ -96,7 +96,9 @@ a struct called with one argument too many was reported as
 [GALA-E0043](/docs/errors/gala-e0043/), as if the type had no constructor at all.
 
 **Where it stands down.** A function or method declared in Go keeps Go's own
-check, and so does a call of a function-typed value. A spread argument
+check when its arguments are passed by position, and so does a call of a
+function-typed value. Passing an argument by name lays the call out against
+the Go parameters, so a parameter left out is reported here. A spread argument
 (`f(xs...)`) fills an unknown number of parameters and is not counted.
 
 **Scope.** A shorthand struct field left out of a construction is

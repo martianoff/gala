@@ -234,7 +234,11 @@ import (
 // v49: a method's ReceiverEffects record the places of its receiver it
 // prints (transpiler.ReceiverPrint). A v48 payload lacks them, so a method
 // that prints a field by a String that changes it would count as read-only.
-const CacheVersion = "v49"
+//
+// v50: an interface's methods record their parameter names
+// (MethodMetadata.ParamNames), so a call through the interface can pass
+// arguments by name. A v49 payload lacks them.
+const CacheVersion = "v50"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

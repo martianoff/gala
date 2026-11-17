@@ -684,7 +684,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 
 	// The arguments in parameter order: named ones moved to their parameter,
 	// and a nil slot for each parameter left to its default.
-	slots, err := bindMethodArguments(c, methodMeta)
+	slots, err := bindMethodArguments(c, method, methodMeta)
 	if err != nil {
 		return true, nil, err
 	}
@@ -1060,19 +1060,32 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 //
 // Without metadata, or for a call of only positional arguments that omits none
 // — including one spreading into a variadic parameter — the arguments are
-// returned as written. A positional call with too many arguments, or too few
-// for the parameters without a default, is GALA-E0082, at the call's anchor.
-func bindMethodArguments(c callSrc, methodMeta *transpiler.MethodMetadata) ([]argSrc, error) {
+// returned as written; without metadata, an argument passed by name is an
+// error, its parameter being unknown. A positional call with too many
+// arguments, or too few for the parameters without a default, is GALA-E0082,
+// at the call's anchor.
+func bindMethodArguments(c callSrc, method string, methodMeta *transpiler.MethodMetadata) ([]argSrc, error) {
 	args := c.args.list
-	named, spread := false, false
+	spread := false
+	var positional []argSrc
+	var byName []namedArg[argSrc]
 	for _, arg := range args {
-		named = named || arg.named()
 		spread = spread || arg.spread()
+		if name, _ := arg.name(); name != "" {
+			byName = append(byName, namedArg[argSrc]{name, arg})
+		} else {
+			positional = append(positional, arg)
+		}
 	}
+	named := len(byName) > 0
+	line, col := c.anchor().start()
 	if methodMeta == nil {
+		// Without metadata the parameters' names are not known.
+		if named {
+			return nil, unknownParamNamesError(byName[0].name, method, line, col)
+		}
 		return args, nil
 	}
-	line, col := c.anchor().start()
 	params := methodParamList(methodMeta.Name, methodMeta)
 	// A spread fills only the variadic last parameter; a Go method's
 	// positional arguments keep Go's own check.
@@ -1081,6 +1094,7 @@ func bindMethodArguments(c callSrc, methodMeta *transpiler.MethodMetadata) ([]ar
 			return nil, err
 		}
 	}
+	nargs := -1
 	if !named {
 		// A spread argument fills an unknown number of parameters, and a Go
 		// method keeps Go's own check (see call_arity.go).
@@ -1092,46 +1106,9 @@ func bindMethodArguments(c callSrc, methodMeta *transpiler.MethodMetadata) ([]ar
 		if len(args) >= params.fixed() {
 			return args, nil
 		}
+		nargs = len(args)
 	}
-
-	slots := make([]argSrc, len(methodMeta.ParamTypes))
-	next := 0
-	for _, arg := range args {
-		name, _ := arg.name()
-		if name == "" {
-			if next >= len(slots) {
-				return nil, params.tooManyError(len(args), line, col)
-			}
-			slots[next] = arg
-			next++
-			continue
-		}
-		idx := slices.Index(methodMeta.ParamNames, name)
-		if idx < 0 || idx >= len(slots) {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", name, methodMeta.Name))
-		}
-		if slots[idx].ok() {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", name, methodMeta.Name))
-		}
-		slots[idx] = arg
-	}
-	for i, slot := range slots {
-		if slot.ok() {
-			continue
-		}
-		if params.isVariadicSlot(i) {
-			// A variadic parameter left out takes no argument.
-			return slots[:i], nil
-		}
-		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-			nargs := len(args)
-			if named {
-				nargs = -1
-			}
-			return nil, params.missingError(i, nargs, line, col)
-		}
-	}
-	return slots, nil
+	return layoutArgs(params, positional, byName, nargs, nil, line, col)
 }
 
 // methodDefaultArg is the default value of a method's i-th parameter at a call
@@ -1426,7 +1403,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	// Unresolved receiver type params: skip full expected-type inference but
 	// still detect void function parameters for lambda return-type stripping.
 	if hasUnresolvedTypeParams {
-		return t.emitMethodCallWithVoidLambdaHint(c, receiver, method, methodMeta, typeSubst)
+		return t.emitMethodCallWithVoidLambdaHint(c, receiver, method, methodMeta, typeSubst, recvType)
 	}
 
 	// Fully concrete receiver type: transform args (named + positional), then
@@ -1437,9 +1414,12 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 // emitDirectMethodCall is the fallback used when the method's metadata
 // cannot be resolved. It still generates a `receiver.method(args...)` call so
 // the downstream compiler can report a meaningful error rather than having
-// the receiver.method structure silently lost. Part of A1 cont.
+// the receiver.method structure silently lost. Arguments passed by name are
+// laid out by the Go method's parameter names (handleNamedArgsGoCall). Part of
+// A1 cont.
 func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, method string) (ast.Expr, error) {
 	var mArgs []ast.Expr
+	var named []namedArg[ast.Expr]
 	hasSpread := false
 	args := c.args.list
 	// The Go method's parameters, for passing a Go call's results through
@@ -1447,6 +1427,10 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 	var goSig *transpiler.GoFuncSignature
 	if len(args) > 0 {
 		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
+	}
+	params := paramList{callee: method}
+	if slices.ContainsFunc(args, argSrc.named) {
+		params = goParamList(method, goSig)
 	}
 	for i, arg := range args {
 		v, extractErr := t.argContent(arg)
@@ -1456,32 +1440,61 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 		if v.spread {
 			hasSpread = true
 		}
-		positional := !v.spread && !arg.named()
+		name, _ := arg.name()
+		idx := params.slotOf(i, name)
+		typed := !v.spread && idx >= 0
 		// A lambda takes its parameter types from the Go method's parameter,
 		// once the signature is instantiated (see goMethodSignature).
 		expected := transpiler.Type(transpiler.NilType{})
-		if positional && v.lambda.ok() && goSig != nil && len(goSig.TypeParams) == 0 {
-			expected = goSigParamType(goSig, i)
-		} else if positional && !v.lambda.ok() {
-			expected = t.goParamSlot(goSig, i, v.expr)
+		if typed && v.lambda.ok() && goSig != nil && len(goSig.TypeParams) == 0 {
+			expected = goSigParamType(goSig, idx)
+		} else if typed && !v.lambda.ok() {
+			expected = t.goParamSlot(goSig, idx, v.expr)
 		}
 		expr, err := t.lowerArg(v, typedSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}
-		if positional {
-			expr = t.spreadGoResultArg(goSig, len(args), expr)
-			if cerr := t.checkGoResultGoArg(goSig, i, expr, v.at()); cerr != nil {
+		if typed {
+			if name == "" {
+				expr = t.spreadGoResultArg(goSig, len(args), expr)
+			}
+			if cerr := t.checkGoResultGoArg(goSig, idx, expr, v.at()); cerr != nil {
 				return nil, cerr
 			}
 		}
+		if name != "" {
+			named = append(named, namedArg[ast.Expr]{name, expr})
+			continue
+		}
 		mArgs = append(mArgs, expr)
 	}
-	return &ast.CallExpr{
-		Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-		Args:     mArgs,
-		Ellipsis: ellipsisPos(hasSpread),
-	}, nil
+	fun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
+	if len(named) > 0 {
+		return handleNamedArgsGoCall(fun, goSig, params, mArgs, named, hasSpread, c)
+	}
+	return &ast.CallExpr{Fun: fun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
+}
+
+// handleNamedArgsGoCall is the call of fun, the Go function or method with
+// the signature sig (nil when unknown) and the parameters params, passing
+// positional and the named arguments: laid out in sig's parameter order, as
+// Go takes them. A spread argument fills only the variadic last parameter.
+func handleNamedArgsGoCall(fun ast.Expr, sig *transpiler.GoFuncSignature, params paramList, positional []ast.Expr, named []namedArg[ast.Expr], spread bool, c callSrc) (ast.Expr, error) {
+	line, col := c.anchor().start()
+	if sig == nil {
+		return nil, unknownParamNamesError(named[0].name, params.callee, line, col)
+	}
+	if spread {
+		if err := params.checkSpreads(c.args); err != nil {
+			return nil, err
+		}
+	}
+	args, err := layoutArgs(params, positional, named, -1, nil, line, col)
+	if err != nil {
+		return nil, err
+	}
+	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(spread)}, nil
 }
 
 // goParamSlot is the slot type the i-th argument e of a call to the Go
@@ -1530,6 +1543,14 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 	return inst
 }
 
+// readsGenericGoSlot reports whether v, an argument of a generic Go function
+// filling a parameter of type slot, is typed by the type arguments the other
+// arguments bind (genericGoLambdaSlot): a lambda, or a thunk for a parameter
+// taking nothing and giving several results.
+func readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
+	return v.lambda.ok() || isGoResultsThunkSlot(slot)
+}
+
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
 // and returning several results, the slot a bare expression fills as a thunk
 // (see goResultsThunk); for a generic Go callee it is typed as a lambda's is,
@@ -1569,9 +1590,15 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	method string,
 	methodMeta *transpiler.MethodMetadata,
 	typeSubst typeSubstMap,
+	recvType transpiler.Type,
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
+	var named []namedArg[ast.Expr]
 	hasSpread := false
+	params := methodParamList(methodMeta.Name, methodMeta)
+	// `true` here filters to void function types only, avoiding leaked
+	// unresolved type params in return types.
+	unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 	for i, arg := range c.args.list {
 		v, extractErr := t.argContent(arg)
 		if extractErr != nil {
@@ -1580,21 +1607,33 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		if v.spread {
 			hasSpread = true
 		}
-		// `true` here filters to void function types only, avoiding leaked
-		// unresolved type params in return types.
-		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
-		expectedType := t.expectedArgType(unresolvedCtx, i, v.spread)
+		name, _ := arg.name()
+		idx := params.slotOf(i, name)
+		expectedType := transpiler.Type(transpiler.NilType{})
+		if idx >= 0 {
+			expectedType = t.expectedArgType(unresolvedCtx, idx, v.spread)
+		}
 		expr, err := t.lowerArg(v, slot{typ: expectedType, open: true}, false)
 		if err != nil {
 			return nil, err
 		}
+		if name != "" {
+			named = append(named, namedArg[ast.Expr]{name, expr})
+			continue
+		}
 		mArgs = append(mArgs, expr)
 	}
-	return &ast.CallExpr{
-		Fun:      &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
-		Args:     mArgs,
-		Ellipsis: ellipsisPos(hasSpread),
-	}, nil
+	fun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
+	if len(named) > 0 {
+		if hasSpread {
+			if err := params.checkSpreads(c.args); err != nil {
+				return nil, err
+			}
+		}
+		al, ac := c.anchor().start()
+		return t.handleNamedArgsMethodCall(fun, receiver, mArgs, named, hasSpread, methodMeta, recvType, typeSubst, al, ac)
+	}
+	return &ast.CallExpr{Fun: fun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
 
 // emitMethodCallWithFullTypes handles the concrete-receiver sub-path of
@@ -1665,8 +1704,8 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			return nil, err
 		}
 	}
-	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, hasSpread, methodMeta, recvType, typeSubst, al, ac)
+	if len(mNamedArgs) > 0 {
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, sortedNamedArgs(mNamedArgs), hasSpread, methodMeta, recvType, typeSubst, al, ac)
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
 		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, al, ac)
@@ -2041,10 +2080,79 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	// A Go callee's parameters, for passing a Go call's results through
 	// (spreadGoResultArg) and for naming a Try or Tuple passed where its plain
 	// value is expected (checkGoResultGoArg).
-	var goSig *transpiler.GoFuncSignature
-	if callCtx.funcMeta == nil && callCtx.applyMethodMeta == nil && len(callCtx.goFuncParamTypes) > 0 {
-		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: fun})
+	goSig := callCtx.goSig
+	// Its parameter names, for a call passing an argument by name.
+	var goParams paramList
+	if goSig != nil && slices.ContainsFunc(args, argSrc.named) {
+		goParams = goParamList("", goSig)
 	}
+	genericGo := goSig != nil && len(goSig.TypeParams) > 0
+	var namedSpreads map[string]bool // the arguments passed by name that spread
+
+	// lowerSlot lowers v, the argument filling parameter slotIdx of a Go
+	// function or any positional argument, against that parameter.
+	lowerSlot := func(v argValue, argName string, slotIdx int) (ast.Expr, error) {
+		funcCallCtx := t.buildFuncCallContext(callCtx.funcMeta, callCtx.inferredTypeSubst, callCtx.goFuncParamTypes, callCtx.structFieldExpectedTypes)
+		funcCallCtx.applyMethodMeta = callCtx.applyMethodMeta
+		funcCallCtx.applyTypeSubst = callCtx.applyTypeSubst
+		funcCallCtx.applyTypeParams = callCtx.applyTypeParams
+		funcCallCtx.unboundStructTypeParams = callCtx.unboundStructTypeParams()
+		funcCallCtx.structLiteral = callCtx.structLiteral
+		// Concurrency boundary: enforce capture-safety when this positional
+		// parameter is a Sendable[F].
+		if cerr := t.checkSendableArg(funcCallCtx, slotIdx, v); cerr != nil {
+			return nil, cerr
+		}
+		expectedType := t.expectedArgType(funcCallCtx, slotIdx, v.spread)
+		if transpiler.IsUnusable(expectedType) && !v.spread {
+			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
+		}
+		if genericGo && readsGenericGoSlot(v, expectedType) {
+			// The arguments lowered so far, each at its parameter, bind the
+			// type parameters: those passed by name too.
+			prior := positional
+			if len(named) > 0 {
+				prior = make([]ast.Expr, len(goParams.names))
+				copy(prior, positional)
+				for name, e := range named {
+					// A spread is a slice, not the element its variadic
+					// parameter is typed by; it binds nothing here.
+					if j := goParams.slotOf(0, name); j >= 0 && !namedSpreads[name] {
+						prior[j] = e
+					}
+				}
+			}
+			expectedType = t.genericGoLambdaSlot(goSig, slotIdx, prior, fun)
+		}
+		// The sole argument of Try(...) is its thunk: a Go call's error there is
+		// the Failure itself (see tryThunkValue).
+		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, slotIdx) && !thunkReturnsError(expectedType)
+		expr, aerr := t.lowerFunctionArg(v, expectedType, callCtx, tryThunk)
+		if aerr != nil {
+			return nil, aerr
+		}
+		if !v.spread {
+			if argName == "" {
+				expr = t.spreadGoResultArg(goSig, len(args), expr)
+			}
+			if cerr := t.checkGoResultGoArg(goSig, slotIdx, expr, v.at()); cerr != nil {
+				return nil, cerr
+			}
+		}
+		return expr, nil
+	}
+
+	// An argument passed by name to a generic Go function whose lowering
+	// reads its slot (a lambda, or a thunk for a parameter taking nothing and
+	// giving several results, see lowerSlot) is lowered after every argument
+	// that does not, whatever order they are written in: those bind the type
+	// parameters it is typed by.
+	type deferredArg struct {
+		v       argValue
+		name    string
+		slotIdx int
+	}
+	var deferred []deferredArg
 
 	for _, arg := range args {
 		v, extractErr := t.argContent(arg)
@@ -2055,7 +2163,14 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			hasSpread = true
 		}
 
-		if argName, _ := arg.name(); argName != "" {
+		// An argument passed by name to a Go function fills the parameter of
+		// its name, and is typed as a positional argument there is.
+		argName, _ := arg.name()
+		slotIdx := argIdx
+		if goSig != nil {
+			slotIdx = goParams.slotOf(argIdx, argName)
+		}
+		if argName != "" && (goSig == nil || slotIdx < 0) {
 			// Named argument: resolve the expected type via struct-field lookup
 			// first (supports generic struct construction), then function metadata,
 			// then sealed-variant cases. The line/col is for the dot-import
@@ -2089,40 +2204,36 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			continue
 		}
 
-		// Positional argument — use unified function call context.
-		funcCallCtx := t.buildFuncCallContext(callCtx.funcMeta, callCtx.inferredTypeSubst, callCtx.goFuncParamTypes, callCtx.structFieldExpectedTypes)
-		funcCallCtx.applyMethodMeta = callCtx.applyMethodMeta
-		funcCallCtx.applyTypeSubst = callCtx.applyTypeSubst
-		funcCallCtx.applyTypeParams = callCtx.applyTypeParams
-		funcCallCtx.unboundStructTypeParams = callCtx.unboundStructTypeParams()
-		funcCallCtx.structLiteral = callCtx.structLiteral
-		// Concurrency boundary: enforce capture-safety when this positional
-		// parameter is a Sendable[F].
-		if cerr := t.checkSendableArg(funcCallCtx, argIdx, v); cerr != nil {
-			return nil, nil, false, cerr
+		// Positional argument, or one passed by name to a Go function.
+		if argName != "" && genericGo && !v.spread && readsGenericGoSlot(v, goSigParamType(goSig, slotIdx)) {
+			deferred = append(deferred, deferredArg{v, argName, slotIdx})
+			continue
 		}
-		expectedType := t.expectedArgType(funcCallCtx, argIdx, v.spread)
-		if transpiler.IsUnusable(expectedType) && !v.spread {
-			expectedType = t.goParamSlot(goSig, argIdx, v.expr)
-		}
-		if goSig != nil && len(goSig.TypeParams) > 0 && (v.lambda.ok() || isGoResultsThunkSlot(expectedType)) {
-			expectedType = t.genericGoLambdaSlot(goSig, argIdx, positional, fun)
-		}
-		// The sole argument of Try(...) is its thunk: a Go call's error there is
-		// the Failure itself (see tryThunkValue).
-		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, argIdx) && !thunkReturnsError(expectedType)
-		expr, aerr := t.lowerFunctionArg(v, expectedType, callCtx, tryThunk)
+		expr, aerr := lowerSlot(v, argName, slotIdx)
 		if aerr != nil {
 			return nil, nil, false, aerr
 		}
-		if !v.spread {
-			expr = t.spreadGoResultArg(goSig, len(args), expr)
-			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, v.at()); cerr != nil {
-				return nil, nil, false, cerr
+		if argName != "" {
+			named[argName] = expr
+			if v.spread {
+				if namedSpreads == nil {
+					namedSpreads = make(map[string]bool)
+				}
+				namedSpreads[argName] = true
 			}
+			continue
 		}
 		positional = append(positional, expr)
 		argIdx++
+	}
+	// In the order written: one deferred argument binds type parameters for a
+	// later one, as positional arguments do.
+	for _, l := range deferred {
+		expr, aerr := lowerSlot(l.v, l.name, l.slotIdx)
+		if aerr != nil {
+			return nil, nil, false, aerr
+		}
+		named[l.name] = expr
 	}
 	return positional, named, hasSpread, nil
 }
@@ -2387,6 +2498,10 @@ type functionCallContext struct {
 	// goStruct is the Go type info of the Go struct the call names when it
 	// is not a GALA struct or function (see goStructTypeData), else nil.
 	goStruct *transpiler.GoTypeData
+	// goSig is the signature of the Go function the call names, when it is
+	// not a GALA function or companion Apply, else nil: its parameters
+	// type the arguments, and their names place those passed by name.
+	goSig *transpiler.GoFuncSignature
 	// The sealed variant the call constructs and its parent (nil otherwise),
 	// and the lookup's ambiguity error, reported for a named argument.
 	variant       *transpiler.SealedVariant
@@ -2570,6 +2685,10 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 		if len(ctx.applyTypeSubst) == 0 {
 			ctx.applyTypeSubst = ctx.structTypeSubst
 		}
+	}
+
+	if ctx.funcMeta == nil && ctx.applyMethodMeta == nil && ctx.goFuncParamTypes != nil && len(args.list) > 0 {
+		ctx.goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: fun})
 	}
 
 	return ctx
@@ -2897,7 +3016,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
-		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
+		if callCtx.funcMeta != nil {
 			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, hasSpread, callCtx.funcMeta, callCtx.inferredTypeSubst, al, ac)
 			// A result-only type parameter comes from the slot, as for a
 			// positional call (section 12.5), over the arguments in order.
@@ -2909,6 +3028,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 			return expr, nil
+		}
+		// A Go function, or a value of function type: laid out by the Go
+		// signature's parameter names, reported when there is none to read.
+		if callCtx.goFuncParamTypes != nil && callCtx.applyMethodMeta == nil {
+			callee := t.argCalleeName(fun)
+			if callee == "" {
+				callee = "this function"
+			}
+			return handleNamedArgsGoCall(fun, callCtx.goSig, goParamList(callee, callCtx.goSig), args, sortedNamedArgs(namedArgs), hasSpread, c)
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, c)
 	}
@@ -4570,59 +4698,14 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	typeSubst typeSubstMap,
 	line, col int,
 ) (ast.Expr, error) {
-	totalParams := len(funcMeta.ParamTypes)
-	result := make([]ast.Expr, totalParams)
-
-	// Place positional args first
-	for i, arg := range positionalArgs {
-		if i >= totalParams {
-			return nil, funcParamList(funcMeta.Name, funcMeta).tooManyError(len(positionalArgs)+len(namedArgs), line, col)
-		}
-		result[i] = arg
+	fill := func(i int, args []ast.Expr) (ast.Expr, error) {
+		return t.funcDefaultArg(funcMeta, i, args, typeSubst, line, col)
 	}
-
-	// Place named args at their correct positions
-	for name, expr := range namedArgs {
-		idx := -1
-		for i, pName := range funcMeta.ParamNames {
-			if pName == name {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-				"unknown parameter %q in call to %s", name, funcMeta.Name))
-		}
-		if result[idx] != nil {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-				"parameter %q specified both positionally and by name in call to %s",
-				name, funcMeta.Name))
-		}
-		result[idx] = expr
+	args, err := layoutArgs(funcParamList(funcMeta.Name, funcMeta), positionalArgs, sortedNamedArgs(namedArgs), -1, fill, line, col)
+	if err != nil {
+		return nil, err
 	}
-
-	// Fill remaining gaps with defaults
-	params := funcParamList(funcMeta.Name, funcMeta)
-	for i, slot := range result {
-		if slot == nil {
-			if params.isVariadicSlot(i) {
-				// A variadic parameter left out takes no argument.
-				result = result[:i]
-				break
-			}
-			if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
-				return nil, params.missingError(i, -1, line, col)
-			}
-			expr, err := t.funcDefaultArg(funcMeta, i, result, typeSubst, line, col)
-			if err != nil {
-				return nil, err
-			}
-			result[i] = expr
-		}
-	}
-
-	return &ast.CallExpr{Fun: fun, Args: result, Ellipsis: ellipsisPos(spread)}, nil
+	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(spread)}, nil
 }
 
 // handleNamedArgsMethodCall handles method calls with named arguments and default parameter values.
@@ -4632,56 +4715,21 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	fun ast.Expr,
 	callSiteReceiver ast.Expr,
 	positionalArgs []ast.Expr,
-	namedArgs map[string]ast.Expr,
+	namedArgs []namedArg[ast.Expr],
 	spread bool,
 	methodMeta *transpiler.MethodMetadata,
 	recvType transpiler.Type,
 	typeSubst typeSubstMap,
 	line, col int,
 ) (ast.Expr, error) {
-	totalParams := len(methodMeta.ParamTypes)
-	result := make([]ast.Expr, totalParams)
-	for i, arg := range positionalArgs {
-		if i >= totalParams {
-			return nil, methodParamList(methodMeta.Name, methodMeta).tooManyError(len(positionalArgs)+len(namedArgs), line, col)
-		}
-		result[i] = arg
+	fill := func(i int, args []ast.Expr) (ast.Expr, error) {
+		return t.methodDefaultArg(methodMeta, i, args, callSiteReceiver, recvType, typeSubst, line, col)
 	}
-	for name, expr := range namedArgs {
-		idx := -1
-		for i, pName := range methodMeta.ParamNames {
-			if pName == name {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", name, methodMeta.Name))
-		}
-		if result[idx] != nil {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", name, methodMeta.Name))
-		}
-		result[idx] = expr
+	args, err := layoutArgs(methodParamList(methodMeta.Name, methodMeta), positionalArgs, namedArgs, -1, fill, line, col)
+	if err != nil {
+		return nil, err
 	}
-	params := methodParamList(methodMeta.Name, methodMeta)
-	for i, slot := range result {
-		if slot == nil {
-			if params.isVariadicSlot(i) {
-				// A variadic parameter left out takes no argument.
-				result = result[:i]
-				break
-			}
-			if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-				return nil, params.missingError(i, -1, line, col)
-			}
-			expr, err := t.methodDefaultArg(methodMeta, i, result, callSiteReceiver, recvType, typeSubst, line, col)
-			if err != nil {
-				return nil, err
-			}
-			result[i] = expr
-		}
-	}
-	return &ast.CallExpr{Fun: fun, Args: result, Ellipsis: ellipsisPos(spread)}, nil
+	return &ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(spread)}, nil
 }
 
 // fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.

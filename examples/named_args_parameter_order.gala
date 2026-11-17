@@ -1,0 +1,61 @@
+package main
+
+import (
+    "regexp"
+    "strconv"
+    "strings"
+)
+
+// Arguments passed by name fill the parameters of their names, in the
+// order the callee declares them, whatever order they are written in.
+
+// Pairer is implemented by Joiner.
+type Pairer interface {
+    Pair(first string, second string) string
+    Join(sep string, parts ...string) string
+}
+
+// Ranker is a generic interface, implemented by Scorer.
+type Ranker[T any] interface {
+    Rank(lo T, hi T) string
+}
+
+// Joiner joins with Sep.
+struct Joiner(Sep string)
+
+// Pair is first, Sep, then second.
+func (j Joiner) Pair(first string, second string) string = first + j.Sep + second
+
+// Join is parts joined by j.Sep, with sep around the result.
+func (j Joiner) Join(sep string, parts ...string) string = sep + strings.Join(parts, j.Sep) + sep
+
+// Scorer ranks ints.
+struct Scorer(Name string)
+
+// Rank names the range from lo to hi.
+func (s Scorer) Rank(lo int, hi int) string = s"${s.Name}:$lo..$hi"
+
+// viaInterface calls Pair through the interface.
+func viaInterface(p Pairer) string = p.Pair(second = "b", first = "a")
+
+// joinAll passes a spread by name through the interface.
+func joinAll(p Pairer, ws ...string) string = p.Join(parts = ws..., sep = "|")
+
+// viaGeneric calls Rank through the generic interface.
+func viaGeneric(r Ranker[int]) string = r.Rank(hi = 9, lo = 1)
+
+func main() {
+    // A method of a Go type.
+    val re = regexp.MustCompile("a")
+    Println(re.ReplaceAllString(repl = "X", src = "banana"))
+    Println(re.ReplaceAllString("banana", repl = "Y"))
+    Println(re.ReplaceAllStringFunc(repl = (m) => strings.ToUpper(m), src = "banana"))
+    // A Go function.
+    Println(strings.Repeat(count = 3, s = "ab"))
+    Println(strconv.FormatInt(base = 16, i = 255))
+    Println(strings.Map(s = "HAL", mapping = (r) => r + 1))
+    // A method declared in a GALA interface.
+    Println(viaInterface(Joiner("-")))
+    Println(joinAll(Joiner("+"), "x", "y"))
+    Println(viaGeneric(Scorer("s")))
+}

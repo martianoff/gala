@@ -509,7 +509,8 @@ func (a *galaAnalyzer) recordStructFieldNative(meta *transpiler.TypeMetadata, fc
 
 // interfaceMethodNative is the metadata of the method msCtx, a method spec
 // of the interface meta, declared in definedIn: its signature, resolved with
-// meta's type parameters, and its parameters' types only.
+// meta's type parameters, and its parameters' types and names (a call through
+// the interface may pass arguments by name, as any method call may).
 func (a *galaAnalyzer) interfaceMethodNative(meta *transpiler.TypeMetadata, msCtx native.MethodSpecNode, pkgName, definedIn string, docs galaparser.Docs) *transpiler.MethodMetadata {
 	methodMeta := &transpiler.MethodMetadata{
 		Name:       msCtx.Identifier().GetText(),
@@ -522,7 +523,7 @@ func (a *galaAnalyzer) interfaceMethodNative(meta *transpiler.TypeMetadata, msCt
 	sig := msCtx.Signature()
 	methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)
 	params := a.nativeParamsOf(sig.Parameters(), pkgName, meta.TypeParams)
-	methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
+	methodMeta.ParamTypes, methodMeta.Variadic, methodMeta.ParamNames = params.types, params.variadic, params.names
 	methodMeta.InoutParams = params.inout
 	return methodMeta
 }
