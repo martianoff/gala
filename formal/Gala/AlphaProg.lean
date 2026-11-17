@@ -6,7 +6,7 @@
   (Gala/AlphaEval.lean) for the package-level initializers and for `main`, and on
   `mentions_alpha` and `reach_alpha` here for the order `initGlobals` initializes them in.
 -/
-import Gala.AlphaEval
+import Gala.AlphaConst
 
 namespace Gala.Spec
 
@@ -1180,6 +1180,21 @@ theorem initGlobals_alpha (hD : DeclsR pkg pm ds ds') (d : Nat) {gs gs' : List G
         ((gs.flatMap (·.names)).contains ·)))
       (fun a b h => ⟨h, deps_eq hD hall h⟩) hg)
 
+/-- A program and its renaming stay related once their constant expressions are folded
+    (`Gala/Const.lean`), which `run` does first. -/
+theorem alphaProgram_fold {p p' : Program} (h : AlphaProgram pkg pm p p') :
+    AlphaProgram pkg pm (foldConstants p) (foldConstants p') where
+  decls := by rw [collect_fold, collect_fold]; exact declsR_fold h.decls
+  globals := by
+    rw [collect_fold, collect_fold]
+    exact fall2_map (fun g g' hg => ⟨hg.mutable, hg.names, hg.destructure, hg.type,
+      foldL_alpha hg.values⟩) h.globals
+  globalsInPkg := by
+    rw [collect_fold]
+    intro g hg x hx
+    obtain ⟨g₀, hg₀, rfl⟩ := List.mem_map.mp hg
+    exact h.globalsInPkg g₀ hg₀ x hx
+
 /-- Running a program commutes with the renaming. -/
 theorem runM_alpha {p p' : Program} (h : AlphaProgram pkg pm p p') (n : Nat) :
     RelM pkg pm [] (fun _ => True) Eq (runM p n) (runM p' n) := by
@@ -1220,12 +1235,12 @@ theorem run_alpha {pkg : List String} {pm : String → Ren} {p p' : Program}
     OutcomeR (run p n).1 (run p' n).1 ∧ (run p n).2 = (run p' n).2 := by
   let s₀ : St := { locals := [], globals := [], out := "", steps := n }
   have hs : StR pkg pm [] s₀ s₀ := ⟨⟨.nil, .nil, ⟨rfl, fun _ h _ => absurd h (by simp [s₀])⟩, rfl⟩, rfl⟩
-  obtain ⟨hr, _, ⟨⟨_, _, _, hout⟩, _⟩, _⟩ := runM_alpha h n s₀ s₀ hs
+  obtain ⟨hr, _, ⟨⟨_, _, _, hout⟩, _⟩, _⟩ := runM_alpha (alphaProgram_fold h) n s₀ s₀ hs
   unfold run
   refine ⟨?_, hout⟩
   revert hr
-  rcases (runM p n).run.run s₀ with ⟨r, _⟩
-  rcases (runM p' n).run.run s₀ with ⟨r', _⟩
+  rcases (runM (foldConstants p) n).run.run s₀ with ⟨r, _⟩
+  rcases (runM (foldConstants p') n).run.run s₀ with ⟨r', _⟩
   intro hr
   cases r <;> cases r' <;> simp only [ResR] at hr
   · cases hr <;> first | exact .panic .. | exact .fuel | exact .unsupported .. | exact .stuck ..

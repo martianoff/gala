@@ -39,8 +39,14 @@ The tiers mean exactly this:
 | S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body's trailing expression is its result where the context or a declaration gives a result type, and with none a trailing value is a compile error and the block is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | capture of the scope only |
 | S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the defaults phase (T4): it does not read the caller's locals, and each default's frame binds exactly the earlier parameters; the order: written arguments, then defaults in parameter order (T3c) |
 
-Untyped constant expressions are not folded: Go rejects `9223372036854775807 + 1` at
-compile time, while galaspec wraps it at run time. Only programs Go rejects differ.
+An operator expression of literals only is a Go constant expression, evaluated exactly at
+compile time (#1237): `(1 << 70) >> 68` is `4`. galaspec folds each one before it runs a
+program (`Gala/Const.lean`). Within such an expression, a division by zero, a negative
+shift count, a value of 512 bits or more and a shift count above 1024 (bounds of the
+model, within gc's), all of which Go rejects at compile time, stop a run that reaches
+them `unsupported`; so does a result that does not fit `int`. None is ever wrapped. A
+division of a variable by the literal `0` is not a constant expression, and stays a
+run-time panic.
 
 `int64` is accepted as a type and means the same as `int`. Every other numeric type is
 outside S1 and reported as unsupported.
@@ -72,7 +78,9 @@ A run ends `unsupported:<kind>` when it reaches:
   function type, `nil` (`nil`); a lambda parameter with a default (`param-default`); a
   named argument to a function value (`named-arg`); a positional argument after a named
   one (`positional-after-named`); a type outside S1 (`type-<name>`); an
-  integer constant outside int64 (`int-constant-overflow`); a cycle in package-level
+  integer constant outside int64 (`int-constant-overflow`), a constant division by zero
+  (`constant-division-by-zero`), a negative constant shift count (`constant-negative-shift`)
+  or a constant beyond the model's bounds (`constant-too-large`); a cycle in package-level
   initialization (`init-cycle`); a program without `main` (`no-main`);
 - an import, before anything runs (`import`; `blank-import` for `import _ "pkg"`): it
   runs the package's initializers whether or not the run reaches a name of it, and
@@ -227,6 +235,10 @@ generated section below.
 Lean definitions. It translates subset S1 and the S2 constructs galaspec models (as
 galaspec models them, except as listed below):
 
+- an operator expression of literals only, a Go constant expression, only where its
+  `Int64` translation gives Go's exact value: where an intermediate result leaves int64,
+  a shift count is outside 0..63 or a constant divides by zero, it is reported
+  (`untyped-constant`, #1237), as galaspec folds it and gala2lean does not yet;
 - interpolated strings `s"..."`, each part printed as `Println` prints it;
 - named arguments and default values: arguments in the order written, then each
   left-out default in parameter order, in the callee's scope; package-level

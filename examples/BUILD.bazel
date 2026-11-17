@@ -1740,6 +1740,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "constant_expressions",
+    src = "constant_expressions.gala",
+    expected = "constant_expressions.out",
+)
+
+gala_exec_test(
     name = "match_block_branch",
     src = "match_block_branch.gala",
     expected = "match_block_branch.out",

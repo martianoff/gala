@@ -4,6 +4,8 @@
 import Gala.GoCore
 import Gala.GoCore.Cli
 import Gala.Syntax
+import Gala.Exact
+import Gala.Const
 import Gala.Json
 import Gala.Scope
 import Gala.Print
@@ -17,6 +19,7 @@ import Gala.MatchLower
 import Gala.Alpha
 import Gala.AlphaStep
 import Gala.AlphaEval
+import Gala.AlphaConst
 import Gala.AlphaProg
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
