@@ -33,6 +33,8 @@
 import Gala.M5.SpecPure
 import Gala.GoCore.Eval
 
+set_option linter.unusedSimpArgs false
+
 namespace Gala.M5
 
 open Gala.GoCore.Full (Ty IntKind UKind)

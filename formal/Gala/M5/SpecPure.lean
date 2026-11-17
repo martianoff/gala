@@ -162,7 +162,7 @@ theorem follows_pure (P : Core → Prop) (a : α) : Follows P (pure a : M α) (p
   fun _ _ => ⟨.inr rfl, rfl⟩
 
 theorem follows_vacuous {P : Core → Prop} {x : M α} {h : H α} (hP : ∀ c, ¬ P c) : Follows P x h :=
-  fun s h => absurd h (hP _)
+  fun _ h => absurd h (hP _)
 
 /-- `&&` and `||` evaluated from their operands' computations, in `M` and in `H` alike. -/
 theorem follows_and {P : Core → Prop} {xl xr : M Val} {hl hr : H Val}
