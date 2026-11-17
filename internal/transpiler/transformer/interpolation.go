@@ -275,8 +275,8 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // hint stack's keys) hit.
 func (t *galaASTTransformer) parseExprAt(text string, line, col int, what string) (exprSrc, error) {
 	file := t.filePath
-	if t.loweringDefault != nil && t.loweringDefault.file != "" {
-		file = t.loweringDefault.file
+	if t.loweringDefault != nil && t.loweringDefault.src.file != "" {
+		file = t.loweringDefault.src.file
 	}
 	key := parsedExprKey{file: file, text: text, what: what, line: line, col: col}
 	if e, ok := t.parsedExprs[key]; ok {

@@ -323,6 +323,10 @@ arguments the call passes:
   evaluated once, however many defaults read it.
 - It may not read its own parameter or a later one
   ([GALA-E0094](/docs/errors/gala-e0094/)).
+- It may call its own function, but a call there that leaves out its parameter
+  takes that parameter's default again, which never ends: `b int = f(1)` in
+  `func f(a int, b int = f(1))` is an error, directly or through the defaults
+  of other functions ([GALA-E0135](/docs/errors/gala-e0135/)). `f(1, 2)` is fine.
 - The caller's locals are never visible to it. A package-level name it reads
   is the callee package's, even where a local of the caller has the same name.
 

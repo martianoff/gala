@@ -141,6 +141,9 @@ func (t *galaASTTransformer) declaredFieldDefault(meta *transpiler.TypeMetadata,
 		DefaultExpr: meta.FieldDefaults[field],
 		file:        meta.DefinedIn,
 		pkg:         meta.Package,
+		owner:       meta.Name,
+		param:       field,
+		field:       true,
 		typeParams:  meta.TypeParams,
 	}
 	t.substituteDeclared(&src, fieldType, typeArgs)

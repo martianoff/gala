@@ -6,6 +6,8 @@ import (
 	"go/ast"
 	"path/filepath"
 	"slices"
+	"strings"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/native"
@@ -26,6 +28,9 @@ type defaultSource struct {
 	transpiler.DefaultExpr
 	file        string                     // declaring source file; "" when unknown
 	pkg         string                     // declaring package; names it borrows from there are qualified at a use site in another package
+	owner       string                     // its declaration, for diagnostics: the function, `Type.Method`, or the struct or case
+	param       string                     // the parameter or field it is the default of, for diagnostics
+	field       bool                       // param is a field: of a struct, or of a case (its companion Apply)
 	declared    transpiler.Type            // the parameter's or field's declared type, type arguments substituted; nil when unknown
 	typeParams  []string                   // type parameters of the declaration; a declared type still mentioning one is not threaded
 	typeArgs    map[string]transpiler.Type // the use site's type arguments for typeParams (see bindDefaultTypeParams)
@@ -55,9 +60,15 @@ type defaultSource struct {
 // recordDefaultLambdaHints). A foreign default's tokens carry another file's
 // positions, so no line markers are emitted for them either.
 type defaultLowering struct {
-	pkg     string // declaring package: bare function names resolve there (functionByName); they are qualified once the whole default is lowered
-	file    string // declaring source file, where its text is parsed (parseExprAt); "" when unknown
-	foreign bool   // declared in a file other than the one being transformed
+	// src is the default being lowered. Its declaring package is where bare
+	// function names resolve (functionByName); they are qualified once the
+	// whole default is lowered. Its declaring file is where its text is
+	// parsed (parseExprAt).
+	src     defaultSource
+	foreign bool // declared in a file other than the one being transformed
+	// outer is the lowering this one is nested in, nil at the use site: the
+	// chain defaultCycle walks.
+	outer *defaultLowering
 	// useScope is the use site's scope. Its bindings, and those of every
 	// scope around it, were not in scope where the default was written, so
 	// they do not shadow the functions the default names (see shadowingScope).
@@ -372,7 +383,10 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if prev != nil {
 		useSite = prev.emitTypeParams
 	}
-	t.loweringDefault = &defaultLowering{pkg: src.pkg, file: src.file, foreign: !local, useScope: t.currentScope, emitTypeParams: useSite}
+	if err := t.defaultCycle(src, useLine, useCol); err != nil {
+		return nil, err
+	}
+	t.loweringDefault = &defaultLowering{foreign: !local, useScope: t.currentScope, emitTypeParams: useSite, src: src, outer: prev}
 	defer func() { t.loweringDefault = prev }()
 	// The default is lowered in its own declaration's scope: the type
 	// parameters bound at the use site do not shadow the names it reads. In
@@ -445,7 +459,12 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	var expr ast.Expr
 	if err == nil {
 		expr, err = t.lowerDefault(def, src)
-		if err != nil {
+		switch {
+		case err == nil:
+			err = laterParamError(def, src.later, expr)
+		case isDefaultCycle(err):
+			// A cycle a nested default found is reported as it is.
+		default:
 			// What it failed on may be a later parameter, or a name only
 			// this file's imports declare: report that, at the name.
 			if laterErr := laterParamError(def, src.later, nil); laterErr != nil {
@@ -453,8 +472,6 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 			} else if scopeErr := t.outOfLexicalScope(def, nil, src); scopeErr != nil {
 				err = scopeErr
 			}
-		} else {
-			err = laterParamError(def, src.later, expr)
 		}
 	}
 	if err == nil {
@@ -484,6 +501,82 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	}
 	t.recordCallDefault(expr)
 	return expr, nil
+}
+
+// sameDefault reports whether a and b are the one declared default: the same
+// text, written at the same place of the same file (the text tells two apart
+// only when the file is unknown). owner is not compared: it names a method by
+// its receiver type, which two use sites may spell differently.
+func sameDefault(a, b defaultSource) bool {
+	return a.Text == b.Text && a.Pos == b.Pos && a.pkg == b.pkg && filepath.Clean(a.file) == filepath.Clean(b.file)
+}
+
+// paramName is the name of parameter i in names, or its position (`#2`) when
+// it has none.
+func paramName(names []string, i int) string {
+	if i < len(names) && names[i] != "" {
+		return names[i]
+	}
+	return fmt.Sprintf("#%d", i+1)
+}
+
+// label names a default in a cycle path: `f.b`, `Box.Get.b`, `Point.X`.
+func (src defaultSource) label() string {
+	return src.owner + "." + src.param
+}
+
+// defaultCycle is GALA-E0135 when src is already being lowered. A default is
+// lowered at every use site that omits its argument, so one whose lowering
+// needs itself again — `b int = f(1)` in `func f(a int, b int = f(1))`, a call
+// that omits b — would be expanded without end. A default that calls its own
+// function but passes the argument (`f(1, 2)`) needs no default, and lowering
+// one default inside another is no cycle unless it comes back to the same one.
+//
+// It is reported at src, the default the cycle starts from and ends at, with
+// the path of defaults that leads back to it; at useLine/useCol, the use site
+// in the file being transformed, when where src was written is unknown.
+func (t *galaASTTransformer) defaultCycle(src defaultSource, useLine, useCol int) error {
+	for start := t.loweringDefault; start != nil; start = start.outer {
+		if !sameDefault(start.src, src) {
+			continue
+		}
+		// The path runs from start, outermost, in to src.
+		path := []string{src.label()}
+		for l := t.loweringDefault; l != start.outer; l = l.outer {
+			path = append(path, l.src.label())
+		}
+		slices.Reverse(path)
+		via := ""
+		if len(path) > 2 {
+			via = ", through the default of " + strings.Join(path[1:len(path)-1], ", then ")
+		}
+		kind := "parameter"
+		if src.field {
+			kind = "field"
+		}
+		err := galaerr.NewCodedSemanticError(galaerr.CodeDefaultCycle, useLine, useCol,
+			fmt.Sprintf("the default value of %s %s of %s depends on itself%s: %s",
+				kind, src.param, src.owner, via, strings.Join(path, " → ")),
+			"pass the argument explicitly in the call; a call that leaves an argument out takes its default, so expanding this default needs itself again")
+		// Its file is named even when it is the one being transformed, so
+		// that the enclosing lowering of a default from another file
+		// (placeForeignDefaultError) leaves the position alone.
+		err.FilePath = t.filePath
+		if src.file != "" && src.Pos.Line > 0 {
+			err.FilePath, err.Line, err.Column = src.file, src.Pos.Line, src.Pos.Column
+			if !strings.Contains(src.Text, "\n") {
+				err = err.WithSpan(src.Pos.Column + utf8.RuneCountInString(src.Text))
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+// isDefaultCycle reports whether err is GALA-E0135.
+func isDefaultCycle(err error) bool {
+	var se *galaerr.SemanticError
+	return errors.As(err, &se) && se.Code == galaerr.CodeDefaultCycle
 }
 
 // lowerDefault transforms a default's parse tree against its declared type.

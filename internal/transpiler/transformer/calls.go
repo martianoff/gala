@@ -1158,6 +1158,8 @@ func (t *galaASTTransformer) lowerMethodDefault(methodMeta *transpiler.MethodMet
 		DefaultExpr: methodMeta.DefaultExprs[i],
 		file:        methodMeta.DefinedIn,
 		pkg:         methodMeta.Package,
+		owner:       stripPackagePrefix(recvType.BaseName()), // the case, for a case field
+		param:       paramName(methodMeta.ParamNames, i),
 		typeParams:  methodMeta.TypeParams,
 		recv:        methodMeta.ReceiverName,
 		recvType:    recvType,
@@ -1165,6 +1167,9 @@ func (t *galaASTTransformer) lowerMethodDefault(methodMeta *transpiler.MethodMet
 	}
 	if bindParams {
 		src.params, src.later = defaultParams(methodMeta.ParamNames, methodMeta.ParamTypes, i, args)
+		src.owner += "." + methodMeta.Name
+	} else {
+		src.field = true
 	}
 	// The receiver's own type arguments (`T` of a Box[int] receiver) are bound
 	// by the receiver, whichever call form reached here.
@@ -4472,6 +4477,8 @@ func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadat
 		DefaultExpr: funcMeta.DefaultExprs[i],
 		file:        funcMeta.DefinedIn,
 		pkg:         funcMeta.Package,
+		owner:       funcMeta.Name,
+		param:       paramName(funcMeta.ParamNames, i),
 		typeParams:  funcMeta.TypeParams,
 	}
 	src.params, src.later = defaultParams(funcMeta.ParamNames, funcMeta.ParamTypes, i, args)
@@ -5660,7 +5667,7 @@ func (t *galaASTTransformer) lookupGoIdentSignature(name string) *transpiler.GoF
 func (t *galaASTTransformer) ownGoFuncSignature(name string) *transpiler.GoFuncSignature {
 	pkg := t.packageName
 	if t.loweringForeignDefault() {
-		pkg = t.loweringDefault.pkg
+		pkg = t.loweringDefault.src.pkg
 	}
 	if pkg == "" {
 		return nil

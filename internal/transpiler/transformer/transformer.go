@@ -1061,7 +1061,7 @@ func (t *galaASTTransformer) useSiteBareKeysForeign() bool {
 // package is lowered, that package (see transformDefaultExpr).
 func (t *galaASTTransformer) resolutionPackage() string {
 	if t.loweringForeignDefault() {
-		return t.loweringDefault.pkg
+		return t.loweringDefault.src.pkg
 	}
 	return t.packageName
 }

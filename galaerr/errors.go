@@ -1152,6 +1152,14 @@ const (
 	// used to fail `go build` against the generated return ("cannot use
 	// std.Tuple[int, error]{…} as std.Try[int] value").
 	CodeGoResultsBodyValue ErrorCode = "GALA-E0134"
+
+	// E0135: a parameter or field default that depends on itself. A
+	// default is expanded at every call or construction that omits its
+	// argument, so a default holding a call that omits the same parameter —
+	// `b int = f(1)` in `func f(a int, b int = f(1))` — directly or through
+	// the defaults of other declarations, would be expanded without end. It
+	// used to crash the compiler with a Go stack overflow.
+	CodeDefaultCycle ErrorCode = "GALA-E0135"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
