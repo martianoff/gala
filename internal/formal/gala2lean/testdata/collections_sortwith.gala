@@ -1,0 +1,25 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// SortWith on an Array and a List: equal keys keep their order (std sorts
+// the positions, breaking a tie by position), a descending order, lengths
+// 0, 1 and 2, a less that says every pair is less both ways (all ties, so
+// the order stays), and galop's normalize pattern.
+
+struct Interval(Lo int, Hi int)
+
+struct Item(Key int, Name string)
+
+func normalize(rs Array[Interval]) Array[Interval] =
+    rs.Filter((r) => r.Lo <= r.Hi).SortWith((a, b) => a.Lo < b.Lo).FoldLeft(EmptyArray[Interval](), (acc, r) => acc.Append(r))
+
+func main() {
+    val items = ArrayOf(Item(2, "b1"), Item(1, "a1"), Item(2, "b2"), Item(0, "z"), Item(1, "a2"))
+    Println(items.SortWith((x, y) => x.Key < y.Key).Map((i) => i.Name).MkString(" "))
+    Println(items.SortWith((x, y) => x.Key > y.Key).Map((i) => i.Name).MkString(" "))
+    Println(EmptyArray[int]().SortWith((x, y) => x < y), ArrayOf(5).SortWith((x, y) => x < y), ArrayOf(9, 3).SortWith((x, y) => x < y))
+    Println(ArrayOf(3, 1, 2).SortWith((x, y) => true), ListOf(3, 1, 2, 1).SortWith((x, y) => x < y))
+    Println(ArrayOf(10, -3, 7, 7, 0).SortWith((x, y) => x % 4 < y % 4))
+    Println(normalize(ArrayOf(Interval(5, 6), Interval(9, 1), Interval(1, 2), Interval(3, 3))).Map((r) => r.Lo).MkString(","))
+}

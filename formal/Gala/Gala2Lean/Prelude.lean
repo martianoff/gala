@@ -523,6 +523,58 @@ def seqGetOption (xs : List α) (i : Int64) : GOption α :=
 /-- The integer GALA's `Size`, `Length`, `IndexOf` and `Count` give. -/
 def seqSize (xs : List α) : Int64 := Int64.ofNat xs.length
 
+/-- Insertion of `x` before the first element `c` puts after it. -/
+def seqInsertBy {σ α : Type} (c : Nat × α → Nat × α → Prog σ Int) (x : Nat × α) :
+    List (Nat × α) → Prog σ (List (Nat × α))
+  | [] => pure [x]
+  | y :: ys => do
+    if (← c x y) < 0 then pure (x :: y :: ys)
+    else return y :: (← seqInsertBy c x ys)
+
+/-- An insertion sort by `c`. -/
+def seqSortBy {σ α : Type} (c : Nat × α → Nat × α → Prog σ Int) :
+    List (Nat × α) → Prog σ (List (Nat × α))
+  | [] => pure []
+  | x :: xs => do seqInsertBy c x (← seqSortBy c xs)
+
+/-- Whether `c` puts every pair of `l` in `l`'s order, both ways: `c x y = -1` and
+    `c y x = 1` for each `x` before `y`. -/
+def seqOrderedBy {σ α : Type} (c : Nat × α → Nat × α → Prog σ Int) :
+    List (Nat × α) → Prog σ Bool
+  | [] => pure true
+  | x :: rest => do
+    if !(← allAfter x rest) then return false
+    seqOrderedBy c rest
+where
+  allAfter (x : Nat × α) : List (Nat × α) → Prog σ Bool
+    | [] => pure true
+    | y :: ys => do
+      if (← c x y) == -1 && (← c y x) == 1 then allAfter x ys else pure false
+
+/-- `SortWith(less)` (array.gala:1160, list.gala's alike): a length of at most 1 is
+    returned as it is, `less` uncalled. Otherwise std sorts the positions with
+    `go_interop.SliceSortStable` (types.go `stableOrder`: `slices.SortFunc`, gc's
+    pdqsort) under `c i j = lessToCompare(less, x_i, x_j)` (array.gala:1141), and the
+    position order `i - j` where that is 0, so `c` is 0 only for a position with itself.
+    The model sorts by the same `c` and checks that `c` agrees, both ways, with the
+    order it found on every pair: then `c` is that strict total order, and every correct
+    comparison sort, pdqsort among them, gives that same order (the trust: gc's sort
+    sorts). The translation passes only a `less` that can have no effect and cannot
+    panic, so how often and in which order it is called cannot be seen. Where `c` is not
+    a strict total order (a `less` that is not consistent), Go's result depends on
+    pdqsort's steps, which the model does not follow: the run stops,
+    `unsupported:sort-inconsistent-less`. -/
+def seqSortWith {σ α : Type} (xs : List α) (less : α → α → Prog σ Bool) : Prog σ (List α) := do
+  if xs.length ≤ 1 then return xs
+  let c : Nat × α → Nat × α → Prog σ Int := fun a b => do
+    let ab ← less a.2 b.2
+    let ba ← less b.2 a.2
+    let r : Int := if ab then (if ba then 0 else -1) else if ba then 1 else 0
+    pure (if r != 0 then r else if a.1 < b.1 then -1 else if a.1 > b.1 then 1 else 0)
+  let sorted ← seqSortBy c ((List.range xs.length).zip xs)
+  if ← seqOrderedBy c sorted then return sorted.map (·.2)
+  else throw (.unsupported "sort-inconsistent-less")
+
 /-! ### Trusted Go models: `strings` and `strconv`
 
 Each is written after the Go 1.25.5 source it cites, over Lean's `String`, a sequence
