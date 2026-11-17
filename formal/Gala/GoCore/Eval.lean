@@ -57,6 +57,15 @@ def Env.push (env : Env) : Env := { env with scopes := [] :: env.scopes }
 /-- The predeclared interface `error` (Go spec, "Errors"). -/
 def errorTy : Ty := .iface [("Error", .func_ [] [.string] false)]
 
+/-- The underlying types of the defined types of Go's standard library that GoCore
+    knows without their source, by import path and name: `fmt.Stringer`
+    (fmt/print.go, `type Stringer interface { String() string }`). Such a type stays
+    the defined type `.named path name []`, as distinct from an identical literal
+    interface as in Go (Go spec, "Type identity"). -/
+def libType? : String → String → Option Ty
+  | "fmt", "Stringer" => some (.iface [("String", .func_ [] [.string] false)])
+  | _, _ => none
+
 /-- The predeclared types (Go spec, "Predeclared identifiers"). -/
 def universeType? : String → Option Ty
   | "bool" => some .bool
@@ -493,6 +502,7 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
         -- A type of a package the document does not hold (Go's own standard library).
         if let .selector (.ident q) sel := e then
           if let some path := importOf c env q then
+            if (libType? path sel).isSome then return .named path sel []
             if partialPkg c path then unsupported s!"{path}.{sel}"
         match e with
         | .index (.selector (.ident q) sel) _ =>
@@ -512,6 +522,7 @@ def underlying (c : Ctx) : Nat → Ty → GM Ty
   | n + 1, t => do
     match t with
     | .named path name args =>
+      if let some u := libType? path name then return u
       let p ← pkgCtx c path
       match p.objs.get? name with
       | some (.type fi (.mk _ tps _ te)) =>
