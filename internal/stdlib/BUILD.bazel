@@ -1,4 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
+load(":gala_packages.bzl", "stdlib_gala_packages")
 
 # Generate embedded stdlib Go file from transpiled sources and GALA source files.
 # This uses gala_bootstrap (not gala) to avoid circular dependency.
@@ -214,6 +215,39 @@ genrule(
     visibility = ["//visibility:private"],
 )
 
+# Whether rules_gala treats each stdlib package's go_library as a GALA package
+# (see gala_packages.bzl). gala_packages_test.go requires it of every package
+# with .gala sources, so a hand-wired package whose go_library does not embed
+# :gala_package (stdlib_gala_package()) fails `bazel test`.
+stdlib_gala_packages(
+    name = "gala_packages",
+    out = "gala_packages_gen_test.go",
+    libraries = [
+        "//collection_immutable",
+        "//collection_mutable",
+        "//concurrent",
+        "//crypto",
+        "//fs",
+        "//go_builtins",
+        "//go_interop",
+        "//io",
+        "//json",
+        "//lazy",
+        "//path",
+        "//regex",
+        "//resource",
+        "//std",
+        "//stream",
+        "//strings",
+        "//subprocess",
+        "//test",
+        "//time_utils",
+        "//validation",
+        "//yaml",
+    ],
+    visibility = ["//visibility:private"],
+)
+
 go_library(
     name = "stdlib",
     srcs = [
@@ -231,6 +265,8 @@ go_test(
         "embed_collections_test.go",
         "embed_completeness_test.go",
         "fingerprint_test.go",
+        "gala_packages_gen_test.go",
+        "gala_packages_test.go",
         "source_tree_files_gen_test.go",
         "stdlib_test.go",
     ],
