@@ -1,0 +1,48 @@
+package main
+
+// Cookbook: write a file, read it back, and count its lines, words and
+// characters. docs/COOKBOOK.MD quotes this file.
+
+import (
+    "path/filepath"
+    "strings"
+
+    "martianoff/gala/fs"
+)
+
+// Counts is what `wc` prints for one file.
+struct Counts(Lines int, Words int, Chars int)
+
+// count counts the lines, words and characters (not bytes) of a text.
+func count(text string) Counts = Counts(
+    Lines = strings.Count(text, "\n"),
+    Words = strings.Fields(text).Size(),
+    Chars = text.Size(),
+)
+
+// writeAndCount writes a file into dir, then reads it back and counts it.
+// Each step is a Try; the first failure ends the block.
+func writeAndCount(dir string) Try[Counts] {
+    val path = filepath.Join(dir, "notes.txt")
+    bind _ = fs.WriteFileString(path, "héllo world\nsecond line here\n", 0o644)
+    bind text = fs.ReadFileString(path)
+    Success(count(text))
+}
+
+func main() {
+    // Clean up whatever happened, and report a failed cleanup too.
+    val counted = fs.MkdirTemp("", "cookbook").FlatMap((dir) => {
+        val result = writeAndCount(dir)
+        fs.RemoveAll(dir).FlatMap((_) => result)
+    })
+    counted match {
+        case Success(c) => Println(s"${c.Lines} lines, ${c.Words} words, ${c.Chars} chars")
+        case Failure(err) => Println(s"failed: ${err.Error()}")
+    }
+
+    // A missing file is a Failure, not a panic.
+    fs.ReadLines("no-such-file.txt") match {
+        case Success(lines) => Println(s"${lines.Size()} lines")
+        case Failure(_) => Println("no-such-file.txt: cannot read it")
+    }
+}

@@ -4,7 +4,7 @@ title: "Getting Started with GALA — Install and Write Your First Program"
 description: "Install GALA and write your first program in minutes. Pre-built binaries for Linux, macOS, and Windows. Get sum types, pattern matching, and Option types for Go in 3 steps."
 keywords: "install gala, gala getting started, gala tutorial, gala hello world, gala setup, gala quickstart, transpile gala to go, golang sum types install, go pattern matching setup"
 permalink: /getting-started/
-last_modified_at: 2026-11-15
+last_modified_at: 2026-11-16
 ---
 
 <div class="breadcrumb">
@@ -435,6 +435,7 @@ You are set up and running. Here is where to go from here:
 
 - **[Playground]({{ '/playground/' | relative_url }})** -- Try GALA in your browser without installing anything
 - **[Add GALA to a Go Repository]({{ '/docs/add-gala-to-go-repo/' | relative_url }})** -- Bring GALA into an existing Go module, with a cobra CLI as the worked example
+- **[Cookbook]({{ '/docs/cookbook/' | relative_url }})** -- Tested recipes for day-one tasks: files, flags, HTTP and JSON, errors, collections, concurrency, tests
 - **[GALA vs Go]({{ '/vs-go/' | relative_url }})** -- Side-by-side comparison of GALA and Go code
 - **[Language Specification](https://github.com/martianoff/gala/blob/master/docs/GALA.MD)** -- Complete reference for GALA syntax and semantics
 - **[Examples](https://github.com/martianoff/gala/blob/master/docs/EXAMPLES.MD)** -- Code examples for all language features

@@ -1,0 +1,50 @@
+package main
+
+// Cookbook: sort, dedupe and group a collection, and count words with a
+// HashMap. docs/COOKBOOK.MD quotes this file.
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/strings"
+)
+
+// Person is one row of the data the examples sort and group.
+struct Person(Name string, City string, Age int)
+
+// wordFrequency counts each word, case-insensitively. GALA's strings.Fields
+// gives an Array. The HashMap is immutable: Put returns a new map, so
+// FoldLeft threads it through.
+func wordFrequency(text string) HashMap[string, int] =
+    strings.Fields(strings.ToLower(text))
+        .FoldLeft(EmptyHashMap[string, int](), (counts, w) =>
+            counts.Put(w, counts.GetOrElse(w, 0) + 1))
+
+// byCity groups people into a HashMap from city to names.
+func byCity(people Array[Person]) HashMap[string, Array[string]] =
+    people.FoldLeft(EmptyHashMap[string, Array[string]](), (groups, p) =>
+        groups.Put(p.City, groups.GetOrElse(p.City, EmptyArray()).Append(p.Name)))
+
+func main() {
+    val people = ArrayOf(
+        Person("Ann", "Oslo", 34),
+        Person("Bo", "Rome", 27),
+        Person("Cy", "Oslo", 41),
+        Person("Di", "Lima", 27),
+    )
+
+    // Sort by a key, or by a comparison of your own; both are stable.
+    Println(people.SortBy(_.Age).Map(_.Name).MkString(", "))
+    Println(people.SortWith((a, b) => a.Age > b.Age).Map(_.Name).MkString(", "))
+
+    // Dedupe, keeping the first occurrence of each.
+    Println(people.Map(_.Age).Distinct().Sorted().MkString(" "))
+
+    // Group; a HashMap has no order, so sort its entries to print them.
+    byCity(people).Sorted().ForEach((e) => Println(s"${e.V1}: ${e.V2.MkString(", ")}"))
+
+    // Top three words, most frequent first, ties alphabetically.
+    val counts = wordFrequency("the cat and the hat and THE bat")
+    counts.SortWith((a, b) => a.V2 > b.V2 || (a.V2 == b.V2 && a.V1 < b.V1))
+        .Take(3)
+        .ForEach((e) => Println(s"${e.V2} ${e.V1}"))
+}

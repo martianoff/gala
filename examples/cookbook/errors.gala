@@ -1,0 +1,66 @@
+package main
+
+// Cookbook: handle errors from Go calls with Try, FromError and Either.
+// docs/COOKBOOK.MD quotes this file.
+
+import (
+    "os"
+    "strconv"
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// A Go call that returns (T, error) is a Try[T]: no `if err != nil`.
+func parsePort(text string) Try[int] = strconv.Atoi(strings.TrimSpace(text))
+
+// A Go call that returns only an error is FromError(call), a Try[Void].
+// RecoverWith turns the one failure we expect back into a success.
+func removeIfPresent(path string) Try[Void] =
+    FromError(os.Remove(path))
+        .RecoverWith((err) => if (os.IsNotExist(err)) Success(Void()) else Failure(err))
+
+// ConfigError is why a configuration is unusable: an error type of your
+// own, which an Either carries and callers match on.
+sealed type ConfigError {
+    case Missing(Key string)
+    case Invalid(Key string, Value string)
+}
+
+func lookup(settings HashMap[string, string], key string) Either[ConfigError, string] =
+    settings.Get(key) match {
+        case Some(v) => Right(v)
+        case None() => Left(Missing(key))
+    }
+
+func portSetting(raw string) Either[ConfigError, int] = parsePort(raw) match {
+    case Success(p) => Right(p)
+    case Failure(_) => Left(Invalid("port", raw))
+}
+
+// bind runs fallible steps in order and stops at the first Left.
+func address(settings HashMap[string, string]) Either[ConfigError, string] {
+    bind host = lookup(settings, "host")
+    bind raw = lookup(settings, "port")
+    bind port = portSetting(raw)
+    Right(s"$host:$port")
+}
+
+func explain(e Either[ConfigError, string]) string = e match {
+    case Right(addr) => s"listening on $addr"
+    case Left(Missing(key)) => s"missing setting: $key"
+    case Left(Invalid(key, value)) => s"bad $key: $value"
+}
+
+func main() {
+    parsePort("eighty") match {
+        case Success(p) => Println(s"port $p")
+        case Failure(err) => Println(s"error: ${err.Error()}")
+    }
+    Println(parsePort(" 443 ").GetOrElse(80), parsePort("").GetOrElse(80))
+    Println(removeIfPresent("no-such-file.tmp").IsSuccess())
+
+    Println(explain(address(HashMapOf(("host", "example.com"), ("port", "443")))))
+    Println(explain(address(HashMapOf(("host", "example.com")))))
+    Println(explain(address(HashMapOf(("host", "example.com"), ("port", "https")))))
+}

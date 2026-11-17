@@ -1,0 +1,48 @@
+package main
+
+// Cookbook: call Go packages from GALA: functions, types, methods,
+// constants, and a Go function that takes a callback.
+// docs/COOKBOOK.MD quotes this file.
+
+import (
+    "fmt"
+    "net/url"
+    "os"
+    "strings"
+    "text/tabwriter"
+    "time"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// Release is one published version.
+struct Release(Version string, Date time.Time)
+
+func main() {
+    // A Go call that can fail is a Try; its result is an ordinary Go value.
+    url.Parse("https://example.com/search?q=gala&page=2") match {
+        case Success(u) => Println(s"${u.Host} q=${u.Query().Get("q")}")
+        case Failure(err) => Println(err.Error())
+    }
+
+    // Go constants, functions and methods, called as in Go.
+    val today = time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+    val releases = ArrayOf(
+        Release("1.0.0", time.Date(2025, time.June, 10, 0, 0, 0, 0, time.UTC)),
+        Release("1.1.0", time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)),
+    )
+
+    // A Go constructor returns a Go pointer; fmt writes to it as to any io.Writer.
+    val w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+    fmt.Fprintln(w, "VERSION\tRELEASED\tAGE")
+    releases.ForEach((r) => {
+        val days = int(today.Sub(r.Date).Hours() / 24)
+        fmt.Fprintf(w, "%s\t%s\t%d days\n", r.Version, r.Date.Format("2006-01-02"), days)
+    })
+    w.Flush()
+
+    // A lambda where Go wants a func value. The []string Go returns stays a
+    // Go slice until ArrayFromSlice turns it into an Array.
+    val fields = strings.FieldsFunc("kiwi, fig;banana", (r) => r == ',' || r == ';' || r == ' ')
+    Println(ArrayFromSlice(fields).SortBy(_.Size()).MkString(" "))
+}

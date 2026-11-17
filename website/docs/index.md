@@ -4,7 +4,7 @@ title: "GALA Documentation — Sum Types, Pattern Matching, Collections, and Con
 description: "Complete GALA documentation. Language reference, sum types (sealed types), pattern matching, Option/Either/Try, immutable collections, Futures, streams, and dependency management — all transpiling to Go."
 keywords: "gala documentation, gala docs, golang sum types docs, golang pattern matching docs, gala language reference, gala api docs, golang option type documentation"
 permalink: /docs/
-last_modified_at: 2026-11-15
+last_modified_at: 2026-11-16
 ---
 
 # GALA Documentation
@@ -56,6 +56,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 | [Examples]({{ '/docs/examples/' | relative_url }}) | Complete, runnable programs covering the language surface |
 | [Add GALA to a Go Repository]({{ '/docs/add-gala-to-go-repo/' | relative_url }}) | A 10-minute walkthrough: `gala mod init` in an existing Go module, `.gala` files beside `.go` files, calls both ways, and a cobra CLI written in GALA |
 | [From Go to GALA: a Porting Guide]({{ '/docs/porting-from-go/' | relative_url }}) | Every Go construct mapped to its GALA form, the error the Go form gets, and what stays in a Go file: `switch`, `(T, error)`, `defer`, slices and maps, struct tags, `const`, goroutines and channels |
+| [Cookbook]({{ '/docs/cookbook/' | relative_url }}) | Tested recipes for day-one tasks: read and write files, flags, a JSON HTTP server and client, JSON codecs, env vars, `Try`/`Either` error handling, sorting and grouping, concurrent work with `Future`, table-driven tests, and calling Go libraries |
 | [Ownership]({{ '/docs/ownership/' | relative_url }}) | `inout` parameters: lending a place for one call, the rules the compiler checks with their fixes, Go interop, and interfaces |
 | [Go Interop Guide]({{ '/docs/go-interop/' | relative_url }}) | Mixing GALA and Go in both directions: calling each way, mixed packages, `gala build` and Bazel, gotchas |
 | [Dependency Injection]({{ '/docs/dependency-injection/' | relative_url }}) | Explicit wiring: interfaces as ports, constructor parameters, a composition root, and fakes built with interface literals |

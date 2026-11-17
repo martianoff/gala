@@ -1,0 +1,74 @@
+package main
+
+// Cookbook: a JSON HTTP server on net/http, and a client that GETs JSON and
+// decodes it. docs/COOKBOOK.MD quotes this file. The server runs on
+// httptest's loopback listener, so the example needs no network.
+
+import (
+    "errors"
+    "io"
+    "net/http"
+    "net/http/httptest"
+    "strconv"
+    "time"
+
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/go_interop"
+    "martianoff/gala/json"
+)
+
+// Todo is the resource the server hands out.
+struct Todo(ID int, Title string, Done bool)
+
+val todoCodec = json.Codec[Todo](json.SnakeCase()).Rename("ID", "id")
+
+val todos = HashMapOf((1, Todo(1, "write the cookbook", true)), (2, Todo(2, "ship it", false)))
+
+// writeJSON sends a JSON body with a status code and a JSON content type.
+func writeJSON(w http.ResponseWriter, status int, body string) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(status)
+    io.WriteString(w, body)
+}
+
+// getTodo serves GET /todos/{id}.
+func getTodo(w http.ResponseWriter, r *http.Request) {
+    val found = strconv.Atoi(r.PathValue("id")).ToOption().FlatMap((id) => todos.Get(id))
+    found.Map((todo) => todoCodec.Encode(todo)) match {
+        case Some(Success(body)) => writeJSON(w, http.StatusOK, body)
+        case Some(Failure(err)) => http.Error(w, err.Error(), http.StatusInternalServerError)
+        case None() => writeJSON(w, http.StatusNotFound, "{\"error\":\"no such todo\"}")
+    }
+}
+
+func newServer() *http.ServeMux {
+    val mux = http.NewServeMux()
+    mux.HandleFunc("GET /todos/{id}", getTodo)
+    mux
+}
+
+// client gives up on a server that does not answer; http.Get never does.
+val client = &http.Client(Timeout = 5 * time.Second)
+
+// fetchTodo GETs a URL and decodes the body. client.Get returns
+// (*http.Response, error), so it is a Try.
+func fetchTodo(url string) Try[Todo] = client.Get(url).FlatMap(readTodo)
+
+// readTodo decodes a response; `use` closes the body on every path out.
+func readTodo(resp *http.Response) Try[Todo] {
+    use body = resp.Body
+    if (resp.StatusCode != http.StatusOK) {
+        return Failure(errors.New(s"unexpected status ${resp.Status}"))
+    }
+    io.ReadAll(body).FlatMap((data) => todoCodec.Decode(ToString(data)))
+}
+
+func main() {
+    // A real server: http.ListenAndServe(":8080", newServer())
+    val server = httptest.NewServer(newServer())
+    ArrayOf("/todos/1", "/todos/7").ForEach((path) => fetchTodo(server.URL + path) match {
+        case Success(t) => Println(s"#${t.ID} ${t.Title} (done: ${t.Done})")
+        case Failure(err) => Println(s"error: ${err.Error()}")
+    })
+    server.Close()
+}

@@ -861,6 +861,7 @@ gala_binary(
 - [Language Specification](docs/GALA.MD) — complete language reference
 - [Why GALA?](docs/WHY_GALA.MD) — feature deep-dive and honest trade-offs
 - [Examples](docs/EXAMPLES.MD) — code examples for all features
+- [Cookbook](docs/COOKBOOK.MD) — tested recipes for day-one tasks: files, flags, HTTP and JSON, env vars, errors, collections, concurrency, tests, Go libraries
 - [Type Inference](docs/TYPE_INFERENCE.MD) — how type inference works
 - [Monadic Binding](docs/BIND_NOTATION.MD) — `bind` / `also` do-notation over any monad
 - [Error Codes](docs/errors/README.md) — every `GALA-Exxxx` diagnostic, with repro and fix

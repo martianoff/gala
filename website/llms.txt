@@ -98,6 +98,7 @@ func main() {
 - [Language reference](https://gala.fyi/docs/language-reference/): full syntax and semantics
 - [Error codes](https://gala.fyi/docs/errors/): every `GALA-Exxxx`, with a repro, the real compiler output, and the fix
 - [Examples](https://gala.fyi/docs/examples/): feature-by-feature programs
+- [Cookbook](https://gala.fyi/docs/cookbook/): tested recipes for day-one tasks: files, flags, a JSON HTTP server and client, JSON codecs, env vars, `Try`/`Either`/`FromError`, sorting and grouping, `Future` fan-out, table-driven tests, calling Go libraries
 - [Immutable collections](https://gala.fyi/docs/immutable-collections/) · [Mutable collections](https://gala.fyi/docs/mutable-collections/): the method surface
 - [Go interop](https://gala.fyi/features/go-interop/): calling Go, and where Go types are allowed
 - [Ownership](https://gala.fyi/docs/ownership/): `inout` parameters, which lend a caller's place for one call; the rules the compiler checks (`GALA-E0111` to `GALA-E0116`) and their fixes, Go interop, interfaces
