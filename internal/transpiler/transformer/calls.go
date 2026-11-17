@@ -2134,8 +2134,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		return expr, nil
 	}
 
-	// An argument passed by name for a function parameter of a generic Go
-	// function (a lambda, a thunk) is lowered once every other argument is,
+	// An argument passed by name to a generic Go function whose lowering
+	// reads its slot (a lambda, or a thunk for a parameter taking nothing and
+	// giving several results, see lowerSlot) is lowered once every other is,
 	// whatever order they are written in: they bind the type parameters it is
 	// typed by.
 	type deferredArg struct {
@@ -2196,7 +2197,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 
 		// Positional argument, or one passed by name to a Go function.
-		if argName != "" && genericGo && t.resolveTranspilerTypeAsFuncType(goSigParamType(goSig, slotIdx)) != nil {
+		if argName != "" && genericGo && !v.spread && (v.lambda.ok() || isGoResultsThunkSlot(goSigParamType(goSig, slotIdx))) {
 			deferred = append(deferred, deferredArg{v, argName, slotIdx})
 			continue
 		}
@@ -3023,7 +3024,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 		if callCtx.goFuncParamTypes != nil && callCtx.applyMethodMeta == nil {
 			callee := t.argCalleeName(fun)
 			if callee == "" {
-				callee = "this function value"
+				callee = "this function"
 			}
 			return handleNamedArgsGoCall(fun, callCtx.goSig, goParamList(callee, callCtx.goSig), args, sortedNamedArgs(namedArgs), hasSpread, c)
 		}
