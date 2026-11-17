@@ -62,6 +62,7 @@ var leanReserved = map[string]bool{
 	"goHasPrefix": true, "goHasSuffix": true, "goTrimPrefix": true, "goTrimSuffix": true, "goContains": true,
 	"goReplaceRest": true, "goReplaceAll": true, "goRepeat": true, "goItoa": true, "goNewReplacer": true,
 	"goReplacerLookup": true, "goReplacerScan": true, "goReplacerReplace": true,
+	"seqInsertBy": true, "seqSortBy": true, "seqOrderedBy": true, "seqSortWith": true,
 	"optIsDefined": true, "optGet": true, "optGetOrElse": true, "optOrElse": true, "optOnSome": true,
 	"optOnNone": true, "optForEach": true, "optMap": true, "optFlatMap": true, "optFilter": true,
 	"optExists": true, "optForAll": true, "eitherIsLeft": true, "eitherGetLeft": true,

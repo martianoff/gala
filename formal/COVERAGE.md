@@ -292,6 +292,16 @@ galaspec models them, except as listed below):
   of an empty sequence, `Grouped` of a size below 1) the model panics with the same
   class, `other`. Each function has a case in
   `internal/formal/gala2lean/testdata` whose output the gala CLI printed;
+- `SortWith(less)` on an `Array` or a `List`, where `less` is a lambda that can have no
+  effect and cannot panic: its body is literals, names (read only), field reads, unary
+  `!`, `-`, `+` and `^`, comparisons, `&&`, `||`, wrapping `+`, `-`, `*`, the bit
+  operators, `/` and `%` by a non-zero integer literal, `if` expressions and tuples of
+  these (no call, index, shift or interpolation; else `sort-less-not-pure`; a comparison
+  that would call a user `Equal` is reported, `custom-equal`, as anywhere). std sorts the
+  positions with gc's sort under `less`, ties broken by position; the model sorts them by
+  the same order and checks it is a strict total order on every pair, so any correct
+  sort, gc's included, gives its result (trusted: gc's sort sorts). Where it is not (a
+  `less` that is not consistent), the Lean run stops, `unsupported:sort-inconsistent-less`;
 - a function's or method's variadic parameter `xs ...T`, as a Lean `List` of its
   arguments: a call passes the trailing arguments, evaluated in the order written with
   the others, as one list (`[]` for none, or when a call with named arguments leaves it

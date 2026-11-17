@@ -2,6 +2,7 @@ package gala2lean
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -131,6 +132,10 @@ type seqMethod struct {
 	// only is the collection kind that alone has the function (GArray or
 	// GList), "" when both have it.
 	only string
+	// safeFn is true when the function argument must be a lambda that can have
+	// no effect and cannot panic (safeLess): the model calls it in its own
+	// order, not std's.
+	safeFn bool
 }
 
 // seqMethods are the functions of Array and List the prelude models, by
@@ -159,6 +164,7 @@ var seqMethods = map[string]seqMethod{
 	"MkString":   {params: []string{"Str"}, code: "(seqMkString {r} {0})", pure: true, result: "Str", prints: true},
 	"Map":        {params: []string{"T->_"}, code: "{k} <$> seqMap {r} {0}", result: "M"},
 	"Filter":     {params: []string{"T->B"}, code: "{k} <$> seqFilter {r} {0}", result: "S"},
+	"SortWith":   {params: []string{"T,T->B"}, code: "{k} <$> seqSortWith {r} {0}", result: "S", safeFn: true},
 	"ForEach":    {params: []string{"T->"}, code: "seqForEach {r} {0}"},
 	"Exists":     {params: []string{"T->B"}, code: "seqExists {r} {0}", result: "B"},
 	"ForAll":     {params: []string{"T->B"}, code: "seqForAll {r} {0}", result: "B"},
@@ -215,6 +221,9 @@ func (g *gen) seqCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 	if m.prints {
 		g.printableType(elem, s.Pos)
 	}
+	if m.safeFn && !safeLess(argNode(e.Args[0])) {
+		unsup(posOf(e.Args[0]), "sort-less-not-pure")
+	}
 	recv := g.expr(s.Target, sc)
 	subs := []term{recv}
 	repl := []string{"{r}", "(" + recv.val() + ").data", "{k}", kind + ".mk"}
@@ -233,6 +242,72 @@ func (g *gen) seqCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 		return wrap(code, subs...), true
 	}
 	return actUnit(code, m.result == ""), true
+}
+
+// safeLess reports whether a, a function argument, is a lambda whose body
+// can have no effect and cannot panic, so that how often and in which order
+// it is called cannot be seen (seqSortWith): an expression of literals,
+// names (parameters and captured values, read only), field reads,
+// comparisons, `&&`, `||`, `!`, wrapping `+`, `-`, `*`, the bit operators,
+// `/` and `%` by a non-zero integer literal, `if` expressions and tuples
+// of such. No call, index, shift or interpolation (whose formatting may call
+// a method).
+func safeLess(a coreexport.Node) bool {
+	l, ok := a.(*coreexport.Lambda)
+	if !ok {
+		return false
+	}
+	body := l.Body
+	if b, ok := body.(*coreexport.Block); ok {
+		if len(b.Stmts) != 1 || !isExpr(b.Stmts[0]) {
+			return false
+		}
+		body = b.Stmts[0]
+	}
+	return safeExpr(body)
+}
+
+// safeExpr is safeLess for one expression.
+func safeExpr(n coreexport.Node) bool {
+	switch n := n.(type) {
+	case *coreexport.Int, *coreexport.Bool, *coreexport.String, *coreexport.Name:
+		return true
+	case *coreexport.Paren:
+		return safeExpr(n.Expr)
+	case *coreexport.Select:
+		return safeExpr(n.Target)
+	case *coreexport.Unary:
+		return (n.Op == "!" || n.Op == "-" || n.Op == "+" || n.Op == "^") && safeExpr(n.Operand)
+	case *coreexport.Binary:
+		switch n.Op {
+		case "==", "!=", "<", "<=", ">", ">=", "&&", "||", "+", "-", "*", "&", "|", "^", "&^":
+		case "/", "%":
+			lit, ok := n.Right.(*coreexport.Int)
+			if !ok || isZeroLit(lit.Text) {
+				return false
+			}
+		default:
+			return false
+		}
+		return safeExpr(n.Left) && safeExpr(n.Right)
+	case *coreexport.IfExpr:
+		return safeExpr(n.Cond) && safeExpr(n.Then) && safeExpr(n.Else)
+	case *coreexport.Tuple:
+		for _, e := range n.Elems {
+			if !safeExpr(e) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// isZeroLit reports whether integer literal text is 0, in any base, or is not
+// an integer literal at all (then nothing is known of it).
+func isZeroLit(text string) bool {
+	v, ok := new(big.Int).SetString(strings.ReplaceAll(strings.ToLower(text), "_", ""), 0)
+	return !ok || v.Sign() == 0
 }
 
 // seqParamType is the GALA type a parameter of kind p wants: elem's GALA

@@ -1,0 +1,13 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A less that is not a strict weak order (a 3-cycle on 0, 1 and 2): Go's
+// result depends on the steps of its sort, which the model does not follow,
+// so the Lean run stops there, unsupported:sort-inconsistent-less, after
+// what was printed before. (Its .out is that output, a prefix of Go's.)
+
+func main() {
+    Println(ArrayOf(2, 0, 1).SortWith((a, b) => a < b))
+    Println(ArrayOf(0, 1, 2).SortWith((a, b) => (b - a + 3) % 3 == 1))
+}
