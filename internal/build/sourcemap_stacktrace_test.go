@@ -26,7 +26,9 @@ import (
 // frame and user-code frames. The test asserts every frame reports a `.gala`
 // source position — the library's boom.gala for the panic origin AND the user's
 // main.gala for the callers — and that no generated-Go (`.gen.go`) position
-// leaks through.
+// leaks through. Each file is named by its module path (example.com/boomapp/
+// main.gala), the way -trimpath names a Go file, and neither the generated Go
+// nor the binary holds the host directory of the sources.
 //
 // Two layers of proof:
 //  1. Pipeline-level (always runs, CI-safe): after transpilation, the generated
@@ -42,42 +44,13 @@ func TestBuild_StackTracesMapToGalaSource_UserAndImportedPackage(t *testing.T) {
 		t.Skip("go toolchain not on PATH")
 	}
 
-	tmp := t.TempDir()
-
-	// Imported GALA library. `return 100 / n` is line 4 and panics when n == 0.
-	libDir := filepath.Join(tmp, "boomlib")
-	require.NoError(t, os.MkdirAll(libDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(libDir, "gala.mod"),
-		[]byte("module example.com/boomlib\n\ngala 0.0.0\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(libDir, "boom.gala"),
-		[]byte("package boomlib\n\nfunc BoomInLib(n int) int {\n    return 100 / n\n}\n"), 0o644))
-
-	// Consumer main module using the lib via a local replace.
-	consumerDir := filepath.Join(tmp, "boomapp")
-	require.NoError(t, os.MkdirAll(consumerDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
-		[]byte("module example.com/boomapp\n\ngala 0.0.0\n\nrequire example.com/boomlib v0.0.0\n\nreplace example.com/boomlib => ../boomlib\n"),
-		0o644))
-	// main.gala: line 6 is `return BoomInLib(0)`, line 10 is `Println(callLib())`.
-	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "main.gala"),
-		[]byte("package main\n\nimport . \"example.com/boomlib\"\n\nfunc callLib() int {\n    return BoomInLib(0)\n}\n\nfunc main() {\n    Println(callLib())\n}\n"),
-		0o644))
-
-	isolateUserState(t)
-	// Isolating HOME/USERPROFILE removes the default GOCACHE location
-	// (%LocalAppData% on Windows), so point GOCACHE at a throwaway dir — the
-	// `go build` inside Builder.Build needs a writable build cache.
-	setEnvForTest(t, "GOCACHE", filepath.Join(t.TempDir(), "gocache"))
-	// Align GOROOT with the PATH `go`'s own root BEFORE building. Builder.Build
-	// runs its OWN internal `go build`, inheriting os.Environ(); in the bazel
-	// test sandbox GOROOT is forced to the hermetic rules_go SDK (go1.25.5, for
-	// the transpiler's type inference) while the `go` on PATH is a different host
-	// version — pairing one toolchain's tool with another's std fails ("compile:
-	// version ... does not match go tool version ..."). Production `gala build`
-	// inherits a consistent host GOROOT+go, so this only corrects the sandbox;
-	// the Builder itself is left unchanged.
-	alignGorootWithPathGo(t)
+	tmp, consumerDir := setUpBoomProject(t)
 	chdirForTest(t, consumerDir)
+	setEnvForTest(t, "GOFLAGS", "-p=4") // -trimpath stays on
+	hostDirs := []string{tmp, filepath.ToSlash(tmp)}
+	if real, err := filepath.EvalSymlinks(tmp); err == nil {
+		hostDirs = append(hostDirs, real, filepath.ToSlash(real))
+	}
 
 	b, err := NewBuilder(consumerDir, "test", false)
 	require.NoError(t, err)
@@ -91,7 +64,7 @@ func TestBuild_StackTracesMapToGalaSource_UserAndImportedPackage(t *testing.T) {
 	consumerGen := readFileString(t, filepath.Join(b.workspace.GenDir, "main.gen.go"))
 	assert.Contains(t, consumerGen, "//line ",
 		"consumer main.gen.go should carry //line directives:\n%s", consumerGen)
-	assert.Contains(t, consumerGen, "main.gala:",
+	assert.Contains(t, consumerGen, "//line example.com/boomapp/main.gala:6\n",
 		"consumer directives should map to the user's main.gala:\n%s", consumerGen)
 	assert.NotContains(t, consumerGen, "__gala_line_",
 		"no raw markers should remain in consumer main.gen.go:\n%s", consumerGen)
@@ -99,10 +72,14 @@ func TestBuild_StackTracesMapToGalaSource_UserAndImportedPackage(t *testing.T) {
 	libGen := findGenFile(t, b.workspace.Dir, "boom.gen.go")
 	assert.Contains(t, libGen, "//line ",
 		"imported library boom.gen.go should carry //line directives:\n%s", libGen)
-	assert.Contains(t, libGen, "boom.gala:",
+	assert.Contains(t, libGen, "//line example.com/boomlib/boom.gala:4\n",
 		"imported library directives should map to the library's boom.gala:\n%s", libGen)
 	assert.NotContains(t, libGen, "__gala_line_",
 		"no raw markers should remain in imported library boom.gen.go:\n%s", libGen)
+	for _, dir := range hostDirs {
+		assert.NotContains(t, consumerGen, dir, "generated Go must not name the host source directory")
+		assert.NotContains(t, libGen, dir, "generated Go must not name the host source directory")
+	}
 
 	// --- Layer 2: binary-level proof — build and run through Builder.Build. ---
 	binPath, buildErr := b.Build("")
@@ -116,15 +93,22 @@ func TestBuild_StackTracesMapToGalaSource_UserAndImportedPackage(t *testing.T) {
 		t.Fatalf("gala build failed: %v", buildErr)
 	}
 	require.NotEmpty(t, binPath)
+	bin, err := os.ReadFile(binPath)
+	require.NoError(t, err)
+	for _, dir := range hostDirs {
+		assert.NotContains(t, string(bin), dir, "the binary must not contain the host source directory")
+	}
 
 	out, runErr := runBuiltBinary(binPath)
 	require.Error(t, runErr, "the program must panic; output:\n%s", out)
 
 	assert.Contains(t, out, "integer divide by zero",
 		"expected a divide-by-zero panic; output:\n%s", out)
-	assert.Contains(t, out, "boom.gala:4",
+	assert.Contains(t, out, "example.com/boomlib/boom.gala:4",
 		"imported-library frame must map to the library's boom.gala source; output:\n%s", out)
-	assert.Contains(t, out, "main.gala:",
+	assert.Contains(t, out, "example.com/boomapp/main.gala:6",
+		"user-code frame must map to the user's main.gala source; output:\n%s", out)
+	assert.Contains(t, out, "example.com/boomapp/main.gala:10",
 		"user-code frame must map to the user's main.gala source; output:\n%s", out)
 	assert.NotContains(t, out, ".gen.go",
 		"stack trace must not report generated-Go positions; output:\n%s", out)
@@ -262,4 +246,52 @@ func isToolchainEnvError(msg string) bool {
 		}
 	}
 	return false
+}
+
+// setUpBoomProject writes the two-module project the source-map tests build,
+// an imported library whose function panics and a consumer that calls it, and
+// points the build at a throwaway user state and Go cache. It returns the
+// directory holding both modules and the consumer's directory.
+//
+//	boomlib/boom.gala   BoomInLib(n) => 100 / n      (panics on line 4)
+//	boomapp/main.gala   callLib()    => BoomInLib(0)  (line 6)
+//	                    main()       => callLib()      (line 10)
+func setUpBoomProject(t *testing.T) (tmp, consumerDir string) {
+	t.Helper()
+	tmp = t.TempDir()
+
+	// Imported GALA library. `return 100 / n` is line 4 and panics when n == 0.
+	libDir := filepath.Join(tmp, "boomlib")
+	require.NoError(t, os.MkdirAll(libDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "gala.mod"),
+		[]byte("module example.com/boomlib\n\ngala 0.0.0\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "boom.gala"),
+		[]byte("package boomlib\n\nfunc BoomInLib(n int) int {\n    return 100 / n\n}\n"), 0o644))
+
+	// Consumer main module using the lib via a local replace.
+	consumerDir = filepath.Join(tmp, "boomapp")
+	require.NoError(t, os.MkdirAll(consumerDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "gala.mod"),
+		[]byte("module example.com/boomapp\n\ngala 0.0.0\n\nrequire example.com/boomlib v0.0.0\n\nreplace example.com/boomlib => ../boomlib\n"),
+		0o644))
+	// main.gala: line 6 is `return BoomInLib(0)`, line 10 is `Println(callLib())`.
+	require.NoError(t, os.WriteFile(filepath.Join(consumerDir, "main.gala"),
+		[]byte("package main\n\nimport . \"example.com/boomlib\"\n\nfunc callLib() int {\n    return BoomInLib(0)\n}\n\nfunc main() {\n    Println(callLib())\n}\n"),
+		0o644))
+
+	isolateUserState(t)
+	// Isolating HOME/USERPROFILE removes the default GOCACHE location
+	// (%LocalAppData% on Windows), so point GOCACHE at a throwaway dir — the
+	// `go build` inside Builder.Build needs a writable build cache.
+	setEnvForTest(t, "GOCACHE", filepath.Join(t.TempDir(), "gocache"))
+	// Align GOROOT with the PATH `go`'s own root BEFORE building. Builder.Build
+	// runs its OWN internal `go build`, inheriting os.Environ(); in the bazel
+	// test sandbox GOROOT is forced to the hermetic rules_go SDK (go1.25.5, for
+	// the transpiler's type inference) while the `go` on PATH is a different host
+	// version — pairing one toolchain's tool with another's std fails ("compile:
+	// version ... does not match go tool version ..."). Production `gala build`
+	// inherits a consistent host GOROOT+go, so this only corrects the sandbox;
+	// the Builder itself is left unchanged.
+	alignGorootWithPathGo(t)
+	return tmp, consumerDir
 }

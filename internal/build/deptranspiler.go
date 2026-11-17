@@ -30,6 +30,10 @@ type DepTranspiler struct {
 	// dependency's own Go requirements). Without it a dependency's call into a
 	// Go module its gala.mod requires had no type.
 	goSrcDirs map[string]string
+
+	// trimPath makes the //line directives name a dependency's sources by
+	// module path rather than host path (see linefile.go).
+	trimPath bool
 }
 
 // NewDepTranspiler creates a new dependency transpiler.
@@ -186,6 +190,17 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, outDir)
 	batchAnalyzer.SetGoSrcDirs(dt.goSrcDirs)
 
+	// The name the //line directives give the module: path@version for a
+	// module-cache copy (its directory there), its module path for a local
+	// replacement.
+	var lineRoot string
+	if dt.trimPath {
+		lineRoot = dt.resolveInternalModulePath(dep)
+		if rel, err := filepath.Rel(dt.config.GalaPkgDir, srcDir); err == nil && filepath.IsLocal(rel) {
+			lineRoot = filepath.ToSlash(rel)
+		}
+	}
+
 	// Process subpackages in deterministic order for stable verbose output.
 	pkgDirs := make([]string, 0, len(filesByPackageDir))
 	for d := range filesByPackageDir {
@@ -231,6 +246,9 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 			batchAnalyzer.SetPackageFiles(siblings)
 
 			t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
+			if dt.trimPath {
+				t.SetLineFile(lineFileFor(galaFile, srcDir, lineRoot))
+			}
 
 			goCode, err := t.Transpile(string(content), galaFile)
 			if err != nil {

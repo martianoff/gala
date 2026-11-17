@@ -76,16 +76,18 @@ panic: runtime error: integer divide by zero
 
 goroutine 1 [running]:
 main.divide(...)
-	/home/you/app/foo.gala:4
+	example.com/app/foo.gala:4
 main.main()
-	/home/you/app/foo.gala:7 +0x4c
+	example.com/app/foo.gala:7 +0x4c
 ```
 
-Line 7 is the call, exactly. The `divide` frame lands one line past its declaration: `//line` is stamped on the `func` line, and the expression body `= a / b` becomes a separate `return` statement in the generated Go, so it inherits the next line — the "off by a few within the construct" caveat below, in its smallest form. (The directory prefix is shortened here for width; the real trace carries the full path the compiler was given.)
+Line 7 is the call, exactly. The `divide` frame lands one line past its declaration: `//line` is stamped on the `func` line, and the expression body `= a / b` becomes a separate `return` statement in the generated Go, so it inherits the next line — the "off by a few within the construct" caveat below, in its smallest form.
+
+The file is named the way Go's `-trimpath` names a Go file: by its module's path (`example.com/app`, from `gala.mod`) and its path inside the module, with the version added for a dependency read from the module cache (`example.com/lib@v1.2.0/lib.gala`). A project without a `gala.mod` names a file by its path in the project directory, and the standard library by its package directory (`std/option.gala`). The build machine's directories stay out of the binary. Set `GOFLAGS=-trimpath=false` to get host paths instead, for Go and GALA files alike, for example so a debugger can match breakpoints set on the `.gala` files.
 
 This works through Go's own `//line` directive mechanism: the transpiler stamps each statement and top-level declaration with its originating GALA line and emits a `//line <file>.gala:<n>` directive before the generated Go, which the Go compiler and runtime honor in panics and stack traces. There is **no separate source-map file and no runtime cost** — the directives only affect position metadata the compiler already records. A debugger's line numbers derive from the same information, so they follow too.
 
-**Imported GALA packages map as well.** The standard library and third-party GALA dependencies are transpiled per file with their real source paths, so a panic originating inside an imported package reports *that library's* `.gala` position (e.g. `option.gala:37`) while the surrounding frames report your own files. A single stack trace can span library and application source, each mapped back to GALA.
+**Imported GALA packages map as well.** The standard library and third-party GALA dependencies are transpiled per file, each naming its own source, so a panic originating inside an imported package reports *that library's* `.gala` position (e.g. `option.gala:37`) while the surrounding frames report your own files. A single stack trace can span library and application source, each mapped back to GALA.
 
 **The honest accuracy caveat.** The mapping is exact for ordinary statements — one GALA statement to one Go statement. It is **approximate** — right file, line possibly off by a few within the construct — in three cases:
 

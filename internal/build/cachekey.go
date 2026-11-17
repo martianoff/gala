@@ -29,7 +29,9 @@ import (
 //
 //	toolchain      gala version string, content hash of the running gala
 //	               executable, the Go SDK the analyzer reads types from, and
-//	               the fingerprint of the stdlib snapshot
+//	               the fingerprint of the stdlib snapshot, and whether -trimpath
+//	               is on (it decides how //line directives name a source; see
+//	               linefile.go)
 //	tree shape     the layout generated into gen/ (see Builder.treeShape)
 //	.gala sources  every non-test .gala file under the project
 //	module files   gala.mod, and go.mod (its module path drives import rewriting)
@@ -65,6 +67,7 @@ type toolchainKey struct {
 	Transpiler  string
 	GoSDK       string
 	Stdlib      string
+	TrimPath    bool
 }
 
 // currentToolchain describes the toolchain this process transpiles with.
@@ -74,12 +77,13 @@ func currentToolchain(galaVersion string) toolchainKey {
 		Transpiler:  transpilerIdentity(),
 		GoSDK:       analyzer.GoSDKIdentity(),
 		Stdlib:      stdlib.Fingerprint(),
+		TrimPath:    trimPathEnabled(analyzer.GoEnvValue("GOFLAGS")),
 	}
 }
 
 func (t toolchainKey) writeTo(h hash.Hash) {
-	fmt.Fprintf(h, "gala:%s\ntranspiler:%s\ngo:%s\nstdlib:%s\n",
-		t.GalaVersion, t.Transpiler, t.GoSDK, t.Stdlib)
+	fmt.Fprintf(h, "gala:%s\ntranspiler:%s\ngo:%s\nstdlib:%s\ntrimpath:%t\n",
+		t.GalaVersion, t.Transpiler, t.GoSDK, t.Stdlib, t.TrimPath)
 }
 
 // transpilerIdentity is a content hash of the running executable (the one the

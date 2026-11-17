@@ -64,6 +64,9 @@ func (b *Builder) SetSourceDir(dir string) {
 	b.sourceDir = dir
 }
 
+// standaloneModulePath is the module path of a project without a gala.mod.
+const standaloneModulePath = "gala-standalone"
+
 // NewBuilder creates a new builder for the given project directory, using the
 // build workspace. `gala test` calls NewBuilderForMode with ModeTest so the two
 // commands never share a workspace — see Mode.
@@ -97,7 +100,7 @@ func NewBuilderForMode(projectDir string, stdlibVersion string, verbose bool, mo
 	} else {
 		// Create a minimal in-memory gala.mod for standalone files
 		galaMod = &mod.File{
-			Module: mod.Module{Path: "gala-standalone"},
+			Module: mod.Module{Path: standaloneModulePath},
 			Gala:   stdlibVersion,
 		}
 	}
@@ -1387,7 +1390,7 @@ func ensureGoToolchain() error {
 // package the other compiled. With it, the key holds the import path instead.
 // Stack traces still name the GALA source: -trimpath rewrites only paths under
 // the workspace's modules and GOROOT, and the //line directives in the
-// generated Go name each .gala file where it lives.
+// generated Go name each .gala file by its module path (see linefile.go).
 //
 // It goes in GOFLAGS rather than on the command line so that the user's
 // GOFLAGS, read after it, can still turn it off with -trimpath=false.
@@ -1510,6 +1513,7 @@ func (b *Builder) transpileDeps() error {
 
 	dt := NewDepTranspiler(b.config, b.workspace, b.galaMod, b.stdlibVersion, b.verbose)
 	dt.goSrcDirs = b.goModuleSrcDirs()
+	dt.trimPath = b.toolchain().TrimPath
 	transpiledDeps, err := dt.TranspileDeps()
 	if err != nil {
 		return err
@@ -1690,7 +1694,7 @@ func withoutReported(err error) error {
 // directory when it has none.
 func (b *Builder) moduleLabel() string {
 	label := b.galaMod.Module.Path
-	if label == "" || label == "gala-standalone" {
+	if label == "" || label == standaloneModulePath {
 		label = b.workspace.ProjectDir
 	}
 	return label
@@ -2437,6 +2441,12 @@ func (b *Builder) transpileToGen(p transpiler.GalaParser, batchAnalyzer *analyze
 		siblingsByDir[d] = append(siblingsByDir[d], s)
 	}
 
+	trimPath := b.toolchain().TrimPath
+	// Sources without a gala.mod go by their path in the project directory.
+	lineRoot := b.galaMod.Module.Path
+	if lineRoot == standaloneModulePath {
+		lineRoot = ""
+	}
 	var embedPatterns []string
 	for _, galaFile := range files {
 		content, err := os.ReadFile(galaFile)
@@ -2453,6 +2463,9 @@ func (b *Builder) transpileToGen(p transpiler.GalaParser, batchAnalyzer *analyze
 		batchAnalyzer.SetPackageFiles(siblings)
 
 		t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
+		if trimPath {
+			t.SetLineFile(lineFileFor(galaFile, b.workspace.ProjectDir, lineRoot))
+		}
 
 		goCode, err := t.Transpile(string(content), galaFile)
 		if err != nil {

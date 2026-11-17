@@ -40,6 +40,7 @@ func newCacheFixture(t *testing.T) *cacheFixture {
 			Transpiler:  "transpiler-a",
 			GoSDK:       "/go|go1.25.0",
 			Stdlib:      "stdlib-a",
+			TrimPath:    true,
 		},
 	}
 	files := map[string]string{
@@ -201,6 +202,9 @@ func TestCacheKeyMutationMatrix(t *testing.T) {
 		}, miss, miss},
 		{"gala version changed", func(t *testing.T, fx *cacheFixture) {
 			fx.toolchain.GalaVersion = "0.99.0"
+		}, miss, miss},
+		{"-trimpath turned off in GOFLAGS", func(t *testing.T, fx *cacheFixture) {
+			fx.toolchain.TrimPath = false
 		}, miss, miss},
 
 		// Files neither step reads.
