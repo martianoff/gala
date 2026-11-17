@@ -520,4 +520,357 @@ theorem binaryC_some {op : String} {kl kr k : Kind} {l r : Spec.CVal}
   cases l <;> cases r <;> (unfold binaryKind at hb; split at hb <;>
     simp_all [Spec.binaryC, cvKind, Gala.Exact.intOp]) <;> (try split) <;> simp_all
 
+/-! ## The simulation of call-free expressions -/
+
+section Sim
+open Gala.GoCore.Full
+
+/-- galaspec's result and GoCore's run agree, as `RRel`, except that an untyped integer is
+    allowed when `u` (the expression is a literal). -/
+def ERel (k : Kind) (g : St) (u : Bool) : Except Spec.Stop Spec.Val → Except Stop Val × St → Prop
+  | .ok v, r => ∃ w, r = (.ok w, g) ∧ VRel v w ∧ valKind v = some k ∧ (u = false → ¬ UInt w)
+  | .error (.panic c m), r => ∃ pv, r = (.error (.panic pv true), g) ∧ PanicRel c m pv
+  | _, _ => True
+
+/-- How deep GoCore's evaluation of an expression's lowering must be allowed to go. -/
+def gdepth : Spec.Expr → Nat
+  | .lit (.int _) => 3
+  | .lit _ => 2
+  | .name _ => 1
+  | .paren e => gdepth e + 1
+  | .unary _ e => gdepth e + 3
+  | .binary _ l r => max (gdepth l) (gdepth r) + 4
+  | _ => 0
+
+theorem deref_bval (b : Spec.Binding) (c : Spec.Core) (v : Spec.Val) (h : bval c.heap b = some v) :
+    (Spec.deref b.val).run.run c = (.ok v, c) := by
+  unfold bval at h
+  unfold Spec.deref
+  split at h
+  · rename_i n hn; simp only [hn]; rw [Spec.run_get_bind]; simp [h]; rfl
+  · cases h; rename_i hn; cases hv : b.val <;> simp_all <;> rfl
+
+theorem vrel_bool {v : Spec.Val} {w : Val} (h : VRel v w) (hk : valKind v = some .bool) :
+    ∃ b t, v = .bool b ∧ w = .bool t b ∧ (t = .bool ∨ t = .untyped .bool) := by
+  cases h <;> simp_all [valKind]
+
+theorem vrel_of_bool (b : Bool) (t : Ty) (ht : t = .bool ∨ t = .untyped .bool) :
+    VRel (.bool b) (.bool t b) := by
+  rcases ht with rfl | rfl
+  · exact .bool b
+  · exact .boolU b
+
+theorem boolType_cases (t t' : Ty) (b b' : Bool) (ht : t = .bool ∨ t = .untyped .bool)
+    (ht' : t' = .bool ∨ t' = .untyped .bool) :
+    boolType (.bool t b) (.bool t' b') = .bool ∨ boolType (.bool t b) (.bool t' b') = .untyped .bool := by
+  rcases ht with rfl | rfl <;> rcases ht' with rfl | rfl <;> simp [boolType, Val.ty]
+
+theorem gasBool (t : Ty) (b : Bool) (g : St) : (asBool (.bool t b)).run.run g = (.ok b, g) := rfl
+
+/-- **GoCore's side of step 2a.** A call-free expression the lowering accepts, with no
+    constant operator node, in related states: what galaspec's step-free evaluation gives,
+    GoCore's evaluation gives too, at every depth from `gdepth` on. -/
+theorem pure_sim (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) :
+    ∀ (e : Spec.Expr) (k : Kind) (le : GoCore.Full.Expr), lowerE κ e = some (k, le) → NoConstOp e →
+    ∀ (c : Spec.Core) (g : St) (env : Env), LocRel κ c g.cells env → Predeclared cx env →
+    ∀ N ≥ gdepth e, ERel k g (isLitE e) ((pureEval ds e).run.run c).1 ((evalExpr cx N env le).run.run g)
+  | .lit (.int v), k, le, hl, _, c, g, env, _, _, N, hN => by
+    simp only [lowerE, lowerLit, Option.some.injEq, Prod.mk.injEq] at hl
+    obtain ⟨rfl, rfl⟩ := hl
+    simp only [pureEval, Spec.intLit]
+    split
+    · rename_i hr
+      obtain ⟨n, rfl⟩ : ∃ n, N = n + 3 := ⟨N - 3, by simp [gdepth] at hN; omega⟩
+      refine ⟨.int (.untyped .int) v, ?_, .intU v (represents_of_range hr.1 hr.2), rfl, by simp [isLitE]⟩
+      split
+      · rw [evalExpr_unary _ _ _ _ _ (by decide), grun_bind, evalExpr_intLit]
+        simp [unary]; rfl
+      · rw [evalExpr_intLit]
+    · exact trivial
+  | .lit (.bool b), k, le, hl, _, c, g, env, _, hp, N, hN => by
+    simp only [lowerE, lowerLit, Option.some.injEq, Prod.mk.injEq] at hl
+    obtain ⟨rfl, rfl⟩ := hl
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 2 := ⟨N - 2, by simp [gdepth] at hN; omega⟩
+    exact ⟨_, evalExpr_predeclared cx n env b g hp, .boolU b, rfl, by simp [isLitE]⟩
+  | .lit (.str s), k, le, hl, _, c, g, env, _, _, N, hN => by
+    simp only [lowerE, lowerLit, Option.some.injEq, Prod.mk.injEq] at hl
+    obtain ⟨rfl, rfl⟩ := hl
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 2 := ⟨N - 2, by simp [gdepth] at hN; omega⟩
+    exact ⟨_, evalExpr_strLit cx (n + 1) env s g, .strU s, rfl, by simp [isLitE]⟩
+  | .name x, k, le, hl, _, c, g, env, hloc, _, N, hN => by
+    simp only [lowerE] at hl
+    split at hl
+    · cases hl
+    rename_i hx
+    simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hl
+    obtain ⟨k', hk, rfl, rfl⟩ := hl
+    obtain ⟨b, cell, v, w, hb, hv, hcell, hw, hvw, hkv, hnu, -, -⟩ := hloc x k' hk
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by simp [gdepth] at hN; omega⟩
+    have hp : ∀ what, w ≠ .poison what := by intro what h; subst h; cases hvw
+    have hs : ((pureEval ds (.name x)).run.run c).1 = .ok v := by
+      unfold pureEval Spec.getCore
+      rw [Spec.run_get_bind]
+      show ((match Spec.lookup c.locals x with
+        | some b => Spec.deref b.val
+        | none => (throw (Spec.Stop.stuck "not a local") : Spec.H Spec.Val)).run.run c).1 = _
+      rw [hb, deref_bval b c v hv]
+    rw [hs]
+    exact ⟨w, evalExpr_local cx n env x cell w g hcell hw hp hx, hvw, hkv, fun _ => hnu⟩
+  | .paren x, k, le, hl, hnc, c, g, env, hloc, hp, N, hN => by
+    simp only [lowerE, Option.map_eq_some_iff] at hl
+    obtain ⟨⟨k', lx⟩, hlx, he⟩ := hl
+    simp only [Prod.mk.injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by simp [gdepth] at hN; omega⟩
+    rw [evalExpr_paren]
+    exact pure_sim ds cx κ x _ lx hlx hnc c g env hloc hp n (by simp [gdepth] at hN; omega)
+  | .unary op x, k, le, hl, hnc, c, g, env, hloc, hp, N, hN => by
+    simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at hl
+    obtain ⟨⟨kx, lx⟩, hlx, k', hu, he⟩ := hl
+    simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    obtain ⟨hc, hncx⟩ := hnc
+    have hnl : isLitE x = false := by
+      cases hlit : isLitE x
+      · rfl
+      · exfalso
+        obtain ⟨r, hr, hk⟩ := lit_const κ x kx lx hlx hlit
+        have hs : (Spec.constEval (.unary op x)).isSome := by
+          cases r with
+          | val cv => simpa [Spec.constEval, hr] using unaryC_some hu (hk cv rfl)
+          | err e => simp [Spec.constEval, hr]
+        rw [hc] at hs; simp at hs
+    have hspec : pureEval ds (.unary op x) = (do Spec.unop op (← pureEval ds x)) :=
+      pureEval_unary ds op x fun n h => by rw [h.2] at hnl; simp [isLitE] at hnl
+    have hamp : op ≠ "&" := by intro h; subst h; simp [unaryKind] at hu
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 3 := ⟨N - 3, by simp [gdepth] at hN; omega⟩
+    have ih := pure_sim ds cx κ x kx lx hlx hncx c g env hloc hp (n + 2)
+      (by simp [gdepth] at hN; omega)
+    rw [evalExpr_unary _ _ _ _ _ hamp, grun_bind, hspec, Spec.run_bind_eq]
+    rcases hx : (pureEval ds x).run.run c with ⟨rx, c'⟩
+    rw [hx] at ih
+    cases rx with
+    | error e =>
+      cases e <;> try exact trivial
+      obtain ⟨pv, h, hpv⟩ := ih
+      rw [h]; exact ⟨pv, rfl, hpv⟩
+    | ok v =>
+      obtain ⟨w, h, hvw, hkv, hnu⟩ := ih
+      rw [h]
+      obtain ⟨v', w', h1, h2, hvw', hk', hnu'⟩ := unary_sim cx n op v w kx k' g c' hvw hkv hu (hnu hnl)
+      simp only
+      rw [show ((Spec.unop op v).run.run c').1 = .ok v' from h1, h2]
+      exact ⟨w', rfl, hvw', hk', fun _ => hnu'⟩
+  | .binary op l r, k, le, hl, hnc, c, g, env, hloc, hp, N, hN => by
+    simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at hl
+    obtain ⟨⟨kl, ll⟩, hll, ⟨kr, lr⟩, hlr, k', hb, he⟩ := hl
+    simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    obtain ⟨hc, hncl, hncr⟩ := hnc
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by simp [gdepth] at hN; omega⟩
+    have ihl := pure_sim ds cx κ l kl ll hll hncl c g env hloc hp (n + 3)
+      (by simp [gdepth] at hN; omega)
+    have ihr := pure_sim ds cx κ r kr lr hlr hncr c g env hloc hp (n + 3)
+      (by simp [gdepth] at hN; omega)
+    by_cases hand : op = "&&"
+    · subst hand
+      have hkb : kl = .bool ∧ kr = .bool ∧ k' = .bool := by
+        unfold binaryKind at hb; split at hb <;> simp_all
+      obtain ⟨rfl, rfl, rfl⟩ := hkb
+      rw [evalExpr_and]
+      simp only [pureEval]
+      rw [grun_bind, Spec.run_bind_eq]
+      rcases hx : (pureEval ds l).run.run c with ⟨rl, c₁⟩
+      have hc₁ : c₁ = c := by have := pureEval_readOnly ds l c; rw [hx] at this; exact this
+      subst c₁
+      rw [hx] at ihl
+      cases rl with
+      | error e =>
+        cases e <;> try exact trivial
+        obtain ⟨pv, h, hpv⟩ := ihl
+        rw [h]; exact ⟨pv, rfl, hpv⟩
+      | ok vl =>
+        obtain ⟨wl, h, hvl, hkl, -⟩ := ihl
+        obtain ⟨b, t, rfl, rfl, ht⟩ := vrel_bool hvl hkl
+        rw [h]
+        simp only
+        rw [grun_bind, gasBool, Spec.run_bind_eq]
+        cases b
+        · exact ⟨_, rfl, vrel_of_bool false t ht, rfl, by simp [UInt]⟩
+        · rw [show StateT.run (ExceptT.run (Spec.asBool (Spec.Val.bool true))) c = (.ok true, c) from rfl]
+          simp only [ite_true]
+          rw [Spec.run_bind_eq, grun_bind]
+          rcases hy : (pureEval ds r).run.run c with ⟨rr, c₂⟩
+          have hc₂ : c₂ = c := by have := pureEval_readOnly ds r c; rw [hy] at this; exact this
+          subst c₂
+          rw [hy] at ihr
+          cases rr with
+          | error e =>
+            cases e <;> try exact trivial
+            obtain ⟨pv, h, hpv⟩ := ihr
+            rw [h]; exact ⟨pv, rfl, hpv⟩
+          | ok vr =>
+            obtain ⟨wr, h, hvr, hkr, -⟩ := ihr
+            obtain ⟨b', t', rfl, rfl, ht'⟩ := vrel_bool hvr hkr
+            rw [h]
+            simp only
+            rw [grun_bind, gasBool]
+            exact ⟨_, rfl, vrel_of_bool b' _ (boolType_cases t t' true b' ht ht'), rfl, by simp [UInt]⟩
+    by_cases hor : op = "||"
+    · subst hor
+      have hkb : kl = .bool ∧ kr = .bool ∧ k' = .bool := by
+        unfold binaryKind at hb; split at hb <;> simp_all
+      obtain ⟨rfl, rfl, rfl⟩ := hkb
+      rw [evalExpr_or]
+      simp only [pureEval]
+      rw [grun_bind, Spec.run_bind_eq]
+      rcases hx : (pureEval ds l).run.run c with ⟨rl, c₁⟩
+      have hc₁ : c₁ = c := by have := pureEval_readOnly ds l c; rw [hx] at this; exact this
+      subst c₁
+      rw [hx] at ihl
+      cases rl with
+      | error e =>
+        cases e <;> try exact trivial
+        obtain ⟨pv, h, hpv⟩ := ihl
+        rw [h]; exact ⟨pv, rfl, hpv⟩
+      | ok vl =>
+        obtain ⟨wl, h, hvl, hkl, -⟩ := ihl
+        obtain ⟨b, t, rfl, rfl, ht⟩ := vrel_bool hvl hkl
+        rw [h]
+        simp only
+        rw [grun_bind, gasBool, Spec.run_bind_eq]
+        cases b
+        · rw [show StateT.run (ExceptT.run (Spec.asBool (Spec.Val.bool false))) c = (.ok false, c) from rfl]
+          simp only [Bool.false_eq_true, ite_false]
+          rw [Spec.run_bind_eq, grun_bind]
+          rcases hy : (pureEval ds r).run.run c with ⟨rr, c₂⟩
+          have hc₂ : c₂ = c := by have := pureEval_readOnly ds r c; rw [hy] at this; exact this
+          subst c₂
+          rw [hy] at ihr
+          cases rr with
+          | error e =>
+            cases e <;> try exact trivial
+            obtain ⟨pv, h, hpv⟩ := ihr
+            rw [h]; exact ⟨pv, rfl, hpv⟩
+          | ok vr =>
+            obtain ⟨wr, h, hvr, hkr, -⟩ := ihr
+            obtain ⟨b', t', rfl, rfl, ht'⟩ := vrel_bool hvr hkr
+            rw [h]
+            simp only
+            rw [grun_bind, gasBool]
+            exact ⟨_, rfl, vrel_of_bool b' _ (boolType_cases t t' false b' ht ht'), rfl, by simp [UInt]⟩
+        · exact ⟨_, rfl, vrel_of_bool true t ht, rfl, by simp [UInt]⟩
+    -- Not both operands literals: that would be a constant expression.
+    have hlits : ¬ (isLitE l = true ∧ isLitE r = true) := by
+      rintro ⟨h1, h2⟩
+      obtain ⟨r1, hr1, hk1⟩ := lit_const κ l kl ll hll h1
+      obtain ⟨r2, hr2, hk2⟩ := lit_const κ r kr lr hlr h2
+      have hs : (Spec.constEval (.binary op l r)).isSome := by
+        cases r1 with
+        | val cv1 =>
+          cases r2 with
+          | val cv2 => simpa [Spec.constEval, hr1, hr2] using binaryC_some hb (hk1 cv1 rfl) (hk2 cv2 rfl)
+          | err e => simp [Spec.constEval, hr1, hr2]
+        | err e => cases r2 <;> simp [Spec.constEval, hr1, hr2]
+      rw [hc] at hs; simp at hs
+    rw [evalExpr_binary _ _ _ _ _ _ hand hor, pureEval_binary ds op l r hand hor]
+    rw [grun_bind, Spec.run_bind_eq]
+    rcases hx : (pureEval ds l).run.run c with ⟨rl, c₁⟩
+    have hc₁ : c₁ = c := by have := pureEval_readOnly ds l c; rw [hx] at this; exact this
+    subst c₁
+    rw [hx] at ihl
+    cases rl with
+    | error e =>
+      cases e <;> try exact trivial
+      obtain ⟨pv, h, hpv⟩ := ihl
+      rw [h]; exact ⟨pv, rfl, hpv⟩
+    | ok vl =>
+      obtain ⟨wl, h, hvl, hkl, hnul⟩ := ihl
+      rw [h]
+      simp only
+      rw [grun_bind, Spec.run_bind_eq]
+      rcases hy : (pureEval ds r).run.run c with ⟨rr, c₂⟩
+      have hc₂ : c₂ = c := by have := pureEval_readOnly ds r c; rw [hy] at this; exact this
+      subst c₂
+      rw [hy] at ihr
+      cases rr with
+      | error e =>
+        cases e <;> try exact trivial
+        obtain ⟨pv, h, hpv⟩ := ihr
+        rw [h]; exact ⟨pv, rfl, hpv⟩
+      | ok vr =>
+        obtain ⟨wr, h, hvr, hkr, hnur⟩ := ihr
+        rw [h]
+        simp only
+        have hnu : ¬ (UInt wl ∧ UInt wr) := by
+          rintro ⟨h1, h2⟩
+          cases hl : isLitE l
+          · exact hnul hl h1
+          · cases hr : isLitE r
+            · exact hnur hr h2
+            · exact hlits ⟨hl, hr⟩
+        have hbs := binary_sim cx n op vl vr wl wr kl kr k' g c hvl hvr hkl hkr hb hand hor hnu
+        revert hbs
+        rcases ((Spec.binop op vl vr).run.run c) with ⟨rb, cb⟩
+        intro hbs
+        cases rb with
+        | ok v =>
+          obtain ⟨w, h, hvw, hk, hnu'⟩ := hbs
+          exact ⟨w, h, hvw, hk, fun _ => hnu'⟩
+        | error e => cases e <;> first | exact trivial | exact hbs
+
+/-- A name the lowering accepts is a local galaspec binds. -/
+theorem pure_of_lower (κ : String → Option Kind) (c : Spec.Core) (cells : Array Val) (env : Env)
+    (hloc : LocRel κ c cells env) :
+    ∀ (e : Spec.Expr) (k : Kind) (le : GoCore.Full.Expr), lowerE κ e = some (k, le) → Pure c.locals e
+  | .lit _, _, _, _ => trivial
+  | .name x, k, le, hl => by
+    simp only [lowerE] at hl
+    split at hl
+    · cases hl
+    simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hl
+    obtain ⟨k', hk, -, -⟩ := hl
+    obtain ⟨b, -, -, -, hb, -⟩ := hloc x k' hk
+    simp [Pure, hb]
+  | .paren x, k, le, hl => by
+    simp only [lowerE, Option.map_eq_some_iff] at hl
+    obtain ⟨⟨k', lx⟩, hlx, -⟩ := hl
+    exact pure_of_lower κ c cells env hloc x k' lx hlx
+  | .unary op x, k, le, hl => by
+    simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at hl
+    obtain ⟨⟨kx, lx⟩, hlx, -⟩ := hl
+    exact pure_of_lower κ c cells env hloc x kx lx hlx
+  | .binary op l r, k, le, hl => by
+    simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at hl
+    obtain ⟨⟨kl, ll⟩, hll, ⟨kr, lr⟩, hlr, -⟩ := hl
+    exact ⟨pure_of_lower κ c cells env hloc l kl ll hll, pure_of_lower κ c cells env hloc r kr lr hlr⟩
+
+/-- **M5, step 2a: call-free expressions.** A call-free expression the reference lowering
+    accepts, with no constant operator node (what `foldConstants` leaves), evaluated by
+    galaspec from a state related to GoCore's: galaspec's state is unchanged apart from its
+    steps, and, at every depth from `gdepth e` on, GoCore's evaluation of the lowering
+    gives a related value of the expression's kind, or the same panic, leaving GoCore's
+    state as it was. Nothing is claimed when galaspec runs out of fuel or stops `stuck`
+    or `unsupported`.
+
+    Covered: `int`, `bool` and `string` literals, locals, parentheses, unary `-`, `+`,
+    `^`, `!`, and binary `+ - * / %`, comparisons of `int`s, `==` and `!=` of any one
+    kind, `+` of strings, `&&` and `||`. Not covered yet: shifts, the bitwise operators
+    and the ordering of strings (the lowering has none). Stated for GoCore's order of
+    evaluation, left to right, which is gc's for operands that are not calls. -/
+theorem expr_correct (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) (e : Spec.Expr)
+    (k : Kind) (le : GoCore.Full.Expr) (hl : lowerE κ e = some (k, le)) (hnc : NoConstOp e)
+    (s : Spec.St) (g : St) (env : Env) (hloc : LocRel κ s.toCore g.cells env)
+    (hp : Predeclared cx env) (d : Nat) :
+    ((Spec.eval ds d e).run.run s).2.toCore = s.toCore ∧
+    ∀ N ≥ gdepth e, ERel k g (isLitE e) ((Spec.eval ds d e).run.run s).1
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨hr, hs⟩ := eval_pure ds e d s (pure_of_lower κ s.toCore g.cells env hloc e k le hl)
+  refine ⟨hs, fun N hN => ?_⟩
+  rcases hr with hr | hr
+  · rw [hr]; exact trivial
+  · rw [hr]; exact pure_sim ds cx κ e k le hl hnc s.toCore g env hloc hp N hN
+
+end Sim
+
 end Gala.M5
