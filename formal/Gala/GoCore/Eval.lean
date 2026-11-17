@@ -2203,8 +2203,10 @@ def sprintf (c : Ctx) : Nat → List Char → List Val → GM String
     `fmtArg`. A formatter (`Immutable.Format`, which passes the whole spec on) comes
     first; an `Error` or `String` method gives the text for `%v` and `%s`, which is
     then formatted as a string; integers, booleans and strings are formatted as
-    `fmtInteger`, `fmtBoolean` and `fmtS` do. A flag on a composite value, `%+v`
-    and `%#v`, and `%x` of anything but an integer are not modelled. -/
+    `fmtInteger`, `fmtBoolean` and `fmtS` do, floats as `fmtFloat` does (`%e %E %f %F
+    %g %G %v`; `FmtSpec.float`, `FloatRep.formatVerb`). A flag on a composite value,
+    `%+v` and `%#v`, `#` on a float, and `%x` of anything but an integer are not
+    modelled. -/
 def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
   | 0, _, _, _ => throw .fuel
   | n + 1, v, verb, spec => do
@@ -2248,9 +2250,7 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
       let lower := match verb with | 'v' | 'G' => 'g' | 'E' => 'e' | 'F' => 'f' | v => v
       if !['e', 'f', 'g'].contains lower then unsupported s!"fmt-verb-{verb}-float"
       let .float size ← underlying c n t | stuck "a float of a non-float type"
-      let (neg, special, body) := if size == 32
-        then FloatRep.formatVerb FloatRep.f32 (FloatRep.bits32 x) lower spec.prec
-        else FloatRep.formatVerb FloatRep.f64 (FloatRep.bits64 x) lower spec.prec
+      let (neg, special, body) := FloatRep.formatSized size x lower spec.prec
       let body := if (verb == 'E' || verb == 'G') && !special then body.map Char.toUpper else body
       pure (spec.float neg special body)
     | _ => unsupported "fmt-spec-composite"

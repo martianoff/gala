@@ -33,6 +33,15 @@ func main() {
 	// exact tie, to even, which strconv's decimal sees whole (no truncation).
 	fmt.Printf("%.749e\n", 5e-324)
 	fmt.Printf("[%.2v] [%8.3v] [%.3E] [%G] [%E]\n", 3.14159, 2.0/3, 12345.678, 1e-7, inf)
+	// Zeros pad a positive number with no sign; an infinity's sign under + and space.
+	fmt.Printf("[%08.3f] [%010.2e] [% e] [%+e] [% 08.2f]\n", 1.5, 1234.5, inf, inf, 1.5)
+	// A float32 with 12 and with 30 significant digits.
+	var third32 float32 = 1.0 / 3
+	fmt.Printf("%.11e %.29e\n", third32, third32)
+	// A precision past the exact expansion: the rest is zeros.
+	long := fmt.Sprintf("%.100000f|%.5000e", 0.1, 0.1)
+	fmt.Println(len(long))
+	fmt.Printf("%.3000g\n", 0.1)
 	fmt.Printf("%.0f\n", 1e308)
 	s := fmt.Sprintf("%6.2f|%-7.3g|%G", 2.0/3, 2.0/3, 1e100)
 	fmt.Println(s, len(s))

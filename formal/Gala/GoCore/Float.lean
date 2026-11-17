@@ -29,6 +29,12 @@ def f32 : Fmt := ⟨23, 127, 255⟩
 /-- The exponent of the least significant bit of a subnormal (`2^(1 - bias - mbits)`). -/
 def Fmt.emin (f : Fmt) : Int := 1 - f.bias - f.mbits
 
+/-- `num / den` (`den > 0`) rounded to an integer, half to even. -/
+def roundHalfEven (num den : Nat) : Nat :=
+  let q := num / den
+  let r := num % den
+  if 2 * r > den || (2 * r == den && q % 2 == 1) then q + 1 else q
+
 /-- `num / den` (`den > 0`) rounded to the nearest float of format `f`, ties to even, as
     the bits of a positive float (infinity when too large). -/
 def roundBits (f : Fmt) (num den : Nat) : Nat :=
@@ -36,10 +42,7 @@ def roundBits (f : Fmt) (num den : Nat) : Nat :=
   let top := 2 ^ (f.mbits + 1)
   -- `m` is the rounded `num / den / 2^e`.
   let roundAt := fun (e : Int) =>
-    let (n, d) := if e ≤ 0 then (num * 2 ^ (-e).toNat, den) else (num, den * 2 ^ e.toNat)
-    let q := n / d
-    let r := n % d
-    if 2 * r > d || (2 * r == d && q % 2 == 1) then q + 1 else q
+    if e ≤ 0 then roundHalfEven (num * 2 ^ (-e).toNat) den else roundHalfEven num (den * 2 ^ e.toNat)
   -- The leading bit's exponent is `log2 num - log2 den` or one less: start one below
   -- and raise `e` until the rounded value fits in `mbits + 1` bits.
   let k : Int := (Nat.log2 num : Int) - (Nat.log2 den : Int)
@@ -70,6 +73,22 @@ def scaled (a : Nat) (e2 s : Int) : Nat × Nat :=
   let den := (if e2 < 0 then 2 ^ (-e2).toNat else 1) * (if s < 0 then 10 ^ (-s).toNat else 1)
   (num, den)
 
+/-- Decimal digits without their trailing zeros. -/
+def trimZeros (ds : String) : String :=
+  String.ofList (ds.toList.reverse.dropWhile (· == '0')).reverse
+
+/-- The decimal point position `dp` of a positive `m * 2^e`: `10^(dp-1) ≤ v < 10^dp`. -/
+def decExp (m : Nat) (e : Int) : Int := Id.run do
+  let mut dp : Int := ((((Nat.log2 m : Int) + e) * 30103) / 100000) + 1
+  -- The estimate is off by at most one or two; correct it exactly.
+  for _ in [0:8] do
+    let (n, d) := scaled m e (1 - dp)
+    if n < d then dp := dp - 1
+    else
+      let (n, d) := scaled m e (-dp)
+      if n ≥ d then dp := dp + 1 else break
+  return dp
+
 /-- The shortest decimal of a positive finite float `m * 2^e` that rounds back to it
     (Ryu's shortest, strconv/ftoa.go `ryuFtoaShortest`): its digits, without trailing
     zeros, and the decimal point's position `dp` (value `0.d₁d₂… × 10^dp`). The
@@ -83,17 +102,10 @@ def shortest (f : Fmt) (m : Nat) (e : Int) (lowerGap : Bool) : String × Int := 
   let up := 4 * m + 2
   let lo := if lowerGap then 4 * m - 1 else 4 * m - 2
   let e2 := e - 2
-  -- An estimate of floor(log10 (m * 2^e)), corrected below.
-  let lg2 : Int := (Nat.log2 m : Int) + e
-  let lg10 : Int := (lg2 * 30103) / 100000
+  let dp := decExp m e
   for k in [1:f.mbits / 3 + 3] do
-    let mut s : Int := (k : Int) - 1 - lg10
-    -- Put floor(v * 10^s) in [10^(k-1), 10^k).
-    for _ in [0:6] do
-      let (n, d) := scaled v e2 s
-      let c := n / d
-      if c ≥ 10 ^ k then s := s - 1
-      else if c < 10 ^ (k - 1) then s := s + 1
+    -- floor(v * 10^s) is in [10^(k-1), 10^k).
+    let s : Int := (k : Int) - dp
     let (n, d) := scaled v e2 s
     let (nl, _) := scaled lo e2 s
     let (nu, _) := scaled up e2 s
@@ -112,10 +124,8 @@ def shortest (f : Fmt) (m : Nat) (e : Int) (lowerGap : Bool) : String × Int := 
       | false, true => some cHi
       | false, false => none
     if let some c := pick then
-      let ds := (toString c).toList
-      let nd := ds.length
-      let trimmed := (ds.reverse.dropWhile (· == '0')).reverse
-      return (String.ofList trimmed, (nd : Int) - s)
+      let ds := toString c
+      return (trimZeros ds, (ds.length : Int) - s)
   -- Unreachable: 17 (binary64) or 9 (binary32) digits always suffice.
   return ("", 0)
 
@@ -134,10 +144,10 @@ def fmtE (ds : String) (dp : Int) (prec : Nat) : String :=
 /-- `%f` of decimal digits `ds` with point position `dp` and `prec` digits after the
     point (strconv/ftoa.go `fmtF`). -/
 def fmtF (ds : String) (dp : Int) (prec : Nat) : String :=
-  let d := ds.toList
-  let nd := d.length
+  let d := ds.toList.toArray
+  let nd := d.size
   let int := if dp > 0 then
-      String.ofList (d.take dp.toNat ++ List.replicate (dp.toNat - min nd dp.toNat) '0')
+      String.ofList (ds.toList.take dp.toNat ++ List.replicate (dp.toNat - min nd dp.toNat) '0')
     else "0"
   let frac := if prec > 0 then
       "." ++ String.ofList ((List.range prec).map fun (i : Nat) =>
@@ -145,24 +155,6 @@ def fmtF (ds : String) (dp : Int) (prec : Nat) : String :=
         if 0 ≤ j && j < nd then d[j.toNat]! else '0')
     else ""
   int ++ frac
-
-/-- `num / den` (`den > 0`) rounded to an integer, half to even. -/
-def roundHalfEven (num den : Nat) : Nat :=
-  let q := num / den
-  let r := num % den
-  if 2 * r > den || (2 * r == den && q % 2 == 1) then q + 1 else q
-
-/-- The decimal point position `dp` of a positive `m * 2^e`: `10^(dp-1) ≤ v < 10^dp`. -/
-def decExp (m : Nat) (e : Int) : Int := Id.run do
-  let mut dp : Int := ((((Nat.log2 m : Int) + e) * 30103) / 100000) + 1
-  -- The estimate is off by at most one or two; correct it exactly.
-  for _ in [0:8] do
-    let (n, d) := scaled m e (1 - dp)
-    if n < d then dp := dp - 1
-    else
-      let (n, d) := scaled m e (-dp)
-      if n ≥ d then dp := dp + 1
-  return dp
 
 /-- A positive `m * 2^e` rounded to `k ≥ 1` significant digits, half to even: its `k`
     digits and point position. -/
@@ -187,6 +179,12 @@ def layoutG (ds : String) (dp : Int) (prec : Nat) (shortest : Bool) : String :=
   if exp < -4 || exp ≥ eprec then fmtE ds dp (min prec nd - 1)
   else fmtF ds dp ((if (prec : Int) > dp then (nd : Int) else prec) - dp).toNat
 
+/-- The most digits a float has, significant (767 for a float64) and after the point
+    (1074): any further digit of its exact value is a zero, so no more are computed and
+    `fmtE`/`fmtF` pad with zeros. -/
+def maxSig : Nat := 800
+def maxFrac : Nat := 1100
+
 /-- A float of format `f`, given by its bits, as `strconv.FormatFloat(x, verb, prec,
     size)` writes it, for `verb` `e`, `f` or `g` (`prec` absent: `g`'s shortest):
     whether it is negative, whether it is an infinity or NaN, and the text without
@@ -200,36 +198,39 @@ def formatVerb (f : Fmt) (bits : Nat) (verb : Char) (prec : Option Nat) : Bool �
   if biased == f.emax then (neg && frac == 0, true, if frac != 0 then "NaN" else "Inf")
   else
     let (m, e) := if biased == 0 && frac == 0 then (0, 0) else mantExp f biased frac
-    let trim := fun (s : String) => String.ofList (s.toList.reverse.dropWhile (· == '0')).reverse
     let text := match verb, prec with
-      | 'e', p => let p := p.getD 6; if m == 0 then fmtE "" 0 p else let (ds, dp) := sigDigits m e (p + 1); fmtE ds dp p
-      | 'f', p => let p := p.getD 6; let (ds, dp) := fixedDigits m e p; fmtF ds dp p
+      | 'e', p =>
+        let p := p.getD 6
+        if m == 0 then fmtE "" 0 p
+        else let (ds, dp) := sigDigits m e (min (p + 1) maxSig); fmtE ds dp p
+      | 'f', p =>
+        let p := p.getD 6
+        let (ds, dp) := fixedDigits m e (min p maxFrac); fmtF ds dp p
       | _, some p =>
         let p := max p 1
         if m == 0 then layoutG "" 0 p false
-        else let (ds, dp) := sigDigits m e p; layoutG (trim ds) dp p false
+        else let (ds, dp) := sigDigits m e (min p maxSig); layoutG (trimZeros ds) dp p false
       | _, none =>
         if m == 0 then "0"
         else let (ds, dp) := shortest f m e (frac == 0 && biased > 1); layoutG ds dp ds.length true
     (neg, false, text)
 
-/-- A float of format `f`, given by its bits, as `strconv.FormatFloat(x, 'g', -1, size)`
-    writes it: the shortest digits, in `%e` form when the exponent is below -4 or at
-    least 6 (`formatDigits`: `if shortest { eprec = 6 }`), else in `%f` form; `+Inf`,
-    `-Inf`, `NaN`. -/
-def formatG (f : Fmt) (bits : Nat) : String :=
-  match formatVerb f bits 'g' none with
-  | (_, true, "NaN") => "NaN"
-  | (neg, true, t) => (if neg then "-" else "+") ++ t
-  | (neg, false, t) => (if neg then "-" else "") ++ t
-
 /-- The bits of a binary64 value, and of a binary32 one held as a `Float`. -/
 def bits64 (x : Float) : Nat := x.toBits.toNat
 def bits32 (x : Float) : Nat := x.toFloat32.toBits.toNat
 
-/-- A float as Go's `%v` prints it, `float64` or `float32` by `size`. -/
+/-- `formatVerb` of a `float64` or, by `size`, a `float32`. -/
+def formatSized (size : Nat) (x : Float) (verb : Char) (prec : Option Nat) : Bool × Bool × String :=
+  if size == 32 then formatVerb f32 (bits32 x) verb prec else formatVerb f64 (bits64 x) verb prec
+
+/-- A float as Go's `%v` prints it (`strconv.FormatFloat(x, 'g', -1, size)`): the
+    shortest digits, in `%e` form when the exponent is below -4 or at least 6, else in
+    `%f` form; `+Inf`, `-Inf`, `NaN`. -/
 def format (size : Nat) (x : Float) : String :=
-  if size == 32 then formatG f32 (bits32 x) else formatG f64 (bits64 x)
+  match formatSized size x 'g' none with
+  | (_, true, "NaN") => "NaN"
+  | (neg, true, t) => (if neg then "-" else "+") ++ t
+  | (neg, false, t) => (if neg then "-" else "") ++ t
 
 /-- The float of `size` nearest the rational `num / den` (`den > 0`), ties to even
     (Go spec, "Conversions": a constant is rounded; "Representability"). A binary32
