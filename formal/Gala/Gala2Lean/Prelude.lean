@@ -540,11 +540,11 @@ def goTrimSuffix (s p : String) : String :=
 
 /-- `strings.Contains` (strings.go:62): `sub` occurs in `s`; the empty string always
     does. -/
-def goContains (s sub : String) : Bool := go s.toList
+def goContains (s sub : String) : Bool := go sub.toList s.toList
 where
-  go : List Char → Bool
-    | [] => sub.isEmpty
-    | l@(_ :: r) => sub.toList.isPrefixOf l || go r
+  go (p : List Char) : List Char → Bool
+    | [] => p.isEmpty
+    | l@(_ :: r) => p.isPrefixOf l || go p r
 
 /-- The replacement loop of `strings.Replace` for a non-empty `old` (strings.go:1159):
     the leftmost occurrence of `old` from here is replaced by `new`, and the search goes
@@ -568,13 +568,19 @@ def goReplaceAll (s old new : String) : String :=
 /-- `strings.Repeat` (strings.go:616): a count of 0 gives `""` and 1 gives `s`; a negative
     count panics ("strings: negative Repeat count"), and so does a result longer than
     Go's largest int in bytes ("strings: Repeat output length overflow"); both are
-    string panics, class `other` (`Panic.std`). Otherwise `s`, `count` times. -/
+    string panics, class `other` (`Panic.std`). A result of more than 2^48 bytes, Go's
+    largest allocation on amd64 (malloc.go: `maxAlloc`, `heapAddrBits` 48), panics as
+    the result's buffer is made ("runtime error: makeslice: len out of range",
+    slice.go:395 `bytealg_MakeNoZero`, from `Builder.Grow`), class `other` too. Otherwise
+    `s`, `count` times. (A result Go can allocate but the machine cannot hold ends the Go
+    run out of memory; the model's run runs out too, and no verdict is drawn.) -/
 def goRepeat {σ : Type} (s : String) (count : Int64) : Prog σ String :=
   if count == 0 then pure ""
   else if count == 1 then pure s
   else if count < 0 then throw .std
   else if s.utf8ByteSize * count.toInt.toNat > 9223372036854775807 then throw .std
   else if s.isEmpty then pure ""
+  else if s.utf8ByteSize * count.toInt.toNat > 281474976710656 then throw .std
   else pure (String.join (List.replicate count.toInt.toNat s))
 
 /-- `strconv.Itoa` (itoa.go:34, `FormatInt(i, 10)`): the decimal digits, with a minus

@@ -308,7 +308,7 @@ galaspec models them, except as listed below):
   `internal/formal/gala2lean/testdata/go_fmt.gala`). Any other operand
   (`fmt-operand`), or the call used as a value (`fmt-value`), is reported;
 - Go's `strings.HasPrefix`, `HasSuffix`, `TrimPrefix`, `TrimSuffix`, `Contains`,
-  `ReplaceAll` and `Repeat` (its negative-count and overflow panics, class `other`),
+  `ReplaceAll` and `Repeat` (its negative-count, overflow and allocation panics, class `other`),
   and `strconv.Itoa`, where the package name resolves to Go's: trusted models in the
   prelude, after the Go 1.25.5 source, that match characters where Go matches bytes,
   which agree on the valid UTF-8 every translated string is (a string literal that is

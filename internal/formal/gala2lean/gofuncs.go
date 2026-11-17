@@ -138,7 +138,7 @@ func (g *gen) goCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term,
 // other call.
 func (g *gen) goCallType(e *coreexport.Call, s *coreexport.Select, sc *scope) string {
 	if f, ok := g.goFuncOf(e, s, sc); ok {
-		return map[string]string{"int": "Int64", "string": "String", "bool": "Bool"}[f.result]
+		return g.leanType(&coreexport.TypeName{Name: f.result})
 	}
 	return ""
 }
