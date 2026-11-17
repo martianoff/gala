@@ -11,7 +11,9 @@
     float, ties to even (Go spec, "Conversions", "Constant expressions");
   * the shortest decimal that rounds back to a float, as `strconv.FormatFloat(f, 'g',
     -1, bits)` writes it (strconv/ftoa.go: Ryu's shortest digits, and the `%g` layout
-    with its exponent threshold of 6 for the shortest form), which fmt's `%v` prints.
+    with its exponent threshold of 6 for the shortest form), which fmt's `%v` prints;
+  * the digits of `%e`, `%f` and `%g` at a given precision: the exact value rounded half
+    to even, laid out as strconv does.
 -/
 namespace Gala.GoCore.Full.FloatRep
 
@@ -144,23 +146,82 @@ def fmtF (ds : String) (dp : Int) (prec : Nat) : String :=
     else ""
   int ++ frac
 
+/-- `num / den` (`den > 0`) rounded to an integer, half to even. -/
+def roundHalfEven (num den : Nat) : Nat :=
+  let q := num / den
+  let r := num % den
+  if 2 * r > den || (2 * r == den && q % 2 == 1) then q + 1 else q
+
+/-- The decimal point position `dp` of a positive `m * 2^e`: `10^(dp-1) ≤ v < 10^dp`. -/
+def decExp (m : Nat) (e : Int) : Int := Id.run do
+  let mut dp : Int := ((((Nat.log2 m : Int) + e) * 30103) / 100000) + 1
+  -- The estimate is off by at most one or two; correct it exactly.
+  for _ in [0:8] do
+    let (n, d) := scaled m e (1 - dp)
+    if n < d then dp := dp - 1
+    else
+      let (n, d) := scaled m e (-dp)
+      if n ≥ d then dp := dp + 1
+  return dp
+
+/-- A positive `m * 2^e` rounded to `k ≥ 1` significant digits, half to even: its `k`
+    digits and point position. -/
+def sigDigits (m : Nat) (e : Int) (k : Nat) : String × Int :=
+  let dp := decExp m e
+  let c := Function.uncurry roundHalfEven (scaled m e ((k : Int) - dp))
+  if c == 10 ^ k then (toString (10 ^ (k - 1)), dp + 1) else (toString c, dp)
+
+/-- A non-negative `m * 2^e` rounded to `p` digits after the point, half to even: its
+    digits (none for zero) and point position. -/
+def fixedDigits (m : Nat) (e : Int) (p : Nat) : String × Int :=
+  let c := Function.uncurry roundHalfEven (scaled m e p)
+  if c == 0 then ("", 0) else let ds := toString c; (ds, (ds.length : Int) - p)
+
+/-- `strconv`'s `%g` layout of digits `ds` (no trailing zeros) with point position `dp`
+    at precision `prec` (`formatDigits`): `%e` form when the exponent is below -4 or
+    at least `eprec`, else `%f` form, with no trailing zeros either way. -/
+def layoutG (ds : String) (dp : Int) (prec : Nat) (shortest : Bool) : String :=
+  let nd := ds.length
+  let eprec : Int := if shortest then 6 else if prec > nd && (nd : Int) ≥ dp then nd else prec
+  let exp := dp - 1
+  if exp < -4 || exp ≥ eprec then fmtE ds dp (min prec nd - 1)
+  else fmtF ds dp ((if (prec : Int) > dp then (nd : Int) else prec) - dp).toNat
+
+/-- A float of format `f`, given by its bits, as `strconv.FormatFloat(x, verb, prec,
+    size)` writes it, for `verb` `e`, `f` or `g` (`prec` absent: `g`'s shortest):
+    whether it is negative, whether it is an infinity or NaN, and the text without
+    its sign (`Inf`, `NaN`). The digits are the exact binary value rounded half to
+    even, which is what strconv computes: `%f` (always) and long `%e`/`%g` go through
+    `bigFtoa`, whose decimal holds the whole exact expansion (800 digits, more than the
+    767 of the longest float64), so its `trunc` rounding never applies; the shorter
+    ones through `ryuFtoaFixed`, which rounds an exact tie to even. -/
+def formatVerb (f : Fmt) (bits : Nat) (verb : Char) (prec : Option Nat) : Bool × Bool × String :=
+  let (neg, biased, frac) := split f bits
+  if biased == f.emax then (neg && frac == 0, true, if frac != 0 then "NaN" else "Inf")
+  else
+    let (m, e) := if biased == 0 && frac == 0 then (0, 0) else mantExp f biased frac
+    let trim := fun (s : String) => String.ofList (s.toList.reverse.dropWhile (· == '0')).reverse
+    let text := match verb, prec with
+      | 'e', p => let p := p.getD 6; if m == 0 then fmtE "" 0 p else let (ds, dp) := sigDigits m e (p + 1); fmtE ds dp p
+      | 'f', p => let p := p.getD 6; let (ds, dp) := fixedDigits m e p; fmtF ds dp p
+      | _, some p =>
+        let p := max p 1
+        if m == 0 then layoutG "" 0 p false
+        else let (ds, dp) := sigDigits m e p; layoutG (trim ds) dp p false
+      | _, none =>
+        if m == 0 then "0"
+        else let (ds, dp) := shortest f m e (frac == 0 && biased > 1); layoutG ds dp ds.length true
+    (neg, false, text)
+
 /-- A float of format `f`, given by its bits, as `strconv.FormatFloat(x, 'g', -1, size)`
     writes it: the shortest digits, in `%e` form when the exponent is below -4 or at
     least 6 (`formatDigits`: `if shortest { eprec = 6 }`), else in `%f` form; `+Inf`,
     `-Inf`, `NaN`. -/
 def formatG (f : Fmt) (bits : Nat) : String :=
-  let (neg, biased, frac) := split f bits
-  let sign := if neg then "-" else ""
-  if biased == f.emax then
-    if frac != 0 then "NaN" else if neg then "-Inf" else "+Inf"
-  else if biased == 0 && frac == 0 then sign ++ "0"
-  else
-    let (m, e) := mantExp f biased frac
-    let (ds, dp) := shortest f m e (frac == 0 && biased > 1)
-    let nd := ds.length
-    let exp := dp - 1
-    if exp < -4 || exp ≥ 6 then sign ++ fmtE ds dp (nd - 1)
-    else sign ++ fmtF ds dp (nd - dp).toNat
+  match formatVerb f bits 'g' none with
+  | (_, true, "NaN") => "NaN"
+  | (neg, true, t) => (if neg then "-" else "+") ++ t
+  | (neg, false, t) => (if neg then "-" else "") ++ t
 
 /-- The bits of a binary64 value, and of a binary32 one held as a `Float`. -/
 def bits64 (x : Float) : Nat := x.toBits.toNat

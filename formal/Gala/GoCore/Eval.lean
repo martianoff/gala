@@ -318,6 +318,25 @@ def FmtSpec.integer (spec : FmtSpec) (x : Int) (base : Nat) (upper : Bool) : Str
     let sign := if neg then "-" else if spec.plus then "+" else if spec.space then " " else ""
     { spec with zero := false }.pad (sign ++ pre ++ String.ofList digits)
 
+/-- A float's text from `FloatRep.formatVerb` (sign, infinity or NaN, unsigned text)
+    signed and padded as `fmt.fmtFloat` does: a `+` sign under the `+` flag, a space
+    under the space flag; an infinity always signed, a NaN only under `+` or space,
+    both padded with spaces even under `0`; under `0`, the zeros after the sign. -/
+def FmtSpec.float (spec : FmtSpec) (neg special : Bool) (body : String) : String :=
+  let sign := if neg then "-" else if spec.space && !spec.plus then " " else "+"
+  let num := sign ++ body
+  if special then
+    let spaces := { spec with zero := false }
+    if body == "NaN" && !spec.space && !spec.plus then spaces.pad body else spaces.pad num
+  else if spec.plus || sign != "+" then
+    match spec.wid with
+    | some w =>
+      if spec.zero && !spec.minus && w > num.length then
+        sign ++ String.ofList (List.replicate (w - num.length) '0') ++ body
+      else spec.pad num
+    | none => num
+  else spec.pad body
+
 /-- A string truncated to the precision, in runes, and padded (`fmt.fmtS`). -/
 def FmtSpec.string (spec : FmtSpec) (s : String) : String :=
   spec.pad (match spec.prec with | some p => String.ofList (s.toList.take p) | none => s)
@@ -2173,7 +2192,8 @@ def sprintf (c : Ctx) : Nat → List Char → List Val → GM String
       -- Go refuses a width or precision over 10^6 (`parsenum`'s `tooLarge`).
       if spec.wid.any (· > 1000000) || spec.prec.any (· > 1000000) then unsupported "fmt-large-width"
       let verb :: rest := rest | unsupported "fmt-no-verb"
-      if !['v', 'd', 's', 't', 'x', 'X'].contains verb then unsupported s!"fmt-verb-{verb}"
+      if !['v', 'd', 's', 't', 'x', 'X', 'e', 'E', 'f', 'F', 'g', 'G'].contains verb then
+        unsupported s!"fmt-verb-{verb}"
       let a :: args := args | unsupported "fmt-missing-arg"
       pure ((← fmtSpec c n a verb spec) ++ (← sprintf c n rest args))
     | ch :: rest => pure (String.singleton ch ++ (← sprintf c n rest args))
@@ -2221,6 +2241,18 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
       else unsupported "fmt-verb-bool"
     | .str _ s =>
       if verb == 'v' || verb == 's' then pure (spec.string s) else unsupported s!"fmt-verb-{verb}-string"
+    -- A float (`printArg`'s `fmtFloat`): `%v` is `%g`; `%e %f` have precision 6 unless
+    -- given, `%g` its shortest digits; `%F` is `%f`, and `%E %G` write `E`.
+    | .float t x =>
+      if spec.sharp then unsupported "fmt-flag-sharp-float"
+      let lower := match verb with | 'v' | 'G' => 'g' | 'E' => 'e' | 'F' => 'f' | v => v
+      if !['e', 'f', 'g'].contains lower then unsupported s!"fmt-verb-{verb}-float"
+      let .float size ← underlying c n t | stuck "a float of a non-float type"
+      let (neg, special, body) := if size == 32
+        then FloatRep.formatVerb FloatRep.f32 (FloatRep.bits32 x) lower spec.prec
+        else FloatRep.formatVerb FloatRep.f64 (FloatRep.bits64 x) lower spec.prec
+      let body := if (verb == 'E' || verb == 'G') && !special then body.map Char.toUpper else body
+      pure (spec.float neg special body)
     | _ => unsupported "fmt-spec-composite"
 
 /-- One operand printed with `verb` (`fmt/print.go`, `printArg`). -/
