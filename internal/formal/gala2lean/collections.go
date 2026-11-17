@@ -2,6 +2,7 @@ package gala2lean
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -248,8 +249,9 @@ func (g *gen) seqCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 // it is called cannot be seen (seqSortWith): an expression of literals,
 // names (parameters and captured values, read only), field reads,
 // comparisons, `&&`, `||`, `!`, wrapping `+`, `-`, `*`, the bit operators,
-// `/` and `%` by a non-zero integer literal, `if` expressions, tuples and
-// interpolation of such. No call, index or shift.
+// `/` and `%` by a non-zero integer literal, `if` expressions and tuples
+// of such. No call, index, shift or interpolation (whose formatting may call
+// a method).
 func safeLess(a coreexport.Node) bool {
 	l, ok := a.(*coreexport.Lambda)
 	if !ok {
@@ -297,20 +299,15 @@ func safeExpr(n coreexport.Node) bool {
 			}
 		}
 		return true
-	case *coreexport.Interp:
-		for _, p := range n.Parts {
-			if _, text := p.(*coreexport.InterpText); !text && !safeExpr(p) {
-				return false
-			}
-		}
-		return true
 	}
 	return false
 }
 
-// isZeroLit reports whether integer literal text is 0, in any base.
+// isZeroLit reports whether integer literal text is 0, in any base, or is not
+// an integer literal at all (then nothing is known of it).
 func isZeroLit(text string) bool {
-	return strings.Trim(strings.NewReplacer("_", "", "0x", "", "0X", "", "0b", "", "0B", "", "0o", "", "0O", "").Replace(text), "0") == ""
+	v, ok := new(big.Int).SetString(strings.ReplaceAll(strings.ToLower(text), "_", ""), 0)
+	return !ok || v.Sign() == 0
 }
 
 // seqParamType is the GALA type a parameter of kind p wants: elem's GALA

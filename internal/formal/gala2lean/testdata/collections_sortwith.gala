@@ -20,6 +20,6 @@ func main() {
     Println(items.SortWith((x, y) => x.Key > y.Key).Map((i) => i.Name).MkString(" "))
     Println(EmptyArray[int]().SortWith((x, y) => x < y), ArrayOf(5).SortWith((x, y) => x < y), ArrayOf(9, 3).SortWith((x, y) => x < y))
     Println(ArrayOf(3, 1, 2).SortWith((x, y) => true), ListOf(3, 1, 2, 1).SortWith((x, y) => x < y))
-    Println(ArrayOf(10, -3, 7, 7, 0).SortWith((x, y) => x % 4 < y % 4))
+    Println(ArrayOf(10, -3, 7, 7, 0).SortWith((x, y) => x % 4 < y % 4), ArrayOf(30, 11, 22).SortWith((x, y) => x / 0x0B < y / 0x0B))
     Println(normalize(ArrayOf(Interval(5, 6), Interval(9, 1), Interval(1, 2), Interval(3, 3))).Map((r) => r.Lo).MkString(","))
 }

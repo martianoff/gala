@@ -293,13 +293,15 @@ galaspec models them, except as listed below):
   class, `other`. Each function has a case in
   `internal/formal/gala2lean/testdata` whose output the gala CLI printed;
 - `SortWith(less)` on an `Array` or a `List`, where `less` is a lambda that can have no
-  effect and cannot panic (literals, names, field reads, comparisons, boolean and
-  wrapping arithmetic operators, `/` and `%` by a non-zero literal; else
-  `sort-less-not-pure`). std sorts the positions with gc's sort under `less`, ties broken
-  by position; the model sorts them by the same order and checks it is a strict total
-  order on every pair, so any correct sort, gc's included, gives its result (trusted:
-  gc's sort sorts). Where it is not (a `less` that is not consistent), the Lean run stops,
-  `unsupported:sort-inconsistent-less`;
+  effect and cannot panic: its body is literals, names (read only), field reads, unary
+  `!`, `-`, `+` and `^`, comparisons, `&&`, `||`, wrapping `+`, `-`, `*`, the bit
+  operators, `/` and `%` by a non-zero integer literal, `if` expressions and tuples of
+  these (no call, index, shift or interpolation; else `sort-less-not-pure`; a comparison
+  that would call a user `Equal` is reported, `custom-equal`, as anywhere). std sorts the
+  positions with gc's sort under `less`, ties broken by position; the model sorts them by
+  the same order and checks it is a strict total order on every pair, so any correct
+  sort, gc's included, gives its result (trusted: gc's sort sorts). Where it is not (a
+  `less` that is not consistent), the Lean run stops, `unsupported:sort-inconsistent-less`;
 - a function's or method's variadic parameter `xs ...T`, as a Lean `List` of its
   arguments: a call passes the trailing arguments, evaluated in the order written with
   the others, as one list (`[]` for none, or when a call with named arguments leaves it
@@ -429,7 +431,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 28 | 1 | 74 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 470 | 34 | 424 | 32 |
+| UNSUPPORTED | 468 | 34 | 422 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **28** (ratchet baseline 28).
@@ -497,7 +499,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (38 
 
 | Construct | Programs |
 |---|---|
-| `import` | 280 |
+| `import` | 278 |
 | `method-call` | 52 |
 | `generic-type` | 41 |
 | `index` | 38 |
@@ -520,11 +522,11 @@ The constructs galaspec stopped at, by how many programs it stopped at each (38 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (90 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (89 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 104 |
+| `import` | 103 |
 | `generic-type` | 35 |
 | `index` | 31 |
 | `qualified-type` | 24 |
@@ -559,13 +561,13 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 286 | 31 |
+| AGREE | 285 | 31 |
 | DISAGREE | 0 | 0 |
 | UNSUPPORTED | 119 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **317** (ratchet baseline 316).
+Programs GoCore agrees with go run on: **316** (ratchet baseline 316).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **28** (ratchet baseline 28).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
