@@ -10,5 +10,6 @@ import "strings"
 
 func main() {
     Println(strings.NewReplacer("", "-").Replace("ab"))
-    Println(strings.NewReplacer("", "-").Replace("é"))
+    // "é" is taken whole by its own old string; before "日" the empty one fires.
+    Println(strings.NewReplacer("é", "e", "", "-").Replace("éa日"))
 }
