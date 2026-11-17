@@ -66,7 +66,7 @@ def classify (n : Int64) : _gala_M String := do
     else
       match n with
       | _gala_p3 =>
-        if ((_gala_p3 == (-(1 : Int64)))) then
+        if ((_gala_p3 == (-1 : Int64))) then
           (pure "minus one")
         else
           match n with
@@ -94,7 +94,7 @@ def classify (n : Int64) : _gala_M String := do
 
 def main : _gala_M Unit := do
   gprintln [garg (← (eval (Expr.Add (Expr.Num (1 : Int64)) (Expr.Neg (Expr.Add (Expr.Num (2 : Int64)) (Expr.Num (3 : Int64))))))), garg (← (eval (Expr.Neg (Expr.Num (4 : Int64))))), garg (← (eval Expr.Zero))]
-  gprintln [garg (← (classify (0 : Int64))), garg (← (classify (-(1 : Int64)))), garg (← (classify (10 : Int64))), garg (← (classify (500 : Int64))), garg (← (classify (-(5 : Int64)))), garg (← (classify (7 : Int64)))]
+  gprintln [garg (← (classify (0 : Int64))), garg (← (classify (-1 : Int64))), garg (← (classify (10 : Int64))), garg (← (classify (500 : Int64))), garg (← (classify (-5 : Int64))), garg (← (classify (7 : Int64)))]
   let t := (T3.mk (1 : Int64) "a" true)
   let r := (← (do
     match t with

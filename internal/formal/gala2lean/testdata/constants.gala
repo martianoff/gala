@@ -1,0 +1,15 @@
+package main
+
+// An operator tree of literals is a Go untyped constant: evaluated exactly,
+// before it takes a type, so an intermediate value may pass int64's range.
+// A tree with a name in it is ordinary int arithmetic, but a constant
+// subtree of it is still a constant.
+
+func main() {
+    Println((1 << 70) >> 68, 9223372036854775807 * 2 / 4)
+    Println(-7 / 2, -7 % 2, 7 / -2, 7 % -2)
+    Println(0xF0 &^ 0x30, ^5, -(-9223372036854775807 - 1) / 2)
+    Println((1 << 70) > 5, !(1 < 2) || "ab" < "b", "con" + "cat")
+    val x = 3
+    Println(x + (1 << 70) >> 68, x * 2)
+}

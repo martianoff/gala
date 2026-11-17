@@ -9,6 +9,7 @@ go_library(
         "bracket.go",
         "call.go",
         "collections.go",
+        "constfold.go",
         "deps.go",
         "expr.go",
         "gala2lean.go",

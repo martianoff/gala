@@ -137,6 +137,10 @@ func strLit(s string, pos coreexport.Pos) string {
 }
 
 func (g *gen) expr(e coreexport.Node, sc *scope) term {
+	if t, ok := constTerm(e); ok {
+		// A constant expression, evaluated as Go does (constfold.go).
+		return t
+	}
 	switch e := e.(type) {
 	case *coreexport.Unsupported:
 		unsup(e.Pos, "%s", e.What)
