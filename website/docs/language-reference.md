@@ -2196,7 +2196,7 @@ gala mod tidy
 
 Every editor integration starts the language server `gala lsp`, which is part of the `gala` binary:
 
-- **VS Code:** the [GALA extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala) (`GALA.gala`) from the Visual Studio Marketplace.
+- **VS Code:** the [GALA extension](https://marketplace.visualstudio.com/items?itemName=GALA.gala) (`GALA.gala`) from the Visual Studio Marketplace, or from [Open VSX](https://open-vsx.org/extension/GALA/gala) for VSCodium, Cursor and other editors that use it.
 - **GoLand / IntelliJ IDEA 2025.2+:** the [GALA plugin](https://plugins.jetbrains.com/plugin/31256-gala) from the JetBrains Marketplace.
 - **Neovim, Helix and other LSP clients:** run `gala lsp` over stdio for `.gala` files, with `gala.mod` as the root marker.
 - **Claude Code:** `/plugin marketplace add martianoff/gala`, then `/plugin install gala@gala`.

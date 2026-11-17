@@ -8,6 +8,7 @@ Inspired by Scala: sum types, exhaustive pattern matching, and `Option`/`Try` â€
 [![Release](https://github.com/martianoff/gala/actions/workflows/release.yml/badge.svg)](https://github.com/martianoff/gala/releases)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/martianoff/gala?sort=semver)](https://github.com/martianoff/gala/releases/latest)
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/GALA.gala?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=GALA.gala)
+[![Open VSX](https://img.shields.io/open-vsx/v/GALA/gala?label=Open%20VSX)](https://open-vsx.org/extension/GALA/gala)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Bazel](https://img.shields.io/badge/Built%20with-Bazel-43A047)](https://bazel.build)
@@ -774,7 +775,7 @@ Install the **GALA extension** from the [Visual Studio Marketplace](https://mark
 code --install-extension GALA.gala
 ```
 
-Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** > `...` > **Install from VSIX...**). The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); to run another binary, set `gala.serverPath`, or the `GALA_PATH` environment variable when that setting is not set.
+VSCodium, Cursor and other editors that use Open VSX can install it from [Open VSX](https://open-vsx.org/extension/GALA/gala). Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** > `...` > **Install from VSIX...**). The extension adds syntax highlighting for `.gala` files and starts `gala lsp` for diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints and document/workspace symbols. It requires the GALA CLI on `PATH` (check `gala version`); to run another binary, set `gala.serverPath`, or the `GALA_PATH` environment variable when that setting is not set.
 
 ### Neovim
 

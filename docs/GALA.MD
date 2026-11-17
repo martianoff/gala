@@ -6668,7 +6668,7 @@ GALA provides a VS Code extension, a full-featured GoLand/IntelliJ plugin and a 
 
 ### VS Code
 
-1. Install **GALA** (`GALA.gala`) from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run `code --install-extension GALA.gala`.
+1. Install **GALA** (`GALA.gala`) from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala): search for **GALA** in the Extensions view, or run `code --install-extension GALA.gala`. VSCodium, Cursor and other editors that use Open VSX can install it from [Open VSX](https://open-vsx.org/extension/GALA/gala).
 2. Open a `.gala` file. The extension starts `gala lsp`.
 
 The extension registers the `gala` language for `.gala` files and starts `gala lsp`, which gives syntax highlighting plus diagnostics, hover, go-to-definition, references, completion, signature help, inlay hints, and document/workspace symbols — all the [LSP features](#lsp-features-via-gala-lsp) listed below. It runs `gala` from `PATH`. To run another binary, set `gala.serverPath` to its path; when that setting is not set, the `GALA_PATH` environment variable is used before `PATH`. Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs.

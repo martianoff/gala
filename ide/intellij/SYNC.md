@@ -246,6 +246,8 @@ The LSP server works with any LSP-capable editor:
 code --install-extension GALA.gala
 ```
 
+VSCodium, Cursor and other editors that use Open VSX can install it from [Open VSX](https://open-vsx.org/extension/GALA/gala).
+
 The extension registers the `gala` language for `.gala` files and starts `gala lsp`. It requires the `gala` binary on `PATH` (or `gala.serverPath` / `GALA_PATH`).
 
 **Neovim (lspconfig):**

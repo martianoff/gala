@@ -406,6 +406,8 @@ Every editor starts `gala lsp`, so the GALA CLI must be on `PATH` (see [Installa
 code --install-extension GALA.gala
 ```
 
+VSCodium, Cursor and other editors that use Open VSX can install it from [Open VSX](https://open-vsx.org/extension/GALA/gala).
+
 It adds syntax highlighting and starts `gala lsp` for diagnostics, hover, go-to-definition, completion, signature help and inlay hints. To run another binary, set `gala.serverPath`, or `GALA_PATH` when that setting is not set.
 
 **GoLand / IntelliJ IDEA 2025.2+** — **Settings > Plugins > Marketplace**, search for **GALA** ([plugin page](https://plugins.jetbrains.com/plugin/31256-gala)), install it and restart the IDE. The LSP server starts when a `.gala` file is opened.

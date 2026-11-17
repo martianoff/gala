@@ -2,7 +2,9 @@
 
 VS Code support for the [GALA programming language](https://gala.fyi): syntax
 highlighting plus the complete GALA language server. Install it from the
-[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala).
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=GALA.gala)
+or, for VSCodium, Cursor and other editors that use Open VSX, from
+[Open VSX](https://open-vsx.org/extension/GALA/gala).
 
 The extension is a thin client. All analysis runs in `gala lsp`, the language
 server built into the GALA CLI, so the editor sees exactly what the transpiler
@@ -45,6 +47,8 @@ Install the extension from the [Visual Studio Marketplace](https://marketplace.v
 ```bash
 code --install-extension GALA.gala
 ```
+
+VSCodium, Cursor and other editors that use Open VSX can install it from [Open VSX](https://open-vsx.org/extension/GALA/gala).
 
 Each [release](https://github.com/martianoff/gala/releases) also attaches `gala-vscode-<version>.vsix` for offline installs (**Extensions** → `...` → **Install from VSIX...**).
 

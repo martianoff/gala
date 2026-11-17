@@ -31,6 +31,8 @@ Every editor below talks to the same language server, `gala lsp`, which is part 
    code --install-extension GALA.gala
    ```
 
+   VSCodium, Cursor and other editors that use Open VSX can install it from [Open VSX](https://open-vsx.org/extension/GALA/gala).
+
 2. Open a `.gala` file. The extension starts `gala lsp`.
 
 The extension is a thin client: it registers the `gala` language for `.gala` files (syntax highlighting, comments, brackets) and starts `gala lsp` for diagnostics, hover, completion, signature help, inlay hints, go-to-definition, references and symbols. It runs `gala` from `PATH`. To run another binary, set `gala.serverPath` to its path; when that setting is not set, the `GALA_PATH` environment variable is used before `PATH`. Offline, install the `gala-vscode-<version>.vsix` attached to each [release](https://github.com/martianoff/gala/releases) with **Extensions** > `...` > **Install from VSIX...**.
