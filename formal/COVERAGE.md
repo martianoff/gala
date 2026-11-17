@@ -607,7 +607,6 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 | `bytes.Buffer` | 1 |
 | `context.Background` | 1 |
 | `crypto/sha256.New` | 1 |
-
 <!-- difftest:end -->
 
 <!-- ownership:begin -->
