@@ -221,6 +221,11 @@ func TestGoResultsKeptWhole(t *testing.T) {
 			absent:   []string{"_goResult"},
 		},
 		{
+			name:     "a value of a named function type still fills a single-result thunk slot as a thunk",
+			body:     "type Getter func() int\n\nfunc takeG(f func() Getter) int = f()()\n\nfunc one() int = 1\n\nfunc viaG() int {\n    val g Getter = one\n    takeG(g)\n}",
+			contains: []string{"takeG(func() Getter {"},
+		},
+		{
 			name:     "nil is passed as the function it is",
 			body:     "func none() int = run(nil)",
 			contains: []string{"run(nil)"},

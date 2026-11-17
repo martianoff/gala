@@ -384,8 +384,12 @@ type goResultsBody struct {
 	valueAt, wholeAt srcNode
 	valueSelf        string
 	// body is where an expression body is written (`= expr`, `() => expr`,
-	// a by-name argument); zero for a block body. A Go call with the
-	// results written there is returned as it is (see returnGoResults).
+	// a by-name argument); zero for a block body. A Go call with one result
+	// per Go result written there is returned as it is (see
+	// returnGoResults), so its Try is exempt from notCovariant. Of these, only
+	// a by-name argument reaches this check with a Try of another element
+	// type: a function or lambda body is lowered against the Try first and
+	// rejects one as GALA-E0049 (#1238).
 	body srcNode
 }
 
