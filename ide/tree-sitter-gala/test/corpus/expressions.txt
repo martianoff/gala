@@ -1,0 +1,444 @@
+==================
+Operator precedence
+==================
+
+package main
+
+val a = 1 + 2 * 3
+val b = x || y && !z
+val c = a == b != c
+val d = x << 2 | y &^ z
+val e = -x.Size()
+val f = <-ch
+val g = &n
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (int_literal)
+      (binary_expression
+        (int_literal)
+        (int_literal))))
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (identifier)
+      (binary_expression
+        (identifier)
+        (unary_expression
+          (identifier)))))
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (identifier))
+      (identifier)))
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (int_literal))
+      (binary_expression
+        (identifier)
+        (identifier))))
+  (val_declaration
+    (identifier)
+    (unary_expression
+      (call_expression
+        (selector_expression
+          (identifier)
+          (field_identifier))
+        (argument_list))))
+  (val_declaration
+    (identifier)
+    (unary_expression
+      (identifier)))
+  (val_declaration
+    (identifier)
+    (unary_expression
+      (identifier))))
+
+==================
+Calls, selectors, indexes and named arguments
+==================
+
+package main
+
+val a = xs.Map((x) => x * 2).Filter((x) => x > 2)
+val b = EmptyHashMap[string, int]()
+val c = Person(Name = "Ann", Age = 3,)
+val d = arr[0]
+val e = strings.ToUpper(s)
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (selector_expression
+        (call_expression
+          (selector_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (lambda_expression
+              (parameter_list
+                (parameter
+                  (identifier)))
+              (binary_expression
+                (identifier)
+                (int_literal)))))
+        (field_identifier))
+      (argument_list
+        (lambda_expression
+          (parameter_list
+            (parameter
+              (identifier)))
+          (binary_expression
+            (identifier)
+            (int_literal))))))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (index_expression
+        (identifier)
+        (identifier)
+        (identifier))
+      (argument_list)))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (named_argument
+          (identifier)
+          (interpreted_string_literal
+            (string_content)))
+        (named_argument
+          (identifier)
+          (int_literal)))))
+  (val_declaration
+    (identifier)
+    (index_expression
+      (identifier)
+      (int_literal)))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (selector_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (identifier)))))
+
+==================
+Lambdas
+==================
+
+package main
+
+val a = (x) => x * 2
+val b = (x int, y int) int => x + y
+val c = () => {
+    Println("hi")
+}
+val d = xs.Map(_ * 10)
+val e = (s string) => (n int) => s + n
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (lambda_expression
+      (parameter_list
+        (parameter
+          (identifier)))
+      (binary_expression
+        (identifier)
+        (int_literal))))
+  (val_declaration
+    (identifier)
+    (lambda_expression
+      (parameter_list
+        (parameter
+          (identifier)
+          (type_identifier))
+        (parameter
+          (identifier)
+          (type_identifier)))
+      (type_identifier)
+      (binary_expression
+        (identifier)
+        (identifier))))
+  (val_declaration
+    (identifier)
+    (lambda_expression
+      (parameter_list)
+      (block
+        (expression_statement
+          (call_expression
+            (identifier)
+            (argument_list
+              (interpreted_string_literal
+                (string_content))))))))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (selector_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (binary_expression
+          (identifier)
+          (int_literal)))))
+  (val_declaration
+    (identifier)
+    (lambda_expression
+      (parameter_list
+        (parameter
+          (identifier)
+          (type_identifier)))
+      (lambda_expression
+        (parameter_list
+          (parameter
+            (identifier)
+            (type_identifier)))
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+==================
+If expressions
+==================
+
+package main
+
+val a = if (n > 0) "pos" else "neg"
+val b = if (n > 0) {
+    "pos"
+} else {
+    "neg"
+}
+val c = if (m) -1 else -2
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (if_expression
+      (binary_expression
+        (identifier)
+        (int_literal))
+      (interpreted_string_literal
+        (string_content))
+      (interpreted_string_literal
+        (string_content))))
+  (val_declaration
+    (identifier)
+    (if_expression
+      (binary_expression
+        (identifier)
+        (int_literal))
+      (block
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))
+      (block
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))))
+  (val_declaration
+    (identifier)
+    (if_expression
+      (identifier)
+      (unary_expression
+        (int_literal))
+      (unary_expression
+        (int_literal)))))
+
+==================
+Tuples and parentheses
+==================
+
+package main
+
+val a = (1, 2)
+val b = (model, cmd,)
+val c = ()
+val d = (a + b) * c
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (tuple_expression
+      (int_literal)
+      (int_literal)))
+  (val_declaration
+    (identifier)
+    (tuple_expression
+      (identifier)
+      (identifier)))
+  (val_declaration
+    (identifier)
+    (tuple_expression))
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (parenthesized_expression
+        (binary_expression
+          (identifier)
+          (identifier)))
+      (identifier))))
+
+==================
+Composite literals and function literals
+==================
+
+package main
+
+val a = Point{X: 1, Y: 2}
+val b = []int{1, 2, 3}
+val c = map[string]int{"a": 1}
+val d = func(x int) int { x }
+val e = EmptyArray[func() int]()
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (composite_literal
+      (type_identifier)
+      (literal_value
+        (keyed_element
+          (identifier)
+          (int_literal))
+        (keyed_element
+          (identifier)
+          (int_literal)))))
+  (val_declaration
+    (identifier)
+    (composite_literal
+      (slice_type
+        (type_identifier))
+      (literal_value
+        (keyed_element
+          (int_literal))
+        (keyed_element
+          (int_literal))
+        (keyed_element
+          (int_literal)))))
+  (val_declaration
+    (identifier)
+    (composite_literal
+      (map_type
+        (type_identifier)
+        (type_identifier))
+      (literal_value
+        (keyed_element
+          (interpreted_string_literal
+            (string_content))
+          (int_literal)))))
+  (val_declaration
+    (identifier)
+    (func_literal
+      (parameter_list
+        (parameter
+          (identifier)
+          (type_identifier)))
+      (type_identifier)
+      (block
+        (expression_statement
+          (identifier)))))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (index_expression
+        (identifier)
+        (func_literal
+          (parameter_list)
+          (type_identifier)))
+      (argument_list))))
+
+==================
+Literals
+==================
+
+package main
+
+val a = 42
+val b = 0x1F
+val c = 0b1010
+val d = 0o644
+val e = 3.14
+val f = 1e9
+val g = .5
+val h = 'x'
+val i = '\n'
+val j = true
+val k = false
+val l = nil
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (int_literal))
+  (val_declaration
+    (identifier)
+    (int_literal))
+  (val_declaration
+    (identifier)
+    (int_literal))
+  (val_declaration
+    (identifier)
+    (int_literal))
+  (val_declaration
+    (identifier)
+    (float_literal))
+  (val_declaration
+    (identifier)
+    (float_literal))
+  (val_declaration
+    (identifier)
+    (float_literal))
+  (val_declaration
+    (identifier)
+    (rune_literal))
+  (val_declaration
+    (identifier)
+    (rune_literal))
+  (val_declaration
+    (identifier)
+    (true))
+  (val_declaration
+    (identifier)
+    (false))
+  (val_declaration
+    (identifier)
+    (nil)))

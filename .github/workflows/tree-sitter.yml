@@ -1,0 +1,69 @@
+name: Tree-sitter grammar
+
+# Checks the tree-sitter grammar in ide/tree-sitter-gala:
+#
+#   - the committed src/ is what `tree-sitter generate` makes from grammar.js
+#     (editors build the parser from src/parser.c, so it must not go stale);
+#   - its corpus and highlight tests pass;
+#   - every .gala file in the repository parses with no ERROR or MISSING node,
+#     except the ones listed in test/parse-all.exclude.
+#
+# Runs when the grammar changes, and when any .gala file does: a new construct
+# in GALA code that the grammar cannot parse shows up here.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "ide/tree-sitter-gala/**"
+      - "**/*.gala"
+      - ".github/workflows/tree-sitter.yml"
+  push:
+    branches: [master]
+    paths:
+      - "ide/tree-sitter-gala/**"
+      - "**/*.gala"
+      - ".github/workflows/tree-sitter.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tree-sitter-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grammar:
+    name: Tree-sitter grammar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide/tree-sitter-gala
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the tree-sitter CLI
+        # Keep in step with devDependencies in ide/tree-sitter-gala/package.json.
+        run: npm install --global tree-sitter-cli@0.25.10
+
+      - name: Generated parser is up to date
+        run: |
+          tree-sitter generate --abi 14
+          if [[ -n "$(git status --porcelain -- src)" ]]; then
+            echo "::error::ide/tree-sitter-gala/src is stale; run 'tree-sitter generate --abi 14' in ide/tree-sitter-gala and commit the result"
+            git status --short -- src
+            git diff --stat -- src
+            exit 1
+          fi
+
+      - name: Corpus and highlight tests
+        run: tree-sitter test
+
+      - name: Parse every .gala file
+        run: script/parse-all.sh

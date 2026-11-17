@@ -1,0 +1,490 @@
+==================
+Package and imports
+==================
+
+package main
+
+import "fmt"
+
+import (
+    . "martianoff/gala/collection_immutable"
+    _ "embed"
+    str "strings"
+)
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (import_declaration
+    (import_spec
+      (interpreted_string_literal
+        (string_content))))
+  (import_declaration
+    (import_spec
+      (dot)
+      (interpreted_string_literal
+        (string_content)))
+    (import_spec
+      (package_identifier)
+      (interpreted_string_literal
+        (string_content)))
+    (import_spec
+      (package_identifier)
+      (interpreted_string_literal
+        (string_content)))))
+
+==================
+Val and var
+==================
+
+package main
+
+val MaxRetries = 3
+val a, b = 1, 2
+val (x, y) = pair
+val name string = "gala"
+var count int
+var total = 0
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (int_literal))
+  (val_declaration
+    (identifier)
+    (identifier)
+    (int_literal)
+    (int_literal))
+  (val_declaration
+    (tuple_pattern
+      (identifier)
+      (identifier))
+    (identifier))
+  (val_declaration
+    (identifier)
+    (type_identifier)
+    (interpreted_string_literal
+      (string_content)))
+  (var_declaration
+    (identifier)
+    (type_identifier))
+  (var_declaration
+    (identifier)
+    (int_literal)))
+
+==================
+Embed val
+==================
+
+package main
+
+embed val content string = "a.txt", "assets/*.txt"
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (embed_declaration
+    (identifier)
+    (type_identifier)
+    (interpreted_string_literal
+      (string_content))
+    (interpreted_string_literal
+      (string_content))))
+
+==================
+Functions with block and expression bodies
+==================
+
+package main
+
+func add(a int, b int) int = a + b
+
+func greet(name string = "world", val loud bool) {
+    Println(name)
+}
+
+func sum(xs ...int) int {
+    return 0
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier))
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (binary_expression
+      (identifier)
+      (identifier)))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)
+        (default_value
+          (interpreted_string_literal
+            (string_content))))
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier))))))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (block
+      (return_statement
+        (int_literal)))))
+
+==================
+Generic function
+==================
+
+package main
+
+func Map[T any, U any](xs Array[T], f func(T) U) Array[U] = xs.Map(f)
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier))
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (parameter_list
+      (parameter
+        (identifier)
+        (generic_type
+          (type_identifier)
+          (type_arguments
+            (type_identifier))))
+      (parameter
+        (identifier)
+        (function_type
+          (parameter_list
+            (parameter
+              (identifier)))
+          (type_identifier))))
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)))
+    (call_expression
+      (selector_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (identifier)))))
+
+==================
+Methods, inout receivers and Go result lists
+==================
+
+package main
+
+func (c Counter) Get() int = c.n
+
+func (inout c Counter) Inc() {
+    c.n += 1
+}
+
+func (w *Writer) Write(p []byte) (int, error) {
+    Success(p.Size())
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (receiver
+      (identifier)
+      (type_identifier))
+    (identifier)
+    (parameter_list)
+    (type_identifier)
+    (selector_expression
+      (identifier)
+      (field_identifier)))
+  (function_declaration
+    (receiver
+      (identifier)
+      (type_identifier))
+    (identifier)
+    (parameter_list)
+    (block
+      (assignment_statement
+        (expression_list
+          (selector_expression
+            (identifier)
+            (field_identifier)))
+        (expression_list
+          (int_literal)))))
+  (function_declaration
+    (receiver
+      (identifier)
+      (pointer_type
+        (type_identifier)))
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (slice_type
+          (type_identifier))))
+    (result_list
+      (type_identifier)
+      (type_identifier))
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list
+            (call_expression
+              (selector_expression
+                (identifier)
+                (field_identifier))
+              (argument_list))))))))
+
+==================
+Struct shorthand
+==================
+
+package main
+
+struct Point(x int, y int)
+
+struct Box[T any](val Value T, var hits int = 0)
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (struct_declaration
+    (type_identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier))
+      (parameter
+        (identifier)
+        (type_identifier))))
+  (struct_declaration
+    (type_identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier))
+      (parameter
+        (identifier)
+        (type_identifier)
+        (default_value
+          (int_literal))))))
+
+==================
+Sealed types
+==================
+
+package main
+
+sealed type Shape {
+    case Circle(Radius float64)
+    case Rect(W float64, H float64 = 1.0,)
+    case Unit()
+    default case Unknown
+}
+
+sealed type Option2[T any] {
+    case Some2(Value T)
+    case None2
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (sealed_type_declaration
+    (type_identifier)
+    (sealed_case
+      (type_identifier)
+      (sealed_case_field
+        (field_identifier)
+        (type_identifier)))
+    (sealed_case
+      (type_identifier)
+      (sealed_case_field
+        (field_identifier)
+        (type_identifier))
+      (sealed_case_field
+        (field_identifier)
+        (type_identifier)
+        (default_value
+          (float_literal))))
+    (sealed_case
+      (type_identifier))
+    (sealed_case
+      (type_identifier)))
+  (sealed_type_declaration
+    (type_identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (sealed_case
+      (type_identifier)
+      (sealed_case_field
+        (field_identifier)
+        (type_identifier)))
+    (sealed_case
+      (type_identifier))))
+
+==================
+Opaque type
+==================
+
+package main
+
+opaque type UserID int64
+
+opaque type Id[T any] int64
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (opaque_type_declaration
+    (type_identifier)
+    (type_identifier))
+  (opaque_type_declaration
+    (type_identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (type_identifier)))
+
+==================
+Struct, interface and alias types
+==================
+
+package main
+
+type User struct {
+    val Name string
+    var Age int
+    Tags []string
+}
+
+type Repo[T any] interface {
+    Find(id int) Option[T]
+    inout Reset()
+}
+
+type Handler func(Request) Response
+
+type Result[T any] Either[AppError, T]
+
+type Index map[string]*Node
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (type_declaration
+    (type_identifier)
+    (struct_type
+      (field_declaration
+        (field_identifier)
+        (type_identifier))
+      (field_declaration
+        (field_identifier)
+        (type_identifier))
+      (field_declaration
+        (field_identifier)
+        (slice_type
+          (type_identifier)))))
+  (type_declaration
+    (type_identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (interface_type
+      (method_spec
+        (field_identifier)
+        (parameter_list
+          (parameter
+            (identifier)
+            (type_identifier)))
+        (generic_type
+          (type_identifier)
+          (type_arguments
+            (type_identifier))))
+      (method_spec
+        (field_identifier)
+        (parameter_list))))
+  (type_declaration
+    (type_identifier)
+    (function_type
+      (parameter_list
+        (parameter
+          (identifier)))
+      (type_identifier)))
+  (type_declaration
+    (type_identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)
+        (type_identifier))))
+  (type_declaration
+    (type_identifier)
+    (map_type
+      (type_identifier)
+      (pointer_type
+        (type_identifier)))))
