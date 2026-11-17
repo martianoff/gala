@@ -196,7 +196,7 @@ func Map[T any, U any](xs Array[T], f func(T) U) Array[U] = xs.Map(f)
         (function_type
           (parameter_list
             (parameter
-              (identifier)))
+              (type_identifier)))
           (type_identifier))))
     (generic_type
       (type_identifier)
@@ -469,7 +469,7 @@ type Index map[string]*Node
     (function_type
       (parameter_list
         (parameter
-          (identifier)))
+          (type_identifier)))
       (type_identifier)))
   (type_declaration
     (type_identifier)

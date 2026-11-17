@@ -91,7 +91,8 @@ bazel build //cmd/gala-lsp:gala-lsp //ide/intellij:plugin
 
 If the tree-sitter grammar changed, regenerate and test it as its
 `ide/tree-sitter-gala/README.md` describes (`tree-sitter generate --abi 14`,
-`tree-sitter test`, `script/parse-all.sh`) and commit the regenerated `src/`.
+`tree-sitter test`, `script/parse-all.sh`, `script/check-queries.sh`) and
+commit the regenerated `src/`.
 
 ### Step 6: Report
 

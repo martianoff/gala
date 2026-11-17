@@ -39,6 +39,10 @@ func (c Counter) Next() int = c.n + 1
 //                              ^ variable.member
 //                                  ^ number
 
+func apply(f func(Shape) int) int = 0
+//                ^ type
+//                       ^ type.builtin
+
 func main() {
     val xs = ArrayOf(1, 2, 3)
     // <- keyword

@@ -6,22 +6,28 @@ name: Tree-sitter grammar
 #     (editors build the parser from src/parser.c, so it must not go stale);
 #   - its corpus and highlight tests pass;
 #   - every .gala file in the repository parses with no ERROR or MISSING node,
-#     except the ones listed in test/parse-all.exclude.
+#     except the ones listed in test/parse-all.exclude;
+#   - queries/highlights.scm captures every gala.g4 keyword and exactly the
+#     builtin types of IsPrimitiveType (internal/transpiler/types.go).
 #
-# Runs when the grammar changes, and when any .gala file does: a new construct
-# in GALA code that the grammar cannot parse shows up here.
+# Runs when the grammar, gala.g4, types.go or any .gala file changes: a new
+# construct in GALA code that the grammar cannot parse shows up here.
 on:
   pull_request:
     branches: [master]
     paths:
       - "ide/tree-sitter-gala/**"
       - "**/*.gala"
+      - "internal/parser/grammar/gala.g4"
+      - "internal/transpiler/types.go"
       - ".github/workflows/tree-sitter.yml"
   push:
     branches: [master]
     paths:
       - "ide/tree-sitter-gala/**"
       - "**/*.gala"
+      - "internal/parser/grammar/gala.g4"
+      - "internal/transpiler/types.go"
       - ".github/workflows/tree-sitter.yml"
 
 permissions:
@@ -67,3 +73,6 @@ jobs:
 
       - name: Parse every .gala file
         run: script/parse-all.sh
+
+      - name: Highlights cover every keyword and builtin type
+        run: script/check-queries.sh

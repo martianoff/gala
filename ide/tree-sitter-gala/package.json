@@ -27,6 +27,7 @@
   "scripts": {
     "generate": "tree-sitter generate --abi 14",
     "test": "tree-sitter test",
-    "parse-all": "bash script/parse-all.sh"
+    "parse-all": "bash script/parse-all.sh",
+    "check-queries": "bash script/check-queries.sh"
   }
 }

@@ -41,6 +41,18 @@ const commaSep1 = (rule) => seq(rule, repeat(seq(',', rule)));
 // A list that may end in a trailing comma, for multi-line argument lists.
 const trailingCommaSep1 = (rule) => seq(commaSep1(rule), optional(','));
 
+// `bind`, `also` and `use`: keyword identifier type? '=' expression
+const binding = ($, keyword) => seq(
+  keyword,
+  field('name', $.identifier),
+  optional(field('type', $._type)),
+  '=',
+  field('value', $._expression),
+);
+
+// The text of an interpreted string between escapes.
+const stringContent = ($) => alias(token.immediate(prec(1, /[^"\r\n\\]+/)), $.string_content);
+
 module.exports = grammar({
   name: 'gala',
 
@@ -68,10 +80,15 @@ module.exports = grammar({
     [$._primary, $._type_name, $.parameter],
     [$.parameter, $._type_name],
     [$.parameter_list, $.tuple_expression],
-    // In a statement, `func (` starts a function literal's parameters or a
-    // method's receiver.
-    [$.receiver, $.parameter],
-    [$.receiver, $.parameter, $._type_name],
+    // `func (` starts a function literal's parameters, a function type's, or
+    // (in a statement) a method's receiver.
+    [$.parameter_list, $._function_type_parameter_list],
+    [$.parameter, $._function_type_parameter],
+    [$.parameter, $._type_name, $._function_type_parameter],
+    [$._type_name, $._function_type_parameter],
+    [$.receiver, $.parameter, $._function_type_parameter],
+    [$.receiver, $.parameter, $._type_name, $._function_type_parameter],
+    [$._primary, $._type],
     // `Foo{...}` and `pkg.Foo[T]{...}` are composite literals; in
     // `if x { ... }` the `{` opens a block.
     [$._primary, $.qualified_type],
@@ -86,7 +103,6 @@ module.exports = grammar({
     // A result type is optional, so the next line may be one or start anew:
     // an interface method `ForEach(f func(T))` followed by `Size() int`.
     [$._signature],
-    [$.func_literal, $.function_type],
     // `if (c) a else b` is an if expression; `if (c) { ... }` an if statement
     // with a parenthesized condition.
     [$.parenthesized_expression, $.if_expression],
@@ -245,31 +261,13 @@ module.exports = grammar({
     tuple_pattern: $ => seq($._lparen, commaSep1($.identifier), ')'),
 
     // bindDeclaration: BIND identifier type? '=' expression
-    bind_declaration: $ => seq(
-      'bind',
-      field('name', $.identifier),
-      optional(field('type', $._type)),
-      '=',
-      field('value', $._expression),
-    ),
+    bind_declaration: $ => binding($, 'bind'),
 
     // alsoDeclaration: ALSO identifier type? '=' expression
-    also_declaration: $ => seq(
-      'also',
-      field('name', $.identifier),
-      optional(field('type', $._type)),
-      '=',
-      field('value', $._expression),
-    ),
+    also_declaration: $ => binding($, 'also'),
 
     // useDeclaration: USE identifier type? '=' expression
-    use_declaration: $ => seq(
-      'use',
-      field('name', $.identifier),
-      optional(field('type', $._type)),
-      '=',
-      field('value', $._expression),
-    ),
+    use_declaration: $ => binding($, 'use'),
 
     // functionDeclaration: 'func' receiver? identifier typeParameters? signature (block | '=' expression)
     function_declaration: $ => seq(
@@ -539,6 +537,7 @@ module.exports = grammar({
       $.parenthesized_expression,
       $.tuple_expression,
       $.func_literal,
+      $.function_type,
       $.composite_literal,
     ),
 
@@ -555,13 +554,14 @@ module.exports = grammar({
       ')',
     ),
 
-    // 'func' signature block? — a Go function literal (rejected by the
-    // compiler, GALA-E0117) or a function type written as a type argument.
-    func_literal: $ => prec.right(seq(
+    // 'func' signature block — a Go function literal (rejected by the
+    // compiler, GALA-E0117). Without the block, `'func' signature` is a
+    // function type written as a type argument: `function_type` in `_primary`.
+    func_literal: $ => seq(
       'func',
       $._signature,
-      optional(field('body', $.block)),
-    )),
+      field('body', $.block),
+    ),
 
     // compositeLiteral: type '{' (elementList ','?)? '}'
     composite_literal: $ => seq(
@@ -668,7 +668,27 @@ module.exports = grammar({
     map_type: $ => seq('map', '[', field('key', $._type), ']', field('value', $._type)),
 
     // 'func' signature
-    function_type: $ => prec.right(seq('func', $._signature)),
+    // gala.g4 parses its parameters with the `parameter` rule, where a lone
+    // name could be either; in a function type it is a type, `func(int) bool`,
+    // so here a parameter has a name only when a type follows it.
+    function_type: $ => prec.right(seq(
+      'func',
+      field('parameters', alias($._function_type_parameter_list, $.parameter_list)),
+      optional(field('result', choice($._type, $.result_list))),
+    )),
+
+    _function_type_parameter_list: $ => seq(
+      $._lparen,
+      optional(trailingCommaSep1(alias($._function_type_parameter, $.parameter))),
+      ')',
+    ),
+
+    _function_type_parameter: $ => seq(
+      optional(choice('val', 'var', 'inout')),
+      optional(choice(seq(field('name', $.identifier), optional('...')), '...')),
+      field('type', $._type),
+      optional(field('default', $.default_value)),
+    ),
 
     // Any '(' but a call's. gala.g4 writes it `'(' | NL_LPAREN` where it can
     // follow an expression; here the scanner's `_call_lparen` stands in for
@@ -714,7 +734,7 @@ module.exports = grammar({
       seq(
         '"',
         repeat(choice(
-          alias(token.immediate(prec(1, /[^"\r\n\\]+/)), $.string_content),
+          stringContent($),
           $.escape_sequence,
         )),
         token.immediate('"'),
@@ -722,7 +742,7 @@ module.exports = grammar({
       seq(
         '\\"',
         repeat(choice(
-          alias(token.immediate(prec(1, /[^"\r\n\\]+/)), $.string_content),
+          stringContent($),
           alias(token.immediate(/\\[^"]/), $.escape_sequence),
         )),
         token.immediate('\\"'),

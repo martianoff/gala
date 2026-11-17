@@ -34,6 +34,7 @@ alongside it; the snippets below wire up both.
 | `test/corpus/` | Corpus tests, one file per area of the language. |
 | `test/highlight/` | Highlight tests. |
 | `script/parse-all.sh` | Parses every `.gala` file in the repository. |
+| `script/check-queries.sh` | Checks that the highlights capture every gala.g4 keyword and exactly the builtin types of `IsPrimitiveType`. |
 
 The parser is generated for ABI 14, which every current tree-sitter runtime
 loads, so it works in editors that have not moved to ABI 15 yet.
@@ -200,22 +201,25 @@ cd ide/tree-sitter-gala
 tree-sitter generate --abi 14   # regenerate src/ after editing grammar.js
 tree-sitter test                # corpus and highlight tests
 script/parse-all.sh             # parse every .gala file in the repository
+script/check-queries.sh         # highlights cover gala.g4's keywords and the builtin types
 ```
 
 or, with only Docker:
 
 ```sh
 docker run --rm -v "$PWD:/w" -w /w/ide/tree-sitter-gala node:22 sh -c \
-  'npm install --global tree-sitter-cli@0.25.10 && tree-sitter generate --abi 14 && tree-sitter test && script/parse-all.sh'
+  'npm install --global tree-sitter-cli@0.25.10 && tree-sitter generate --abi 14 && tree-sitter test && script/parse-all.sh && script/check-queries.sh'
 ```
 
 Commit the regenerated `src/` with the change to `grammar.js`.
 
 ## Known gaps
 
-- A parameter list is ambiguous between names and types: in a function type
-  written without parameter names, `func(int, string) bool`, the types parse
-  as parameter names. The highlight query colors them as types.
+- A string with escaped quotes, `\"k\"`, is accepted anywhere a string is.
+  GALA allows it only inside `${...}` of an interpolated string, where the
+  grammar needs it; elsewhere it is a compile error the grammar does not flag.
+- Only the outermost extractor of a pattern is highlighted as a constructor:
+  in `case Some(Ok(x))`, `Ok` is colored as a call.
 - A qualified type has one qualifier, `pkg.Type`; gala.g4 allows more dots.
 - The line-break rule looks at whitespace only: a `(` after a block comment
   that spans lines, `f() /* ... */ (x)`, is still a call, where GALA counts the

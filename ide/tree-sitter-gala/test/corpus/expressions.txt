@@ -377,7 +377,7 @@ val e = EmptyArray[func() int]()
     (call_expression
       (index_expression
         (identifier)
-        (func_literal
+        (function_type
           (parameter_list)
           (type_identifier)))
       (argument_list))))

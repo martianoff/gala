@@ -76,6 +76,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -177,6 +181,10 @@
         },
         {
           "type": "func_literal",
+          "named": true
+        },
+        {
+          "type": "function_type",
           "named": true
         },
         {
@@ -344,6 +352,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -527,6 +539,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -672,6 +688,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -856,6 +876,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -978,6 +1002,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1073,6 +1101,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -1235,6 +1267,10 @@
         },
         {
           "type": "func_literal",
+          "named": true
+        },
+        {
+          "type": "function_type",
           "named": true
         },
         {
@@ -1401,6 +1437,10 @@
           "named": true
         },
         {
+          "type": "function_type",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
@@ -1501,6 +1541,10 @@
         },
         {
           "type": "func_literal",
+          "named": true
+        },
+        {
+          "type": "function_type",
           "named": true
         },
         {
@@ -1654,6 +1698,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -1815,6 +1863,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1906,7 +1958,7 @@
     "fields": {
       "body": {
         "multiple": false,
-        "required": false,
+        "required": true,
         "types": [
           {
             "type": "block",
@@ -1998,6 +2050,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -2271,6 +2327,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -2366,6 +2426,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -2468,6 +2532,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -2586,6 +2654,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -2770,6 +2842,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -2888,6 +2964,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -2979,6 +3059,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -3116,6 +3200,10 @@
           "named": true
         },
         {
+          "type": "function_type",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
@@ -3238,6 +3326,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -3333,6 +3425,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -3441,6 +3537,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -3677,6 +3777,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -3864,6 +3968,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -4129,6 +4237,10 @@
           "named": true
         },
         {
+          "type": "function_type",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
@@ -4322,6 +4434,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -4476,6 +4592,10 @@
           "named": true
         },
         {
+          "type": "function_type",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
@@ -4615,6 +4735,10 @@
         },
         {
           "type": "func_literal",
+          "named": true
+        },
+        {
+          "type": "function_type",
           "named": true
         },
         {
@@ -4846,6 +4970,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {
@@ -5111,6 +5239,10 @@
         },
         {
           "type": "func_literal",
+          "named": true
+        },
+        {
+          "type": "function_type",
           "named": true
         },
         {
@@ -5454,6 +5586,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -5636,6 +5772,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -5794,6 +5934,10 @@
             "named": true
           },
           {
+            "type": "function_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -5949,6 +6093,10 @@
           },
           {
             "type": "func_literal",
+            "named": true
+          },
+          {
+            "type": "function_type",
             "named": true
           },
           {

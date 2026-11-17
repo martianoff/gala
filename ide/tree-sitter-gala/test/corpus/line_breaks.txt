@@ -219,7 +219,7 @@ type Traversable[T any] interface {
             (function_type
               (parameter_list
                 (parameter
-                  (identifier)))))))
+                  (type_identifier)))))))
       (method_spec
         (field_identifier)
         (parameter_list)

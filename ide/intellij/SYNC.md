@@ -149,11 +149,13 @@ keywords; `internal/parser/newline.go` for the line-break rule;
 names in `queries/highlights.scm`
 
 **How to verify:** in `ide/tree-sitter-gala`, `tree-sitter generate --abi 14`,
-`tree-sitter test` and `script/parse-all.sh`, which parses every `.gala` file
-in the repository (see its README). The `Tree-sitter grammar` workflow runs all
-three on any change to the grammar or to a `.gala` file, so a construct the
-grammar does not know fails there. A new construct gets a corpus test in
-`test/corpus/`, and a new keyword its capture in `queries/highlights.scm`.
+`tree-sitter test`, `script/parse-all.sh`, which parses every `.gala` file in
+the repository, and `script/check-queries.sh`, which fails when a gala.g4
+keyword has no highlight capture or the builtin types differ from
+`IsPrimitiveType` (see its README). The `Tree-sitter grammar` workflow runs
+them on any change to the grammar, gala.g4, types.go or a `.gala` file, so a
+construct the grammar does not know fails there. A new construct gets a corpus
+test in `test/corpus/`.
 
 ## When to Sync
 

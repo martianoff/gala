@@ -157,56 +157,33 @@
     (parameter
       name: (identifier) @variable.member)))
 
-; In a function type, `func(int, string) bool`, an untyped parameter is a type.
-(function_type
-  parameters: (parameter_list
-    (parameter
-      name: (identifier) @type
-      !type)))
-
-((function_type
-  parameters: (parameter_list
-    (parameter
-      name: (identifier) @type.builtin
-      !type)))
-  (#any-of? @type.builtin
-    "any" "bool" "byte" "complex64" "complex128" "error" "float32" "float64"
-    "int" "int8" "int16" "int32" "int64" "rune" "string"
-    "uint" "uint8" "uint16" "uint32" "uint64" "uintptr"))
-
-; Calls
+; Calls, with or without explicit type arguments: `f(x)`, `f[T](x)`.
 
 (call_expression
-  function: (identifier) @function.call)
+  function: [
+    (identifier) @function.call
+    (index_expression
+      operand: (identifier) @function.call)
+    (selector_expression
+      field: (field_identifier) @function.method.call)
+    (index_expression
+      operand: (selector_expression
+        field: (field_identifier) @function.method.call))
+  ])
 
-(call_expression
-  function: (index_expression
-    operand: (identifier) @function.call))
-
-(call_expression
-  function: (selector_expression
-    field: (field_identifier) @function.method.call))
-
-(call_expression
-  function: (index_expression
-    operand: (selector_expression
-      field: (field_identifier) @function.method.call)))
-
-; Patterns: the extractor in `case Some(x)` is a constructor.
+; Patterns: the extractor in `case Some(x)` is a constructor. A pattern is an
+; expression, so only the outermost extractor is caught: in
+; `case Some(Ok(x))`, `Ok` stays a call.
 
 (case_clause
   pattern: (call_expression
-    function: (identifier) @constructor))
-
-(case_clause
-  pattern: (call_expression
-    function: (index_expression
-      operand: (identifier) @constructor)))
-
-(case_clause
-  pattern: (call_expression
-    function: (selector_expression
-      field: (field_identifier) @constructor)))
+    function: [
+      (identifier) @constructor
+      (index_expression
+        operand: (identifier) @constructor)
+      (selector_expression
+        field: (field_identifier) @constructor)
+    ]))
 
 ; Literals
 
