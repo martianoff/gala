@@ -1036,7 +1036,7 @@ With the module's `go.mod` requiring the standard library at the version of that
 ```
 module example.com/server
 
-go 1.24
+go 1.25
 
 require go.gala.fyi/stdlib v0.87.1
 ```

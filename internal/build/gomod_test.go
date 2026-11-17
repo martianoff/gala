@@ -6,8 +6,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/stdlib"
 )
+
+// TestWorkspaceGoModDeclaresMinGoVersion: the build workspace's go.mod is the
+// main module of every program GALA builds, so its go line picks the
+// program's GODEBUG defaults. It must be the oldest Go GALA supports, not an
+// older release.
+func TestWorkspaceGoModDeclaresMinGoVersion(t *testing.T) {
+	gen := NewGoModGenerator(&Config{})
+	content := gen.GenerateGoMod(&mod.File{Module: mod.Module{Path: "example.com/app"}}, "v0.0.0", nil)
+	assert.Contains(t, content, "\ngo "+MinGoVersion+"\n")
+}
 
 // TestStdlibPackagesMatchEmbedded guards against drift between the stdlib
 // embedding (cmd/stdlib_gen → internal/stdlib.PackageImportPaths) and the

@@ -159,6 +159,17 @@ if [[ -z "$bazel_go" || "$bazel_go" != "$gocore_go" || "$bazel_go" != "$difftest
   fail "Go releases differ: MODULE.bazel go_sdk '$bazel_go', GcRuntime.lean goVersion '$gocore_go', difftest GcRuntimeGoVersion '$difftest_go', formal.yml difftest go-version '$ci_go'"
 fi
 
+# --- 8. one oldest supported Go ----------------------------------------------
+# stdlib.GoVersion is the oldest Go GALA supports and the go line of every
+# go.mod it generates; the installers and the Scoop manifest ask for the same Go.
+min_go="$(sed -nE 's/^const GoVersion = "([^"]+)"/\1/p' internal/stdlib/stdlib.go)"
+sh_go="$(sed -nE 's/^go_min_(major|minor)=([0-9]+)\r?$/\2/p' tools/install/install.sh | paste -sd. -)"
+ps_go="$(sed -nE "s/^[\$]goMin = \[version\]'([0-9]+\.[0-9]+)'.*/\1/p" tools/install/install.ps1)"
+scoop_go="$(sed -nE 's/.*through Go ([0-9]+\.[0-9]+)\+.*/\1/p' tools/install/render_packaging.sh)"
+if [[ -z "$min_go" || "$min_go" != "$sh_go" || "$min_go" != "$ps_go" || "$min_go" != "$scoop_go" ]]; then
+  fail "oldest supported Go differs: stdlib.GoVersion '$min_go', install.sh '$sh_go', install.ps1 '$ps_go', render_packaging.sh '$scoop_go'"
+fi
+
 # A plain `bazel build //...` must never download Lean (AGENTS.md rule 4).
 # formal/lean.bzl gates every Lean rule behind --config=formal, so the rules
 # are loaded from there and nowhere else.

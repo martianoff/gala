@@ -70,12 +70,10 @@ func ExtractTo(destDir string) error {
 	return nil
 }
 
-// GoVersion is the Go language version every go.mod GALA generates declares,
-// so it sets the -lang the generated code compiles at. It must cover every Go
-// feature the transpiler emits (a generic alias, `type Conv[A any, B any] =
-// func(A) B`, needs 1.24). It applies to every program, so it is kept at the
-// lowest version that covers them all.
-const GoVersion = "1.24"
+// GoVersion is the oldest Go GALA supports and the go line of every go.mod it
+// generates. That line sets the -lang of the generated code, which needs 1.24
+// (generic aliases), and the GODEBUG defaults of every program GALA builds.
+const GoVersion = "1.25"
 
 // generatePackageGoMod generates a go.mod file for a stdlib package.
 func generatePackageGoMod(pkgName, importPath string) string {
