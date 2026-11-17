@@ -7,6 +7,7 @@
   them (Go spec, "Operators": "the untyped operand is implicitly converted to the type of
   the other operand").
 -/
+import Gala.Exact
 import Gala.GoCore.Value
 import Gala.GoCore.Float
 
@@ -66,30 +67,9 @@ def shiftR (x : Int) (s : Nat) : Int :=
   -- for an unsigned kind.
   x / 2 ^ s
 
-/-- Bitwise operators on mathematical integers in two's complement, with infinitely many
-    sign bits (Go spec, "Arithmetic operators": exact for untyped constants; a typed
-    result is wrapped after). Built from `Nat`'s operators and `~x = -x - 1`. -/
-def bitNot (x : Int) : Int := -x - 1
-def bitAnd : Int → Int → Int
-  | .ofNat a, .ofNat b => .ofNat (a &&& b)
-  | .ofNat a, .negSucc b => .ofNat (a - (a &&& b))
-  | .negSucc a, .ofNat b => .ofNat (b - (b &&& a))
-  | .negSucc a, .negSucc b => .negSucc (a ||| b)
-def bitOr : Int → Int → Int
-  | .ofNat a, .ofNat b => .ofNat (a ||| b)
-  | .ofNat a, .negSucc b => .negSucc (b - (b &&& a))
-  | .negSucc a, .ofNat b => .negSucc (a - (a &&& b))
-  | .negSucc a, .negSucc b => .negSucc (a &&& b)
-def bitXor : Int → Int → Int
-  | .ofNat a, .ofNat b => .ofNat (a ^^^ b)
-  | .ofNat a, .negSucc b => .negSucc (a ^^^ b)
-  | .negSucc a, .ofNat b => .negSucc (a ^^^ b)
-  | .negSucc a, .negSucc b => .ofNat (a ^^^ b)
-
--- Spot checks against Go: `-6 & 5 == 0`, `-6 | 5 == -1`, `-6 ^ 5 == -1`, `-6 &^ 5 == -6`.
-#guard bitAnd (-6) 5 == 0 && bitOr (-6) 5 == -1 && bitXor (-6) 5 == -1
-#guard bitAnd (-6) (bitNot 5) == -6 && bitAnd (-6) (-3) == -8 && bitOr (-6) (-3) == -1
-#guard bitAnd 12 (-5) == 8 && bitOr 12 (-5) == -1 && bitXor (-6) (-3) == 7
+-- The bitwise operators on mathematical integers are the shared ones (`Gala/Exact.lean`):
+-- exact for untyped constants, and a typed result is wrapped after.
+export Gala.Exact (bitNot bitAnd bitOr bitXor)
 
 /-- An arithmetic or bitwise operator on two integers of kind `k`, wrapping (Go spec,
     "Arithmetic operators", "Integer overflow"). `k` is `none` for untyped constants,
