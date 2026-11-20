@@ -672,7 +672,16 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       match FloatRep.truncate x with
       | some i => if k.represents i then pure (.int t i) else unsupported "float-to-int-out-of-range"
       | none => unsupported "float-to-int-out-of-range"
-    | .slice _, .str .. => unsupported "slice-of-string"
+    -- `[]byte(s)` of a constant string: a new array of its bytes (Go spec,
+    -- "Conversions to and from a string type"), of the capacity gc gives it
+    -- (`GcRuntime.constStringBytesCap`). Of another string the capacity depends on
+    -- escape analysis, and a typed constant cannot be told from a variable here: not
+    -- modelled, but in a range clause (`rangeLoop`). `[]rune(s)` is not modelled.
+    | .slice et, .str (.untyped _) s =>
+      let .int .uint8 ← underlying c n et | unsupported "slice-of-string"
+      let bs := s.toUTF8.toList.toArray.map fun b => Val.int et b.toNat
+      if bs.size > maxSliceCap then unsupported "slice-of-string-large"
+      pure (.slice t (some (← newArray c n et bs (GcRuntime.constStringBytesCap bs.size))))
     | .string, .slice .. => unsupported "string-of-slice"
     | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
     | _, _ => convert c n t v
@@ -756,6 +765,11 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
     | .binary op x y => do
       let a ← evalExpr c n env x
       let b ← evalExpr c n env y
+      -- In a constant declaration (`iota` is set) every operand is a constant, so a
+      -- shifted untyped constant is one too, whatever the count's type (Go spec,
+      -- "Constant expressions").
+      if env.iota.isSome && (op == "<<" || op == ">>") then
+        if let .int (.untyped k) v := a then return .int (.untyped k) (← shiftOp op none v (← asInt b))
       binary c n op a b
     | .unsupported k => unsupported k
     | .keyValue .. => stuck "key: value outside a composite literal"
@@ -1416,6 +1430,17 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
     -- A conversion `T(x)`.
     if let some t ← typeOf? c n env fn then
       let [a] := args | stuck "a conversion takes one argument"
+      -- `T(x << s)` of an untyped constant `x`: `x` takes the type `T` first, as it
+      -- would without the shift (Go spec, "Operators"); with a constant count too,
+      -- which gives the same value whenever the program compiles (a constant result
+      -- `T` cannot hold is a compile error).
+      if let .binary op l r := a then
+        if op == "<<" || op == ">>" then
+          let lv ← evalExpr c n env l
+          let lv ← match lv with
+            | .int (.untyped _) _ => conversion c n t lv
+            | _ => pure lv
+          return [← conversion c n t (← binary c n op lv (← evalExpr c n env r))]
       return [← conversion c n t (← evalExpr c n env a)]
     match fn with
     | .ident b =>
@@ -1923,7 +1948,26 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
           let v ← declValue c n t? vs[i]?
           env := env.bind x (← allocAs (t?.getD v.ty) v)
       pure env
-    | .decl (.value true _) => unsupported "local-const"
+    -- Local constants, as package-level ones (`Prog`): a spec without a type and
+    -- values repeats the previous one's, each spec's `iota` is its index, a typed one
+    -- is converted. The name holds the constant's value, untyped or typed, which no
+    -- compiled program assigns or takes the address of (Go spec, "Constant
+    -- declarations").
+    | .decl (.value true specs) =>
+      let mut env := env
+      let mut prev : Option Expr × List Expr := (none, [])
+      for (.mk names ty values, iota) in specs.zipIdx do
+        let (t, vs) := if ty.isNone && values.isEmpty then prev else (ty, values)
+        prev := (t, vs)
+        let cenv := { env with iota := some iota }
+        for (x, k) in names.zipIdx do
+          let some ve := vs[k]? | stuck s!"constant {x} without a value"
+          let v ← evalExpr c n cenv ve
+          let v ← match t with
+            | some te => conversion c n (← evalType c n cenv te) v
+            | none => pure v
+          env := env.bind x (← allocAs v.ty v)
+      pure env
     | .decl (.type _) => unsupported "local-type"
     | .decl (.func ..) | .decl (.unsupported _) => unsupported "local-decl"
     | .incDec op x => do

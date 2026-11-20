@@ -59,8 +59,13 @@ func TestAddStdlib(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "errors.go"), append(listed, []byte("\nvar Sentinel = New(\"s\")\n")...), 0o644))
 	for name, text := range map[string]string{
-		"a method":   "package errors\n\nfunc (e *errorString) Unwrap() error { return nil }\n",
-		"a variable": "package errors\n\nfunc init() { Sentinel = nil }\n",
+		"a method":           "package errors\n\nfunc (e *errorString) Unwrap() error { return nil }\n",
+		"an assignment":      "package errors\n\nfunc init() { Sentinel = nil }\n",
+		"a field assignment": "package errors\n\nfunc init() { Sentinel.(*errorString).s = \"\" }\n",
+		"an address":         "package errors\n\nvar p = &Sentinel\n",
+		"an increment":       "package errors\n\nfunc f() { Sentinel++ }\n",
+		"a range assignment": "package errors\n\nfunc f() { for Sentinel = range []error{} {} }\n",
+		"a method call":      "package errors\n\nfunc f() string { return Sentinel.Error() }\n",
 	} {
 		t.Run("sibling with "+name, func(t *testing.T) {
 			sib := filepath.Join(dir, "wrap.go")
@@ -70,6 +75,59 @@ func TestAddStdlib(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+	// A sibling that only reads a listed variable cannot change what the
+	// listed file does.
+	t.Run("sibling reading a variable", func(t *testing.T) {
+		sib := filepath.Join(dir, "wrap.go")
+		require.NoError(t, os.WriteFile(sib, []byte("package errors\n\nfunc isSentinel(e error) bool { x := Sentinel; return e == x }\n"), 0o644))
+		defer os.Remove(sib)
+		_, err := gocoreexport.AddStdlib(goroot, src)
+		require.NoError(t, err)
+	})
+	// A listed file may import a package GoCore does not hold only when that
+	// package's initialization does nothing: no init function, no variable.
+	quiet := filepath.Join(goroot, "src", "quiet")
+	require.NoError(t, os.MkdirAll(quiet, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(quiet, "q.go"), []byte("package quiet\n\nconst K = 1\n\nfunc F() int { return K }\n"), 0o644))
+	noisy := filepath.Join(goroot, "src", "noisy")
+	require.NoError(t, os.MkdirAll(noisy, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(noisy, "n.go"), []byte("package noisy\n\nvar V = 1\n"), 0o644))
+	initp := filepath.Join(goroot, "src", "initp")
+	require.NoError(t, os.MkdirAll(initp, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(initp, "i.go"), []byte("package initp\n\nfunc init() {}\n"), 0o644))
+	for name, tc := range map[string]struct {
+		imp string
+		ok  bool
+	}{
+		"a quiet package":           {"import \"quiet\"\n\nvar _ = quiet.F", true},
+		"a package with a variable": {"import \"noisy\"\n\nvar _ = noisy.V", false},
+		"a package with an init":    {"import \"initp\"\n\nvar _ = 1", false},
+		"unsafe":                    {"import \"unsafe\"\n\nvar _ = unsafe.Sizeof(1)", false},
+		"an aliased import":         {"import q \"quiet\"\n\nvar _ = q.F", false},
+		"an absent package":         {"import \"absent\"\n\nvar _ = 1", false},
+	} {
+		t.Run("listed file importing "+name, func(t *testing.T) {
+			text := "package errors\n\n" + tc.imp + "\n\nfunc New(s string) error { return nil }\n"
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "errors.go"), []byte(text), 0o644))
+			_, err := gocoreexport.AddStdlib(goroot, src)
+			if tc.ok {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "errors.go"), listed, 0o644))
+	// A runnable package's runnable imports come with it, before it.
+	t.Run("a runnable import of a runnable package", func(t *testing.T) {
+		sc := filepath.Join(goroot, "src", "strconv")
+		require.NoError(t, os.MkdirAll(sc, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(sc, "atoi.go"),
+			[]byte("package strconv\n\nimport \"errors\"\n\nvar ErrRange = errors.New(\"r\")\n"), 0o644))
+		got, err := gocoreexport.AddStdlib(goroot, main("package main\nimport \"strconv\"\nvar e = strconv.ErrRange\n"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"main", "errors", "strconv"}, paths(got))
+	})
 	// A listed file GoCore could run differently from Go fails the export.
 	for name, text := range map[string]string{
 		"a build constraint": "//go:build linux\n\npackage errors\n\nfunc New(s string) error { return nil }\n",

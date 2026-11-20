@@ -410,8 +410,9 @@ column lists what each milestone's claim rests on beyond them.
     - Each construct cites the Go spec section it follows.
     - Its evaluator is total, by structural fuel.
     - Only `fmt` and the hand-written, reflective standard-library functions it names
-      are models. A few small, import-free files of Go's standard library (`errors.go`,
-      `unicode/utf8/utf8.go`) are not modelled at all: their own source, from the pinned
+      are models. A few small files of Go's standard library (`errors.go`, `strconv/atoi.go`,
+      `unicode/utf8/utf8.go`), which import only each other or packages whose
+      initialization does nothing, are not modelled at all: their own source, from the pinned
       toolchain, runs with the program (`gocoreexport.RunnableStdlib`).
     - Floats are IEEE 754, one rounding per operation to the type's width, with untyped
       constants exact; Lean's `Float` is opaque to its kernel, so float code is tested
