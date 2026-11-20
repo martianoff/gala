@@ -82,14 +82,60 @@ func (t *galaASTTransformer) checkSpreadArg(e exprSrc, expr ast.Expr, elem trans
 	return spreadError(e, fmt.Sprintf("cannot spread `%s` of type %s: only a Go slice can be spread into a variadic parameter", spreadText(e), displayType(argType)), hint)
 }
 
-// checkValueApplySpread reports a spread passed to the Apply a call of fun
-// makes through a value (`joiner(parts...)`, `Joiner(",")(parts...)`) at a
-// parameter other than Apply's variadic one (checkSpreads); nothing when the
-// value's type is not known exactly (valueApplyType). Its element type was
-// checked as it was lowered (applyVariadicElem).
-func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc, spread bool) error {
+// checkSpreadPlacement reports a spread argument of the call c of fun that
+// fills a parameter other than the callee's variadic last one, or that
+// another positional argument follows (checkSpreads). It runs before the
+// arguments are lowered, so a misplaced spread is told where it may go
+// before what it holds is checked (GALA-E0138), which presumes a variadic
+// parameter. The callee is a GALA function, a Go function passed arguments
+// by name, a companion Apply or the Apply of a value; a method is checked as
+// it is lowered (checkMethodSpreads).
+func (t *galaASTTransformer) checkSpreadPlacement(fun ast.Expr, c callSrc, callCtx functionCallContext) error {
+	if !slices.ContainsFunc(c.args.list, argSrc.spread) {
+		return nil
+	}
+	switch {
+	case callCtx.funcMeta != nil:
+		return funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta).checkSpreads(c.args)
+	case callCtx.applyMethodMeta != nil:
+		// A companion Apply, unless as many arguments as the type has
+		// fields build a struct literal instead (Section 10), which reports
+		// a spread into a field itself.
+		typeName := t.getBaseTypeName(fun)
+		if len(t.structFields[t.resolveStructTypeName(typeName)]) == len(c.args.list) {
+			return nil
+		}
+		return methodParamList(typeName+".Apply", callCtx.applyMethodMeta).checkSpreads(c.args)
+	case callCtx.goSig != nil:
+		if !slices.ContainsFunc(c.args.list, argSrc.named) {
+			return nil // Go checks a positional call of its own function
+		}
+		callee := t.argCalleeName(fun)
+		if callee == "" {
+			callee = "this function"
+		}
+		return goParamList(callee, callCtx.goSig).checkSpreads(c.args)
+	}
+	return t.checkValueApplySpread(fun, c)
+}
+
+// checkMethodSpreads is checkSpreads for the call c of the method methodMeta
+// describes, run before its arguments are lowered (see checkSpreadPlacement).
+// A Go method's positional arguments keep Go's own check (see call_arity.go).
+func checkMethodSpreads(c callSrc, methodMeta *transpiler.MethodMetadata) error {
+	if !slices.ContainsFunc(c.args.list, argSrc.spread) ||
+		methodMeta.GoDeclared && !slices.ContainsFunc(c.args.list, argSrc.named) {
+		return nil
+	}
+	return methodParamList(methodMeta.Name, methodMeta).checkSpreads(c.args)
+}
+
+// checkValueApplySpread is checkSpreads for the Apply a call of fun makes
+// through a value (`joiner(parts...)`, `Joiner(",")(parts...)`); nothing when
+// the value's type is not known exactly (valueApplyType).
+func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) error {
 	meta := t.valueApplyType(fun)
-	if !spread || meta == nil || meta.Methods["Apply"] == nil {
+	if meta == nil || meta.Methods["Apply"] == nil {
 		return nil
 	}
 	// The type as the file names it, `lib.Joiner` (under an import alias too),

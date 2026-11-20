@@ -1611,6 +1611,9 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	var named []namedArg[ast.Expr]
 	hasSpread := false
 	params := methodParamList(methodMeta.Name, methodMeta)
+	if err := checkMethodSpreads(c, methodMeta); err != nil {
+		return nil, err
+	}
 	// `true` here filters to void function types only, avoiding leaked
 	// unresolved type params in return types.
 	unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
@@ -1640,11 +1643,6 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	}
 	fun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 	if len(named) > 0 {
-		if hasSpread {
-			if err := params.checkSpreads(c.args); err != nil {
-				return nil, err
-			}
-		}
 		return t.handleNamedArgsMethodCall(fun, receiver, mArgs, named, hasSpread, methodMeta, recvType, typeSubst, c)
 	}
 	return &ast.CallExpr{Fun: fun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
@@ -1665,6 +1663,9 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
 	mNamedArgs := make(map[string]ast.Expr)
+	if err := checkMethodSpreads(c, methodMeta); err != nil {
+		return nil, err
+	}
 	hasSpread := false
 	argIdx := 0
 	for _, arg := range c.args.list {
@@ -1708,13 +1709,8 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	}
 	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 	al, ac := c.anchor().start()
-	// A spread fills only the variadic last parameter; a Go method's
-	// positional arguments keep Go's own check (see call_arity.go).
-	if hasSpread && (len(mNamedArgs) > 0 || !methodMeta.GoDeclared) {
-		if err := methodParamList(methodMeta.Name, methodMeta).checkSpreads(c.args); err != nil {
-			return nil, err
-		}
-	} else if len(mNamedArgs) == 0 && !hasSpread && !methodMeta.GoDeclared {
+	// A spread was placed by checkMethodSpreads.
+	if len(mNamedArgs) == 0 && !hasSpread && !methodMeta.GoDeclared {
 		if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(len(mArgs), al, ac); err != nil {
 			return nil, err
 		}
@@ -3089,6 +3085,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 		return nil, err
 	}
 
+	// --- Section 5.9: where a spread argument goes ---
+	// Checked before the arguments are lowered, which checks what a spread
+	// holds (GALA-E0138) against the parameter it fills.
+	if err := t.checkSpreadPlacement(fun, c, callCtx); err != nil {
+		return nil, err
+	}
+
 	// --- Section 6: Argument transformation ---
 	// Walks the argument list, classifying each arg as positional or named,
 	// and resolves an expected type for each from the gathered callCtx.
@@ -3132,17 +3135,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// A positional call is checked here; a call with named arguments is
 	// checked as its arguments are laid out (handleNamedArgsFuncCall). A
 	// spread argument fills an unknown number of parameters, and only the
-	// variadic last one.
-	if callCtx.funcMeta != nil {
-		params := funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta)
-		if hasSpread {
-			if err := params.checkSpreads(c.args); err != nil {
-				return nil, err
-			}
-		} else if len(namedArgs) == 0 {
-			if err := params.checkPositional(len(args), al, ac); err != nil {
-				return nil, err
-			}
+	// variadic last one (checkSpreadPlacement).
+	if callCtx.funcMeta != nil && !hasSpread && len(namedArgs) == 0 {
+		if err := funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta).checkPositional(len(args), al, ac); err != nil {
+			return nil, err
 		}
 	}
 
@@ -3204,18 +3200,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// Handles `Append("cherry")("apple")` where the left side is already a
 	// struct literal produced by an earlier partial-application step.
 	if expr, handled := t.tryTransformCompositeLitApply(fun, args, hasSpread); handled {
-		if err := t.checkValueApplySpread(fun, c, hasSpread); err != nil {
-			return nil, err
-		}
 		return expr, nil
 	}
 
 	// --- Section 12: Variable whose type has an Apply method ---
 	// Handles `val add5 = Adder(5); add5(10)` → `add5.Apply(10)`.
 	if expr, handled := t.tryTransformValWithApply(fun, args, hasSpread); handled {
-		if err := t.checkValueApplySpread(fun, c, hasSpread); err != nil {
-			return nil, err
-		}
 		return expr, nil
 	}
 

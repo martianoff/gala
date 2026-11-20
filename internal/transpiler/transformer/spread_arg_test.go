@@ -48,6 +48,8 @@ struct Counter(N int)
 
 func (c Counter) Plus(x int, xs ...int) int = c.N + x + xs.Size()
 
+func (c Counter) Both(xs []int) int = c.N + xs.Size()
+
 struct Box[T any](V T)
 
 func (b Box[T]) Count(extra int, xs ...T) int = xs.Size() + extra
@@ -341,8 +343,14 @@ func main() {
 	}
 
 	// A spread at a parameter that is not variadic is told so (checkSpreads),
-	// not compared against that parameter's type.
+	// not compared against that parameter's type, nor reported as GALA-E0138
+	// when it is not a slice either.
 	misplaced := []struct{ name, body, want string }{
+		{"an Array at a function's slice parameter", `Println(pairs("x", ArrayOf("a")...))`, `a spread argument cannot fill parameter "b" of pairs`},
+		{"an Array at a method's slice parameter", `Println(Counter(1).Both(ArrayOf(1)...))`, `a spread argument cannot fill parameter "xs" of Both`},
+		{"an Array at a companion Apply's slice parameter", `Println(Pair("x", ArrayOf("a")...))`, `a spread argument cannot fill parameter "b" of Pair.Apply`},
+		{"an Array after an argument of a value's Apply", `val j = Joiner("-")
+    Println(j("a", ArrayOf("b")...))`, `a spread argument must be the only argument of variadic parameter "parts" of Joiner.Apply`},
 		{"after an argument of the Apply of a construction", `Println(Joiner(",")("a", go_interop.SliceOf("b")...))`, `a spread argument must be the only argument of variadic parameter "parts" of Joiner.Apply`},
 		{"a slice parameter", `val ws = go_interop.SliceOf("a")
     Println(pairs("x", ws...))`, `a spread argument cannot fill parameter "b" of pairs`},
