@@ -269,9 +269,8 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // placeholderInInterpolation is GALA-E0137 when name, a primary written at
 // at, is a `_` read in an interpolated expression that no placeholder lambda
 // written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine). The
-// innermost `_` decides: a `_` parameter names no value to read. A scope
-// chain that does not lead back to the interpolation's lowers something not
-// written in it, and is left alone.
+// innermost `_` decides: one a `_` parameter or typed pattern binds names no
+// value to read, and an unbound one is never valid.
 func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode) error {
 	if name != "_" || t.interpolationScope == nil {
 		return nil
@@ -284,14 +283,14 @@ func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode)
 	}
 	r := at.rng()
 	switch {
-	case s == t.interpolationScope:
+	case s == t.interpolationScope || s == nil:
 		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
 			"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
 			"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
-	case s != nil && !s.placeholder:
+	case !s.placeholder:
 		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
-			"`_` inside an interpolated string reads a `_` parameter, which names no value",
-			"give the parameter a name and use the name inside the string: `(x) => s\"v${x}\"`")
+			"`_` inside an interpolated string reads a `_` binding, which names no value",
+			"name what it binds and use the name inside the string: `(x) => s\"v${x}\"`")
 	}
 	return nil
 }

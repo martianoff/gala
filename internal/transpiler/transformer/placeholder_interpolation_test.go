@@ -15,7 +15,7 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 	const (
 		header      = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val xs = ArrayOf(1, 2)\n"
 		notBound    = "`_` inside an interpolated string is not a placeholder"
-		readsAParam = "`_` inside an interpolated string reads a `_` parameter"
+		readsAParam = "`_` inside an interpolated string reads a `_` binding"
 	)
 	rejected := []struct{ name, body, want string }{
 		{"s-string in a function slot", `    Println(xs.Map(s"v${_}"))`, "line 7:24 " + notBound},
