@@ -1207,9 +1207,9 @@ func parseInlineScalar(raw string) *yNode {
 func decodeQuotedScalar(s string) string {
 	switch end := closingQuote(s); {
 	case end < 0:
-		panic(fmt.Sprintf("yaml: unterminated quoted scalar %s", s))
+		panic(fmt.Sprintf("yaml: unterminated quoted scalar %q", s))
 	case end != len(s)-1:
-		panic(fmt.Sprintf("yaml: unexpected text after quoted scalar %s", s))
+		panic(fmt.Sprintf("yaml: unexpected text after quoted scalar %q", s))
 	case s[0] == '"':
 		return unescapeDoubleQuoted(s[1:end])
 	default:

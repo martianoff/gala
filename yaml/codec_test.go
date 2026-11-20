@@ -403,20 +403,33 @@ func TestDecoder_EmptyDocumentIsNull(t *testing.T) {
 
 // ----- Quoted scalars --------------------------------------------------------
 
-// readValueOf decodes "k: <value>" and returns the string read for k, or the
-// error the decode panicked with.
-func readValueOf(value string) (s string, err string) {
+// readKeyValue decodes a one-pair mapping and returns its key and the string
+// read for its value, or the error the decode panicked with.
+func readKeyValue(src string) (k string, s string, err string) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Sprint(r)
 		}
 	}()
-	d := NewYamlDecoder("k: " + value)
+	d := NewYamlDecoder(src)
 	d.StartObject()
-	d.ReadKey()
+	k = d.ReadKey()
 	s = d.ReadString()
 	d.EndObject()
-	return s, ""
+	return k, s, ""
+}
+
+// readValueOf decodes "k: <value>" and returns the string read for k, or the
+// error the decode panicked with.
+func readValueOf(value string) (string, string) {
+	_, s, err := readKeyValue("k: " + value)
+	return s, err
+}
+
+func unterminated(s string) string { return fmt.Sprintf("yaml: unterminated quoted scalar %q", s) }
+
+func textAfter(s string) string {
+	return fmt.Sprintf("yaml: unexpected text after quoted scalar %q", s)
 }
 
 // A scalar that starts with a quote is exactly one quoted scalar, optionally
@@ -440,16 +453,16 @@ func TestDecoder_QuotedScalarMustBeWellFormed(t *testing.T) {
 		{`abc"`, `abc"`, ""},
 		{`it's`, "it's", ""},
 
-		{`"abc`, "", `yaml: unterminated quoted scalar "abc`},
-		{`'abc`, "", `yaml: unterminated quoted scalar 'abc`},
-		{`"`, "", `yaml: unterminated quoted scalar "`},
-		{`'`, "", `yaml: unterminated quoted scalar '`},
-		{`"abc\"`, "", `yaml: unterminated quoted scalar "abc\"`},
-		{`'it''s`, "", `yaml: unterminated quoted scalar 'it''s`},
-		{`"abc" trailing`, "", `yaml: unexpected text after quoted scalar "abc" trailing`},
-		{`'abc' trailing`, "", `yaml: unexpected text after quoted scalar 'abc' trailing`},
-		{`"a" "b"`, "", `yaml: unexpected text after quoted scalar "a" "b"`},
-		{`"abc"#x`, "", `yaml: unexpected text after quoted scalar "abc"#x`},
+		{`"abc`, "", unterminated(`"abc`)},
+		{`'abc`, "", unterminated(`'abc`)},
+		{`"`, "", unterminated(`"`)},
+		{`'`, "", unterminated(`'`)},
+		{`"abc\"`, "", unterminated(`"abc\"`)},
+		{`'it''s`, "", unterminated(`'it''s`)},
+		{`"abc" trailing`, "", textAfter(`"abc" trailing`)},
+		{`'abc' trailing`, "", textAfter(`'abc' trailing`)},
+		{`"a" "b"`, "", textAfter(`"a" "b"`)},
+		{`"abc"#x`, "", textAfter(`"abc"#x`)},
 	}
 	for _, tt := range tests {
 		got, err := readValueOf(tt.value)
@@ -463,10 +476,10 @@ func TestDecoder_QuotedScalarMustBeWellFormed(t *testing.T) {
 // one-line document.
 func TestDecoder_QuotedScalarContexts(t *testing.T) {
 	tests := []struct{ src, wantErr string }{
-		{"- \"abc", `yaml: unterminated quoted scalar "abc`},
-		{"- 'abc' trailing", `yaml: unexpected text after quoted scalar 'abc' trailing`},
-		{"\"k\": \"abc", `yaml: unterminated quoted scalar "abc`},
-		{"\"abc", `yaml: unterminated quoted scalar "abc`},
+		{"- \"abc", unterminated(`"abc`)},
+		{"- 'abc' trailing", textAfter(`'abc' trailing`)},
+		{"\"k\": \"abc", unterminated(`"abc`)},
+		{"\"abc", unterminated(`"abc`)},
 	}
 	for _, tt := range tests {
 		func() {
@@ -492,14 +505,8 @@ func TestDecoder_QuotedKeyValueComment(t *testing.T) {
 		{`"k": v#w`, "v#w"},
 	}
 	for _, tt := range tests {
-		d := NewYamlDecoder(tt.src)
-		d.StartObject()
-		if k := d.ReadKey(); k != "k" {
-			t.Errorf("%s: key = %q, want %q", tt.src, k, "k")
+		if k, s, err := readKeyValue(tt.src); k != "k" || s != tt.want || err != "" {
+			t.Errorf("%s => (%q, %q, error %q), want (%q, %q)", tt.src, k, s, err, "k", tt.want)
 		}
-		if s := d.ReadString(); s != tt.want {
-			t.Errorf("%s: value = %q, want %q", tt.src, s, tt.want)
-		}
-		d.EndObject()
 	}
 }
