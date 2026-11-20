@@ -1038,7 +1038,7 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 	if len(suffixes) != 2 || suffixes[0].opener() != "(" || suffixes[1].opener() != "(" {
 		return false
 	}
-	meta := t.litApplyTarget(&ast.CompositeLit{Type: typ})
+	meta := t.valueApplyType(&ast.CompositeLit{Type: typ})
 	return resultGenericApply(meta) && t.positionalCallBuildsStructLiteral(meta, meta.FieldNames, len(suffixes[0].args().list))
 }
 
@@ -1051,7 +1051,9 @@ func firstMember(suffixes []suffixSrc) (string, srcNode, bool) {
 }
 
 // resultGenericApply reports whether meta, a type's metadata, has an Apply
-// whose own type parameters its result mentions.
+// whose own type parameters its result mentions. An Apply genericApply routes
+// only because the analyzer marks it generic has no type parameters of its
+// own, so there is none for a slot to bind.
 func resultGenericApply(meta *transpiler.TypeMetadata) bool {
 	if meta == nil {
 		return false

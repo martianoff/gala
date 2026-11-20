@@ -2923,13 +2923,11 @@ func (t *galaASTTransformer) litApplyTarget(fun ast.Expr) *transpiler.TypeMetada
 }
 
 // callsGenericValueApply reports whether a call of fun calls a value through
-// its type's Apply (Sections 11 and 12) and that Apply is generic.
+// its type's Apply (valueApplyType) and that Apply is generic. A literal goes
+// by the type it names, its package included: the bare-name fallback Section
+// 11 also takes could name another package's type.
 func (t *galaASTTransformer) callsGenericValueApply(fun ast.Expr) bool {
-	meta := t.litApplyTarget(fun)
-	if meta == nil {
-		meta = t.bindingApplyType(fun)
-	}
-	return genericApply(meta)
+	return genericApply(t.valueApplyType(fun))
 }
 
 // genericApply reports whether meta, a type's metadata, has an Apply that

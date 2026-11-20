@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"maps"
 	"regexp"
 	"strings"
 	"testing"
@@ -156,6 +157,47 @@ func main() {
 	_, err = transpileBareVariant(t, src(`val gg = G[string]()
     Println(gg(1, go_interop.SliceOf(1)...))`))
 	require.ErrorContains(t, err, "cannot spread `go_interop.SliceOf(1)` of type []int into a variadic parameter of string")
+
+	// Another package's value and construction, under an alias too.
+	files := map[string]string{
+		"go.mod":   "module example.com/applies\n\ngo 1.25\n",
+		"gala.mod": "module example.com/applies\n",
+		"lib/lib.gala": `package lib
+
+struct Show()
+
+func (s Show) Apply[A any](a A) string = s"<$a>"
+
+struct Conv(N int)
+
+func (c Conv) Apply[A any](x int) Option[A] = None[A]()
+
+val Shower = Show()
+`,
+	}
+	for _, pkg := range []struct{ name, imp string }{
+		{"lib", `"example.com/applies/lib"`},
+		{"l2", `l2 "example.com/applies/lib"`},
+	} {
+		t.Run("another package's, imported as "+pkg.name, func(t *testing.T) {
+			files := maps.Clone(files)
+			files["main.gala"] = "package main\n\nimport " + pkg.imp + `
+
+func main() {
+    Println(P.Shower(1))
+    val q Option[string] = P.Conv(1)(2)
+    Println(q)
+}
+`
+			files["main.gala"] = strings.ReplaceAll(files["main.gala"], "P.", pkg.name+".")
+			out, err := transpileInModule(t, files, "main.gala")
+			require.NoError(t, err)
+			require.Contains(t, out, pkg.name+".Show_Apply(")
+			require.Contains(t, out, pkg.name+".Conv_Apply[string](")
+			require.NotContains(t, out, "}.Apply(")
+			require.NotContains(t, out, "Shower.Apply(")
+		})
+	}
 
 	// Its arguments are checked against Apply's parameters, as a call of
 	// `v.Apply(...)` written out is, rather than left for go build.
