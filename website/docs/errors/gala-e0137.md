@@ -63,7 +63,9 @@ func main() {
 A `_` that something inside the interpolation gives a meaning is fine: a
 placeholder lambda written whole inside it, as in `s"${xs.Map(_ * 10)}"`, a
 wildcard pattern, as in `s"${opt match { case Some(_) => "some" case _ => "none" }}"`,
-and naming a parameter `_` without reading it.
+and a `_` parameter or `case _: int` that is not read. Where a `_` that a
+parameter or typed pattern binds is read, give it a name and read the name:
+`(x) => s"v${x}"`, `case n: int => s"${n}"`.
 
 **Rationale.** A placeholder lambda's parameters are the `_` of the argument
 as written, and the text of a string literal is not part of that. Reading a

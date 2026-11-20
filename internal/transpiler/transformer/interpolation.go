@@ -290,7 +290,7 @@ func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode)
 	case !s.placeholder:
 		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
 			"`_` inside an interpolated string reads a `_` binding, which names no value",
-			"name what it binds and use the name inside the string: `(x) => s\"v${x}\"`")
+			"give it a name and read the name; a parameter `(x) => s\"v${x}\"`, a typed pattern `case n: int => s\"${n}\"`")
 	}
 	return nil
 }
