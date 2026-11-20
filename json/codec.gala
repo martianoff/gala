@@ -211,9 +211,10 @@ type JsonDecoderImpl struct {
     var data          []byte
     var pos           int
     var stack         []byte
-    // firstConsumed records, per open container, whether an object has
-    // read a key yet; ReadKey uses it. An array's entry only keeps the
-    // slice in step with stack: arrays use elemStart instead.
+    // firstConsumed records, per open container, whether ReadKey has read
+    // a key in it yet, so it is only meaningful for objects. It has an
+    // entry per container to stay in step with stack; arrays check their
+    // separators with elemStart instead.
     var firstConsumed []bool
     // elemStart is the position at which an array element's separator was
     // last settled: the first byte that is not whitespace after a
@@ -231,10 +232,8 @@ type JsonDecoderImpl struct {
 func NewJsonDecoder(s string) Ptr[JsonDecoderImpl] = &JsonDecoderImpl{data: toBytes(s), pos: 0}
 
 func (d Ptr[JsonDecoderImpl]) StartObject() {
-    // Container openers must consume the inter-element comma when the
-    // enclosing context is an array — otherwise Array[Foo] of structs
-    // panics on the leading ',' of element 2+. The primitive Read* paths
-    // already do this; objects/arrays were missing the same hook.
+    // An object that is an array element makes the element's separator
+    // check first, as every read of an element does (see consumeElemComma).
     d.consumeElemComma()
     d.openContainer('{', 'o')
 }
@@ -274,8 +273,7 @@ func (d Ptr[JsonDecoderImpl]) EndObject() {
 }
 
 func (d Ptr[JsonDecoderImpl]) StartArray() {
-    // See StartObject — the enclosing array context's leading ',' must be
-    // consumed before we can recognise the '[' of a nested array element.
+    // See StartObject: a nested array makes its element's separator check.
     d.consumeElemComma()
     d.openContainer('[', 'a')
 }
