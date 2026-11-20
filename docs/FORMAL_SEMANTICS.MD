@@ -481,7 +481,8 @@ column lists what each milestone's claim rests on beyond them.
   `int`s, the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, the
   orderings `< <= > >=` on strings, `&&` and `||`. galaspec and GoCore both order
   strings by code point; that Go's byte order agrees on UTF-8 is GoCore's model, not
-  proved, tested against `go run` by the GoCore fixture `string_order`. galaspec
+  proved, tested against `go run` on the strings of the GoCore fixture `string_order`.
+  galaspec
   computes the bitwise operators through Lean's `Int64`, GoCore
   exactly and then reduced to `int`; core's `BitVec` lemmas show they agree
   (`formal/Gala/M5/Bits.lean`). Shifts `<<` and `>>` of a typed `int` by an `int` count

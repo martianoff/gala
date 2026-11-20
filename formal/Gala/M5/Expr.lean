@@ -421,7 +421,7 @@ theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool
 /-! String ordering: galaspec's `<` and GoCore's `compare` on `String` are both Lean's
     code-point order, so these lemmas relate the two exactly. That Go's byte order is the
     same order on UTF-8 is a fact GoCore's model relies on: not proved, tested against `go run`
-    by the GoCore fixture `string_order`. -/
+    on the strings of the GoCore fixture `string_order`. -/
 
 theorem scmp_lt (x y : String) : (compare x y == .lt) = decide (x < y) := by
   show (compareOfLessAndEq x y == .lt) = _
@@ -1110,7 +1110,7 @@ def strKinds : String → Option Kind := fun x => if x = "s" then some .str else
     `"a" <= s` (an untyped left operand) is true, `s >= "é"` true, in galaspec and GoCore,
     and the lowering accepts each shape. Both sides compare code points here; `"é"` is
     chosen so that Go's byte order (`C3 A9` against `7A`) gives the same answers, which
-    this instance does not check (the GoCore fixture `string_order` tests it against `go run`). -/
+    this instance does not check (tested against `go run` on the strings of the GoCore fixture `string_order`). -/
 theorem inst_strcmp :
     ((pureEval default (.binary "<" (.name "s") (.lit (.str "z")))).run.run strCore).1 = .ok (.bool false) ∧
     (evalExpr instCtx 10 strEnv (.binary "<" (.ident "s") (.strLit "z"))).run.run strSt =
