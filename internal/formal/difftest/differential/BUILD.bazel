@@ -10,7 +10,10 @@ go_test(
     # Builds and runs every example inside the spec's subset with Go, one at a
     # time; "enormous" matches the CI job's budget.
     size = "enormous",
-    srcs = ["differential_test.go"],
+    srcs = [
+        "differential_test.go",
+        "partial_test.go",
+    ],
     # Lean only under --config=formal: without it, nothing here refers to a
     # Lean target, so building this test never downloads Lean.
     data = [
@@ -41,6 +44,7 @@ go_test(
     deps = [
         "//internal/formal/difftest",
         "//internal/formal/gala2lean",
+        "//internal/formal/gocoreexport",
         "//internal/transpiler/fuzz/progrun",
         "@rules_go//go/runfiles",
         "@rules_go//go/tools/bazel",
