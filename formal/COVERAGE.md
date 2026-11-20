@@ -27,7 +27,7 @@ The tiers mean exactly this:
 | `==`/`!=` on structs, sealed values and tuples, by value | yes | no | no |
 | `val`/`var` (several names, tuple destructuring), `=`, `+= -= *= /=`, `++`/`--`, assignment to `var` struct fields | yes | no | that `op=` reads its target before the right side runs (T3d) |
 | `var x T` with no value: the type's default value (docs/GALA.MD, "Default Values"): Go's zero value for `int`, `bool`, `string`; a struct's fields, and a sealed type's default case's, each at its declared default, else at its type's default value. The declared defaults are evaluated for each name anew, in field order and depth first, with no local in scope, as the transpiler writes the value out at each use | yes | no | no |
-| Package-level `val`/`var`, initialized in Go's dependency order (a declaration with no value depends on what its type's declared field defaults refer to) | yes | no | no |
+| Package-level `val`/`var`, initialized in Go's dependency order (a declaration with no value depends on what its type's declared field defaults refer to, and a construction on those in the default values of the fields it leaves out) | yes | no | no |
 | Blocks and their scopes, shadowing | yes | no | no |
 | `if` statement and expression, `return`, trailing-expression results | yes | no | no |
 | Top-level functions and recursion | yes | no | no |
@@ -38,7 +38,7 @@ The tiers mean exactly this:
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | the order, given what each part does (T3a, T3c) |
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | the order of the parts (T3a) |
 | S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body's trailing expression is its result where the context or a declaration gives a result type, and with none a trailing value is a compile error and the block is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | capture of the scope only |
-| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the defaults phase (T4): it does not read the caller's locals, and each default's frame binds exactly the earlier parameters; the order: written arguments, then defaults in parameter order (T3c) |
+| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field); a left-out field without a declared default takes its type's default value, its declared defaults evaluated in its turn, with no local in scope | yes | no | the defaults phase (T4): it does not read the caller's locals, and each default's frame binds exactly the earlier parameters; the order: written arguments, then defaults in parameter order (T3c, for calls whose every left-out parameter or field has a declared default) |
 
 An operator expression of literals only is a Go constant expression, evaluated exactly at
 compile time (#1237): `(1 << 70) >> 68` is `4`. galaspec folds each one before it runs a
@@ -462,7 +462,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 29 | 1 | 75 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 478 | 34 | 432 | 32 |
+| UNSUPPORTED | 480 | 34 | 434 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **29** (ratchet baseline 29).
@@ -530,9 +530,9 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 
 | Construct | Programs |
 |---|---|
-| `import` | 285 |
-| `method-call` | 53 |
-| `generic-type` | 41 |
+| `import` | 286 |
+| `method-call` | 54 |
+| `generic-type` | 42 |
 | `index` | 38 |
 | `generic-decl` | 15 |
 | `address-of` | 10 |
@@ -540,7 +540,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 | `composite-literal` | 8 |
 | `float-literal` | 7 |
 | `method` | 6 |
-| `stuck` | 4 |
+| `stuck` | 3 |
 | `by-name-arg` | 2 |
 | `char-literal` | 2 |
 | `for` | 2 |
@@ -575,8 +575,8 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `composite-literal` | 6 |
 | `extractor` | 6 |
 | `go-results` | 6 |
+| `untyped-global` | 6 |
 | `expression-pattern` | 5 |
-| `float-literal` | 5 |
 
 ### Known disagreements
 
@@ -592,13 +592,13 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 328 | 31 |
+| AGREE | 330 | 31 |
 | DISAGREE | 0 | 0 |
 | UNSUPPORTED | 86 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **359** (ratchet baseline 359).
+Programs GoCore agrees with go run on: **361** (ratchet baseline 359).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **29** (ratchet baseline 29).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
