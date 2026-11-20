@@ -1,0 +1,42 @@
+package main
+
+// A value of a named function type passed where a `func() T` or `func()` is
+// expected is the function itself when its function type is the slot's, and
+// the value of a thunk when the slot's result holds it.
+
+type Getter func() int
+
+type Action func()
+
+type Supplier func() Option[int]
+
+func supply(f func() Option[int]) Option[int] = f()
+
+func call(f func() int) int = f()
+
+func callTwice(f func()) {
+    f()
+    f()
+}
+
+func takeGetter(f func() Getter) int = f()()
+
+func later[T any](f func() T) T = f()
+
+func one() int = 1
+
+func main() {
+    // The function itself: a Getter is a func() int.
+    val g Getter = one
+    Println(call(g))
+    Println(later(g))
+
+    val a Action = () => Println("action")
+    callTwice(a)
+
+    val s Supplier = () => Some(4)
+    Println(supply(s).GetOrElse(0))
+
+    // The thunk's value: the slot's result is the function's type.
+    Println(takeGetter(g) + 1)
+}

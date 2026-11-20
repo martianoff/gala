@@ -457,7 +457,20 @@ func main() {
 The type parameter is inferred from the lifted expression's own type
 (`Future(compute())` where `compute() int` yields `Future[int]`). The lift is
 purely additive: an argument that is already a function value is passed through
-untouched, and multi-argument function parameters still require an explicit lambda.
+untouched. For a `func() T` or `func()` slot, a value of a named function type
+(`type Getter func() int`) is passed through only where its function type is the
+slot's and a thunk returning it is known not to be valid Go: a `func()` slot
+given a value Go does not run as a statement (a local, a parameter, a `var`
+field; a `val` field is read through a call), or a slot whose result is
+a predeclared type other than `error` and `any`, a function type whose signature
+differs from the value's, or a GALA struct or sealed type (a `Getter` for a
+`func() int`). Everywhere else it is the thunk's result: for a `func() Getter`,
+a `func() any`, a result that is an interface or a type parameter not yet
+inferred, as for a type's `Apply` (`Try(g)` is a `Try[Getter]`, while a generic
+function that infers its `T` from `g` binds it from `g`'s function type), and a
+`func()` slot given a call or
+a receive.
+Multi-argument function parameters still require an explicit lambda.
 
 ### Variadic Functions
 ```gala
