@@ -151,6 +151,12 @@ func main() {
     Println(q)`,
 			[]string{`Opts_Apply[string](Opts{`},
 		},
+		{
+			"the slot binding it for a construction by position and name called at once",
+			`val q Option[int] = Opts(1, b = 2)(3)
+    Println(q)`,
+			[]string{`Opts_Apply[int](Opts{`},
+		},
 	}
 	// The import goes only where it is used: GALA reports an unused one.
 	src := func(body string) string {

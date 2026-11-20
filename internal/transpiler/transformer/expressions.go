@@ -997,7 +997,7 @@ func (t *galaASTTransformer) isResultGenericValueApply(name string) bool {
 	}
 	var ref ast.Expr = ast.NewIdent(name)
 	if pkg, member, qualified := strings.Cut(name, "."); qualified {
-		if !t.importManager.IsPackage(pkg) {
+		if !t.importManager.IsPackage(pkg) || t.shadowingScope(pkg) != nil {
 			return false
 		}
 		ref = &ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent(member)}
@@ -1048,17 +1048,22 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 
 // firstCallBuilds reports whether a call of the type meta describes with args
 // builds the struct rather than calling its Apply as a companion: by name,
-// when every name is a field; with no arguments, when Apply takes parameters
+// when every name given is a field; with no arguments, when Apply takes parameters
 // none of which has a default (lowerCallSuffix); otherwise by position
 // (positionalCallBuildsStructLiteral).
 func (t *galaASTTransformer) firstCallBuilds(meta *transpiler.TypeMetadata, args argsSrc) bool {
 	if len(args.list) == 0 {
+		// A sealed case's Apply is generated, never generic, so only the
+		// parameters, their defaults and an injected metadata one decide.
 		apply := meta.Methods["Apply"]
-		return len(apply.ParamTypes) > 0 && len(apply.DefaultExprs) == 0 && !meta.IsSealed
+		return len(apply.ParamTypes) > 0 && len(apply.DefaultExprs) == 0 && !meta.IsSealed &&
+			t.injectedMetaParam(apply.ParamTypes[0]) == noInjectedMeta
 	}
 	if slices.ContainsFunc(args.list, argSrc.named) {
+		// Positional arguments fill the leading fields; each named one must
+		// name a field.
 		for _, a := range args.list {
-			if name, _ := a.name(); !slices.Contains(meta.FieldNames, name) {
+			if name, _ := a.name(); name != "" && !slices.Contains(meta.FieldNames, name) {
 				return false
 			}
 		}
