@@ -214,7 +214,8 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 
 	// A `_` target of `=` (`_ = expr`, `n, _ = f()`) is Go's blank
 	// identifier, not a `_` binding: it is no read (GALA-E0139), and a value
-	// it discards takes no type from one.
+	// it discards takes no type from one. A compound assignment reads its
+	// target first, so `_ += x` is GALA-E0139.
 	discards := make([]bool, len(targets))
 	lhsExprs := make([]ast.Expr, len(targets))
 	for i, target := range targets {
