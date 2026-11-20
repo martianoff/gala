@@ -682,6 +682,7 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       let bs := s.toUTF8.toList.toArray.map fun b => Val.int et b.toNat
       if bs.size > maxSliceCap then unsupported "slice-of-string-large"
       pure (.slice t (some (← newArray c n et bs (GcRuntime.constStringBytesCap bs.size))))
+    | .slice _, .str .. => unsupported "slice-of-string"
     | .string, .slice .. => unsupported "string-of-slice"
     | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
     | _, _ => convert c n t v
@@ -1456,6 +1457,12 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
             match ← evalArgs c n env args with
             | [.slice t r] => return [.slice t (r.map fun r => { r with cap := r.len, alt := none })]
             | _ => stuck "slices.Clip of a non-slice"
+          -- `stringslite.Clone(s)` returns a copy of `s` (internal/stringslite, which
+          -- strconv's errors use): strings are immutable, so the copy is `s`.
+          if path == "internal/stringslite" && f == "Clone" && !spread then
+            match ← evalArgs c n env args with
+            | [s@(.str ..)] => return [s]
+            | _ => stuck "stringslite.Clone of a non-string"
           if !c.pkgs.contains path then unsupported s!"{path}.{f}"
     | _ => pure ()
     -- A declared function called by name: a generic one gets its type arguments by

@@ -20,7 +20,7 @@ import (
 // checkRunnable and checkSiblings passing.
 var RunnableStdlib = map[string][]string{
 	"errors":       {"errors.go"},
-	"strconv":      {"atoi.go"},
+	"strconv":      {"atoi.go", "isprint.go", "quote.go"},
 	"unicode/utf8": {"utf8.go"},
 }
 

@@ -1,5 +1,6 @@
-// strconv.Atoi, run from Go's own strconv/atoi.go (gocoreexport.RunnableStdlib):
-// the fast path for short inputs, signs, and int64's bounds through ParseInt.
+// strconv.Atoi, run from Go's own strconv/atoi.go, quote.go and isprint.go
+// (gocoreexport.RunnableStdlib): the fast path for short inputs, signs, int64's
+// bounds through ParseInt, and the errors, printed with Quote.
 package main
 
 import (
@@ -14,4 +15,8 @@ func main() {
 		fmt.Println(n, err == nil)
 	}
 	fmt.Println(strconv.IntSize)
+	for _, s := range []string{"x", "", "-", "1_000", "99999999999999999999", "12a", "héllo\n"} {
+		n, err := strconv.Atoi(s)
+		fmt.Println(n, err)
+	}
 }

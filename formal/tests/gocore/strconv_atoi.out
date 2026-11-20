@@ -8,3 +8,10 @@
 -9223372036854775808 true
 123456789012345678 true
 64
+0 strconv.Atoi: parsing "x": invalid syntax
+0 strconv.Atoi: parsing "": invalid syntax
+0 strconv.Atoi: parsing "-": invalid syntax
+0 strconv.Atoi: parsing "1_000": invalid syntax
+9223372036854775807 strconv.Atoi: parsing "99999999999999999999": value out of range
+0 strconv.Atoi: parsing "12a": invalid syntax
+0 strconv.Atoi: parsing "héllo\n": invalid syntax
