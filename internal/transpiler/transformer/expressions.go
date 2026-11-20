@@ -1042,7 +1042,7 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 	if len(suffixes) != 2 || suffixes[0].opener() != "(" || suffixes[1].opener() != "(" {
 		return false
 	}
-	meta := t.litApplyTarget(&ast.CompositeLit{Type: typ})
+	meta := t.valueApplyType(&ast.CompositeLit{Type: typ})
 	return resultGenericApply(meta) && t.firstCallBuilds(meta, suffixes[0].args())
 }
 
@@ -1062,7 +1062,10 @@ func (t *galaASTTransformer) firstCallBuilds(meta *transpiler.TypeMetadata, args
 	}
 	if slices.ContainsFunc(args.list, argSrc.named) {
 		// Positional arguments fill the leading fields; each named one must
-		// name a field.
+		// name a field. A sealed parent is no construction target.
+		if meta.IsSealed || len(args.list) > len(meta.FieldNames) {
+			return false
+		}
 		for _, a := range args.list {
 			if name, _ := a.name(); name != "" && !slices.Contains(meta.FieldNames, name) {
 				return false
