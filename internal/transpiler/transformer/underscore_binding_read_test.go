@@ -67,7 +67,12 @@ func TestUnderscoreCompoundWrite(t *testing.T) {
 		{"`_ -= 1`", "    _ -= 1\n", "line 5:4 `_ -= ...` reads `_`, which names no value " + hint},
 		{"`_++`", "    _++\n", "line 5:4 `_++` reads `_`, which names no value " + hint},
 		{"`_--`", "    _--\n", "line 5:4 `_--` reads `_`, which names no value " + hint},
+		{"`_ *= 2`", "    _ *= 2\n", "line 5:4 `_ *= ...` reads `_`"},
+		{"`_ /= 2`", "    _ /= 2\n", "line 5:4 `_ /= ...` reads `_`"},
+		{"`(_)++`", "    (_)++\n", "line 5:4 `_++` reads `_`"},
+		{"`(_) += 1`", "    (_) += 1\n", "line 5:4 `_ += ...` reads `_`"},
 		{"`_ += 1` in a lambda with a `_` parameter", "    val f = (_ int) => {\n        _ += 1\n        0\n    }\n    Println(f(1))\n", "line 6:8 `_ += ...` reads `_`"},
+		{"`_ += 1` in a typed-pattern arm", "    val v any = n\n    Println(v match {\n        case _: int => {\n            _ += 1\n            0\n        }\n        case _ => 1\n    })\n", "line 8:12 `_ += ...` reads `_`"},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,7 +83,15 @@ func TestUnderscoreCompoundWrite(t *testing.T) {
 		})
 	}
 	t.Run("`_ = x` stays a discard", func(t *testing.T) {
-		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    _ = n + 1\n    n += 1\n    n++\n    Println(n)\n}\n", "")
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    _ = n + 1\n    (_) = n\n    n += 1\n    n++\n    Println(n)\n}\n", "")
 		require.NoError(t, err)
 	})
+	const bindHeader = "package main\n\nfunc step() Option[int] = Some(1)\n\nfunc run() Option[int] {\n    bind _ = step()\n"
+	for _, op := range []string{"_ += 1", "_++"} {
+		t.Run("`"+op+"` after `bind _ = m`", func(t *testing.T) {
+			_, err := newForbiddenBuiltinTranspiler().Transpile(bindHeader+"    "+op+"\n    Some(2)\n}\n\nfunc main() {\n    Println(run())\n}\n", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), string(galaerr.CodeUnderscoreBindingRead))
+		})
+	}
 }

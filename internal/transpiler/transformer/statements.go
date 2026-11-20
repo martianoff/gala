@@ -106,9 +106,24 @@ func (t *galaASTTransformer) checkForbiddenStatementKeywordSrc(e exprSrc) error 
 	)
 }
 
+// isBlankTarget reports whether e, written as an assignment or inc/dec target,
+// is `_`, also in grouping parentheses (`(_)`).
+func (t *galaASTTransformer) isBlankTarget(e exprSrc) bool {
+	for {
+		if e.bareIdent() == "_" {
+			return true
+		}
+		inner, n := t.parenthesized(e)
+		if n != 1 {
+			return false
+		}
+		e = inner
+	}
+}
+
 // lowerIncDec lowers an increment or decrement.
 func (t *galaASTTransformer) lowerIncDec(d incDecDecl) (ast.Stmt, error) {
-	if d.expr.bareIdent() == "_" {
+	if t.isBlankTarget(d.expr) {
 		op := "_++"
 		if d.dec {
 			op = "_--"
@@ -193,6 +208,15 @@ func (t *galaASTTransformer) lowerStatement(s stmtSrc) (stmt ast.Stmt, pre []ast
 // lowerAssignment lowers an assignment.
 func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	targets := d.lhs.exprs()
+	// A compound assignment reads its target first, so `_ += x` is
+	// GALA-E0139, whatever binds `_`.
+	if d.op != "=" {
+		for _, target := range targets {
+			if t.isBlankTarget(target) {
+				return nil, underscoreWriteRead(target.at(), "_ "+d.op+" ...")
+			}
+		}
+	}
 	for _, target := range targets {
 		// `if (c) a() else x = v` parses as an assignment to the whole
 		// if-expression: an if-expression's branch is an expression, and an
@@ -214,15 +238,11 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 
 	// A `_` target of `=` (`_ = expr`, `n, _ = f()`) is Go's blank
 	// identifier, not a `_` binding: it is no read (GALA-E0139), and a value
-	// it discards takes no type from one. A compound assignment reads its
-	// target first, so `_ += x` is GALA-E0139.
+	// it discards takes no type from one.
 	discards := make([]bool, len(targets))
 	lhsExprs := make([]ast.Expr, len(targets))
 	for i, target := range targets {
-		if target.bareIdent() == "_" {
-			if d.op != "=" {
-				return nil, underscoreWriteRead(target.at(), "_ "+d.op+" ...")
-			}
+		if t.isBlankTarget(target) {
 			discards[i], lhsExprs[i] = true, ast.NewIdent("_")
 			continue
 		}
