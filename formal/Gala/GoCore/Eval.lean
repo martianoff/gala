@@ -57,6 +57,18 @@ def Env.push (env : Env) : Env := { env with scopes := [] :: env.scopes }
 /-- The predeclared interface `error` (Go spec, "Errors"). -/
 def errorTy : Ty := .iface [("Error", .func_ [] [.string] false)]
 
+/-- `fmt.Stringer`'s underlying type (fmt/print.go). -/
+def stringerTy : Ty := .iface [("String", .func_ [] [.string] false)]
+
+/-- The underlying types of the defined types of Go's standard library that GoCore
+    knows without their source, by import path and name: `fmt.Stringer`
+    (fmt/print.go, `type Stringer interface { String() string }`). Such a type stays
+    the defined type `.named path name []`, as distinct from an identical literal
+    interface as in Go (Go spec, "Type identity"). -/
+def libType? : String → String → Option Ty
+  | "fmt", "Stringer" => some stringerTy
+  | _, _ => none
+
 /-- The predeclared types (Go spec, "Predeclared identifiers"). -/
 def universeType? : String → Option Ty
   | "bool" => some .bool
@@ -428,7 +440,8 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
             if alias then return some (← evalType c n { pkg := path, file := fi } te)
             if tps.isEmpty then return some (.named path sel []) else stuck s!"generic type {sel} without type arguments"
           | _ => return none
-        | none => return none
+        -- A package the document does not hold: a type GoCore knows without its source.
+        | none => return (libType? path sel).map fun _ => .named path sel []
       | none => return none
     | .index x args =>
       -- A generic type instantiated: `T[args]` or `pkg.T[args]`.
@@ -462,7 +475,23 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
   | n + 1, env, e => do
     match e with
     | .structType fs =>
+      -- An embedded field promotes its type's methods to the struct (Go spec,
+      -- "Struct types"), which GoCore's method sets do not include: an embedded
+      -- interface, or a type (or pointer to one) that declares methods, is outside.
       let tys ← (fieldTypes fs).mapM (evalType c n env)
+      let embedded := fs.flatMap fun | .mk ns _ => if ns.isEmpty then [true] else ns.map fun _ => false
+      for (e, t) in embedded.zip tys do
+        if e then
+          if let .iface _ ← underlying c n t then unsupported "embedded-interface-field"
+          let base := match t with | .ptr b => b | b => b
+          -- A type of a package the document holds none or only some of has
+          -- methods GoCore may not see: taken as having some. A type that embeds
+          -- such a field in turn stops here when its own type is evaluated.
+          if let .named p tn _ := base then
+            let pre := tn ++ "."
+            if partialPkg c p ||
+                ((c.pkgs.get? p).map fun pk => pk.methods.fold (fun b k _ => b || k.startsWith pre) false).getD false then
+              unsupported "embedded-methods"
       return .struct_ ((fieldNames fs).zip tys)
     | .interfaceType es =>
       -- An embedded element (`error`, a constraint's type union) would add to the
@@ -486,6 +515,10 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
       if k < 0 then stuck "negative array length"
       return .array k.toNat (← evalType c n env elt)
     | .unsupported k => unsupported k
+    -- So that a pointer to, or a parenthesized, type GoCore does not hold reaches the
+    -- checks below.
+    | .star x => return .ptr (← evalType c n env x)
+    | .paren x => evalType c n env x
     | _ =>
       match ← typeOf? c n env e with
       | some t => pure t
@@ -512,6 +545,9 @@ def underlying (c : Ctx) : Nat → Ty → GM Ty
   | n + 1, t => do
     match t with
     | .named path name args =>
+      -- A package the document does not hold: a type GoCore knows without its source.
+      if !c.pkgs.contains path then
+        if let some u := libType? path name then return u
       let p ← pkgCtx c path
       match p.objs.get? name with
       | some (.type fi (.mk _ tps _ te)) =>
