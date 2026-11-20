@@ -240,7 +240,9 @@ func (d Ptr[JsonDecoderImpl]) StartObject() {
 }
 
 // openContainer steps over the opening byte of an object or array that the
-// caller decodes, and records it as kind ('o' or 'a') on the stack.
+// caller decodes, and records it as kind ('o' or 'a') on the stack. It
+// settles elemStart at the first byte inside that is not whitespace, so the
+// first element needs no ',' (see elemStart).
 func (d Ptr[JsonDecoderImpl]) openContainer(open byte, kind byte) {
     d.skipWs()
     d.checkDepth(d.stack.Size() + 1)
