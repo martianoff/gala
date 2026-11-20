@@ -468,13 +468,11 @@ func peekValueByte(d *JsonDecoderImpl) byte {
 	return d.data[i]
 }
 
-var readValue = valueReader(true)
-
 // separatorReaders are the paths that check a separator: the typed reads
 // with and without an IsNull probe before each, Skip on the members of a
 // container the caller opened, and Skip over a whole document.
 var separatorReaders = map[string]func(*JsonDecoderImpl){
-	"decode with IsNull probes": readValue,
+	"decode with IsNull probes": valueReader(true),
 	"decode":                    valueReader(false),
 	"Skip each member":          skipMembers,
 	"Skip":                      skipValue,

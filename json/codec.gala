@@ -219,9 +219,10 @@ type JsonDecoderImpl struct {
     // last settled: the first byte that is not whitespace after a
     // container's opening byte or after a ','. A separator check there
     // repeats the one for the same element (a read after an IsNull probe)
-    // and needs no ','. A check anywhere else is a new element. That holds because pos never moves backwards
-    // and every value, nested containers included, is at least one byte,
-    // so a decode path that rewinds pos must reset elemStart as well.
+    // and needs no ','. A check anywhere else is a new element. That holds
+    // because pos never moves backwards and every value, nested containers
+    // included, is at least one byte, so a decode path that rewinds pos
+    // must reset elemStart as well.
     var elemStart     int
     var pendingKey    string
     var hasPendingKey bool
