@@ -121,6 +121,23 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 	return ident, nil
 }
 
+// underscoreBindingRead is GALA-E0139 when name, a primary written at at, is
+// a `_` whose innermost binding is a `_` lambda parameter or typed pattern
+// (`(_) => _ + 1`, `case _: int => _`): such a `_` names no value, and Go
+// has no value to read for it. A placeholder lambda's `_` is its parameter.
+func (t *galaASTTransformer) underscoreBindingRead(name string, at srcNode) error {
+	if name != "_" {
+		return nil
+	}
+	if s := t.bindingScope(name); s == nil || s.placeholder {
+		return nil
+	}
+	r := at.rng()
+	return spanErrorAt(galaerr.CodeUnderscoreBindingRead, r, r,
+		"`_` reads a `_` binding, which names no value",
+		"bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`")
+}
+
 // lowerParenthesized lowers `(elems)` written at at: a tuple literal of two
 // or more elements, a grouping of one, and `()`, which is no value.
 func (t *galaASTTransformer) lowerParenthesized(elems []exprSrc, at srcNode) (ast.Expr, error) {

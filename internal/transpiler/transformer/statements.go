@@ -205,11 +205,12 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		}
 	}
 
-	// `_` as a target is Go's blank identifier, `_ = expr`, not a read of a
-	// `_` binding (GALA-E0139).
+	// `_ = expr` assigns to Go's blank identifier, not to a `_` binding: it
+	// is no read (GALA-E0139) and the value takes no type from one.
+	discard := d.op == "=" && len(targets) == 1 && targets[0].bareIdent() == "_"
 	lhsExprs := make([]ast.Expr, len(targets))
 	for i, target := range targets {
-		if target.bareIdent() == "_" {
+		if discard {
 			lhsExprs[i] = ast.NewIdent("_")
 			continue
 		}
@@ -230,9 +231,10 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`, and so does a
 	// field or element target: `s.cur = None()` for `cur Option[int]`.
 	var lhsType transpiler.Type
-	if lhsName, lhsOk := singleAssignmentLHSName(targets); lhsOk && !t.isInoutName(lhsName) {
+	// A discarded value keeps its own type.
+	if lhsName, lhsOk := singleAssignmentLHSName(targets); lhsOk && !discard && !t.isInoutName(lhsName) {
 		lhsType = t.getValType(lhsName)
-	} else if len(lhsExprs) == 1 {
+	} else if len(lhsExprs) == 1 && !discard {
 		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
 	rhsExprs, err := t.lowerDeclarationInitializers(t.exprsOf(d.rhs), len(lhsExprs), lhsType)

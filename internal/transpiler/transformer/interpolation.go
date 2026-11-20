@@ -286,23 +286,6 @@ func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode)
 		"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
 }
 
-// underscoreBindingRead is GALA-E0139 when name, a primary written at at, is
-// a `_` whose innermost binding is a `_` lambda parameter or typed pattern
-// (`(_) => _ + 1`, `case _: int => _`): such a `_` names no value, and Go
-// has no value to read for it. A placeholder lambda's `_` is its parameter.
-func (t *galaASTTransformer) underscoreBindingRead(name string, at srcNode) error {
-	if name != "_" {
-		return nil
-	}
-	if s := t.bindingScope(name); s == nil || s.placeholder {
-		return nil
-	}
-	r := at.rng()
-	return spanErrorAt(galaerr.CodeUnderscoreBindingRead, r, r,
-		"`_` reads a `_` binding, which names no value",
-		"bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`")
-}
-
 // parseExprAt parses text as one expression whose first character sits at
 // line/col of the file into a native tree of its own, made by galop's
 // recovering parser as the file's is (parser.ParseExpressionCheckedAt). The
