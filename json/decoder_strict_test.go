@@ -406,3 +406,115 @@ func TestDecoder_SkipInsideArray(t *testing.T) {
 	d.EndArray()
 	d.End()
 }
+
+// ----- Decoder: separators --------------------------------------------------
+
+// readValue reads the value at the decoder's position through the typed
+// reads Codec.Decode uses, choosing each read by the value's first byte.
+// Every value is first probed with IsNull, as an Option field is, so a read
+// that follows the probe for the same element is covered too.
+func readValue(d *JsonDecoderImpl) {
+	if d.IsNull() {
+		d.ReadNull()
+		return
+	}
+	if d.pos >= len(d.data) {
+		panic("unexpected end of input")
+	}
+	switch d.data[d.pos] {
+	case '{':
+		d.StartObject()
+		for d.HasMoreFields() {
+			d.ReadKey()
+			readValue(d)
+		}
+		d.EndObject()
+	case '[':
+		d.StartArray()
+		for d.HasMoreElements() {
+			readValue(d)
+		}
+		d.EndArray()
+	case '"':
+		d.ReadString()
+	case 't', 'f':
+		d.ReadBool()
+	default:
+		d.ReadFloat64()
+	}
+}
+
+// Members of an object and elements of an array are separated by exactly one
+// ',' (#1293): a missing, doubled, leading or trailing separator is an error,
+// as it is in encoding/json, wherever the container sits.
+func TestDecoder_SeparatorsRequired(t *testing.T) {
+	tests := []struct {
+		in    string
+		valid bool
+	}{
+		{`[]`, true},
+		{`{}`, true},
+		{`[1]`, true},
+		{`[1,2,3]`, true},
+		{` [ 1 , 2 ,3 ] `, true},
+		{"[1\n,\t2]", true},
+		{`[1,null,2]`, true},
+		{`[null,null]`, true},
+		{`["a","b"]`, true},
+		{`[true,false]`, true},
+		{`[[1],[2,3],[]]`, true},
+		{`[{"a":1},{"a":2}]`, true},
+		{`{"a":1,"b":2}`, true},
+		{` { "a" : 1 , "b" : [ 1 , 2 ] , "c" : { "d" : null } } `, true},
+		{`{"a":[{"b":[1,2]},{"b":[]}],"c":"x"}`, true},
+
+		{`[1 2]`, false},
+		{`[1 2 3]`, false},
+		{`[1,2 3]`, false},
+		{`[1 null]`, false},
+		{`[null 1]`, false},
+		{`["a" "b"]`, false},
+		{`[true false]`, false},
+		{`[[1] [2]]`, false},
+		{`[[1 2]]`, false},
+		{`[{"a":1} {"a":2}]`, false},
+		{`[1,,2]`, false},
+		{`[,1]`, false},
+		{`[1,]`, false},
+		{`{"a":1 "b":2}`, false},
+		{`{"a":"x" "b":2}`, false},
+		{`{"a":[1] "b":2}`, false},
+		{`{"a":{"x":1} "b":2}`, false},
+		{`{"a":{"x":1 "y":2}}`, false},
+		{`{"a":1,,"b":2}`, false},
+		{`{,"a":1}`, false},
+		{`{"a":1,}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := stdjson.Valid([]byte(tt.in)); got != tt.valid {
+				t.Fatalf("test table disagrees with encoding/json: Valid(%s) = %v", tt.in, got)
+			}
+			err := decodeDocument(tt.in, readValue)
+			if tt.valid && err != "" {
+				t.Fatalf("decode(%s) failed: %s", tt.in, err)
+			}
+			if !tt.valid && err == "" {
+				t.Fatalf("decode(%s) did not fail", tt.in)
+			}
+		})
+	}
+}
+
+// A missing separator is reported where the separator belongs.
+func TestDecoder_MissingSeparatorError(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{`[1 2]`, `json at pos 3: expected ','`},
+		{`{"a":1 "b":2}`, `json at pos 7: expected ','`},
+	}
+	for _, tt := range tests {
+		if got := decodeDocument(tt.in, readValue); got != tt.want {
+			t.Errorf("decode(%s): error = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

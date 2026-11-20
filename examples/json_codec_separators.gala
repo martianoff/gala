@@ -1,0 +1,45 @@
+package main
+
+// Codec.Decode requires the ',' between object members and between array
+// elements (#1293). A document with a missing separator is a Failure wherever
+// the separator is missing: between declared fields, inside an array or a
+// map, after a nested object, at the root, or inside an unknown field that
+// is skipped. The same documents with their separators decode as before.
+
+import (
+    "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct In(K string)
+struct R(S string, I int, N Array[int], M HashMap[string, int], X In, O Array[Option[int]])
+
+func main() {
+    val c = json.Codec[R](json.AsIs())
+    val ints = json.Value[Array[int]]()
+
+    Println("--- well-formed ---")
+    Println(c.Decode("{\"S\":\"a\",\"I\":1}"))
+    Println(c.Decode("{\"N\":[1,2,3]}"))
+    Println(c.Decode("{\"M\":{\"a\":1}}"))
+    Println(c.Decode("{\"X\":{\"K\":\"v\"} , \"I\":7}"))
+    Println(c.Decode("{\"O\":[1,null,3]}"))
+    Println(c.Decode("{ \"N\" : [ 1 ,\n 2 ] , \"Z\" : [ 1 , 2 ] , \"I\" : 7 }"))
+    Println(ints.Decode("[1,2,3]"))
+
+    Println("--- missing separator ---")
+    Println(c.Decode("{\"S\":\"a\" \"I\":1}"))
+    Println(c.Decode("{\"N\":[1 2 3]}"))
+    Println(c.Decode("{\"M\":{\"a\":1 \"b\":2}}"))
+    Println(c.Decode("{\"X\":{\"K\":\"v\"} \"I\":7}"))
+    Println(c.Decode("{\"O\":[1 null]}"))
+    Println(c.Decode("{\"O\":[null 1]}"))
+    Println(ints.Decode("[1 2 3]"))
+    Println(c.Decode("{\"Z\":[1 2] , \"I\":7}"))
+
+    Println("--- extra separator ---")
+    Println(c.Decode("{\"N\":[1,,2]}"))
+    Println(c.Decode("{\"S\":\"a\",,\"I\":1}"))
+    Println(c.Decode("{\"O\":[1,,2]}"))
+    Println(c.Decode("{\"O\":[,1]}"))
+}

@@ -1,0 +1,22 @@
+--- well-formed ---
+Success(R(a, 1, Array(), HashMap(), In(), Array()))
+Success(R(, 0, Array(1, 2, 3), HashMap(), In(), Array()))
+Success(R(, 0, Array(), HashMap(a -> 1), In(), Array()))
+Success(R(, 7, Array(), HashMap(), In(v), Array()))
+Success(R(, 0, Array(), HashMap(), In(), Array(Some(1), None(), Some(3))))
+Success(R(, 7, Array(1, 2), HashMap(), In(), Array()))
+Success(Array(1, 2, 3))
+--- missing separator ---
+Failure(json at pos 9: expected ',')
+Failure(json at pos 8: expected ',')
+Failure(json at pos 12: expected ',')
+Failure(json at pos 15: expected ',')
+Failure(json at pos 8: expected ',')
+Failure(json at pos 11: expected ',')
+Failure(json at pos 3: expected ',')
+Failure(json at pos 8: expected ',')
+--- extra separator ---
+Failure(json at pos 8: expected a number)
+Failure(json at pos 9: expected '"')
+Failure(json at pos 8: expected a number)
+Failure(json at pos 6: expected a number)

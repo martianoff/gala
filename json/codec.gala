@@ -212,6 +212,12 @@ type JsonDecoderImpl struct {
     var pos           int
     var stack         []byte
     var firstConsumed []bool
+    // elemStart is where the array element being read begins: just inside
+    // the '[' for the first element, after the ',' for the others.
+    // Positions only grow and every value is at least one byte, so a
+    // separator check at elemStart repeats the one for the same element
+    // rather than starting a new one.
+    var elemStart     int
     var pendingKey    string
     var hasPendingKey bool
 }
@@ -233,6 +239,8 @@ func (d Ptr[JsonDecoderImpl]) openContainer(open byte, kind byte) {
     d.skipWs()
     d.checkDepth(d.stack.Size() + 1)
     d.expectByte(open)
+    d.skipWs()
+    d.elemStart = d.pos
     d.stack = go_interop.SliceAppend(d.stack, kind)
     d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
 }
@@ -282,16 +290,16 @@ func (d Ptr[JsonDecoderImpl]) HasMoreElements() bool {
     return d.data[d.pos] != ']'
 }
 
+// ReadKey reads the next member's key and the ':' after it. Every member
+// after the first must follow a ',' separator.
 func (d Ptr[JsonDecoderImpl]) ReadKey() string {
-    d.skipWs()
-    val depth = d.firstConsumed.Size() - 1
-    if depth >= 0 && d.firstConsumed[depth] {
-        if d.pos < d.data.Size() && d.data[d.pos] == ',' {
-            d.pos = d.pos + 1
-            d.skipWs()
+    val depth = d.stack.Size() - 1
+    if depth >= 0 {
+        if d.firstConsumed[depth] {
+            d.expectByte(',')
         }
+        d.firstConsumed[depth] = true
     }
-    if depth >= 0 { d.firstConsumed[depth] = true }
 
     val key = d.readJsonString()
     d.expectByte(':')
@@ -421,16 +429,18 @@ func (d Ptr[JsonDecoderImpl]) skipWs() {
     }
 }
 
+// consumeElemComma steps over the ',' before an array element; every element
+// after the first must have one. A read may follow IsNull for the same
+// element, so a second call at that element's start does nothing.
 func (d Ptr[JsonDecoderImpl]) consumeElemComma() {
-    val depth = d.firstConsumed.Size() - 1
-    if depth >= 0 && d.stack.Size() > 0 && d.stack[depth] == 'a' && d.firstConsumed[depth] {
+    val depth = d.stack.Size() - 1
+    if depth >= 0 && d.stack[depth] == 'a' {
         d.skipWs()
-        if d.pos < d.data.Size() && d.data[d.pos] == ',' {
-            d.pos = d.pos + 1
+        if d.pos != d.elemStart {
+            d.expectByte(',')
+            d.skipWs()
+            d.elemStart = d.pos
         }
-    }
-    if depth >= 0 && d.stack.Size() > 0 && d.stack[depth] == 'a' {
-        d.firstConsumed[depth] = true
     }
 }
 

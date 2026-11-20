@@ -3954,6 +3954,17 @@ gala_exec_test(
     ],
 )
 
+# Object members and array elements need their ',' separators (#1293).
+gala_exec_test(
+    name = "json_codec_separators",
+    src = "json_codec_separators.gala",
+    expected = "json_codec_separators.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Every numeric kind (sized ints/uints, float32, aliases, time.Duration) must
 # round-trip through the JSON codec instead of encoding as null; out-of-range
 # input and NaN are failures.
