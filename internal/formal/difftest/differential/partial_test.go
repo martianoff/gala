@@ -1,10 +1,15 @@
 package differential_test
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"martianoff/gala/internal/formal/difftest"
+	"martianoff/gala/internal/formal/gocoreexport"
 )
 
 // partialProgram prints "before", then uses errors.Is where USE stands.
@@ -49,10 +54,12 @@ func TestPartialPackageUnsupported(t *testing.T) {
 			if real.Outcome.Kind != difftest.KindOK || real.Stdout != "before\ntrue\n" || prog == nil {
 				t.Fatalf("go run: %s, stdout %q\n%s", real.Outcome, real.Stdout, stderr)
 			}
-			rec, run, err := difftest.GoCoreLane(gc, t.TempDir(), "partial", *prog, real, stderr)
+			dir := t.TempDir()
+			rec, run, err := difftest.GoCoreLane(gc, dir, "partial", *prog, real, stderr)
 			if err != nil {
 				t.Fatal(err)
 			}
+			requirePartialErrors(t, dir)
 			if run.Stdout != "before\n" || rec.Verdict != difftest.Unsupported || rec.Construct != "errors.Is" {
 				t.Fatalf("gocore: outcome %q, stdout %q, verdict %s (%s); want unsupported:errors.Is after %q "+
 					"(errors.Is must stay out of gocoreexport.RunnableStdlib's files)",
@@ -60,4 +67,47 @@ func TestPartialPackageUnsupported(t *testing.T) {
 			}
 		})
 	}
+}
+
+// requirePartialErrors fails the test unless the one document GoCoreLane
+// wrote under dir holds package errors marked partial, with exactly its
+// runnable files. GoCore stops the same way at a name of a package the
+// document lacks altogether, so this is what makes the stop one at a partial
+// package's missing name.
+func requirePartialErrors(t *testing.T, dir string) {
+	t.Helper()
+	docs, err := filepath.Glob(filepath.Join(dir, "*.gocore.json"))
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("want one GoCore document under %s, found %v (%v)", dir, docs, err)
+	}
+	data, err := os.ReadFile(docs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Packages []struct {
+			Path    string `json:"path"`
+			Partial bool   `json:"partial"`
+			Files   []struct {
+				Name string `json:"name"`
+			} `json:"files"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range doc.Packages {
+		if p.Path != "errors" {
+			continue
+		}
+		var names []string
+		for _, f := range p.Files {
+			names = append(names, f.Name)
+		}
+		if want := gocoreexport.RunnableStdlib["errors"]; !p.Partial || !slices.Equal(names, want) {
+			t.Fatalf("package errors in the document: partial %v, files %v; want partial, files %v", p.Partial, names, want)
+		}
+		return
+	}
+	t.Fatal("the document holds no package errors: the stop would not be at a partial package")
 }
