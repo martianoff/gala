@@ -21,9 +21,7 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 		{"placeholder outside and inside the string", `    Println(xs.Map(_ * 2 + s"${_}".Size()))`, "line 7:31 "},
 		{"slot that wants no function", `    Println(s"v${_}" + xs.String())`, "line 7:17 "},
 		{"selector on `_`", `    Println(xs.Map(s"v${_.String()}"))`, "line 7:24 "},
-		{"inside a lambda inside the string", `    Println(s"${xs.Map((x) => s"${_}")}")`, "line 7:34 "},
-		{"a `_` parameter read inside the string", `    Println(s"${xs.Map((_) => _ + 1)}")`, "line 7:30 "},
-	}
+		{"inside a lambda inside the string", `    Println(s"${xs.Map((x) => s"${_}")}")`, "line 7:34 "},	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.body+"\n}\n", "")
@@ -32,4 +30,13 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 			require.Contains(t, err.Error(), tc.at+"`_` inside an interpolated string is not a placeholder")
 		})
 	}
+
+	// Where it points depends on the file name, which this harness lacks (see
+	// transformDefaultExpr); the CLI points at the `_` in the default.
+	t.Run("in a default value", func(t *testing.T) {
+		src := "package main\n\nfunc label(x int, s string = s\"v${_}\") string = s\n\nfunc main() {\n    Println(label(1))\n}\n"
+		_, err := newForbiddenBuiltinTranspiler().Transpile(src, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(galaerr.CodePlaceholderInInterpolation))
+	})
 }
