@@ -525,7 +525,8 @@ theorem inst_strcmp :
     (evalExpr instCtx 10 strEnv (.binary ">=" (.ident "s") (.strLit "é"))).run.run strSt =
       (.ok (.bool (.untyped .bool) true), strSt) ∧
     (["<", "<=", ">", ">="].all fun op =>
-      (lowerE strKinds (.binary op (.name "s") (.lit (.str "z")))).isSome) = true :=
+      (lowerE strKinds (.binary op (.name "s") (.lit (.str "z")))).isSome) = true ∧
+    (lowerE strKinds (.binary "<=" (.lit (.str "a")) (.name "s"))).isSome :=
   Gala.M5.inst_strcmp
 
 open Gala Gala.M5 in

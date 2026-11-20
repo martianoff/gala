@@ -418,8 +418,9 @@ theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
     | (simp [show (Ty.bool == Ty.bool) = true from rfl]; exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩)
 
-/-! String ordering: GoCore's `compare` on `String` is code-point order, which equals Go's
-    byte order on UTF-8 (GoCore's fidelity, tested); galaspec's `<` is the same order. -/
+/-! String ordering: galaspec's `<` and GoCore's `compare` on `String` are both Lean's
+    code-point order, so these lemmas relate the two exactly. That Go's byte order is the
+    same order on UTF-8 is a fact GoCore's model relies on; it is not proved here. -/
 
 theorem scmp_lt (x y : String) : (compare x y == .lt) = decide (x < y) := by
   show (compareOfLessAndEq x y == .lt) = _
@@ -1013,8 +1014,7 @@ theorem pure_of_lower (κ : String → Option Kind) (c : Spec.Core) (cells : Arr
     Covered: `int`, `bool` and `string` literals, locals, parentheses, unary `-`, `+`,
     `^`, `!`, and binary `+ - * / %` and the bitwise `& | ^ &^` on `int`s (galaspec's
     through `Int64`, GoCore's exact bits reduced to `int`; `Gala/M5/Bits.lean`),
-    comparisons of `int`s and of strings (byte order in Go, code-point order in Lean: the
-    same for UTF-8), `==` and `!=` of any one kind, `+` of strings, `&&` and `||`.
+    comparisons of `int`s and of strings (code-point order on both sides), `==` and `!=` of any one kind, `+` of strings, `&&` and `||`.
     Shifts `<< >>` of a typed `int` by an `int` count, a negative count panicking as in Go.
     Not covered yet: a shift of a literal or by a negative constant (the lowering has
     neither). Stated for GoCore's order of evaluation, left to right, which is gc's for
@@ -1105,10 +1105,11 @@ def strCore : Spec.Core := { locals := [("s", ⟨.str "é", false⟩)], globals 
 def strSt : St := { cells := #[.str .string "é"], closures := #[], out := "", steps := 0 }
 def strKinds : String → Option Kind := fun x => if x = "s" then some .str else none
 
-/-- String ordering on the instance, `s = "é"`: `s < "z"` is false and `s > "z"` true (Go
-    compares bytes, `é` is `C3 A9`; Lean code points, `é` is `U+E9`: the same order for
-    UTF-8), `"a" <= s` is true, `s >= "é"` true, in galaspec and GoCore. The lowering
-    accepts each. -/
+/-- String ordering on the instance, `s = "é"`: `s < "z"` is false and `s > "z"` true,
+    `"a" <= s` (an untyped left operand) is true, `s >= "é"` true, in galaspec and GoCore,
+    and the lowering accepts each shape. Both sides compare code points here; `"é"` is
+    chosen so that Go's byte order (`C3 A9` against `7A`) gives the same answers, which
+    this instance does not check. -/
 theorem inst_strcmp :
     ((pureEval default (.binary "<" (.name "s") (.lit (.str "z")))).run.run strCore).1 = .ok (.bool false) ∧
     (evalExpr instCtx 10 strEnv (.binary "<" (.ident "s") (.strLit "z"))).run.run strSt =
@@ -1123,8 +1124,9 @@ theorem inst_strcmp :
     (evalExpr instCtx 10 strEnv (.binary ">=" (.ident "s") (.strLit "é"))).run.run strSt =
       (.ok (.bool (.untyped .bool) true), strSt) ∧
     (["<", "<=", ">", ">="].all fun op =>
-      (lowerE strKinds (.binary op (.name "s") (.lit (.str "z")))).isSome) = true := by
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      (lowerE strKinds (.binary op (.name "s") (.lit (.str "z")))).isSome) = true ∧
+    (lowerE strKinds (.binary "<=" (.lit (.str "a")) (.name "s"))).isSome := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Shifts on the instance, `x = 5`: by a typed count `x << x` is `160`; `-x >> 1` is `-3`
     (an arithmetic shift rounds down); a count of `64` or more gives `x << 64 = 0` and

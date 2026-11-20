@@ -470,9 +470,10 @@ column lists what each milestone's claim rests on beyond them.
   claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`.
   `expr_correct_instance` meets every hypothesis, on `x + 1`. It covers
   literals, locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %` and comparisons on
-  `int`s and on strings (Go compares bytes, Lean code points: the same order for UTF-8),
-  the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, `&&` and
-  `||`. galaspec computes the bitwise operators through Lean's `Int64`, GoCore
+  `int`s, the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, the
+  orderings `< <= > >=` on strings, `&&` and `||`. galaspec and GoCore both order
+  strings by code point; that Go's byte order agrees on UTF-8 is an assumption of
+  GoCore's model, not proved here. galaspec computes the bitwise operators through Lean's `Int64`, GoCore
   exactly and then reduced to `int`; core's `BitVec` lemmas show they agree
   (`formal/Gala/M5/Bits.lean`). Shifts `<<` and `>>` of a typed `int` by an `int` count
   are covered, counts of 64 or more and negative counts included; a shift of a literal
